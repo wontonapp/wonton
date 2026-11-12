@@ -92,62 +92,6 @@ pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
     }
 }
 
-/// 可以声明成可选、默认关的权限（ADR-0057）。判据：关着时整段字段能拿掉，插件还能运行。
-pub fn may_be_optional(permission: &Permission) -> bool {
-    matches!(
-        permission,
-        Permission::DockerSocket
-            | Permission::DevicesGpu
-            | Permission::DevicesSerial
-            | Permission::DevicesUsb
-    )
-}
-
-/// 开着时注入给插件的变量名（ADR-0057）。注入给这个插件的所有服务，关着时不定义。
-pub fn permission_var(permission: &Permission) -> Option<&'static str> {
-    match permission {
-        Permission::DockerSocket => Some("WONTON_PERMISSION_DOCKER_SOCKET"),
-        Permission::DevicesGpu => Some("WONTON_PERMISSION_DEVICES_GPU"),
-        Permission::DevicesSerial => Some("WONTON_PERMISSION_DEVICES_SERIAL"),
-        Permission::DevicesUsb => Some("WONTON_PERMISSION_DEVICES_USB"),
-        _ => None,
-    }
-}
-
-/// `optional_permissions` 的键和 `off_loss`：在允许名单里、不和必需的重复、每种语言都写了。
-pub fn validate_optional(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
-    for (permission, optional) in &manifest.optional_permissions {
-        if !may_be_optional(permission) {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-not-allowed",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-        if manifest.permissions.contains(permission) {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-declared-twice",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-        let complete = ["zh", "en"].iter().all(|lang| {
-            optional
-                .off_loss
-                .get(*lang)
-                .is_some_and(|text| !text.trim().is_empty())
-        });
-        if !complete {
-            return Err(ManifestError::Invalid(text(
-                langs,
-                "plugin-install-optional-off-loss",
-                &[("permission", permission.to_string().into())],
-            )));
-        }
-    }
-    Ok(())
-}
-
 /// 固定设备不扩大宿主路径的允许范围；串口和 USB 由后续的设备选择流程处理。
 pub fn is_fixed_device(path: &str) -> bool {
     matches!(path, "/dev/net/tun" | "/dev/fuse")
@@ -174,7 +118,7 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
         || manifest.permissions.contains(&Permission::MatrixBot)
         || manifest.bots.is_some();
     if restricted
-        && let Some(permission) = manifest.all_permissions().find(|permission| {
+        && let Some(permission) = manifest.permissions.iter().find(|permission| {
             matches!(
                 risk(permission),
                 Some(CapabilityRisk::VeryHigh | CapabilityRisk::Highest)
@@ -188,7 +132,8 @@ pub fn validate_manifest(manifest: &Manifest, langs: &Languages) -> Result<(), M
         )));
     }
     if let Some(permission) = manifest
-        .all_permissions()
+        .permissions
+        .iter()
         .find_map(|permission| match permission {
             Permission::Device { path } if !is_fixed_device(path) => Some(path),
             _ => None,
@@ -261,14 +206,6 @@ fn validate_host_network(
         "network_mode: host",
         langs,
     )?;
-    if manifest.permissions.contains(&Permission::Notify) {
-        // 发信按来源网段认插件（ADR-0047）；宿主网络的信从网桥地址来，认不出来源会被丢，
-        // 所以装时就拒（ADR-0056），失败即停。
-        return Err(ServiceError::new(
-            name,
-            text(langs, "plugin-install-priv-host-network-mail", &[]),
-        ));
-    }
     if manifest
         .lan
         .as_ref()
@@ -294,12 +231,10 @@ fn validate_host_network(
                 text(langs, "plugin-install-priv-host-network-sso", &[]),
             ));
         }
-        // `webui.health` 时核心自己探，不用 compose 里的 healthcheck。
-        if webui.health.is_none()
-            && service
-                .healthcheck
-                .as_ref()
-                .is_none_or(|check| check.disable || check.test.is_none())
+        if service
+            .healthcheck
+            .as_ref()
+            .is_none_or(|check| check.disable || check.test.is_none())
         {
             return Err(ServiceError::new(
                 name,
@@ -580,9 +515,7 @@ fn require(
     field: &str,
     langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if manifest.permissions.contains(&permission)
-        || manifest.optional_permissions.contains_key(&permission)
-    {
+    if manifest.permissions.contains(&permission) {
         Ok(())
     } else {
         Err(ServiceError::new(
@@ -606,10 +539,7 @@ fn check_declared(
     field: &str,
     langs: &Languages,
 ) -> Result<(), ServiceError> {
-    if (manifest.permissions.contains(&permission)
-        || manifest.optional_permissions.contains_key(&permission))
-        && !used
-    {
+    if manifest.permissions.contains(&permission) && !used {
         Err(ServiceError::new(
             "*",
             text(

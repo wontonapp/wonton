@@ -208,9 +208,12 @@ private fun Cancelled(
     onUseRecoveryKey: (() -> Unit)?,
 ) {
     CancelledText(reason.textRes())
-    // 下一步只给发起确认的这台设备：“重新开始”是主按钮，恢复密钥是备选。没取全钥匙也先重来：可能只是请求丢了。
+    // 下一步只给发起确认的这台设备；拒绝和表情对不上时，“重新开始”是主按钮，恢复密钥是备选。
     if (!flow.startedHere) return
     when (reason) {
+        VerificationCancel.KEYS_MISSING -> onUseRecoveryKey?.let {
+            WontonButton(stringResource(R.string.verification_use_recovery_key), it, Modifier.fillMaxWidth())
+        }
         VerificationCancel.ACCEPTED_ELSEWHERE, VerificationCancel.OTHER -> Unit
         else -> {
             WontonButton(

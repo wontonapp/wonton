@@ -1,21 +1,18 @@
 //! 连上之后向核心要它现在的地址，存进连接信息：服务器换了 IP，下一次建连第一个包还是直连，不用重新配对（ADR-0032）。
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Weak};
 use std::time::Duration;
 
-use futures_util::StreamExt;
-use iroh::endpoint::PathEventStream;
-use iroh::{Endpoint, EndpointId, TransportAddr};
+use iroh::EndpointId;
 use serde::Deserialize;
 use url::Url;
 use wonton_protocol::ProxySettings;
+use wonton_tunnel::TunnelStatus;
 use wonton_tunnel::relays::Relay;
-use wonton_tunnel::{TunnelClient, TunnelStatus};
 
 use super::HomeLink;
-use super::Published;
 use super::ticket::Ticket;
 use crate::chat::proxy_url;
 
@@ -112,21 +109,9 @@ impl HomeLink {
         }
     }
 
-    /// 本次连接选中的直连路径排最前。返回连接信息是否还是取地址时那份（是的话新地址已经用上）。
+    /// 记上核心报告的地址；和已有的一样时不算变化。返回连接信息是否还是取地址时那份（是的话新地址已经用上）。
     async fn remember(&self, text: &str, ticket: &Ticket, reported: Reported) -> bool {
-        let Some((_, client)) = self.current_link().await else {
-            return false;
-        };
-        let Some(path) = client.path() else {
-            return false;
-        };
-        let connected = match path.remote {
-            TransportAddr::Ip(addr) => Some(addr),
-            _ => None,
-        };
-        let Some(updated) =
-            ticket.with_reported(reported.relays, &reported.direct_addrs, connected)
-        else {
+        let Some(updated) = ticket.with_reported(reported.relays, &reported.direct_addrs) else {
             return self.is_current_ticket(text);
         };
         let new_text = match serde_json::to_string(&updated) {
@@ -149,7 +134,9 @@ impl HomeLink {
             *current = Some(new_text);
         }
         tracing::info!(direct_addrs = ?updated.direct_addrs(), "saved the server's new addresses");
-        client.set_server_addr(updated.server_addr());
+        if let Some((_, client)) = self.current_link().await {
+            client.set_server_addr(updated.server_addr());
+        }
         true
     }
 
@@ -192,67 +179,6 @@ impl HomeLink {
             .take();
         if let Some(task) = task {
             task.abort();
-        }
-    }
-}
-/// 把隧道客户端的状态变化写进 ViewModel，断开期间定时重新算（断开的时长和中继的情况不发事件）。只持有弱引用，核心释放后
-/// 自动结束。
-pub(super) async fn follow_connection(
-    home: Weak<HomeLink>,
-    endpoint: Endpoint,
-    client: TunnelClient,
-    proxy: ProxySettings,
-) {
-    let Some(mut recount) = home.upgrade().map(|home| home.recount.subscribe()) else {
-        return;
-    };
-    let mut status = client.watch_status();
-    let mut was_connected = false;
-    let mut paths: Option<PathEventStream> = None;
-    let mut selected = None;
-    loop {
-        let current = status.borrow_and_update().clone();
-        let Some(link) = home.upgrade() else {
-            return;
-        };
-        let connected = current == TunnelStatus::Connected;
-        if connected && !was_connected {
-            paths = client.path_events();
-        }
-        let path = client.path().map(|path| path.remote);
-        let changed_to_direct = path != selected && path.as_ref().is_some_and(|path| path.is_ip());
-        selected = path;
-        // 判据在 publish 的视图写锁里：视图已归别的连接就退出，这里不会再发布。
-        let tick = match link.publish(&current, &endpoint, &client, &proxy) {
-            Published::Superseded => return,
-            Published::Tick(tick) => tick,
-        };
-        if connected && (!was_connected || changed_to_direct) {
-            link.spawn_address_refresh();
-        } else if !connected {
-            link.stop_address_refresh();
-            paths = None;
-            selected = None;
-        }
-        was_connected = connected;
-        drop(link);
-        tokio::select! {
-            event = async { paths.as_mut()?.next().await }, if paths.is_some() => {
-                if event.is_none() {
-                    paths = None;
-                }
-            }
-            changed = status.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-            }
-            changed = recount.changed() => {
-                if changed.is_err() {
-                    return;
-                }
-            }
-            () = tokio::time::sleep(tick.unwrap_or_default()), if tick.is_some() => {}
         }
     }
 }

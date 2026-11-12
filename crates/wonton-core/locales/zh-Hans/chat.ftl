@@ -30,21 +30,11 @@ chat-card-agent-ask-again = 以后 { $requester } 改这个应用不再问，除
 chat-card-update-header-added = 这次更新新增的项：
 chat-card-update-header-risky = 这次更新申请了很高或最高级的权限：
 chat-card-update-header-ask-every = 权限没有变宽，你打开了“每次都问”：
-chat-card-update-header-adopt = 这个应用是你装的，同意后交给 { $requester } 管：
-chat-card-update-adopt-replace = 同意后换成它交来的这份，数据保留，装不上会退回
 
 # 卡片标题。$requester 是 Bot 的名字；$title、$plugin、$tool 是应用给的名字。
 chat-card-install-title = { $requester } 想安装 { $title }
 chat-card-update-title = { $requester } 想更新 { $title }
 chat-card-uninstall-title = { $requester } 想卸载 { $title }
-chat-card-permission-enable-title = { $requester } 要在“{ $title }”上打开「{ $permission }」
-chat-card-permission-disable-title = { $requester } 要在“{ $title }”上关掉「{ $permission }」
-chat-card-permission-off-loss = 关掉以后：{ $loss }
-chat-card-permission-root = 打开后这个应用能控制整台主机，操作以本机 root 身份执行。
-chat-choice-permission-enable = 打开
-chat-choice-permission-disable = 关掉
-chat-permission-done = 已经改好“{ $title }”的权限
-chat-permission-failed = 给 { $id } 改权限失败：{ $error }
 chat-card-tool-title = { $requester } 想用 { $plugin } 的 { $tool }
 
 # Agent 权限卡片的标题。$title 是 Agent 给这次请求起的名字。
@@ -56,13 +46,12 @@ chat-card-highest-line = 代码会以本机 root 身份运行
 chat-card-highest-confirm = 我知道这个应用能控制整台主机
 
 # 卸载卡片：应用的数据怎么处理。
-chat-card-uninstall-purge = 并删除它的数据，和 Bot 的旧加密消息将无法再查看，不可恢复
+chat-card-uninstall-purge = 并删除它的数据，不可恢复
 chat-card-uninstall-keep = 保留它的数据，以后重装还在
 
 # 工具调用卡片的行。$args 是原始 JSON 参数，太长时截断。
 chat-card-tool-data = 这个工具会改动数据
 chat-card-tool-root = 这个操作以本机 root 身份执行
-chat-card-tool-deletes = 应用标明这个工具会删除或覆盖数据
 chat-card-args = 参数：{ $args }
 
 # Bot 存文件的卡片。$name 和 $size 描述一个文件；$total 是加在一起的大小。
@@ -123,7 +112,7 @@ chat-tool-failed = 工具报告执行失败
 chat-save-done = 已存进 { $folder }
 chat-save-done-note = 已存进 { $folder }。{ $note }
 chat-save-partial = 存好了 { $saved }，后面的没存成：{ $failure }
-chat-save-note-grant = 授权没记下来（{ $error }），下次存还要问你
+chat-save-note-grant = 授权没记下来（{ $error }），下次存还要问主人
 chat-agent-chose = 已选择“{ $choice }”
 chat-agent-abandoned = Agent 不再等这个回答了，这次确认作废
 chat-superseded = 已被新版本取代
@@ -139,30 +128,3 @@ chat-help-refresh-needs-core = 有新的帮助文档，但服务器要更新到 
 chat-help-docs-age = { $problem }。这是 { $days } 天前的文档
 chat-help-topic-missing = 没有主题 { $topic }。可选的主题：{ $topics }
 chat-help-page-needs-core = 这一页讲的功能要服务器更新到 { $required } 以上（这台是 { $core }）：先更新服务器
-
-chat-mail-convert-failed = 这封信只有 HTML，正文没能转成文字，原文已作为 message.html 附上。
-chat-mail-unknown-source = 收到一封来源不明或没有发信权限的应用邮件，未投递给任何人。
-chat-mail-recipients-failed = 无法更新应用邮件的收件人：{ $error }。家人变动或服务器重启时会再试。
-chat-notify-rate-limited = { $plugin } 发通知和信太频繁，已暂停，约 { $seconds } 秒后自动恢复。
-# MCP Apps 界面里的调用在卡片上把调用方写成主人。
-mcp-app-owner = 你
-
-# Bot 往面板钉页（ADR-0052）。
-panel-pin-card-title = { $bot } 想往你的面板里放页面
-panel-pin-card-line = 同意后，这个 Bot 以后再往主面板放页面不再问；可以在设置里收回。
-panel-pin-allowed = 已同意
-panel-pin-bot-only = 只有 Bot 能钉页面；插件 { $plugin } 没有 Bot 身份
-panel-pin-bot-missing = 找不到 Bot { $bot } 的记录
-panel-pin-full = 面板已经满了（最多 { $max } 页），先拿掉一页再钉
-panel-pin-already-asking = 已经有一张往主面板钉页的确认卡片在等主人回答
-panel-pin-matrix = 连不上 Matrix：{ $error }
-panel-pin-not-there = 这个页面没有钉在面板上
-
-# MCP Apps 界面里的调用在卡片上把调用方写成主人。
-
-# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
-chat-card-hop-limit-title = { $bots } 来回说了 { $hops } 次，已停下
-chat-choice-hop-limit-continue = 继续
-chat-choice-hop-limit-stay = 先停着
-chat-hop-limit-resumed = 已继续
-chat-hop-limit-kept-by-other = 另一方选了先停着，房间还停着

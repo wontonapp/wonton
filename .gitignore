@@ -10,15 +10,10 @@ dist/
 .env
 .env.local
 *.local.toml
-*.key
-# iOS 的版本号，xcodegen 生成工程时由 scripts/app-version.sh 写出
-apps/ios/Version.xcconfig
 
 # 调试产物（截图、录屏、测试结果放在仓库外）
 *.xcresult
 *.mov
-*.log
-plugin-pr.md
 
 # 系统文件
 .DS_Store

@@ -48,8 +48,6 @@ struct ServersSection: View {
                 .frame(minHeight: WontonTheme.size.target)
                 .contentShape(Rectangle())
             }
-            WontonSeparator()
-            NavigationLink(value: SettingsRoute.matrixLogin) { MatrixLoginEntryLabel() }
         }
         .buttonStyle(.plain)
         .alert(String(localized: .commonRename), isPresented: Binding(

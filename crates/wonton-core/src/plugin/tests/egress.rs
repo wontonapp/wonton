@@ -89,17 +89,12 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             files: Default::default(),
             limits: Default::default(),
             granted_permissions: Vec::new(),
-            enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
@@ -140,7 +135,7 @@ pub(super) async fn serve(app: Router) -> std::net::SocketAddr {
 }
 
 #[tokio::test]
-async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_gateway() {
+async fn on_the_host_oidc_plugins_reach_the_core_through_their_own_network_gateway() {
     // 假 Docker 把插件容器的地址报成 127.0.0.1，安装最后一步检查的网页就是这个本机服务。
     let web = serve(Router::new().route("/", get(|| async { "ok" }))).await;
     let compose = package(
@@ -160,17 +155,16 @@ async fn on_the_host_oidc_plugins_reach_the_provider_through_their_own_network_g
     let created = docker.created(&container_name("app-test", "web")).unwrap();
     assert_eq!(
         created["HostConfig"]["ExtraHosts"],
-        json!([
-            format!("auth.wonton.internal:{gateway}"),
-            format!("app-test.wonton.localhost:{gateway}"),
-        ])
+        json!([format!("auth.wonton.localhost:{gateway}")])
     );
     assert_eq!(created["HostConfig"]["NetworkMode"], "wonton-app-test");
 }
 
 fn with_proxy(package: &PluginPackage) -> (InstallContext, Deployment) {
-    let mut ctx = dry_run_context(package);
-    ctx.egress = Some(EgressVars);
+    let mut ctx = dry_run_context(package, None);
+    ctx.egress = Some(EgressVars {
+        auth_host: "auth.wonton.localhost".to_owned(),
+    });
     let plan = render(package, &ctx, &super::langs()).unwrap();
     (ctx, plan)
 }
@@ -196,8 +190,10 @@ fn with_a_proxy_every_networked_service_of_an_egress_plugin_gets_the_variables()
     assert!(web.contains(&format!("HTTP_PROXY={PROXY_URL}")), "{web:?}");
     assert!(web.contains(&format!("SEARX_PROXY={PROXY_URL}")), "{web:?}");
     let no_proxy = web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap();
-    assert!(no_proxy.contains(",db,sealed,web,"), "{no_proxy}");
-    assert!(no_proxy.contains(",.localhost"), "{no_proxy}");
+    assert!(
+        no_proxy.contains(",auth.wonton.localhost,db,sealed,web,"),
+        "{no_proxy}"
+    );
     let db = super::env_of(service(&plan, "db"));
     assert!(
         db.contains(&"HTTP_PROXY=".to_owned()),
@@ -242,16 +238,16 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
     assert_eq!(
         web.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
         &format!(
-            "NO_PROXY=localhost,web,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,\
-             {private}"
+            "NO_PROXY=localhost,web,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
+             db,hub,{private}"
         )
     );
     let hub = super::env_of(service(&plan, "hub"));
     assert_eq!(
         hub.iter().find(|l| l.starts_with("no_proxy=")).unwrap(),
         &format!(
-            "no_proxy=internal.example,localhost,.localhost,127.0.0.1,::1,\
-             .wonton.internal,db,hub,web,{private}"
+            "no_proxy=internal.example,localhost,127.0.0.1,::1,.wonton.internal,\
+             auth.wonton.localhost,db,hub,web,{private}"
         )
     );
     // 没写的照常拿到完整名单。
@@ -259,8 +255,8 @@ fn compose_written_no_proxy_is_merged_into_every_networked_service() {
     assert_eq!(
         db.iter().find(|l| l.starts_with("NO_PROXY=")).unwrap(),
         &format!(
-            "NO_PROXY=localhost,.localhost,127.0.0.1,::1,.wonton.internal,db,hub,web,\
-             {private}"
+            "NO_PROXY=localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.localhost,\
+             db,hub,web,{private}"
         )
     );
 }
@@ -300,7 +296,7 @@ fn without_a_proxy_only_the_empty_url_variable_is_injected() {
         "  permissions: [network.egress]",
     );
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let plan = render(&package, &dry_run_context(&package), &super::langs()).unwrap();
+    let plan = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap();
     let web = service(&plan, "web");
     assert_eq!(super::env_of(web), ["SEARX_PROXY="]);
     let test = web.body.healthcheck.clone().unwrap().test.unwrap();
@@ -314,7 +310,7 @@ fn a_plugin_without_egress_cannot_reference_the_proxy_url() {
         "  permissions: []",
     );
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
+    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_PROXY_URL"), "{error}");
 }
 
@@ -343,7 +339,7 @@ async fn image_healthchecks_are_rewritten_only_when_a_proxy_is_configured() {
     assert_eq!(check.interval, Some(5_000_000_000));
     assert_eq!(service(&plan, "sealed").body.healthcheck, None);
 
-    let ctx = dry_run_context(&package);
+    let ctx = dry_run_context(&package, None);
     let mut plan = render(&package, &ctx, &super::langs()).unwrap();
     m.rewrite_image_healthchecks(&ctx, &mut plan).await.unwrap();
     assert_eq!(service(&plan, "web").body.healthcheck, None);
@@ -390,7 +386,7 @@ async fn proxy_plugins_get_the_core_address_and_others_do_not() {
     );
     let compose = package_with_env_ref();
     let package = PluginPackage::parse(&compose, &super::langs()).unwrap();
-    let error = render(&package, &dry_run_context(&package), &super::langs()).unwrap_err();
+    let error = render(&package, &dry_run_context(&package, None), &super::langs()).unwrap_err();
     assert!(error.to_string().contains("WONTON_CORE_ADDRESS"), "{error}");
 }
 

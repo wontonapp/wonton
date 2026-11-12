@@ -8,8 +8,6 @@
 //! - `wonton-core plugin …`：插件检查、打包、索引与构建期锁文件取包（见 `plugin_command`）。
 //! - `wonton-core image <icon.png|icon.svg|screenshot>`：核心内部用，在子进程里处理插件的图片
 //!   （`wonton_core::plugin::image_worker`）。
-//! - `wonton-core image-host <程序>`：核心内部用，常驻的图片助手，由它起上面那些处理图片的子进程；
-//!   核心启动时、绑隧道之前就先起它（`wonton_core::plugin::image_worker`）。
 //! - `wonton-core lan-probe`：核心内部用，在宿主网络里的一次性容器里读宿主的路由和网卡
 //!   （`wonton_core::plugin::lan::probe`）；`lan-probe listen <地址:端口,…>` 报告哪些端口有程序在用。
 //! - `wonton-core egress-proxy-check`：查代理连不连得上，安装脚本和核心都在出口网络上的一次性容器里跑它
@@ -18,20 +16,21 @@
 //! - `wonton-core compose-images`：升级器在新镜像里执行，列出这个版本要用的其他镜像。
 //! - `wonton-core manual-rollback …`：`install.sh` 手动退回时在目标镜像里执行（`wonton_core::upgrade::manual`）。
 
+use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, bail};
+use hyper::Method;
+use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 use wonton_core::config::Config;
-mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
-use wonton_core::friends::Friends;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
-use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
+use wonton_core::matrix::{FederationConfig, Matrix, NoticeRoom};
 use wonton_core::mcp;
 use wonton_core::mcp::audit::Audit;
 use wonton_core::members::Members;
@@ -55,9 +54,10 @@ use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
-use wonton_core::upgrade::compose_images;
 use wonton_core::upgrade::docker_host::DockerHost;
 use wonton_core::upgrade::service::{UpgradeConfig, Upgrades};
+use wonton_core::upgrade::state::Layout;
+use wonton_core::upgrade::{compose_images, manual, updater};
 use wonton_tunnel::federation::{FEDERATION_ALPN, FederationForwarder, FederationProtocol};
 use wonton_tunnel::peer_pair::{PEER_PAIR_ALPN, PeerPairProtocol};
 
@@ -113,7 +113,7 @@ async fn open_peers_and_federation(
     let forwarder = FederationForwarder::bind(
         tunnel.endpoint.clone(),
         listen,
-        Arc::new(move |name: &str| sharing_start::paired_target(&lookup, name)),
+        Arc::new(move |name: &str| lookup.lookup(name)),
         peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
@@ -133,7 +133,6 @@ async fn open_peers_and_federation(
 fn extra_protocols(
     peers: Option<Arc<peers::Peers>>,
     federation: Option<FederationProtocol>,
-    sharing: sharing_start::LimitedShares,
 ) -> Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> {
     let mut extra: Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> = Vec::new();
     if let (Some(protocol), Some(peers)) = (federation, peers) {
@@ -145,19 +144,12 @@ fn extra_protocols(
             ))) as _,
         ));
     }
-    extra.push((wonton_protocol::SHARE_ALPN, Box::new(sharing) as _));
     extra
 }
 
 mod federation_addrs;
-mod init_command;
-mod lifecycle_commands;
-mod mailbox_startup;
-use mailbox_startup::{open_mailpit, start_mailpit};
 mod pair_command;
 mod plugin_command;
-mod push_listener;
-mod sharing_start;
 
 /// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
 const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
@@ -170,7 +162,6 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
         Some(image_worker::COMMAND) => return image_worker::child(&args[2..]),
-        Some(image_worker::HOST_COMMAND) => return image_worker::host(&args[2..]),
         // 检测容器的结果打印在标准输出上，同样不初始化日志。
         Some(lan::probe::COMMAND) => return lan::probe::command(&args[2..]),
         Some(check::COMMAND) => return check::command(),
@@ -193,20 +184,15 @@ async fn run() -> ExitCode {
     }
     let result = match command.as_deref() {
         None | Some("serve") => serve().await,
-        Some("healthcheck") => lifecycle_commands::healthcheck().await,
+        Some("healthcheck") => healthcheck().await,
         Some("pair") => pair_command::run(std::env::args().skip(2).collect()).await,
-        Some("init") => init_command::init(&std::env::args().skip(2).collect::<Vec<_>>()).await,
-        Some("federation-block") => {
-            init_command::federation_block(&std::env::args().skip(2).collect::<Vec<_>>())
-        }
-        Some("updater") => {
-            lifecycle_commands::run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await
-        }
+        Some("init") => init(&std::env::args().skip(2).collect::<Vec<_>>()),
+        Some("updater") => run_updater(&std::env::args().skip(2).collect::<Vec<_>>()).await,
         Some(wonton_core::plugin::network_pool_command::COMMAND) => {
             wonton_core::plugin::network_pool_command::run().await
         }
         Some("manual-rollback") => {
-            lifecycle_commands::manual_rollback(&std::env::args().skip(2).collect::<Vec<_>>()).await
+            manual_rollback(&std::env::args().skip(2).collect::<Vec<_>>()).await
         }
         Some("--version") => {
             println!("wonton-core {} ({BUILD_COMMIT})", env!("CARGO_PKG_VERSION"));
@@ -245,19 +231,16 @@ fn plugin_engine(cfg: &Config) -> anyhow::Result<Engine> {
     Ok(Engine::connect()?.with_network_pool(cfg.plugin_network_pool, detector))
 }
 
+/// 联邦名单的运行时（ADR-0050）：盯配对组件的已配对名单（[`peers::Peers::paired_names`]），
+/// 变了就重写 Tuwunel 的第二份配置。没接 Matrix 的核心没有配对，也就没有名单可盯。
+/// 核心每次启动都会按启动时的名单对齐一次，补上上次没发出去的更新。
 fn spawn_federation_config(
     engine: &Engine,
     cfg: &Config,
     peers: &Option<Arc<peers::Peers>>,
     notices: &Option<Arc<NoticeRoom>>,
-    blocks: Option<Arc<FederationBlocks>>,
 ) {
     let Some(names) = peers.as_ref().map(|peers| peers.paired_names()) else {
-        return;
-    };
-    let (Some(server_name), Some(blocks)) =
-        (cfg.matrix.as_ref().map(|m| m.server_name.clone()), blocks)
-    else {
         return;
     };
     FederationConfig::spawn(
@@ -266,29 +249,9 @@ fn spawn_federation_config(
         cfg.core_container.clone(),
         notices.clone(),
         names,
-        server_name,
-        blocks,
     );
 }
 
-/// 网关监听先建好再装配：核对插件时的一次性服务要连核心，连接先在内核队列等着。
-async fn open_listener(
-    listen: std::net::SocketAddr,
-) -> anyhow::Result<wonton_core::entry_runtime::MainListener> {
-    wonton_core::entry_runtime::MainListener::bind(listen)
-        .await
-        .with_context(|| format!("监听 {listen}"))
-}
-
-fn owner_token(cfg: &Config) -> anyhow::Result<String> {
-    let path = cfg.core_state_dir().join("owner-token");
-    let token = secret::load_or_create(&path)
-        .with_context(|| format!("读取主人令牌 {}", path.display()))?;
-    tracing::info!(path = %path.display(), "主人令牌已就绪");
-    Ok(token)
-}
-
-#[allow(clippy::too_many_lines)] // 启动顺序就是一串有先后的接线，拆开会把顺序藏进多个函数。
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
@@ -299,17 +262,17 @@ async fn serve() -> anyhow::Result<()> {
     let docker = engine.check_server().await.context("连接 Docker")?;
     tracing::info!(version = %docker.version, arch = %docker.arch, "Docker 已连接");
 
-    let owner_token = owner_token(&cfg)?;
-    let members = Arc::new(Members::open(cfg.core_state_dir().join("members.json"))?);
-    let mailpit = open_mailpit(&cfg, &engine, members.clone())?;
-    // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
-    // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
-    let listener = open_listener(cfg.listen).await?;
+    let token_path = cfg.core_state_dir().join("owner-token");
+    let owner_token = secret::load_or_create(&token_path)
+        .with_context(|| format!("读取主人令牌 {}", token_path.display()))?;
+    tracing::info!(path = %token_path.display(), "主人令牌已就绪");
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let sharing_registries = sharing_start::Registries::open(&cfg)?;
-    let (http, system_http, hydra, matrix) =
-        serve::open_clients(&cfg, &engine, &sharing_registries).await?;
+    let http = HttpClient::new();
+    let system_http =
+        HttpClient::for_system_services(&engine, cfg.core_container.as_deref()).await?;
+    let hydra = connect_hydra(&cfg, &system_http).await?;
+    let matrix = connect_matrix(&cfg, &system_http).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
     let (manager, images) = start_plugin_manager(
         &cfg,
@@ -319,113 +282,40 @@ async fn serve() -> anyhow::Result<()> {
         hydra_for_manager,
         &matrix,
         owner.clone(),
-        &sharing_registries,
-        mailpit.clone(),
     )
     .await?;
-    let (friends, federation_blocks) = serve::open_friends(&cfg)?;
+
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
+    let members = Arc::new(
+        Members::open(cfg.core_state_dir().join("members.json"))
+            .context("读取家人记录 members.json")?,
+    );
     gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
-    // 隧道先起：确认卡片的开卡推送要用推送登记表和 endpoint ID（ADR-0016）。
-    let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
-    let push = Arc::new(open_push(&cfg, &tunnel, &manager)?);
     // Bot 调用的确认卡片（ADR-0016）。
-    let bus = mcp_bus(&cfg, manager.clone(), audit.clone(), push.clone());
+    let (bus, _confirmations) = mcp_bus(&cfg, manager.clone(), notices.clone(), audit.clone());
     let server_name = cfg
         .matrix
         .as_ref()
         .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
-    attach_identity(&bus, matrix.as_ref(), &cfg, server_name, members.clone());
+    bus.attach_people(server_name, members.clone());
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
         bus.upstreams(),
         notices.clone(),
     ));
-    let files = open_files(&cfg, host, http.clone(), audit.clone(), images)?;
+    let files = open_files(&cfg, host, http.clone(), audit, images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
+    let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
-    let forwarder = _forwarder.map(Arc::new);
-    let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
-    spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
-    spawn_entry_runtime(&cfg, &engine, &notices)?;
-    let contacts = serve::open_contacts(
-        &cfg,
-        (&manager, &members, &owner),
-        Some(push.clone()),
-        matrix.as_ref(),
-        peers.as_ref(),
-    )?;
-    if let Some(contacts) = &contacts {
-        bus.attach_contacts(contacts.clone());
-    }
-    let upgrades_after_serve = upgrades.clone();
-    let gateway = open_gateway(
-        &cfg,
-        owner,
-        owner_token,
-        members,
-        manager.clone(),
-        hydra,
-        http,
-        tunnel.clone(),
-        system_http.clone(),
-        matrix,
-        push,
-        bus,
-        notices,
-        files,
-        audit,
-        upgrades,
-        peers.clone(),
-        friends,
-        federation_blocks,
-        sharing,
-        contacts,
-    );
-    let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
-    serve::run_gateway(
-        &cfg,
-        listener,
-        tunnel,
-        (peers, federation),
-        gateway,
-        (manager, upgrades_after_serve),
-    )
-    .await
-}
-
-/// 把网关装起来：确认卡片、文件、配对这些部件都接上（ADR-0004）。
-#[allow(clippy::too_many_arguments)]
-fn open_gateway(
-    cfg: &Config,
-    owner: Arc<OwnerStore>,
-    owner_token: String,
-    members: Arc<Members>,
-    manager: Arc<PluginManager>,
-    hydra: Option<(Hydra, String)>,
-    http: HttpClient,
-    tunnel: Tunnel,
-    system_http: HttpClient,
-    matrix: Option<Arc<Matrix>>,
-    push: Arc<Push>,
-    bus: Arc<mcp::Bus>,
-    notices: Option<Arc<NoticeRoom>>,
-    files: Arc<Files>,
-    audit: Arc<Audit>,
-    upgrades: Arc<Upgrades>,
-    peers: Option<Arc<peers::Peers>>,
-    friends: Arc<Friends>,
-    federation_blocks: Option<Arc<FederationBlocks>>,
-    sharing: Arc<wonton_core::gateway::sharing::Sharing>,
-    contacts: Option<Arc<wonton_core::contacts::Contacts>>,
-) -> Arc<Gateway> {
-    Arc::new(
+    spawn_federation_config(&engine, &cfg, &peers, &notices);
+    let push = open_push(&cfg, &tunnel, &manager)?;
+    let gateway = Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
@@ -434,27 +324,47 @@ fn open_gateway(
             manager,
             hydra,
             http,
-            tunnel,
+            tunnel.clone(),
         )
         .with_system_http(system_http)
         .with_matrix(matrix)
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
-        .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
-            cfg.people_limits,
-        )))
-        .with_push(Some(push))
+        .with_push(Some(Arc::new(push)))
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices)
         .with_files(Some(files))
-        .with_audit(Some(audit))
         .with_tusd(cfg.tusd.clone())
         .with_upgrades(Some(upgrades))
-        .with_peers(peers)
-        .with_friends(Some(friends))
-        .with_contacts(contacts)
-        .with_federation_blocks(federation_blocks)
-        .with_sharing(Some(sharing)),
+        .with_peers(peers.clone()),
+    );
+    let app = gateway::router(gateway);
+    let listener = TcpListener::bind(cfg.listen)
+        .await
+        .with_context(|| format!("监听 {}", cfg.listen))?;
+    let entry =
+        TunnelEntry::spawn_with_protocols(&tunnel, app.clone(), extra_protocols(peers, federation));
+    tracing::info!(
+        listen = %cfg.listen,
+        url = %cfg.public.origin(cfg.public.core_host()),
+        "网关已启动"
+    );
+    let served = axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown())
+    .await
+    .context("网关异常退出");
+    entry.shutdown().await;
+    served
+}
+
+fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
+    manager.spawn_lan_monitor();
+    manager.spawn_egress_monitor();
+    manager.spawn_upgrade_checks();
+    manager.spawn_oom_watch();
+    manager.spawn_container_watch();
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
@@ -498,6 +408,20 @@ fn open_upgrades(cfg: &Config, engine: &Engine) -> Arc<Upgrades> {
             }),
         )),
     ))
+}
+
+fn lan_state(cfg: &Config) -> Lan {
+    let detector = Lan::for_core(cfg.core_container.clone());
+    match &cfg.lan_addresses {
+        Some(addresses) => {
+            tracing::info!(
+                ?addresses,
+                "局域网端口只开在 WONTON_LAN_ADDRESSES 指定的地址上"
+            );
+            detector.with_fixed(addresses.clone())
+        }
+        None => detector,
+    }
 }
 
 async fn connect_hydra(cfg: &Config, http: &HttpClient) -> anyhow::Result<Option<(Hydra, String)>> {
@@ -577,7 +501,7 @@ fn owner_languages(manager: &Arc<PluginManager>) -> Arc<dyn Fn() -> Languages + 
     Arc::new(move || manager.owner_languages())
 }
 
-/// 和主人的通知房间（ADR-0016）：插件通知发进这里，确认卡片不进（ADR-0016 第 6 条）。没接 Matrix 时插件通知如实报不可用。
+/// 和主人的通知房间（ADR-0016）：插件通知、确认卡片都发进这里。没接 Matrix 时插件通知如实报不可用。
 fn notice_room(
     cfg: &Config,
     matrix: Option<&Arc<Matrix>>,
@@ -617,61 +541,35 @@ fn open_plugin_manager(
     )
     .with_matrix(matrix)
     .with_host(HostPaths::new(cfg.host_dev.clone()))
-    .with_lan(Lan::from_config(cfg))
-    .with_egress(
-        Egress::new(cfg.egress_proxy.clone(), cfg.egress_proxy_detected.clone())
-            .with_doh(cfg.doh_url.clone()),
-    )
+    .with_lan(lan_state(cfg))
+    .with_egress(Egress::new(
+        cfg.egress_proxy.clone(),
+        cfg.egress_proxy_detected.clone(),
+    ))
     .with_store(cfg.store.clone())
     .with_upgrade_freeze(upgrades.frozen())
 }
 
-/// 把总线认人用的资料和 Matrix 接上：家人记录、服务器名，以及 Bot 钉页卡片的发送方。
-fn attach_identity(
-    bus: &Arc<mcp::Bus>,
-    matrix: Option<&Arc<Matrix>>,
-    cfg: &Config,
-    server_name: String,
-    members: Arc<Members>,
-) {
-    bus.attach_people(server_name, members);
-    bus.attach_matrix(matrix.cloned(), cfg.username.clone());
-}
-
-/// MCP 总线（ADR-0016）：开卡时给收件人的设备发推送，之后状态变化只改确认表，设备从
-/// “等你确认”列表的长轮询里知道。卡片不进任何 Matrix 房间。
+/// MCP 总线（ADR-0016）：确认卡片发进和主人的通知房间。没接 Matrix 时敏感的调用如实报“没法请主人确认”。
+/// 返回卡片集合本身，供服务器配对（ADR-0050）复用同一套确认流程。
 fn mcp_bus(
     cfg: &Config,
     manager: Arc<PluginManager>,
+    notices: Option<Arc<NoticeRoom>>,
     audit: Arc<Audit>,
-    push: Arc<Push>,
-) -> Arc<mcp::Bus> {
-    let notifier: Arc<dyn mcp::Notifier> = Arc::new(mcp::DevicePush::new(push));
+) -> (Arc<mcp::Bus>, Arc<mcp::Confirmations>) {
+    let notifier: Arc<dyn mcp::Notifier> = match notices {
+        Some(notices) => notices,
+        None => Arc::new(mcp::NoMatrix),
+    };
     let confirmations = Arc::new(
         mcp::Confirmations::new(notifier, cfg.confirmation_ttl).with_windows(
             cfg.confirmation_window,
             cfg.core_state_dir().join("confirmation-windows.json"),
         ),
     );
-    mcp::Bus::new(manager, confirmations, audit)
-}
-
-/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
-fn spawn_entry_runtime(
-    cfg: &Config,
-    engine: &Engine,
-    notices: &Option<Arc<NoticeRoom>>,
-) -> anyhow::Result<()> {
-    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
-        wonton_core::entry_runtime::spawn(
-            dir,
-            &cfg.data_dir,
-            engine.clone(),
-            container.clone(),
-            notices.clone(),
-        )?;
-    }
-    Ok(())
+    let bus = mcp::Bus::new(manager, confirmations.clone(), audit);
+    (bus, confirmations)
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
@@ -715,7 +613,6 @@ fn open_files(
 }
 
 /// 装配插件管理器：恢复已安装的插件、起监控、装默认插件（ADR-0025 的预装在后台跑）。
-#[allow(clippy::too_many_arguments)]
 async fn start_plugin_manager(
     cfg: &Config,
     engine: Engine,
@@ -724,55 +621,30 @@ async fn start_plugin_manager(
     hydra: Option<Hydra>,
     matrix: &Option<Arc<Matrix>>,
     owner: Arc<OwnerStore>,
-    sharing: &sharing_start::Registries,
-    mailpit: Option<Arc<wonton_core::mailbox::Component>>,
 ) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
     let images = ImageWorker::current_in(store.people_languages(), cfg.username.clone())
         .context("找不到核心自己的可执行文件（处理图片要用）")?;
-    // 助手要在隧道绑 UDP 之前起好：之后图片任务的子进程都在它里面 fork，核心不再在 iroh 重绑的窗口里
-    // fork（#66）。起不来不挡住启动，图片任务会如实报不可用，预装会重试。
-    if let Err(e) = images.start().await {
-        tracing::warn!("图片助手没起来，图片处理要等它重起：{e}");
-    }
     let images = Arc::new(images);
-    let matrix_rtc_ca = matrix
-        .as_ref()
-        .map(|_| wonton_core::plugin::matrix_rtc_ca::CoreCa::load_or_create(&cfg.core_state_dir()))
-        .transpose()?;
-    let manager = Arc::new(
-        open_plugin_manager(
-            cfg,
-            engine,
-            store,
-            http.clone(),
-            hydra,
-            matrix.clone(),
-            owner.clone(),
-            &upgrades,
-            images.clone(),
-        )
-        .with_mailpit(mailpit)
-        .with_matrix_rtc_ca(matrix_rtc_ca),
-    );
-    manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
+    let manager = Arc::new(open_plugin_manager(
+        cfg,
+        engine,
+        store,
+        http.clone(),
+        hydra,
+        matrix.clone(),
+        owner.clone(),
+        &upgrades,
+        images.clone(),
+    ));
     manager.spawn_registry_mirror_probe();
     // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
     manager.host_name().await;
-    Ok((manager, images))
-}
-
-/// 网关开始接连接之后才做：核对已装插件、起监控、装默认插件。
-async fn start_restored_plugins(
-    cfg: &Config,
-    manager: &Arc<PluginManager>,
-    upgrades: Arc<Upgrades>,
-) -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
-    serve::spawn_plugin_monitors(manager);
+    spawn_plugin_monitors(&manager);
     upgrades.spawn();
-    preinstall(cfg, manager.clone(), upgrades)?;
-    Ok(())
+    preinstall(cfg, manager.clone(), upgrades.clone())?;
+    Ok((manager, images))
 }
 
 /// 读取已配对设备和隧道私钥，绑定隧道 endpoint。绑不上就启动失败：没有隧道，App 连不回家。
@@ -817,4 +689,91 @@ async fn shutdown() {
         _ = term.recv() => {}
     }
     tracing::info!("收到退出信号");
+}
+
+async fn healthcheck() -> anyhow::Result<()> {
+    let cfg = Config::from_env()?;
+    let url = format!("http://127.0.0.1:{}/_wonton/health", cfg.listen.port());
+    let request = hyper::Request::builder()
+        .method(Method::GET)
+        .uri(&url)
+        .header(hyper::header::HOST, cfg.public.core_host())
+        .body(axum::body::Body::empty())?;
+    let response = tokio::time::timeout(Duration::from_secs(5), HttpClient::new().send(request))
+        .await
+        .context("健康检查超时")??;
+    if !response.status().is_success() {
+        bail!("健康检查失败：HTTP {}", response.status());
+    }
+    Ok(())
+}
+
+/// 安装脚本把要写进 `.env` 的主人设置传给 `init`：不合规则或者和记录对不上时当场报错，不用等容器反复重启。`init` 也
+/// 由一键升级执行，那时什么都不传，这里什么都不查。
+fn check_owner_before_install() -> anyhow::Result<()> {
+    let get = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
+    wonton_core::config::check_owner_settings(&get)?;
+    if let Some(pool) = get(wonton_core::plugin::network_pool::VAR) {
+        pool.parse::<wonton_core::plugin::network_pool::NetworkPool>()
+            .map_err(anyhow::Error::msg)
+            .context("环境变量 WONTON_PLUGIN_NETWORK_POOL 不合法")?;
+    }
+    if let Some(data_dir) = get("WONTON_DATA_DIR") {
+        let state = std::path::Path::new(&data_dir).join("core");
+        let configured = get("WONTON_OWNER_NAME");
+        wonton_core::owner::check_before_install(&state, configured.as_deref())?;
+    }
+    Ok(())
+}
+
+async fn run_updater(args: &[String]) -> anyhow::Result<()> {
+    let [install_dir, data_dir] = args else {
+        bail!("用法：wonton-core updater <安装目录> <数据目录>");
+    };
+    let host = DockerHost::new(
+        Engine::connect()?,
+        Box::new({
+            let data_dir: std::path::PathBuf = data_dir.into();
+            move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+        }),
+    );
+    let layout = Layout {
+        install_dir: install_dir.into(),
+        data_dir: data_dir.into(),
+    };
+    // 升级器写进状态文件的文字（App 详情里显示）按主人的语言（ADR-0043）。
+    let langs = wonton_core::plugin::store::read_owner_languages(&layout.data_dir);
+    updater::run(&host, layout, langs, updater::observe_period()).await
+}
+
+async fn manual_rollback(args: &[String]) -> anyhow::Result<()> {
+    let rollback = manual::parse(args)?;
+    let host = DockerHost::new(
+        Engine::connect()?,
+        Box::new({
+            let data_dir = rollback.layout.data_dir.clone();
+            move || wonton_core::plugin::store::read_owner_languages(&data_dir)
+        }),
+    );
+    rollback.run(&host).await
+}
+
+/// 第二个参数是基础域名：旧版本的升级器照这个格式调新镜像的 `init`，所以留着，`init` 不再用它。Matrix 服务器名只在
+/// 第一次安装时由 `WONTON_MATRIX_SERVER_NAME` 指定。
+fn init(args: &[String]) -> anyhow::Result<()> {
+    let [dir, _base_domain] = args else {
+        bail!("用法：wonton-core init <安装目录> <基础域名>");
+    };
+    check_owner_before_install()?;
+    let requested = std::env::var("WONTON_MATRIX_SERVER_NAME")
+        .ok()
+        .filter(|v| !v.is_empty());
+    let report = wonton_core::install::init(std::path::Path::new(dir), requested.as_deref())?;
+    for path in &report.created {
+        println!("已生成 {}", path.display());
+    }
+    for path in &report.kept {
+        println!("沿用 {}", path.display());
+    }
+    Ok(())
 }

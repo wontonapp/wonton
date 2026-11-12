@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
-use tokio::sync::watch;
 use wonton_protocol::CoreError;
 
 use super::ScopeRuntime;
@@ -34,14 +33,13 @@ impl Visit {
         let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
             handle.clone(),
-            crate::sharing::hub::bind(handle.clone())?,
             storage,
             network,
             None,
             push_method.subscribe(),
         )?;
         // 聊天部件要插件部件来认 Bot；Bot 的轮询随下面的 backgrounded 停掉，插件部件只在连上时取一次列表。
-        let plugins = PluginsLink::new(handle.clone(), home.clone(), dir, None, false);
+        let plugins = PluginsLink::new(handle.clone(), home.clone(), dir, None);
         // 临时作用域不补取：卡片成功什么都不做。开着测试钩子时决定是个 future，直接完成。
         let card_success: crate::chat::CardSuccess = {
             #[cfg(not(feature = "test-hooks"))]
@@ -53,17 +51,11 @@ impl Visit {
         let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
-            slot,
             dir,
             card_success,
             plugins,
-            crate::chat::ChatChannels {
-                view: None,
-                method: push_method.subscribe(),
-                session_out: watch::channel(None).0,
-                room_panel_out: watch::channel(None).0,
-                external: false,
-            },
+            None,
+            push_method.subscribe(),
         )?;
         chat.backgrounded();
         let push = PushLink::new(handle, home, chat.clone(), dir, push_method.subscribe());

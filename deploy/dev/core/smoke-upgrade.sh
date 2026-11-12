@@ -95,9 +95,9 @@ RUN rm -rf /usr/share/wonton/system-plugins/* /usr/share/wonton/default-plugins/
 $extra
 EOF
   docker push -q "$channel:$tag" >/dev/null
-  # 渠道就是 stable 这个 tag。
-  docker tag "$channel:$tag" "$channel:stable"
-  docker push -q "$channel:stable" >/dev/null
+  # 渠道就是 beta 这个 tag。
+  docker tag "$channel:$tag" "$channel:beta"
+  docker push -q "$channel:beta" >/dev/null
   docker image inspect --format '{{index .RepoDigests 0}}' "$channel:$tag" | sed 's/.*@//'
 }
 
@@ -186,7 +186,7 @@ env_image() { env_value WONTON_CORE_IMAGE; }
 mkdir -p "$install_dir" "$data_dir"
 one="$(publish one 0.9.0-smoke.1)"
 echo "==> install.sh 装 0.9.0-smoke.1"
-run_install -e WONTON_CORE_IMAGE="$channel:stable"
+run_install -e WONTON_CORE_IMAGE="$channel:beta"
 token="$(root_read "$data_dir/core/owner-token")"
 status="$(api GET)"
 expect "当前版本" "$(json current.version <<<"$status")" 0.9.0-smoke.1
@@ -252,7 +252,7 @@ wait_installed
 status="$(api GET)"
 expect "退回到最早的版本" "$(json current.digest <<<"$status")" "$one"
 expect ".env 按旧 digest 写" "$(env_image)" "$channel@$one"
-expect "还跟着渠道" "$(env_value WONTON_CORE_SOURCE)" "$channel:stable"
+expect "还跟着渠道" "$(env_value WONTON_CORE_SOURCE)" "$channel:beta"
 expect "App 不再显示旧的结果" "$(json run <<<"$status")" ""
 
 echo "全部通过"

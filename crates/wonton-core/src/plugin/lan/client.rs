@@ -20,7 +20,7 @@ const HOST: &str = "{host}";
 pub struct LanClientSpec {
     /// 连接地址，`{host}` 换成端口开着的局域网地址，如 `http://{host}:4533`。
     pub address: String,
-    /// 主人的账号模板；不能用显示名 `{name}` 或网页请求者的 `{role}`。
+    /// 值模板，同 `webui.proxy`，但不能用 `{name}`。
     pub username: String,
     pub password: String,
 }
@@ -125,10 +125,6 @@ impl PluginManager {
                 "plugin-settings-lan-client-not-published",
                 &[],
             ));
-        }
-        // 启动器声明了宣告地址时，端口绑在通配地址上，容器记录里的地址不能给用户；连的是宣告地址。
-        if let Some(announce) = &self.lan.announce {
-            hosts = announce.iter().map(|a| a.ip.to_string()).collect();
         }
         Ok(Some(LanClient {
             addresses: hosts

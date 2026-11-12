@@ -36,12 +36,12 @@ Web UI；支持列表里有 Hermes Agent。
 ## 验证结果（M0-4，2026-10-28）
 
 环境：magpie 0.1.1327（stable 渠道）、Hermes Agent v0.22.5、Tuwunel v1.9.4，macOS + OrbStack。
-内网的开发机拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
+内网的 npchy 拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
 的 `dev.sh up` 再 `dev.sh smoke`。
 
 **上游说明**：验证时容器里的 magpie 没有直接配 provider，而是加了一个 OpenAI 兼容的自定义 provider，
-指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用网关里的一个对话模型跑日常测试；
-海外只发了一次 Anthropic Messages 格式的短请求（网关里的 Claude 模型，经两层 magpie 转换，2 秒返回）。
+指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用 `rm/glm-5.3-flash` 跑日常测试；
+海外只发了一次 Anthropic Messages 格式的短请求（`auto/claude-haiku-5-5`，经两层 magpie 转换，2 秒返回）。
 生产环境没有这一层，用户在容器 magpie 的网页（“模型设置”）里直接配置 provider 和 key。
 
 ### 每插件独立凭据：用 magpie 的网关凭据（gateway key）
@@ -147,30 +147,6 @@ magpie 的网页经网关代登录（ADR-0009 的“网关代登录”）打开�
 - 网页的修改是同源的 `fetch`（`POST /api/…`，JSON），经网关照常转发：在网页上关掉、再打开上游，`magpie providers`
   里随即可见。别的插件网页发来的同样请求得到 401，到不了 magpie。
 
-## 补充：默认路由的轻提示（2026-11-07）
-
-默认模型（`default_model`，组 `wonton-default`）可能还没有模型：先装 Agent、后在“模型设置”里接 provider 是常态。
-接上与否只影响详情页的轻提示（`PluginHintCategory`，ADR-0055 的分工），不是错误，不标红，插件状态照常由容器健康决定：
-
-- **探测**：核心对运行中的使用方每 30 秒读一次网关的 `GET <openai>/models`（不计费）；默认模型不在列表就给
-  `models_no_default_model`。凭据用核心自己的 `<网关插件 id>/health`，与使用方的限额和用量分开。
-- **最小补全**：列表证明不了服务商的 key 有效；核心在核心启动首轮、使用方刚安装、刚启动时各发一次
-  一条用户消息、`max_tokens: 1`、非流式的补全来验证，服务商出错（如 key 被拒）后每 5 分钟复查，恢复即停。
-  30 秒一轮补全是每天约 2880 次请求，会把健康检查混进用量，不做。缺模型时不发补全；健康稳态不发补全，
-  巡检只读列表，不宣称持续验证服务商 key。补全可能计费，出错给 `models_provider_error`，原因由核心按
-  App 的语言写进 detail。网关连不上或模型列表拿不到归 `models_not_connected`（事实上没接上，与 ADR-0055 的类别一致）。
-- **安装预览**：`kind: agent` 或申请了 `models` 的插件在默认模型不在列表时，预览里按请求语言提一句先接模型，
-  不阻断安装，不发补全。
-
-行为测试（`cargo test -p wonton-core models`，假网关上）：列表缺默认组时补全得 404、不写提示前不发补全；
-key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`；65 个假时钟秒内健康巡检零补全；
-服务商错误恰好在五分钟边界复查、恢复后停发；安装和启动各只补全一次。真实栈复跑见 PR 描述。
-
-没选的做法：
-
-- 巡检每轮发补全：计费与用量污染（见上）。
-- 把路由问题写成 `Degraded` 状态：与 ADR-0055 冲突，模型问题不是插件坏了。
-
 ## 补充：默认模型（2026-10-30）
 
 主人在“模型设置”里加任意一家 provider 的 key，默认 Bot 就能回答，不用再做别的（GOAL 的 M1 第 3 项）。
@@ -206,7 +182,8 @@ key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`�
 
 没选的做法：
 
-- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613，组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
+- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613（每百万
+  token 输入 30、输出 60 美元），组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
   openrouter/auto（由 OpenRouter 按请求另挑模型，价格不定），通义千问下是旗舰 qwen-max（实测见下）。
 - 自己按模型名挑（如名字里带 mini、flash 的排前面）：命名没有规律可循，会过时；magpie 的模板用的是价格。通配也排不了
   序：通配匹配到的模型一律按 magpie 列出模型的顺序排，写在前面的通配不会排在前面。

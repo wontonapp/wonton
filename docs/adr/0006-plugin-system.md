@@ -47,7 +47,7 @@ Olares 基于 Kubernetes / Helm，对 Pi 和普通 Linux 太重。
 
 三项结论：插件管理器直接用 bollard 渲染 compose 子集；HTTP 网关内置在核心里（axum + hyper）；
 MCP 总线用官方 Rust SDK rmcp 在核心里做最小聚合（M1 实现）。验证环境：本机 macOS + OrbStack（arm64，
-Docker 29.8）和一台 Linux 开发机（x86_64，Docker 29.7，`DOCKER_HOST` 指向它）。端到端可复跑：
+Docker 29.8）和 npchy（Linux x86_64，Docker 29.7，`DOCKER_HOST=ssh://npchy`）。端到端可复跑：
 `deploy/dev/core/smoke.sh`，两台都通过（安装 Grafana 示例插件约 6 秒，含健康检查；卸载 1–10 秒）。
 
 **插件管理器**（`crates/wonton-core/src/plugin/`）
@@ -83,7 +83,7 @@ Traefik 一组在负载下有约 0.7% 的 500（forwardAuth 子请求失败，�
   路由就有了两份事实源。
 - 少一个容器，小主机上更省内存。
 - 代价：反向代理自己维护（`gateway/proxy.rs`），行为测试覆盖鉴权、Cookie 剥离、转发头和协议升级；
-  Grafana 的 WebSocket 经网关可用。转发在请求体发完后等响应头最多 120 秒，超时回 504 `upstream_timeout`，连接不上回 502 `upstream_unreachable`；网页入口的错误按 `Accept` 协商，页面导航回 HTML 错误页，接口（`fetch`、`*/*`）回 JSON 并带 `x-wonton-error`，Matrix、模型网关和 tusd 各按自己的 JSON 格式回（tusd 超时沿用 `service_unavailable`，客户端已有暂停重试语义）；
+  Grafana 的 WebSocket 经网关可用。转发在请求体发完后等响应头最多 120 秒，超时回 504 `upstream_timeout`，连接不上回 502 `upstream_unreachable`；网页入口回 HTML 错误页，Matrix、模型网关和 tusd 各按自己的 JSON 格式回（tusd 超时沿用 `service_unavailable`，客户端已有暂停重试语义）；
   Matrix 客户端接口（长轮询）、协议升级和上传不计入，响应头之后的流式转发仍然不限时。“TLS 和 ACME 以后用 rustls 补上”已被取代：经隧道不另加 HTTPS（ADR-0009），面向第三方 App 的 TLS 在入口容器（ADR-0021）。
 
 **MCP 总线：rmcp 最小聚合**

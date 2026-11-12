@@ -13,6 +13,7 @@ use serde_json::json;
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
 use super::super::image_worker::ImageWorker;
+use super::super::languages::Languages;
 use super::super::lifecycle::LifecycleConfig;
 use super::super::names::{Instance, container_name};
 use super::super::package_files::PackageFiles;
@@ -359,17 +360,12 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             files: Default::default(),
             limits: Default::default(),
             granted_permissions: Vec::new(),
-            enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");
@@ -504,30 +500,40 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine.clone(), &dir);
     let compose = proxy_app(web.port());
+    let preview = m
+        .preview_install(
+            &PluginPackage::parse(&compose, &super::langs()).unwrap(),
+            &Languages::default(),
+        )
+        .await
+        .unwrap();
+    let expected = crate::l10n::text(&Languages::default(), "install-webui-sso", &[]);
+    assert!(
+        preview.notices.iter().any(|n| n.text.contains(&expected)),
+        "安装确认页上显示会自动登录：{:?}",
+        preview.notices
+    );
     m.install(&compose, &[], super::langs()).await.unwrap();
     let owner = crate::owner::Owner {
         username: "owner".into(),
         display_name: "主人".into(),
         email: Some("owner@wonton.localhost".into()),
     };
-    let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
-    let header = auth.headers(&owner, wonton_protocol::Role::Owner).unwrap();
+    let auth = m.route("app-test").unwrap().proxy.unwrap();
+    let header = auth.headers(&owner, &super::langs()).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
         ("remote-user", "owner")
     );
-    let cookies = auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap();
+    let cookies = auth.cookies(&owner, &super::langs()).unwrap();
     let (name, key) = (&cookies[0].0, cookies[0].1.clone());
     assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
     assert_eq!(auth.secrets(), [key.as_str()]);
     // 核心重启后从密钥库读回同一个值。
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
-    let auth = restarted.route("app-test", "/").unwrap().proxy.unwrap();
-    assert_eq!(
-        auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap()[0].1,
-        key
-    );
+    let auth = restarted.route("app-test").unwrap().proxy.unwrap();
+    assert_eq!(auth.cookies(&owner, &super::langs()).unwrap()[0].1, key);
 }
 
 #[tokio::test]
@@ -554,7 +560,7 @@ async fn sso_plugins_that_ask_for_the_identity_get_the_owner_name_and_email() {
     .unwrap();
     let env = env_of_container(&docker, "wonton-app-test--web");
     assert_eq!(env["ADMIN"], "owner");
-    assert_eq!(env["MAIL"], "owner@wonton.internal");
+    assert_eq!(env["MAIL"], "owner@example.com");
 }
 
 #[test]
@@ -584,8 +590,8 @@ fn proxy_sso_templates_use_known_placeholders_and_long_generated_secrets() {
     };
     let key = "{web_key: {generate: {bytes: 32}}}";
     let ok = parse(
-        "{Remote-User: '{user} <{email}>', Remote-Role: '{role}'}",
-        "{app_web: 'v1.{secret:web_key}', app_role: '{role}'}",
+        "{Remote-User: '{user} <{email}>'}",
+        "{app_web: 'v1.{secret:web_key}'}",
         key,
     );
     assert!(ok.is_ok(), "{ok:?}");
@@ -642,10 +648,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
     ));
     let request = tokio::spawn({
         let (m, id) = (m.clone(), id.clone());
-        async move {
-            m.uninstall_detached(id, true, Vec::new(), true, super::langs())
-                .await
-        }
+        async move { m.uninstall_detached(id, true, super::langs()).await }
     });
     hold.reached().await;
     // 请求断开时 hyper 丢弃处理它的 future。
@@ -654,7 +657,7 @@ async fn an_uninstall_finishes_after_its_request_goes_away() {
 
     // 卸载还在进行：再来一次如实回答，不另起一次。
     let err = m
-        .uninstall_detached(id.clone(), true, Vec::new(), true, super::langs())
+        .uninstall_detached(id.clone(), true, super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict");
@@ -752,17 +755,12 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             files: Default::default(),
             limits: Default::default(),
             granted_permissions: Vec::new(),
-            enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             origin: None,
             written_by: None,
             ask_every_update: false,
             family: false,
-            settings: Default::default(),
-            settings_changed_ms: None,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");
@@ -780,7 +778,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
     let m = manager_in_container(engine, &dir);
     m.restore().await.unwrap();
     assert_eq!(
-        m.route("app-test", "/").unwrap().upstream,
+        m.route("app-test").unwrap().upstream,
         Some(Endpoint::Tcp(
             "web.app-test.wonton.internal:8123".to_owned()
         ))

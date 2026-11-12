@@ -29,9 +29,6 @@ const CHUNK: usize = 256 * 1024;
 const STALL: Duration = Duration::from_secs(60);
 /// 字节发完后等多久：最后一个 PATCH 的回答要等核心把文件放进 `transfers`，大文件跨文件系统要复制。
 const PLACEMENT: Duration = Duration::from_secs(10 * 60);
-/// 发链接前等 Matrix 登录多久：App 重启后接着发时，恢复会话、第一次同步用不了一分钟。
-/// 停在登录失败上的当场就走，不等。
-const CHAT_SIGN_IN: Duration = Duration::from_secs(60);
 
 pub(super) async fn run(link: &Arc<FilesLink>, record: Record) -> Result<(), Problem> {
     let Job::Upload {
@@ -336,7 +333,7 @@ async fn send(
         )
         .header(reqwest::header::CONTENT_LENGTH, remaining)
         .body(body);
-    let sent = match tokio::select! {
+    let sent = tokio::select! {
         sent = request.send() => sent,
         () = activity.stalled() => {
             return Err(Problem::Interrupted(l10n!(
@@ -345,11 +342,6 @@ async fn send(
                 "files-upload-stalled"
             )));
         }
-    } {
-        Ok(sent) => sent,
-        // 核心不读请求体就回 503 时连接先关，客户端可能先看到写失败：问一句进度，问出服务的毛病就照实说，
-        // 别把这次说成等连接恢复。
-        Err(error) => return Err(what_while_down(api, file, interrupted(error)).await),
     };
     let failed = activity
         .failed
@@ -360,7 +352,7 @@ async fn send(
         return Err(failed);
     }
     let response = tokio::select! {
-        checked = checked(sent) => checked.map_err(pausable)?,
+        checked = checked(sent.map_err(interrupted)?) => checked.map_err(pausable)?,
         () = activity.stalled() => {
             return Err(Problem::Interrupted(l10n!(
                 CATALOG,
@@ -424,18 +416,8 @@ fn body(
     ))
 }
 
-/// 这次传不动时顺带问一句进度：问出服务的毛病（或者核心写明的失败）就照实说；答得上来、或者问也问不上，
-/// 还是按原来的算。
-async fn what_while_down(api: &Api, file: &FileId, problem: Problem) -> Problem {
-    match Offset::query(api, file).await {
-        Err(err @ Problem::ServicesDown(_)) | Err(err @ Problem::Failed(..)) => err,
-        _ => problem,
-    }
-}
-
 /// 传完后把这个房间的 Bot 加进访问范围，再把链接发进这个房间。App 被杀在这两步之间时，重启后再做一遍；授权本身可以重复，消息极少数
-/// 情况下会多发一条。隧道断着时等连上再做；Matrix 还没登录好（App 重启后接着发链接时常见）等它一小会儿，别让主人点重发；
-/// 其他的不自动再试，等主人点重发：聊天停在登录失败上、主人退出了房间这些情况，一直试也不会好。
+/// 情况下会多发一条。隧道断着时等连上再做；其他的不自动再试，等主人点重发：聊天没就绪、主人退出了房间这些情况，一直试也不会好。
 async fn deliver(
     link: &Arc<FilesLink>,
     api: &Api,
@@ -444,7 +426,6 @@ async fn deliver(
 ) -> Result<(), Problem> {
     let sent = async {
         api.grant(file, room).await?;
-        link.chat.signed_in_within(CHAT_SIGN_IN).await;
         link.chat
             .send_text_unopened(room, &file.link())
             .await
@@ -459,9 +440,6 @@ async fn deliver(
     })
 }
 
-/// 聊天那边的错算传输的哪一类。`NotReady`（还没登录 Matrix）、`Unauthorized`、`Upstream` 说的是手机这边的
-/// 处境，借用了服务器那边的类别：两端的壳只显示说明，类别没有人用，就先不分（issue #19）。要分开得先加
-/// `FileFailure`，两端的壳跟着改，等真有人要看类别再做。
 fn chat_problem(error: CoreError) -> Problem {
     match error {
         CoreError::TransportUnavailable { reason } => Problem::Interrupted(reason),
@@ -470,13 +448,6 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::InvalidInput { reason } => Problem::Failed(FileFailure::InvalidInput, reason),
         CoreError::Storage { reason } => Problem::Failed(FileFailure::LocalIo, reason),
         CoreError::Upstream { reason } => Problem::Failed(FileFailure::UpstreamError, reason),
-        CoreError::ServerTooOld { reason, .. } => {
-            Problem::Failed(FileFailure::UpstreamError, reason)
-        }
-        // 文件上传不传设置，走不到这一类；真到了按输入错误说。
-        CoreError::SettingsInvalid { reason, .. } => {
-            Problem::Failed(FileFailure::InvalidInput, reason)
-        }
     }
 }
 

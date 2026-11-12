@@ -20,8 +20,8 @@ pub enum Error {
     #[error("连不上 Matrix 服务器：{0}")]
     Transport(String),
 
-    /// 服务器不认这个身份：JWT 无效或过期、设备已被吊销、账号已停用。只能重新登录或重新配对。
-    #[error("Matrix 服务器拒绝了身份（{errcode}）：{message}")]
+    /// 服务器拒绝了身份或权限：JWT 无效或过期、设备已被吊销、账号已停用、无权操作。
+    #[error("Matrix 服务器拒绝了请求（{errcode}）：{message}")]
     Unauthorized {
         /// Matrix 错误码，如 `M_FORBIDDEN`、`M_UNKNOWN_TOKEN`、`M_USER_DEACTIVATED`；
         /// 服务器没给错误码时为空。
@@ -30,17 +30,7 @@ pub enum Error {
         message: String,
     },
 
-    /// 身份没问题，但服务器不让做这件事：不在房间里、权限等级不够、对方屏蔽了自己、对方的服务器不在联邦名单里。
-    /// 登录还有效，不能当成要重新登录。
-    #[error("Matrix 服务器不允许这个操作（{errcode}）：{message}")]
-    Forbidden {
-        /// Matrix 错误码，通常是 `M_FORBIDDEN`；服务器没给错误码时为空。
-        errcode: String,
-        /// 服务器给出的说明。
-        message: String,
-    },
-
-    /// 前置条件不满足：服务器缺少必需的能力，房间还没同步到本地，或 Matrix 服务器暂时不可用（网关回 502–504）。
+    /// 前置条件不满足：服务器缺少必需的能力，或房间还没同步到本地。
     #[error("Matrix 尚未就绪：{0}")]
     NotReady(String),
 
@@ -53,29 +43,12 @@ pub enum Error {
     InvalidInput(String),
 }
 
-/// 403 里说身份失效的错误码（规范的 Standard error codes）；其余的 403 是权限问题。
-const SESSION_ERRCODES: [&str; 3] = ["M_UNKNOWN_TOKEN", "M_MISSING_TOKEN", "M_USER_DEACTIVATED"];
-
-impl Error {
-    /// 登录、换令牌这类请求被拒时，不管是 401 还是 403，说的都是身份。
-    #[must_use]
-    pub fn into_unauthorized(self) -> Self {
-        match self {
-            Self::Forbidden { errcode, message } => Self::Unauthorized { errcode, message },
-            other => other,
-        }
-    }
-}
-
 impl From<&HttpError> for Error {
     fn from(error: &HttpError) -> Self {
         match error {
             HttpError::Reqwest(source) => Self::Transport(source.to_string()),
             HttpError::Cached(inner) => inner.as_ref().into(),
-            // 刷新令牌被拒就是登录失效，不管错误码：Tuwunel 对删掉的刷新令牌回 403 `M_FORBIDDEN`（规范要求 `M_UNKNOWN_TOKEN`）。
-            HttpError::RefreshToken(RefreshTokenError::MatrixAuth(inner)) => {
-                Self::from(inner.as_ref()).into_unauthorized()
-            }
+            HttpError::RefreshToken(RefreshTokenError::MatrixAuth(inner)) => inner.as_ref().into(),
             // 访问令牌已被拒绝，又没法刷新（会话没有刷新令牌等）。
             HttpError::RefreshToken(other) => Self::Unauthorized {
                 errcode: String::new(),
@@ -96,33 +69,17 @@ impl From<&ApiError> for Error {
         if matches!(api.body, ErrorBody::NotJson { .. }) {
             return Self::Transport(api.to_string());
         }
-        let errcode = || {
-            api.error_kind()
-                .map_or_else(String::new, |kind| kind.errcode().to_string())
-        };
         match api.status_code.as_u16() {
-            401 => Self::Unauthorized {
-                errcode: errcode(),
+            401 | 403 => Self::Unauthorized {
+                errcode: api
+                    .error_kind()
+                    .map_or_else(String::new, |kind| kind.errcode().to_string()),
                 message: api.to_string(),
-            },
-            // 403 多数是“不让做这件事”，身份本身没问题；只有这几个错误码说的是令牌或账号本身。
-            403 => match errcode() {
-                code if SESSION_ERRCODES.contains(&code.as_str()) => Self::Unauthorized {
-                    errcode: code,
-                    message: api.to_string(),
-                },
-                code => Self::Forbidden {
-                    errcode: code,
-                    message: api.to_string(),
-                },
             },
             400 => {
                 tracing::warn!(%api, "服务器拒绝了请求");
                 Self::InvalidInput("服务器不接受这个请求，检查填的内容后再试".to_owned())
             }
-            // 核心的网关连不上 Tuwunel（重启、升级中）回 503，Tuwunel 迟迟不回回 504，都是 Matrix JSON：
-            // 会自己好，归成未就绪，登录才会退避重试，不当成要用户处理的服务器错误。
-            502..=504 => Self::NotReady(api.to_string()),
             _ => Self::Upstream(api.to_string()),
         }
     }
@@ -216,38 +173,14 @@ mod tests {
         let body = r#"{"errcode":"M_FORBIDDEN","error":"no"}"#;
         assert_eq!(
             Error::from(&response(403, body)),
-            Error::Forbidden {
+            Error::Unauthorized {
                 errcode: "M_FORBIDDEN".to_owned(),
                 message: "[403 / M_FORBIDDEN] no".to_owned(),
             }
         );
-        for (status, errcode) in [
-            (401, "M_UNKNOWN_TOKEN"),
-            (401, "M_FORBIDDEN"),
-            (403, "M_UNKNOWN_TOKEN"),
-            (403, "M_USER_DEACTIVATED"),
-        ] {
-            let body = format!(r#"{{"errcode":"{errcode}","error":"x"}}"#);
-            let error = Error::from(&response(status, &body));
-            assert!(
-                matches!(&error, Error::Unauthorized { errcode: actual, .. } if actual == errcode),
-                "{status} {errcode}: {error:?}"
-            );
-        }
         assert!(matches!(
             Error::from(&response(500, r#"{"errcode":"M_UNKNOWN","error":"x"}"#)),
             Error::Upstream(_)
         ));
-    }
-
-    #[test]
-    fn a_matrix_server_that_is_temporarily_unavailable_is_not_ready() {
-        for status in [502, 503, 504] {
-            let error = Error::from(&response(
-                status,
-                r#"{"errcode":"M_UNKNOWN","error":"Tuwunel 暂时无法访问"}"#,
-            ));
-            assert!(matches!(error, Error::NotReady(_)), "{status}: {error:?}");
-        }
     }
 }

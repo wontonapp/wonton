@@ -14,13 +14,10 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginImage
-import app.wonton.protocol.PluginDetailRoute
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginState
-import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginsViewModel
-import app.wonton.protocol.StoreConfirmation
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.TabRef
@@ -36,7 +33,9 @@ private const val CACHED_IMAGES = 128
  * 这里不做任何业务判断。
  */
 class PluginsState(val core: ClientCore) {
-    var viewModel by mutableStateOf(core.plugins())
+    var viewModel by mutableStateOf(core.plugins().also {
+        configureCrossOriginIsolatedAllowlist(it.installed?.plugins.orEmpty())
+    })
         private set
 
     /** 核心拒绝主人的操作的原因，由界面弹窗展示。 */
@@ -51,7 +50,12 @@ class PluginsState(val core: ClientCore) {
 
     /** 在主界面里一直收集，切到别的页面时也接着更新。 */
     suspend fun observe() {
-        core.pluginsUpdates().collect { next -> viewModel = next }
+        core.pluginsUpdates().collect { next ->
+            if (next.installed?.plugins != viewModel.installed?.plugins) {
+                configureCrossOriginIsolatedAllowlist(next.installed?.plugins.orEmpty())
+            }
+            viewModel = next
+        }
     }
 
     fun send(action: Action) {
@@ -117,13 +121,6 @@ sealed interface PluginRoute {
     data class Store(val source: String) : PluginRoute
 
     data class Installed(val id: String) : PluginRoute
-
-    /** 核心认得的同一页。 */
-    val coreRoute: PluginDetailRoute
-        get() = when (this) {
-            is Store -> PluginDetailRoute.Store(source)
-            is Installed -> PluginDetailRoute.Installed(id)
-        }
 }
 
 /** 安装或升级的确认页。 */
@@ -141,16 +138,8 @@ sealed interface PluginConfirmation {
     /** 换到主人选的压缩包。 */
     class UpgradeUpload(val id: String, val archive: ByteArray) : PluginConfirmation
 
-    /** 核心取好预览、请主人拿主意的一键操作（ADR-0017）：预览不再重新取。 */
-    data class Store(val confirmation: StoreConfirmation) : PluginConfirmation
-
-    /** 核心已经取好的预览；确认页不再自己取。 */
-    val preloaded: InstallPreview?
-        get() = (this as? Store)?.confirmation?.preview
-
     val isUpgrade: Boolean
-        get() = this is Upgrade || this is UpgradeFrom || this is UpgradeUpload ||
-            (this is Store && confirmation is StoreConfirmation.Upgrade)
+        get() = this is Upgrade || this is UpgradeFrom || this is UpgradeUpload
 
     /** 主人选的版本可能比装着的旧，不叫升级。 */
     val actionTitle: String
@@ -158,11 +147,6 @@ sealed interface PluginConfirmation {
             is Install, is Upload -> stringResource(R.string.install_action_install)
             is Upgrade -> stringResource(R.string.install_action_upgrade)
             is UpgradeFrom, is UpgradeUpload -> stringResource(R.string.install_change_version)
-            is Store -> if (confirmation is StoreConfirmation.Upgrade) {
-                stringResource(R.string.install_action_upgrade)
-            } else {
-                stringResource(R.string.install_action_install)
-            }
         }
 }
 
@@ -172,13 +156,3 @@ val StoreListing.allPlugins: List<StoreItem>
 
 /** 要卸载的插件，确认对话框用。 */
 data class UninstallTarget(val id: String, val title: String)
-
-/** 要打开设置页的插件，设置页用：标题栏显示插件的标题。 */
-data class PluginSettingsTarget(val id: String, val title: String)
-
-/** 核心取好的预览：确认页不再重新取。 */
-val StoreConfirmation.preview: InstallPreview
-    get() = when (this) {
-        is StoreConfirmation.Install -> preview
-        is StoreConfirmation.Upgrade -> preview
-    }

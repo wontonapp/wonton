@@ -11,7 +11,7 @@ use wonton_client::{
 use wonton_matrix::testkit::Received;
 
 use super::accept_the_bots_invite;
-use super::support::{Home, Phone, WAIT};
+use super::support::{Home, Phone};
 
 /// RFC 8291 附录 A 里设备的公钥和认证密钥。家里的推送代理在这个测试里是替身，不加密，只看登记的内容。
 const P256DH: &str =
@@ -367,89 +367,4 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
     phone.wait_chat("B 再登记一遍", registered).await;
     assert!(b.push_requests().len() > on_b);
     assert_eq!(a.push_requests().len(), on_a, "地址没变，A 不用再登记");
-}
-
-/// 等家里到达一条满足条件的推送登记请求；靠假核心的到达计数等事件，不睡固定间隔。
-async fn wait_for_a_registration(
-    home: &Home,
-    within: Duration,
-    mut found: impl FnMut(&[(String, Value)]) -> bool,
-) -> bool {
-    let mut seen = home.push_registrations_seen();
-    let waiting = async {
-        loop {
-            if found(&home.push_requests()) {
-                return true;
-            }
-            if seen.changed().await.is_err() {
-                panic!("推送登记的假核心没了");
-            }
-        }
-    };
-    tokio::time::timeout(within, waiting).await.unwrap_or(false)
-}
-
-/// 另一台还在登记（家里已收到 PUT、登记还没走完）时，壳再给一遍同一个地址（Android 的 UnifiedPush 开机时常常
-/// 连着回调几次 `onNewEndpoint`），家里只该收到一次 PUT。登记走完之前只有落盘记录能去重，而记录要等登记走完
-/// 才写，所以核心得记着“正在给哪台登记哪个地址”。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_repeated_endpoint_while_another_server_is_still_registering_is_not_registered_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let a = Home::start(&[phone.device_id()]).await;
-    let b = Home::start(&[phone.device_id()]).await;
-    let registered =
-        |view: &wonton_client::ChatViewModel| (view.push == PushStatus::Registered).then_some(());
-    phone.connect(&a);
-    phone.signed_in().await;
-    phone.use_unified_push().await;
-    phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
-        })
-        .unwrap();
-    phone.wait_chat("A 上推送已登记", registered).await;
-    phone.dispatch(Action::AddServer).unwrap();
-    phone.connect(&b);
-    phone.signed_in().await;
-    phone.wait_chat("B 上推送已登记", registered).await;
-
-    // 挂起 A 的登记响应：家里已收到 PUT、登记停在等响应，正好是写盘前的窗口。
-    a.hold_push_registrations(true);
-    let mut moved = endpoint();
-    moved.url = "https://ntfy.example/upWonton456?up=1".to_owned();
-    let puts_with_moved = |requests: &[(String, Value)]| {
-        requests
-            .iter()
-            .filter(|(m, s)| m == "PUT" && s["endpoint"] == moved.url)
-            .count()
-    };
-    phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: moved.clone(),
-        })
-        .unwrap();
-    assert!(
-        wait_for_a_registration(&a, WAIT, |requests| puts_with_moved(requests) > 0).await,
-        "家里没等到 A 用新地址登记"
-    );
-
-    // 窗口里壳再给一遍同一个地址。放行让挂起的登记走完：重复的登记跟第一次共用同一把登记锁，
-    // 它的 PUT 只会出现在放行之后，所以断言放在放行后、给第二次 PUT 一个有界的机会再数。
-    phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: moved.clone(),
-        })
-        .unwrap();
-    a.hold_push_registrations(false);
-    let _ = wait_for_a_registration(&a, Duration::from_secs(2), |requests| {
-        puts_with_moved(requests) > 1
-    })
-    .await;
-    assert_eq!(
-        puts_with_moved(&a.push_requests()),
-        1,
-        "同一个地址家里只该收到一次 PUT"
-    );
 }

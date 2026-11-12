@@ -122,11 +122,9 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         TabRef.Chat -> if (selected) WontonIcon.ChatFill else WontonIcon.Chat
         TabRef.Apps -> if (selected) WontonIcon.AppsFill else WontonIcon.Apps
         TabRef.Settings -> if (selected) WontonIcon.SettingsFill else WontonIcon.Settings
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> null
+        is TabRef.Plugin -> null
     }
     if (builtIn != null) {
-        // 装饰：底栏每一格都有标题。
         Icon(builtIn, null, Modifier.size(size), tint)
         return
     }
@@ -134,10 +132,8 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         is TabIcon.Plugin -> PluginIconImage(icon.icon, size, plugins)
         is TabIcon.Monochrome -> {
             val image = rememberPluginImage(plugins, if (selected) icon.selected ?: icon.icon else icon.icon)
-            // 装饰：底栏每一格都有标题。
             if (image != null) Image(image, null, Modifier.size(size), colorFilter = ColorFilter.tint(tint))
         }
-        // 装饰：底栏每一格都有标题。
         null -> Icon(WontonIcon.Apps, null, Modifier.size(size), tint)
     }
 }

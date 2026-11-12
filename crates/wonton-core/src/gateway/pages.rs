@@ -1,11 +1,9 @@
 //! 网关自己的几个网页：登录、状态、错误。文字按浏览器请求的 `Accept-Language` 写（没有就英文，ADR-0043），
-//! `lang` 属性跟着协商出的语言。错误页按 `Accept` 协商：页面导航要网页，接口请求要 JSON（[`Format`]）。
+//! `lang` 属性跟着协商出的语言。
 
-use axum::Json;
 use axum::response::{Html, IntoResponse, Response};
 use hyper::StatusCode;
-use hyper::header::{ACCEPT, HeaderMap, HeaderName, HeaderValue};
-use serde_json::json;
+use hyper::header::{HeaderName, HeaderValue};
 
 use crate::l10n;
 use crate::plugin::languages::Languages;
@@ -13,24 +11,6 @@ use crate::plugin::{PluginStatus, PluginView};
 
 /// 错误类别写在这个响应头里，方便脚本和测试判断原因而不依赖文案。
 pub const ERROR_HEADER: HeaderName = HeaderName::from_static("x-wonton-error");
-
-/// 错误响应的样子：浏览器的页面导航（`Accept` 里有 `text/html`）要看网页，其余请求（`fetch` 默认的
-/// `*/*`、`application/json` 等）是代码在调用，要能读的结构化错误。
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Format {
-    Html,
-    Json,
-}
-
-impl Format {
-    pub fn of(headers: &HeaderMap) -> Self {
-        let wants_html = headers
-            .get(ACCEPT)
-            .and_then(|v| v.to_str().ok())
-            .is_some_and(|v| v.contains("text/html"));
-        if wants_html { Self::Html } else { Self::Json }
-    }
-}
 
 pub fn escape(text: &str) -> String {
     text.chars()
@@ -62,58 +42,39 @@ fn layout(title: &str, body: &str, langs: &Languages) -> String {
     )
 }
 
-pub fn error(
-    status: StatusCode,
-    kind: &'static str,
-    message: &str,
-    langs: &Languages,
-    format: Format,
-) -> Response {
-    error_with_detail(status, kind, message, None, langs, format)
+pub fn error(status: StatusCode, kind: &'static str, message: &str, langs: &Languages) -> Response {
+    error_with_detail(status, kind, message, None, langs)
 }
 
-/// 同 [`error`]，另带一段技术详情：给人看的一句话在上面，技术细节（状态、原因）在下面。HTML 里默认收起，
-/// JSON 里是单独的 `detail` 字段。
+/// 同 [`error`]，另带一段默认收起的详情：给人看的一句话在上面，技术细节（状态、原因）放进 `details`。
 pub fn error_with_detail(
     status: StatusCode,
     kind: &'static str,
     message: &str,
     detail: Option<&str>,
     langs: &Languages,
-    format: Format,
 ) -> Response {
-    let mut response = match format {
-        Format::Html => {
-            let title = l10n::text(langs, "gateway-page-error-title", &[]);
-            let summary = l10n::text(langs, "gateway-page-error-detail", &[]);
-            let detail = detail
-                .map(|detail| {
-                    format!(
-                        "<details><summary>{}</summary><pre>{}</pre></details>",
-                        escape(&summary),
-                        escape(detail)
-                    )
-                })
-                .unwrap_or_default();
-            let body = layout(
-                &title,
-                &format!(
-                    "<h1>{}</h1><p>{}</p>{detail}<p class=\"muted\"><code>{kind}</code></p>",
-                    escape(&title),
-                    escape(message)
-                ),
-                langs,
-            );
-            (status, Html(body)).into_response()
-        }
-        Format::Json => {
-            let mut error = json!({ "category": kind, "message": message });
-            if let Some(detail) = detail {
-                error["detail"] = detail.into();
-            }
-            (status, Json(json!({ "error": error }))).into_response()
-        }
-    };
+    let title = l10n::text(langs, "gateway-page-error-title", &[]);
+    let summary = l10n::text(langs, "gateway-page-error-detail", &[]);
+    let detail = detail
+        .map(|detail| {
+            format!(
+                "<details><summary>{}</summary><pre>{}</pre></details>",
+                escape(&summary),
+                escape(detail)
+            )
+        })
+        .unwrap_or_default();
+    let body = layout(
+        &title,
+        &format!(
+            "<h1>{}</h1><p>{}</p>{detail}<p class=\"muted\"><code>{kind}</code></p>",
+            escape(&title),
+            escape(message)
+        ),
+        langs,
+    );
+    let mut response = (status, Html(body)).into_response();
     response
         .headers_mut()
         .insert(ERROR_HEADER, HeaderValue::from_static(kind));

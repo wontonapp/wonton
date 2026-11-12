@@ -22,9 +22,7 @@ impl Confirmations {
             if slot.waiter.is_some() && slot.card.expires_at_ms <= now {
                 slot.waiter = None;
                 slot.card.state = ConfirmationState::Expired;
-                slot.ended = Some(now);
                 self.activity_changed();
-                self.bump();
             }
         }
     }

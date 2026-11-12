@@ -58,7 +58,6 @@ internal fun PluginPageCapsule(
     tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
     controller: PluginWebViewController, takeover: PageTakeover?,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
-    onEditPanel: (() -> Unit)? = null,
 ) {
     val opacity by animateFloatAsState(if (state.visible) 1f else 0f, tween(CAPSULE_FADE_MS), label = "capsule")
     val trailingLabel = stringResource(R.string.tab_exit_fullscreen)
@@ -94,7 +93,7 @@ internal fun PluginPageCapsule(
                 CapsuleHitTarget(trailingLabel) { state.show(); onClose() }
             }
             Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                CapsuleMenu(tab, page, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
+                CapsuleMenu(tab, page, tabs, state, controller, takeover, onReload, onDetails)
             }
         }
     }
@@ -113,11 +112,9 @@ private fun CapsuleArtwork(trailingIcon: ImageVector) {
 @Composable
 private fun CapsuleGlyph(icon: ImageVector) {
     Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton), contentAlignment = Alignment.Center) {
-        // 装饰：这是同一个图形的阴影层。
         Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall)
             .blur(capsuleShadowRadius, BlurredEdgeTreatment.Unbounded),
             tint = Color.Black.copy(alpha = CAPSULE_SHADOW_ALPHA))
-        // 装饰：旁边叠着的命中区自己带名字。
         Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = Color.White)
     }
 }
@@ -132,7 +129,7 @@ private fun CapsuleHitTarget(label: String, onClick: () -> Unit) {
 private fun CapsuleMenu(
     tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
     controller: PluginWebViewController, takeover: PageTakeover?,
-    onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
+    onReload: () -> Unit, onDetails: (String) -> Unit,
 ) {
     val close = { state.menuOpen = false; state.show() }
     DropdownMenu(state.menuOpen, close, containerColor = WontonTheme.colors.surface.toColor()) {
@@ -140,19 +137,14 @@ private fun CapsuleMenu(
             onClick = { close(); controller.goBack() })
         takeover?.let { TakeoverButton(it) }
         DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_reload)) }, onClick = { close(); onReload() })
-        if (onEditPanel != null) {
-            DropdownMenuItem(text = { Text(stringResource(R.string.panel_edit)) },
-                onClick = { close(); onEditPanel() })
-        } else {
-            DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_always_fullscreen)) },
-                trailingIcon = { WontonSwitch(page.opensFullscreen, { enabled ->
-                    close()
-                    tabs.send(Action.SetTabDisplay(tab, displayChoice(enabled)))
-                }) }, onClick = {
-                    close()
-                    tabs.send(Action.SetTabDisplay(tab, displayChoice(!page.opensFullscreen)))
-                })
-        }
+        DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_always_fullscreen)) },
+            trailingIcon = { WontonSwitch(page.opensFullscreen, { enabled ->
+                close()
+                tabs.send(Action.SetTabDisplay(tab, displayChoice(enabled)))
+            }) }, onClick = {
+                close()
+                tabs.send(Action.SetTabDisplay(tab, displayChoice(!page.opensFullscreen)))
+            })
         if (tab is TabRef.Plugin) DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
             onClick = { close(); onDetails(tab.pluginId) })
     }

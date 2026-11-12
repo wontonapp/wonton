@@ -2,14 +2,13 @@ use super::*;
 use crate::http::HttpClient;
 use crate::matrix::fake::{Fake, start};
 use crate::matrix::{BotAccount, Matrix};
-use crate::plugin::bots::{BotEntry, PluginBots};
+use crate::plugin::bots::BotRecord;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{PluginPackage, PluginStatus};
-use wonton_protocol::BotKeeper;
 
 pub(crate) struct Bed {
     pub manager: Arc<PluginManager>,
@@ -65,22 +64,12 @@ impl Bed {
             .bots()
             .save(
                 &id,
-                &PluginBots {
-                    bots: [(
-                        crate::plugin::bot_services::DEFAULT_BOT.to_owned(),
-                        BotEntry {
-                            account: BotAccount {
-                                user_id: login.user_id,
-                                home_room: "!room:test".into(),
-                            },
-                            device_id: Some(login.device_id),
-                            keeper: BotKeeper::User {
-                                username: "owner".to_owned(),
-                            },
-                            bus_token: "bus-token".to_owned(),
-                        },
-                    )]
-                    .into(),
+                &BotRecord {
+                    account: BotAccount {
+                        user_id: login.user_id,
+                        home_room: "!room:test".into(),
+                    },
+                    device_id: Some(login.device_id),
                 },
             )
             .unwrap();

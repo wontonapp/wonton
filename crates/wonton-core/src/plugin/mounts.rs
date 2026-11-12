@@ -18,8 +18,6 @@ pub(super) struct Mounts<'a> {
     pub named: &'a BTreeSet<String>,
     pub service: &'a str,
     pub allow_docker_socket: bool,
-    /// 清单声明了 `docker.socket`（必需或可选）。声明了而没开着时跳过那一行，不按普通宿主路径查。
-    pub socket_declared: bool,
     pub langs: &'a Languages,
 }
 
@@ -30,24 +28,16 @@ impl Mounts<'_> {
         entries: &[VolumeEntry],
         binds: &mut Vec<(String, PathBuf)>,
     ) -> Result<Vec<Mount>, RenderError> {
-        let mut mounts = Vec::new();
-        for entry in entries {
-            let long = match entry {
-                VolumeEntry::Long(long) => long.clone(),
-                VolumeEntry::Short(text) => self.parse_short(text)?,
-            };
-            // 声明了 `docker.socket` 而没开着：这一行整个不挂。
-            if self.socket_declared
-                && !self.allow_docker_socket
-                && long.kind == VolumeType::Bind
-                && long.source.as_deref() == Some(super::privileges::DOCKER_SOCKET)
-                && long.target == super::privileges::DOCKER_SOCKET
-            {
-                continue;
-            }
-            mounts.push(self.mount(long, binds)?);
-        }
-        Ok(mounts)
+        entries
+            .iter()
+            .map(|entry| {
+                let long = match entry {
+                    VolumeEntry::Long(long) => long.clone(),
+                    VolumeEntry::Short(text) => self.parse_short(text)?,
+                };
+                self.mount(long, binds)
+            })
+            .collect()
     }
 
     fn parse_short(&self, text: &str) -> Result<LongVolume, RenderError> {
@@ -128,7 +118,7 @@ impl Mounts<'_> {
                 )));
             }
             (VolumeType::Bind, Some(path))
-                if self.socket_declared
+                if self.allow_docker_socket
                     && path == super::privileges::DOCKER_SOCKET
                     && volume.target == super::privileges::DOCKER_SOCKET =>
             {

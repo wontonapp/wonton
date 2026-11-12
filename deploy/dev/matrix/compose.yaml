@@ -3,7 +3,7 @@ name: wonton-dev-matrix
 
 services:
   tuwunel:
-    image: ghcr.io/matrix-construct/tuwunel:v2.0.0
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4
     restart: unless-stopped
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
@@ -21,8 +21,6 @@ services:
     environment:
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
       TUWUNEL_JWT__KEY: ${WONTON_DEV_JWT_PUBLIC_KEY:?请用 deploy/dev/matrix/dev.sh up 启动}
-      # 客户端发现文件里的 homeserver 地址跟着实际发布的端口走；测试容器用随机端口，不读它。
-      TUWUNEL_WELL_KNOWN__CLIENT: http://wonton.localhost:${WONTON_DEV_MATRIX_PORT:-8008}
     healthcheck:
       # 镜像自带的检查间隔是 30 秒，开发时缩短，让 `up --wait` 尽快返回。
       test: ["CMD", "tuwunel", "--health-check"]

@@ -107,7 +107,6 @@ gateway-body-invalid = 請求內容不合法：{ $error }
 gateway-bot-not-found = 沒有這個 Bot：{ $caller }
 gateway-bot-not-in-plugin = 應用程式 { $id } 沒有這個 Bot：{ $caller }
 gateway-tool-not-found = 應用程式 { $id } 沒有工具 { $tool }
-gateway-tool-deletes = 工具 { $tool } 會刪除或覆寫資料，每次都要確認，不能標成唯讀
 gateway-plugin-not-running = 這個應用程式沒有在執行，或者沒有宣告工具
 
 # App 回答確認請求。
@@ -120,27 +119,3 @@ gateway-pair-code-used = 這個配對碼已經用過了，請換一個新碼
 gateway-pair-code-expired = 配對碼過期了，請換一個新碼
 gateway-pair-first-used = 這部伺服器已經有配對的裝置，首次配對碼不能再用；請在伺服器上執行 sudo wonton pair 另發一個配對碼
 gateway-pair-register-failed = 伺服器登記裝置失敗：{ $error }
-
-# 主人在 App 裡查看應用程式的金鑰。
-gateway-owner-secrets-plugin-not-installed = 應用程式 { $id } 沒有安裝
-gateway-owner-secrets-record-unreadable = 應用程式 { $id } 的記錄讀不出來，列不出它的金鑰
-gateway-owner-secrets-not-viewable = 應用程式 { $id } 沒有宣告可查看的金鑰 { $name }
-gateway-owner-secrets-not-generated = 金鑰 { $name } 還沒有值：啟動一次應用程式（或升級）會重新產生
-gateway-owner-secrets-store-failed = 讀應用程式金鑰失敗：{ $error }
-gateway-owner-secrets-not-text = 金鑰 { $name } 存的值不是文字
-gateway-owner-secrets-audit-unavailable = 家用伺服器沒有接審計日誌，不能查看金鑰的值
-gateway-plugin-scope-unsupported = 這個核心不支援修改外掛給哪些 Bot 用，請先升級核心。
-gateway-bot-plugin-access-unsupported = 這個核心不支援為個別 Bot 開關外掛，請先升級核心。
-
-# MCP Apps 宿主页（#35）。
-mcp-app-loading = 正在載入…
-mcp-app-failed = 介面沒能載入：{ $error }
-mcp-app-page-failed = 介面沒能載入。
-mcp-app-retry = 重試
-
-# 好友經分享連線開啟網頁（ADR-0051）。
-gateway-share-identity = 這台伺服器認不出你是誰
-gateway-share-required = 主人沒有把這個應用程式分享給你
-gateway-share-revoked = 主人停止分享這個應用了
-gateway-share-expired = 分享已到期
-gateway-confirmation-gone = 沒有這張確認，或它已結束超過一天

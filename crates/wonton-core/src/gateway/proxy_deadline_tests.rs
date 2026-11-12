@@ -88,15 +88,6 @@ fn get(path: &str) -> Request<Body> {
     Request::builder().uri(path).body(Body::empty()).unwrap()
 }
 
-/// 浏览器的页面导航：`Accept` 要网页，错误回 HTML 错误页。
-fn navigate(path: &str) -> Request<Body> {
-    Request::builder()
-        .uri(path)
-        .header("accept", "text/html")
-        .body(Body::empty())
-        .unwrap()
-}
-
 #[tokio::test]
 async fn silent_tcp_upstream_is_a_header_timeout_not_a_transport_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -111,39 +102,13 @@ async fn silent_tcp_upstream_is_a_header_timeout_not_a_transport_failure() {
             .unwrap();
         assert!(bytes.is_empty(), "空体请求不应被重放");
     });
-    let response = timeout(WAIT, web(&endpoint, navigate("/silent")))
-        .await
-        .unwrap();
+    let response = timeout(WAIT, web(&endpoint, get("/silent"))).await.unwrap();
     assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
     assert_eq!(response.headers()["x-wonton-error"], "upstream_timeout");
     assert_eq!(
         response.headers()["content-type"],
         "text/html; charset=utf-8"
     );
-    serving.await.unwrap();
-}
-
-/// 接口请求（没有 `Accept: text/html`）：同一个超时回 JSON，应用能直接读类别。
-#[tokio::test]
-async fn an_api_request_gets_the_timeout_as_json() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = Endpoint::Tcp(listener.local_addr().unwrap().to_string());
-    let serving = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        head(&mut stream).await;
-        let mut bytes = Vec::new();
-        timeout(WAIT, stream.read_to_end(&mut bytes))
-            .await
-            .unwrap()
-            .unwrap();
-    });
-    let response = timeout(WAIT, web(&endpoint, get("/silent"))).await.unwrap();
-    assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
-    assert_eq!(response.headers()["x-wonton-error"], "upstream_timeout");
-    assert_eq!(response.headers()["content-type"], "application/json");
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    let error: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(error["error"]["category"], "upstream_timeout");
     serving.await.unwrap();
 }
 

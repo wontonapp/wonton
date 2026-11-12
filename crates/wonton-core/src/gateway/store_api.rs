@@ -19,7 +19,7 @@ use serde::Deserialize;
 use wonton_protocol::AddSourceRequest;
 
 use super::Gateway;
-use super::api::{install_denied, install_error, invalid_body, languages, owner_denied, requester};
+use super::api::{install_denied, install_error, invalid_body, languages, owner_denied};
 
 #[derive(Deserialize)]
 pub struct StoreQuery {
@@ -58,21 +58,12 @@ pub async fn store_plugin(
     if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let person = match requester(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(response) => return *response,
-    };
     match gateway
         .plugins
         .store_plugin(&query.source, &languages(&headers))
         .await
     {
-        Ok(mut detail) => {
-            if !person.is_owner() {
-                detail.scope = None;
-            }
-            Json(detail).into_response()
-        }
+        Ok(detail) => Json(detail).into_response(),
         Err(e) => install_error(&e),
     }
 }

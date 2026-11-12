@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import android.icu.text.ListFormatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,10 +12,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
+import androidx.webkit.WebViewCompat
 import app.wonton.protocol.Action
-import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLoadFailure
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
@@ -30,32 +28,30 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun PluginTabStatus(
     page: TabPage, tab: TabRef, tabs: TabsState, problem: Problem?, supported: Boolean,
-    crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
+    crossOriginBlocked: Boolean, onDetails: (String) -> Unit,
 ) {
     val state = page.state
-    // 核心让它在系统浏览器里打开（ADR-0033 的“跨源隔离”）：App 里只留一行说明。
-    val inBrowser = crossOriginBlocked && problem == null &&
+    val isolationWarning = crossOriginBlocked && supported && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
-    if (inBrowser) {
-        BrowserPageStatus(page, tabs.core, autoOpen = place !is PlacedTab.Panel)
-        return
-    }
     val failure = when {
-        !supported -> Problem(stringResource(R.string.tab_webview_too_old))
+        !supported -> Problem(tabText("请更新 Android System WebView 后重试", "Update Android System WebView and try again"))
         problem != null -> problem
-        state is TabState.Stopped -> Problem(stringResource(R.string.tab_stopped, page.title))
-        state is TabState.Failed -> Problem(stringResource(R.string.tab_problem, page.title), detail = state.reason)
-        state is TabState.PageRemoved -> Problem(stringResource(R.string.tab_page_removed))
-        state is TabState.Unknown -> Problem(stringResource(R.string.tab_status_unknown))
+        state is TabState.Stopped -> Problem(tabText("${page.title}已停止", "${page.title} has stopped"))
+        state is TabState.Failed -> Problem(
+            tabText("${page.title}出了问题", "${page.title} has a problem"), detail = state.reason,
+        )
+        state is TabState.PageRemoved -> Problem(tabText("新版本不再提供这个页面", "This page is no longer available"))
+        state is TabState.Unknown -> Problem(tabText("无法确定应用状态", "App status is unknown"))
         state is TabState.LoadFailed -> Problem(
             loadFailureTitle(state.failure), detail = state.status?.let { "HTTP $it" },
         )
+        isolationWarning -> crossOriginIsolationProblem()
         else -> null
     }
     if (failure == null) {
         Column(Modifier.fillMaxSize()) {
             if (state is TabState.Starting || state is TabState.Uninstalling) Text(
-                stringResource(if (state is TabState.Starting) R.string.tab_starting else R.string.tab_uninstalling),
+                if (state is TabState.Starting) tabText("正在启动…", "Starting…") else tabText("正在卸载…", "Uninstalling…"),
                 Modifier.padding(WontonTheme.spacing.pageInset), color = WontonTheme.colors.textSecondary.toColor(),
             )
             ListSkeleton(WontonTheme.size.storeIcon)
@@ -68,43 +64,53 @@ internal fun PluginTabStatus(
         ) {
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
-            failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, onDetails, place)
+            failure.detail?.let { ProblemDetail(it, tabText("详情", "Details")) }
+            TabStatusActions(state, tab, tabs, isolationWarning, onDetails)
         }
     }
 }
 
 @Composable
 private fun TabStatusActions(
-    state: TabState, tab: TabRef, tabs: TabsState, onDetails: (String) -> Unit, place: PlacedTab?,
+    state: TabState, tab: TabRef, tabs: TabsState, crossOriginBlocked: Boolean,
+    onDetails: (String) -> Unit,
 ) {
-    if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
-        WontonButton(stringResource(R.string.panel_remove), {
-            tabs.send(Action.RemovePanelPage(place.scope, tab))
-        })
+    if (crossOriginBlocked && tab is TabRef.Plugin) {
+        WontonButton(tabText("仍然打开", "Open anyway"), { allowCrossOriginIsolationAnyway(tab.pluginId) })
     } else if (state is TabState.PageRemoved) {
         val pinned = tabs.viewModel.items.any { it.tab == tab }
-        val label = if (pinned) stringResource(R.string.tab_unpin_from_bar) else stringResource(R.string.common_close)
-        WontonButton(label, {
+        WontonButton(if (pinned) tabText("从底栏移除", "Remove from tab bar") else tabText("关闭", "Close"), {
             tabs.send(if (pinned) Action.UnpinTab(tab) else Action.CloseTabOverlay)
         })
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
-        WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
+        WontonButton(tabText("启动", "Start"), { tabs.send(Action.StartPlugin(tab.pluginId)) })
     } else {
-        WontonButton(stringResource(R.string.common_retry), {
-            tabs.send(Action.ReloadTab(place ?: PlacedTab.Bar(tab)))
-        })
+        WontonButton(tabText("重试", "Retry"), { tabs.send(Action.ReloadTab(tab)) })
         if (state is TabState.Failed && tab is TabRef.Plugin) {
-            WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
+            WontonButton(tabText("查看详情", "View details"), { onDetails(tab.pluginId) })
         }
     }
 }
 
 @Composable
+private fun crossOriginIsolationProblem(): Problem {
+    val context = LocalContext.current
+    val currentVersion = remember(context) { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }
+    val version = currentVersion ?: tabText("拿不到版本号", "version unavailable")
+    return Problem(
+        tabText("这个应用在 Android App 里暂时打不开", "This app can't open in the Android app yet"),
+        detail = tabText(
+            "当前 Android System WebView：$version；需要 156 或更新。",
+            "Current Android System WebView: $version; requires 156 or newer.",
+        ),
+    )
+}
+
+@Composable
 private fun loadFailureTitle(failure: TabLoadFailure): String = when (failure) {
-    TabLoadFailure.TRANSPORT -> stringResource(R.string.problem_transport_unavailable_title)
-    TabLoadFailure.PLUGIN_NOT_READY -> stringResource(R.string.tab_load_not_ready)
-    TabLoadFailure.UPSTREAM -> stringResource(R.string.tab_load_upstream)
+    TabLoadFailure.TRANSPORT -> tabText("连不上家里的服务器", "Cannot connect to your home server")
+    TabLoadFailure.PLUGIN_NOT_READY -> tabText("应用还没有准备好", "The app is not ready")
+    TabLoadFailure.UPSTREAM -> tabText("应用的网页打不开", "The app page could not load")
 }
 
 @Composable
@@ -112,22 +118,22 @@ fun TabNotices(tabs: TabsState, onSettings: () -> Unit) {
     val view = tabs.viewModel
     var dismissed by remember { mutableStateOf<String?>(null) }
     if (view.uninstalled.isNotEmpty()) {
-        val names = ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(view.uninstalled)
+        val names = view.uninstalled.joinToString("、")
         val dismiss = { tabs.send(Action.DismissUninstalledTabs) }
         WontonDialog(
-            stringResource(R.string.tab_uninstalled_notice, names),
+            tabText("$names 已卸载，已从底栏移除", "$names was uninstalled and removed from the tab bar"),
             onDismiss = dismiss,
-            actions = listOf(WontonDialogAction(stringResource(R.string.design_ok), onClick = dismiss)),
+            actions = listOf(WontonDialogAction(tabText("好", "OK"), onClick = dismiss)),
         )
     } else view.problem?.takeUnless { it.message == dismissed }?.let { problem ->
         WontonDialog(
-            stringResource(R.string.tab_settings_unreadable),
+            tabText("底栏设置读不了", "Could not read tab bar settings"),
             onDismiss = { dismissed = problem.message },
-            actions = listOf(WontonDialogAction(stringResource(R.string.tab_open_settings)) {
+            actions = listOf(WontonDialogAction(tabText("查看底栏设置", "Tab bar settings")) {
                 dismissed = problem.message
                 onSettings()
             }),
-            detail = { ProblemDetail(problem.message, stringResource(R.string.common_details)) }
+            detail = { ProblemDetail(problem.message, tabText("详情", "Details")) }
         )
     }
 }

@@ -137,7 +137,7 @@ async fn declared_headers_go_on_every_request() {
     assert!(listed.is_ok(), "{listed:?}");
     let call = tokio::time::timeout(
         Duration::from_secs(20),
-        upstreams.call(&server, "a", None, None, std::future::pending()),
+        upstreams.call(&server, "a", None, std::future::pending()),
     )
     .await
     .expect("到期了还没有结果");

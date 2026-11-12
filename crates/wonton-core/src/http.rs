@@ -250,17 +250,15 @@ impl HttpClient {
         timeout: Duration,
     ) -> Result<(StatusCode, Value), HttpError> {
         let body = body.map_or(RequestBody::Empty, RequestBody::Json);
-        self.request_json(method, url, None, &[], body, timeout)
-            .await
+        self.request_json(method, url, None, body, timeout).await
     }
 
-    /// 同 [`Self::json`]，可以带访问令牌（`Authorization: Bearer`）、额外的请求头和原始字节请求体（如上传文件）。
+    /// 同 [`Self::json`]，可以带访问令牌（`Authorization: Bearer`），请求体也可以是原始字节（如上传文件）。
     pub async fn request_json(
         &self,
         method: Method,
         url: &str,
         bearer: Option<&str>,
-        headers: &[(&str, String)],
         body: RequestBody<'_>,
         timeout: Duration,
     ) -> Result<(StatusCode, Value), HttpError> {
@@ -270,9 +268,6 @@ impl HttpClient {
             .header(header::ACCEPT, "application/json");
         if let Some(token) = bearer {
             builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
-        }
-        for (name, value) in headers {
-            builder = builder.header(*name, value);
         }
         let request = match body {
             RequestBody::Empty => builder.body(Body::empty()),

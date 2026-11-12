@@ -34,9 +34,15 @@ const CHUNK: usize = 256 << 10;
 /// tusd 退出、容器被 `--rm` 收掉以后，`docker logs` 说的话。
 const GONE: [&str; 2] = ["No such container", "can not get logs from container"];
 
-/// 此刻没人监听的端口。号码要交给别人去绑，所以用避开临时端口段的挑法。
+/// 此刻没人监听的端口：绑 0 拿到号码就放掉。只为下面两条测试服务——`a_tusd_that_is_not_running_shows_as_unavailable`
+/// 要的就是没人监听，`an_upload_works_when_the_port_is_already_taken` 用它占住一个端口。
+/// 别拿它当“安全地把端口交给别的进程”的办法：放掉到对方绑上之间，别人能抢走，那正是这里修掉的问题。
 fn free_port() -> u16 {
-    wonton_tunnel::test_support::unused_port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// 退出时删掉的 tusd 容器：名字由调用方的 test_docker::Names 登记并回收。
@@ -76,7 +82,7 @@ impl Tusd {
                     .iter()
                     .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]),
             )
-            .arg(wonton_test_images::image(&service.image))
+            .arg(&service.image)
             .args(["-host=127.0.0.1", "-port=0"]);
         for flag in service.command {
             docker.arg(if flag.starts_with("-hooks-http=") {
@@ -496,14 +502,15 @@ async fn a_tusd_that_is_not_running_shows_as_unavailable() {
 
 /// 端口已经被别人占着时照样能用：`free_port` 拿到的号码交出去之前就可能被抢走。
 ///
-/// 先后顺序是钉住的：抢端口的监听者先起，而且收下连接就断（连接立刻被拒）；之后才起 tusd。
+/// 先后顺序是钉住的：抢端口的监听者先起，而且收下连接就断（连接立刻被拒）；之后才按这个端口起 tusd。
 /// 修好以前 tusd 绑不上这个端口就退出，测试却连上了抢端口的东西，创建上传拿到 503（对方收下连接就断）。
-/// 抢端口的自己也绑 0：先挑号再绑，中间会被并行的测试抢走（CI 上见过 `AddrInUse`）。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用它起一次性的 tusd"]
 async fn an_upload_works_when_the_port_is_already_taken() {
-    let thief = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
-    let stolen = thief.local_addr().unwrap().port();
+    let stolen = free_port();
+    let thief = TcpListener::bind((Ipv4Addr::LOCALHOST, stolen))
+        .await
+        .unwrap();
     tokio::spawn(async move {
         while let Ok((socket, _)) = thief.accept().await {
             drop(socket);

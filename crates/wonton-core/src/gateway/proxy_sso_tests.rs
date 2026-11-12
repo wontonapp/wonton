@@ -13,11 +13,9 @@ use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use wonton_protocol::Role;
 
 use super::session;
 use super::tests::{CORE, Harness, PLUGIN};
-use crate::owner::Owner;
 use crate::plugin::languages::Languages;
 use crate::plugin::proxy_auth::ProxyAuth;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
@@ -39,7 +37,7 @@ x-wonton:
     port: 80
     sso: proxy
     proxy:
-      headers: {Remote-User: '{user}', Remote-Email: '{email}'}
+      headers: {Remote-User: '{user}'}
       cookies: {vault_web: '{secret:web_key}'}
   secrets:
     web_key: {generate: {bytes: 32}}
@@ -152,7 +150,6 @@ async fn the_owner_is_signed_in_with_credentials_the_browser_cannot_forge() {
         [format!("theme=dark; vault_web={KEY}")]
     );
     assert_eq!(received(&body, "remote-user"), ["owner"]);
-    assert_eq!(received(&body, "remote-email"), ["owner@wonton.internal"]);
     assert_eq!(hits.load(Ordering::SeqCst), 1);
 }
 
@@ -223,97 +220,4 @@ async fn only_the_owner_on_the_plugins_own_pages_gets_proxy_credentials() {
     let seen = h.get(PLUGIN, "/", &[("cookie", &whoami)]).await.json();
     assert!(!seen.to_string().contains(KEY), "{seen}");
     assert!(seen["headers"].get("remote-user").is_none(), "{seen}");
-}
-
-#[tokio::test]
-async fn the_plugins_own_network_reaches_it_without_a_session_or_identity() {
-    let h = Harness::start(None).await;
-    let hits = register_vault(&h.manager).await;
-    h.manager
-        .register_source_for_test("app.vault", "127.0.0.1/32", vec![]);
-    // 容器自己发来的请求带什么同名请求头和 Cookie 都剥掉：插件后端可能转发的是某个浏览器的请求，
-    // 那套值属于别人，不是网关给它的。
-    let reply = h
-        .get(
-            VAULT_HOST,
-            "/",
-            &[("remote-user", "forged"), ("cookie", "vault_web=forged")],
-        )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(hits.load(Ordering::SeqCst), 1);
-    assert!(!reply.text().contains("forged"), "{}", reply.text());
-}
-
-fn role_auth() -> ProxyAuth {
-    let compose = VAULT
-        .replace("spec: '0.4'", "spec: '0.9'")
-        .replace(
-            "headers: {Remote-User: '{user}', Remote-Email: '{email}'}",
-            "headers: {Remote-User: '{user}', Remote-Name: '{name}', Remote-Role: '{role}'}",
-        )
-        .replace(
-            "cookies: {vault_web: '{secret:web_key}'}",
-            "cookies: {vault_role: '{role}'}",
-        );
-    let manifest = PluginPackage::parse(&compose, &Languages::default())
-        .unwrap()
-        .manifest;
-    ProxyAuth::resolve(&manifest, &BTreeMap::new(), &Languages::default())
-        .unwrap()
-        .unwrap()
-}
-
-#[test]
-fn authenticated_people_replace_every_client_supplied_identity() {
-    let auth = role_auth();
-    for (username, display_name, role, rendered_role) in [
-        ("owner", "Owner", Role::Owner, "owner"),
-        ("alice", "Alice", Role::Member, "member"),
-        ("friend_bob", "Bob", Role::Friend, "friend"),
-        ("friend_eve", "Eve", Role::Friend, "friend"),
-    ] {
-        let identity = Owner {
-            username: username.into(),
-            display_name: display_name.into(),
-            email: None,
-        };
-        let mut headers = HeaderMap::new();
-        for name in ["remote-user", "remote-name", "remote-role"] {
-            headers.append(name, "forged-owner".parse().unwrap());
-            headers.append(name, "forged-again".parse().unwrap());
-        }
-        headers.append(
-            header::COOKIE,
-            "vault_role=owner; theme=dark".parse().unwrap(),
-        );
-        headers.append(header::COOKIE, "VAULT_ROLE=member".parse().unwrap());
-        super::proxy_sso::attach(&mut headers, &auth, &identity, role).unwrap();
-        for (name, expected) in [
-            ("remote-user", username),
-            ("remote-name", display_name),
-            ("remote-role", rendered_role),
-        ] {
-            let values: Vec<_> = headers.get_all(name).iter().collect();
-            assert_eq!(values.len(), 1);
-            assert_eq!(values[0].as_bytes(), expected.as_bytes());
-        }
-        assert_eq!(
-            headers[header::COOKIE].as_bytes(),
-            format!("theme=dark; vault_role={rendered_role}").as_bytes()
-        );
-    }
-}
-
-#[test]
-fn an_unknown_role_never_attaches_proxy_credentials() {
-    let auth = role_auth();
-    let identity = Owner {
-        username: "future".into(),
-        display_name: "Future".into(),
-        email: None,
-    };
-    let mut headers = HeaderMap::new();
-    assert!(super::proxy_sso::attach(&mut headers, &auth, &identity, Role::Other).is_err());
-    assert!(headers.is_empty());
 }

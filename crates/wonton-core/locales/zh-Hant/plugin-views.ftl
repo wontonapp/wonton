@@ -20,7 +20,7 @@ permission-models = 使用模型閘道
 permission-tools = 呼叫家用伺服器和其他應用程式的工具
 permission-plugins-health = 讀取所有應用程式的健康狀態
 permission-matrix-bot = 以 Bot 身分收發訊息
-permission-notify = 傳送通知和信件給家人
+permission-notify = 傳送通知給你
 permission-owner-identity = 知道你的使用者名稱和電子郵件，也能查詢家人使用的語言
 permission-network-egress = 存取外部網路和區域網路
 permission-egress-proxy = 提供代理伺服器（高權限）
@@ -33,8 +33,6 @@ permission-security-opt = 修改容器安全選項（最高權限）
 permission-privileged = 以特權模式執行（最高權限）
 permission-devices-gpu = 使用 GPU（高權限）
 permission-device = 存取主機裝置 { $path }（高權限）
-permission-devices-serial = 存取主機序列埠裝置（高權限）
-permission-devices-usb = 存取主機 USB 裝置（高權限）
 permission-docker-socket = 控制 Docker（最高權限）
 
 # 高權限下面帶的長說明。
@@ -43,12 +41,11 @@ permission-notice-network-host = 這個應用程式能直接存取你家裡的�
 permission-notice-highest-risk = 這個應用程式能控制整台主機：讀寫所有檔案和其他應用程式的資料，改動或停用 Wonton 自己。這等於把主機的 root 交給它。只安裝你信任的應用程式。解除安裝後，它建立的容器和改過的東西不會被清理。
 permission-notice-network-lan = 區域網路裡的裝置可以直接連接應用程式開放的連接埠，不經 Wonton 登入；身分驗證由應用程式自己負責。
 permission-notice-device = 這個應用程式可以存取主機裝置 { $path }。
-permission-notice-devices = 這個應用程式可以存取你交給它的主機裝置。
 
 # 應用程式詳情裡的提示。
 plugin-firewall-notice = 本機防火牆可能擋住了外來連線，區域網路裝置可能連不進來
 plugin-egress-proxy-select = 在代理伺服器設定裡選它
-plugin-cross-origin-isolation = 這個應用程式需要跨來源隔離：在 Android 上，它的頁面會在瀏覽器裡開啟。
+plugin-cross-origin-isolation = 這個應用程式放寬了跨來源隔離：在 Android 上，它的頁面可能和別的網頁共用行程。
 
 # 安裝和更新預覽裡的提示與裝不了的原因。
 install-retained-data = 這台伺服器上留著 { $id } 以前的資料和金鑰，這個應用程式裝上後能讀到它們；不想這樣就先徹底刪除

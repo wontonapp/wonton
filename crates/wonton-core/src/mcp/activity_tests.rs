@@ -21,7 +21,7 @@ use super::test_support::Notes;
 use super::tests::failed;
 use crate::files::test_support::Fixture;
 use crate::matrix::BotAccount;
-use crate::plugin::bots::{BotEntry, PluginBots};
+use crate::plugin::bots::BotRecord;
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::languages::Languages;
@@ -47,23 +47,12 @@ fn register_bot(s: &Setup) {
         .bots()
         .save(
             &s.caller.id,
-            &PluginBots {
-                bots: [(
-                    crate::plugin::bot_services::DEFAULT_BOT.to_owned(),
-                    BotEntry {
-                        account: BotAccount {
-                            user_id: "@source:example.com".into(),
-                            home_room: "!source:example.com".into(),
-                        },
-                        device_id: Some("SOURCE".into()),
-                        keeper: wonton_protocol::BotKeeper::User {
-                            username: "owner".to_owned(),
-                        },
-                        bus_token: "source-token".to_owned(),
-                    },
-                )]
-                .into_iter()
-                .collect(),
+            &BotRecord {
+                account: BotAccount {
+                    user_id: "@source:example.com".into(),
+                    home_room: "!source:example.com".into(),
+                },
+                device_id: Some("SOURCE".into()),
             },
         )
         .unwrap();
@@ -245,7 +234,7 @@ async fn confirmation_wait_is_idle_and_detached_execution_stays_counted() {
     wait_calls(&s, 0).await;
     tokio::time::timeout(Duration::from_secs(5), async {
         while !matches!(
-            s.bus.confirmations().card(&card.id).map(|card| card.state),
+            s.cards.states(&card.id).last(),
             Some(ConfirmationState::Succeeded { .. })
         ) {
             tokio::task::yield_now().await;

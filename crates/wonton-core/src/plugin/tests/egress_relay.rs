@@ -84,7 +84,6 @@ impl Rig {
     fn save(&self, url: Option<&str>, direct: &[&str]) {
         let settings = StoredEgress {
             url: url.map(str::to_owned),
-            doh_url: None,
             direct_cidrs: direct.iter().map(|c| c.parse().unwrap()).collect(),
             use_plugin: false,
         };
@@ -116,8 +115,7 @@ async fn with_a_proxy_an_egress_plugin_is_sent_through_the_relay() {
 
     let env = env_of_container(&rig.docker, &container_name("app-test", "web"));
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
-    assert!(env["NO_PROXY"].contains(".wonton.internal"));
-    assert!(env["NO_PROXY"].contains(".localhost"));
+    assert!(env["NO_PROXY"].contains("auth.wonton.localhost"));
 
     let created = rig.relay_created();
     assert_eq!(created["Image"], IMAGE);
@@ -177,7 +175,7 @@ async fn the_lists_let_the_host_through_and_stop_everything_else_inside() {
     rig.save(None, &["100.64.0.0/10"]);
     rig.install(&egress_app()).await;
     let direct = rig.lines("direct.txt");
-    // 选出的地址 192.168.0.10 所在的网段，主人多放行的网段，假 Docker 里网桥的网关。
+    // 选出的地址 192.168.0.193 所在的网段，主人多放行的网段，假 Docker 里网桥的网关。
     let mut expected = BTreeSet::from([
         "100.64.0.0/10".to_owned(),
         "172.17.0.1/32".to_owned(),

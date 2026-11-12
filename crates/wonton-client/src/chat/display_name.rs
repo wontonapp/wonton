@@ -24,7 +24,7 @@ impl ChatLink {
 
     fn spawn_display_name(&self, session: &Arc<MatrixSession>, name: String) {
         let session = session.clone();
-        self.spawn_op("chat-op-display-name-failed", async move {
+        self.spawn_op("同步显示名", async move {
             session.set_display_name(&name).await
         });
     }

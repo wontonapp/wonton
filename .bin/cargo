@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "$HOME/wonton-dev/cargo-slot.sh" cargo "$@"

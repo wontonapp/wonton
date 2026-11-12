@@ -3,11 +3,10 @@
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use wonton_client::{Action, ChatSync, HomeStatus, TimelineContent};
+use wonton_client::{Action, ChatSync, HomeStatus};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
+use super::support::{Home, Phone, Timeline, WAIT};
 use super::{accept_the_bots_invite, text};
 
 struct Chat {
@@ -52,34 +51,26 @@ impl Chat {
             .await
             .expect("Bot 发消息");
         self.phone
-            .dispatch(Action::Timeline {
-                action: TimelineAction::SendText {
-                    target: TimelineTarget {
-                        room_id: self.room_id.to_string(),
-                        thread_root: None,
-                    },
-                    body: "断开时主人发的".to_owned(),
-                    reply_to: None,
-                },
+            .dispatch(Action::SendText {
+                room_id: self.room_id.to_string(),
+                body: "断开时主人发的".to_owned(),
             })
             .unwrap();
     }
 
     /// 恢复以后两条都到了对面，同步在跑，用的还是原来的会话。
     async fn caught_up(&mut self) {
-        // 先等同步真的跑起来（恢复的后置条件），再等断开期间的消息：同步没跑起来时，等消息只会白等满一个
-        // 时限，也分不清是同步没恢复还是消息没到。
-        self.phone
-            .wait_chat("同步恢复", |view| {
-                (view.sync == ChatSync::Running).then_some(())
-            })
-            .await;
         self.timeline
             .until("打开着的房间收到断开时 Bot 发的", |item| {
                 text(item, "断开时 Bot 发的")
             })
             .await;
         self.bot_received("断开时主人发的").await;
+        self.phone
+            .wait_chat("同步恢复", |view| {
+                (view.sync == ChatSync::Running).then_some(())
+            })
+            .await;
         assert_eq!(
             self.home.login_tokens(),
             self.login_tokens,
@@ -167,71 +158,6 @@ async fn the_chat_recovers_when_the_tunnel_comes_back() {
     chat.caught_up().await;
 }
 
-/// 编辑、表情回应、撤回不会在时间线里自己成一项：它们来的时候不能把整条时间线重建（壳会清屏重画，流式回复时就是
-/// 每秒一次）。内容照常更新。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn edits_reactions_and_redactions_do_not_rebuild_the_timeline() {
-    let mut chat = Chat::open().await;
-    chat.bot_room
-        .send_text("流式的第一版")
-        .await
-        .expect("Bot 发消息");
-    chat.timeline
-        .until("时间线里有这条", |item| text(item, "流式的第一版"))
-        .await;
-    let event = chat
-        .timeline
-        .items
-        .iter()
-        .find_map(|item| match &item.content {
-            TimelineContent::Message { message } => message.event_id.clone(),
-            _ => None,
-        })
-        .expect("消息的事件 ID");
-
-    // 连着改三次（流式回复就是这样），再回应、再撤回另一条。
-    for round in 1..=3 {
-        let body = format!("流式的第{}版", round + 1);
-        chat.bot_room
-            .send_raw_message(serde_json::json!({
-                "msgtype": "m.text",
-                "body": format!("* {body}"),
-                "m.new_content": {"msgtype": "m.text", "body": body},
-                "m.relates_to": {"rel_type": "m.replace", "event_id": event},
-            }))
-            .await
-            .expect("编辑");
-    }
-    chat.bot_room
-        .send_raw_event(
-            "m.reaction",
-            serde_json::json!({
-                "m.relates_to": {"rel_type": "m.annotation", "event_id": event, "key": "👍"},
-            }),
-        )
-        .await
-        .expect("回应");
-    let other = chat
-        .bot_room
-        .send_raw_message(serde_json::json!({"msgtype": "m.text", "body": "马上撤回"}))
-        .await
-        .expect("再发一条");
-    chat.bot_room
-        .redact(other.as_ref(), "撤回")
-        .await
-        .expect("撤回");
-
-    chat.timeline
-        .until("最后的编辑到了", |item| text(item, "流式的第4版"))
-        .await;
-    assert!(
-        !chat.timeline.was_cleared(),
-        "编辑、回应、撤回不该重建整条时间线；重建原因：{}",
-        chat.timeline.cleared_reasons()
-    );
-}
-
 /// 服务器丢了房间列表那条连接的位置（`M_UNKNOWN_POS`，负载高时 Tuwunel 实测会回）：SDK 从头同步，打开着的房间只剩最新
 /// 的一段。新消息照常到，往回翻能把更早的找回来。
 #[tokio::test(flavor = "multi_thread")]
@@ -243,6 +169,8 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .until("之前的", |item| text(item, "之前的"))
         .await;
 
+    // 过期落在“同一批的”带回来之后的那次请求上；SDK 从头同步后列表清空，只剩最新的一段。
+    chat.home.expire_room_list_sync();
     chat.bot_room
         .send_text("同一批的")
         .await
@@ -250,29 +178,6 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
     chat.timeline
         .until("同一批的", |item| text(item, "同一批的"))
         .await;
-    // 订阅保留后，重启应答可能与缓存重叠而无需清空。断开期间发出超过订阅窗口的事件，
-    // 让重启应答与原缓存不重叠，确定地覆盖清空后往回翻的路径。
-    let limit = chat
-        .home
-        .sync_requests()
-        .into_iter()
-        .filter(|request| is_room_list(&request["conn_id"]))
-        .rev()
-        .find_map(|request| {
-            request["room_subscriptions"][chat.room_id.as_str()]["timeline_limit"].as_u64()
-        })
-        .expect("opened room subscription must specify a timeline limit");
-    chat.home.set_matrix_down(true);
-    chat.sync_failed().await;
-    for i in 0..=limit {
-        chat._bot
-            .send_text_to(&chat.room_id, &format!("gap message {i}"))
-            .await
-            .expect("Bot sends a message while the phone is disconnected");
-    }
-    chat.home.expire_room_list_sync();
-    chat.home.set_matrix_down(false);
-    chat.phone.dispatch(Action::AppForegrounded).unwrap();
     let deadline = Instant::now() + Duration::from_secs(40);
     while !chat.home.room_list_sync_expired() {
         assert!(
@@ -281,10 +186,8 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    chat.timeline.until_cleared().await;
     chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
 
-    // 重建已经发生，前面的消息只可能靠往回翻补回来。
     chat.timeline
         .until_items("新消息到了，更早的也翻回来了", |items| {
             let has = |body| items.iter().any(|item| text(item, body).is_some());
@@ -293,7 +196,6 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .await;
     assert!(
         chat.timeline.was_cleared(),
-        "同步没有从头开始，这条测试没测到；重建原因：{}",
-        chat.timeline.cleared_reasons()
+        "同步没有从头开始，这条测试没测到"
     );
 }

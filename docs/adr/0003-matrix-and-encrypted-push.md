@@ -12,8 +12,8 @@ App 被杀后收不到任何消息。
 - 凡是有自有 App 的自托管产品，推送都由厂商运营一个中继，因为 APNs、FCM 的证书只在 App 发行者手里。
   Home Assistant、Nextcloud、Zulip、群晖、ntfy、Rocket.Chat、Matrix/Element 都是这样。
   Nextcloud、Zulip、群晖会先加密通知内容再交给中继；ntfy、Element 只发消息 ID。
-- 商业 IM 云（如腾讯云 IM）推送和厂商通道现成，但消息正文在第三方云上，按用量计费，
-  境内外要分别建应用，和“数据在家”矛盾。
+- 商业 IM 云（如腾讯云 IM）推送和厂商通道现成，但消息正文在第三方云上，按用量计费
+  （专业版国内 1499 元/月、境外 2999 元/月起），境内外要分别建应用，和“数据在家”矛盾。
 - 国内 Android 必须接厂商通道；小米、vivo、OPPO（正式权限）要求企业开发者账号和商店上架。
 
 ## 决策
@@ -110,11 +110,9 @@ App 被杀后收不到任何消息。
 
 **3. 推送代理：`POST http://push.wonton.internal/_matrix/push/v1/notify`**
 
-- Matrix Push Gateway API v1，只给 Tuwunel 用。正式安装和开发栈都把 `push.wonton.internal` 设为核心在 `core`
-  网络上的别名，`WONTON_PUSH_LISTEN=push.wonton.internal:80` 只绑定这个网络的地址；不发布到宿主，也不监听插件
-  网络。专用监听只接受推送 Host，其他 Host 返回 404；未设置这个变量时不启动专用监听。
-- Tuwunel 的 `ip_range_denylist` 留空以允许内部服务（ADR-0050），推送直连专用监听，不经联邦 CONNECT 代理；
-  安装配置的 `proxy.by_domain.exclude` 保留这个域名。
+- Matrix Push Gateway API v1，只给 Tuwunel 用。Tuwunel 默认拒绝推到私网地址（`ip_range_denylist`），连核心容器都
+  推不到；所以给它配出站代理，只代理 `push.wonton.internal`（`proxy.by_domain`），代理地址是核心网关。代理地址
+  不受这个限制，其他 pusher 仍受它保护。
 - Matrix 推送网关没有鉴权，pushkey 是核心生成的 256 位随机串，兼作凭据；推送代理另外只接受 Tuwunel 的地址来的
   请求（按核心配置里的 Matrix 服务器地址现查，容器重建后地址会变），局域网、插件网络和隧道来的都拒绝。
 - 只有计数、没有事件的通知（Tuwunel 在未读数变化时发）不转发。
@@ -161,9 +159,8 @@ Android 收新消息有两种方式，存在本机、每台设备各选各的（
 
 - **保持连接**：已配对、选了保持连接时（`HomeViewModel::keep_connection`），壳开一个前台服务，进程和隧道在后台不被挂起，
   Matrix 同步照常。App 在后台时，核心按 Matrix 推送规则挑出同步到的、该通知的消息，用和推送同样的方式解出通知
-  （`ChatViewModel::background_notifications`），壳照着弹系统通知；解不开时先弹占位，房间密钥晚到就回填——核心把
-  解出的正文再交一次，壳用同一个通知标识替换占位（UnifiedPush 的推送路径没有这个机会，扩展或进程返回后就改不了
-  已经发出的通知）。回到前台时清空。家里的推送登记和 pusher 删掉，同一条消息不会既推送又本地通知。
+  （`ChatViewModel::background_notifications`），壳照着弹系统通知；回到前台时清空。家里的推送登记和 pusher 删掉，
+  同一条消息不会既推送又本地通知。
 - **UnifiedPush**：照上面的“加密推送”，App 被杀也能收到，但要装分发器。
 
 推送规则由客户端评估，结果和 Tuwunel 给 pusher 的判断一致：两边读的是同一份账号的推送规则。
@@ -274,14 +271,7 @@ specialUse 服务给出同样的说明和一段演示视频。国内应用市场
     事件，`required_state` 里本人还是邀请；SDK 只按 `required_state` 定状态，房间一直显示“受邀”，直到房间里来新
     事件（CI 上偶发，抓同步应答确认）。客户端加入后等同步标成已加入，3 秒还没有就单独订阅这个房间，服务器按当前
     状态重发。上游问题 [tuwunel#685](https://github.com/matrix-construct/tuwunel/issues/685)，修复
-    [tuwunel#686](https://github.com/matrix-construct/tuwunel/pull/686)；升到 v2.0.0 后去掉订阅这一步，main 的 Docker 测试
-    `chat::stale_join::a_join_the_server_reports_as_invited_still_ends_joined` 又失败（2026-11-12），所以保留。
-  - Tuwunel 按（设备，Sliding Sync 连接号）一条一条地处理同步。重启后沿用原来的连接号时，新连接的第一个同步请求要排在
-    死掉那条连接还没结束的 30 秒长轮询后面，起步干等半分钟（CI 上并发跑测试时超过 60 秒，`chat::card_plugin_refresh` 因此红过）。
-    客户端不再一直用同一个号，改在两个固定号之间轮换（`room-list-a` / `room-list-b`，上次用哪个记在存储里），
-    也不读旧号下存的位置（轮换后对不上），同步从 `pos=None` 起。代价就是重启
-    等于冷启动：房间列表和打开的房间先给最新一段，更早的历史要往回翻才补上（壳滚到顶时就翻）。同实例内的重启不换号，
-    不受影响。实测同一条用例改前每次起步停 17–30 秒、改后 5 秒内起步，16 核压满时也一样。
+    [tuwunel#686](https://github.com/matrix-construct/tuwunel/pull/686)；上游修好、升级镜像后去掉订阅这一步。
   - SDK 处理 `m.direct` 时不算房间的显著变化，房间列表不会因此更新；客户端另外观察 `m.direct`。
 
 ## 验证结果（M0-3，自动化测试）

@@ -26,11 +26,11 @@ struct TakeoverButton: View {
     var body: some View {
         switch takeover.state {
         case .operating:
-            Button(.takeoverEnd, action: takeover.end)
+            Button("交还", action: takeover.end)
         case .starting:
-            Button(.takeoverStart) {}.disabled(true)
+            Button("我来操作") {}.disabled(true)
         case nil, .notStarted, .lost:
-            Button(.takeoverStart, action: takeover.start)
+            Button("我来操作", action: takeover.start)
         }
     }
 }
@@ -43,7 +43,7 @@ struct TakeoverNotice: View {
         if let problem = takeover.state?.notice {
             WontonNotice(icon: .warning, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
                 if let detail = problem.detail { ProblemDetail(text: detail) }
-                Button(.takeoverDismiss, action: takeover.end)
+                Button("知道了", action: takeover.end)
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
             .padding(WontonTheme.spacing.s8)
@@ -58,18 +58,12 @@ extension TakeoverState {
             return nil
         case let .notStarted(problem):
             let plain = problem.problem
-            return Problem(
-                title: String(localized: .takeoverFailedTitle(plain.title)),
-                nextStep: plain.nextStep, detail: plain.detail
-            )
+            return Problem(title: "没有开始操作：\(plain.title)", nextStep: plain.nextStep, detail: plain.detail)
         case let .lost(problem) where problem.reason == .transportUnavailable:
-            return Problem(title: String(localized: .takeoverLostTransport), detail: problem.message)
+            return Problem(title: "已交还，连接断了", detail: problem.message)
         case let .lost(problem):
             let plain = problem.problem
-            return Problem(
-                title: String(localized: .takeoverLostTitle(plain.title)),
-                nextStep: plain.nextStep, detail: plain.detail
-            )
+            return Problem(title: "已交还：\(plain.title)", nextStep: plain.nextStep, detail: plain.detail)
         }
     }
 }

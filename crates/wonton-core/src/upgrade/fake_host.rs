@@ -41,12 +41,6 @@ pub struct World {
     pub updater: Option<ContainerInfo>,
     pub updater_start_error: Option<String>,
     pub updater_spec: Option<UpdaterSpec>,
-    /// `wonton-compat` 一次性容器的 canned 输出：没给时目标镜像没有 compat 子命令（退出码 2）。
-    pub compat: Option<OneShotOutput>,
-    /// `wonton-compat` 跑不起来时给的原因。
-    pub compat_error: Option<String>,
-    /// 跑过的 compat 任务，测试核对它的形态。
-    pub compat_spec: Option<OneShot>,
     pub free: u64,
     pub log: Vec<String>,
     /// 走到这个操作时停住（只停一次）：测试丢掉 future，模拟升级器被杀。
@@ -270,20 +264,12 @@ impl Host for FakeHost {
     fn run_once<'a>(&'a self, job: &'a OneShot) -> BoxFuture<'a, Result<OneShotOutput>> {
         Box::pin(async move {
             self.op(format!("run {} {}", job.name, job.image)).await;
-            match job.name.as_str() {
-                "wonton-updater-images" => Ok(output(0, "hydra:1\ntuwunel:1\n", "")),
-                "wonton-updater-init" => Ok(self.init(&job.image)),
-                "wonton-updater-volume-size" => Ok(output(0, "1000\t/volume\n", "")),
-                "wonton-compat" => Ok({
-                    let mut world = self.world();
-                    world.compat_spec = Some(job.clone());
-                    if let Some(error) = &world.compat_error {
-                        return Err(HostError::Failed(error.clone()));
-                    }
-                    world.compat.clone().unwrap_or_else(|| output(2, "", ""))
-                }),
-                _ => Ok(output(0, "", "")),
-            }
+            Ok(match job.name.as_str() {
+                "wonton-updater-images" => output(0, "hydra:1\ntuwunel:1\n", ""),
+                "wonton-updater-init" => self.init(&job.image),
+                "wonton-updater-volume-size" => output(0, "1000\t/volume\n", ""),
+                _ => output(0, "", ""),
+            })
         })
     }
 

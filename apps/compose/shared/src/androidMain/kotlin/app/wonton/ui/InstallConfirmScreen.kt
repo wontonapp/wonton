@@ -25,11 +25,10 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
-import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginTask
-import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
@@ -49,14 +48,11 @@ fun InstallConfirmScreen(
     confirmation: PluginConfirmation,
     onAccepted: (() -> Unit)? = null,
     onClose: () -> Unit,
-    onCheckInstalled: () -> Unit,
 ) {
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     var lanWebui by remember { mutableStateOf(false) }
-    var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var secrets by remember(confirmation) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
@@ -64,10 +60,7 @@ fun InstallConfirmScreen(
         value = null
         value = try {
             Result.success(
-                loadInstallPreview(plugins, confirmation).also { preview ->
-                    lanWebui = preview.lanWebui?.enabled ?: false
-                    enabled = preview.permissions.filter { it.optional && it.enabled }.map { it.permission }.toSet()
-                },
+                loadInstallPreview(plugins, confirmation).also { lanWebui = it.lanWebui?.enabled ?: false },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -82,13 +75,12 @@ fun InstallConfirmScreen(
         return
     }
     submittedId?.let { id ->
-        InstallCompletion(plugins, id, previousTask, onClose, onCheckInstalled) {
+        InstallCompletion(plugins, id, previousTask, onClose) {
             submittedId = null
             attempt++
         }
         return
     }
-    SecureScreen()
     val title = confirmation.actionTitle
     WontonScreen(bar = { WontonPushedBar(title, onClose, WontonIcon.Close, stringResource(R.string.common_close)) }) {
         val result = loaded
@@ -102,40 +94,35 @@ fun InstallConfirmScreen(
                         preview,
                         plugins,
                         lanWebui,
-                        enabled,
                         onFillProfile = { fillingProfile = true },
                         onLanWebui = { lanWebui = it },
-                        onOptional = { permission, on ->
-                            enabled = if (on) enabled + permission else enabled - permission
-                        },
-                        secrets = secrets,
-                        onSecret = { name, value -> secrets = secrets + (name to value) },
                     )
                 }
             }
-            preview?.let { current ->
-                val chosen = current.withPermissionChoices(lanWebui, enabled)
-                val sent = secretValues(chosen.secretInputs, secrets)
-                ConfirmInstallButton(
-                    chosen,
+            preview?.let {
+                WontonButton(
                     title,
-                    secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
-                ) {
-                    val action = if (isUpgrade) {
-                        Action.UpgradePlugin(chosen, sent, emptyMap())
-                    } else {
-                        Action.InstallPlugin(chosen, sent, emptyMap())
-                    }
-                    previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
-                    rejection = plugins.core.send(action)
-                    if (rejection == null) {
-                        when {
-                            onAccepted != null -> onAccepted()
-                            isUpgrade -> onClose()
-                            else -> submittedId = chosen.id
+                    {
+                        // 在这里直接发给核心：被拒绝时原因留在确认页上，不随确认页关掉。
+                        val shown = it.copy(lanWebui = it.lanWebui?.copy(enabled = lanWebui))
+                        val action = if (isUpgrade) Action.UpgradePlugin(shown) else Action.InstallPlugin(shown)
+                        previousTask = plugins.viewModel.tasks.firstOrNull { task -> task.id == shown.id }
+                        rejection = plugins.core.send(action)
+                        if (rejection == null) {
+                            when {
+                                onAccepted != null -> onAccepted()
+                                isUpgrade -> onClose()
+                                else -> submittedId = shown.id
+                            }
                         }
-                    }
-                }
+                    },
+                    Modifier.padding(bottom = LocalWontonBottomInset.current)
+                        .padding(WontonTheme.spacing.pageInset)
+                        .fillMaxWidth(),
+                    // 装不了（blocked）、缺资料或者有核心不支持的权限时不能确认。
+                    enabled = it.blocked == null && it.missingProfile == null &&
+                        it.permissions.all { line -> line.supported },
+                )
             }
         }
     }
@@ -143,14 +130,12 @@ fun InstallConfirmScreen(
 }
 
 private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: PluginConfirmation): InstallPreview =
-    // 核心取好预览请主人拿主意的一键操作（ADR-0017）：不再重新取。
-    confirmation.preloaded ?: when (confirmation) {
+    when (confirmation) {
         is PluginConfirmation.Install -> plugins.core.previewInstall(confirmation.source)
         is PluginConfirmation.Upgrade -> plugins.core.previewUpgrade(confirmation.id)
         is PluginConfirmation.Upload -> plugins.core.previewUpload(confirmation.archive)
         is PluginConfirmation.UpgradeFrom -> plugins.core.previewUpgradeFrom(confirmation.id, confirmation.source)
         is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
-        is PluginConfirmation.Store -> error("core preview already returned above")
     }
 
 /** 留在安装页等核心任务完成，成功后才提供固定入口。 */
@@ -160,21 +145,12 @@ private fun InstallCompletion(
     id: String,
     previousTask: PluginTask?,
     onClose: () -> Unit,
-    onCheckInstalled: () -> Unit,
     onReview: () -> Unit,
 ) {
     val task = plugins.viewModel.tasks.firstOrNull { it.id == id }?.takeUnless { it == previousTask }
     val installed = plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
     val succeeded = task?.state is PluginTaskState.Succeeded
-    WontonScreen(
-        bar = {
-            WontonPushedBar(
-                stringResource(R.string.install_completion_title),
-                onClose,
-                showsStatus = true,
-            )
-        },
-    ) {
+    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.install_completion_title), onClose) }) {
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -183,34 +159,17 @@ private fun InstallCompletion(
             when (val state = task?.state) {
                 null, is PluginTaskState.Running -> {
                     CircularProgressIndicator()
-                    Text(
-                        stringResource(
-                            if (task?.waitingForConnection == true) {
-                                R.string.plugin_task_waiting_for_connection
-                            } else {
-                                R.string.install_completion_installing
-                            },
-                        ),
-                        style = WontonTheme.typography.body,
-                        color = WontonTheme.colors.textPrimary.toColor(),
-                    )
+                    Text(stringResource(R.string.install_completion_installing), style = WontonTheme.typography.body,
+                        color = WontonTheme.colors.textPrimary.toColor())
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-                is PluginTaskState.Failed -> InstallFailure(state.reason, state.message, onReview)
-                is PluginTaskState.Uncertain -> {
-                    ProblemNotice(
-                        Problem(
-                            stringResource(R.string.install_completion_uncertain),
-                            state.nextStep.takeIf { it == PluginTaskNextStep.CHECK_INSTALLED }
-                                ?.let { stringResource(R.string.plugin_task_check_installed_next_step) },
-                            state.message,
-                        ),
-                    )
-                    if (state.nextStep == PluginTaskNextStep.CHECK_INSTALLED) {
-                        WontonButton(stringResource(R.string.plugin_task_check_installed), onCheckInstalled)
-                    }
+                is PluginTaskState.Failed -> {
+                    ProblemNotice(Problem(stringResource(R.string.install_completion_failed), null, state.message))
+                    WontonButton(stringResource(R.string.plugin_task_review), onReview)
                 }
+                is PluginTaskState.Uncertain -> ProblemNotice(Problem(
+                    stringResource(R.string.install_completion_uncertain), null, state.message))
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
             if (succeeded && installed != null) PluginTabPinButton(installed)
@@ -220,29 +179,13 @@ private fun InstallCompletion(
     }
 }
 
-/** 安装失败：标题和下一步按类别出，标题沿用商店任务行的“安装失败：原因”格式。 */
-@Composable
-fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit) {
-    val problem = reason.problem(message)
-    ProblemNotice(Problem(
-        title = stringResource(R.string.plugin_task_install_failed, problem.titleText),
-        nextStep = problem.nextStepText,
-        detail = problem.detail,
-    ))
-    WontonButton(stringResource(R.string.plugin_task_review), onReview)
-}
-
 @Composable
 private fun PreviewContent(
     preview: InstallPreview,
     plugins: PluginsState,
     lanWebui: Boolean,
-    enabled: Set<String>,
     onFillProfile: () -> Unit,
     onLanWebui: (Boolean) -> Unit,
-    onOptional: (String, Boolean) -> Unit,
-    secrets: Map<String, String>,
-    onSecret: (String, String) -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -277,13 +220,7 @@ private fun PreviewContent(
                 WontonButton(stringResource(R.string.install_fill_profile), onFillProfile)
             }
         }
-        if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
-        InstallPermissionChoices(preview.permissions, enabled, onOptional)
-        if (preview.secretInputs.isNotEmpty()) {
-            DetailSection(stringResource(R.string.secret_section_title)) {
-                SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
-            }
-        }
+        InstallAccessDetails(preview.notices, preview.permissions)
         AlwaysAllowed(preview, plugins)
         preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
         preview.releaseNotes?.let { notes ->

@@ -17,7 +17,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -38,7 +37,7 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun TabPinSwitch(choice: TabChoice, checked: Boolean, enabled: Boolean) {
     val tabs = LocalTabs.current
-    val spoken = stringResource(R.string.tab_pin_a11y, choice.title, stringResource(R.string.tab_pin_to_bar))
+    val label = tabText("固定到底栏", "Pin to tab bar")
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = WontonTheme.spacing.s16),
         verticalAlignment = Alignment.CenterVertically,
@@ -46,7 +45,7 @@ internal fun TabPinSwitch(choice: TabChoice, checked: Boolean, enabled: Boolean)
     ) {
         Text(choice.title, Modifier.weight(1f), style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor())
-        Column(Modifier.semantics { contentDescription = spoken }) {
+        Column(Modifier.semantics { contentDescription = "${choice.title}, $label" }) {
             WontonSwitch(checked, { on ->
                 if (on) tabs.pin(choice.tab, choice.title) else tabs.send(Action.UnpinTab(choice.tab))
             }, enabled)
@@ -59,7 +58,7 @@ fun PluginTabPinControls(plugin: InstalledPlugin) {
     val tabs = LocalTabs.current
     val choices = plugin.tabChoices
     if (choices.isEmpty()) return
-    DetailSection(stringResource(R.string.tab_pin_to_bar)) {
+    DetailSection(tabText("固定到底栏", "Pin to tab bar")) {
         WontonGroup {
             choices.forEach { choice ->
                 val item = tabs.viewModel.items.firstOrNull { it.tab == choice.tab }
@@ -76,7 +75,7 @@ fun PluginTabPinButton(plugin: InstalledPlugin) {
     val choices = plugin.tabChoices.filter { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
     var choosingPage by remember(plugin.id) { mutableStateOf(false) }
     if (choices.isEmpty()) return
-    WontonButton(stringResource(R.string.tab_pin_to_bar), {
+    WontonButton(tabText("固定到底栏", "Pin to tab bar"), {
         if (choices.size == 1) tabs.pin(choices.single().tab, choices.single().title)
         else choosingPage = true
     })
@@ -87,7 +86,7 @@ fun PluginTabPinButton(plugin: InstalledPlugin) {
 @Composable
 fun TabPageChoiceSheet(plugin: InstalledPlugin, onDismiss: () -> Unit) {
     val tabs = LocalTabs.current
-    WontonSheet(onDismiss, stringResource(R.string.tab_choose_page)) { close ->
+    WontonSheet(onDismiss, tabText("选择页面", "Choose a page")) { close ->
         Column(Modifier.verticalScroll(rememberScrollState())) {
             val available = plugin.tabChoices.filter { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
             available.forEach { choice ->
@@ -102,17 +101,14 @@ fun TabPageChoiceSheet(plugin: InstalledPlugin, onDismiss: () -> Unit) {
 fun TabPinSheet(viewModel: TabsViewModel, request: PinRequest, onDismiss: () -> Unit) {
     val tabs = LocalTabs.current
     var rejection by remember(request) { mutableStateOf<Problem?>(null) }
-    WontonSheet(onDismiss, stringResource(R.string.tab_choose_replace)) { close ->
+    WontonSheet(onDismiss, tabText("选择要替换的一项", "Choose a tab to replace")) { close ->
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             .padding(horizontal = WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
             TabsConfigurationProblem(viewModel)
             rejection?.let { ProblemNotice(it) }
-            Text(
-                stringResource(R.string.tab_bar_full, request.title),
-                style = WontonTheme.typography.body,
-                color = WontonTheme.colors.textPrimary.toColor(),
-            )
+            Text(tabText("底栏已满：固定${request.title}", "Tab bar full: pin ${request.title}"),
+                style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
             WontonGroup {
                 viewModel.items.filter { it.removable && it.tab != request.tab }.forEach { item ->
                     TabReplacementRow(item) {
@@ -121,7 +117,7 @@ fun TabPinSheet(viewModel: TabsViewModel, request: PinRequest, onDismiss: () -> 
                     }
                 }
             }
-            WontonRow(stringResource(R.string.common_cancel), onClick = { close {} })
+            WontonRow(tabText("取消", "Cancel"), onClick = { close {} })
         }
     }
 }

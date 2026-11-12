@@ -188,15 +188,6 @@ fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Re
     Some(builder.body(Body::from(body)).unwrap())
 }
 
-/// 默认没有 Bot 钉页；单独要钉页的测试自己在前面拦。
-fn empty_pins() -> Response {
-    (
-        StatusCode::OK,
-        serde_json::json!({"pins": [], "consents": []}).to_string(),
-    )
-        .into_response()
-}
-
 pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let path = parts
@@ -271,7 +262,6 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             )
         }
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
-        (&Method::GET, "/_wonton/api/panel/pins") => empty_pins(),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
             // 来源 github:owner/<id> 预览出来就是 <id>。
             let id = serde_json::from_slice::<serde_json::Value>(&body)
@@ -397,7 +387,6 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
         icon: None,
         trust: PluginTrust::Official,
         source: None,
@@ -416,8 +405,6 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         removable: true,
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
-        install_progress: None,
-        tunnel_ports: Vec::new(),
     }
 }
 
@@ -435,16 +422,11 @@ pub fn preview(id: &str) -> InstallPreview {
         source: Some(format!("github:owner/{id}@v1.0.0")),
         commit: None,
         digest: "sha256:abc".to_owned(),
-        plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
         summary: String::new(),
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
-        security_tier: None,
-        scope_choices: Vec::new(),
-        has_bot: false,
         icon: None,
         trust: PluginTrust::Official,
         provider: None,
@@ -463,17 +445,11 @@ pub fn preview(id: &str) -> InstallPreview {
             off_loss: None,
             opened: None,
         }],
-        secret_inputs: Vec::new(),
-        settings: None,
         notices: Vec::new(),
-        missing_requires: Vec::new(),
-        missing_wants: Vec::new(),
-        wanting_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,
         blocked: None,
-        blocked_category: None,
         devices: None,
         lan_webui: None,
         always_allowed: Vec::new(),
@@ -496,7 +472,6 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         author: None,
         stars: None,
         installed_version: None,
-        security_tier: None,
         high_permissions: false,
         blocked: None,
     }
@@ -640,11 +615,6 @@ impl Rig {
             self._home.server.endpoint().id(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 9)),
         )
-    }
-
-    /// 关掉服务端，模拟断网：客户端那边会看到连接断开。
-    pub async fn drop_home(&self) {
-        self._home.server.endpoint().close().await;
     }
 
     pub async fn connected(&self) {

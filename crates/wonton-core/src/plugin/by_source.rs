@@ -11,6 +11,7 @@ use super::github_source::{self, INDEX_SCHEME, SourceRef};
 use super::index_location::IndexLocation;
 use super::languages::{Languages, accept_language_tags};
 use super::manager::{InstallError, PluginManager, PluginView};
+use super::manifest::Permission;
 use super::package::PluginPackage;
 use super::staged;
 use super::store::{create_private_dir, read_json, read_people_languages, write_json};
@@ -175,30 +176,27 @@ impl PluginManager {
         Ok(preview)
     }
 
-    /// 按预览给的来源和摘要安装，`grant` 是主人确认的权限、`enabled_permissions` 是打开了的可选项。安装本身在独立的
-    /// 任务里执行，见 [`Self::install_detached`]。
+    /// 按预览给的来源和摘要安装，`grant` 是主人确认的权限。安装本身在独立的任务里执行，见 [`Self::install_detached`]。
     pub async fn install_source(
         self: &Arc<Self>,
         request: &InstallRequest,
     ) -> Result<PluginView, InstallError> {
-        let langs = self.owner_languages();
+        let granted = request
+            .grant
+            .iter()
+            .map(|p| p.parse::<Permission>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| InstallError::Invalid(e.to_string()))?;
         let package = self.fetch_source(&request.source).await?;
         let digest = package.digest();
         if digest != request.digest {
-            return Err(InstallError::Changed(crate::l10n::text(
-                &langs,
-                "plugin-capability-plan-changed",
-                &[],
+            return Err(InstallError::Changed(format!(
+                "{} 在预览之后变了（插件包摘要现在是 {digest}），要重新预览、重新确认",
+                request.source
             )));
         }
         let installed = self
-            .install_with_dependencies(
-                package,
-                super::dependencies::DependencyInstall {
-                    request: request.clone(),
-                    langs,
-                },
-            )
+            .install_detached(package, granted, request.lan_webui, self.owner_languages())
             .await?;
         self.staged.remove(&digest);
         Ok(installed)

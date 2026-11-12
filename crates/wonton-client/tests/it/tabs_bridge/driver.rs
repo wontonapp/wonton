@@ -10,12 +10,8 @@ use wonton_client::{TabBridgeAction, TabEnvironment, TabPlatform, TabRef};
 use super::support::PAGE_ORIGIN;
 use crate::plugins::rig::Rig;
 
-/// node：本地从 Docker Hub 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn node_image() -> String {
-    wonton_test_images::image(
-        "node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd",
-    )
-}
+const NODE_IMAGE: &str =
+    "node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd";
 
 pub struct Driver<'a> {
     rig: &'a Rig,
@@ -58,7 +54,7 @@ impl<'a> Driver<'a> {
                     "type=bind,source={},target=/fixture,readonly",
                     fixtures.display()
                 ),
-                node_image().as_str(),
+                NODE_IMAGE,
                 "sh",
                 "-c",
                 "node /fixture/sdk.mjs; status=$?; printf '{\"sdkExitCode\":%d}\\n' \"$status\"; exit \"$status\"",
@@ -94,7 +90,7 @@ impl<'a> Driver<'a> {
         };
         let script = rig
             .app
-            .tab_document_script(super::support::bar(tab), driver.environment.clone())
+            .tab_document_script(tab.clone(), driver.environment.clone())
             .unwrap();
         driver.send(
             json!({"script":script, "platform":platform, "url":format!("{PAGE_ORIGIN}/feed")}),
@@ -116,7 +112,7 @@ impl<'a> Driver<'a> {
             let value: Value = serde_json::from_str(&line).unwrap();
             if let Some(message) = value["message"].as_str() {
                 let result = self.rig.app.tab_handle_message(
-                    super::support::bar(self.tab),
+                    self.tab.clone(),
                     true,
                     value["origin"].as_str().unwrap().to_owned(),
                     message.to_owned(),
@@ -144,7 +140,7 @@ impl<'a> Driver<'a> {
         let script = self
             .rig
             .app
-            .tab_context_script(super::support::bar(self.tab), self.environment.clone())
+            .tab_context_script(self.tab.clone(), self.environment.clone())
             .unwrap();
         self.send(json!({"script":script}));
     }

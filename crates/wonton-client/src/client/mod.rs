@@ -1,54 +1,39 @@
 use std::path::PathBuf;
-#[cfg(feature = "ui-fake")]
-use std::sync::RwLockReadGuard;
-#[cfg(feature = "ui-fake")]
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
-use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
-    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TimelineTarget, TransfersViewModel,
+    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, CoreError, FileCard,
+    FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem, HomeViewModel,
+    InstallPreview, LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel,
+    OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TabRef, TabsViewModel,
+    TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
 use crate::home::Network;
-use crate::l10n::{CATALOG, language};
 use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
+    AppearanceSubscription, ChatSubscription, HomeSubscription, OnboardingSubscription,
+    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
+    SettingsSubscription, TabsSubscription, TransfersSubscription,
 };
+use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
-mod bot_contacts;
-mod browser;
-mod composer;
 mod dispatch;
 mod limits;
 mod media;
-mod plugin_detail;
 mod push_route;
-mod settings;
-mod sharing;
 mod switch;
-mod tabs;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
-mod test_support;
 mod tool_policy;
-#[cfg(feature = "ui-fake")]
-mod ui_fake;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
 ///
@@ -63,11 +48,6 @@ pub struct ClientCore {
     root: PathBuf,
     network: Network,
     scope: RwLock<Arc<Scope>>,
-    /// 壳订阅的 ViewModel 发送端。有假数据入口时整组换成独立的发送端，包一层锁；没有这个 feature 时保持
-    /// 直接字段，生产构建不多一次读锁。
-    #[cfg(feature = "ui-fake")]
-    views: RwLock<Views>,
-    #[cfg(not(feature = "ui-fake"))]
     views: Views,
     /// 切换后要在新作用域里重放的、壳只发一次的输入。
     replay: Mutex<Replay>,
@@ -75,12 +55,6 @@ pub struct ClientCore {
     switching: Arc<Mutex<()>>,
     /// 为不是当前这台的服务器临时开的作用域。
     visits: Arc<Visits>,
-    /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
-    in_flight_registrations: push_route::InFlightRegistrations,
-    matrix_login: Arc<crate::matrix_login::MatrixLogins>,
-    /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
-    #[cfg(feature = "ui-fake")]
-    ui_fake: AtomicBool,
 }
 
 #[uniffi::export]
@@ -94,12 +68,69 @@ impl ClientCore {
 
     /// 当前的底栏和插件页面，用于首帧渲染。
     pub fn tabs(&self) -> TabsViewModel {
-        self.views().tabs.borrow().clone()
+        self.views.tabs.borrow().clone()
     }
 
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
-        Arc::new(TabsSubscription::new(self.views().tabs.subscribe()))
+        Arc::new(TabsSubscription::new(self.views.tabs.subscribe()))
+    }
+
+    /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
+    pub fn tab_document_script(
+        &self,
+        tab: TabRef,
+        environment: TabEnvironment,
+    ) -> Result<String, CoreError> {
+        bridge::document_script(
+            &self.scope().tabs,
+            &self.appearance.view(),
+            &tab,
+            &environment,
+        )
+    }
+
+    /// 壳原样交入消息及原生回调的主框架标志、来源；核心校验来源，草稿不发送。
+    pub fn tab_handle_message(
+        &self,
+        tab: TabRef,
+        is_main_frame: bool,
+        origin: String,
+        message: String,
+        environment: TabEnvironment,
+    ) -> TabBridgeResult {
+        bridge::handle_message(
+            &self.scope().tabs,
+            &self.appearance,
+            &tab,
+            is_main_frame,
+            &origin,
+            &message,
+            &environment,
+        )
+    }
+
+    /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
+    pub fn tab_context_script(
+        &self,
+        tab: TabRef,
+        environment: TabEnvironment,
+    ) -> Result<String, CoreError> {
+        bridge::context_script(
+            &self.scope().tabs,
+            &self.appearance.view(),
+            &tab,
+            &environment,
+        )
+    }
+
+    pub fn tab_reselected_script(&self) -> String {
+        bridge::reselected_script()
+    }
+
+    /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
+    pub fn tab_connection_script(&self) -> String {
+        bridge::connection_script(&self.scope().home.view().status)
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -124,32 +155,22 @@ impl ClientCore {
 
     /// 当前的设置首页，用于首帧渲染。
     pub fn settings(&self) -> SettingsViewModel {
-        self.views().settings.borrow().clone()
+        self.views.settings.borrow().clone()
     }
 
     /// 订阅设置首页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_settings(&self) -> Arc<SettingsSubscription> {
-        Arc::new(SettingsSubscription::new(self.views().settings.subscribe()))
+        Arc::new(SettingsSubscription::new(self.views.settings.subscribe()))
     }
 
     /// 当前的“其他服务器”页面（ADR-0050），用于首帧渲染。
     pub fn peers(&self) -> PeersViewModel {
-        self.views().peers.borrow().clone()
+        self.views.peers.borrow().clone()
     }
 
     /// 订阅“其他服务器”页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_peers(&self) -> Arc<PeersSubscription> {
-        Arc::new(PeersSubscription::new(self.views().peers.subscribe()))
-    }
-
-    /// 当前的好友页（ADR-0051），用于首帧渲染。
-    pub fn friends(&self) -> FriendsViewModel {
-        self.views().friends.borrow().clone()
-    }
-
-    /// 订阅好友页，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
-    pub fn subscribe_friends(&self) -> Arc<FriendsSubscription> {
-        Arc::new(FriendsSubscription::new(self.views().friends.subscribe()))
+        Arc::new(PeersSubscription::new(self.views.peers.subscribe()))
     }
 
     /// 当前的会话列表，用于首帧渲染。
@@ -164,22 +185,22 @@ impl ClientCore {
 
     /// 当前和家里服务器的连接，用于首帧渲染。
     pub fn home(&self) -> HomeViewModel {
-        self.views().home.borrow().clone()
+        self.views.home.borrow().clone()
     }
 
     /// 订阅和家里服务器的连接，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_home(&self) -> Arc<HomeSubscription> {
-        Arc::new(HomeSubscription::new(self.views().home.subscribe()))
+        Arc::new(HomeSubscription::new(self.views.home.subscribe()))
     }
 
     /// 当前的聊天状态（账号、同步、加密、房间列表），用于首帧渲染。
     pub fn chat(&self) -> ChatViewModel {
-        self.views().chat.borrow().clone()
+        self.views.chat.borrow().clone()
     }
 
     /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
-        Arc::new(ChatSubscription::new(self.views().chat.subscribe()))
+        Arc::new(ChatSubscription::new(self.views.chat.subscribe()))
     }
 
     /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。
@@ -197,66 +218,17 @@ impl ClientCore {
         self.scope().chat.resolve_user_id(&input)
     }
 
-    /// 把 Matrix 房间 ID 或别名解成已加入的房间 ID；不自动加入房间。
-    /// 取不到、未加入和输入非法分别返回对应的错误，壳不按别名等待一个永远不会出现的 ID。
-    pub async fn resolve_chat_room(&self, input: String) -> Result<String, CoreError> {
-        let scope = self.scope();
-        let chat = scope.chat.clone();
-        scope
-            .run(async move { chat.resolve_chat_room(&input).await })
-            .await
-    }
-
-    /// 订阅一条时间线（主时间线或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
-    /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时
-    /// 返回 `NotReady`；旁聊时间线还没实现，`thread_root` 不为空时返回 `NotReady`。
+    /// 订阅一个已加入房间的时间线：第一批是全部条目，之后是按顺序应用的增量。同一时间只打开一个房间，
+    /// 打开另一个房间后前一个的订阅不再更新。还没登录、房间还没同步到本机时返回 `NotReady`。
     pub async fn subscribe_timeline(
         &self,
-        target: TimelineTarget,
-    ) -> Result<Arc<TimelineSubscription>, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
-        let scope = self.scope();
-        let chat = scope.chat.clone();
-        let room_view = scope.tabs.subscribe_room_view();
-        scope
-            .run(async move { chat.open_timeline(&room_id, room_view).await })
-            .await
-    }
-
-    /// 一条时间线（主时间线或旁聊）输入框里的草稿（正文和正在回复的消息），没打过字也没在回复时是
-    /// `None`。换房间、重启核心都还在，主人回来接着写。旁聊时间线还没实现，`thread_root` 不为空时
-    /// 返回 `NotReady`（ADR-0093 §5）。
-    pub async fn draft(&self, target: TimelineTarget) -> Result<Option<ComposerDraft>, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
-        let scope = self.scope();
-        let chat = scope.chat.clone();
-        scope.run(async move { chat.draft(&room_id).await }).await
-    }
-
-    /// 开旁聊（ADR-0093 §4）：发根消息（带 `app.wonton.side_chat` 的 `m.notice`），等服务器回事件 ID，
-    /// 把第一句话放进这个话题的发送队列，返回根的事件 ID。根没发出去时返回错误，不留下空旁聊。
-    /// 旁聊还没实现（接口先合并），现在返回 `NotReady`。
-    pub async fn start_side_chat(
-        &self,
         room_id: String,
-        body: String,
-    ) -> Result<String, CoreError> {
-        let _ = (room_id, body);
-        Err(self.chat_side_chat_not_ready())
-    }
-
-    /// 拆 [`TimelineTarget`]：主时间线回房间 ID；带话题根的旁聊时间线还没实现，报“还不能用”。
-    fn chat_timeline_target(&self, target: &TimelineTarget) -> Result<String, CoreError> {
-        if target.thread_root.is_some() {
-            return Err(self.chat_side_chat_not_ready());
-        }
-        Ok(target.room_id.clone())
-    }
-
-    fn chat_side_chat_not_ready(&self) -> CoreError {
-        CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "side-chat-not-ready"),
-        }
+    ) -> Result<Arc<TimelineSubscription>, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.open_timeline(&room_id).await })
+            .await
     }
 
     /// 取图片等媒体的原文件（时间线里给出的句柄）。核心负责下载、解密和缓存。
@@ -264,15 +236,6 @@ impl ClientCore {
         let scope = self.scope();
         let chat = scope.chat.clone();
         scope.run(async move { chat.load_media(media).await }).await
-    }
-
-    /// 链接预览卡片的图片原文件（凭卡片图片里的 id）。核心负责从家里取回来。
-    pub async fn load_link_preview_image(&self, id: String) -> Result<Vec<u8>, CoreError> {
-        let scope = self.scope();
-        let chat = scope.chat.clone();
-        scope
-            .run(async move { chat.preview_image(&id).await })
-            .await
     }
 
     /// 视频头像的本机缓存文件；相同媒体的并发请求共用一次下载。
@@ -286,29 +249,41 @@ impl ClientCore {
 
     /// 当前的插件页面（已安装的插件、商店、安装的进展），用于首帧渲染。
     pub fn plugins(&self) -> PluginsViewModel {
-        self.views().plugins.borrow().clone()
+        self.views.plugins.borrow().clone()
     }
 
     /// 订阅插件页面，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_plugins(&self) -> Arc<PluginsSubscription> {
-        Arc::new(PluginsSubscription::new(self.views().plugins.subscribe()))
+        Arc::new(PluginsSubscription::new(self.views.plugins.subscribe()))
     }
     /// 当前的新用户引导状态，用于首帧渲染。
     pub fn onboarding(&self) -> OnboardingViewModel {
-        self.views().onboarding.borrow().clone()
-    }
-
-    /// 关掉从设置进去的重看引导：这次记下的选择全部丢弃，什么都不保存，壳回到设置。
-    /// 没在重看时调用没有效果。
-    pub fn close_onboarding(&self) {
-        self.scope().onboarding.close();
+        self.views.onboarding.borrow().clone()
     }
 
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
     pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
         Arc::new(OnboardingSubscription::new(
-            self.views().onboarding.subscribe(),
+            self.views.onboarding.subscribe(),
         ))
+    }
+
+    /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
+    pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.store_plugin(&source).await })
+            .await
+    }
+
+    /// 一个已安装插件的详情（装着的版本）。
+    pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.installed_plugin(&id).await })
+            .await
     }
 
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是
@@ -435,20 +410,6 @@ impl ClientCore {
             .await
     }
 
-    /// 填一项插件密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应；返回之后的详情。
-    pub async fn set_plugin_secret(
-        &self,
-        id: String,
-        name: String,
-        value: Option<SecretString>,
-    ) -> Result<PluginDetail, CoreError> {
-        let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.set_secret_now(id, name, value).await })
-            .await
-    }
-
     /// 开关“每次都问”（ADR-0033）：打开后这个 Agent 每次更新都发卡片；返回开关之后的详情。
     pub async fn set_ask_every_update(
         &self,
@@ -493,25 +454,21 @@ impl ClientCore {
 
     /// 当前的传输列表，用于首帧渲染。
     pub fn transfers(&self) -> TransfersViewModel {
-        self.views().transfers.borrow().clone()
+        self.views.transfers.borrow().clone()
     }
 
     /// 这个房间的传输条列什么。不走网络，传输列表一变就可以重新取。
-    /// 附件区自己的上传不在里面，它们画在附件区里。
     pub fn room_transfers(&self, room_id: String) -> RoomTransfers {
         let scope = self.scope();
-        let listed = scope
+        scope
             .files
             .view()
-            .for_room(&room_id, &scope.chat.view().rooms);
-        scope.composer.hide_own_uploads(listed)
+            .for_room(&room_id, &scope.chat.view().rooms)
     }
 
     /// 订阅传输列表，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_transfers(&self) -> Arc<TransfersSubscription> {
-        Arc::new(TransfersSubscription::new(
-            self.views().transfers.subscribe(),
-        ))
+        Arc::new(TransfersSubscription::new(self.views.transfers.subscribe()))
     }
 
     /// 消息下面的文件卡片：取信息并缓存。结果写在卡片里，壳等待时画 [`FileCard::Loading`]。
@@ -545,8 +502,7 @@ impl ClientCore {
         scope.run(async move { files.stream_url(id).await }).await
     }
 
-    /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。只有格式放不了时，
-    /// 说明里才提可以下载后用其他 App 打开。
+    /// 播放器放不了时问为什么：连不上家、家里的服务器报错，还是这台手机不支持这个格式。说明里写着可以下载后用其他 App 打开。
     pub async fn file_playback_problem(&self, id: FileId) -> FileProblem {
         let scope = self.scope();
         let files = scope.files.clone();
@@ -583,18 +539,6 @@ impl ClientCore {
 }
 
 impl ClientCore {
-    #[cfg(feature = "ui-fake")]
-    pub(crate) fn views(&self) -> RwLockReadGuard<'_, Views> {
-        self.views
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    #[cfg(not(feature = "ui-fake"))]
-    pub(crate) fn views(&self) -> &Views {
-        &self.views
-    }
-
     /// 关掉隧道的定时检查和升级状态的定时轮询，只留回到前台、网络变化和重试触发的检查。只给测试用。
     #[doc(hidden)]
     pub fn stop_periodic_checks(&self) {
@@ -602,14 +546,6 @@ impl ClientCore {
         scope.home.stop_periodic_checks();
         scope.plugins.stop_upgrade_polling();
         self.replay().no_periodic_checks = true;
-    }
-
-    /// 把当前的隧道 endpoint 关掉，模拟本机 socket 死掉：这条 socket 上的连接和中继一起失效，客户端的
-    /// 退避重连拨的全是死 socket。endpoint 重建的触发条件靠它验证。只给测试用。
-    #[cfg(feature = "test-hooks")]
-    #[doc(hidden)]
-    pub fn test_close_home_endpoint(&self) {
-        self.scope().home.test_close_endpoint();
     }
 
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
@@ -628,13 +564,9 @@ impl ClientCore {
         )?;
         let switching = Arc::new(Mutex::new(()));
         let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
-        let servers_for_login = servers.clone();
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
-            #[cfg(feature = "ui-fake")]
-            views: RwLock::new(Views::of(&scope)),
-            #[cfg(not(feature = "ui-fake"))]
             views: Views::of(&scope),
             scope: RwLock::new(scope.clone()),
             servers,
@@ -643,13 +575,7 @@ impl ClientCore {
             replay: Mutex::default(),
             switching,
             visits,
-            in_flight_registrations: Arc::default(),
-            matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),
-            #[cfg(feature = "ui-fake")]
-            ui_fake: AtomicBool::new(false),
         });
-        let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
-        core.matrix_login.bind(switch);
         core.attach(&scope);
         Ok(core)
     }
@@ -681,34 +607,12 @@ impl ClientCore {
                 Ok(())
             }
             Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
-            Action::SetPortMapping { plugin_id, enabled } => {
-                scope.plugins.set_port_mapping(plugin_id, enabled)
-            }
-            Action::SetVisiblePlugin { plugin_id } => {
-                scope.plugins.set_visible_plugin(plugin_id);
-                Ok(())
-            }
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);
                 Ok(())
             }
-            Action::InstallPlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.install(preview, secrets, settings),
-            Action::UpgradePlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.upgrade(preview, secrets, settings),
-            Action::InstallNow { source } => scope.plugins.install_now(source),
-            Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
-            Action::UpgradeAll => scope.plugins.upgrade_all(),
-            Action::DismissStoreConfirmation => {
-                scope.plugins.dismiss_confirmation();
-                Ok(())
-            }
+            Action::InstallPlugin { preview } => scope.plugins.install(preview),
+            Action::UpgradePlugin { preview } => scope.plugins.upgrade(preview),
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
             Action::StartTakeover { id } => {
@@ -744,7 +648,7 @@ impl ClientCore {
             Action::AskAgent { text } => {
                 let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
                     CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
+                        reason: "还没有默认 Agent：先在设置里选一个".to_owned(),
                     }
                 })?;
                 scope.chat.ask(&bot, &text)
@@ -772,7 +676,7 @@ impl ClientCore {
 /// 局域网设置的接口先于实现合并（ADR-0019）：实现之前如实失败。
 fn lan_unsupported() -> CoreError {
     CoreError::NotReady {
-        reason: l10n!(CATALOG, language(), "home-lan-unsupported"),
+        reason: "这个版本的客户端核心不支持局域网设置".into(),
     }
 }
 

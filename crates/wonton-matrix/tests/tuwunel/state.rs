@@ -105,12 +105,4 @@ async fn a_state_event_is_written_replaced_and_read_by_another_member() {
             .unwrap(),
         None
     );
-    // 原始事件带着发送者，按发送者区分的读法（如 m.room.create 认房间主人）要用它。
-    let event = bob_room
-        .fetch_state_event(EVENT, alice_id.as_str())
-        .await
-        .unwrap()
-        .expect("原始状态事件");
-    assert_eq!(event["sender"], alice_id.as_str());
-    assert_eq!(event["content"], second);
 }

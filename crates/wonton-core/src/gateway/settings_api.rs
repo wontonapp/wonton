@@ -19,9 +19,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
-use wonton_protocol::{
-    AskEveryUpdate, EgressProxyUpdate, LanChoice, LanWebuiUpdate, PluginLimits, SecretUpdate,
-};
+use wonton_protocol::{AskEveryUpdate, EgressProxyUpdate, LanChoice, LanWebuiUpdate, PluginLimits};
 
 use super::Gateway;
 use super::api::{error_response, install_denied, install_error, languages, owner_denied, text1};
@@ -255,73 +253,4 @@ pub async fn revoke_save_grant(
         Some(detail) => Json(detail).into_response(),
         None => install_error(&InstallError::NotInstalled(id.to_string())),
     }
-}
-
-/// 填写或清空一项密钥（ADR-0064）。只有主人能改；改完返回详情，用到这个变量的服务会重建。
-pub async fn set_secret_input(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<super::TunnelPeer>>,
-    headers: HeaderMap,
-    Path((id, name)): Path<(String, String)>,
-    body: Bytes,
-) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let id = match PluginId::parse(&id) {
-        Ok(id) => id,
-        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
-    };
-    let update = match serde_json::from_slice::<SecretUpdate>(&body) {
-        Ok(update) => update,
-        Err(e) => {
-            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string());
-        }
-    };
-    let langs = languages(&headers);
-    let outcome = gateway
-        .plugins
-        .set_secret_input(
-            &id,
-            &name,
-            update.value.as_ref().map(|v| v.expose()),
-            &langs,
-        )
-        .await;
-    match outcome {
-        Ok(detail) => {
-            audit_secret_change(&gateway, &headers, peer.as_ref(), id.as_str(), &name);
-            Json(detail).into_response()
-        }
-        Err(e) => install_error(&e),
-    }
-}
-
-/// 记一条审计：谁改了哪个插件的哪一项，不记值。
-fn audit_secret_change(
-    gateway: &Gateway,
-    headers: &HeaderMap,
-    peer: Option<&Extension<super::TunnelPeer>>,
-    plugin: &str,
-    secret: &str,
-) {
-    let Some(audit) = &gateway.audit else {
-        return;
-    };
-    let by = super::api::acted_by(gateway, peer, headers);
-    audit.record(&SecretChangeEvent {
-        event: "plugin_secret_change",
-        by: &by,
-        plugin,
-        secret,
-    });
-}
-
-/// 改一项密钥的审计；值不进审计。
-#[derive(serde::Serialize)]
-struct SecretChangeEvent<'a> {
-    event: &'static str,
-    by: &'a str,
-    plugin: &'a str,
-    secret: &'a str,
 }

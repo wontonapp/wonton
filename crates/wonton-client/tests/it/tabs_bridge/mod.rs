@@ -4,16 +4,9 @@ mod sdk;
 mod support;
 
 use serde_json::json;
-use wonton_client::{
-    Action, CoreError, PlacedTab, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef,
-};
-use wonton_protocol::PanelScope;
+use wonton_client::{Action, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef};
 
-use crate::plugins::rig::Rig;
-
-use support::{
-    PAGE_ORIGIN, bar, environment, initialize, open_page, request, response, selected_page,
-};
+use support::{PAGE_ORIGIN, environment, initialize, open_page, request, response, selected_page};
 
 #[tokio::test]
 async fn initialization_exposes_only_standard_context_and_supported_capabilities() {
@@ -46,7 +39,7 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
         wonton_client::accent_hex(rig.app.appearance().light.canvas)
     );
     let initialized = rig.app.tab_handle_message(
-        bar(&tab),
+        tab.clone(),
         true,
         PAGE_ORIGIN.to_owned(),
         json!({"jsonrpc":"2.0","method":"ui/notifications/initialized"}).to_string(),
@@ -55,7 +48,7 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert!(initialized.initialized);
     assert!(initialized.reply_script.is_none());
     let size = rig.app.tab_handle_message(
-        bar(&tab),
+        tab,
         true,
         PAGE_ORIGIN.to_owned(),
         json!({"jsonrpc":"2.0","method":"ui/notifications/size-changed","params":{"height":800}})
@@ -65,66 +58,6 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert!(!size.initialized);
     assert!(size.reply_script.is_none());
     assert!(size.action.is_none());
-}
-
-#[tokio::test]
-async fn public_pages_get_no_document_script_or_bridge() {
-    let rig = Rig::new().await;
-    rig.app.stop_periodic_checks();
-    let tab = TabRef::Url {
-        url: "https://example.com/news".to_owned(),
-    };
-    rig.app
-        .dispatch(Action::PinTab {
-            tab: tab.clone(),
-            replacing: None,
-        })
-        .unwrap();
-    rig.app
-        .dispatch(Action::AddPanelPage {
-            scope: PanelScope::Main,
-            tab: tab.clone(),
-        })
-        .unwrap();
-
-    for placed in [
-        bar(&tab),
-        PlacedTab::Panel {
-            scope: PanelScope::Main,
-            tab: tab.clone(),
-        },
-    ] {
-        for error in [
-            rig.app.tab_document_script(placed.clone(), environment()),
-            rig.app.tab_context_script(placed.clone(), environment()),
-        ] {
-            assert!(matches!(error, Err(CoreError::InvalidInput { .. })));
-        }
-        let reply = rig.app.tab_handle_message(
-            placed,
-            true,
-            "https://example.com".to_owned(),
-            json!({"jsonrpc":"2.0","id":"draft","method":"ui/message","params":
-                {"role":"user","content":[{"type":"text","text":"hello"}]}})
-            .to_string(),
-            environment(),
-        );
-        assert!(reply.action.is_none());
-        let reply = response(&reply);
-        assert_eq!(reply["id"], "draft");
-        assert_eq!(reply["error"]["code"], -32001);
-    }
-
-    // 通知没有 id，不回话，也不算初始化完成。
-    let notification = rig.app.tab_handle_message(
-        bar(&tab),
-        true,
-        "https://example.com".to_owned(),
-        json!({"jsonrpc":"2.0","method":"ui/notifications/initialized"}).to_string(),
-        environment(),
-    );
-    assert!(notification.reply_script.is_none());
-    assert!(!notification.initialized);
 }
 
 #[tokio::test]
@@ -168,7 +101,7 @@ async fn subframes_and_notifications_have_no_request_side_effects() {
         ),
     ] {
         let reply = rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             false,
             PAGE_ORIGIN.to_owned(),
             json!({"jsonrpc":"2.0","id":1,"method":method,"params":params}).to_string(),
@@ -178,7 +111,7 @@ async fn subframes_and_notifications_have_no_request_side_effects() {
         assert!(reply.action.is_none());
         assert!(!reply.initialized);
         let notification = rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             true,
             PAGE_ORIGIN.to_owned(),
             json!({"jsonrpc":"2.0","method":method,"params":params}).to_string(),
@@ -251,8 +184,7 @@ async fn automatic_fullscreen_returns_to_previous_tab_and_overlay_can_close() {
             json!({"mode":"inline"}),
         );
         assert_eq!(response(&reply)["result"]["mode"], "inline");
-        // 底栏只剩"聊天"后，进来之前所在的就是聊天页，自动退出回到它。
-        assert_eq!(rig.app.tabs().selected, TabRef::Chat);
+        assert_eq!(rig.app.tabs().selected, TabRef::Apps);
         assert!(rig.app.tabs().overlay.is_none());
     }
 }
@@ -336,7 +268,7 @@ async fn malformed_messages_do_not_panic_or_change_state() {
         r#"{"jsonrpc":"2.0","id":{},"method":"ui/request-display-mode","params":{"mode":"fullscreen"}}"#,
     ] {
         let reply = rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             true,
             PAGE_ORIGIN.to_owned(),
             message.to_owned(),

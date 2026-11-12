@@ -38,20 +38,6 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
 `-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
 
-### 版本号
-
-版本号由仓库根的 `scripts/app-version.sh` 一处计算（iOS 用同一条规则，见 `apps/ios/README.md` 的「构建」）：
-优先环境变量 `WONTON_VERSION`（`X.Y.Z`，可带 `v` 前缀），其次最近的 `vX.Y.Z` tag。**发版必须显式传版本**：
-发版构建是在没有 git 元数据的副本上做的，取不到 tag，不传 Release 构建直接报错。
-
-```bash
-WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
-```
-
-Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
-取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
-patch`），覆盖安装要求它不降。
-
 ## 连家里的服务器（开发）
 
 起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“应用”页就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
@@ -74,10 +60,6 @@ adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code
 设置首页订阅客户端核心的 `SettingsViewModel`，按 `sections` 的分组和顺序画列表；明暗、重点色、字号和字体收在“外观”二级页，“通知”页列出系统通知、推送状态和类别，点击进入对应的系统通知设置；“关于”只显示 App 版本和构建号（ADR-0028）。
 
 “应用”页的商店入口独立放在已装插件网格上方，有更新时显示数量，未安装插件时保留“去应用商店”空状态按钮。底栏根页不显示大标题，连接状态仍在顶栏显示，状态栏后是不透明的 `canvas`。
-
-插件安装确认页按预览选择可选权限，安装默认关闭、升级保留预览选择；提交最高风险权限需单独确认主机控制权。
-详情页开关以服务器返回的状态为准，打开最高风险权限两步确认、关闭一次确认；显示打开者和日期，失败可重试原目标。
-应用图标上的主机权限锁标记独立于更新、故障标记，点锁打开详情（ADR-0057）。
 
 “家里的服务器”顶部始终显示服务器列表和“添加服务器”，当前这台带勾，点另一台切换；长按一台可改名或移除。移除前确认只删手机上的聊天记录和文件，不影响服务器。添加时配对页左上角可取消，首次配对不显示取消（ADR-0042）。
 服务器的默认名由界面按核心给的固定编号和 App 语言显示，主人自定义的名字保持原样；改名输入框用显示名预填，只有点击保存才提交该文字（ADR-0043）。
@@ -161,8 +143,8 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 ./gradlew detekt
 ```
 
-规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件行数由仓库的
-`scripts/check-file-size.sh` 检查（不算空行和注释，超过 800 行警告、超过 2000 行失败）。CI 见 `.github/workflows/android.yml`。
+规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件 ≤ 800 行由仓库的
+`scripts/check-file-size.sh` 检查。CI 见 `.github/workflows/android.yml`。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
 

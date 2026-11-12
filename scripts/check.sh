@@ -5,13 +5,6 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-# 装上提交、推送前的 hook（规则在 lefthook.yml，重复运行没有副作用）。
-if command -v lefthook >/dev/null; then
-  lefthook install
-else
-  echo "没装 lefthook：git hook 没装，提交前不会自动格式化和挡结构问题。装法：brew install lefthook，或 bash scripts/install-hooks.sh"
-fi
-
 # 集成测试用 testcontainers 起容器，它只认 DOCKER_HOST 和 /var/run/docker.sock。
 # OrbStack、Colima 等把 socket 放在别处时，从当前 Docker context 取地址。
 if [[ -z "${DOCKER_HOST:-}" && ! -S /var/run/docker.sock ]] && command -v docker >/dev/null; then
@@ -34,23 +27,15 @@ docker_reachable() {
 bash scripts/check-file-size.sh
 python3 -m unittest discover -q -s scripts/ui_text -t scripts
 python3 -m unittest discover -q -s scripts/install -t scripts
-python3 -m unittest discover -q -s scripts/dev_ports -t scripts
-python3 -m unittest discover -q -s scripts/shell_parity -t scripts
-python3 deploy/dev/core/instance-label_test.py
-python3 deploy/dev/core/dev_test.py
-python3 deploy/dev/core/port-preflight_test.py
-python3 deploy/dev/core/smoke-lib_test.py
 python3 scripts/check-ui-text.py
-python3 scripts/check-dev-compose-ports.py
 bash scripts/check-conflict-markers.sh
 bash scripts/check-bundled-plugin-versions.sh
+bash scripts/check-docker-test-images.sh
 
 bash scripts/check-uniffi-comments.sh
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-# 和 pre-push 同一项：合上最新 main 后的树能不能编过（WONTON_SKIP_MERGED_CHECK=1 跳过）。
-bash scripts/check-merged-main.sh
 
 # --include-ignored 连文档里标了 ignore 的示例也会运行，所以文档示例不要用 ```ignore（用 text 或 no_run）。
 if docker_error="$(docker_reachable)"; then

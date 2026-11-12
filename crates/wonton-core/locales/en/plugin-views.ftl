@@ -21,7 +21,7 @@ permission-models = Use the model gateway
 permission-tools = Use tools from your home server and other apps
 permission-plugins-health = Read the health status of all apps
 permission-matrix-bot = Send and receive messages as a bot
-permission-notify = Send your household notifications and mail
+permission-notify = Send you notifications
 permission-owner-identity = Know your username and email, and which language your family members use
 permission-network-egress = Reach the internet and your local network
 permission-egress-proxy = Provide an Internet proxy (high permission)
@@ -34,8 +34,6 @@ permission-security-opt = Change container security options (highest permission)
 permission-privileged = Run in privileged mode (highest permission)
 permission-devices-gpu = Use the GPU (high permission)
 permission-device = Access the host device { $path } (high permission)
-permission-devices-serial = Access host serial devices (high permission)
-permission-devices-usb = Access host USB devices (high permission)
 permission-docker-socket = Control Docker (highest permission)
 
 # Longer explanations shown under the high permissions.
@@ -44,12 +42,11 @@ permission-notice-network-host = This app can directly access your home network 
 permission-notice-highest-risk = This app can control the entire host: read and write all files and other apps' data, change or stop Wonton itself. This is equivalent to giving it root on the host. Only install apps you trust. After uninstalling, containers it created and things it changed will not be cleaned up.
 permission-notice-network-lan = Devices on your local network can connect directly to the app's ports without Wonton login; the app is responsible for authentication.
 permission-notice-device = This app can access the host device { $path }.
-permission-notice-devices = This app can access host devices you give it.
 
 # Notices in the app detail view.
 plugin-firewall-notice = A firewall on this machine may be blocking incoming connections, so devices on your local network may not be able to connect.
 plugin-egress-proxy-select = Select it in Internet proxy settings
-plugin-cross-origin-isolation = This app needs cross-origin isolation: on Android, its pages open in your browser.
+plugin-cross-origin-isolation = This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.
 
 # Notices and blocked reasons in the install and update previews.
 install-retained-data = Data and keys from { $id } are still on this server; the app you install will be able to read them. Delete them completely first if you don't want that.

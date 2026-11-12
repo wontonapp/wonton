@@ -5,12 +5,6 @@
     <string name="keepalive_channel_name">Keep connection</string>
     <!-- Title of the ongoing notification of the "keep connection" foreground service. -->
     <string name="keepalive_notification_title">Staying connected to your home server</string>
-    <!-- Name of the notification channel for the ongoing port-mapping foreground service (ADR-0072). Shown in the system notification settings. -->
-    <string name="mapping_channel_name">Port mapping</string>
-    <!-- Title of the ongoing port-mapping notification when one app's ports are mapped. Argument: the app's name. -->
-    <string name="mapping_notification_title">Mapping ports for %1$s</string>
-    <!-- Title of the ongoing port-mapping notification when several apps have the mapping on. Argument: the number of apps. -->
-    <string name="mapping_notification_title_multiple">Mapping ports for %1$d apps</string>
     <!-- Notification text when a message is in a group room: sender name, then the message. -->
     <string name="push_in_room">%1$s: %2$s</string>
     <!-- Shown as the sender when the push didn't say who sent the message. -->
@@ -21,22 +15,4 @@
     <string name="push_unavailable">New message (can\'t load it right now)</string>
     <!-- Lock screen version of a notification when sensitive content is hidden: no sender, no text. -->
     <string name="push_hidden">New message</string>
-    <!-- Full-page startup failure: the client core didn't start. Argument: the error. -->
-    <string name="startup_core_failed">Wonton didn\'t start: %1$s</string>
-    <!-- Full-page startup failure in development builds: the pairing code passed in over adb was rejected. Argument: the error. -->
-    <string name="startup_code_rejected">The pairing code passed in for development was rejected: %1$s</string>
-    <!-- Push status detail: the user denied the notification permission. -->
-    <string name="push_no_permission">No notification permission: new messages can\'t show while Wonton is closed or the screen is locked</string>
-    <!-- Push status detail: no UnifiedPush distributor app (such as ntfy) is installed. -->
-    <string name="push_no_distributor">No UnifiedPush distributor installed (such as ntfy): new messages can\'t arrive while Wonton is closed or the screen is locked</string>
-    <!-- Push status detail: the distributor gave no Web Push public key. -->
-    <string name="push_no_public_key">The distributor gave no Web Push public key, so pushes can\'t be encrypted</string>
-    <!-- Push status detail: the distributor rejected the registration. Argument: the reason UnifiedPush reported. -->
-    <string name="push_registration_rejected">The distributor rejected the registration: %1$s</string>
-    <!-- Push status detail: the distributor unregistered the app. -->
-    <string name="push_unregistered">The distributor unregistered Wonton</string>
-    <!-- Notification text: a bot asks to be your bot's contact. -->
-    <string name="push_contact_request">Wants to be your bot\'s contact</string>
-    <!-- Same, when the asking bot belongs to someone. Argument: that person's name. -->
-    <string name="push_contact_request_keeper">%1$s\'s bot wants to be your bot\'s contact</string>
 </resources>

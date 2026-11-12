@@ -175,10 +175,10 @@ pub(super) fn storage_error(e: &DeviceError) -> Response {
     error_response(StatusCode::INTERNAL_SERVER_ERROR, "storage", &e.to_string())
 }
 
-/// 出码接口共用的请求体：`{"direct_addrs": ["IP:端口"]}`；不给时用核心自己算的直连地址（跟着宣告地址和局域网检测走）。
+/// 出码接口共用的请求体：`{"direct_addrs": ["IP:端口"]}`，不给时码里只有中继地址。
 #[derive(Deserialize, Default)]
 pub struct NewCode {
-    /// 写进码里的直连地址，例如宿主的局域网 IP 加发布的隧道端口。不给时用核心自己算的直连地址（跟着宣告地址和局域网检测走）。
+    /// 写进码里的直连地址，例如宿主的局域网 IP 加发布的隧道端口。不给时码里只有中继地址。
     #[serde(default)]
     pub direct_addrs: Vec<SocketAddr>,
 }
@@ -260,13 +260,9 @@ pub(super) fn invalid_code_request(langs: &Languages, e: &serde_json::Error) -> 
 fn code_response(
     gateway: &Gateway,
     langs: &Languages,
-    mut direct_addrs: Vec<SocketAddr>,
+    direct_addrs: Vec<SocketAddr>,
     issued: IssuedCode,
 ) -> Response {
-    // 请求里没给就由核心决定，宿主地址只有局域网检测这一处算（ADR-0019）：包装脚本和 App 不再猜地址。
-    if direct_addrs.is_empty() {
-        direct_addrs = gateway.tunnel.direct_addrs();
-    }
     let code = lan::code_for(gateway, direct_addrs, issued.secret);
     if code.relays.is_empty() && code.direct_addrs.is_empty() {
         return error_response(

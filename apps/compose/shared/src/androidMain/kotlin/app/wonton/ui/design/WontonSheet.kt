@@ -99,7 +99,6 @@ fun WontonActionSheet(actions: List<WontonSheetAction>, onDismiss: () -> Unit, t
             ) {
                 Icon(
                     action.icon,
-                    // 装饰：操作项有文字。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.icon),
                     tint = tint,

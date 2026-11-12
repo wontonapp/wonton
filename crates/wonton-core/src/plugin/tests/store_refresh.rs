@@ -68,18 +68,12 @@ async fn a_minute_later(m: &PluginManager) {
 async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
-        scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
-        plan: preview.plan,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
-        install_together: Vec::new(),
-        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
 }

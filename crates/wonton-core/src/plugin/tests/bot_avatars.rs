@@ -316,9 +316,9 @@ async fn invalid_default_or_poster_fails_before_any_upload_and_retry_reuses_acco
                 .bots()
                 .load(&id())
                 .unwrap()
-                .bots
-                .values()
-                .all(|entry| entry.device_id.is_none())
+                .unwrap()
+                .device_id
+                .is_none()
         );
         assert_eq!(bed.manager.profile_revisions().get("app.test"), 0);
         bed.manager
@@ -356,15 +356,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     .unwrap();
     assert!(matches!(
         bed.manager
-            .upgrade_upload(
-                &id(),
-                invalid,
-                grant(),
-                Vec::new(),
-                false,
-                &Default::default(),
-                &super::langs()
-            )
+            .upgrade_upload(&id(), invalid, grant(), false, &super::langs())
             .await,
         Err(InstallError::Invalid(_))
     ));
@@ -379,15 +371,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     )
     .unwrap();
     bed.manager
-        .upgrade_upload(
-            &id(),
-            next,
-            grant(),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id(), next, grant(), false, &super::langs())
         .await
         .unwrap();
     assert!(bed.avatars().await.unwrap().states.contains_key("idle"));
@@ -407,15 +391,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
     )
     .unwrap();
     bed.manager
-        .upgrade_upload(
-            &id(),
-            next,
-            grant(),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id(), next, grant(), false, &super::langs())
         .await
         .unwrap();
     assert_eq!(bed.avatars().await, Some(StateAvatars::default()));

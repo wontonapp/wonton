@@ -7,7 +7,6 @@ use wonton_client::{
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 const HISTORY: [&str; 3] = [
     "before pairing one",
@@ -122,10 +121,7 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
         stages.contains(&VerificationStage::FetchingKeys),
         "{stages:?}"
     );
-    // 期限过了才到齐的话，`confirm_and_observe` 在 `KeysMissing` 就返回了，秘密到齐后流程才改成完成。
-    if stages.last() != Some(&VerificationStage::Done) {
-        flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
-    }
+    assert_eq!(stages.last(), Some(&VerificationStage::Done));
     assert_recovered(&devices.second);
     assert!(matches!(
         devices.second.dispatch(Action::StartDeviceVerification),
@@ -168,109 +164,6 @@ async fn sas_recovers_open_history_in_place_and_survives_restart() {
     drop(second);
     drop(first);
     drop(home);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn the_new_phone_asks_again_for_keys_the_old_phone_dropped() {
-    let devices = Devices::new(true).await;
-    devices.connect_second().await;
-    let id = compare(&devices.first, &devices.second).await;
-    let (_, old_phone) = devices.first.signed_in().await;
-    devices.home.deliver_key_request_before_done(&old_phone);
-    devices
-        .second
-        .dispatch(Action::ConfirmVerification {
-            flow_id: id.clone(),
-        })
-        .unwrap();
-    flow_at(&devices.second, |stage| {
-        *stage == VerificationStage::WaitingForOther
-    })
-    .await;
-    devices
-        .first
-        .dispatch(Action::ConfirmVerification {
-            flow_id: id.clone(),
-        })
-        .unwrap();
-    // 丢掉的请求要再要才补得回来，补回来前会先以 `KeysMissing` 结束，所以这里只等完成，不等取消。
-    let end = flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
-    assert_eq!(end.stage, VerificationStage::Done);
-    assert_recovered(&devices.second);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn keys_that_arrive_after_the_deadline_turn_keys_missing_into_done() {
-    let devices = Devices::new(true).await;
-    devices.connect_second().await;
-    let id = compare(&devices.first, &devices.second).await;
-    // 旧手机没收到新手机要秘密的请求，像它在交出秘密前掉线。
-    devices.home.hold_key_requests(true);
-    for phone in [&devices.first, &devices.second] {
-        phone
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.clone(),
-            })
-            .unwrap();
-    }
-    flow_at(&devices.second, |stage| {
-        *stage
-            == (VerificationStage::Cancelled {
-                reason: VerificationCancel::KeysMissing,
-            })
-    })
-    .await;
-    assert_ne!(
-        devices.second.chat().encryption.recovery,
-        RecoveryStatus::Enabled
-    );
-
-    // 旧手机回来，答了排着的请求。
-    devices.home.hold_key_requests(false);
-    flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
-    devices
-        .second
-        .wait_chat("秘密到齐、恢复开启", |view| {
-            (view.encryption.recovery == RecoveryStatus::Enabled).then_some(())
-        })
-        .await;
-    assert_recovered(&devices.second);
-}
-
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn lost_key_requests_are_asked_for_again_after_the_deadline() {
-    let devices = Devices::new(true).await;
-    devices.connect_second().await;
-    let id = compare(&devices.first, &devices.second).await;
-    // 新手机要秘密的请求发出去就丢，旧手机收不到；服务端回了 200，新手机不会自己重发。
-    devices.home.drop_key_requests(true);
-    for phone in [&devices.first, &devices.second] {
-        phone
-            .dispatch(Action::ConfirmVerification {
-                flow_id: id.clone(),
-            })
-            .unwrap();
-    }
-    flow_at(&devices.second, |stage| {
-        *stage
-            == (VerificationStage::Cancelled {
-                reason: VerificationCancel::KeysMissing,
-            })
-    })
-    .await;
-    // 丢掉的请求不会自己到。以 `KeysMissing` 结束后接着再要，秘密才到得齐、流程才改成完成。
-    devices.home.drop_key_requests(false);
-    flow_at(&devices.second, |stage| *stage == VerificationStage::Done).await;
-    devices
-        .second
-        .wait_chat("秘密到齐、恢复开启", |view| {
-            (view.encryption.recovery == RecoveryStatus::Enabled).then_some(())
-        })
-        .await;
-    assert_recovered(&devices.second);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -591,7 +484,7 @@ async fn another_trusted_device_taking_over_marks_the_request_accepted_elsewhere
     cancelled(&first, &id, VerificationCancel::ByOther).await;
 }
 
-pub(super) async fn available(phone: &Phone) {
+async fn available(phone: &Phone) {
     phone
         .wait_chat("可以请另一台设备确认", |view| {
             view.encryption.can_verify_with_other_device.then_some(())
@@ -600,9 +493,8 @@ pub(super) async fn available(phone: &Phone) {
 }
 
 async fn flow_at(phone: &Phone, check: impl Fn(&VerificationStage) -> bool) -> VerificationFlow {
-    // 30 秒期限本身就在等，晚到还要等补要，按两倍上限等，别让负载把等待挤爆。
     phone
-        .wait_chat_within("设备确认达到预期阶段", WAIT * 2, |view| {
+        .wait_chat("设备确认达到预期阶段", |view| {
             view.encryption
                 .verification_flow
                 .as_ref()
@@ -624,7 +516,7 @@ async fn incoming(first: &Phone, second: &Phone) -> String {
     received.flow_id
 }
 
-pub(super) async fn compare(first: &Phone, second: &Phone) -> String {
+async fn compare(first: &Phone, second: &Phone) -> String {
     let id = incoming(first, second).await;
     first
         .dispatch(Action::AcceptDeviceVerification {
@@ -708,7 +600,7 @@ async fn confirm_and_observe(
     stages.expect("原有 60 秒等待内设备确认必须结束")
 }
 
-pub(super) async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
+async fn cancelled(phone: &Phone, id: &str, reason: VerificationCancel) {
     phone
         .wait_chat("指定设备确认流程以预期原因取消", |view| {
             view.encryption
@@ -770,13 +662,8 @@ async fn open_history(phone: &Phone, room_id: &str) -> Timeline {
         .await;
     let timeline = Timeline::open(phone, room_id).await;
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::PaginateBackwards {
-                target: TimelineTarget {
-                    room_id: room_id.to_owned(),
-                    thread_root: None,
-                },
-            },
+        .dispatch(Action::PaginateBackwards {
+            room_id: room_id.to_owned(),
         })
         .unwrap();
     timeline

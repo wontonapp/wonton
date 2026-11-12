@@ -5,7 +5,7 @@ import WontonClient
 
 /// 只把可发送的值交给系统；核心、UIKit 图片和可观察模型都留在 MainActor。
 struct WontonPageEntity: AppEntity, Sendable {
-    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Page"
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "页面"
     static let defaultQuery = WontonPageQuery()
 
     let id: String
