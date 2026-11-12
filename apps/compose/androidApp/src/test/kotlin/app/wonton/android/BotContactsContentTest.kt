@@ -44,9 +44,15 @@ class BotContactsContentTest {
     private val sent = mutableListOf<Action>()
     private val removed = mutableListOf<BotContact>()
 
-    private fun contact(userId: String, state: ContactState, kind: ContactKind = ContactKind.BOT) = BotContact(
+    // 显示名不给时行的名字回退成用户 ID，同一行出现两个相同文本，按文本找节点会数到 2 个。
+    private fun contact(
+        userId: String,
+        state: ContactState,
+        kind: ContactKind = ContactKind.BOT,
+        displayName: String? = null,
+    ) = BotContact(
         userId = userId,
-        displayName = null,
+        displayName = displayName,
         keeperDisplayName = null,
         kind = kind,
         state = state,
@@ -117,7 +123,10 @@ class BotContactsContentTest {
     @Test
     fun aFailedActionKeepsTheListAndShowsWhyAboveIt() {
         val failure = BotContactFailure(ContactError.CONTACT_NOT_FOUND, "detail")
-        show(ready(contact("@c:b.example", ContactState.ACTIVE)).copy(actionFailure = failure))
+        show(
+            ready(contact("@c:b.example", ContactState.ACTIVE, displayName = "家庭助手"))
+                .copy(actionFailure = failure),
+        )
 
         compose.onNodeWithText("@c:b.example").assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.contacts_error_contact_not_found)).assertIsDisplayed()
