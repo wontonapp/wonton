@@ -266,9 +266,9 @@ pub enum MessageAction {
     /// 回复这条：壳把 `message` 画在输入框上方，发送时把它的事件 ID 作为 `reply_to` 交回，并用
     /// [`TimelineAction::SetDraft`](crate::TimelineAction::SetDraft) 记进草稿。有这一项时壳也允许右滑这条消息来回复。
     Reply { message: QuotedMessage },
-    /// 转发到另一个房间（[`Action::ForwardMessage`](crate::Action::ForwardMessage)），壳先让主人选房间。
+    /// 转发到另一个房间（[`TimelineAction::ForwardMessage`](crate::TimelineAction::ForwardMessage)），壳先让主人选房间。
     Forward,
-    /// 撤回（[`Action::RedactMessage`](crate::Action::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
+    /// 撤回（[`TimelineAction::RedactMessage`](crate::TimelineAction::RedactMessage)）：所有人那里都会变成“已撤回”，壳先请主人确认。
     Redact,
 }
 
@@ -285,10 +285,10 @@ pub enum SendState {
         progress: Option<f32>,
     },
     Sent,
-    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`Action::CancelSend`](crate::Action::CancelSend)）。
+    /// 发送失败，`message` 是原因。没发出去的都可以取消（[`TimelineAction::CancelSend`](crate::TimelineAction::CancelSend)）。
     ///
     /// - `recoverable` 为真：连接出了问题（连不上、超时、服务器暂时出错）。核心隔一段时间自动重发，连续失败时间隔
-    ///   逐渐拉长，直到发出去；也可以马上重发（[`Action::RetrySend`](crate::Action::RetrySend)）。
+    ///   逐渐拉长，直到发出去；也可以马上重发（[`TimelineAction::RetrySend`](crate::TimelineAction::RetrySend)）。
     /// - 为假：服务器拒收（比如太大、没有权限）。核心不自动重发，同一房间之后发的消息都排在它后面，直到主人重发或者
     ///   取消这一条。
     Failed {
