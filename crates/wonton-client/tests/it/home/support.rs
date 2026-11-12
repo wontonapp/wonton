@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, EndpointId, SecretKey};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::task::JoinHandle;
 use wonton_client::{Action, ClientCore, HomeViewModel, Network, ProxySettings};
 use wonton_tunnel::{Allowlist, TunnelServer};
@@ -370,5 +370,42 @@ impl Gate {
         let (open, wake) = &*self.0;
         *open.lock().unwrap() = true;
         wake.notify_all();
+    }
+}
+
+/// 转发的 UDP 代理：让设备经它连服务端。`packets` 个设备→服务端的包各晚 `delay`，之后立即转；
+/// 用来把第一次建连拖过时限、之后的又恢复正常。
+pub(crate) struct SlowUdp {
+    addr: SocketAddr,
+}
+
+impl SlowUdp {
+    pub(crate) async fn start_first(server: SocketAddr, packets: usize, delay: Duration) -> Self {
+        let socket = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
+        let addr = socket.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut peer = None;
+            let mut sent = 0usize;
+            let mut buf = vec![0u8; 65_536];
+            while let Ok((n, from)) = socket.recv_from(&mut buf).await {
+                let target = if from == server {
+                    peer
+                } else {
+                    peer = Some(from);
+                    Some(server)
+                };
+                let Some(target) = target else { continue };
+                if from != server && sent < packets {
+                    sent += 1;
+                    tokio::time::sleep(delay).await;
+                }
+                socket.send_to(&buf[..n], target).await.ok();
+            }
+        });
+        Self { addr }
+    }
+
+    pub(crate) fn addr(&self) -> SocketAddr {
+        self.addr
     }
 }
