@@ -215,6 +215,7 @@ fn timeline_message(
         actions,
         body,
         read_by,
+        group: None,
     }
 }
 
@@ -248,6 +249,7 @@ pub(super) fn message_content(
                 size: image.size,
                 width: image.width,
                 height: image.height,
+                caption: None,
             },
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
