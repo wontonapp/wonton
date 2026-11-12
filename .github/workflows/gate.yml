@@ -5,7 +5,9 @@ name: gate
 # - lint：轻检查，不按路径过滤，草稿 PR 也跑。
 # - rust、ios、android：重作业在各自的工作流里（workflow_call），这里按开关调用；定时、手动和合后的运行
 #   还是那几个工作流自己触发。
-# - 汇总：needs 全部作业，任一失败或取消就红，成功和跳过算过。
+# - 汇总：needs 全部作业，任一失败或取消就红，成功和跳过算过；草稿 PR 上重作业全被跳过，汇总自己也判红——
+#   否则「跳过算过」会让 gate 汇总在草稿阶段显示绿，gh pr merge --auto 转 ready 后立刻看到已绿的必需检查就合了，
+#   重作业一次没跑（11-13 #470 21:59Z 就这样合进了 main）。转 ready 的新 run 才给真结果。
 # 一次推送只起 changes、lint、汇总三个轻作业加改到的重作业（之前是三个改动范围、四个汇总加 lint），
 # 省下的是 runner 名额和排队，重作业本身不变。
 # 路径不写在触发器上：必需检查在每个 PR 上都要有结果，工作流没触发的话检查一直“等待中”，PR 合不了。
@@ -136,6 +138,11 @@ jobs:
     env:
       RESULTS: ${{ join(needs.*.result, ' ') }}
     steps:
+      - name: 草稿 PR 不跑重作业
+        if: github.event_name == pull_request && github.event.pull_request.draft
+        run: |
+          echo "::error::草稿 PR：rust/android/ios 重作业按设计没跑，这份汇总不算数——转 ready 会重跑，以那次为准"
+          exit 1
       - name: 各作业的结果
         run: |
           echo "$RESULTS"
