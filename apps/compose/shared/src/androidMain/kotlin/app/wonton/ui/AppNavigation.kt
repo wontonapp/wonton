@@ -170,14 +170,14 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         chat.showingBackup = false
         chat.startingChat = startingChat
     }
+}
 
-    fun hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
-        TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
-        TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
-        TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
-        is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> false
-    }
+internal fun AppNavigation.hidesBar(): Boolean = settingsOverlay || when (tabs.viewModel.selected) {
+    TabRef.Chat -> chat.openRoom != null || chat.showingBackup || chat.startingChat
+    TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
+    TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
+    is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
+    is TabRef.UiResource -> false
 }
 
 /** 每次系统 Intent 有自己的消费状态；重组或 Activity 重建不能重放已处理的导航。 */
