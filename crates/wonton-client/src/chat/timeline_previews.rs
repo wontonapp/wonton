@@ -3,6 +3,7 @@
 use wonton_matrix::{EntryKind, TimelineEntry, Vector};
 use wonton_protocol::TimelineDiff;
 
+use super::agent_run::BotsView;
 use super::confirmation::CardsView;
 use super::links::LinkTargets;
 use super::previews::{Previews, message_target};
@@ -37,6 +38,7 @@ pub(super) fn preview_diffs(
     shown: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
+    bots: &BotsView,
     previews: &Previews,
     settled: &[String],
 ) -> Vec<TimelineDiff> {
@@ -51,7 +53,7 @@ pub(super) fn preview_diffs(
         })
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
-            item: timeline_item(entry.clone(), shown, read, links, previews),
+            item: timeline_item(entry.clone(), shown, read, links, bots, previews),
         })
         .collect()
 }

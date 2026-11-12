@@ -8,7 +8,8 @@ use wonton_client::{
 };
 use wonton_matrix::ChatRoom;
 use wonton_protocol::{
-    LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure, LinkPreviewImage,
+    LinkPreviewCard, LinkPreviewCardImage, LinkPreviewFailure, LinkPreviewImage, TimelineAction,
+    TimelineTarget,
 };
 
 use super::PNG;
@@ -57,7 +58,10 @@ async fn until_composer_preview(phone: &Phone, room: &str, want: &LinkPreviewSta
     let waiting = async {
         loop {
             let preview = phone
-                .draft(room.to_owned())
+                .draft(TimelineTarget {
+                    room_id: room.to_owned(),
+                    thread_root: None,
+                })
                 .await
                 .ok()
                 .flatten()
@@ -77,7 +81,10 @@ async fn until_composer_without_preview(phone: &Phone, room: &str) {
     let waiting = async {
         loop {
             let preview = phone
-                .draft(room.to_owned())
+                .draft(TimelineTarget {
+                    room_id: room.to_owned(),
+                    thread_root: None,
+                })
                 .await
                 .ok()
                 .flatten()
@@ -127,10 +134,29 @@ async fn bot_sends(room: &ChatRoom, body: &str, previews: Option<Value>) {
 
 /// 把链接打进草稿。
 fn set_draft(room: &str, body: String) -> Action {
-    Action::SetDraft {
-        room_id: room.to_owned(),
-        body,
-        reply_to: None,
+    Action::Timeline {
+        action: TimelineAction::SetDraft {
+            target: TimelineTarget {
+                room_id: room.to_owned(),
+                thread_root: None,
+            },
+            body,
+            reply_to: None,
+        },
+    }
+}
+
+/// 发这条文字。
+fn send_text(room: String, body: String) -> Action {
+    Action::Timeline {
+        action: TimelineAction::SendText {
+            target: TimelineTarget {
+                room_id: room,
+                thread_root: None,
+            },
+            body,
+            reply_to: None,
+        },
     }
 }
 
@@ -156,20 +182,19 @@ async fn the_composer_fetches_the_preview_removes_it_and_sends_without_it() {
 
     // 点掉：这条草稿不再出。
     phone
-        .dispatch(Action::DismissLinkPreview {
-            room_id: room.clone(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::DismissLinkPreview {
+                target: TimelineTarget {
+                    room_id: room.clone(),
+                    thread_root: None,
+                },
+            },
         })
         .unwrap();
     until_composer_without_preview(&phone, &room).await;
 
     // 去掉了还发：事件里没有 `com.beeper.linkpreviews`。
-    phone
-        .dispatch(Action::SendText {
-            room_id: room.clone(),
-            body,
-            reply_to: None,
-        })
-        .unwrap();
+    phone.dispatch(send_text(room.clone(), body)).unwrap();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_receives(&bot_room, "Bot 收到没带预览的消息", |message| {
         matches!(&message.body, wonton_matrix::MessageBody::Text(text) if text == "看看 https://example.com/a")
@@ -212,13 +237,7 @@ async fn a_sent_message_carries_the_preview_with_an_uploaded_image() {
         &ready_card("https://example.com/final", "第一个", "img"),
     )
     .await;
-    phone
-        .dispatch(Action::SendText {
-            room_id: plain.clone(),
-            body,
-            reply_to: None,
-        })
-        .unwrap();
+    phone.dispatch(send_text(plain.clone(), body)).unwrap();
     let bot_room = bot.open_room(&plain_id).await.expect("Bot 打开群聊");
     let bundled = bot_receives(&bot_room, "Bot 收到带预览的消息", |message| {
         message.custom.get("com.beeper.linkpreviews").cloned()
@@ -255,13 +274,7 @@ async fn a_sent_message_carries_the_preview_with_an_uploaded_image() {
         &ready_card("https://example.com/final", "第一个", "img"),
     )
     .await;
-    phone
-        .dispatch(Action::SendText {
-            room_id: encrypted,
-            body,
-            reply_to: None,
-        })
-        .unwrap();
+    phone.dispatch(send_text(encrypted, body)).unwrap();
     let encrypted_room = bot.open_room(&encrypted_id).await.expect("Bot 打开私聊");
     let bundled = bot_receives(
         &encrypted_room,

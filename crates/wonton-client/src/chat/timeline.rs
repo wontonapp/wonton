@@ -36,6 +36,7 @@ impl TimelineSubscription {
     ///
     /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
     /// 决定解不开的消息旁给什么入口。
+    #[allow(clippy::too_many_arguments)] // 和 [`forward`] 一样，参数就是转发要用的那几个。
     pub(crate) fn start(
         runtime: &Handle,
         room: Arc<ChatRoom>,
@@ -139,10 +140,10 @@ macro_rules! refreshed {
             &$cards,
             &$read,
             &links_of($plugins),
-            &$previews,
             $sender,
             $view,
             &mut $bots,
+            &$previews,
         ) {
             Some(batch) => batch,
             None => continue,
@@ -177,8 +178,10 @@ async fn forward(
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
         let mut bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
-        let Some(mut view) =
-            start_batch(room, &entries, &shown, &read, &links, sender, status, &bots, &previews).await
+        let Some(mut view) = start_batch(
+            room, &entries, &shown, &read, &links, sender, status, &bots, &previews,
+        )
+        .await
         else {
             return;
         };
@@ -274,6 +277,7 @@ async fn forward(
                         &links_of(plugins),
                         &bots,
                         &new_bots,
+                        &previews,
                     );
                     if diffs.is_empty() && sender.key_notice(&entries) == view.notice {
                         continue;
@@ -294,7 +298,7 @@ async fn forward(
                     // 预览取回来了：落定网址所在的条目重发一遍，别的条目不动。
                     let settled = previews.take_settled();
                     let links = links_of(plugins);
-                    let diffs = preview_diffs(&entries, &shown, &read, &links, &previews, &settled);
+                    let diffs = preview_diffs(&entries, &shown, &read, &links, &bots, &previews, &settled);
                     if diffs.is_empty() {
                         continue;
                     }
@@ -354,6 +358,7 @@ async fn start_batch(
 }
 
 /// 插件表变了：整条时间线按现在的插件表重画一遍；没有条目时返回 `None`。
+#[allow(clippy::too_many_arguments)] // 和 [`apply`] 一样，参数就是批处理要用的那几个。
 fn relinked_batch(
     entries: &Vector<TimelineEntry>,
     cards: &Cards,
@@ -424,7 +429,14 @@ fn apply(
     let links = LinkTargets::of(&plugins.view());
     let mut out = refresh(entries, shown, cards, read, &links, bots, previews);
     for diff in batch {
-        out.push(timeline_diff(diff.clone(), shown, read, &links, bots, previews));
+        out.push(timeline_diff(
+            diff.clone(),
+            shown,
+            read,
+            &links,
+            bots,
+            previews,
+        ));
         diff.apply(entries);
     }
     // 这一批带来了新的卡片或回答：房间里的等回答卡片变了，AgentRun 条目跟着重算。
@@ -806,6 +818,7 @@ mod tests {
             &read,
             &LinkTargets::default(),
             &BotsView::default(),
+            &Previews::new(),
         );
         assert_eq!(kind(&before[0]), RichLinkKind::External);
 
@@ -813,7 +826,14 @@ mod tests {
             "app.grafana",
             "http://app-grafana.home.example:18480/",
         )]);
-        let after = relinked(&entries, &cards, &read, &links, &BotsView::default());
+        let after = relinked(
+            &entries,
+            &cards,
+            &read,
+            &links,
+            &BotsView::default(),
+            &Previews::new(),
+        );
         assert_eq!(
             kind(&after[0]),
             RichLinkKind::Plugin {

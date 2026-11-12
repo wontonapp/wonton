@@ -63,7 +63,7 @@ pub struct ComposerDraft {
     pub body: String,
     /// 正在回复的消息；壳在输入框上方画出来，发送时把它的事件 ID 作为 `reply_to` 交回。
     pub reply: Option<ReplyQuote>,
-    /// 输入框里第一个外部链接的预览（ADR-0065）；没有链接、刚被去掉（[`Action::DismissLinkPreview`](crate::Action::DismissLinkPreview)）或还没取到时是 `None`。
+    /// 输入框里第一个外部链接的预览（ADR-0065）；没有链接、刚被去掉（[`crate::TimelineAction::DismissLinkPreview`]）或还没取到时是 `None`。
     pub preview: Option<crate::LinkPreviewState>,
 }
 
