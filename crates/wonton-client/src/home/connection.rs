@@ -43,6 +43,8 @@ pub(super) struct Tracker {
     /// 上次连上之后最近一次断开的原因。断开后自动重试会回到“连接中”，这期间连接仍是已知不通的，
     /// 核心自己经隧道的请求照旧立刻失败，不能因为状态在断开和连接中之间来回跳就时拦时不拦。
     known_failure: Option<HomeFailure>,
+    /// 隧道客户端报来的断开次数上一次看到的值，见 [`Self::observe_drops`]。
+    seen_disconnects: u32,
 }
 
 /// 一次断开恢复了。
@@ -177,6 +179,20 @@ impl Tracker {
             self.round_failed = false;
             self.known_failure = None;
         }
+    }
+
+    /// 隧道的断开次数涨了、现在又没连上：连着的连接断了，原因按隧道记的最近一次失败算。在 [`Self::observe`]
+    /// 之前调。隧道的状态流只留最新值，断开紧接着重拨时这里可能只看到“连接中”，只看状态会漏掉这次断开。
+    pub(super) fn observe_drops(
+        &mut self,
+        disconnects: u32,
+        last_failure: Option<HomeFailure>,
+        connected: bool,
+    ) {
+        if disconnects > self.seen_disconnects && !connected {
+            self.known_failure = last_failure.or(self.known_failure);
+        }
+        self.seen_disconnects = disconnects;
     }
 
     /// 上次连上之后最近一次断开的原因；连上、换服务器、回前台或网络恢复后清空（新一轮先给建连机会）。
@@ -725,6 +741,24 @@ mod tests {
         tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
         tracker.foregrounded(start);
         assert_eq!(tracker.known_failure(), None, "回前台先给新一轮建连机会");
+    }
+
+    /// 断开紧接着重拨，状态从“已连接”直接看到“连接中”：断开次数涨了，照样算已知不通。
+    #[test]
+    fn a_drop_seen_only_as_connecting_is_still_a_known_failure() {
+        let start = Instant::now();
+        let mut tracker = Tracker::default();
+        tracker.observe_drops(0, None, true);
+        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        let transport = Some(HomeFailure::TransportUnavailable);
+        tracker.observe_drops(1, transport, false);
+        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 0, start);
+        assert_eq!(tracker.known_failure(), transport);
+        tracker.observe_drops(1, transport, true);
+        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        tracker.observe_drops(1, transport, false);
+        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 0, start);
+        assert_eq!(tracker.known_failure(), None, "次数没涨：不是新的断开");
     }
 
     #[test]

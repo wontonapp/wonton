@@ -316,6 +316,8 @@ home-ticket-core-url-under-domain = 核心地址要是 { $domain } 的 http(s) �
 # 没有参数。配对页的设备名一栏被清空了。
 home-pairing-name-empty = 设备名是空的。
 home-pairing-bind-failed = 绑定网络失败：{ $error }
+# $seconds 是绑定的时限秒数。建连时本机网络在这么久里没准备好，会自动再试。
+home-bind-timeout = 本机网络在 { $seconds } 秒内没有准备好。
 # $reason 是连接信息解析器的原始错误。
 home-ticket-corrupt = 保存的连接信息已损坏：{ $reason }
 home-no-connection-info = 还没有家里服务器的连接信息

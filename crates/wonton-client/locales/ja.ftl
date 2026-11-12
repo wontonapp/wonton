@@ -316,6 +316,8 @@ home-ticket-core-url-under-domain = 自宅サーバーのアドレスは{ $domai
 # 引数なし。ペアリング画面のデバイス名欄が空です。
 home-pairing-name-empty = デバイス名が空です
 home-pairing-bind-failed = ネットワーク接続を確立できません：{ $error }
+# $seconds はバインドの制限秒数。本機のネットワークが時間内に準備できず、自動で再試行します。
+home-bind-timeout = 端末のネットワークが { $seconds } 秒以内に準備できませんでした。
 # $reason は接続情報の解析の元のエラーです。
 home-ticket-corrupt = 保存された接続情報が壊れています：{ $reason }
 home-no-connection-info = 自宅サーバーの接続情報がまだありません

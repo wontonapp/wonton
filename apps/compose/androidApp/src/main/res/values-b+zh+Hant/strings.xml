@@ -5,6 +5,10 @@
     <string name="keepalive_channel_name">保持連線</string>
     <!-- 「保持連線」前台服務的常駐通知標題。 -->
     <string name="keepalive_notification_title">與家用伺服器保持連線</string>
+    <!-- 「保持連線」常駐通知的標題：正在連線到家用伺服器（還沒連上或斷開後在重連）。 -->
+    <string name="keepalive_notification_connecting">正在連線到家用伺服器…</string>
+    <!-- 「保持連線」常駐通知的標題：連不上家用伺服器。 -->
+    <string name="keepalive_notification_unreachable">連不上家用伺服器</string>
     <!-- 「連接埠映射」前台服務的常駐通知渠道名（ADR-0072），顯示在系統的通知設定裡。 -->
     <string name="mapping_channel_name">連接埠映射</string>
     <!-- 連接埠映射的常駐通知標題：只有一個應用程式開著映射。參數是應用程式名稱。 -->
