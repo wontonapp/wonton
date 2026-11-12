@@ -702,10 +702,15 @@ fn same_options(info: &ContainerInspectResponse, body: &ContainerCreateBody) -> 
     {
         return false;
     }
-    let env = |list: Option<&Vec<String>>| -> std::collections::BTreeSet<String> {
-        list.cloned().unwrap_or_default().into_iter().collect()
-    };
-    env(config.env.as_ref()) == env(body.env.as_ref())
+    // 容器的环境变量里还有镜像自己的（PATH 之类），只要求我们那几项都在。
+    let have: std::collections::BTreeSet<&str> = config
+        .env
+        .as_ref()
+        .map(|env| env.iter().map(String::as_str).collect())
+        .unwrap_or_default();
+    body.env
+        .as_ref()
+        .is_none_or(|env| env.iter().all(|item| have.contains(item.as_str())))
 }
 
 /// 容器里只读挂的配置文件。
