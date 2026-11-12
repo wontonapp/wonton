@@ -7,21 +7,27 @@
 //!   `Set-Cookie` 或跳转地址）。响应体网关不改：插件不应把凭据写进页面。
 
 use hyper::header::{COOKIE, HeaderMap, HeaderName, HeaderValue, SET_COOKIE};
+use wonton_protocol::Role;
 
 use super::isolation::sent_name;
 use super::session::strip_cookies;
 use crate::owner::Owner;
 use crate::plugin::proxy_auth::ProxyAuth;
 
-/// 转发前：换上代加的请求头和 Cookie；值写不进 HTTP 时报错，不转发。
-pub fn attach(headers: &mut HeaderMap, auth: &ProxyAuth, owner: &Owner) -> Result<(), String> {
-    for (name, value) in auth.headers(owner) {
+/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP 或者模板要了不认识的角色时报错，不转发。
+pub fn attach(
+    headers: &mut HeaderMap,
+    auth: &ProxyAuth,
+    owner: &Owner,
+    role: Role,
+) -> Result<(), String> {
+    for (name, value) in auth.headers(owner, role).map_err(|e| e.to_string())? {
         let value = HeaderValue::from_bytes(value.as_bytes())
             .map_err(|_| format!("代加的请求头 {name} 的值写不进 HTTP"))?;
         // 同名的（请求头名不分大小写）全部换掉。
         headers.insert(name, value);
     }
-    let cookies = auth.cookies(owner);
+    let cookies = auth.cookies(owner, role).map_err(|e| e.to_string())?;
     if cookies.is_empty() {
         return Ok(());
     }
@@ -57,6 +63,49 @@ pub fn strip(headers: &mut HeaderMap, auth: &ProxyAuth) {
         auth.cookie_names()
             .any(|declared| declared.as_bytes().eq_ignore_ascii_case(name))
     });
+}
+
+/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
+pub(super) fn attach_credentials(
+    gateway: &super::Gateway,
+    route: &crate::plugin::manager::Route,
+    person: &super::Person,
+    headers: &mut hyper::HeaderMap,
+    langs: &crate::plugin::languages::Languages,
+    format: super::pages::Format,
+) -> Result<(), Box<axum::response::Response>> {
+    let Some(auth) = &route.proxy else {
+        return Ok(());
+    };
+    let identity = match gateway.identity_of(person) {
+        Ok(identity) => identity,
+        Err(e) => {
+            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
+            return Err(Box::new(super::pages::error(
+                hyper::StatusCode::FORBIDDEN,
+                "permission_denied",
+                &crate::l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
+                langs,
+                format,
+            )));
+        }
+    };
+    attach(headers, auth, &identity, person.role).map_err(|e| {
+        Box::new(super::pages::error(
+            hyper::StatusCode::INTERNAL_SERVER_ERROR,
+            "proxy_credentials",
+            &crate::l10n::text(
+                langs,
+                "gateway-proxy-sso-failed",
+                &[
+                    ("id", route.id.as_str().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+            langs,
+            format,
+        ))
+    })
 }
 
 /// 转发后：去掉响应里会把代加的凭据交给浏览器的头。

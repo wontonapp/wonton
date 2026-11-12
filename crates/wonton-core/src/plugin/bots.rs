@@ -285,12 +285,16 @@ impl PluginManager {
         let mut plugin_bots = store.load(id)?;
         // 同一个 Bot 重试安装时沿用账号；其他 Bot 的令牌不变。
         let existing = plugin_bots.bots.get(bot).cloned();
-        let taken: BTreeSet<String> = store
+        let mut taken: BTreeSet<String> = store
             .all()?
             .into_values()
             .flat_map(|bots| bots.bots.into_values())
             .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
             .collect();
+        self.reserve_friend_names(&mut taken);
+        if let Some(members) = self.person_members.get() {
+            taken.extend(members.list().into_iter().map(|member| member.username));
+        }
         let langs = self.owner_languages();
         let spec = BotSpec {
             localpart: &bot_localpart(id, bot),
@@ -350,13 +354,13 @@ impl PluginManager {
     }
 
     /// 注入给一个 Bot 的服务的 `WONTON_MATRIX_*`：经核心在插件网络里的别名访问 Matrix 客户端接口，
-    /// `WONTON_MATRIX_ALLOWED_USERS` 是它听的人（现在只有归属人一个人）。
+    /// `WONTON_MATRIX_ALLOWED_USERS` 是它听的人：归属人和已成立的联系人。
     pub(super) fn matrix_vars(&self, bot: &ProvisionedBot) -> MatrixVars {
         MatrixVars {
             homeserver: format!("http://{PLUGIN_MATRIX_HOST}:{}", self.cfg.gateway_port),
             user_id: bot.account.user_id.clone(),
             access_token: bot.access_token.clone(),
-            allowed_users: bot.owner.clone(),
+            allowed_users: self.allowed_users(bot.owner.clone(), &bot.account.user_id),
             home_room: bot.account.home_room.clone(),
         }
     }
@@ -414,7 +418,7 @@ impl PluginManager {
             homeserver: format!("http://{PLUGIN_MATRIX_HOST}:{}", self.cfg.gateway_port),
             user_id: entry.account.user_id.clone(),
             access_token: super::egress::PLACEHOLDER.to_owned(),
-            allowed_users: matrix.user_id(&owner),
+            allowed_users: self.allowed_users(matrix.user_id(&owner), &entry.account.user_id),
             home_room: entry.account.home_room.clone(),
         })
     }

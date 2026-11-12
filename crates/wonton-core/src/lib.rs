@@ -16,6 +16,7 @@ mod bot_activity;
 pub mod bot_media;
 
 pub mod config;
+pub mod contacts;
 pub mod device;
 pub mod entry_certificate;
 pub mod entry_compose;
@@ -43,5 +44,7 @@ pub mod peers;
 pub mod plugin;
 pub mod push;
 pub mod secret;
+pub mod share_identity;
+pub mod shares;
 pub mod tunnel;
 pub mod upgrade;

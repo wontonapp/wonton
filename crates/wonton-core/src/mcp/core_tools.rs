@@ -392,7 +392,7 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -433,7 +433,7 @@ async fn set_permission(
         .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
         .is_some();
     if cleared {
-        let outcome = run(Arc::clone(bus), SecretValues::new()).await;
+        let outcome = run(Arc::clone(bus), SecretValues::new(), Default::default()).await;
         let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
         bus.audit.record(&Record {
             caller: caller.id.as_str(),
@@ -489,7 +489,9 @@ async fn uninstall(
         .unwrap_or(false);
     let langs = bus.plugins.owner_languages();
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
-    let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+    let run = move |bus: Arc<Bus>,
+                    _secrets: SecretValues,
+                    _settings: wonton_protocol::SettingValues| async move {
         match bus
             .plugins
             .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())

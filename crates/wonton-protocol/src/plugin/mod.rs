@@ -29,7 +29,7 @@ pub use capability_deps::{
     ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
     UninstallRequest,
 };
-pub use forms::{PluginKind, PluginRuntime, PluginScope, plugin_scope_path};
+pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use owner_secrets::{
     OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView,
@@ -49,7 +49,7 @@ pub use settings::{
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
@@ -389,8 +389,9 @@ pub struct StoreItem {
     pub stars: Option<u32>,
     /// 装着的版本；没装时为空。
     pub installed_version: Option<String>,
-    /// 申请了高权限，商店里标出来。
-    pub high_permissions: bool,
+    /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
+    #[serde(default)]
+    pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
 }
@@ -453,6 +454,12 @@ pub struct PluginDetail {
     pub kind: PluginKind,
     #[serde(default)]
     pub runtime: PluginRuntime,
+    /// 核心按清单算出的安全档位（ADR-0080）；清单读不出来或旧核心不给时为空。
+    #[serde(default)]
+    pub security_tier: Option<SecurityTier>,
+    /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
+    #[serde(default)]
+    pub link_url: Option<String>,
     /// 只有主人能看到的安装范围；家人或未安装时为空。
     #[serde(default)]
     pub scope: Option<PluginScope>,

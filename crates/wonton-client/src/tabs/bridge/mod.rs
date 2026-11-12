@@ -8,9 +8,7 @@ mod types;
 
 use serde_json::{Value, json};
 use wonton_l10n::l10n;
-use wonton_protocol::{
-    AppearanceViewModel, CoreError, HomeStatus, PanelScope, PlacedTab, TabPage, TabRef,
-};
+use wonton_protocol::{AppearanceViewModel, CoreError, PanelScope, PlacedTab, TabPage, TabRef};
 
 use super::{TabsLink, placed_tab_ref};
 use crate::l10n::{CATALOG, language};
@@ -43,8 +41,8 @@ pub(crate) fn reselected_script() -> String {
     "window.dispatchEvent(new Event(\"wonton:tab-reselected\"));".to_owned()
 }
 
-pub(crate) fn connection_script(status: &HomeStatus) -> String {
-    let detail = json!({"connected": matches!(status, HomeStatus::Connected)});
+pub(crate) fn connection_script(connected: bool) -> String {
+    let detail = json!({"connected": connected});
     format!("window.dispatchEvent(new CustomEvent(\"wonton:connection\",{{detail:{detail}}}));")
 }
 

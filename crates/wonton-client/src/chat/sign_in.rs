@@ -84,6 +84,45 @@ impl ChatLink {
         Ok(session)
     }
 
+    /// 外部 Matrix 账号的槽位（ADR-0051）：只用登录时存下的状态和存储恢复，直连 homeserver，不经家里的代理。
+    /// 没有登录状态（或存储丢了）就只能重新登录这个账号，按被拒处理，不自己去登录。
+    pub(super) async fn sign_in_external(&self) -> Result<MatrixSession, (ChatFailure, String)> {
+        let lang = language();
+        let stored = self
+            .storage
+            .session()
+            .map_err(|e| (ChatFailure::Upstream, e.to_string()))?
+            .filter(|_| self.storage.has_store())
+            .ok_or_else(|| {
+                (
+                    ChatFailure::Unauthorized,
+                    l10n!(CATALOG, lang, "chat-sign-in-external-missing"),
+                )
+            })?;
+        let config = SessionConfig {
+            homeserver_url: stored.homeserver_url,
+            device_name: DEVICE_NAME.to_owned(),
+            store: StoreConfig::Sqlite {
+                path: self.storage.store_dir(),
+                passphrase: None,
+            },
+            proxy: None,
+        };
+        MatrixSession::restore(&config, stored.session)
+            .await
+            .map_err(|e| {
+                (
+                    failure(&e),
+                    l10n!(
+                        CATALOG,
+                        lang,
+                        "chat-sign-in-restore-failed",
+                        reason = e.to_string()
+                    ),
+                )
+            })
+    }
+
     /// 存下的登录状态，只要 `server_id` 这台服务器的。别的服务器的令牌拿到这里只会被拒，看着像这台设备被吊销了，那边的
     /// 设备密钥和房间密钥也用不上，所以连本地存储一起丢掉，页面上也不再留那台服务器的房间。
     fn session_on(&self, server_id: &str) -> Result<Option<StoredSession>, CoreError> {
@@ -103,7 +142,7 @@ impl ChatLink {
             view.problem = None;
             view.encryption.verification = DeviceVerification::Unknown;
             view.encryption.recovery = RecoveryStatus::Unknown;
-            super::recovery::update_reminder(&mut view.encryption);
+            super::recovery::refresh(&mut view.encryption);
         });
         Ok(None)
     }

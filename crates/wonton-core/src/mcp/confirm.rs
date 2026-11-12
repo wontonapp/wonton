@@ -122,6 +122,8 @@ pub struct Ticket {
     pub answer: Answer,
     /// 主人在卡片里填的密钥（ADR-0064）。
     pub secrets: SecretValues,
+    /// 主人在卡片里填的设置（ADR-0077）。
+    pub settings: wonton_protocol::SettingValues,
     /// 主人没回答这张卡片，是另一张卡片打开放行时段时一起放行的：那张卡片的 ID。
     pub window: Option<String>,
 }
@@ -132,6 +134,8 @@ pub struct Chosen {
     pub choice_id: Option<String>,
     /// 主人在卡片里填的密钥（ADR-0064）；别的卡片是空表。
     pub secrets: SecretValues,
+    /// 主人在卡片里填的设置（ADR-0077）；别的卡片是空表。
+    pub settings: wonton_protocol::SettingValues,
 }
 
 struct Slot {
@@ -238,6 +242,7 @@ impl Confirmations {
                     id: card.id,
                     answer,
                     secrets: chosen.secrets,
+                    settings: chosen.settings,
                     window,
                 })
             }
@@ -268,7 +273,7 @@ impl Confirmations {
             expires_at_ms: now_ms(created + self.ttl),
             plugin_id: draft.plugin_id,
             secret_inputs: draft.secret_inputs.clone(),
-            settings: None,
+            settings: draft.settings.clone(),
             window: None,
             requester: None,
             origin: None,
@@ -365,6 +370,7 @@ impl Confirmations {
             answer,
             choice_id,
             SecretValues::new(),
+            Default::default(),
             &Languages::from_header(None),
         )
     }
@@ -376,6 +382,7 @@ impl Confirmations {
         answer: Answer,
         choice_id: Option<&str>,
         secrets: SecretValues,
+        settings: wonton_protocol::SettingValues,
         langs: &Languages,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
@@ -440,6 +447,7 @@ impl Confirmations {
             answer,
             choice_id: choice_id.map(str::to_owned),
             secrets,
+            settings,
         };
         if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
@@ -479,6 +487,7 @@ impl Confirmations {
             answer: Answer::Reject,
             choice_id: Some(SUPERSEDED.to_owned()),
             secrets: SecretValues::new(),
+            settings: Default::default(),
         });
         self.publish(id).await;
         true

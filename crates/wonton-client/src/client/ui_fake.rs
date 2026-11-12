@@ -48,6 +48,7 @@ impl ClientCore {
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
             peers: watch::Sender::new(current.peers.borrow().clone()),
             friends: watch::Sender::new(current.friends.borrow().clone()),
+            bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             settings: watch::Sender::new(current.settings.borrow().clone()),
         };
         drop(current);
@@ -103,6 +104,8 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         recovery_next_step: RecoveryNextStep::None,
         verification_flow: None,
     };
+    // 和真核心同一份推导，备份页在假核心下也按真值表显示。
+    crate::chat::recovery::refresh(&mut chat.encryption);
     chat.installing_bots.clear();
     chat.rooms = vec![RoomRow {
         room_id: ROOM_ID.into(),

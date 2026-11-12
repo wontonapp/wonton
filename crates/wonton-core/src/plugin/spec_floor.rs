@@ -17,6 +17,8 @@ enum Added {
     /// `x-wonton` 下的一个字段，按路径找；路径里的 `"*"` 匹配所在表里的任意一个键，报错写实际的键
     /// （如按名字的表 `secrets.<名字>`）。
     Field(&'static [&'static str]),
+    /// `x-wonton` 下一个字符串字段的新取值，如 `runtime: static_web`。
+    Value(&'static str, &'static str),
     /// `x-wonton.permissions` 里的一项。
     Permission(&'static str),
     /// 某个服务里的一个 compose 字段。
@@ -27,6 +29,8 @@ enum Added {
     NetworkModeService,
     /// `security_opt` 里的 `no-new-privileges` 不用申请 `security.opt`。
     NoNewPrivilegesWithoutPermission,
+    /// 网页代登录模板里的 `{role}`。
+    ProxyRole,
 }
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
@@ -34,6 +38,7 @@ const V0_8: SpecVersion = SpecVersion::new(0, 8);
 const V0_9: SpecVersion = SpecVersion::new(0, 9);
 const V0_10: SpecVersion = SpecVersion::new(0, 10);
 const V0_11: SpecVersion = SpecVersion::new(0, 11);
+const V0_12: SpecVersion = SpecVersion::new(0, 12);
 
 /// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
 const TABLE: &[(SpecVersion, Added)] = &[
@@ -60,6 +65,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
     (V0_9, Added::Field(&["webui", "friends"])),
+    (V0_9, Added::ProxyRole),
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
@@ -67,6 +73,11 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),
+    (V0_12, Added::Value("runtime", "static_web")),
+    (V0_12, Added::Value("runtime", "link")),
+    (V0_12, Added::Field(&["static_web"])),
+    (V0_12, Added::Field(&["link"])),
+    (V0_12, Added::Field(&["provides", "*", "mount"])),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -125,6 +136,21 @@ fn places(
             walk(manifest, path, &mut String::from("x-wonton"), &mut found);
             found
         }
+        Added::ProxyRole => ["headers", "cookies"]
+            .into_iter()
+            .flat_map(|kind| {
+                manifest["webui"]["proxy"][kind]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter(|(_, value)| value.as_str().is_some_and(|v| v.contains("{role}")))
+                    .map(move |(name, _)| format!("x-wonton.webui.proxy.{kind}.{name}"))
+            })
+            .collect(),
+        Added::Value(field, value) => (manifest[*field].as_str() == Some(*value))
+            .then(|| format!("x-wonton.{field}: {value}"))
+            .into_iter()
+            .collect(),
         Added::Permission(name) => permissions
             .contains(name)
             .then(|| format!("permission {name}"))

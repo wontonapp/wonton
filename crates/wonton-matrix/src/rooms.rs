@@ -116,6 +116,8 @@ pub struct RoomInfo {
 /// 房间的最新一条消息。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LatestMessage {
+    /// 发送者的 Matrix 用户 ID。
+    pub sender_id: OwnedUserId,
     /// 发送者的显示名。
     pub sender_name: String,
     /// 是否由本账号发出。
@@ -635,8 +637,10 @@ async fn latest_message(room: &Room) -> Option<LatestMessage> {
         } => (timestamp, sender, true, profile, content),
         LatestEventValue::RemoteInvite { .. } | LatestEventValue::None => return None,
     };
+    let sender_name = profile_name(&profile, &sender);
     Some(LatestMessage {
-        sender_name: profile_name(&profile, &sender),
+        sender_id: sender,
+        sender_name,
         is_own,
         body: match &content {
             TimelineItemContent::MsgLike(message) => body(&message.kind),

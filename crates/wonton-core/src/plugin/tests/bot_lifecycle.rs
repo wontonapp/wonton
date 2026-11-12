@@ -411,7 +411,7 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &super::langs(),
     )
     .unwrap();
-    m.upgrade_checked(package, &granted(), &[], false)
+    m.upgrade_checked(package, &granted(), &[], false, Default::default())
         .await
         .unwrap();
     assert_eq!(env_map(&target), before);
@@ -736,5 +736,36 @@ async fn a_home_bot_permission_is_not_supported_yet() {
     assert!(
         matches!(refused, InstallError::Unsupported(ref e) if e.contains("storage.home:read")),
         "{refused}"
+    );
+}
+
+/// 安装失败回滚、账号留给下次时，这次建的 Bot 数据也留下：init 在服务器上建的加密身份，私钥只在这里，删了
+/// 下次就解不开（Tuwunel 删不掉也换不掉那个身份）。重试沿用同一个账号和同一份数据。
+#[tokio::test]
+async fn a_failed_install_keeps_the_bot_data_for_the_same_account_next_time() {
+    let bed = Bed::start().await;
+    let m = bed.manager();
+    let bot = bot_container("default");
+    let failed = json!({"Status": "exited", "Running": false, "ExitCode": 1});
+    bed.docker.set_state(&bot, failed);
+    m.install(&agent(), &granted_with_tools(), super::langs())
+        .await
+        .unwrap_err();
+    let first = env_of_container(&bed.docker, &bot);
+    let data = bot_data_dir(&bed, "default");
+    assert!(data.is_dir(), "回滚留下这次建的 Bot 数据目录");
+    // 插件的 init 写下的加密私钥。
+    std::fs::write(data.join("crypto.key"), "private").unwrap();
+
+    bed.docker
+        .set_state(&bot, json!({"Status": "running", "Running": true}));
+    m.install(&agent(), &granted_with_tools(), super::langs())
+        .await
+        .unwrap();
+    let second = env_of_container(&bed.docker, &bot);
+    assert_eq!(second["USER"], first["USER"]);
+    assert_eq!(
+        std::fs::read_to_string(data.join("crypto.key")).unwrap(),
+        "private"
     );
 }

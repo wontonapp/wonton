@@ -60,6 +60,7 @@ internal fun ServerApp(
     onRoomRequestHandled: () -> Unit,
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
+    requestedAgentText: AgentTextRequest? = null,
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -78,9 +79,20 @@ internal fun ServerApp(
         requestedRoom?.let { navigation.openRoom(it.roomId); onRoomRequestHandled() }
     }
     AppLinkEffect(requestedLink, navigation)
+    AskAgentEffect(requestedAgentText, navigation)
     AppShortcutsEffect(tabs)
     WontonTheme(appearance) {
-        CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft) {
+        val proxyRoute = pluginProxyRoute(home, plugins)
+        val account = LocalServers.current.servers.firstOrNull { it.current }?.id
+        LaunchedEffect(account, plugins.viewModel.installed) {
+            if (account != null && androidx.webkit.WebViewFeature.isFeatureSupported(
+                    androidx.webkit.WebViewFeature.MULTI_PROFILE)) {
+                configureCrossOriginIsolatedAllowlist(plugins.viewModel.installed?.plugins.orEmpty(),
+                    pluginProfileName(account))
+            }
+        }
+        CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft,
+            LocalPluginProxy provides proxyRoute, LocalPluginAccount provides account) {
             PluginsEffects(plugins)
             OpenDevWebEffect(devWebUrl, plugins, tabs)
             if (LocalServers.current.adding) {

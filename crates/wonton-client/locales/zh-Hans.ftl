@@ -108,6 +108,7 @@ onboarding-review-no-failure = 这一项没有失败
 
 # 登录相关。$reason 是 Matrix SDK 的原始错误。
 chat-sign-in-restore-failed = 恢复 Matrix 会话失败：{ $reason }
+chat-sign-in-external-missing = 这台手机上已经没有这个 Matrix 账号的登录状态，请重新登录。
 chat-sign-in-no-connection-info = 还没有家里服务器的连接信息
 chat-sign-in-login-failed = 登录 Matrix 失败：{ $reason }
 chat-sign-in-no-saved-session = 登录后取不到登录状态
@@ -318,6 +319,8 @@ home-port-mapping-save-failed = 端口映射的开关存不下：{ $error }
 tabs-view-always-pinned = 聊天和应用已经固定到底栏。
 tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作插件页面。
 tabs-view-unknown-plugin = 没有这个插件。
+# $error 是本地存储的原始错误。
+tabs-storage-problem = 底栏设置存不下，下次启动可能恢复旧状态：{ $error }
 tabs-view-plugin-no-page = 插件没有可打开的网页。
 tabs-page-not-placed = 这个页面不在面板里。
 
@@ -443,6 +446,13 @@ servers-name-required = 名字不能为空
 servers-storage-failed = 读写不了 { $path }：{ $reason }
 # 壳把不认识的操作分给服务器列表时显示。
 servers-invalid-action = 不是服务器列表操作
+matrix-login-not-current = 这次登录已经结束，或者已经换成了新的一次。
+matrix-login-wrong-step = 这次登录不在这一步。
+matrix-login-method-not-offered = 这台服务器不提供这种登录方式。
+matrix-login-device-name-required = 请填这台设备的名字。
+matrix-login-invalid-user-id = 请填完整的 Matrix ID，比如 @name:matrix.org。
+matrix-login-password-required = 请填密码。
+matrix-login-redirect-not-allowed = App 收不到发往这个地址的登录回调。
 
 # 会话列表（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 会话标题不能为空
@@ -530,6 +540,14 @@ plugins-core-upgrade-not-cancellable = 现在不能取消
 # $reason 是连接问题的原始详情。
 plugins-core-upgrade-start-uncertain = 不确定发起了没有，连上后再看一下：{ $reason }
 
+# 兼容检查（ADR-0085）的详情：每个原因一行，{ $raw } 是清单里的原值。客户端核心按
+# App 的语言写，升级页列在新版本读不了的应用下面。
+plugins-core-upgrade-compat-spec = 它按规范 { $raw } 写成，新版本不支持：升级后会被标为异常。
+plugins-core-upgrade-compat-feature = 它的清单用了新版本不认识的 { $raw }：升级后会被标为异常。
+plugins-core-upgrade-compat-capability = 它依赖能力 { $raw }，新版本不提供：升级后会被标为异常。
+plugins-core-upgrade-compat-other = 新版本读不了这个应用：升级后会被标为异常。
+plugins-core-upgrade-compat-other-raw = 新版本读不了这个应用的 { $raw }：升级后会被标为异常。
+
 # 资料这一步：名字或邮箱为什么存不了。$max 是名字最多几个字。
 onboarding-profile-name-empty = 名字不能为空
 onboarding-profile-name-too-long = 名字太长：最多 { $max } 个字
@@ -601,3 +619,5 @@ tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
 panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }
+
+contacts-invalid-action = 不是 Bot 联系人操作。

@@ -402,6 +402,16 @@ impl Peers {
         self.own.to_wire(&self.tunnel, (self.owner_display_name)())
     }
 
+    /// 一台服务器在联系人看来的样子（ADR-0050）：已配对时是转发组件给的状态，没配对或配对已经移除时为空。
+    pub fn contact_reach(&self, server_name: &str) -> Option<PeerStatus> {
+        let paired = self
+            .lock()
+            .peers
+            .get(server_name)
+            .is_some_and(|record| record.phase == Phase::Paired);
+        paired.then(|| self.forwarded_status(server_name))
+    }
+
     /// 本机的码：令牌一直是这一张，中继地址按当时的取。
     pub fn issue_code(&self) -> PeerCode {
         let inner = self.lock();
@@ -626,15 +636,18 @@ impl Peers {
         } else {
             request.owner_display_name.clone()
         };
-        let text = crate::l10n::text(
-            &langs,
-            "peers-new-request",
-            &[
-                ("owner", who.into()),
-                ("server", request.server_name.as_str().into()),
-            ],
-        ) + "\n"
-            + &wonton_protocol::AppLink::Peers.to_url();
+        let text = format!(
+            "{}\n{}",
+            crate::l10n::text(
+                &langs,
+                "peers-new-request",
+                &[
+                    ("owner", who.into()),
+                    ("server", request.server_name.as_str().into()),
+                ],
+            ),
+            wonton_protocol::AppLink::Peers.to_url()
+        );
         let server_name = request.server_name.clone();
         tokio::spawn(async move {
             let content = serde_json::json!({"msgtype": "m.text", "body": text});

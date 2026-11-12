@@ -366,6 +366,7 @@ impl Setup {
             answer,
             None,
             secrets,
+            Default::default(),
             &Languages::from_header(None),
         )
     }

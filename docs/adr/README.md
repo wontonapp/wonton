@@ -98,3 +98,6 @@
 | [0077](0077-plugin-settings.md) | 插件设置：Schema 定义，核心校验，只重建用到的服务 |
 | [0079](0079-agent-plugins-monorepo.md) | ACP Agent 插件：一个仓库、一个底座，每家一个子目录 |
 | [0080](0080-static-web-plugins.md) | 静态网页插件：文件交给静态托管插件，核心只存文件、转发和记账；外部网页只存一个地址 |
+| [0081](0081-local-agent-host.md) | 用户自己电脑上的 Agent：电脑只当远端 ACP 运行时，桥和令牌留在服务器 |
+| [0082](0082-agent-run-status.md) | Agent 进度用一条状态消息：按 MSC4564，每轮一条，编辑推进到“等你确认”“完成”“失败” |
+| [0085](0085-upgrade-plugin-compat.md) | 核心升级前列出会失效的插件：目标镜像自证的兼容检查 |

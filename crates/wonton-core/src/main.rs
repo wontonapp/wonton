@@ -113,7 +113,7 @@ async fn open_peers_and_federation(
     let forwarder = FederationForwarder::bind(
         tunnel.endpoint.clone(),
         listen,
-        Arc::new(move |name: &str| lookup.lookup(name)),
+        Arc::new(move |name: &str| sharing_start::paired_target(&lookup, name)),
         peers.paired_names(),
         FEDERATION_PING_INTERVAL,
         FEDERATION_PING_TIMEOUT,
@@ -133,6 +133,7 @@ async fn open_peers_and_federation(
 fn extra_protocols(
     peers: Option<Arc<peers::Peers>>,
     federation: Option<FederationProtocol>,
+    sharing: sharing_start::LimitedShares,
 ) -> Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> {
     let mut extra: Vec<(&'static [u8], Box<dyn iroh::protocol::DynProtocolHandler>)> = Vec::new();
     if let (Some(protocol), Some(peers)) = (federation, peers) {
@@ -144,6 +145,7 @@ fn extra_protocols(
             ))) as _,
         ));
     }
+    extra.push((wonton_protocol::SHARE_ALPN, Box::new(sharing) as _));
     extra
 }
 
@@ -155,6 +157,7 @@ use mailbox_startup::{open_mailpit, start_mailpit};
 mod pair_command;
 mod plugin_command;
 mod push_listener;
+mod sharing_start;
 
 /// 构建它的提交号：开发镜像构建时由 `deploy/dev/core/dev.sh` 传入，直接 `cargo build` 时没有。
 const BUILD_COMMIT: &str = match option_env!("WONTON_BUILD_COMMIT") {
@@ -285,6 +288,7 @@ fn owner_token(cfg: &Config) -> anyhow::Result<String> {
     Ok(token)
 }
 
+#[allow(clippy::too_many_lines)] // 启动顺序就是一串有先后的接线，拆开会把顺序藏进多个函数。
 async fn serve() -> anyhow::Result<()> {
     tracing::info!(commit = %BUILD_COMMIT, "核心启动");
     let cfg = Config::from_env()?.lock_owner()?;
@@ -303,7 +307,9 @@ async fn serve() -> anyhow::Result<()> {
     let listener = open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let (http, system_http, hydra, matrix) = serve::open_clients(&cfg, &engine).await?;
+    let sharing_registries = sharing_start::Registries::open(&cfg)?;
+    let (http, system_http, hydra, matrix) =
+        serve::open_clients(&cfg, &engine, &sharing_registries).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());
     let (manager, images) = start_plugin_manager(
         &cfg,
@@ -313,6 +319,7 @@ async fn serve() -> anyhow::Result<()> {
         hydra_for_manager,
         &matrix,
         owner.clone(),
+        &sharing_registries,
         mailpit.clone(),
     )
     .await?;
@@ -340,18 +347,19 @@ async fn serve() -> anyhow::Result<()> {
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
+    let forwarder = _forwarder.map(Arc::new);
+    let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
-    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
-        wonton_core::entry_runtime::spawn(
-            dir,
-            &cfg.data_dir,
-            engine.clone(),
-            container.clone(),
-            notices.clone(),
-        )?;
-    }
-    let push = open_push(&cfg, &tunnel, &manager)?;
+    spawn_entry_runtime(&cfg, &engine, &notices)?;
+    let push = Arc::new(open_push(&cfg, &tunnel, &manager)?);
+    let contacts = serve::open_contacts(
+        &cfg,
+        (&manager, &members, &owner),
+        Some(push.clone()),
+        matrix.as_ref(),
+        peers.as_ref(),
+    )?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(
@@ -370,7 +378,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_people_limiter(Arc::new(gateway::people_limits::PeopleLimiter::new(
             cfg.people_limits,
         )))
-        .with_push(Some(Arc::new(push)))
+        .with_push(Some(push))
         .with_mcp(Some(bus.endpoint()))
         .with_notices(notices.clone())
         .with_files(Some(files))
@@ -379,7 +387,9 @@ async fn serve() -> anyhow::Result<()> {
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone())
         .with_friends(Some(friends))
-        .with_federation_blocks(federation_blocks),
+        .with_contacts(contacts)
+        .with_federation_blocks(federation_blocks)
+        .with_sharing(Some(sharing)),
     );
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
@@ -596,6 +606,24 @@ fn mcp_bus(
     (bus, confirmations)
 }
 
+/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
+fn spawn_entry_runtime(
+    cfg: &Config,
+    engine: &Engine,
+    notices: &Option<Arc<NoticeRoom>>,
+) -> anyhow::Result<()> {
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
+    Ok(())
+}
+
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
     let path = cfg.core_state_dir().join("push.json");
     Push::open(&path, tunnel.devices.clone(), tunnel.endpoint.id())
@@ -646,6 +674,7 @@ async fn start_plugin_manager(
     hydra: Option<Hydra>,
     matrix: &Option<Arc<Matrix>>,
     owner: Arc<OwnerStore>,
+    sharing: &sharing_start::Registries,
     mailpit: Option<Arc<wonton_core::mailbox::Component>>,
 ) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
     let store = Store::open(cfg.core_state_dir().join("plugins"))?;
@@ -671,6 +700,7 @@ async fn start_plugin_manager(
         )
         .with_mailpit(mailpit),
     );
+    manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
     manager.spawn_registry_mirror_probe();
     // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。
     manager.host_name().await;

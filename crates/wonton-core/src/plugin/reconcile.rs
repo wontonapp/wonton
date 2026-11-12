@@ -27,14 +27,23 @@ pub(super) struct Containers {
     state: ContainersState,
     /// 能用的服务：它的每个容器（Bot 服务的每份）都在运行、健康检查没失败。一次性服务不在里面。
     serving: BTreeSet<String>,
-    /// 不健康的容器（或其他问题）的原因，按请求的语言写好，一个容器一条。
+    /// 不健康的容器（或其他问题）的原因，按请求的语言写好，一个容器一条。容器不在不算这里的问题：
+    /// 全都不在时插件算停着，启动时照安装的路径重建（见 start.rs）。
     failures: Vec<String>,
+    /// 不在的容器的原因，一条一个。插件还在跑时它们也进 `failures`（插件没死，但少了服务）；
+    /// 启动看到它们就先照安装的路径重建，不看别的核对结果（见 start.rs）。
+    missing: Vec<String>,
 }
 
 impl Containers {
     /// 现在能用的服务：网关、MCP 和模型按它决定异常时照不照常给路由。
     pub(super) fn serving(&self) -> &BTreeSet<String> {
         &self.serving
+    }
+
+    /// 有容器不在：启动时不看别的核对结果，先按安装的路径重建（见 start.rs）。
+    pub(super) fn has_missing(&self) -> bool {
+        !self.missing.is_empty()
     }
 
     /// 都就绪时为空；有不健康的就把它们一起列在原因里。
@@ -167,6 +176,7 @@ impl PluginManager {
         let mut healthy = true;
         let mut stopped = Vec::new();
         let mut failures = Vec::new();
+        let mut missing = Vec::new();
         let mut served = BTreeSet::new();
         // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
         let instances = |service: &str| -> Vec<String> {
@@ -201,6 +211,10 @@ impl PluginManager {
                         serving = false;
                         stopped.push(name);
                     }
+                    Checked::Missing(reason) => {
+                        serving = false;
+                        missing.push(reason);
+                    }
                     Checked::Failed(reason) => {
                         serving = false;
                         failures.push(reason);
@@ -211,16 +225,31 @@ impl PluginManager {
                 served.insert(service.to_owned());
             }
         }
-        let state = ContainersState::Running(if healthy {
-            Health::Healthy
+        // 容器不在不算停止以外的问题：常驻容器一个都没在跑、也没有真问题时（全不在的、和停着的混着的
+        // 都算）插件算停着，不是异常——启动按已安装记录照安装的路径重建（issue #126），App 的启动按钮
+        // 照常出现。只有它还缺在运行中间时才如实进原因：插件没死，但少了服务。
+        if running > 0 {
+            failures.extend(missing.iter().cloned());
+        }
+        let state = if running > 0 || (stopped.is_empty() && missing.is_empty()) {
+            // 有在跑的容器，或没有常驻容器可看（只有一次性服务）：照原有的分类。
+            ContainersState::Running(if healthy {
+                Health::Healthy
+            } else {
+                Health::Unknown
+            })
+        } else if failures.is_empty() {
+            ContainersState::Stopped
         } else {
-            Health::Unknown
-        });
+            // 没有在跑的容器，却有真问题（不健康、OOM、一次性服务失败）：照旧按异常核对报。
+            ContainersState::Running(Health::Unknown)
+        };
         if stopped.is_empty() {
             return Ok(Containers {
                 state,
                 serving: served,
                 failures,
+                missing,
             });
         }
         if running == 0 && failures.is_empty() {
@@ -228,6 +257,7 @@ impl PluginManager {
                 state: ContainersState::Stopped,
                 serving: served,
                 failures,
+                missing,
             });
         }
         if running > 0 {
@@ -241,6 +271,7 @@ impl PluginManager {
             state,
             serving: served,
             failures,
+            missing,
         })
     }
 

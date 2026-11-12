@@ -321,6 +321,7 @@ impl PluginsLink {
                     reason: problem.reason,
                     message: problem.message,
                 },
+                waiting_for_connection: false,
                 added_tools: None,
                 id,
             });
@@ -474,6 +475,7 @@ mod tests {
             version: "1.0.0".into(),
             kind: PluginKind::App,
             runtime: Default::default(),
+            security_tier: None,
             scope_choices: Vec::new(),
             has_bot: false,
             icon: None,

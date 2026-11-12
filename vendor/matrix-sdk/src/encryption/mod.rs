@@ -88,7 +88,7 @@ use ruma::{
 };
 use serde::{Deserialize, de::Error as _};
 use tasks::BundleReceiverTask;
-use tokio::sync::{Mutex, RwLockReadGuard};
+use tokio::sync::{Mutex, OwnedRwLockWriteGuard, RwLockReadGuard};
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 use tracing::{Instrument, Span, debug, error, instrument, warn};
 use url::Url;
@@ -182,8 +182,10 @@ pub async fn export_secrets_bundle_from_store(
     use matrix_sdk_base::crypto::store::CryptoStore;
 
     let store = matrix_sdk_sqlite::SqliteCryptoStore::open(database_path, passphrase).await?;
-    let account =
-        store.load_account().await.map_err(|e| BundleExportError::StoreError(e.into()))?;
+    let account = store
+        .load_account()
+        .await
+        .map_err(|e| BundleExportError::StoreError(e.into()))?;
 
     if let Some(account) = account {
         let machine = OlmMachineBuilder::new(&account.user_id, &account.device_id)
@@ -339,6 +341,9 @@ pub struct CrossSigningResetHandle {
     signatures_request: UploadSignaturesRequest,
     auth_type: CrossSigningResetAuthType,
     is_cancelled: Mutex<bool>,
+    /// Wonton patch: keeps `/keys/query` on hold until the new keys are uploaded or the handle is
+    /// dropped; see `ClientLocks::cross_signing_reset_lock`.
+    reset_guard: Mutex<Option<OwnedRwLockWriteGuard<()>>>,
 }
 
 impl CrossSigningResetHandle {
@@ -355,6 +360,7 @@ impl CrossSigningResetHandle {
             signatures_request,
             auth_type,
             is_cancelled: Mutex::new(false),
+            reset_guard: Mutex::new(None),
         }
     }
 
@@ -385,6 +391,7 @@ impl CrossSigningResetHandle {
                 );
                 while let Err(e) = self.client.send(upload_request.clone()).await {
                     if *self.is_cancelled.lock().await {
+                        self.reset_guard.lock().await.take();
                         return Ok(());
                     }
 
@@ -409,6 +416,7 @@ impl CrossSigningResetHandle {
                 }
 
                 self.client.send(self.signatures_request.clone()).await?;
+                self.reset_guard.lock().await.take();
 
                 Ok(())
             },
@@ -495,12 +503,12 @@ impl FromStr for DuplicateOneTimeKeyErrorMessage {
         // by a `;` character.
         let mut split = s.split_terminator(';');
 
-        let old_key = split
-            .next()
-            .ok_or(serde_json::Error::custom("Old key is missing in the error message"))?;
-        let new_key = split
-            .next()
-            .ok_or(serde_json::Error::custom("New key is missing in the error message"))?;
+        let old_key = split.next().ok_or(serde_json::Error::custom(
+            "Old key is missing in the error message",
+        ))?;
+        let new_key = split.next().ok_or(serde_json::Error::custom(
+            "New key is missing in the error message",
+        ))?;
 
         // Now we remove the lengthy prefix from the part containing the old key, we
         // should be left with just the JSON of the signed key.
@@ -570,9 +578,14 @@ impl Client {
     ) -> Result<get_keys::v3::Response> {
         let request = assign!(get_keys::v3::Request::new(), { device_keys });
 
+        // Wonton patch: see `ClientLocks::cross_signing_reset_lock`. Held until the response is
+        // processed, so a reset waits for queries already on the wire.
+        let _reset = self.locks().cross_signing_reset_lock.read().await;
         let response = self.send(request).await?;
         self.mark_request_as_sent(request_id, &response).await?;
-        self.encryption().update_state_after_keys_query(&response).await;
+        self.encryption()
+            .update_state_after_keys_query(&response)
+            .await;
 
         Ok(response)
     }
@@ -658,7 +671,10 @@ impl Client {
             .with_send_progress_observable(send_progress)
             .await?;
 
-        Ok(Some((MediaSource::Encrypted(Box::new(file)), thumbnail_info)))
+        Ok(Some((
+            MediaSource::Encrypted(Box::new(file)),
+            thumbnail_info,
+        )))
     }
 
     /// Claim one-time keys creating new Olm sessions.
@@ -766,7 +782,8 @@ impl Client {
 
         match r.request() {
             AnyOutgoingRequest::KeysQuery(request) => {
-                self.keys_query(r.request_id(), request.device_keys.clone()).await?;
+                self.keys_query(r.request_id(), request.device_keys.clone())
+                    .await?;
             }
             AnyOutgoingRequest::KeysUpload(request) => {
                 let response = self.keys_upload(r.request_id(), request).await;
@@ -928,8 +945,9 @@ impl Client {
 
         // Find out the actual user devices from their name/wildcard
         for (user_id, recipient_device_ids) in recipients {
-            let (devices, unknown_devices) =
-                self.resolve_recipient_devices(&user_id, recipient_device_ids).await?;
+            let (devices, unknown_devices) = self
+                .resolve_recipient_devices(&user_id, recipient_device_ids)
+                .await?;
             recipient_devices.extend(devices);
             if !unknown_devices.is_empty() {
                 failures.insert(user_id, unknown_devices);
@@ -1006,8 +1024,10 @@ impl Client {
 
             // Let's now find any devices that are part of the recipient_device_ids list but
             // were not found in our store.
-            let missing_devices =
-                requested_device_ids.difference(&found_device_ids).map(ToOwned::to_owned).collect();
+            let missing_devices = requested_device_ids
+                .difference(&found_device_ids)
+                .map(ToOwned::to_owned)
+                .collect();
 
             Ok((devices, missing_devices))
         }
@@ -1052,12 +1072,20 @@ impl Encryption {
     /// Get the public ed25519 key of our own device. This is usually what is
     /// called the fingerprint of the device.
     pub async fn ed25519_key(&self) -> Option<String> {
-        self.client.olm_machine().await.as_ref().map(|o| o.identity_keys().ed25519.to_base64())
+        self.client
+            .olm_machine()
+            .await
+            .as_ref()
+            .map(|o| o.identity_keys().ed25519.to_base64())
     }
 
     /// Get the public Curve25519 key of our own device.
     pub async fn curve25519_key(&self) -> Option<Curve25519PublicKey> {
-        self.client.olm_machine().await.as_ref().map(|o| o.identity_keys().curve25519)
+        self.client
+            .olm_machine()
+            .await
+            .as_ref()
+            .map(|o| o.identity_keys().curve25519)
     }
 
     /// Get the current device creation timestamp.
@@ -1108,8 +1136,9 @@ impl Encryption {
         bundle: &SecretsBundle,
     ) -> Result<(), SecretImportError> {
         let olm_machine = self.client.olm_machine().await;
-        let olm_machine =
-            olm_machine.as_ref().expect("This should only be called once we have an OlmMachine");
+        let olm_machine = olm_machine
+            .as_ref()
+            .expect("This should only be called once we have an OlmMachine");
 
         olm_machine.store().import_secrets_bundle(bundle).await
     }
@@ -1210,16 +1239,25 @@ impl Encryption {
         let olm = self.client.olm_machine().await;
         let olm = olm.as_ref()?;
         #[allow(clippy::bind_instead_of_map)]
-        olm.get_verification(user_id, flow_id).and_then(|v| match v {
-            matrix_sdk_base::crypto::Verification::SasV1(sas) => {
-                Some(SasVerification { inner: sas, client: self.client.clone() }.into())
-            }
-            #[cfg(feature = "qrcode")]
-            matrix_sdk_base::crypto::Verification::QrV1(qr) => {
-                Some(verification::QrVerification { inner: qr, client: self.client.clone() }.into())
-            }
-            _ => None,
-        })
+        olm.get_verification(user_id, flow_id)
+            .and_then(|v| match v {
+                matrix_sdk_base::crypto::Verification::SasV1(sas) => Some(
+                    SasVerification {
+                        inner: sas,
+                        client: self.client.clone(),
+                    }
+                    .into(),
+                ),
+                #[cfg(feature = "qrcode")]
+                matrix_sdk_base::crypto::Verification::QrV1(qr) => Some(
+                    verification::QrVerification {
+                        inner: qr,
+                        client: self.client.clone(),
+                    }
+                    .into(),
+                ),
+                _ => None,
+            })
     }
 
     /// Get a `VerificationRequest` object for the given user with the given
@@ -1233,7 +1271,10 @@ impl Encryption {
         let olm = olm.as_ref()?;
 
         olm.get_verification_request(user_id, flow_id)
-            .map(|r| VerificationRequest { inner: r, client: self.client.clone() })
+            .map(|r| VerificationRequest {
+                inner: r,
+                client: self.client.clone(),
+            })
     }
 
     /// Get a specific device of a user.
@@ -1275,9 +1316,14 @@ impl Encryption {
         device_id: &DeviceId,
     ) -> Result<Option<Device>, CryptoStoreError> {
         let olm = self.client.olm_machine().await;
-        let Some(machine) = olm.as_ref() else { return Ok(None) };
+        let Some(machine) = olm.as_ref() else {
+            return Ok(None);
+        };
         let device = machine.get_device(user_id, device_id, None).await?;
-        Ok(device.map(|d| Device { inner: d, client: self.client.clone() }))
+        Ok(device.map(|d| Device {
+            inner: d,
+            client: self.client.clone(),
+        }))
     }
 
     /// A convenience method to retrieve your own device from the store.
@@ -1288,9 +1334,16 @@ impl Encryption {
     /// This will always return a device, unless you are not logged in.
     pub async fn get_own_device(&self) -> Result<Option<Device>, CryptoStoreError> {
         let olm = self.client.olm_machine().await;
-        let Some(machine) = olm.as_ref() else { return Ok(None) };
-        let device = machine.get_device(machine.user_id(), machine.device_id(), None).await?;
-        Ok(device.map(|d| Device { inner: d, client: self.client.clone() }))
+        let Some(machine) = olm.as_ref() else {
+            return Ok(None);
+        };
+        let device = machine
+            .get_device(machine.user_id(), machine.device_id(), None)
+            .await?;
+        Ok(device.map(|d| Device {
+            inner: d,
+            client: self.client.clone(),
+        }))
     }
 
     /// Get a map holding all the devices of an user.
@@ -1328,7 +1381,10 @@ impl Encryption {
             .get_user_devices(user_id, None)
             .await?;
 
-        Ok(UserDevices { inner: devices, client: self.client.clone() })
+        Ok(UserDevices {
+            inner: devices,
+            client: self.client.clone(),
+        })
     }
 
     /// Get the E2EE identity of a user from the crypto store.
@@ -1371,7 +1427,9 @@ impl Encryption {
         user_id: &UserId,
     ) -> Result<Option<UserIdentity>, CryptoStoreError> {
         let olm = self.client.olm_machine().await;
-        let Some(olm) = olm.as_ref() else { return Ok(None) };
+        let Some(olm) = olm.as_ref() else {
+            return Ok(None);
+        };
         let identity = olm.get_identity(user_id, None).await?;
 
         Ok(identity.map(|i| UserIdentity::new(self.client.clone(), i)))
@@ -1416,10 +1474,14 @@ impl Encryption {
     /// ```
     pub async fn request_user_identity(&self, user_id: &UserId) -> Result<Option<UserIdentity>> {
         let olm = self.client.olm_machine().await;
-        let Some(olm) = olm.as_ref() else { return Ok(None) };
+        let Some(olm) = olm.as_ref() else {
+            return Ok(None);
+        };
 
         let (request_id, request) = olm.query_keys_for_users(iter::once(user_id));
-        self.client.keys_query(&request_id, request.device_keys).await?;
+        self.client
+            .keys_query(&request_id, request.device_keys)
+            .await?;
 
         let identity = olm.get_identity(user_id, None).await?;
         Ok(identity.map(|i| UserIdentity::new(self.client.clone(), i)))
@@ -1611,6 +1673,14 @@ impl Encryption {
     /// # anyhow::Ok(()) };
     /// ```
     pub async fn reset_cross_signing(&self) -> Result<Option<CrossSigningResetHandle>> {
+        // Wonton patch: taken before the Olm machine, in the same order as `keys_query`.
+        let reset_guard = self
+            .client
+            .locks()
+            .cross_signing_reset_lock
+            .clone()
+            .write_owned()
+            .await;
         let olm = self.client.olm_machine().await;
         let olm = olm.as_ref().ok_or(Error::NoOlmMachine)?;
 
@@ -1635,12 +1705,14 @@ impl Encryption {
             if let Ok(Some(auth_type)) = CrossSigningResetAuthType::new(&error) {
                 let client = self.client.clone();
 
-                Ok(Some(CrossSigningResetHandle::new(
+                let mut handle = CrossSigningResetHandle::new(
                     client,
                     upload_signing_keys_req,
                     upload_signatures_req,
                     auth_type,
-                )))
+                );
+                *handle.reset_guard.get_mut() = Some(reset_guard);
+                Ok(Some(handle))
             } else {
                 Err(error.into())
             }
@@ -1659,9 +1731,17 @@ impl Encryption {
 
         let user_id = olm_machine.user_id();
 
-        if self.client.encryption().get_user_identity(user_id).await?.is_none() {
+        if self
+            .client
+            .encryption()
+            .get_user_identity(user_id)
+            .await?
+            .is_none()
+        {
             let (request_id, request) = olm_machine.query_keys_for_users([olm_machine.user_id()]);
-            self.client.keys_query(&request_id, request.device_keys).await?;
+            self.client
+                .keys_query(&request_id, request.device_keys)
+                .await?;
         }
 
         Ok(())
@@ -1723,7 +1803,13 @@ impl Encryption {
 
         self.ensure_initial_key_query().await?;
 
-        if self.client.encryption().get_user_identity(user_id).await?.is_none() {
+        if self
+            .client
+            .encryption()
+            .get_user_identity(user_id)
+            .await?
+            .is_none()
+        {
             self.bootstrap_cross_signing(auth_data).await?;
         }
 
@@ -1861,7 +1947,10 @@ impl Encryption {
         let task = tokio::task::spawn_blocking(decrypt);
         let import = task.await.expect("Task join error")?;
 
-        let ret = olm.store().import_exported_room_keys(import, |_, _| {}).await?;
+        let ret = olm
+            .store()
+            .import_exported_room_keys(import, |_, _| {})
+            .await?;
 
         self.backups().maybe_trigger_backup();
 
@@ -1949,17 +2038,23 @@ impl Encryption {
 
     /// Get the secret storage manager of the client.
     pub fn secret_storage(&self) -> SecretStorage {
-        SecretStorage { client: self.client.to_owned() }
+        SecretStorage {
+            client: self.client.to_owned(),
+        }
     }
 
     /// Get the backups manager of the client.
     pub fn backups(&self) -> Backups {
-        Backups { client: self.client.to_owned() }
+        Backups {
+            client: self.client.to_owned(),
+        }
     }
 
     /// Get the recovery manager of the client.
     pub fn recovery(&self) -> Recovery {
-        Recovery { client: self.client.to_owned() }
+        Recovery {
+            client: self.client.to_owned(),
+        }
     }
 
     /// Get the dehydrated-devices manager of the client.
@@ -1970,7 +2065,9 @@ impl Encryption {
     /// [`dehydrated_devices`] module
     /// for the full lifecycle and an example.
     pub fn dehydrated_devices(&self) -> dehydrated_devices::DehydratedDevices {
-        dehydrated_devices::DehydratedDevices { client: self.client.to_owned() }
+        dehydrated_devices::DehydratedDevices {
+            client: self.client.to_owned(),
+        }
     }
 
     /// Enables the crypto-store cross-process lock.
@@ -2076,7 +2173,8 @@ impl Encryption {
         &self,
         max_backoff: Option<u32>,
     ) -> Result<Option<CrossProcessLockGuard>, Error> {
-        self.lock_store(async move |lock| lock.spin_lock(max_backoff).await).await
+        self.lock_store(async move |lock| lock.spin_lock(max_backoff).await)
+            .await
     }
 
     /// If a lock was created with [`Self::enable_cross_process_store_lock`],
@@ -2220,14 +2318,18 @@ impl Encryption {
             self.client.keys_upload(&request_id, &request).await?;
 
             let (request_id, request) = olm.query_keys_for_users([olm.user_id()]);
-            self.client.keys_query(&request_id, request.device_keys).await?;
+            self.client
+                .keys_query(&request_id, request.device_keys)
+                .await?;
         }
 
         Ok(())
     }
 
     pub(crate) async fn update_state_after_keys_query(&self, response: &get_keys::v3::Response) {
-        self.recovery().update_state_after_keys_query(response).await;
+        self.recovery()
+            .update_state_after_keys_query(response)
+            .await;
 
         // Only update the verification_state if our own devices changed
         if let Some(user_id) = self.client.user_id() {
@@ -2246,18 +2348,30 @@ impl Encryption {
                     let is_verified = device.is_cross_signed_by_owner();
 
                     if is_verified {
-                        self.client.inner.verification_state.set(VerificationState::Verified);
+                        self.client
+                            .inner
+                            .verification_state
+                            .set(VerificationState::Verified);
                     } else {
-                        self.client.inner.verification_state.set(VerificationState::Unverified);
+                        self.client
+                            .inner
+                            .verification_state
+                            .set(VerificationState::Unverified);
                     }
                 } else {
                     warn!("Couldn't find out own device in the store.");
-                    self.client.inner.verification_state.set(VerificationState::Unknown);
+                    self.client
+                        .inner
+                        .verification_state
+                        .set(VerificationState::Unknown);
                 }
             }
             Err(error) => {
                 warn!("Failed retrieving own device: {error}");
-                self.client.inner.verification_state.set(VerificationState::Unknown);
+                self.client
+                    .inner
+                    .verification_state
+                    .set(VerificationState::Unknown);
             }
         }
     }
@@ -2351,7 +2465,10 @@ impl Encryption {
 
         let (requests, withhelds) = olm
             .encrypt_content_for_devices(
-                recipient_devices.into_iter().map(|d| d.deref().clone()).collect(),
+                recipient_devices
+                    .into_iter()
+                    .map(|d| d.deref().clone())
+                    .collect(),
                 event_type,
                 &content
                     .deserialize_as::<serde_json::Value>()
@@ -2377,7 +2494,11 @@ impl Encryption {
 
             let send_result = self
                 .client
-                .send_inner(ruma_request, Some(RequestConfig::short_retry()), Default::default())
+                .send_inner(
+                    ruma_request,
+                    Some(RequestConfig::short_retry()),
+                    Default::default(),
+                )
                 .await;
 
             // If the sending failed we need to collect the failures to report them
@@ -2447,7 +2568,9 @@ mod tests {
         let event_id = event_id!("$2:example.org");
 
         Mock::given(method("GET"))
-            .and(path_regex(r"^/_matrix/client/r0/rooms/.*/state/m.*room.*encryption.?"))
+            .and(path_regex(
+                r"^/_matrix/client/r0/rooms/.*/state/m.*room.*encryption.?",
+            ))
             .and(header("authorization", "Bearer 1234"))
             .respond_with(
                 ResponseTemplate::new(200)
@@ -2457,7 +2580,9 @@ mod tests {
             .await;
 
         Mock::given(method("PUT"))
-            .and(path_regex(r"^/_matrix/client/r0/rooms/.*/send/m\.reaction/.*".to_owned()))
+            .and(path_regex(
+                r"^/_matrix/client/r0/rooms/.*/send/m\.reaction/.*".to_owned(),
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
                 "event_id": event_id,
             })))
@@ -2469,25 +2594,39 @@ mod tests {
             .add_joined_room(
                 JoinedRoomBuilder::default()
                     .add_state_event(
-                        f.member(user_id!("@example:localhost")).display_name("example"),
+                        f.member(user_id!("@example:localhost"))
+                            .display_name("example"),
                     )
                     .add_state_event(f.default_power_levels())
                     .add_state_event(f.room_encryption()),
             )
             .build_sync_response();
 
-        client.base_client().receive_sync_response(response).await.unwrap();
+        client
+            .base_client()
+            .receive_sync_response(response)
+            .await
+            .unwrap();
 
-        let room = client.get_room(&DEFAULT_TEST_ROOM_ID).expect("Room should exist");
+        let room = client
+            .get_room(&DEFAULT_TEST_ROOM_ID)
+            .expect("Room should exist");
         assert!(
-            room.latest_encryption_state().await.expect("Getting encryption state").is_encrypted()
+            room.latest_encryption_state()
+                .await
+                .expect("Getting encryption state")
+                .is_encrypted()
         );
 
         let event_id = event_id!("$1:example.org");
         let reaction = ReactionEventContent::new(Annotation::new(event_id.into(), "🐈".to_owned()));
-        room.send(reaction).await.expect("Sending the reaction should not fail");
+        room.send(reaction)
+            .await
+            .expect("Sending the reaction should not fail");
 
-        room.send_raw("m.reaction", json!({})).await.expect("Sending the reaction should not fail");
+        room.send_raw("m.reaction", json!({}))
+            .await
+            .expect("Sending the reaction should not fail");
     }
 
     #[cfg(feature = "sqlite")]
@@ -2520,22 +2659,37 @@ mod tests {
             .build()
             .await
             .unwrap();
-        client2.matrix_auth().restore_session(session, RoomLoadSettings::default()).await.unwrap();
+        client2
+            .matrix_auth()
+            .restore_session(session, RoomLoadSettings::default())
+            .await
+            .unwrap();
 
         // When the lock isn't enabled, any attempt at locking won't return a guard.
         let guard = client1.encryption().try_lock_store_once().await.unwrap();
         assert!(guard.is_none());
 
-        client1.encryption().enable_cross_process_store_lock("client1".to_owned()).await.unwrap();
-        client2.encryption().enable_cross_process_store_lock("client2".to_owned()).await.unwrap();
+        client1
+            .encryption()
+            .enable_cross_process_store_lock("client1".to_owned())
+            .await
+            .unwrap();
+        client2
+            .encryption()
+            .enable_cross_process_store_lock("client2".to_owned())
+            .await
+            .unwrap();
 
         // One client can take the lock.
         let acquired1 = client1.encryption().spin_lock_store(None).await.unwrap();
         assert!(acquired1.is_some());
 
         // Keep the olm machine, so we can see if it's changed later, by comparing Arcs.
-        let initial_olm_machine =
-            client1.olm_machine().await.clone().expect("must have an olm machine");
+        let initial_olm_machine = client1
+            .olm_machine()
+            .await
+            .clone()
+            .expect("must have an olm machine");
 
         // Also enable backup to check that new machine has the same backup keys.
         let decryption_key = matrix_sdk_base::crypto::store::types::BackupDecryptionKey::new();
@@ -2547,7 +2701,11 @@ mod tests {
             .await
             .expect("Should save");
 
-        initial_olm_machine.backup_machine().enable_backup_v1(backup_key.clone()).await.unwrap();
+        initial_olm_machine
+            .backup_machine()
+            .enable_backup_v1(backup_key.clone())
+            .await
+            .unwrap();
 
         assert!(client1.encryption().backups().are_enabled().await);
 
@@ -2563,7 +2721,11 @@ mod tests {
         assert!(acquired1.is_some());
 
         // In that case, the Olm Machine shouldn't change.
-        let olm_machine = client1.olm_machine().await.clone().expect("must have an olm machine");
+        let olm_machine = client1
+            .olm_machine()
+            .await
+            .clone()
+            .expect("must have an olm machine");
         assert!(initial_olm_machine.same_as(&olm_machine));
 
         // Ok, release again.
@@ -2581,14 +2743,26 @@ mod tests {
         assert!(acquired1.is_some());
 
         // But now its olm machine has been invalidated and thus regenerated!
-        let olm_machine = client1.olm_machine().await.clone().expect("must have an olm machine");
+        let olm_machine = client1
+            .olm_machine()
+            .await
+            .clone()
+            .expect("must have an olm machine");
 
         assert!(!initial_olm_machine.same_as(&olm_machine));
 
-        let backup_key_new = olm_machine.backup_machine().get_backup_keys().await.unwrap();
+        let backup_key_new = olm_machine
+            .backup_machine()
+            .get_backup_keys()
+            .await
+            .unwrap();
         assert!(backup_key_new.decryption_key.is_some());
         assert_eq!(
-            backup_key_new.decryption_key.unwrap().megolm_v1_public_key().to_base64(),
+            backup_key_new
+                .decryption_key
+                .unwrap()
+                .megolm_v1_public_key()
+                .to_base64(),
             backup_key.to_base64()
         );
         assert!(client1.encryption().backups().are_enabled().await);
@@ -2601,7 +2775,9 @@ mod tests {
 
         use matrix_sdk_base::store::RoomLoadSettings;
         let tmp_dir = tempfile::tempdir().unwrap();
-        let sqlite_path = tmp_dir.path().join("generation_counter_no_spurious_invalidations.db");
+        let sqlite_path = tmp_dir
+            .path()
+            .join("generation_counter_no_spurious_invalidations.db");
         let session = mock_matrix_session();
 
         let client = Client::builder()
@@ -2619,7 +2795,11 @@ mod tests {
 
         let initial_olm_machine = client.olm_machine().await.as_ref().unwrap().clone();
 
-        client.encryption().enable_cross_process_store_lock("client1".to_owned()).await.unwrap();
+        client
+            .encryption()
+            .enable_cross_process_store_lock("client1".to_owned())
+            .await
+            .unwrap();
 
         // Enabling the lock doesn't update the olm machine.
         let after_enabling_lock = client.olm_machine().await.as_ref().unwrap().clone();
@@ -2746,8 +2926,14 @@ mod tests {
         let message = DuplicateOneTimeKeyErrorMessage::from_str(message)
             .expect("We should be able to parse the error message");
 
-        assert_eq!(message.old_key.to_base64(), "dBcZBzQaiQYWf6rBPh2QypIOB/dxSoTeyaFaxNNbeHs");
-        assert_eq!(message.new_key.to_base64(), "CY0TWVK1/Kj3ZADuBcGe3UKvpT+IKAPMUsMeJhSDqno");
+        assert_eq!(
+            message.old_key.to_base64(),
+            "dBcZBzQaiQYWf6rBPh2QypIOB/dxSoTeyaFaxNNbeHs"
+        );
+        assert_eq!(
+            message.new_key.to_base64(),
+            "CY0TWVK1/Kj3ZADuBcGe3UKvpT+IKAPMUsMeJhSDqno"
+        );
 
         DuplicateOneTimeKeyErrorMessage::from_str("One time key already exists.")
             .expect_err("We shouldn't be able to parse an incomplete error message");
@@ -2761,7 +2947,17 @@ mod tests {
     ) -> serde_json::Value {
         let device_keys: serde_json::Map<String, serde_json::Value> = devices
             .into_iter()
-            .map(|device| (device.get("device_id").unwrap().as_str().unwrap().to_owned(), device))
+            .map(|device| {
+                (
+                    device
+                        .get("device_id")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_owned(),
+                    device,
+                )
+            })
             .collect();
         json!({
             "device_keys": {
@@ -2825,7 +3021,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        assert!(!client.encryption().has_devices_to_verify_against().await.unwrap());
+        assert!(
+            !client
+                .encryption()
+                .has_devices_to_verify_against()
+                .await
+                .unwrap()
+        );
     }
 
     #[async_test]
@@ -2862,7 +3064,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        assert!(client.encryption().has_devices_to_verify_against().await.unwrap());
+        assert!(
+            client
+                .encryption()
+                .has_devices_to_verify_against()
+                .await
+                .unwrap()
+        );
     }
 
     #[async_test]
@@ -2921,9 +3129,18 @@ mod tests {
             .await;
 
         let (request_id, request) = olm_machine.query_keys_for_users([user_id]);
-        client.keys_query(&request_id, request.device_keys).await.unwrap();
+        client
+            .keys_query(&request_id, request.device_keys)
+            .await
+            .unwrap();
 
-        assert!(!client.encryption().has_devices_to_verify_against().await.unwrap());
+        assert!(
+            !client
+                .encryption()
+                .has_devices_to_verify_against()
+                .await
+                .unwrap()
+        );
     }
 
     #[cfg(feature = "experimental-send-custom-to-device")]
@@ -2970,8 +3187,10 @@ mod tests {
         /// The device IDs of the given devices, sorted so that we can assert on
         /// them.
         fn device_ids(devices: Vec<Device>) -> Vec<OwnedDeviceId> {
-            let mut device_ids: Vec<_> =
-                devices.into_iter().map(|d| d.device_id().to_owned()).collect();
+            let mut device_ids: Vec<_> = devices
+                .into_iter()
+                .map(|d| d.device_id().to_owned())
+                .collect();
             device_ids.sort();
             device_ids
         }
@@ -2990,9 +3209,15 @@ mod tests {
 
             assert_eq!(
                 device_ids(devices),
-                vec![owned_device_id!(BOB_FIRST_DEVICE), owned_device_id!(BOB_SECOND_DEVICE)]
+                vec![
+                    owned_device_id!(BOB_FIRST_DEVICE),
+                    owned_device_id!(BOB_SECOND_DEVICE)
+                ]
             );
-            assert!(unknown_devices.is_empty(), "`AllDevices` can't reference an unknown device");
+            assert!(
+                unknown_devices.is_empty(),
+                "`AllDevices` can't reference an unknown device"
+            );
         }
 
         #[async_test]
@@ -3002,12 +3227,17 @@ mod tests {
             let (devices, unknown_devices) = alice
                 .resolve_recipient_devices(
                     bob.user_id().unwrap(),
-                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!(BOB_SECOND_DEVICE))],
+                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!(
+                        BOB_SECOND_DEVICE
+                    ))],
                 )
                 .await
                 .unwrap();
 
-            assert_eq!(device_ids(devices), vec![owned_device_id!(BOB_SECOND_DEVICE)]);
+            assert_eq!(
+                device_ids(devices),
+                vec![owned_device_id!(BOB_SECOND_DEVICE)]
+            );
             assert!(unknown_devices.is_empty());
         }
 
@@ -3041,7 +3271,10 @@ mod tests {
 
             assert_eq!(
                 device_ids(devices),
-                vec![owned_device_id!(BOB_FIRST_DEVICE), owned_device_id!(BOB_THIRD_DEVICE)],
+                vec![
+                    owned_device_id!(BOB_FIRST_DEVICE),
+                    owned_device_id!(BOB_THIRD_DEVICE)
+                ],
                 "the second device was not requested and must be left out"
             );
             assert!(unknown_devices.is_empty());
@@ -3054,7 +3287,9 @@ mod tests {
             let (devices, unknown_devices) = alice
                 .resolve_recipient_devices(
                     bob.user_id().unwrap(),
-                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!("UNKNOWNDEVICE"))],
+                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!(
+                        "UNKNOWNDEVICE"
+                    ))],
                 )
                 .await
                 .unwrap();
@@ -3080,7 +3315,10 @@ mod tests {
                 .await
                 .unwrap();
 
-            assert_eq!(device_ids(devices), vec![owned_device_id!(BOB_FIRST_DEVICE)]);
+            assert_eq!(
+                device_ids(devices),
+                vec![owned_device_id!(BOB_FIRST_DEVICE)]
+            );
             assert_eq!(unknown_devices, vec![owned_device_id!("UNKNOWNDEVICE")]);
         }
 
@@ -3104,7 +3342,10 @@ mod tests {
 
             assert_eq!(
                 device_ids(devices),
-                vec![owned_device_id!(BOB_FIRST_DEVICE), owned_device_id!(BOB_SECOND_DEVICE)]
+                vec![
+                    owned_device_id!(BOB_FIRST_DEVICE),
+                    owned_device_id!(BOB_SECOND_DEVICE)
+                ]
             );
             assert!(unknown_devices.is_empty());
         }
@@ -3115,8 +3356,10 @@ mod tests {
         async fn test_empty_recipient_list_resolves_to_no_device() {
             let (_server, alice, bob) = alice_and_bob_with_two_bob_devices().await;
 
-            let (devices, unknown_devices) =
-                alice.resolve_recipient_devices(bob.user_id().unwrap(), vec![]).await.unwrap();
+            let (devices, unknown_devices) = alice
+                .resolve_recipient_devices(bob.user_id().unwrap(), vec![])
+                .await
+                .unwrap();
 
             assert!(devices.is_empty());
             assert!(unknown_devices.is_empty());
@@ -3132,7 +3375,9 @@ mod tests {
             let (devices, unknown_devices) = alice
                 .resolve_recipient_devices(
                     unknown_user_id,
-                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!(BOB_FIRST_DEVICE))],
+                    vec![DeviceIdOrAllDevices::DeviceId(owned_device_id!(
+                        BOB_FIRST_DEVICE
+                    ))],
                 )
                 .await
                 .unwrap();

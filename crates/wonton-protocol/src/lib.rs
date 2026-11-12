@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 mod action;
 mod agent_permission;
+mod agent_run;
 mod appearance;
 mod bot_commands;
 mod bot_contacts;
@@ -59,6 +60,7 @@ pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
 };
+pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
@@ -106,10 +108,12 @@ pub use confirmation_origin::{
     ORIGIN_THREAD_HEADER, confirmation_path,
 };
 pub use core_upgrade::{
-    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
-    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
-    CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
+    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeBreakingPlugin,
+    CoreUpgradeBreakingReason, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
+    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
+    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun,
+    CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget,
+    CoreUpgradeViewModel, CoreVersion,
 };
 pub use egress::{
     EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
@@ -198,13 +202,13 @@ pub use plugin::{
     PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
     PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
     PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
-    PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SettingValue,
-    SettingValues, SettingsFieldError, SettingsFieldProblem, SettingsFieldProblemKind,
-    SettingsForm, SettingsInvalidError, SettingsProblem, SettingsSchemaError,
-    SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind, StorageUsage, StoreFailure,
-    StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState, ToolAccess,
-    ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
+    PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel,
+    RequirementLine, RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues,
+    SecurityTier, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
+    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
+    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
+    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
     UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
     plugin_settings_preview_path, secret_input_path,
 };

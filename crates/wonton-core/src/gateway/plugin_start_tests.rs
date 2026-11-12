@@ -8,7 +8,7 @@ use iroh::SecretKey;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use super::fakes::loopback_tunnel;
+use super::fakes::loopback_tunnel_with_members;
 use super::tests::{CORE, Harness, Reply, TOKEN, WHOAMI, owner};
 use super::tunnel_tests::Phone;
 use super::{CORE_COOKIE, Gateway, router};
@@ -178,7 +178,12 @@ async fn paired_device_can_start_but_its_web_page_cannot() {
         &container,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
     );
-    let (tunnel, members) = loopback_tunnel(h.data_dir()).await;
+    let tunnel = loopback_tunnel_with_members(
+        h.data_dir(),
+        h.members.clone(),
+        ["192.0.2.10".parse().unwrap()].into(),
+    )
+    .await;
     let gateway = Gateway::new(
         PublicUrls {
             scheme: "http".into(),
@@ -187,7 +192,7 @@ async fn paired_device_can_start_but_its_web_page_cannot() {
         },
         OwnerStore::for_test(h.data_dir(), &owner()),
         TOKEN.into(),
-        members,
+        h.members.clone(),
         h.manager.clone(),
         None,
         h.http.clone(),

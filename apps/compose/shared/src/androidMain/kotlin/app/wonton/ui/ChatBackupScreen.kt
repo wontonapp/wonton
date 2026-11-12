@@ -42,6 +42,7 @@ import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
 import app.wonton.protocol.KeyNotice
+import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
@@ -133,23 +134,27 @@ private fun NextStep(
     onUseRecoveryKey: () -> Unit,
     onAction: (Action) -> Unit,
 ) {
-    when (encryption.recovery) {
-        RecoveryStatus.INCOMPLETE -> when {
-            showKeyEntry -> RecoveryKeyEntry(key, onKey, onAction)
-            encryption.verificationFlow != null -> Unit
-            encryption.canVerifyWithOtherDevice -> VerificationChoices(onAction, onUseRecoveryKey)
-            else -> RecoveryKeyEntry(key, onKey, onAction)
+    // 类别由核心按恢复状态算好（ADR-0076），这里只按类别画。
+    when (encryption.recoveryNextStep) {
+        RecoveryNextStep.ENTER_KEY -> RecoveryKeyEntry(key, onKey, onAction)
+        // 账号里有别的已验证设备：确认和恢复密钥两条路并列（ADR-0046）。
+        RecoveryNextStep.CHOOSE_DEVICE_OR_KEY -> if (showKeyEntry) {
+            RecoveryKeyEntry(key, onKey, onAction)
+        } else {
+            VerificationChoices(onAction, onUseRecoveryKey)
         }
-        // 账号没有备份，输恢复密钥没用；只有另一台已验证的设备能把密钥直接发过来。
-        RecoveryStatus.DISABLED -> if (encryption.canVerifyWithOtherDevice && encryption.verificationFlow == null) {
+        // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
+        RecoveryNextStep.SHOW_FLOW -> if (encryption.verificationFlow == null) {
             WontonButton(
                 stringResource(R.string.verification_verify_with_other_device),
                 { onAction(Action.StartDeviceVerification) },
                 Modifier.fillMaxWidth(),
             )
+        } else if (showKeyEntry) {
+            RecoveryKeyEntry(key, onKey, onAction)
         }
-        RecoveryStatus.IN_PROGRESS -> CircularProgressIndicator()
-        RecoveryStatus.ENABLED, RecoveryStatus.UNKNOWN -> Unit
+        RecoveryNextStep.PROGRESS -> CircularProgressIndicator()
+        RecoveryNextStep.NONE, RecoveryNextStep.OTHER -> Unit
     }
 }
 
@@ -209,14 +214,6 @@ val RecoveryStatus.backupTitle: String
         RecoveryStatus.INCOMPLETE -> stringResource(R.string.chat_backup_status_incomplete)
         RecoveryStatus.IN_PROGRESS -> stringResource(R.string.chat_backup_status_in_progress)
         RecoveryStatus.UNKNOWN -> stringResource(R.string.chat_backup_status_unknown)
-    }
-
-/** 恢复密钥丢了、备份残缺或者开启不了时的出路。正在显示新密钥时不出现，免得主人还没抄下来就把它作废。 */
-val EncryptionStatus.canReset: Boolean
-    get() = recoveryKey == null && when (recovery) {
-        RecoveryStatus.ENABLED, RecoveryStatus.INCOMPLETE -> true
-        RecoveryStatus.DISABLED -> verification == DeviceVerification.UNVERIFIED
-        RecoveryStatus.IN_PROGRESS, RecoveryStatus.UNKNOWN -> false
     }
 
 val EncryptionStatus.backupDetail: String?

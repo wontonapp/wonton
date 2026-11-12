@@ -22,6 +22,8 @@ struct RegistryDocker {
     rejecting: Arc<Mutex<HashSet<String>>>,
     wrong_digest: Arc<Mutex<HashSet<String>>>,
     digests: Arc<Mutex<HashMap<String, String>>>,
+    /// 每个引用还能成功 inspect 的次数，用完就报 500：模拟 Docker inspect 出错。
+    inspect_ok_left: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 impl RegistryDocker {
@@ -35,6 +37,16 @@ impl RegistryDocker {
     fn wrong_digest(stations: &[&str]) -> Self {
         Self {
             wrong_digest: Arc::new(Mutex::new(stations.iter().map(|s| s.to_string()).collect())),
+            ..Self::default()
+        }
+    }
+
+    /// 让 `reference` 的第一次 inspect 成功、之后报 500。
+    fn flaky_inspect(reference: &str) -> Self {
+        Self {
+            inspect_ok_left: Arc::new(Mutex::new(
+                [(reference.to_owned(), 1)].into_iter().collect(),
+            )),
             ..Self::default()
         }
     }
@@ -85,6 +97,16 @@ async fn serve(State(state): State<RegistryDocker>, request: Request) -> Respons
         .strip_prefix("/images/")
         .and_then(|rest| rest.strip_suffix("/json"))
         .unwrap_or("");
+    if let Some(remaining) = state.inspect_ok_left.lock().unwrap().get_mut(name) {
+        if *remaining == 0 {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"message":"daemon inspect failed"})),
+            )
+                .into_response();
+        }
+        *remaining -= 1;
+    }
     if let Some(digest) = state.digests.lock().unwrap().get(name) {
         let repository = name
             .split_once('@')
@@ -268,4 +290,30 @@ async fn without_stations_the_original_registry_is_used() {
     server.abort();
     assert_eq!(result.unwrap(), image);
     assert_eq!(state.pulls(), [image]);
+}
+
+/// Docker inspect 出错时如实报错，不当成摘要匹配继续用本机镜像。
+#[tokio::test]
+async fn an_inspect_error_is_not_treated_as_a_digest_match() {
+    let image = format!("alpine:3@{DIGEST}");
+    let state = RegistryDocker::flaky_inspect(&image);
+    state
+        .digests
+        .lock()
+        .unwrap()
+        .insert(image.clone(), DIGEST.to_owned());
+    let (engine, server) = engine(state).await;
+    let error = engine
+        .ensure_image(&image, PullPolicy::Never, &[])
+        .await
+        .unwrap_err();
+    server.abort();
+    assert!(
+        matches!(error, EngineError::Rejected { .. }),
+        "inspect 出错该按上游出错上报：{error}"
+    );
+    assert!(
+        error.to_string().contains("daemon inspect failed"),
+        "{error}"
+    );
 }

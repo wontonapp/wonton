@@ -27,11 +27,12 @@ struct TabPageView: View {
     @State private var isVisible = false
     @State private var topHeight: CGFloat = WontonTheme.size.topBar
     @State private var bottomHeight: CGFloat = 0
-    /// 全屏胶囊看不看得见。进来、加载完、转屏、手指往下拖时出现，几秒没碰就藏起来。
+    /// 全屏胶囊看不看得见。进来、切回 App、加载完、转屏、手指往下拖时出现，几秒没碰就藏起来。
     @State private var capsuleShown = true
     @State private var capsuleShowings = 0
     @State private var seenReady = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonTabBar) private var bottomBar
@@ -72,6 +73,7 @@ struct TabPageView: View {
         // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
         // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
         .ignoresSafeArea(.keyboard)
+        .environment(\.wontonBarStatus, pageStatus)
         .onChange(of: page.fullscreen, initial: true) { showCapsule() }
         .onChange(of: panel?.expanded) { showCapsule() }
         .onChange(of: session.ready) { showCapsule(); notifySeen() }
@@ -79,6 +81,8 @@ struct TabPageView: View {
             if visible == true { seenReady = false; notifySeen() }
         }
         .onAppear { notifySeen() }
+        // 切回 App 也算“进来”：全屏页和面板整页在后台时胶囊早藏了，回来不叫出来就看不到出口。
+        .onChange(of: scenePhase) { _, phase in if phase == .active { showCapsule() } }
         .task(id: capsuleShowings) {
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { capsuleShown = false }
@@ -115,14 +119,15 @@ struct TabPageView: View {
     @ViewBuilder
     private func panelStack(safe: EdgeInsets, frame: EdgeInsets, inputs: TabWebInputs) -> some View {
         ZStack {
-                if let webView = session.webView {
+                if let webView = session.webView, sourceAvailable {
                     TabWebView(webView: webView, obscured: obscured(safe: safe))
                     .id(ObjectIdentifier(webView))
                     .padding(frame)
                     .ignoresSafeArea(.container)
                 }
                 TabPageStateView(
-                    page: page, session: session, connected: connected, isPanel: panel != nil,
+                    page: page, session: session, connected: connected,
+                    shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
                     details: { showsDetails = true },
                     remove: {
                         if let remove {
@@ -255,7 +260,31 @@ extension TabPageView {
     private var capsuleAllowed: Bool { panel?.expanded ?? page.fullscreen }
     private var edgeToEdge: Bool { panel != nil || page.layout == .edgeToEdge && (!isOverlay || page.fullscreen) }
     private var contentBottom: CGFloat { fullscreen || isOverlay || bottomBar == nil ? 0 : bottomHeight }
-    private var connected: Bool { home.viewModel.status == .connected }
+    private var connected: Bool {
+        if case .sharedApp = tab { return sourceProxy != nil }
+        return home.viewModel.status == .connected
+    }
+    private var sourceProxy: ProxySettings? {
+        if case .sharedApp = tab {
+            guard let source = plugins.viewModel.sharedSource(for: tab),
+                  case let .ready(proxy) = source.state else { return nil }
+            return proxy
+        }
+        return home.viewModel.proxy
+    }
+
+    private var sourceAvailable: Bool {
+        if case .sharedApp = tab { return connected && plugins.viewModel.sharedProblem(for: tab) == nil }
+        return true
+    }
+
+    private var pageStatus: WontonBarStatus {
+        guard case .sharedApp = tab else { return status }
+        let title = plugins.viewModel.sharedSource(for: tab).map {
+            $0.ownerDisplayName.flatMap { $0.isEmpty ? nil : $0 } ?? $0.ownerUserId
+        }
+        return WontonBarStatus(subtitle: title)
+    }
     private var pluginId: String? {
         switch tab {
         case let .plugin(id, _), let .pluginPath(id, _): id
@@ -275,7 +304,7 @@ extension TabPageView {
         var inputPage = page
         if panel != nil { inputPage.layout = .edgeToEdge }
         return TabWebInputs(
-            page: inputPage, proxy: home.viewModel.proxy, connected: connected,
+            page: inputPage, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
                 locale: AppLanguage.current,

@@ -40,6 +40,9 @@ pub(super) fn core_error(
         }
         // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
         Some("changed" | "permission_denied") => PluginFailure::Changed,
+        // 拉不到插件的镜像：镜像仓库连不上、镜像不存在、没有权限等，和取商店信息是同一类来源问题。
+        Some("image_pull_failed") => PluginFailure::SourceUnavailable,
+        Some("record_unusable") => PluginFailure::RecordUnusable,
         Some("source_unavailable") => PluginFailure::SourceUnavailable,
         Some("not_found" | "not_installed") => PluginFailure::NotFound,
         Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,

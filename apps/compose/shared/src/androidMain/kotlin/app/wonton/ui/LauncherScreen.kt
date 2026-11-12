@@ -44,6 +44,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.AppsAction
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
@@ -82,7 +83,10 @@ fun LauncherScreen(
     settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,
 ) {
-    LaunchedEffect(plugins) { plugins.refresh(Action.RefreshPlugins) }
+    LaunchedEffect(plugins) {
+        if (AppsAction.STORE in plugins.viewModel.actions) plugins.refresh(Action.RefreshPlugins)
+        plugins.refresh(Action.RefreshSharedApps(null))
+    }
     WontonScreen(
         bar = {
             WontonRootBar(stringResource(R.string.launcher_title), actions = if (onSettings != null) {
@@ -92,42 +96,48 @@ fun LauncherScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             val installed = plugins.viewModel.installed
-            StoreEntry(plugins.viewModel.updatable.size, onShowStore)
+            val hasStore = AppsAction.STORE in plugins.viewModel.actions
+            if (hasStore) StoreEntry(plugins.viewModel.updatable.size, onShowStore)
             PullToRefreshBox(
                 isRefreshing = plugins.viewModel.refreshing,
-                onRefresh = { plugins.send(Action.RefreshPlugins) },
+                onRefresh = {
+                    if (hasStore) plugins.send(Action.RefreshPlugins)
+                    plugins.send(Action.RefreshSharedApps(null))
+                },
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
-                if (installed == null) {
-                    LauncherPlaceholder(plugins)
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(WontonTheme.size.launcherCell),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = wontonContentPaddingValues(
-                            horizontal = WontonTheme.spacing.pageInset,
-                            bottom = WontonTheme.spacing.pageInset,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s24),
-                        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-                    ) {
-                        plugins.viewModel.problem?.let { problem ->
-                            item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
-                                ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
-                            }
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(WontonTheme.size.launcherCell),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = wontonContentPaddingValues(
+                        horizontal = WontonTheme.spacing.pageInset,
+                        bottom = WontonTheme.spacing.pageInset,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s24),
+                    horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+                ) {
+                    if (installed == null && hasStore) {
+                        item(key = "loading", span = { GridItemSpan(maxLineSpan) }) { LauncherPlaceholder(plugins) }
+                    }
+                    plugins.viewModel.problem?.let { problem ->
+                        item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
+                            ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
                         }
-                        installed.upgradeCheck?.let { check ->
-                            item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
-                                ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
-                            }
+                    }
+                    installed?.upgradeCheck?.let { check ->
+                        item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
+                            ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
                         }
-                        if (installed.plugins.isEmpty()) {
-                            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
-                        }
-                        items(installed.plugins, key = { it.id }) { LauncherIcon(it, plugins, navigation) }
-                        item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                            HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
-                        }
+                    }
+                    if (installed?.plugins?.isEmpty() == true && hasStore) {
+                        item(key = "empty", span = { GridItemSpan(maxLineSpan) }) { NoPlugins(onShowStore) }
+                    }
+                    items(installed?.plugins.orEmpty(), key = { it.id }) { LauncherIcon(it, plugins, navigation) }
+                    item(key = "shared", span = { GridItemSpan(maxLineSpan) }) {
+                        SharedAppsSection(plugins.viewModel.sharedApps, plugins)
+                    }
+                    if (installed != null) item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
+                        HomeStatusPanel(home, plugins.viewModel, pendingCards, onConnection, onOpenCardRoom)
                     }
                 }
             }

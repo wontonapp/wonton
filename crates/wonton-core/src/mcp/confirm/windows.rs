@@ -149,6 +149,7 @@ impl Confirmations {
                 answer: Answer::Approve,
                 choice_id: None,
                 secrets: SecretValues::new(),
+                settings: Default::default(),
             };
             if waiter.send(chosen).is_ok() {
                 slot.card.state = ConfirmationState::Running;

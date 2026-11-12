@@ -9,7 +9,7 @@
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；`grant` 含全部必需权限，可选项放在 `enabled_permissions`（201 `InstalledPlugin`） |
-//! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`）。容器不在时按安装记录照安装的路径重建再启动（网络不在也重建），做不到按原因报类别：镜像拉不到 `image_pull_failed`，安装记录读不出 `record_unusable` |
 //! | PUT | `/_wonton/api/plugins/{id}/permissions/{permission}` | 开关一项可选权限（`PermissionUpdate`），重建完返回详情（200 `PluginDetail`） |
 //! | PUT | `/_wonton/api/plugins/{id}/scope` | 主人提交 `PluginScope`；不支持范围设置时返回 501 `unsupported`，不保存 |
 //! | PUT | `/_wonton/api/bots/{id}/{bot}/plugin-access/{target}` | 主人提交 `BotPluginAccessUpdate`；不支持 Bot 开关时返回 501 `unsupported`，不保存 |
@@ -79,7 +79,10 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
     }
     let status = match error {
         InstallError::EgressProxyUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
-        InstallError::Invalid(_) | InstallError::UnsupportedRuntime(_) => StatusCode::BAD_REQUEST,
+        InstallError::Invalid(_)
+        | InstallError::UnsupportedRuntime(_)
+        | InstallError::SettingsInvalid(..)
+        | InstallError::SettingsSchemaInvalid(..) => StatusCode::BAD_REQUEST,
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
@@ -88,6 +91,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
         | InstallError::PortTaken(_)
+        | InstallError::RecordUnusable(_)
         | InstallError::CoreUpgrading(_) => StatusCode::CONFLICT,
         InstallError::NotInstalled(_) | InstallError::NotFound(_) => StatusCode::NOT_FOUND,
         InstallError::DockerUnavailable(_)
@@ -102,7 +106,41 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         }
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
-    error_response(status, error.kind(), &error.to_string())
+    match error {
+        InstallError::SettingsInvalid(message, fields) => settings_error(
+            status,
+            "settings_invalid",
+            message,
+            json!({"fields": fields}),
+        ),
+        InstallError::SettingsSchemaInvalid(message, problems) => settings_error(
+            status,
+            "settings_schema_invalid",
+            message,
+            json!({"problems": problems}),
+        ),
+        _ => error_response(status, error.kind(), &error.to_string()),
+    }
+}
+
+/// 设置的两类校验失败：附加字段直接放在 `error` 对象上。
+fn settings_error(
+    status: StatusCode,
+    kind: &'static str,
+    message: &str,
+    extra: serde_json::Value,
+) -> Response {
+    let mut error = json!({"kind": kind, "message": message});
+    if let serde_json::Value::Object(extra) = extra
+        && let serde_json::Value::Object(error) = &mut error
+    {
+        error.extend(extra);
+    }
+    let mut response = (status, Json(json!({"error": error}))).into_response();
+    response
+        .headers_mut()
+        .insert(pages::ERROR_HEADER, HeaderValue::from_static(kind));
+    response
 }
 
 /// 带没带主人令牌。
@@ -306,6 +344,22 @@ pub async fn detail(
             if !person.is_owner() {
                 detail.scope = None;
             }
+            // Sharing settings are never exposed to family members, including installers.
+            detail.shares = None;
+            if person.is_owner()
+                && let Some(sharing) = gateway.sharing.as_ref()
+            {
+                let offer = gateway.plugins.share_offer(&id);
+                if offer.installed && offer.has_webui {
+                    detail.shares = match sharing
+                        .shares
+                        .plugin_shares(&offer, super::sharing::now_ms())
+                    {
+                        Ok(shares) => Some(shares),
+                        Err(error) => return super::sharing::api::share_error(&error),
+                    };
+                }
+            }
             Json(detail).into_response()
         }
         None => install_error(&InstallError::NotInstalled(id.to_string())),
@@ -396,9 +450,23 @@ async fn install_upload(
     gateway
         .plugins
         .store_input_values(&package.manifest, &secrets, None, langs)?;
+    let settings = match crate::plugin::settings::load(&package, langs)? {
+        Some(schema) => {
+            crate::plugin::settings::value::initial(&schema, &Default::default(), langs)
+                .map_err(|fields| crate::plugin::settings::value_error(fields, langs))?
+        }
+        None => Default::default(),
+    };
     gateway
         .plugins
-        .install_detached_enabled(package, granted, enabled, query.lan_webui, langs.clone())
+        .install_detached_enabled(
+            package,
+            granted,
+            enabled,
+            query.lan_webui,
+            settings,
+            langs.clone(),
+        )
         .await
 }
 
@@ -475,7 +543,15 @@ pub async fn upgrade(
                     return install_error(&e);
                 }
                 plugins
-                    .upgrade_upload(&id, package, grant, enabled, query.lan_webui, &langs)
+                    .upgrade_upload(
+                        &id,
+                        package,
+                        grant,
+                        enabled,
+                        query.lan_webui,
+                        &Default::default(),
+                        &langs,
+                    )
                     .await
             }
             Err(e) => return install_error(&e),

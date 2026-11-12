@@ -221,3 +221,26 @@ fn tunnel_ports_need_0_11() {
     );
     assert!(problems(&document("0.11", manifest, plain())).is_empty());
 }
+
+#[test]
+fn proxy_role_templates_require_0_9_in_headers_and_cookies_only() {
+    for kind in ["headers", "cookies"] {
+        let manifest = json!({"webui": {"proxy": {(kind): {
+            "identity": "prefix.{role}",
+            "username": "{user}",
+            "secret": "{secret:role}",
+            "literal": "role"
+        }}}});
+        for version in ["0.7", "0.8"] {
+            assert_eq!(
+                problems(&document(version, manifest.clone(), plain())).len(),
+                1
+            );
+        }
+        assert!(problems(&document("0.9", manifest, plain())).is_empty());
+    }
+    let manifest = json!({"webui": {"proxy": {"headers": {
+        "username": "{user}", "secret": "{secret:role}", "literal": "role"
+    }}}});
+    assert!(problems(&document("0.8", manifest, plain())).is_empty());
+}

@@ -19,7 +19,9 @@ internal fun TabsState.installedPlugin(tab: TabRef): InstalledPlugin? {
 }
 
 /** 先配置平台，再把已装列表发布给 UI；平台更新也作用于已加载的页面。 */
-internal fun configureCrossOriginIsolatedAllowlist(plugins: List<InstalledPlugin>) {
+internal fun configureCrossOriginIsolatedAllowlist(
+    plugins: List<InstalledPlugin>, profile: String = Profile.DEFAULT_PROFILE_NAME,
+) {
     if (!crossOriginIsolationSupported) return
     val origins = buildSet {
         for (plugin in plugins) {
@@ -31,7 +33,7 @@ internal fun configureCrossOriginIsolatedAllowlist(plugins: List<InstalledPlugin
             }
         }
     }
-    ProfileStore.getInstance().getOrCreateProfile(Profile.DEFAULT_PROFILE_NAME)
+    ProfileStore.getInstance().getOrCreateProfile(profile)
         .setCrossOriginIsolatedAllowlist(origins)
 }
 

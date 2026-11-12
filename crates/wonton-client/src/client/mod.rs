@@ -13,7 +13,7 @@ use wonton_protocol::{
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
     OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PlacedTab, PluginDetail, PluginImage,
     PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabsViewModel, TransfersViewModel,
+    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -32,10 +32,13 @@ use crate::subscription::{
 use crate::tabs::bridge::{self, TabBridgeResult, TabEnvironment};
 use switch::Replay;
 
+mod bot_contacts;
 mod dispatch;
 mod limits;
 mod media;
 mod push_route;
+mod settings;
+mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
@@ -70,6 +73,7 @@ pub struct ClientCore {
     visits: Arc<Visits>,
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
     in_flight_registrations: push_route::InFlightRegistrations,
+    matrix_login: Arc<crate::matrix_login::MatrixLogins>,
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
     #[cfg(feature = "ui-fake")]
     ui_fake: AtomicBool,
@@ -147,8 +151,15 @@ impl ClientCore {
     }
 
     /// 连接变化时派发真实的核心状态；不把不确定状态当成已连接。
-    pub fn tab_connection_script(&self) -> String {
-        bridge::connection_script(&self.scope().home.view().status)
+    pub fn tab_connection_script(&self, tab: TabRef) -> String {
+        let scope = self.scope();
+        let home = scope.home.sender();
+        let plugins = scope.plugins.sender();
+        bridge::connection_script(sharing::tab_connected(
+            &tab,
+            &home.borrow().status,
+            &plugins.borrow(),
+        ))
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -623,6 +634,14 @@ impl ClientCore {
         self.replay().no_periodic_checks = true;
     }
 
+    /// 把当前的隧道 endpoint 关掉，模拟本机 socket 死掉：这条 socket 上的连接和中继一起失效，客户端的
+    /// 退避重连拨的全是死 socket。endpoint 重建的触发条件靠它验证。只给测试用。
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn test_close_home_endpoint(&self) {
+        self.scope().home.test_close_endpoint();
+    }
+
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         crate::l10n::init();
@@ -639,6 +658,7 @@ impl ClientCore {
         )?;
         let switching = Arc::new(Mutex::new(()));
         let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
+        let servers_for_login = servers.clone();
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
@@ -654,9 +674,12 @@ impl ClientCore {
             switching,
             visits,
             in_flight_registrations: Arc::default(),
+            matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
         });
+        let switch: std::sync::Weak<Self> = Arc::downgrade(&core);
+        core.matrix_login.bind(switch);
         core.attach(&scope);
         Ok(core)
     }

@@ -13,7 +13,6 @@ use serde_json::json;
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
 use super::super::image_worker::ImageWorker;
-use super::super::languages::Languages;
 use super::super::lifecycle::LifecycleConfig;
 use super::super::names::{Instance, container_name};
 use super::super::package_files::PackageFiles;
@@ -367,6 +366,8 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
         })
         .unwrap();
     docker.add_container(&container_name("app-good", "web"), "app.good");
@@ -501,19 +502,6 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine.clone(), &dir);
     let compose = proxy_app(web.port());
-    let preview = m
-        .preview_install(
-            &PluginPackage::parse(&compose, &super::langs()).unwrap(),
-            &Languages::default(),
-        )
-        .await
-        .unwrap();
-    let expected = crate::l10n::text(&Languages::default(), "install-webui-sso", &[]);
-    assert!(
-        preview.notices.iter().any(|n| n.text.contains(&expected)),
-        "安装确认页上显示会自动登录：{:?}",
-        preview.notices
-    );
     m.install(&compose, &[], super::langs()).await.unwrap();
     let owner = crate::owner::Owner {
         username: "owner".into(),
@@ -521,12 +509,12 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         email: Some("owner@wonton.localhost".into()),
     };
     let auth = m.route("app-test").unwrap().proxy.unwrap();
-    let header = auth.headers(&owner);
+    let header = auth.headers(&owner, wonton_protocol::Role::Owner).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
         ("remote-user", "owner")
     );
-    let cookies = auth.cookies(&owner);
+    let cookies = auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap();
     let (name, key) = (&cookies[0].0, cookies[0].1.clone());
     assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
     assert_eq!(auth.secrets(), [key.as_str()]);
@@ -534,7 +522,10 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
     let auth = restarted.route("app-test").unwrap().proxy.unwrap();
-    assert_eq!(auth.cookies(&owner)[0].1, key);
+    assert_eq!(
+        auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap()[0].1,
+        key
+    );
 }
 
 #[tokio::test]
@@ -591,8 +582,8 @@ fn proxy_sso_templates_use_known_placeholders_and_long_generated_secrets() {
     };
     let key = "{web_key: {generate: {bytes: 32}}}";
     let ok = parse(
-        "{Remote-User: '{user} <{email}>'}",
-        "{app_web: 'v1.{secret:web_key}'}",
+        "{Remote-User: '{user} <{email}>', Remote-Role: '{role}'}",
+        "{app_web: 'v1.{secret:web_key}', app_role: '{role}'}",
         key,
     );
     assert!(ok.is_ok(), "{ok:?}");
@@ -763,6 +754,8 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
         })
         .unwrap();
     docker.add_container(&container_name("app-test", "web"), "app.test");

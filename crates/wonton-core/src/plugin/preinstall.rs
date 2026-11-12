@@ -110,7 +110,10 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Unsupported(_)
         | InstallError::UnsupportedRuntime(_)
         | InstallError::Conflict(_)
+        | InstallError::SettingsInvalid(..)
+        | InstallError::SettingsSchemaInvalid(..)
         | InstallError::NotInstalled(_)
+        | InstallError::RecordUnusable(_)
         | InstallError::NotFound(_)
         | InstallError::Changed(_)
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
@@ -214,6 +217,7 @@ impl PluginManager {
                     &manifest.permissions,
                     &[],
                     false,
+                    Default::default(),
                     &self.owner_languages(),
                 )
                 .await

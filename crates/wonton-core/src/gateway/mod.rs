@@ -25,6 +25,7 @@ mod api_body;
 mod api_switch;
 mod auth;
 mod bot_activity;
+mod bot_contacts;
 mod bot_profile;
 mod bots;
 mod confirmations;
@@ -55,6 +56,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 mod plugin_scope;
+mod plugin_settings;
 mod plugin_start;
 mod plugin_web;
 mod proxy;
@@ -65,6 +67,7 @@ mod registry_mirror;
 mod request_guards;
 mod room_rules;
 pub(crate) mod send_limits;
+pub mod sharing;
 
 pub use entry::router as entry_router;
 pub use push::router as push_router;
@@ -175,26 +178,20 @@ pub struct Gateway {
     /// 审计日志（`core/audit.jsonl`，见 [`crate::mcp::audit`]）：总线和文件服务共用一份，
     /// 主人查看插件密钥的取值审计也从这里写。
     pub(crate) audit: Option<Arc<crate::mcp::audit::Audit>>,
-    /// tusd 的 `host:port`；没配置时上传如实报不可用。
     pub tusd: Option<String>,
-    /// 核心的一键升级（ADR-0025）；没接时接口如实报不可用。
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
-    /// 服务器配对（ADR-0050）；没接 Matrix 的核心没有它，接口如实报不可用。
     pub peers: Option<Arc<crate::peers::Peers>>,
-    /// 好友名单（ADR-0051）；记录同意过的好友和固定的插件用户名。
     friends: Option<Arc<Friends>>,
-    /// 整台服务器的联邦黑名单（`forbidden_remote_server_names`）；只有能热加载配置的安装才有。
+    /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
+    contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
+    pub sharing: Option<Arc<sharing::Sharing>>,
     pub(crate) onboarding: Arc<onboarding::OnboardingState>,
-    /// `plugins.health` 的限频表（[`health`]）。
     health_limits: health::RateLimits,
-    /// 链接预览（ADR-0065），缓存在核心数据目录，出网跟着核心的代理设置。
     pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
-    /// MCP Apps 界面发起的工具调用：先返回标识，页面轮询结果。
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     sessions: session::SessionStore,
 }
-
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
     /// `http://主机:端口`。
@@ -209,6 +206,7 @@ impl Gateway {
         http: HttpClient,
         tunnel: Tunnel,
     ) -> Self {
+        plugins.attach_person_members(members.clone());
         let (hydra, hydra_public) = match hydra {
             Some((hydra, public_url)) => {
                 let authority = config::http_authority(&public_url)
@@ -251,13 +249,21 @@ impl Gateway {
             upgrades: None,
             peers: None,
             friends: None,
+            contacts: None,
             federation_blocks: None,
+            sharing: None,
             onboarding,
             health_limits: health::RateLimits::new(),
             link_previews,
             app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_sharing(mut self, sharing: Option<Arc<sharing::Sharing>>) -> Self {
+        self.sharing = sharing;
+        self
     }
 
     #[must_use]
@@ -423,6 +429,18 @@ impl Gateway {
         if person.is_owner() {
             return Ok(self.owner.owner());
         }
+        if person.role == Role::Friend {
+            let record = self
+                .sharing
+                .as_ref()
+                .and_then(|sharing| sharing.friends.find_username(&person.username))
+                .ok_or_else(|| MissingMember(person.username.clone()))?;
+            return Ok(Owner {
+                username: record.username,
+                display_name: record.display_name.unwrap_or_default(),
+                email: None,
+            });
+        }
         let record = self
             .members
             .get(&person.username)
@@ -505,6 +523,9 @@ fn request_host(req: &Request) -> String {
 }
 
 async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response {
+    if req.extensions().get::<sharing::SharePeer>().is_some() {
+        return sharing::dispatch(gateway, core, req).await;
+    }
     let host = request_host(&req);
     match gateway.public.classify(&host) {
         HostKind::Core => match core.oneshot(req).await {
@@ -619,7 +640,7 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         Err(response) => return *response,
     };
     if let Err(response) =
-        attach_proxy_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
+        proxy_sso::attach_credentials(gateway, &route, &person, req.headers_mut(), &langs, format)
     {
         return *response;
     }
@@ -646,53 +667,12 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
     response
 }
 
-/// 代登录（`sso: proxy`）：拿这个人的身份写进请求头。拿不到身份或值写不进去时，回错误（形状按请求协商）。
-fn attach_proxy_credentials(
-    gateway: &Gateway,
-    route: &crate::plugin::manager::Route,
-    person: &Person,
-    headers: &mut hyper::HeaderMap,
-    langs: &crate::plugin::languages::Languages,
-    format: pages::Format,
-) -> Result<(), Box<Response>> {
-    let Some(auth) = &route.proxy else {
-        return Ok(());
-    };
-    let identity = match gateway.identity_of(person) {
-        Ok(identity) => identity,
-        Err(e) => {
-            tracing::warn!(plugin = %route.id, error = %e, "代登录拿不到身份");
-            return Err(Box::new(pages::error(
-                StatusCode::FORBIDDEN,
-                "permission_denied",
-                &l10n::text(langs, "gateway-proxy-sso-member-missing", &[]),
-                langs,
-                format,
-            )));
-        }
-    };
-    proxy_sso::attach(headers, auth, &identity).map_err(|e| {
-        Box::new(pages::error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "proxy_credentials",
-            &l10n::text(
-                langs,
-                "gateway-proxy-sso-failed",
-                &[
-                    ("id", route.id.as_str().into()),
-                    ("error", e.to_string().into()),
-                ],
-            ),
-            langs,
-            format,
-        ))
-    })
-}
-
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod bot_activity_tests;
+#[cfg(test)]
+mod bot_contacts_tests;
 #[cfg(test)]
 mod bot_profile_tests;
 #[cfg(test)]

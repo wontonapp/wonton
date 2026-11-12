@@ -1,6 +1,6 @@
 # ADR-0035 ACP 桥：Matrix 与 ACP Agent 的连接形态
 
-- 状态：已接受（2026-11-05）。表单模式的 `elicitation/create` 回 `decline`，转成多步卡片的提议见 [ADR-0038](0038-multi-step-cards.md)，M1 不做
+- 状态：已接受（2026-11-05）。表单模式的 `elicitation/create` 回 JSON-RPC 错误 -32602（只支持 URL 引导），转成多步卡片的提议见 [ADR-0038](0038-multi-step-cards.md)，M1 不做
 
 ## 背景
 
@@ -16,7 +16,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 两服务首先为了数据隔离，而不是只为故障隔离：`bridge` 只挂 `${WONTON_BOT_DATA}/bridge`，`agent` 只挂 `${WONTON_BOT_DATA}/agent`，两个目录不互相可见。bridge 目录存 Matrix crypto store、Bot 登录态、恢复密钥和房间→session 映射；agent 目录存 Agent 的 HOME、workspace 和官方登录态。Matrix access token 只在 bridge 服务的 environment 中引用，agent 不拿到 Matrix token、crypto store 或恢复密钥；Agent 自带 shell 因此不能读取这些密钥。
 
-桥服务是公共的、版本固定的 Wonton ACP bridge 镜像层；Agent 服务是每个插件自己的层。桥层包含 Rust bridge 和 `wonton-matrix`，不包含任何厂商 Agent；它不依赖 `rmcp`，因为桥不实现 MCP。Agent 层只放上游程序或其适配器、配置和许可证；Claude Code 第一次启动时在自己的容器内下载未修改的官方程序，不把它打进公共镜像。适配器、Agent、桥都按上游版本和 digest 固定。
+桥服务是公共的、版本固定的 Wonton ACP bridge 镜像层；Agent 服务是每个插件自己的层。桥层包含 Rust bridge 和 `wonton-matrix`，不包含任何厂商 Agent；桥不实现 MCP 服务端，`rmcp` 只作客户端问核心总线上的用户语言（`wonton__user_locale`）。Agent 层只放上游程序或其适配器、配置和许可证；Claude Code 第一次启动时在自己的容器内下载未修改的官方程序，不把它打进公共镜像。适配器、Agent、桥都按上游版本和 digest 固定。
 
 一个插件默认只有一个 Bot（现有 `bots.services` 模型）；一个 Bot 的多个房间共享同一个 Agent 进程，但一个房间一个 ACP session。M2 再实例化多个 Bot。桥监控 Agent 退出并把原因分成 Agent 未就绪、传输不可用和上游错误，不重启成假成功。
 
@@ -24,7 +24,7 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 桥以一个普通 Matrix 设备运行，核心把 Matrix access token 只注入 bridge 服务。核心创建主人与 Bot 的加密私聊并把房间 ID 交给桥；桥只接受主人的消息，群聊和其他发送者按 Bot 权限拒绝。桥复用 `wonton-matrix` 的 Sliding Sync、设备密钥、交叉签名和恢复密钥，不自己实现 Olm/Megolm。bridge 的 crypto store、Bot 登录状态、恢复密钥和房间→session 映射在 `${WONTON_BOT_DATA}/bridge`，目录权限 0700；agent 的 HOME、workspace 和官方登录态在 `${WONTON_BOT_DATA}/agent`，Agent 看不到 bridge 目录。恢复密钥只在核心收集/保管的文件中出现，不进日志、环境变量或 Matrix 消息。加密初始化失败就让插件不健康，绝不退回明文。
 
-收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
+收到普通文本后，桥按房间查 session；没有就调用 `session/new`，随后切到插件配置的模式（见下文）。文本成为一个 `session/prompt`，ACP 的 `agent_message_chunk` 只在该轮结束后拼成一条 Matrix `m.text`；中间不展示 thought、tool call、usage、plan 或执行轨迹，只发送 typing 状态和每轮一条状态消息（[ADR-0082](0082-agent-run-status.md)）。图片和文件 C1 不转，收到时返回明确的输入不支持错误。桥限制输入、输出、队列长度和单轮时间，超限报错误，不截断成成功。
 
 同一 session 同时只有一个 `session/prompt`。默认排队，队列满返回 busy。主人发送“打断重来”操作时，桥先 `session/cancel`，等原 prompt 的响应（包括 `cancelled`）后再用新文本调用 `session/prompt`；取消后的迟到 chunk 在该 prompt 的边界外丢弃。桥在 ACP `initialize` 的顶层 `_meta.steering.supported` 为真时支持现成的 `_session/steering`：进行中直接发送，返回 `injected`；空闲返回 `promptRequired`，再走普通 prompt。没有该能力就排队，不调用 Qwen 私有方法。Matrix 控制消息只由桥识别，不发给 ACP：`/wonton interrupt <文字>` 是打断重来，`/wonton queue <文字>` 是显式排队；普通聊天文本默认排队。
 
@@ -46,7 +46,7 @@ Agent 仍是不可信执行者：插件清单授权的共享目录才可挂载�
 
 ### MCP 总线
 
-`session/new`、`session/load`、`session/resume` 的 `mcpServers` 只放核心给该 Bot 的 Wonton MCP 入口；插件工具已经由核心总线聚合，不让 Agent 直连各插件。桥不实现 MCP，只把这个入口作为 ACP session 配置传给 Agent。`rmcp` 继续只由 `wonton-core` 使用，因为核心需要它实现 Wonton MCP 总线；bridge crate 不增加这项依赖。核心提供 Streamable HTTP；桥在 Agent 声明 `agentCapabilities.mcpCapabilities.http` 时传 `type: "http"` 的 Wonton 服务器。实测 `omp 18.16.0` 宣布 HTTP/SSE，并在 `session/new` 收到 HTTP `mcpServers` 后发出 MCP `initialize`、`notifications/initialized` 和 `tools/list`。
+`session/new`、`session/load`、`session/resume` 的 `mcpServers` 只放核心给该 Bot 的 Wonton MCP 入口；插件工具已经由核心总线聚合，不让 Agent 直连各插件。桥不实现 MCP，只把这个入口作为 ACP session 配置传给 Agent。`rmcp` 由 `wonton-core`（MCP 总线服务端）和 bridge crate（客户端，查用户语言）共用。核心提供 Streamable HTTP；桥在 Agent 声明 `agentCapabilities.mcpCapabilities.http` 时传 `type: "http"` 的 Wonton 服务器。实测 `omp 18.16.0` 宣布 HTTP/SSE，并在 `session/new` 收到 HTTP `mcpServers` 后发出 MCP `initialize`、`notifications/initialized` 和 `tools/list`。
 
 只收 stdio 的 Agent 不由桥跨容器起进程：Agent 服务的镜像层自带固定版本、MIT 许可的 `mcp-remote`（或等价的最小 stdio→Streamable HTTP 转发器），桥传入 `type: "stdio"`、绝对命令路径和不含秘密的 Wonton URL；ACP Agent 在自己的 Agent 容器内启动这个命令。若 Agent 镜像不能提供该命令，session 建立失败并显示插件未就绪。
 
@@ -70,7 +70,7 @@ Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；
 
 桥代码放主仓库私有的 `crates/wonton-acp-bridge`，因为它复用私有 workspace 的 `wonton-matrix`；插件仓库是公开的，不能复制或依赖主仓库源代码。主仓库 CI 构建多架构 `ghcr.io/wontonapp/wonton-acp-bridge:<version>`，发布后按 digest 固定；公开插件仓库只放 Compose、Agent 层、配置和 notices，并引用这个 digest；ACP Agent 插件合在一个仓库、每家一个子目录，见 [ADR-0079](0079-agent-plugins-monorepo.md)。推荐这个边界；把桥源代码另开公开仓库需要先抽出 Matrix 边界和单独处理许可证，不属于 C1。
 
-桥用 Rust，原因是仓库已有 Matrix 的 Rust 边界、厚核心的错误分类和低常驻开销；桥是独立插件进程，不能调用核心内部 API。桥及其复用的 `wonton-matrix` 随私有主仓库的 `LicenseRef-Proprietary` 发布；公共插件仓库只引用已构建的镜像，不暴露桥源代码。桥不说 MCP，`rmcp`（Apache-2.0）只留在已实现 MCP 总线的 `wonton-core`；桥及其依赖不引入 GPL/AGPL。Agent 的专有许可证、适配器许可证和上游 notices 随 Agent 插件清单分发；不能满足某个 Agent 的许可证时不上架。
+桥用 Rust，原因是仓库已有 Matrix 的 Rust 边界、厚核心的错误分类和低常驻开销；桥是独立插件进程，不能调用核心内部 API。桥及其复用的 `wonton-matrix` 随私有主仓库的 `LicenseRef-Proprietary` 发布；公共插件仓库只引用已构建的镜像，不暴露桥源代码。桥只在客户端说 MCP（查用户语言），`rmcp`（Apache-2.0）由 `wonton-core` 和桥共用；桥及其依赖不引入 GPL/AGPL。Agent 的专有许可证、适配器许可证和上游 notices 随 Agent 插件清单分发；不能满足某个 Agent 的许可证时不上架。
 
 每个活跃 ACP session 的内存预算按实测值留余量：Claude 约 200 MiB/会话增量，Qwen 有 2.7–2.9 GiB 的瞬时多会话峰值；插件清单声明限制，Qwen 默认单 session 并设容器内存上限，超限显示插件被杀/未就绪，不静默重试。空闲 10 分钟后 `session/close`，不删除持久状态。
 
