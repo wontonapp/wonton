@@ -176,12 +176,13 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   不影响家人之间的加密：房间密钥只发给有设备的成员。其他群聊家人在 App 里自己建，是普通 Matrix 房间。
 - **共享 Bot**：主人在 App 里“新建共享 Bot”，选 Agent 插件和名字，同样按 `bots` 新建，归属 `household`。
 - **加密**：私聊、家庭群都端到端加密；Wonton 私聊照旧不加密（ADR-0016）。
-- **Bot 听谁的**：`WONTON_MATRIX_OWNER` 改成 `WONTON_MATRIX_ALLOWED_USERS`，逗号分隔：私人 Bot 是归属人加联系人，共享 Bot 是所有家人加联系人。
+- **Bot 听谁的**（群里按房间听谁的见 [ADR-0083](0083-bot-contacts-and-group-chat.md) 第 3 节）：`WONTON_MATRIX_OWNER` 改成 `WONTON_MATRIX_ALLOWED_USERS`，逗号分隔：私人 Bot 是归属人加联系人，共享 Bot 是所有家人加联系人。
   名单变了，核心重建这个 Bot 的服务，沿用设备和令牌（插件规范的“重建容器时沿用设备和令牌”）。Hermes 的 `MATRIX_ALLOWED_USERS` 同时管邀请和消息，直接接上。
 - **用户目录**：Tuwunel 默认只搜得到有共同房间的人（`show_all_local_users_in_user_directory = false`）。家庭群让家人彼此看得到，Bot 不在共同房间里就搜不到。
 - **网关管房间规则。** 所有客户端接口都经核心网关（设备经 `matrix.<基础域名>`，Bot 经 `matrix.wonton.internal`），Tuwunel 没有邀请策略的扩展点
   （`block_non_admin_invites` 是一刀切）。网关只看请求路径和请求体里的用户 ID，不看消息内容：
-  - 邀请 Bot（`POST /rooms/{房间}/invite`、`createRoom` 的 `invite`）：私人 Bot 只能由归属人和它的联系人邀请，共享 Bot 由家人和联系人邀请。
+  - 邀请 Bot（`POST /rooms/{房间}/invite`、`createRoom` 的 `invite`）：拉进群只能由私人 Bot 的归属人、共享 Bot 的家人发起，联系人只能和它建私聊；
+    Bot 只能加入登记过的房间。见 [ADR-0083](0083-bot-contacts-and-group-chat.md) 第 2 节。
   - Bot 邀请别人：只能邀请它听的人（归属人或家人）和联系人。
   - 人邀请人不限，只限频（ADR-0051 的“挡垃圾”）。
   - 不放行公开房间：`createRoom` 的 `public_chat`、`visibility: public`，把 `join_rules` 改成 `public`。公开房间会被搜到、被刷，第一版不开（ADR-0051）。
