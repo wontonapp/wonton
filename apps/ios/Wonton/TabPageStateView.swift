@@ -91,11 +91,7 @@ struct TabPageStateView: View {
     }
 
     private func startPlugin() {
-        let pluginId: String
-        switch session.tab {
-        case let .plugin(id, _), let .pluginPath(id, _): pluginId = id
-        default: return
-        }
+        guard let pluginId = session.tab.localPluginId else { return }
         do {
             try session.core.dispatch(action: .startPlugin(pluginId: pluginId))
             startProblem = nil

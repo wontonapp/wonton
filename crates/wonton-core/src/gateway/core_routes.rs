@@ -442,6 +442,10 @@ fn member_routes() -> Router<Arc<Gateway>> {
             "/_wonton/api/plugins/{id}/family",
             put(family::set_plugin_family),
         )
+        .route(
+            "/_wonton/api/bots/{id}/{bot}/webui",
+            get(super::bot_web::get),
+        )
 }
 
 /// 角色和分配（ADR-0088）：建、改、删、给成员和好友分配、设默认邀请角色，都只收主人。
@@ -550,9 +554,16 @@ struct LoginForm {
 
 async fn login(
     State(gateway): State<Arc<Gateway>>,
+    source: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
+    if source.is_some_and(|Extension(source)| gateway.plugins.source(source.0.ip()).is_some()) {
+        return super::bot_web::failure(
+            wonton_protocol::BotWebFailure::PermissionDenied,
+            &api::languages(&headers),
+        );
+    }
     let next = safe_next(&gateway, form.next.as_deref());
     if !gateway.check_owner_token(&form.token) {
         tracing::warn!("主人令牌不正确");

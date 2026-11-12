@@ -67,7 +67,7 @@ internal fun PluginTabStatus(
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, onDetails, place)
+            TabStatusActions(state, tab, tabs, crossOriginBlocked, onDetails, place)
         }
     }
 }
@@ -76,6 +76,7 @@ internal fun PluginTabStatus(
 private fun TabStatusActions(
     state: TabState, tab: TabRef, tabs: PagesState, onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
+    val pluginId = tab.localPluginId()
     if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
         WontonButton(stringResource(R.string.panel_remove), {
             tabs.send(Action.RemovePanelPage(place.scope, tab))
@@ -88,8 +89,8 @@ private fun TabStatusActions(
         WontonButton(stringResource(R.string.common_retry), {
             tabs.send(Action.ReloadTab(place ?: PlacedTab.Page(tab)))
         })
-        if (state is TabState.Failed && tab is TabRef.Plugin) {
-            WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
+        if (state is TabState.Failed && pluginId != null) {
+            WontonButton(stringResource(R.string.tab_view_details), { onDetails(pluginId) })
         }
     }
 }

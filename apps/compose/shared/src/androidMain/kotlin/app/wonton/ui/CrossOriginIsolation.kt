@@ -24,10 +24,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabPage
+import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+
+internal fun TabRef.localPluginId(): String? = when (this) {
+    is TabRef.Plugin -> pluginId
+    is TabRef.PluginPath -> pluginId
+    is TabRef.Bot -> bot.pluginId
+    else -> null
+}
+
+internal fun TabsState.installedPlugin(tab: TabRef): InstalledPlugin? {
+    val id = tab.localPluginId() ?: return null
+    return plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
+}
 
 /**
  * Chrome 认的 Custom Tabs 附加项：页面开着时浏览器绑定 App 里的这个空服务，App 的进程跟着浏览器保持前台的优先级，

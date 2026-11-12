@@ -14,9 +14,10 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    Action, BotPanelPin, CoreError, HomeStatus, HomeViewModel, LayoutSettings, MAX_PANEL_PAGES,
-    MyAppRef, PagesProblem, PagesViewModel, PanelEntry, PanelItem, PanelScope, PinTarget,
-    PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon, TabLoadFailure, TabRef,
+    Action, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
+    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PagesProblem, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel,
+    TabIcon, TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -44,6 +45,7 @@ use panel_view::*;
 mod reload;
 use reload::*;
 mod actions;
+mod bot;
 mod panel;
 mod pins;
 mod sync;
@@ -93,6 +95,8 @@ struct PagesState {
     pins_problem: Option<String>,
     /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
     media_prompt: Option<PendingMediaPrompt>,
+    /// Bot 和它们的网页就绪状态（chat 的视图镜像过来的，ADR-0052）。
+    bots: Vec<BotView>,
 }
 
 pub(crate) struct PagesLink {
@@ -102,6 +106,8 @@ pub(crate) struct PagesLink {
     home_link: Arc<HomeLink>,
     plugins: Arc<PluginsLink>,
     plugins_view: watch::Receiver<PluginsViewModel>,
+    /// 聊天链的视图：Bot 列表和它们的网页就绪状态从这里镜像。
+    chat: watch::Receiver<ChatViewModel>,
     path: PathBuf,
     view: watch::Sender<PagesViewModel>,
     state: Mutex<PagesState>,
@@ -148,6 +154,7 @@ impl PagesLink {
         view: Option<watch::Sender<PagesViewModel>>,
         session: watch::Receiver<Option<Arc<MatrixSession>>>,
         room_panel: RoomPanelChannel,
+        chat: watch::Receiver<ChatViewModel>,
     ) -> Arc<Self> {
         let path = data_dir.join(LAYOUT_FILE);
         let home_view = home.view();
@@ -201,6 +208,7 @@ impl PagesLink {
             core_url: home.core_url(),
             pins_problem: None,
             media_prompt: None,
+            bots: Vec::new(),
         };
         let room_view = watch::Sender::new(None);
         let sync_problem = watch::Sender::new(None);
@@ -210,6 +218,7 @@ impl PagesLink {
             home_link: home.clone(),
             plugins_view: plugins.subscribe(),
             plugins,
+            chat,
             path,
             view: reuse(view, empty_view()),
             state: Mutex::new(state),
@@ -318,18 +327,25 @@ impl PagesLink {
         PluginsViewModel,
         HomeViewModel,
         Option<(OwnedRoomId, RoomPanel)>,
+        Vec<BotView>,
     ) {
         // 持有身份快照时只取同源列表，Home 与插件观察者的发布先后不影响页面归属。
         let home = self.home.borrow();
         let plugins = self.plugins.view_for_server(home.server_id.as_deref());
         let open_room = self.room_panel.1.borrow().clone();
-        (plugins, home.clone(), open_room)
+        let bots = if matches!(home.status, HomeStatus::Connected) {
+            self.chat.borrow().bots.clone()
+        } else {
+            Vec::new()
+        };
+        (plugins, home.clone(), open_room, bots)
     }
 
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room) = self.inputs();
+        let (plugins, home, open_room, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
+        bot::replace_bots(&mut state, bots);
         // 换了房间：上次看的那页、入口状态和红点都是那个房间的，清掉。
         let room_changed = match (&state.open_room, &open_room) {
             (Some((old, _)), Some((new, _))) => old != new,
@@ -388,12 +404,8 @@ impl PagesLink {
                         };
                         let removed: std::collections::HashSet<&str> =
                             removed.iter().map(String::as_str).collect();
-                        panel.pages.retain(|entry| match &entry.tab {
-                            TabRef::Plugin { plugin_id, .. }
-                            | TabRef::PluginPath { plugin_id, .. } => {
-                                !removed.contains(plugin_id.as_str())
-                            }
-                            _ => true,
+                        panel.pages.retain(|entry| {
+                            tab_ref_plugin_id(&entry.tab).is_none_or(|id| !removed.contains(id))
                         });
                         if let Some(fields) = serde_json::to_value(panel)
                             .ok()
@@ -430,15 +442,17 @@ impl PagesLink {
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room) = self.inputs();
+        let (plugins, home, open_room, bots) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
         state.open_room = open_room;
+        bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
         ensure_stack(&mut state, &plugins);
         if let Err(error) = persist(&self.path, &state.config) {
             let mut failed = previous;
+            bot::replace_bots(&mut failed, state.bots.clone());
             failed.problem = Some(storage_problem(&error));
             let sync_stale = self.sync_problem.borrow().is_some();
             let view = make_view(&failed, &plugins, sync_stale);
@@ -474,9 +488,10 @@ impl PagesLink {
         F: FnOnce(&mut PagesState, &PluginsViewModel) -> Result<(), CoreError>,
     {
         let _writing = lock(&self.writing);
-        let (plugins, home, open_room) = self.inputs();
+        let (plugins, home, open_room, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
         state.open_room = open_room;
+        bot::replace_bots(&mut state, bots);
         let config_changed = refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
         ensure_stack(&mut state, &plugins);

@@ -59,6 +59,7 @@ struct ChatListView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
+                            .accessibilityIdentifier("chatRoom.\(row.roomId)")
                         }
                     }
                 }
@@ -399,8 +400,11 @@ struct RoomAvatar: View {
     @Environment(\.wontonColors) private var colors
 
     private var plugin: InstalledPlugin? {
-        guard let bot = row.directUserId else { return nil }
-        return plugins.viewModel.installed?.plugins.first { $0.botUserId == bot }
+        guard let userId = row.directUserId else { return nil }
+        if let bot = model.viewModel.bots.first(where: { $0.userId == userId }) {
+            return plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }
+        }
+        return plugins.viewModel.installed?.plugins.first { $0.botUserId == userId }
     }
 
     var body: some View {

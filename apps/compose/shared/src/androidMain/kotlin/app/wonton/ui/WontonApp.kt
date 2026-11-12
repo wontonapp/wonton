@@ -72,6 +72,9 @@ internal fun ServerApp(
     val navigation = remember(core, context) { AppNavigation(pages, chat, context) }
     LaunchedEffect(pages) { pages.observe() }
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
+    LaunchedEffect(plugins.viewModel.installed?.plugins, chatView.bots) {
+        configureCrossOriginIsolatedAllowlist(plugins.viewModel.installed?.plugins.orEmpty(), chatView.bots)
+    }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { request ->

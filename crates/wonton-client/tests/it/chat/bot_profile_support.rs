@@ -42,9 +42,13 @@ impl BotApi {
     }
 
     pub fn facts(&self, facts: BotActivityFacts) {
+        self.bots(vec![facts]);
+    }
+
+    pub fn bots(&self, bots: Vec<BotActivityFacts>) {
         self.report.send_modify(|report| {
             report.rev += 1;
-            report.bots = vec![facts];
+            report.bots = bots;
         });
     }
 

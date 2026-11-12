@@ -32,6 +32,9 @@ mod bot_activity;
 mod bot_contacts;
 mod bot_plugin_access;
 mod bot_profile;
+mod bot_web;
+#[cfg(test)]
+mod bot_web_tests;
 mod bots;
 mod capabilities;
 mod capability_settings;
@@ -105,9 +108,9 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::Response;
 use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
-use hyper::{HeaderMap, Method, StatusCode};
+use hyper::{HeaderMap, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
 use wonton_protocol::{MemberStatus, Permissions, Role};
@@ -697,6 +700,10 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
 /// 响应里的 `Set-Cookie` 和会交出凭据的头。
 async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
     let host = gateway.public.plugin_host(slug);
+    // Bot 网页按 `bot--<插件>-<Bot>` 的标签路由，走 bot_web 自己的会话与凭据（ADR-0044）。
+    if slug.starts_with(wonton_protocol::BOT_WEB_LABEL_PREFIX) {
+        return plugin_web::request(gateway, slug, req).await;
+    }
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let Some(route) = gateway.plugins.route(slug, req.uri().path()) else {

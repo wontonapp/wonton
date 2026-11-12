@@ -176,6 +176,7 @@ fn chat_links(
         views.map(|v| v.pages.clone()),
         session_in,
         (room_sender, room_receiver),
+        chat.subscribe(),
     );
     let files = FilesLink::new(
         handle.clone(),

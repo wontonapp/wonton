@@ -421,6 +421,36 @@
           }
         }
       }
+    },
+    "botProfile.readOnly": {
+      "comment": "Nondefault Bot profile editing is not supported by the existing default-only actions.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This Bot’s profile is read-only."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Bot 的资料为只读。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Bot 的資料為唯讀。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この Bot のプロフィールは読み取り専用です。"
+          }
+        }
+      }
     }
   }
 }

@@ -26,6 +26,8 @@ struct TabPageView: View {
     @State private var showsDetails = false
     @State private var isVisible = false
     @State private var seenReady = false
+    @State private var disclosedURL: String?
+    @State private var disclosedProxy: ProxySettings?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -76,7 +78,11 @@ struct TabPageView: View {
             if panel == nil { takeover?.end() }
         }
         .sheet(isPresented: $showsDetails) {
-            if let pluginId {
+            if case let .bot(bot, _) = tab {
+                NavigationStack {
+                    BotProfileView(chat: chat, plugins: plugins, botRef: bot) { showsDetails = false }
+                }
+            } else if let pluginId {
                 NavigationStack {
                     PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
                         showsDetails = false
@@ -189,14 +195,83 @@ struct TabPageView: View {
         }
         return WontonBarStatus(subtitle: title)
     }
-    private var pluginId: String? {
+    private var pluginId: String? { tab.localPluginId }
+
+}
+
+private extension TabPageView {
+    /// Only Bot-bound entries need this disclosure; ordinary plugin pages retain their existing behavior.
+    private var requiresDisclosure: Bool {
+        guard isBotPage, let url = page.url else { return false }
+        return disclosedURL != url || disclosedProxy != home.viewModel.proxy
+    }
+
+    private var pageBotRef: BotRef? {
         switch tab {
-        case let .plugin(id, _), let .pluginPath(id, _): id
-        default: nil
+        case let .bot(bot, _): return bot
+        case let .plugin(id, _), let .pluginPath(id, _):
+            guard plugins.viewModel.installed?.plugins.contains(where: {
+                $0.id == id && ($0.botUserId != nil || $0.chat != nil)
+            }) == true else { return nil }
+            return BotRef(pluginId: id, bot: "default")
+        case .chat, .apps, .settings, .url, .sharedApp, .uiResource: return nil
+        }
+    }
+
+    private var pageBot: BotView? {
+        guard let pageBotRef else { return nil }
+        return chat.viewModel.bots.first { $0.bot == pageBotRef }
+    }
+
+    private var verifiedBotPage: Bool {
+        guard let ref = pageBotRef, let bot = pageBot, let web = bot.web,
+              case let .ready(metadata) = web, metadata.bot == ref,
+              let origin = webOrigin(metadata.url), origin == webOrigin(page.url) else { return false }
+        return true
+    }
+
+    private var blocksBotPage: Bool { isBotPage && !verifiedBotPage }
+
+    private var blockedBotText: String {
+        if let web = pageBot?.web, case let .unavailable(reason) = web { return reason.profileText }
+        return String(localized: .botProfileWebUnknown)
+    }
+
+    private func updatePermittedSession(_ inputs: TabWebInputs) {
+        guard !blocksBotPage, !requiresDisclosure else {
+            session.withhold()
+            return
+        }
+        updateSession(inputs)
+    }
+
+    private func webOrigin(_ value: String?) -> String? {
+        guard let value, var url = URLComponents(string: value), let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased() else { return nil }
+        url.scheme = scheme
+        url.host = host
+        if (scheme == "http" && url.port == 80) || (scheme == "https" && url.port == 443) { url.port = nil }
+        url.path = ""
+        url.query = nil
+        url.fragment = nil
+        url.user = nil
+        url.password = nil
+        return url.string
+    }
+
+    private var isBotPage: Bool {
+        switch tab {
+        case .bot: return true
+        case .plugin, .pluginPath:
+            guard pageBotRef != nil else { return false }
+            if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
+            return true
+        case .chat, .apps, .settings, .url, .sharedApp, .uiResource: return false
         }
     }
 
     private var takeover: PageTakeover? {
+        if case .bot = tab { return nil }
         guard let pluginId, let plugin = plugins.viewModel.installed?.plugins.first(where: { $0.id == pluginId }),
               plugin.declaresTools else { return nil }
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)

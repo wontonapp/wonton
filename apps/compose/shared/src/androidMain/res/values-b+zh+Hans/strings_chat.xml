@@ -2,62 +2,33 @@
 <resources>
     <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
     <!-- Accessibility label for a Bot's avatar: the Bot's name, then what it is doing right now. -->
-    <string name="bot_avatar_label">%1$s，%2$s</string>
     <!-- Button under the large avatar on the Bot profile: pick a new profile picture. -->
-    <string name="bot_avatar_choose">选图片</string>
     <!-- Sheet action on a status avatar cell: pick a new picture or video. -->
-    <string name="bot_avatar_choose_media">选图片或视频</string>
     <!-- Text inside an empty status avatar cell; tapping it picks a picture or video. -->
-    <string name="bot_avatar_add">添加</string>
     <!-- Sheet action that removes the Bot's static avatar or one status avatar. -->
-    <string name="bot_avatar_remove">移除</string>
     <!-- Section on an installed Agent app's page: the Bot's name, avatar and status avatars. -->
-    <string name="bot_profile_title">资料</string>
     <!-- Label of the field for editing the Bot's name. -->
-    <string name="bot_name_title">名字</string>
     <!-- The Bot name was empty. -->
-    <string name="bot_name_empty">名字不能是空的</string>
     <!-- The Bot name was longer than the limit; the number isn\'t shown. -->
-    <string name="bot_name_too_long">这个名字太长了</string>
     <!-- The Bot name contains line breaks or control characters. -->
-    <string name="bot_name_control">名字里有不能用的字符</string>
     <!-- The Bot name collides with Wonton\'s or the owner\'s name, so Bots can\'t use it. -->
-    <string name="bot_name_reserved">Bot 不能叫 Wonton 或你的名字</string>
     <!-- The Bot name failed validation for another reason. -->
-    <string name="bot_name_other">这个名字不行</string>
     <!-- Saving the Bot profile failed because the home server couldn\'t be reached. -->
-    <string name="bot_problem_transport">连不上家里的服务器</string>
     <!-- Saving failed because the app isn\'t installed, has no Bot, or its Matrix login isn\'t ready. -->
-    <string name="bot_problem_not_ready">应用还没准备好</string>
     <!-- Saving failed because the home server or Matrix reported an error. -->
-    <string name="bot_problem_upstream">家里的服务器出错了</string>
-    <string name="bot_problem_owner_only">只有主人能改 Bot 的资料</string>
     <!-- Saving the Bot profile failed for another reason. -->
-    <string name="bot_problem_other">资料没保存上</string>
     <!-- The picked avatar file is in a format the home server doesn\'t accept. -->
-    <string name="bot_media_format">这个文件不是支持的格式</string>
     <!-- The picked avatar file exceeds the size limit; the number isn\'t shown. -->
-    <string name="bot_media_too_large">这个文件太大了</string>
     <!-- The picked avatar image is larger in pixels than the home server accepts. -->
-    <string name="bot_media_too_big">这张图片尺寸超过上限</string>
     <!-- The picked avatar image isn\'t square. -->
-    <string name="bot_media_not_square">这张图片不是正方形</string>
     <!-- The picked avatar animation or video exceeds the duration limit; the number isn\'t shown. -->
-    <string name="bot_media_too_long">这个动图或视频太长了</string>
     <!-- The home server couldn\'t read the picked avatar file. -->
-    <string name="bot_media_unreadable">读不出这个文件</string>
     <!-- The picked file failed for another reason. -->
-    <string name="bot_media_other">这个文件不能用作头像</string>
     <!-- An animated GIF or WebP was too large to send as-is; the Bot profile accepts videos instead. -->
-    <string name="bot_media_use_video">这张动图太大了，改用一段视频吧</string>
     <!-- The four states of a Bot, shown as status avatar grid labels and read out for the avatar. -->
-    <string name="bot_state_idle">待机</string>
     <!-- Status: the Bot has model requests, tool calls, or is typing. -->
-    <string name="bot_state_working">工作中</string>
     <!-- Status: a confirmation card from the Bot is waiting for the owner. -->
-    <string name="bot_state_waiting">等你确认</string>
     <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
-    <string name="bot_state_offline">离线</string>
     <string name="timeline_new_messages_below">以下是新消息</string>
     <string name="room_scroll_to_bottom">回到底部</string>
     <string name="room_scroll_to_bottom_count">回到底部，还有 %1$d 条新消息</string>
@@ -99,7 +70,6 @@
     <string name="confirmation_card_tool_root">这个操作会以 root 身份在这台机器上运行</string>
     <string name="confirmation_card_requests">待确认的请求</string>
     <string name="confirmation_card_unavailable">这条请求已不在列表里</string>
-    <string name="bot_avatar_pick_state">更换%1$s头像</string>
     <string name="timeline_sending_progress">发送中 %1$s</string>
     <string name="timeline_cancel_send">取消发送</string>
     <string name="side_chat">旁聊</string>
@@ -121,4 +91,53 @@
     <plurals name="side_chat_unread">
         <item quantity="other">%1$d 条未读</item>
     </plurals>
+    <!-- 每个 Bot 的资料页与网页（ADR-0044）。 -->
+    <string name="bot_avatar_label">%1$s，%2$s</string>
+    <string name="bot_avatar_choose">选图片</string>
+    <string name="bot_avatar_choose_media">选图片或视频</string>
+    <string name="bot_avatar_add">添加</string>
+    <string name="bot_avatar_remove">移除</string>
+    <string name="bot_profile_title">资料</string>
+    <string name="bot_name_title">名字</string>
+    <string name="bot_name_empty">名字不能是空的</string>
+    <string name="bot_name_too_long">这个名字太长了</string>
+    <string name="bot_name_control">名字里有不能用的字符</string>
+    <string name="bot_name_reserved">Bot 不能叫 Wonton 或你的名字</string>
+    <string name="bot_name_other">这个名字不行</string>
+    <string name="bot_problem_transport">连不上家里的服务器</string>
+    <string name="bot_problem_not_ready">应用还没准备好</string>
+    <string name="bot_problem_upstream">家里的服务器出错了</string>
+    <string name="bot_problem_owner_only">只有主人能改 Bot 的资料</string>
+    <string name="bot_problem_other">资料没保存上</string>
+    <string name="bot_media_format">这个文件不是支持的格式</string>
+    <string name="bot_media_too_large">这个文件太大了</string>
+    <string name="bot_media_too_big">这张图片尺寸超过上限</string>
+    <string name="bot_media_not_square">这张图片不是正方形</string>
+    <string name="bot_media_too_long">这个动图或视频太长了</string>
+    <string name="bot_media_unreadable">读不出这个文件</string>
+    <string name="bot_media_other">这个文件不能用作头像</string>
+    <string name="bot_media_use_video">这张动图太大了，改用一段视频吧</string>
+    <string name="bot_state_idle">待机</string>
+    <string name="bot_state_working">工作中</string>
+    <string name="bot_state_waiting">等你确认</string>
+    <string name="bot_state_offline">离线</string>
+    <string name="bot_avatar_pick_state">更换%1$s头像</string>
+    <string name="bot_profile_open">查看 Bot 资料</string>
+    <string name="bot_identity_title">Bot 身份</string>
+    <string name="bot_identity_value">插件：%1$s\nBot：%2$s</string>
+    <string name="bot_profile_read_only">此 Bot 的资料只读。只有默认 Bot 支持编辑资料。</string>
+    <string name="bot_profile_missing">此 Bot 的资料已不可用。</string>
+    <string name="bot_web_title">Bot 网页</string>
+    <string name="bot_web_open">打开 Bot 网页</string>
+    <string name="bot_web_unauthenticated">请先登录服务器，再打开此 Bot 的网页。</string>
+    <string name="bot_web_not_shared">服务器主人尚未向家人开放此 Bot 的网页。</string>
+    <string name="bot_web_permission_denied">此身份无权打开 Bot 网页。</string>
+    <string name="bot_web_not_found">此 Bot 已不存在。</string>
+    <string name="bot_web_no_webui">此 Bot 没有独立网页。</string>
+    <string name="bot_web_not_ready">此 Bot 的网页尚未就绪，请启动后再试。</string>
+    <string name="bot_web_unknown">无法确定此 Bot 的网页是否可用，不能打开网页。</string>
+    <string name="bot_web_login_title">打开此 Bot 网页前</string>
+    <string name="bot_web_login_warning">服务器主人可以查看、管理这里的登录状态。</string>
+    <string name="bot_web_shared_state">家人可能查看或修改同一份上游应用状态。账号是否独立取决于应用本身，不保证登录或数据按人隔离。</string>
+</resources>
 </resources>

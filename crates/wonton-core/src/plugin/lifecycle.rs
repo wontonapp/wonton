@@ -35,11 +35,13 @@ use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
 use crate::matrix::ProvisionedBot;
-use crate::oidc::{ClientSpec, Hydra};
+use crate::oidc::Hydra;
 use crate::secret::random_token;
 
+mod oidc_client;
 pub(super) mod rollback;
 pub(super) mod volumes;
+pub(super) use oidc_client::{client_spec, client_spec_at};
 
 /// 插件管理器需要的那部分核心配置。
 #[derive(Debug, Clone)]
@@ -95,12 +97,14 @@ pub(super) struct Undo {
     /// 本次安装代 Bot 登录的设备，回滚时吊销（账号、主房间和数据保留给下次安装，见
     /// [`Undo::keep_bot_data`]）。
     pub(super) bot: Option<(PluginId, String, ProvisionedBot)>,
+    pub(super) extra_bots: Vec<(PluginId, String, ProvisionedBot)>,
+    pub(super) web_plugin: Option<PluginId>,
     /// 本次安装把主房间交给了主人（主人原来不在里面），回滚时收回。
     pub(super) handed_over: bool,
     /// 已登记插件网络的地址段，回滚时注销。
     source: Option<PluginId>,
     /// 本次安装在模型网关里签发了凭据的插件，回滚时吊销。
-    models: Option<PluginId>,
+    pub(super) models: Option<PluginId>,
     pub(super) record: Option<PluginId>,
     pub(super) hosted: Vec<(String, PluginId)>,
     pub(super) final_stage: Option<InstallStage>,
@@ -129,7 +133,12 @@ impl PluginManager {
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<(Deployed, Undo), InstallError> {
-        let mut undo = Undo::default();
+        let _allocating = self.bot_allocation.lock().await;
+        self.reserve_manifest_bot_web(&package.manifest)?;
+        let mut undo = Undo {
+            web_plugin: Some(package.manifest.id.clone()),
+            ..Default::default()
+        };
         // 同 installation.rs 的 install_checked：deploy 子树的状态机搬上堆，install 链默认栈才够深。
         match Box::pin(self.deploy_inner(
             package, granted, enabled, grants, settings, &mut undo, langs,
@@ -198,6 +207,7 @@ impl PluginManager {
                 .await?;
             undo.oidc_client = Some(manifest.id.to_string());
         }
+        self.sync_bot_web_clients(manifest, &ctx).await?;
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline = super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
@@ -757,12 +767,17 @@ impl PluginManager {
         purge: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
+        let _allocating = self.bot_allocation.lock().await;
         let found = self.own_resources(id).await?;
         for container in &found.containers {
             self.engine.remove_container(container).await?;
         }
         // 容器都停了再吊销 Bot 的设备和模型网关凭据。
         let bots = self.deactivate_bots(id, purge).await?;
+        self.delete_bot_web_clients(id, None).await?;
+        if purge {
+            self.release_bot_web(id, None)?;
+        }
         self.revoke_models(id, langs).await?;
         self.remove_networks(&found.networks).await?;
         // 核心为只读根服务写的配置文件（configs_store）跟着插件删，不占数据目录的清理（purge）。
@@ -827,47 +842,5 @@ impl PluginManager {
             )));
         }
         Ok(report)
-    }
-}
-
-pub(super) fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &str) -> ClientSpec {
-    let webui = manifest.webui.as_ref();
-    let base = ctx.app_url.as_deref().unwrap_or_default();
-    let oidc = webui.and_then(|w| w.oidc.as_ref());
-    ClientSpec {
-        id: manifest.id.to_string(),
-        secret: secret.to_owned(),
-        name: manifest
-            .title
-            .get("en")
-            .or_else(|| manifest.title.values().next())
-            .cloned()
-            .unwrap_or_else(|| manifest.id.to_string()),
-        redirect_uris: oidc
-            .map(|o| {
-                o.redirect_paths
-                    .iter()
-                    .map(|p| format!("{base}{p}"))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        post_logout_redirect_uris: webui
-            .map(|webui| {
-                // Hydra 按整串匹配，根地址有无末尾斜杠都要登记。
-                let mut paths = vec!["", "/", webui.path.as_str()];
-                if let Some(oidc) = oidc {
-                    paths.extend(oidc.post_logout_paths.iter().map(String::as_str));
-                }
-                paths.sort_unstable();
-                paths.dedup();
-                paths
-                    .into_iter()
-                    .map(|path| format!("{base}{path}"))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        token_endpoint_auth_method: oidc
-            .map(|o| o.token_endpoint_auth_method.as_str())
-            .unwrap_or("client_secret_basic"),
     }
 }

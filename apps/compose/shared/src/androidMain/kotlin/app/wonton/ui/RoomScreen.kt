@@ -49,6 +49,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ConfirmationView
@@ -78,6 +79,7 @@ import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -168,6 +170,7 @@ internal fun RoomRoute(
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(target) { TimelineState() }
@@ -231,6 +234,7 @@ internal fun RoomRoute(
             onReject,
             onOpenRoom,
             onOpenBackup,
+            onOpenBotProfile,
             onClose,
         )
     }
@@ -272,6 +276,7 @@ private fun RoomScreen(
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -307,7 +312,12 @@ private fun RoomScreen(
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
             RoomSurface(
-                bar = { RoomBar(target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose) },
+                bar = {
+                    RoomBar(
+                        target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose,
+                        onOpenBotProfile = { onOpenBotProfile(it) },
+                    )
+                },
             ) { backdrop ->
                 Conversation(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
@@ -386,6 +396,7 @@ private fun RoomBar(
     plugins: PluginsState,
     header: SideChatCard?,
     onClose: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
 ) {
     if (target.threadRoot != null) {
         WontonPushedBar(header?.title ?: stringResource(R.string.side_chat), onClose, showsStatus = true)
@@ -404,6 +415,14 @@ private fun RoomBar(
         showsStatusLine = true,
         avatar = barAvatar,
         actions = {
+            if (isDirect && bot != null) {
+                Box(Modifier.testTag("bot-profile-open")) {
+                    WontonIconButton(
+                        WontonIcon.Info, stringResource(R.string.bot_profile_open),
+                        { onOpenBotProfile(bot.bot) },
+                    )
+                }
+            }
             if (sideChats.supported) {
                 WontonIconButton(
                     WontonIcon.Compose,

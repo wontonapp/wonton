@@ -133,7 +133,7 @@ final class AppNavigation {
         guard try await navigationReady() else { return }
         switch link {
         case let .tab(tab):
-            if case .plugin = tab {
+            if tab.localPluginId != nil {
                 try await waitForInitialPlugins()
                 guard allowsNavigation else { return }
             }
