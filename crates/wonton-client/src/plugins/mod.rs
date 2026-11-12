@@ -5,6 +5,7 @@ pub(crate) mod api;
 mod cache;
 pub(crate) mod cards;
 mod core_upgrade;
+mod detail;
 mod egress;
 mod me;
 mod media;
@@ -31,8 +32,9 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginsViewModel,
-    ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing, TabRef,
+    PermissionUpdate, PluginDetail, PluginDetailRoute, PluginFailure, PluginImage, PluginProblem,
+    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
+    TabRef,
 };
 
 use crate::home::HomeLink;
@@ -522,17 +524,15 @@ impl PluginsLink {
     }
 
     pub(crate) async fn store_plugin(&self, source: &str) -> Result<PluginDetail, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.get(&["store", "plugin"], &[("source", source)], SOURCE_TIMEOUT)
-            .await
-            .map_err(to_core_error)
+        let route = PluginDetailRoute::Store {
+            source: source.to_owned(),
+        };
+        self.fetch_detail(&route).await.map_err(to_core_error)
     }
 
     pub(crate) async fn installed_plugin(&self, id: &str) -> Result<PluginDetail, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        api.get(&["plugins", id], &[], READ_TIMEOUT)
-            .await
-            .map_err(to_core_error)
+        let route = PluginDetailRoute::Installed { id: id.to_owned() };
+        self.fetch_detail(&route).await.map_err(to_core_error)
     }
 
     pub(crate) async fn preview_install(

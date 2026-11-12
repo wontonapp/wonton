@@ -14,6 +14,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginImage
+import app.wonton.protocol.PluginDetailRoute
 import app.wonton.protocol.PluginKind
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.InstallPreview
@@ -116,6 +117,13 @@ sealed interface PluginRoute {
     data class Store(val source: String) : PluginRoute
 
     data class Installed(val id: String) : PluginRoute
+
+    /** 核心认得的同一页。 */
+    val coreRoute: PluginDetailRoute
+        get() = when (this) {
+            is Store -> PluginDetailRoute.Store(source)
+            is Installed -> PluginDetailRoute.Installed(id)
+        }
 }
 
 /** 安装或升级的确认页。 */
