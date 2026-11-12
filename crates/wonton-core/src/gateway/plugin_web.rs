@@ -255,14 +255,16 @@ async fn bot_request(
     let Some(upstream) = route.upstream.as_ref() else {
         return bot_web::failure(wonton_protocol::BotWebFailure::NotReady, &langs);
     };
-    if let Err(response) = attach_proxy_credentials(
-        gateway,
-        &route,
-        person.as_ref().unwrap(),
-        req.headers_mut(),
-        &langs,
-        format,
-    ) {
+    if let Some(person) = &person
+        && let Err(response) = proxy_sso::attach_credentials(
+            gateway,
+            &route,
+            person,
+            req.headers_mut(),
+            &langs,
+            format,
+        )
+    {
         return *response;
     }
     let fwd = proxy::Forwarded {
