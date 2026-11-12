@@ -182,6 +182,66 @@
         }
       }
     },
+    "message.redactOthers": {
+      "comment": "Item in the message menu on someone else's message: delete it for everyone. Argument: the sender's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete %@'s Message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@ 的消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除 %@ 的訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のメッセージを削除"
+          }
+        }
+      }
+    },
+    "message.redactOthersTitle": {
+      "comment": "Title of the confirmation before deleting someone else's message for everyone. Argument: the sender's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete %@'s message for everyone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@ 的这条消息？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除 %@ 的這則訊息？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のメッセージを全員から削除しますか？"
+          }
+        }
+      }
+    },
     "message.replyCancel": {
       "comment": "Remove the reply quote above the composer.",
       "extractionState": "manual",

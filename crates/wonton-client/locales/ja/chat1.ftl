@@ -84,6 +84,8 @@ chat-op-direct-chat-failed = ダイレクトチャットを開始できません
 
 chat-op-send-text-failed = メッセージを送信できませんでした：{ $error }
 
+chat-op-send-preview-failed = リンクのプレビューを付けられませんでした：{ $error }
+
 chat-avatar-cache-hash-collision = アバターのキャッシュでハッシュが衝突しています
 
 chat-draft-clear-failed = 送信済みの下書きを消すのに失敗しました：{ $error }

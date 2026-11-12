@@ -4,6 +4,10 @@
     <string name="message_code_copied">已複製</string>
     <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
     <string name="message_delete_everyone">收回</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">刪除 %1$s 的訊息</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">刪除 %1$s 的這則訊息？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">轉發</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->

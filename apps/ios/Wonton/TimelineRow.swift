@@ -159,11 +159,18 @@ private struct MessageBubble: View {
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
+            // 隔开前面的项，别和转发挨着误点。管理员也能撤别人的消息，写明是谁的，免得以为撤的是自己的。
+            Divider()
             Button(role: .destructive) {
                 redact()
             } label: {
-                Label { Text(.Message1.messageRedact) }
-                    icon: { WontonIcon.trash.view(size: WontonTheme.size.iconSmall) }
+                Label {
+                    message.isOwn
+                        ? Text(.Message1.messageRedact)
+                        : Text(.Message2.messageRedactOthers(message.senderName))
+                } icon: {
+                    WontonIcon.trash.view(size: WontonTheme.size.iconSmall)
+                }
             }
             .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。

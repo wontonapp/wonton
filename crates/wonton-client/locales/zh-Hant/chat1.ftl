@@ -84,6 +84,8 @@ chat-op-direct-chat-failed = 無法發起私訊：{ $error }
 
 chat-op-send-text-failed = 無法傳送訊息：{ $error }
 
+chat-op-send-preview-failed = 連結預覽沒有附上：{ $error }
+
 chat-avatar-cache-hash-collision = 頭像快取的雜湊值衝突
 
 chat-draft-clear-failed = 清掉已發出的草稿失敗：{ $error }

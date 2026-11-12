@@ -89,6 +89,8 @@ chat-op-direct-chat-failed = Can't start the direct chat: { $error }
 
 chat-op-send-text-failed = Can't send the message: { $error }
 
+chat-op-send-preview-failed = Couldn't attach the link preview: { $error }
+
 chat-avatar-cache-hash-collision = Two avatars in the cache have the same hash.
 
 chat-draft-clear-failed = Clearing the sent draft failed: { $error }

@@ -84,6 +84,8 @@ chat-op-direct-chat-failed = 发起私聊失败：{ $error }
 
 chat-op-send-text-failed = 发送消息失败：{ $error }
 
+chat-op-send-preview-failed = 链接预览没带上：{ $error }
+
 chat-avatar-cache-hash-collision = 头像缓存哈希冲突
 
 chat-draft-clear-failed = 清掉已发出的草稿失败：{ $error }

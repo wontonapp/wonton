@@ -38,7 +38,17 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
+                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
+    }
+
+    /// 撤回别人的消息时标题写明是谁的。
+    private var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .Message1.messageRedactTitle)
+        }
+        return String(localized: .Message2.messageRedactOthersTitle(message.senderName))
     }
 
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
@@ -79,7 +89,7 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .Message1.messageRedactTitle),
+            redactTitle,
             message: String(localized: .Message2.messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
