@@ -152,7 +152,7 @@ impl BotContactsLink {
     }
 
     fn api(&self) -> Result<api::Api, Failure> {
-        // 已知隧道不通就立刻失败，不等超时（tunnel-502）。
+        // 已知隧道不通就立刻失败，不等超时。
         if let Some(reason) = self.home.tunnel_outage() {
             return Err(Failure::transport(format!("{reason:?}")));
         }

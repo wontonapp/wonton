@@ -142,7 +142,7 @@ struct Inner {
     /// 当前连接的数据报分发器，第一次开 UDP 流向时建；连接换了就换。
     datagrams: Mutex<Option<Arc<crate::udp::mux::DatagramMux>>>,
     /// 请求在隧道流上迟迟等不到服务端回执时催一下定时检查：立即确认一次，不等下一个检查周期
-    /// （tunnel-502）。存一个许可，催多次合成一次。
+    /// 存一个许可，催多次合成一次。
     check_nudge: Notify,
 }
 
@@ -254,7 +254,7 @@ impl TunnelClient {
     }
 
     /// 催一下定时检查：请求在隧道流上迟迟等不到服务端回执时，立即确认一次连接，不等下一个
-    /// 检查周期（tunnel-502）。确认的时限和判死证据与定时检查相同，不会因为催得早而误判慢中继。
+    /// 检查周期。确认的时限和判死证据与定时检查相同，不会因为催得早而误判慢中继。
     /// 没人在等时存一个许可，下一次等待马上返回。
     pub fn nudge_check(&self) {
         self.inner.check_nudge.notify_one();

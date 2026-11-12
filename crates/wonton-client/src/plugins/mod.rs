@@ -483,7 +483,7 @@ impl PluginsLink {
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
-        // 已知隧道不通就立刻失败，不等超时（tunnel-502）。
+        // 已知隧道不通就立刻失败，不等超时。
         if self.home.tunnel_outage().is_some() {
             return Err(api::not_connected());
         }

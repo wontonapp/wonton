@@ -34,7 +34,7 @@ const GAP: Duration = Duration::from_millis(100);
 struct SlowPing {
     upstream: SocketAddr,
     served: Arc<Mutex<Vec<JoinHandle<()>>>>,
-    /// 为真时收下 `Forward` 却永远不回状态字节：模拟服务端忙到接不动，客户端的请求卡在等回执上（tunnel-502）。
+    /// 为真时收下 `Forward` 却永远不回状态字节：模拟服务端忙到接不动，客户端的请求卡在等回执上。
     hang_forward: bool,
 }
 
@@ -279,7 +279,7 @@ impl Rig {
         Self::start_with_hanging_forward(false).await
     }
 
-    /// 服务端收下 Forward 却永远不回状态字节：请求卡在等服务端回执上（tunnel-502 的催促测试用）。
+    /// 服务端收下 Forward 却永远不回状态字节：请求卡在等服务端回执上（催促测试用）。
     async fn start_with_hanging_forward(hang_forward: bool) -> Self {
         let upstream = SlowBody::spawn().await;
         let server = Server::start(SecretKey::generate(), 0, upstream.addr, hang_forward).await;
@@ -363,7 +363,7 @@ async fn leftovers_of_a_silently_replaced_server_do_not_keep_the_connection() {
     assert_eq!(http_get(rig.proxy.local_addr(), "/after").await.status, 200);
     reading.abort();
 }
-/// 本地代理等服务端回执等过 [`NUDGE_AFTER`] 时催一次定时检查（tunnel-502）：检查循环收到催促
+/// 本地代理等服务端回执等过 [`NUDGE_AFTER`] 时催一次定时检查：检查循环收到催促
 /// 立刻确认换连接，不等下一个周期。催促不能太早：中继负载下往返到过 2.8 秒（ADR-0004），
 /// 一卡就催会把忙线上的慢响应误当成断链。
 const NUDGE_AFTER: Duration = Duration::from_secs(2);

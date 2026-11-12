@@ -55,7 +55,7 @@ extension TabWebSession: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
-        // 类别由代理给（x-wonton-error，tunnel-502）。网关的响应也用这个头名，只认代理自己的取值：
+        // 类别由代理给（x-wonton-error）。网关的响应也用这个头名，只认代理自己的取值：
         // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
         // 照实交状态码给核心判断。
         let category = http.value(forHTTPHeaderField: "x-wonton-error").map { $0.lowercased() }

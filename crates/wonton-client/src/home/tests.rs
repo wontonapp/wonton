@@ -93,7 +93,7 @@ async fn page_media_keeps_the_tunnel_checked_in_the_background() {
     assert!(!*home.background.borrow());
 }
 
-/// 核心自己经隧道请求的闸门（tunnel-502）：已知断开给原因，连接中、已连上和还没配对不拦。
+/// 核心自己经隧道请求的闸门：已知断开给原因，连接中、已连上和还没配对不拦。
 #[tokio::test(start_paused = true)]
 async fn a_known_disconnected_connection_gates_core_requests() {
     let (_dir, home, _method_rx) = paused_home().await;

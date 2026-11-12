@@ -143,7 +143,7 @@ async fn tunnel_errors_are_still_explained_through_the_forward_proxy() {
 }
 
 /// 隧道不通时立刻回带类别的响应：状态码照旧，类别头给壳，正文只有类别、不写英文原文
-/// （tunnel-502）。客户端已关时新请求当场失败，不用等建连。
+/// 客户端已关时新请求当场失败，不用等建连。
 #[tokio::test]
 async fn a_dead_tunnel_is_reported_by_category_not_by_english_text() {
     let (home, upstream) = home_with_head_echo(true).await;

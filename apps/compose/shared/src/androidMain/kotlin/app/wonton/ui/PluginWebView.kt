@@ -51,7 +51,7 @@ private const val TAG = "WontonWeb"
 /** 和 `wonton-tunnel` 的 `ERROR_HEADER` 一致。 */
 private const val TUNNEL_ERROR_HEADER = "x-wonton-tunnel-error"
 
-// 代理给壳的用户可读错误类别（tunnel-502），取值见核心 `TunnelError::category`。
+// 代理给壳的用户可读错误类别，取值见核心 `TunnelError::category`。
 private const val CATEGORY_ERROR_HEADER = "x-wonton-error"
 
 // 只有这些取值是本地代理回的；网关的响应也带 x-wonton-error，取值不同。
@@ -506,7 +506,7 @@ private class ProxyAuthClient(
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
         if (!request.isForMainFrame) return
         val headers = response.responseHeaders.orEmpty()
-        // 类别由代理给（x-wonton-error，tunnel-502）。服务端的网关也用这个头名，只认代理自己的取值：
+        // 类别由代理给（x-wonton-error）。服务端的网关也用这个头名，只认代理自己的取值：
         // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
         // 照实交状态码给核心判断。
         val category = headers.entries

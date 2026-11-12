@@ -260,7 +260,7 @@ async fn relay(
 }
 
 /// 等隧道流上回的状态字节。服务端迟迟不回，就在这里等着，所以等久了报一下：卡在这里是服务端没接请求，不是转发慢。
-/// 等过 [`SLOW_STAGE`] 还没回时催一次定时检查（tunnel-502）：连接可能已经死了，立即确认一次，
+/// 等过 [`SLOW_STAGE`] 还没回时催一次定时检查：连接可能已经死了，立即确认一次，
 /// 不让这条请求干等下一个检查周期。
 async fn download(
     client: &TunnelClient,
@@ -346,7 +346,7 @@ fn error_response(err: &TunnelError) -> String {
         TunnelError::UpstreamUnavailable => (503, "Service Unavailable"),
         _ => (502, "Bad Gateway"),
     };
-    // 正文会被网页原样显示，只放类别；人话由壳按类别写（tunnel-502）。
+    // 正文会被网页原样显示，只放类别；人话由壳按类别写。
     let body = format!("{}\n", err.category());
     format!(
         "HTTP/1.1 {status} {reason}\r\n\
