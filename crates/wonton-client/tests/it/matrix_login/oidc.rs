@@ -2,7 +2,7 @@
 //! （动态注册、令牌端点）。测的是核心生成授权地址、核对回调、换到令牌后存成槽位；浏览器那一段由测试拼回调代替。
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::{
     Json, Router,
@@ -23,12 +23,22 @@ use wonton_protocol::ServerKind;
 
 use super::{open, settled, slot_dir_gone, start};
 
-const REDIRECT: &str = "wonton://matrix-login";
+/// 和核心发布的 `oidc_redirect_uri` 必须一致：matrix.org 只收 `client_uri` 域名倒写的 scheme。
+const REDIRECT: &str = "io.github.wontonapp:/matrix-login";
+const CLIENT_URI: &str = "https://wontonapp.github.io/";
 const USER: &str = "@alice:oidc.example";
 
 struct FakeHomeserver {
     url: String,
+    /// 最近一次动态注册收到的客户端元数据。
+    registered: Arc<Mutex<Option<Value>>>,
     task: JoinHandle<()>,
+}
+
+#[derive(Clone)]
+struct Fake {
+    base: Arc<String>,
+    registered: Arc<Mutex<Option<Value>>>,
 }
 
 impl Drop for FakeHomeserver {
@@ -41,7 +51,11 @@ impl FakeHomeserver {
     async fn start() -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
-        let base = Arc::new(url.clone());
+        let registered = Arc::new(Mutex::new(None));
+        let fake = Fake {
+            base: Arc::new(url.clone()),
+            registered: registered.clone(),
+        };
         let app = Router::new()
             .route("/_matrix/client/versions", get(versions))
             .route("/_matrix/client/v3/login", get(login_types))
@@ -51,11 +65,15 @@ impl FakeHomeserver {
             .route("/_matrix/client/v3/account/whoami", get(whoami))
             .route("/_matrix/client/v3/devices/{device}", put(rename))
             .fallback(unrecognized)
-            .with_state(base);
+            .with_state(fake);
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        Self { url, task }
+        Self {
+            url,
+            registered,
+            task,
+        }
     }
 }
 
@@ -71,7 +89,7 @@ async fn login_types() -> Json<Value> {
     Json(json!({ "flows": [{ "type": "m.login.sso" }] }))
 }
 
-async fn metadata(State(base): State<Arc<String>>) -> Json<Value> {
+async fn metadata(State(Fake { base, .. }): State<Fake>) -> Json<Value> {
     Json(json!({
         "issuer": format!("{base}/"),
         "authorization_endpoint": format!("{base}/oauth2/authorize"),
@@ -85,7 +103,8 @@ async fn metadata(State(base): State<Arc<String>>) -> Json<Value> {
     }))
 }
 
-async fn register() -> impl IntoResponse {
+async fn register(State(fake): State<Fake>, Json(body): Json<Value>) -> impl IntoResponse {
+    *fake.registered.lock().unwrap() = Some(body);
     (
         StatusCode::CREATED,
         Json(json!({ "client_id": "fake-client" })),
@@ -145,7 +164,9 @@ async fn awaiting(core: &ClientCore, server: &FakeHomeserver) -> (String, HashMa
         [MatrixLoginMethod::Oidc],
         "旧式 SSO 不算 OIDC"
     );
-    core.dispatch(oidc(&ready.login_id, REDIRECT)).unwrap();
+    assert_eq!(ready.oidc_redirect_uri, REDIRECT);
+    core.dispatch(oidc(&ready.login_id, &ready.oidc_redirect_uri))
+        .unwrap();
     let login = settled(core).await;
     let MatrixLoginState::AwaitingOidc { authorization_url } = login.state else {
         panic!("没拿到授权地址：{login:?}");
@@ -159,6 +180,19 @@ async fn awaiting(core: &ClientCore, server: &FakeHomeserver) -> (String, HashMa
     let query: HashMap<String, String> = url.query_pairs().into_owned().collect();
     assert_eq!(query["client_id"], "fake-client");
     assert_eq!(query["redirect_uri"], REDIRECT);
+    let registered = server
+        .registered
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("动态注册过");
+    assert_eq!(registered["client_uri"], CLIENT_URI, "{registered}");
+    assert_eq!(
+        registered["redirect_uris"],
+        json!([REDIRECT]),
+        "{registered}"
+    );
+    assert_eq!(registered["application_type"], "native", "{registered}");
     assert_eq!(query["code_challenge_method"], "S256");
     assert!(!query["state"].is_empty());
     (ready.login_id, query)

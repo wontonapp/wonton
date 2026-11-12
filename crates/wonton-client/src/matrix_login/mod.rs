@@ -27,8 +27,11 @@ use crate::servers::ServerList;
 /// 不填服务器时用的。
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
-/// 平台注册、核心接受的 OIDC 回调地址；壳交来的不在这里就拒绝。
-const REDIRECT_URIS: &[&str] = &["wonton://matrix-login"];
+/// 核心接受的 OIDC 回调地址，经 `MatrixLoginViewModel.oidc_redirect_uri` 给壳；壳交来的不是它就拒绝。
+///
+/// matrix.org 的授权服务器（MAS）动态注册时要求原生 App 的回调 scheme 是 `client_uri` 域名倒过来写
+/// （[`tasks::CLIENT_URI`]），`wonton://` 会被拒成 `invalid_redirect_uri`。只有一个斜杠是 RFC 8252 7.1 的私有 scheme 写法。
+const OIDC_REDIRECT_URI: &str = "io.github.wontonapp:/matrix-login";
 
 /// 授权地址发出去以后，回调最晚多久内回来。授权服务器的授权码一般只活几分钟，这里给够在浏览器里登录的时间。
 const OIDC_DEADLINE: Duration = Duration::from_secs(15 * 60);
@@ -117,6 +120,7 @@ impl MatrixLogins {
             login_id: id.clone(),
             homeserver: input.clone(),
             methods: Vec::new(),
+            oidc_redirect_uri: OIDC_REDIRECT_URI.to_owned(),
             state: MatrixLoginState::Discovering,
         };
         let flow = Arc::new(Flow {
@@ -160,11 +164,10 @@ impl MatrixLogins {
 
     fn start_oidc(self: &Arc<Self>, login: MatrixOidcLogin) -> Result<(), CoreError> {
         let device_name = device_name(&login.device_name)?;
-        let redirect = REDIRECT_URIS
-            .iter()
-            .find(|allowed| **allowed == login.redirect_uri.trim())
-            .and_then(|allowed| Url::parse(allowed).ok())
-            .ok_or_else(|| invalid("matrix-login-redirect-not-allowed"))?;
+        if login.redirect_uri.trim() != OIDC_REDIRECT_URI {
+            return Err(invalid("matrix-login-redirect-not-allowed"));
+        }
+        let redirect = Url::parse(OIDC_REDIRECT_URI).expect("the redirect URI is valid");
         // 浏览器里放弃了的话可以再开一次授权，换新的 state。
         let (flow, pending) = self.ready(&login.login_id, MatrixLoginMethod::Oidc, true)?;
         let logins = self.clone();

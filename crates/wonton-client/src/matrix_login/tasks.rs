@@ -13,8 +13,8 @@ use super::{Flow, MatrixLogins, OIDC_DEADLINE, Oidc, lock};
 use crate::chat::{ChatStorage, StoredSession};
 use crate::servers::ServerList;
 
-/// OAuth 2.0 动态注册时报的客户端主页（MSC2966 的 `client_uri`）。
-const CLIENT_URI: &str = "https://github.com/wontonapp";
+/// OAuth 2.0 动态注册时报的客户端主页（MSC2966 的 `client_uri`）。要是公开能打开的页面，域名倒过来就是回调的 scheme。
+pub(super) const CLIENT_URI: &str = "https://wontonapp.github.io";
 const CLIENT_NAME: &str = "Wonton";
 
 /// 登录用的存储：占的槽位里聊天以后要用的那个目录，登录得到的设备密钥直接落在那里。
