@@ -1,12 +1,150 @@
+use std::net::Ipv4Addr;
 use std::{
     pin::Pin,
     task::{Context, Poll},
 };
 
+use tokio::{io::AsyncBufReadExt, io::AsyncReadExt, net::TcpListener, task::JoinHandle};
+
 use super::*;
 use crate::acp::test_support::*;
 use crate::l10n::zh;
 use tokio::io::{AsyncRead, ReadBuf};
+
+/// 假核心的权限接口：每个转发来的权限请求都回同一个结果。
+struct FakeCore {
+    url: String,
+    task: JoinHandle<()>,
+}
+
+impl FakeCore {
+    async fn replying(outcome: Value) -> Self {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(serve_permissions(listener, outcome));
+        Self {
+            url: format!("http://{address}/mcp"),
+            task,
+        }
+    }
+
+    fn broker(&self) -> PermissionBroker {
+        PermissionBroker::new(&self.url).unwrap()
+    }
+
+    fn finish(&self) {
+        self.task.abort();
+    }
+}
+
+async fn serve_permissions(listener: TcpListener, outcome: Value) {
+    loop {
+        let Ok((mut stream, _)) = listener.accept().await else {
+            return;
+        };
+        let outcome = outcome.clone();
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(&mut stream);
+            let mut content_length = 0;
+            let mut request_line = String::new();
+            if reader.read_line(&mut request_line).await.is_err() {
+                return;
+            }
+            loop {
+                let mut line = String::new();
+                if reader.read_line(&mut line).await.is_err() {
+                    return;
+                }
+                if line == "\r\n" || line.is_empty() {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    content_length = value.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; content_length];
+            if reader.read_exact(&mut body).await.is_err() {
+                return;
+            }
+            let outcome = outcome.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{outcome}",
+                outcome.len()
+            );
+            let _ = stream.write_all(response.as_bytes()).await;
+        });
+    }
+}
+
+/// 等到这个权限请求收到应答（最久 5 秒，`bounded` 兜底）。
+async fn permission_response(agent: &FakeAgent, id: &Value) -> Vec<Value> {
+    bounded(
+        async {
+            loop {
+                let responses = agent.responses_for(id).await;
+                if !responses.is_empty() {
+                    return responses;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        },
+        "等权限应答",
+    )
+    .await
+}
+
+/// 挂起中的一轮。
+type PromptTask = JoinHandle<Result<PromptResult>>;
+
+/// 起假 Agent + 假核心，开好会话、挂起一轮 prompt，返回挂起的一轮。
+async fn started_with(outcome: Value) -> (FakeAgent, FakeCore, AcpClient, PromptTask) {
+    let agent = FakeAgent::start(Scenario::Manual).await;
+    let core = FakeCore::replying(outcome).await;
+    let client = bounded(
+        AcpClient::connect(&agent.socket, core.broker()),
+        "initialize",
+    )
+    .await
+    .unwrap();
+    bounded(
+        client.new_session(
+            "/workspace",
+            "http://mcp.wonton.internal/mcp",
+            "plan",
+            None,
+            &origin(None),
+        ),
+        "session/new",
+    )
+    .await
+    .unwrap();
+    let prompt = {
+        let client = client.clone();
+        tokio::spawn(async move {
+            client
+                .prompt(
+                    "session-1",
+                    vec![json!({"type": "text", "text": "hi"})],
+                    1024,
+                    Duration::from_secs(2),
+                    zh(),
+                )
+                .await
+        })
+    };
+    bounded(
+        async {
+            while agent.pending_count() == 0 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        },
+        "等一轮挂起",
+    )
+    .await;
+    (agent, core, client, prompt)
+}
 
 #[tokio::test]
 async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
@@ -603,6 +741,39 @@ async fn restored_sessions_get_the_mode_new_set_again() {
 }
 
 #[tokio::test]
+async fn an_expired_permission_cancels_the_session_before_answering_cancelled() {
+    let (agent, core, client, prompt) = started_with(json!({"outcome": "expired"})).await;
+    let id = agent.ask_permission("session-1", "src/a.rs").await;
+    let responses = permission_response(&agent, &id).await;
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["outcome"]["outcome"], "cancelled");
+
+    // 过期的卡片等不到答案：先发 `session/cancel`，假 Agent 照实撤了这一轮，然后才
+    // 收到这次请求的 `cancelled`（ADR-0061）。
+    let incoming = agent.incoming().await;
+    let cancel_at = incoming
+        .iter()
+        .position(|message| {
+            message["method"] == "session/cancel" && message["params"]["sessionId"] == "session-1"
+        })
+        .expect("桥没有发 session/cancel");
+    let answer_at = incoming
+        .iter()
+        .position(|message| message.get("method").is_none() && message["id"] == id)
+        .expect("桥没有回答权限请求");
+    assert!(cancel_at < answer_at, "要先 session/cancel 再回 cancelled");
+
+    let result = bounded(prompt, "prompt")
+        .await
+        .expect("prompt 任务 panic")
+        .expect("prompt 应答");
+    assert_eq!(result.stop_reason, "cancelled");
+    core.finish();
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
 async fn agents_without_modes_tolerate_the_restore_set_mode() {
     let agent = FakeAgent::start(Scenario::NoModes).await;
     let client = bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
@@ -628,6 +799,36 @@ async fn agents_without_modes_tolerate_the_restore_set_mode() {
             .any(|request| request["method"] == "session/set_mode"),
         "{requests:?}"
     );
+    drop(client);
+    agent.finish().await;
+}
+
+#[tokio::test]
+async fn a_cancelled_permission_does_not_cancel_the_session() {
+    let (agent, core, client, prompt) = started_with(json!({"outcome": "cancelled"})).await;
+    let id = agent.ask_permission("session-1", "src/a.rs").await;
+    let responses = permission_response(&agent, &id).await;
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0]["result"]["outcome"]["outcome"], "cancelled");
+
+    // 卡片被撤回只答复这一次请求，会话照常跑完这一轮。
+    let incoming = agent.incoming().await;
+    assert!(
+        !incoming
+            .iter()
+            .any(|message| message["method"] == "session/cancel"),
+        "撤回不该取消会话"
+    );
+
+    let session = agent.respond_prompt(0, "done").await;
+    assert_eq!(session, "session-1");
+    let result = bounded(prompt, "prompt")
+        .await
+        .expect("prompt 任务 panic")
+        .expect("prompt 应答");
+    assert_eq!(result.stop_reason, "end_turn");
+    assert_eq!(result.text, "done");
+    core.finish();
     drop(client);
     agent.finish().await;
 }

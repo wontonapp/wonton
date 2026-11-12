@@ -142,7 +142,7 @@ async fn exercise(
         assert_eq!(status.as_u16(), 200, "{body}");
         assert_eq!(body["status"]["state"], "running");
     }
-    let route = restarted.route("app-test").unwrap();
+    let route = restarted.route("app-test", "/").unwrap();
     let upstream = route.upstream.unwrap();
     let page = http
         .get(upstream.url("/"))
