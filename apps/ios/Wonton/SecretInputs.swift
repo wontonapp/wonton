@@ -111,3 +111,24 @@ func secretValues(_ inputs: [SecretInput], _ values: [String: String]) -> [Strin
 func missingRequiredSecret(_ inputs: [SecretInput], _ values: [String: String]) -> Bool {
     inputs.contains { input in input.required && (values[input.name] ?? "").isEmpty }
 }
+
+/// App 不在前台时盖住这一屏，切换器里的快照看不到填过的值。
+private struct SecretSnapshotMask: ViewModifier {
+    var isEnabled: Bool
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if isEnabled, scenePhase != .active {
+                Color(colors.canvas).ignoresSafeArea()
+            }
+        }
+    }
+}
+
+extension View {
+    func secretSnapshotMask(_ isEnabled: Bool = true) -> some View {
+        modifier(SecretSnapshotMask(isEnabled: isEnabled))
+    }
+}

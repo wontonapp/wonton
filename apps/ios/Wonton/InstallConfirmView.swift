@@ -38,6 +38,8 @@ struct InstallConfirmView: View {
             }
         }
         .wontonModalScreen(confirmation.actionTitle, showsStatus: true)
+        // 这一屏有密钥输入，切后台的快照里整页盖住。
+        .secretSnapshotMask()
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .wontonDialog(
             String(localized: .pluginPermissionUnderstandTitle),
