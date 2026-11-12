@@ -507,6 +507,7 @@ pub fn owner_message_at(
         edited: false,
         read_by: Vec::new(),
         reply: None,
+        group: None,
         can_redact: false,
     }
 }

@@ -39,25 +39,7 @@ impl ChatRoom {
         if mime_type.type_() != mime::IMAGE {
             return Err(Error::InvalidInput(format!("不是图片类型：{mime_type}")));
         }
-        let size = image.data.len() as u64;
-        // SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
-        // 不拦，和文字一样进队列、马上有本地回显：连上后由服务器判断，太大的被拒收，停在队首等主人取消。
-        let client = self.room.client();
-        match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await
-        {
-            Ok(Ok(limit)) if size > u64::from(limit) => {
-                return Err(Error::InvalidInput(format!(
-                    "图片有 {}，超过服务器的上传上限 {}",
-                    megabytes(size),
-                    megabytes(u64::from(limit))
-                )));
-            }
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => tracing::info!("要不到服务器的上传上限，图片照样进队列：{error}"),
-            Err(_) => {
-                tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，图片照样进队列")
-            }
-        }
+        check_upload_size(&self.room.client(), image.data.len() as u64).await?;
         let info = BaseImageInfo {
             width: image.width.map(UInt::from),
             height: image.height.map(UInt::from),
@@ -83,6 +65,29 @@ impl ChatRoom {
             .use_send_queue()
             .await?;
         Ok(())
+    }
+}
+
+/// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限。
+///
+/// SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
+/// 不拦：连上后由服务器判断。
+pub(crate) async fn check_upload_size(client: &matrix_sdk::Client, size: u64) -> Result<()> {
+    match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await {
+        Ok(Ok(limit)) if size > u64::from(limit) => Err(Error::InvalidInput(format!(
+            "图片有 {}，超过服务器的上传上限 {}",
+            megabytes(size),
+            megabytes(u64::from(limit))
+        ))),
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(error)) => {
+            tracing::info!("要不到服务器的上传上限，照样上传：{error}");
+            Ok(())
+        }
+        Err(_) => {
+            tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，照样上传");
+            Ok(())
+        }
     }
 }
 

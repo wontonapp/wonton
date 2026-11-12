@@ -161,6 +161,7 @@ mod tests {
             edited: false,
             read_by: Vec::new(),
             reply: None,
+            group: None,
             can_redact: false,
         }
     }

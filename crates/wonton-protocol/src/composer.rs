@@ -8,11 +8,12 @@ use serde_json::{Map, Value};
 
 use crate::SendState;
 
-/// 一个房间的输入框：附件区和这个房间里还没交出去的消息。经 `ClientCore::subscribe_composer` 按房间订阅。
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// 一条时间线的输入框：附件区和这条时间线里还没交出去的消息。经 `ClientCore::subscribe_composer` 按时间线订阅；
+/// 附件区的操作是 [`TimelineAction`](crate::TimelineAction) 里的 `SendComposer` 等几个。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ComposerViewModel {
-    pub room_id: String,
+    pub target: crate::TimelineTarget,
     /// 附件区，按加入的顺序，也是发出去的顺序。
     pub attachments: Vec<ComposerAttachment>,
     /// 点了发送、还没交给 Matrix 的消息，先点的在前。壳画在时间线最后一条后面；交出去以后由 SDK 的本地回显代替，核心从这里拿掉。
@@ -25,7 +26,7 @@ pub struct ComposerViewModel {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ComposerAttachment {
-    /// 本机给这个附件的标识，交给删除、重试和取预览图的方法。
+    /// 本机给这个附件的标识，交给删除、重试的操作和取预览图的方法。
     pub id: String,
     pub kind: AttachmentKind,
     /// 文件名，壳给的。
@@ -94,7 +95,7 @@ pub enum AttachmentFailure {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OutgoingMessage {
-    /// 本机给这条消息的标识，交给 `ClientCore::retry_outgoing`、`ClientCore::cancel_outgoing`；也是列表里这一行的 ID，
+    /// 本机给这条消息的标识，交给 `TimelineAction::RetryOutgoing`、`TimelineAction::CancelOutgoing`；也是列表里这一行的 ID，
     /// 不会和时间线条目的 ID 相同。
     pub id: String,
     /// 主人写的字，可以为空。
@@ -224,7 +225,10 @@ mod tests {
     #[test]
     fn composer_types_round_trip_through_json() {
         let view = ComposerViewModel {
-            room_id: "!a:home.example".into(),
+            target: crate::TimelineTarget {
+                room_id: "!a:home.example".into(),
+                thread_root: None,
+            },
             attachments: vec![ComposerAttachment {
                 id: "a1".into(),
                 kind: AttachmentKind::Image {

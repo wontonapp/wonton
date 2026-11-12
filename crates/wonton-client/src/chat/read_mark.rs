@@ -70,6 +70,7 @@ mod tests {
                 edited: false,
                 read_by: read_by.iter().map(|&name| name.to_owned()).collect(),
                 reply: None,
+                group: None,
                 can_redact: false,
             })),
         }

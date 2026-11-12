@@ -91,4 +91,36 @@ pub enum TimelineAction {
         #[cfg_attr(feature = "uniffi", uniffi(default = None))]
         reply_to: Option<String>,
     },
+    /// 把输入框的字和附件区的附件作为一次发送发出（ADR-0094）：马上变成一条待发消息
+    /// （[`ComposerViewModel::outgoing`](crate::ComposerViewModel::outgoing)），附件区和草稿清空；附件全部传完、文件授权给
+    /// 房间后，才按顺序把这一组事件交给 Matrix。`reply_to` 同 [`TimelineAction::SendText`]。字和附件都没有、附件区里有
+    /// 失败的附件时返回 `InvalidInput`。
+    SendComposer {
+        target: TimelineTarget,
+        body: String,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        reply_to: Option<String>,
+    },
+    /// 从附件区删掉一个附件，停下它的上传。已经传上去的照片留在服务器上，文件由家里的服务器到期清掉。附件区里没有它时
+    /// 返回 `InvalidInput`。
+    RemoveAttachment {
+        target: TimelineTarget,
+        attachment_id: String,
+    },
+    /// 重新上传一个失败的附件；不是失败的不动。附件区和待发消息里都没有它时返回 `InvalidInput`。
+    RetryAttachment {
+        target: TimelineTarget,
+        attachment_id: String,
+    },
+    /// 重发一条失败的待发消息：只重传失败的附件，再接着发。不是失败的不动；找不到时返回 `InvalidInput`。
+    RetryOutgoing {
+        target: TimelineTarget,
+        outgoing_id: String,
+    },
+    /// 取消一条还没交出去的待发消息，整条不发，停下它的上传；排在它后面的接着发。找不到时（已经交出去了）返回
+    /// `InvalidInput`，交出去的用 [`TimelineAction::CancelSend`]。
+    CancelOutgoing {
+        target: TimelineTarget,
+        outgoing_id: String,
+    },
 }

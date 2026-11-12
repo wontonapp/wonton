@@ -464,6 +464,14 @@ impl ChatLink {
                 let room_id = self.timeline_target(&target)?;
                 self.set_draft(&room_id, &body, reply_to.as_deref())
             }
+            // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
+            TimelineAction::SendComposer { .. }
+            | TimelineAction::RemoveAttachment { .. }
+            | TimelineAction::RetryAttachment { .. }
+            | TimelineAction::RetryOutgoing { .. }
+            | TimelineAction::CancelOutgoing { .. } => {
+                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            }
         }
     }
 
