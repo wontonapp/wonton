@@ -69,6 +69,7 @@ impl BotsView {
         status: &AgentRunStatus,
         body: &str,
         sender: &str,
+        sender_name: &str,
     ) -> TimelineContent {
         TimelineContent::AgentRun {
             run: status.run.clone(),
@@ -83,6 +84,7 @@ impl BotsView {
                 .then(|| self.waiting_cards.get(sender).cloned())
                 .flatten(),
             choices: status.choices.clone(),
+            sender_name: sender_name.to_owned(),
         }
     }
 }

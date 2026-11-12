@@ -383,9 +383,13 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
         .expect("Bot 发消息");
     let card_id = timeline
         .until("waiting 带上卡片", |item| match &item.content {
-            TimelineContent::AgentRun { state, card_id, .. }
-                if *state == AgentRunState::Waiting =>
-            {
+            TimelineContent::AgentRun {
+                state,
+                card_id,
+                sender_name,
+                ..
+            } if *state == AgentRunState::Waiting => {
+                assert_eq!(sender_name, "Hermes");
                 card_id.clone()
             }
             _ => None,

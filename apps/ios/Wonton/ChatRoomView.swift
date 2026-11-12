@@ -164,6 +164,14 @@ struct ChatRoomView: View {
                         redact: {
                             redactItem = item.id
                             showingRedact = true
+                        },
+                        openCard: { cardId in
+                            guard let target = timeline.items.first(where: { $0.cardId == cardId }) else { return }
+                            pin.unpin()
+                            DispatchQueue.main.async { scroller.scrollTo(target.id, anchor: .center) }
+                        },
+                        answerChoice: { key in
+                            model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
                         }
                     )
                     .id(item.id)
@@ -303,6 +311,12 @@ private extension TimelineItem {
             if case let .reply(quote) = action { return quote }
         }
         return nil
+    }
+
+    /// 这条消息带着的确认卡片 ID：Agent 的等待行靠它滚到卡片。
+    var cardId: String? {
+        guard case let .message(message) = content, case let .confirmation(view) = message.body else { return nil }
+        return view.card.id
     }
 }
 
