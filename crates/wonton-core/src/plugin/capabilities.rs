@@ -367,14 +367,12 @@ pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
 ) -> Result<(), super::install_error::InstallError> {
-    // 托管能力（ADR-0080）的提供方由托管路径兑现：挂目录、网关按能力找它，不走使用方依赖那一套。
-    let new_provides = manifest.provides.as_ref().is_some_and(|provides| {
-        provides
-            .capabilities
-            .keys()
-            .any(|name| lookup(name).is_none_or(|c| c.hosted.is_none()))
-    });
-    if manifest.requires.is_empty() && manifest.wants.is_empty() && !new_provides {
+    if !manifest
+        .requires
+        .iter()
+        .chain(&manifest.wants)
+        .any(|name| name == MODELS.name)
+    {
         return Ok(());
     }
     Err(super::install_error::InstallError::Unsupported(

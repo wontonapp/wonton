@@ -113,6 +113,7 @@ impl Manifest {
                 oidc: None,
                 proxy: None,
                 accounts: None,
+                health: None,
                 cross_origin_isolated: false,
             });
         }
@@ -132,6 +133,8 @@ fn static_webui_fields(manifest: &Manifest) -> Vec<&'static str> {
         ("webui.proxy", webui.proxy.is_some()),
         // 按人分开的数据存储没定，第一步不收（ADR-0080 第 3 节）。
         ("webui.accounts", webui.accounts.is_some()),
+        // 静态网页没有服务，健康检查没有可探的东西。
+        ("webui.health", webui.health.is_some()),
     ]
     .into_iter()
     .filter_map(|(field, declared)| declared.then_some(field))
