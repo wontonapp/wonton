@@ -467,6 +467,7 @@ impl PluginManager {
                 health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
             self.stage(&package.manifest.id, InstallStage::Starting);
             self.start_containers(
+                Some(&package.manifest),
                 &plan,
                 Some(&package.manifest.id),
                 &mut undo,
@@ -518,8 +519,15 @@ impl PluginManager {
         let deadline =
             health_gate::deadline(&plan, self.cfg.install_timeout, tokio::time::Instant::now());
         self.stage(id, InstallStage::Starting);
-        self.start_containers(&plan, Some(id), &mut Undo::default(), deadline, &langs)
-            .await?;
+        self.start_containers(
+            Some(&package.manifest),
+            &plan,
+            Some(id),
+            &mut Undo::default(),
+            deadline,
+            &langs,
+        )
+        .await?;
         Ok(())
     }
 

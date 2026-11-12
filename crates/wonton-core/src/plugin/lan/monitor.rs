@@ -471,7 +471,7 @@ impl PluginManager {
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
         let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
-        self.start_containers(&plan, None, &mut Undo::default(), deadline, &langs)
+        self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs)
             .await?;
         Ok(())
     }

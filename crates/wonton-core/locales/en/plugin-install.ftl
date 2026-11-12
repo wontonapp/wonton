@@ -69,6 +69,7 @@ plugin-install-containers-unhealthy = Some containers aren't healthy: { $failure
 plugin-install-container-unhealthy = Container { $container } failed its health check (last probe, exit code { $code }): { $output }
 plugin-install-container-unhealthy-nocode = Container { $container } failed its health check (last probe, exit code unknown): { $output }
 plugin-install-container-unhealthy-noprobe = Container { $container } failed its health check (Docker kept no probe result)
+plugin-install-container-health-probe-failed = Container { $container } failed its health probe (GET { $path }): { $reason }
 plugin-install-container-not-running = Container { $container } isn't running ({ $status })
 plugin-install-one-shot-failed = The one-shot service's container { $container } didn't exit 0 ({ $status }, exit code { $code })
 plugin-install-reach-none = doesn't exist

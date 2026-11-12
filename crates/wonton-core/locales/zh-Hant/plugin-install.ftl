@@ -68,6 +68,7 @@ plugin-install-containers-unhealthy = 部分容器不健康：{ $failures }
 plugin-install-container-unhealthy = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼 { $code }）：{ $output }
 plugin-install-container-unhealthy-nocode = 容器 { $container } 健康檢查失敗（最後一次探針，退出碼未知）：{ $output }
 plugin-install-container-unhealthy-noprobe = 容器 { $container } 健康檢查失敗（Docker 沒有留下探針結果）
+plugin-install-container-health-probe-failed = 容器 { $container } 的健康探測失敗（GET { $path }）：{ $reason }
 plugin-install-container-not-running = 容器 { $container } 沒有在執行（{ $status }）
 plugin-install-one-shot-failed = 一次性服務的容器 { $container } 沒有以 0 結束（{ $status }，退出碼 { $code }）
 plugin-install-reach-none = 不存在

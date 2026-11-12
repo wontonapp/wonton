@@ -233,14 +233,15 @@ impl PluginManager {
 
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测
     /// （[`super::health::wait_webui`]）用同一个地址（核心在插件网络里看到的 `主机:端口` 加网页路径）
-    /// 和每请求 5 秒的时限。没有网页、还没部署到那一步的为空。
+    /// 和每请求 5 秒的时限；声明了 `webui.health` 时探健康路径。没有网页、还没部署到那一步的为空。
     pub async fn webui_status(&self, id: &PluginId) -> Option<Result<u16, HttpError>> {
         let (endpoint, path) = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             let entry = plugins.get(id)?;
+            let webui = entry.listed.as_ref()?.manifest.webui.as_ref()?;
             (
                 entry.upstream.clone()?,
-                entry.listed.as_ref()?.manifest.webui.as_ref()?.path.clone(),
+                webui.health.clone().unwrap_or_else(|| webui.path.clone()),
             )
         };
         Some(status(&self.http, &endpoint, &path, PROBE_TIMEOUT).await)

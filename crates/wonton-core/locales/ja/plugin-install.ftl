@@ -68,6 +68,7 @@ plugin-install-containers-unhealthy = 一部のコンテナが不健康です：
 plugin-install-container-unhealthy = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード { $code }）：{ $output }
 plugin-install-container-unhealthy-nocode = コンテナ{ $container }のヘルスチェックが失敗しました（最後のプローブ、終了コード不明）：{ $output }
 plugin-install-container-unhealthy-noprobe = コンテナ{ $container }のヘルスチェックが失敗しました（Docker にプローブの結果が残っていません）
+plugin-install-container-health-probe-failed = コンテナ { $container } のヘルスプローブに失敗しました（GET { $path }）：{ $reason }
 plugin-install-container-not-running = コンテナ{ $container }が動いていません（{ $status }）
 plugin-install-one-shot-failed = 一度きりのサービスのコンテナ{ $container }が 0 で終了しませんでした（{ $status }、終了コード { $code }）
 plugin-install-reach-none = 存在しない
