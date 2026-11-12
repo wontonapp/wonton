@@ -5,6 +5,10 @@
     <string name="keepalive_channel_name">接続を維持</string>
     <!-- 「接続を維持」フォアグラウンドサービスの常設通知のタイトル。 -->
     <string name="keepalive_notification_title">ホームサーバーとの接続を維持しています</string>
+    <!-- 「接続を維持」の常駐通知のタイトル：ホームサーバーにまだつながっていない、または再接続中。 -->
+    <string name="keepalive_notification_connecting">ホームサーバーに接続しています…</string>
+    <!-- 「接続を維持」の常駐通知のタイトル：ホームサーバーにつながらない。 -->
+    <string name="keepalive_notification_unreachable">ホームサーバーに接続できません</string>
     <!-- 「ポートマッピング」フォアグラウンドサービスの常設通知チャンネル名（ADR-0072）。システムの通知設定に表示される。 -->
     <string name="mapping_channel_name">ポートマッピング</string>
     <!-- ポートマッピングの常設通知のタイトル：マッピングが有効なアプリが 1 つ。引数はアプリ名。 -->

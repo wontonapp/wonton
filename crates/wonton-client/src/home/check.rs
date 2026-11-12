@@ -18,6 +18,8 @@ const CHECK_DEADLINE: Duration = Duration::from_secs(8);
 const CHECK_FLOOR: Duration = Duration::from_millis(200);
 /// 连续多少次"检查失败且一个中继都不在"就整个重建 endpoint（ADR-0032 §4）。
 const RELAY_LOST_BEFORE_REBUILD: u32 = 2;
+/// 把“网络可能变了”交给 iroh 的时限。正常时 actor 的信箱有空位，立刻交上。
+const NUDGE_DEADLINE: Duration = Duration::from_secs(2);
 
 /// 一直确认隧道真的通：不通就断开换新连接，连不上就接着重试，不等 App 回到前台，也不等下一个请求。连接状态和路径
 /// 因此如实（#154）。在后台时停下。服务端不认这台设备、或者两端协议不匹配时重试也没用，等主人处理。只持有弱引用，核心
@@ -89,7 +91,7 @@ pub(super) async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, clie
                 // 没触发（冷却期内、或网络没了不占冷却期）：留着这个检查循环，streak 已经够数，下一次
                 // 失败的检查再试一次 spawn，冷却到期、网络回来后自然通过。
                 // 可能是网络变了，让 iroh 重新检查网卡和路径。
-                endpoint.network_change().await;
+                nudge_network(&endpoint).await;
                 CHECK_FLOOR
             }
         };
@@ -101,4 +103,18 @@ pub(super) fn needs_the_owner(status: &TunnelStatus) -> bool {
         status,
         TunnelStatus::Disconnected(TunnelError::Unauthorized | TunnelError::Protocol { .. })
     )
+}
+
+/// 让 iroh 重新检查网卡和路径，限时交上，交不上就算了。
+///
+/// iroh 的 socket actor 处理这条通知时等网络监视收下；网络监视在 Android 上每次重新检查都 fork 执行
+/// `ip route`，子进程卡死时它再也收不下（见 `bind.rs`），socket actor 跟着停在这里，信箱满了以后谁交这条通知
+/// 谁就永远等着。不限时的话，检查循环、回前台和“重试”都会停在这一步，连接再也不重连。
+pub(super) async fn nudge_network(endpoint: &Endpoint) {
+    if tokio::time::timeout(NUDGE_DEADLINE, endpoint.network_change())
+        .await
+        .is_err()
+    {
+        tracing::warn!("iroh did not take the network change in time");
+    }
 }

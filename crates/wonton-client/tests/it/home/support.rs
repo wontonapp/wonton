@@ -349,3 +349,26 @@ pub(super) async fn get(
     let status = head.split_whitespace().nth(1).unwrap().parse().unwrap();
     (status, body.to_owned())
 }
+
+/// 挡住绑定的闸：打开之前进来的阻塞线程都停在这里。
+#[derive(Clone, Default)]
+pub(crate) struct Gate(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+impl Gate {
+    pub(crate) fn hook(&self) -> Arc<dyn Fn() + Send + Sync> {
+        let gate = self.clone();
+        Arc::new(move || {
+            let (open, wake) = &*gate.0;
+            let mut open = open.lock().unwrap();
+            while !*open {
+                open = wake.wait(open).unwrap();
+            }
+        })
+    }
+
+    pub(crate) fn open(&self) {
+        let (open, wake) = &*self.0;
+        *open.lock().unwrap() = true;
+        wake.notify_all();
+    }
+}

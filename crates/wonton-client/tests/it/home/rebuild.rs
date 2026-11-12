@@ -86,6 +86,8 @@ async fn a_dead_local_endpoint_is_rebuilt_when_the_relays_are_gone_and_the_netwo
             && view.proxy.as_ref().is_some_and(|p| p.password != password)
     })
     .await;
+    // 断开次数按这台服务器算：旧 endpoint 上那次断开不因为换了新的隧道客户端清零。
+    assert!(rebuilt.details.disconnects >= 1, "{:?}", rebuilt.details);
     let second = rebuilt
         .proxy
         .as_ref()

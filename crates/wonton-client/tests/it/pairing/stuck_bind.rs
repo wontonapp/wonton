@@ -1,12 +1,12 @@
 //! iroh 的绑定卡在同步阻塞里不返回时（Android 上慢设备的网卡枚举），配对不能一直停在“正在配对”：绑定有
 //! 自己的一段时限；运行时整个被拖住时，看门线程在它自己的时限上报失败，而且不盖掉后来又起的一次配对。
 
-use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
 use wonton_client::{HomeStatus, PairingFailure, PairingStatus};
 
 use super::{Home, Phone};
+use crate::home::support::Gate;
 
 /// 测试里的每一段时限，取短的免得等满生产的三段 30 秒；用不上的那一道取得比整个测试还长。
 const SHORT: Duration = Duration::from_millis(300);
@@ -70,27 +70,4 @@ async fn the_watchdog_fails_a_stuck_pairing_and_leaves_a_newer_one_alone() {
         view.server_id,
         Some(home_side.server.endpoint().id().to_string())
     );
-}
-
-/// 挡住绑定的闸：打开之前进来的阻塞线程都停在这里。
-#[derive(Clone, Default)]
-struct Gate(Arc<(Mutex<bool>, Condvar)>);
-
-impl Gate {
-    fn hook(&self) -> Arc<dyn Fn() + Send + Sync> {
-        let gate = self.clone();
-        Arc::new(move || {
-            let (open, wake) = &*gate.0;
-            let mut open = open.lock().unwrap();
-            while !*open {
-                open = wake.wait(open).unwrap();
-            }
-        })
-    }
-
-    fn open(&self) {
-        let (open, wake) = &*self.0;
-        *open.lock().unwrap() = true;
-        wake.notify_all();
-    }
 }

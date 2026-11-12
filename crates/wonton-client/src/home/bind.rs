@@ -1,5 +1,7 @@
 //! 本设备身份的 endpoint：配对、配对后建连、换服务器和重启后重连都从这里绑定。
 
+use std::time::Duration;
+
 use iroh::endpoint::{Builder, QuicTransportConfig, presets};
 use iroh::{Endpoint, RelayMode};
 use wonton_l10n::{Lang, l10n};
@@ -8,16 +10,28 @@ use wonton_tunnel::relays::{Relay, RelayTable, relay_map};
 use super::{HomeLink, Network};
 use crate::l10n::CATALOG;
 
+/// 一次绑定没有成：失败带给人看的原因；超时由调用方按自己的场景说。
+#[derive(Debug)]
+pub(super) enum BindError {
+    Failed(String),
+    TimedOut,
+}
+
 impl HomeLink {
     /// 绑定经 [`wonton_tunnel::off_workers`] 跑在阻塞线程池里：iroh 的绑定里有整段同步阻塞的网卡枚举，
     /// 在作用域运行时的 worker 上跑会把 worker 和外层的时限一起拖住（Android 上配对因此一直转圈）。
-    /// 失败时返回给人看的原因。
+    ///
+    /// 到 `deadline` 还没绑好就放弃，交给调用方再来一次。iroh 的网络监视在 Android 上 fork 执行 `ip route`
+    /// （netwatch）。x86 模拟器经 ndk_translation 跑 arm64 包时，fork 出的子进程约一半卡死在翻译层的锁上，
+    /// 父进程停在同步的 `spawn` 里等它 exec，绑定永远不返回；这个阻塞线程和卡死的子进程都收不回来，留在那里，
+    /// 再绑一次多半就好。真机上没有翻译层，但同样不该无限期地等一次绑定：时限是建连能自己重试的前提。
     pub(super) async fn bind_endpoint(
         &self,
         relays: &[Relay],
         tiers: usize,
         lang: Lang,
-    ) -> Result<Endpoint, String> {
+        deadline: Duration,
+    ) -> Result<Endpoint, BindError> {
         let builder = self.endpoint_builder(relays, tiers);
         #[cfg(feature = "test-hooks")]
         let hook = self
@@ -26,25 +40,25 @@ impl HomeLink {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone();
-        let bound = wonton_tunnel::off_workers(move || {
+        let bind = wonton_tunnel::off_workers(move || {
             #[cfg(feature = "test-hooks")]
             if let Some(hook) = hook {
                 hook();
             }
             builder.bind()
-        })
-        .await;
-        let error = match bound {
-            Ok(Ok(endpoint)) => return Ok(endpoint),
+        });
+        let error = match tokio::time::timeout(deadline, bind).await {
+            Ok(Ok(Ok(endpoint))) => return Ok(endpoint),
+            Err(_) => return Err(BindError::TimedOut),
+            Ok(Ok(Err(error))) => error.to_string(),
             Ok(Err(error)) => error.to_string(),
-            Err(error) => error.to_string(),
         };
-        Err(l10n!(
+        Err(BindError::Failed(l10n!(
             CATALOG,
             lang,
             "home-pairing-bind-failed",
             error = error
-        ))
+        )))
     }
 
     /// `relays` 是连接信息或配对码带来的中继表，`tiers` 是要放进 endpoint 的档数：App 的隧道 endpoint
@@ -87,4 +101,7 @@ pub(crate) struct TestHooks {
     pub(crate) bind: std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>,
     /// 配对的每一段时限（绑定、一次交换、一次确认）和看门线程的时限，替掉生产的那两份。
     pub(crate) pair_deadlines: std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
+    /// 配对后建连的绑定时限和建不起来后第一次再试的间隔，替掉生产的那两份。
+    pub(crate) establish_timing:
+        std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
 }

@@ -7,6 +7,7 @@ pub(crate) mod support;
 mod quality;
 mod rebuild;
 mod retry;
+mod stuck_bind;
 pub(crate) use support::{Home, Phone};
 use support::{WEB_URL, get, wait_until_ticket_has};
 

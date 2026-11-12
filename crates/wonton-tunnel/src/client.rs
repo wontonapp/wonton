@@ -456,6 +456,16 @@ impl Inner {
             if !stale {
                 return attempt.clone();
             }
+            // 连接已经被对端关掉、`watch_close` 还没轮到写状态时，先如实写断开再重拨。不写的话状态从“已连接”
+            // 直接跳到新一次建连的“连接中”，旧连接的关闭事件到时已不是当前连接、不再写：断开次数少记一次，
+            // 核心也不知道这条连接是断了（实测请求恰好在关闭后立刻到达时，连不上的闸门放过了它，白等一次建连）。
+            // 本机关掉的连接由关的地方写。
+            if let Some(Ok(conn)) = attempt.outcome()
+                && let Some(reason) = conn.close_reason()
+                && !matches!(reason, ConnectionError::LocallyClosed)
+            {
+                self.set_status(TunnelStatus::Disconnected(from_connection_error(&reason)));
+            }
         }
         let attempt = Attempt::spawn(true, false, self, self.clone().dial());
         *current = Some(attempt.clone());

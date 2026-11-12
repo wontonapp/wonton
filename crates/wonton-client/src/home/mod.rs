@@ -8,6 +8,7 @@ mod background;
 mod bind;
 mod check;
 mod connection;
+mod establish;
 mod invite;
 mod link;
 mod pairing;
@@ -17,9 +18,8 @@ mod refresh;
 mod storage;
 mod ticket;
 
-use std::net::Ipv4Addr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use iroh::TransportAddr;
@@ -30,18 +30,14 @@ use tokio::task::JoinHandle;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceNetwork, HomeFailure,
-    HomePath, HomeStatus, HomeViewModel, ProxySettings, PushMethod,
+    ConnectionCheck, ConnectionDetails, CoreError, DeviceNetwork, HomeFailure, HomePath,
+    HomeStatus, HomeViewModel, ProxySettings, PushMethod,
 };
-use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
-use wonton_tunnel::{
-    LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
-    TunnelStatus,
-};
+use wonton_tunnel::relays::is_public_relay;
+use wonton_tunnel::{PathInfo, PathKind, TunnelClient, TunnelError, TunnelStatus};
 
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
-use check::keep_checking;
 use connection::{LONG_OUTAGE, Tracker};
 use link::Link;
 use quality::Quality;
@@ -119,6 +115,14 @@ pub(crate) struct HomeLink {
     endpoint_rebuilt_at: std::sync::Mutex<Option<Instant>>,
     /// 正在跑的配对任务。取消时中止它：被放弃的配对不该在后台继续连到自己的时限。
     pairing_task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// 第几次换连接。旧的一次还在退避重试时，新的一次接手，旧的到点自己退出。
+    establishing: AtomicU64,
+    /// 叫醒在退避里等着的建连：主人点“重试”、回到前台、网络变了。
+    establish_wake: tokio::sync::Notify,
+    /// 换掉的旧连接上已经断开过的次数：每条连接的隧道客户端从零数，连接详情要的是这台服务器的。
+    carried_disconnects: AtomicU32,
+    /// 连接没建起来时最近一次的原因和第几次失败；建起来就清掉。
+    unlinked: std::sync::Mutex<Option<(String, u32)>>,
     #[cfg(feature = "test-hooks")]
     pub(crate) test_hooks: bind::TestHooks,
 }
@@ -182,6 +186,10 @@ impl HomeLink {
             pairing_progress: std::sync::Mutex::new(None),
             endpoint_rebuilt_at: std::sync::Mutex::new(None),
             pairing_task: std::sync::Mutex::new(None),
+            establishing: AtomicU64::new(0),
+            establish_wake: tokio::sync::Notify::new(),
+            carried_disconnects: AtomicU32::new(0),
+            unlinked: std::sync::Mutex::new(None),
             #[cfg(feature = "test-hooks")]
             test_hooks: bind::TestHooks::default(),
         });
@@ -237,9 +245,13 @@ impl HomeLink {
                 return;
             }
             let Some((endpoint, client)) = home.current_link().await else {
+                // 连接还没建起来：网络回来了就马上再建，不等退避。
+                if network != DeviceNetwork::None {
+                    home.wake_establish();
+                }
                 return;
             };
-            endpoint.network_change().await;
+            check::nudge_network(&endpoint).await;
             if *home.background.borrow() {
                 return;
             }
@@ -281,7 +293,7 @@ impl HomeLink {
         let home = self.clone();
         self.runtime.spawn(async move {
             if let Some((endpoint, client)) = home.current_link().await {
-                endpoint.network_change().await;
+                check::nudge_network(&endpoint).await;
                 client.retry_now();
                 match tokio::time::timeout(LONG_OUTAGE, client.revalidate()).await {
                     Ok(Ok(_)) => {}
@@ -290,6 +302,9 @@ impl HomeLink {
                         "retry confirmation timed out; automatic reconnect continues"
                     ),
                 }
+            } else {
+                // 上一次没建起来、正在退避：马上再建一次，结果由建连自己报出来。
+                home.wake_establish();
             }
             home.lock_tracker().retry_finished();
             home.recount();
@@ -345,6 +360,8 @@ impl HomeLink {
 
     fn recount(&self) {
         self.recount.send_replace(());
+        // 没有连接可跟（建连失败、在等下一次）时没有 `follow_connection`，这里自己重算。
+        self.republish_unlinked();
     }
 
     fn lock_tracker(&self) -> std::sync::MutexGuard<'_, Tracker> {
@@ -414,127 +431,15 @@ impl HomeLink {
         self.device_name().is_some()
     }
 
-    fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
-        *self.lock_ticket() = Some(text);
-        *self
-            .core_url
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ticket.core_url());
-        self.lock_tracker().new_server();
-        self.view.send_modify(|view| {
-            view.server_id = Some(ticket.server_id().to_string());
-            view.web_url = ticket.web_url().map(str::to_owned);
-            view.status = HomeStatus::Connecting;
-            view.path = None;
-            view.proxy = None;
-            view.notice = None;
-            view.just_recovered = false;
-        });
-        self.runtime.spawn(self.clone().establish(ticket));
-    }
-
-    async fn establish(self: Arc<Self>, ticket: Ticket) {
-        let mut current = self.link.lock().await;
-        if let Some(old) = current.take() {
-            *self.lock_lifecycle_client() = None;
-            old.close().await;
-        }
-        match self.open(&ticket).await {
-            Ok(link) => {
-                let client = link.client.clone();
-                *current = Some(link);
-                drop(current);
-                // 主动建连：壳打开网页之前，状态就已经是准的。
-                self.check(&client).await;
-            }
-            Err(message) => self.view.send_modify(|view| {
-                view.details.last_failure = Some(message.clone());
-                view.notice = Some(ConnectionNotice::Unreachable { retrying: false });
-                view.status = HomeStatus::Disconnected {
-                    reason: HomeFailure::TransportUnavailable,
-                    message,
-                };
-            }),
-        }
-    }
-
-    async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
-        let endpoint = self.bind_endpoint(ticket.relays(), 1, language()).await?;
-        // 只建最优先的一档（ADR-0048）；掉档回退由这个任务盯着家中继状态做。DirectOnly 不连中继，
-        // 连接信息里一个中继都没有时没有表，也不回退。
-        if self.network == Network::Internet && !ticket.relays().is_empty() {
-            spawn_tier_fallback(
-                endpoint.clone(),
-                RelayTable::from_relays(ticket.relays().to_vec()),
-                FALLBACK_AFTER,
-                None,
-            );
-        }
-        let client = TunnelClient::new(endpoint.clone(), ticket.server_addr());
-        let credential = ProxyCredential::generate();
-        let domain = ticket.base_domain().to_owned();
-        let access = ProxyAccess::Credential {
-            credential: credential.clone(),
-            domain: domain.clone(),
-        };
-        let proxy = LocalProxy::bind(client.clone(), (Ipv4Addr::LOCALHOST, 0).into(), access)
-            .await
-            .map_err(|e| {
-                l10n!(
-                    CATALOG,
-                    language(),
-                    "home-proxy-start-failed",
-                    error = e.to_string()
-                )
-            })?;
-        let registration = self
-            .hub
-            .register(proxy.local_addr(), credential, domain.clone())
-            .map_err(|_| "proxy route registration failed".to_owned())?;
-        let credential = registration.credential();
-        {
-            let mut current = self.lock_lifecycle_client();
-            client.set_suspendable(self.app_backgrounded.load(Ordering::SeqCst));
-            *current = Some(client.clone());
-        }
-        let settings = ProxySettings {
-            host: Ipv4Addr::LOCALHOST.to_string(),
-            port: registration.local_addr().port(),
-            username: credential.username().to_owned(),
-            password: credential.password().to_owned(),
-            domain,
-        };
-        self.view
-            .send_modify(|view| view.proxy = Some(settings.clone()));
-        let watcher = self.runtime.spawn(refresh::follow_connection(
-            Arc::downgrade(self),
-            endpoint.clone(),
-            client.clone(),
-            settings,
-        ));
-        let checker = self.runtime.spawn(keep_checking(
-            Arc::downgrade(self),
-            endpoint.clone(),
-            client.clone(),
-        ));
-        Ok(Link {
-            endpoint,
-            client,
-            proxy,
-            registration,
-            watcher,
-            checker,
-        })
-    }
-
     async fn resume(self: Arc<Self>) {
         let started = Instant::now();
         let Some((endpoint, client)) = self.current_link().await else {
+            self.wake_establish();
             return;
         };
         tracing::info!(elapsed = ?started.elapsed(), "STEP link");
         // 挂起期间网络可能变了（换 Wi-Fi、切蜂窝），让 iroh 重新检查网卡和路径。
-        endpoint.network_change().await;
+        check::nudge_network(&endpoint).await;
         tracing::info!(elapsed = ?started.elapsed(), "STEP network_change");
         client.retry_now();
         tracing::info!(elapsed = ?started.elapsed(), "STEP retry_now");
@@ -603,6 +508,8 @@ impl HomeLink {
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
+        let last_failure = stats.last_failure.as_ref().map(failure);
+        tracker.observe_drops(stats.disconnects, last_failure, connected);
         if let Some(recovery) = tracker.observe(&status, relay, stats.failed_dials, now) {
             let outage_ms = recovery.outage.as_millis();
             tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
@@ -614,10 +521,8 @@ impl HomeLink {
             relay: tracker.relay(),
             server: tracker.server_check(&status, now),
             last_connected_at_ms: stats.last_confirmed.and_then(unix_ms),
-            handshake_ms: stats
-                .handshake
-                .map(|took| u32::try_from(took.as_millis()).unwrap_or(u32::MAX)),
-            disconnects: stats.disconnects,
+            handshake_ms: stats.handshake.map(millis),
+            disconnects: self.disconnects(stats.disconnects),
             failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
             lost_packets: stats.lost_packets,
@@ -695,6 +600,13 @@ impl HomeLink {
         })
     }
 
+    /// 这台服务器上断开过几次：换掉的旧连接上的加上现在这条连接上的。
+    fn disconnects(&self, current: u32) -> u32 {
+        self.carried_disconnects
+            .load(Ordering::SeqCst)
+            .saturating_add(current)
+    }
+
     /// 距上次把每包变化的计数写进主 ViewModel 过了多久；还没推过就是到期。
     fn stats_due(&self, now: Instant) -> bool {
         match *self.lock_stats_at() {
@@ -726,6 +638,10 @@ fn relay_check(endpoint: &Endpoint) -> ConnectionCheck {
 fn unix_ms(time: std::time::SystemTime) -> Option<u64> {
     let since = time.duration_since(std::time::UNIX_EPOCH).ok()?;
     u64::try_from(since.as_millis()).ok()
+}
+
+fn millis(took: Duration) -> u32 {
+    u32::try_from(took.as_millis()).unwrap_or(u32::MAX)
 }
 
 fn status_view(status: &TunnelStatus) -> HomeStatus {

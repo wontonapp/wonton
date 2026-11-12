@@ -96,4 +96,16 @@ impl ClientCore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((stage, watchdog));
     }
+
+    /// 替掉配对后建连的绑定时限和建不起来后第一次再试的间隔，免得测试等满生产的时限和退避。
+    #[doc(hidden)]
+    pub fn test_set_establish_timing(&self, bind: Duration, first_retry: Duration) {
+        *self
+            .scope()
+            .home
+            .test_hooks
+            .establish_timing
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((bind, first_retry));
+    }
 }
