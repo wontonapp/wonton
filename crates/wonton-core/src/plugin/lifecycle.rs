@@ -708,7 +708,7 @@ impl PluginManager {
             }))
     }
 
-      /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
+    /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
     pub(super) async fn own_resources(
         &self,
         id: &PluginId,
