@@ -2052,6 +2052,12 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
+    <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
+    <string name="message_link_browser">Open in browser</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
+    <string name="message_link_share_failed">Couldn\'t share this link</string>
+    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
     <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
     <string name="contacts_title">Contacts</string>
     <!-- Toolbar button and sheet title for adding a contact to this bot. -->

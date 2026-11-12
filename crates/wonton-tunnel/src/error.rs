@@ -49,6 +49,18 @@ impl TunnelError {
         }
     }
 
+    /// 用户可读的错误类别，本地代理把它放进 `x-wonton-error` 响应头：壳按类别显示人话，不读错误
+    /// 原文（ADR-0032）。比 [`Self::code`] 粗：传输不可用和客户端已关闭对用户是同一回事。取值是
+    /// 两端写文案的依据，改了要连着改 iOS 和 Android 的本地化资源。
+    pub fn category(&self) -> &'static str {
+        match self {
+            Self::Unauthorized => "unauthorized",
+            Self::TransportUnavailable { .. } | Self::Closed => "tunnel-unavailable",
+            Self::UpstreamUnavailable => "upstream-unavailable",
+            Self::Protocol { .. } => "protocol",
+        }
+    }
+
     pub(crate) fn transport(reason: impl std::fmt::Display) -> Self {
         Self::TransportUnavailable {
             reason: reason.to_string(),

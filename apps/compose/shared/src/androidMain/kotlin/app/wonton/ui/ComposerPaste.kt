@@ -113,7 +113,7 @@ internal fun PastePreviewSheet(
                 Modifier.padding(horizontal = WontonTheme.spacing.pageInset)
                     .verticalScroll(rememberScrollState()),
             ) {
-                ready.bitmap?.let { bitmap ->
+                ready.bitmap.let { bitmap ->
                     Image(
                         bitmap,
                         null,
@@ -142,12 +142,12 @@ internal fun PastePreviewSheet(
 }
 
 /** 过目的内容和显示用的位图一起留着，确认发送时才把 [upload] 交给核心。 */
-private class PastePreview(val upload: ImageUpload, val bitmap: ImageBitmap?)
+private class PastePreview(val upload: ImageUpload, val bitmap: ImageBitmap)
 
-/** `ImageDecoder` 按 EXIF 方向转正，缩到预览的尺寸；解不出来时预览没有图，发送不受影响。 */
-private fun previewBitmap(upload: ImageUpload): ImageBitmap? = runCatching {
+/** Decode only the preview size; an unreadable preview fails before the send button becomes available. */
+private fun previewBitmap(upload: ImageUpload): ImageBitmap {
     val bytes = upload.thumbnail?.data ?: upload.data
-    ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+    return ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
         // 要在 CPU 上读像素，不能用硬件位图。
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         val scale = min(1f, PREVIEW_MAX_PIXELS / max(info.size.width, info.size.height))
@@ -156,4 +156,4 @@ private fun previewBitmap(upload: ImageUpload): ImageBitmap? = runCatching {
             (info.size.height * scale).toInt().coerceAtLeast(1),
         )
     }.asImageBitmap()
-}.getOrNull()
+}

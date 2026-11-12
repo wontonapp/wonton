@@ -4,8 +4,8 @@
 use std::time::Instant;
 
 use wonton_client::{
-    Action, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsState, FriendsViewModel,
-    RoomMembership,
+    Action, CoreError, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendsState,
+    FriendsViewModel, RoomMembership,
 };
 use wonton_matrix::testkit::unique;
 
@@ -354,6 +354,56 @@ async fn a_matrix_to_user_link_sends_the_request() {
     let my_link = format!("https://matrix.to/#/{OWNER}");
     until(&phone, "给出自己的用户链接", |view| {
         (view.my_link.as_deref() == Some(my_link.as_str())).then_some(())
+    })
+    .await;
+}
+
+/// 隧道断开时好友页和“你的资料”立刻失败成“连不上家里的服务器”，不等各自接口的 30 秒超时；
+/// 恢复后好友名单照常取到。
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn friends_and_profile_fail_right_away_while_the_tunnel_is_down() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut home, phone) = signed_in_phone(dir.path()).await;
+
+    home.stop_tunnel().await;
+    // 服务端关闭连接，状态很快如实变断开；等它变完，闸门才有依据。
+    let deadline = Instant::now() + WAIT;
+    while matches!(phone.home().status, wonton_protocol::HomeStatus::Connected) {
+        assert!(Instant::now() < deadline, "服务端停了，状态还没如实变断开");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+    let started = Instant::now();
+    refresh(&phone);
+    until(&phone, "断开时立刻失败", |view| match &view.state {
+        FriendsState::Failed { problem }
+            if problem.reason == FriendFailure::TransportUnavailable =>
+        {
+            Some(())
+        }
+        _ => None,
+    })
+    .await;
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "断开时好友请求要立刻失败，实际等了 {:?}",
+        started.elapsed()
+    );
+    let started = Instant::now();
+    let error = phone.me().await.expect_err("断开时取资料要失败");
+    assert!(
+        matches!(error, CoreError::TransportUnavailable { .. }),
+        "{error:?}"
+    );
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "断开时取资料要立刻失败，实际等了 {:?}",
+        started.elapsed()
+    );
+
+    home.start_tunnel().await;
+    until(&phone, "恢复后取到名单", |view| {
+        matches!(view.state, FriendsState::Ready).then_some(())
     })
     .await;
 }

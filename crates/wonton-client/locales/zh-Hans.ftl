@@ -192,6 +192,7 @@ chat-not-signed-in = 还没有登录 Matrix
 chat-send-no-response = Matrix 服务器没有回应
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
+chat-link-room-not-joined = 还没加入这个房间，请先在聊天列表里接受邀请。
 # 往只放通知的房间里发东西时显示。
 chat-read-only-room = 这个房间只放通知，不能发消息
 # $room 是原始的房间 ID。
