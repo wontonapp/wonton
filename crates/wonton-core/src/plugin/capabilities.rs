@@ -379,11 +379,16 @@ pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
 ) -> Result<(), super::install_error::InstallError> {
+    // 托管能力（ADR-0080）只由静态网页兑现：容器插件要它没人给。
+    let hosted_for_container = |name: &String| {
+        manifest.runtime != super::manifest::Runtime::StaticWeb
+            && lookup(name).is_some_and(|capability| capability.hosted.is_some())
+    };
     if !manifest
         .requires
         .iter()
         .chain(&manifest.wants)
-        .any(|name| name == MODELS.name)
+        .any(|name| name == MODELS.name || hosted_for_container(name))
     {
         return Ok(());
     }
