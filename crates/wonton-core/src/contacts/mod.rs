@@ -233,14 +233,17 @@ impl Contacts {
             .unwrap_or_default()
     }
 
+    /// `user_id` 在别的服务器上。认不出服务器名的也按远端算：证明不了是本机的人。
+    pub(crate) fn is_remote(&self, user_id: &str) -> bool {
+        server_of(user_id) != Some(self.own_server.as_str())
+    }
+
     /// 这个 Bot 有没有已成立的远端联系人（人或 Bot 都算：kind 是对方核心自报的）。总线据此不给它插件工具
     /// （ADR-0050“远端联系人默认只聊天”）。认不出服务器名的用户 ID 也按远端算：证明不了是本机的人。
     pub fn has_active_remote(&self, bot: &BotRef) -> bool {
         self.lock().rows(bot).is_some_and(|rows| {
-            rows.iter().any(|(user, row)| {
-                row.state == ContactState::Active
-                    && server_of(user) != Some(self.own_server.as_str())
-            })
+            rows.iter()
+                .any(|(user, row)| row.state == ContactState::Active && self.is_remote(user))
         })
     }
 }
