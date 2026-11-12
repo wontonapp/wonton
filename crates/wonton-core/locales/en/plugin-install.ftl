@@ -523,3 +523,4 @@ plugin-install-runtime-services = runtime { $runtime } must not declare services
 plugin-install-runtime-unsupported = this core cannot install or upgrade runtime { $runtime }; upgrade the core first
 plugin-install-matrix-rtc-needs-matrix = The home server isn't connected to a Matrix server, so an app that provides matrix_rtc (call authorization) can't be installed
 plugin-install-matrix-rtc-conflict = App { $id } already provides matrix_rtc (call authorization): there can only be one at a time
+plugin-install-matrix-rtc-ca-failed = Couldn't write the certificate bundle the call authorization app trusts: { $error }

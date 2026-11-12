@@ -522,3 +522,4 @@ plugin-install-runtime-services = runtime 为 { $runtime } 时不能声明 servi
 plugin-install-runtime-unsupported = 这个核心不支持安装或升级 runtime 为 { $runtime } 的插件，请先升级核心
 plugin-install-matrix-rtc-needs-matrix = 核心没有接入 Matrix 服务器，装不了提供 matrix_rtc（通话授权）的插件
 plugin-install-matrix-rtc-conflict = 已经装了提供 matrix_rtc（通话授权）的插件 { $id }：同一时间只能有一个
+plugin-install-matrix-rtc-ca-failed = 写不了通话授权插件要信任的证书包：{ $error }

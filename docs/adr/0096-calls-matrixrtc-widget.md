@@ -66,10 +66,19 @@ MSC4157 delayed events、MSC4515 RTC transports）替它收发事件。Element X
 `resolve_federation_base_url`）。插件网络里解析不了服务器名，也连不到 Tuwunel，所以：
 
 - 核心给 `matrix_rtc` 的提供方注入 `WONTON_MATRIX_SERVER_NAME`（插件拿它填 `LIVEKIT_FULL_ACCESS_HOMESERVERS`），并在它的网络里
-  把服务器名解析到核心（同 ADR-0063 的核心别名）。核心在这个别名上只答两个路径：`/.well-known/matrix/server`（指回自己）和
-  `/_matrix/federation/v1/openid/userinfo`（转给 Tuwunel），别的一律 404；也只答 `matrix_rtc` 提供方网络里来的请求。
-- 别名是核心的一个 TLS 监听（容器里 443，`WONTON_MATRIX_RTC_LISTEN`），证书是核心启动时给服务器名现签的自签证书。
-  `.well-known/matrix/server` 指回 `<服务器名>:443`，免得授权服务退到 8448。lk-jwt-service 怎么认这张证书见“验证结果”。
+  把服务器名解析到核心（同 ADR-0063 的核心别名）。核心在这个别名上只答：`/.well-known/matrix/server`（指回自己），
+  `/_matrix/federation/v1/openid/userinfo`、`/.well-known/matrix/client` 和 MSC4140 不稳定路径上的
+  `POST /delayed_events/{delay_id}/{action}`（这三样原样转给 Tuwunel），别的一律 404；也只答 `matrix_rtc` 提供方网络里来的请求。
+- 别名是核心的一个 TLS 监听（容器里 443，`WONTON_MATRIX_RTC_LISTEN`）。`.well-known/matrix/server` 指回 `<服务器名>:443`，
+  免得授权服务退到 8448。
+- **证书：** 核心有一把自己的 CA（私钥在核心的状态目录里，重启不变），给服务器名签别名的证书。装提供方时核心把
+  “核心看到的系统根证书 + 这个 CA”写成证书包，放进提供方数据目录的 `matrix-rtc-ca/ca-bundle.pem`，目录经
+  `WONTON_MATRIX_CA_DIR` 交给插件；插件挂进去、`SSL_CERT_FILE` 指向它。追加而不是替换：只信核心的 CA 就验不了别的服务器
+  来的用户，跳过校验则谁的证书都认。
+- **代管 delayed leave：** Element Call 断线后靠 delayed leave 退出通话，lk-jwt-service 可以替它续期和发出。它按服务器名找
+  客户端接口，插件设 `LIVEKIT_CS_API_URL_OVERRIDES=<服务器名>=https://<服务器名>` 指回别名（Tuwunel 的
+  `.well-known/matrix/client` 没配，转过去是 404），别名把操作原样转给 Tuwunel。Tuwunel v2.0.0 的不稳定路径专门为这类调用方
+  免访问令牌（`src/api/client/delayed_events/update_delayed_event.rs`）。
 
 ### 2. 核心：插件页可以作为 Matrix widget 跑
 
@@ -191,9 +200,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCapturePermissionFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
-- **授权服务代管 delayed leave：** lk-jwt-service 代管时还要访问 `.well-known/matrix/client` 和 MSC4140 的
-  `/delayed_events/{id}/{action}`（客户端接口），别名不答，代管用不了。两条路待定：别名加开这几个路径，或者插件不用代管、
-  靠客户端自己续期。
+- **lk-jwt-service 连不上别名时日志里带 OpenID 令牌：** 见“验证结果”，它没有配置项能关掉这一条。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
 - **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成
   页面自己的 origin 是否够。
@@ -205,11 +212,15 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 
 - `allow_federation = false` 时 `GET /_matrix/federation/v1/openid/userinfo` 回 200；`/rtc/transports` 回配置的
   `livekit_url`；没配 client 的 `.well-known/matrix/client` 回 404。回归测试钉住第一条。
-- lk-jwt-service 用 reqwest + rustls-platform-verifier。别名用自签证书、授权服务什么都不配时校验失败（UnknownIssuer），
-  退到 8448 也失败，`/sfu/get` 回 401。它的错误日志里带着 OpenID 访问令牌。
-- `SSL_CERT_FILE`（或 `SSL_CERT_DIR`）指向核心的 CA 时回 200；但这会替换系统根证书，同一个授权服务就验不了别的公网服务器的用户。
-- `LIVEKIT_INSECURE_SKIP_VERIFY_TLS=YES_I_KNOW_WHAT_I_AM_DOING` 时回 200。核心的自签证书按这条实现：插件设它即可，不用
-  核心交出 CA。代价是授权服务验别的服务器（非 full access 的用户）时也不校验证书。两条里定哪条待定。
+- lk-jwt-service 用 reqwest + rustls-platform-verifier（Linux 上读 `SSL_CERT_FILE`/`SSL_CERT_DIR`）。别名的证书它不认、
+  什么都不配时校验失败（UnknownIssuer），退到 8448 也失败，`/sfu/get` 回 401。
+- `SSL_CERT_FILE` 指向“系统根证书 + 核心的 CA”的证书包时回 200（`gateway/matrix_rtc_docker_tests.rs`）。只放核心的 CA 也回
+  200，但同一个授权服务就验不了别的服务器的用户；`LIVEKIT_INSECURE_SKIP_VERIFY_TLS` 也回 200，但谁的证书都认。
+- 代管 delayed leave：带 `delay_id` 的 `/sfu/get` 回 200（授权服务经别名找到客户端接口）；经别名发的 `restart`、`send`
+  不带访问令牌，Tuwunel 回 200，`send` 之后房间里有这条状态事件。
+- 日志：授权服务连得上别名时，OpenID 令牌对、错、代管都走一遍，容器日志里没有令牌（同一个测试钉住）。连不上别名时
+  （核心没在跑、地址不通）它报 `error sending request for url (…?access_token=<令牌>)`，令牌原样进日志；这是 error 级，
+  `LIVEKIT_LOG_LEVEL` 只调它自己 info/debug 的多少，关不掉；不读 `RUST_LOG`。
 - full access 的服务器名换到令牌后，授权服务建 LiveKit 房间成功。
 - 网关测试：真实 Tuwunel 发的 OpenID 令牌经 `/_wonton/matrix-rtc/sfu/get` 换回 LiveKit 令牌，假令牌 401，没装提供方 503
   （`gateway/matrix_rtc_docker_tests.rs`）。

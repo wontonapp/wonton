@@ -522,3 +522,4 @@ plugin-install-runtime-services = runtime が { $runtime } の場合、services 
 plugin-install-runtime-unsupported = このコアは runtime が { $runtime } のプラグインのインストールや更新に対応していません。先にコアを更新してください
 plugin-install-matrix-rtc-needs-matrix = コアが Matrix サーバーに接続していないため、matrix_rtc（通話の認可）を提供するアプリはインストールできません
 plugin-install-matrix-rtc-conflict = matrix_rtc（通話の認可）を提供するアプリ { $id } が既にインストールされています。同時に1つだけです
+plugin-install-matrix-rtc-ca-failed = 通話の認可アプリが信頼する証明書バンドルを書き込めませんでした：{ $error }
