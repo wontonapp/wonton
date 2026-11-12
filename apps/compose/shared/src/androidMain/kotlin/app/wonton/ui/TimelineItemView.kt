@@ -159,6 +159,8 @@ private fun agentRunRow(run: TimelineContent.AgentRun): AgentRunRowModel = Agent
     end = when (run.end) {
         SerAgentRunEnd.Cancelled -> AgentRunEnd.Cancelled
         SerAgentRunEnd.Uncertain -> AgentRunEnd.Uncertain
+        // 以后新加的结束原因不单独画，显示 result 和失败的红色。
+        is SerAgentRunEnd.Other -> null
         null -> null
     },
     body = run.body,
