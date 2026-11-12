@@ -27,11 +27,12 @@ struct TabPageView: View {
     @State private var isVisible = false
     @State private var topHeight: CGFloat = WontonTheme.size.topBar
     @State private var bottomHeight: CGFloat = 0
-    /// 全屏胶囊看不看得见。进来、加载完、转屏、手指往下拖时出现，几秒没碰就藏起来。
+    /// 全屏胶囊看不看得见。进来、切回 App、加载完、转屏、手指往下拖时出现，几秒没碰就藏起来。
     @State private var capsuleShown = true
     @State private var capsuleShowings = 0
     @State private var seenReady = false
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonTabBar) private var bottomBar
@@ -80,6 +81,8 @@ struct TabPageView: View {
             if visible == true { seenReady = false; notifySeen() }
         }
         .onAppear { notifySeen() }
+        // 切回 App 也算“进来”：全屏页和面板整页在后台时胶囊早藏了，回来不叫出来就看不到出口。
+        .onChange(of: scenePhase) { _, phase in if phase == .active { showCapsule() } }
         .task(id: capsuleShowings) {
             try? await Task.sleep(for: .seconds(3))
             if !Task.isCancelled { capsuleShown = false }
