@@ -10492,6 +10492,186 @@
         }
       }
     },
+    "plugin.settings.emptyPrompt": {
+      "comment": "Placeholder of a text setting whose empty value clears it back to the default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave empty to reset to the default"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空恢复默认值"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空恢復預設值"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "空欄で既定値に戻ります"
+          }
+        }
+      }
+    },
+    "plugin.settings.invalidDecimal": {
+      "comment": "Shown when the text for a decimal setting is not a number.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入数字"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入數字"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "数値を入力してください"
+          }
+        }
+      }
+    },
+    "plugin.settings.invalidInteger": {
+      "comment": "Shown when the text for an integer setting is not an integer.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a whole number"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入整数"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請輸入整數"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "整数を入力してください"
+          }
+        }
+      }
+    },
+    "plugin.settings.required": {
+      "comment": "Shown next to a required setting that has neither a value nor a default.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Required"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必填"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必填"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "必須"
+          }
+        }
+      }
+    },
+    "plugin.settings.title": {
+      "comment": "Title of a plugin's settings page and the row on the plugin detail page that opens it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定"
+          }
+        }
+      }
+    },
+    "plugin.settings.updatesApp": {
+      "comment": "Shown for a setting whose control or value type is newer than this App understands; submitting the whole form is blocked.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the App to edit this setting"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要更新 App 才能改"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要更新 App 才能改"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この設定を変更するには App をアップデートしてください"
+          }
+        }
+      }
+    },
     "plugin.task.addedTools": {
       "comment": "Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list.",
       "extractionState": "manual",
@@ -28325,25 +28505,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Deleting data also removes its keys and bot accounts. This can't be undone."
+            "value": "Deleting data also removes its keys and bot accounts, and old encrypted messages with its bots become unreadable. This can't be undone."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。"
+            "value": "删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。"
+            "value": "刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。"
+            "value": "データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。"
           }
         }
       }
@@ -28974,6 +29154,366 @@
           "stringUnit": {
             "state": "translated",
             "value": "まだサーバーの確認待ち…"
+          }
+        }
+      }
+    },
+    "secret.sectionTitle": {
+      "comment": "Section title for the keys a plugin asks its owner to fill in. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keys this app needs"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要填的密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要填的密鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリに必要な鍵"
+          }
+        }
+      }
+    },
+    "secret.optional": {
+      "comment": "Tag on a secret input the plugin doesn't require. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Optional"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可选"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可選"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任意"
+          }
+        }
+      }
+    },
+    "secret.getOne": {
+      "comment": "Link text under a secret input pointing to where to get one. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Where to get one"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去哪里拿"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去哪裡拿"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取得先"
+          }
+        }
+      }
+    },
+    "secret.show": {
+      "comment": "Accessibility label of the button that reveals a masked secret value. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show value"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顯示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "値を表示"
+          }
+        }
+      }
+    },
+    "secret.hide": {
+      "comment": "Accessibility label of the button that masks a secret value again. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide value"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "値を隠す"
+          }
+        }
+      }
+    },
+    "secret.edit": {
+      "comment": "Button that opens the field to change one stored secret. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Change"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修改"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更"
+          }
+        }
+      }
+    },
+    "secret.clear": {
+      "comment": "Button that empties an optional secret. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清空"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清空"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリア"
+          }
+        }
+      }
+    },
+    "secret.filled": {
+      "comment": "State line of a filled secret on the detail page; the change date is appended. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已填写"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已填寫"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力済み"
+          }
+        }
+      }
+    },
+    "secret.unfilled": {
+      "comment": "State line of a secret the owner hasn't filled yet. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not filled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未填写"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未填寫"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未入力"
+          }
+        }
+      }
+    },
+    "portMapping.title": {
+      "comment": "Section title listing the ports a plugin maps to this device (ADR-0072). No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Map to this device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射到本机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射到本機"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末にマッピング"
+          }
+        }
+      }
+    },
+    "portMapping.portLine": {
+      "comment": "One mapped port: the loopback address with the port number and protocol. Arguments: %1$lld is the port number, %2$@ the protocol name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "127.0.0.1:%1$lld · %2$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "127.0.0.1:%1$lld · %2$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "127.0.0.1:%1$lld · %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "127.0.0.1:%1$lld · %2$@"
+          }
+        }
+      }
+    },
+    "portMapping.protocolOther": {
+      "comment": "Label for a port whose protocol the app doesn't know. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Other"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "其他"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "その他"
           }
         }
       }

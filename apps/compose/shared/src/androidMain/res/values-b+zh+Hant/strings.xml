@@ -1011,6 +1011,10 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">可儲存檔案的資料夾</string>
     <string name="plugin_save_revoke">撤銷</string>
+    <string name="plugin_settings_section">設定</string>
+    <string name="plugin_settings_open">開啟設定</string>
+    <string name="plugin_settings_update_app">要更新 App 才能改</string>
+    <string name="plugin_settings_required">必填</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都詢問</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1093,7 +1097,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">解除安裝並刪除資料</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，無法復原。</string>
+    <string name="plugin_uninstall_delete_data_warning">刪除資料會一併刪掉它的金鑰和 Bot 帳號，與 Bot 的舊加密訊息將無法再查看，無法復原。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->

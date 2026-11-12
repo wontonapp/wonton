@@ -74,6 +74,8 @@ jobs:
               - "deploy/dev/core/Dockerfile"
               - "deploy/dev/matrix/**"
               - "plugins/**"
+              # 镜像清单检查（wonton-core 的 test_docker_check）要运行它。
+              - "scripts/mirror-test-images.sh"
               - "Cargo.toml"
               - "vendor/**"
               - "Cargo.lock"
@@ -162,6 +164,18 @@ jobs:
         run: cargo test --doc --workspace --locked 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
         env:
           DOCKER_HOST: unix:///nonexistent/docker.sock
+      - name: 官方索引里的清单这份核心都读得懂、渲染得出来
+        if: matrix.shard == 1
+        # 每个插件都按安装前的渲染走一遍（索引里只有文件的 sha256，被引用的文件用占位内容），
+        # 核心不再注入的变量、改名的变量当场失败，免得合进来以后那些插件装不上。用不到 Docker。
+        # 放在文档测试后面、带 --workspace：库已经按整个 workspace 的特性编好，只差链接核心的二进制；
+        # 写成 -p wonton-core 会按单个包重新合特性，依赖又编一遍。
+        shell: bash
+        run: |
+          curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
+            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+          cargo build --workspace --locked --bin wonton-core 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
+          target/debug/wonton-core plugin check-index "$RUNNER_TEMP/index.json" 2>&1 | tee -a "$RUNNER_TEMP/test-output.log"
       # 假数据入口的模块和测试都在 cargo feature 后面，默认的 workspace 测试跑不到；只在第一片跑一遍。
       - name: 测试假数据入口（feature ui-fake）
         if: env.RUN == 'true' && matrix.shard == 1

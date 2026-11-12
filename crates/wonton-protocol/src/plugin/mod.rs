@@ -49,7 +49,7 @@ pub use settings::{
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };

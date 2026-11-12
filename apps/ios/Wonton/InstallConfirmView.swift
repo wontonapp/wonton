@@ -10,6 +10,7 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
+    @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
     @State private var submittedId: String?
     @State private var hostAcknowledgement = false
@@ -67,7 +68,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled) {
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled, secrets: $secrets) {
                 isFillingProfile = true
             }
         }
@@ -80,10 +81,11 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）、缺资料或者有核心不支持的权限时不能确认。
+    /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
         return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
+            && !missingRequiredSecret(preview.secretInputs, secrets)
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -142,11 +144,12 @@ struct InstallConfirmView: View {
             line.enabled = enabled.contains(line.permission)
             return line
         }
+        let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
-            action = .upgradePlugin(preview: preview, secrets: [:], settings: [:])
+            action = .upgradePlugin(preview: preview, secrets: secrets, settings: [:])
         } else {
-            action = .installPlugin(preview: preview, secrets: [:], settings: [:])
+            action = .installPlugin(preview: preview, secrets: secrets, settings: [:])
         }
         do {
             try model.core.dispatch(action: action)
@@ -166,6 +169,7 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
+    @Binding var secrets: [String: String]
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -200,6 +204,13 @@ private struct PreviewContent: View {
                             } else {
                                 PermissionRow(line: line)
                             }
+                        }
+                    }
+                }
+                if !preview.secretInputs.isEmpty {
+                    DetailSection(title: String(localized: .secretSectionTitle)) {
+                        SecretInputsSection(inputs: preview.secretInputs, values: secrets) { name, value in
+                            secrets[name] = value
                         }
                     }
                 }

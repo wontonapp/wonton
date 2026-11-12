@@ -127,6 +127,42 @@ impl Push {
         }
     }
 
+    /// 把一条新的联系人请求推给一个人的所有设备（`user` 为空是主人，ADR-0045）。核心自己发起，没有 Tuwunel 等着
+    /// 重试：推送服务暂时不可用时记日志，请求本身在“等你确认”列表里还在。
+    pub async fn notify_contact_request(
+        &self,
+        user: Option<&str>,
+        request: wonton_protocol::ContactRequestPush,
+    ) {
+        let payload = DevicePayload {
+            server: self.server.clone(),
+            room_id: String::new(),
+            event_id: String::new(),
+            sender: Some(request.user_id.clone()),
+            sender_display_name: request.display_name.clone(),
+            room_name: None,
+            prio: None,
+            contact_request: Some(request),
+        };
+        let devices = match user {
+            Some(user) => self.devices.of_user(user),
+            None => self
+                .devices
+                .list()
+                .into_iter()
+                .filter(|device| device.user.is_none())
+                .collect(),
+        };
+        for device in devices {
+            let Some(registration) = self.registrations.get(&device.id) else {
+                continue;
+            };
+            if let Err(e) = self.deliver(&registration, &payload, "high").await {
+                tracing::warn!(device = %device.id.fmt_short(), error = %e, "联系人请求的推送没发出去");
+            }
+        }
+    }
+
     /// 发给一台设备。返回订阅是否还有效。
     async fn deliver(
         &self,

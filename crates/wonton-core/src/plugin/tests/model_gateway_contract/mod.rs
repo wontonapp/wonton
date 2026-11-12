@@ -252,7 +252,7 @@ async fn a_minimal_gateway_satisfies_the_consumer_contract() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "需要 Docker，锁定的系统网关运行与最小网关相同的消费方契约"]
+#[ignore = "需要 Docker，还要连 GitHub 按 system.lock 的提交取插件包；锁定的系统网关运行与最小网关相同的消费方契约"]
 async fn the_bundled_gateway_satisfies_the_same_consumer_contract() {
     let upstream = Arc::new(upstream::Upstream::start().await);
     contract(system::start(&upstream.socket).await, &upstream).await;

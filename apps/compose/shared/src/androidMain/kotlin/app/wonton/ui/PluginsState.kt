@@ -165,6 +165,9 @@ val StoreListing.allPlugins: List<StoreItem>
 /** 要卸载的插件，确认对话框用。 */
 data class UninstallTarget(val id: String, val title: String)
 
+/** 要打开设置页的插件，设置页用：标题栏显示插件的标题。 */
+data class PluginSettingsTarget(val id: String, val title: String)
+
 /** 核心取好的预览：确认页不再重新取。 */
 val StoreConfirmation.preview: InstallPreview
     get() = when (this) {

@@ -43,6 +43,12 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="wonton" />
             </intent-filter>
+            <!-- 分享一句话给默认 Agent（iOS 快捷指令“问 Bot”同）：发给 Action.AskAgent。 -->
+            <intent-filter android:label="@string/shortcut_agent_chat">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
         <!-- 下载好的文件交给系统打开（ADR-0020）。 -->
         <provider

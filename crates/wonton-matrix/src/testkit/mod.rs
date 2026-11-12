@@ -261,6 +261,30 @@ impl TestServer {
             .expect("冻住 Tuwunel 容器");
     }
 
+    /// 注册一个用密码登录的账号（用现成 Matrix 账号登录的测试用），返回完整用户 ID 和密码。容器要开着密码登录
+    /// （`TUWUNEL_LOGIN_WITH_PASSWORD=true`），只有测试自己起的容器能注册。
+    pub async fn register_password_user(&self, localpart: &str) -> (String, String) {
+        let secret = self
+            .registration_secret
+            .as_deref()
+            .expect("现成的服务器没有注册密钥");
+        let password = random_hex(16);
+        let response = admin::register_user(
+            &matrix_sdk::reqwest::Client::new(),
+            &self.url,
+            secret,
+            localpart,
+            &password,
+            false,
+        )
+        .await;
+        let user_id = response["user_id"]
+            .as_str()
+            .expect("注册接口应返回用户 ID")
+            .to_owned();
+        (user_id, password)
+    }
+
     /// 核心的管理账号，只有测试自己起的容器才有。
     pub async fn admin(&self) -> Admin {
         let secret = self

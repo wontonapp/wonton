@@ -136,6 +136,19 @@ async fn recovery_needs_the_whole_hold_before_good() {
     let mut site = Site::start(Duration::ZERO).await;
     site.poor().await;
     site.wire.set(0, Duration::ZERO);
+    // noq 的丢包计数在学到丢包时才入账（ACK 空洞），不按发包时刻归属：200‰ 期间没学完的账会学进后面
+    // 的采样增量，污染紧跟着的干净窗口。这里循环小步采样，等累计丢失数停走（账学完了），再走一秒让它
+    // 滑出 30 秒窗口，干净样本的增量里就只剩干净流量。CI 高负载（同进程并跑上千个测试）下记账延迟拖得
+    // 很长，不等的话干净窗口实测到过 205‰（run 43115663522）。
+    let mut lost = site.phone.home().details.lost_packets;
+    for _ in 0..30 {
+        let now = site.sample(1).await.details.lost_packets;
+        if now == lost {
+            break;
+        }
+        lost = now;
+    }
+    site.sample(1).await;
     let clean = site.sample(30).await;
     assert!(clean.details.loss_per_mille.unwrap() < 20, "{clean:?}");
     assert_eq!(clean.details.quality, ConnectionQuality::Poor);

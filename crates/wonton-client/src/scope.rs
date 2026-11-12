@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, CoreError, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
-    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel,
-    TransfersViewModel,
+    BotContactsViewModel, ChatViewModel, CoreError, FriendsViewModel, HomeViewModel,
+    OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel, ServersViewModel,
+    SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
+use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
@@ -41,6 +42,7 @@ pub(crate) struct Scope {
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
+    pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
     /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
@@ -64,6 +66,7 @@ pub(crate) struct Views {
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
     pub(crate) friends: watch::Sender<FriendsViewModel>,
+    pub(crate) bot_contacts: watch::Sender<BotContactsViewModel>,
     pub(crate) settings: watch::Sender<SettingsViewModel>,
 }
 
@@ -78,6 +81,7 @@ impl Views {
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
             friends: scope.friends.sender(),
+            bot_contacts: scope.bot_contacts.sender(),
             settings: scope.settings.sender(),
         }
     }
@@ -269,6 +273,7 @@ impl Scope {
             method: push_method.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),
+            external,
         };
         let shared = Shared {
             handle: &handle,
@@ -296,6 +301,11 @@ impl Scope {
             home.subscribe(),
             plugins.subscribe(),
         );
+        let bot_contacts = BotContactsLink::new(
+            handle.clone(),
+            home.clone(),
+            views.map(|v| v.bot_contacts.clone()),
+        );
         Ok(Arc::new(Self {
             slot: slot.to_owned(),
             home,
@@ -308,6 +318,7 @@ impl Scope {
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,
+            bot_contacts,
             settings: people.2,
             shared_apps,
             browser,
@@ -331,6 +342,7 @@ impl Scope {
         self.plugins.set_languages(languages.to_vec());
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
+        self.bot_contacts.set_languages(languages.to_vec());
     }
 
     pub(crate) fn backgrounded(&self) {

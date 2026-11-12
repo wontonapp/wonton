@@ -60,6 +60,7 @@ internal fun ServerApp(
     onRoomRequestHandled: () -> Unit,
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
+    requestedAgentText: AgentTextRequest? = null,
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -78,6 +79,7 @@ internal fun ServerApp(
         requestedRoom?.let { navigation.openRoom(it.roomId); onRoomRequestHandled() }
     }
     AppLinkEffect(requestedLink, navigation)
+    AskAgentEffect(requestedAgentText, navigation)
     AppShortcutsEffect(tabs)
     WontonTheme(appearance) {
         val proxyRoute = pluginProxyRoute(home, plugins)

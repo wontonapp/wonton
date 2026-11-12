@@ -1,10 +1,14 @@
 use std::time::{Duration, Instant};
 
 use axum::http::Method;
-use wonton_client::{Action, OnboardingStep, OnboardingViewModel, PluginTaskState};
+use wonton_client::{
+    Action, OnboardingCommit, OnboardingStep, OnboardingViewModel, PluginTaskState,
+};
 
 use super::super::rig::{Canned, Rig, core_error, item, preview, running};
-use super::{KEY_TEST, ONBOARDING, act, at, edit, onboarding, providers, test_key, wait_requests};
+use super::{
+    KEY_TEST, ONBOARDING, act, at, edit, flow_rig, onboarding, providers, test_key, wait_requests,
+};
 
 const PLUGINS: &str = "/_wonton/api/plugins";
 
@@ -228,4 +232,43 @@ async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
     rig.core.release(Method::POST, PLUGINS);
     rig.task("app.photos", |state| *state == PluginTaskState::Succeeded)
         .await;
+}
+
+#[tokio::test]
+async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
+    // Agent 已经装着：点完成不装任何插件，扣住的 GET 不会卡住插件那头的刷新。
+    let mut state = onboarding("profile");
+    state["agents"][0]["status"] = serde_json::json!({ "state": "running", "health": "healthy" });
+    let rig = flow_rig(state.clone()).await;
+    edit(&rig, "云吞", "");
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Agent).await;
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Model).await;
+    act(&rig, Action::SkipOnboardingStep);
+    at(&rig, OnboardingStep::Apps).await;
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Review).await;
+
+    // 旧请求扣在假核心上，回应是点完成之前的状态（primary_agent 还是空）。
+    rig.core
+        .answer(Method::GET, ONBOARDING, Canned(200, state.to_string()));
+    rig.core.hold(Method::GET, ONBOARDING);
+    let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
+    act(&rig, Action::RefreshOnboarding);
+    wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
+
+    // 点完成：finish 的回应先落地，走完了和默认 Agent 都比旧请求的新。
+    act(&rig, Action::ContinueOnboarding);
+    rig.wait_onboarding(|view| {
+        view.review.commit == OnboardingCommit::Done
+            && view.primary_bot_user_id.as_deref() == Some("@agent:home")
+    })
+    .await;
+
+    // 旧回应放行：不许盖掉刚保存的状态。
+    rig.core.release(Method::GET, ONBOARDING);
+    let settled = rig.wait_onboarding(|view| !view.loading).await;
+    assert_eq!(settled.primary_bot_user_id.as_deref(), Some("@agent:home"));
+    assert_stays(&rig, &settled).await;
 }

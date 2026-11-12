@@ -68,7 +68,7 @@ chat-card-highest-line = Its code runs as root on this machine
 chat-card-highest-confirm = I understand this app can control the whole machine
 
 # Uninstall card: what happens to the app's data.
-chat-card-uninstall-purge = Its data will be deleted too; this can't be undone
+chat-card-uninstall-purge = Its data will be deleted too, and old encrypted messages with its bots become unreadable; this can't be undone
 chat-card-uninstall-keep = Keep its data; it's still there if you reinstall later
 
 # Tool-call card lines. $args is the raw JSON arguments, truncated when too long.

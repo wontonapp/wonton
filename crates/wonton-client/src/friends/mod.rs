@@ -648,6 +648,8 @@ async fn collect(session: &Arc<wonton_matrix::MatrixSession>) -> Result<Sync, Fa
                     display_name: invite.inviter_name,
                     kind: if invite.friend {
                         FriendRequestKind::Friend
+                    } else if invite.bot_contact {
+                        FriendRequestKind::BotContact
                     } else {
                         FriendRequestKind::DirectChat
                     },
