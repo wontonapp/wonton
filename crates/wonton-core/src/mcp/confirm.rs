@@ -31,6 +31,9 @@ const MAX_PENDING_PER_CALLER: usize = 3;
 /// [`Self::supersede`] 送给等待方的标记：这次等待结束是因为被新提交取代，不是主人拒绝。
 const SUPERSEDED: &str = "superseded";
 
+/// [`Self::cancel`] 送给等待方的标记：卡片被核心撤回了（链被停），不是主人拒绝，也不是过期。
+pub(super) const CANCELLED: &str = "cancelled";
+
 /// 回答过、过期的确认留这么久，之后再回答得到“不存在”。
 const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
 
@@ -57,6 +60,8 @@ pub struct Audience {
     pub recipient: Option<String>,
     pub requester: Option<ConfirmationRequester>,
     pub origin: Option<ConfirmationOrigin>,
+    /// 卡片问的是哪类事（ADR-0061 的链上限卡片等），壳据此画专门的界面；不分类的是 `None`。
+    pub category: Option<wonton_protocol::ConfirmationCategory>,
 }
 
 /// 没能执行的原因。
@@ -66,6 +71,8 @@ pub enum Refusal {
     Expired,
     /// 同一个（Bot，插件）有了新的确认请求，旧的这份被取代（ADR-0033 的暂存），等新的那份。
     Superseded,
+    /// 核心撤回了卡片（链被停，ADR-0061 第 10 节）。
+    Cancelled,
     /// 这个插件已经有太多请求在等主人。
     TooMany,
     /// 卡片发不出去，没法问主人。
@@ -80,6 +87,7 @@ impl Refusal {
             Self::Superseded => {
                 "这个插件有了新的确认请求，这一份已经被取代，只有最新的那份能确认".to_owned()
             }
+            Self::Cancelled => "这条链被停了，卡片随之撤回".to_owned(),
             Self::TooMany => {
                 format!("已经有 {MAX_PENDING_PER_CALLER} 个请求在等你确认，等你处理完再试")
             }
@@ -93,6 +101,7 @@ impl Refusal {
             Self::Rejected => "owner_rejected",
             Self::Expired => "confirmation_expired",
             Self::Superseded => "superseded",
+            Self::Cancelled => "chain_stopped",
             Self::TooMany => "too_many_pending",
             Self::Unavailable(_) => "confirmation_unavailable",
         }
@@ -263,6 +272,9 @@ impl Confirmations {
             Answer::Reject if chosen.choice_id.as_deref() == Some(SUPERSEDED) => {
                 Err(Refusal::Superseded)
             }
+            Answer::Reject if chosen.choice_id.as_deref() == Some(CANCELLED) => {
+                Err(Refusal::Cancelled)
+            }
             // 不认识的回答到不了这里（`answer` 挡掉了）；真到了也不算同意。
             // 拒绝时 `deliver` 已经发布过卡片状态。
             Answer::Reject | Answer::Unknown => Err(Refusal::Rejected),
@@ -277,6 +289,12 @@ impl Confirmations {
         audience: Audience,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
         let created = SystemTime::now();
+        let Audience {
+            recipient,
+            requester,
+            origin,
+            category,
+        } = audience;
         let card = ConfirmationCard {
             id: random_token(),
             state: ConfirmationState::Pending,
@@ -288,11 +306,11 @@ impl Confirmations {
             secret_inputs: draft.secret_inputs.clone(),
             settings: draft.settings.clone(),
             window: None,
-            requester: audience.requester,
-            origin: audience.origin,
+            requester,
+            origin,
             audience: wonton_protocol::CardAudience::Keeper,
             answered_by: None,
-            category: None,
+            category,
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();
@@ -307,7 +325,7 @@ impl Confirmations {
         }
         let slot = Slot {
             caller: caller.clone(),
-            recipient: audience.recipient,
+            recipient,
             scope: draft.scope,
             released_by: None,
             card: card.clone(),
@@ -567,6 +585,31 @@ impl Confirmations {
         let _ = waiter.send(Chosen {
             answer: Answer::Reject,
             choice_id: Some(SUPERSEDED.to_owned()),
+            secrets: SecretValues::new(),
+            settings: Default::default(),
+        });
+        self.bump();
+        true
+    }
+
+    /// 核心撤回了这张卡片（链被停，ADR-0061 第 10 节）：还在等的等待方拿到“已取消”，卡片改成结果。
+    /// 已经不在等（回答了、过期了）时不动，返回假。
+    pub(super) fn cancel(&self, id: &str, message: &str) -> bool {
+        let chosen = self.lock().slots.get_mut(id).and_then(|slot| {
+            let waiter = slot.waiter.take()?;
+            slot.card.state = ConfirmationState::Failed {
+                message: message.to_owned(),
+            };
+            slot.ended = Some(now_ms(SystemTime::now()));
+            Some(waiter)
+        });
+        let Some(waiter) = chosen else {
+            return false;
+        };
+        self.activity_changed();
+        let _ = waiter.send(Chosen {
+            answer: Answer::Reject,
+            choice_id: Some(CANCELLED.to_owned()),
             secrets: SecretValues::new(),
             settings: Default::default(),
         });
