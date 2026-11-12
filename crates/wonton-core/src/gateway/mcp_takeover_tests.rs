@@ -53,7 +53,11 @@ async fn only_paired_devices_answer_confirmations() {
         (status, kind.as_deref()),
         (StatusCode::BAD_REQUEST, Some("invalid_input"))
     );
-    assert!(home.cards.states(&card.id).is_empty(), "还没有人回答");
+    assert_eq!(
+        home.confirmations.card(&card.id).map(|card| card.state),
+        Some(wonton_protocol::ConfirmationState::Pending),
+        "还没有人回答"
+    );
 
     let (status, _, reply) = home.send(&path, approve, Some(device), &[]).await;
     assert_eq!(status, StatusCode::OK);
