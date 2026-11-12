@@ -1,5 +1,5 @@
 //! 静态网页和外部网页两种形态的清单契约（ADR-0080）：字段怎么写、哪些字段不能写、安全档位怎么算，
-//! 以及托管能力的 `provides.<能力>.mount`。托管本身没有实现，装的时候如实报“不支持”。
+//! 以及托管能力的 `provides.<能力>.mount`。装、升、卸见 `static_web_install`。
 
 use serde_json::{Value, json};
 use wonton_protocol::{PluginRuntime, SecurityTier};
@@ -316,20 +316,4 @@ fn new_fields_and_runtimes_need_spec_0_12() {
     old_link["x-wonton"]["spec"] = json!("0.11");
     assert_eq!(spec_floor::problems(&old_link).len(), 2);
     assert!(spec_floor::problems(&static_web(json!({}))).is_empty());
-}
-
-#[tokio::test]
-async fn hosted_forms_are_refused_at_install_until_hosting_exists() {
-    let (_docker, engine) = super::super::fake_docker::FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = super::manager::manager_with(engine, &dir);
-    for doc in [base("static_web"), link("https://example.com")] {
-        let package = parse(&doc).unwrap();
-        let error = manager
-            .install_package(package, &[], super::langs())
-            .await
-            .unwrap_err();
-        assert_eq!(error.kind(), "unsupported");
-    }
-    assert!(manager.list().is_empty());
 }

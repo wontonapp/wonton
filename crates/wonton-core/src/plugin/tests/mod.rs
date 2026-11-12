@@ -76,6 +76,8 @@ mod source_subdir;
 mod sources;
 mod start_recreate;
 mod static_web;
+mod static_web_files;
+mod static_web_install;
 mod stopped;
 mod stopped_docker;
 mod store;

@@ -213,7 +213,10 @@ pub struct RoleClaim {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WebUi {
+    /// 容器插件必填；`runtime: static_web` 没有服务，不写（ADR-0080）。
+    #[serde(default)]
     pub service: String,
+    #[serde(default)]
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
@@ -261,11 +264,11 @@ pub struct ProxyCredentials {
     pub cookies: BTreeMap<String, String>,
 }
 
-fn default_web_path() -> String {
+pub(super) fn default_web_path() -> String {
     "/".to_owned()
 }
 
-fn default_web_display() -> String {
+pub(super) fn default_web_display() -> String {
     "standard".to_owned()
 }
 
@@ -638,7 +641,7 @@ impl Manifest {
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {
-            validate_webui(webui)?;
+            validate_webui(webui, self.runtime)?;
         }
         if let Some(mcp) = &self.mcp {
             super::manifest_mcp::validate(mcp)?;
@@ -730,7 +733,7 @@ fn validate_bots(manifest: &Manifest) -> Result<(), ManifestError> {
     Ok(())
 }
 
-fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
+fn validate_webui(webui: &WebUi, runtime: Runtime) -> Result<(), ManifestError> {
     if let Some(problem) = manifest_tabs::validate_path("webui.path", &webui.path) {
         return Err(ManifestError::Invalid(problem));
     }
@@ -739,8 +742,17 @@ fn validate_webui(webui: &WebUi) -> Result<(), ManifestError> {
     {
         return Err(ManifestError::Invalid(problem));
     }
+    // 静态网页的 webui 只有展示字段，服务端字段由 manifest_static 按“用不上”报。
+    if runtime == Runtime::StaticWeb {
+        return Ok(());
+    }
+    if webui.service.is_empty() {
+        return Err(ManifestError::Invalid("webui.service 必填".to_owned()));
+    }
     if webui.port == 0 {
-        return Err(ManifestError::Invalid("webui.port 不能为 0".to_owned()));
+        return Err(ManifestError::Invalid(
+            "webui.port 必填，且不能为 0".to_owned(),
+        ));
     }
     let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
     if webui.oidc.is_some() && webui.sso != Sso::Oidc {

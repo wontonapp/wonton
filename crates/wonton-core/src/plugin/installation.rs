@@ -104,10 +104,19 @@ impl PluginManager {
         let manifest = &package.manifest;
         super::install_entry::check_runtime(manifest, langs)?;
         self.check_not_upgrading(langs)?;
-        dry_run(&package, langs)?;
+        if !super::install_hosted::is_containerless(manifest) {
+            dry_run(&package, langs)?;
+        }
         self.check_icon(&package, langs).await?;
         super::grant::check_permissions(manifest, &granted, &enabled, langs)?;
         super::capabilities::unsupported_model_dependency(manifest, langs)?;
+        if super::install_hosted::is_containerless(manifest) {
+            let view = self
+                .install_containerless(&package, &granted, langs)
+                .await?;
+            return Ok((view, Undo::default()));
+        }
+        self.check_hosted_provider(manifest, langs)?;
         self.check_requirements(manifest, langs).await?;
         self.check_egress(manifest, langs).await?;
         let effective = manifest.effective_permissions(&super::store::permission_set(&enabled));
@@ -216,7 +225,11 @@ impl PluginManager {
     }
 
     /// 占位，防止同一插件并发安装，也防止两个插件映射到同一个子域名。
-    fn reserve(&self, listed: &Arc<Listed>, langs: &Languages) -> Result<(), InstallError> {
+    pub(super) fn reserve(
+        &self,
+        listed: &Arc<Listed>,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let manifest = &listed.manifest;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(existing) = plugins.get(&manifest.id) {
@@ -319,6 +332,14 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         self.check_not_upgrading(langs)?;
+        let users = self.hosted_users(id);
+        if !users.is_empty() {
+            return Err(InstallError::Conflict(l10n::text(
+                langs,
+                "plugin-hosted-provider-in-use",
+                &[("plugins", users.join(", ").into())],
+            )));
+        }
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let entry = plugins
             .get(id)
