@@ -204,6 +204,11 @@ pub struct TabPage {
     pub fullscreen: bool,
     /// 页面要重新加载的计数：变了壳就重新加载（重试、升级完、连上后）。
     pub reload: u64,
+    /// 这个页面不在 App 里加载，交给系统浏览器：它要跨源隔离，这个平台的 WebView 给不了（ADR-0033）。
+    /// 壳用 `ClientCore::plugin_browser_url` 换浏览器打开的地址。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub opens_in_browser: bool,
 }
 
 /// 底栏图标的两种画法。
@@ -317,6 +322,7 @@ mod tests {
             opens_fullscreen: true,
             fullscreen: true,
             reload: 2,
+            opens_in_browser: true,
         }
     }
 

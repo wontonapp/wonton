@@ -119,6 +119,7 @@ fn login_failures_round_trip_and_unknown_failure_is_other() {
         MatrixLoginFailure::InvalidCallback,
         MatrixLoginFailure::Expired,
         MatrixLoginFailure::Storage,
+        MatrixLoginFailure::Upstream,
         MatrixLoginFailure::Other,
     ] {
         assert_eq!(round_trip(&failure), failure);

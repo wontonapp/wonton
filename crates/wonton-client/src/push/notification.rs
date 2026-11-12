@@ -12,8 +12,8 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, CoreError, HomeStatus, NOTICE_FIELD, NotificationCategory,
-    PluginNotice, PushContent, PushNotification,
+    ChatAccount, ChatFailure, ContactRequestPush, CoreError, HomeStatus, NOTICE_FIELD,
+    NotificationCategory, PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
@@ -37,6 +37,9 @@ pub(crate) struct Payload {
     sender: Option<String>,
     sender_display_name: Option<String>,
     room_name: Option<String>,
+    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
+    #[serde(default)]
+    contact_request: Option<ContactRequestPush>,
 }
 
 impl Payload {
@@ -49,6 +52,26 @@ impl Payload {
                 "push-payload-invalid",
                 reason = e.to_string()
             ))
+        })
+    }
+
+    /// 联系人请求的通知：推送里带齐了要显示的原值，不用取消息。类别同确认卡片（“等你确认”），正文的位置放
+    /// `Invite`：壳看到 `contact_request` 按它写文字。
+    fn contact_request(&self) -> Option<PushNotification> {
+        let request = self.contact_request.clone()?;
+        Some(PushNotification {
+            server_id: None,
+            room_id: String::new(),
+            event_id: String::new(),
+            sender: request
+                .display_name
+                .clone()
+                .or_else(|| Some(request.user_id.clone())),
+            room_name: None,
+            content: PushContent::Invite,
+            category: NotificationCategory::Confirmation,
+            confirmation: None,
+            contact_request: Some(request),
         })
     }
 
@@ -78,6 +101,9 @@ impl PushLink {
         &self,
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
+        if let Some(notification) = payload.contact_request() {
+            return Ok(Some(notification));
+        }
         let started = Instant::now();
         let room_id = payload.room_id.parse::<OwnedRoomId>().map_err(|e| {
             invalid(&l10n!(
@@ -298,6 +324,28 @@ mod tests {
             Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
         let unavailable = payload.unavailable(ChatFailure::TransportUnavailable, "offline".into());
         assert_eq!(unavailable.sender, None);
+    }
+
+    /// 核心自己发的联系人请求推送不对应消息：不去取正文，直接是一张“等你确认”。
+    #[test]
+    fn a_contact_request_push_is_a_confirmation_without_a_message() {
+        let payload = Payload::parse(
+            br#"{"server":"s","room_id":"","event_id":"","contact_request":{
+                "bot":{"plugin_id":"ai.nous.hermes","bot":"bob"},
+                "user_id":"@hermes-alice:a.example","display_name":"Hermes",
+                "keeper_display_name":"Alice"}}"#,
+        )
+        .unwrap();
+        let shown = payload.contact_request().unwrap();
+        assert_eq!(shown.category, NotificationCategory::Confirmation);
+        assert_eq!(shown.sender.as_deref(), Some("Hermes"));
+        let request = shown.contact_request.unwrap();
+        assert_eq!(request.bot.bot, "bob");
+        assert_eq!(request.keeper_display_name.as_deref(), Some("Alice"));
+
+        let message =
+            Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
+        assert!(message.contact_request().is_none());
     }
 
     #[test]

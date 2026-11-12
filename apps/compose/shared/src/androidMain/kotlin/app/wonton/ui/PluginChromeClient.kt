@@ -1,7 +1,9 @@
 package app.wonton.ui
 
+import android.net.Uri
 import android.view.View
 import android.webkit.PermissionRequest
+import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 
@@ -24,4 +26,9 @@ internal class PluginChromeClient(
         }
         controller.onPermissionRequest(request)
     }
+    override fun onShowFileChooser(
+        webView: WebView,
+        filePathCallback: ValueCallback<Array<Uri>>,
+        fileChooserParams: FileChooserParams,
+    ): Boolean = controller.showFileChooser(owner, filePathCallback, fileChooserParams)
 }

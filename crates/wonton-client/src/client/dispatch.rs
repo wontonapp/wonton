@@ -37,6 +37,7 @@ impl ClientCore {
                 self.change_servers(|servers| servers.rename(&id, &name))
             }
             Action::RemoveServer { id } => self.change_servers(|servers| servers.remove(&id)),
+            action if is_matrix_login_action(&action) => self.matrix_login.dispatch(action),
             _ => Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "servers-invalid-action"),
             }),
@@ -68,6 +69,7 @@ impl ClientCore {
             | Action::SwitchServer { .. }
             | Action::RenameServer { .. }
             | Action::RemoveServer { .. }) => self.change_server(action),
+            action if is_matrix_login_action(&action) => self.change_server(action),
             peers @ (Action::RefreshPeers
             | Action::ShowPeerCode
             | Action::HidePeerCode
@@ -77,6 +79,12 @@ impl ClientCore {
             | Action::RejectPeerRequest { .. }
             | Action::UnrejectPeerRequest { .. }
             | Action::RemovePeer { .. }) => scope.peers.dispatch(peers),
+            contacts @ (Action::RefreshBotContacts { .. }
+            | Action::RequestBotContact { .. }
+            | Action::RequestPersonContact { .. }
+            | Action::ApproveBotContact { .. }
+            | Action::RejectBotContact { .. }
+            | Action::RemoveBotContact { .. }) => scope.bot_contacts.dispatch(contacts),
             friends @ (Action::RefreshFriends
             | Action::AddFriend { .. }
             | Action::ApproveFriendRequest { .. }
@@ -152,6 +160,18 @@ fn is_sharing_action(action: &Action) -> bool {
             | Action::CreatePluginShare { .. }
             | Action::UpdatePluginShare { .. }
             | Action::RevokePluginShare { .. }
+    )
+}
+
+/// 用现成 Matrix 账号登录的操作（ADR-0051），整组交给 [`MatrixLogins`](crate::matrix_login::MatrixLogins)。
+fn is_matrix_login_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::StartMatrixLogin { .. }
+            | Action::SubmitMatrixPassword { .. }
+            | Action::StartMatrixOidc { .. }
+            | Action::CompleteMatrixOidc { .. }
+            | Action::CancelMatrixLogin { .. }
     )
 }
 

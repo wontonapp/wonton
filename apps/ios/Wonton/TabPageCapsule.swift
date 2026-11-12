@@ -24,6 +24,8 @@ struct TabPageCapsule: View {
             HStack(spacing: WontonTheme.spacing.s8) {
                 Spacer(minLength: 0)
                 capsule
+                    // 来源域名的字号封顶：最大的辅助字号下胶囊不被撑出屏幕，退出一直点得到。
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .opacity(shown ? 1 : 0)
                     .allowsHitTesting(shown)
                     .accessibilityHidden(!shown)

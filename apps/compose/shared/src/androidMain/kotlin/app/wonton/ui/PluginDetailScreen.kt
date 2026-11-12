@@ -134,10 +134,16 @@ private fun DetailContent(
         val working = task?.state is PluginTaskState.Running
         if (bot != null) {
             BotProfileSection(bot, plugins)
+            BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
-            TaskRow(it, plugins) { navigation.confirmation = reconfirmation(it, plugins) }
+            TaskRow(
+                it,
+                plugins,
+                { navigation.confirmation = reconfirmation(it, plugins) },
+                navigation.checkInstalled,
+            )
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         detail.installed?.let { PluginTabPinControls(it) }
@@ -147,7 +153,7 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        detail.installed?.let { InstalledDetailSections(detail, plugins, onToggled) }
+        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled) }
         detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
@@ -214,9 +220,13 @@ private fun SaveGrants(plugins: PluginsState, id: String, folders: List<String>,
 private fun InstalledDetailSections(
     detail: PluginDetail,
     plugins: PluginsState,
+    navigation: PluginNavigation,
     onToggled: (PluginDetail) -> Unit,
 ) {
     val installed = detail.installed ?: return
+    if (detail.hasSettings) {
+        SettingsEntry(detail, navigation)
+    }
     SecretSection(detail, plugins, onToggled)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
@@ -228,49 +238,17 @@ private fun InstalledDetailSections(
     }
 }
 
-/** 详情页的一行开关：网页用摄像头和麦克风的记下的决定，没问过不显示。
- *  关掉是改回没问过（下次再问）；拒绝只在询问弹窗里产生。 */
+/** 插件设置（ADR-0077）的入口行，点开整页的原生设置表单。 */
 @Composable
-private fun MediaPermissionSection(plugins: PluginsState, id: String) {
-    val grant = plugins.viewModel.mediaGrants.firstOrNull { it.pluginId == id } ?: return
-    val title = stringResource(R.string.plugin_media_title)
-    var busy by remember(id) { mutableStateOf(false) }
-    var problem by remember(id) { mutableStateOf<Problem?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+private fun SettingsEntry(detail: PluginDetail, navigation: PluginNavigation) {
+    DetailSection(stringResource(R.string.plugin_settings_section)) {
         WontonGroup {
-            Row(
-                Modifier.fillMaxWidth()
-                    .heightIn(min = WontonTheme.size.target)
-                    .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-            ) {
-                Text(
-                    title,
-                    Modifier.weight(1f),
-                    style = WontonTheme.typography.body,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                )
-                WontonSwitch(
-                    checked = grant.allowed,
-                    onCheckedChange = { allowed ->
-                        busy = true
-                        problem = null
-                        // 本机设置，同步落盘；和别的详情页开关一样失败弹回并显示原因。
-                        problem = try {
-                            plugins.core.setPluginMediaPermission(pluginId = id, allow = allowed)
-                            null
-                        } catch (failure: CoreException) {
-                            failure.problem
-                        }
-                        busy = false
-                    },
-                    enabled = !busy,
-                    modifier = Modifier.semantics { contentDescription = title },
-                )
-            }
+            WontonRow(
+                stringResource(R.string.plugin_settings_open),
+                showsForward = true,
+                onClick = { navigation.settings = PluginSettingsTarget(detail.id, detail.title) },
+            )
         }
-        problem?.let { ProblemNotice(it) }
     }
 }
 

@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
@@ -371,6 +372,7 @@ impl Bus {
     }
 
     /// 插件工具的声明：清单这会儿取不到、或插件没有这个工具时，给 Agent 的失败。
+    /// 错误装箱：serde_json 开 `preserve_order` 时 `CallToolResult` 撑过 clippy `result_large_err` 的 128 字节阈值。
     async fn definition_of(
         &self,
         caller: &Caller,
@@ -378,26 +380,26 @@ impl Bus {
         args: &Value,
         server: &McpServer,
         tool: &str,
-    ) -> Result<rmcp::model::Tool, CallToolResult> {
+    ) -> Result<rmcp::model::Tool, Box<CallToolResult>> {
         let listed = match self.upstreams.tools(server).await {
             Ok(tools) => tools,
             // 插件的工具清单这会儿取不到：多半是插件没就绪或连接断了，Agent 该晚点再试。
             Err(e) => {
-                return Err(self.deny(
+                return Err(Box::new(self.deny(
                     caller,
                     name,
                     args,
                     &ToolFailure::new("source_unavailable", e),
-                ));
+                )));
             }
         };
         listed.into_iter().find(|t| t.name == tool).ok_or_else(|| {
-            self.deny(
+            Box::new(self.deny(
                 caller,
                 name,
                 args,
                 &ToolFailure::new("not_found", format!("插件 {} 没有工具 {tool}", server.id)),
-            )
+            ))
         })
     }
 
@@ -412,7 +414,7 @@ impl Bus {
         let args = Value::Object(arguments.clone());
         let definition = match self.definition_of(caller, name, &args, server, tool).await {
             Ok(definition) => definition,
-            Err(result) => return result,
+            Err(result) => return *result,
         };
         let read_only = definition
             .annotations
@@ -441,7 +443,7 @@ impl Bus {
                 .await
             {
                 Ok(held_ms) => held_ms,
-                Err(result) => return result,
+                Err(result) => return *result,
             };
             // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
             let cleared = if highest {
@@ -487,7 +489,9 @@ impl Bus {
         }
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
-        let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        let run = move |bus: Arc<Bus>,
+                        _secrets: SecretValues,
+                        _settings: wonton_protocol::SettingValues| async move {
             forward(
                 &bus,
                 &agent,
@@ -513,7 +517,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
@@ -531,7 +535,7 @@ impl Bus {
         held_ms: Option<u64>,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         drop(activity);
@@ -543,7 +547,8 @@ impl Bus {
             match decision {
                 Ok(ticket) => {
                     let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome = run(bus.clone(), ticket.secrets.clone()).await;
+                    let outcome =
+                        run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
                     drop(activity);
                     // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
                     let confirmation = if ticket.window.is_some() {
@@ -584,7 +589,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         let Some(second) = second else {
@@ -618,7 +623,7 @@ impl Bus {
                 }
             };
             let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone(), ticket.secrets.clone()).await;
+            let outcome = run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
             drop(activity);
             let confirmation = if ticket.window.is_some() {
                 "window"

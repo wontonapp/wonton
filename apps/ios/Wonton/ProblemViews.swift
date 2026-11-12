@@ -58,6 +58,8 @@ extension PluginFailure {
                 .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
             )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
+        case .recordUnusable:
+            categorizedProblem(.problemPluginRecordUnusableTitle, .problemPluginRecordUnusableNextStep, detail)
         case .serverTooOld:
             categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
         // 比这个壳新的类别：先按服务器出错说。

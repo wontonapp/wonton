@@ -317,6 +317,10 @@
     <string name="core_upgrade_check_up_to_date">最新です</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">確認中</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">アップデート後、これらのアプリは使えなくなります</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">どのアプリが影響を受けるか確認できませんでした</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">%1$sにアップデートしました</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -664,6 +668,9 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">招待を送る</string>
+    <string name="friends_scan_code">相手のコードをスキャン</string>
+    <string name="friends_paste_placeholder">相手のコードをペースト</string>
+    <string name="friends_my_code">自分のQRコード</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">リクエスト</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1012,6 +1019,10 @@
     <string name="plugin_save_folders">保存できるフォルダ</string>
     <string name="plugin_media_title">ウェブページのカメラとマイク</string>
     <string name="plugin_save_revoke">取り消す</string>
+    <string name="plugin_settings_section">設定</string>
+    <string name="plugin_settings_open">設定を開く</string>
+    <string name="plugin_settings_update_app">変更するには App のアップデートが必要です</string>
+    <string name="plugin_settings_required">必須</string>
     <string name="plugin_updates_section">アップデート</string>
     <string name="plugin_ask_every_update">毎回確認</string>
     <string name="plugin_written_by_agent">あなたのエージェント・%1$s</string>
@@ -1071,6 +1082,12 @@
     <string name="plugin_task_review">再確認</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">結果が不確定です：%1$s</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">接続を待っています</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">インストールされたかアプリ一覧で確認してください。</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">インストール済みを確認</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">アンインストールしました</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1094,7 +1111,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、元に戻せません。</string>
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">アンインストール（データを残す）</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
@@ -1427,13 +1444,12 @@
     <string name="tab_starting">起動しています…</string>
     <string name="tab_uninstalling">アンインストールしています…</string>
     <string name="tab_upgrading">アップデートしています…</string>
-    <string name="tab_open_anyway">そのまま開く</string>
+    <string name="tab_opens_in_browser">%1$sはブラウザで開きます</string>
+    <string name="tab_open_in_browser">開く</string>
+    <string name="tab_no_browser_next_step">Chromeなどのブラウザをインストールまたは有効にしてから、もう一度お試しください。</string>
     <string name="tab_unpin_from_bar">ナビゲーションバーから外す</string>
     <string name="tab_start">起動</string>
     <string name="tab_view_details">詳細を表示</string>
-    <string name="tab_cross_origin_title">このアプリはWontonのAndroid版ではまだ開けません</string>
-    <string name="tab_cross_origin_detail">現在のAndroid System WebView：%1$s。156以降が必要です。</string>
-    <string name="tab_webview_version_unknown">バージョンを取得できません</string>
     <string name="tab_load_not_ready">アプリの準備ができていません</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
@@ -1737,4 +1753,40 @@
     <string name="panel_public_unsupported">この端末の WebView は公開ウェブページとプラグインのページの保存領域を分けられないため、ここでは開けません</string>
     <string name="panel_remove">削除</string>
     <string name="panel_url">URL を入力</string>
+    <string name="contacts_title">連絡先</string>
+    <string name="contacts_add">連絡先を追加</string>
+    <string name="contacts_add_kind_bot">ボット</string>
+    <string name="contacts_add_kind_person">人</string>
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <string name="contacts_add_submit">リクエストを送信</string>
+    <string name="contacts_requests_title">リクエスト</string>
+    <string name="contacts_active_title">追加済み</string>
+    <string name="contacts_sent_title">送信済み</string>
+    <string name="contacts_incoming_warning">相手のボットの発言は、あなたのボットへの発言として扱われます。重要なツールは毎回あなたの確認が必要になります。</string>
+    <string name="contacts_approve">承認</string>
+    <string name="contacts_reject">拒否</string>
+    <string name="contacts_withdraw">取り消す</string>
+    <string name="contacts_clear">削除</string>
+    <string name="contacts_remove">連絡先を削除</string>
+    <string name="contacts_remove_title">「%1$s」を削除しますか？</string>
+    <string name="contacts_remove_message">ボットは相手の発言を処理しなくなります。既存のチャットは残ります。</string>
+    <string name="contacts_status_waiting_bot">相手の承認待ち</string>
+    <string name="contacts_status_waiting_person">相手の承諾待ち</string>
+    <string name="contacts_status_declined">相手が拒否しました</string>
+    <string name="contacts_status_not_found">該当するユーザーがいません</string>
+    <string name="contacts_status_unknown">状態不明</string>
+    <string name="contacts_keeper">%1$s のボット</string>
+    <string name="contacts_remote_unpaired">そのサーバーとの接続が解除されたため、メッセージは届きません</string>
+    <string name="contacts_empty">連絡先はまだありません</string>
+    <string name="contacts_error_invalid_user_id">有効な Matrix ID ではありません</string>
+    <string name="contacts_error_not_paired">相手のサーバーはあなたのサーバーと接続されていません</string>
+    <string name="contacts_error_not_paired_next">先に「他のサーバー」で接続してください。</string>
+    <string name="contacts_error_already_contact">すでに連絡先か、リクエストを送信済みです</string>
+    <string name="contacts_error_bot_not_found">このボットはもうインストールされていません</string>
+    <string name="contacts_error_contact_not_found">すでに処理済みです</string>
+    <string name="contacts_error_not_keeper">このボットの連絡先は持ち主だけが管理できます</string>
+    <string name="contacts_error_peer_unreachable">相手のサーバーに接続できません。送信されていません。</string>
+    <string name="contacts_error_unauthenticated">この端末ではこの操作はできません</string>
+    <string name="contacts_error_upstream">自宅サーバーが保存できませんでした</string>
+    <string name="friends_request_bot_contact">ボットの連絡先リクエスト</string>
 </resources>

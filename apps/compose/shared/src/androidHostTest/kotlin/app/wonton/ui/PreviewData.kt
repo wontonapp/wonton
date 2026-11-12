@@ -150,6 +150,7 @@ internal fun previewHome() = HomeViewModel(
     pairing = null,
     invite = null,
     keepConnection = false,
+    justRecovered = false,
 )
 
 internal fun previewPlugins() = PluginsViewModel(
@@ -184,6 +185,7 @@ internal fun previewPlugins() = PluginsViewModel(
         status = null,
         stage = CoreUpgradeStage.Idle,
         offer = null,
+        compatDetails = emptyList(),
         offerSkipped = false,
         refreshing = false,
         problem = null,

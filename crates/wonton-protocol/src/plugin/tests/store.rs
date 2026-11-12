@@ -13,6 +13,35 @@ where
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
+/// 商店条目的 `high_permissions` 是核心给的：旧核心的列表没有这个字段，按没有算，壳不自己比档位。
+#[test]
+fn store_items_without_high_permissions_default_to_no_tag() {
+    let mut item = serde_json::to_value(store()).unwrap();
+    let official = item
+        .pointer_mut("/official/plugins/0")
+        .unwrap()
+        .as_object_mut()
+        .unwrap();
+    assert_eq!(official["high_permissions"], json!(false));
+    official.remove("high_permissions");
+    official["security_tier"] = json!("highest");
+    let item: StoreItem =
+        serde_json::from_value(item.pointer("/official/plugins/0").unwrap().clone()).unwrap();
+    assert!(!item.high_permissions);
+
+    let mut item = serde_json::to_value(store()).unwrap();
+    let community = item
+        .pointer_mut("/community/plugins/0")
+        .unwrap()
+        .as_object_mut()
+        .unwrap();
+    assert_eq!(community["high_permissions"], json!(true));
+    community.remove("high_permissions");
+    let item: StoreItem =
+        serde_json::from_value(item.pointer("/community/plugins/0").unwrap().clone()).unwrap();
+    assert!(!item.high_permissions);
+}
+
 /// 契约：一键装/升的操作、安装请求和升级报价的 JSON 写法；旧 App 读得懂新 App 加的字段。
 #[test]
 fn one_tap_requests_round_trip() {
@@ -102,6 +131,7 @@ fn sidebar_view_model_round_trip() {
                 reason: PluginFailure::Changed,
                 message: "插件包在预览之后变了".into(),
             },
+            waiting_for_connection: false,
             added_tools: Some(AddedTools::NotCompared {
                 reason: "插件没有运行，列不出工具".into(),
             }),
