@@ -12,7 +12,7 @@
 pub mod announce;
 pub mod client;
 pub mod detect;
-mod grant;
+pub(crate) mod grant;
 mod monitor;
 mod platform;
 pub(in crate::plugin) mod ports;

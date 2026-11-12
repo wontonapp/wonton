@@ -120,7 +120,7 @@ matrix_widget:
   就等于能拿到一小时的 OpenID 令牌，令牌只能让对方换回用户 ID。确认页写明。
 
 **主人在哪确认：沿用“声明 + 醒目提示”（ADR-0036、ADR-0057），不在每次打开时问。** 安装和更新的确认页、确认卡片按类别列出
-widget 能力，文字由核心给：
+widget 能力：核心给原始能力串和级别（普通、高），确认页的文字由壳按级别写，确认卡片由核心写：
 
 - 普通（不标色）：读写通话、回应这类不含聊天内容的事件；to-device；delayed events；查通话服务器；OpenID。
 - 高（同 `network.lan` 的级别）：读或发 `m.room.message`、`m.room.encrypted`、`m.room.redaction`、`m.room.member`、

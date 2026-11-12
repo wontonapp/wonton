@@ -329,6 +329,15 @@ fn base64url_secret_encoding_needs_spec_0_14() {
         found[0].contains("x-wonton.secrets.key.generate.encoding: base64url"),
         "{found:?}"
     );
+}
+
+#[test]
+fn a_widget_needs_spec_0_14() {
+    let manifest =
+        json!({"webui": {"service": "web", "port": 80}, "matrix_widget": {"url": "/room"}});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.matrix_widget"), "{found:?}");
     assert!(problems(&document("0.14", manifest, plain())).is_empty());
 }
 
@@ -348,4 +357,9 @@ fn the_install_deadline_needs_spec_0_14() {
 fn other_secret_encodings_stay_at_the_old_spec() {
     let manifest = json!({"secrets": {"key": {"generate": {"encoding": "base64"}}}});
     assert!(problems(&document("0.13", manifest, plain())).is_empty());
+}
+
+#[test]
+fn the_supported_spec_version_covers_the_newest_table_entry() {
+    assert!(TABLE.iter().all(|(since, _)| *since <= SPEC_VERSION));
 }

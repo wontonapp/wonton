@@ -64,3 +64,5 @@ install-unreviewed-provider = Wontonはこのアプリを審査していませ�
 install-unreviewed-provider-via = Wontonはこのアプリを審査していません。コードとイメージは{ $provider }が提供しており、インデックスは{ $host }のものを使っています
 install-unreviewed-upload-author = Wontonはこのアプリを審査していません。アップロードされたファイルのもので、マニフェストに記載された作者は{ $author }ですが、確認できません
 install-unreviewed-upload = Wontonはこのアプリを審査していません。アップロードされたファイルのもので、マニフェストに作者の記載がありません
+plugin-widget-high = このアプリのページは、開いたルームのチャット内容を読んだり、あなたの名前でメッセージを送信・取り消したりできます。
+plugin-widget-normal = このアプリのページはほかに、通話とデバイス宛てのイベントの送受信、イベントの予約送信、通話サーバーの照会、ログイン用トークンの取得ができます。

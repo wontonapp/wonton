@@ -38,6 +38,7 @@ fn detail() -> PluginDetail {
         stars: None,
         release_notes: None,
         permissions: Vec::new(),
+        widget_capabilities: Vec::new(),
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: true,

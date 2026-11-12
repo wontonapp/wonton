@@ -496,6 +496,7 @@ pub fn preview(id: &str) -> InstallPreview {
         via_index: None,
         written_by: None,
         author: None,
+        widget_capabilities: Vec::new(),
         permissions: vec![PermissionLine {
             permission: "storage.share.photos:read".to_owned(),
             text: "读共享文件夹 photos".to_owned(),

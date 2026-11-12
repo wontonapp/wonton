@@ -66,6 +66,7 @@ mod manifest_mcp;
 mod manifest_oidc;
 mod manifest_static;
 mod manifest_tabs;
+pub(crate) mod manifest_widget;
 pub mod matrix_rtc;
 pub mod matrix_rtc_ca;
 mod mcp_server;

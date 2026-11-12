@@ -13,6 +13,7 @@ mod install;
 mod owner_secrets;
 pub mod store;
 mod view_model;
+mod widget;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
 pub use view_model::PluginsViewModel;
 mod permission;
@@ -55,6 +56,7 @@ pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState,
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
+pub use widget::{WidgetCapability, WidgetCapabilityLevel};
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

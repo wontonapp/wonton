@@ -63,3 +63,28 @@ fn a_core_without_install_stages_and_a_new_stage_still_parse() {
         }
     );
 }
+
+/// 契约：旧核心没有 `widget_capabilities` 时读成空列表；新核心的级别旧 App 不认识的落到 `Other`。
+#[test]
+fn a_core_without_widget_capabilities_lists_none() {
+    let mut shown = serde_json::to_value(detail()).unwrap();
+    shown.as_object_mut().unwrap().remove("widget_capabilities");
+    let shown: PluginDetail = serde_json::from_value(shown).unwrap();
+    assert!(shown.widget_capabilities.is_empty());
+
+    let mut confirmed = serde_json::to_value(preview()).unwrap();
+    confirmed
+        .as_object_mut()
+        .unwrap()
+        .remove("widget_capabilities");
+    let confirmed: InstallPreview = serde_json::from_value(confirmed).unwrap();
+    assert!(confirmed.widget_capabilities.is_empty());
+
+    let unknown: WidgetCapability = serde_json::from_value(json!({
+        "capability": "org.matrix.msc2762.receive.event:m.room.message",
+        "level": "extreme",
+    }))
+    .unwrap();
+    assert_eq!(unknown.level, WidgetCapabilityLevel::Other);
+    assert!(!unknown.added);
+}

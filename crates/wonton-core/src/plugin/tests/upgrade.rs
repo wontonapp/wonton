@@ -318,7 +318,12 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
     release(&github, &wanting);
     m.check_upgrades_now().await;
     let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
-    assert!(offer.permissions_changed);
+    assert!(
+        offer.permissions_changed,
+        "offered {} installed {}",
+        offer.version,
+        version(&m)
+    );
 
     let preview = m
         .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
@@ -722,4 +727,76 @@ async fn always_allow_stays_through_an_upgrade_and_the_preview_lists_it() {
         .await
         .unwrap();
     assert!(preview.always_allowed.is_empty());
+}
+
+/// widget 能力变多：新版本的提示要主人重新确认（和权限变多是同一条路），预览里标出多出来的那项。
+#[tokio::test]
+async fn more_widget_capabilities_ask_the_owner_again() {
+    // 网页入口的健康检查真的连这个端口，要有东西听着。
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().fallback(|| async { "ok" }))
+            .await
+            .unwrap();
+    });
+    let widget = |capabilities: &[&str]| {
+        let mut yaml = format!(
+            "  permissions: []\n  webui: {{service: web, port: {port}}}\n  matrix_widget:\n    url: /room\n    capabilities:\n"
+        );
+        for capability in capabilities {
+            yaml.push_str(&format!("      - {capability}\n"));
+        }
+        yaml
+    };
+    let transports = "org.matrix.msc4515.rtc_transports";
+    let messages = "org.matrix.msc2762.receive.event:m.room.message";
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &hello("1.0.0", "", &widget(&[transports])));
+    install(&m, SOURCE).await;
+
+    release(&github, &hello("1.1.0", "", &widget(&[transports])));
+    assert_eq!(m.check_upgrades_now().await, None);
+    assert!(
+        !m.installed_plugin(&id(), &zh())
+            .unwrap()
+            .upgrade
+            .unwrap()
+            .permissions_changed,
+        "能力没变不用再确认"
+    );
+
+    release(
+        &github,
+        &hello("1.2.0", "", &widget(&[transports, messages])),
+    );
+    assert_eq!(m.check_upgrades_now().await, None);
+    let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
+    assert!(
+        offer.permissions_changed,
+        "offered {} installed {}",
+        offer.version,
+        version(&m)
+    );
+
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
+    let added: Vec<_> = preview
+        .widget_capabilities
+        .iter()
+        .filter(|capability| capability.added)
+        .collect();
+    assert_eq!(added.len(), 1, "{:?}", preview.widget_capabilities);
+    assert_eq!(added[0].capability, messages);
+    assert_eq!(added[0].level, wonton_protocol::WidgetCapabilityLevel::High);
+    assert!(
+        preview.notices.iter().any(|notice| notice.emphasis),
+        "{:?}",
+        preview.notices
+    );
+
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.2.0");
 }

@@ -93,6 +93,7 @@ mod views;
 mod views_l10n;
 mod watch;
 mod webui_health;
+mod widget;
 
 /// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。
 fn langs() -> crate::plugin::languages::Languages {
