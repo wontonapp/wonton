@@ -16,6 +16,7 @@ pub mod agent_chain;
 mod bot_activity;
 pub mod bot_media;
 
+pub mod clients;
 pub mod config;
 pub mod contacts;
 pub mod device;
