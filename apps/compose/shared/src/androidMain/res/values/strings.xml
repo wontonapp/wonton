@@ -1115,6 +1115,8 @@
     <string name="plugin_settings_update_app">Update the app to change this</string>
     <!-- Note under a required setting that has no value and no default. No arguments. -->
     <string name="plugin_settings_required">Required</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">The app will restart to apply this</string>
     <!-- Section title for the app's updates. No arguments. -->
     <string name="plugin_updates_section">Updates</string>
     <!-- Switch label: ask before every update of an agent-written app. No arguments. -->
@@ -1917,7 +1919,7 @@
     <string name="secret_edit">Change</string>
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
-    <string name="secret_unfilled">Not filled</string>
+    <string name="secret_unfilled">Not ready: paste a token first</string>
     <string name="pin_to_bar">Pin to navigation bar</string>
     <!-- Menu item that removes an app\'s page from the navigation bar (long press in the sidebar). -->
     <string name="unpin_from_bar">Remove from navigation bar</string>
