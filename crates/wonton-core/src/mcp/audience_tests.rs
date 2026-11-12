@@ -103,7 +103,7 @@ async fn matrix(s: &Setup) -> Fake {
 /// 等发给 `recipient`（`None` 是主人）的第一张卡片。
 async fn pending_for(s: &Setup, recipient: Option<&str>) -> ConfirmationCard {
     for _ in 0..500 {
-        if let Some(card) = s.bus.confirmations().pending_for(recipient).pop() {
+        if let Some(card) = s.bus.confirmations().list(recipient).0.pop() {
             return card;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -132,7 +132,15 @@ fn rejected_origins(s: &Setup) -> Vec<Value> {
 async fn a_card_shows_the_bot_and_the_conversation_it_was_asked_from() {
     let s = setup_with_upstreams(Upstreams::new()).await;
     let fake = matrix(&s).await;
-    let mut caller = bot(&s, &fake, "main", BotKeeper::User { username: "owner".into() }, "owner");
+    let mut caller = bot(
+        &s,
+        &fake,
+        "main",
+        BotKeeper::User {
+            username: "owner".into(),
+        },
+        "owner",
+    );
     room(&fake, "!work:test", &["agent-main", "owner", "someone"]);
     caller.origin = Some(ConfirmationOrigin {
         room_id: "!work:test".into(),
@@ -143,7 +151,7 @@ async fn a_card_shows_the_bot_and_the_conversation_it_was_asked_from() {
     let card = s.cards.wait_for(1).await;
     assert_eq!(card.requester, requester("main"));
     assert_eq!(card.origin, caller.origin);
-    assert_eq!(s.bus.confirmations().pending_for(None)[0].id, card.id);
+    assert_eq!(s.bus.confirmations().list(None).0[0].id, card.id);
     s.answer(&card.id, Answer::Approve).unwrap();
     call.await.unwrap();
     assert!(rejected_origins(&s).is_empty());
@@ -157,7 +165,15 @@ async fn a_card_shows_the_bot_and_the_conversation_it_was_asked_from() {
 async fn an_origin_that_does_not_check_out_falls_back_to_the_bots_home_room() {
     let s = setup_with_upstreams(Upstreams::new()).await;
     let fake = matrix(&s).await;
-    let mut caller = bot(&s, &fake, "main", BotKeeper::User { username: "owner".into() }, "owner");
+    let mut caller = bot(
+        &s,
+        &fake,
+        "main",
+        BotKeeper::User {
+            username: "owner".into(),
+        },
+        "owner",
+    );
     // Bot 在、主人不在的房间；Bot 自己不在的房间；没有这个房间。
     room(&fake, "!without-owner:test", &["agent-main", "someone"]);
     room(&fake, "!without-bot:test", &["owner", "someone"]);
@@ -190,16 +206,32 @@ async fn a_family_bots_tool_card_goes_to_its_keeper_only() {
     let s = setup_with_upstreams(Upstreams::new()).await;
     let fake = matrix(&s).await;
     member(&s, "alice", false);
-    let mut caller = bot(&s, &fake, "alice", BotKeeper::User { username: "alice".into() }, "alice");
-    room(&fake, "!family-chat:test", &["agent-alice", "alice", "owner"]);
+    let mut caller = bot(
+        &s,
+        &fake,
+        "alice",
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+        "alice",
+    );
+    room(
+        &fake,
+        "!family-chat:test",
+        &["agent-alice", "alice", "owner"],
+    );
     caller.origin = Some(origin("!family-chat:test"));
 
     let call = s.spawn_as(&caller, TOOL, json!({"id": 1}));
     let card = pending_for(&s, Some("alice")).await;
     assert_eq!(card.requester, requester("alice"));
     assert_eq!(card.origin, caller.origin);
-    assert!(s.bus.confirmations().pending_for(None).is_empty());
-    assert!(s.cards.posted.lock().unwrap().is_empty(), "不进主人的通知房间");
+    assert!(s.bus.confirmations().list(None).0.is_empty());
+    assert_eq!(
+        *s.cards.recipients.lock().unwrap(),
+        [Some("alice".to_owned())],
+        "只推给她，不推给主人"
+    );
     // 放行时段按插件记，家人的卡片不给这个选项。
     assert!(card.choices.iter().all(|c| c.answer != Answer::AllowWindow));
     s.answer(&card.id, Answer::Approve).unwrap();
@@ -223,21 +255,53 @@ async fn plugin_admin_cards_go_to_a_keeper_only_with_the_install_grant() {
     }
     member(&s, "alice", false);
     member(&s, "bob", true);
-    let alice = bot(&s, &fake, "alice", BotKeeper::User { username: "alice".into() }, "alice");
-    let bob = bot(&s, &fake, "bob", BotKeeper::User { username: "bob".into() }, "bob");
+    let alice = bot(
+        &s,
+        &fake,
+        "alice",
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+        "alice",
+    );
+    let bob = bot(
+        &s,
+        &fake,
+        "bob",
+        BotKeeper::User {
+            username: "bob".into(),
+        },
+        "bob",
+    );
 
     let uninstall = |id: &str| json!({"id": id});
-    let call = s.spawn_as(&alice, "wonton__uninstall_plugin", uninstall("app.example.journal"));
+    let call = s.spawn_as(
+        &alice,
+        "wonton__uninstall_plugin",
+        uninstall("app.example.journal"),
+    );
     let card = s.cards.wait_for(1).await;
-    assert_eq!(card.requester, requester("alice"), "主人看得到是谁的 Bot 要卸载");
+    assert_eq!(
+        card.requester,
+        requester("alice"),
+        "主人看得到是谁的 Bot 要卸载"
+    );
     assert_eq!(card.origin, None, "Alice 的主房间主人不在：只在列表里");
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
 
-    let call = s.spawn_as(&bob, "wonton__uninstall_plugin", uninstall("app.example.diary"));
+    let call = s.spawn_as(
+        &bob,
+        "wonton__uninstall_plugin",
+        uninstall("app.example.diary"),
+    );
     let card = pending_for(&s, Some("bob")).await;
     assert_eq!(card.origin, Some(origin(&home("bob"))));
-    assert_eq!(s.cards.posted.lock().unwrap().len(), 1);
+    assert_eq!(
+        *s.cards.recipients.lock().unwrap(),
+        [None, Some("bob".to_owned())],
+        "没授权的发给主人，授权了的推给他自己"
+    );
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
 }
@@ -275,7 +339,15 @@ async fn an_agent_permission_card_uses_the_origin_in_the_request() {
     let s = setup_with_upstreams(Upstreams::new()).await;
     let fake = matrix(&s).await;
     member(&s, "alice", false);
-    let caller = bot(&s, &fake, "alice", BotKeeper::User { username: "alice".into() }, "alice");
+    let caller = bot(
+        &s,
+        &fake,
+        "alice",
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+        "alice",
+    );
     room(&fake, "!project:test", &["agent-alice", "alice"]);
     let request = AgentPermissionRequest {
         tool_call_id: "t1".into(),

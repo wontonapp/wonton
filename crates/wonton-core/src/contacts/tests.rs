@@ -14,7 +14,7 @@ use super::*;
 
 /// 内存里的几台服务器：发出的事件先排队，测试调 [`Net::deliver_all`] 才送到，送的时候不持有发送方的锁。
 #[derive(Default)]
-pub(super) struct Net {
+pub(crate) struct Net {
     servers: Mutex<BTreeMap<String, Weak<Contacts>>>,
     queue: Mutex<Vec<(String, String, ContactEvent)>>,
     /// 配对状态，没写的已配对服务器按“已连上”。
@@ -22,7 +22,7 @@ pub(super) struct Net {
 }
 
 impl Net {
-    pub(super) async fn deliver_all(&self) {
+    pub(crate) async fn deliver_all(&self) {
         loop {
             let next = {
                 let mut queue = self.queue.lock().unwrap();
@@ -43,11 +43,11 @@ impl Net {
         }
     }
 
-    pub(super) fn set_reach(&self, server: &str, reach: PeerReach) {
+    pub(crate) fn set_reach(&self, server: &str, reach: PeerReach) {
         self.reach.lock().unwrap().insert(server.to_owned(), reach);
     }
 
-    pub(super) fn queued(&self) -> Vec<ContactEvent> {
+    pub(crate) fn queued(&self) -> Vec<ContactEvent> {
         self.queue
             .lock()
             .unwrap()
@@ -92,7 +92,7 @@ impl PeerLink for FakeLink {
 }
 
 #[derive(Default)]
-pub(super) struct FakeDirectory {
+pub(crate) struct FakeDirectory {
     bots: Mutex<Vec<LocalBot>>,
 }
 
@@ -119,13 +119,13 @@ impl Directory for FakeDirectory {
 }
 
 #[derive(Default)]
-pub(super) struct FakeInvites {
+pub(crate) struct FakeInvites {
     /// 下一次邀请的结果；空时发到，房间 ID 按人编。
-    pub(super) next: Mutex<Option<Result<InviteOutcome, ContactFailure>>>,
-    pub(super) states: Mutex<BTreeMap<String, InviteeState>>,
-    pub(super) sent: Mutex<Vec<String>>,
-    pub(super) withdrawn: Mutex<Vec<String>>,
-    pub(super) withdraw_fails: Mutex<bool>,
+    pub(crate) next: Mutex<Option<Result<InviteOutcome, ContactFailure>>>,
+    pub(crate) states: Mutex<BTreeMap<String, InviteeState>>,
+    pub(crate) sent: Mutex<Vec<String>>,
+    pub(crate) withdrawn: Mutex<Vec<String>>,
+    pub(crate) withdraw_fails: Mutex<bool>,
 }
 
 impl PersonInvites for FakeInvites {
@@ -178,9 +178,9 @@ impl PersonInvites for FakeInvites {
 }
 
 #[derive(Default)]
-pub(super) struct FakeEffects {
-    pub(super) rebuilt: Mutex<Vec<BotRef>>,
-    pub(super) pushed: Mutex<Vec<(String, ContactRequestPush)>>,
+pub(crate) struct FakeEffects {
+    pub(crate) rebuilt: Mutex<Vec<BotRef>>,
+    pub(crate) pushed: Mutex<Vec<(String, ContactRequestPush)>>,
 }
 
 impl Effects for FakeEffects {
@@ -194,17 +194,17 @@ impl Effects for FakeEffects {
 }
 
 /// 一台测试服务器。
-pub(super) struct Server {
-    pub(super) contacts: Arc<Contacts>,
-    pub(super) directory: Arc<FakeDirectory>,
-    pub(super) invites: Arc<FakeInvites>,
-    pub(super) effects: Arc<FakeEffects>,
+pub(crate) struct Server {
+    pub(crate) contacts: Arc<Contacts>,
+    pub(crate) directory: Arc<FakeDirectory>,
+    pub(crate) invites: Arc<FakeInvites>,
+    pub(crate) effects: Arc<FakeEffects>,
     link: Arc<FakeLink>,
-    pub(super) dir: tempfile::TempDir,
+    pub(crate) dir: tempfile::TempDir,
 }
 
 impl Server {
-    pub(super) fn start(net: &Arc<Net>, name: &str) -> Self {
+    pub(crate) fn start(net: &Arc<Net>, name: &str) -> Self {
         Self::open(net, name, tempfile::tempdir().unwrap(), Arc::default())
     }
 
@@ -247,12 +247,12 @@ impl Server {
     }
 
     /// 核心重启：同一份记录重新读。
-    pub(super) fn restart(self, net: &Arc<Net>, name: &str) -> Self {
+    pub(crate) fn restart(self, net: &Arc<Net>, name: &str) -> Self {
         Self::open(net, name, self.dir, self.directory)
     }
 
     /// 加一个本机 Bot：私人 Bot 归 `keeper`；`keeper` 是 `owner` 时当共享 Bot。
-    pub(super) fn bot(&self, name: &str, keeper: &str) -> BotRef {
+    pub(crate) fn bot(&self, name: &str, keeper: &str) -> BotRef {
         let server = &self.contacts.own_server;
         let bot = BotRef {
             plugin_id: "ai.nous.hermes".into(),
@@ -276,18 +276,18 @@ impl Server {
         bot
     }
 
-    pub(super) fn fail_sends(&self, kind: Option<ContactError>) {
+    pub(crate) fn fail_sends(&self, kind: Option<ContactError>) {
         *self.link.fail.lock().unwrap() = kind;
     }
 
-    pub(super) fn row(&self, bot: &BotRef, user: &str) -> Option<BotContact> {
+    pub(crate) fn row(&self, bot: &BotRef, user: &str) -> Option<BotContact> {
         self.contacts
             .view(bot)
             .into_iter()
             .find(|c| c.user_id == user)
     }
 
-    pub(super) fn rebuilt(&self) -> Vec<String> {
+    pub(crate) fn rebuilt(&self) -> Vec<String> {
         self.effects
             .rebuilt
             .lock()
@@ -298,14 +298,14 @@ impl Server {
     }
 }
 
-pub(super) fn bot_request(user: &str) -> ContactRequest {
+pub(crate) fn bot_request(user: &str) -> ContactRequest {
     ContactRequest {
         user_id: user.into(),
         kind: ContactKind::Bot,
     }
 }
 
-pub(super) fn person_request(user: &str) -> ContactRequest {
+pub(crate) fn person_request(user: &str) -> ContactRequest {
     ContactRequest {
         user_id: user.into(),
         kind: ContactKind::Person,
@@ -313,7 +313,7 @@ pub(super) fn person_request(user: &str) -> ContactRequest {
 }
 
 /// 以管它的人（Bot 名就是归属人的用户名，共享 Bot 归主人）发一条请求。
-pub(super) async fn ask(
+pub(crate) async fn ask(
     server: &Server,
     bot: &BotRef,
     request: ContactRequest,
@@ -322,7 +322,7 @@ pub(super) async fn ask(
     server.contacts.request(bot, &keeper, &request).await
 }
 
-pub(super) fn state(server: &Server, bot: &BotRef, user: &str) -> Option<ContactState> {
+pub(crate) fn state(server: &Server, bot: &BotRef, user: &str) -> Option<ContactState> {
     server.row(bot, user).map(|c| c.state)
 }
 

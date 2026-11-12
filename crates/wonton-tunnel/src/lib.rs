@@ -20,6 +20,7 @@
 //! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
 mod allowlist;
+pub mod bind_address;
 mod blocking;
 pub mod browser_front;
 mod client;

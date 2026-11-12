@@ -30,7 +30,7 @@ use super::render::{Deployment, InstallContext, render};
 use super::secrets::{self, Secrets};
 use super::store::{EnabledPermission, InstalledRecord};
 use super::upstreams::Endpoint;
-use super::upstreams::{McpTarget, core_aliases, uses_sso};
+use super::upstreams::{McpTarget, uses_sso};
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
@@ -257,7 +257,14 @@ impl PluginManager {
             super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
-            .start_containers(&plan, Some(&manifest.id), undo, deadline, langs)
+            .start_containers(
+                Some(manifest),
+                &plan,
+                Some(&manifest.id),
+                undo,
+                deadline,
+                langs,
+            )
             .await?;
         let (upstream, models, mcp) = self
             .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
@@ -265,27 +272,8 @@ impl PluginManager {
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
             .await;
-        self.store.save(&InstalledRecord {
-            id: manifest.id.clone(),
-            version: manifest.version.clone(),
-            source: package.source.clone(),
-            files: package.files().clone(),
-            granted_permissions: granted.to_vec(),
-            enabled_permissions: enabled.to_vec(),
-            limits: Default::default(),
-            lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
-            relays: plan.relays.clone(),
-            firewalled,
-            proxied: ctx.egress.is_some(),
-            oidc_client_secret: secret,
-            installed_at: super::manager::now_secs(),
-            origin: package.origin.clone(),
-            written_by: None,
-            ask_every_update: false,
-            family: false,
-            settings: ctx.settings.clone().into_iter().collect(),
-            settings_changed_ms: None,
-        })?;
+        self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
+            .await?;
         Ok(Deployed {
             upstream,
             serving: package
@@ -300,6 +288,43 @@ impl PluginManager {
             mcp,
             firewalled,
         })
+    }
+
+    /// 安装成功后的记录：权限、局域网开关、代理和密钥都在这一步落盘。
+    #[allow(clippy::too_many_arguments)]
+    async fn save_installed(
+        &self,
+        package: &PluginPackage,
+        granted: &[Permission],
+        enabled: &[EnabledPermission],
+        ctx: &InstallContext,
+        plan: &Deployment,
+        oidc_secret: Option<String>,
+        firewalled: bool,
+    ) -> Result<(), InstallError> {
+        let manifest = &package.manifest;
+        self.store.save(&InstalledRecord {
+            id: manifest.id.clone(),
+            version: manifest.version.clone(),
+            source: package.source.clone(),
+            files: package.files().clone(),
+            granted_permissions: granted.to_vec(),
+            enabled_permissions: enabled.to_vec(),
+            limits: Default::default(),
+            lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
+            relays: plan.relays.clone(),
+            firewalled,
+            proxied: ctx.egress.is_some(),
+            oidc_client_secret: oidc_secret,
+            installed_at: super::manager::now_secs(),
+            origin: package.origin.clone(),
+            written_by: None,
+            ask_every_update: false,
+            family: false,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: None,
+        })?;
+        Ok(())
     }
 
     /// 容器起来之后的收尾：收存密钥和入口（见 [`PluginManager::deploy_upstreams`]），把 Bot 的房间交给核心。
@@ -439,6 +464,11 @@ impl PluginManager {
                 ))
             })?;
         }
+        let capabilities = {
+            let mut vars = self.dependency_vars(manifest)?;
+            vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
+            vars
+        };
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
             config_store: self.cfg.data_dir.join("core").join("configs"),
@@ -454,7 +484,7 @@ impl PluginManager {
             matrix: None,
             bots: Default::default(),
             models: None,
-            capabilities: self.dependency_vars(manifest)?,
+            capabilities,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)
@@ -497,14 +527,14 @@ impl PluginManager {
         }
     }
 
-    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`core_aliases`]）：
+    /// 核心直接跑在宿主上时，插件经自己网络的网关（宿主上网桥的地址）访问核心的别名（[`PluginManager::core_aliases_of`]）：
     /// 内部网络没有默认路由，`host-gateway`（另一个网桥的地址）走不通。返回要写进 `/etc/hosts` 的条目。
     pub(super) async fn hosts_via_gateway(
         &self,
         manifest: &Manifest,
         network: &str,
     ) -> Result<Vec<String>, InstallError> {
-        let aliases = core_aliases(&self.cfg.public, manifest);
+        let aliases = self.core_aliases_of(manifest);
         if self.cfg.core_container.is_some() || aliases.is_empty() {
             return Ok(Vec::new());
         }
@@ -565,6 +595,7 @@ impl PluginManager {
 
     pub(super) async fn start_containers(
         &self,
+        manifest: Option<&Manifest>,
         plan: &Deployment,
         id: Option<&PluginId>,
         undo: &mut Undo,
@@ -582,7 +613,14 @@ impl PluginManager {
                     ],
                 ))
             };
-            health::wait_for_all(&self.engine, &container.depends_on, deadline, langs).await?;
+            health::wait_for_all(
+                &self.engine,
+                &self.http,
+                &container.depends_on,
+                deadline,
+                langs,
+            )
+            .await?;
             // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
             // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
             if let Some(dir) = &container.store_dir {
@@ -616,15 +654,41 @@ impl PluginManager {
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {
             let finished = Target::Depend(DependCondition::ServiceCompletedSuccessfully);
-            health::wait_for(&self.engine, &container.name, finished, deadline, langs).await?;
+            health::wait_for(
+                &self.engine,
+                &self.http,
+                &container.name,
+                finished,
+                None,
+                deadline,
+                langs,
+            )
+            .await?;
         }
-        // 其余容器都必须健康或稳定运行。
+        self.wait_ready_containers(manifest, plan, deadline, langs)
+            .await
+    }
+
+    /// 其余容器都必须健康或稳定运行；`webui.health` 由核心探，和容器自己的健康检查同一条路。
+    async fn wait_ready_containers(
+        &self,
+        manifest: Option<&Manifest>,
+        plan: &Deployment,
+        deadline: Instant,
+        langs: &Languages,
+    ) -> Result<Health, InstallError> {
         let mut healthy = Vec::new();
         for container in plan.containers.iter().filter(|c| !c.one_shot) {
+            let webui_health = match manifest {
+                Some(manifest) => self.webui_health(manifest, &container.service).await?,
+                None => None,
+            };
             let readiness = health::wait_for(
                 &self.engine,
+                &self.http,
                 &container.name,
                 Target::Ready,
+                webui_health.as_ref(),
                 deadline,
                 langs,
             )
@@ -632,6 +696,29 @@ impl PluginManager {
             healthy.push(readiness == Readiness::Healthy);
         }
         Ok(Health::of(healthy))
+    }
+
+    /// 一个服务的 `webui.health` 探测（只有网页服务有）；没声明或是别的服务时为空。调用时容器已经起来，
+    /// 地址才取得到。
+    pub(super) async fn webui_health(
+        &self,
+        manifest: &Manifest,
+        service: &str,
+    ) -> Result<Option<health::WebuiHealth>, InstallError> {
+        let Some(webui) = manifest.webui.as_ref().filter(|w| w.service == service) else {
+            return Ok(None);
+        };
+        let Some(path) = &webui.health else {
+            return Ok(None);
+        };
+        let network = self.cfg.instance.network(&manifest.id.slug());
+        Ok(self
+            .webui_upstream(manifest, &network)
+            .await?
+            .map(|endpoint| health::WebuiHealth {
+                endpoint,
+                path: path.clone(),
+            }))
     }
 
     /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。

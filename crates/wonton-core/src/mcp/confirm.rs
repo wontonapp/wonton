@@ -13,10 +13,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::future::BoxFuture;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 use wonton_protocol::{
     Answer, CardChoice, ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
-    ConfirmationState, DeviceConfirmationPush, SecretInput, SecretValues,
+    ConfirmationState, SecretInput, SecretValues,
 };
 
 use super::cards::Draft;
@@ -37,25 +37,16 @@ const KEEP_FINISHED: Duration = Duration::from_secs(24 * 3600);
 /// 放行时段默认多长（`WONTON_CONFIRMATION_WINDOW_SECS`，ADR-0024）。
 pub const DEFAULT_WINDOW: Duration = Duration::from_secs(30 * 60);
 
-/// 把卡片交给主人：发出去，状态变了再更新。
+/// 把新卡片通知给收件人的设备（ADR-0016 的“推送”）：开卡时发一条推送，之后状态变化只改确认表，
+/// 设备从 [`CONFIRMATIONS_PATH`](wonton_protocol::CONFIRMATIONS_PATH) 的长轮询里知道。卡片不进任何 Matrix 房间。
 pub trait Notifier: Send + Sync {
-    /// 发一张新卡片，返回它的标识，之后用来更新。
-    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>>;
-    /// 更新卡片。原来那张改不了、重发了一张时返回新的标识，之后的更新都用它。
-    fn update<'a>(
+    /// 通知 `recipient`（家人的用户名；`None` 是主人）的设备有一张新卡片。他名下没有已配对的设备时报错
+    /// （没人能答，调用得到 `confirmation_unavailable`）；推送服务暂时不可用不报错，卡片已在确认表里，
+    /// App 照常看得到。
+    fn post<'a>(
         &'a self,
-        handle: &'a str,
+        recipient: Option<&'a str>,
         card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<Option<String>, String>>;
-}
-
-/// 给收件人的设备发确认推送（ADR-0016）：发给家人的卡片不在任何 Matrix 房间里，直推是它到设备的
-/// 唯一通道。主人的卡片不发：发进通知房间的消息自己会推（ADR-0003）。
-pub trait RecipientPush: Send + Sync {
-    fn push<'a>(
-        &'a self,
-        person: &'a str,
-        card: &'a DeviceConfirmationPush,
     ) -> BoxFuture<'a, Result<(), String>>;
 }
 
@@ -162,18 +153,16 @@ struct Slot {
     caller: PluginId,
     /// 见 [`Audience::recipient`]。
     recipient: Option<String>,
-    /// 这张卡片的发送方：默认是通知房间，Bot 钉页的同意是它自己的房间。
-    notifier: Arc<dyn Notifier>,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
     scope: Option<String>,
     /// 见 [`Ticket::window`]。
     released_by: Option<String>,
     card: ConfirmationCard,
-    handle: Option<String>,
     waiter: Option<oneshot::Sender<Chosen>>,
     /// 这张卡片要填的密钥（ADR-0064）；不填密钥的卡片是空的。
     secret_inputs: Vec<SecretInput>,
-    created: SystemTime,
+    /// 不再等回答的时刻（Unix 毫秒）：答了、拒了、过期或被取代。结束的卡片按 [`KEEP_FINISHED`] 留这么久。
+    ended: Option<u64>,
 }
 
 #[derive(Default)]
@@ -189,14 +178,16 @@ pub struct Confirmations {
     notifier: Arc<dyn Notifier>,
     ttl: Duration,
     window: Duration,
+    /// 结束的卡片留多久（`KEEP_FINISHED`，测试里可改短）。
+    keep: Duration,
     /// 记着哪些卡片显示着时段，核心重启后才改得了它们。判定不读它。
     windows_file: Option<PathBuf>,
     table: Mutex<Table>,
+    /// 列表的版本：任何一张卡片变了就加一，网关的长轮询挂在这个通道上（[`wonton_protocol::CONFIRMATIONS_PATH`]）。
+    revision: watch::Sender<u64>,
     /// 确认状态变化要唤醒的活动表。挂它的 Bus 可能重建（测试里共用 Confirmations），
     /// 所以允许换接：新 Bus 的活动表才是当前事实源。
     activity: RwLock<Option<Arc<crate::bot_activity::BotActivity>>>,
-    /// 推送代理：发给家人的卡片直接推到他的设备（ADR-0016）。没接时（如测试）只记列表。
-    push: RwLock<Option<Arc<dyn RecipientPush>>>,
 }
 
 fn now_ms(at: SystemTime) -> u64 {
@@ -212,25 +203,24 @@ impl Confirmations {
             notifier,
             ttl,
             window: DEFAULT_WINDOW,
+            keep: KEEP_FINISHED,
             windows_file: None,
             table: Mutex::new(Table::default()),
+            revision: watch::Sender::new(0),
             activity: RwLock::new(None),
-            push: RwLock::new(None),
         }
-    }
-
-    /// 接上推送代理（ADR-0003）：发给家人的卡片直接推到他的设备。
-    pub fn attach_push(&self, push: Option<Arc<dyn RecipientPush>>) {
-        *self.push.write().expect("推送代理锁中毒") = push;
-    }
-
-    /// 默认的卡片发送方（主人的通知房间）。
-    pub(crate) fn default_notifier_arc(&self) -> Arc<dyn Notifier> {
-        self.notifier.clone()
     }
 
     pub fn ttl(&self) -> Duration {
         self.ttl
+    }
+
+    /// 结束的卡片留多久（测试里改短，好验证“过了保留期取不到”）。
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_keep_finished(mut self, keep: Duration) -> Self {
+        self.keep = keep;
+        self
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Table> {
@@ -239,32 +229,18 @@ impl Confirmations {
 
     /// 请主人确认，等到主人回答或者过期。确认了返回 [`Ticket`]，执行完要调 [`Self::finish`]。
     pub async fn ask(&self, caller: &PluginId, draft: Draft) -> Result<Ticket, Refusal> {
-        self.ask_with(self.notifier.clone(), caller, draft).await
+        self.ask_as(caller, draft, Audience::default()).await
     }
 
-    /// 同 [`Self::ask`]，卡片用别的发送方：Bot 往面板钉页的同意发在 Bot 自己的房间里。
-    /// 之后的更新仍走默认的通知房间，它按卡片发出去的房间编辑。
-    pub async fn ask_with(
-        &self,
-        notifier: Arc<dyn Notifier>,
-        caller: &PluginId,
-        draft: Draft,
-    ) -> Result<Ticket, Refusal> {
-        self.ask_as(notifier, caller, draft, Audience::default())
-            .await
-    }
-
-    /// 同 [`Self::ask_with`]，卡片发给 `audience` 说的人、带上发起者和来源会话。
+    /// 同 [`Self::ask`]，卡片发给 `audience` 说的人、带上发起者和来源会话（ADR-0016）。
     pub async fn ask_as(
         &self,
-        notifier: Arc<dyn Notifier>,
         caller: &PluginId,
         draft: Draft,
         audience: Audience,
     ) -> Result<Ticket, Refusal> {
-        let (card, answered) = self.open_as(notifier.clone(), caller, draft, audience)?;
-        let chosen = self.deliver(&*notifier, &card, answered).await?;
-        self.publish(&card.id).await;
+        let (card, answered) = self.open_as(caller, draft, audience)?;
+        let chosen = self.deliver(&card, answered).await?;
         match chosen.answer {
             answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {
                 if answer == Answer::AllowWindow {
@@ -296,7 +272,6 @@ impl Confirmations {
     /// 登记一张等回答的卡片，还没发出去。
     pub(super) fn open_as(
         &self,
-        notifier: Arc<dyn Notifier>,
         caller: &PluginId,
         draft: Draft,
         audience: Audience,
@@ -321,12 +296,7 @@ impl Confirmations {
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();
-        let open: Vec<String> = table.windows.values().cloned().collect();
-        table.slots.retain(|id, slot| {
-            slot.waiter.is_some()
-                || open.contains(id)
-                || created.duration_since(slot.created).unwrap_or_default() < KEEP_FINISHED
-        });
+        self.prune(&mut table, created);
         let pending = table
             .slots
             .values()
@@ -338,46 +308,59 @@ impl Confirmations {
         let slot = Slot {
             caller: caller.clone(),
             recipient: audience.recipient,
-            notifier,
             scope: draft.scope,
             released_by: None,
             card: card.clone(),
-            handle: None,
             waiter: Some(waiter),
             secret_inputs: draft.secret_inputs,
-            created,
+            ended: None,
         };
         table.slots.insert(card.id.clone(), slot);
         self.activity_changed();
+        self.bump();
         Ok((card, answered))
     }
 
-    /// 把 [`Self::open_as`] 登记的卡片发给收件人，等回答。回答之后卡片的变化由调用方发布。
+    /// 清掉结束超过保留期的卡片。
+    fn prune(&self, table: &mut Table, now: SystemTime) {
+        let before = table.slots.len();
+        let open: Vec<String> = table.windows.values().cloned().collect();
+        table.slots.retain(|id, slot| {
+            slot.waiter.is_some()
+                || open.contains(id)
+                || slot.ended.is_none_or(|ended| {
+                    Duration::from_millis(now_ms(now).saturating_sub(ended)) < self.keep
+                })
+        });
+        if table.slots.len() != before {
+            self.bump();
+        }
+    }
+
+    /// 通知收件人的设备有一张新卡片，然后等回答。回答之后卡片的变化只改确认表。
     pub(super) async fn deliver(
         &self,
-        notifier: &dyn Notifier,
         card: &ConfirmationCard,
         answered: oneshot::Receiver<Chosen>,
     ) -> Result<Chosen, Refusal> {
         let expires =
             Duration::from_millis(card.expires_at_ms.saturating_sub(now_ms(SystemTime::now())));
         let deadline = tokio::time::Instant::now() + expires;
-        let handle = match tokio::time::timeout_at(deadline, notifier.post(card)).await {
-            Ok(Ok(handle)) => handle,
+        let recipient = self.recipient(&card.id).flatten();
+        let posted = self.notifier.post(recipient.as_deref(), card);
+        match tokio::time::timeout_at(deadline, posted).await {
+            Ok(Ok(())) => {}
             Ok(Err(e)) => {
                 self.lock().slots.remove(&card.id);
                 self.activity_changed();
+                self.bump();
                 return Err(Refusal::Unavailable(e));
             }
             Err(_) => {
                 self.settle(&card.id, ConfirmationState::Expired).await;
                 return Err(Refusal::Expired);
             }
-        };
-        if let Some(slot) = self.lock().slots.get_mut(&card.id) {
-            slot.handle = Some(handle);
         }
-        self.push_recipient(card).await;
         match tokio::time::timeout_at(deadline, answered).await {
             Ok(Ok(chosen)) => Ok(chosen),
             Err(_) | Ok(Err(_)) => {
@@ -387,63 +370,63 @@ impl Confirmations {
         }
     }
 
-    /// 收件人的卡片直接推送到他的设备（ADR-0016）。推送发不出去不挡确认：卡片已经在他的“等你确认”
-    /// 列表里，打开 App 照样答得了，失败如实记日志。
-    async fn push_recipient(&self, card: &ConfirmationCard) {
-        let recipient = {
-            let table = self.lock();
-            match table.slots.get(&card.id) {
-                Some(slot) => slot.recipient.clone(),
-                None => return,
+    /// “等你确认”列表（ADR-0016）：等回答的（最早到期的在前）、结束不到保留期的（最近结束的在前），和当前版本。
+    /// 只列发给这个人的（`None` 是主人）：家人的列表里没有主人和别人的卡片。
+    pub fn list(
+        &self,
+        recipient: Option<&str>,
+    ) -> (Vec<ConfirmationCard>, Vec<ConfirmationCard>, u64) {
+        let now = now_ms(SystemTime::now());
+        let table = self.lock();
+        let mut pending: Vec<&Slot> = Vec::new();
+        let mut finished: Vec<&Slot> = Vec::new();
+        for slot in table.slots.values() {
+            if slot.recipient.as_deref() != recipient {
+                continue;
             }
-        };
-        let push = self.push.read().expect("推送代理锁中毒").clone();
-        let (Some(push), Some(recipient)) = (push, recipient) else {
-            return;
-        };
-        let direct = DeviceConfirmationPush {
-            id: card.id.clone(),
-            title: card.title.clone(),
-            expires_at_ms: card.expires_at_ms,
-            origin: card.origin.clone(),
-        };
-        if let Err(error) = push.push(&recipient, &direct).await {
-            tracing::error!(
-                confirmation = %card.id,
-                person = %recipient,
-                %error,
-                "确认卡片推送到收件人的设备失败"
-            );
+            if slot.waiter.is_some() && slot.card.expires_at_ms > now {
+                pending.push(slot);
+            } else if let Some(ended) = slot.ended
+                && Duration::from_millis(now.saturating_sub(ended)) < self.keep
+            {
+                finished.push(slot);
+            }
         }
+        pending.sort_by_key(|slot| slot.card.expires_at_ms);
+        finished.sort_by_key(|slot| std::cmp::Reverse(slot.ended));
+        let revision = *self.revision.borrow();
+        (
+            pending.into_iter().map(|s| s.card.clone()).collect(),
+            finished.into_iter().map(|s| s.card.clone()).collect(),
+            revision,
+        )
     }
 
-    /// 等回答的卡片，最早到期的在前。
-    pub fn pending(&self) -> Vec<ConfirmationCard> {
+    /// 一张卡片：等回答的、和结束不到保留期的都取得到，再早的没有。收件人用 [`Self::recipient`] 查。
+    pub fn card(&self, id: &str) -> Option<ConfirmationCard> {
         let now = now_ms(SystemTime::now());
-        let mut cards: Vec<_> = self
-            .lock()
-            .slots
-            .values()
-            .filter(|slot| slot.waiter.is_some() && slot.card.expires_at_ms > now)
-            .map(|slot| slot.card.clone())
-            .collect();
-        cards.sort_by_key(|card| card.expires_at_ms);
-        cards
+        self.lock().slots.get(id).and_then(|slot| {
+            let pending = slot.waiter.is_some() && slot.card.expires_at_ms > now;
+            let kept = slot
+                .ended
+                .is_some_and(|ended| Duration::from_millis(now.saturating_sub(ended)) < self.keep);
+            (pending || kept).then(|| slot.card.clone())
+        })
     }
 
-    /// 发给某个人的、等回答的卡片（`None` 是主人），最早到期的在前。
-    pub fn pending_for(&self, recipient: Option<&str>) -> Vec<ConfirmationCard> {
-        let now = now_ms(SystemTime::now());
-        let mut cards: Vec<_> = self
-            .lock()
-            .slots
-            .values()
-            .filter(|slot| slot.waiter.is_some() && slot.card.expires_at_ms > now)
-            .filter(|slot| slot.recipient.as_deref() == recipient)
-            .map(|slot| slot.card.clone())
-            .collect();
-        cards.sort_by_key(|card| card.expires_at_ms);
-        cards
+    /// 当前列表的版本。
+    pub fn revision(&self) -> u64 {
+        *self.revision.borrow()
+    }
+
+    /// 版本变化的订阅：网关的长轮询挂在它上面等下一张卡片。
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.revision.subscribe()
+    }
+
+    /// 卡片变了：版本加一，挂着的长轮询知道。状态变化只改确认表，不再改任何 Matrix 消息。
+    pub(super) fn bump(&self) {
+        self.revision.send_modify(|revision| *revision += 1);
     }
 
     /// 卡片 `id` 发给谁（`Some(None)` 是主人）；没有这张卡片时是 `None`。
@@ -544,14 +527,18 @@ impl Confirmations {
         };
         if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
+            slot.ended = Some(now);
             self.activity_changed();
+            self.bump();
             return Err(AnswerError::Expired);
         }
         slot.card.state = state.clone();
+        slot.ended = Some(now);
         if answer == Answer::AllowWindow {
             self.open_window(&mut table, id, now);
         }
         self.activity_changed();
+        self.bump();
         Ok(state)
     }
 
@@ -570,6 +557,7 @@ impl Confirmations {
             slot.card.state = ConfirmationState::Failed {
                 message: superseded,
             };
+            slot.ended = Some(now_ms(SystemTime::now()));
             Some(waiter)
         });
         let Some(waiter) = chosen else {
@@ -582,7 +570,7 @@ impl Confirmations {
             secrets: SecretValues::new(),
             settings: Default::default(),
         });
-        self.publish(id).await;
+        self.bump();
         true
     }
 
@@ -614,38 +602,11 @@ impl Confirmations {
     pub(super) async fn settle(&self, id: &str, state: ConfirmationState) {
         if let Some(slot) = self.lock().slots.get_mut(id) {
             if slot.waiter.take().is_some() {
+                slot.ended = Some(now_ms(SystemTime::now()));
                 self.activity_changed();
             }
             slot.card.state = state;
         }
-        self.publish(id).await;
-    }
-
-    /// 把卡片现在的状态发给主人。更新失败只记日志：执行已经发生了，工具的结果照样返回给 Agent。
-    pub(super) async fn publish(&self, id: &str) {
-        let current = self
-            .lock()
-            .slots
-            .get(id)
-            .and_then(|slot| Some((slot.handle.clone()?, slot.card.clone())));
-        let Some((handle, card)) = current else {
-            return;
-        };
-        let notifier = self
-            .lock()
-            .slots
-            .get(id)
-            .map(|slot| slot.notifier.clone())
-            .unwrap_or_else(|| self.notifier.clone());
-        match notifier.update(&handle, &card).await {
-            Ok(None) => {}
-            Ok(Some(moved)) => {
-                tracing::warn!(confirmation = %id, "原房间不能用了，确认卡片重发到了当前的房间");
-                if let Some(slot) = self.lock().slots.get_mut(id) {
-                    slot.handle = Some(moved);
-                }
-            }
-            Err(e) => tracing::error!(confirmation = %id, error = %e, "更新确认卡片失败"),
-        }
+        self.bump();
     }
 }

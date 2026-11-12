@@ -200,11 +200,13 @@ async fn a_highest_permission_install_needs_both_cards() {
     let result = call.await.unwrap();
     assert!(failed(&result), "{result:?}");
     assert!(!b.installed("app.agent.root"));
-    let states = b.s.cards.states(&first.id);
-    assert!(
-        matches!(states.last(), Some(ConfirmationState::Failed { .. })),
-        "{states:?}"
-    );
+    assert!(matches!(
+        b.s.bus
+            .confirmations()
+            .card(&first.id)
+            .map(|card| card.state),
+        Some(ConfirmationState::Failed { .. })
+    ));
 
     // 两张都同意才装上。
     let call = b.s.spawn(INSTALL, json!({"dir": "root"}));
@@ -259,11 +261,13 @@ async fn a_new_submission_supersedes_the_old_one() {
     let result = first.await.unwrap();
     assert!(failed(&result), "{result:?}");
     assert!(text(&result).contains("取代"), "{result:?}");
-    let states = b.s.cards.states(&old_card.id);
-    assert!(
-        matches!(states.last(), Some(ConfirmationState::Failed { .. })),
-        "{states:?}"
-    );
+    assert!(matches!(
+        b.s.bus
+            .confirmations()
+            .card(&old_card.id)
+            .map(|card| card.state),
+        Some(ConfirmationState::Failed { .. })
+    ));
 
     // 只有新的能批。
     b.s.answer(&old_card.id, Answer::Approve).unwrap_err();

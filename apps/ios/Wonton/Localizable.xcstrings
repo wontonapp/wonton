@@ -7812,6 +7812,66 @@
         }
       }
     },
+    "message.redactOthers": {
+      "comment": "Item in the message menu on someone else's message: delete it for everyone. Argument: the sender's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete %@'s Message"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@ 的消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除 %@ 的訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のメッセージを削除"
+          }
+        }
+      }
+    },
+    "message.redactOthersTitle": {
+      "comment": "Title of the confirmation before deleting someone else's message for everyone. Argument: the sender's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete %@'s message for everyone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@ 的这条消息？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除 %@ 的這則訊息？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のメッセージを全員から削除しますか？"
+          }
+        }
+      }
+    },
     "message.redactTitle": {
       "comment": "Title of the confirmation before redacting a message.",
       "extractionState": "manual",
@@ -17964,6 +18024,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "取り消す"
+          }
+        }
+      }
+    },
+    "friends.error.forbidden": {
+      "comment": "Title when the server refused a friend action although the sign-in is valid.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The request was refused"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求被拒绝了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求被拒絕了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストが拒否されました"
+          }
+        }
+      }
+    },
+    "friends.error.forbidden.nextStep": {
+      "comment": "Explains why a friend action was refused.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They may have blocked you, or their server can't reach your home server yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。"
           }
         }
       }
@@ -31974,6 +32094,396 @@
           "stringUnit": {
             "state": "translated",
             "value": "現在ログインを続けられません"
+          }
+        }
+      }
+    },
+    "composer.trayFull": {
+      "comment": "Shown when the attachment tray is full. Argument: the most attachments one message can carry.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can send up to %lld attachments at a time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次最多发 %lld 个附件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一次最多傳送 %lld 個附件。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一度に送れる添付は %lld 個までです。"
+          }
+        }
+      }
+    },
+    "composer.attachment.remove": {
+      "comment": "Accessibility label of the button that takes an attachment out of the tray. Argument: file name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ を外す"
+          }
+        }
+      }
+    },
+    "composer.attachment.paused": {
+      "comment": "Accessibility label of an attachment whose upload waits for the connection to the home server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting to reach your home server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等连上家里的服务器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等連上家裡的伺服器"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅のサーバーへの接続を待っています"
+          }
+        }
+      }
+    },
+    "composer.attachment.failed": {
+      "comment": "An attachment could not be uploaded; also the fallback when the core gives an unknown reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't upload"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "传不上去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳不上去"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アップロードできませんでした"
+          }
+        }
+      }
+    },
+    "composer.attachment.retry": {
+      "comment": "Button: upload a failed attachment again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Upload Again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新上传"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新上傳"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度アップロード"
+          }
+        }
+      }
+    },
+    "composer.attachment.tooLarge": {
+      "comment": "Upload failure: the photo is over the home server's limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This photo is over your home server's size limit. Send it as a file instead."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片超过了家里服务器的大小上限，可以改用文件发。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片超過了家裡伺服器的大小上限，可以改用檔案傳送。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真が自宅のサーバーのサイズ上限を超えています。ファイルとして送ってください。"
+          }
+        }
+      }
+    },
+    "composer.attachment.sourceUnavailable": {
+      "comment": "Upload failure: the original file on the phone can no longer be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original file can't be read anymore. Choose it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原文件读不了了，请重新选一次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原檔案讀不了了，請重新選一次。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "元のファイルを読み込めなくなりました。もう一度選んでください。"
+          }
+        }
+      }
+    },
+    "composer.attachment.storageFull": {
+      "comment": "Upload failure: the home server's disk is full.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server is out of space."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里服务器的磁盘满了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家裡伺服器的磁碟滿了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅のサーバーの容量がいっぱいです。"
+          }
+        }
+      }
+    },
+    "composer.attachment.rejected": {
+      "comment": "Upload failure: the home server refused the upload.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server refused this upload."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器拒收了这个附件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家裡的伺服器拒收了這個附件。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅のサーバーがこのアップロードを拒否しました。"
+          }
+        }
+      }
+    },
+    "composer.attachment.upstream": {
+      "comment": "Upload failure: the home server ran into an error.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server ran into a problem."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器出错了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家裡的伺服器出錯了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅のサーバーでエラーが起きました。"
+          }
+        }
+      }
+    },
+    "composer.attachment.localStorage": {
+      "comment": "Upload failure: the phone has no room to keep the attachment.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There isn't enough space on this phone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手机上存不下了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手機上存不下了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このスマートフォンの空き容量が足りません。"
+          }
+        }
+      }
+    },
+    "message.sendingProgress": {
+      "comment": "Footer of a message still uploading its attachments. Argument: percent done, already formatted.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sending %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送中 %@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送中 %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信中 %@"
+          }
+        }
+      }
+    },
+    "message.cancelSend": {
+      "comment": "Menu item on a message that is still uploading: drop it and stop the upload.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Sending"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消发送"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消傳送"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信を取り消す"
           }
         }
       }

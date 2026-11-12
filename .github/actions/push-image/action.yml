@@ -17,6 +17,10 @@ inputs:
   file:
     description: Dockerfile 路径，构建上下文是仓库根目录
     required: true
+  target:
+    description: Dockerfile 的构建目标（--target）；空着建最后一个阶段
+    required: false
+    default: ""
   version:
     description: 写进 org.opencontainers.image.version 的值
     required: true
@@ -62,6 +66,7 @@ runs:
       with:
         context: .
         file: ${{ inputs.file }}
+        target: ${{ inputs.target }}
         platforms: ${{ inputs.platforms }}
         # digest 模式不带 tag：镜像名和 push 都在 outputs 里说（build-push-action 没有直接接收
         # push-by-digest 的输入，官方多平台构建的写法就是这样）。

@@ -182,10 +182,7 @@ pub async fn bind(key: SecretKey, port: u16, table: &RelayTable) -> anyhow::Resu
         .ok()
         .filter(|s| !s.is_empty())
     {
-        let address = tokio::net::lookup_host((host.as_str(), port))
-            .await?
-            .find(SocketAddr::is_ipv4)
-            .context("隧道绑定名没有 IPv4 地址")?;
+        let address = wonton_tunnel::bind_address::resolve_bind_v4(&host, port).await?;
         builder = builder.clear_ip_transports().bind_addr(address)?;
     } else if port != 0 {
         builder = builder
@@ -486,6 +483,30 @@ mod tests {
         assert!(!endpoint.addr().ip_addrs().any(|addr| *addr == old));
 
         task.abort();
+        endpoint.close().await;
+    }
+
+    /// 设了 `WONTON_TUNNEL_BIND` 时套接字只绑解析出的那个地址：没有通配地址，也没有别的传输
+    /// （ADR-0021：入口拓扑下只绑 core 网络上的地址，别的网络发到隧道端口的包落不到套接字）。
+    #[tokio::test]
+    async fn the_tunnel_binds_only_the_address_wonton_tunnel_bind_resolves_to() {
+        // 进程环境是所有测试共享的；全仓库只有这个测试动 WONTON_TUNNEL_BIND，先存后还。
+        let saved = std::env::var("WONTON_TUNNEL_BIND").ok();
+        unsafe { std::env::set_var("WONTON_TUNNEL_BIND", "127.0.0.1") };
+        let bound = bind(
+            SecretKey::generate(),
+            0,
+            &RelayTable::from_relays(Vec::new()),
+        )
+        .await;
+        match &saved {
+            Some(value) => unsafe { std::env::set_var("WONTON_TUNNEL_BIND", value) },
+            None => unsafe { std::env::remove_var("WONTON_TUNNEL_BIND") },
+        }
+        let endpoint = bound.unwrap();
+        let bound = endpoint.bound_sockets();
+        assert_eq!(bound.len(), 1, "只绑一个地址：{bound:?}");
+        assert_eq!(bound[0].ip(), Ipv4Addr::LOCALHOST);
         endpoint.close().await;
     }
 }

@@ -17,7 +17,6 @@ use wonton_protocol::{
 
 use super::audit::{Decision, Record};
 use super::cards;
-use super::notifier::BotRoom;
 use super::{Bus, Caller, ToolFailure, core_tools, naming};
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -568,56 +567,32 @@ impl Drop for PinCardGuard {
     }
 }
 
-/// 第一次往主面板钉：在 Bot 自己的房间里发确认卡片，等到主人回答。同一个插件同时只问一张。
+/// 第一次往主面板钉：请主人确认，等到主人回答。同一个插件同时只问一张。
+/// 卡片显示在这个会话里（ADR-0016）：发起者是这个 Bot，来源是它收到调用的房间。
 async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFailure> {
-    let cards = bus
-        .cards()
-        .map_err(|e| ToolFailure::new("service_unavailable", e))?;
-    let Some(matrix) = cards.matrix.clone() else {
-        return Err(ToolFailure::new(
-            "service_unavailable",
-            words(
-                bus,
-                "panel-pin-matrix",
-                &[("error", "核心没有接上 Matrix".into())],
-            ),
-        ));
-    };
-    ask_card(bus, context, &matrix).await
-}
-
-async fn ask_card(
-    bus: &Arc<Bus>,
-    context: &BotContext,
-    matrix: &Arc<crate::matrix::Matrix>,
-) -> Result<(), ToolFailure> {
     let langs = bus.owner_languages();
-    let localpart = localpart_of(&bot_user(bus, context)?).to_owned();
-    let login = matrix
-        .login(&localpart, "Wonton 核心（面板确认）")
-        .await
-        .map_err(|e| {
-            ToolFailure::new(
-                "service_unavailable",
-                l10n::text(
-                    &langs,
-                    "panel-pin-matrix",
-                    &[("error", e.to_string().into())],
-                ),
-            )
-        })?;
-    let draft = cards_for(&context.name, &langs);
-    let notifier = std::sync::Arc::new(BotRoom {
-        matrix: matrix.clone(),
-        login: login.clone(),
-        room: context.room.clone(),
-        languages: langs,
+    let requester = wonton_protocol::ConfirmationRequester::Bot {
+        bot: wonton_protocol::BotRef {
+            plugin_id: context.plugin.to_string(),
+            bot: context.bot.clone(),
+        },
+        user_id: bot_user(bus, context)?,
+    };
+    let origin = Some(wonton_protocol::ConfirmationOrigin {
+        room_id: context.room.clone(),
+        thread_id: None,
     });
+    // 主面板是主人的：卡片发给主人。
+    let audience = super::Audience {
+        recipient: None,
+        requester: Some(requester),
+        origin,
+    };
     let asked = bus
         .confirmations
-        .ask_with(notifier.clone(), &context.plugin, draft)
+        .ask_as(&context.plugin, cards_for(&context.name, &langs), audience)
         .await;
-    let finished = match asked {
+    match asked {
         Ok(ticket) => {
             bus.confirmations
                 .finish(
@@ -630,10 +605,7 @@ async fn ask_card(
             Ok(())
         }
         Err(refusal) => Err(ToolFailure::new(refusal.kind(), refusal.message())),
-    };
-    // 卡片已经结束（状态也改过），这台临时设备可以退出登录了；记录里留着的发送方不再更新。
-    let _ = matrix.session(&login).logout().await;
-    finished
+    }
 }
 
 fn cards_for(name: &str, langs: &Languages) -> super::Draft {
@@ -653,13 +625,6 @@ fn bot_user(bus: &Bus, context: &BotContext) -> Result<String, ToolFailure> {
         .map_err(storage)?
         .ok_or_else(|| ToolFailure::new("not_found", "Bot 记录不见了"))?;
     Ok(entry.account.user_id)
-}
-
-fn localpart_of(user_id: &str) -> &str {
-    user_id
-        .strip_prefix('@')
-        .and_then(|rest| rest.split_once(':').map(|(local, _)| local))
-        .unwrap_or(user_id)
 }
 
 fn unpin(bus: &Arc<Bus>, caller: &Caller, args: &JsonObject) -> Result<Value, ToolFailure> {

@@ -4,8 +4,6 @@
 //! 归属人得到主人授权“能装插件”才发给他，否则发给主人。来源会话由 Agent 一侧报（[`reported_origin`]），是不可信
 //! 输入：只认发起的 Bot 和收件人都已加入的房间，对不上、查不了时落到 Bot 的主房间；主房间收件人不在时卡片只在列表里。
 
-use std::sync::Arc;
-
 use hyper::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
@@ -14,8 +12,7 @@ use wonton_protocol::{
     ORIGIN_THREAD_HEADER,
 };
 
-use super::confirm::{Audience, Notifier, Refusal, Ticket};
-use super::notifier::ListOnly;
+use super::confirm::{Audience, Refusal, Ticket};
 use super::{Bus, Caller, Draft};
 use crate::matrix::BotAccount;
 use crate::plugin::languages::Languages;
@@ -103,12 +100,8 @@ impl Bus {
         self.languages_for(self.recipient(caller, subject).as_deref())
     }
 
-    /// 发卡片要的全部：发送方（主人的进通知房间，家人的不进房间），收件人、发起者和核对过的来源会话。
-    pub(super) async fn audience(
-        &self,
-        caller: &Caller,
-        subject: Subject,
-    ) -> (Arc<dyn Notifier>, Audience) {
+    /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何房间，推送发到收件人的设备（ADR-0016）。
+    pub(super) async fn audience(&self, caller: &Caller, subject: Subject) -> Audience {
         let recipient = self.recipient(caller, subject);
         let bot = caller.bot.as_ref().and_then(|bot| {
             let account = self.plugins.bot_account(&caller.id, &bot.bot)?;
@@ -136,16 +129,11 @@ impl Bus {
                 None,
             ),
         };
-        let notifier: Arc<dyn Notifier> = match recipient {
-            None => self.confirmations.default_notifier_arc(),
-            Some(_) => Arc::new(ListOnly),
-        };
-        let audience = Audience {
+        Audience {
             recipient,
             requester: Some(requester),
             origin,
-        };
-        (notifier, audience)
+        }
     }
 
     /// 请收件人确认（[`Self::audience`]），等到回答或者过期。
@@ -155,10 +143,8 @@ impl Bus {
         subject: Subject,
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
-        let (notifier, audience) = self.audience(caller, subject).await;
-        self.confirmations
-            .ask_as(notifier, &caller.id, draft, audience)
-            .await
+        let audience = self.audience(caller, subject).await;
+        self.confirmations.ask_as(&caller.id, draft, audience).await
     }
 
     /// Bot 的主房间是它和归属人的私聊（共享 Bot 是和主人的）：收件人是这个人时，主房间就是两边都在的房间。
@@ -182,7 +168,10 @@ impl Bus {
             room_id: account.home_room.clone(),
             thread_id: None,
         });
-        let reported = caller.origin.as_ref()?;
+        // 没报来源：落到主房间，不算没用上，审计不记。
+        let Some(reported) = caller.origin.as_ref() else {
+            return home;
+        };
         let checked = if shares_home && reported.room_id == account.home_room {
             Ok(())
         } else {

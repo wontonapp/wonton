@@ -7,6 +7,7 @@ struct ChatRoomView: View {
     let roomId: String
     let title: String
     @State private var timeline: TimelineModel
+    @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
@@ -29,6 +30,7 @@ struct ChatRoomView: View {
         self.roomId = roomId
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
+        _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId))
         _presenter = State(initialValue: RoomPresenter(files: model.files))
     }
 
@@ -36,6 +38,7 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
+                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
     }
 
@@ -62,7 +65,7 @@ struct ChatRoomView: View {
                         model.appendDraft($0, to: roomId)
                     }
                 }
-                ComposerView(model: model, roomId: roomId, pin: pin)
+                ComposerView(model: model, composer: composer, pin: pin)
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
@@ -76,7 +79,7 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .messageRedactTitle),
+            redactTitle,
             message: String(localized: .messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
@@ -103,6 +106,7 @@ struct ChatRoomView: View {
             model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
         }
         .task(id: roomId) { await model.loadDraft(roomId) }
+        .task(id: roomId) { await composer.observe() }
         .task(id: timeline.attempt) {
             if await timeline.observe(pin: pin) {
                 model.path = []
@@ -167,6 +171,12 @@ struct ChatRoomView: View {
                         model.startReply(.ready(message: quote), in: roomId)
                     })
                 }
+                // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
+                ForEach(composer.outgoing, id: \.id) { message in
+                    OutgoingRow(message: message, composer: composer)
+                        .id(message.id)
+                        .timelineListRow()
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -185,6 +195,8 @@ struct ChatRoomView: View {
                 guard let pageAnchor, !pin.isPinned else { return }
                 DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
             }
+            // 待发消息出现、交出去换成本地回显时，贴底的跟着到底；等这一轮排版完再滚。
+            .onChange(of: composer.outgoing.map(\.id)) { DispatchQueue.main.async { pin.stick() } }
             .onChange(of: timeline.items.last?.id) { _, last in
                 guard last != nil else { return }
                 if pin.isPinned, placed { reportPosition(true) }
@@ -215,16 +227,6 @@ struct ChatRoomView: View {
         }
     }
 
-    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
-    private var oldestEvent: String? {
-        timeline.items.first { item in
-            switch item.content {
-            case .dateDivider, .readMarker, .timelineStart: false
-            default: true
-            }
-        }?.id
-    }
-
     /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
     private func placeAnchor(_ scroller: ScrollViewProxy) {
@@ -248,20 +250,27 @@ struct ChatRoomView: View {
         sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
         if pinned { sendTimeline(.markRead(target: mainTimeline)) }
     }
+}
 
-    private var isDirect: Bool {
+@MainActor
+private extension ChatRoomView {
+    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+
+    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
+
+    var isDirect: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isDirect ?? false
     }
 
     /// 私聊对方是已装应用的 Bot 时非空。
-    private var bot: BotView? {
+    var bot: BotView? {
         guard let directId = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId else {
             return nil
         }
         return model.viewModel.bots.first { $0.userId == directId }
     }
 
-    private var barAvatar: AnyView? {
+    var barAvatar: AnyView? {
         guard let bot else { return nil }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
         return AnyView(BotAvatarView(
@@ -270,20 +279,13 @@ struct ChatRoomView: View {
     }
 
     /// 可以转发到的房间：已加入、能写。
-    private var forwardRooms: [RoomRow] {
+    var forwardRooms: [RoomRow] {
         model.viewModel.rooms.filter { $0.membership == .joined && !$0.isReadOnly }
     }
 
-    private var isReadOnly: Bool {
+    var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
-}
-
-@MainActor
-private extension ChatRoomView {
-    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
-
-    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 }
 
 private extension TimelineItem {
@@ -382,5 +384,27 @@ private struct PageRequest: Equatable {
         isLoaded = timeline.isLoaded
         count = timeline.items.count
         state = timeline.backPagination
+    }
+}
+
+// 这两项只读状态、不碰布局，放在类型体外，免得 `ChatRoomView` 的身体越过 SwiftLint 的 250 行。
+private extension ChatRoomView {
+    /// 撤回别人的消息时标题写明是谁的。
+    var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .messageRedactTitle)
+        }
+        return String(localized: .messageRedactOthersTitle(message.senderName))
+    }
+
+    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
+    var oldestEvent: String? {
+        timeline.items.first { item in
+            switch item.content {
+            case .dateDivider, .readMarker, .timelineStart: false
+            default: true
+            }
+        }?.id
     }
 }

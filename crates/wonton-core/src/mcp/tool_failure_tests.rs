@@ -148,8 +148,8 @@ async fn rejected_expired_and_unavailable_confirmations_carry_kinds() {
     assert!(failed(&result), "{result:?}");
     assert_eq!(failure_kind(&result), Some("owner_rejected"));
     assert_eq!(
-        s.cards.states(&card.id).last(),
-        Some(&ConfirmationState::Rejected)
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
 
     // 主人没在期限内回答：过期。
