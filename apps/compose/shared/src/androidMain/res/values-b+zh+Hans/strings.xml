@@ -748,6 +748,10 @@
     <string name="friends_error_unauthorized">登录已失效</string>
     <!-- Next step under the unauthorized failure. -->
     <string name="friends_error_unauthorized_next">重新登录后再打开好友。</string>
+    <!-- Failure title when the server refused a friend action although the sign-in is valid. -->
+    <string name="friends_error_forbidden">请求被拒绝了</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <!-- Failure title when the typed ID isn't a full Matrix ID. -->
     <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
     <!-- Next step under the invalid-ID failure. -->
