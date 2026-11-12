@@ -309,8 +309,11 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
 /// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。
 #[tokio::test]
 async fn losing_the_network_while_the_request_is_out_waits_at_once() {
-    let rig = Rig::new().await;
-    rig.connected().await;
+    // 测的是任务跟着连接状态走，不是隧道恢复：繁忙时定时探测卡满时限会把健康连接断掉、
+    // 触发整轮重连，把测试要的断开时点挤乱（见 [`Rig::without_periodic_checks`]）。
+    let rig = Rig::new().await.without_periodic_checks();
+    // 建连是真实握手加令牌请求，繁忙时实测 16s+（见 [`CONNECT_BACKSTOP`]）：等事件，预算只兜底。
+    rig.connected_within(CONNECT_BACKSTOP).await;
     rig.core.hold(Method::POST, "/_wonton/api/plugins");
     rig.app
         .dispatch(Action::InstallPlugin {
@@ -319,6 +322,22 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
             settings: Default::default(),
         })
         .unwrap();
+
+    // 请求真的出了门（假核心先记 seen 再按住）再断网：断网赶在发请求前面的话，连接信息
+    // 已经没了，任务按“没发出去”直接报失败（见 `PluginsLink::install`），测的就是另一条路径。
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .core
+        .seen(&Method::POST, "/_wonton/api/plugins")
+        .is_empty()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "请求没出门：{:?}",
+            rig.app.plugins()
+        );
+        tokio::time::sleep(Duration::from_millis(2)).await;
+    }
 
     // 请求还挂着，连接断了：不等请求报错就说在等连接。
     rig.drop_home().await;
@@ -337,19 +356,31 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
         Err(CoreError::NotReady { .. })
     ));
 
-    // 连接回来：回到在做。断开期间隧道自己会按自己的节奏重新发布状态，多设几次直到被接住。
-    let deadline = Instant::now() + WAIT;
-    while rig
-        .app
-        .plugins()
-        .tasks
-        .iter()
-        .any(|task| task.waiting_for_connection)
-    {
-        assert!(Instant::now() < deadline, "一直停在等连接");
-        rig.app.set_home_status_for_test(HomeStatus::Connected);
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    // 连接回来：回到在做。断开期间隧道自己会按自己的节奏重新发布状态，单次设置会被它
+    // 盖掉：一个小任务一直设着“已连接”，直到任务不再等连接；主测等视图事件，不按
+    // 固定节奏轮询自己。视图事件本身就是完成条件，wait_for 的预算只兜底。
+    let guard = {
+        let app = rig.app.clone();
+        tokio::spawn(async move {
+            loop {
+                app.set_home_status_for_test(HomeStatus::Connected);
+                if !app
+                    .plugins()
+                    .tasks
+                    .iter()
+                    .any(|task| task.waiting_for_connection)
+                {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+    };
+    let view = rig
+        .wait_for(|view| !view.tasks.iter().any(|task| task.waiting_for_connection))
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Running);
+    guard.abort();
 }
 
 /// 请求可能根本没到：连回来以后列表里也一直没有它，结果不确定，下一步是去已安装列表看。
