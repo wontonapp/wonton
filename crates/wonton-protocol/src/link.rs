@@ -21,6 +21,9 @@ pub enum AppLink {
     AgentChat,
     /// 打开设置里的“其他服务器”，滚到“请求”（ADR-0050：核心在“Wonton”私聊里的配对提醒带这个链接）。
     Peers,
+    /// 认领系统分享进来的一次分享（ADR-0097）：iOS 的分享扩展写好收件目录后用它打开 App，壳把令牌交给
+    /// `ClientCore::claim_share`。
+    Share { token: String },
 }
 
 impl AppLink {
@@ -76,6 +79,7 @@ impl AppLink {
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
             Self::Peers => "settings/peers".to_owned(),
+            Self::Share { token } => format!("share/{token}"),
         };
         format!("{SCHEME}{path}")
     }
@@ -162,6 +166,9 @@ impl AppLink {
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
             ["settings", "peers"] => Some(Self::Peers),
+            ["share", token] if crate::is_share_token(token) => Some(Self::Share {
+                token: (*token).to_owned(),
+            }),
             _ => None,
         }
     }
@@ -236,6 +243,9 @@ mod tests {
             AppLink::NewChat,
             AppLink::AgentChat,
             AppLink::Peers,
+            AppLink::Share {
+                token: "6F9619FF-8B86-D011-B42D-00C04FC964FF".into(),
+            },
         ];
         for link in links {
             assert_eq!(AppLink::parse(&link.to_url()), Some(link));
@@ -252,6 +262,8 @@ mod tests {
             "wonton://tab/plugin/a b",
             "wonton://tab/plugin/a/b/c",
             "wonton://ask",
+            "wonton://share/../../servers",
+            "wonton://share/",
         ] {
             assert_eq!(AppLink::parse(url), None, "{url}");
         }

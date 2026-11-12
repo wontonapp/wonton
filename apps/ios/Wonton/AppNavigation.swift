@@ -14,6 +14,7 @@ final class AppNavigation {
     let plugins: PluginsModel
     let tabs: TabsModel
     let onboarding: OnboardingModel
+    let shareIn: ShareInModel
     private(set) var presentationRevision = 0
     private(set) var opensSettings = false
     /// 链接要求直接打开“其他服务器”页并滚到“请求”；由 MainView 取走。
@@ -28,6 +29,7 @@ final class AppNavigation {
         self.plugins = plugins
         tabs = TabsModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
+        shareIn = ShareInModel(core: chat.core)
         Self.shared = self
     }
 
@@ -45,7 +47,22 @@ final class AppNavigation {
 
     func receive(_ url: URL) {
         guard let link = parseAppLink(url: url.absoluteString) else { return }
+        // 分享扩展打开 App（ADR-0097）：没配对、引导没走完也认领，分享页自己引导去配对。
+        if case let .share(token) = link {
+            shareIn.claim(token)
+            return
+        }
         request { try await $0.open(link) }
+    }
+
+    /// 分享页发出去以后打开那个聊天看进度。
+    func openSharedRoom(_ roomId: String) {
+        request { navigation in
+            guard try await navigation.navigationReady() else { return }
+            try navigation.select(.chat)
+            navigation.chat.resetNavigation()
+            navigation.chat.openRoom(id: roomId)
+        }
     }
 
     /// 聊天里的一条链接：类别由核心判断，壳只按类别开（ADR-0065）。外部和认不出的地址用 Safari 在 App 内打开，
@@ -117,6 +134,9 @@ final class AppNavigation {
             opensPeers = true
             try select(.settings)
             chat.resetNavigation()
+        case let .share(token):
+            // `receive` 已经先接走；这里只为别的入口带来的同一个链接。
+            shareIn.claim(token)
         }
     }
 

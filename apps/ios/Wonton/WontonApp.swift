@@ -110,16 +110,34 @@ private enum Launch {
         return .ready(chat, home, plugins, AppearanceModel(core: core), navigation)
     }
 
-    /// App 私有的数据目录，存设备密钥和连接信息。
+    /// 核心的数据目录，存设备密钥和连接信息。
     private static func dataDirectory() throws -> URL {
-        let base = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-        )
+        let base = try groupDirectory()
         #if DEBUG
         if let suffix = ProcessInfo.processInfo.environment["WONTON_DEV_DATA_SUFFIX"] {
-            return base.appending(path: "wonton-\(suffix)", directoryHint: .isDirectory)
+            return base.deletingLastPathComponent().appending(path: "wonton-\(suffix)", directoryHint: .isDirectory)
         }
         #endif
-        return base.appending(path: "wonton", directoryHint: .isDirectory)
+        return base
+    }
+
+    /// 在 App Group 的容器里，分享扩展才放得进收件目录（ADR-0097）。真机上拿不到容器时如实启动失败，不退回 App 私有目录：
+    /// 那样分享扩展写的东西 App 永远看不到。
+    private static func groupDirectory() throws -> URL {
+        do {
+            return try AppGroup.dataDirectory()
+        } catch {
+            #if targetEnvironment(simulator)
+            // 不签名的模拟器构建（CI 和脚本里的 `CODE_SIGNING_ALLOWED=NO`）没有 entitlements，系统不给组容器
+            // （iOS 26.5 模拟器实测）。这种构建退回 App 私有目录，分享扩展同样拿不到容器、会如实报错；签了名的模拟器构建
+            // 和真机都走组容器。
+            if case .containerUnavailable = error {
+                return try FileManager.default.url(
+                    for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
+                ).appending(path: "wonton", directoryHint: .isDirectory)
+            }
+            #endif
+            throw error
+        }
     }
 }

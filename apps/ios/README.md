@@ -17,6 +17,9 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   默认名由壳按核心给的固定编号和 App 语言显示，自定义名字原样显示；改名预填显示名，只在主人保存时写回（ADR-0043）。
   配对页和服务器列表的“添加服务器”下面是“用 Matrix 账号登录”（`MatrixLoginView`，ADR-0051），没有服务器的人从配对页进：按核心发现的方式给浏览器登录或密码表单，浏览器登录用
   `ASWebAuthenticationSession`，回调地址取核心的 `oidcRedirectUri`。`project.yml` 也注册了它的 scheme，回调从面板以外的路径回来时同样交给核心核对。
+- `ShareExtension/`：系统分享面板里的“云吞”（ADR-0097）。只把分享的东西复制进收件目录、打开 App，不链接 Rust 核心；
+  App 收到 `wonton://share/<令牌>` 后认领，分享页在 `ShareInSheet`。`Shared/` 是 App 和扩展共用的 App Group 位置：
+  核心的数据目录在组容器的 `wonton/` 里，扩展才放得进去。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
@@ -83,8 +86,12 @@ xcodegen generate --spec apps/ios/project.yml
 真机要用自己的开发团队签名：在 Xcode 里登录 Apple ID 后，命令行这样构建（团队 ID 是开发证书的 OU）：
 
 ```bash
-xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> build
+xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> WONTON_BUNDLE_ID=<自己的 bundle ID> build
 ```
+
+`WONTON_BUNDLE_ID` 一个设置管三个标识：App 是它本身，分享扩展是 `<它>.share`，App Group 是 `group.<它>`，自动签名
+（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也行。不要直接改 `PRODUCT_BUNDLE_IDENTIFIER`：
+那会把扩展的也改成同一个，签不过。换了 bundle ID 就是换了 App Group，数据目录跟着换，要重新配对。
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
 “设置 → 通用 → VPN 与设备管理”里信任开发者证书；第一次打开配对页时系统请求相机权限，第一次连家里的服务器时请求

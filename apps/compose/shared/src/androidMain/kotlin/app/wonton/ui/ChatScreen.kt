@@ -324,7 +324,7 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
 }
 
 /** 和 Bot 的私聊行对应的 Bot；不是私聊、或没有 Bot 的房间为空。 */
-private fun List<BotView>.directBot(row: RoomRow?): BotView? =
+internal fun List<BotView>.directBot(row: RoomRow?): BotView? =
     row?.directUserId?.let { direct -> firstOrNull { it.userId == direct } }
 
 @Composable
@@ -413,7 +413,7 @@ private fun RoomPreviewLine(row: RoomRow) {
 }
 
 @Composable
-private fun RoomAvatar(row: RoomRow, bot: BotView?, plugins: PluginsState) {
+internal fun RoomAvatar(row: RoomRow, bot: BotView?, plugins: PluginsState) {
     val size = WontonTheme.size.avatar
     if (bot != null) {
         // 和 Bot 的私聊行：显示 Bot 的资料头像（状态头像在播，没有就静态头像、应用图标）。

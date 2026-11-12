@@ -18,4 +18,8 @@
     <string name="share_title">友だちと共有</string>
     <!-- Expiration choice that grants access until the end of today. No arguments. -->
     <string name="share_today">今日中</string>
+    <!-- Screen-reader label of the remove button on a shared item in the share sheet. Argument: the item's name. -->
+    <string name="share_in_remove_item">%1$s を削除</string>
+    <!-- Next step under the problem above. -->
+    <string name="share_in_unreadable_next_step">元のアプリからもう一度共有してください。</string>
 </resources>

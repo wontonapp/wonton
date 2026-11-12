@@ -139,6 +139,10 @@ Android 按 WebView 能力检测配置默认 Profile 的精确来源允许列表
 未配对或仍在引导时忽略导航；已配对的冷启动等首次状态恢复后再决定。扫码、粘贴与 Debug 配对仍交给 `PairHome`。
 未固定的设置页沿用原生覆盖层，不自动修改底栏（核心 `SelectTab` 只接受已固定的原生页）。
 
+系统分享进云吞遵循 [ADR-0097](../../docs/adr/0097-share-in.md)：`MainActivity` 接 `ACTION_SEND`、`ACTION_SEND_MULTIPLE`，
+`androidApp/.../ShareInbox.kt` 趁临时读权限还在把每项复制进收件目录，再交核心认领；分享页在 `shared/.../ui/ShareSheet.kt`，
+没配对也出。
+
 `shared/.../ui/AppShortcuts.kt` 用 AndroidX Core（Apache-2.0）发布“新会话”“问 Bot”和固定的插件页；固定入口图标
 复用设计系统，插件图标经核心下载后转 `IconCompat`。总数不超过系统上限：两个固定入口优先，插件按底栏顺序显示。
 图标获取和系统更新失败会提示原因。卸载后同时停用动态项和已固定到桌面的项，显示“这个应用已卸载”；只移出底栏不禁用
