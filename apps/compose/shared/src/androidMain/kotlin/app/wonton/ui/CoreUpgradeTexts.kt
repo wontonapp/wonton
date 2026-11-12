@@ -6,6 +6,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreUpgradeCheck
+import app.wonton.protocol.CoreUpgradeCompat
+import app.wonton.protocol.CoreUpgradeCompatDetail
 import app.wonton.protocol.CoreUpgradeFailure
 import app.wonton.protocol.CoreUpgradePhase
 import app.wonton.protocol.CoreUpgradeProblem
@@ -14,6 +16,7 @@ import app.wonton.protocol.CoreUpgradeStage
 import app.wonton.protocol.CoreUpgradeStatus
 import app.wonton.protocol.CoreUpgradeTarget
 import app.wonton.protocol.CoreVersion
+import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeColors
 import app.wonton.ui.icons.CheckCircleFill
@@ -72,14 +75,26 @@ internal fun CoreUpgradeStage.line(target: CoreUpgradeTarget?): StageLine? {
 internal fun CoreUpgradeStatus.detailRows(
     offer: CoreUpgradeOffer?,
     stage: CoreUpgradeStage,
+    compat: List<CoreUpgradeCompatDetail>,
+    installed: InstalledPlugins?,
 ): List<Pair<String, String>> = listOf(
-    stringResource(R.string.core_upgrade_detail_reason) to (stage.problem()?.message ?: check.problem()?.message),
+    stringResource(R.string.core_upgrade_detail_reason) to (
+        stage.problem()?.message
+            ?: check.problem()?.message
+            ?: (offer?.compat as? CoreUpgradeCompat.Failed)?.problem?.message
+        ),
     stringResource(R.string.core_upgrade_detail_channel) to channel,
     stringResource(R.string.core_upgrade_current_version) to current.digest,
     stringResource(R.string.core_upgrade_detail_new_version) to (offer?.digest ?: run?.to?.digest),
     stringResource(R.string.core_upgrade_detail_migrates) to offer?.migrates?.takeIf { it.isNotEmpty() }
         ?.let { ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(it) },
-).mapNotNull { (title, value) -> value?.let { title to it } }
+).mapNotNull { (title, value) -> value?.let { title to it } } + compat.mapNotNull { detail ->
+    // 会失效的应用各原因一行行显示；名字按已装列表，不在列表里（刚卸载等）就显示 ID。
+    detail.lines.takeIf { it.isNotEmpty() }?.let {
+        (installed?.plugins?.firstOrNull { plugin -> plugin.id == detail.id }?.title ?: detail.id) to
+            it.joinToString("\n")
+    }
+}
 
 /** 没有升级在进行，可以看渠道上的版本。 */
 internal fun CoreUpgradeStage.isSettled() = when (this) {

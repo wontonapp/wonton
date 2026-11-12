@@ -622,4 +622,12 @@ tabs-fullscreen-none = 全画面のページはありません。
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
 panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
 
+## クロスオリジン分離が必要なプラグインのページはシステムのブラウザで開きます（ADR-0033）。後の3つはブラウザに表示されます。
+browser-front-failed = ブラウザ用のローカルアドレスを開けませんでした：{ $error }
+browser-page-not-isolated = このページはブラウザでは開きません。
+browser-not-paired = Wontonはまだ自宅のサーバーとペアリングされていません。
+browser-unknown-address = このアドレスは期限切れです。Wontonに戻って、アプリをもう一度開いてください。
+browser-not-connected = Wontonは今、自宅のサーバーにつながっていません。Wontonに戻り、つながってからこのページを再読み込みしてください。
+browser-bad-request = このページはWontonから開いてください。
+
 contacts-invalid-action = Bot の連絡先の操作ではありません。

@@ -16,6 +16,8 @@ use crate::push::Push;
 
 /// 隔这么久查一遍还在等的人的邀请（ADR-0050：接受了才成立）。对方接受后 Bot 要等到下一次查才理他，一分钟够用。
 const CHECK_PEOPLE_INTERVAL: Duration = Duration::from_secs(60);
+/// 隔这么久再发一遍还没送到对方核心的联系人事件（[`Contacts::flush_outbox`]）。启动时马上发一次。
+const OUTBOX_INTERVAL: Duration = Duration::from_secs(30);
 
 /// 插件管理器里的 Bot 记录。
 pub struct PluginDirectory {
@@ -162,6 +164,7 @@ pub fn start(state_dir: &Path, wiring: Wiring) -> Result<Arc<Contacts>, StoreErr
         }));
     link.start(Arc::downgrade(&contacts));
     spawn_people_check(Arc::downgrade(&contacts));
+    spawn_outbox_flush(Arc::downgrade(&contacts));
     Ok(contacts)
 }
 
@@ -174,6 +177,20 @@ fn spawn_people_check(contacts: Weak<Contacts>) {
                 return;
             };
             contacts.check_people().await;
+        }
+    });
+}
+
+fn spawn_outbox_flush(contacts: Weak<Contacts>) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(OUTBOX_INTERVAL);
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            tick.tick().await;
+            let Some(contacts) = contacts.upgrade() else {
+                return;
+            };
+            contacts.flush_outbox().await;
         }
     });
 }

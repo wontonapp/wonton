@@ -40,13 +40,18 @@ pub(crate) enum Scenario {
     NoModes,
     /// `session/prompt` 不自动应答，测试用 [`FakeAgent::respond_prompt`] 控制什么时候、回什么。
     Manual,
+    /// Manual 的变体：`availableModes` 里多一个 `bypassPermissions`，测桥不跟 Agent 报出的危险档位。
+    DangerousModes,
+    /// 同 [`Scenario::Manual`]，另在 `promptCapabilities` 里声明能收 `image` 块。
+    ManualImages,
 }
 
-/// Manual 场景里挂起的一轮：应答的 id、会话，和写回用的连接。
+/// Manual 场景里挂起的一轮：应答的 id、会话、完整内容块，和写回用的连接。
 pub(crate) struct PendingPrompt {
     id: Value,
     session: String,
     text: String,
+    blocks: Value,
     writer: Arc<Mutex<OwnedWriteHalf>>,
 }
 
@@ -154,7 +159,7 @@ impl FakeAgent {
             .collect()
     }
 
-    /// Manual 场景挂起的各轮：会话 ID 和发给 Agent 的原文。
+    /// Manual 场景挂起的各轮：会话 ID 和发给 Agent 的原文（第一个文字块）。
     pub(crate) async fn prompts(&self) -> Vec<(String, String)> {
         self.link
             .pending
@@ -162,6 +167,17 @@ impl FakeAgent {
             .await
             .iter()
             .map(|pending| (pending.session.clone(), pending.text.clone()))
+            .collect()
+    }
+
+    /// Manual 场景挂起的各轮：会话 ID 和完整内容块数组（附件轮有多个块）。
+    pub(crate) async fn prompt_blocks(&self) -> Vec<(String, Value)> {
+        self.link
+            .pending
+            .lock()
+            .await
+            .iter()
+            .map(|pending| (pending.session.clone(), pending.blocks.clone()))
             .collect()
     }
 
@@ -329,7 +345,12 @@ fn initialize_result(scenario: &Scenario) -> Value {
             } else {
                 json!({"close": {}})
             },
-            "mcpCapabilities": {"http": {}}
+            "mcpCapabilities": {"http": {}},
+            "promptCapabilities": if matches!(scenario, Scenario::ManualImages) {
+                json!({"image": true})
+            } else {
+                json!({})
+            }
         },
         "_meta": {"steering": {"supported": true}}
     });
@@ -499,19 +520,11 @@ impl Connection {
             }
             "session/prompt" => {
                 self.prompts += 1;
-                if matches!(self.scenario, Scenario::Manual) {
-                    self.link.pending.lock().await.push(PendingPrompt {
-                        id: message["id"].clone(),
-                        session: message["params"]["sessionId"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_owned(),
-                        text: message["params"]["prompt"][0]["text"]
-                            .as_str()
-                            .unwrap_or_default()
-                            .to_owned(),
-                        writer: writer.clone(),
-                    });
+                if matches!(
+                    self.scenario,
+                    Scenario::Manual | Scenario::DangerousModes | Scenario::ManualImages
+                ) {
+                    self.hold_prompt(message, writer).await;
                 } else {
                     handle_prompt(
                         writer,
@@ -536,6 +549,23 @@ impl Connection {
         }
         true
     }
+
+    /// Manual 系场景：把一轮挂在链路上，等测试用 [`FakeAgent::respond_prompt`] 回。
+    async fn hold_prompt(&self, message: &Value, writer: &Arc<Mutex<OwnedWriteHalf>>) {
+        self.link.pending.lock().await.push(PendingPrompt {
+            id: message["id"].clone(),
+            session: message["params"]["sessionId"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            text: message["params"]["prompt"][0]["text"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned(),
+            blocks: message["params"]["prompt"].clone(),
+            writer: writer.clone(),
+        });
+    }
 }
 
 async fn new_session(
@@ -552,7 +582,7 @@ async fn new_session(
     } else if matches!(scenario, Scenario::NoModes) {
         reply(writer, id, json!({"sessionId": session})).await;
     } else {
-        let modes = json!({
+        let mut modes = json!({
             "currentModeId": "plan",
             "availableModes": [
                 {"id": "plan", "name": "Plan"},
@@ -560,6 +590,12 @@ async fn new_session(
                 {"id": "agent", "name": "Agent"}
             ]
         });
+        if matches!(scenario, Scenario::DangerousModes) {
+            modes["availableModes"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"id": "bypassPermissions", "name": "Bypass"}));
+        }
         reply(writer, id, json!({"sessionId": session, "modes": modes})).await;
     }
 }
