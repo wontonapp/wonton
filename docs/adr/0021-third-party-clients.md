@@ -1,6 +1,6 @@
 # ADR-0021 第三方原生 App 连回家：公网子域名、公共证书和专用密码
 
-- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)
+- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)；自己的域名在 App 里配、预设 deSEC，插件的规范对外地址见 [ADR-0089](0089-https-own-domain.md)；公网入口扩成通用的公网访问，路由器转发和 Cloudflare Tunnel 提到 M1，总开关和访客链接见 [ADR-0090](0090-public-access.md)
 
 ## 背景
 
@@ -80,7 +80,7 @@ HAProxy 不做 ACME，证书还是 lego。核心从清单生成它的配置，�
 
 ### 入口的开关
 
-每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
+每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** 公网入口还受设置里的总开关管（ADR-0090）。 `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
 
 **`network.clients` 和 `network.lan`（ADR-0019）为什么权限等级不同。** `network.lan` 在安装时就把端口开到局域网，所以算高权限。`network.clients` 只是声明“有这个能力”，安装后什么都没暴露，要主人再开一次开关才有效；打开开关这一步单独醒目确认，相当于高权限确认。所以 `network.clients` 不算高权限，“帮我装 Immich”时卡片上不用醒目提示。局域网入口也要开关，而不是装好就开：不然局域网里任何设备装完就能碰到应用的登录页，这和 `network.lan` 的暴露是同一类。这个权限要列进规范的权限表。
 
@@ -286,7 +286,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 ### 换入口
 
-核心对入口只有这几个接口，不认识 Let's Encrypt 或任何具体域名：
+核心对入口只有这几个接口，不认识 Let's Encrypt 或任何具体域名。主人在 App 的设置里选入口和 DNS 服务商（ADR-0089、ADR-0090），下表的环境变量是装机时的写法：
 
 | 接口 | 内容 |
 | --- | --- |
@@ -383,7 +383,7 @@ x-wonton:
 
 - `clients` 和 `network.clients` 要一起写，只写一个时清单不合法。`clients.http`、`clients.tcp` 至少有一项。
 - `clients.http` 不能是 `mcp` 的端口，可以是 `webui` 的端口（Immich 的网页和 API 是同一个端口）：转发前删掉 `webui.proxy` 里声明的请求头和 Cookie，`sso: proxy` 伪造不了。删除时按规范化后的名字比较（`_` 换成 `-`，忽略大小写），`gateway` 的模板头也一样，入口容器也用 `option http-restrict-req-hdr-names delete` 删掉名字带 `_` 的请求头（实测）：CGI、WSGI、FastCGI、PHP 和很多 Python 应用把 `X_Remote_User` 和 `X-Remote-User` 映射成同一个变量。这个入口不看设备身份，也没有会话，绝不当作主人。
-- 插件按 `X-Forwarded-Host` 得到请求的地址，清单和插件都不知道域名。
+- 插件按 `X-Forwarded-Host` 得到请求的地址。要固定地址的（往外登记回调、只认一个 `Host`）用核心注入的 `WONTON_EXTERNAL_URL` 和 `single_host`，见 ADR-0089 第 5 节。
 - **`public.deny`、`public.allow`（二选一）：公网路径限制，由核心在公网入口上执行。** 按整段前缀匹配，不分大小写：`/share` 只匹配 `/share` 和 `/share/...`。局域网入口不受影响。比如 Immich 的 `/api/auth/admin-sign-up`、Vaultwarden 的 `/admin` 和 `/identity/accounts/register`、Jellyfin 的 `/Startup`（都读过各自的代码；写插件时核实完整列表）。
 - **路径怎么匹配（`public` 和 `auth_failures` 一样）。** 应用解析路径的方式各不相同（Kestrel 保留 `%2F` 再去点段，不合并斜杠；Express、chi 按字面路由），所以声明了其中任何一个的入口：
   - 沿用 ADR-0009 的规则并收紧：不解码、解码一次、解码两次的结果，都按 `/` 和 `\` 切段，每段再去掉 `;` 起的部分，只要有 `.` 或 `..` 段，就回 400 `invalid_input`。这样 `%2e%2e`、`..;`，以及要解码后才切得开的 `..%2f`，都到不了应用。规范的客户端发请求前会去掉点段。非法的百分号序列按原样保留，不回 400，也不丢掉这个候选。
@@ -563,7 +563,7 @@ ADR-0011 写的是“所有访问经核心网关鉴权”。这篇开了一个�
 
 ### 范围
 
-M1 做局域网直连和主人自己的域名，不依赖我们的云服务，验收见 [GOAL](../GOAL.md) 的 M1 第 9 项。公网中继、家名服务、DNS、证书服务和 CT 监控在 M2 部署，和推送、中继节点一起（主人 2026-11-04 定）。
+M1 做局域网直连和主人自己的域名（在 App 里配，ADR-0089），公网入口用主人自己的路由器转发、自己的 frps 或 Cloudflare Tunnel（ADR-0090），不依赖我们的云服务，验收见 [GOAL](../GOAL.md) 的 M1 第 9 项。公网中继、家名服务、DNS、证书服务和 CT 监控在 M2 部署，和推送、中继节点一起（主人 2026-11-04 定）。
 
 以后：家人（专用密码按人分，`gateway` 的 `{user}` 跟着变）；第三方 App 的 OIDC（Immich 手机 App 支持 OAuth，能解决“每客户端一个”，要改核心的登录流程，另写 ADR）；多地区中继；付费（主人说以后再说）。
 
