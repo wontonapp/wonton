@@ -188,7 +188,7 @@ async fn a_list_only_clears_its_own_problem() {
 }
 
 #[tokio::test]
-async fn an_owner_only_refusal_is_permission_not_transport() {
+async fn an_permission_required_refusal_is_permission_not_transport() {
     let rig = Rig::new().await;
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some()).await;
@@ -197,7 +197,7 @@ async fn an_owner_only_refusal_is_permission_not_transport() {
     rig.core.answer(
         Method::GET,
         "/_wonton/api/plugins",
-        core_error(403, "owner_only", "Only the owner"),
+        core_error(403, "permission_required", "Only the owner"),
     );
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;

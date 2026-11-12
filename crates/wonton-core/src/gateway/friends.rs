@@ -105,7 +105,7 @@ fn owner_denied(person: &super::Person) -> Option<Response> {
     (!person.is_owner()).then(|| {
         error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "核心里的好友名单只有主人能改",
         )
     })

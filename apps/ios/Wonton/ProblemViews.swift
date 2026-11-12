@@ -145,7 +145,7 @@ extension BotProfileFailure {
                 detail: detail
             )
         // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .ownerOnly:
+        case .permissionRequired:
             return Problem(
                 title: String(localized: .botProfileProblemOwnerOnlyTitle),
                 nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
