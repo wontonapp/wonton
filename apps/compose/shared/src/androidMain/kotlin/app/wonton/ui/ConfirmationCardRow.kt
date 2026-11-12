@@ -223,7 +223,7 @@ private fun rowLine(view: ConfirmationView): String? = when (val state = view.ca
         }
     ConfirmationState.Running -> stringResource(R.string.confirmation_card_running)
     is ConfirmationState.Succeeded ->
-        answeredLine(view)?.approved ?: stringResource(R.string.confirmations_state_succeeded)
+        answeredLine(view)?.second ?: stringResource(R.string.confirmations_state_succeeded)
     is ConfirmationState.Failed -> state.message.takeIf { it.isNotEmpty() }
         ?.let { stringResource(R.string.confirmation_card_failed_result, it) }
         ?: stringResource(R.string.confirmations_state_failed)
@@ -231,6 +231,6 @@ private fun rowLine(view: ConfirmationView): String? = when (val state = view.ca
         ?.let { stringResource(R.string.confirmation_card_uncertain_result, it) }
         ?: stringResource(R.string.confirmations_state_uncertain)
     ConfirmationState.Rejected ->
-        answeredLine(view)?.rejected ?: stringResource(R.string.confirmation_card_rejected)
+        answeredLine(view)?.first ?: stringResource(R.string.confirmation_card_rejected)
     ConfirmationState.Expired -> stringResource(R.string.confirmation_card_expired)
 }
