@@ -82,13 +82,6 @@ internal fun ServerApp(
     WontonTheme(appearance) {
         val proxyRoute = pluginProxyRoute(home, plugins)
         val account = LocalServers.current.servers.firstOrNull { it.current }?.id
-        LaunchedEffect(account, plugins.viewModel.installed) {
-            if (account != null && androidx.webkit.WebViewFeature.isFeatureSupported(
-                    androidx.webkit.WebViewFeature.MULTI_PROFILE)) {
-                configureCrossOriginIsolatedAllowlist(plugins.viewModel.installed?.plugins.orEmpty(),
-                    pluginProfileName(account))
-            }
-        }
         CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft,
             LocalPluginProxy provides proxyRoute, LocalPluginAccount provides account) {
             PluginsEffects(plugins)

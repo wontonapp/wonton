@@ -97,6 +97,11 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Maps ports of plugins on the user's self-hosted home server onto this device's loopback interface while the user has the mapping switched on, so other apps on the phone can connect to them." />
         </service>
+        <!-- 插件页在 Custom Tabs 里打开时浏览器绑定它，App 不被冻结（ADR-0033）。浏览器在别的进程，所以要导出；
+             绑定它只让 App 的进程多留一会儿，不给任何能力。 -->
+        <service
+            android:name=".browser.BrowserKeepAliveService"
+            android:exported="true" />
     </application>
 
 </manifest>

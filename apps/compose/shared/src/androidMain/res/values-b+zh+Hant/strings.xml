@@ -1426,13 +1426,12 @@
     <string name="tab_starting">正在啟動…</string>
     <string name="tab_uninstalling">正在解除安裝…</string>
     <string name="tab_upgrading">正在更新…</string>
-    <string name="tab_open_anyway">仍然開啟</string>
+    <string name="tab_opens_in_browser">%1$s 會在瀏覽器裡開啟</string>
+    <string name="tab_open_in_browser">開啟</string>
+    <string name="tab_no_browser_next_step">安裝或啟用一個瀏覽器（例如 Chrome）後再試一次。</string>
     <string name="tab_unpin_from_bar">從底部導覽列移除</string>
     <string name="tab_start">啟動</string>
     <string name="tab_view_details">查看詳細資訊</string>
-    <string name="tab_cross_origin_title">這個應用程式暫時無法在 Android 版雲吞裡開啟</string>
-    <string name="tab_cross_origin_detail">目前的 Android System WebView：%1$s；需要 156 或更新版本。</string>
-    <string name="tab_webview_version_unknown">取不到版本號</string>
     <string name="tab_load_not_ready">應用程式還沒準備好</string>
     <string name="tab_load_upstream">應用程式的網頁打不開</string>
     <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>

@@ -26,6 +26,7 @@ uniffi::setup_scaffolding!();
 #[cfg(target_os = "android")]
 mod android;
 mod appearance;
+mod browser;
 mod chat;
 mod client;
 mod files;

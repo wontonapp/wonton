@@ -269,13 +269,18 @@ x-wonton:
 
 ### 跨源隔离
 
-有的应用要跨源隔离才能用 `SharedArrayBuffer`，如 Actual Budget。iOS 的 WKWebView 看 COOP/COEP 响应头就给；Android WebView 没有站点进程隔离，一直不给（“验证”里 WebView 124 的实测）。WebView 156 起有官方开关 `Profile.setCrossOriginIsolatedAllowlist`：来源在允许列表里、响应带 `Document-Isolation-Policy: isolate-and-credentialless` 时才给。
+有的应用要跨源隔离才能用 `SharedArrayBuffer`，如 Actual Budget。iOS 的 WKWebView 看 COOP/COEP 响应头就给。Android System WebView 不给：COOP/COEP 对它不生效（“验证”里 WebView 124 的实测），`Profile.setCrossOriginIsolatedAllowlist` 加 `Document-Isolation-Policy` 实测也不生效，Chromium 不打算给 WebView 做 Document-Isolation-Policy。所以 Android 上这样的页面交给系统浏览器打开。
 
 - 插件在清单的 `webui` 上写 `cross_origin_isolated: true` 声明要它。没声明的插件不受影响。
-- 核心给声明了的插件的网页响应加 `Document-Isolation-Policy: isolate-and-credentialless`。
-- Android 壳只把声明了的插件的网页来源放进允许列表，不用 `*`。
-- WebView 低于 156（`WebViewFeature.CROSS_ORIGIN_ISOLATED_ALLOWLIST` 不支持）时，打开前显示“这个应用在 Android App 里暂时打不开”，“详情”里写 WebView 版本，配“仍然打开”：用户能进去走应用自己的降级（Actual 有不用 `SharedArrayBuffer` 的模式）。不替应用打开降级。
-- 详情页给声明了的插件加一条醒目提示，说它放宽了隔离。Agent 写的插件声明了这一项，安装和更新的确认卡片上也写明；从没声明变成声明算权限变宽，要发卡片。
+- 核心给声明了的插件的网页响应加 `Document-Isolation-Policy: isolate-and-credentialless`，给支持它的浏览器；COOP/COEP 由应用自己发。
+- 在哪里打开由客户端核心定：`TabPage.opens_in_browser`，只在 Android 的核心、声明了的本机插件页上为真。壳不看清单字段，看到它就不建 WebView：进页面时用 Custom Tabs 打开一次（默认浏览器不支持 Custom Tabs 时由它直接打开），App 里只留一行“xx 在浏览器里打开”和“打开”按钮。面板里的页面不自动打开，点按钮才开。没有浏览器时按“说人话 + 下一步 + 收起的详情”报错，不退回打不开的 WebView。
+- **浏览器怎么到插件。** 浏览器用不了 App 的会话代理，也到不了家里的服务器，只能经本机回环。客户端核心在 `127.0.0.1` 和 `[::1]` 的同一个端口上开一个浏览器入口（`wonton-tunnel` 的 `browser_front`；两个都听，免得空着的那个被别的 App 抢去收请求）。壳调 `ClientCore::plugin_browser_url(TabPage.url)` 换地址 `http://<标签>.localhost:<端口>/<原路径>`。浏览器自己把 `*.localhost` 解析到回环、当安全上下文，跨源隔离才生效。
+- **身份怎么带过去。** 入口按 `Host` 里的标签认请求。标签是 128 位的秘密，只经 Intent 交给浏览器；对不上的回“地址已失效”，不进隧道。对上的把 `Host`，以及等于浏览器 origin 的 `Origin`、`Referer` 前缀改回插件网页自己的，每条连接只转一个请求，再经 App 的本地代理（带会话凭据）`CONNECT` 进隧道。网关和插件看到的和 WebView 发的一样，照旧按隧道认出的设备认人（`sso: proxy`、`oidc` 都照常），**网关不需要新的登录方式**。
+- **为什么不用一次性登录链接换 Cookie。** 浏览器到不了网关，Cookie 只能由回环入口自己发；Cookie 又不分端口，同机的 App 在另一个端口上听同一个主机名、让浏览器打开它，就能把 Cookie 拿走。秘密放进主机名就没有这条路。
+- **origin 固定。** 标签由设备密钥、服务器和插件推出来，端口也由设备密钥推出来（被占时换随机端口）：同一台手机上同一个插件的 origin 不变，插件存在浏览器里的数据（登录状态、本地账本）一直在。重新配对换了设备密钥，标签跟着换。
+- Custom Tab 开着时浏览器绑定 App 里的一个空服务（`android.support.customtabs.extra.KEEP_ALIVE`），App 的进程跟着保持前台的优先级，入口和隧道才答得上。App 被杀后浏览器里的页面回“没连上”，回到云吞重开即可。
+- 详情页和卡片给声明了的插件加一条提示，说它在 Android 上会在浏览器里打开。Agent 写的插件声明了这一项，安装和更新的确认卡片上也写明；从没声明变成声明照旧发卡片。
+- 好友分享的插件页（`SharedApp`）不走这条路。
 
 ### 状态
 
@@ -454,7 +459,7 @@ Skills over MCP 等宿主支持了再加，内容是同一个目录。
 - **Agent 能悄悄改已批准的插件。** 不发卡片的更新，让被提示注入的 Bot 能把自己写的插件改成别的样子，在已批准的权限内做事，比如把它能读的共享文件夹发出去（如果也批了 `network.egress`）。范围只限它写的插件和批过的权限，每次写审计，详情页能打开“每次都问”。主人接受了这个取舍。
 - **Agent 写的代码没人审。** 只标未审核，不做扫描。没有 `network.egress` 的插件出不了内部网络，这是最实在的限制，所以说明要教 Agent 只申请用得到的权限。
 - **Agent 看不到渲染结果。** 页面只有主人看得到。网页探测和日志能发现起不来，发现不了布局错。以后可以让 Agent 经浏览器插件看自己的页面，要先想好网关登录怎么给。
-- **跨源隔离放宽了 Android 上的安全保障。** 允许列表里的页面和别的网页可能在同一个渲染进程里，能用 `SharedArrayBuffer` 和高精度计时器读同进程的内存（Spectre 一类）。只对声明了的插件开，详情页和卡片上写明，主人知道这个代价。
+- **Android 上要跨源隔离的页面靠主机名里的秘密挡住同机的 App。** 标签在浏览器的历史里，也会经 `Referer`、`Origin` 带给插件页链到的第三方网站；拿到它的同机 App 能以这台设备的身份打开那个插件的网页。只对声明了的插件开，标签随设备密钥更换。插件按 `Host` 拼出自己的绝对地址（`http://<slug>.<base>`）再跳转时，浏览器里打不开。页面在浏览器里，没有桥、主题令牌、胶囊和媒体通知。
 - **公开接口变多：** CSS 变量、`tabs` 字段和 `wonton:*` 事件都是作者依赖的，以后不能随便改。
 
 ## 已定
@@ -469,7 +474,7 @@ Skills over MCP 等宿主支持了再加，内容是同一个目录。
 
 主人 2026-11-06 定了：
 
-- **Android 上的跨源隔离：** 声明了的插件在 WebView 156 及以上放宽隔离，更低的版本如实提示并给“仍然打开”。知道代价是安全保障变弱。
+- **Android 上的跨源隔离：** 声明了的插件在 WebView 156 及以上放宽隔离，更低的版本如实提示并给“仍然打开”。知道代价是安全保障变弱。（后来实测 WebView 的允许列表不生效，改为在系统浏览器里打开，见“跨源隔离”。）
 - **栏和胶囊（看了两版原型的录屏）：** 带栏时保留标题栏，网页限在标题栏和底栏之间；全屏时用会自动隐藏的胶囊，往下拉出现、往上推藏起、3 秒淡出；全屏时状态栏那一条是 App 底色。
 
 ## 验证
