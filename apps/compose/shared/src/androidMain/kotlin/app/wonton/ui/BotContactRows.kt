@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import app.wonton.protocol.BotContact
+import app.wonton.protocol.BotContactFailure
 import app.wonton.protocol.BotContactsState
 import app.wonton.protocol.ContactError
 import app.wonton.protocol.ContactKind
@@ -146,8 +147,12 @@ internal fun BotContact.remoteProblem(): Int? {
     }
 }
 
+fun BotContactsState.Failed.problem(): Problem = contactProblem(error, message)
+
+fun BotContactFailure.problem(): Problem = contactProblem(error, message)
+
 /** 联系人接口失败的一句话，按核心给的类别写（ADR-0043）；核心写好的说明收进“详情”。不认识的类别用通用的一句。 */
-fun BotContactsState.Failed.problem(): Problem = Problem(
+private fun contactProblem(error: ContactError, message: String): Problem = Problem(
     titleRes = when (error) {
         ContactError.INVALID_USER_ID -> R.string.contacts_error_invalid_user_id
         ContactError.NOT_PAIRED -> R.string.contacts_error_not_paired
