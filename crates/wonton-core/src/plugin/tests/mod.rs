@@ -52,6 +52,7 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod matrix_rtc;
 mod model_gateway_contract;
 mod model_providers;
 mod models;
@@ -87,6 +88,7 @@ mod upgrade_bot;
 mod views;
 mod views_l10n;
 mod watch;
+mod webui_health;
 
 /// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。
 fn langs() -> crate::plugin::languages::Languages {
