@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -105,7 +107,7 @@ fun MessageMenu(
                     Box(Modifier.width(width).clearAndSetSemantics {}) {
                         BubbleSurface(message, core, false, false, Modifier, {}, {}, {})
                     }
-                    MenuSurface(message.actions, onReply, onForward, onRedact, onDismiss)
+                    MenuSurface(message, onReply, onForward, onRedact, onDismiss)
                 },
                 modifier = Modifier
                     .fillMaxSize()
@@ -141,7 +143,7 @@ fun MessageMenu(
 
 @Composable
 private fun MenuSurface(
-    actions: List<MessageAction>,
+    message: TimelineMessage,
     reply: (QuotedMessage) -> Unit,
     forward: () -> Unit,
     redact: () -> Unit,
@@ -154,7 +156,13 @@ private fun MenuSurface(
     val clipLabel = stringResource(R.string.message_clip_label)
     val replyLabel = stringResource(R.string.message_reply)
     val forwardLabel = stringResource(R.string.message_forward)
-    val redactLabel = stringResource(R.string.message_delete_everyone)
+    // 管理员也能撤别人的消息：写明是谁的，免得以为撤的是自己的。
+    val redactLabel = if (message.isOwn) {
+        stringResource(R.string.message_delete_everyone)
+    } else {
+        stringResource(R.string.message_delete_others, message.senderName)
+    }
+    val danger = WontonTheme.colors.danger.toColor()
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = WontonTheme.colors.surface.toColor(),
@@ -162,7 +170,7 @@ private fun MenuSurface(
     ) {
         Column(Modifier.width(WontonTheme.size.menuWidth)) {
             // 顺序照核心给的 `actions`，核心和 App 分开升级时不认识的不显示。
-            actions.forEach { action ->
+            message.actions.forEach { action ->
                 val run: () -> Unit = when (action) {
                     is MessageAction.Copy -> {
                         {
@@ -181,10 +189,18 @@ private fun MenuSurface(
                     MessageAction.Forward -> forwardLabel to WontonIcon.Forward
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash
                 }
+                val destructive = action == MessageAction.Redact
+                // 隔开前面的项，别和转发挨着误点。
+                if (destructive) HorizontalDivider()
                 DropdownMenuItem(
                     text = { Text(label) },
                     // 装饰：菜单项有文字。
                     leadingIcon = { Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall)) },
+                    colors = if (destructive) {
+                        MenuDefaults.itemColors(textColor = danger, leadingIconColor = danger)
+                    } else {
+                        MenuDefaults.itemColors()
+                    },
                     onClick = {
                         run()
                         onDismiss()
