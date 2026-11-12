@@ -246,7 +246,14 @@ impl Bots {
             }
         }
         local.installed = installed;
-        self.view.send_modify(|view| view.bots = views);
+        // 插件表变得频繁，Bot 列表没变时别惊动壳：发送方每次通知都会变成一批时间线增量。
+        self.view.send_if_modified(|view| {
+            if view.bots == views {
+                return false;
+            }
+            view.bots = views;
+            true
+        });
         drop(local);
         self.update_activity();
         self.refresh_all();
