@@ -86,6 +86,7 @@ fn build_item(state: &TabsState, stored: &StoredItem, plugins: &PluginsViewModel
         TabRef::Chat | TabRef::Apps | TabRef::Settings => None,
         TabRef::Bot { .. } => None,
         TabRef::SharedApp { .. } => Some(super::sharing::page(state, stored, plugins)),
+        TabRef::Widget { .. } => Some(super::widget::page(state, &placed, stored, plugins)),
         TabRef::Plugin { plugin_id, page } => {
             let plugin = plugins
                 .installed
@@ -496,6 +497,11 @@ pub(super) fn stored_item_with_title(
             language(),
             "tabs-view-unknown-plugin"
         ))),
+        TabRef::Widget { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-widget-not-pinnable"
+        ))),
         TabRef::Url { url } => {
             if !is_https_url(url) {
                 return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
@@ -631,6 +637,9 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     if matches!(tab, TabRef::SharedApp { .. }) {
         return super::sharing::usable(tab, plugins);
     }
+    if matches!(tab, TabRef::Widget { .. }) {
+        return super::widget::available(tab, plugins);
+    }
     let TabRef::Plugin { plugin_id, page } = tab else {
         return false;
     };
@@ -658,7 +667,8 @@ pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> boo
     let plugin_id = match tab {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
-        | TabRef::UiResource { plugin_id, .. } => plugin_id,
+        | TabRef::UiResource { plugin_id, .. }
+        | TabRef::Widget { plugin_id, .. } => plugin_id,
         _ => return false,
     };
     plugins
@@ -703,6 +713,7 @@ pub(super) fn is_plugin_page(tab: &TabRef) -> bool {
             | TabRef::PluginPath { .. }
             | TabRef::SharedApp { .. }
             | TabRef::UiResource { .. }
+            | TabRef::Widget { .. }
     )
 }
 
@@ -716,6 +727,7 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
             | TabRef::Bot { .. }
+            | TabRef::Widget { .. }
     )
 }
 

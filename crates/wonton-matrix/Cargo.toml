@@ -13,7 +13,10 @@ wonton-protocol = { path = "../wonton-protocol" }
 # MIT OR Apache-2.0。testkit 的 Tuwunel 镜像引用经它读 `WONTON_TEST_IMAGES`（CI 指到镜像仓库副本），没设时原样返回。
 wonton-test-images = { path = "../wonton-test-images" }
 # Apache-2.0。默认特性含 E2EE、SQLite 存储与 rustls；bundled-sqlite 自带 SQLite，移动端不依赖系统库。
-matrix-sdk = { workspace = true, features = ["bundled-sqlite"] }
+# experimental-widgets 是插件页作为 Matrix widget 的驱动（ADR-0096），多带进 urlencoding（MIT）。
+matrix-sdk = { workspace = true, features = ["bundled-sqlite", "experimental-widgets"] }
+# MIT OR Apache-2.0。widget 地址里的语言（`ClientProperties` 要它的类型），matrix-sdk 已经用它，没有重导出。
+language-tags = "0.3.2"
 # Apache-2.0。Sliding Sync 同步服务、房间列表与时间线；版本必须与 matrix-sdk 一致。
 matrix-sdk-ui = "0.19.1"
 # MIT OR Apache-2.0。房间信息更新的通知类型（未读数、已读回执），matrix-sdk 没有在根上重导出。

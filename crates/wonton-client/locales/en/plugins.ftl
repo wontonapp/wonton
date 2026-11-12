@@ -222,3 +222,10 @@ tabs-fullscreen-only-plugins = Only app pages can go full screen.
 tabs-fullscreen-none = Nothing is full screen right now.
 
 tabs-fullscreen-not-current = That page isn't the full-screen one.
+
+# Errors when opening an app as a Matrix widget inside a room (ADR-0096). No parameters.
+tabs-widget-not-signed-in = Sign in to chat first, then open this app from the room.
+
+tabs-widget-not-declared = This app can't be opened inside a room.
+
+tabs-widget-not-pinnable = Apps opened inside a room can't be pinned.

@@ -1,7 +1,8 @@
-mod driver;
+pub(crate) mod driver;
 mod origin;
 mod sdk;
-mod support;
+pub(crate) mod support;
+mod widget;
 
 use serde_json::json;
 use wonton_client::{

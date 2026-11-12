@@ -105,6 +105,12 @@ pub enum TabRef {
         owner_user_id: String,
         plugin_id: String,
     },
+    /// 插件网页作为 Matrix widget 在某个房间里打开（ADR-0096）：全屏盖在聊天上，不能固定。
+    /// 每次打开都是新的 widget 会话，关掉、换房间或退出登录时结束；同一时间只有一个。
+    Widget {
+        plugin_id: String,
+        room_id: String,
+    },
 }
 
 /// 整个底栏，以及盖在主界面上的插件页。

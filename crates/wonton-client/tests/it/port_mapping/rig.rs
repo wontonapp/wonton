@@ -137,6 +137,7 @@ pub fn remote(tcp: u16, udp: u16) -> wonton_client::InstalledPlugin {
     let spec = |port, protocol| MappedPort { port, protocol };
     wonton_client::InstalledPlugin {
         tunnel_ports: vec![spec(tcp, PortProtocol::Tcp), spec(udp, PortProtocol::Udp)],
+        matrix_widget: None,
         ..running(PLUGIN)
     }
 }

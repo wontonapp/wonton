@@ -96,6 +96,10 @@ impl AppLink {
                     "tab/shared/{}/{plugin_id}",
                     URL_SAFE_NO_PAD.encode(owner_user_id)
                 ),
+                TabRef::Widget { plugin_id, room_id } => format!(
+                    "tab/widget/{plugin_id}/{}",
+                    utf8_percent_encode(room_id, ROOM_ID)
+                ),
             },
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
@@ -184,6 +188,16 @@ impl AppLink {
                     plugin_id: (*plugin_id).to_owned(),
                 })
             }
+            ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => {
+                let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
+                if !is_room_id(&room_id) {
+                    return None;
+                }
+                tab(TabRef::Widget {
+                    plugin_id: (*plugin_id).to_owned(),
+                    room_id: room_id.into_owned(),
+                })
+            }
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
             ["settings", "peers"] => Some(Self::Peers),
@@ -269,6 +283,12 @@ mod tests {
                 tab: TabRef::SharedApp {
                     owner_user_id: "@alice/smith:[2001:db8::1]:8448".into(),
                     plugin_id: "app.snake".into(),
+                },
+            },
+            AppLink::Tab {
+                tab: TabRef::Widget {
+                    plugin_id: "app.example.call".into(),
+                    room_id: "!odd/id?x=1#y%z:[2001:db8::1]:8448".into(),
                 },
             },
             AppLink::NewChat,

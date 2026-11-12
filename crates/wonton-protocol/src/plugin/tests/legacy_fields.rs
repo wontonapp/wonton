@@ -88,3 +88,20 @@ fn a_core_without_widget_capabilities_lists_none() {
     assert_eq!(unknown.level, WidgetCapabilityLevel::Other);
     assert!(!unknown.added);
 }
+
+/// 契约：旧核心没有 `matrix_widget` 时没有 widget；新核心的入口图标旧 App 不认识的落到 `Other`，缺的字段读成空值。
+#[test]
+fn a_core_without_matrix_widget_has_no_widget() {
+    let mut item = serde_json::to_value(installed()).unwrap();
+    item.as_object_mut().unwrap().remove("matrix_widget");
+    let item: InstalledPlugin = serde_json::from_value(item).unwrap();
+    assert_eq!(item.matrix_widget, None);
+
+    let widget: PluginWidget = serde_json::from_value(json!({
+        "url": "/room",
+        "entry": "hologram",
+    }))
+    .unwrap();
+    assert_eq!(widget.entry, WidgetEntry::Other);
+    assert!(widget.capabilities.is_empty());
+}

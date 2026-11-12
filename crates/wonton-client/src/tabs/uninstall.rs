@@ -64,9 +64,9 @@ pub(super) fn remove_uninstalled(
     });
     if let Some(overlay) = state.overlay.take() {
         let missing = match &overlay.tab {
-            TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                gone(plugin_id)
-            }
+            TabRef::Plugin { plugin_id, .. }
+            | TabRef::PluginPath { plugin_id, .. }
+            | TabRef::Widget { plugin_id, .. } => gone(plugin_id),
             _ => false,
         };
         if missing {

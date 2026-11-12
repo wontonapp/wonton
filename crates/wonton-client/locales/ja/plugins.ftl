@@ -214,3 +214,9 @@ tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページ�
 tabs-fullscreen-none = 全画面のページはありません。
 
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
+
+tabs-widget-not-signed-in = 先にチャットにサインインしてから、ルームから開いてください。
+
+tabs-widget-not-declared = このアプリはルームの中では開けません。
+
+tabs-widget-not-pinnable = ルームの中で開いたアプリはピン留めできません。

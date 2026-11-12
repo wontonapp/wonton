@@ -83,6 +83,11 @@ fn installed() -> InstalledPlugin {
         enabled_root_permissions: vec!["docker.socket".into()],
         install_progress: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: Some(PluginWidget {
+            url: "/room?widgetId=$matrix_widget_id".into(),
+            entry: WidgetEntry::VideoCall,
+            capabilities: vec!["org.matrix.msc4157.send.delayed_event".into()],
+        }),
     }
 }
 

@@ -64,6 +64,7 @@ impl Rig {
                 previous_sources: HashMap::new(),
                 external: false,
                 media_prompt: None,
+                widget: None,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -73,6 +74,7 @@ impl Rig {
             dirty: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
+            widgets: Default::default(),
         };
         tabs.recompute();
         Self {
@@ -151,6 +153,7 @@ fn plugins(revision: &str) -> PluginsViewModel {
                 enabled_root_permissions: Vec::new(),
                 install_progress: None,
                 tunnel_ports: Vec::new(),
+                matrix_widget: None,
             }],
             upgrade_check: None,
         }),

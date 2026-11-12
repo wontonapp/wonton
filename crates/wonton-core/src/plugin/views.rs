@@ -625,6 +625,7 @@ impl PluginManager {
                         .collect()
                 },
             ),
+            matrix_widget: manifest.and_then(super::manifest_widget::plugin_widget),
         }
     }
 

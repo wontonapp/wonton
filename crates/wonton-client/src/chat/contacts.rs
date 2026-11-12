@@ -159,6 +159,7 @@ mod tests {
             enabled_root_permissions: Vec::new(),
             install_progress: None,
             tunnel_ports: Vec::new(),
+            matrix_widget: None,
         }
     }
 

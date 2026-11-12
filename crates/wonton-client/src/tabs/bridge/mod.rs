@@ -5,6 +5,7 @@ mod rpc;
 #[path = "generated/tokens.rs"]
 mod tokens;
 mod types;
+mod widget;
 
 use serde_json::{Value, json};
 use wonton_l10n::l10n;
@@ -14,6 +15,8 @@ use super::{TabsLink, placed_tab_ref};
 use crate::l10n::{CATALOG, language};
 pub(crate) use rpc::handle_message;
 pub use types::{TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea};
+pub use widget::TabWidgetSubscription;
+pub(crate) use widget::subscribe;
 
 const SCRIPT: &str = include_str!("script.js");
 
@@ -24,7 +27,8 @@ pub(crate) fn document_script(
     environment: &TabEnvironment,
 ) -> Result<String, CoreError> {
     let payload = context::payload(appearance, &bridge_page(tabs, page)?, environment)?;
-    Ok(format!("({SCRIPT})({payload},true);"))
+    let widget = matches!(placed_tab_ref(page), TabRef::Widget { .. });
+    Ok(format!("({SCRIPT})({payload},true,{widget});"))
 }
 
 pub(crate) fn context_script(

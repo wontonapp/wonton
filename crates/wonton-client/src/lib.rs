@@ -72,6 +72,7 @@ pub use subscription::{
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
+    TabWidgetSubscription,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use tabs::media_permission::TabMediaPermission;

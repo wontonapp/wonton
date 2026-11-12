@@ -4,6 +4,9 @@ use super::*;
 
 impl TabsLink {
     pub(crate) fn select(&self, tab: TabRef) -> Result<(), CoreError> {
+        if matches!(tab, TabRef::Widget { .. }) {
+            return self.open_widget(tab);
+        }
         self.runtime_change(|state, plugins| {
             if state.selected == tab
                 && state
@@ -280,6 +283,12 @@ impl TabsLink {
     }
 
     pub(super) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
+        if let PlacedTab::Bar {
+            tab: tab @ TabRef::Widget { .. },
+        } = &page
+        {
+            return self.reopen_widget(tab.clone());
+        }
         self.runtime_change(|state, _| {
             if !is_web_page(placed_tab_ref(&page)) || !state_has_page(state, &page) {
                 return Err(invalid(&l10n!(

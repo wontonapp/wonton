@@ -1,4 +1,4 @@
-(state, install) => {
+(state, install, widget) => {
   if (window.parent !== window) return;
 
   const apply = () => {
@@ -31,8 +31,13 @@
     return;
   }
 
+  // widget API（MSC2762）里页面发出的两种：fromWidget 请求、对 toWidget 请求的应答。只在 widget 页接。
+  const fromWidget = (data) => widget === true
+    && ((data?.api === "fromWidget" && data.response === undefined)
+      || (data?.api === "toWidget" && data.response !== undefined));
   window.addEventListener("message", (event) => {
-    if (event.source !== window || event.data?.jsonrpc !== "2.0") return;
+    if (event.source !== window) return;
+    if (event.data?.jsonrpc !== "2.0" && !fromWidget(event.data)) return;
     // 宿主注入的合成 MessageEvent 使用空 origin。
     // 真实 postMessage 事件始终携带页面来源（或 "null"）。
     if (event.origin === "") return;

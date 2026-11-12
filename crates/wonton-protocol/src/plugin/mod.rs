@@ -56,7 +56,7 @@ pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState,
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
-pub use widget::{WidgetCapability, WidgetCapabilityLevel};
+pub use widget::{PluginWidget, RoomWidget, WidgetCapability, WidgetCapabilityLevel, WidgetEntry};
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -186,6 +186,9 @@ pub struct InstalledPlugin {
     /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
     #[serde(default)]
     pub tunnel_ports: Vec<crate::MappedPort>,
+    /// 清单声明了 `matrix_widget`：网页能在房间里作为 Matrix widget 打开（ADR-0096）。
+    #[serde(default)]
+    pub matrix_widget: Option<PluginWidget>,
 }
 
 /// 插件的状态。

@@ -214,3 +214,9 @@ tabs-fullscreen-only-plugins = 只有外掛頁面可以全螢幕。
 tabs-fullscreen-none = 目前沒有全螢幕頁面。
 
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
+
+tabs-widget-not-signed-in = 先登入聊天，再從聊天室裡打開它。
+
+tabs-widget-not-declared = 這個應用程式不能在聊天室裡打開。
+
+tabs-widget-not-pinnable = 在聊天室裡打開的應用程式不能釘選。
