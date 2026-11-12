@@ -1,6 +1,7 @@
-//! 主人对确认的放宽（ADR-0024）：一律允许、始终允许、标成只读。判定在总线（`crate::mcp`），这里只管存和查。
+//! 主人的工具策略：对确认的放宽（ADR-0024：一律允许、始终允许、标成只读），和对单个 Bot 关掉的插件（ADR-0066 第 5 节）。
+//! 判定在总线（`crate::mcp`），这里只管存和查。
 //!
-//! 文件读不出来时当作没有任何放宽，写请求也拒绝，不覆盖它：坏文件里可能还有主人的设置。
+//! 文件读不出来时当作没有任何放宽、也不知道哪些插件对哪个 Bot 关了，写请求也拒绝，不覆盖它：坏文件里可能还有主人的设置。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
@@ -26,6 +27,14 @@ struct Settings {
     /// 标成只读：插件 → 工具。
     #[serde(default)]
     read_only: BTreeMap<String, BTreeSet<String>>,
+    /// 单独关掉：插件 → 对它关了的 Bot（[`bot_key`]）。没记的 Bot 按插件的范围。
+    #[serde(default)]
+    bot_off: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// 一个插件可以有几个 Bot（ADR-0045），单独关掉按 Bot 记。插件 ID 和 Bot 名里都没有 `/`。
+fn bot_key(plugin: &str, bot: &str) -> String {
+    format!("{plugin}/{bot}")
 }
 
 enum State {
@@ -108,6 +117,44 @@ impl ToolPolicy {
         self.read(|settings| listed(&settings.read_only, plugin, tool))
     }
 
+    /// `plugin` 的 Bot `bot` 被主人单独关掉了 `target` 的工具。文件读不出来时不知道，报错，由调用方拒绝。
+    pub fn is_bot_off(
+        &self,
+        plugin: &str,
+        bot: &str,
+        target: &str,
+    ) -> Result<bool, PolicyUnavailable> {
+        match &*self.lock() {
+            State::Ready(settings) => Ok(listed(&settings.bot_off, target, &bot_key(plugin, bot))),
+            State::Unreadable(reason) => Err(PolicyUnavailable(reason.clone())),
+        }
+    }
+
+    pub fn set_bot_off(
+        &self,
+        plugin: &str,
+        bot: &str,
+        target: &str,
+        off: bool,
+    ) -> Result<(), PolicyUnavailable> {
+        let key = bot_key(plugin, bot);
+        self.change(|settings| toggle_in(&mut settings.bot_off, target, &key, off))
+    }
+
+    /// Bot 被删：它的单独设置一起删（ADR-0066 第 5 节）。
+    pub fn forget_bot(&self, plugin: &str, bot: &str) {
+        let key = bot_key(plugin, bot);
+        let forgotten = self.change(|settings| {
+            for bots in settings.bot_off.values_mut() {
+                bots.remove(&key);
+            }
+            settings.bot_off.retain(|_, bots| !bots.is_empty());
+        });
+        if let Err(e) = forgotten {
+            tracing::error!(plugin, bot, error = %e, "清掉 Bot 的单独设置失败");
+        }
+    }
+
     fn read(&self, query: impl FnOnce(&Settings) -> bool) -> bool {
         match &*self.lock() {
             State::Ready(settings) => query(settings),
@@ -137,16 +184,23 @@ impl ToolPolicy {
         self.change(|settings| toggle_in(&mut settings.read_only, plugin, tool, on))
     }
 
-    /// 插件被卸载（保留数据也算）：它的只读标记、别的 Bot 对它的始终允许，和它作为 Bot 得到的放宽一起清掉。
+    /// 插件被卸载（保留数据也算）：它的只读标记、别的 Bot 对它的始终允许和单独关掉，和它作为 Bot 得到的放宽、
+    /// 它的 Bot 的单独关掉一起清掉。
     pub fn forget_plugin(&self, id: &str) {
+        let prefix = bot_key(id, "");
         let forgotten = self.change(|settings| {
             settings.allow_all.remove(id);
             settings.always.remove(id);
             settings.read_only.remove(id);
+            settings.bot_off.remove(id);
             for callers in settings.always.values_mut() {
                 callers.remove(id);
             }
             settings.always.retain(|_, callers| !callers.is_empty());
+            for bots in settings.bot_off.values_mut() {
+                bots.retain(|key| !key.starts_with(&prefix));
+            }
+            settings.bot_off.retain(|_, bots| !bots.is_empty());
         });
         if let Err(e) = forgotten {
             tracing::error!(plugin = %id, error = %e, "清掉插件的工具策略失败");
@@ -231,6 +285,20 @@ impl PluginManager {
             .collect()
     }
 
+    /// 主人对 Bot 单独开关一个插件。改成了就通知总线上的 Agent 重新取工具列表。
+    pub fn set_bot_plugin_access(
+        &self,
+        plugin: &PluginId,
+        bot: &str,
+        target: &PluginId,
+        enabled: bool,
+    ) -> Result<(), PolicyUnavailable> {
+        self.tool_policy()
+            .set_bot_off(plugin.as_str(), bot, target.as_str(), !enabled)?;
+        self.changed();
+        Ok(())
+    }
+
     /// 插件声明了 `mcp`，不管在不在运行。
     pub fn declares_mcp(&self, id: &PluginId) -> bool {
         let plugins = self.plugins.read().expect("插件表锁中毒");
@@ -303,5 +371,96 @@ mod tests {
         );
         policy.forget_plugin("notes");
         assert_eq!(policy.clearance("other", "notes", "delete"), None);
+    }
+
+    #[test]
+    fn a_bot_switched_off_stays_off_across_a_restart_and_only_for_that_bot() {
+        let (policy, dir) = policy();
+        assert_eq!(
+            policy.is_bot_off("app.agent", "alice", "app.notes"),
+            Ok(false)
+        );
+        policy
+            .set_bot_off("app.agent", "alice", "app.notes", true)
+            .unwrap();
+        let reopened = ToolPolicy::load(dir.path().join("policy.json"));
+        assert_eq!(
+            reopened.is_bot_off("app.agent", "alice", "app.notes"),
+            Ok(true)
+        );
+        assert_eq!(
+            reopened.is_bot_off("app.agent", "bob", "app.notes"),
+            Ok(false)
+        );
+        assert_eq!(
+            reopened.is_bot_off("app.agent", "alice", "app.mail"),
+            Ok(false)
+        );
+        reopened
+            .set_bot_off("app.agent", "alice", "app.notes", false)
+            .unwrap();
+        assert_eq!(
+            reopened.is_bot_off("app.agent", "alice", "app.notes"),
+            Ok(false)
+        );
+    }
+
+    #[test]
+    fn removing_a_bot_or_either_plugin_clears_its_switches() {
+        let (policy, _dir) = policy();
+        policy
+            .set_bot_off("app.agent", "alice", "app.notes", true)
+            .unwrap();
+        policy
+            .set_bot_off("app.agent", "bob", "app.notes", true)
+            .unwrap();
+        policy
+            .set_bot_off("app.other", "carol", "app.notes", true)
+            .unwrap();
+        policy
+            .set_bot_off("app.other", "carol", "app.mail", true)
+            .unwrap();
+        policy.forget_bot("app.agent", "alice");
+        assert_eq!(
+            policy.is_bot_off("app.agent", "alice", "app.notes"),
+            Ok(false)
+        );
+        assert_eq!(policy.is_bot_off("app.agent", "bob", "app.notes"), Ok(true));
+        policy.forget_plugin("app.agent");
+        assert_eq!(
+            policy.is_bot_off("app.agent", "bob", "app.notes"),
+            Ok(false)
+        );
+        assert_eq!(
+            policy.is_bot_off("app.other", "carol", "app.notes"),
+            Ok(true)
+        );
+        policy.forget_plugin("app.notes");
+        assert_eq!(
+            policy.is_bot_off("app.other", "carol", "app.notes"),
+            Ok(false)
+        );
+        assert_eq!(
+            policy.is_bot_off("app.other", "carol", "app.mail"),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn an_unreadable_file_does_not_pretend_a_bot_is_switched_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("policy.json");
+        std::fs::write(&path, "不是 JSON").unwrap();
+        let policy = ToolPolicy::load(path);
+        assert!(
+            policy
+                .is_bot_off("app.agent", "alice", "app.notes")
+                .is_err()
+        );
+        assert!(
+            policy
+                .set_bot_off("app.agent", "alice", "app.notes", true)
+                .is_err()
+        );
     }
 }

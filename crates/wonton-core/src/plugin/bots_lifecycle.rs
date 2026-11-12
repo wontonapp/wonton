@@ -152,6 +152,7 @@ impl PluginManager {
         }
         plugin_bots.bots.remove(bot);
         self.store.bots().save(plugin, &plugin_bots)?;
+        self.tool_policy().forget_bot(plugin.as_str(), bot);
         let manifest = installed_package(&record, &self.owner_languages())?.manifest;
         self.drop_bot_secrets(plugin, &manifest, bot)?;
         if !keep_data {

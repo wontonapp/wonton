@@ -130,7 +130,6 @@ gateway-owner-secrets-store-failed = 读应用密钥失败：{ $error }
 gateway-owner-secrets-not-text = 密钥 { $name } 存的值不是文本
 gateway-owner-secrets-audit-unavailable = 家里的服务器没有接审计日志，不能查看密钥的值
 gateway-plugin-scope-unsupported = 这个核心不支持修改插件给哪些 Bot 用，请先升级核心。
-gateway-bot-plugin-access-unsupported = 这个核心不支持为单个 Bot 开关插件，请先升级核心。
 
 # MCP Apps 宿主页（#35）。
 mcp-app-loading = 正在载入…

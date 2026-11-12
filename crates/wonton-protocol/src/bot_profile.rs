@@ -38,7 +38,7 @@ pub fn bot_profile_path(plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/profile")
 }
 
-/// `PUT`：请求体 [`BotPluginAccessUpdate`]。只有主人能用。
+/// `GET` 取、`PUT` 改（请求体 [`BotPluginAccessUpdate`]），都返回 [`BotPluginAccess`]。只有主人能用。
 pub fn bot_plugin_access_path(plugin_id: &str, bot: &str, target_plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/{bot}/plugin-access/{target_plugin_id}")
 }
