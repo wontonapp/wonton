@@ -77,7 +77,7 @@ impl Asked {
             .find(|o| Some(o.choice_id.as_str()) == choice_id);
         let Some(option) = option else {
             self.audit(Decision::Rejected, None);
-            self.bus.confirmations.publish(&self.card).await;
+            self.bus.confirmations.bump();
             return AgentPermissionOutcome::Cancelled;
         };
         if option.kind.answer() == Answer::Approve {
@@ -92,7 +92,7 @@ impl Asked {
             self.bus.confirmations.settle(&self.card, state).await;
         } else {
             self.audit(Decision::Rejected, Some(option));
-            self.bus.confirmations.publish(&self.card).await;
+            self.bus.confirmations.bump();
         }
         AgentPermissionOutcome::Selected {
             choice_id: option.choice_id.clone(),
@@ -133,7 +133,7 @@ impl Bus {
         caller.origin = request.origin.clone().and_then(super::audience::checked);
         let langs = self.card_languages(&caller, Subject::Tool);
         let draft = cards::agent_permission(&caller.name, &request, &langs);
-        let (notifier, audience) = self.audience(&caller, Subject::Tool).await;
+        let audience = self.audience(&caller, Subject::Tool).await;
         let mut asked = Asked {
             bus: self.clone(),
             caller: caller.id.to_string(),
@@ -142,24 +142,16 @@ impl Bus {
             langs,
             settled: true,
         };
-        let (card, answered) =
-            match self
-                .confirmations
-                .open_as(notifier.clone(), &caller.id, draft, audience)
-            {
-                Ok(opened) => opened,
-                Err(refusal) => {
-                    asked.audit(Decision::Unconfirmed, None);
-                    return Err(refused(&refusal));
-                }
-            };
+        let (card, answered) = match self.confirmations.open_as(&caller.id, draft, audience) {
+            Ok(opened) => opened,
+            Err(refusal) => {
+                asked.audit(Decision::Unconfirmed, None);
+                return Err(refused(&refusal));
+            }
+        };
         asked.card.clone_from(&card.id);
         asked.settled = false;
-        match self
-            .confirmations
-            .deliver(&*notifier, &card, answered)
-            .await
-        {
+        match self.confirmations.deliver(&card, answered).await {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {
                 asked.settled = true;

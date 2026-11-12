@@ -1,20 +1,17 @@
 //! 跳数的行为测试（ADR-0045 的“频率和跳数”）：只数不同 Bot 之间的来回，到顶时主人收到“已停下”卡片，选“继续”
 //! 或有人说话就清零。网关后面接假的 Tuwunel，时钟是注入的。
 
-use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::FutureExt as _;
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use wonton_protocol::{
     Answer, BotKeeper, ConfirmationCard, ConfirmationRequester, ConfirmationState,
-    DeviceConfirmationPush, HOP_LIMIT_ERRCODE,
+    HOP_LIMIT_ERRCODE,
 };
 
 use super::SendLimits;
 use crate::gateway::family_rules_tests::{Home, ROOM};
-use crate::mcp::RecipientPush;
 
 /// 两个 Bot 轮流说话，每条隔 3 秒（频率不挡）：`hermes` 先说，`from..to` 条全都放行。
 async fn take_turns(home: &Home, from: usize, to: usize) {
@@ -32,13 +29,14 @@ async fn take_turns(home: &Home, from: usize, to: usize) {
 
 /// 等主人的卡片 `id` 结束成 `done` 这一类：卡片的任务这时已经决定清不清零了。
 async fn wait_settled(home: &Home, id: &str, done: fn(&ConfirmationState) -> bool) {
+    let state = || home.bus.confirmations().card(id).map(|card| card.state);
     for _ in 0..500 {
-        if home.cards.states(id).iter().any(done) {
+        if state().as_ref().is_some_and(done) {
             return;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    panic!("等了 5 秒卡片还没结束：{:?}", home.cards.states(id));
+    panic!("等了 5 秒卡片还没结束：{:?}", state());
 }
 
 async fn wait_resumed(home: &Home, id: &str) {
@@ -51,7 +49,7 @@ async fn wait_resumed(home: &Home, id: &str) {
 /// 等家人 `alice` 的“等你确认”列表里出现卡片。
 async fn alices_card(home: &Home) -> ConfirmationCard {
     for _ in 0..500 {
-        if let Some(card) = home.bus.confirmations().pending_for(Some("alice")).pop() {
+        if let Some(card) = home.bus.confirmations().list(Some("alice")).0.pop() {
             return card;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -80,7 +78,18 @@ async fn stop_the_pair(home: &Home) -> ConfirmationCard {
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert_eq!(body["errcode"], HOP_LIMIT_ERRCODE);
     assert_eq!(home.refusal(&headers), Some("hop_limit"));
-    home.cards.wait_for(1).await
+    owners_card(home).await
+}
+
+/// 等主人的“等你确认”列表里出现卡片。
+async fn owners_card(home: &Home) -> ConfirmationCard {
+    for _ in 0..500 {
+        if let Some(card) = home.bus.confirmations().list(None).0.pop() {
+            return card;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("等了 5 秒主人还没收到卡片");
 }
 
 #[tokio::test]
@@ -150,7 +159,7 @@ async fn two_bots_going_back_and_forth_are_stopped_and_the_owner_is_asked() {
         card.choices.iter().any(|c| c.answer == Answer::Approve)
             && card.choices.iter().any(|c| c.answer == Answer::Reject)
     );
-    assert_eq!(home.bus.confirmations().pending().len(), 1);
+    assert_eq!(home.bus.confirmations().list(None).0.len(), 1);
 
     // 上一条是 hermes 说的：它接着说不算一跳，照样放行。
     home.tick(3000);
@@ -268,14 +277,9 @@ async fn each_keeper_gets_a_card_in_the_stopped_room() {
         assert_eq!(card.origin.as_ref().map(|o| o.room_id.as_str()), Some(ROOM));
     }
     // 各看各的：主人的列表里没有 alice 的卡片。
-    let owner_list = home.bus.confirmations().pending_for(None);
+    let owner_list = home.bus.confirmations().list(None).0;
     assert_eq!(owner_list.len(), 1);
     assert_eq!(owner_list[0].id, owners.id);
-    assert_eq!(
-        home.cards.posted.lock().unwrap().len(),
-        1,
-        "alice 的卡片不进主人的通知房间"
-    );
 }
 
 #[tokio::test]
@@ -285,7 +289,7 @@ async fn a_shared_bot_and_the_owners_bot_share_one_card() {
     stop_the_pair(&home).await;
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
-    assert_eq!(home.bus.confirmations().pending_for(None).len(), 1);
+    assert_eq!(home.bus.confirmations().list(None).0.len(), 1);
 }
 
 #[tokio::test]
@@ -382,46 +386,28 @@ async fn keepers_only_see_and_answer_their_own_cards() {
     assert_eq!(status, StatusCode::OK, "{body}");
 }
 
-/// 收件人推送的替身：记下推给了谁、哪张卡（ADR-0016）。
-#[derive(Default)]
-struct RecordedPushes(std::sync::Mutex<Vec<(String, DeviceConfirmationPush)>>);
-
-impl RecipientPush for RecordedPushes {
-    fn push<'a>(
-        &'a self,
-        person: &'a str,
-        card: &'a DeviceConfirmationPush,
-    ) -> futures_util::future::BoxFuture<'a, Result<(), String>> {
-        async move {
-            self.0
-                .lock()
-                .unwrap()
-                .push((person.to_owned(), card.clone()));
-            Ok(())
-        }
-        .boxed()
-    }
-}
-
+/// 卡片不进任何房间（ADR-0016）：两边的卡片各推给自己的收件人。
 #[tokio::test]
-async fn the_family_card_is_pushed_to_her_and_the_owners_is_not() {
+async fn each_card_is_pushed_to_its_own_recipient() {
     let home = Home::with_keeper(SendLimits::default(), alice()).await;
     home.seed_room(ROOM);
-    let pushes = Arc::new(RecordedPushes::default());
-    home.bus.confirmations().attach_push(Some(pushes.clone()));
     let owners = stop_the_pair(&home).await;
     let alices = alices_card(&home).await;
-    let recorded = pushes.0.lock().unwrap();
-    assert_eq!(recorded.len(), 1, "只有收件人的卡片走直推：{recorded:?}");
-    let (person, card) = &recorded[0];
-    assert_eq!(person, "alice");
-    assert_eq!(card.id, alices.id);
     assert_ne!(alices.id, owners.id, "两边的卡片不是同一张");
-    assert_eq!(card.title, alices.title);
+    let posted = home.cards.posted.lock().unwrap().clone();
+    let recipients = home.cards.recipients.lock().unwrap().clone();
+    let pushed: Vec<(Option<String>, String)> = recipients
+        .into_iter()
+        .zip(posted.iter().map(|card| card.id.clone()))
+        .collect();
+    assert_eq!(pushed.len(), 2, "{pushed:?}");
+    assert!(pushed.contains(&(None, owners.id.clone())), "{pushed:?}");
+    assert!(
+        pushed.contains(&(Some("alice".to_owned()), alices.id.clone())),
+        "{pushed:?}"
+    );
+    let card = posted.iter().find(|card| card.id == alices.id).unwrap();
     assert_eq!(card.origin.as_ref().map(|o| o.room_id.as_str()), Some(ROOM));
-    drop(recorded);
-    // 主人的卡片照常进通知房间（消息推送自己会响），不走直推。
-    assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

@@ -143,3 +143,4 @@ gateway-share-identity = 這台伺服器認不出你是誰
 gateway-share-required = 主人沒有把這個應用程式分享給你
 gateway-share-revoked = 主人停止分享這個應用了
 gateway-share-expired = 分享已到期
+gateway-confirmation-gone = 沒有這張確認，或它已結束超過一天

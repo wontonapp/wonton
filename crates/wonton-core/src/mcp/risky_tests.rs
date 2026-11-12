@@ -72,7 +72,7 @@ async fn an_open_window_neither_covers_nor_releases_a_deleting_tool() {
     s.answer(&delete_card.id, Answer::AllowWindow).unwrap();
     assert_eq!(text(&delete.await.unwrap()), "删掉了 b.txt");
     assert_eq!(
-        s.bus.confirmations().pending().first().map(|c| &c.id),
+        s.bus.confirmations().list(None).0.first().map(|c| &c.id),
         Some(&purge_card.id),
         "时段不放行等着的删除"
     );

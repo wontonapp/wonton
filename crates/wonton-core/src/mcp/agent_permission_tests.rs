@@ -74,7 +74,7 @@ async fn the_owner_picks_one_of_the_agents_options() {
     );
     assert!(
         matches!(
-            s.cards.states(&card.id).last(),
+            s.bus.confirmations().card(&card.id).map(|card| card.state),
             Some(ConfirmationState::Succeeded { message }) if message.contains("总是允许")
         ),
         "卡片写明选了哪一项"
@@ -120,8 +120,8 @@ async fn a_rejecting_option_comes_back_as_selected() {
         })
     );
     assert_eq!(
-        s.cards.states(&card.id).last(),
-        Some(&ConfirmationState::Rejected)
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
     let audit = s.audit();
     assert_eq!(audit.last().unwrap()["decision"], "rejected");
@@ -144,8 +144,8 @@ async fn without_a_rejecting_option_the_card_offers_cancel() {
         .unwrap();
     assert_eq!(asked.await.unwrap(), Ok(AgentPermissionOutcome::Cancelled));
     assert_eq!(
-        s.cards.states(&card.id).last(),
-        Some(&ConfirmationState::Rejected)
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
 }
 
@@ -155,8 +155,8 @@ async fn an_unanswered_card_expires() {
     let (card, asked) = asking(&s, full_options()).await;
     assert_eq!(asked.await.unwrap(), Ok(AgentPermissionOutcome::Expired));
     assert_eq!(
-        s.cards.states(&card.id).last(),
-        Some(&ConfirmationState::Expired)
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Expired)
     );
     assert_eq!(s.audit().last().unwrap()["decision"], "expired");
 }
@@ -224,20 +224,24 @@ async fn a_caller_that_goes_away_withdraws_the_card() {
     let (card, asked) = asking(&s, full_options()).await;
     asked.abort();
     let _ = asked.await;
+    let withdrawn = |s: &Setup, id: &str| {
+        matches!(
+            s.bus.confirmations().card(id).map(|card| card.state),
+            Some(ConfirmationState::Failed { message }) if message.contains("作废")
+        )
+    };
     for _ in 0..100 {
-        if !s.cards.states(&card.id).is_empty() {
+        if withdrawn(&s, &card.id) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(
-        matches!(
-            s.cards.states(&card.id).last(),
-            Some(ConfirmationState::Failed { message }) if message.contains("作废")
-        ),
+        withdrawn(&s, &card.id),
         "{:?}",
-        s.cards.states(&card.id)
+        s.bus.confirmations().card(&card.id)
     );
-    assert!(s.bus.confirmations().pending().is_empty());
+    let (pending, _, _) = s.bus.confirmations().list(None);
+    assert!(pending.is_empty());
     assert_eq!(s.audit().last().unwrap()["decision"], "withdrawn");
 }

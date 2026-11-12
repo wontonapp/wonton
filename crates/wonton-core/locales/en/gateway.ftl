@@ -143,3 +143,4 @@ gateway-share-identity = This server can't confirm who you are
 gateway-share-required = The owner hasn't shared this app with you
 gateway-share-revoked = The owner stopped sharing this app
 gateway-share-expired = This share has expired
+gateway-confirmation-gone = There is no such confirmation, or it ended more than a day ago

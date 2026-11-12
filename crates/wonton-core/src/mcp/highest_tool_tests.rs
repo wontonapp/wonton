@@ -65,7 +65,7 @@ async fn rejecting_the_card_does_not_execute_the_tool() {
     assert_eq!(result.is_error, Some(true));
     assert!(!s.notes.deleted.lock().unwrap().contains(&"a".to_owned()));
     assert_eq!(
-        s.cards.states(&card.id).last(),
-        Some(&ConfirmationState::Rejected)
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
 }

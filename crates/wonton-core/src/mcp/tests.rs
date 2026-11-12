@@ -229,27 +229,14 @@ async fn a_confirmed_call_that_times_out_leaves_the_card_uncertain() {
     assert!(text(&result).contains("是否已执行不确定"), "{result:?}");
     let meta = result.meta.as_ref().unwrap();
     assert_eq!(meta.0["app.wonton/failure"], "tool_timed_out");
-    let states = s.cards.states(&card.id);
     assert!(
-        matches!(states.last(), Some(ConfirmationState::Uncertain { .. })),
-        "{states:?}"
+        matches!(
+            s.bus.confirmations().card(&card.id).map(|card| card.state),
+            Some(ConfirmationState::Uncertain { .. })
+        ),
+        "执行完的卡片标结果不确定"
     );
     assert_eq!(s.audit().last().unwrap()["decision"], "approved");
-}
-
-/// 卡片重发到了别的房间：之后的更新发给重发的那张。
-#[tokio::test]
-async fn a_card_that_moved_is_updated_where_it_now_is() {
-    let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
-    *s.cards.moves_to.lock().unwrap() = Some("$moved".to_owned());
-    let call = s.spawn("app-example-notes__delete", json!({"name": "a"}));
-    let card = s.cards.wait_for(1).await;
-    s.answer(&card.id, Answer::Approve).unwrap();
-    call.await.unwrap();
-    let handles = s.cards.update_handles.lock().unwrap();
-    assert!(handles.len() >= 2, "{handles:?}");
-    assert_eq!(handles[0], "$card1");
-    assert_eq!(handles[1], "$moved");
 }
 
 /// Agent 取消了只读的调用（或者断开了）：取消传给插件，不留一个没人要结果的调用在那里跑。
@@ -412,11 +399,12 @@ async fn writes_run_only_after_the_owner_approves() {
     let result = call.await.unwrap();
     assert_eq!(text(&result), "删掉了 b.txt");
     assert_eq!(*s.notes.deleted.lock().unwrap(), ["b"]);
-    let states = s.cards.states(&card.id);
-    assert_eq!(states.first(), Some(&ConfirmationState::Running));
-    assert!(
-        matches!(states.last(), Some(ConfirmationState::Succeeded { .. })),
-        "{states:?}"
+    assert_eq!(
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Succeeded {
+            message: crate::l10n::text(&s.bus.owner_languages(), "chat-tool-ran", &[]),
+        }),
+        "执行完的卡片是结果"
     );
     assert_eq!(
         s.answer(&card.id, Answer::Reject),
@@ -439,12 +427,9 @@ async fn rejected_and_expired_requests_never_run() {
         failed(&result) && text(&result).contains("拒绝"),
         "{result:?}"
     );
-    let states = s.cards.states(&card.id);
-    assert!(!states.is_empty());
-    assert!(
-        states
-            .iter()
-            .all(|state| *state == ConfirmationState::Rejected)
+    assert_eq!(
+        s.bus.confirmations().card(&card.id).map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
 
     let result = s
@@ -455,7 +440,13 @@ async fn rejected_and_expired_requests_never_run() {
         "{result:?}"
     );
     let expired = s.cards.wait_for(2).await;
-    assert_eq!(s.cards.states(&expired.id), [ConfirmationState::Expired]);
+    assert_eq!(
+        s.bus
+            .confirmations()
+            .card(&expired.id)
+            .map(|card| card.state),
+        Some(ConfirmationState::Expired)
+    );
     assert_eq!(
         s.answer(&expired.id, Answer::Approve),
         Err(AnswerError::Expired)
@@ -545,10 +536,12 @@ async fn the_bot_installs_from_the_official_index_after_the_owner_confirms() {
         journal.map(|p| p.status.clone()),
         Some(PluginStatus::Running)
     );
-    let states = s.cards.states(&card.id);
     assert!(
-        matches!(states.last(), Some(ConfirmationState::Succeeded { .. })),
-        "{states:?}"
+        matches!(
+            s.bus.confirmations().card(&card.id).map(|card| card.state),
+            Some(ConfirmationState::Succeeded { .. })
+        ),
+        "装完的卡片是结果"
     );
 
     // 已经装了、官方索引里没有、要核心不开放的权限的：直接拒绝，不发卡片。

@@ -3,18 +3,22 @@
 //! 发给家人的（如跳数到顶的卡片发给 Bot 的归属人）只有他列得到、答得了，回答别人的卡片回 403 `not_yours`。
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::{ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd};
+use serde::Deserialize;
+use wonton_protocol::{
+    CONFIRMATIONS_WAIT_SECS, ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd,
+};
 
 use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
-use crate::mcp::AnswerError;
+use crate::mcp::{AnswerError, Confirmations};
 use crate::plugin::languages::Languages;
 
 fn mcp_unavailable(langs: &Languages) -> Response {
@@ -25,11 +29,13 @@ fn mcp_unavailable(langs: &Languages) -> Response {
     )
 }
 
-/// `GET /_wonton/api/confirmations`
+/// `GET /_wonton/api/confirmations?after=<revision>`：不带 `after` 立即返回；带了就长轮询，版本变成别的值
+/// （有新变化，或者核心重启后版本变小）时返回，最多 [`CONFIRMATIONS_WAIT_SECS`] 秒。
 pub async fn pending(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
+    Query(params): Query<WaitParams>,
 ) -> Response {
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
@@ -58,14 +64,72 @@ pub async fn pending(
     };
     // 只列发给这个人的卡片：主人的是没写收件人的，家人的是写了他用户名的。
     let recipient = (!person.is_owner()).then_some(person.username.as_str());
-    let confirmations = mcp.bus.confirmations().pending_for(recipient);
+    let confirmations = mcp.bus.confirmations();
+    if let Some(after) = params.after {
+        wait_for_change(confirmations, after).await;
+    }
+    let (confirmations, finished, revision) = confirmations.list(recipient);
     Json(ConfirmationList {
         confirmations,
-        finished: Vec::new(),
-        revision: 0,
+        finished,
+        revision,
         contact_requests,
     })
     .into_response()
+}
+
+/// 长轮询的查询参数。
+#[derive(Debug, Deserialize)]
+pub struct WaitParams {
+    /// 上次见到的列表版本。
+    #[serde(default)]
+    pub after: Option<u64>,
+}
+
+/// 版本还停在 `after` 就挂住，等到变了或者到 [`CONFIRMATIONS_WAIT_SECS`]。`after` 比当前的大（核心重启过）
+/// 时立即返回，客户端见到版本变小就当成新的列表。
+async fn wait_for_change(confirmations: &Confirmations, after: u64) {
+    if after != confirmations.revision() {
+        return;
+    }
+    let mut watcher = confirmations.subscribe();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(CONFIRMATIONS_WAIT_SECS);
+    loop {
+        if *watcher.borrow_and_update() != after {
+            return;
+        }
+        match tokio::time::timeout_at(deadline, watcher.changed()).await {
+            Ok(Ok(())) => {}
+            _ => return,
+        }
+    }
+}
+
+/// `GET /_wonton/api/confirmations/{id}`：等回答的、和结束不到 24 小时的都取得到，再早的 404。点开推送时用它。
+/// 和回答同一道门，只取得到发给自己的（别人的回 403 `not_yours`）。
+pub async fn card(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let Some(mcp) = &gateway.mcp else {
+        return mcp_unavailable(&languages(&headers));
+    };
+    if let Some(not_yours) = not_their_card(&gateway, mcp, peer, &headers, &id) {
+        return not_yours;
+    }
+    match mcp.bus.confirmations().card(&id) {
+        Some(card) => Json(card).into_response(),
+        None => error_response(
+            StatusCode::NOT_FOUND,
+            "not_found",
+            &l10n::text(&languages(&headers), "gateway-confirmation-gone", &[]),
+        ),
+    }
 }
 
 /// `POST /_wonton/confirmations/{id}`
@@ -185,3 +249,7 @@ fn not_the_owners_card(
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "confirmations_tests.rs"]
+mod tests;

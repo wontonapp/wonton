@@ -113,9 +113,10 @@ fn assert_scoped_secrets(b: &Bench, docker: &FakeDocker) {
         assert!(!env.iter().any(|value| value == other), "{id}: {env:?}");
         assert_eq!(docker.creations(&container), 1);
     }
+    // 推出去的卡片和确认表里卡片现在的样子（App 从列表取的就是这些）都不带密钥。
     let cards = b.s.cards.posted.lock().unwrap();
-    let updates = b.s.cards.updates.lock().unwrap();
-    let serialized = serde_json::to_string(&(&*cards, &*updates)).unwrap();
+    let (pending, finished, _) = b.s.bus.confirmations().list(None);
+    let serialized = serde_json::to_string(&(&*cards, &pending, &finished)).unwrap();
     for secret in ["consumer-private-value", "provider-private-value"] {
         assert!(!serialized.contains(secret));
     }
@@ -219,10 +220,12 @@ async fn capability_invalid_or_rejected_confirmation_installs_neither_plugin() {
         .unwrap();
     assert!(failed(&call.await.unwrap()));
     assert_not_installed(&b, &docker);
-    assert!(
-        b.s.cards
-            .states(&card.id)
-            .contains(&ConfirmationState::Rejected)
+    assert_eq!(
+        b.s.bus
+            .confirmations()
+            .card(&card.id)
+            .map(|card| card.state),
+        Some(ConfirmationState::Rejected)
     );
 }
 

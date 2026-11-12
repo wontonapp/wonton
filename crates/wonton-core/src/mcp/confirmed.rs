@@ -124,10 +124,10 @@ impl Bus {
         let name = name.to_owned();
         let task = tokio::spawn(async move {
             // 两张卡片发给同一个人、显示在同一个会话。
-            let (notifier, audience) = bus.audience(&caller, Subject::PluginAdmin).await;
+            let audience = bus.audience(&caller, Subject::PluginAdmin).await;
             let ask = |draft| {
                 bus.confirmations
-                    .ask_as(notifier.clone(), &caller.id, draft, audience.clone())
+                    .ask_as(&caller.id, draft, audience.clone())
             };
             let ticket = match ask(draft).await {
                 Ok(ticket) => ticket,

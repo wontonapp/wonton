@@ -16,7 +16,7 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::json;
 use tokio::net::TcpListener;
-use wonton_protocol::{ConfirmationCard, ConfirmationState};
+use wonton_protocol::ConfirmationCard;
 
 use super::Notifier;
 
@@ -183,16 +183,13 @@ pub async fn serve_notes(notes: Notes) -> String {
     format!("http://{addr}/mcp")
 }
 
-/// 假的卡片通道：记下发出的卡片和每次更新。
+/// 假的卡片通道：记下推送了哪些卡片、推给谁。
 #[derive(Default)]
 pub struct Cards {
     pub posted: Mutex<Vec<ConfirmationCard>>,
-    pub updates: Mutex<Vec<ConfirmationCard>>,
-    /// 每次更新用的标识。
-    pub update_handles: Mutex<Vec<String>>,
-    /// 下一次更新时卡片换了地方，给出这个新标识。
-    pub moves_to: Mutex<Option<String>>,
-    /// 为真时发卡片和更新卡片都失败，模拟 Matrix 不可用。
+    /// 和 `posted` 一一对应：推给了谁（家人的用户名；`None` 是主人）。
+    pub recipients: Mutex<Vec<Option<String>>>,
+    /// 为真时发卡片失败，模拟没有能答的设备。
     pub broken: std::sync::atomic::AtomicBool,
 }
 
@@ -207,43 +204,26 @@ impl Cards {
         }
         panic!("等了 5 秒还没有第 {n} 张卡片");
     }
-
-    /// 卡片 `id` 经历过的状态，按更新的顺序。
-    pub fn states(&self, id: &str) -> Vec<ConfirmationState> {
-        let updates = self.updates.lock().unwrap();
-        updates
-            .iter()
-            .filter(|card| card.id == id)
-            .map(|card| card.state.clone())
-            .collect()
-    }
 }
 
 impl Notifier for Cards {
-    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
+    fn post<'a>(
+        &'a self,
+        recipient: Option<&'a str>,
+        card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<(), String>> {
         async move {
             if self.broken.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err("Matrix 连不上".to_owned());
+                return Err("没有已配对的设备".to_owned());
             }
+            // 两张表在同一把锁下追加，下标才对得上。
             let mut posted = self.posted.lock().unwrap();
             posted.push(card.clone());
-            Ok(format!("$card{}", posted.len()))
-        }
-        .boxed()
-    }
-
-    fn update<'a>(
-        &'a self,
-        handle: &'a str,
-        card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<Option<String>, String>> {
-        async move {
-            if self.broken.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err("Matrix 连不上".to_owned());
-            }
-            self.updates.lock().unwrap().push(card.clone());
-            self.update_handles.lock().unwrap().push(handle.to_owned());
-            Ok(self.moves_to.lock().unwrap().take())
+            self.recipients
+                .lock()
+                .unwrap()
+                .push(recipient.map(str::to_owned));
+            Ok(())
         }
         .boxed()
     }

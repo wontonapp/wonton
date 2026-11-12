@@ -15,7 +15,7 @@ use wonton_protocol::{
 use super::{HopLimitReached, SendLimiter};
 use crate::gateway::Gateway;
 use crate::l10n;
-use crate::mcp::{Audience, Bus, Draft, ListOnly, Notifier};
+use crate::mcp::{Audience, Bus, Draft};
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginManager};
 
@@ -89,15 +89,10 @@ async fn ask_all(
                 thread_id: None,
             }),
         };
-        // 主人的卡片照常进通知房间；家人的卡片只在他的“等你确认”列表里（ADR-0016 的会话内显示）。
-        let notifier = match ask.recipient {
-            None => bus.confirmations().default_notifier_arc(),
-            Some(_) => Arc::new(ListOnly) as Arc<dyn Notifier>,
-        };
         async move {
             let answer = bus
                 .confirmations()
-                .ask_as(notifier, &ask.plugin, draft, audience)
+                .ask_as(&ask.plugin, draft, audience)
                 .await;
             (langs, answer)
         }

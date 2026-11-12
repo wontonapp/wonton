@@ -387,7 +387,7 @@ async fn a_confirmation_push_reaches_only_the_recipients_devices() {
         expires_at_ms: 42,
         origin: None,
     };
-    let sent = push.send_confirmation("alice", &card).await.unwrap();
+    let sent = push.send_confirmation(Some("alice"), &card).await.unwrap();
     assert_eq!(sent, 1, "只发给 alice 的设备");
     assert!(for_owner.take().is_empty(), "主人的设备不收别人的卡片");
     let received = for_alice.take();
@@ -402,7 +402,57 @@ async fn a_confirmation_push_reaches_only_the_recipients_devices() {
     );
 
     // 名下没有设备的人收不到：如实地失败，不假装发出去了。
-    let error = push.send_confirmation("nobody", &card).await.unwrap_err();
+    let error = push
+        .send_confirmation(Some("nobody"), &card)
+        .await
+        .unwrap_err();
     assert!(matches!(error, PushError::Invalid(_)), "{error}");
     assert!(for_alice.take().is_empty());
+
+    // 主人的卡片（收件人为空）只到主人的设备。
+    assert_eq!(push.send_confirmation(None, &card).await.unwrap(), 1);
+    assert_eq!(for_owner.take().len(), 1);
+    assert!(for_alice.take().is_empty(), "家人的设备不收主人的卡片");
+}
+
+/// 收件人名下没有任何已配对设备时开卡：没人能答，调用方拿到 `confirmation_unavailable`，卡片不留在列表里
+/// （ADR-0016）。
+#[tokio::test]
+async fn without_a_paired_device_nobody_can_confirm() {
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
+    let server = SecretKey::generate().public();
+    let push = Arc::new(Push::open(dir.path().join("push.json"), devices.clone(), server).unwrap());
+    let confirmations = crate::mcp::Confirmations::new(
+        Arc::new(crate::mcp::DevicePush::new(push)),
+        Duration::from_secs(5),
+    );
+    let caller = crate::plugin::PluginId::parse("app.example.notes").unwrap();
+    let draft = || crate::mcp::Draft {
+        title: "Hermes 想卸载 Grafana".into(),
+        lines: Vec::new(),
+        choices: Vec::new(),
+        scope: None,
+        plugin_id: None,
+        secret_inputs: Vec::new(),
+        settings: None,
+    };
+    let refusal = confirmations.ask(&caller, draft()).await.err().unwrap();
+    assert_eq!(refusal.kind(), "confirmation_unavailable");
+    // 主人有设备了，发给没有设备的家人的卡片照样没人能答。
+    devices.add(SecretKey::generate().public(), None).unwrap();
+    let audience = crate::mcp::Audience {
+        recipient: Some("alice".into()),
+        ..Default::default()
+    };
+    let refusal = confirmations
+        .ask_as(&caller, draft(), audience)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(refusal.kind(), "confirmation_unavailable");
+    assert!(confirmations.list(None).0.is_empty());
+    assert!(confirmations.list(Some("alice")).0.is_empty());
 }
