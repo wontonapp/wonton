@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginRuntime, PluginScope,
@@ -57,6 +58,9 @@ pub struct PluginDetail {
     pub release_notes: Option<String>,
     /// 安装时要授予的权限。
     pub permissions: Vec<PermissionLine>,
+    /// 这个版本的网页能当 Matrix widget 在房间里做什么（ADR-0096）；不是 widget 时为空。
+    #[serde(default)]
+    pub widget_capabilities: Vec<WidgetCapability>,
     /// 对宿主的要求和这台主机满不满足。
     pub requirements: Vec<RequirementLine>,
     /// 主人要填的密钥和填没填（ADR-0064），按清单里的顺序；装着的版本才列，`input` 项才在里面。没有值。

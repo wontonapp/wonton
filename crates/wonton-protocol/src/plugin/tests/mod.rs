@@ -192,6 +192,11 @@ fn preview() -> InstallPreview {
                 Some(PermissionRisk::VeryHigh),
             ),
         ],
+        widget_capabilities: vec![WidgetCapability {
+            capability: "org.matrix.msc2762.receive.event:m.room.message".into(),
+            level: WidgetCapabilityLevel::High,
+            added: false,
+        }],
         secret_inputs: vec![SecretInput {
             name: "brave_key".into(),
             title: "Brave Search API key".into(),
@@ -282,6 +287,7 @@ fn detail() -> PluginDetail {
             "读共享文件夹 photos",
             None,
         )],
+        widget_capabilities: vec![],
         requirements: vec![RequirementLine {
             text: "需要 2 GB 内存".into(),
             status: RequirementStatus::Unmet,

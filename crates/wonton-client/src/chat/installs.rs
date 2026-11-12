@@ -355,6 +355,7 @@ mod tests {
             written_by: None,
             author: None,
             permissions: Vec::new(),
+            widget_capabilities: Vec::new(),
             secret_inputs: Vec::new(),
             settings: None,
             notices: Vec::new(),

@@ -64,3 +64,5 @@ install-unreviewed-provider = 雲吞沒有審核過這個應用程式，程式�
 install-unreviewed-provider-via = 雲吞沒有審核過這個應用程式，程式碼和映像檔由 { $provider } 提供，經 { $host } 的索引
 install-unreviewed-upload-author = 雲吞沒有審核過這個應用程式，它來自你上傳的檔案，清單裡寫的作者是 { $author }，無法核實
 install-unreviewed-upload = 雲吞沒有審核過這個應用程式，它來自你上傳的檔案，清單裡沒寫作者
+plugin-widget-high = 這個應用程式的網頁能在你開啟它的房間裡讀到聊天內容，或以你的名義傳訊息、收回訊息。
+plugin-widget-normal = 這個應用程式的網頁還能收發通話和給裝置的訊息、定時發出事件、查通話伺服器，並拿到你的登入憑證。
