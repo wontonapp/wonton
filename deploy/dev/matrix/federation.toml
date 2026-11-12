@@ -1,6 +1,7 @@
 # 开发栈的联邦选项（ADR-0050），第二份配置：compose 里 `-c` 给两次，同键覆盖 tuwunel.toml。
 # 只在这里挂载：crates/wonton-matrix 的测试用基础配置起 Tuwunel（127.0.0.1 上联邦开不了）。
 # 选项与正式安装生成的 tuwunel.toml 保持一致，见 crates/wonton-core/src/install.rs。
+# 测试还跑在 1.9.4 上，这里用两版都认的扁平写法（2.0 的 `[global.*]` 分组表 1.9.4 会整个忽略）。
 
 [global]
 # 8008 明文给核心网关（客户端接口），8448 是联邦端口。

@@ -46,6 +46,18 @@ fn docker_test_images_are_in_the_mirror_list() {
             }
         }
     }
+    // wonton-matrix 的 testkit 从 compose 解析 Tuwunel 的镜像（源码里没有字面量，上面的扫描看不见）：
+    // 这里按同样的规则取一份，缺了清单 CI 还是会在测试跑到一半才拉不到镜像。
+    let compose = std::fs::read_to_string(workspace.join("deploy/dev/matrix/compose.yaml"))
+        .expect("deploy/dev/matrix/compose.yaml 要能读");
+    let compose_ref = compose
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("image: "))
+        .expect("deploy/dev/matrix/compose.yaml 里应有带标签的镜像");
+    let mapped = wonton_test_images::image(compose_ref);
+    if !listed.lines().any(|known| known == mapped) {
+        missing.push(format!("deploy/dev/matrix/compose.yaml: {compose_ref}"));
+    }
     match previous {
         Some(value) => unsafe { std::env::set_var("WONTON_TEST_IMAGES", value) },
         None => unsafe { std::env::remove_var("WONTON_TEST_IMAGES") },
