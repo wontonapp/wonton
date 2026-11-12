@@ -81,6 +81,10 @@ pub struct PluginManager {
     pub(super) http: HttpClient,
     pub(super) oidc: Option<Hydra>,
     pub(super) matrix: Option<Arc<Matrix>>,
+    /// Tuwunel 的服务器名，接上 Matrix 时一起定下；`matrix_rtc` 提供方要它（见 [`super::matrix_rtc`]）。
+    pub(super) matrix_server_name: Option<String>,
+    /// 给 `matrix_rtc` 别名签证书、给提供方写证书包的 CA；接了 Matrix 才有。
+    pub(super) matrix_rtc_ca: Option<std::sync::Arc<super::matrix_rtc_ca::CoreCa>>,
     pub(super) mailpit: Option<Arc<crate::mailbox::Component>>,
     pub(super) profiles: super::bot_profile::ProfileState,
     pub(super) cfg: LifecycleConfig,
@@ -173,6 +177,8 @@ impl PluginManager {
             http,
             oidc,
             matrix: None,
+            matrix_server_name: None,
+            matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
             host: HostPaths::new(host_dev),
