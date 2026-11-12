@@ -7,7 +7,7 @@ use matrix_sdk::{
     ruma::{OwnedMxcUri, events::room::MediaSource},
 };
 
-use crate::{Error, ImageContent, MatrixSession, Result};
+use crate::{ChatRoom, Error, FileContent, ImageContent, MatrixSession, Result};
 
 /// 把未加密的 Matrix 媒体地址编成可交给 [`MatrixSession::download_media`] 的句柄。
 pub fn media_token(url: &str) -> Result<String> {
@@ -32,6 +32,13 @@ impl ImageContent {
     }
 }
 
+impl FileContent {
+    /// 取这个文件用的句柄，交给 [`MatrixSession::download_media`]。
+    pub fn media_token(&self) -> String {
+        serde_json::to_string(&self.source).expect("媒体来源总能编成 JSON")
+    }
+}
+
 impl MatrixSession {
     /// 用当前登录账号上传媒体，返回服务器分配的 `mxc://` 地址。
     pub async fn upload_media(&self, mime_type: &str, data: Vec<u8>) -> Result<String> {
@@ -49,18 +56,34 @@ impl MatrixSession {
     /// 凭 [`ImageContent::media_token`] 给出的句柄下载原文件。加密附件在本机解密；下载过的文件存在本地
     /// 存储里，再取不用重新下载。
     pub async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
-        let source: MediaSource = serde_json::from_str(token)
-            .map_err(|error| Error::InvalidInput(format!("媒体句柄无效：{error}")))?;
-        let request = MediaRequestParameters {
-            source,
-            format: MediaFormat::File,
-        };
         Ok(self
             .client
             .media()
-            .get_media_content(&request, true)
+            .get_media_content(&media_request(token)?, true)
             .await?)
     }
+}
+
+impl ChatRoom {
+    /// 凭媒体句柄下载原文件，加密附件在本机解密；规则同 [`MatrixSession::download_media`]。
+    pub async fn download_media(&self, token: &str) -> Result<Vec<u8>> {
+        Ok(self
+            .room
+            .client()
+            .media()
+            .get_media_content(&media_request(token)?, true)
+            .await?)
+    }
+}
+
+/// 把句柄还原成媒体请求（[`MediaFormat::File`]，即原图原文件，加密的带密钥）。
+fn media_request(token: &str) -> Result<MediaRequestParameters> {
+    let source: MediaSource = serde_json::from_str(token)
+        .map_err(|error| Error::InvalidInput(format!("媒体句柄无效：{error}")))?;
+    Ok(MediaRequestParameters {
+        source,
+        format: MediaFormat::File,
+    })
 }
 
 #[cfg(test)]

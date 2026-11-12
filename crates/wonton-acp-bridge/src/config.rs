@@ -3,10 +3,13 @@ use std::{path::PathBuf, time::Duration};
 use anyhow::{Context, Result, bail};
 use wonton_matrix::{OwnedRoomId, OwnedUserId};
 
-/// 桥与 Agent 之间 stdin/stdout 单行帧的上限。实测 qwen-code 会把全部技能全文
-/// （availableSkillDetails，约 650 KiB）塞进一条 available_commands_update；
-/// 上限必须容下这类富负载，否则整条连接被误判为协议错误而断开。
-pub const MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+/// 桥与 Agent 之间 stdin/stdout 单行帧的上限：32 MiB。
+///
+/// 文字轮用不了这么大。实测 qwen-code 会把全部技能全文（availableSkillDetails，
+/// 约 650 KiB）塞进一条 available_commands_update，上限必须容下这类富负载，否则
+/// 整条连接被误判为协议错误而断开；放宽到 32 MiB 是为了装下附件轮里 20 MiB 图片
+/// 的 base64（约 27 MiB，见 `bridge/attachments.rs` 的 `MAX_ATTACHMENT_BYTES`）。
+pub const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 
 /// 桥会发的工作模式全集（负责人的定）：写死已知安全的值，挡住 Claude Code 的
 /// `bypassPermissions`、Codex 的 `full-access` 这类不问就做的档位；`auto` 在 Codex
