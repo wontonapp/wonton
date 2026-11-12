@@ -1,8 +1,8 @@
 name: nightly-ui
 
 # 界面测试的夜跑：每晚在模拟器上把两端的 UI 测试走一遍，失败自动开 issue。
-# 只定时和手动跑，不挂 PR 和合并队列，也不设必需检查——先连续两周稳定（失败都查清是真问题），
-# 再把“启动到首屏 + 一个关键流程”升进合并队列。
+# 只定时和手动跑，不挂 PR，也不设必需检查——先连续两周稳定（失败都查清是真问题），
+# 再把“启动到首屏 + 一个关键流程”升进 PR 的必需检查。
 #
 # 时间直接沿用现有定时（ios.yml 的 30 4 * * *、android.yml 的 0 4 * * *）：一个工作流两个 cron，
 # 作业按 github.event.schedule 分给自己那一条，不另占时间。手动触发两端都跑。
@@ -41,9 +41,9 @@ jobs:
       issues: write
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 要后端的走屏（好友、粘贴、安装行、图片查看、Bot 资料）读这两个变量；没有就 XCTSkip。
-      PAIRING_CODE: ${{ inputs.pairing_code }}
-      PAIR_CODES: ${{ inputs.pairing_code }}
+      # 要后端的走屏（好友、粘贴、安装行、图片查看、Bot 资料）读 PAIRING_CODE；没有就 XCTSkip。
+      # xcodebuild 只把 TEST_RUNNER_ 开头的变量（去掉前缀）交给模拟器里的测试进程。
+      TEST_RUNNER_PAIRING_CODE: ${{ inputs.pairing_code }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

@@ -12,6 +12,7 @@ pub mod test_docker;
 #[cfg(test)]
 mod test_docker_check;
 
+pub mod agent_chain;
 mod bot_activity;
 pub mod bot_media;
 

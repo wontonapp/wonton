@@ -28,6 +28,8 @@ mod bot_activity;
 mod bot_contacts;
 mod bot_profile;
 mod bots;
+mod capabilities;
+mod capability_settings;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -536,6 +538,9 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::Matrix => matrix::client_request(&gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
+        HostKind::PluginCapability(capability) => {
+            capabilities::request(&gateway, &capability, req).await
+        }
         HostKind::Push => push::gateway_request(&gateway, req).await,
         HostKind::PluginMcp => mcp::request(&gateway, req).await,
         HostKind::PluginHealth => health::request(&gateway, req).await,
@@ -678,6 +683,10 @@ mod bot_profile_tests;
 #[cfg(test)]
 mod bots_tests;
 #[cfg(test)]
+mod capabilities_tests;
+#[cfg(test)]
+mod capability_uninstall_tests;
+#[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]
 mod degraded_webui_tests;
@@ -761,3 +770,5 @@ mod tunnel_bot_tests;
 mod tunnel_tests;
 #[cfg(test)]
 mod tusd_tests;
+#[cfg(test)]
+mod upload_settings_tests;

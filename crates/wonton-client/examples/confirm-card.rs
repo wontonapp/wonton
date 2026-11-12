@@ -11,6 +11,7 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
+use wonton_protocol::TimelineTarget;
 
 use wonton_client::{
     Action, Answer, ChatAccount, ChatSync, ClientCore, ConfirmationState, ConfirmationView,
@@ -64,7 +65,10 @@ async fn run(dir: &str, code: &str, answer: Answer) -> Result<ConfirmationState,
     let room_id = wonton_room(&core).await?;
     println!("Wonton 私聊：{room_id}");
     let timeline = core
-        .subscribe_timeline(room_id)
+        .subscribe_timeline(TimelineTarget {
+            room_id,
+            thread_root: None,
+        })
         .await
         .map_err(|e| e.to_string())?;
     let mut items = Vec::new();

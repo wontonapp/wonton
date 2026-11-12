@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.TabRef
 import app.wonton.protocol.AddedTools
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.PluginFailure
@@ -274,3 +275,16 @@ fun reconfirmation(task: PluginTask, plugins: PluginsState): PluginConfirmation?
         PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(task.id)
         PluginOperation.UNINSTALL -> null
     }
+
+/** 结果不确定时去已安装列表看：关掉叠着的页面，回到主屏。
+ *  是 [AppNavigation] 的扩展：装完回应用列表和插件详情、商店的接线同一处，也让 AppNavigation 的成员函数数贴住门禁。 */
+internal fun AppNavigation.checkInstalled() {
+    appsPage = HomePage.LAUNCHER
+    settingsOverlay = false
+    plugins.detail = null
+    plugins.confirmation = null
+    plugins.changingVersion = null
+    plugins.addingSource = false
+    plugins.uninstalling = null
+    tabs.send(Action.SelectTab(TabRef.Apps))
+}

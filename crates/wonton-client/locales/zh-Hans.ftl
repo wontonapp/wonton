@@ -158,6 +158,14 @@ chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
 # 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
 chat-empty-message = 消息不能为空。
+composer-tray-full = 附件区最多放 { $max } 个附件。
+composer-has-failed = 附件区里有没传上去的附件，先重试或删掉它。
+composer-attachment-not-found = 找不到这个附件，可能已经删掉或发出去了。
+composer-outgoing-not-found = 找不到这条待发消息，可能已经交出去了。
+composer-store-failed = 附件区存不到手机上（{ $path }）：{ $reason }
+composer-attachment-failed = 附件“{ $name }”没传上去。
+composer-transfer-gone = 这个文件的上传记录不见了，请重试。
+composer-upload-record-unreadable = 照片的上传记录读不懂：{ $reason }
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
@@ -169,6 +177,7 @@ chat-layout-change-failed = 改显示方式没成功：{ $reason }
 chat-session-device-revoked = 这台设备在 Matrix 上已被吊销，需要主人重新配对。
 
 # 壳把不认识的操作分给聊天时显示。
+side-chat-not-ready = 这个版本的客户端核心还不支持旁聊。
 chat-invalid-action = 不是聊天操作
 # 发起私聊时给的 ID 不像 @名字:服务器 时显示。
 chat-invalid-user-id = ID 的格式不对，应该像 @名字:服务器
@@ -183,6 +192,7 @@ chat-not-signed-in = 还没有登录 Matrix
 chat-send-no-response = Matrix 服务器没有回应
 # $error 是房间 ID 解析器的原始错误。
 chat-invalid-room-id = 房间 ID 不合法：{ $error }
+chat-link-room-not-joined = 还没加入这个房间，请先在聊天列表里接受邀请。
 # 往只放通知的房间里发东西时显示。
 chat-read-only-room = 这个房间只放通知，不能发消息
 # $room 是原始的房间 ID。
@@ -511,6 +521,8 @@ plugins-start-busy = { $id } 正在启动、安装、更新或卸载
 tabs-bridge-page-not-open = 这个插件页面没有打开或固定
 tabs-bridge-invalid-environment = 页面栏高和安全区必须是有限的非负数
 tabs-bridge-public-page = 公网网页没有 Wonton 的桥。
+plugin-media-not-asked = 这个插件页面没有保存摄像头和麦克风的决定
+plugin-media-save-failed = 写不了摄像头和麦克风的记录文件 { $path }：{ $reason }
 
 # 聊天的连接问题（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失败操作的消息。
 chat-not-connected = 连上家里的服务器后再试

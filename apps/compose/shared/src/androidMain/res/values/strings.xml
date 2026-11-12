@@ -872,6 +872,60 @@
     </plurals>
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">Update to %1$s</string>
+    <!-- Row in the server list that opens signing in with an existing Matrix account. No arguments; short label. -->
+    <string name="matrix_login_entry">Sign in with a Matrix account</string>
+    <!-- Navigation title of the Matrix sign-in page. No arguments; fits a phone navigation bar. -->
+    <string name="matrix_login_title">Sign in with Matrix</string>
+    <!-- Field label for the Matrix server to sign in to, a server name like matrix.org or an https URL. No arguments; short label. -->
+    <string name="matrix_login_server">Server</string>
+    <!-- Button that asks the core to check the server and list the ways to sign in. No arguments; short button label. -->
+    <string name="matrix_login_continue">Continue</string>
+    <!-- Progress line while the core contacts the server to discover the sign-in methods. Argument: the server name or URL the user chose. -->
+    <string name="matrix_login_contacting">Contacting %1$s</string>
+    <!-- Button for the password method in the list of ways the server supports. No arguments; short button label. -->
+    <string name="matrix_login_method_password">Sign in with password</string>
+    <!-- Button for the server's own OIDC sign-in, which opens in the system browser. No arguments; short button label. -->
+    <string name="matrix_login_method_oidc">Continue in browser</string>
+    <!-- Field label for the full Matrix user ID, like @user:example.org. No arguments; short label. -->
+    <string name="matrix_login_user_id">Matrix user ID</string>
+    <!-- Field label for the account password. No arguments; short label. -->
+    <string name="matrix_login_password">Password</string>
+    <!-- Button that submits the user ID and password to the server. No arguments; short button label. -->
+    <string name="matrix_login_sign_in">Sign in</string>
+    <!-- Progress line while the core signs in with the password. No arguments. -->
+    <string name="matrix_login_signing_in">Signing in</string>
+    <!-- Progress line while the core stores the signed-in session on this phone. No arguments. -->
+    <string name="matrix_login_saving">Saving the session</string>
+    <!-- Progress line while the user finishes the sign-in in the system browser. No arguments. -->
+    <string name="matrix_login_finish_in_browser">Finish signing in in the browser</string>
+    <!-- Button that opens the browser again for the pending OIDC sign-in. No arguments; short button label. -->
+    <string name="matrix_login_open_browser">Open browser</string>
+    <!-- Notice when the phone has no app that can open the browser link. No arguments. -->
+    <string name="matrix_login_no_browser">No browser app to open the sign-in page</string>
+    <!-- Failure title: the server name or URL doesn't point to a Matrix homeserver. No arguments. -->
+    <string name="matrix_login_failed_invalid_homeserver">Can’t find a Matrix server at this address</string>
+    <!-- Failure title: the server couldn't be reached to discover the sign-in methods. No arguments. -->
+    <string name="matrix_login_failed_discovery">Couldn’t reach the server</string>
+    <!-- Failure title: the server offers none of the sign-in methods this app supports. No arguments. -->
+    <string name="matrix_login_failed_unsupported_method">This server has no supported way to sign in</string>
+    <!-- Failure title: the network is unavailable. No arguments. -->
+    <string name="matrix_login_failed_transport">The network is unavailable</string>
+    <!-- Failure title: the server rejected the user ID or password. No arguments. -->
+    <string name="matrix_login_failed_invalid_credentials">The user ID or password is wrong</string>
+    <!-- Failure title: the server rejected the browser sign-in. No arguments. -->
+    <string name="matrix_login_failed_oidc_rejected">The server rejected the browser sign-in</string>
+    <!-- Failure title: the browser came back without a complete sign-in result. No arguments. -->
+    <string name="matrix_login_failed_invalid_callback">The sign-in result from the browser is incomplete</string>
+    <!-- Failure title: the sign-in took too long or expired on the server. No arguments. -->
+    <string name="matrix_login_failed_expired">The sign-in expired, start over</string>
+    <!-- Failure title: signing in worked but saving the session on this phone failed. No arguments. -->
+    <string name="matrix_login_failed_storage">Signed in, but saving it on this phone failed</string>
+    <!-- Failure title: the homeserver or its sign-in service returned an error (5xx, rate limiting, an unexpected reply), not a problem with the credentials or input. No arguments. -->
+    <string name="matrix_login_failed_upstream">The server or its sign-in service had a problem</string>
+    <!-- Failure title for every category the app doesn't know. No arguments. -->
+    <string name="matrix_login_failed_other">Signing in failed</string>
+    <!-- Notice when the core reports a state the app doesn't know. No arguments. -->
+    <string name="matrix_login_unknown_state">Signing in can’t continue right now</string>
     <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
     <string name="message_clip_label">Message</string>
     <!-- Item in the message menu: copy the message text. Android only. -->
@@ -1116,6 +1170,8 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>
+    <!-- Detail-page switch for the remembered camera/microphone decision of its web page. -->
+    <string name="plugin_media_title">Camera and microphone for its web page</string>
     <!-- Button that revokes one save permission. No arguments; short label. -->
     <string name="plugin_save_revoke">Revoke</string>
     <!-- Section title and row for opening an app\'s settings page. No arguments. -->
@@ -1257,6 +1313,7 @@
     <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
     <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
     <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
     <!-- Problem title when the appearance settings couldn't be saved on the home server. -->
     <string name="problem_appearance_title">Appearance settings weren\'t saved</string>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
@@ -1623,6 +1680,15 @@
     <string name="tab_load_upstream">Can\'t open the app\'s page</string>
     <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->
     <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from the navigation bar</string>
+    <!-- Camera and microphone permission for plugin web pages. Arguments: app title. -->
+    <string name="tab_media_prompt_camera">Allow %1$s to use your camera?</string>
+    <string name="tab_media_prompt_microphone">Allow %1$s to use your microphone?</string>
+    <string name="tab_media_prompt_both">Allow %1$s to use your camera and microphone?</string>
+    <string name="tab_media_allow">Allow</string>
+    <string name="tab_media_deny">Don\'t allow</string>
+    <string name="tab_media_system_denied_title">Camera or microphone unavailable</string>
+    <string name="tab_media_system_denied">Wonton doesn\'t have camera or microphone permission in system settings. The page was denied.</string>
+    <string name="tab_media_system_settings">Open settings</string>
     <!-- Problem title when the tab bar settings can't be read. No arguments. -->
     <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
     <!-- Button that opens the navigation bar settings from that problem. No arguments. -->
@@ -1996,6 +2062,12 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
+    <string name="composer_file_unreadable">Couldn\'t read this file. Copy it again or choose another file.</string>
+    <string name="message_link_browser">Open in browser</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
+    <string name="message_link_share_failed">Couldn\'t share this link</string>
+    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
     <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
     <string name="contacts_title">Contacts</string>
     <!-- Toolbar button and sheet title for adding a contact to this bot. -->

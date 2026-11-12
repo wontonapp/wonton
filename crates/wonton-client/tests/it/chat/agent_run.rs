@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 use wonton_client::{Action, Answer, MessageContent, TimelineContent};
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Membership, RelationType};
-use wonton_protocol::{AgentRunChoice, AgentRunState, BotActivityFacts};
+use wonton_protocol::{
+    AgentRunChoice, AgentRunState, BotActivityFacts, TimelineAction, TimelineTarget,
+};
 
 use super::confirmation::{card, content, core_room, in_ten_minutes, joined_direct_chat, send};
 use super::support::{Home, Phone, Timeline};
@@ -113,10 +115,15 @@ async fn a_round_with_edits_is_one_agent_run_following_the_latest_edit() {
 
     // 主人发请求，Bot 对它发一条状态消息，再编辑两次推进到完成。
     phone
-        .dispatch(Action::SendText {
-            room_id: room.to_string(),
-            body: "帮我查天气".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room.to_string(),
+                    thread_root: None,
+                },
+                body: "帮我查天气".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     let request: String = timeline

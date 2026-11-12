@@ -19,6 +19,9 @@
     <!-- 扫家里服务器上的配对二维码。没有相机的设备也能装，粘贴配对码即可。 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- 插件网页（通话等）要麦克风；和相机一样没有也不挡安装，网页拿到拒绝。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），WebView 要放开明文。 -->
     <application
@@ -27,6 +30,7 @@
         android:label="@string/app_name"
         android:theme="@style/Theme.Wonton"
         android:localeConfig="@xml/locales_config"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
@@ -42,6 +46,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="wonton" />
+            </intent-filter>
+            <!-- Matrix 登录的 OIDC 回调（MSC2965）：scheme 是 client_uri 域名的反写。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="io.github.wontonapp" />
             </intent-filter>
             <!-- 分享一句话给默认 Agent（iOS 快捷指令“问 Bot”同）：发给 Action.AskAgent。 -->
             <intent-filter android:label="@string/shortcut_agent_chat">

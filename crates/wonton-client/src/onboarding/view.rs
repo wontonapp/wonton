@@ -303,6 +303,7 @@ mod tests {
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,
                 preview: None,
+                side_chats: false,
                 unread_count: 0,
             }],
             problem: None,

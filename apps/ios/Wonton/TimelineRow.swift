@@ -50,6 +50,13 @@ struct TimelineRow: View {
                     .foregroundStyle(Color(colors.accentInk))
                 edge
             }
+        case let .sideChat(card):
+            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
+            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案，过 ui-text 检查。
+            note(Text(card.title))
+        case let .sideChatResult(_, title, _):
+            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
+            note(Text(title))
         case .timelineStart:
             note(Text(.timelineStart))
         }
@@ -134,27 +141,27 @@ private struct MessageBubble: View {
             Button {
                 UIPasteboard.general.string = text
             } label: {
-                Label { Text(.messageCopy) } icon: { WontonIcon.copy.image }
+                Label { Text(.messageCopy) } icon: { WontonIcon.copy.view(size: WontonTheme.size.iconSmall) }
             }
         case let .reply(quoted):
             Button {
                 reply(quoted)
             } label: {
-                Label { Text(.messageReply) } icon: { WontonIcon.reply.image }
+                Label { Text(.messageReply) } icon: { WontonIcon.reply.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageReply")
         case .forward:
             Button {
                 forward()
             } label: {
-                Label { Text(.messageForward) } icon: { WontonIcon.forward.image }
+                Label { Text(.messageForward) } icon: { WontonIcon.forward.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
             Button(role: .destructive) {
                 redact()
             } label: {
-                Label { Text(.messageRedact) } icon: { WontonIcon.trash.image }
+                Label { Text(.messageRedact) } icon: { WontonIcon.trash.view(size: WontonTheme.size.iconSmall) }
             }
             .accessibilityIdentifier("messageRedact")
         // 核心和 App 分开升级时，不认识的菜单项不显示。

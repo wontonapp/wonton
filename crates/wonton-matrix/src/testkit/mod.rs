@@ -378,6 +378,21 @@ impl TempStore {
             passphrase: Some(self.passphrase.clone()),
         }
     }
+
+    /// 删掉整个存储目录，模拟数据卷被删、容器重建没挂卷；之后的会话从空存储重新开始。
+    pub fn wipe(&self) {
+        std::fs::remove_dir_all(&self.path).expect("删除存储目录");
+    }
+
+    /// 把存储目录里的文件写成垃圾，模拟 SQLite 损坏；之后的会话打不开存储。
+    pub fn corrupt(&self) {
+        for entry in std::fs::read_dir(&self.path).expect("读存储目录") {
+            let entry = entry.expect("读存储目录项");
+            if entry.path().is_file() {
+                std::fs::write(entry.path(), b"not a sqlite database").expect("写坏存储文件");
+            }
+        }
+    }
 }
 
 impl Drop for TempStore {

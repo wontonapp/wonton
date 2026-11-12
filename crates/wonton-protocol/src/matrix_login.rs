@@ -37,6 +37,9 @@ pub struct MatrixLoginViewModel {
     pub homeserver: String,
     /// 只含核心发现并支持的方法；发现结束前为空，未知方法不显示。
     pub methods: Vec<MatrixLoginMethod>,
+    /// 核心接受的 OIDC 回调 URI。壳按它注册平台回调（iOS 取 scheme 给 `ASWebAuthenticationSession`），
+    /// 再原样放进 `MatrixOidcLogin.redirect_uri`，不自己另写一份。
+    pub oidc_redirect_uri: String,
     pub state: MatrixLoginState,
 }
 
