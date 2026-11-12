@@ -162,7 +162,7 @@ const FILE_EXTENSIONS: [&str; 25] = [
 ];
 
 /// matrix.to 的用户、房间和事件永久链接。别的 matrix.to 地址（没有片段、指向客户端选择页的）是外部网页。
-fn matrix_target(url: &Url) -> Option<MatrixTarget> {
+pub(crate) fn matrix_target(url: &Url) -> Option<MatrixTarget> {
     if !matches!(url.scheme(), "http" | "https") || url.host_str()? != "matrix.to" {
         return None;
     }

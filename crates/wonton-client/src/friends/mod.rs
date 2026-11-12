@@ -26,10 +26,10 @@ use url::Url;
 use wonton_protocol::{
     Action, CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure,
     FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState, FriendsViewModel,
-    ProxySettings,
+    MatrixTarget, ProxySettings,
 };
 
-use crate::chat::ChatLink;
+use crate::chat::{ChatLink, matrix_target};
 use crate::home::HomeLink;
 use crate::l10n::text;
 use crate::scope::reuse;
@@ -74,6 +74,7 @@ impl FriendsLink {
             outgoing: Vec::new(),
             blocked: Vec::new(),
             can_block_federation: false,
+            my_link: None,
         };
         Ok(Arc::new(Self {
             handle,
@@ -220,6 +221,7 @@ impl FriendsLink {
             outgoing: sync.outgoing,
             blocked,
             can_block_federation,
+            my_link: Some(format!("https://matrix.to/#/{}", session.user_id())),
         })
     }
 
@@ -253,8 +255,7 @@ impl FriendsLink {
     }
 
     fn add(self: &Arc<Self>, user_id: String) {
-        let user_id = user_id.trim().to_owned();
-        if !user_id.starts_with('@') || !user_id.contains(':') {
+        let Some(user_id) = friend_user_id(&user_id) else {
             self.view.send_modify(|view| {
                 view.state = FriendsState::Failed {
                     problem: FriendProblem {
@@ -266,7 +267,7 @@ impl FriendsLink {
                 }
             });
             return;
-        }
+        };
         let link = self.clone();
         self.spawn(async move {
             link.view
@@ -599,6 +600,19 @@ fn name_of(joined: &[(String, String, u64)], user_id: &str) -> Option<String> {
         .iter()
         .find(|(id, _, _)| id == user_id)
         .map(|(_, name, _)| name.clone())
+}
+
+/// 加好友的输入：完整用户 ID，或 matrix.to 的用户链接（含百分号转义，同 [`matrix_target`] 的解析）。
+/// 归一成用户 ID；房间链接、普通网址和别的都不是用户，不收。完整校验仍由后面的用户 ID 解析做。
+fn friend_user_id(input: &str) -> Option<String> {
+    let input = input.trim();
+    if let Ok(url) = Url::parse(input) {
+        return match matrix_target(&url) {
+            Some(MatrixTarget::User { user_id }) => Some(user_id),
+            _ => None,
+        };
+    }
+    (input.starts_with('@') && input.contains(':')).then(|| input.to_owned())
 }
 
 /// 一次同步里数出来的东西：请求、已加入的好友私聊、屏蔽名单。

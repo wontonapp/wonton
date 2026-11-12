@@ -26,6 +26,8 @@ pub struct FriendsViewModel {
     pub blocked: Vec<FriendBlock>,
     /// 当前账号能否管理整台 Wonton 的联邦黑名单；不等于个人的邀请屏蔽。
     pub can_block_federation: bool,
+    /// 自己的 matrix.to 用户链接，给壳画“我的二维码”；没登录到 Matrix 时没有。
+    pub my_link: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

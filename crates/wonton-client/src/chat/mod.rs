@@ -67,7 +67,7 @@ use wonton_protocol::{
 
 pub use bots::bot_current_avatar;
 pub(crate) use confirmation::{PushedCard, core_account, pushed_card};
-pub(crate) use links::LinkTargets;
+pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
 pub use timeline::TimelineSubscription;
 pub(crate) use view::{failure, summary};
