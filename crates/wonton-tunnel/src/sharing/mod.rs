@@ -16,7 +16,7 @@
 mod client;
 mod frame;
 mod proxy;
-mod proxy_hub;
+pub(crate) mod proxy_hub;
 mod server;
 mod stream;
 

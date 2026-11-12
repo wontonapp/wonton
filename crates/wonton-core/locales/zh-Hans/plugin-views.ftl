@@ -48,7 +48,7 @@ permission-notice-devices = 这个应用可以访问你交给它的宿主设备�
 # 应用详情里的提示。
 plugin-firewall-notice = 本机防火墙可能挡住了外来连接，局域网设备可能连不进来
 plugin-egress-proxy-select = 在出网代理设置里选它
-plugin-cross-origin-isolation = 这个应用放宽了跨源隔离：在 Android 上，它的页面可能和别的网页共用进程。
+plugin-cross-origin-isolation = 这个应用要跨源隔离：在 Android 上，它的页面会在浏览器里打开。
 
 # 安装和更新预览里的提示与装不了的原因。
 install-retained-data = 这台服务器上留着 { $id } 以前的数据和密钥，这个应用装上后能读到它们；不想这样就先彻底删除

@@ -101,7 +101,7 @@ internal fun PanelPage(
             tabFeaturesSupported()
         }
     }
-    val crossOriginBlocked = !public && isCrossOriginIsolationBlocked(tabs.installedPlugin(tab))
+    val crossOriginBlocked = !public && page.opensInBrowser
     val openLink = externalLinkOpener { state.problem = it }
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         val loadable = page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)

@@ -176,7 +176,30 @@ fn build_url_page(
     )
 }
 
+/// 本机插件的页面要跨源隔离、这个平台的 WebView 给不了时交给系统浏览器（ADR-0033）。
 fn build_page(
+    state: &TabsState,
+    placed: &PlacedTab,
+    stored: &StoredItem,
+    plugin: Option<&InstalledPlugin>,
+    page_id: Option<&str>,
+    plugins: &PluginsViewModel,
+    pin: Option<&wonton_protocol::BotPanelPin>,
+) -> TabPage {
+    let page = compose_page(state, placed, stored, plugin, page_id, plugins, pin);
+    let own_page = matches!(
+        stored.tab,
+        TabRef::Plugin { .. } | TabRef::PluginPath { .. }
+    );
+    let browser =
+        plugin.is_some_and(|p| crate::browser::opens_in_browser(p, crate::browser::ENGINE));
+    TabPage {
+        opens_in_browser: own_page && browser,
+        ..page
+    }
+}
+
+fn compose_page(
     state: &TabsState,
     placed: &PlacedTab,
     stored: &StoredItem,
@@ -333,6 +356,7 @@ pub(super) fn page_from_metadata(
             .as_ref()
             .is_some_and(|full| full.tab == *placed_tab_ref(placed)),
         reload: state.reloads.get(placed).copied().unwrap_or_default(),
+        opens_in_browser: false,
     }
 }
 

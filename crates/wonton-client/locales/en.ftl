@@ -683,4 +683,12 @@ tabs-fullscreen-none = Nothing is full screen right now.
 tabs-fullscreen-not-current = That page isn't the full-screen one.
 panel-pins-refresh-failed = Couldn't load the pages bots pinned: { $error }
 
+## Plugin pages that need cross-origin isolation open in the system browser (ADR-0033). The last three show in the browser.
+browser-front-failed = Can't open a local address for the browser: { $error }
+browser-page-not-isolated = This page doesn't open in the browser.
+browser-not-paired = Wonton isn't paired with a home server yet.
+browser-unknown-address = This address has expired. Go back to Wonton and open the app again.
+browser-not-connected = Wonton isn't connected to your home server right now. Go back to Wonton, wait until it connects, then reload this page.
+browser-bad-request = Open this page from Wonton.
+
 contacts-invalid-action = Not a bot-contacts action.

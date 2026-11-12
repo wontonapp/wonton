@@ -42,6 +42,11 @@ impl ProxyCredential {
         }
     }
 
+    /// 已有的一份凭据（例如 ViewModel 里交给壳的代理设置），用来连那个代理。
+    pub fn from_parts(username: String, password: String) -> Self {
+        Self { username, password }
+    }
+
     pub fn username(&self) -> &str {
         &self.username
     }

@@ -1439,13 +1439,12 @@
     <string name="tab_starting">起動しています…</string>
     <string name="tab_uninstalling">アンインストールしています…</string>
     <string name="tab_upgrading">アップデートしています…</string>
-    <string name="tab_open_anyway">そのまま開く</string>
+    <string name="tab_opens_in_browser">%1$sはブラウザで開きます</string>
+    <string name="tab_open_in_browser">開く</string>
+    <string name="tab_no_browser_next_step">Chromeなどのブラウザをインストールまたは有効にしてから、もう一度お試しください。</string>
     <string name="tab_unpin_from_bar">ナビゲーションバーから外す</string>
     <string name="tab_start">起動</string>
     <string name="tab_view_details">詳細を表示</string>
-    <string name="tab_cross_origin_title">このアプリはWontonのAndroid版ではまだ開けません</string>
-    <string name="tab_cross_origin_detail">現在のAndroid System WebView：%1$s。156以降が必要です。</string>
-    <string name="tab_webview_version_unknown">バージョンを取得できません</string>
     <string name="tab_load_not_ready">アプリの準備ができていません</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>

@@ -14,9 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.webkit.WebViewCompat
 import app.wonton.protocol.Action
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLoadFailure
@@ -35,8 +33,13 @@ internal fun PluginTabStatus(
     crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
 ) {
     val state = page.state
-    val isolationWarning = crossOriginBlocked && supported && problem == null &&
+    // 核心让它在系统浏览器里打开（ADR-0033 的“跨源隔离”）：App 里只留一行说明。
+    val inBrowser = crossOriginBlocked && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
+    if (inBrowser) {
+        BrowserPageStatus(page, tabs.core, autoOpen = place !is PlacedTab.Panel)
+        return
+    }
     val failure = when {
         !supported -> Problem(stringResource(R.string.tab_webview_too_old))
         problem != null -> problem
@@ -47,7 +50,6 @@ internal fun PluginTabStatus(
         state is TabState.LoadFailed -> Problem(
             loadFailureTitle(state.failure), detail = state.status?.let { "HTTP $it" },
         )
-        isolationWarning -> crossOriginIsolationProblem()
         else -> null
     }
     if (failure == null) {
@@ -67,19 +69,16 @@ internal fun PluginTabStatus(
             Text(failure.titleText, style = WontonTheme.typography.itemTitle,
                 color = WontonTheme.colors.textPrimary.toColor())
             failure.detail?.let { ProblemDetail(it, stringResource(R.string.common_details)) }
-            TabStatusActions(state, tab, tabs, isolationWarning, onDetails, place)
+            TabStatusActions(state, tab, tabs, onDetails, place)
         }
     }
 }
 
 @Composable
 private fun TabStatusActions(
-    state: TabState, tab: TabRef, tabs: TabsState, crossOriginBlocked: Boolean,
-    onDetails: (String) -> Unit, place: PlacedTab?,
+    state: TabState, tab: TabRef, tabs: TabsState, onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
-    if (crossOriginBlocked && tab is TabRef.Plugin) {
-        WontonButton(stringResource(R.string.tab_open_anyway), { allowCrossOriginIsolationAnyway(tab.pluginId) })
-    } else if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
+    if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
         WontonButton(stringResource(R.string.panel_remove), {
             tabs.send(Action.RemovePanelPage(place.scope, tab))
         })
@@ -99,17 +98,6 @@ private fun TabStatusActions(
             WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
         }
     }
-}
-
-@Composable
-private fun crossOriginIsolationProblem(): Problem {
-    val context = LocalContext.current
-    val currentVersion = remember(context) { WebViewCompat.getCurrentWebViewPackage(context)?.versionName }
-    val version = currentVersion ?: stringResource(R.string.tab_webview_version_unknown)
-    return Problem(
-        stringResource(R.string.tab_cross_origin_title),
-        detail = stringResource(R.string.tab_cross_origin_detail, version),
-    )
 }
 
 @Composable

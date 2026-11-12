@@ -45,6 +45,8 @@ pub(crate) struct Scope {
     pub(crate) bot_contacts: Arc<BotContactsLink>,
     pub(crate) settings: SettingsLink,
     pub(crate) shared_apps: Arc<crate::sharing::SharedAppsLink>,
+    /// 要跨源隔离的插件网页交给系统浏览器时用的回环入口（ADR-0033）。
+    pub(crate) browser: Arc<crate::browser::BrowserLink>,
     /// 卡片成功的测试钩子，只给集成测试用（feature `test-hooks`，生产构建没有）。挂在作用域上：
     /// 换服务器换作用域，测试不换服务器就一直是同一个。
     #[cfg(feature = "test-hooks")]
@@ -238,6 +240,7 @@ impl Scope {
             row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
         });
         let storage = Storage::open(root, dir)?;
+        let device_key = storage.device_key()?.to_bytes();
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
         let home = HomeLink::new(
@@ -292,6 +295,12 @@ impl Scope {
         let people = people_links(&shared, servers, &links.chat)?;
         let shared_apps =
             crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
+        let browser = crate::browser::BrowserLink::new(
+            handle.clone(),
+            device_key,
+            home.subscribe(),
+            plugins.subscribe(),
+        );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
             home.clone(),
@@ -312,6 +321,7 @@ impl Scope {
             bot_contacts,
             settings: people.2,
             shared_apps,
+            browser,
             #[cfg(feature = "test-hooks")]
             card_success_hook,
             runtime,

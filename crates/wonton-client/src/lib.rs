@@ -27,6 +27,7 @@ uniffi::setup_scaffolding!();
 mod android;
 mod appearance;
 mod bot_contacts;
+mod browser;
 mod chat;
 mod client;
 mod files;

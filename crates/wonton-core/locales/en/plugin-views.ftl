@@ -49,7 +49,7 @@ permission-notice-devices = This app can access host devices you give it.
 # Notices in the app detail view.
 plugin-firewall-notice = A firewall on this machine may be blocking incoming connections, so devices on your local network may not be able to connect.
 plugin-egress-proxy-select = Select it in Internet proxy settings
-plugin-cross-origin-isolation = This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.
+plugin-cross-origin-isolation = This app needs cross-origin isolation: on Android, its pages open in your browser.
 
 # Notices and blocked reasons in the install and update previews.
 install-retained-data = Data and keys from { $id } are still on this server; the app you install will be able to read them. Delete them completely first if you don't want that.

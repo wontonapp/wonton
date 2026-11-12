@@ -104,14 +104,18 @@ fn in_domain(host: &str, domain: &str) -> bool {
 
 /// 不交给隧道、由代理自己回绝的原因。
 #[derive(Debug, Clone, Copy)]
-enum Rejection {
+pub(crate) enum Rejection {
     Unauthorized,
     ForeignHost,
     TooLarge,
     Malformed,
 }
 
-async fn reject(tcp_write: &mut OwnedWriteHalf, tcp_read: &mut OwnedReadHalf, why: Rejection) {
+pub(crate) async fn reject(
+    tcp_write: &mut OwnedWriteHalf,
+    tcp_read: &mut OwnedReadHalf,
+    why: Rejection,
+) {
     let (status, extra, body) = match why {
         Rejection::Unauthorized => (
             "407 Proxy Authentication Required",
@@ -151,16 +155,16 @@ async fn reject(tcp_write: &mut OwnedWriteHalf, tcp_read: &mut OwnedReadHalf, wh
 
 /// 收到的第一个请求头，以及紧跟在它后面、已经读到的字节。
 #[derive(Debug)]
-struct Head {
-    method: String,
-    target: String,
-    minor_version: u8,
-    headers: Vec<(String, Vec<u8>)>,
-    rest: Vec<u8>,
+pub(crate) struct Head {
+    pub(crate) method: String,
+    pub(crate) target: String,
+    pub(crate) minor_version: u8,
+    pub(crate) headers: Vec<(String, Vec<u8>)>,
+    pub(crate) rest: Vec<u8>,
 }
 
 /// 读到第一个请求头结束为止。连接在此之前关闭或出错时返回 `Ok(None)`。
-async fn read_head(tcp: &mut OwnedReadHalf) -> Result<Option<Head>, Rejection> {
+pub(crate) async fn read_head(tcp: &mut OwnedReadHalf) -> Result<Option<Head>, Rejection> {
     let mut buf = Vec::with_capacity(4096);
     let mut chunk = [0u8; 4096];
     loop {
@@ -207,7 +211,7 @@ impl Head {
         Some(strip_port(authority.trim()).to_owned())
     }
 
-    fn header(&self, name: &str) -> Option<&[u8]> {
+    pub(crate) fn header(&self, name: &str) -> Option<&[u8]> {
         self.headers
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
