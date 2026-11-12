@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button on the fullscreen page capsule that leaves fullscreen. -->
+    <!-- Tab bar and navigation title for the chat list. -->
+    <!-- Button that hands the page back to the bot while the owner drives. No arguments; short label. -->
+    <string name="takeover_hand_back">Hand back</string>
+    <!-- Button that gives the owner control of a plugin page. No arguments; short label. -->
+    <string name="takeover_start">Take over</string>
+    <!-- Button under a takeover problem that closes it. No arguments; short label. -->
+    <string name="takeover_got_it">Got it</string>
+    <!-- Problem title when taking over didn't start. Argument: the reason title. -->
+    <string name="takeover_not_started">Didn\'t start: %1$s</string>
+    <!-- Problem title when the takeover ended because the connection dropped. No arguments. -->
+    <string name="takeover_lost">Handed back, the connection dropped</string>
+    <!-- Problem title when the takeover ended for another reason. Argument: the reason title. -->
+    <string name="takeover_lost_reason">Handed back: %1$s</string>
+</resources>

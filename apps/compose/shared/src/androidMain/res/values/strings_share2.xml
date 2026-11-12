@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="one">Shared with %1$d friend</item>
+        <item quantity="other">Shared with %1$d friends</item>
+    </plurals>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">Edit share</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">No friends or groups available</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">Friends</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">Groups</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 hour</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">The verified user ID does not match the identity server.</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">Shared apps are unavailable</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">This app is not running</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">This friend has not shared this app with you</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">Cannot connect to this friend’s server</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">Your friend will sign in to this app with their own username. The app may create an account for them and let them see your data.</string>
+</resources>

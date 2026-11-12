@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Section title and text field label for the proxy address (like http://192.0.2.10:7890). -->
+    <string name="egress_address">Proxy address</string>
+    <!-- Radio option: type a proxy address by hand instead of using an app's proxy. -->
+    <string name="egress_address_enter">Enter proxy address</string>
+    <!-- Radio option: use the proxy that an installed app provides. Argument: that app's name. -->
+    <string name="egress_address_use_provider">Use %1$s</string>
+    <!-- Row title on the Internet proxy page: whether apps on the home server can reach the internet through the proxy. The value on the right is a reachability status. -->
+    <string name="egress_path_apps">Apps</string>
+    <!-- Status value: the internet can't be reached through the proxy. A reason is shown below the row. -->
+    <string name="egress_path_failed">Unreachable</string>
+    <!-- Row title on the Internet proxy page: whether the home server itself can reach the internet through the proxy. -->
+    <string name="egress_path_home_server">Home server</string>
+    <!-- Status value next to Apps / Home Server while the proxy is being checked. -->
+    <string name="egress_path_probing">Checking…</string>
+    <!-- Status value: the internet can be reached through the proxy. -->
+    <string name="egress_path_reachable">Reachable</string>
+    <!-- Status value: the check couldn't tell whether the proxy works. A reason is shown below the row. -->
+    <string name="egress_path_uncertain">Unknown</string>
+    <!-- Section title and text field label for network ranges (CIDR, like 100.64.0.0/10) that skip the proxy and are reached directly. -->
+    <string name="egress_ranges">Bypass ranges</string>
+    <!-- Note under the bypass ranges field. Argument: the computer's own network ranges (CIDR), comma-separated. -->
+    <string name="egress_ranges_host">Server\'s network: %1$s</string>
+    <!-- Explanation under the bypass ranges field. -->
+    <string name="egress_ranges_note">These ranges skip the proxy. Every app with internet access can reach them.</string>
+    <!-- Confirmation dialog title before turning off the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_cancel_title">Turning off the proxy restarts these apps</string>
+    <!-- Primary button in the proxy confirmation dialog: restart the listed apps. -->
+    <string name="egress_restart_confirm">Restart</string>
+    <!-- Body of the proxy restart confirmation. Argument: the names of the apps that restart, already formatted as a list. The second line says their data is kept. -->
+    <string name="egress_restart_message">%1$s\nYour data stays as it is.</string>
+    <!-- Confirmation dialog title before turning on the Internet proxy; the message lists the apps on the home server that will restart. -->
+    <string name="egress_restart_set_title">Using the proxy restarts these apps</string>
+    <!-- Note under the proxy address when the installer detected it on the computer. -->
+    <string name="egress_source_detected">Detected during installation.</string>
+    <!-- Note under the proxy address when it was set by an environment variable at install time. Keep WONTON_EGRESS_PROXY as is. -->
+    <string name="egress_source_env">Set by WONTON_EGRESS_PROXY. To change it, edit the settings in the install folder and run the install script again.</string>
+    <!-- Note under the proxy address when the proxy comes from an installed app. Argument: that app's name. -->
+    <string name="egress_source_provider">From %1$s</string>
+    <!-- Title of the Internet proxy settings page and its row in Settings > Home Server. The proxy is what apps on the home server use to reach the internet. -->
+    <string name="egress_title">Internet proxy</string>
+    <!-- Destructive full-width button that stops using the Internet proxy. -->
+    <string name="egress_turn_off">Turn off proxy</string>
+</resources>

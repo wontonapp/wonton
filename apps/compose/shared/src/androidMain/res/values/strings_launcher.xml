@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">Default agent</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">No apps yet</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">Open the Store</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">Open web page</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">Pin to navigation bar</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">Apps</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="one">%1$d update available</item>
+        <item quantity="other">%1$d updates available</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">Update to %1$s</string>
+    <!-- Content description of the warning badge on a launcher tile: the app has a problem. -->
+    <string name="launcher_badge_degraded">Has a problem</string>
+</resources>

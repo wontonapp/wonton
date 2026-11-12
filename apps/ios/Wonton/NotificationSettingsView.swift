@@ -14,16 +14,16 @@ struct NotificationSettingsView: View {
                             openURL(url)
                         }
                     } label: {
-                        WontonRow(title: String(localized: .notificationSystemSettings), showsForward: true)
+                        WontonRow(title: String(localized: .Settings.notificationSystemSettings), showsForward: true)
                     }
                     .buttonStyle(.plain)
                 }
-                Text(.notificationUnsupported)
+                Text(.Settings.notificationUnsupported)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .notificationTitle))
+        .wontonPushedScreen(String(localized: .Settings.notificationTitle))
     }
 }

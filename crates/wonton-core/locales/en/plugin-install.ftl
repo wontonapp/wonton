@@ -444,8 +444,9 @@ plugin-install-coreaddr-no-core-address = The network doesn't have an address re
 plugin-install-upstream-container-missing = Container { $container } doesn't exist, or has no address in network { $network }
 plugin-install-upstream-mcp-headers = Can't resolve the MCP headers of app { $id }: { $error }
 plugin-install-relay-prepare-dir-failed = Can't prepare the relay directory: { $error }
-plugin-install-relay-path-too-long = The app data directory path is too long for a unix socket; move your home server's data directory somewhere shorter ({ $path }: { $bytes } bytes, limit { $max } bytes)
+plugin-install-relay-path-too-long = The relay socket directory path is too long for a unix socket; set WONTON_RELAY_DIR to a shorter directory ({ $path }: { $bytes } bytes, limit { $max } bytes)
 plugin-install-relay-listens-unknown = Can't read the listening table, so the firewall isn't judged
+plugin-install-egress-host-no-address = The egress container has no address on the plugin network { $network }, so the host-network services cannot go through the proxy
 
 # ── Images (images.rs, images/preflight.rs, image_worker.rs) ─────────────────
 

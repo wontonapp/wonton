@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Explicit acknowledgement of the warning about sharing an app without declared friend support. No arguments. -->
+    <string name="share_acknowledge">我了解并接受此风险</string>
+    <!-- Button that creates an app share for a friend or group. No arguments. -->
+    <string name="share_add">添加分享</string>
+    <!-- Expiration choice that opens a date and time picker. No arguments. -->
+    <string name="share_custom">选择日期和时间</string>
+    <!-- Label of the share expiration picker. No arguments. -->
+    <string name="share_expires">到期时间</string>
+    <!-- Identity verification detail when secure discovery of the identity server failed. No arguments. -->
+    <string name="share_identity_discovery">无法安全发现身份服务器。</string>
+    <!-- Identity verification detail for an invalid OpenID identity token. No arguments. -->
+    <string name="share_identity_invalid">身份令牌无效。</string>
+    <!-- Identity verification detail for an unrecognized failure category. No arguments. -->
+    <string name="share_identity_other">身份验证失败。</string>
+    <!-- Expiration choice that keeps access until the owner revokes it. No arguments. -->
+    <string name="share_indefinite">一直有效</string>
+    <!-- Apps page section title for apps shared by other people. No arguments. -->
+    <string name="share_received">别人分享给我的</string>
+    <!-- Button or accessibility label that refreshes apps shared by friends. No arguments. -->
+    <string name="share_refresh">刷新分享</string>
+    <!-- Button that saves a new or edited app share. No arguments. -->
+    <string name="share_save">保存分享</string>
+    <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
+    <string name="share_unknown">未知接收方</string>
+</resources>

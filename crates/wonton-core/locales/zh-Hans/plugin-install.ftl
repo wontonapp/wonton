@@ -443,8 +443,9 @@ plugin-install-coreaddr-no-core-address = 网络还没有给服务器留出地�
 plugin-install-upstream-container-missing = 容器 { $container } 不存在，或者在网络 { $network } 中没有地址
 plugin-install-upstream-mcp-headers = 应用 { $id } 的 MCP 请求头解析不了：{ $error }
 plugin-install-relay-prepare-dir-failed = 准备中继目录失败：{ $error }
-plugin-install-relay-path-too-long = 应用数据目录的路径太长，unix 套接字放不下，把服务器的数据目录换到短一点的路径（{ $path }：{ $bytes } 字节，上限 { $max } 字节）
+plugin-install-relay-path-too-long = 中继套接字的目录路径太长，unix 套接字放不下，把 WONTON_RELAY_DIR 换到短一点的目录（{ $path }：{ $bytes } 字节，上限 { $max } 字节）
 plugin-install-relay-listens-unknown = 读不到监听表，不判断防火墙
+plugin-install-egress-host-no-address = 出口容器在插件网络 { $network } 里没有地址，宿主网络的服务过不了代理
 
 # ── 图片（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 

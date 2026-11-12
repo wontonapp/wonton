@@ -8,7 +8,8 @@ struct LanguageSettingsRow: View {
         Button {
             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
         } label: {
-            WontonRow(title: String(localized: .settingsLanguage), value: AppLanguage.selfName, showsForward: true)
+            WontonRow(title: String(localized: .Settings.settingsLanguage), value: AppLanguage.selfName,
+                showsForward: true)
         }
     }
 }

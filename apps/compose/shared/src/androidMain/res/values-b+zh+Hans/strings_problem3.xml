@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">请求被拒绝了</string>
+    <!-- Accessibility label of the skeleton list placeholder while content loads. -->
+    <string name="problem_loading">正在加载</string>
+    <!-- Problem title when the core says the action can't run yet; the core's own reason is shown as the next step. -->
+    <string name="problem_not_ready_title">现在还做不了</string>
+    <!-- Problem title: the app changed after the owner approved the install. -->
+    <string name="problem_plugin_changed_title">应用在确认之后变了</string>
+    <!-- Problem title: the home server is updating itself right now. -->
+    <string name="problem_plugin_core_upgrading_title">家里的服务器正在升级</string>
+    <!-- Next step: look at the devices again and choose one that's available. -->
+    <string name="problem_plugin_device_unavailable_next_step">重新查看设备后再试。</string>
+    <!-- Problem title: a port the app opens on the local network is used by another container or program. -->
+    <string name="problem_plugin_lan_port_taken_title">端口被占用</string>
+    <!-- Next step: choose an interface or address in the local network settings, then try again. -->
+    <string name="problem_plugin_lan_unavailable_next_step">在局域网设置里选好网卡或地址后再试。</string>
+    <!-- Problem title: no local network address could be picked for the app. -->
+    <string name="problem_plugin_lan_unavailable_title">选不出局域网地址</string>
+    <!-- Problem title: the app is gone from its source. -->
+    <string name="problem_plugin_not_found_title">没有找到这个应用</string>
+    <!-- Next step: look at the proxy settings again once the server is reachable. -->
+    <string name="problem_plugin_save_uncertain_next_step">连上家里的服务器后再看一下。</string>
+    <!-- Problem title after saving the internet proxy while offline: whether it saved isn't known. -->
+    <string name="problem_plugin_save_uncertain_title">不确定改好了没有</string>
+    <!-- Problem title: the community source is switched off, so its apps are missing. -->
+    <string name="problem_store_disabled_title">社区应用已关闭</string>
+    <!-- Problem title: the store's index is newer than the home server understands. -->
+    <string name="problem_store_index_too_new_title">应用列表比家里的服务器新</string>
+    <!-- Problem title shown above the store list: the app's source can't be reached, the list may be stale. -->
+    <string name="problem_store_unreachable_title">连不上应用的来源，列表可能不是最新的</string>
+    <!-- Problem title used for plugin, chat and connection failures: the home server can't be reached. -->
+    <string name="problem_transport_unavailable_title">连不上家里的服务器</string>
+</resources>

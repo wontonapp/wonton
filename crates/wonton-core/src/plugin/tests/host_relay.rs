@@ -1,14 +1,19 @@
 //! 宿主网络的网页和 MCP 服务经 unix 套接字中继（ADR-0036）。
 
-use std::path::Path;
+use std::fs;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
 
 use tokio::net::UnixListener;
 
 use super::super::fake_docker::FakeDocker;
+use super::super::host_relay::{HostRelay, Purpose, socket_path};
 use super::super::languages::Languages;
+use super::super::manager::PluginManager;
 use super::super::manifest::{Permission, PluginId};
+use super::super::names::Instance;
 use super::super::package::{PackageError, PluginPackage};
-use super::manager::{manager_in_container, manager_with, manager_with_apps_dir};
+use super::manager::{manager_in_container, manager_with, manager_with_relay_dir};
 use super::package;
 
 const HOST_WEBUI: &str =
@@ -21,6 +26,20 @@ fn host_webui(port: u16) -> String {
             "  webui: {{service: web, port: {port}, sso: none}}\n  permissions: [network.host]"
         ),
     )
+}
+
+/// `app-test` 的网页（或 MCP）中继套接字：路径按管理器的中继目录和哈希算，测试不写死。
+fn socket_of(m: &PluginManager, purpose: Purpose) -> PathBuf {
+    let relay = HostRelay {
+        purpose,
+        service: match purpose {
+            Purpose::Mcp => "mcp",
+            _ => "web",
+        }
+        .to_owned(),
+        port: 8123,
+    };
+    socket_path(&m.cfg.relay_dir, &Default::default(), "app-test", &relay)
 }
 
 #[test]
@@ -111,7 +130,7 @@ async fn a_loopback_only_host_webui_gets_no_firewall_notice() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     let port = free_port();
     docker.on_exec_output(move |container, argv, _| {
@@ -145,7 +164,7 @@ async fn a_wildcard_host_webui_still_gets_the_firewall_notice() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     let port = free_port();
     docker.on_exec_output(move |_, _, _| {
@@ -174,7 +193,7 @@ async fn an_unknown_listener_does_not_claim_a_firewall() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     docker.on_exec_output(move |_, _, _| (0, proc_header(), String::new()));
     m.install(
@@ -241,17 +260,17 @@ fn host_webui_and_mcp_get_relays_on_the_host_network() {
         let container = plan.containers.iter().find(|c| c.name == name).unwrap();
         let host = container.body.host_config.as_ref().unwrap();
         assert_eq!(host.network_mode.as_deref(), Some("host"));
-        assert!(host.binds.as_ref().unwrap()[0].ends_with(":/s"));
+        let dir = crate::config::DEFAULT_RELAY_DIR;
+        assert_eq!(host.binds.as_ref().unwrap()[0], format!("{dir}:{dir}"));
+        let socket = socket_path(Path::new(dir), &Default::default(), "app-test", relay);
         assert_eq!(
             container.body.cmd.as_ref().unwrap()[0],
             format!(
-                "UNIX-LISTEN:/s/{}.sock,fork,mode=0660,unlink-early",
-                relay.purpose.as_str()
+                "UNIX-LISTEN:{},fork,mode=0660,unlink-early",
+                socket.display()
             )
         );
     }
-    let dir = "/wonton-dry-run/apps/app-test/relay";
-    assert!(plan.dirs.contains_key(Path::new(dir)));
 }
 
 #[test]
@@ -273,7 +292,7 @@ async fn installing_a_host_webui_goes_through_the_relay_and_reports_the_firewall
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
 
     let port = free_port();
@@ -317,7 +336,7 @@ async fn a_host_mcp_service_is_reached_through_its_socket() {
     };
     assert_eq!(
         server.socket.as_deref(),
-        Some(dir.path().join("apps/app-test/relay/mcp.sock").as_path())
+        Some(socket_of(&m, Purpose::Mcp).as_path())
     );
     assert_eq!(server.url, "http://localhost/mcp");
 }
@@ -327,7 +346,7 @@ async fn the_watch_brings_a_missing_relay_back() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     let port = free_port();
     m.install(
@@ -350,7 +369,7 @@ async fn uninstalling_takes_the_relay_with_it() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     let port = free_port();
     m.install(
@@ -372,34 +391,96 @@ async fn uninstalling_takes_the_relay_with_it() {
     assert!(!docker.containers().contains(&relay));
 }
 
+/// 套接字按实例、插件和中继内容区分：几套核心共用一台机器、一个插件有网页和 MCP 都不撞。
+#[test]
+fn relay_socket_names_differ_per_instance_plugin_and_endpoint() {
+    let dir = Path::new(crate::config::DEFAULT_RELAY_DIR);
+    let relay = |purpose, service: &str| HostRelay {
+        purpose,
+        service: service.to_owned(),
+        port: 80,
+    };
+    let web = relay(Purpose::Webui, "web");
+    let base = socket_path(dir, &Default::default(), "app-test", &web);
+    let instance = Instance::parse(Some("two")).unwrap();
+    assert_ne!(base, socket_path(dir, &instance, "app-test", &web));
+    assert_ne!(
+        base,
+        socket_path(dir, &Default::default(), "app-other", &web)
+    );
+    assert_ne!(
+        base,
+        socket_path(
+            dir,
+            &Default::default(),
+            "app-test",
+            &relay(Purpose::Mcp, "web")
+        )
+    );
+    assert_ne!(
+        base,
+        socket_path(
+            dir,
+            &Default::default(),
+            "app-test",
+            &relay(Purpose::Capability, "web")
+        )
+    );
+    // 文件名定长（`/` + 16 位哈希 + `.sock`）：插件和服务名再长也一样。
+    let long = HostRelay::capability("a-very-long-service-name-with-many-dashes", 65535);
+    let path = socket_path(dir, &Default::default(), "io.example.the-longest", &long);
+    assert_eq!(
+        path.as_os_str().len(),
+        crate::config::DEFAULT_RELAY_DIR.len() + 22
+    );
+}
+
+/// 装之前把中继目录连同缺的上级目录建出来（`/run` 下核心自己是建不了的），交给 PUID。
+#[tokio::test]
+async fn installing_prepares_the_relay_directory() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let relay_dir = dir.path().join("run/nested/relay");
+    let m = manager_with_relay_dir(engine, &dir, &relay_dir);
+    m.prepare_relay_dir(&super::langs()).unwrap();
+    let owner = fs::metadata(&relay_dir).unwrap();
+    assert_eq!((owner.uid(), owner.gid()), (m.cfg.puid, m.cfg.pgid));
+}
+
 #[test]
 fn relay_socket_paths_up_to_the_limit_fit_and_over_it_do_not() {
-    use super::super::host_relay::{
-        HostRelay, MAX_SOCKET_PATH, Purpose, path_too_long, socket_path,
-    };
+    use super::super::host_relay::{MAX_SOCKET_PATH, path_too_long};
     let relays = [HostRelay {
         purpose: Purpose::Webui,
         service: "web".to_owned(),
         port: 8123,
     }];
-    // `<app_data>/relay/webui.sock` 的总长：末段 17 字节，前面补足到目标的字节数。
-    let app_data_of = |total: usize| {
-        let rest = total - "/relay/webui.sock".len();
-        std::path::PathBuf::from(format!("/{}", "d".repeat(rest - 1)))
+    let instance = Instance::default();
+    // 文件名是固定的 16 位哈希加 `.sock`：末段 21 字节，前面补足到目标的字节数。
+    let dir_of = |total: usize| {
+        let rest = total - "/0000000000000000.sock".len();
+        PathBuf::from(format!("/{}", "d".repeat(rest - 1)))
     };
-    let fit = app_data_of(MAX_SOCKET_PATH);
+    let fit = dir_of(MAX_SOCKET_PATH);
     assert_eq!(
-        socket_path(&fit, &relays[0]).as_os_str().len(),
+        socket_path(&fit, &instance, "app-test", &relays[0])
+            .as_os_str()
+            .len(),
         MAX_SOCKET_PATH
     );
     let langs = Languages::from_header(Some("zh-Hans"));
-    assert_eq!(path_too_long(&fit, &relays, &langs), None);
-    let over = app_data_of(MAX_SOCKET_PATH + 1);
     assert_eq!(
-        socket_path(&over, &relays[0]).as_os_str().len(),
+        path_too_long(&fit, &instance, "app-test", &relays, &langs),
+        None
+    );
+    let over = dir_of(MAX_SOCKET_PATH + 1);
+    assert_eq!(
+        socket_path(&over, &instance, "app-test", &relays[0])
+            .as_os_str()
+            .len(),
         MAX_SOCKET_PATH + 1
     );
-    let problem = path_too_long(&over, &relays, &langs).unwrap();
+    let problem = path_too_long(&over, &instance, "app-test", &relays, &langs).unwrap();
     assert!(problem.contains("路径太长"), "{problem}");
     assert!(problem.contains(&over.display().to_string()), "{problem}");
     assert!(problem.contains("107"), "{problem}");
@@ -410,9 +491,8 @@ async fn an_over_long_socket_path_fails_the_install_before_any_container() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     // 120 字符的一段保证套接字路径超过上限，与临时目录本身的长短无关。
-    let apps = dir.path().join("d".repeat(120));
-    std::fs::create_dir_all(&apps).unwrap();
-    let m = manager_with_apps_dir(engine, &dir, &apps);
+    let relay_dir = dir.path().join("d".repeat(120));
+    let m = manager_with_relay_dir(engine, &dir, &relay_dir);
     let error = m
         .install(
             &host_webui(8123),
@@ -444,7 +524,7 @@ async fn a_reachable_host_webui_gets_no_firewall_notice() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
-    let socket = dir.path().join("apps/app-test/relay/webui.sock");
+    let socket = socket_of(&m, Purpose::Webui);
     serve(&socket);
     // 直连探测打的是 127.0.0.1 上的这个端口：真的有人监听，不该提示防火墙。
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

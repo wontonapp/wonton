@@ -41,7 +41,7 @@ struct BotProfileSection: View {
 
     var body: some View {
         if let bot {
-            DetailSection(title: String(localized: .botProfileTitle)) {
+            DetailSection(title: String(localized: .BotProfile0.botProfileTitle)) {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
                     HStack(alignment: .top, spacing: WontonTheme.spacing.s16) {
                         BotAvatarView(
@@ -101,7 +101,7 @@ struct BotProfileSection: View {
         let isSaving = pending == .name && bot.saving
         if isEditingName {
             HStack(spacing: WontonTheme.spacing.s8) {
-                TextField(String(localized: .botProfileName), text: $draftName)
+                TextField(String(localized: .BotProfile0.botProfileName), text: $draftName)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier("botProfileNameField")
                     .wontonField()
@@ -115,7 +115,7 @@ struct BotProfileSection: View {
                         if isSaving {
                             ProgressView()
                         } else {
-                            Text(String(localized: .commonSave))
+                            Text(String(localized: .Common.commonSave))
                         }
                     }
                     .frame(minWidth: WontonTheme.size.smallButton)
@@ -123,7 +123,7 @@ struct BotProfileSection: View {
                 .buttonStyle(WontonSmallButtonStyle())
                 .disabled(isBusy)
                 .accessibilityIdentifier("botProfileSave")
-                Button(String(localized: .commonCancel)) {
+                Button(String(localized: .Common.commonCancel)) {
                     pending = nil
                     isEditingName = false
                 }
@@ -149,7 +149,7 @@ struct BotProfileSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("botProfileName")
-            .accessibilityHint(String(localized: .botProfileNameHint))
+            .accessibilityHint(String(localized: .BotProfile1.botProfileNameHint))
         }
     }
 
@@ -192,7 +192,7 @@ private extension BotProfileSection {
             .overlay {
                 Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline)
             }
-            Button(String(localized: .botProfilePickImage)) {
+            Button(String(localized: .BotProfile0.botProfilePickImage)) {
                 pickerSlot = .staticAvatar
                 showsPicker = true
             }
@@ -200,7 +200,7 @@ private extension BotProfileSection {
             .disabled(isBusy)
             .accessibilityIdentifier("botProfileChooseStatic")
             if bot.avatar != nil {
-                Button(String(localized: .botProfilePickRemove)) {
+                Button(String(localized: .BotProfile1.botProfilePickRemove)) {
                     dispatch(.clearBotAvatar(pluginId: pluginId, state: nil))
                     pending = .staticRemove
                 }
@@ -274,18 +274,23 @@ private extension BotProfileSection {
         }
         .buttonStyle(.plain)
         .disabled(isBusy)
-        .accessibilityLabel(image == nil ? String(localized: .botProfilePickAddState(state.text)) : state.text)
+        .accessibilityLabel(
+            image == nil
+                ? String(localized: .BotProfile0.botProfilePickAddState(state.text))
+                : state.text
+        )
         .accessibilityIdentifier("botProfileState.\(state.identifier)")
     }
 
     private var sheetActions: [WontonSheetAction] {
         [
-            WontonSheetAction(title: String(localized: .botProfilePickImageOrVideo), icon: .image) {
+            WontonSheetAction(title: String(localized: .BotProfile0.botProfilePickImageOrVideo), icon: .image) {
                 pickerSlot = sheetSlot
                 showsPicker = true
                 sheetSlot = nil
             },
-            WontonSheetAction(title: String(localized: .botProfilePickRemove), icon: .trash, isDanger: true) {
+            WontonSheetAction(title: String(localized: .BotProfile1.botProfilePickRemove), icon: .trash,
+                isDanger: true) {
                 if let state = sheetSlot?.state {
                     dispatch(.clearBotAvatar(pluginId: pluginId, state: state))
                     pending = .stateRemove(state)
@@ -314,7 +319,7 @@ private extension BotProfileSection {
             }
         } catch {
             localProblem = (error as? AvatarTranscodeError)?.problem
-                ?? Problem(title: String(localized: .botProfileProblemMediaOther))
+                ?? Problem(title: String(localized: .BotProfile1.botProfileProblemMediaOther))
         }
     }
 }
