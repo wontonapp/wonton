@@ -11,12 +11,14 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
+use tokio::sync::watch;
 use wonton_protocol::{
     CONFIRMATIONS_WAIT_SECS, ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd,
 };
 
 use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
 use super::{Gateway, TunnelPeer};
+use crate::contacts::Contacts;
 use crate::l10n;
 use crate::mcp::{AnswerError, Confirmations};
 use crate::plugin::languages::Languages;
@@ -30,7 +32,7 @@ fn mcp_unavailable(langs: &Languages) -> Response {
 }
 
 /// `GET /_wonton/api/confirmations?after=<revision>`：不带 `after` 立即返回；带了就长轮询，版本变成别的值
-/// （有新变化，或者核心重启后版本变小）时返回，最多 [`CONFIRMATIONS_WAIT_SECS`] 秒。
+/// （卡片或联系人请求有新变化，或者核心重启后版本变小）时返回，最多 [`CONFIRMATIONS_WAIT_SECS`] 秒。
 pub async fn pending(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -44,31 +46,29 @@ pub async fn pending(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    // 联系人请求发给 Bot 的归属人（ADR-0045），家人也有自己的。
-    let contact_requests = gateway
-        .contacts()
+    let cards = gateway.mcp.as_ref().map(|mcp| mcp.bus.confirmations());
+    let contacts = gateway.contacts().map(Arc::as_ref);
+    // 没开 MCP 总线就没有卡片；家人照样拿得到自己的联系人请求。
+    if cards.is_none() && person.is_owner() {
+        return mcp_unavailable(&languages(&headers));
+    }
+    if let Some(after) = params.after {
+        wait_for_change(cards, contacts, after).await;
+    }
+    // 醒来之后再读一遍：联系人请求和卡片都要是醒来之后的样子。
+    let revision = revision(cards, contacts);
+    let contact_requests = contacts
         .map(|contacts| contacts.pending_for(&person.username))
         .unwrap_or_default();
-    let Some(mcp) = &gateway.mcp else {
-        // 没开 MCP 总线就没有卡片；家人照样拿得到自己的联系人请求。
-        if person.is_owner() {
-            return mcp_unavailable(&languages(&headers));
-        }
-        return Json(ConfirmationList {
-            confirmations: Vec::new(),
-            finished: Vec::new(),
-            revision: 0,
-            contact_requests,
-        })
-        .into_response();
-    };
     // 只列发给这个人的卡片：主人的是没写收件人的，家人的是写了他用户名的。
     let recipient = (!person.is_owner()).then_some(person.username.as_str());
-    let confirmations = mcp.bus.confirmations();
-    if let Some(after) = params.after {
-        wait_for_change(confirmations, after).await;
-    }
-    let (confirmations, finished, revision) = confirmations.list(recipient);
+    let (confirmations, finished) = match cards {
+        Some(cards) => {
+            let (confirmations, finished, _) = cards.list(recipient);
+            (confirmations, finished)
+        }
+        None => (Vec::new(), Vec::new()),
+    };
     Json(ConfirmationList {
         confirmations,
         finished,
@@ -86,22 +86,46 @@ pub struct WaitParams {
     pub after: Option<u64>,
 }
 
-/// 版本还停在 `after` 就挂住，等到变了或者到 [`CONFIRMATIONS_WAIT_SECS`]。`after` 比当前的大（核心重启过）
+/// 列表的版本：卡片的变化次数加联系人记录的变化次数，任一边变了都变大。核心重启后从零算，客户端见到变小就当成新的列表。
+fn revision(cards: Option<&Confirmations>, contacts: Option<&Contacts>) -> u64 {
+    let cards = cards.map(Confirmations::revision).unwrap_or_default();
+    let contacts = contacts.map(Contacts::changes_count).unwrap_or_default();
+    cards.saturating_add(contacts)
+}
+
+/// 版本还停在 `after` 就挂住，等到版本变了或者到 [`CONFIRMATIONS_WAIT_SECS`]。`after` 比当前的大（核心重启过）
 /// 时立即返回，客户端见到版本变小就当成新的列表。
-async fn wait_for_change(confirmations: &Confirmations, after: u64) {
-    if after != confirmations.revision() {
-        return;
-    }
-    let mut watcher = confirmations.subscribe();
+async fn wait_for_change(cards: Option<&Confirmations>, contacts: Option<&Contacts>, after: u64) {
+    let mut card_watch = cards.map(Confirmations::subscribe);
+    let mut contact_watch = contacts.map(Contacts::changes);
     let deadline = tokio::time::Instant::now() + Duration::from_secs(CONFIRMATIONS_WAIT_SECS);
     loop {
-        if *watcher.borrow_and_update() != after {
+        for watch in [&mut card_watch, &mut contact_watch].into_iter().flatten() {
+            watch.borrow_and_update();
+        }
+        if revision(cards, contacts) != after {
             return;
         }
-        match tokio::time::timeout_at(deadline, watcher.changed()).await {
-            Ok(Ok(())) => {}
-            _ => return,
+        let changed = tokio::time::timeout_at(deadline, async {
+            tokio::select! {
+                _ = changed(&mut card_watch) => {}
+                _ = changed(&mut contact_watch) => {}
+            }
+        })
+        .await;
+        if changed.is_err() {
+            return;
         }
+    }
+}
+
+/// 等一个变化通道；没有这个通道时永远不醒。
+async fn changed(watch: &mut Option<watch::Receiver<u64>>) {
+    match watch {
+        Some(watch) => {
+            let _ = watch.changed().await;
+        }
+        None => std::future::pending::<()>().await,
     }
 }
 

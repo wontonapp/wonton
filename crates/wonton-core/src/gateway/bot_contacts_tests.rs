@@ -383,3 +383,92 @@ async fn bad_input_and_an_unreachable_peer_are_reported_by_category() {
         .await;
     assert_eq!(body, json!({"contacts": []}), "连不上时什么都没记下");
 }
+
+/// 当前列表的版本。
+async fn revision_of(home: &Home, device: iroh::EndpointId) -> u64 {
+    let (status, _, list) = home
+        .call(
+            Some(device),
+            Method::GET,
+            "/_wonton/api/confirmations",
+            Value::Null,
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    list["revision"].as_u64().unwrap()
+}
+
+/// 带 `after` 挂一个长轮询，返回它的回复。
+async fn long_poll(
+    home: &Home,
+    device: iroh::EndpointId,
+    after: u64,
+) -> (StatusCode, String, Value) {
+    let path = format!("/_wonton/api/confirmations?after={after}");
+    home.call(Some(device), Method::GET, &path, Value::Null)
+        .await
+}
+
+/// 联系人请求也长轮询：请求来了唤醒、版本变大，同意了请求从列表消失、版本再变。
+#[tokio::test]
+async fn a_contact_request_wakes_the_list_long_poll() {
+    let home = home().await;
+    let alice = home.device(Some("alice"));
+    let bob = home.device(Some("bob"));
+    let revision = revision_of(&home, bob).await;
+    assert_eq!(revision, 0, "家人没有卡片，版本只跟联系人记录走");
+
+    let request = wonton_protocol::bot_contacts_path(&bot("alice"));
+    let started = std::time::Instant::now();
+    let (poll, sent) = tokio::join!(
+        long_poll(&home, bob, revision),
+        home.call(
+            Some(alice),
+            Method::POST,
+            &request,
+            json!({"user_id": "@hermes-bob:test", "kind": "bot"}),
+        ),
+    );
+    assert_eq!(sent.0, StatusCode::OK, "{}", sent.2);
+    let (status, _, list) = poll;
+    // 到时限（25 秒）才回来的是没被唤醒，这里要求请求来了当场就醒。
+    assert!(started.elapsed() < Duration::from_secs(5), "{list}");
+    assert_eq!(status, StatusCode::OK, "{list}");
+    let raised = list["revision"].as_u64().unwrap();
+    assert!(raised > revision, "{list}");
+    assert_eq!(
+        list["contact_requests"][0]["contact"]["user_id"],
+        "@hermes-alice:test"
+    );
+
+    let approve =
+        wonton_protocol::bot_contact_approve_path(&bot("bob"), &encoded("@hermes-alice:test"));
+    let started = std::time::Instant::now();
+    let (poll, approved) = tokio::join!(
+        long_poll(&home, bob, raised),
+        home.call(Some(bob), Method::POST, &approve, Value::Null),
+    );
+    assert_eq!(approved.0, StatusCode::OK, "{}", approved.2);
+    let (status, _, list) = poll;
+    assert!(started.elapsed() < Duration::from_secs(5), "{list}");
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert!(list["revision"].as_u64().unwrap() > raised, "{list}");
+    assert_eq!(list["contact_requests"], json!([]));
+}
+
+/// 版本没变时挂住，不立即回来：没有 MCP 的家人不会把核心打满。
+#[tokio::test]
+async fn an_unchanged_list_hangs_instead_of_returning_at_once() {
+    let home = home().await;
+    let bob = home.device(Some("bob"));
+    let revision = revision_of(&home, bob).await;
+    let poll = long_poll(&home, bob, revision);
+    tokio::pin!(poll);
+    let still_waiting = tokio::time::timeout(Duration::from_millis(300), &mut poll).await;
+    assert!(still_waiting.is_err(), "{:?}", still_waiting.ok());
+    let (status, _, list) = tokio::time::timeout(Duration::from_secs(30), poll)
+        .await
+        .expect("到时限要回来");
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["revision"].as_u64().unwrap(), revision);
+}
