@@ -508,6 +508,8 @@ impl HomeLink {
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
+        let last_failure = stats.last_failure.as_ref().map(failure);
+        tracker.observe_drops(stats.disconnects, last_failure, connected);
         if let Some(recovery) = tracker.observe(&status, relay, stats.failed_dials, now) {
             let outage_ms = recovery.outage.as_millis();
             tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
@@ -519,9 +521,7 @@ impl HomeLink {
             relay: tracker.relay(),
             server: tracker.server_check(&status, now),
             last_connected_at_ms: stats.last_confirmed.and_then(unix_ms),
-            handshake_ms: stats
-                .handshake
-                .map(|took| u32::try_from(took.as_millis()).unwrap_or(u32::MAX)),
+            handshake_ms: stats.handshake.map(millis),
             disconnects: self.disconnects(stats.disconnects),
             failed_dials: stats.failed_dials,
             sent_packets: stats.sent_packets,
@@ -638,6 +638,10 @@ fn relay_check(endpoint: &Endpoint) -> ConnectionCheck {
 fn unix_ms(time: std::time::SystemTime) -> Option<u64> {
     let since = time.duration_since(std::time::UNIX_EPOCH).ok()?;
     u64::try_from(since.as_millis()).ok()
+}
+
+fn millis(took: Duration) -> u32 {
+    u32::try_from(took.as_millis()).unwrap_or(u32::MAX)
 }
 
 fn status_view(status: &TunnelStatus) -> HomeStatus {
