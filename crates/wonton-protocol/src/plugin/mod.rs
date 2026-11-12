@@ -29,7 +29,7 @@ pub use capability_deps::{
     ConsumerCapabilitySetting, InUseError, InstallTogether, MissingCapability, UninstallPreview,
     UninstallRequest,
 };
-pub use forms::{PluginKind, PluginRuntime, PluginScope, plugin_scope_path};
+pub use forms::{PluginKind, PluginRuntime, PluginScope, SecurityTier, plugin_scope_path};
 pub use owner_secrets::{OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets};
 pub use owner_secrets::{
     OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView,
@@ -49,7 +49,7 @@ pub use settings::{
     plugin_settings_preview_path,
 };
 pub use takeover::{PluginTakeover, TakeoverState};
-pub use task::{PluginOperation, PluginTask, PluginTaskState, UpgradeResult};
+pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
@@ -149,7 +149,7 @@ pub struct InstalledPlugin {
     /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
     #[serde(default)]
     pub web_display: TabDisplay,
-    /// 清单 `webui` 声明了页面要跨源隔离：Android 壳只对这些插件的网页放宽 WebView 的隔离限制。
+    /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,
     /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
@@ -389,10 +389,15 @@ pub struct StoreItem {
     pub stars: Option<u32>,
     /// 装着的版本；没装时为空。
     pub installed_version: Option<String>,
-    /// 申请了高权限，商店里标出来。
-    pub high_permissions: bool,
+    /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
+    #[serde(default)]
+    pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
+    /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
+    #[serde(default)]
+    pub high_permissions: bool,
 }
 
 /// 主人给插件定的资源上限，对它的每个服务生效（ADR-0037）。也是 `PUT /_wonton/api/plugins/{id}/limits` 的请求体。
@@ -453,6 +458,12 @@ pub struct PluginDetail {
     pub kind: PluginKind,
     #[serde(default)]
     pub runtime: PluginRuntime,
+    /// 核心按清单算出的安全档位（ADR-0080）；清单读不出来或旧核心不给时为空。
+    #[serde(default)]
+    pub security_tier: Option<SecurityTier>,
+    /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
+    #[serde(default)]
+    pub link_url: Option<String>,
     /// 只有主人能看到的安装范围；家人或未安装时为空。
     #[serde(default)]
     pub scope: Option<PluginScope>,
@@ -528,6 +539,16 @@ pub struct PluginDetail {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct AskEveryUpdate {
     pub enabled: bool,
+}
+
+/// 插件网页用摄像头和麦克风的记下的决定，按插件 ID 存在设备本机：
+/// 插件详情页一行开关，没问过（没有记录）不显示。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginMediaGrant {
+    pub plugin_id: String,
+    /// `true` 是允许过；`false` 是拒绝过（只在询问弹窗里产生）。
+    pub allowed: bool,
 }
 
 /// 开关 `lan_webui`：网页的局域网端口默认不开，主人看过风险后可以打开（ADR-0023 的“网页的局域网端口”）。

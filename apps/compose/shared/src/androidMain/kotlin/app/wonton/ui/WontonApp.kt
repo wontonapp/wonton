@@ -60,6 +60,7 @@ internal fun ServerApp(
     onRoomRequestHandled: () -> Unit,
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
+    requestedAgentText: AgentTextRequest? = null,
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -75,20 +76,18 @@ internal fun ServerApp(
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
     LaunchedEffect(requestedRoom) {
-        requestedRoom?.let { navigation.openRoom(it.roomId); onRoomRequestHandled() }
+        requestedRoom?.let { request ->
+            val contacts = request.contacts
+            if (contacts != null) navigation.openContacts(contacts) else navigation.openRoom(request.roomId)
+            onRoomRequestHandled()
+        }
     }
     AppLinkEffect(requestedLink, navigation)
+    AskAgentEffect(requestedAgentText, navigation)
     AppShortcutsEffect(tabs)
     WontonTheme(appearance) {
         val proxyRoute = pluginProxyRoute(home, plugins)
         val account = LocalServers.current.servers.firstOrNull { it.current }?.id
-        LaunchedEffect(account, plugins.viewModel.installed) {
-            if (account != null && androidx.webkit.WebViewFeature.isFeatureSupported(
-                    androidx.webkit.WebViewFeature.MULTI_PROFILE)) {
-                configureCrossOriginIsolatedAllowlist(plugins.viewModel.installed?.plugins.orEmpty(),
-                    pluginProfileName(account))
-            }
-        }
         CompositionLocalProvider(LocalTabs provides tabs, LocalTabDraft provides draft,
             LocalPluginProxy provides proxyRoute, LocalPluginAccount provides account) {
             PluginsEffects(plugins)
@@ -99,7 +98,9 @@ internal fun ServerApp(
                 AppContent(navigation, home, settings, appearance, chatView)
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }
+            TabMediaPermissions(tabs)
             DeviceVerificationDialogs(chatView, navigation, tabs.core)
+            KeyHandoffHost(chatView, navigation, tabs.core)
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
         }
     }
@@ -258,6 +259,7 @@ private fun NativeTab(
             onClose = { nav.settingsOverlay = false }.takeIf { nav.settingsOverlay },
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
+            onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
         is TabRef.UiResource -> Unit

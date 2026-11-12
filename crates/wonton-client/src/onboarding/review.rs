@@ -251,7 +251,7 @@ pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) ->
                     },
                 },
             },
-            PluginTaskState::Uncertain { message } => OnboardingItemState::Uncertain {
+            PluginTaskState::Uncertain { message, .. } => OnboardingItemState::Uncertain {
                 message: message.clone(),
             },
         };
@@ -278,6 +278,8 @@ fn core_problem(error: &CoreError) -> PluginProblem {
             PluginFailure::Upstream
         }
         CoreError::ServerTooOld { .. } => PluginFailure::ServerTooOld,
+        // 引导流程不写设置，走不到这一类；按输入错误说。
+        CoreError::SettingsInvalid { .. } => PluginFailure::Invalid,
     };
     PluginProblem {
         reason,

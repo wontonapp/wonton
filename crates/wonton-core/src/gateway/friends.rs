@@ -28,33 +28,12 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use wonton_protocol::{FriendGroup, FriendRow};
+use wonton_protocol::{FriendRow, FriendsList, RemovedFriend};
 
 use super::api::error_response;
 use super::{Gateway, TunnelPeer};
 use crate::friends::FriendsError;
 use crate::matrix::ADMIN_LOCALPART;
-
-/// 好友页的数据。请求和屏蔽邀请在客户端从 Matrix 同步里拼，这里只有核心存着的部分。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FriendsView {
-    pub friends: Vec<FriendRow>,
-    pub groups: Vec<FriendGroup>,
-    /// 整台服务器黑名单（`forbidden_remote_server_names`）。
-    pub blocked_servers: Vec<String>,
-    /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
-    pub removed: Vec<RemovedFriend>,
-    /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
-    pub can_block_federation: bool,
-    /// 名单是不是主人的：家人没有核心名单，好友只存在客户端本机。
-    pub owner_scope: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RemovedFriend {
-    pub user_id: String,
-    pub removed_at_ms: u64,
-}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendAccept {
@@ -105,7 +84,7 @@ fn owner_denied(person: &super::Person) -> Option<Response> {
     (!person.is_owner()).then(|| {
         error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "核心里的好友名单只有主人能改",
         )
     })
@@ -147,7 +126,7 @@ fn friends_error(error: FriendsError) -> Response {
     }
 }
 
-fn view(gateway: &Gateway, person: &super::Person) -> FriendsView {
+fn view(gateway: &Gateway, person: &super::Person) -> FriendsList {
     let is_owner = person.is_owner();
     // 家人没有核心名单：主人的名单不给他们看，客户端按 `owner_scope` 换成本机清单。
     let snapshot = if is_owner {
@@ -195,7 +174,7 @@ fn view(gateway: &Gateway, person: &super::Person) -> FriendsView {
                 .collect()
         })
         .unwrap_or_default();
-    FriendsView {
+    FriendsList {
         friends,
         groups,
         removed,

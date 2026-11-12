@@ -73,3 +73,23 @@ fn unreadable_entries_fail_too() {
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("github:acme/bad"), "{problems:?}");
 }
+
+/// 同一仓库里两个子目录的最后一段相同：tag 前缀会撞，`check-index` 挡下（PR #235 核对意见 ②）。
+#[test]
+fn two_subdirectories_with_the_same_last_segment_fail_the_index() {
+    let (passed, problems) = checked(vec![
+        entry("x/agents/codex", "codex", &[]),
+        entry("x/apps/codex", "kimi", &[]),
+        entry("x/apps/kimi", "other", &[]),
+    ]);
+    assert!(!passed);
+    let [problem] = problems.as_slice() else {
+        panic!("{problems:?}");
+    };
+    assert!(
+        problem.contains("github:acme/x/agents/codex")
+            && problem.contains("github:acme/x/apps/codex"),
+        "{problem}"
+    );
+    assert!(!problem.contains("github:acme/x/apps/kimi"), "{problem}");
+}

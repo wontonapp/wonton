@@ -25,14 +25,14 @@ enum QualityPreviews {
     static func fakeHome(relay: Bool) -> HomeViewModel {
         HomeViewModel(
             deviceId: "0", serverId: nil, status: .connected,
-            path: HomePath(relay: relay, lan: false, rttMs: 1_240), notice: nil,
+            path: HomePath(relay: relay, publicRelay: false, lan: false, rttMs: 1_240), notice: nil,
             details: ConnectionDetails(
                 network: .wifi, relay: .ok, server: .ok, lastConnectedAtMs: 1_794_000_000_000,
                 handshakeMs: 120, disconnects: 0, failedDials: 0, sentPackets: 900, lostPackets: 66,
                 quality: .poor, lossPerMille: 73, rttMs: 1_240,
                 lastFailure: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
             ),
-            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false
+            proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
         )
     }
 }

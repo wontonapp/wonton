@@ -25,7 +25,10 @@ use super::{
     gallery::{IconSource, Variant},
     github_source::{Origin, Trust},
 };
-use super::{store::EnabledPermission, views_source::source_notices};
+use super::{
+    store::{EnabledPermission, InstalledRecord},
+    views_source::source_notices,
+};
 use crate::l10n;
 
 impl PluginManager {
@@ -105,6 +108,8 @@ impl PluginManager {
             tags: langs.pick_tags(&m.tags),
             kind: installed.kind,
             runtime: m.runtime.into(),
+            security_tier: Some(super::security_tier::security_tier(m)),
+            link_url: m.link.as_ref().map(|link| link.url.clone()),
             scope: Some(wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: installed.trust,
@@ -124,7 +129,7 @@ impl PluginManager {
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
-            has_settings: false,
+            has_settings: super::settings::enabled(m),
             installed: Some(installed),
             blocked: None,
             notices: setup_notice(m, langs)
@@ -168,7 +173,7 @@ impl PluginManager {
     ) -> Result<InstallPreview, InstallError> {
         let blocked = blocked_by(self.precheck(&package.manifest, langs).await)?;
         let mut preview = self
-            .preview_with(package, langs, blocked, None, &[])
+            .preview_with(package, langs, blocked, None, &[], None)
             .await?;
         if let Some(notice) = self.retained_data(&package.manifest.id, langs).await? {
             let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
@@ -204,8 +209,21 @@ impl PluginManager {
         blocked: Option<String>,
         written_by: Option<PluginWriter>,
         enabled: &[EnabledPermission],
+        installed: Option<&InstalledRecord>,
     ) -> Result<InstallPreview, InstallError> {
         super::install_entry::check_runtime(&package.manifest, langs)?;
+        // 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
+        let schema = super::settings::load(package, langs)?;
+        let settings = match &schema {
+            None => None,
+            Some(schema) => {
+                let mut values: std::collections::BTreeMap<String, serde_json::Value> = installed
+                    .map(|record| record.settings.clone())
+                    .unwrap_or_default();
+                super::settings::value::defaults(schema, &mut values);
+                Some(super::settings::install_form(schema, &values, langs))
+            }
+        };
         let plan = dry_run(package, langs)?;
         let icon = self.check_icon(package, langs).await?;
         if let Some(icon) = &icon {
@@ -273,13 +291,14 @@ impl PluginManager {
             kind: kind(m.kind),
             has_bot: super::bots::is_bot(m),
             runtime: m.runtime.into(),
+            security_tier: Some(super::security_tier::security_tier(m)),
             scope_choices: self.scope_choices()?,
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
-            settings: None,
+            settings,
             notices,
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
@@ -708,6 +727,8 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         tags: Vec::new(),
         kind: installed.kind,
         runtime: installed.runtime,
+        security_tier: None,
+        link_url: None,
         scope: None,
         version: installed.version.clone(),
         trust: installed.trust,

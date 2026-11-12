@@ -43,7 +43,6 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.ProxySettings
-import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabPage
@@ -98,6 +97,8 @@ internal fun PlacedTab.tab(): TabRef = when (this) {
 internal class WebPageState(val place: PlacedTab, val tabs: TabsState) {
     val tab: TabRef get() = place.tab()
     val controller = PluginWebViewController()
+    /** 网页要摄像头/麦克风时的处置；接在控制器上，页面销毁跟着失效。 */
+    val media = TabMediaPermissionFlow(tabs, place)
     val capsule = TabCapsuleVisibility()
     var loaded by mutableStateOf(false)
     var failed by mutableStateOf(false)
@@ -151,7 +152,6 @@ private fun PluginTabContainer(
     onReselected: () -> Unit, onDetails: (String) -> Unit, onDraft: (String) -> Unit,
     bannerTop: Dp,
 ) {
-    val plugin = tabs.installedPlugin(item.tab)
     val page = item.page ?: return
     val connection = sharedPageConnection(item.tab, tabs, home)
     val state = remember { WebPageState(PlacedTab.Bar(item.tab), tabs) }
@@ -167,14 +167,14 @@ private fun PluginTabContainer(
     val environment = viewport.environment
     val openLink = externalLinkOpener { state.problem = it }
     val supported = connection.supported
-    val crossOriginBlocked = isCrossOriginIsolationBlocked(plugin)
+    val crossOriginBlocked = page.opensInBrowser
     PageEffects(state, page, connection.connected, active, appearance, environment)
     ReselectedEffect(state, reselected, onReselected)
     val back = { state.back(page.fullscreen, overlay) }
     TabBackHandler(state, active, page.fullscreen, overlay, back)
     val cover = state.covers(page)
     val takeover = pageTakeover(item.tab, tabs, active)
-    PageLayers(state, item, page, tabs, connection, plugin, appearance, environment, viewport, supported,
+    PageLayers(state, item, page, tabs, connection, appearance, environment, viewport, supported,
         crossOriginBlocked, active, overlay, cover, takeover, bannerTop, { top = it }, onDetails, onDraft, openLink,
         back)
 }
@@ -249,12 +249,13 @@ private fun PageEffects(
 
 @Composable
 internal fun PageWebView(
-    state: WebPageState, page: TabPage, plugin: InstalledPlugin?, proxy: ProxySettings?, environment: TabEnvironment,
+    state: WebPageState, page: TabPage, proxy: ProxySettings?, environment: TabEnvironment,
     script: String, inset: PaddingValues, visible: Boolean, openLink: (String) -> Unit, onDraft: (String) -> Unit,
     profile: String?,
 ) {
-    val url = page.url?.takeIf { !isCrossOriginIsolationBlocked(plugin) } ?: return
+    val url = page.url?.takeIf { !page.opensInBrowser } ?: return
     proxy ?: return
+    state.controller.permissionHandler = state.media::handle
     PluginWebView(
         url, proxy, page.reload,
         onLoaded = { state.loadFinished(environment) }, onFailed = state::loadFailed,

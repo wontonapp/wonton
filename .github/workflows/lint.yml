@@ -8,16 +8,10 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
-  # 合并队列：入队后的合并提交上也要报告，否则队列直接判失败。merge_group 不认 paths，
-  # 路径过滤只留在 pull_request 下自己生效。
-  merge_group:
-    types: [checks_requested]
-    branches: [main]
 
 # 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
-# 队列里的 ref 一律是 gh-merge-queue/main，按它分组会把几次入队挤进同一组，改用这次入队的合并提交。
 concurrency:
-  group: lint-${{ github.event_name == 'merge_group' && github.event.merge_group.head_sha || github.ref }}
+  group: lint-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -85,6 +79,12 @@ jobs:
       - name: dev.sh 的 logs 和 diag（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/dev_test.py
+      - name: dev.sh up 构建前的端口检查（假 docker、假 ss）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/port-preflight_test.py
+      - name: smoke.sh 分段运行（步骤名、SMOKE_UNTIL、SMOKE_ONLY）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/smoke-lib_test.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py
@@ -94,6 +94,15 @@ jobs:
       - name: 生成绑定的 crate 的文档注释能进 Swift 和 Kotlin 的块注释
         if: steps.changes.outputs.source == 'true'
         run: bash scripts/check-uniffi-comments.sh
+      - name: 两个壳的对齐检查自己的用例
+        if: steps.changes.outputs.source == 'true'
+        run: python3 -m unittest discover -s scripts/shell_parity -t scripts
+      # 只有一个壳用到的 ViewModel 项报警告注解，不挡合并（主人 2026-11-12 定）。脚本只在读不懂 Rust 源码时
+      # 退出非零，那也只标黄，不让这个作业失败。
+      - name: 两个壳的对齐（只报警告）
+        if: steps.changes.outputs.source == 'true'
+        continue-on-error: true
+        run: python3 scripts/check-shell-parity.py
       - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts

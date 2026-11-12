@@ -108,6 +108,7 @@ onboarding-review-no-failure = 这一项没有失败
 
 # 登录相关。$reason 是 Matrix SDK 的原始错误。
 chat-sign-in-restore-failed = 恢复 Matrix 会话失败：{ $reason }
+chat-sign-in-external-missing = 这台手机上已经没有这个 Matrix 账号的登录状态，请重新登录。
 chat-sign-in-no-connection-info = 还没有家里服务器的连接信息
 chat-sign-in-login-failed = 登录 Matrix 失败：{ $reason }
 chat-sign-in-no-saved-session = 登录后取不到登录状态
@@ -157,6 +158,7 @@ chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
 # 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
 chat-empty-message = 消息不能为空。
+composer-not-ready = 这个版本的客户端核心还不支持附件区。
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。
@@ -168,6 +170,7 @@ chat-layout-change-failed = 改显示方式没成功：{ $reason }
 chat-session-device-revoked = 这台设备在 Matrix 上已被吊销，需要主人重新配对。
 
 # 壳把不认识的操作分给聊天时显示。
+side-chat-not-ready = 这个版本的客户端核心还不支持旁聊。
 chat-invalid-action = 不是聊天操作
 # 发起私聊时给的 ID 不像 @名字:服务器 时显示。
 chat-invalid-user-id = ID 的格式不对，应该像 @名字:服务器
@@ -444,6 +447,13 @@ servers-name-required = 名字不能为空
 servers-storage-failed = 读写不了 { $path }：{ $reason }
 # 壳把不认识的操作分给服务器列表时显示。
 servers-invalid-action = 不是服务器列表操作
+matrix-login-not-current = 这次登录已经结束，或者已经换成了新的一次。
+matrix-login-wrong-step = 这次登录不在这一步。
+matrix-login-method-not-offered = 这台服务器不提供这种登录方式。
+matrix-login-device-name-required = 请填这台设备的名字。
+matrix-login-invalid-user-id = 请填完整的 Matrix ID，比如 @name:matrix.org。
+matrix-login-password-required = 请填密码。
+matrix-login-redirect-not-allowed = App 收不到发往这个地址的登录回调。
 
 # 会话列表（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 会话标题不能为空
@@ -503,6 +513,8 @@ plugins-start-busy = { $id } 正在启动、安装、更新或卸载
 tabs-bridge-page-not-open = 这个插件页面没有打开或固定
 tabs-bridge-invalid-environment = 页面栏高和安全区必须是有限的非负数
 tabs-bridge-public-page = 公网网页没有 Wonton 的桥。
+plugin-media-not-asked = 这个插件页面没有保存摄像头和麦克风的决定
+plugin-media-save-failed = 写不了摄像头和麦克风的记录文件 { $path }：{ $reason }
 
 # 聊天的连接问题（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailable 的原因和失败操作的消息。
 chat-not-connected = 连上家里的服务器后再试
@@ -530,6 +542,14 @@ plugins-core-upgrade-already-running = 已经在更新了
 plugins-core-upgrade-not-cancellable = 现在不能取消
 # $reason 是连接问题的原始详情。
 plugins-core-upgrade-start-uncertain = 不确定发起了没有，连上后再看一下：{ $reason }
+
+# 兼容检查（ADR-0085）的详情：每个原因一行，{ $raw } 是清单里的原值。客户端核心按
+# App 的语言写，升级页列在新版本读不了的应用下面。
+plugins-core-upgrade-compat-spec = 它按规范 { $raw } 写成，新版本不支持：升级后会被标为异常。
+plugins-core-upgrade-compat-feature = 它的清单用了新版本不认识的 { $raw }：升级后会被标为异常。
+plugins-core-upgrade-compat-capability = 它依赖能力 { $raw }，新版本不提供：升级后会被标为异常。
+plugins-core-upgrade-compat-other = 新版本读不了这个应用：升级后会被标为异常。
+plugins-core-upgrade-compat-other-raw = 新版本读不了这个应用的 { $raw }：升级后会被标为异常。
 
 # 资料这一步：名字或邮箱为什么存不了。$max 是名字最多几个字。
 onboarding-profile-name-empty = 名字不能为空
@@ -602,3 +622,13 @@ tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
 panel-pins-refresh-failed = 面板里 Bot 钉的页面取不到:{ $error }
+
+## 要跨源隔离的插件网页在系统浏览器里打开（ADR-0033）。后三条显示在浏览器里。
+browser-front-failed = 给浏览器用的本机地址开不了：{ $error }
+browser-page-not-isolated = 这个页面不在浏览器里打开。
+browser-not-paired = 云吞还没和家里的服务器配对。
+browser-unknown-address = 这个地址已经失效。回到云吞，重新打开这个应用。
+browser-not-connected = 云吞现在没连上家里的服务器。回到云吞，等连上后再刷新这个页面。
+browser-bad-request = 请从云吞里打开这个页面。
+
+contacts-invalid-action = 不是 Bot 联系人操作。

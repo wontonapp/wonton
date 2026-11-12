@@ -7,9 +7,11 @@ pub(crate) mod cards;
 mod core_upgrade;
 mod egress;
 mod me;
+mod media;
 mod now;
 mod polling;
 mod registry_mirror;
+mod settings;
 mod sharing;
 mod start;
 mod support;
@@ -29,9 +31,8 @@ use tokio::sync::{Notify, watch};
 use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
-    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginTaskState,
-    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
-    TabRef,
+    PermissionUpdate, PluginDetail, PluginFailure, PluginImage, PluginProblem, PluginsViewModel,
+    ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing, TabRef,
 };
 
 use crate::home::HomeLink;
@@ -92,6 +93,8 @@ pub(crate) struct PluginsLink {
     confirmations: Mutex<VecDeque<StoreConfirmation>>,
     /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
     ports: Arc<PortMapper>,
+    /// 网页用摄像头/麦克风的记忆，结果写进 `view.media_grants`。
+    media: media::MediaGrants,
 }
 
 impl PluginsLink {
@@ -123,6 +126,7 @@ impl PluginsLink {
             },
         );
         let ports = PortMapper::new(&runtime, home.clone(), data_dir, view.clone());
+        let media = media::MediaGrants::new(data_dir, view.clone());
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
@@ -151,6 +155,7 @@ impl PluginsLink {
             previews: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(VecDeque::new()),
             ports,
+            media,
         });
         link.restore_core_upgrade();
         link.refresh_derived();
@@ -383,10 +388,10 @@ impl PluginsLink {
             view.core_upgrade = CoreUpgradeViewModel::default();
             view.storage = None;
             view.storage_problem = None;
-            view.tasks
-                .retain(|task| task.state == PluginTaskState::Running);
+            view.tasks.retain(|task| task.state.in_progress());
             for task in &mut view.tasks {
                 task.state = tasks::server_changed();
+                task.waiting_for_connection = false;
             }
         });
         self.forget_core_upgrade();

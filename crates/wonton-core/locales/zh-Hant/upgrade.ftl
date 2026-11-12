@@ -30,6 +30,13 @@ upgrade-download-no-space = 磁碟不夠：下載大約要 { $needed } 位元組
 upgrade-download-failed = 下載失敗：{ $error }
 upgrade-image-missing-after-pull = 下載完了，本機還是沒有 { $reference }
 
+# 相容性檢查（ADR-0085）查不成不攔升級：詳情如實說沒查成，升級照常可以發起。
+upgrade-compat-records-unreadable = 讀不了已安裝應用程式的紀錄：{ $error }
+upgrade-compat-materialize-failed = 無法為相容性檢查寫出已安裝應用程式的套件：{ $error }
+upgrade-compat-run-failed = 在新映像檔 { $image } 裡跑不了相容性檢查：{ $error }
+upgrade-compat-command-failed = 新映像檔 { $image } 裡的相容性檢查以結束代碼 { $code } 結束：{ $error }
+upgrade-compat-output-unreadable = 讀不懂相容性檢查的輸出：{ $error }
+
 # 更新器容器把自己做的事寫進狀態檔，用主人的語言。
 upgrade-updater-crashed = 更新器反覆崩潰
 upgrade-phase-unreadable = 無法讀取狀態檔裡的階段

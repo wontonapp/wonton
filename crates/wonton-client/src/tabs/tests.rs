@@ -63,6 +63,7 @@ impl Rig {
                 pins_problem: None,
                 previous_sources: HashMap::new(),
                 external: false,
+                media_prompt: None,
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -112,6 +113,7 @@ fn home(server: &str) -> HomeViewModel {
         pairing: None,
         invite: None,
         keep_connection: false,
+        just_recovered: false,
     }
 }
 

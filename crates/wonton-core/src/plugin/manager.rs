@@ -123,6 +123,9 @@ pub struct PluginManager {
     pub(super) sharing:
         std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
     pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
+    /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
+    /// [`super::contacts`]。
+    pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
 }
 
 pub(super) use super::grant::{check_permissions, supported};
@@ -196,6 +199,7 @@ impl PluginManager {
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
             person_members: std::sync::OnceLock::new(),
+            contact_source: std::sync::OnceLock::new(),
         }
     }
 
@@ -351,9 +355,9 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.owner_groups`）。
+    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
     /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
-    pub fn oidc_owner_groups(&self, client_id: &str) -> Vec<String> {
+    pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
         let Ok(id) = PluginId::parse(client_id) else {
             return Vec::new();
         };
@@ -364,7 +368,7 @@ impl PluginManager {
             .and_then(|entry| entry.listed.as_ref())
             .and_then(|listed| listed.manifest.webui.as_ref())
             .and_then(|webui| webui.oidc.as_ref())
-            .map(|client| client.owner_groups.clone())
+            .map(|client| client.admin_groups.clone())
             .unwrap_or_default()
     }
 
@@ -572,6 +576,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
         super::install_entry::check_runtime(&package.manifest, langs)?;
@@ -591,7 +596,7 @@ impl PluginManager {
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, gpu = ?gpu, lan = ?lan, "开始安装插件");
         match self
-            .deploy(&package, granted, enabled, gpu, lan, langs)
+            .deploy(&package, granted, enabled, gpu, lan, settings, langs)
             .await
         {
             Ok(deployed) => {

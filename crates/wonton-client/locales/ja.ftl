@@ -108,6 +108,7 @@ onboarding-review-no-failure = その項目は失敗していません
 
 # サインイン関連。$reason は Matrix SDK の元のエラーの詳細です。
 chat-sign-in-restore-failed = Matrixセッションを復元できません：{ $reason }
+chat-sign-in-external-missing = このスマートフォンにはこの Matrix アカウントのログイン状態がありません。もう一度ログインしてください。
 chat-sign-in-no-connection-info = 自宅サーバーの接続情報がまだありません
 chat-sign-in-login-failed = Matrixにログインできません：{ $reason }
 chat-sign-in-no-saved-session = ログイン後にログイン状態を取得できません
@@ -157,6 +158,7 @@ chat-contacts-invalid-user-id = ユーザーIDが無効です：{ $reason }
 
 # Siri、ショートカット、チャット画面でメッセージを送るとき、本文が空の場合に表示します。
 chat-empty-message = メッセージを入力してください。
+composer-not-ready = このバージョンのクライアントコアは添付トレイにまだ対応していません。
 # Siriやショートカットから渡されたボットのIDを解析できない場合に表示します。
 chat-ask-invalid-bot-id = デフォルトのエージェントのIDの形式が正しくありません。
 # 既存のダイレクトチャットのルームIDを解析できない場合に表示します。
@@ -168,6 +170,7 @@ chat-layout-change-failed = チャットの表示方法を変更できません�
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
 
 # シェルからコアの知らないチャット操作が渡されたときに表示します。
+side-chat-not-ready = このバージョンのクライアントコアはサイドチャットにまだ対応していません。
 chat-invalid-action = チャット操作ではありません
 # ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
 chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
@@ -445,6 +448,13 @@ servers-name-required = 名前を入力してください
 servers-storage-failed = { $path }を読み書きできません：{ $reason }
 # シェルからコアの知らないサーバー一覧の操作が渡されたときに表示します。
 servers-invalid-action = サーバー一覧の操作ではありません
+matrix-login-not-current = このログインは終了したか、新しいログインに置き換えられました。
+matrix-login-wrong-step = このログインはその段階にありません。
+matrix-login-method-not-offered = このサーバーはそのログイン方法に対応していません。
+matrix-login-device-name-required = このデバイスの名前を入力してください。
+matrix-login-invalid-user-id = @name:matrix.org のような完全な Matrix ID を入力してください。
+matrix-login-password-required = パスワードを入力してください。
+matrix-login-redirect-not-allowed = アプリはそのアドレスへのログインコールバックを受け取れません。
 
 # セッションリスト（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = セッションのタイトルを入力してください
@@ -504,6 +514,8 @@ plugins-start-busy = { $id }はすでに起動、インストール、更新、�
 tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
 tabs-bridge-public-page = 公開ウェブページには Wonton のブリッジがありません。
+plugin-media-not-asked = このアプリのページにはカメラとマイクの判断が保存されていません
+plugin-media-save-failed = カメラとマイクの判断ファイル { $path } に書き込めません：{ $reason }
 
 # チャットの接続問題（crates/wonton-client/src/chat/view.rs）：CoreError::TransportUnavailableの理由と失敗した操作のメッセージ。
 chat-not-connected = 自宅サーバーに接続してから、もう一度試してください
@@ -531,6 +543,15 @@ plugins-core-upgrade-already-running = すでにアップデートを実行中�
 plugins-core-upgrade-not-cancellable = 今はキャンセルできません
 # $reason は接続問題の元の詳細です。
 plugins-core-upgrade-start-uncertain = アップデートを開始できたかはっきりしません。接続後にもう一度確認してください：{ $reason }
+
+# アップデート前の互換性チェック（ADR-0085）の詳細：理由ごとに 1 行、{ $raw } はマニフェ
+# ストの原文の値。クライアントコアがアプリの言語で書き、アップデートページでは新しいバー
+# ジョンが読めないアプリの下に並べます。
+plugins-core-upgrade-compat-spec = このアプリは仕様{ $raw }で書かれており、新しいバージョンは対応していません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-feature = このアプリのマニフェストには、新しいバージョンが認識しない{ $raw }があります。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-capability = このアプリは能力{ $raw }に依存していますが、新しいバージョンでは提供されません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other = 新しいバージョンはこのアプリを読めません。アップデート後は異常として表示されます。
+plugins-core-upgrade-compat-other-raw = 新しいバージョンはこのアプリの{ $raw }を読めません。アップデート後は異常として表示されます。
 
 # プロフィールのステップ：名前やメールアドレスを保存できない理由です。$max は名前の最大文字数です。
 onboarding-profile-name-empty = 名前を入力してください
@@ -603,3 +624,13 @@ tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページ�
 tabs-fullscreen-none = 全画面のページはありません。
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
 panel-pins-refresh-failed = Bot がピン留めしたページを読み込めません:{ $error }
+
+## クロスオリジン分離が必要なプラグインのページはシステムのブラウザで開きます（ADR-0033）。後の3つはブラウザに表示されます。
+browser-front-failed = ブラウザ用のローカルアドレスを開けませんでした：{ $error }
+browser-page-not-isolated = このページはブラウザでは開きません。
+browser-not-paired = Wontonはまだ自宅のサーバーとペアリングされていません。
+browser-unknown-address = このアドレスは期限切れです。Wontonに戻って、アプリをもう一度開いてください。
+browser-not-connected = Wontonは今、自宅のサーバーにつながっていません。Wontonに戻り、つながってからこのページを再読み込みしてください。
+browser-bad-request = このページはWontonから開いてください。
+
+contacts-invalid-action = Bot の連絡先の操作ではありません。

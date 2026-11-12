@@ -442,6 +442,7 @@ pub fn preview(id: &str) -> InstallPreview {
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
         runtime: Default::default(),
+        security_tier: None,
         scope_choices: Vec::new(),
         has_bot: false,
         icon: None,
@@ -495,6 +496,7 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         author: None,
         stars: None,
         installed_version: None,
+        security_tier: None,
         high_permissions: false,
         blocked: None,
     }
@@ -638,6 +640,11 @@ impl Rig {
             self._home.server.endpoint().id(),
             SocketAddr::from((Ipv4Addr::LOCALHOST, 9)),
         )
+    }
+
+    /// 关掉服务端，模拟断网：客户端那边会看到连接断开。
+    pub async fn drop_home(&self) {
+        self._home.server.endpoint().close().await;
     }
 
     pub async fn connected(&self) {

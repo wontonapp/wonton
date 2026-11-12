@@ -42,6 +42,10 @@ struct MainView: View {
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
+        .modifier(KeyHandoffCover(model: chat) {
+            tabs.select(.chat)
+            chat.path = [.chatBackup]
+        })
         .fullScreenCover(isPresented: overlayPresented, onDismiss: presentPendingSettings) { overlay }
         .fullScreenCover(
             item: $onboardingGateway, onDismiss: {
@@ -56,6 +60,8 @@ struct MainView: View {
                         tabs.send(.closeTabOverlay)
                         onboardingGateway = nil
                     })
+                } else {
+                    StaleCoverDismiss()
                 }
             }
         )
@@ -109,7 +115,7 @@ struct MainView: View {
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         .environment(plugins)
-        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.connectionRecovered) {
+        .environment(\.wontonBarStatus, WontonBarStatus(home: home.viewModel, recovered: home.viewModel.justRecovered) {
             ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
         })
     }
@@ -169,6 +175,8 @@ struct MainView: View {
                 }
                 pluginPage(item.tab, page: page, overlay: true)
             }
+        } else {
+            StaleCoverDismiss()
         }
     }
 
@@ -247,6 +255,19 @@ struct MainView: View {
     }
 
 }
+/// 盖着的页面在核心那边已经没了（关掉、插件卸载、换了服务器），盖层却还在（在后台时 SwiftUI 没收掉）：
+/// 不留一块没有出口的空白，自己收起，回到下面的主界面。
+private struct StaleCoverDismiss: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .onAppear { dismiss() }
+            .onChange(of: scenePhase) { _, phase in if phase == .active { dismiss() } }
+    }
+}
+
 private struct TabPageIdentity: Hashable {
     let accountId: String?
     let tab: TabRef

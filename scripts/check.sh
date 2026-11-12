@@ -35,8 +35,11 @@ bash scripts/check-file-size.sh
 python3 -m unittest discover -q -s scripts/ui_text -t scripts
 python3 -m unittest discover -q -s scripts/install -t scripts
 python3 -m unittest discover -q -s scripts/dev_ports -t scripts
+python3 -m unittest discover -q -s scripts/shell_parity -t scripts
 python3 deploy/dev/core/instance-label_test.py
 python3 deploy/dev/core/dev_test.py
+python3 deploy/dev/core/port-preflight_test.py
+python3 deploy/dev/core/smoke-lib_test.py
 python3 scripts/check-ui-text.py
 python3 scripts/check-dev-compose-ports.py
 bash scripts/check-conflict-markers.sh
@@ -46,6 +49,8 @@ bash scripts/check-uniffi-comments.sh
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
+# 和 pre-push 同一项：合上最新 main 后的树能不能编过（WONTON_SKIP_MERGED_CHECK=1 跳过）。
+bash scripts/check-merged-main.sh
 
 # --include-ignored 连文档里标了 ignore 的示例也会运行，所以文档示例不要用 ```ignore（用 text 或 no_run）。
 if docker_error="$(docker_reachable)"; then

@@ -37,6 +37,7 @@ impl ClientCore {
                 self.change_servers(|servers| servers.rename(&id, &name))
             }
             Action::RemoveServer { id } => self.change_servers(|servers| servers.remove(&id)),
+            action if is_matrix_login_action(&action) => self.matrix_login.dispatch(action),
             _ => Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "servers-invalid-action"),
             }),
@@ -62,12 +63,16 @@ impl ClientCore {
             Action::PairHome { code, device_name } => self.pair_home(code.expose(), &device_name),
             Action::DismissPairingFailure => scope.home.dismiss_pairing_failure(),
             Action::CancelPairing => scope.home.cancel_pairing(),
-            Action::InviteDevice => scope.home.invite(),
+            action
+            @ (Action::InviteDevice | Action::CloseDeviceInvite | Action::SkipKeyHandoff) => {
+                key_handoff_action(&scope, &action)
+            }
             action @ (Action::AddServer
             | Action::CancelAddServer
             | Action::SwitchServer { .. }
             | Action::RenameServer { .. }
             | Action::RemoveServer { .. }) => self.change_server(action),
+            action if is_matrix_login_action(&action) => self.change_server(action),
             peers @ (Action::RefreshPeers
             | Action::ShowPeerCode
             | Action::HidePeerCode
@@ -77,6 +82,12 @@ impl ClientCore {
             | Action::RejectPeerRequest { .. }
             | Action::UnrejectPeerRequest { .. }
             | Action::RemovePeer { .. }) => scope.peers.dispatch(peers),
+            contacts @ (Action::RefreshBotContacts { .. }
+            | Action::RequestBotContact { .. }
+            | Action::RequestPersonContact { .. }
+            | Action::ApproveBotContact { .. }
+            | Action::RejectBotContact { .. }
+            | Action::RemoveBotContact { .. }) => scope.bot_contacts.dispatch(contacts),
             friends @ (Action::RefreshFriends
             | Action::AddFriend { .. }
             | Action::ApproveFriendRequest { .. }
@@ -135,6 +146,22 @@ impl ClientCore {
 }
 
 /// 分享相关的操作（含分享页的加载结果），整组交给 `dispatch_sharing`。
+/// 加设备时交接聊天密钥（ADR-0087）：“添加设备”页开着时，聊天那边自动接上一次新设备的确认请求。
+fn key_handoff_action(scope: &Scope, action: &Action) -> Result<(), CoreError> {
+    match action {
+        Action::InviteDevice => {
+            scope.home.invite()?;
+            scope.chat.open_device_invite();
+        }
+        Action::CloseDeviceInvite => {
+            scope.home.close_invite();
+            scope.chat.close_device_invite();
+        }
+        _ => return scope.chat.skip_key_handoff(),
+    }
+    Ok(())
+}
+
 fn is_sharing_action(action: &Action) -> bool {
     matches!(
         action,
@@ -152,6 +179,18 @@ fn is_sharing_action(action: &Action) -> bool {
             | Action::CreatePluginShare { .. }
             | Action::UpdatePluginShare { .. }
             | Action::RevokePluginShare { .. }
+    )
+}
+
+/// 用现成 Matrix 账号登录的操作（ADR-0051），整组交给 [`MatrixLogins`](crate::matrix_login::MatrixLogins)。
+fn is_matrix_login_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::StartMatrixLogin { .. }
+            | Action::SubmitMatrixPassword { .. }
+            | Action::StartMatrixOidc { .. }
+            | Action::CompleteMatrixOidc { .. }
+            | Action::CancelMatrixLogin { .. }
     )
 }
 
