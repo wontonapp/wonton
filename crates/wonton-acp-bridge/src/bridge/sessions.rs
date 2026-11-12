@@ -3,7 +3,7 @@
 //! 会话键和 ACP 会话 ID 都存在 `sessions.json`：重启后按会话键 `session/load`，Agent 说
 //! 会话没了才新建并如实说明上下文已丢（ADR-0035）。
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap};
 
 use tokio::sync::mpsc;
 
@@ -18,8 +18,10 @@ pub(super) struct SessionState {
     pub(super) session_id: Option<String>,
     pub(super) loaded: bool,
     pub(super) active: bool,
-    pub(super) queue: VecDeque<Job>,
-    pub(super) pending_interrupt: Option<Job>,
+    /// 这一轮在跑时 Agent 没收下的消息，按到达顺序；这一轮结束后合成一轮发（`busy.rs`）。
+    pub(super) buffer: Vec<Job>,
+    /// 已经发了 `session/cancel`、在等这一轮收尾：这时进来的消息不再插进将要结束的一轮。
+    pub(super) cancelling: bool,
     /// 还没跑过一轮；话题的第一轮要带开局说明。
     pub(super) first_turn: bool,
     /// 话题起点那条消息的原文和它前面的主对话片段，开局用。
@@ -64,11 +66,11 @@ impl Sessions {
         self.acp.get(session_id).cloned()
     }
 
-    /// 丢掉所有会话排队的后续任务：连接断开时不再开新一轮，收尾只管在跑的。
+    /// 丢掉所有会话攒着的消息：连接断开时不再开新一轮，收尾只管在跑的。
     pub(super) fn drop_pending(&mut self) {
         for state in self.states.values_mut() {
-            state.queue.clear();
-            state.pending_interrupt = None;
+            state.buffer.clear();
+            state.cancelling = false;
         }
     }
 }
