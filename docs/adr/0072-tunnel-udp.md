@@ -207,9 +207,27 @@ WebView。代价是 iOS 和 Android 能力不一样，原生 Moonlight 的体验
 - **CPU**（两端转发进程合计，x86 台式机）：按包数走。1000–1414 字节、100 Mbit/s 约 0.2–0.4 核；200 字节、100 Mbit/s 约 0.6 核。
   手机上折算更高，100 Mbit/s 以内的串流能接受，小包高包率的流量要注意。
 
+2026-11-11，Android WebView 里的 WebRTC 经本机映射和 LiveKit 互通（“待验证”里 WebView 一条的 Android 部分，App 未改代码）：
+LiveKit 1.13.11（`rtc.node_ip` 设 `127.0.0.1`，UDP mux 7882、TCP 退路 7881）、livekit-client 2.23.0，Android WebView 124、
+API 35 模拟器；信令 WebSocket 经插件网页同源反代到 7880，不为它另开映射。三组各 24–30 秒采样：
+
+| 组 | WebView 选中的远端候选 | 首帧 | 码率 | 丢包 |
+| --- | --- | --- | --- | --- |
+| UDP 直连（主路径） | `127.0.0.1:7882 udp type=host` | 313 ms | 1.2–1.7 Mbit/s | 0 |
+| TCP 7881 退路 | `127.0.0.1:7881 tcp type=host` | 470 ms | 1.0–2.0 Mbit/s | 0 |
+| 强制走 n0 公共中继 | `127.0.0.1:7882 udp type=host` | 6262 ms | 0.8–1.8 Mbit/s，有一个 0 采样 | 0 |
+
+三组选中的远端候选都是回环地址，本端是核心在插件网络里的流向套接字（`type=prflx`）——“每个流向一个套接字”从两侧互证。
+Android WebView 对 `127.0.0.1` 的 ICE 候选不挡路，隧道和中继路径完全藏在映射后面。中继组首帧 6.3 秒、码率贴着 ~1 Mbit/s
+上限波动，是“中继下如实提示”的量化依据。
+
+发布（`getUserMedia`）要 Android 壳补 `onPermissionRequest` 权限桥，未接时一律 `NotAllowedError`；接收（订阅、渲染远端
+画面）不需要，这轮数据全是纯接收路径。要发布音视频的插件网页等壳补上权限桥（iOS 用 `WKUIDelegate` 的媒体捕获权限代理）。
+
 ## 待验证
 
-- WKWebView 和 Android WebView 里的 WebRTC 能不能连 `127.0.0.1` 的 ICE 候选（neko、LiveKit 在 App 里用的前提）。
+- WKWebView 里的 WebRTC 能不能连 `127.0.0.1` 的 ICE 候选（neko、LiveKit 在 App 里用的前提）。Android WebView 已实测可以
+  （见“验证结果”）；WebKit 历史上过滤回环候选，要实测。连着一起验的还有：发布要的媒体捕获权限代理、信令 WebSocket 的兼容性。
 - Android 上原生 Moonlight 经映射连 Sunshine 或 Wolf 的端到端体验。
 - iOS 切到别的 App 后，Wonton 的本机监听多久失效（有没有短时可用的余地）。
 - 一个流向进行中路径从中继切到直连时，数据报是否连续（本机实测换路径的那 1–3 秒丢包集中，还没测中继到直连的单向切换）。
