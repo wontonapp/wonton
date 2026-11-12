@@ -289,7 +289,7 @@ x-wonton:
 
 - 只放行发请求的那个页面自己的源：请求的 origin 和页面 URL 的 scheme、主机、有效端口一致才算页面自己（判定同桥的来源检查）。页面里嵌的其他源（第三方 iframe）一律直接拒，不出询问。
 - 记着允许就直接放行，记着拒绝就直接拒；没问过的出询问（`TabsViewModel.media_prompt`，一次只有一张，页面关掉就清），壳画成平台风格的弹窗，写清哪个插件、要什么（摄像头/麦克风/两者）。允许 / 不允许都是决定，按插件 ID 记下；换插件重新问。
-- 主人在弹窗里允许后，壳再申请系统运行时权限（Android `CAMERA`/`RECORD_AUDIO`；iOS 复用或补 `NSCameraUsageDescription`/`NSMicrophoneUsageDescription`）。系统层被拒时：网页拿到拒绝，壳给一条带“去设置”的提示；不崩、不让网页卡住等回调。App 内的允许是 App 内的决定，系统权限每次都另查。
+- 主人在弹窗里允许后，壳再申请系统运行时权限（Android `CAMERA`/`RECORD_AUDIO`；iOS 复用或补 `NSCameraUsageDescription`/`NSMicrophoneUsageDescription`）。系统层被拒时：网页拿到拒绝，壳给一条带“去设置”的提示；不崩、不让网页卡住等回调。App 内的允许是 App 内的决定，系统权限每次都另查。Android 的清单还要声明 `MODIFY_AUDIO_SETTINGS`（普通权限，安装时就给、不弹框）：WebView 开麦克风要它和 `RECORD_AUDIO` 两个都在，缺了它系统权限给了，网页也只拿到 `NotReadableError`。
 - 拒绝只在询问弹窗里产生。插件详情页一行开关显示记着的决定并可改回：开是允许，关是改回没问过（清掉，下次再问）；没问过不显示。开关上给不出拒绝。
 - 只处理摄像头和麦克风（Android `RESOURCE_VIDEO_CAPTURE`/`RESOURCE_AUDIO_CAPTURE`），其他资源照旧拒绝。
 
