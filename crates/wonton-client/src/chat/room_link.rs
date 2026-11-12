@@ -13,8 +13,9 @@ impl ChatLink {
             .resolve_room_id(input)
             .await
             .map_err(|error| core_error(&error))?;
+        // 没加入的房间进不去，但登录好好的：不能说成要重新配对。
         if !session.is_joined(&room_id) {
-            return Err(CoreError::Unauthorized {
+            return Err(CoreError::Forbidden {
                 reason: l10n!(CATALOG, language(), "chat-link-room-not-joined"),
             });
         }

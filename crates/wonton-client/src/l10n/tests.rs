@@ -143,6 +143,10 @@ fn assert_error_prefixes(lang: wonton_l10n::Lang) {
             "core-error-unauthorized",
         ),
         (
+            CoreError::Forbidden { reason: raw.into() },
+            "core-error-forbidden",
+        ),
+        (
             CoreError::Upstream { reason: raw.into() },
             "core-error-upstream",
         ),

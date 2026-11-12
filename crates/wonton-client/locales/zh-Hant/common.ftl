@@ -1,3 +1,15 @@
+## 預設收合的技術詳細資訊。原因、錯誤碼和上游原文保持不變。
+## 不限長度。參數是診斷資料，不是翻譯鍵。
+
+# CoreError 前綴。$reason 是原始錯誤詳細資訊。
+core-error-storage = 無法讀寫本機儲存空間：{ $reason }
+core-error-not-ready = 尚未就緒：{ $reason }
+core-error-transport = 無法連上家用伺服器：{ $reason }
+core-error-unauthorized = 家用伺服器拒絕了請求：{ $reason }
+core-error-forbidden = 家用伺服器不允許這個操作：{ $reason }
+core-error-upstream = 家用伺服器發生錯誤：{ $reason }
+core-error-server-too-old = 家裡的伺服器太舊，還做不了這件事。升級伺服器後再試。
+
 # 殼把不認得的操作交給聊天時顯示。
 side-chat-not-ready = 這個版本的用戶端核心還不支援旁聊。
 

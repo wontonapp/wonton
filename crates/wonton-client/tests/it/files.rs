@@ -660,7 +660,7 @@ async fn thumbnails_return_bytes_or_the_reason() {
         .thumbnail(&file, Err(FileFailure::NotShared));
     assert!(matches!(
         world.phone().file_thumbnail(file).await,
-        Err(CoreError::Unauthorized { .. })
+        Err(CoreError::Forbidden { .. })
     ));
 }
 

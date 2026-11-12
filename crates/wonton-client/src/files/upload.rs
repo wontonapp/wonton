@@ -467,6 +467,7 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::TransportUnavailable { reason } => Problem::Interrupted(reason),
         CoreError::NotReady { reason } => Problem::Failed(FileFailure::ServiceUnavailable, reason),
         CoreError::Unauthorized { reason } => Problem::Failed(FileFailure::Unauthenticated, reason),
+        CoreError::Forbidden { reason } => Problem::Failed(FileFailure::PermissionDenied, reason),
         CoreError::InvalidInput { reason } => Problem::Failed(FileFailure::InvalidInput, reason),
         CoreError::Storage { reason } => Problem::Failed(FileFailure::LocalIo, reason),
         CoreError::Upstream { reason } => Problem::Failed(FileFailure::UpstreamError, reason),

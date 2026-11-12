@@ -354,8 +354,8 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
             reason: not_connected(),
         },
-        // CoreError 没有单独的“被拒绝”类别，它的 Unauthorized 包括无权操作。
-        ChatFailure::Unauthorized | ChatFailure::Forbidden => CoreError::Unauthorized { reason },
+        ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
+        ChatFailure::Forbidden => CoreError::Forbidden { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },
         ChatFailure::Upstream | ChatFailure::Other => CoreError::Upstream { reason },
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason },

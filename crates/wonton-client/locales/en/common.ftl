@@ -1,3 +1,15 @@
+## Collapsed technical details. Raw reasons, codes and upstream text stay unchanged.
+## No length limit. Each parameter is diagnostic data, not a translation key.
+
+# CoreError prefixes. $reason is the original error detail.
+core-error-storage = Can't read or write local storage: { $reason }
+core-error-not-ready = Not ready: { $reason }
+core-error-transport = Can't reach your home server: { $reason }
+core-error-unauthorized = Your home server rejected the request: { $reason }
+core-error-forbidden = Your home server refused this: { $reason }
+core-error-upstream = Something went wrong on your home server: { $reason }
+core-error-server-too-old = Your home server is too old for this. Update the server, then try again.
+
 # Shown when the shell routes a chat action this core doesn't know.
 side-chat-not-ready = This version of the client core doesn't support side chats yet.
 
