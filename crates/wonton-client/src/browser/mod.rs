@@ -9,7 +9,8 @@
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use sha2::{Digest, Sha256};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use url::Url;
@@ -190,15 +191,18 @@ impl BrowserRoutes for Routes {
     }
 }
 
-/// 浏览器地址里的标签：设备密钥、服务器和插件的摘要，取前 128 位。
+/// 浏览器地址里的标签：以设备密钥为键、对服务器和插件做 HMAC-SHA256，取前 128 位。标签是同机其他 App
+/// 进隧道的唯一门槛，所以用带键的 MAC：知道一个插件的标签推不出别的插件的，也推不出设备密钥。
 fn label(device_key: &[u8; 32], server: &str, plugin: &str) -> String {
-    let digest = Sha256::new()
-        .chain_update(b"wonton browser origin\0")
-        .chain_update(device_key)
-        .chain_update(server.as_bytes())
-        .chain_update([0])
-        .chain_update(plugin.as_bytes())
-        .finalize();
+    let digest = keyed(
+        device_key,
+        &[
+            b"wonton browser origin\0",
+            server.as_bytes(),
+            &[0],
+            plugin.as_bytes(),
+        ],
+    );
     digest[..LABEL_LEN / 2]
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -206,11 +210,16 @@ fn label(device_key: &[u8; 32], server: &str, plugin: &str) -> String {
 }
 
 fn preferred_port(device_key: &[u8; 32]) -> u16 {
-    let digest = Sha256::new()
-        .chain_update(b"wonton browser port\0")
-        .chain_update(device_key)
-        .finalize();
+    let digest = keyed(device_key, &[b"wonton browser port\0"]);
     PORT_BASE + u16::from_be_bytes([digest[0], digest[1]]) % PORT_SPAN
+}
+
+fn keyed(device_key: &[u8; 32], parts: &[&[u8]]) -> [u8; 32] {
+    let mut mac = Hmac::<Sha256>::new_from_slice(device_key).expect("HMAC accepts any key length");
+    for part in parts {
+        mac.update(part);
+    }
+    mac.finalize().into_bytes().into()
 }
 
 /// 逐字节比较全部内容，不按前缀提前返回：从耗时上猜不出标签。
