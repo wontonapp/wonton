@@ -35,4 +35,16 @@ class PreviewSnapshotsTest {
 
     @Test
     fun problemView() = paparazzi.snapshot { ProblemViewPreview() }
+
+    @Test
+    fun pluginSettingsFields() = paparazzi.snapshot { PluginSettingsFieldsPreview() }
+
+    @Test
+    fun pluginSettingsProblems() = paparazzi.snapshot { PluginSettingsProblemsPreview() }
+
+    @Test
+    fun pluginSettingsRestartHint() = paparazzi.snapshot { PluginSettingsRestartHintPreview() }
+
+    @Test
+    fun pluginSettingsSaving() = paparazzi.snapshot { PluginSettingsSavingPreview() }
 }
