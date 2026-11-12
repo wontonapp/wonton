@@ -5,6 +5,7 @@
 
 mod api;
 mod download;
+mod held;
 mod opener;
 mod playback;
 mod store;
@@ -200,11 +201,22 @@ impl FilesLink {
         mime_type: Option<String>,
         room: Option<String>,
     ) -> Result<(), CoreError> {
+        let room = room.filter(|room| !room.is_empty());
+        let record = self.upload_record(source, name, mime_type, room)?;
+        self.start(record)
+    }
+
+    fn upload_record(
+        &self,
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+        room: Option<String>,
+    ) -> Result<Record, CoreError> {
         if name.trim().is_empty() {
             return Err(invalid(&l10n!(CATALOG, language(), "files-name-required")));
         }
-        let room = room.filter(|room| !room.is_empty());
-        self.start(Record {
+        Ok(Record {
             id: local_id(),
             server: self.current_server()?,
             name,
