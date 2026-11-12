@@ -9,6 +9,7 @@
 
 pub(crate) mod attachments;
 mod busy;
+pub(crate) mod chain;
 mod permissions;
 mod refused;
 mod routing;
@@ -43,6 +44,7 @@ use crate::{
     acp::{AcpClient, AgentNotice, PermissionAsk, PromptResult},
     commands::{CommandSink, Commands},
     config::Config,
+    core_feed,
     error::{Detail, Error, Result as BridgeResult, format_error},
     l10n::text,
     locale::{Locales, Origin},
@@ -57,13 +59,17 @@ use crate::{
 use permissions::ApprovalWaiter;
 
 #[derive(Clone)]
-struct Bridge {
-    config: Config,
-    acp: Arc<AcpClient>,
-    sessions: Arc<SessionStore>,
+pub(crate) struct Bridge {
+    pub(crate) config: Config,
+    pub(crate) acp: Arc<AcpClient>,
+    pub(crate) sessions: Arc<SessionStore>,
     last_seen: Arc<LastSeen>,
     bot: OwnedUserId,
     locales: Arc<Locales<Origin>>,
+    /// 轮次登记的客户端（ADR-0061 第 10 节）：每轮领链、结束报 End。
+    chains: chain::Client,
+    /// 桥挂在确认接口上的权限长轮询；会话被取消（停链的 CancelTurn）时断开。
+    pub(crate) pending_asks: permissions::PendingAsks,
 }
 
 impl Bridge {
@@ -88,6 +94,8 @@ struct Job {
     kind: JobKind,
     /// 这条请求的消息事件 ID，状态消息的 `run`（ADR-0082）。
     event_id: String,
+    /// 说话人：轮次登记报给核心（ADR-0061 第 10 节），一批里报最后一条的。
+    sender: String,
     /// 已落工作区的附件；纯文字为 None。
     media: Option<attachments::PreparedAttachment>,
 }
@@ -380,6 +388,7 @@ pub async fn run() -> Result<()> {
         Origin::core(&config.mcp_url),
         config.owner.clone(),
     ));
+    let chains = chain::Client::new(&config.mcp_url, &config.access_token)?;
     let bridge = Bridge {
         config,
         acp,
@@ -387,7 +396,11 @@ pub async fn run() -> Result<()> {
         last_seen,
         bot,
         locales,
+        chains,
+        pending_asks: permissions::PendingAsks::default(),
     };
+    // 出箱是全 Bot 一份的：停链的取消轮次从这里来，和房间循环并行。
+    core_feed::spawn(bridge.clone());
     match direct {
         Some(direct) => {
             // 登录事件只由私聊循环消费；它结束后整座桥退出重连。

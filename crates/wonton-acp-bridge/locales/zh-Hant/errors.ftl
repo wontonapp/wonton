@@ -38,3 +38,16 @@ perm-invalid-kind = ACP 權限選項 kind 無效：{ $error }
 perm-empty-options = ACP 權限請求沒有 options
 perm-missing-field = ACP 權限請求缺少 { $field }
 perm-redacted = [已隱藏]
+
+# 調用鏈（ADR-0061 第 10 節）：核心不給鏈時這一輪不發給 Agent，房間裡如實說明。
+chain-limit-depth = 這條對話鏈套的 Agent 層數到上限了，這一輪沒法開始。要繼續請在 Wonton 裡給這條鏈「再給一份」。
+chain-limit-rounds = 這條對話鏈的輪數用完了，這一輪沒法開始。要繼續請在 Wonton 裡給這條鏈「再給一份」。
+chain-limit-cost = 這條對話鏈的花費到上限了，這一輪沒法開始。要繼續請在 Wonton 裡給這條鏈「再給一份」。
+chain-limit-other = 這條對話鏈用到上限了，這一輪沒法開始。要繼續請在 Wonton 裡給這條鏈「再給一份」。
+chain-stopped = 這條對話鏈已經被停了，這一輪沒法開始。要繼續請重新說一句，會開一條新的鏈。
+err-chain-refused = 呼叫鏈拒絕了這一輪：{ $message }
+chain-unreachable = 連線呼叫鏈介面失敗：{ $error }
+chain-invalid = 呼叫鏈介面的應答無效（HTTP { $status }）：{ $error }
+chain-client = 建立呼叫鏈 HTTP 客戶端失敗：{ $error }
+chain-url = WONTON_MCP_URL 無效：{ $error }
+outbox-client = 建立出箱 HTTP 客戶端失敗：{ $error }

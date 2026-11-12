@@ -30,7 +30,7 @@ pub(super) async fn handle_request(inner: Arc<Inner>, id: Value, message: Value)
     merge_tool_call(&inner, &session_id, &mut params).await;
     let lang = lang_for(&inner, &session_id).await;
     let origin = inner.origins.lock().await.get(&session_id).cloned();
-    let pending = match parse_pending(&params, lang, origin) {
+    let mut pending = match parse_pending(&params, lang, origin) {
         Ok(pending) => pending,
         Err(error) => {
             send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;
@@ -41,6 +41,9 @@ pub(super) async fn handle_request(inner: Arc<Inner>, id: Value, message: Value)
             return;
         }
     };
+    // 会话 ID 随权限请求报给核心（ADR-0061 第 10 节）：核心把卡片认到这一轮的链上，
+    // 停链时撤得掉，hand_off_status 也查得到在等权限。
+    pending.request.session = Some(session_id.clone());
     let key = id_key(&id);
     let (cancel_tx, cancel_rx) = oneshot::channel();
     inner.permission_waiters.lock().await.insert(

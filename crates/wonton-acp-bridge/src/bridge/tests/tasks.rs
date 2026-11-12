@@ -144,11 +144,11 @@ async fn task_permission_title_carries_the_task_name() {
     harness.wait_prompts(2).await;
 
     harness.agent.ask_permission("w1", "src/login.rs").await;
-    wait_until(|| harness.cards.pending() == 1).await;
-    let cards = harness.cards.requests();
+    wait_until(|| harness.core.pending() == 1).await;
+    let cards = harness.core.requests();
     let title = cards[0]["title"].as_str().unwrap_or_default();
     assert_eq!(title, "「修登录页」改 src/login.rs");
-    harness.cards.answer("acp-0");
+    harness.core.answer("acp-0");
 }
 
 /// done：结束话题并在主对话留一行。

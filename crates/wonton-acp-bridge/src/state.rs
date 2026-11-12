@@ -98,6 +98,22 @@ impl SessionStore {
         }
         persist(&self.path, &records).await
     }
+
+    /// 桥登记过这个 ACP 会话没有（任何房间、任何会话键，含任务话题）：出箱的
+    /// `CancelTurn` 只对自己登记过的会话发 `session/cancel`，不是的如实回报失败。
+    pub async fn contains_session(&self, session_id: &str) -> bool {
+        self.records
+            .lock()
+            .await
+            .values()
+            .any(|room| room.values().any(|record| record.session_id == session_id))
+            || self
+                .tasks
+                .lock()
+                .await
+                .values()
+                .any(|task| task.session_id == session_id)
+    }
 }
 
 impl SessionStore {

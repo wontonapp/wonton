@@ -10,6 +10,7 @@ use super::*;
 use crate::acp::test_support::*;
 use crate::l10n::zh;
 use tokio::io::{AsyncRead, ReadBuf};
+use wonton_protocol::{ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER};
 
 /// 假核心的权限接口：每个转发来的权限请求都回同一个结果。
 struct FakeCore {
@@ -502,7 +503,9 @@ async fn session_setup_reports_the_origin_session_in_mcp_headers() {
         headers_of("session/load", 0),
         json!([
             {"name": ORIGIN_ROOM_HEADER, "value": "!room:wonton.internal"},
-            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-2"}
+            {"name": ORIGIN_THREAD_HEADER, "value": "$thread-2"},
+            // 恢复时 ACP 会话 ID 已知：带上它核心才能把 MCP 调用认到链上（ADR-0061 第 10 节）。
+            {"name": "wonton-session", "value": "session-1"}
         ])
     );
     drop(client);

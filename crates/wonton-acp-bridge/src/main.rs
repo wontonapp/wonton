@@ -5,6 +5,7 @@ mod acp;
 mod bridge;
 mod commands;
 mod config;
+mod core_feed;
 mod error;
 mod health;
 mod l10n;

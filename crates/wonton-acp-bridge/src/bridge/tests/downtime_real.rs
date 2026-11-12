@@ -29,7 +29,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
     drop(bot_setup);
 
     let agent = FakeAgent::start(Scenario::Manual).await;
-    let cards = FakeCards::start().await;
+    let core = FakeCore::start().await;
     let config = Config {
         homeserver: server.url.clone(),
         access_token: bot_token,
@@ -40,7 +40,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
         bridge_data: dir.path().join("bridge"),
         socket: agent.socket.clone(),
         workspace: "/workspace".into(),
-        mcp_url: cards.url(),
+        mcp_url: core.url(),
         mode: "plan".into(),
         topic_mode: None,
         health: crate::health::Files::in_dir(dir.path()),
@@ -92,7 +92,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
     assert_eq!(repeats, 1, "重启前的消息不该重跑");
     task.abort();
     agent.finish().await;
-    cards.finish();
+    core.finish();
 }
 
 async fn open_room(session: &MatrixSession, room_id: &wonton_matrix::RoomId) -> ChatRoom {
@@ -159,6 +159,8 @@ async fn spawn_bridge(config: &Config) -> (MatrixSession, JoinHandle<BridgeResul
         last_seen,
         bot: session.user_id().to_owned(),
         locales: Arc::new(Locales::new(Origin::Fixed, session.user_id().to_owned())),
+        chains: crate::bridge::chain::Client::new(&config.mcp_url, &config.access_token).unwrap(),
+        pending_asks: permissions::PendingAsks::default(),
     };
     let task = tokio::spawn(run_room(bridge, room, false, None, login));
     (session, task)

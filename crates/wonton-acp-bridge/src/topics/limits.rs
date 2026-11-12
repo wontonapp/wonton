@@ -27,6 +27,7 @@ pub(crate) fn poll_admission(
     SessionKey,
     String,
     String,
+    String,
     Option<crate::bridge::attachments::PreparedAttachment>,
 )> {
     let key = board.queued_keys().into_iter().next()?;
@@ -36,10 +37,11 @@ pub(crate) fn poll_admission(
     let row = board.row_mut(&key)?;
     let prompt = row.pending_prompt.take()?;
     let run = row.pending_run.take().unwrap_or_default();
+    let sender = row.pending_sender.take().unwrap_or_default();
     let media = row.pending_media.take();
     row.status = Status::Working;
     row.last_activity = now;
-    Some((key, prompt, run, media))
+    Some((key, prompt, run, sender, media))
 }
 
 /// 把空闲超过 30 分钟的话题判为结束，返回被结束的会话键（调用方去关 Agent 会话并
