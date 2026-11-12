@@ -40,7 +40,6 @@ fn plugin() -> InstalledPlugin {
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
         icon: None,
         trust: PluginTrust::Official,
         source: None,
@@ -62,7 +61,6 @@ fn plugin() -> InstalledPlugin {
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
         install_progress: None,
-        tunnel_ports: Vec::new(),
     }
 }
 

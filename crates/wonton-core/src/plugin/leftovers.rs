@@ -55,9 +55,9 @@ impl PluginManager {
             self.engine.remove_container(container).await?;
         }
         // 正常卸载和回滚都会清掉设备记录，还记着就是上次没装完。容器都停了再吊销。
-        let bots = self.store.bots().load(id)?;
-        if bots.bots.values().any(|entry| entry.device_id.is_some()) {
-            self.deactivate_bots(id, false).await?;
+        let bot = self.store.bots().load(id)?;
+        if bot.is_some_and(|record| record.device_id.is_some()) {
+            self.remove_bot(id, false).await?;
         }
         self.remove_networks(&found.networks).await
     }
@@ -66,12 +66,6 @@ impl PluginManager {
     /// 插件在运行，标签和残留一模一样。这时什么都不删。
     async fn check_no_strangers(&self, found: &LabeledResources) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        let mailpit = match &self.mailpit {
-            Some(component) => component.optional_container().await.map_err(|error| {
-                InstallError::Conflict(format!("Mailpit 组件查询失败：{error:#}"))
-            })?,
-            None => None,
-        };
         for network in &found.networks {
             let endpoints = self.engine.network_endpoints(network).await?;
             let strangers: Vec<String> = endpoints
@@ -80,7 +74,6 @@ impl PluginManager {
                     !found.containers.contains(name)
                         && self.cfg.core_container.as_ref() != Some(name)
                         && *name != self.cfg.instance.egress()
-                        && mailpit.as_ref() != Some(name)
                 })
                 .collect();
             if !strangers.is_empty() {
@@ -104,7 +97,6 @@ impl PluginManager {
                 self.engine.disconnect_network(network, core).await?;
             }
             self.detach_relay(network).await?;
-            self.detach_mailpit(network).await?;
             self.engine.remove_network(network).await?;
         }
         Ok(())

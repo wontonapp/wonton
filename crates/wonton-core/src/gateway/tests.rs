@@ -53,13 +53,6 @@ impl Reply {
         self.headers.get(ERROR_HEADER).map(|v| v.to_str().unwrap())
     }
 
-    pub fn content_type(&self) -> &str {
-        self.headers
-            .get(header::CONTENT_TYPE)
-            .map(|v| v.to_str().unwrap())
-            .unwrap_or_default()
-    }
-
     pub fn cookie(&self, name: &str) -> String {
         self.headers
             .get_all(header::SET_COOKIE)
@@ -254,15 +247,16 @@ impl Harness {
             base_domain: CORE.into(),
             port: self.addr.port(),
         };
+        let (tunnel, members) = loopback_tunnel(self._dir.path()).await;
         let gateway = Gateway::new(
             public,
             OwnerStore::for_test(self._dir.path(), &owner()),
             TOKEN.into(),
-            self.members.clone(),
+            members,
             self.manager.clone(),
             None,
             self.http.clone(),
-            self.tunnel.clone(),
+            tunnel,
         );
         let app = router(Arc::new(gateway));
         let mut request = hyper::Request::builder()
@@ -376,50 +370,14 @@ async fn unauthenticated_plugin_requests_never_reach_the_plugin() {
         page.location(),
         format!("{}/_wonton/sso?{expected}", h.origin(CORE))
     );
-    // fetch 默认的 `*/*` 和显式的 `application/json` 一样：直接 401，体是 JSON，不是登录页。
-    for accept in ["*/*", "application/json"] {
-        let api = h.get(PLUGIN, "/api/data", &[("accept", accept)]).await;
-        assert_eq!(api.status, StatusCode::UNAUTHORIZED, "{accept}");
-        assert_eq!(api.error_kind(), Some("unauthenticated"), "{accept}");
-        assert_eq!(api.content_type(), "application/json", "{accept}");
-        assert_eq!(
-            api.json()["error"]["category"],
-            "unauthenticated",
-            "{accept}"
-        );
-        assert!(
-            api.json()["error"]["message"]
-                .as_str()
-                .is_some_and(|m| !m.is_empty()),
-            "{accept}: {}",
-            api.text()
-        );
-    }
-    // 没有 `Accept`（curl、脚本）也不给网页。
-    let bare = h.get(PLUGIN, "/api/data", &[]).await;
-    assert_eq!(bare.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(bare.json()["error"]["category"], "unauthenticated");
-    // 不是导航的页面地址（不带 `Accept: text/html`）照样 401。
+    let api = h
+        .get(PLUGIN, "/api/data", &[("accept", "application/json")])
+        .await;
+    assert_eq!(api.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(api.error_kind(), Some("unauthenticated"));
     let forged = h.get(PLUGIN, "/", &[("cookie", "wonton_app=forged")]).await;
     assert_eq!(forged.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(forged.json()["error"]["category"], "unauthenticated");
     assert_eq!(h.hits.load(Ordering::SeqCst), 0, "未登录的请求不得到达插件");
-}
-
-#[tokio::test]
-async fn upstream_responses_pass_through_untouched() {
-    let h = Harness::start(None).await;
-    let app = h.app_session().await;
-    // 应用自己的 401：网关只转发，不改体，也不加 `x-wonton-error`，接口靠这个头区分是谁拦的。
-    let reply = h.get(PLUGIN, "/unauthorized", &[("cookie", &app)]).await;
-    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(reply.error_kind(), None);
-    assert_eq!(reply.json(), json!({"error": "app_login_required"}));
-
-    // 正常响应也一样：头里只有上游自己的内容。
-    let reply = h.get(PLUGIN, "/hello?x=1", &[("cookie", &app)]).await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.error_kind(), None);
 }
 
 #[tokio::test]

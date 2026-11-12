@@ -1,13 +1,12 @@
 //! 保持连接下的后台通知（ADR-0003 的“设计：保持连接”）：App 在后台时，同步到的、按推送规则该通知的
-//! 消息收集进 `ChatViewModel::background_notifications`，回到前台清空；壳照它逐条弹本地通知。缺密钥的
-//! 占位在密钥晚到时由核心回填，壳用同一个通知标识把占位换成正文。
+//! 消息收集进 `ChatViewModel::background_notifications`，回到前台清空；壳照它逐条弹本地通知。
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use tokio::task::JoinHandle;
 use wonton_matrix::{BackgroundNotification, MatrixSession, UserId};
-use wonton_protocol::{PushContent, PushMethod};
+use wonton_protocol::PushMethod;
 
 use crate::push::push_notification;
 
@@ -54,8 +53,7 @@ impl ChatLink {
     }
 
     /// 保持连接下同步到的一条该通知的消息：不收自己发的，只在 App 在后台、方式是保持连接时收集；
-    /// 按 `event_id` 去重（同一条事件可能同步到两次），超过上限丢最早的。先到的在前。缺密钥的占位在
-    /// 密钥晚到、正文回填时换成正文，壳据此用同一个通知标识重弹。
+    /// 按 `event_id` 去重（同一条事件可能同步到两次），超过上限丢最早的。先到的在前。
     fn background_notification(self: &Arc<Self>, own: &UserId, event: BackgroundNotification) {
         tracing::info!(
             sender = %event.message.sender,
@@ -70,10 +68,8 @@ impl ChatLink {
         {
             return;
         }
-        // 契约（`PushNotification::server_id`）是本机槽位号（`ServerRow::id`），不是这台的 endpoint ID：
-        // 壳点开通知按槽位号切服务器，端点 ID 在槽位列表里查不到，会被当成“已移除的服务器”误报。
         let Some(notification) = push_notification(
-            Some(self.slot.clone()),
+            self.home.view().server_id,
             own,
             &event.room_id,
             &event.event_id,
@@ -82,17 +78,11 @@ impl ChatLink {
             return;
         };
         self.view.send_modify(|view| {
-            if let Some(shown) = view
+            if view
                 .background_notifications
-                .iter_mut()
-                .find(|shown| shown.event_id == notification.event_id)
+                .iter()
+                .any(|shown| shown.event_id == notification.event_id)
             {
-                // 同一条事件又到了：只有占位换正文这一种升级，重复的正文和再一次的占位都不动。
-                if matches!(shown.content, PushContent::Unavailable { .. })
-                    && !matches!(notification.content, PushContent::Unavailable { .. })
-                {
-                    *shown = notification;
-                }
                 return;
             }
             view.background_notifications.push(notification);

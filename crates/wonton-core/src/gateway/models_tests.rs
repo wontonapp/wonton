@@ -48,11 +48,6 @@ async fn streaming_gateway(release: oneshot::Receiver<()>) -> String {
 }
 
 async fn harness_with_gateway(upstream: String) -> Harness {
-    harness_with_gateway_status(upstream, PluginStatus::Running).await
-}
-
-/// 同 [`harness_with_gateway`]，但网关是给定的状态（比如辅助容器坏了，插件已经是异常）。
-async fn harness_with_gateway_status(upstream: String, status: PluginStatus) -> Harness {
     let h = Harness::start(None).await;
     let manifest = PluginPackage::parse(PROVIDER, &Languages::from_header(Some("zh-Hans")))
         .unwrap()
@@ -64,7 +59,8 @@ async fn harness_with_gateway_status(upstream: String, status: PluginStatus) -> 
         upstream,
         credentials_container: "wonton-system-models--magpie".into(),
     };
-    h.manager.register_for_test(manifest, status, None);
+    h.manager
+        .register_for_test(manifest, PluginStatus::Running, None);
     h.manager.serve_models_for_test(route);
     h
 }
@@ -188,42 +184,4 @@ async fn default_route_problems_never_degrade_the_installed_state() {
             "listed={listed} upstream={upstream}"
         );
     }
-}
-
-// 网关服务自己好着、别的容器坏了：插件异常，模型请求照常转发（按服务判断）。
-#[tokio::test]
-async fn a_down_auxiliary_container_keeps_models_forwarding() {
-    let (_release, released) = oneshot::channel();
-    let degraded = PluginStatus::Degraded {
-        reason: "worker: connection refused".into(),
-    };
-    let h = harness_with_gateway_status(streaming_gateway(released).await, degraded).await;
-    h.manager
-        .register_source_for_test("app.client", "127.0.0.0/8", vec![Permission::Models]);
-    let response = h.http.send(chat(&h)).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-// 网关服务自己的容器不健康：路由不算能用，回 503 `models_unavailable`。
-#[tokio::test]
-async fn a_down_gateway_container_is_models_unavailable() {
-    let (_release, released) = oneshot::channel();
-    let h = harness_with_gateway(streaming_gateway(released).await).await;
-    h.manager
-        .register_source_for_test("app.client", "127.0.0.0/8", vec![Permission::Models]);
-    h.manager.serving_for_test(
-        &crate::plugin::PluginId::parse("system.models").unwrap(),
-        &[],
-    );
-    let response = h.http.send(chat(&h)).await.unwrap();
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        response
-            .headers()
-            .get("x-wonton-error")
-            .unwrap()
-            .to_str()
-            .unwrap(),
-        "models_unavailable"
-    );
 }

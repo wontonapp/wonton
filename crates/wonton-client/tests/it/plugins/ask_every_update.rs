@@ -19,10 +19,6 @@ fn detail(ask: bool) -> Canned {
         screenshots: Vec::new(),
         tags: Vec::new(),
         kind: PluginKind::App,
-        runtime: Default::default(),
-        security_tier: None,
-        link_url: None,
-        scope: None,
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,
         provider: None,
@@ -37,7 +33,6 @@ fn detail(ask: bool) -> Canned {
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: true,
-        has_settings: false,
         installed: None,
         blocked: None,
         notices: Vec::new(),
@@ -49,7 +44,6 @@ fn detail(ask: bool) -> Canned {
         save_grants: Vec::new(),
         limits: None,
         ask_every_update: Some(ask),
-        shares: None,
     };
     Canned(200, serde_json::to_string(&detail).unwrap())
 }

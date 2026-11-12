@@ -594,10 +594,7 @@ impl Recovery {
         if self.client.encryption().backups().are_enabled().await {
             Ok(true)
         } else {
-            // Recovery may enable backups while the account-data request is in flight.
-            // Do not publish Incomplete from the local state read before that request.
-            Ok(self.are_backups_marked_as_disabled().await?
-                || self.client.encryption().backups().are_enabled().await)
+            self.are_backups_marked_as_disabled().await
         }
     }
 

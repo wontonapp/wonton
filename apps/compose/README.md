@@ -38,20 +38,6 @@ SDK 位置写在 `apps/compose/local.properties`（`sdk.dir=...`，不提交）�
 默认只编译 `arm64-v8a`（真机和 Apple 芯片上的模拟器）。要别的 ABI 或 release 构建，用
 `-Pwonton.abis="arm64-v8a x86_64"`、`-Pwonton.rustProfile=release`。
 
-### 版本号
-
-版本号由仓库根的 `scripts/app-version.sh` 一处计算（iOS 用同一条规则，见 `apps/ios/README.md` 的「构建」）：
-优先环境变量 `WONTON_VERSION`（`X.Y.Z`，可带 `v` 前缀），其次最近的 `vX.Y.Z` tag。**发版必须显式传版本**：
-发版构建是在没有 git 元数据的副本上做的，取不到 tag，不传 Release 构建直接报错。
-
-```bash
-WONTON_VERSION=0.2.4 ./gradlew :androidApp:assembleRelease
-```
-
-Gradle 也认 `-PwontonVersion=0.2.4`（透传给同一脚本；远程构建通道只透传它）。在自己带 tag 的检出上不传时
-取最近的发版 tag；都拿不到时 Debug 构建用 `0.0.0 (0)`。构建号由版本号算出（`major*1000000 + minor*1000 +
-patch`），覆盖安装要求它不降。
-
 ## 连家里的服务器（开发）
 
 起本地核心后（`deploy/dev/core/dev.sh up`），还没配对时“应用”页就是配对页：扫局域网状态页上或 `dev.sh pair` 打出的
@@ -161,8 +147,8 @@ Debug 构建默认编译 debug 的 Rust 核心，加上 matrix-sdk 后 `.so` 将
 ./gradlew detekt
 ```
 
-规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件行数由仓库的
-`scripts/check-file-size.sh` 检查（不算空行和注释，超过 800 行警告、超过 2000 行失败）。CI 见 `.github/workflows/android.yml`。
+规则在 `config/detekt.yml`：函数超过 100 行即失败。detekt 没有文件行数规则，文件 ≤ 800 行由仓库的
+`scripts/check-file-size.sh` 检查。CI 见 `.github/workflows/android.yml`。
 
 包名 `app.wonton.*` 是临时的，上架前确定正式的。
 

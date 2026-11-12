@@ -173,109 +173,62 @@ pub enum CollectError {
 }
 
 /// 从插件的容器里收存 `collect` 项，返回有没有变化。文件还不存在时跳过，下次启动时再收；核心不修改、
-/// 不删除插件里的这个文件，也不把它注入回去。`collect.service` 是 Bot 服务时按 Bot 各收一份，
-/// 记成 [`collect_key`]；全插件一份的照旧一份。
+/// 不删除插件里的这个文件，也不把它注入回去。
 pub async fn collect(
     engine: &Engine,
     instance: &Instance,
     manifest: &Manifest,
-    bots: &[String],
     secrets: &mut Secrets,
     langs: &Languages,
 ) -> Result<bool, CollectError> {
-    let slug = manifest.id.slug();
-    let bot_services = super::bot_services::bot_services(manifest);
     let mut changed = false;
     for (name, spec) in &manifest.secrets {
         let SecretSpec::Collect(spec) = spec else {
             continue;
         };
-        if bot_services.contains(spec.service.as_str()) {
-            for bot in bots {
-                changed |= collect_one(
-                    engine,
-                    &instance.bot_container(&slug, &spec.service, bot),
-                    &spec.path,
-                    &collect_key(name, bot),
-                    name,
-                    secrets,
-                    langs,
-                )
-                .await?;
-            }
-        } else {
-            changed |= collect_one(
-                engine,
-                &instance.container(&slug, &spec.service),
-                &spec.path,
-                name,
-                name,
-                secrets,
+        let container = instance.container(&manifest.id.slug(), &spec.service);
+        let invalid = |reason: &str| {
+            CollectError::Invalid(crate::l10n::text(
                 langs,
-            )
-            .await?;
+                "plugin-settings-secret-invalid",
+                &[
+                    ("name", name.into()),
+                    ("container", container.as_str().into()),
+                    ("path", spec.path.as_str().into()),
+                    ("reason", reason.into()),
+                ],
+            ))
+        };
+        match engine
+            .read_file(&container, &spec.path, MAX_COLLECT_BYTES)
+            .await?
+        {
+            ContainerFile::Regular(data) => {
+                if secrets.get(name) != Some(&data) {
+                    secrets.insert(name.clone(), data);
+                    changed = true;
+                }
+            }
+            ContainerFile::Missing => {
+                tracing::info!(plugin = %manifest.id, secret = %name, "插件还没有写下要收存的密钥，下次启动时再收");
+            }
+            ContainerFile::NotRegular => {
+                return Err(invalid(&crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-not-regular",
+                    &[],
+                )));
+            }
+            ContainerFile::TooBig => {
+                return Err(invalid(&crate::l10n::text(
+                    langs,
+                    "plugin-settings-secret-too-big",
+                    &[],
+                )));
+            }
         }
     }
     Ok(changed)
-}
-
-/// `collect.service` 是 Bot 服务时的密钥名：`<名字>@<Bot>`。
-pub(super) fn collect_key(name: &str, bot: &str) -> String {
-    format!("{name}@{bot}")
-}
-
-async fn collect_one(
-    engine: &Engine,
-    container: &str,
-    path: &str,
-    key: &str,
-    name: &str,
-    secrets: &mut Secrets,
-    langs: &Languages,
-) -> Result<bool, CollectError> {
-    let invalid = |reason: &str| {
-        CollectError::Invalid(crate::l10n::text(
-            langs,
-            "plugin-settings-secret-invalid",
-            &[
-                ("name", name.into()),
-                ("container", container.into()),
-                ("path", path.into()),
-                ("reason", reason.into()),
-            ],
-        ))
-    };
-    // 容器不在（Bot 刚加、正在重建，或者停着）：和文件没写下一样，等它起来再收。
-    match engine.read_file(container, path, MAX_COLLECT_BYTES).await {
-        Ok(ContainerFile::Regular(data)) => {
-            if secrets.get(key) != Some(&data) {
-                secrets.insert(key.to_owned(), data);
-                return Ok(true);
-            }
-        }
-        Ok(ContainerFile::Missing) => {
-            tracing::info!(secret = %name, container, "插件还没有写下要收存的密钥，下次启动时再收");
-        }
-        Ok(ContainerFile::NotRegular) => {
-            return Err(invalid(&crate::l10n::text(
-                langs,
-                "plugin-settings-secret-not-regular",
-                &[],
-            )));
-        }
-        Ok(ContainerFile::TooBig) => {
-            return Err(invalid(&crate::l10n::text(
-                langs,
-                "plugin-settings-secret-too-big",
-                &[],
-            )));
-        }
-        Err(EngineError::NotFound(_)) => {
-            tracing::info!(secret = %name, container, "容器不在，等它起来再收存");
-        }
-        Err(e) => return Err(e.into()),
-    }
-    Ok(false)
 }
 
 /// 注入的变量名：`WONTON_SECRET_<名字大写>`。

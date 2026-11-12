@@ -9,7 +9,7 @@ use super::{MAX_MESSAGE_LEN, PEER_PAIR_ALPN, PeerIdentity, PeerMessage, PeerPair
 use crate::error::{TunnelError, from_connect_error, from_read_error, from_write_error};
 
 /// 建连（包括打洞或经中继）到读完回应的总时间。和设备配对一样，超时按传输不可用处理。
-const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(90);
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// TLS 的 `no_application_protocol` 告警：服务端不接受 [`PEER_PAIR_ALPN`]，两端版本不配。
 const NO_APPLICATION_PROTOCOL: u64 = 0x100 + 120;

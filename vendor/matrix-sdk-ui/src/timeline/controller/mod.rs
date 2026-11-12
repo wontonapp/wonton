@@ -1448,15 +1448,11 @@ impl TimelineController {
     ///
     /// Should be called only once after creation of the [`TimelineController`],
     /// with all its fields set.
-    pub(super) async fn init_focus(
-        &self,
-        initial_events: Vec<TimelineEvent>,
-    ) -> Result<InitFocusResult, Error> {
+    pub(super) async fn init_focus(&self) -> Result<InitFocusResult, Error> {
         match self.focus.deref() {
             TimelineFocusKind::Live { event_cache, .. } => {
-                // Use the snapshot paired with the live update subscription. A later read
-                // would already include queued diffs, which would then be applied twice.
-                let events = initial_events;
+                // Retrieve the cached events, and add them to the timeline.
+                let events = event_cache.events().await?;
 
                 let has_events = !events.is_empty();
 

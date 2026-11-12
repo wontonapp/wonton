@@ -4,8 +4,6 @@
 //! 不开它的离线模式：离线模式把所有同步错误（包括设备被吊销）都当成离线并在后台重试，会掩盖吊销。出错后的重启由
 //! [`MatrixSession::keep_syncing`] 做，它分得清吊销。
 
-use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use futures_util::{Stream, StreamExt, future, stream};
@@ -36,40 +34,6 @@ const FIRST_RESTART: Duration = Duration::from_secs(2);
 const MAX_RESTART: Duration = Duration::from_secs(30);
 /// 追赶比这短就不提示。
 const CATCH_UP_NOTICE_DELAY: Duration = Duration::from_millis(500);
-/// 起步等这么久就报一次停在哪个状态。
-const WAIT_REPORT: Duration = Duration::from_secs(5);
-
-/// 各设备最近一次起步等待的现场，见 [`last_sync_diagnostic`]。一个进程里有多台设备（测试并行跑）时按设备号分开，
-/// 免得把别人的等待当成自己的。
-static WAIT_DIAGNOSTIC: LazyLock<Mutex<HashMap<String, String>>> = LazyLock::new(Default::default);
-
-/// `device_id` 上一次 [`MatrixSession::start_sync`] 报的等待现场，空串是还没报过。日志跟着 App 的日志开关走，
-/// 这个不打开日志也拿得到，超时的时候能直接写进失败说明。
-pub fn last_sync_diagnostic(device_id: &str) -> String {
-    WAIT_DIAGNOSTIC
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .get(device_id)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn record_sync_diagnostic(device_id: &str, text: &str) {
-    WAIT_DIAGNOSTIC
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .insert(device_id.to_owned(), text.to_owned());
-}
-
-/// 等待现场的说明：等多久了、同步服务和房间列表各在哪个状态。房间列表要等一个应答回来才离开 `Init`，所以 `Init`
-/// 是第一个应答还没回来（请求没发出去或还在路上都算），`SettingUp` 是回来过一批、还没跟上。
-fn format_wait(
-    elapsed: Duration,
-    service: &sync_service::State,
-    list: &room_list_service::State,
-) -> String {
-    format!("同步还停在起步：等了 {elapsed:?}，服务 {service:?}，房间列表 {list:?}")
-}
 
 impl From<&sync_service::State> for SyncStatus {
     fn from(state: &sync_service::State) -> Self {
@@ -105,13 +69,9 @@ fn status_of(service: &sync_service::State, list: &room_list_service::State) -> 
 
 impl MatrixSession {
     /// 启动同步，等到房间列表首次同步完成才返回。
-    ///
-    /// 起步可能久（服务器慢、请求在重试），期间每 [`WAIT_REPORT`] 把停在哪个状态打发出来、记进
-    /// [`last_sync_diagnostic`]。没有这些，卡住时只剩一个 `Starting`，看不出卡在哪一步。
     pub async fn start_sync(&self) -> Result<()> {
         let mut list_state = self.sync.room_list_service().state();
         let mut service_state = self.sync.state();
-        let started = Instant::now();
         {
             // SyncService 的 Error 在两条同步任务及过期清理结束后才发布。观察房间列表的 Error
             // 异步补挂会与重新启动竞跑；持订阅锁把恢复名单和启动串起来，健康服务不重发。
@@ -121,15 +81,9 @@ impl MatrixSession {
                 self.sync.start().await;
             }
         }
-        let mut report =
-            tokio::time::interval_at((Instant::now() + WAIT_REPORT).into(), WAIT_REPORT);
-        report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            match SyncStatus::from(&service_state.get()) {
-                SyncStatus::Failed(error) => return Err(error),
-                // 启动之后同步服务又停了（被 `stop_sync` 或终结）：再等也不会有应答。
-                SyncStatus::Idle => return Err(Error::Upstream("同步服务已停止".to_owned())),
-                SyncStatus::Starting | SyncStatus::Running => {}
+            if let SyncStatus::Failed(error) = SyncStatus::from(&service_state.get()) {
+                return Err(error);
             }
             if list_state.get() == room_list_service::State::Running {
                 return Ok(());
@@ -137,12 +91,6 @@ impl MatrixSession {
             let changed = tokio::select! {
                 state = service_state.next() => state.is_some(),
                 state = list_state.next() => state.is_some(),
-                _ = report.tick() => {
-                    let wait = format_wait(started.elapsed(), &service_state.get(), &list_state.get());
-                    tracing::warn!("{wait}");
-                    record_sync_diagnostic(self.device_id().as_str(), &wait);
-                    true
-                }
             };
             if !changed {
                 return Err(Error::Upstream("同步服务已关闭".to_owned()));
@@ -166,8 +114,7 @@ impl MatrixSession {
             let SyncStatus::Failed(error) = status else {
                 continue;
             };
-            // 同步被 403 拒绝也一样：每次重启都会被拒。
-            if matches!(error, Error::Unauthorized { .. } | Error::Forbidden { .. }) {
+            if matches!(error, Error::Unauthorized { .. }) {
                 return;
             }
             // 上次重启以后跑了一阵才出错，算恢复过，间隔从头算。重启本身成功不算数：服务器不通时它也可能先成功。

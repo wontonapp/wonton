@@ -1,0 +1,3 @@
+[env]
+ENCDUP_PAUSE_BUILD = "1"
+WONTON_TEST_LOG = "warn,matrix_sdk::event_cache=debug,matrix_sdk_ui::timeline=trace,wonton_matrix=debug"

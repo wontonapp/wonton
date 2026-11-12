@@ -72,7 +72,6 @@ mod tests {
     fn facts() -> BotActivityFacts {
         BotActivityFacts {
             plugin_id: "bot".into(),
-            bot: Some("default".into()),
             user_id: "@bot:home".into(),
             running: true,
             model_requests: 0,

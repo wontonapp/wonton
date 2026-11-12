@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use super::health_gate::Gate;
+use super::bot_services::DEFAULT_BOT;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager, PluginStatus};
 use super::manifest::{Manifest, Permission, PluginId};
@@ -90,11 +90,6 @@ impl ModelKeyStore {
         Ok(read_json::<KeyFile>(&self.path(id))?.unwrap_or_default())
     }
 
-    /// 记下的一个凭据值：别的模块（建 Bot）只读。没有记过时是 `None`。
-    pub(in crate::plugin) fn stored_key(&self, id: &PluginId, name: &str) -> Option<String> {
-        self.load(id).ok()?.keys.get(name).cloned()
-    }
-
     fn save(&self, id: &PluginId, file: &KeyFile) -> Result<(), StoreError> {
         create_private_dir(&self.dir)?;
         write_json(&self.path(id), file)
@@ -168,22 +163,21 @@ impl ModelKeyStore {
     }
 }
 
-/// 使用方要的凭据名：没有 `bots` 时只有插件级的（插件 `id`）；有 `bots` 时 Bot 服务用 `<id>/<Bot 名>`，
-/// 还有全插件一份的服务时再加插件级的。`bot_names` 是记录在案的 Bot 名。
-fn credential_names(
-    package: &PluginPackage,
-    bot_names: &[String],
-) -> (Option<String>, Vec<String>) {
+/// 使用方要的凭据名：没有 `bots` 时只有插件级的（插件 `id`）；有 `bots` 时 Bot 服务用 `<id>/<Bot 名>`，还有
+/// 全插件一份的服务时再加插件级的。
+fn credential_names(package: &PluginPackage) -> (Option<String>, Option<String>) {
     let manifest = &package.manifest;
     let id = manifest.id.to_string();
-    let Some(bots_declared) = &manifest.bots else {
-        return (Some(id), Vec::new());
+    let Some(bots) = &manifest.bots else {
+        return (Some(id), None);
     };
     let shared = package
         .service_names()
-        .any(|service| !bots_declared.services.iter().any(|b| b == service));
-    let bots = bot_names.iter().map(|bot| format!("{id}/{bot}")).collect();
-    (shared.then(|| id.clone()), bots)
+        .any(|service| !bots.services.iter().any(|b| b == service));
+    (
+        shared.then(|| id.clone()),
+        Some(format!("{id}/{DEFAULT_BOT}")),
+    )
 }
 
 pub(super) fn uses_models(manifest: &Manifest) -> bool {
@@ -224,17 +218,14 @@ pub(crate) fn gateway_absent(langs: &Languages) -> String {
 
 /// 没接上网关时注入的变量：`WONTON_MODEL_*` 全部定义成空字符串，compose 引用它们不会因为变量缺失而失败，
 /// 插件用它自己的登录或 key 设置。
-fn empty_model_vars(package: &PluginPackage, bot_names: &[String]) -> ModelVars {
-    let (plugin, _) = credential_names(package, bot_names);
+fn empty_model_vars(package: &PluginPackage) -> ModelVars {
+    let (plugin, bot) = credential_names(package);
     ModelVars {
         base_url: String::new(),
         anthropic_url: Some(String::new()),
         gemini_url: Some(String::new()),
         plugin_key: plugin.map(|_| String::new()),
-        bot_keys: bot_names
-            .iter()
-            .map(|bot| (bot.clone(), String::new()))
-            .collect(),
+        bot_key: bot.map(|_| String::new()),
         default_model: String::new(),
     }
 }
@@ -270,20 +261,19 @@ impl PluginManager {
         if !uses_models(manifest) {
             return Ok(None);
         }
-        let bot_names = self.bot_names(&manifest.id);
         let vars = match self.provider(langs) {
             Err(e) => {
                 tracing::info!(plugin = %manifest.id, error = %e, "模型网关没接上，照样安装，模型变量为空");
-                empty_model_vars(package, &bot_names)
+                empty_model_vars(package)
             }
             Ok(route) => match self
-                .issue_consumer_credentials(&route, package, langs, &bot_names)
+                .issue_consumer_credentials(&route, package, langs)
                 .await
             {
                 Ok(vars) => vars,
                 Err(e) => {
                     tracing::warn!(plugin = %manifest.id, error = %e, "模型网关凭据签发失败，照样安装，模型变量为空");
-                    empty_model_vars(package, &bot_names)
+                    empty_model_vars(package)
                 }
             },
         };
@@ -297,17 +287,16 @@ impl PluginManager {
         route: &ModelsRoute,
         package: &PluginPackage,
         langs: &Languages,
-        bot_names: &[String],
     ) -> Result<ModelVars, InstallError> {
         let store = self.store.model_keys();
         let id = &package.manifest.id;
         let mut file = store.load(id)?;
-        let (plugin, bots) = credential_names(package, bot_names);
-        for name in plugin.iter().chain(bots.iter()) {
+        let (plugin, bot) = credential_names(package);
+        for name in plugin.iter().chain(bot.iter()) {
             file.keys.entry(name.clone()).or_insert_with(random_token);
         }
         let issued = async {
-            for name in plugin.iter().chain(bots.iter()) {
+            for name in plugin.iter().chain(bot.iter()) {
                 self.issue_verified(route, name, &file.keys[name], langs)
                     .await?;
             }
@@ -316,7 +305,7 @@ impl PluginManager {
         .await;
         match issued {
             Ok(()) => {
-                let vars = self.model_vars(route, package, &file.keys, bot_names);
+                let vars = self.model_vars(route, package, &file.keys);
                 file.vars = Some(vars.clone());
                 file.problem = None;
                 // 凭据重新接上：之前的探测结论是旧状态留下的，下一轮探测重写。
@@ -355,13 +344,14 @@ impl PluginManager {
         let store = self.store.model_keys();
         let mut file = store.load(&manifest.id)?;
         let Ok(route) = self.provider(langs) else {
-            return Ok(Some(file.vars.clone().unwrap_or_else(|| {
-                empty_model_vars(package, &self.bot_names(&manifest.id))
-            })));
+            return Ok(Some(
+                file.vars
+                    .clone()
+                    .unwrap_or_else(|| empty_model_vars(package)),
+            ));
         };
-        let bot_names = self.bot_names(&manifest.id);
-        let (plugin, bots) = credential_names(package, &bot_names);
-        for name in plugin.iter().chain(bots.iter()) {
+        let (plugin, bot) = credential_names(package);
+        for name in plugin.iter().chain(bot.iter()) {
             if file.keys.contains_key(name) {
                 continue;
             }
@@ -370,7 +360,7 @@ impl PluginManager {
             added.push(name.clone());
             self.issue_verified(&route, name, &key, langs).await?;
         }
-        let vars = self.model_vars(&route, package, &file.keys, &bot_names);
+        let vars = self.model_vars(&route, package, &file.keys);
         file.vars = Some(vars.clone());
         file.problem = None;
         file.route = None;
@@ -418,45 +408,6 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 给一个 Bot 签发自己的模型网关凭据（`<插件 id>/<Bot 名>`），建 Bot 时用。插件没申请 `models` 时不动。
-    pub(super) async fn issue_bot_credential(
-        &self,
-        package: &PluginPackage,
-        bot: &str,
-        langs: &Languages,
-    ) -> Result<Option<String>, InstallError> {
-        let manifest = &package.manifest;
-        if !uses_models(manifest) || manifest.bots.is_none() {
-            return Ok(None);
-        }
-        let route = self.provider(langs)?;
-        let store = self.store.model_keys();
-        let mut file = store.load(&manifest.id)?;
-        let name = format!("{}/{bot}", manifest.id);
-        let key = file
-            .keys
-            .entry(name.clone())
-            .or_insert_with(random_token)
-            .clone();
-        store.save(&manifest.id, &file)?;
-        self.issue_verified(&route, &name, &key, langs).await?;
-        Ok(Some(key))
-    }
-
-    /// 删掉一个 Bot：吊销它的模型网关凭据，再从记下的值里删掉。没有记过就什么都不做。
-    pub(super) async fn revoke_bot_credential(
-        &self,
-        id: &PluginId,
-        bot: &str,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        let name = format!("{id}/{bot}");
-        if !self.store.model_keys().load(id)?.keys.contains_key(&name) {
-            return Ok(());
-        }
-        self.revoke_model_names(id, &[name], langs).await
-    }
-
     /// 重建容器时（见 [`super::lan`]、[`super::egress`]）：注入记下的变量，不问网关在不在——网关不在，
     /// 变量也保持原样，等网关回来对账后就接上了。从来没接上的注入空变量。
     pub(super) fn stored_model_vars(
@@ -467,20 +418,16 @@ impl PluginManager {
             return Ok(None);
         }
         let file = self.store.model_keys().load(&package.manifest.id)?;
-        Ok(Some(file.vars.clone().unwrap_or_else(|| {
-            empty_model_vars(package, &self.bot_names(&package.manifest.id))
-        })))
+        Ok(Some(
+            file.vars
+                .clone()
+                .unwrap_or_else(|| empty_model_vars(package)),
+        ))
     }
 
     /// 注入的变量；`keys` 里有使用方要的每个凭据。
-    fn model_vars(
-        &self,
-        route: &ModelsRoute,
-        package: &PluginPackage,
-        keys: &Keys,
-        bot_names: &[String],
-    ) -> ModelVars {
-        let (plugin, _) = credential_names(package, bot_names);
+    fn model_vars(&self, route: &ModelsRoute, package: &PluginPackage, keys: &Keys) -> ModelVars {
+        let (plugin, bot) = credential_names(package);
         let spec = &route.spec;
         let port = self.cfg.gateway_port;
         ModelVars {
@@ -488,15 +435,7 @@ impl PluginManager {
             anthropic_url: spec.apis.anthropic.as_ref().map(|p| base_url(port, p)),
             gemini_url: spec.apis.gemini.as_ref().map(|p| base_url(port, p)),
             plugin_key: plugin.map(|name| keys[&name].clone()),
-            bot_keys: bot_names
-                .iter()
-                .map(|bot| {
-                    (
-                        bot.clone(),
-                        keys[&format!("{}/{}", package.manifest.id, bot)].clone(),
-                    )
-                })
-                .collect(),
+            bot_key: bot.map(|name| keys[&name].clone()),
             default_model: spec.default_model.clone(),
         }
     }
@@ -577,7 +516,7 @@ impl PluginManager {
                     PluginPackage::with_files(&record.source, record.files, &self.owner_languages())
             {
                 package.origin = record.origin.clone();
-                let vars = self.model_vars(&route, &package, &file.keys, &self.bot_names(&id));
+                let vars = self.model_vars(&route, &package, &file.keys);
                 let mut file = file;
                 file.vars = Some(vars);
                 file.problem = None;
@@ -637,9 +576,8 @@ impl PluginManager {
                 continue;
             };
             package.origin = record.origin.clone();
-            let bot_names = self.bot_names(&id);
             match self
-                .issue_consumer_credentials(&route, &package, langs, &bot_names)
+                .issue_consumer_credentials(&route, &package, langs)
                 .await
             {
                 Err(e) => {
@@ -677,8 +615,8 @@ impl PluginManager {
         let mut ctx = self
             .rebuild_context(package, record, lan, pending.as_ref())
             .await?;
-        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
-        self.fill_bot_vars(package, &mut ctx, &self.owner_languages())
+        ctx.matrix = self
+            .bot_vars_read_back(package, &ctx, &self.owner_languages())
             .await?;
         let plan = render::render(package, &ctx, &self.owner_languages())?;
         if let (Some(pending), Some(reservation)) = (&pending, reservation) {
@@ -691,8 +629,7 @@ impl PluginManager {
             )
             .await?;
         }
-        self.replace_containers(&ctx, plan, Gate::StartPeriod)
-            .await?;
+        self.replace_containers(&ctx, plan).await?;
         self.reconcile_running(package, record).await?;
         Ok(())
     }

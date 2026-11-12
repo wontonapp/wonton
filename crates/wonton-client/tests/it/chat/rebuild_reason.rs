@@ -9,7 +9,7 @@ use tracing::field::{Field, Visit};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 
-pub(super) const TARGETS: [&str; 2] = ["wonton_client::chat::timeline", "wonton_matrix::chat_room"];
+const TARGETS: [&str; 2] = ["wonton_client::chat::timeline", "wonton_matrix::chat_room"];
 const KEEP: usize = 64;
 
 static REASONS: Mutex<VecDeque<(String, String)>> = Mutex::new(VecDeque::new());
@@ -17,6 +17,10 @@ static REASONS: Mutex<VecDeque<(String, String)>> = Mutex::new(VecDeque::new());
 pub struct Capture;
 
 impl<S: Subscriber> Layer<S> for Capture {
+    fn enabled(&self, metadata: &tracing::Metadata<'_>, _: Context<'_, S>) -> bool {
+        TARGETS.contains(&metadata.target())
+    }
+
     fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
         let mut fields = Fields::default();
         event.record(&mut fields);

@@ -36,12 +36,12 @@ Web UI；支持列表里有 Hermes Agent。
 ## 验证结果（M0-4，2026-10-28）
 
 环境：magpie 0.1.1327（stable 渠道）、Hermes Agent v0.22.5、Tuwunel v1.9.4，macOS + OrbStack。
-内网的开发机拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
+内网的 npchy 拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
 的 `dev.sh up` 再 `dev.sh smoke`。
 
 **上游说明**：验证时容器里的 magpie 没有直接配 provider，而是加了一个 OpenAI 兼容的自定义 provider，
-指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用网关里的一个对话模型跑日常测试；
-海外只发了一次 Anthropic Messages 格式的短请求（网关里的 Claude 模型，经两层 magpie 转换，2 秒返回）。
+指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用 `rm/glm-5.3-flash` 跑日常测试；
+海外只发了一次 Anthropic Messages 格式的短请求（`auto/claude-haiku-5-5`，经两层 magpie 转换，2 秒返回）。
 生产环境没有这一层，用户在容器 magpie 的网页（“模型设置”）里直接配置 provider 和 key。
 
 ### 每插件独立凭据：用 magpie 的网关凭据（gateway key）
@@ -206,7 +206,8 @@ key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`�
 
 没选的做法：
 
-- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613，组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
+- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613（每百万
+  token 输入 30、输出 60 美元），组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
   openrouter/auto（由 OpenRouter 按请求另挑模型，价格不定），通义千问下是旗舰 qwen-max（实测见下）。
 - 自己按模型名挑（如名字里带 mini、flash 的排前面）：命名没有规律可循，会过时；magpie 的模板用的是价格。通配也排不了
   序：通配匹配到的模型一律按 magpie 列出模型的顺序排，写在前面的通配不会排在前面。

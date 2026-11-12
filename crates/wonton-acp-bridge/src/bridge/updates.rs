@@ -33,11 +33,6 @@ pub(super) async fn handle_notice<R: Room>(
             let Some(key) = state.sessions.key_of(&session_id) else {
                 return Ok(());
             };
-            // 一轮一条的状态消息跟着 ACP 事件走（ADR-0082）。
-            state
-                .run_status
-                .observe(context.room.as_ref(), &key, &update)
-                .await;
             commands
                 .receive(
                     &super::RoomSink {
@@ -53,13 +48,7 @@ pub(super) async fn handle_notice<R: Room>(
                 .await;
             report_conflict(context, topics, &key, &update).await;
         }
-        AgentNotice::PermissionCancelled { session_id } => {
-            // Agent 撤回了权限请求（或主人取消了卡片）：一轮还在跑，回到干活。
-            if let Some(key) = state.sessions.key_of(&session_id) {
-                state.run_status.resumed(context.room.as_ref(), &key).await;
-            }
-        }
-        AgentNotice::PermissionFailed { .. } | AgentNotice::Task { .. } => {}
+        AgentNotice::PermissionCancelled { .. } | AgentNotice::PermissionFailed { .. } => {}
     }
     Ok(())
 }

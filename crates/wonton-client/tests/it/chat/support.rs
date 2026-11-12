@@ -1,21 +1,23 @@
 //! 测试里的家：一次性的 Tuwunel，加一个模拟的核心（签发 Matrix 登录令牌，把 `matrix.<基础域名>` 转给 Tuwunel），
 //! 前面接真实的隧道服务端。手机是真实的客户端核心，经隧道和本地代理访问，和 App 一样。
 
-use std::collections::{HashMap, VecDeque};
-use std::net::SocketAddr;
+use std::collections::VecDeque;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::ops::Deref;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use super::stale_join::StaleJoin;
-use iroh::{EndpointId, SecretKey};
-use serde_json::Value;
+use iroh::endpoint::presets;
+use iroh::{Endpoint, EndpointId, SecretKey};
+use serde_json::{Value, json};
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpStream;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tracing_subscriber::Layer as _;
-use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use wonton_client::{
@@ -23,26 +25,16 @@ use wonton_client::{
     Network, OnboardingViewModel, PushMethod,
 };
 use wonton_matrix::MatrixSession;
-pub use wonton_matrix::testkit::ToDeviceHold;
 use wonton_matrix::testkit::{Issuer, PushGateway, TestServer, random_hex};
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, SECRET_LEN,
 };
-use wonton_tunnel::{Allowlist, TunnelServer};
+use wonton_tunnel::{Allowlist, TunnelListener, TunnelServer};
 
-mod diagnostics;
-mod endpoint;
 mod fake_core;
-mod files;
-mod friends;
-mod io;
-mod link_preview;
 mod matrix;
 
-pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
-use endpoint::loopback_endpoint;
 use fake_core::fake_core;
-pub(super) use io::{read_body, relay};
 
 pub const WAIT: Duration = Duration::from_secs(60);
 pub(super) const BASE_DOMAIN: &str = "wonton.localhost";
@@ -57,11 +49,8 @@ pub const OWNER: &str = "@owner:wonton.localhost";
 pub fn init_test_logging() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let subscriber =
-            tracing_subscriber::registry().with(super::rebuild_reason::Capture.with_filter(
-                filter_fn(|m| super::rebuild_reason::TARGETS.contains(&m.target())),
-            ));
-        match std::env::var("WONTON_TEST_LOG").or_else(|_| Ok::<_, ()>("info".to_owned())) {
+        let subscriber = tracing_subscriber::registry().with(super::rebuild_reason::Capture);
+        match std::env::var("WONTON_TEST_LOG") {
             Ok(filter) => {
                 let filter = tracing_subscriber::EnvFilter::try_new(&filter)
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"));
@@ -144,23 +133,16 @@ struct Core {
     uploads_paused: watch::Sender<bool>,
     /// 为真时手机的 keys/upload 一接上就断开（drop 语义），见 `chat::key_upload_order` 回归测试。
     hold_key_uploads: Arc<AtomicBool>,
-    key_upload_delay: Mutex<Duration>,
-    /// Tuwunel 成功应答过的手机 keys/upload 次数；收到完成事件后，设备查询才有因果上的保证。
-    key_uploads_completed: watch::Sender<u64>,
+    /// 放行过的手机 keys/upload 次数；等“设备密钥上服务器”的一方靠它的事件变化再查，不睡固定间隔。
+    key_uploads_forwarded: watch::Sender<u64>,
     /// 等待函数进门标记：为真表示测试开始等设备密钥上服务器（先于 Bot 发消息就该放行）。
     device_keys_wait_started: watch::Sender<bool>,
     /// 为真时 Tuwunel 像挂了一样：转发中的请求断开，新请求一接上就断开。
     matrix_down: watch::Sender<bool>,
-    /// 为真时发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久。
-    fail_sends: watch::Sender<bool>,
     /// 为真时取房间成员的请求一接上就断开，别的请求不受影响。
     members_down: AtomicBool,
     members_requests_dropped: AtomicUsize,
-    /// 为真时取聊天显示方式账号数据的请求一接上就断开，别的请求不受影响。
-    layout_down: AtomicBool,
     reject_backup_creation: AtomicBool,
-    /// 请求行（小写）含其中一段的 Matrix 请求由假核心直接回这个状态码和错误码，不转给 Tuwunel。
-    refusals: Mutex<Vec<matrix::Refusal>>,
     /// 同步应答保持错标直到测试显式清除，避免其他同步连接提前把状态覆盖回来。
     stale_join: watch::Sender<Option<StaleJoin>>,
     join_reported_as_invited: AtomicUsize,
@@ -175,40 +157,17 @@ struct Core {
     key_requests_forwarded: watch::Sender<u64>,
     /// 为真时 `m.secret.request` 由假核心先回 200、留在手里，变回假再转发，像旧设备掉线时排着的请求。
     hold_key_requests: watch::Sender<bool>,
-    drop_key_requests: AtomicBool,
     sync_requests: Mutex<Vec<Value>>,
     hold_sync_recording: AtomicBool,
     sync_recording_held: watch::Sender<Option<Value>>,
     sync_recording_released: watch::Sender<bool>,
     /// 引导状态：没有就是没有这个接口（404）。
     onboarding: Mutex<Option<Value>>,
-    /// “添加设备”发的配对码（`POST /_wonton/api/pairing-codes`），隧道起来后填上。
-    issued_pairing_code: Mutex<Option<String>>,
     /// 已装插件的应答：没有就是没有这个接口（404）。
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
     bot_api: Arc<super::bot_profile_support::BotApi>,
-    /// 好友接口的假名单（ADR-0051）。
-    friends: Mutex<friends::FakeFriends>,
-    /// 文件服务的 tus 上传：编号和内容，传完发链接的测试用。
-    files: Mutex<HashMap<String, FakeFile>>,
-    file_grants: Mutex<Vec<(String, String)>>,
-    next_file: AtomicU64,
-    /// 链接预览的假应答：网址 → 状态码和响应体（ADR-0065）。没配的网址回 404。
-    link_previews: Mutex<HashMap<String, (u16, String)>>,
-    /// 链接预览的图片：id → 类型和字节。
-    link_preview_images: Mutex<HashMap<String, (String, Vec<u8>)>>,
-    /// 取预览的请求到了几次（图片的请求不算）。
-    link_preview_requests: AtomicUsize,
-}
-
-/// 假核心记下的一个 tus 上传。
-#[derive(Default)]
-pub(crate) struct FakeFile {
-    pub length: u64,
-    pub bytes: Vec<u8>,
-    pub name: String,
 }
 
 impl Home {
@@ -232,16 +191,12 @@ impl Home {
             push_registrations_seen: watch::Sender::new(0),
             uploads_paused: watch::Sender::new(false),
             hold_key_uploads: Arc::new(AtomicBool::new(false)),
-            key_upload_delay: Mutex::new(Duration::ZERO),
-            key_uploads_completed: watch::Sender::new(0),
+            key_uploads_forwarded: watch::Sender::new(0),
             device_keys_wait_started: watch::Sender::new(false),
             matrix_down: watch::Sender::new(false),
-            fail_sends: watch::Sender::new(false),
             members_down: AtomicBool::new(false),
             members_requests_dropped: AtomicUsize::new(0),
-            layout_down: AtomicBool::new(false),
             reject_backup_creation: AtomicBool::new(false),
-            refusals: Mutex::default(),
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicUsize::new(0),
             expire_room_list: AtomicBool::new(false),
@@ -250,23 +205,14 @@ impl Home {
             done_after_key_request: Mutex::default(),
             key_requests_forwarded: watch::Sender::new(0),
             hold_key_requests: watch::Sender::new(false),
-            drop_key_requests: AtomicBool::new(false),
             sync_requests: Mutex::default(),
             hold_sync_recording: AtomicBool::new(false),
             sync_recording_held: watch::Sender::new(None),
             sync_recording_released: watch::Sender::new(false),
             onboarding: Mutex::default(),
-            issued_pairing_code: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
-            friends: Mutex::default(),
-            files: Mutex::default(),
-            file_grants: Mutex::default(),
-            next_file: AtomicU64::new(0),
-            link_previews: Mutex::default(),
-            link_preview_images: Mutex::default(),
-            link_preview_requests: AtomicUsize::new(0),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -282,7 +228,7 @@ impl Home {
             PairProtocol::new(pairing.clone()),
         );
         let relay = relay(listener, addr);
-        let home = Self {
+        Self {
             matrix,
             push,
             bot_api: core.bot_api.clone(),
@@ -294,29 +240,12 @@ impl Home {
             relay,
             core_addr: addr,
             _core: task,
-        };
-        *home.core.issued_pairing_code.lock().unwrap() = Some(home.pairing_code());
-        home
+        }
     }
 
     /// Tuwunel 挂了或恢复了，隧道不受影响。
     pub fn set_matrix_down(&self, down: bool) {
         self.core.matrix_down.send_replace(down);
-    }
-
-    /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
-    pub fn fail_sends(&self, fail: bool) {
-        self.core.fail_sends.send_replace(fail);
-    }
-
-    /// 请求行（小写，如 `post /_matrix/client/v3/createroom`）含 `request` 的 Matrix 请求回 `status` 和 Matrix 错误码
-    /// `errcode`，像 Tuwunel 拒绝了它。
-    pub fn refuse_matrix(&self, request: &str, status: u16, errcode: &str) {
-        self.core.refusals.lock().unwrap().push(matrix::Refusal {
-            request: request.to_owned(),
-            status,
-            errcode: errcode.to_owned(),
-        });
     }
 
     /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。
@@ -357,9 +286,6 @@ impl Home {
         self.core.hold_key_requests.send_replace(hold);
     }
 
-    pub fn drop_key_requests(&self, drop: bool) {
-        self.core.drop_key_requests.store(drop, Ordering::SeqCst);
-    }
     /// 设置假核心的引导状态；没设置时引导接口回 404。
     pub fn set_onboarding(&self, onboarding: Value) {
         *self.core.onboarding.lock().unwrap() = Some(onboarding);
@@ -380,37 +306,9 @@ impl Home {
         self.core.installed_requests.load(Ordering::SeqCst)
     }
 
-    /// 配一个网址的预览应答：`status` 和核心会回的 `body`（成功是预览 JSON，失败是错误 JSON）。
-    pub fn set_link_preview(&self, url: &str, status: u16, body: Value) {
-        self.core
-            .link_previews
-            .lock()
-            .unwrap()
-            .insert(url.to_owned(), (status, body.to_string()));
-    }
-
-    /// 配一张预览图片：按 id 给回类型和字节。
-    pub fn set_link_preview_image(&self, id: &str, mime_type: &str, bytes: &[u8]) {
-        self.core
-            .link_preview_images
-            .lock()
-            .unwrap()
-            .insert(id.to_owned(), (mime_type.to_owned(), bytes.to_vec()));
-    }
-
-    /// 取预览的请求到了几次；图片的请求不算，断言“没向核心请求”用它。
-    pub fn link_preview_requests(&self) -> usize {
-        self.core.link_preview_requests.load(Ordering::SeqCst)
-    }
-
     /// 取房间成员的请求断开或恢复。
     pub fn set_members_down(&self, down: bool) {
         self.core.members_down.store(down, Ordering::SeqCst);
-    }
-
-    /// 取聊天显示方式账号数据的请求断开或恢复，别的请求不受影响。
-    pub fn set_layout_down(&self, down: bool) {
-        self.core.layout_down.store(down, Ordering::SeqCst);
     }
 
     /// 下一个带着 `stale` 房间加入事件的同步应答起，每个这样的应答都被改写成还是受邀（同步重启后 SDK 会
@@ -477,6 +375,15 @@ impl Home {
 
     /// 用同样的身份和端口恢复隧道。
     pub async fn start_tunnel(&mut self) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        // iroh 关闭后要再过一小会儿才释放 UDP 端口。
+        while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, self.tunnel_port)).is_err() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "隧道的端口一直没有释放"
+            );
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
         let endpoint = loopback_endpoint(self.tunnel_key.clone(), self.tunnel_port).await;
         let (tunnel, listener) = TunnelServer::spawn_embedded_with_pairing(
             endpoint,
@@ -534,11 +441,6 @@ impl Home {
     /// 订阅推送登记请求的到达次数；等的一方靠事件变化再查，不睡固定间隔。
     pub fn push_registrations_seen(&self) -> watch::Receiver<u64> {
         self.core.push_registrations_seen.subscribe()
-    }
-
-    /// 好友接口收到的请求：方法和小写路径。
-    pub fn friends_calls(&self) -> Vec<(String, String)> {
-        self.core.friends.lock().unwrap().calls.clone()
     }
 
     pub fn ticket(&self) -> String {
@@ -604,18 +506,14 @@ impl Home {
         self.core.hold_key_uploads.store(true, Ordering::SeqCst);
     }
 
-    pub fn delay_key_uploads(&self, delay: Duration) {
-        *self.core.key_upload_delay.lock().unwrap() = delay;
-    }
-
     /// 开关本体给放开挂起的任务：先到先放的逻辑里，放行的一方不持有 [`Home`]。
     pub fn key_uploads_hold(&self) -> Arc<AtomicBool> {
         self.core.hold_key_uploads.clone()
     }
 
-    /// 完成计数的接收端：`changed()` 等下一次 keys/upload 收到 Tuwunel 的成功响应。
-    pub fn key_uploads_completed(&self) -> watch::Receiver<u64> {
-        self.core.key_uploads_completed.subscribe()
+    /// 转发计数的接收端：`changed()` 等下一次 keys/upload 被放行。
+    pub fn key_uploads_forwarded(&self) -> watch::Receiver<u64> {
+        self.core.key_uploads_forwarded.subscribe()
     }
 
     /// 等待函数进门时调用：放开的任务看到它就知道测试开始等设备密钥了。
@@ -640,29 +538,103 @@ impl Home {
         bot.start_sync().await.expect("Bot 开始同步");
         bot
     }
+}
 
-    /// 同 [`Self::bot`]，但登录走 `homeserver_url`（比如 [`ToDeviceHold`] 的中转），之后的请求都走它。
-    pub async fn bot_via(
-        &self,
-        homeserver_url: &str,
-        localpart: &str,
-        display_name: &str,
-    ) -> MatrixSession {
-        let bot = self
-            .matrix
-            .login_via(
-                homeserver_url,
-                localpart,
-                display_name,
-                wonton_matrix::StoreConfig::InMemory,
-            )
-            .await;
-        bot.set_display_name(display_name)
-            .await
-            .expect("Bot 设置显示名");
-        bot.start_sync().await.expect("Bot 开始同步");
-        bot
+pub(super) async fn read_body(tcp: &mut TcpStream, head: &str) -> Option<Vec<u8>> {
+    let length = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length:"))
+        .and_then(|value| value.trim().parse().ok())
+        .unwrap_or(0);
+    let mut body = vec![0u8; length];
+    tcp.read_exact(&mut body).await.ok()?;
+    Some(body)
+}
+
+/// 核心自己的接口；不认识的请求回 `None`（404）。
+fn respond(core: &Core, head: &str, body: &[u8]) -> Option<(u16, String)> {
+    let push = |method: &str, body: Value| {
+        core.push_requests
+            .lock()
+            .unwrap()
+            .push((method.to_owned(), body));
+        core.push_registrations_seen
+            .send_modify(|count| *count += 1);
+    };
+    if let Some(rest) = head.strip_prefix("post /_wonton/confirmations/") {
+        let id = rest
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+        let answer: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+        let state = match answer["answer"].as_str() {
+            Some("approve") => "running",
+            _ => "rejected",
+        };
+        core.answers.lock().unwrap().push((id, answer));
+        let (status, reply) = core
+            .answer_replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .unwrap_or_else(|| (200, json!({"state": {"type": state}})));
+        return Some((status, reply.to_string()));
     }
+    if let Some(rest) = head.strip_prefix("delete /_wonton/confirmations/") {
+        let id = rest.split('/').next().unwrap_or_default().to_owned();
+        core.window_stops.lock().unwrap().push(id);
+        let reply = core.answer_replies.lock().unwrap().pop_front();
+        return Some(reply.map_or((204, String::new()), |(status, reply)| {
+            (status, reply.to_string())
+        }));
+    }
+    if head.starts_with("get /_wonton/api/plugins ") {
+        core.installed_requests.fetch_add(1, Ordering::SeqCst);
+        let installed = core.installed.lock().unwrap().clone()?;
+        return Some((200, installed.to_string()));
+    }
+    let response = if head.starts_with("post /_wonton/matrix/login-token ") {
+        if core
+            .failing_login_tokens
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .is_ok()
+        {
+            return Some((502, String::new()));
+        }
+        core.login_tokens.fetch_add(1, Ordering::SeqCst);
+        json!({
+            "homeserver_url": format!("http://matrix.{BASE_DOMAIN}"),
+            "server_name": BASE_DOMAIN,
+            "user_id": OWNER,
+            "login_type": "org.matrix.login.jwt",
+            "token": core.issuer.login_token("owner"),
+            "expires_in": 120,
+        })
+    } else if head.starts_with("put /_wonton/push/registration ") {
+        push("PUT", serde_json::from_slice(body).unwrap_or(Value::Null));
+        json!({"pushkey": core.pushkey, "gateway_url": PushGateway::URL})
+    } else if head.starts_with("get /_wonton/api/onboarding ") {
+        let value = core.onboarding.lock().unwrap().clone()?;
+        return Some((200, value.to_string()));
+    } else if head.starts_with("delete /_wonton/push/registration ") {
+        push("DELETE", Value::Null);
+        json!({"removed": true})
+    } else {
+        return None;
+    };
+    Some((200, response.to_string()))
+}
+
+async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
+    Endpoint::builder(presets::Minimal)
+        .secret_key(key)
+        .clear_ip_transports()
+        .bind_addr((Ipv4Addr::LOCALHOST, port))
+        .unwrap()
+        .bind()
+        .await
+        .unwrap()
 }
 
 /// 测试里的手机：一个客户端核心，连同它的数据目录。
@@ -699,18 +671,9 @@ impl Phone {
     pub async fn wait_chat<R>(
         &self,
         what: &str,
-        check: impl FnMut(&ChatViewModel) -> Option<R>,
-    ) -> R {
-        self.wait_chat_within(what, WAIT, check).await
-    }
-    pub async fn wait_chat_within<R>(
-        &self,
-        what: &str,
-        within: Duration,
         mut check: impl FnMut(&ChatViewModel) -> Option<R>,
     ) -> R {
         let subscription = self.subscribe_chat();
-        let since = std::time::Instant::now();
         let mut last = None;
         let waiting = async {
             while let Some(view) = subscription.next().await {
@@ -721,21 +684,9 @@ impl Phone {
             }
             panic!("订阅提前结束");
         };
-        match tokio::time::timeout(within, waiting).await {
+        match tokio::time::timeout(WAIT, waiting).await {
             Ok(found) => found,
-            Err(_) => {
-                let view = self.chat();
-                // 起步现场的记录按 Matrix 设备号分开，设备号只在登录后才有。
-                let device = match &view.account {
-                    ChatAccount::SignedIn { device_id, .. } => device_id.as_str(),
-                    _ => "",
-                };
-                panic!(
-                    "{what}：{within:?} 内没有等到，当前：{view:#?}\n同步起步：{}\n挂着的请求：{}",
-                    wonton_matrix::last_sync_diagnostic(device),
-                    pending_requests(since)
-                )
-            }
+            Err(_) => panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", self.chat()),
         }
     }
 
@@ -783,6 +734,20 @@ impl Phone {
             ),
         }
     }
+}
+
+/// 把隧道交给嵌入方的流接到假核心的 TCP 上，拆开后连接各自结束。
+fn relay(mut listener: TunnelListener, upstream: SocketAddr) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        while let Some(mut stream) = listener.accept().await {
+            tokio::spawn(async move {
+                let Ok(mut tcp) = TcpStream::connect(upstream).await else {
+                    return;
+                };
+                let _ = tokio::io::copy_bidirectional(&mut stream, &mut tcp).await;
+            });
+        }
+    })
 }
 
 pub use super::timeline::Timeline;

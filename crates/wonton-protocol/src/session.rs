@@ -22,9 +22,9 @@ pub struct SessionRow {
 mod tests {
     use super::*;
     use crate::{
-        Action, ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, CoreError,
-        DeviceInvite, DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel,
-        PairingFailure, PairingStatus, ProxySettings, SecretString,
+        Action, ConnectionCheck, ConnectionDetails, ConnectionNotice, CoreError, DeviceInvite,
+        DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel, PairingFailure,
+        PairingStatus, ProxySettings, SecretString,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -57,7 +57,6 @@ mod tests {
             },
             path: Some(HomePath {
                 relay: false,
-                public_relay: false,
                 lan: true,
                 rtt_ms: 3,
             }),
@@ -69,16 +68,10 @@ mod tests {
                 last_connected_at_ms: Some(1_793_778_000_000),
                 handshake_ms: Some(120),
                 disconnects: 2,
-                failed_dials: 1,
                 sent_packets: 900,
                 lost_packets: 3,
-                quality: ConnectionQuality::Poor,
-                loss_per_mille: Some(73),
-                rtt_ms: Some(1_240),
                 last_failure: Some("timed out".into()),
                 addresses_stale: true,
-                udp_flows: Vec::new(),
-                udp_buffer_evicted_datagrams: None,
             },
             proxy: Some(ProxySettings {
                 host: "127.0.0.1".into(),
@@ -99,7 +92,6 @@ mod tests {
                 expires_at_ms: 1_767_225_600_000,
             }),
             keep_connection: true,
-            just_recovered: true,
         };
         assert_eq!(round_trip(&home), home);
         for action in [
@@ -110,7 +102,6 @@ mod tests {
                 code: SecretString::new("wonton://pair?v=0"),
                 device_name: "phone".into(),
             },
-            Action::CancelPairing,
             Action::InviteDevice,
             Action::AppForegrounded,
             Action::AppBackgrounded,

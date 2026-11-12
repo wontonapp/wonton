@@ -32,9 +32,6 @@ pub struct ProviderService {
     /// 转发来的请求（ADR-0053）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credentials: Option<CredentialCommands>,
-    /// 托管能力（ADR-0080）：核心把这项能力的总目录挂到容器里的这个绝对路径。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mount: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

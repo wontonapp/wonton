@@ -190,7 +190,6 @@ private fun ChoiceRow(title: String, isSelected: Boolean, sample: FontSample? = 
         }
         Spacer(Modifier.weight(1f))
         if (isSelected) {
-            // 装饰：选中状态由选项本身朗读。
             Icon(WontonIcon.Check, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.accentInk.toColor())
         }
     }

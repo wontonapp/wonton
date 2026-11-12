@@ -3,14 +3,6 @@ import WontonClient
 
 extension MainView {
     func receiveAppURL(_ url: URL) {
-        if home.completeMatrixLogin(from: url) { return }
-        if home.prefillPairing(from: url) {
-            showsSettings = false
-            showsTabSettings = false
-            tabs.send(.closeTabOverlay)
-            tabs.select(.apps)
-            return
-        }
         navigation.receive(url)
     }
 
@@ -97,7 +89,7 @@ extension MainView {
         case let .chat(botUserId):
             let origin: AppTab = if tabs.viewModel.overlay != nil {
                 .chat
-            } else if tabs.viewModel.selected.isWebPage {
+            } else if case .plugin = tabs.viewModel.selected {
                 .chat
             } else { nativeTab }
             if chat.openDirectChat(with: botUserId, from: origin) { tabs.select(.chat) }

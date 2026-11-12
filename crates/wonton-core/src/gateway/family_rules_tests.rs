@@ -1,15 +1,11 @@
-//! 家人网关规则的行为测试（ADR-0045 的“网关管房间规则”“频率和跳数”）：公开房间不放行、Bot 发消息的频率。
-//! 跳数在 `hop_limit_tests`，共用这里的 [`Home`]。网关后面接假的 Tuwunel（`crate::matrix::fake`），时钟是注入的，
-//! 不许 sleep。
+//! 家人网关规则的行为测试（ADR-0045 的“网关管房间规则”“频率和跳数”）：公开房间不放行、Bot 发消息的频率和
+//! 跳数。网关后面接假的 Tuwunel（`crate::matrix::fake`），时钟是注入的，不许 sleep。
 
 use std::collections::BTreeSet;
-
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use wonton_protocol::BotKeeper;
 
-use crate::plugin::PluginId;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
@@ -28,9 +24,6 @@ use crate::config::{Config, PublicUrls};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::matrix::fake::Room;
-use crate::mcp::audit::Audit;
-use crate::mcp::test_support::Cards;
-use crate::mcp::{Bus, Confirmations};
 use crate::owner::OwnerStore;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
@@ -38,77 +31,28 @@ use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginManager};
 use crate::tunnel::Tunnel;
-use std::time::Duration;
 
 const MATRIX_HOST: &str = "matrix.wonton.localhost";
 const BOT_HOST: &str = "matrix.wonton.internal";
 /// 插件网络里的来源：注册成有 `matrix.bot` 权限的插件。
 const BOT: &str = "172.30.1.5:40000";
 const BOT_TOKEN: &str = "bot-token";
-/// 另一个插件的 Bot：跳数只数不同 Bot 之间的来回。
-const OTHER: &str = "172.30.2.5:40000";
-const OTHER_TOKEN: &str = "other-token";
 const DEVICE_TOKEN: &str = "device-token";
-pub(super) const ROOM: &str = "!r:test";
+const ROOM: &str = "!r:test";
 
-pub(super) struct Home {
+struct Home {
     app: Router,
-    pub(super) fake: crate::matrix::fake::Fake,
-    /// 主人收到的确认卡片。
-    pub(super) cards: Arc<Cards>,
-    pub(super) bus: Arc<Bus>,
-    pub(super) plugins: Arc<PluginManager>,
+    fake: crate::matrix::fake::Fake,
+    limiter: Arc<SendLimiter>,
     clock: Arc<AtomicU64>,
     phone: EndpointId,
-    tunnel: Tunnel,
-    members: Arc<crate::members::Members>,
+    _tunnel: Tunnel,
     _dir: tempfile::TempDir,
 }
 
-/// 两个插件各有一个 Bot、带 `matrix.bot` 权限：`hermes` 归主人，`claw` 归 `other_keeper`。
-fn register_bots(plugins: &PluginManager, other_keeper: BotKeeper) {
-    let owner = BotKeeper::User {
-        username: "owner".to_owned(),
-    };
-    for (plugin, network, user, token, keeper) in [
-        (
-            "app.echo",
-            "172.30.1.0/24",
-            "@hermes:test",
-            BOT_TOKEN,
-            owner,
-        ),
-        (
-            "app.other",
-            "172.30.2.0/24",
-            "@claw:test",
-            OTHER_TOKEN,
-            other_keeper,
-        ),
-    ] {
-        plugins.register_source_for_test(
-            plugin,
-            network,
-            vec!["matrix.bot".parse::<Permission>().unwrap()],
-        );
-        plugins.bot_records_for_test(
-            &PluginId::parse(plugin).unwrap(),
-            &[("default", user, keeper, token)],
-        );
-    }
-}
-
 impl Home {
-    /// 核心接着假的 Tuwunel 和总线；两个插件各有一个 Bot、带 `matrix.bot` 权限，都归主人；一台设备经隧道接入。
-    pub(super) async fn start(limits: SendLimits) -> Self {
-        let owner = BotKeeper::User {
-            username: "owner".to_owned(),
-        };
-        Self::with_keeper(limits, owner).await
-    }
-
-    /// 同 [`Self::start`]，`claw` 归 `other_keeper`。
-    pub(super) async fn with_keeper(limits: SendLimits, other_keeper: BotKeeper) -> Self {
+    /// 核心接着假的 Tuwunel；一个插件带 `matrix.bot` 权限，一台设备经隧道接入。
+    async fn start(limits: SendLimits) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (fake, config) = crate::matrix::fake::start().await;
         let matrix = Matrix::connect(&config, dir.path(), HttpClient::new())
@@ -145,7 +89,11 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        register_bots(&plugins, other_keeper);
+        plugins.register_source_for_test(
+            "app.echo",
+            "172.30.1.0/24",
+            vec!["matrix.bot".parse::<Permission>().unwrap()],
+        );
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
@@ -153,10 +101,6 @@ impl Home {
         fake.state().tokens.insert(
             BOT_TOKEN.into(),
             ("@hermes:test".into(), "bot-device".into()),
-        );
-        fake.state().tokens.insert(
-            OTHER_TOKEN.into(),
-            ("@claw:test".into(), "claw-device".into()),
         );
         fake.state().tokens.insert(
             DEVICE_TOKEN.into(),
@@ -168,53 +112,39 @@ impl Home {
             Arc::new(move || clock.load(Ordering::Relaxed))
         };
         let limiter = Arc::new(SendLimiter::with_clock(limits, now));
-        let cards = Arc::new(Cards::default());
-        let bus = Bus::new(
-            plugins.clone(),
-            Arc::new(Confirmations::new(cards.clone(), Duration::from_secs(60))),
-            Arc::new(Audit::new(dir.path().join("audit.jsonl"))),
-        );
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
-            members.clone(),
-            plugins.clone(),
+            members,
+            plugins,
             None,
             http,
             tunnel.clone(),
         )
         .with_matrix(Some(Arc::new(matrix)))
-        .with_send_limiter(limiter)
-        .with_mcp(Some(bus.endpoint()));
+        .with_send_limiter(limiter.clone());
         Self {
             app: router(Arc::new(gateway)),
             fake,
-            cards,
-            bus,
-            plugins,
+            limiter,
             clock,
             phone,
-            tunnel,
-            members,
+            _tunnel: tunnel,
             _dir: dir,
         }
     }
 
-    pub(super) fn tick(&self, ms: u64) {
+    fn tick(&self, ms: u64) {
         self.clock.fetch_add(ms, Ordering::Relaxed);
     }
 
-    /// 建一个两个 Bot 和人都在的房间，省得上游把消息拒在门外。
-    pub(super) fn seed_room(&self, room: &str) {
+    /// 建一个 Bot 和人都在的房间，省得上游把消息拒在门外。
+    fn seed_room(&self, room: &str) {
         self.fake.state().rooms.insert(
             room.to_owned(),
             Room {
-                members: BTreeSet::from([
-                    "@hermes:test".to_owned(),
-                    "@claw:test".to_owned(),
-                    "@owner:test".to_owned(),
-                ]),
+                members: BTreeSet::from(["@hermes:test".to_owned(), "@owner:test".to_owned()]),
                 ..Room::default()
             },
         );
@@ -256,7 +186,7 @@ impl Home {
     }
 
     /// 设备（人）的请求，走 `matrix.<base>`。
-    pub(super) async fn device(
+    async fn device(
         &self,
         method: Method,
         path: &str,
@@ -289,7 +219,7 @@ impl Home {
     }
 
     /// Bot 在房间里说一句话。
-    pub(super) async fn bot_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
+    async fn bot_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
         self.bot(
             Method::PUT,
             &format!("/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}"),
@@ -298,96 +228,7 @@ impl Home {
         .await
     }
 
-    /// 另一个插件的 Bot 在房间里发一条事件。
-    pub(super) async fn other_sends(
-        &self,
-        room: &str,
-        txn: &str,
-        content: Value,
-    ) -> (StatusCode, HeaderMap, Value) {
-        let path = format!("/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}");
-        self.send(
-            Method::PUT,
-            BOT_HOST,
-            &path,
-            None,
-            OTHER,
-            Some(OTHER_TOKEN),
-            content.to_string(),
-        )
-        .await
-    }
-
-    /// 另一个插件的 Bot 说一句话。
-    pub(super) async fn other_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
-        self.other_sends(room, txn, json!({"msgtype": "m.text", "body": "hey"}))
-            .await
-    }
-
-    /// 人在房间里说一句话。
-    pub(super) async fn human_says(&self, room: &str, txn: &str) -> (StatusCode, HeaderMap, Value) {
-        self.device(
-            Method::PUT,
-            &format!("/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}"),
-            json!({"msgtype": "m.text", "body": "我在"}),
-        )
-        .await
-    }
-
-    /// 家人 `username` 的一台已配对设备。
-    pub(super) fn member_device(&self, username: &str) -> EndpointId {
-        self.members
-            .invite(crate::members::MemberRecord {
-                username: username.to_owned(),
-                user_id: format!("@{username}:test"),
-                display_name: username.to_owned(),
-                email: None,
-                status: wonton_protocol::MemberStatus::Invited,
-                can_install_plugins: false,
-                wants_private_bot: true,
-                private_bot: None,
-                pairing_code_hash: None,
-                pairing_code_expires_at_ms: None,
-            })
-            .unwrap();
-        let device = SecretKey::generate().public();
-        self.tunnel
-            .devices
-            .add_if(device, None, Some(username.to_owned()), |_| true)
-            .unwrap();
-        device
-    }
-
-    /// 某台设备请求核心的接口（`/_wonton/…`）。
-    pub(super) async fn core_as(
-        &self,
-        device: EndpointId,
-        method: Method,
-        path: &str,
-        body: Value,
-    ) -> (StatusCode, HeaderMap, Value) {
-        let body = if body.is_null() {
-            String::new()
-        } else {
-            body.to_string()
-        };
-        self.send(
-            method,
-            CORE,
-            path,
-            Some(device),
-            "127.0.0.1:50000",
-            None,
-            body,
-        )
-        .await
-    }
-
-    pub(super) fn phone(&self) -> EndpointId {
-        self.phone
-    }
-
-    pub(super) fn refusal<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
+    fn refusal<'a>(&self, headers: &'a HeaderMap) -> Option<&'a str> {
         headers
             .get("x-wonton-error")
             .and_then(|value| value.to_str().ok())
@@ -603,6 +444,124 @@ async fn state_events_and_receipts_are_not_counted() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let (status, _, body) = home.bot_says(ROOM, "t10").await;
     assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+}
+
+#[tokio::test]
+async fn the_hop_limit_stops_the_loop_until_someone_speaks() {
+    let home = Home::start(SendLimits::default()).await;
+    home.seed_room(ROOM);
+    let mut events = home.limiter.subscribe();
+    // 每条隔 3 秒：频率不挡，跳数到 20 条为止。
+    for txn in 0..20 {
+        home.tick(3000);
+        let (status, _, body) = home.bot_says(ROOM, &format!("t{txn}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    home.tick(3000);
+    let (status, headers, body) = home.bot_says(ROOM, "t20").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(body["errcode"], "M_FORBIDDEN");
+    assert_eq!(home.refusal(&headers), Some("hop_limit"));
+    assert_eq!(home.fake.state().sent.len(), 20, "第 21 条没到上游");
+
+    // 订阅的任务收到事件，Bot 的名字是 whoami 认出来的。
+    let event = events.recv().await.expect("跳数到顶的事件");
+    assert_eq!(event.room_id, ROOM);
+    assert_eq!(event.bot_user_ids, vec!["@hermes:test"]);
+
+    // 人说一句就清零：Bot 又能连着发 20 条。
+    home.tick(3000);
+    let (status, _, body) = home
+        .device(
+            Method::PUT,
+            &format!("/_matrix/client/v3/rooms/{ROOM}/send/m.room.message/from-human"),
+            json!({"msgtype": "m.text", "body": "我回来了"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    for txn in 21..41 {
+        home.tick(3000);
+        let (status, _, body) = home.bot_says(ROOM, &format!("t{txn}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    home.tick(3000);
+    let (status, headers, _) = home.bot_says(ROOM, "t41").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(home.refusal(&headers), Some("hop_limit"));
+}
+
+#[tokio::test]
+async fn an_hour_without_messages_starts_the_room_over() {
+    let home = Home::start(SendLimits::default()).await;
+    home.seed_room(ROOM);
+    for txn in 0..20 {
+        home.tick(3000);
+        home.bot_says(ROOM, &format!("t{txn}")).await;
+    }
+    home.tick(3000);
+    let (status, _, _) = home.bot_says(ROOM, "t20").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    // 一小时没有任何消息：下一条从头数。
+    home.tick(3_600_000);
+    let (status, _, body) = home.bot_says(ROOM, "t21").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn a_refused_message_does_not_consume_a_rate_token() {
+    let home = Home::start(SendLimits::default()).await;
+    home.seed_room(ROOM);
+    // 十条突发把桶打空，跳数到 10。
+    for txn in 0..10 {
+        let (status, _, body) = home.bot_says(ROOM, &format!("t{txn}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    // 每条隔 3 秒补回一个令牌又用掉：桶一直是空的，跳数到 20。
+    for txn in 10..20 {
+        home.tick(3000);
+        let (status, _, body) = home.bot_says(ROOM, &format!("t{txn}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    home.tick(3000);
+    let (status, headers, _) = home.bot_says(ROOM, "t20").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(home.refusal(&headers), Some("hop_limit"));
+    // 人说一句，Bot 不挪时钟立刻能发：被跳数拒掉的那条没占频率的令牌。
+    let (status, _, body) = home
+        .device(
+            Method::PUT,
+            &format!("/_matrix/client/v3/rooms/{ROOM}/send/m.room.message/from-human"),
+            json!({"msgtype": "m.text", "body": "我在"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, _, body) = home.bot_says(ROOM, "t21").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+}
+
+#[tokio::test]
+async fn the_configured_numbers_are_enforced() {
+    let home = Home::start(SendLimits {
+        per_minute: 60,
+        burst: 30,
+        hop_limit: 5,
+        idle_reset: std::time::Duration::from_secs(60),
+    })
+    .await;
+    home.seed_room(ROOM);
+    for txn in 0..5 {
+        home.tick(1000);
+        let (status, _, body) = home.bot_says(ROOM, &format!("t{txn}")).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+    }
+    home.tick(1000);
+    let (status, headers, body) = home.bot_says(ROOM, "t5").await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert_eq!(
+        home.refusal(&headers),
+        Some("hop_limit"),
+        "跳数上限用的是配置里的 5"
+    );
 }
 
 #[test]

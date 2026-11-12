@@ -3,7 +3,11 @@
 
 name-main = Main conversation
 
+topic-input-unsupported = Input not supported: the ACP bridge only takes plain text.
+topic-interrupt-pending = Busy: an interrupt is already waiting.
 topic-no-active-session = No active ACP session
+topic-steer-rejected = The agent did not accept the steer request.
+topic-queue-full = The ACP queue is full; try again later.
 topic-input-too-long = Input is over the { $size } byte limit
 topic-input-empty = Input can't be empty
 topic-control-no-text = The control command is missing its text

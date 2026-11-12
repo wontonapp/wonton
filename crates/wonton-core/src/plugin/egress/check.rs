@@ -308,7 +308,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_closed_port_is_unreachable() {
-        let port = wonton_tunnel::test_support::unused_port();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
         let proxy = ProxyAddress::parse(&format!("http://127.0.0.1:{port}"), &langs()).unwrap();
         let found = check(&proxy, TARGET, &langs()).await.unwrap();
         assert_eq!(found.reason, EgressFailure::ProxyUnreachable);

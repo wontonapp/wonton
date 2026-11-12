@@ -14,16 +14,6 @@ case "$profile" in
   release) cargo_profile=release ;;
   *) echo "未知的构建类型：${profile}（只支持 debug 或 release）" >&2; exit 2 ;;
 esac
-
-# 假数据入口（cargo feature ui-fake）：Debug 默认带上（原生壳只在 Debug 里调它），Release 不带，发布包
-# 编不进去。WONTON_UI_FAKE=1/0 强制开/关，夜跑的 UI 测试显式传 1。
-ui_fake_args=()
-case "${WONTON_UI_FAKE:-auto}" in
-  1|true) ui_fake_args=(--features ui-fake) ;;
-  0|false) : ;;
-  auto) if [ "$profile" = debug ]; then ui_fake_args=(--features ui-fake); fi ;;
-  *) echo "WONTON_UI_FAKE 只接受 1、0 或 auto，得到：${WONTON_UI_FAKE}" >&2; exit 2 ;;
-esac
 read -r -a targets <<<"${WONTON_IOS_TARGETS:-aarch64-apple-ios aarch64-apple-ios-sim}"
 if (( ${#targets[@]} == 0 )); then
   echo "WONTON_IOS_TARGETS 不能为空" >&2
@@ -31,14 +21,6 @@ if (( ${#targets[@]} == 0 )); then
 fi
 
 repo_root="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
-
-# project.yml 的 configFiles 引用版本号 xcconfig，XcodeGen 在生成时校验它存在，而 postGenCommand 在生成
-# 之后才跑、兜不住首次生成，所以在这里（xcodegen 之前）写好。规则和 Android 共 scripts/app-version.sh
-# 一处，发版显式传 WONTON_VERSION=X.Y.Z；Debug 必有输出（无 tag 落 0.0.0/0）。
-bash "$repo_root/scripts/app-version.sh" debug |
-  sed -e 's/^VERSION=/MARKETING_VERSION = /' -e 's/^BUILD=/CURRENT_PROJECT_VERSION = /' \
-    > "$repo_root/apps/ios/Version.xcconfig"
-
 package_dir="$repo_root/apps/ios/WontonClient"
 generated_dir="$package_dir/Sources/WontonClient/Generated"
 xcframework="$package_dir/build/WontonClientFFI.xcframework"
@@ -53,13 +35,17 @@ export IPHONEOS_DEPLOYMENT_TARGET=17.0
 libraries=()
 for target in "${targets[@]}"; do
   cargo rustc -p wonton-client --lib --crate-type staticlib --locked \
-    ${ui_fake_args[@]+"${ui_fake_args[@]}"} \
     --target "$target" --profile "$cargo_profile"
   libraries+=("$target_dir/$target/$profile/libwonton_client.a")
 done
 
-# 绑定怎么生成只写在这一处。
-"$repo_root/apps/ios/scripts/generate-swift-bindings.sh" "${libraries[0]}" "$work_dir"
+rm -rf "$work_dir"
+mkdir -p "$work_dir/headers" "$work_dir/swift"
+cargo run -q -p wonton-client --features bindgen --bin uniffi-bindgen-swift --locked -- \
+  --swift-sources --headers --modulemap \
+  --module-name WontonClientFFI --modulemap-filename module.modulemap \
+  "${libraries[0]}" "$work_dir/headers"
+mv "$work_dir"/headers/*.swift "$work_dir/swift/"
 
 rm -rf "$generated_dir" "$xcframework"
 mkdir -p "$generated_dir"

@@ -6,10 +6,9 @@ use std::sync::Arc;
 
 use axum::http::Method;
 use wonton_client::{
-    Action, ClientCore, CoreUpgradeBreakingPlugin, CoreUpgradeBreakingReason, CoreUpgradeCheck,
-    CoreUpgradeCompat, CoreUpgradeCompatCategory, CoreUpgradeFailure, CoreUpgradeOffer,
-    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry,
+    Action, ClientCore, CoreUpgradeCheck, CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase,
+    CoreUpgradeProblem, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus,
+    CoreUpgradeTarget, CoreVersion, HomeStatus, PluginsViewModel, SettingsEntry, TabRef,
 };
 
 use super::rig::{Canned, Rig, WAIT, core_error};
@@ -41,7 +40,6 @@ fn offer(digest: &str) -> CoreUpgradeCheck {
             digest: digest.to_owned(),
             version: Some("0.4.0".to_owned()),
             migrates: Vec::new(),
-            compat: CoreUpgradeCompat::Unavailable,
         },
     }
 }
@@ -362,45 +360,6 @@ async fn the_new_core_first_check_shows_up_without_touching_the_page() {
     .await;
 }
 
-/// 服务端报了会新失效的插件：客户端核心按 App 的语言把每个原因写一行，壳只渲染。
-#[tokio::test]
-async fn the_breaking_plugins_details_are_written_in_the_apps_language() {
-    let rig = Rig::new().await;
-    let mut check = idle(offer(NEW));
-    let CoreUpgradeCheck::Ready { offer } = &mut check.check else {
-        panic!("{check:?}");
-    };
-    offer.compat = CoreUpgradeCompat::Breaking {
-        plugins: vec![CoreUpgradeBreakingPlugin {
-            id: "app.immich.photos".into(),
-            reasons: vec![
-                CoreUpgradeBreakingReason {
-                    category: CoreUpgradeCompatCategory::SpecUnsupported,
-                    raw: "0.13".into(),
-                },
-                CoreUpgradeBreakingReason {
-                    category: CoreUpgradeCompatCategory::Other,
-                    raw: String::new(),
-                },
-            ],
-        }],
-    };
-    reports(&rig, &check);
-    rig.connected().await;
-    let view = rig
-        .wait_for(|view| !view.core_upgrade.compat_details.is_empty())
-        .await;
-    let details = &view.core_upgrade.compat_details;
-    assert_eq!(details.len(), 1, "{details:?}");
-    assert_eq!(details[0].id, "app.immich.photos");
-    assert_eq!(details[0].lines.len(), 2, "{details:?}");
-    assert!(
-        details[0].lines[0].contains("0.13"),
-        "{:?}",
-        details[0].lines
-    );
-}
-
 #[tokio::test]
 async fn upgrading_sends_the_confirmed_digest_and_can_be_cancelled_only_while_pulling() {
     let rig = Rig::new().await;
@@ -539,9 +498,13 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
                 } => Some((status, upgrade)),
                 _ => None,
             });
-        // 设置的红点现在在侧边栏上（栏上默认没有设置这一项）。
-        let badge = rig.app.plugins().sidebar.settings_badge;
-        (server, Some(badge))
+        let tab = rig
+            .app
+            .tabs()
+            .items
+            .into_iter()
+            .find(|item| item.tab == TabRef::Settings);
+        (server, tab.map(|item| item.badge))
     };
     let deadline = tokio::time::Instant::now() + WAIT;
     while marked(&rig) != (Some((HomeStatus::Connected, true)), Some(true)) {

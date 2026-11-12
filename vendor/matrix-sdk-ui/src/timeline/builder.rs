@@ -170,10 +170,11 @@ impl TimelineBuilder {
 
         let room_id = room.room_id();
         let (room_event_cache, event_cache_drop) = event_cache.room(room_id).await?;
-        // Keep the snapshot paired with this subscription, not a later cache read.
-        // Wonton regression: crates/wonton-matrix/src/chat_room/bootstrap_tests.rs::
-        // overlapping_pagination_during_encrypted_room_open_keeps_each_event_once.
-        let (initial_events, event_subscriber) = room_event_cache.subscribe().await?;
+        let (_, event_subscriber) = room_event_cache.subscribe().await?;
+        if std::env::var_os("ENCDUP_PAUSE_BUILD").is_some() {
+            eprintln!("ENCDUP subscribed, delaying initial snapshot room={room_id}");
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
 
         let is_room_encrypted = room
             .latest_encryption_state()
@@ -201,7 +202,7 @@ impl TimelineBuilder {
             controller.handle_active_call_update(initial_active_call_info.clone()).await;
         }
 
-        let InitFocusResult { focus_task, has_events } = controller.init_focus(initial_events).await?;
+        let InitFocusResult { focus_task, has_events } = controller.init_focus().await?;
 
         let room_update_join_handle = room
             .client()

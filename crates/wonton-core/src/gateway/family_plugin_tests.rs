@@ -137,41 +137,6 @@ async fn assert_gated(h: &Harness, hers: iroh::EndpointId, kind: Option<&'static
     .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
     assert_eq!(reply.error_kind(), kind);
-
-    // 接口拿到的体是 JSON：看得见是网关拦的、为什么拦，不是一页 HTML 解析不了。
-    let reply = send_as(
-        &h.app,
-        Some(hers),
-        Method::GET,
-        PLUGIN,
-        "/api/data",
-        &[("accept", "*/*")],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
-    assert_eq!(reply.error_kind(), kind);
-    assert_eq!(reply.content_type(), "application/json");
-    assert_eq!(reply.json()["error"]["category"], "not_shared");
-
-    // 同一个人从浏览器打开：还是 HTML 错误页（已经登录，不跳登录页）。
-    let reply = send_as(
-        &h.app,
-        Some(hers),
-        Method::GET,
-        PLUGIN,
-        "/hello?x=1",
-        &[("accept", "text/html")],
-        "",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
-    assert_eq!(reply.error_kind(), kind);
-    assert!(
-        reply.text().starts_with("<!doctype html>"),
-        "{}",
-        reply.text()
-    );
 }
 
 /// 家人测试要的插件记录：register_for_test 只填内存表，开关和详情要读记录。
@@ -391,9 +356,9 @@ async fn a_family_member_with_install_grant_reads_the_store() {
     );
 }
 
-/// 放行时段只在主人的卡片上：家人停时段回 403 `not_yours`。家人列卡片、回答卡片见 `hop_limit_tests`。
+/// 卡片都发给主人：家人列出来是空的，回答别人的卡片回 403 `not_yours`。
 #[tokio::test]
-async fn members_cannot_stop_an_allow_window() {
+async fn confirmations_still_belong_to_the_owner() {
     let h = Harness::start(None).await;
     let hers = SecretKey::generate().public();
     invite_record(&h, false).await;
@@ -402,7 +367,27 @@ async fn members_cannot_stop_an_allow_window() {
         .add_if(hers, None, Some("mia".to_owned()), |_| true)
         .unwrap();
 
-    for (method, path, body) in [(Method::DELETE, "/_wonton/confirmations/some-id/window", "")] {
+    let reply = send_as(
+        &h.app,
+        Some(hers),
+        Method::GET,
+        CORE,
+        "/_wonton/api/confirmations",
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert_eq!(reply.json()["confirmations"].as_array().unwrap().len(), 0);
+
+    for (method, path, body) in [
+        (
+            Method::POST,
+            "/_wonton/confirmations/some-id",
+            "{\"answer\": \"approve\"}",
+        ),
+        (Method::DELETE, "/_wonton/confirmations/some-id/window", ""),
+    ] {
         let reply = send_as(
             &h.app,
             Some(hers),
@@ -445,8 +430,6 @@ async fn oidc_claims_come_from_the_current_person() {
     let claims = claims_of(&accepted, 0);
     assert_eq!(claims["preferred_username"], "mia");
     assert_eq!(claims["groups"], json!(["member"]));
-    assert_eq!(claims["email"], "mia@wonton.internal");
-    assert_eq!(claims["email_verified"], true);
 
     // 主人的声明照旧（主人令牌登录的核心会话）。假 Hydra 对这个 challenge 返回主人的 subject。
     let core = h.login(TOKEN).await.cookie(super::CORE_COOKIE);
@@ -464,8 +447,6 @@ async fn oidc_claims_come_from_the_current_person() {
     let claims = claims_of(&accepted, 1);
     assert_eq!(claims["preferred_username"], "owner");
     assert_eq!(claims["groups"], json!(["owner"]));
-    assert_eq!(claims["email"], "owner@wonton.internal");
-    assert_eq!(claims["email_verified"], true);
 }
 
 fn claims_of(accepted: &Mutex<Vec<Value>>, nth: usize) -> Value {

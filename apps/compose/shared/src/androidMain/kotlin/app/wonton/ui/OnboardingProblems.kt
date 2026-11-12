@@ -60,9 +60,9 @@ internal fun PluginProblem.onboardingTitle(): String = stringResource(
         PluginFailure.LAN_PORT_TAKEN -> R.string.onboarding_problem_plugin_lan_port_taken
         PluginFailure.CORE_UPGRADING -> R.string.onboarding_problem_plugin_core_upgrading
         PluginFailure.EGRESS_PROXY_UNAVAILABLE -> R.string.onboarding_problem_plugin_egress_proxy_unavailable
+        PluginFailure.OWNER_PROFILE_INCOMPLETE -> R.string.onboarding_problem_plugin_owner_profile_incomplete
         PluginFailure.UPSTREAM -> R.string.onboarding_problem_plugin_upstream
         PluginFailure.PROTOCOL -> R.string.onboarding_problem_plugin_protocol
-        PluginFailure.SERVER_TOO_OLD -> R.string.onboarding_problem_plugin_server_too_old
         // 比这个壳新的类别：先按服务器出错说，壳以后再补一条。
         else -> R.string.onboarding_problem_plugin_upstream
     },

@@ -10,13 +10,12 @@ use std::{
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncWriteExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
     sync::{Mutex, broadcast, mpsc, oneshot, watch},
 };
 
 use wonton_l10n::Lang;
-use wonton_protocol::{ConfirmationOrigin, ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER};
 
 use crate::{
     config::MAX_FRAME_BYTES,
@@ -26,7 +25,6 @@ use crate::{
 };
 
 pub mod auth;
-mod frame;
 mod mode;
 mod permissions;
 use permissions::PermissionWaiter;
@@ -35,9 +33,6 @@ mod updates;
 use auth::{AuthMethod, AuthRequests, parse_auth_methods};
 use rpc_error::RpcError;
 use updates::PromptUpdates;
-#[cfg(test)]
-#[path = "acp_contract_tests.rs"]
-mod contract_tests;
 #[cfg(test)]
 #[path = "acp_test_support.rs"]
 pub(crate) mod test_support;
@@ -55,53 +50,13 @@ pub struct Capabilities {
     pub close: bool,
     pub steering: bool,
     pub mcp_http: bool,
-    /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
-    /// resource_link 所有 Agent 都必须支持，image 要声明）。
-    pub prompt_image: bool,
-}
-
-/// `_session/steering` 的结果。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SteerOutcome {
-    /// 进了正在跑的一轮。
-    Injected,
-    /// 没有在跑的一轮，Agent 自己另起了一轮（不认 `idleBehavior` 的旧适配器）；那一轮没有 `session/prompt`
-    /// 跟着，回复桥收不到。
-    StartedNewTurn,
-    /// 没有在跑的一轮，内容没被收下，要走普通 `session/prompt`。
-    PromptRequired,
-    /// 没插进去（codex-acp、omp 会回），以及不认识的结果：都按没收下算。
-    Failed,
-}
-
-impl SteerOutcome {
-    fn parse(outcome: &Value) -> Self {
-        match outcome.as_str() {
-            Some("injected") => Self::Injected,
-            Some("startedNewTurn") => Self::StartedNewTurn,
-            Some("promptRequired") => Self::PromptRequired,
-            _ => Self::Failed,
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
 pub enum AgentNotice {
-    /// `_wonton/task`：编排器的任务事件（ADR-0059）。
-    Task {
-        params: Value,
-    },
-    PermissionCancelled {
-        session_id: String,
-    },
-    PermissionFailed {
-        session_id: String,
-        detail: Detail,
-    },
-    Update {
-        session_id: String,
-        update: Value,
-    },
+    PermissionCancelled { session_id: String },
+    PermissionFailed { session_id: String, detail: Detail },
+    Update { session_id: String, update: Value },
 }
 
 #[derive(Debug)]
@@ -118,7 +73,6 @@ pub struct PromptResult {
 pub struct NewSession {
     pub session_id: String,
     pub ask_before_edit: bool,
-    pub mode: String,
 }
 
 /// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
@@ -166,8 +120,6 @@ struct Inner {
     cancelled_sessions: Mutex<HashSet<String>>,
     /// 每个会话这一轮说话的语言（权限请求里的卡片文字要用）。
     langs: Mutex<HashMap<String, Lang>>,
-    /// 每个会话的来源会话（ADR-0016）：建会话时登记，权限请求带到核心。
-    origins: Mutex<HashMap<String, ConfirmationOrigin>>,
     closed: watch::Sender<bool>,
     auth: AuthRequests,
 }
@@ -204,7 +156,6 @@ impl AcpClient {
             old_message_ids: Mutex::new(HashMap::new()),
             cancelled_sessions: Mutex::new(HashSet::new()),
             langs: Mutex::new(HashMap::new()),
-            origins: Mutex::new(HashMap::new()),
             closed: watch::channel(false).0,
             auth: AuthRequests::new(),
         });
@@ -217,7 +168,6 @@ impl AcpClient {
                 close: false,
                 steering: false,
                 mcp_http: false,
-                prompt_image: false,
             },
             auth_methods: Vec::new(),
         };
@@ -278,14 +228,12 @@ impl AcpClient {
 
     /// 建会话并切模式。`topic` 时先试 `ask_mode`（“改前先问”，ADR-0058），Agent 报不出
     /// 这个取值就退回 `mode`，由调用方在话题里如实说明。
-    /// `origin` 是这个会话的来源会话（ADR-0016），进 MCP 服务器的请求头，权限请求也带上。
     pub async fn new_session(
         &self,
         cwd: &str,
         mcp_url: &str,
         mode: &str,
         ask_mode: Option<&str>,
-        origin: &ConfirmationOrigin,
     ) -> Result<NewSession> {
         if !self.capabilities.mcp_http {
             return Err(Error::AgentNotReady(Detail::msg("acp-no-http-mcp")));
@@ -295,7 +243,7 @@ impl AcpClient {
                 "session/new",
                 json!({
                     "cwd": cwd,
-                    "mcpServers": [http_mcp_server(mcp_url, origin)]
+                    "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
                 }),
             )
             .await
@@ -310,11 +258,6 @@ impl AcpClient {
             .as_str()
             .ok_or_else(|| Error::AgentNotReady(Detail::msg("acp-no-session-id")))?
             .to_owned();
-        self.inner
-            .origins
-            .lock()
-            .await
-            .insert(session_id.clone(), origin.clone());
         let asked = ask_mode.and_then(|asked| {
             mode::topic_request(&result, &session_id, asked).map(|request| (request, asked))
         });
@@ -333,39 +276,24 @@ impl AcpClient {
         Ok(NewSession {
             session_id,
             ask_before_edit,
-            mode: mode.to_owned(),
         })
     }
 
-    pub async fn load_or_resume(
-        &self,
-        session_id: &str,
-        cwd: &str,
-        mcp_url: &str,
-        origin: &ConfirmationOrigin,
-        mode: &str,
-    ) -> Result<()> {
+    pub async fn load_or_resume(&self, session_id: &str, cwd: &str, mcp_url: &str) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
             "cwd": cwd,
-            "mcpServers": [http_mcp_server(mcp_url, origin)]
+            "mcpServers": [{"type": "http", "name": "wonton", "url": mcp_url, "headers": []}]
         });
         if self.capabilities.load_session {
-            self.restore_with("session/load", params).await?;
-        } else if self.capabilities.resume {
-            self.restore_with("session/resume", params).await?;
-        } else {
-            return Err(Error::SessionUnavailable(Detail::msg(
-                "acp-restore-unsupported",
-            )));
+            return self.restore_with("session/load", params).await;
         }
-        mode::set_after_restore(self, session_id, mode).await?;
-        self.inner
-            .origins
-            .lock()
-            .await
-            .insert(session_id.to_owned(), origin.clone());
-        Ok(())
+        if self.capabilities.resume {
+            return self.restore_with("session/resume", params).await;
+        }
+        Err(Error::SessionUnavailable(Detail::msg(
+            "acp-restore-unsupported",
+        )))
     }
     async fn restore_with(&self, method: &str, params: Value) -> Result<()> {
         let mut notices = self.subscribe();
@@ -406,7 +334,6 @@ impl AcpClient {
     }
 
     pub async fn close(&self, session_id: &str) -> Result<()> {
-        self.inner.origins.lock().await.remove(session_id);
         if !self.capabilities.close {
             return Ok(());
         }
@@ -428,10 +355,7 @@ impl AcpClient {
             .await
     }
 
-    /// 把内容块插进正在跑的一轮（`_session/steering`，claude-agent-acp、codex-acp、omp、OpenCode 共用的
-    /// 预标准扩展）。总带 `idleBehavior: promptRequired`：一轮已经结束时 Agent 不自己另起一轮，内容留给桥
-    /// 走普通 `session/prompt`。投递的时机由 Agent 定，协议里没有让客户端选的字段。
-    pub async fn steer(&self, session_id: &str, prompt: Vec<Value>) -> Result<SteerOutcome> {
+    pub async fn steer(&self, session_id: &str, text: &str) -> Result<String> {
         if !self.capabilities.steering {
             return Err(Error::Upstream(Detail::msg("acp-no-steering")));
         }
@@ -440,21 +364,19 @@ impl AcpClient {
                 "_session/steering",
                 json!({
                     "sessionId": session_id,
-                    "prompt": prompt,
-                    "_meta": {"steering": {"idleBehavior": "promptRequired"}}
+                    "prompt": [{"type": "text", "text": text}],
+                    "_meta": {"steering": {"queue": "steering", "idleBehavior": "promptRequired"}}
                 }),
             )
             .await
             .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
-        Ok(SteerOutcome::parse(&result["outcome"]))
+        Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
     }
 
-    /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见
-    /// `bridge/attachments.rs`），一轮可以多个块。
     pub async fn prompt(
         &self,
         session_id: &str,
-        prompt: Vec<Value>,
+        text: &str,
         max_output: usize,
         timeout: Duration,
         lang: Lang,
@@ -487,10 +409,10 @@ impl AcpClient {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
+        tracing::debug!(session_id, bytes = text.len(), "发送 ACP prompt");
         let response = self.request(
             "session/prompt",
-            json!({"sessionId": session_id, "prompt": prompt}),
+            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": text}]}),
         );
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
@@ -636,16 +558,16 @@ impl AcpClient {
 }
 
 async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
-    let mut reader = BufReader::new(reader);
-    let mut frame = Vec::new();
+    let mut lines = BufReader::new(reader).lines();
     loop {
-        match frame::read_frame(&mut reader, &mut frame).await {
-            frame::FrameRead::Frame => {}
-            frame::FrameRead::Oversize | frame::FrameRead::Eof | frame::FrameRead::Transport => {
-                break;
-            }
+        let line = match lines.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) | Err(_) => break,
+        };
+        if line.len() > MAX_FRAME_BYTES {
+            break;
         }
-        let Ok(message) = serde_json::from_slice::<Value>(&frame) else {
+        let Ok(message) = serde_json::from_str::<Value>(&line) else {
             break;
         };
         if message.get("method").is_some() {
@@ -689,12 +611,6 @@ async fn handle_request(inner: &Arc<Inner>, message: &Value) {
     tracing::debug!(method, "收到 ACP 请求");
     if method == "session/update" {
         handle_update(inner, message).await;
-        return;
-    }
-    if method == "_wonton/task" {
-        let _ = inner.notices.send(AgentNotice::Task {
-            params: message["params"].clone(),
-        });
         return;
     }
     if method == "$/cancel_request" {
@@ -812,16 +728,6 @@ fn id_key(id: &Value) -> String {
     id.to_string()
 }
 
-/// 会话的 MCP 服务器配置：带上来源会话的请求头（ADR-0016），Agent 对这个 MCP 服务器的
-/// 每个请求都带着它们，核心据此认出会话在哪个房间、哪个话题里。
-fn http_mcp_server(mcp_url: &str, origin: &ConfirmationOrigin) -> Value {
-    let mut headers = vec![json!({"name": ORIGIN_ROOM_HEADER, "value": origin.room_id})];
-    if let Some(thread) = &origin.thread_id {
-        headers.push(json!({"name": ORIGIN_THREAD_HEADER, "value": thread}));
-    }
-    json!({"type": "http", "name": "wonton", "url": mcp_url, "headers": headers})
-}
-
 fn parse_capabilities(result: &Value) -> Capabilities {
     let agent = &result["agentCapabilities"];
     let sessions = &agent["sessionCapabilities"];
@@ -834,8 +740,5 @@ fn parse_capabilities(result: &Value) -> Capabilities {
             .unwrap_or(false),
         mcp_http: agent["mcpCapabilities"]["http"].is_object()
             || agent["mcpCapabilities"]["http"].as_bool().unwrap_or(false),
-        prompt_image: agent["promptCapabilities"]["image"]
-            .as_bool()
-            .unwrap_or(false),
     }
 }

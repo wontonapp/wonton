@@ -35,15 +35,13 @@ struct WontonButtonStyle: ButtonStyle {
 struct WontonIconButton: View {
     let icon: WontonIcon
     let label: String
-    /// 不给时用 `textPrimary`；放在带色的底（如自己的气泡）上时由调用方给。
-    var tint: Color?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Button(action: action) {
             icon.view()
-                .foregroundStyle(tint ?? Color(colors.textPrimary))
+                .foregroundStyle(Color(colors.textPrimary))
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }
@@ -89,8 +87,6 @@ struct WontonRow: View {
     var value: String?
     var valueTint: Rgb?
     var badge = false
-    /// 数字角标：等着处理的件事有多少（比如好友请求）。和只表示“有新的”的 `badge` 圆点分开。
-    var badgeText: String?
     var showsForward = false
     @Environment(\.wontonColors) private var colors
 
@@ -110,15 +106,6 @@ struct WontonRow: View {
             if badge {
                 Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
                     .accessibilityLabel(String(localized: .designUpdateBadge))
-            }
-            if let badgeText {
-                Text(badgeText)
-                    .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.onPrimary))
-                    .padding(.horizontal, WontonTheme.spacing.s4)
-                    .frame(minWidth: 20, minHeight: 20)
-                    .background(Capsule().fill(Color(colors.primary)))
-                    .accessibilityLabel(String(localized: .friendsRequestsBadge(Int(badgeText) ?? 0)))
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
@@ -257,31 +244,27 @@ struct WontonRootBar<Trailing: View>: View {
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
-    @Environment(\.wontonOpenSidebar) private var openSidebar
-
-    private var hasButtons: Bool { hasActions || openSidebar != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasButtons || status.title?.isEmpty == false {
+            if hasActions || status.title?.isEmpty == false {
                 ZStack {
                     if let title = status.title, !title.isEmpty {
                         Text(title)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textPrimary))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, hasButtons ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
+                            .padding(.horizontal, hasActions ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
                             .padding(.vertical, WontonTheme.spacing.s8)
                     }
-                    if hasButtons {
+                    if hasActions {
                         HStack(spacing: 0) {
-                            if let openSidebar { SidebarButton(action: openSidebar) }
                             Spacer(minLength: 0)
-                            if hasActions { trailing }
+                            trailing
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: hasButtons ? WontonTheme.size.topBar : 0)
+                .frame(maxWidth: .infinity, minHeight: hasActions ? WontonTheme.size.topBar : 0)
             }
             if let line = status.line {
                 line.padding(.bottom, WontonTheme.spacing.s8)
@@ -289,23 +272,6 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// 根页面左上角的侧边栏按钮。
-private struct SidebarButton: View {
-    let action: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        Button(action: action) {
-            WontonIcon.list.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: .sidebarOpen))
     }
 }
 
@@ -394,10 +360,9 @@ extension View {
     }
 
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
-    func wontonModalScreen(_ title: String, showsStatus: Bool = false) -> some View {
+    func wontonModalScreen(_ title: String) -> some View {
         let bar = WontonPushedBar(
-            title: title, icon: .close, iconLabel: String(localized: .designClose),
-            showsStatus: showsStatus
+            title: title, icon: .close, iconLabel: String(localized: .designClose)
         ) { EmptyView() }
         return wontonTopBar { bar }
             .modifier(WontonCanvas())

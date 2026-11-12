@@ -26,7 +26,6 @@ use crate::error::Result;
 use crate::l10n::text;
 use board::{Board, NAME_MAX_CHARS, Row, SUMMARY_LINES, Status, TEXT_MAX_CHARS};
 use wonton_l10n::Lang;
-use wonton_protocol::ConfirmationOrigin;
 
 /// 会话键：主对话是 [`SessionKey::Main`]，话题用它的根消息事件 ID。
 ///
@@ -41,17 +40,6 @@ pub enum SessionKey {
 impl SessionKey {
     pub(crate) fn is_topic(&self) -> bool {
         matches!(self, SessionKey::Topic(_))
-    }
-
-    /// 这个会话报给核心的来源会话（ADR-0016）：主对话只带房间，话题带话题根。
-    pub(crate) fn origin(&self, room_id: &str) -> ConfirmationOrigin {
-        ConfirmationOrigin {
-            room_id: room_id.to_owned(),
-            thread_id: match self {
-                SessionKey::Main => None,
-                SessionKey::Topic(root) => Some(root.clone()),
-            },
-        }
     }
 
     /// 会话的持久化键：主对话是 `main`，话题是根消息事件 ID。
@@ -101,15 +89,12 @@ impl Topics {
         &mut self,
         key: &SessionKey,
         prompt: &str,
-        run: &str,
-        media: Option<&crate::bridge::attachments::PreparedAttachment>,
         now: SystemTime,
         lang: Lang,
     ) -> Result<TurnStart> {
         let now = stamp(now);
         let base = self.board.seq();
-        let is_task = self.board.row(key).is_some_and(|row| row.is_task);
-        let admit = !key.is_topic() || is_task || limits::can_admit(&self.board);
+        let admit = !key.is_topic() || limits::can_admit(&self.board);
         let started = if let Some(row) = self.board.row_mut(key) {
             row.doing = digest::clip(prompt, TEXT_MAX_CHARS);
             row.last_activity = now;
@@ -126,8 +111,6 @@ impl Topics {
                 Status::Queued
             };
             row.pending_prompt = (!started).then(|| prompt.to_owned());
-            row.pending_run = (!started).then(|| run.to_owned());
-            row.pending_media = (!started).then(|| media.cloned()).flatten();
             row.last_seen_seq = base;
             started
         } else {
@@ -151,9 +134,6 @@ impl Topics {
                 last_seen_seq: base,
                 last_activity: now,
                 pending_prompt: (!admit).then(|| prompt.to_owned()),
-                pending_run: (!admit).then(|| run.to_owned()),
-                pending_media: (!admit).then(|| media.cloned()).flatten(),
-                is_task: false,
             });
             admit
         };
@@ -333,62 +313,12 @@ impl Topics {
         Ok(notice)
     }
 
-    /// 编排器发来任务事件时调：任务话题入场（第一次）并登记工作板，不受活跃话题上限管。
-    pub async fn turn_started_task(
-        &mut self,
-        key: &SessionKey,
-        title: &str,
-        now: SystemTime,
-    ) -> Result<()> {
-        if self.board.row(key).is_none() {
-            self.board.add_row(Row {
-                key: key.clone(),
-                name: digest::clip_plain(title, NAME_MAX_CHARS),
-                doing: String::new(),
-                status: Status::Working,
-                summary: Vec::new(),
-                files: Vec::new(),
-                last_seen_seq: self.board.seq(),
-                last_activity: stamp(now),
-                pending_prompt: None,
-                pending_run: None,
-                pending_media: None,
-                is_task: true,
-            });
-        }
-        self.board.persist().await
-    }
-
-    /// 任务状态换到工作板上：要人行动的标“等你确认”，完成标结束，其余进行中。
-    pub async fn task_state(
-        &mut self,
-        key: &SessionKey,
-        state: &str,
-        now: SystemTime,
-    ) -> Result<()> {
-        let Some(row) = self.board.row_mut(key) else {
-            return Ok(());
-        };
-        row.status = match state {
-            "needs_answer" | "needs_review" | "blocked" | "failed" => Status::WaitingApproval,
-            "done" => Status::Finished,
-            _ => Status::Working,
-        };
-        row.last_activity = stamp(now);
-        self.board.persist().await
-    }
-
     /// 会话在聊天里用的名字（话题名，主对话是“主对话”）；工作板上没有这个会话时为空串。
     pub fn name(&self, key: &SessionKey) -> String {
         self.board
             .row(key)
             .map(|row| row.name.clone())
             .unwrap_or_default()
-    }
-
-    /// 是编排器的任务话题。
-    pub fn is_task(&self, key: &SessionKey) -> bool {
-        self.board.row(key).is_some_and(|row| row.is_task)
     }
 
     /// 这个会话已经结束（主对话永远不结束）。
@@ -449,19 +379,12 @@ impl Topics {
     }
 
     /// 有话题结束之后调（[`Topics::end`] 返回 true、[`Topics::sweep`] 非空）：名额有
-    /// 空就放最老的排队话题进来，返回它的会话键、首条消息和那条消息的事件 ID（状态
-    /// 消息的 `run`）；第 2 步拼上开局说明和动态再发提示词。没有返回值就继续等。
+    /// 空就放最老的排队话题进来，返回它的会话键和首条消息；第 2 步拼上开局说明和
+    /// 动态再发提示词。没有返回值就继续等。
     pub async fn poll_admission(
         &mut self,
         now: SystemTime,
-    ) -> Result<
-        Option<(
-            SessionKey,
-            String,
-            String,
-            Option<crate::bridge::attachments::PreparedAttachment>,
-        )>,
-    > {
+    ) -> Result<Option<(SessionKey, String)>> {
         let promoted = limits::poll_admission(&mut self.board, stamp(now));
         if promoted.is_some() {
             self.board.persist().await?;

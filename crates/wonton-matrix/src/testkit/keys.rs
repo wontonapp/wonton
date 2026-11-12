@@ -1,8 +1,6 @@
-//! 以服务器为准查设备密钥，给集成测试等“对方设备的密钥真的上传了”再发首条加密消息。
+//! 以服务器为准查设备密钥，给客户端核心的集成测试等“对方设备的密钥真的上传了”再动手。
 
-use std::time::Duration;
-
-use crate::{DeviceId, Error, MatrixSession, OwnedDeviceId, Result, UserId};
+use crate::{Error, MatrixSession, OwnedDeviceId, Result, UserId};
 use matrix_sdk::ruma::api::client::keys::get_keys;
 
 impl MatrixSession {
@@ -20,28 +18,5 @@ impl MatrixSession {
             .get(user)
             .map(|devices| devices.keys().cloned().collect())
             .unwrap_or_default())
-    }
-
-    /// 房间列表已同步不代表设备密钥已上传；测试发首条加密消息前，以服务器可见性为准。
-    pub async fn wait_for_server_device(&self, user: &UserId, device: &DeviceId) {
-        let mut last = Vec::new();
-        let waiting = async {
-            loop {
-                last = self
-                    .server_device_ids_of(user)
-                    .await
-                    .expect("查服务器设备密钥");
-                if last.iter().any(|id| id.as_str() == device.as_str()) {
-                    return;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        };
-        if tokio::time::timeout(super::WAIT, waiting).await.is_err() {
-            panic!(
-                "等 {user} 的设备密钥 {device}：{:?} 内服务器仍不可见，最后的设备：{last:?}",
-                super::WAIT
-            );
-        }
     }
 }

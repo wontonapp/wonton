@@ -2,7 +2,7 @@
 //!
 //! 从 [`super::render_plan`] 的每个服务循环里调用；文字按请求语言拼好整句。
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use bollard::models::{
     ContainerCreateBody, EndpointSettings, HealthConfig, HostConfig, Mount, NetworkingConfig,
@@ -17,7 +17,7 @@ use super::super::interpolate::UsedVars;
 use super::super::languages::Languages;
 use super::super::requirements::Requirements;
 use super::list;
-use super::{ContainerPlan, InstallContext, LABEL_BOT, LABEL_SERVICE, RenderError, service_err};
+use super::{ContainerPlan, InstallContext, LABEL_SERVICE, RenderError, service_err};
 
 pub(super) struct ContainerOptions<'a> {
     pub requirements: Option<&'a Requirements>,
@@ -25,16 +25,12 @@ pub(super) struct ContainerOptions<'a> {
     pub aliases: Vec<String>,
     pub labels: &'a HashMap<String, String>,
     pub gpu: Option<&'a GpuGrant>,
-    /// Bot 服务的服务名：依赖它们的 Bot 容器要指到同一个 Bot 的那份。
-    pub bot_services: &'a BTreeSet<&'a str>,
 }
 
 /// `endpoint` 是插件网络和服务在其中的别名；`gpu` 是这个服务拿到的显卡（清单的 `gpu.services` 里的服务才有）。
-/// `bot` 是 Bot 服务的 Bot 名（每个 Bot 一份容器）；全插件一份的服务是 `None`。
 pub(super) fn container_plan(
     name: &str,
     service: &Service,
-    bot: Option<&str>,
     mounts: Vec<Mount>,
     ctx: &InstallContext,
     options: ContainerOptions<'_>,
@@ -63,30 +59,17 @@ pub(super) fn container_plan(
     }
     all_labels.extend(options.labels.clone());
     all_labels.insert(LABEL_SERVICE.to_owned(), name.to_owned());
-    if let Some(bot) = bot {
-        all_labels.insert(LABEL_BOT.to_owned(), bot.to_owned());
-    }
 
-    // Bot 服务依赖的 Bot 服务是同一个 Bot 的那份；依赖全插件一份的服务就是它自己。
-    // `dependencies()` 还带上共用网络命名空间的目标（#511）：Bot 服务共用同 Bot 的服务。
     let depends_on = service
         .dependencies()
         .into_iter()
-        .map(|(dep, cond)| {
-            let dep = match bot {
-                Some(bot) if options.bot_services.contains(dep.as_str()) => {
-                    ctx.instance.bot_container(&ctx.slug, &dep, bot)
-                }
-                _ => ctx.instance.container(&ctx.slug, &dep),
-            };
-            (dep, cond)
-        })
+        .map(|(dep, cond)| (ctx.instance.container(&ctx.slug, &dep), cond))
         .collect();
     let networking_config = service.network_mode.is_none().then(|| NetworkingConfig {
         endpoints_config: Some(HashMap::from([(
             options.network.to_owned(),
             EndpointSettings {
-                aliases: Some(options.aliases.clone()),
+                aliases: Some(options.aliases),
                 ..Default::default()
             },
         )])),
@@ -113,18 +96,21 @@ pub(super) fn container_plan(
             .transpose()
             .map_err(|m| service_err(langs, name, m))?,
         host_config: Some(host_config(
-            name, service, bot, &options, mounts, ctx, langs,
+            name,
+            service,
+            mounts,
+            ctx,
+            options.requirements,
+            options.network,
+            options.gpu,
+            langs,
         )?),
         networking_config,
         ..Default::default()
     };
     Ok(ContainerPlan {
         service: name.to_owned(),
-        bot: bot.map(str::to_owned),
-        name: match bot {
-            Some(bot) => ctx.instance.bot_container(&ctx.slug, name, bot),
-            None => ctx.instance.container(&ctx.slug, name),
-        },
+        name: ctx.instance.container(&ctx.slug, name),
         image: service.image.clone(),
         pull_policy: service.pull_policy,
         depends_on,
@@ -140,10 +126,11 @@ pub(super) fn container_plan(
 fn host_config(
     name: &str,
     service: &Service,
-    bot: Option<&str>,
-    options: &ContainerOptions,
     mounts: Vec<Mount>,
     ctx: &InstallContext,
+    requirements: Option<&Requirements>,
+    network: &str,
+    gpu: Option<&GpuGrant>,
     langs: &Languages,
 ) -> Result<HostConfig, RenderError> {
     let tmpfs = service.tmpfs.as_ref().map(|spec| {
@@ -159,16 +146,9 @@ fn host_config(
         Some(NetworkMode::None) => "none".to_owned(),
         Some(NetworkMode::Host) => "host".to_owned(),
         Some(NetworkMode::Service(target)) => {
-            // 共用网络命名空间的目标：Bot 服务用同一个 Bot 的那份容器（#511）。
-            let target = match bot {
-                Some(bot) if options.bot_services.contains(target.as_str()) => {
-                    ctx.instance.bot_container(&ctx.slug, target, bot)
-                }
-                _ => ctx.instance.container(&ctx.slug, target),
-            };
-            format!("container:{target}")
+            format!("container:{}", ctx.instance.container(&ctx.slug, target))
         }
-        None => options.network.to_owned(),
+        None => network.to_owned(),
     };
     let mut host = HostConfig {
         network_mode: Some(network_mode),
@@ -190,14 +170,14 @@ fn host_config(
     super::super::limits::apply(
         &mut host,
         service,
-        options.requirements,
+        requirements,
         ctx.memory_total,
         ctx.cgroup_parent.as_deref(),
         &ctx.limits,
         langs,
     )
     .map_err(|message| service_err(langs, name, message))?;
-    if let Some(grant) = options.gpu {
+    if let Some(grant) = gpu {
         grant.apply(&mut host);
     }
     super::super::privileges::apply(service, &mut host, langs)

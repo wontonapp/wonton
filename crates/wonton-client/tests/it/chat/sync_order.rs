@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use super::confirmation::joined_direct_chat;
-use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
+use super::support::{Home, Phone, Timeline, WAIT};
 use serde_json::Value;
 
 async fn wait_request(home: &Home, check: impl Fn(&Value) -> bool) -> Value {
@@ -36,12 +36,12 @@ async fn a_cancelled_empty_request_can_arrive_after_its_subscribed_replacement()
         .await
         .unwrap();
     let old = home.held_sync_request().await;
-    assert!(is_room_list(&old["conn_id"]), "{}", old["conn_id"]);
+    assert_eq!(old["conn_id"], "room-list");
     assert!(old.get("room_subscriptions").is_none());
     let old_sequence = old["test_sequence"].as_u64().unwrap();
     let timeline = Timeline::open(&phone, room_id.as_str()).await;
     let new = wait_request(&home, |request| {
-        is_room_list(&request["conn_id"])
+        request["conn_id"] == "room-list"
             && request["test_sequence"].as_u64().unwrap() > old_sequence
             && request["room_subscriptions"]
                 .get(room_id.as_str())

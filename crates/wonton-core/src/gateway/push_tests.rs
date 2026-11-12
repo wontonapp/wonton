@@ -22,9 +22,7 @@ use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::owner::OwnerStore;
-use crate::plugin::{PluginId, PluginManager};
-use wonton_protocol::BotKeeper;
-
+use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
@@ -55,11 +53,7 @@ impl Home {
     /// 核心接着假的 Tuwunel（`crate::matrix::fake`），它在 127.0.0.1 上：从 127.0.0.1 来的请求就是 Tuwunel 发的。
     async fn start() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let (fake, config) = crate::matrix::fake::start().await;
-        fake.state().tokens.insert(
-            "bot-token".to_owned(),
-            ("@hermes:test".to_owned(), "bot-device".to_owned()),
-        );
+        let (_, config) = crate::matrix::fake::start().await;
         let matrix = Matrix::connect(&config, dir.path(), HttpClient::new())
             .await
             .unwrap();
@@ -159,7 +153,6 @@ impl Home {
             .header(header::HOST, host)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::CONTENT_LENGTH, body.len())
-            .header(header::AUTHORIZATION, "Bearer bot-token")
             .body(Body::from(body))
             .unwrap();
         let from: SocketAddr = from.parse().unwrap();
@@ -417,17 +410,6 @@ async fn bots_may_only_register_pushers_that_point_at_the_push_proxy() {
     let bot = vec!["matrix.bot".parse().unwrap()];
     home.plugins
         .register_source_for_test("agent.echo", "172.30.1.0/24", bot);
-    home.plugins.bot_records_for_test(
-        &PluginId::parse("agent.echo").unwrap(),
-        &[(
-            "default",
-            "@hermes:test",
-            BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "bot-token",
-        )],
-    );
     let set = |host: &'static str, peer, from: &'static str, body: Value| {
         home.send(
             Method::POST,
@@ -495,17 +477,6 @@ async fn a_bot_pusher_reaches_tuwunel_exactly_as_checked() {
     let bot = vec!["matrix.bot".parse().unwrap()];
     home.plugins
         .register_source_for_test("agent.echo", "172.30.1.0/24", bot);
-    home.plugins.bot_records_for_test(
-        &PluginId::parse("agent.echo").unwrap(),
-        &[(
-            "default",
-            "@hermes:test",
-            BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "bot-token",
-        )],
-    );
     let proxy = "http://push.wonton.internal/_matrix/push/v1/notify";
     let outside = "https://attacker.example/_matrix/push/v1/notify";
     let body = |first: &str, last: &str| {

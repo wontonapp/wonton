@@ -53,10 +53,7 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
     let m = manager_with(engine, &dir);
     m.restore().await.unwrap();
     assert!(degraded(&m), "{:?}", seen(&m));
-    // 路由留着（容器还在），只是网页服务还不能用，网关回 503。
-    let route = m.route("app-test", "/").unwrap();
-    assert!(route.upstream.is_some());
-    assert!(!route.web_serving);
+    assert_eq!(m.route("app-test").unwrap().upstream, None);
 
     m.watch_containers().await;
     assert!(degraded(&m), "还在重启，不算好了：{:?}", seen(&m));
@@ -65,7 +62,7 @@ async fn a_container_restarting_at_startup_recovers_when_it_becomes_healthy() {
     m.watch_containers().await;
     assert_eq!(seen(&m), (PluginStatus::Running, Some(Health::Healthy)));
     assert!(
-        m.route("app-test", "/").unwrap().upstream.is_some(),
+        m.route("app-test").unwrap().upstream.is_some(),
         "容器好了，网页也要能打开"
     );
 }
@@ -213,7 +210,7 @@ async fn an_unhealthy_auxiliary_container_leaves_the_web_page_served() {
         "{reason}"
     );
     assert!(!reason.contains("早先通过的一次"), "只要最后一条：{reason}");
-    let route = m.route("app-test", "/").unwrap();
+    let route = m.route("app-test").unwrap();
     assert!(route.web_serving, "{reason}");
     assert!(route.upstream.is_some());
 }
@@ -232,41 +229,7 @@ async fn an_unhealthy_web_container_stops_serving() {
     m.watch_containers().await;
 
     assert!(degraded(&m), "{:?}", seen(&m));
-    let route = m.route("app-test", "/").unwrap();
+    let route = m.route("app-test").unwrap();
     assert!(!route.web_serving);
     assert!(route.upstream.is_some());
-}
-
-/// MCP 服务加一个辅助容器。
-fn mcp_and_worker() -> String {
-    package(
-        "  mcp:\n    image: example/mcp\n  worker:\n    image: redis\n",
-        "  mcp: {service: mcp, port: 9000, transport: streamable-http}\n  permissions: []",
-    )
-}
-
-// 辅助容器坏了，MCP 服务自己好着：总线照常拿着它。
-#[tokio::test]
-async fn an_unhealthy_auxiliary_container_leaves_the_mcp_service_alone() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = manager_with(engine, &dir);
-    m.install(&mcp_and_worker(), &[], super::langs())
-        .await
-        .unwrap();
-    assert_eq!(m.mcp_servers().len(), 1);
-
-    docker.set_state(
-        &container_name("app-test", "worker"),
-        with_health("unhealthy"),
-    );
-    m.watch_containers().await;
-
-    assert!(degraded(&m), "{:?}", seen(&m));
-    assert_eq!(m.mcp_servers().len(), 1, "{:?}", seen(&m));
-
-    // MCP 服务自己也坏了：不再交给总线。
-    docker.set_state(&container_name("app-test", "mcp"), with_health("unhealthy"));
-    m.watch_containers().await;
-    assert!(m.mcp_servers().is_empty());
 }

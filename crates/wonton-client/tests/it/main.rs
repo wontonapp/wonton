@@ -5,19 +5,15 @@
 // 同 wonton-matrix：matrix-sdk 的 future 嵌套很深。
 #![recursion_limit = "256"]
 
-mod bot_contacts;
 mod chat;
 mod files;
 mod files_cards;
 mod files_services;
 mod files_support;
-mod friends;
 mod home;
-mod matrix_login;
 mod pairing;
 mod peers;
 mod plugins;
-mod port_mapping;
 mod servers;
 mod session_list;
 mod tabs;

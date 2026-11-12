@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,14 +22,12 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,17 +44,13 @@ import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.BotView
-import app.wonton.protocol.BackupReminder
-import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
-import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.LocalWontonBottomInset
-import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.wontonContentPaddingValues
@@ -70,7 +63,6 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
-import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
 import app.wonton.ui.icons.WontonIcon
@@ -83,17 +75,11 @@ import java.time.temporal.ChronoUnit
 private const val DAYS_SHOWN_AS_WEEKDAY = 7L
 
 @Composable
-fun ChatRoute(
-    core: ClientCore,
-    navigation: ChatNavigation,
-    plugins: PluginsState,
-    pluginNavigation: PluginNavigation,
-) {
+fun ChatRoute(core: ClientCore, navigation: ChatNavigation, plugins: PluginsState) {
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
     val onAction: (Action) -> Unit = { action -> core.send(action)?.let { rejection = it } }
 
@@ -103,12 +89,7 @@ fun ChatRoute(
     when {
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
-            ChatBackupScreen(
-                viewModel.encryption,
-                onAction,
-                onContinueHandoff = { navigation.keyHandoffDeferred = false },
-                onClose = { navigation.showingBackup = false },
-            )
+            ChatBackupScreen(viewModel.encryption, onAction, onClose = { navigation.showingBackup = false })
         }
         navigation.startingChat -> {
             BackHandler { navigation.startingChat = false }
@@ -122,50 +103,29 @@ fun ChatRoute(
             )
         }
         room != null -> {
-            // 面板开着时返回键先关面板，不关房间。
-            val panel = LocalChatPanel.current
-            BackHandler {
-                if (panel != null && panel.level != PanelLevel.CLOSED) panel.back() else navigation.closeRoom()
-            }
+            BackHandler { navigation.closeRoom() }
             val row = viewModel.rooms.firstOrNull { it.roomId == room }
-            val context = LocalContext.current
-            val opener = remember(core, navigation, context, scope) {
-                AndroidLinkOpener(context, core, navigation, scope) { rejection = it }
-            }
-            CompositionLocalProvider(LocalLinkOpener provides opener) {
-                RoomRoute(
-                    core = core,
-                    roomId = room,
-                    title = row?.name ?: room,
-                    isDirect = row?.isDirect == true,
-                    isReadOnly = row?.isReadOnly == true,
-                    bot = viewModel.bots.directBot(row),
-                    plugins = plugins,
-                    rooms = viewModel.rooms,
-                    onAction = onAction,
-                    onReject = { rejection = it },
-                    onOpenRoom = { navigation.openRoom = it },
-                    onOpenBackup = { navigation.showingBackup = true },
-                    onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
-                )
-            }
-        }
-        else -> PluginPages(plugins, pluginNavigation) {
-            ChatListScreen(
-                viewModel = viewModel,
+            RoomRoute(
+                core = core,
+                roomId = room,
+                title = row?.name ?: room,
+                isDirect = row?.isDirect == true,
+                isReadOnly = row?.isReadOnly == true,
+                bot = viewModel.bots.directBot(row),
                 plugins = plugins,
-                pluginNavigation = pluginNavigation,
                 onAction = onAction,
-                onOpenRoom = { navigation.openRoom = it },
-                onOpenBackup = {
-                    // 收起了的交接页从提醒再打开，不进备份页（ADR-0087）。
-                    if (viewModel.encryption.backupReminder == BackupReminder.CONTINUE_ON_OTHER_DEVICE) {
-                        navigation.keyHandoffDeferred = false
-                    } else navigation.showingBackup = true
-                },
-                onStartChat = { navigation.startingChat = true },
+                onReject = { rejection = it },
+                onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
             )
         }
+        else -> ChatListScreen(
+            viewModel = viewModel,
+            plugins = plugins,
+            onAction = onAction,
+            onOpenRoom = { navigation.openRoom = it },
+            onOpenBackup = { navigation.showingBackup = true },
+            onStartChat = { navigation.startingChat = true },
+        )
     }
 
     viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
@@ -176,51 +136,24 @@ fun ChatRoute(
 private fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
-    pluginNavigation: PluginNavigation,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
 ) {
-    val installing = viewModel.installingBots
-    val panel = LocalChatPanel.current
-    val listState = rememberLazyListState()
     WontonScreen(
         bar = { WontonRootBar(stringResource(R.string.tab_chat)) },
     ) {
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
-                Modifier.fillMaxSize()
-                    .panelAction(panel)
-                    .chatPanelPull(panel, { !listState.canScrollBackward }, panel != null),
-                state = listState,
-                overscrollEffect = null,
+                Modifier.fillMaxSize(),
                 contentPadding = wontonContentPaddingValues(
                     bottom = WontonTheme.size.floatingActionButton + WontonTheme.spacing.pageInset * 2,
                 ),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
-                itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
-                    if (index > 0) {
-                        Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
-                            WontonSeparator()
-                        }
-                    }
-                    ChatInstallRow(
-                        row,
-                        plugins,
-                        onRetry = {
-                            // 重试不进核心的执行路径：重新预览，主人在确认页上再点一次（ADR-0067）。
-                            pluginNavigation.confirmation = when (row.operation) {
-                                PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(row.pluginId)
-                                else -> row.source?.let { PluginConfirmation.Install(it) }
-                            }
-                        },
-                        onOpenPage = { onAction(Action.SelectTab(TabRef.Apps)) },
-                    )
-                }
                 itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->
-                    if (index > 0 || installing.isNotEmpty()) {
+                    if (index > 0) {
                         Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
                             WontonSeparator()
                         }
@@ -234,7 +167,7 @@ private fun ChatListScreen(
             }
             // 同步好之前列表是空的不代表没有聊天。
             val synced = viewModel.account is ChatAccount.SignedIn && viewModel.sync == ChatSync.Running
-            if (viewModel.rooms.isEmpty() && installing.isEmpty() && synced) {
+            if (viewModel.rooms.isEmpty() && synced) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
                         stringResource(R.string.chat_empty),
@@ -261,11 +194,10 @@ private fun ChatListScreen(
 }
 
 @Composable
-internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
+private fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
     val account = viewModel.account
     val sync = viewModel.sync
-    val backupReminder = viewModel.encryption.backupReminder
-    val reminder = backupReminder?.text
+    val reminder = viewModel.encryption.backupReminder?.text
     // 连不上由标题栏说，连上后自动重来。
     val failure = (account as? ChatAccount.Failed)?.takeIf { it.reason != ChatFailure.TRANSPORT_UNAVAILABLE }
         ?.let { it.reason.problem(it.message) }
@@ -276,11 +208,6 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         ChatAccount.SigningIn -> stringResource(R.string.chat_signing_in)
         is ChatAccount.Reconnecting -> stringResource(R.string.chat_status_reconnecting)
         else -> null
-    }
-    val context = LocalContext.current
-    val reminderPrefs = remember { BackupReminderPrefs(context) }
-    var reminderDismissed by remember(backupReminder) {
-        mutableStateOf(backupReminder != null && reminderPrefs.dismissed(backupReminder))
     }
     if (account != ChatAccount.SignedOut && listOfNotNull(failure, progress, reminder).isEmpty()) return
     Column(
@@ -294,32 +221,7 @@ internal fun Notices(viewModel: ChatViewModel, onOpenBackup: () -> Unit) {
         progress?.let {
             Text(it, style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
         }
-        if (reminder != null && !reminderDismissed && backupReminder != null) {
-            WontonGroup {
-                Row(
-                    Modifier.fillMaxWidth()
-                        .clickable(onClick = onOpenBackup)
-                        .heightIn(min = WontonTheme.size.target)
-                        .padding(start = WontonTheme.spacing.s16),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        reminder,
-                        Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
-                        style = WontonTheme.typography.body,
-                        color = WontonTheme.colors.textPrimary.toColor(),
-                    )
-                    WontonIconButton(
-                        WontonIcon.Close,
-                        stringResource(R.string.common_close),
-                        {
-                            reminderPrefs.dismiss(backupReminder)
-                            reminderDismissed = true
-                        },
-                    )
-                }
-            }
-        }
+        reminder?.let { WontonGroup { WontonRow(it, showsForward = true, onClick = onOpenBackup) } }
     }
 }
 
@@ -398,8 +300,7 @@ private fun RoomPreviewLine(row: RoomRow) {
             overflow = TextOverflow.Ellipsis,
         )
         if (row.unreadCount > 0uL) {
-            // unreadCount 是 ULong，Android 的 %d 格式化不认，转成 Int。
-            val spoken = stringResource(R.string.chat_unread_count, row.unreadCount.toInt())
+            val spoken = stringResource(R.string.chat_unread_count, row.unreadCount)
             Text(
                 row.unreadCount.toString(),
                 Modifier.semantics { contentDescription = spoken }
@@ -456,7 +357,7 @@ private fun roomTime(timestampMs: Long): String {
 }
 
 @Composable
-internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
+private fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
     Column(
         Modifier.fillMaxWidth().padding(WontonTheme.spacing.s16),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),

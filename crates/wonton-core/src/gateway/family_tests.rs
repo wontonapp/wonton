@@ -16,7 +16,6 @@ use super::tests::{CORE, Harness, Reply, TOKEN};
 use super::tunnel_tests::{Home, Phone, header};
 use crate::http::HttpClient;
 use crate::members::MemberRecord;
-use crate::plugin::PluginId;
 
 const ME: &str = wonton_protocol::ME_PATH;
 const MEMBERS: &str = wonton_protocol::MEMBERS_PATH;
@@ -202,10 +201,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     // 家人的请求碰不到主人的接口。
     let (status, headers, _) = phone.get(CORE, MEMBERS).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(
-        header(&headers, "x-wonton-error"),
-        Some("permission_required")
-    );
+    assert_eq!(header(&headers, "x-wonton-error"), Some("owner_only"));
 }
 
 /// 命令行带主人令牌读写主人自己的资料，`dev.sh up` 替主人填资料就这么调。
@@ -238,14 +234,11 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
         Some(RejectReason::UnknownCode),
         "再出一个以后旧的不能用"
     );
-    let (key, _phone) = pair_member_phone(&home, &second).await;
-    // 同一台设备重发同一个码是幂等的（回应可能在慢中继上丢了）；别的设备再来是“用过”。
-    let same = loopback_endpoint(key.clone()).await;
-    let response = pair(&same, &second, "家人的手机").await.unwrap();
-    assert_eq!(reject_reason(response), None);
+    let (_, _phone) = pair_member_phone(&home, &second).await;
+    // 码只能用一次。
     let again = loopback_endpoint(SecretKey::generate()).await;
     let rejected = pair(&again, &second, "再用").await.unwrap();
-    assert_eq!(reject_reason(rejected), Some(RejectReason::Used));
+    assert_eq!(reject_reason(rejected), Some(RejectReason::UnknownCode));
 
     // 作废以后不能用。
     invite(&home, json!({"display_name": "Bob", "private_bot": true})).await;
@@ -343,9 +336,9 @@ async fn usernames_come_from_display_names_and_collisions_are_conflicts() {
     }
 }
 
-/// 只给主人的路由，挨个过一遍：家人的设备回 403 `permission_required`，没有身份回 401。
+/// 只给主人的路由，挨个过一遍：家人的设备回 403 `owner_only`，没有身份回 401。
 #[tokio::test]
-async fn permission_required_routes_reject_member_devices_with_permission_required() {
+async fn owner_only_routes_reject_member_devices_with_owner_only() {
     let h = Harness::start(None).await;
     let member = SecretKey::generate().public();
     seed_member(&h, "mia", false);
@@ -354,7 +347,7 @@ async fn permission_required_routes_reject_member_devices_with_permission_requir
         .add_if(member, None, Some("mia".to_owned()), |_| true)
         .unwrap();
 
-    for (kind, routes) in permission_required_route_tables() {
+    for (kind, routes) in owner_only_route_tables() {
         for (method, path, body) in routes {
             let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
             assert_eq!(
@@ -381,7 +374,7 @@ async fn permission_required_routes_reject_member_devices_with_permission_requir
         }
     }
 
-    // 登记设备只认主人令牌（ADR-0009）：家人的设备也是 401 unauthenticated，不是 permission_required。
+    // 登记设备只认主人令牌（ADR-0009）：家人的设备也是 401 unauthenticated，不是 owner_only。
     let reply = send_as(
         &h.app,
         Some(member),
@@ -455,12 +448,7 @@ async fn install_authorization_does_not_allow_changing_plugin_permissions() {
         )
         .await;
         assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
-        assert_eq!(
-            reply.error_kind(),
-            Some("permission_required"),
-            "{}",
-            reply.text()
-        );
+        assert_eq!(reply.error_kind(), Some("owner_only"), "{}", reply.text());
     }
 }
 
@@ -468,8 +456,8 @@ async fn install_authorization_does_not_allow_changing_plugin_permissions() {
 type RouteTable = (&'static str, Vec<(Method, &'static str, &'static str)>);
 
 /// 分层的路由表：`kind` 是没授权的家人会拿到的错误码。
-fn permission_required_route_tables() -> Vec<RouteTable> {
-    let mut permission_required: Vec<(Method, &str, &str)> = vec![
+fn owner_only_route_tables() -> Vec<RouteTable> {
+    let owner_only: Vec<(Method, &str, &str)> = vec![
         (Method::GET, "/_wonton/api/egress-proxy", ""),
         (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
         (Method::GET, "/_wonton/api/registry-mirror", ""),
@@ -552,15 +540,11 @@ fn permission_required_route_tables() -> Vec<RouteTable> {
         (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
         (Method::DELETE, "/_wonton/api/peers/other.example", ""),
     ];
-    permission_required.extend(super::plugin_forms_tests::permission_required_routes());
-    vec![
-        ("permission_required", permission_required),
-        install_not_allowed_routes(),
-    ]
+    vec![("owner_only", owner_only), install_not_allowed_routes()]
 }
 
 fn install_not_allowed_routes() -> RouteTable {
-    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 permission_required。
+    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 owner_only。
     let install_routes: Vec<(Method, &str, &str)> = vec![
         (
             Method::POST,
@@ -739,18 +723,15 @@ async fn a_member_sees_and_revokes_only_her_own_devices() {
 #[tokio::test]
 async fn member_issued_codes_follow_the_issuer_and_bot_names_are_taken() {
     let (home, _state) = home_with_matrix().await;
-    // 记录一个 Bot 用户名 hermes-alice。
-    home.plugins.bot_records_for_test(
-        &PluginId::parse("app.hermes").unwrap(),
-        &[(
-            "default",
-            "@hermes-alice:wonton.localhost",
-            wonton_protocol::BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "hermes-token",
-        )],
-    );
+    // 记录一个 Bot 用户名 hermes-alice（Bot 记录在插件记录目录的 bots/ 下）。
+    let bots_dir = home.data_dir().join("plugins").join("bots");
+    std::fs::create_dir_all(&bots_dir).unwrap();
+    std::fs::write(
+        bots_dir.join("app.hermes.json"),
+        json!({"user_id": "@hermes-alice:wonton.localhost", "home_room": "!room:wonton.localhost"})
+            .to_string(),
+    )
+    .unwrap();
     seed_member_via_home(&home, "Alice").await;
     let hers = SecretKey::generate().public();
     home.tunnel

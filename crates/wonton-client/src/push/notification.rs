@@ -12,13 +12,12 @@ use wonton_matrix::{
     EventId, MatrixSession, MessageBody, Notification, OwnedEventId, OwnedRoomId, RoomId, UserId,
 };
 use wonton_protocol::{
-    ChatAccount, ChatFailure, ContactRequestPush, CoreError, DeviceConfirmationPush, HomeStatus,
-    MessageSummary, NOTICE_FIELD, NotificationCategory, PluginNotice, PushConfirmation,
-    PushContent, PushNotification,
+    ChatAccount, ChatFailure, CoreError, HomeStatus, NOTICE_FIELD, NotificationCategory,
+    PluginNotice, PushContent, PushNotification,
 };
 
 use super::PushLink;
-use crate::chat::{LinkTargets, PushedCard, core_account, failure, pushed_card, summary};
+use crate::chat::{PushedCard, core_account, failure, pushed_card, summary};
 use crate::l10n::{CATALOG, language};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
@@ -38,9 +37,6 @@ pub(crate) struct Payload {
     sender: Option<String>,
     sender_display_name: Option<String>,
     room_name: Option<String>,
-    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
-    #[serde(default)]
-    contact_request: Option<ContactRequestPush>,
 }
 
 impl Payload {
@@ -53,27 +49,6 @@ impl Payload {
                 "push-payload-invalid",
                 reason = e.to_string()
             ))
-        })
-    }
-
-    /// 联系人请求的通知：推送里带齐了要显示的原值，不用取消息。类别同确认卡片（“等你确认”），正文的位置放
-    /// `Invite`：壳看到 `contact_request` 按它写文字。
-    fn contact_request(&self) -> Option<PushNotification> {
-        let request = self.contact_request.clone()?;
-        Some(PushNotification {
-            server_id: None,
-            room_id: String::new(),
-            event_id: String::new(),
-            sender: request
-                .display_name
-                .clone()
-                .or_else(|| Some(request.user_id.clone())),
-            room_name: None,
-            content: PushContent::Invite,
-            category: NotificationCategory::Confirmation,
-            confirmation: None,
-            contact_request: Some(request),
-            thread_root: None,
         })
     }
 
@@ -92,54 +67,6 @@ impl Payload {
             content: PushContent::Unavailable { reason, message },
             category: NotificationCategory::Message,
             confirmation: None,
-            contact_request: None,
-            thread_root: None,
-        }
-    }
-}
-
-/// 确认卡片的直推（ADR-0016）：发给家人的卡片不在任何 Matrix 房间里，卡片内容就在推送里，取不到房间里的
-/// 消息。明文里是 `confirmation` 段和服务器的 endpoint ID，和核心发的格式对着（核心有行为测试）。
-#[derive(Clone, Deserialize)]
-pub(crate) struct DirectConfirmation {
-    /// 发推送的服务器的 endpoint ID。
-    pub(crate) server: String,
-    confirmation: DeviceConfirmationPush,
-}
-
-impl DirectConfirmation {
-    /// 不是确认卡片直推的格式（房间消息的推送没有 `confirmation` 段）时返回 `None`，调用方按消息推送解析。
-    pub(crate) fn parse(payload: &[u8]) -> Option<Self> {
-        serde_json::from_slice(payload).ok()
-    }
-
-    /// 卡片不是房间里的消息：`room_id` 是来源会话（没有时为空），`event_id` 是卡片 ID（`PushConfirmation`
-    /// 的约定），标题两处都给（壳拿它当通知标题，消息推送的正文也是它）。
-    pub(crate) fn notification(&self) -> PushNotification {
-        let card = &self.confirmation;
-        PushNotification {
-            // 槽位由 `ClientCore` 填：推送这一层不知道自己属于哪个槽位。
-            server_id: None,
-            room_id: card
-                .origin
-                .as_ref()
-                .map_or(String::new(), |origin| origin.room_id.clone()),
-            event_id: card.id.clone(),
-            sender: Some(card.title.clone()),
-            room_name: None,
-            content: PushContent::Message {
-                summary: MessageSummary::Text {
-                    text: card.title.clone(),
-                },
-            },
-            category: NotificationCategory::Confirmation,
-            confirmation: Some(PushConfirmation {
-                id: card.id.clone(),
-                expires_at_ms: card.expires_at_ms,
-                origin: card.origin.clone(),
-            }),
-            contact_request: None,
-            thread_root: None,
         }
     }
 }
@@ -150,9 +77,6 @@ impl PushLink {
         &self,
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
-        if let Some(notification) = payload.contact_request() {
-            return Ok(Some(notification));
-        }
         let started = Instant::now();
         let room_id = payload.room_id.parse::<OwnedRoomId>().map_err(|e| {
             invalid(&l10n!(
@@ -289,7 +213,7 @@ pub(crate) fn push_notification(
         },
         MessageBody::Other { kind } if kind == "m.room.member" => PushContent::Invite,
         body => PushContent::Message {
-            summary: summary(body, false, &LinkTargets::default()),
+            summary: summary(body, false),
         },
     };
     Some(PushNotification {
@@ -307,8 +231,6 @@ pub(crate) fn push_notification(
             NotificationCategory::Message
         },
         confirmation,
-        contact_request: None,
-        thread_root: None,
     })
 }
 
@@ -337,43 +259,6 @@ mod tests {
     use wonton_matrix::OwnedUserId;
 
     use super::*;
-
-    /// 契约：核心直推的确认卡片（ADR-0016）解析成确认通知；不是房间消息，没有房间的 event 可取。
-    #[test]
-    fn a_confirmation_push_parses_into_a_confirmation_notification() {
-        let direct = DirectConfirmation::parse(
-            r#"{"server":"srv","confirmation":{"id":"c1","title":"claw 想安装 Grafana","expires_at_ms":42,"origin":{"room_id":"!room:test"}}}"#.as_bytes(),
-        )
-        .expect("核心发的确认推送要能解析");
-        assert_eq!(direct.server, "srv");
-        let shown = direct.notification();
-        assert_eq!(shown.category, NotificationCategory::Confirmation);
-        assert_eq!(shown.room_id, "!room:test");
-        assert_eq!(shown.event_id, "c1");
-        let card = shown.confirmation.expect("确认通知带卡片");
-        assert_eq!(card.id, "c1");
-        assert_eq!(card.expires_at_ms, 42);
-        assert_eq!(
-            card.origin.as_ref().map(|o| o.room_id.as_str()),
-            Some("!room:test")
-        );
-        // 没有来源会话的卡片（核心自己发起的）点开去“等你确认”列表：room_id 为空。
-        let direct = DirectConfirmation::parse(
-            r#"{"server":"srv","confirmation":{"id":"c2","title":"服务器配对","expires_at_ms":7}}"#
-                .as_bytes(),
-        )
-        .unwrap();
-        let shown = direct.notification();
-        assert_eq!(shown.room_id, "");
-        assert!(shown.confirmation.unwrap().origin.is_none());
-        // 房间消息的推送没有 `confirmation` 段：不走这条，按消息推送解析。
-        assert!(
-            DirectConfirmation::parse(
-                br#"{"server":"srv","room_id":"!room:test","event_id":"$e"}"#
-            )
-            .is_none()
-        );
-    }
 
     fn custom(field: Value) -> Map<String, Value> {
         [(NOTICE_FIELD.to_owned(), field)].into_iter().collect()
@@ -411,28 +296,6 @@ mod tests {
             Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
         let unavailable = payload.unavailable(ChatFailure::TransportUnavailable, "offline".into());
         assert_eq!(unavailable.sender, None);
-    }
-
-    /// 核心自己发的联系人请求推送不对应消息：不去取正文，直接是一张“等你确认”。
-    #[test]
-    fn a_contact_request_push_is_a_confirmation_without_a_message() {
-        let payload = Payload::parse(
-            br#"{"server":"s","room_id":"","event_id":"","contact_request":{
-                "bot":{"plugin_id":"ai.nous.hermes","bot":"bob"},
-                "user_id":"@hermes-alice:a.example","display_name":"Hermes",
-                "keeper_display_name":"Alice"}}"#,
-        )
-        .unwrap();
-        let shown = payload.contact_request().unwrap();
-        assert_eq!(shown.category, NotificationCategory::Confirmation);
-        assert_eq!(shown.sender.as_deref(), Some("Hermes"));
-        let request = shown.contact_request.unwrap();
-        assert_eq!(request.bot.bot, "bob");
-        assert_eq!(request.keeper_display_name.as_deref(), Some("Alice"));
-
-        let message =
-            Payload::parse(br#"{"server":"s","room_id":"!room:test","event_id":"$e"}"#).unwrap();
-        assert!(message.contact_request().is_none());
     }
 
     #[test]

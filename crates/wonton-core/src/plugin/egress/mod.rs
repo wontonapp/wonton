@@ -19,7 +19,7 @@ pub(in crate::plugin) mod provider;
 mod relay;
 pub mod settings;
 mod switch;
-pub(in crate::plugin) use switch::{PLACEHOLDER, cannot_read, token_uses};
+pub(in crate::plugin) use switch::cannot_read;
 
 use std::collections::BTreeSet;
 

@@ -1,6 +1,7 @@
 //! 执行升级：保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器。
 //!
-//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
+//! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用
+//! 旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
 //! 变量里，这里绝不签新设备：换设备要重新建加密身份。安装记录最后才写，核心中途退出时记录还是旧版本的。
 
 use std::collections::HashMap;
@@ -11,8 +12,9 @@ use wonton_protocol::InstallStage;
 
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
+use super::super::egress::cannot_read;
 use super::super::gpu::GpuGrant;
-use super::super::health_gate::Gate;
+use super::super::health;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
@@ -25,12 +27,11 @@ use super::super::manager::{
 use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
-use wonton_protocol::BotKeeper;
-
 use super::super::render::{Deployment, InstallContext, dry_run, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
-use super::super::upstreams::uses_sso;
+use super::super::upstreams::{core_aliases, uses_sso};
+use super::super::vars::MatrixVars;
 use super::{installed_package, newer};
 use crate::l10n;
 use crate::secret::random_token;
@@ -99,20 +100,16 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 
 impl PluginManager {
     /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
-    pub(super) async fn upgrade_declared(
+    pub(in crate::plugin) async fn upgrade_checked(
         &self,
         package: PluginPackage,
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
-        settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        super::super::install_entry::check_runtime(&package.manifest, &langs)?;
         self.check_not_upgrading(&langs)?;
-        if !super::super::install_hosted::is_containerless(&package.manifest) {
-            dry_run(&package, &langs)?;
-        }
+        dry_run(&package, &langs)?;
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
@@ -134,11 +131,7 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
-        super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
-        if super::super::install_hosted::is_containerless(manifest) {
-            return self.upgrade_containerless(package, granted, &langs).await;
-        }
-        self.check_hosted_provider(manifest, &langs)?;
+        super::super::capabilities::unsupported_dependencies(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self
@@ -152,16 +145,9 @@ impl PluginManager {
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
-        let outcome = Box::pin(self.upgrade_begun(
-            &package,
-            granted,
-            &enabled,
-            (gpu, lan),
-            settings.clone(),
-            &langs,
-        ))
-        .await;
+        let outcome = self
+            .upgrade_begun(&package, granted, &enabled, (gpu, lan), &langs)
+            .await;
         self.lan.end(id);
         let result = self.finish_upgrade(&package, lan_webui, before, outcome);
         if result.is_ok()
@@ -262,7 +248,6 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
-        settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
         let old = match self.read_old(&package.manifest.id).await {
@@ -271,15 +256,7 @@ impl PluginManager {
         };
         let mut progress = Progress::default();
         let error = match self
-            .replace_version(
-                &old,
-                package,
-                granted,
-                enabled,
-                grants,
-                settings,
-                &mut progress,
-            )
+            .replace_version(&old, package, granted, enabled, grants, &mut progress)
             .await
         {
             Ok(deployed) => {
@@ -331,8 +308,7 @@ impl PluginManager {
         let package = installed_package(&record, &langs)?;
         let lan = self.lan_grant(&package, record.lan_webui, &langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
-        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
-        self.fill_bot_vars(&package, &mut ctx, &langs).await?;
+        ctx.matrix = self.bot_vars_read_back(&package, &ctx, &langs).await?;
         let plan = render(&package, &ctx, &langs)?;
         let mut images = HashMap::new();
         for container in &plan.containers {
@@ -349,7 +325,6 @@ impl PluginManager {
         })
     }
 
-    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     async fn replace_version(
         &self,
         old: &Old,
@@ -357,12 +332,11 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         grants: (Option<GpuGrant>, Option<LanGrant>),
-        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let prepared = self
-            .prepare_new(old, package, enabled, grants, settings, progress)
+            .prepare_new(old, package, enabled, grants, progress)
             .await?;
         let langs = self.owner_languages();
         let Prepared {
@@ -383,12 +357,10 @@ impl PluginManager {
             self.hydra(&langs)?.upsert_client(&spec).await?;
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            super::super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+        let deadline = Instant::now() + self.cfg.install_timeout;
         self.stage(&manifest.id, InstallStage::Starting);
         let health = self
             .start_containers(
-                Some(manifest),
                 &plan,
                 Some(&manifest.id),
                 &mut progress.undo,
@@ -396,14 +368,28 @@ impl PluginManager {
                 &langs,
             )
             .await?;
-        let (upstream, models, mcp) = self
-            .deploy_upstreams(manifest, &network, &mut secrets, deadline, &langs)
-            .await?;
+        if secrets::collect(
+            &self.engine,
+            &self.cfg.instance,
+            manifest,
+            &mut secrets,
+            &langs,
+        )
+        .await?
+        {
+            self.store.secrets().save(&manifest.id, &secrets)?;
+        }
+        let upstream = self.webui_upstream(manifest, &network).await?;
+        let models = self.models_upstream(manifest, &network).await?;
+        let mcp = self.mcp_upstream(manifest, &network, &secrets).await?;
+        if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
+            health::wait_webui(&self.http, upstream, &webui.path, deadline, &langs).await?;
+        }
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &network)
             .await;
-        if let Some((_, _, bot)) = &progress.undo.bot {
-            progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
+        if let Some((_, bot)) = &progress.undo.bot {
+            progress.undo.handed_over = self.hand_over_home_room(bot).await?;
         }
         self.store.save(&InstalledRecord {
             id: manifest.id.clone(),
@@ -424,25 +410,14 @@ impl PluginManager {
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
             family: old.record.family,
-            settings: ctx.settings.clone().into_iter().collect(),
-            settings_changed_ms: old.record.settings_changed_ms,
-            static_files: Default::default(),
-            hosted: Vec::new(),
         })?;
         Ok(Deployed {
             upstream,
-            serving: package
-                .resident_services()
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            problem: None,
             health,
             models,
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
-            hosted: self.hosted_upstreams(manifest, &network).await?,
         })
     }
 
@@ -453,7 +428,6 @@ impl PluginManager {
         package: &PluginPackage,
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
-        settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
@@ -462,8 +436,6 @@ impl PluginManager {
             .then(|| old.record.oidc_client_secret.clone())
             .map(|kept| kept.unwrap_or_else(random_token));
         let langs = self.owner_languages();
-        self.prepare_dependencies(manifest, &langs).await?;
-        self.revoke_removed_provider_keys(manifest, &langs).await?;
         let secrets = self.prepare_secrets(manifest, &mut progress.undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;
@@ -481,37 +453,12 @@ impl PluginManager {
         ctx.limits = old.record.limits;
         ctx.gpu = gpu;
         ctx.lan = lan;
-        ctx.settings = settings;
-        // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
-        let mut new_bot = None;
-        if is_bot(manifest) && !is_bot(&old.package.manifest) {
-            let keeper = BotKeeper::User {
-                username: self.cfg.owner.clone(),
-            };
-            let bot = self
-                .provision_bot(
-                    &manifest.id,
-                    manifest,
-                    super::super::bot_services::DEFAULT_BOT,
-                    keeper,
-                    package,
-                )
-                .await?;
-            progress.undo.bot = Some((
-                manifest.id.clone(),
-                super::super::bot_services::DEFAULT_BOT.to_owned(),
-                bot.clone(),
-            ));
-            new_bot = Some(bot);
-        }
+        ctx.matrix = self
+            .upgrade_bot(old, package, &mut progress.undo, &langs)
+            .await?;
         ctx.models = self
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
-        if let Some(bot) = new_bot {
-            self.fill_default_bot_vars(manifest, &bot, &mut ctx);
-        } else {
-            self.fill_bot_vars(package, &mut ctx, &langs).await?;
-        }
         let mut plan = render(package, &ctx, &langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), &langs)
             .await?;
@@ -540,6 +487,39 @@ impl PluginManager {
             oidc_secret,
             pulled: plan,
         })
+    }
+
+    /// 新版本的 Matrix 变量。原来就是 Bot 的沿用账号和设备；新版本才申请 `matrix.bot` 的才签发。
+    async fn upgrade_bot(
+        &self,
+        old: &Old,
+        package: &PluginPackage,
+        undo: &mut Undo,
+        langs: &Languages,
+    ) -> Result<Option<MatrixVars>, InstallError> {
+        let manifest = &package.manifest;
+        if !is_bot(manifest) {
+            return Ok(None);
+        }
+        if is_bot(&old.package.manifest) {
+            let vars = old.ctx.matrix.clone();
+            if vars.as_ref().is_none_or(|v| v.access_token.is_empty()) {
+                return Err(cannot_read(
+                    langs,
+                    l10n::text(langs, "plugin-settings-egress-token-not-used", &[]),
+                ));
+            }
+            if let Some(vars) = &vars {
+                self.fill_default_avatars(package, &vars.user_id).await?;
+            }
+            return Ok(vars);
+        }
+        let Some(bot) = self.provision_bot(package).await? else {
+            return Ok(None);
+        };
+        let vars = self.matrix_vars(&bot);
+        undo.bot = Some((manifest.id.clone(), bot));
+        Ok(Some(vars))
     }
 
     /// 删掉这个插件所有的容器，包括新版本不要了的服务的。
@@ -608,7 +588,6 @@ impl PluginManager {
             self.engine.disconnect_network(network, core).await?;
         }
         self.detach_relay(network).await?;
-        self.detach_mailpit(network).await?;
         self.engine.remove_network(network).await?;
         let labels = self.cfg.instance.labels(&manifest.id);
         self.engine
@@ -630,7 +609,8 @@ impl PluginManager {
         let Some(core) = &self.cfg.core_container else {
             return Ok(());
         };
-        if self.core_aliases_of(from) != self.core_aliases_of(to) {
+        let public = &self.cfg.public;
+        if core_aliases(public, from) != core_aliases(public, to) {
             self.engine.disconnect_network(network, core).await?;
         }
         self.attach_core(network, core, to).await
@@ -710,10 +690,8 @@ impl PluginManager {
         }
         let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
-        self.replace_containers(&ctx, plan, Gate::StartPeriod)
-            .await?;
-        // 对账要取宿主信息、起检查容器，链很深：同样放堆上。
-        Box::pin(self.reconcile_running(&old.package, &old.record)).await
+        self.replace_containers(&ctx, plan).await?;
+        self.reconcile_running(&old.package, &old.record).await
     }
 
     /// 新版本不要了的：记录已经写好，失败只记日志，主人卸载时一并清掉。
@@ -733,7 +711,7 @@ impl PluginManager {
         }
         if is_bot(was)
             && !is_bot(manifest)
-            && let Err(e) = self.deactivate_bots(id, false).await
+            && let Err(e) = self.remove_bot(id, false).await
         {
             tracing::warn!(plugin = %id, error = %e, "吊销新版本不用的 Bot 设备失败");
         }
@@ -790,7 +768,6 @@ impl PluginManager {
                 &granted,
                 &installed.enabled_permissions,
                 installed.lan_webui,
-                installed.settings.clone(),
             )
             .await
         {

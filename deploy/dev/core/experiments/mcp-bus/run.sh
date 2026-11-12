@@ -38,7 +38,7 @@ for _ in $(seq 50); do
 done
 sleep 1
 kill -0 "$call" 2>/dev/null && echo "删除请求已挂起，等待主人确认（$approval）"
-curl -sS --max-time 10 -X POST "http://127.0.0.1:8100/approvals/$approval?approve=true" >/dev/null
+curl -sS -X POST "http://127.0.0.1:8100/approvals/$approval?approve=true" >/dev/null
 wait "$call"
 echo "主人确认后删除结果：$(cat "$work/delete.out")"
 echo "审计日志："

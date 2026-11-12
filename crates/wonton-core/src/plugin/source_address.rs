@@ -87,17 +87,14 @@ pub fn chosen_source(text: &str, langs: &Languages) -> Result<String, InstallErr
     }
 }
 
-/// GitHub 上的页面路径 → 来源：`/o/r`、`/o/r.git`、`/o/r/tree/<tag>[/<子目录>]`、`/o/r/releases/tag/<tag>`、
-/// `/o/r/commit/<提交>`。
+/// GitHub 上的页面路径 → 来源：`/o/r`、`/o/r.git`、`/o/r/tree/<tag>`、`/o/r/releases/tag/<tag>`、`/o/r/commit/<提交>`。
 fn github_page(path: &str, langs: &Languages) -> Result<SourceRef, InstallError> {
     let path = path.split(['?', '#']).next().unwrap_or_default();
     let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
-    let (owner, name, subdir, version) = match parts.as_slice() {
-        [owner, name] => (*owner, *name, None, None),
-        [owner, name, "tree" | "commit", version] => (*owner, *name, None, Some(*version)),
-        [owner, name, "releases", "tag", version] => (*owner, *name, None, Some(*version)),
-        [owner, name, "tree", version, subdir @ ..] => {
-            (*owner, *name, Some(subdir.join("/")), Some(*version))
+    let (owner, name, version) = match parts.as_slice() {
+        [owner, name] => (*owner, *name, None),
+        [owner, name, "tree" | "commit", version] | [owner, name, "releases", "tag", version] => {
+            (*owner, *name, Some(*version))
         }
         _ => {
             return Err(InstallError::Invalid(crate::l10n::text(
@@ -108,9 +105,8 @@ fn github_page(path: &str, langs: &Languages) -> Result<SourceRef, InstallError>
         }
     };
     let name = name.strip_suffix(".git").unwrap_or(name);
-    let subdir = subdir.map(|s| format!("/{s}")).unwrap_or_default();
     let version = version.map(|v| format!("@{v}")).unwrap_or_default();
-    SourceRef::parse(&format!("github:{owner}/{name}{subdir}{version}"), langs)
+    SourceRef::parse(&format!("github:{owner}/{name}{version}"), langs)
 }
 
 #[cfg(test)]
@@ -159,28 +155,6 @@ mod tests {
             repo(&format!("https://github.com/o/r/commit/{commit}")),
             ("o/r".to_owned(), Wanted::Commit(commit))
         );
-    }
-
-    /// `/tree/<ref>/<路径>` 解析成带子目录的来源，`<ref>` 是 tag 或提交（完成标准 2）。
-    #[test]
-    fn a_tree_page_with_a_subdirectory_names_that_source() {
-        let langs = Languages::default();
-        let parsed =
-            match Address::parse("https://github.com/o/r/tree/v1.0.0/agents/x", &langs).unwrap() {
-                Address::Repo(source) => source,
-                other => panic!("{other:?}"),
-            };
-        assert_eq!(
-            parsed,
-            SourceRef::parse("github:o/r/agents/x@v1.0.0", &langs).unwrap()
-        );
-        // 多段子目录也一样。
-        let deep = match Address::parse("https://github.com/o/r/tree/main/a/b/c", &langs).unwrap() {
-            Address::Repo(source) => source,
-            other => panic!("{other:?}"),
-        };
-        assert_eq!(deep.subdir.as_deref(), Some("a/b/c"));
-        assert_eq!(deep.wanted, Wanted::Tag("main".to_owned()));
     }
 
     #[test]

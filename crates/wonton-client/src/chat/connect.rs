@@ -10,13 +10,6 @@ use wonton_protocol::{ChatAccount, ChatFailure, ChatSync, ProxySettings};
 
 use super::{Active, ChatLink, failure, lock};
 
-/// 登录到哪里：经家里的本地代理登录配对的服务器，或者直连外部 Matrix 账号的 homeserver（ADR-0051）。
-#[derive(Clone, PartialEq, Eq)]
-pub(super) enum Target {
-    Home(ProxySettings),
-    External,
-}
-
 /// 第一次重试前等这么久，之后每次翻倍，最多等 [`MAX_BACKOFF`]。
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(60);
@@ -47,8 +40,8 @@ fn backoff(failures: u32) -> Duration {
 }
 
 impl ChatLink {
-    /// 登录或恢复会话，然后开始同步。
-    pub(super) async fn connect(self: Arc<Self>, target: Target) {
+    /// 用 `proxy` 登录或恢复会话，然后开始同步。
+    pub(super) async fn connect(self: Arc<Self>, proxy: ProxySettings) {
         let generation = {
             let mut relogin = lock(&self.relogin.0);
             relogin.generation += 1;
@@ -59,48 +52,31 @@ impl ChatLink {
         if lock(&self.relogin.0).generation != generation {
             return;
         }
-        // 等锁时可能又换了连接：这个代理已经没了，不能凭它动下一台服务器的登录状态。外部账号的槽位一个槽位一个账号，
-        // 账号数据按槽位记。
-        let server_id = match &target {
-            Target::Home(proxy) => {
-                let home = self.home.view();
-                let Some(server_id) = home
-                    .server_id
-                    .filter(|_| home.proxy.as_ref() == Some(proxy))
-                else {
-                    return;
-                };
-                server_id
-            }
-            Target::External => String::new(),
+        // 等锁时可能又换了连接：这个代理已经没了，不能凭它动下一台服务器的登录状态。
+        let home = self.home.view();
+        let Some(server_id) = home
+            .server_id
+            .filter(|_| home.proxy.as_ref() == Some(&proxy))
+        else {
+            return;
         };
         if let Some(old) = active.take() {
             self.forget_current().await;
             drop(old);
         }
-        // 账号数据跟着服务器走：断线时先留着，换服务器才清。
-        if self.layouts.adopt(&server_id) {
-            self.view
-                .send_modify(|view| view.chat_layout_default = Default::default());
-        }
         self.view
             .send_modify(|view| view.account = ChatAccount::SigningIn);
-        let signed_in = match &target {
-            Target::Home(proxy) => self.sign_in(proxy, server_id).await,
-            Target::External => self.sign_in_external().await,
-        };
-        let session = match signed_in {
+        let session = match self.sign_in(&proxy, server_id).await {
             Ok(session) => Arc::new(session),
             Err((reason, message)) => {
                 tracing::info!("Matrix sign-in failed: {message}");
                 drop(active);
-                self.sign_in_failed(generation, target, reason, message);
+                self.sign_in_failed(generation, proxy, reason, message);
                 return;
             }
         };
         lock(&self.relogin.0).failures = 0;
         *lock(&self.session) = Some(session.clone());
-        self.session_out.send_replace(Some(session.clone()));
         self.bots.set_session(Some(session.clone()));
         self.apply_pending_display_name(&session);
         self.view.send_modify(|view| {
@@ -127,7 +103,7 @@ impl ChatLink {
     fn sign_in_failed(
         self: Arc<Self>,
         generation: u64,
-        target: Target,
+        proxy: ProxySettings,
         reason: ChatFailure,
         message: String,
     ) {
@@ -163,7 +139,7 @@ impl ChatLink {
             tokio::time::sleep(delay).await;
             let Some(chat) = chat.upgrade() else { return };
             if lock(&chat.relogin.0).generation == generation {
-                chat.connect(target).await;
+                chat.connect(proxy).await;
             }
         });
     }

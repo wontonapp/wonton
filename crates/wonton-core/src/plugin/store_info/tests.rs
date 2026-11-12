@@ -227,7 +227,7 @@ fn package_size_is_limited() {
     let mut yaml = compose("") + "configs:\n";
     let mut files = PackageFiles::new();
     for i in 0..count {
-        yaml += format!("  c{i}:\n    file: c{i}.bin\n").as_str();
+        yaml += &format!("  c{i}:\n    file: c{i}.bin\n");
         files.insert(format!("c{i}.bin"), vec![b'x'; MAX_FILE_BYTES as usize]);
     }
     let err = PluginPackage::with_files(&yaml, files, &langs()).unwrap_err();

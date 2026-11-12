@@ -20,7 +20,7 @@ permission-models = モデルゲートウェイを使用します
 permission-tools = 自宅サーバーやほかのアプリのツールを呼び出します
 permission-plugins-health = すべてのアプリの稼働状態を読み取ります
 permission-matrix-bot = ボットとしてメッセージを送受信します
-permission-notify = 家族に通知とメールを送ります
+permission-notify = 通知を送ります
 permission-owner-identity = あなたのユーザー名とメールアドレス、家族が使っている言語を取得します
 permission-network-egress = インターネットとローカルネットワークにアクセスします
 permission-egress-proxy = プロキシを提供します（高権限）
@@ -48,7 +48,7 @@ permission-notice-devices = このアプリは渡したホストのデバイス�
 # アプリ詳細の通知。
 plugin-firewall-notice = このマシンのファイアウォールが外部からの接続を遮断している可能性があり、ローカルネットワークのデバイスから接続できないかもしれません
 plugin-egress-proxy-select = プロキシの設定でこのアプリを選んでください
-plugin-cross-origin-isolation = このアプリはクロスオリジン分離が必要です。Androidでは、そのページはブラウザで開きます。
+plugin-cross-origin-isolation = このアプリはオリジン間の分離を緩めています。Androidでは、そのページがほかのウェブページとプロセスを共有する可能性があります。
 
 # インストールと更新のプレビューに表示する通知と、インストールできない理由。
 install-retained-data = このサーバーには前に{ $id }が使っていたデータとキーが残っており、インストールしたアプリはそれらを読めます。望まない場合は先に完全に削除してください

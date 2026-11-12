@@ -2,18 +2,15 @@
 //! 本地回显先出现在时间线里，发送结果见 [`Message::status`](crate::Message::status)。
 
 use matrix_sdk::ruma::{
-    EventId, OwnedEventId, UserId,
-    events::Mentions,
+    EventId, OwnedEventId,
     events::relation::Thread,
     events::room::message::{
         AddMentions, ReplyMetadata, ReplyWithinThread, RoomMessageEventContent,
     },
 };
 
-use matrix_sdk_ui::timeline::{EventSendState, MsgLikeKind};
-
 use super::ChatRoom;
-use crate::{Error, Result};
+use crate::Result;
 
 impl ChatRoom {
     /// 发一条文字进指定话题，`root` 是话题根消息的事件 ID。
@@ -61,103 +58,5 @@ impl ChatRoom {
             }
         }
         root.to_owned()
-    }
-}
-
-impl ChatRoom {
-    /// 发一条普通文字并等它落到时间线，返回事件 ID（话题根要用它）。
-    pub async fn send_text_event(&self, body: &str) -> Result<OwnedEventId> {
-        self.timeline()
-            .await
-            .send(RoomMessageEventContent::text_plain(body).into())
-            .await?;
-        for _ in 0..100 {
-            for item in self.timeline().await.items().await.into_iter().rev() {
-                let Some(event) = item.as_event() else {
-                    continue;
-                };
-                let Some(id) = event.event_id() else { continue };
-                let matches = event
-                    .content()
-                    .as_msglike()
-                    .and_then(|c| match &c.kind {
-                        MsgLikeKind::Message(message) => Some(message.body()),
-                        _ => None,
-                    })
-                    .is_some_and(|sent| sent == body);
-                if matches && event.sender() == self.room.own_user_id() {
-                    return Ok(id.to_owned());
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-        Err(crate::Error::Upstream("发出去的消息没有落到时间线".into()))
-    }
-
-    /// 发一条会提及主人的文字进指定话题（推送会响）。
-    pub async fn send_thread_mention(
-        &self,
-        root: &EventId,
-        body: &str,
-        owner: &UserId,
-    ) -> Result<()> {
-        let latest = self.latest_sent_in_thread(root).await;
-        let thread = Thread::plain(root.to_owned(), latest.clone());
-        let content = RoomMessageEventContent::text_plain(body)
-            .make_for_thread(
-                ReplyMetadata::new(&latest, self.room.own_user_id(), Some(&thread)),
-                ReplyWithinThread::No,
-                AddMentions::Yes,
-            )
-            .add_mentions(Mentions::with_user_ids([owner.to_owned()]));
-        self.timeline().await.send(content.into()).await?;
-        Ok(())
-    }
-
-    /// 发一条进指定话题的 `m.notice`（不推送）。
-    pub async fn send_thread_notice(&self, root: &EventId, body: &str) -> Result<()> {
-        let latest = self.latest_sent_in_thread(root).await;
-        let thread = Thread::plain(root.to_owned(), latest.clone());
-        let content = RoomMessageEventContent::notice_plain(body).make_for_thread(
-            ReplyMetadata::new(&latest, self.room.own_user_id(), Some(&thread)),
-            ReplyWithinThread::No,
-            AddMentions::No,
-        );
-        self.timeline().await.send(content.into()).await?;
-        Ok(())
-    }
-}
-
-impl ChatRoom {
-    /// 重发所有被服务器拒收、卡在队首的消息（不可恢复的发送失败），按原来的顺序，再打开发送队列。返回重发了几条。
-    ///
-    /// 只给拒收原因已经消失的调用方用（比如网关的跳数被人说话清零了）：原因还在时会再被拒收一次，照样卡住。
-    pub async fn resend_refused(&self) -> Result<usize> {
-        let mut resent = 0;
-        for item in self.timeline().await.items().await.iter() {
-            let Some(event) = item.as_event() else {
-                continue;
-            };
-            let refused = matches!(
-                event.send_state(),
-                Some(EventSendState::SendingFailed {
-                    is_recoverable: false,
-                    ..
-                })
-            );
-            let Some(handle) = event.local_echo_send_handle().filter(|_| refused) else {
-                continue;
-            };
-            handle
-                .unwedge()
-                .await
-                .map_err(|error| Error::Upstream(format!("重发失败：{error}")))?;
-            resent += 1;
-        }
-        // `unwedge` 只唤醒队列，出错后停下的队列要重新打开（见 `send_queue`）。
-        if resent > 0 {
-            self.room.send_queue().set_enabled(true);
-        }
-        Ok(resent)
     }
 }

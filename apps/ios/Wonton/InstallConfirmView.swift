@@ -10,7 +10,6 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
-    @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
     @State private var submittedId: String?
     @State private var hostAcknowledgement = false
@@ -37,7 +36,7 @@ struct InstallConfirmView: View {
                 .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(confirmation.actionTitle, showsStatus: true)
+        .wontonModalScreen(confirmation.actionTitle)
         .wontonDialog(problem: rejection, isPresented: isShowingRejection)
         .wontonDialog(
             String(localized: .pluginPermissionUnderstandTitle),
@@ -68,7 +67,7 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled, secrets: $secrets) {
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled) {
                 isFillingProfile = true
             }
         }
@@ -81,11 +80,10 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
+    /// 装不了（`blocked`）、缺资料或者有核心不支持的权限时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
         return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
-            && !missingRequiredSecret(preview.secretInputs, secrets)
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -98,12 +96,6 @@ struct InstallConfirmView: View {
     }
 
     private func load() async {
-        if let preloaded = confirmation.preloaded {
-            lanWebui = preloaded.lanWebui?.enabled ?? false
-            enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
-            loaded = .success(preloaded)
-            return
-        }
         loaded = nil
         do {
             let preview = switch confirmation {
@@ -112,7 +104,6 @@ struct InstallConfirmView: View {
             case let .upload(archive): try await model.core.previewUpload(archive: archive)
             case let .upgradeFrom(id, source): try await model.core.previewUpgradeFrom(id: id, source: source)
             case let .upgradeUpload(id, archive): try await model.core.previewUpgradeUpload(id: id, archive: archive)
-            case .store: throw CancellationError()
             }
             lanWebui = preview.lanWebui?.enabled ?? false
             enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
@@ -144,12 +135,11 @@ struct InstallConfirmView: View {
             line.enabled = enabled.contains(line.permission)
             return line
         }
-        let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
-            action = .upgradePlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .upgradePlugin(preview: preview, secrets: [:])
         } else {
-            action = .installPlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .installPlugin(preview: preview, secrets: [:])
         }
         do {
             try model.core.dispatch(action: action)
@@ -169,7 +159,6 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
-    @Binding var secrets: [String: String]
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -204,13 +193,6 @@ private struct PreviewContent: View {
                             } else {
                                 PermissionRow(line: line)
                             }
-                        }
-                    }
-                }
-                if !preview.secretInputs.isEmpty {
-                    DetailSection(title: String(localized: .secretSectionTitle)) {
-                        SecretInputsSection(inputs: preview.secretInputs, values: secrets) { name, value in
-                            secrets[name] = value
                         }
                     }
                 }

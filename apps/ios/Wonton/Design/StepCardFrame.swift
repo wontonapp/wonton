@@ -9,8 +9,6 @@ struct StepCardFrame<Content: View>: View {
     let back: () -> Void
     let skip: () -> Void
     let next: () -> Void
-    /// 重看引导的关闭：给了就在左上画 X，第一步不再显示灰返回。
-    var close: (() -> Void)?
     var rejection: (title: String, action: () -> Void)?
     @ViewBuilder let content: Content
     @Environment(\.wontonColors) private var colors
@@ -46,16 +44,9 @@ struct StepCardFrame<Content: View>: View {
 
     private var navigation: some View {
         HStack(spacing: WontonTheme.spacing.s8) {
-            if let close {
-                WontonIconButton(icon: .close, label: String(localized: .designClose), action: close)
-                if nav.canBack {
-                    WontonIconButton(icon: .back, label: String(localized: .designStepBack), action: back)
-                }
-            } else {
-                WontonIconButton(icon: .back, label: String(localized: .designStepBack), action: back)
-                    .disabled(!nav.canBack)
-                    .opacity(nav.canBack ? 1 : WontonTheme.ratio.secondaryContent)
-            }
+            WontonIconButton(icon: .back, label: String(localized: .designStepBack), action: back)
+                .disabled(!nav.canBack)
+                .opacity(nav.canBack ? 1 : WontonTheme.ratio.secondaryContent)
             Spacer(minLength: 0)
             Text("\(nav.position)/\(nav.total)")
                 .wontonText(WontonTheme.typography.supporting)

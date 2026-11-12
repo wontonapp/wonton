@@ -15,7 +15,6 @@ import app.wonton.android.R
 import app.wonton.android.WontonApplication
 import app.wonton.android.push.PushNotifications
 import app.wonton.client.ClientCore
-import app.wonton.protocol.PushContent
 import app.wonton.ui.chatUpdates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -97,24 +96,14 @@ class KeepaliveService : Service() {
             .build()
     }
 
-    /** 逐条弹后台同步到的新消息；同一个 event_id 用同一个通知标签，核心重复给也不会重复弹。
-     *  密钥晚到时核心把占位换成正文再交同一条（同 event_id）：这时原地替换，只响第一次那遍。 */
+    /** 逐条弹后台同步到的新消息；同一个 event_id 用同一个通知标签，核心重复给也不会重复弹。 */
     private suspend fun showNewMessages(core: ClientCore) {
         val context = this
-        // event_id → 已弹的是不是占位；占位之后来了正文要重弹替换。
-        val shown = mutableMapOf<String, Boolean>()
+        val shown = mutableSetOf<String>()
         core.chatUpdates().collect { view ->
             view.backgroundNotifications.forEach { notification ->
-                val unavailable = notification.content is PushContent.Unavailable
-                val posted = shown[notification.eventId]
-                if (posted == null || (posted && !unavailable)) {
-                    shown[notification.eventId] = unavailable
-                    PushNotifications.show(
-                        context,
-                        notification,
-                        tag = notification.eventId,
-                        onlyAlertOnce = posted != null,
-                    )
+                if (shown.add(notification.eventId)) {
+                    PushNotifications.show(context, notification, tag = notification.eventId)
                 }
             }
         }

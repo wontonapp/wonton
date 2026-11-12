@@ -1,13 +1,7 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
-use std::collections::HashSet;
-
-use super::agent_run::BotsView;
 use super::confirmation::CardsView;
-use super::links::LinkTargets;
-use super::menu::message_actions;
 use super::read_mark::ReadMark;
-use super::reply::{quoted_content, reply_quote};
 use super::rich;
 use wonton_l10n::l10n;
 use wonton_matrix::{
@@ -15,10 +9,10 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
-    QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
+    ChatFailure, CoreError, DeviceVerification, FileLinks, ImageContent, MediaHandle,
+    MessageAction, MessageContent, MessageSummary, RecoveryStatus, RoomMembership, RoomPreview,
+    RoomRow, SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
+    extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -37,36 +31,10 @@ pub(crate) fn sort_rooms(rows: &mut [RoomRow]) {
     });
 }
 
-/// 时间线里有解不开的消息时给主人的下一步。本设备已经能拿到密钥（恢复完成、正在恢复）或者账号里没有别的路时为空。
-///
-/// 账号设过备份就输恢复密钥：备份带得回旧消息，别的设备确认不一定有。账号没有备份时，只有另一台已验证的设备能把
-/// 密钥直接发过来。
-pub(crate) fn key_notice(
-    encryption: &EncryptionStatus,
-    has_undecryptable: bool,
-) -> Option<KeyNotice> {
-    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
-    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
-        return None;
-    }
-    match encryption.recovery {
-        RecoveryStatus::Incomplete => Some(KeyNotice::EnterRecoveryKey),
-        RecoveryStatus::Disabled if encryption.can_verify_with_other_device => {
-            Some(KeyNotice::VerifyWithOtherDevice)
-        }
-        _ => None,
-    }
-}
-
-pub(crate) fn room_row(
-    room: RoomInfo,
-    core: &UserId,
-    layout: ChatLayout,
-    bots: &HashSet<String>,
-) -> RoomRow {
+pub(crate) fn room_row(room: RoomInfo, core: &UserId) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
-        layout,
+        layout: Default::default(),
         room_id: room.room_id.to_string(),
         name: room.name,
         is_direct: room.is_direct,
@@ -78,24 +46,17 @@ pub(crate) fn room_row(
             Membership::Invited => RoomMembership::Invited,
             Membership::Left | Membership::Knocked | Membership::Banned => RoomMembership::Left,
         },
-        preview: room.latest.and_then(|latest| preview(latest, bots)),
-        // 旁聊支持声明还没实现（ADR-0093 §4），先都按没有算；实现 PR 从声明状态事件来。
-        side_chats: false,
+        preview: room.latest.and_then(preview),
         unread_count: room.unread_count,
     }
 }
 
 /// 预览。不是消息的事件（成员变化等）不做预览。
-fn preview(latest: LatestMessage, bots: &HashSet<String>) -> Option<RoomPreview> {
+fn preview(latest: LatestMessage) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
     }
-    // Agent 的状态行不进预览（ADR-0082）：状态对象在 SDK 的最新消息里读不到，只能按“Bot 发的提示消息”认，
-    // 显示不出上一条就先空着，答案到了预览跟着换。
-    if matches!(&latest.body, MessageBody::Notice(_)) && bots.contains(latest.sender_id.as_str()) {
-        return None;
-    }
-    let body = summary(latest.body, latest.is_own, &LinkTargets::default());
+    let body = summary(latest.body, latest.is_own);
     Some(RoomPreview {
         sender_name: latest.sender_name,
         is_own: latest.is_own,
@@ -105,7 +66,7 @@ fn preview(latest: LatestMessage, bots: &HashSet<String>) -> Option<RoomPreview>
 }
 
 /// 消息的摘要：房间列表的预览用它。推送的正文是字符串，由 `push::notification` 转换。
-pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> MessageSummary {
+pub(crate) fn summary(body: MessageBody, is_own: bool) -> MessageSummary {
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
@@ -115,15 +76,11 @@ pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> M
                 MessageSummary::Text { text: body }
             } else {
                 MessageSummary::Text {
-                    text: rich::flatten(&rich::markdown(&body, links)),
+                    text: rich::flatten(&rich::markdown(&body)),
                 }
             }
         }
         MessageBody::Image(_) => MessageSummary::Image,
-        // App 不渲染文件消息；按不认识的消息类型一样显示，交给 Agent 是桥的事。
-        MessageBody::File(_) => MessageSummary::Other {
-            kind: "m.file".to_owned(),
-        },
         MessageBody::Undecryptable => MessageSummary::Undecryptable,
         MessageBody::Redacted => MessageSummary::Redacted,
         MessageBody::Other { kind } => MessageSummary::Other { kind },
@@ -134,24 +91,11 @@ pub(crate) fn timeline_item(
     entry: TimelineEntry,
     cards: &CardsView,
     read: &ReadMark,
-    links: &LinkTargets,
-    bots: &BotsView,
-    previews: &super::previews::Previews,
 ) -> TimelineItem {
     let read_by = read.readers_of(&entry.id);
     let content = match entry.kind {
-        EntryKind::Message(message) => match &message.agent_run {
-            // 只有核心认得的 Bot 发的状态对象才是 AgentRun，别人发的按普通消息显示（ADR-0082 第 4 节）。
-            Some(status) if bots.is_bot(message.sender.as_str()) => {
-                let body = match &message.body {
-                    MessageBody::Text(text) | MessageBody::Notice(text) => text.clone(),
-                    _ => String::new(),
-                };
-                bots.content(status, &body, message.sender.as_str())
-            }
-            _ => TimelineContent::Message {
-                message: timeline_message(*message, cards, read_by, links, previews),
-            },
+        EntryKind::Message(message) => TimelineContent::Message {
+            message: timeline_message(*message, cards, read_by),
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
         EntryKind::ProfileChange {
@@ -175,39 +119,17 @@ pub(crate) fn timeline_item(
     }
 }
 
-fn timeline_message(
-    message: Message,
-    cards: &CardsView,
-    read_by: Vec<String>,
-    links: &LinkTargets,
-    previews: &super::previews::Previews,
-) -> TimelineMessage {
+fn timeline_message(message: Message, cards: &CardsView, read_by: Vec<String>) -> TimelineMessage {
     let card = cards.view_of(&message);
     // 卡片靠编辑更新状态，对主人来说不是“编辑过”。
     let edited = message.edited && card.is_none();
-    // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
-    let preview = if card.is_none() {
-        super::previews::message_preview(&message, links, previews)
-    } else {
-        None
-    };
     let body = match (card, message.body) {
         (Some(view), _) => MessageContent::Confirmation { view },
-        (None, body) => message_content(body, message.is_own, links),
+        (None, body) => message_content(body, message.is_own),
     };
-    let event_id = message.event_id.map(|id| id.to_string());
-    let sender_id = message.sender.to_string();
-    let actions = message_actions(&body, event_id.as_deref(), message.can_redact, |event_id| {
-        QuotedMessage {
-            event_id,
-            sender_id: sender_id.clone(),
-            sender_name: message.sender_name.clone(),
-            content: quoted_content(&body),
-        }
-    });
     TimelineMessage {
-        event_id,
-        sender_id,
+        event_id: message.event_id.map(|id| id.to_string()),
+        sender_id: message.sender.to_string(),
         sender_name: message.sender_name,
         is_own: message.is_own,
         timestamp_ms: message.timestamp_ms,
@@ -224,28 +146,32 @@ fn timeline_message(
             },
         },
         edited,
-        reply: message
-            .reply
-            .map(|reply| reply_quote(reply, cards.core_account(), links)),
-        // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
-        side_chat: None,
-        preview,
-        actions,
+        actions: message_actions(&body),
         body,
         read_by,
-        group: message.group,
     }
 }
 
-pub(super) fn message_content(
-    body: MessageBody,
-    is_own: bool,
-    links: &LinkTargets,
-) -> MessageContent {
+fn message_actions(body: &MessageContent) -> Vec<MessageAction> {
+    match body {
+        MessageContent::Text { body, blocks, .. } if !body.trim().is_empty() => {
+            vec![MessageAction::Copy {
+                text: rich::copy_text(blocks),
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn message_content(body: MessageBody, is_own: bool) -> MessageContent {
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
-            let blocks = blocks_of(&body, is_own, links);
+            let blocks = if is_own {
+                rich::plain(&body)
+            } else {
+                rich::markdown(&body)
+            };
             MessageContent::Text {
                 body,
                 blocks,
@@ -263,26 +189,11 @@ pub(super) fn message_content(
                 size: image.size,
                 width: image.width,
                 height: image.height,
-                caption: image.caption.map(|body| ImageCaption {
-                    blocks: blocks_of(&body, is_own, links),
-                    body,
-                }),
             },
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
-        MessageBody::File(_) => MessageContent::Unsupported {
-            kind: "m.file".to_owned(),
-        },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
-    }
-}
-
-fn blocks_of(body: &str, is_own: bool, links: &LinkTargets) -> Vec<RichBlock> {
-    if is_own {
-        rich::plain(body, links)
-    } else {
-        rich::markdown(body, links)
     }
 }
 
@@ -295,11 +206,8 @@ pub(crate) fn timeline_diff(
     diff: VectorDiff<TimelineEntry>,
     cards: &CardsView,
     read: &ReadMark,
-    links: &LinkTargets,
-    bots: &BotsView,
-    previews: &super::previews::Previews,
 ) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards, read, links, bots, previews);
+    let item = |entry| timeline_item(entry, cards, read);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -354,8 +262,6 @@ pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
         Error::Transport(_) => ChatFailure::TransportUnavailable,
         Error::Unauthorized { .. } => ChatFailure::Unauthorized,
-        // 不让做这件事（没有权限、对方屏蔽、联邦不通），登录还有效，不能说成登录失效。
-        Error::Forbidden { .. } => ChatFailure::Forbidden,
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) => ChatFailure::Upstream,
         Error::InvalidInput(_) => ChatFailure::InvalidInput,
@@ -369,10 +275,9 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
         ChatFailure::TransportUnavailable => CoreError::TransportUnavailable {
             reason: not_connected(),
         },
-        // CoreError 没有单独的“被拒绝”类别，它的 Unauthorized 包括无权操作。
-        ChatFailure::Unauthorized | ChatFailure::Forbidden => CoreError::Unauthorized { reason },
+        ChatFailure::Unauthorized => CoreError::Unauthorized { reason },
         ChatFailure::NotReady => CoreError::NotReady { reason },
-        ChatFailure::Upstream | ChatFailure::Other => CoreError::Upstream { reason },
+        ChatFailure::Upstream => CoreError::Upstream { reason },
         ChatFailure::InvalidInput => CoreError::InvalidInput { reason },
     }
 }
@@ -381,60 +286,7 @@ pub(crate) fn core_error(error: &Error) -> CoreError {
 mod tests {
     use super::*;
     use wonton_matrix::UploadProgress;
-    use wonton_protocol::{FileId, RichLinkKind};
-
-    fn encryption(
-        recovery: RecoveryStatus,
-        can_verify_with_other_device: bool,
-    ) -> EncryptionStatus {
-        EncryptionStatus {
-            verification: DeviceVerification::Unverified,
-            recovery,
-            recovery_key: None,
-            backup_reminder: None,
-            can_verify_with_other_device,
-            can_reset: false,
-            recovery_next_step: wonton_protocol::RecoveryNextStep::None,
-            verification_flow: None,
-            key_handoff: None,
-        }
-    }
-
-    /// 行为：解不开的消息只在账号里有现成的路时给入口；设过备份走恢复密钥，没设过才让别的设备确认。
-    #[test]
-    fn the_key_notice_offers_the_way_the_account_actually_has() {
-        for (recovery, can_verify, expected) in [
-            (
-                RecoveryStatus::Incomplete,
-                true,
-                Some(KeyNotice::EnterRecoveryKey),
-            ),
-            (
-                RecoveryStatus::Incomplete,
-                false,
-                Some(KeyNotice::EnterRecoveryKey),
-            ),
-            (
-                RecoveryStatus::Disabled,
-                true,
-                Some(KeyNotice::VerifyWithOtherDevice),
-            ),
-            (RecoveryStatus::Disabled, false, None),
-            (RecoveryStatus::Enabled, true, None),
-            (RecoveryStatus::InProgress, true, None),
-            (RecoveryStatus::Unknown, true, None),
-        ] {
-            assert_eq!(
-                key_notice(&encryption(recovery, can_verify), true),
-                expected,
-                "{recovery:?} {can_verify}"
-            );
-        }
-        assert_eq!(
-            key_notice(&encryption(RecoveryStatus::Incomplete, true), false),
-            None
-        );
-    }
+    use wonton_protocol::FileId;
 
     #[test]
     fn timeline_exposes_upload_fractions_without_hiding_regressions() {
@@ -459,9 +311,6 @@ mod tests {
                 }),
                 &cards,
                 &ReadMark::default(),
-                &LinkTargets::default(),
-                &BotsView::default(),
-                &super::super::previews::Previews::new(),
             );
             let TimelineContent::Message { message } = item.content else {
                 panic!("the message must stay in the timeline");
@@ -493,13 +342,9 @@ mod tests {
                 body: MessageBody::Text("attachment".to_owned()),
                 custom: Default::default(),
                 mentions: Vec::new(),
-                agent_run: None,
                 thread_root: None,
                 edited: false,
                 read_by: Vec::new(),
-                reply: None,
-                group: None,
-                can_redact: true,
             })),
         }
     }
@@ -507,57 +352,14 @@ mod tests {
     #[test]
     fn previews_do_not_show_file_links() {
         let link = FileId::from_bytes([1; 16]).link();
-        let links = LinkTargets::default();
-        let with_text = summary(MessageBody::Text(format!("给你 {link}")), false, &links);
+        let with_text = summary(MessageBody::Text(format!("给你 {link}")), false);
         assert_eq!(
             with_text,
             MessageSummary::Text {
                 text: "给你".to_owned()
             }
         );
-        let only_link = summary(MessageBody::Text(link), false, &links);
+        let only_link = summary(MessageBody::Text(link), false);
         assert_eq!(only_link, MessageSummary::Files);
-    }
-
-    /// 行为：消息正文里的链接带着类别进 ViewModel，插件地址认成插件页。
-    #[test]
-    fn message_links_carry_their_kind() {
-        let targets = crate::chat::links::test_targets(&[(
-            "app.grafana",
-            "http://app-grafana.home.example:18480/",
-        )]);
-        let content = message_content(
-            MessageBody::Text(
-                "看 http://app-grafana.home.example:18480/ 和 example.com，打 +8613800138000。"
-                    .into(),
-            ),
-            false,
-            &targets,
-        );
-        let MessageContent::Text { blocks, .. } = content else {
-            panic!("文字还是文字");
-        };
-        let found: Vec<(String, RichLinkKind)> = blocks
-            .iter()
-            .flat_map(|block| &block.spans)
-            .filter_map(|span| {
-                span.link
-                    .as_ref()
-                    .map(|link| (link.url.clone(), link.kind.clone()))
-            })
-            .collect();
-        assert_eq!(
-            found,
-            [
-                (
-                    "http://app-grafana.home.example:18480/".to_owned(),
-                    RichLinkKind::Plugin {
-                        plugin_id: "app.grafana".to_owned()
-                    }
-                ),
-                ("http://example.com/".to_owned(), RichLinkKind::External),
-                ("tel:+8613800138000".to_owned(), RichLinkKind::Phone),
-            ]
-        );
     }
 }

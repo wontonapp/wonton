@@ -30,11 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -45,7 +43,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
-import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
 import app.wonton.protocol.SendState
@@ -59,7 +56,6 @@ import app.wonton.ui.design.accentFill
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.Refresh
-import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircle
 import app.wonton.ui.icons.WontonIcon
@@ -80,8 +76,7 @@ fun TimelineItemView(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
-    onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
-    onReply: (TimelineMessage) -> Unit,
+    onOpenMenu: (TimelineMessage, Rect) -> Unit,
 ) {
     when (val content = item.content) {
         is TimelineContent.Message -> MessageBubble(
@@ -93,14 +88,9 @@ fun TimelineItemView(
             onRetry,
             onCancel,
             onCardAction,
-            { message, bounds -> onOpenMenu(item, message, bounds) },
-            onReply,
+            onOpenMenu,
         )
         is TimelineContent.Notice -> CenteredNote(content.text)
-        is TimelineContent.AgentRun ->
-            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
-            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
-            CenteredNote(content.body)
         is TimelineContent.ProfileChange -> CenteredNote(
             content.previousName
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
@@ -121,13 +111,6 @@ fun TimelineItemView(
             NoteEdge()
         }
         TimelineContent.TimelineStart -> CenteredNote(stringResource(R.string.timeline_start))
-        is TimelineContent.SideChat ->
-            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
-            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案。
-            CenteredNote(content.card.title)
-        is TimelineContent.SideChatResult ->
-            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
-            CenteredNote(content.title)
     }
 }
 
@@ -171,28 +154,24 @@ private fun MessageBubble(
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
     onOpenMenu: (TimelineMessage, Rect) -> Unit,
-    onReply: (TimelineMessage) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
     val gutter = WontonTheme.spacing.s48
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val haptics = LocalHapticFeedback.current
-    val showsMenu = message.actions.isNotEmpty()
-    val swipe = rememberSwipeToReply(message.replyAction != null) { onReply(message) }
-    // 长按开菜单；图片消息自己的点击在它上面处理，长按也从那里来（onLongPress 传下去）。
-    val openMenu = {
-        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-        onOpenMenu(message, bounds)
-    }
-    val pressable = if (!showsMenu) {
+    val pressable = if (message.actions.isEmpty()) {
         Modifier
     } else {
         Modifier
+            .onGloballyPositioned { bounds = it.boundsInRoot() }
             .combinedClickable(
                 interactionSource = null,
                 indication = null,
-                onLongClick = openMenu,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onOpenMenu(message, bounds)
+                },
                 onClick = {},
             )
     }
@@ -204,23 +183,7 @@ private fun MessageBubble(
         if (showsSender && !isOwn) {
             Text(message.senderName, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
         }
-        Box(
-            Modifier.fillMaxWidth().then(pressable),
-            contentAlignment = if (isOwn) Alignment.CenterEnd else Alignment.CenterStart,
-        ) {
-            SwipeHint(swipe)
-            BubbleSurface(
-                message,
-                core,
-                joinsPrevious,
-                joinsNext,
-                swipe.modifier.onGloballyPositioned { bounds = it.boundsInRoot() },
-                onRetry,
-                onCancel,
-                onCardAction,
-                onLongPress = openMenu.takeIf { showsMenu },
-            )
-        }
+        BubbleSurface(message, core, joinsPrevious, joinsNext, pressable, onRetry, onCancel, onCardAction)
     }
 }
 
@@ -235,7 +198,6 @@ fun BubbleSurface(
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
-    onLongPress: (() -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -248,14 +210,11 @@ fun BubbleSurface(
     val padded = modifier.then(fill).padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8)
     val content = if (isOwn) colors.textOnAccentFill else colors.textPrimary
     val styledBody: @Composable (String?) -> Unit = { reserve ->
-        Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            message.reply?.let { QuotedMessageRow(it, core, onTint = content.toColor()) }
-            CompositionLocalProvider(
-                LocalContentColor provides content.toColor(),
-                LocalTextStyle provides WontonTheme.typography.body,
-            ) {
-                MessageBody(message.body, core, message.sendState, reserve, onCardAction, onLongPress)
-            }
+        CompositionLocalProvider(
+            LocalContentColor provides content.toColor(),
+            LocalTextStyle provides WontonTheme.typography.body,
+        ) {
+            MessageBody(message.body, core, message.sendState, reserve, onCardAction)
         }
     }
     val reserve = footerReserve(message, LocalContext.current.resources)
@@ -335,7 +294,6 @@ private fun FailedSend(state: SendState.Failed, onRetry: () -> Unit, onCancel: (
         ) {
             Icon(
                 WontonIcon.WarningCircle,
-                // 装饰：失败原因写在右边的文字里。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconTiny),
                 tint = danger,
@@ -371,18 +329,12 @@ private fun MessageBody(
     sendState: SendState,
     trailingReserve: String?,
     onCardAction: (Action) -> Unit,
-    onLongPress: (() -> Unit)? = null,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
-        is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            MessageImage(body.image, core, sendState, onLongPress)
-            // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
-            body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
-        }
+        is MessageContent.Image -> MessageImage(body.image, core, sendState)
         is MessageContent.Confirmation -> ConfirmationCardView(body.view, onCardAction)
         MessageContent.Undecryptable -> Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            // 装饰：右边就是说明文字。
             Icon(WontonIcon.LockKey, contentDescription = null, modifier = Modifier.size(WontonTheme.size.iconSmall))
             Text(stringResource(R.string.timeline_undecryptable), style = WontonTheme.typography.supporting)
         }
@@ -398,7 +350,3 @@ private fun MessageBody(
         )
     }
 }
-
-/** 这条消息的回复项，自带引用；菜单里没有就是空。 */
-val TimelineMessage.replyAction: MessageAction.Reply?
-    get() = actions.firstOrNull { it is MessageAction.Reply } as? MessageAction.Reply

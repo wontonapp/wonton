@@ -5,13 +5,7 @@
 //! 把 base URL 换成 `http://<local_addr>` 即可。隧道出错时回一个 HTTP 错误响应，用 [`ERROR_HEADER`]
 //! 头标明原因。
 
-use std::{
-    io,
-    net::SocketAddr,
-    pin::pin,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{io, net::SocketAddr, pin::pin, sync::Arc, time::Duration};
 
 use iroh::endpoint::RecvStream;
 use tokio::{
@@ -25,7 +19,7 @@ use tokio::{
 use tracing::{Instrument, debug, debug_span, error, warn};
 
 use crate::{
-    client::{TunnelClient, TunnelStream, streams::StreamCounters},
+    client::{TunnelClient, TunnelStream},
     credential::ProxyAccess,
     error::{TunnelError, from_write_error},
     forward::{self, PumpError},
@@ -38,17 +32,11 @@ use crate::{
 /// 和 `bad-request`（请求头不合法或太大）。
 pub const ERROR_HEADER: &str = "x-wonton-tunnel-error";
 
-/// 代理回错误响应时给壳的用户可读类别头，取值见 [`TunnelError::category`]。壳按它显示人话；
-/// [`ERROR_HEADER`] 和正文只给机器和调试。
-pub const CATEGORY_HEADER: &str = "x-wonton-error";
-
 /// 响应结束后，最多再花这么久收尾客户端没发完的请求，避免空闲写端长期占住流。
 const LINGER: Duration = Duration::from_secs(2);
 
 /// accept 出错（例如文件描述符耗尽）后暂停多久再继续，避免空转。
 const ACCEPT_BACKOFF: Duration = Duration::from_millis(100);
-/// 建流或等服务端应答超过这么久就报一下，平常是毫秒级。
-const SLOW_STAGE: Duration = Duration::from_secs(3);
 
 /// 本地 HTTP 代理。丢弃或调用 [`LocalProxy::shutdown`] 后停止监听，并断开所有经它转发的连接。
 #[derive(Debug)]
@@ -171,31 +159,17 @@ async fn serve_local(
             }
         }
     };
-    let accepted = Instant::now();
     let mut stream = match client.open(Request::Forward).await {
         Ok(stream) => stream,
         Err(err) => return respond_error(&mut tcp_write, &mut tcp_read, &err).await,
     };
-    // 卡在起步时，这几个耗时能分出是隧道建流慢、服务端不回还是转发本身慢。
-    let opening = accepted.elapsed();
-    if opening > SLOW_STAGE {
-        warn!(?opening, "opening the tunnel stream took a while");
-    }
     if !prefix.is_empty()
         && let Err(err) = stream.send.write_all(&prefix).await
     {
         stream.abort();
         return respond_error(&mut tcp_write, &mut tcp_read, &from_write_error(&err)).await;
     }
-    match relay(
-        &client,
-        &mut stream,
-        &mut tcp_read,
-        &mut tcp_write,
-        accepted,
-    )
-    .await
-    {
+    match relay(&client, &mut stream, &mut tcp_read, &mut tcp_write).await {
         Ok(()) => {}
         Err(RelayError::BeforeResponse(err)) => {
             stream.abort();
@@ -217,20 +191,15 @@ async fn relay(
     stream: &mut TunnelStream,
     tcp_read: &mut OwnedReadHalf,
     tcp_write: &mut OwnedWriteHalf,
-    accepted: Instant,
 ) -> Result<(), RelayError> {
-    let counters = stream.counters().clone();
     let TunnelStream {
         send,
         recv,
         conn_id,
-        ..
     } = stream;
     {
         let mut upload = pin!(forward::tcp_to_tunnel(tcp_read, send));
-        let mut download = pin!(download(
-            client, recv, *conn_id, tcp_write, accepted, &counters
-        ));
+        let mut download = pin!(download(client, recv, *conn_id, tcp_write));
         let mut upload_done = false;
         loop {
             tokio::select! {
@@ -259,53 +228,19 @@ async fn relay(
     Ok(())
 }
 
-/// 等隧道流上回的状态字节。服务端迟迟不回，就在这里等着，所以等久了报一下：卡在这里是服务端没接请求，不是转发慢。
-/// 等过 [`SLOW_STAGE`] 还没回时催一次定时检查：连接可能已经死了，立即确认一次，
-/// 不让这条请求干等下一个检查周期。
 async fn download(
     client: &TunnelClient,
     recv: &mut RecvStream,
     conn_id: usize,
     tcp_write: &mut OwnedWriteHalf,
-    accepted: Instant,
-    delivered: &StreamCounters,
 ) -> Result<(), RelayError> {
-    match tokio::time::timeout(SLOW_STAGE, client.read_status(recv, conn_id)).await {
-        Ok(result) => result.map_err(RelayError::BeforeResponse)?,
-        Err(_) => {
-            debug!(
-                conn_id,
-                ?SLOW_STAGE,
-                "the server has not accepted the request yet"
-            );
-            client.nudge_check();
-            client
-                .read_status(recv, conn_id)
-                .await
-                .map_err(RelayError::BeforeResponse)?;
-        }
-    }
-    let waiting = accepted.elapsed();
-    if waiting > SLOW_STAGE {
-        warn!(
-            conn_id,
-            ?waiting,
-            "the server took a while to accept the request"
-        );
-    }
-    // 接受了却一直没有正文：长轮询本来就会静一会儿，这里只留个记号，和真的卡住分开看。
-    let mut body = pin!(forward::tunnel_to_tcp(recv, tcp_write, Some(delivered)));
-    match tokio::time::timeout(SLOW_STAGE, &mut body).await {
-        Ok(result) => result.map_err(RelayError::Aborted),
-        Err(_) => {
-            debug!(
-                conn_id,
-                ?SLOW_STAGE,
-                "the server accepted the request but sent nothing yet"
-            );
-            body.await.map_err(RelayError::Aborted)
-        }
-    }
+    client
+        .read_status(recv, conn_id)
+        .await
+        .map_err(RelayError::BeforeResponse)?;
+    forward::tunnel_to_tcp(recv, tcp_write)
+        .await
+        .map_err(RelayError::Aborted)
 }
 
 /// 给本地客户端回一个说明隧道错误的 HTTP 响应，然后优雅关闭连接。
@@ -346,19 +281,16 @@ fn error_response(err: &TunnelError) -> String {
         TunnelError::UpstreamUnavailable => (503, "Service Unavailable"),
         _ => (502, "Bad Gateway"),
     };
-    // 正文会被网页原样显示，只放类别；人话由壳按类别写。
-    let body = format!("{}\n", err.category());
+    let body = format!("{err}\n");
     format!(
         "HTTP/1.1 {status} {reason}\r\n\
          {ERROR_HEADER}: {code}\r\n\
-         {CATEGORY_HEADER}: {category}\r\n\
          content-type: text/plain; charset=utf-8\r\n\
          content-length: {len}\r\n\
          connection: close\r\n\
          \r\n\
          {body}",
         code = err.code(),
-        category = err.category(),
         len = body.len(),
     )
 }

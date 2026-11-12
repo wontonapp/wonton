@@ -135,39 +135,17 @@ fn owner() -> crate::owner::Owner {
 }
 
 impl Home {
-    /// 插件 `from` 发一条 JSON 通知（自己的格式）。
+    /// 插件 `from` 发一条通知。
     async fn post(&self, from: &str, body: Value) -> (StatusCode, Value) {
-        self.send(
-            from,
-            Method::POST,
-            "/notices",
-            "application/json",
-            &[],
-            body.to_string(),
-        )
-        .await
-    }
-
-    /// 按上游客户端的写法发：路径、方法、内容类型和头都由调用方给。
-    async fn send(
-        &self,
-        from: &str,
-        method: Method,
-        path: &str,
-        content_type: &str,
-        headers: &[(&str, &str)],
-        text: String,
-    ) -> (StatusCode, Value) {
+        let text = body.to_string();
         let mut request = hyper::Request::builder()
-            .method(method)
-            .uri(path)
+            .method(Method::POST)
+            .uri("/notices")
             .header(header::HOST, "notify.wonton.internal:8080")
-            .header(header::CONTENT_TYPE, content_type)
-            .header(header::CONTENT_LENGTH, text.len());
-        for (name, value) in headers {
-            request = request.header(*name, *value);
-        }
-        let mut request = request.body(Body::from(text)).unwrap();
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::CONTENT_LENGTH, text.len())
+            .body(Body::from(text))
+            .unwrap();
         request
             .extensions_mut()
             .insert(ConnectInfo(from.parse::<SocketAddr>().unwrap()));
@@ -204,7 +182,7 @@ async fn a_notice_reaches_the_owner_with_level_and_structured_fields() {
     let home = start().await;
     let body = json!({"title": "下载完成", "body": "Ubuntu 24.04.iso", "level": "info"});
     let (status, _) = home.post("172.30.1.5:40000", body).await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::CREATED);
 
     let sent = home.sent();
     let [message] = sent.as_slice() else {
@@ -226,7 +204,7 @@ async fn a_notice_reaches_the_owner_with_level_and_structured_fields() {
             json!({"title": "CPU 100%", "level": "critical"}),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::CREATED);
     let sent = home.sent();
     let message = sent.last().unwrap();
     assert_eq!(message["msgtype"], "m.text");
@@ -254,7 +232,7 @@ async fn the_eleventh_within_a_minute_is_denied_and_the_owner_is_told_once() {
         let (status, reply) = home
             .post("172.30.1.5:40000", json!({"title": format!("第 {i} 条")}))
             .await;
-        assert_eq!(status, StatusCode::OK, "{reply}");
+        assert_eq!(status, StatusCode::CREATED, "{reply}");
     }
     let (status, reply) = home
         .post("172.30.1.5:40000", json!({"title": "第 11 条"}))
@@ -285,14 +263,10 @@ async fn the_eleventh_within_a_minute_is_denied_and_the_owner_is_told_once() {
 #[tokio::test]
 async fn invalid_fields_are_rejected_with_the_field_named() {
     let home = start().await;
-    let long: String = "长".repeat(121);
-    let (status, _) = home.post("172.30.1.5:40000", json!({"title": long})).await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
     let from = "172.30.1.5:40000";
-
-    // 字段类型不对。
-    let (status, reply) = home.post(from, json!({"title": 42})).await;
+    let (status, reply) = home.post(from, json!({})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{reply}");
+    assert_eq!(reply["error"]["kind"], "invalid_input");
     assert!(
         reply["error"]["message"]
             .as_str()
@@ -300,6 +274,10 @@ async fn invalid_fields_are_rejected_with_the_field_named() {
             .contains("title"),
         "{reply}"
     );
+
+    let long: String = "长".repeat(121);
+    let (status, _) = home.post(from, json!({"title": long})).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 
     let (status, _) = home
         .post(from, json!({"title": "急", "level": "emergency"}))
@@ -328,7 +306,7 @@ async fn invalid_fields_are_rejected_with_the_field_named() {
             json!({"title": "急", "path": "/hosts/1"}),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::CREATED);
     let long: String = "长".repeat(2001);
     let (status, _) = home.post(from, json!({"title": "急", "body": long})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -354,131 +332,8 @@ async fn a_notice_with_a_path_keeps_it_for_the_app_to_open() {
             json!({"title": "磁盘快满了", "path": "/hosts/1"}),
         )
         .await;
-    assert_eq!(status, StatusCode::OK);
+    assert_eq!(status, StatusCode::CREATED);
     let sent = home.sent();
     let message = sent.last().unwrap();
     assert_eq!(message[NOTICE_FIELD]["path"], "/hosts/1");
-}
-
-#[tokio::test]
-async fn a_webhook_payload_without_a_title_is_sent_as_readable_text() {
-    let home = start().await;
-    let payload = json!({
-        "type": "chore_completed",
-        "timestamp": "2026-11-12T09:30:00Z",
-        "data": {"chore": {"name": "洗碗", "points": 2}, "completedBy": {"username": "alice"}},
-    });
-    let (status, reply) = home.post("172.30.1.5:40000", payload).await;
-    assert_eq!(status, StatusCode::OK, "{reply}");
-
-    let sent = home.sent();
-    let [message] = sent.as_slice() else {
-        panic!("只发了一条：{sent:?}");
-    };
-    // 没有 title 时从载荷里找一条当标题，整段拍平成可读文本。
-    assert_eq!(message[NOTICE_FIELD]["title"], "洗碗");
-    let text = message["body"].as_str().unwrap();
-    assert!(text.contains("type: chore_completed"), "{text}");
-    assert!(text.contains("data.chore.name: 洗碗"), "{text}");
-    // 没写级别：info 只进聊天。
-    assert_eq!(message["msgtype"], "m.notice");
-}
-
-#[tokio::test]
-async fn an_ntfy_publish_uses_its_headers_and_plain_text_body() {
-    let home = start().await;
-    let (status, reply) = home
-        .send(
-            "172.30.1.5:40000",
-            Method::PUT,
-            "/backups",
-            "text/plain",
-            &[
-                ("Title", "备份完成"),
-                ("Priority", "4"),
-                ("Tags", "backup,nightly"),
-            ],
-            "nas:/srv 已备份".to_owned(),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{reply}");
-
-    let sent = home.sent();
-    let [message] = sent.as_slice() else {
-        panic!("只发了一条：{sent:?}");
-    };
-    assert_eq!(message[NOTICE_FIELD]["title"], "备份完成");
-    assert_eq!(message[NOTICE_FIELD]["level"], "warning");
-    assert_eq!(message["msgtype"], "m.text");
-    assert_eq!(
-        message["body"],
-        "监控：备份完成\nnas:/srv 已备份\n标签：backup、nightly"
-    );
-}
-
-#[tokio::test]
-async fn a_gotify_message_is_accepted() {
-    let home = start().await;
-    let payload = json!({"title": "磁盘快满", "message": "根分区剩 3%", "priority": 9});
-    let (status, reply) = home
-        .send(
-            "172.30.2.5:40000",
-            Method::POST,
-            "/message?token=abc",
-            "application/json",
-            &[],
-            payload.to_string(),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK, "{reply}");
-
-    let sent = home.sent();
-    let [message] = sent.as_slice() else {
-        panic!("只发了一条：{sent:?}");
-    };
-    assert_eq!(message[NOTICE_FIELD]["title"], "磁盘快满");
-    assert_eq!(message[NOTICE_FIELD]["body"], "根分区剩 3%");
-    // Gotify 的 9 是“高优先”，要推送。
-    assert_eq!(message[NOTICE_FIELD]["level"], "warning");
-    assert_eq!(message["msgtype"], "m.text");
-}
-
-#[tokio::test]
-async fn a_message_without_a_title_still_notifies() {
-    let home = start().await;
-    // 纯文本没有 Title 头：第一行当标题，其余是正文。
-    let (status, _) = home
-        .send(
-            "172.30.1.5:40000",
-            Method::POST,
-            "/notices",
-            "text/plain",
-            &[],
-            "证书到期\n换一张".to_owned(),
-        )
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    // 空对象：标题兜底。
-    let (status, _) = home.post("172.30.1.5:40000", json!({})).await;
-    assert_eq!(status, StatusCode::OK);
-
-    let sent = home.sent();
-    assert_eq!(sent.len(), 2, "{sent:?}");
-    assert_eq!(sent[0][NOTICE_FIELD]["title"], "证书到期");
-    assert_eq!(sent[0][NOTICE_FIELD]["body"], "换一张");
-    assert_eq!(sent[1][NOTICE_FIELD]["title"], "通知");
-    assert!(sent[1][NOTICE_FIELD].get("body").is_none());
-
-    // 只收 POST 和 PUT。
-    let (status, reply) = home
-        .send(
-            "172.30.1.5:40000",
-            Method::GET,
-            "/notices",
-            "text/plain",
-            &[],
-            String::new(),
-        )
-        .await;
-    assert_eq!(status, StatusCode::METHOD_NOT_ALLOWED, "{reply}");
 }

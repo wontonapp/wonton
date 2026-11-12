@@ -32,8 +32,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import app.wonton.protocol.Action
 import app.wonton.protocol.AvatarMediaProblem
@@ -100,7 +98,7 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
                 picked.fold(
                     onSuccess = { result ->
                         when (result) {
-                            is AvatarPick.Ready -> send(Action.SetBotAvatar(bot.bot.pluginId, state, result.upload))
+                            is AvatarPick.Ready -> send(Action.SetBotAvatar(bot.pluginId, state, result.upload))
                             AvatarPick.UseVideo -> localProblem = Problem(useVideoText)
                         }
                     },
@@ -123,12 +121,12 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
         ProfileHeader(bot, plugins, busy, editingName, nameDraft, { nameDraft = it },
             onEditName = { editingName = true },
             onSaveName = {
-                send(Action.SetBotName(bot.bot.pluginId, nameDraft))
+                send(Action.SetBotName(bot.pluginId, nameDraft))
                 editingName = false
             },
             onCancelName = { editingName = false },
             onPickStatic = { pickStatic.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
-            onRemoveStatic = { send(Action.ClearBotAvatar(bot.bot.pluginId, null)) },
+            onRemoveStatic = { send(Action.ClearBotAvatar(bot.pluginId, null)) },
         )
         StateGrid(bot, plugins, busy) { state ->
             pickingState = state
@@ -141,7 +139,7 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
         if (transcoding) LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth())
         localProblem?.let { problem -> ProfileProblemNotice(problem) { localProblem = null } }
         bot.problem?.let { problem ->
-            ProfileProblemNotice(problem.profileProblem()) { send(Action.DismissBotProfileProblem(bot.bot.pluginId)) }
+            ProfileProblemNotice(problem.profileProblem()) { send(Action.DismissBotProfileProblem(bot.pluginId)) }
         }
         sheetState?.let { state ->
             WontonActionSheet(
@@ -151,7 +149,7 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
                         pickState.launch(PickVisualMediaRequest(PickVisualMedia.ImageAndVideo))
                     },
                     WontonSheetAction(stringResource(R.string.bot_avatar_remove), WontonIcon.Trash, isDanger = true) {
-                        send(Action.ClearBotAvatar(bot.bot.pluginId, state))
+                        send(Action.ClearBotAvatar(bot.pluginId, state))
                     },
                 ),
                 onDismiss = { sheetState = null },
@@ -222,7 +220,6 @@ private fun NameLine(bot: BotView, busy: Boolean, onEditName: () -> Unit) {
         Text(bot.name, style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
         Icon(
             WontonIcon.Forward,
-            // 装饰：整行可点，名字就在左边的文字里。
             contentDescription = null,
             modifier = Modifier.size(WontonTheme.size.iconTiny),
             tint = WontonTheme.colors.textSecondary.toColor(),
@@ -245,8 +242,6 @@ private fun StateGrid(bot: BotView, plugins: PluginsState, busy: Boolean, onPick
 private fun StateCell(state: BotActivity, bot: BotView, plugins: PluginsState, busy: Boolean, onPick: () -> Unit) {
     val size = WontonTheme.size.previewIcon
     val image = bot.stateAvatars.firstOrNull { it.state == state }?.image
-    // 状态名字在格子下面，点起来换图的是这一格本身，读屏要在可点区域上听到换的是哪个状态。
-    val pickLabel = stringResource(R.string.bot_avatar_pick_state, state.label())
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
@@ -272,9 +267,8 @@ private fun StateCell(state: BotActivity, bot: BotView, plugins: PluginsState, b
                 plugins,
                 size,
                 fallbackStill = bot.avatar,
-                fallbackIcon = plugins.iconFor(bot.bot.pluginId),
-                modifier = Modifier.clickable(enabled = !busy, role = Role.Button, onClick = onPick)
-                    .semantics { contentDescription = pickLabel },
+                fallbackIcon = plugins.iconFor(bot.pluginId),
+                modifier = Modifier.clickable(enabled = !busy, role = Role.Button, onClick = onPick),
             )
         }
         Text(state.label(), style = WontonTheme.typography.caption, color = WontonTheme.colors.textSecondary.toColor())
@@ -290,7 +284,7 @@ private fun BotProfileProblem.profileProblem(): Problem = Problem(
         is BotProfileFailure.InvalidName -> stringResource(reason.problem.textRes())
         is BotProfileFailure.MediaRejected -> stringResource(reason.problem.textRes())
         BotProfileFailure.Upstream -> stringResource(R.string.bot_problem_upstream)
-        BotProfileFailure.PermissionRequired -> stringResource(R.string.bot_problem_owner_only)
+        BotProfileFailure.OwnerOnly -> stringResource(R.string.bot_problem_owner_only)
         else -> stringResource(R.string.bot_problem_other)
     },
     detail = detail,

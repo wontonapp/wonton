@@ -8,7 +8,7 @@ use url::Url;
 use wonton_l10n::{Arg, Lang};
 use wonton_protocol::{
     AGENT_PERMISSION_PATH, AgentPermissionKind, AgentPermissionOption, AgentPermissionOutcome,
-    AgentPermissionRequest, ConfirmationOrigin,
+    AgentPermissionRequest,
 };
 
 use crate::{
@@ -63,17 +63,7 @@ impl PermissionBroker {
                 [("error", error.to_string())],
             ))
         })?;
-        // 权限接口挂在同一个总线地址后面，路径里的总线令牌要带过去（`/mcp/<令牌>` → `/agent/permissions/<令牌>`，
-        // 核心靠它认出是哪个 Bot）；没有令牌的插件地址（`/mcp`）照旧不带。
-        let token = endpoint
-            .path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .filter(|segment| *segment != "mcp")
-            .map(str::to_owned);
-        endpoint.set_path(&match token {
-            Some(token) => format!("{AGENT_PERMISSION_PATH}/{token}"),
-            None => AGENT_PERMISSION_PATH.to_owned(),
-        });
+        endpoint.set_path(AGENT_PERMISSION_PATH);
         endpoint.set_query(None);
         endpoint.set_fragment(None);
         let client = reqwest::Client::builder()
@@ -149,11 +139,7 @@ impl PermissionBroker {
     }
 }
 
-pub fn parse_pending(
-    params: &Value,
-    lang: Lang,
-    origin: Option<ConfirmationOrigin>,
-) -> Result<PendingPermission> {
+pub fn parse_pending(params: &Value, lang: Lang) -> Result<PendingPermission> {
     let tool_call = &params["toolCall"];
     let tool_call_id = required_string(tool_call, "toolCallId")?;
     let title = required_string(tool_call, "title")?;
@@ -228,9 +214,6 @@ pub fn parse_pending(
             description,
             arguments,
             options,
-            // 会话的来源会话（ADR-0016），核心当不可信输入核对；没报时卡片落到 Bot 的主房间。
-            origin,
-            session: None,
         },
         option_ids,
         locations,
@@ -307,8 +290,6 @@ mod tests {
                     kind: AgentPermissionKind::AllowOnce,
                     name: "允许一次".into(),
                 }],
-                origin: None,
-                session: None,
             },
             option_ids: HashMap::from([(String::from("acp-0"), String::from("allow_once"))]),
             locations: Vec::new(),
@@ -370,18 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn permission_url_keeps_the_bus_token() {
-        let tokenized =
-            PermissionBroker::new("http://mcp.wonton.internal:8080/mcp/abc123").unwrap();
-        assert_eq!(
-            tokenized.endpoint.as_str(),
-            format!("http://mcp.wonton.internal:8080{AGENT_PERMISSION_PATH}/abc123")
-        );
-        let plain = PermissionBroker::new("http://mcp.wonton.internal:8080/mcp").unwrap();
-        assert_eq!(plain.endpoint.path(), AGENT_PERMISSION_PATH);
-    }
-
-    #[test]
     fn maps_acp_options_to_opaque_core_choices() {
         let pending = parse_pending(
             &json!({
@@ -398,7 +367,6 @@ mod tests {
                 ]
             }),
             zh(),
-            None,
         )
         .unwrap();
         assert_eq!(pending.request.options[0].choice_id, "acp-0");
@@ -409,36 +377,6 @@ mod tests {
             pending.request.arguments.as_ref().unwrap()["api_token"],
             "[已隐藏]"
         );
-        // 没登记来源会话时不报，卡片落到 Bot 的主房间。
-        let body = serde_json::to_value(&pending.request).unwrap();
-        assert_eq!(body["tool_call_id"], "call-1");
-        assert!(body.get("origin").is_none());
-    }
-
-    #[test]
-    fn permission_request_carries_the_session_origin() {
-        let pending = parse_pending(
-            &json!({
-                "toolCall": {"toolCallId": "call-1", "title": "改文件", "kind": "edit"},
-                "options": [{"optionId": "allow_once", "kind": "allow_once", "name": "允许"}]
-            }),
-            zh(),
-            Some(ConfirmationOrigin {
-                room_id: "!room:example.org".into(),
-                thread_id: Some("$root:example.org".into()),
-            }),
-        )
-        .unwrap();
-        assert_eq!(
-            pending.request.origin,
-            Some(ConfirmationOrigin {
-                room_id: "!room:example.org".into(),
-                thread_id: Some("$root:example.org".into()),
-            })
-        );
-        let body = serde_json::to_value(&pending.request).unwrap();
-        assert_eq!(body["origin"]["room_id"], "!room:example.org");
-        assert_eq!(body["origin"]["thread_id"], "$root:example.org");
     }
 
     #[tokio::test]

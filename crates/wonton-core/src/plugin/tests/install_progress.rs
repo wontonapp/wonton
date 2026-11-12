@@ -1,12 +1,12 @@
 //! 安装和升级报的阶段（ADR-0067）：准备、拉镜像、启动、等 Bot，装完清空；失败时连进度一起撤掉。
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use wonton_protocol::{InstallProgress, InstallStage};
+use wonton_protocol::{InstallProgress, InstallStage, PluginState};
 
 use super::super::docker::Engine;
-use super::super::fake_docker::{FakeDocker, Hold};
+use super::super::fake_docker::FakeDocker;
 
 use super::super::names::container_name;
 use super::manager::manager_with;
@@ -20,25 +20,64 @@ async fn fake_docker() -> (FakeDocker, Engine) {
 #[tokio::test]
 async fn an_install_reports_its_stages_and_clears_them() {
     let (docker, engine) = fake_docker().await;
-    // 本机没有这两个镜像：拉的时候走假 Docker 的进度流。第二个镜像总是拉，两个镜像都走拉取。
+    // 本机没有这个镜像：拉的时候走假 Docker 的进度流。
     docker.forget_image("nginx");
-    docker.forget_image("redis");
+    // 先停住建容器，确认报的是“启动”；再改成停住健康检查，确认接着报的是“等 Bot”。
+    let creating = docker.hold("POST /containers/create");
     let name = container_name("app-test", "web");
     let dir = tempfile::tempdir().unwrap();
     let m = Arc::new(manager_with(engine, &dir));
-    let compose = package(
-        "  web:\n    image: nginx\n  db:\n    image: redis\n    pull_policy: always",
-        "  permissions: []",
-    );
-    // 百分比由后台任务在每次变化时记下；阶段由停住的请求确定地读。
-    let percents = Arc::new(Mutex::new(Vec::new()));
-    let sampler = sample_percents(&m, &percents);
+    let compose = package("  web:\n    image: nginx", "  permissions: []");
+    let install = tokio::spawn({
+        let m = m.clone();
+        async move { m.install(&compose, &[], langs()).await }
+    });
 
-    let seen = stages_while_installing(&docker, &m, &compose, &name)
-        .await
-        .unwrap();
-    sampler.abort();
-    let percents = percents.lock().unwrap().clone();
+    let mut seen: Vec<InstallStage> = Vec::new();
+    let mut percents: Vec<u8> = Vec::new();
+    let mut starting: Option<InstallStage> = None;
+    let mut waiting: Option<InstallStage> = None;
+    let mut ready: Option<super::super::fake_docker::Hold> = None;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while tokio::time::Instant::now() < deadline {
+        if let Some(progress) = current(&m) {
+            if seen.last() != Some(&progress.stage) {
+                seen.push(progress.stage);
+            }
+            percents.extend(progress.percent);
+        }
+        tokio::select! {
+            () = creating.reached(), if starting.is_none() => {
+                starting = current(&m).map(|progress| progress.stage);
+                ready = Some(docker.hold(&format!("GET /containers/{name}/json")));
+                creating.release();
+            }
+            () = async {
+                if let Some(ready) = &ready {
+                    ready.reached().await;
+                } else {
+                    std::future::pending().await
+                }
+            }, if waiting.is_none() => {
+                waiting = current(&m).map(|progress| progress.stage);
+                ready.as_ref().expect("先停了建容器").release();
+            }
+            () = tokio::time::sleep(Duration::from_millis(1)) => {}
+        }
+        let listed = m.installed(&langs());
+        if install.is_finished()
+            || listed
+                .plugins
+                .first()
+                .is_some_and(|plugin| matches!(plugin.status, PluginState::Running { .. }))
+        {
+            break;
+        }
+    }
+    install.await.unwrap().unwrap();
+    if let Some(ready) = &ready {
+        ready.release();
+    }
 
     assert_eq!(
         seen,
@@ -49,6 +88,12 @@ async fn an_install_reports_its_stages_and_clears_them() {
             InstallStage::Starting,
             InstallStage::WaitingForBot,
         ]
+    );
+    assert_eq!(starting, Some(InstallStage::Starting), "建容器时是启动阶段");
+    assert_eq!(
+        waiting,
+        Some(InstallStage::WaitingForBot),
+        "健康检查时是等 Bot 阶段"
     );
     assert!(
         percents
@@ -70,133 +115,12 @@ async fn an_install_reports_its_stages_and_clears_them() {
     );
 }
 
-/// 每次插件表变了就记下安装进度里的百分比，测试做完 `abort`。
-///
-/// 测试跑在单线程运行时上：报进度时叫醒这个任务，它排在假 Docker 下一行进度（隔 30 ms 的定时器）之前，
-/// 所以跨过一次等待还在的百分比一定记得到，不靠轮询撞上。
-fn sample_percents(
-    m: &Arc<super::super::manager::PluginManager>,
-    percents: &Arc<Mutex<Vec<u8>>>,
-) -> tokio::task::JoinHandle<()> {
-    let (m, percents) = (m.clone(), percents.clone());
-    let mut changes = m.changes();
-    tokio::spawn(async move {
-        loop {
-            if let Some(progress) = current(&m) {
-                percents.lock().unwrap().extend(progress.percent);
-            }
-            if changes.changed().await.is_err() {
-                return;
-            }
-        }
-    })
-}
-
-/// 等一个停住的请求最多这么久；超时就失败并说出卡在哪一步，不让 CI 挂着。
-const STEP: Duration = Duration::from_secs(20);
-
-/// 装 `compose` 并返回报出的阶段。每一步都停在它之后必然发出的请求上：阶段已经报出，下一个阶段还到不了，
-/// 读到当前阶段再放行，不靠采样撞上。
-///
-/// 假 Docker 同时只停一种请求，新的 `hold` 顶掉旧的：所以总是等上一个请求停住了，才停下一个、再放行上一个。
-/// 先停下一个再等上一个的话，上一个还没到就被顶掉，会一直等不到。
-async fn stages_while_installing(
-    docker: &FakeDocker,
-    m: &Arc<super::super::manager::PluginManager>,
-    compose: &str,
-    name: &str,
-) -> Result<Vec<InstallStage>, super::super::InstallError> {
-    let healthy = format!("GET /containers/{name}/json");
-    // （停住的请求，这一步叫什么，停住时该是的阶段）
-    let steps = [
-        ("POST /images/create", "第一个镜像的拉取", None),
-        // 第二个镜像的拉取发出时，第一个镜像的进度流已经报完，下一次改回准备阶段还在后头。
-        (
-            "POST /images/create",
-            "第二个镜像的拉取",
-            Some(InstallStage::PullingImages),
-        ),
-        (
-            "POST /networks/create",
-            "建网络",
-            Some(InstallStage::Preparing),
-        ),
-        (
-            "POST /containers/create",
-            "建容器",
-            Some(InstallStage::Starting),
-        ),
-        (
-            healthy.as_str(),
-            "健康检查",
-            Some(InstallStage::WaitingForBot),
-        ),
-    ];
-
-    let mut seen = Vec::new();
-    let mut held = docker.hold("GET /containers/json");
-    let mut install = tokio::spawn({
-        let m = m.clone();
-        let compose = compose.to_owned();
-        async move { m.install(&compose, &[], langs()).await }
-    });
-    stopped_at(&held, &mut install, "清残留").await;
-    assert_eq!(
-        stage_now(m, &mut seen),
-        InstallStage::Preparing,
-        "清残留时是准备阶段"
-    );
-    for (call, step, stage) in steps {
-        let next = docker.hold(call);
-        held.release();
-        held = next;
-        stopped_at(&held, &mut install, step).await;
-        if let Some(stage) = stage {
-            assert_eq!(stage_now(m, &mut seen), stage, "停在{step}时的阶段");
-        }
-    }
-    held.release();
-
-    tokio::time::timeout(STEP, install)
-        .await
-        .unwrap_or_else(|_| panic!("放行健康检查后 {STEP:?} 内没装完"))
-        .expect("安装任务没 panic")?;
-    Ok(seen)
-}
-
-/// 等到假 Docker 停住 `hold` 的请求。安装先结束了（多半是出错）或者超时，就说明卡在 `step`，立刻失败。
-async fn stopped_at<T: std::fmt::Debug>(
-    hold: &Hold,
-    install: &mut tokio::task::JoinHandle<T>,
-    step: &str,
-) {
-    let wait = async {
-        tokio::select! {
-            () = hold.reached() => {}
-            done = &mut *install => panic!("还没到{step}安装就结束了：{done:?}"),
-        }
-    };
-    tokio::time::timeout(STEP, wait)
-        .await
-        .unwrap_or_else(|_| panic!("{STEP:?} 内没等到{step}的请求"));
-}
-
 fn current(m: &super::super::manager::PluginManager) -> Option<InstallProgress> {
     m.installed(&langs())
         .plugins
         .first()?
         .install_progress
         .clone()
-}
-
-/// 读到当前阶段并记下：调用时请求正停着，阶段不会再往前走。
-fn stage_now(
-    m: &super::super::manager::PluginManager,
-    seen: &mut Vec<InstallStage>,
-) -> InstallStage {
-    let stage = current(m).expect("安装中一直有阶段").stage;
-    seen.push(stage);
-    stage
 }
 
 /// 契约：安装失败、插件回滚以后没有进度留下。

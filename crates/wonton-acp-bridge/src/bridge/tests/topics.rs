@@ -90,8 +90,6 @@ async fn later_turns_carry_the_other_session_digest() {
     // 主对话这一轮在话题开了以后才结束：它的变化要进话题的下一轮动态。
     harness.respond(&main, "登录改好了").await;
     harness.respond(&topic, "看过了").await;
-    // 等话题这一轮收完尾再说下一句：还在跑时进来的会插进这一轮，不另起一轮。
-    wait_until(|| !harness.room.thread_texts("$root").is_empty()).await;
     harness.send_in_thread("$t2", "$root", "再改一处");
     let prompts = harness.wait_prompts(1).await;
     assert_eq!(prompts[0].0, topic);

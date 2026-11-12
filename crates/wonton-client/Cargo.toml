@@ -26,10 +26,9 @@ required-features = ["bindgen"]
 [features]
 # 只在生成 Swift / Kotlin 绑定时启用，避免把 CLI 依赖带进 App。
 bindgen = ["uniffi/cli"]
-# 只给测试用的时序钩子（src/test_hooks.rs）和本机自签中继；生产构建不开，App 和 uniffi 不经过 dev-dependencies。
-test-hooks = ["wonton-tunnel/test-hooks", "iroh/test-utils"]
-# Debug 包和夜跑 UI 测试的假数据入口（src/client/ui_fake.rs）。Release 包不带；构建脚本按 profile 开。
-ui-fake = []
+# 只给集成测试用的时序钩子（src/test_hooks.rs），生产构建不开：App 和 uniffi 命令行不经过 dev-dependencies，
+# 编出来的就是没有钩子的核心。
+test-hooks = ["wonton-tunnel/test-hooks"]
 
 [dependencies]
 # MIT OR Apache-2.0。校验推送订阅里 base64url 编码的公钥和认证密钥。
@@ -45,8 +44,6 @@ hyper-util = { version = "0.1.21", features = ["tokio"] }
 iroh = { workspace = true }
 # MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
 linkify = "0.11.0"
-# MIT OR Apache-2.0。matrix.to 链接的片段里有百分号转义的房间和用户 ID。
-percent-encoding = "2.3.2"
 # MIT OR Apache-2.0。重点色推导用的 OKLCH 和 WCAG 对比度（ADR-0026）。
 palette = { version = "0.7.7", default-features = false, features = ["std"] }
 # MIT。把 Bot 发的 Markdown 排成气泡里的块和片段。
@@ -55,9 +52,6 @@ pulldown-cmark = { version = "0.13.6", default-features = false }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# 都是 MIT OR Apache-2.0。以设备密钥为键推出浏览器入口的标签和端口（`src/browser`）。
-hmac = "0.12"
-sha2 = { workspace = true }
 # MIT OR Apache-2.0。
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "sync", "rt-multi-thread", "time"] }
@@ -65,13 +59,10 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 uniffi = { workspace = true }
 url = { workspace = true }
-# MIT OR Apache-2.0. Explicit discovery roots must be valid CA certificates.
-x509-parser = "0.18.1"
 wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol", features = ["uniffi"] }
 wonton-tunnel = { path = "../wonton-tunnel" }
-psl = "2.1.248"
 
 # libc 0.2.190 起只在 macOS 上提供 `in6_ifreq`，而 iroh 依赖的 netdev 0.46 在 iOS 上也用它，iOS 编译失败。
 # 上游修好之前固定在 0.2.189（MIT OR Apache-2.0）。lockfile 不分目标，整个工作区都用这个版本。
@@ -83,19 +74,12 @@ libc = "=0.2.189"
 jni = "0.21"
 
 [dev-dependencies]
-# MIT。测试挑本机空闲端口（`wonton_tunnel::test_support`）要 `test-hooks`。
-wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
-# MIT OR Apache-2.0. Local TLS discovery fixtures; no external homeserver calls.
-rcgen = "0.14.10"
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12"] }
 # MIT。插件和文件接口的行为测试用它在本机假扮核心（文件还假扮 tusd）。
 axum = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["rt", "time", "net", "io-util"] }
 # 聊天的集成测试：一次性的 Tuwunel 和模拟核心的 JWT 签发。
 wonton-matrix = { path = "../wonton-matrix", features = ["testkit"] }
-# MIT OR Apache-2.0。tabs 测试的 node 镜像在 CI 指到镜像仓库副本。
-wonton-test-images = { path = "../wonton-test-images" }
 # 对自己的 dev 依赖：编集成测试时给 test-hooks 打开，钩子代码就只进测试二进制。cargo 允许这样自引用；
 # 依赖 App 的构建不经 dev-dependencies，核心还是干净的。
 

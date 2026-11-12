@@ -45,12 +45,7 @@ internal fun InstallPermissionChoices(
 }
 
 @Composable
-internal fun ConfirmInstallButton(
-    preview: InstallPreview,
-    title: String,
-    secretsReady: Boolean = true,
-    onConfirm: () -> Unit,
-) {
+internal fun ConfirmInstallButton(preview: InstallPreview, title: String, onConfirm: () -> Unit) {
     var acknowledging by remember(preview.id) { mutableStateOf(false) }
     val rootPermissions = preview.permissions.filter { line ->
         line.needsRootConfirmation && (!line.optional || line.enabled)
@@ -61,7 +56,7 @@ internal fun ConfirmInstallButton(
         Modifier.padding(bottom = LocalWontonBottomInset.current)
             .padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
         enabled = preview.blocked == null && preview.missingProfile == null &&
-            secretsReady && preview.permissions.all { it.supported },
+            preview.permissions.all { it.supported },
     )
     if (acknowledging) {
         WontonDialog(

@@ -112,18 +112,10 @@ extension InstalledPlugin {
 enum PluginRoute: Hashable {
     case store(source: String)
     case installed(id: String)
-
-    /// 核心认得的同一页。
-    var coreRoute: PluginDetailRoute {
-        switch self {
-        case let .store(source): .store(source: source)
-        case let .installed(id): .installed(id: id)
-        }
-    }
 }
 
 /// 安装或升级的确认页。
-enum PluginConfirmation: Identifiable, Equatable {
+enum PluginConfirmation: Identifiable {
     case install(source: String)
     case upgrade(id: String)
     /// 主人选的压缩包。
@@ -132,8 +124,6 @@ enum PluginConfirmation: Identifiable, Equatable {
     case upgradeFrom(id: String, source: String)
     /// 换到主人选的压缩包。
     case upgradeUpload(id: String, archive: Data)
-    /// 核心取好预览、请主人拿主意的一键操作（ADR-0017）：预览不再重新取。
-    case store(StoreConfirmation)
 
     var id: String {
         switch self {
@@ -147,22 +137,13 @@ enum PluginConfirmation: Identifiable, Equatable {
             return "upgrade:\(id):\(source)"
         case let .upgradeUpload(id, archive):
             return "upgrade:\(id):\(archive.hashValue)"
-        case let .store(confirmation):
-            return "store:\(confirmation.isUpgrade ? "upgrade" : "install"):\(confirmation.preview.id)"
         }
-    }
-
-    /// 核心已经取好的预览；确认页不再自己取。
-    var preloaded: InstallPreview? {
-        if case let .store(confirmation) = self { return confirmation.preview }
-        return nil
     }
 
     var isUpgrade: Bool {
         switch self {
         case .upgrade, .upgradeFrom, .upgradeUpload: return true
         case .install, .upload: return false
-        case .store(let confirmation): return confirmation.isUpgrade
         }
     }
 
@@ -172,8 +153,6 @@ enum PluginConfirmation: Identifiable, Equatable {
         case .install, .upload: return String(localized: .installActionInstall)
         case .upgrade: return String(localized: .installActionUpgrade)
         case .upgradeFrom, .upgradeUpload: return String(localized: .installChangeVersion)
-        case let .store(confirmation):
-            return String(localized: confirmation.isUpgrade ? .installActionUpgrade : .installActionInstall)
         }
     }
 }
@@ -189,17 +168,4 @@ extension StoreListing {
 struct UninstallTarget: Identifiable {
     let id: String
     let title: String
-}
-
-extension StoreConfirmation {
-    var preview: InstallPreview {
-        switch self {
-        case let .install(preview), let .upgrade(preview): return preview
-        }
-    }
-
-    var isUpgrade: Bool {
-        if case .upgrade = self { return true }
-        return false
-    }
 }

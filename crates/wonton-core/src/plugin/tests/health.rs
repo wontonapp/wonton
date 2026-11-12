@@ -226,10 +226,8 @@ async fn timeout_also_names_the_failing_probes() {
     let deadline = tokio::time::Instant::now() + Duration::from_millis(100);
     let error = wait_for(
         &engine,
-        &crate::http::HttpClient::new(),
         &app,
         Target::Ready,
-        None,
         deadline,
         &Languages::default(),
     )

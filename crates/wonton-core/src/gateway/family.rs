@@ -10,7 +10,7 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{
     FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval,
-    MemberSettings, MemberStatus,
+    MemberSettings, MemberStatus, NewSharedBot,
 };
 
 use super::api::{error_response, languages, owner_denied};
@@ -92,7 +92,6 @@ pub async fn invite(
             &problem.to_string(),
         );
     }
-    let _allocating = gateway.plugins.lock_person_names().await;
     let username = match pick_username(&gateway, matrix, &invite, display_name).await {
         Ok(username) => username,
         Err(response) => return *response,
@@ -129,10 +128,7 @@ async fn pick_username(
     display_name: &str,
 ) -> Result<String, Box<Response>> {
     let taken_static = |name: &str| {
-        name == gateway.owner.username()
-            || name == ADMIN_LOCALPART
-            || gateway.members.taken(name)
-            || gateway.plugins.friend_username_taken(name)
+        name == gateway.owner.username() || name == ADMIN_LOCALPART || gateway.members.taken(name)
     };
     let bots = gateway.plugins.bot_localparts().map_err(|e| {
         tracing::error!(error = %e, "读 Bot 用户名失败");
@@ -358,6 +354,31 @@ pub async fn set_plugin_family(
         }
         Err(e) => super::api::install_error(&e),
     }
+}
+
+/// `POST SHARED_BOTS_PATH`：共享 Bot 的建号（按插件规范“一个插件多个 Bot”给 Agent 插件建 Bot）是后续
+/// 任务，先如实报没有就绪，不给主人一个假成功。
+pub async fn new_shared_bot(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+        return denied;
+    }
+    let _: NewSharedBot = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(e) => {
+            let message = format!("请求体不是共享 Bot：{e}");
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+        }
+    };
+    error_response(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "not_ready",
+        "共享 Bot 还没有上线：核心还不能给 Agent 插件建多个 Bot",
+    )
 }
 
 fn members_error(e: MembersError) -> Response {

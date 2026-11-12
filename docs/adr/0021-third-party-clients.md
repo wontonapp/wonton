@@ -1,10 +1,10 @@
 # ADR-0021 第三方原生 App 连回家：公网子域名、公共证书和专用密码
 
-- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代；家名同时用作 Matrix 的服务器名、中继多转联邦，见 [ADR-0051](0051-friends-and-plugin-sharing.md)；自己的域名在 App 里配、预设 deSEC，插件的规范对外地址见 [ADR-0089](0089-https-own-domain.md)；公网入口扩成通用的公网访问，路由器转发和 Cloudflare Tunnel 提到 M1，总开关和访客链接见 [ADR-0090](0090-public-access.md)
+- 状态：已接受（2026-11-03）。`auth: app` 的 `setup_done` 和错误 `setup_pending` 由 [ADR-0022](0022-owner-identity.md) 补充；云端部分挪到 M2（主人 2026-11-04 定，见“范围”）；“Bot 装不了高权限插件”已被 [ADR-0033](0033-plugin-tabs.md) 取代
 
 ## 背景
 
-插件网页只经核心网关打开，只有已配对的 Wonton App 能经 iroh 隧道连回家（ADR-0004、ADR-0009）。Immich 手机 App、Bitwarden、Jellyfin 和 Subsonic 播放器、CalDAV/CardDAV、OPDS 阅读器、Git 客户端都连不进来。50 个候选插件的调研里（`research/plugin-candidates.md`），这是最大的共性缺口。那份调研的结论第 1、2、13 项核对后：
+插件网页只经核心网关打开，只有已配对的 Wonton App 能经 iroh 隧道连回家（ADR-0004、ADR-0009）。Immich 手机 App、Bitwarden、Jellyfin 和 Subsonic 播放器、CalDAV/CardDAV、OPDS 阅读器、Git 客户端都连不进来。50 个候选插件的调研里（npchy 上的 `~/wonton-dev/research/plugin-candidates.md`），这是最大的共性缺口。那份调研的结论第 1、2、13 项核对后：
 
 - **第 1、2 项的缺口属实。** `lan.ports` 确实不能列 `webui` 的端口（插件规范的“局域网”）。它建议的“把网页端口发布到局域网”没有采用，理由见“没选的做法”；它建议的“一个 TLS 端口按 SNI 路由”采用了，名字问题见“局域网直连”。
 - **第 13 项不是缺口。** 按 `f664c6b` 的 `gateway/proxy.rs`，网关流式转发请求和响应，`Range` 原样带给插件；请求体发完后等响应头最多 120 秒（ADR-0006），响应体仍然不限时。这篇的新入口复用它。
@@ -80,7 +80,7 @@ HAProxy 不做 ACME，证书还是 lego。核心从清单生成它的配置，�
 
 ### 入口的开关
 
-每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** 公网入口还受设置里的总开关管（ADR-0090）。 `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
+每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
 
 **`network.clients` 和 `network.lan`（ADR-0019）为什么权限等级不同。** `network.lan` 在安装时就把端口开到局域网，所以算高权限。`network.clients` 只是声明“有这个能力”，安装后什么都没暴露，要主人再开一次开关才有效；打开开关这一步单独醒目确认，相当于高权限确认。所以 `network.clients` 不算高权限，“帮我装 Immich”时卡片上不用醒目提示。局域网入口也要开关，而不是装好就开：不然局域网里任何设备装完就能碰到应用的登录页，这和 `network.lan` 的暴露是同一类。这个权限要列进规范的权限表。
 
@@ -286,7 +286,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 ### 换入口
 
-核心对入口只有这几个接口，不认识 Let's Encrypt 或任何具体域名。主人在 App 的设置里选入口和 DNS 服务商（ADR-0089、ADR-0090），下表的环境变量是装机时的写法：
+核心对入口只有这几个接口，不认识 Let's Encrypt 或任何具体域名：
 
 | 接口 | 内容 |
 | --- | --- |
@@ -319,7 +319,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 
 ### 局域网直连
 
-**用真实的域名指向局域网地址，配公共证书，和 Plex 的 `plex.direct` 同一个思路，名字固定。** `https://<标签>.lan.<家>.<域名>:8483` 解析到家的 RFC 1918 地址，核心更新 A 记录。没选 Plex 的“IP 写进名字”：DHCP 换地址（ADR-0019：主机从 `.14` 变成 `.10`）时第三方 App 都要重填。
+**用真实的域名指向局域网地址，配公共证书，和 Plex 的 `plex.direct` 同一个思路，名字固定。** `https://<标签>.lan.<家>.<域名>:8483` 解析到家的 RFC 1918 地址，核心更新 A 记录。没选 Plex 的“IP 写进名字”：DHCP 换地址（ADR-0019：npchy 从 `.68` 变成 `.193`）时第三方 App 都要重填。
 
 **端口只绑检测到的局域网地址（启动器声明了宣告地址时绑 `0.0.0.0`，见 ADR-0019），不按来源过滤当边界。** 静态 compose 的 `ports` 会监听 `0.0.0.0` 和 `::`，经 docker-proxy 进来的 IPv6 连接来源是网桥网关，正好在 RFC 1918 里（ADR-0019 实测），所以单靠来源过滤，公网 IPv6 能直连局域网入口，还绕过公网入口的开关。
 
@@ -336,7 +336,7 @@ DNS 对任何标签都回答同样的结果（通配符），查不出哪个标�
 - **选中的地址不是 RFC 1918 时**（100.64/10、fc00::/7，或 `WONTON_LAN_ADDRESSES` 指定的这类地址）拒绝打开局域网入口，地址页写明原因（错误类别 `lan_unavailable`）。公网入口不受影响。
 - **地址集合一致。** 家名服务 `PUT lan` 接受的和能打开局域网入口的都是 RFC 1918 地址（宣告地址同样只收私有地址），8483 放行这个地址所在的网段。
 
-- **`*.lan` 的公网解析会泄露家的私有地址。** 只有 `192.0.2.10` 这种信息，外人用不上。
+- **`*.lan` 的公网解析会泄露家的私有地址。** 只有 `192.168.0.193` 这种信息，外人用不上。
 - **iOS 第三方 App** 第一次连局域网地址时，系统会问“本地网络”权限，拒绝就连不上（[TN3179](https://developer.apple.com/documentation/technotes/tn3179-understanding-local-network-privacy)）。
 - **第三方 App 里只能填一个地址的，主人二选一。** 公网地址在家也能用，只是绕一圈中继。Immich 有[按 Wi-Fi 自动切换地址](https://github.com/immich-app/immich/pull/14437)的设置（要定位权限，[有过切换失败的报告](https://github.com/immich-app/immich/issues/21930)），能两个都填。
 
@@ -383,7 +383,7 @@ x-wonton:
 
 - `clients` 和 `network.clients` 要一起写，只写一个时清单不合法。`clients.http`、`clients.tcp` 至少有一项。
 - `clients.http` 不能是 `mcp` 的端口，可以是 `webui` 的端口（Immich 的网页和 API 是同一个端口）：转发前删掉 `webui.proxy` 里声明的请求头和 Cookie，`sso: proxy` 伪造不了。删除时按规范化后的名字比较（`_` 换成 `-`，忽略大小写），`gateway` 的模板头也一样，入口容器也用 `option http-restrict-req-hdr-names delete` 删掉名字带 `_` 的请求头（实测）：CGI、WSGI、FastCGI、PHP 和很多 Python 应用把 `X_Remote_User` 和 `X-Remote-User` 映射成同一个变量。这个入口不看设备身份，也没有会话，绝不当作主人。
-- 插件按 `X-Forwarded-Host` 得到请求的地址。要固定地址的（往外登记回调、只认一个 `Host`）用核心注入的 `WONTON_EXTERNAL_URL` 和 `single_host`，见 ADR-0089 第 5 节。
+- 插件按 `X-Forwarded-Host` 得到请求的地址，清单和插件都不知道域名。
 - **`public.deny`、`public.allow`（二选一）：公网路径限制，由核心在公网入口上执行。** 按整段前缀匹配，不分大小写：`/share` 只匹配 `/share` 和 `/share/...`。局域网入口不受影响。比如 Immich 的 `/api/auth/admin-sign-up`、Vaultwarden 的 `/admin` 和 `/identity/accounts/register`、Jellyfin 的 `/Startup`（都读过各自的代码；写插件时核实完整列表）。
 - **路径怎么匹配（`public` 和 `auth_failures` 一样）。** 应用解析路径的方式各不相同（Kestrel 保留 `%2F` 再去点段，不合并斜杠；Express、chi 按字面路由），所以声明了其中任何一个的入口：
   - 沿用 ADR-0009 的规则并收紧：不解码、解码一次、解码两次的结果，都按 `/` 和 `\` 切段，每段再去掉 `;` 起的部分，只要有 `.` 或 `..` 段，就回 400 `invalid_input`。这样 `%2e%2e`、`..;`，以及要解码后才切得开的 `..%2f`，都到不了应用。规范的客户端发请求前会去掉点段。非法的百分号序列按原样保留，不回 400，也不丢掉这个候选。
@@ -544,7 +544,7 @@ ADR-0011 写的是“所有访问经核心网关鉴权”。这篇开了一个�
 
 - **注册门槛：** 邀请码由家名服务的管理命令生成，一码一用，有过期时间（生成时指定），管理员手动发。注册按来源限速。
 - **举报和下线：** 官网和证书页写明举报邮箱。下线一个家是一条命令，**同时停 DNS 和停 frps 路由**（`Login`、`NewUserConn`、`Ping` 都拒绝），生效时间见“中继”。App 显示这个家被停用和原因。
-- **安全浏览监控：** 家名服务用 Web Risk 的 [Update API](https://cloud.google.com/web-risk/docs/update-api)，`threatLists.computeDiff` 下载本地库（免费），查登记过的名字时先在本地比对哈希前缀，命中才把前缀发给 `hashes.search`（按量计费）。不用 Lookup API：它每月 10 万次以内免费，但把完整的 URI 发给 Google，等于把所有家的可读标签成批交给第三方。[Safe Browsing API](https://developers.google.com/safe-browsing/v4/usage-limits) 限非商业用途，不用。域名本身加进 Search Console 收告警。
+- **安全浏览监控：** 家名服务用 Web Risk 的 [Update API](https://cloud.google.com/web-risk/docs/update-api)，`threatLists.computeDiff` 下载本地库（免费），查登记过的名字时先在本地比对哈希前缀，命中才把前缀发给 `hashes.search`（[每千次 50 美元](https://cloud.google.com/web-risk/pricing)，2026-11-03）。不用 Lookup API：它每月 10 万次以内免费，但把完整的 URI 发给 Google，等于把所有家的可读标签成批交给第三方。[Safe Browsing API](https://developers.google.com/safe-browsing/v4/usage-limits) 限非商业用途，不用。域名本身加进 Search Console 收告警。
 - **入口专用一个和产品官网无关的域名**（部署时定，注册商也是），一个家出事不影响官网。
 
 **先只在邀请制范围内（主人和朋友）运行。公开注册的前置条件，缺一不可：**
@@ -563,7 +563,7 @@ ADR-0011 写的是“所有访问经核心网关鉴权”。这篇开了一个�
 
 ### 范围
 
-M1 做局域网直连和主人自己的域名（在 App 里配，ADR-0089），公网入口用主人自己的路由器转发、自己的 frps 或 Cloudflare Tunnel（ADR-0090），不依赖我们的云服务，验收见 [GOAL](../GOAL.md) 的 M1 第 9 项。公网中继、家名服务、DNS、证书服务和 CT 监控在 M2 部署，和推送、中继节点一起（主人 2026-11-04 定）。
+M1 做局域网直连和主人自己的域名，不依赖我们的云服务，验收见 [GOAL](../GOAL.md) 的 M1 第 9 项。公网中继、家名服务、DNS、证书服务和 CT 监控在 M2 部署，和推送、中继节点一起（主人 2026-11-04 定）。
 
 以后：家人（专用密码按人分，`gateway` 的 `{user}` 跟着变）；第三方 App 的 OIDC（Immich 手机 App 支持 OAuth，能解决“每客户端一个”，要改核心的登录流程，另写 ADR）；多地区中继；付费（主人说以后再说）。
 
@@ -626,7 +626,7 @@ M1 做局域网直连和主人自己的域名（在 App 里配，ADR-0089），�
 - **Clash 这类代理。** 公网地址和 Clash 没有冲突。局域网名字要规则放行，否则可能被送去代理（fake-IP 尤其如此），要实测。
 - **全局失败上限能被外人触发。** 主人在这段时间也登录不了新客户端，已登录的不受影响。
 - **`<家>` 变了，所有第三方 App 都要重填。** 核心数据丢失又没有备份时会发生。
-- **多三个常驻容器**：入口容器和局域网转发（同一个 HAProxy 镜像，60 MB。内存在开发机上是入口容器约 27 MiB，在 OrbStack 上两个都约 80 MiB）、frpc（镜像 39 MB，内存约 12 MiB），加上每天一次的 lego。
+- **多三个常驻容器**：入口容器和局域网转发（同一个 HAProxy 镜像，60 MB。内存在 npchy 上是入口容器约 27 MiB，在 OrbStack 上两个都约 80 MiB）、frpc（镜像 39 MB，内存约 12 MiB），加上每天一次的 lego。
 
 ## 验证
 

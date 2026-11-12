@@ -5,7 +5,8 @@
 //! 配对时记下的 endpoint ID，经共享的 iroh 连接转发。对方确认接上它那台 Tuwunel 之后才回 200，之后的
 //! 字节（两台 Tuwunel 之间的 TLS）双向原样转发，转发器不终结 TLS，断开也不当协议错误。
 //!
-//! 有名字的配对服务器也通过此代理取 443 上的发现文件；私用名保留 8448。其余端口拒绝。
+//! 只接 8448：Tuwunel 先 CONNECT `<名字>:443` 取 well-known，这里回 502，它就改连 Matrix 的默认联邦端口
+//! `<名字>:8448`（实测见 ADR-0050 的“验证”）。转发器不查 DNS，名字在配对名单里才转。
 use std::{
     collections::BTreeSet,
     io,
@@ -26,9 +27,9 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-use crate::{client::TunnelStream, error::TunnelError, forward};
+use crate::{forward, wire::Status};
 
-use super::peer::{PeerStates, PeerTable};
+use super::peer::{ForwardStream, PeerStates, PeerTable};
 
 /// 嵌入方提供的查找函数：Matrix 服务器名 → 配对时记下的对方 endpoint ID 和地址。
 ///
@@ -70,6 +71,7 @@ pub(super) struct ForwarderCtx {
     pub(super) endpoint: Endpoint,
     pub(super) lookup: ServerLookup,
     pub(super) peers: Arc<PeerTable>,
+    pub(super) status: watch::Sender<PeerStates>,
     pub(super) ping_interval: Duration,
     pub(super) ping_timeout: Duration,
 }
@@ -93,7 +95,8 @@ impl FederationForwarder {
         let ctx = Arc::new(ForwarderCtx {
             endpoint,
             lookup,
-            peers: Arc::new(PeerTable::new(status.clone())),
+            peers: Arc::new(PeerTable::default()),
+            status: status.clone(),
             ping_interval,
             ping_timeout,
         });
@@ -147,7 +150,7 @@ async fn sync_loop(mut paired: watch::Receiver<BTreeSet<String>>, ctx: Arc<Forwa
                 continue;
             };
             let peer = ctx.peers.get_or_create(name, id, addr.clone(), &ctx);
-            peer.set_target(addr);
+            peer.set_target(id, addr);
         }
         if paired.changed().await.is_err() {
             return;
@@ -182,10 +185,9 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         }
     };
     let name = request.host;
-    if (request.port != FEDERATION_PORT && request.port != 443)
-        || (request.port == 443 && name.ends_with(".wonton.internal"))
-    {
-        debug!(server = %name, port = request.port, "federation outbound: unsupported port");
+    if request.port != FEDERATION_PORT {
+        // well-known（443）这类请求：回 502，Tuwunel 就改连联邦端口。
+        debug!(server = %name, port = request.port, "federation outbound: not the federation port");
         respond(&mut tcp, BAD_GATEWAY).await;
         return;
     }
@@ -196,7 +198,7 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         return;
     };
     let peer = ctx.peers.get_or_create(&name, id, addr.clone(), &ctx);
-    peer.set_target(addr);
+    peer.set_target(id, addr);
     let mut stream = match peer.open_forward().await {
         Ok(stream) => stream,
         Err(err) => {
@@ -206,23 +208,34 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
         }
     };
     // 对方先回 1 字节状态，然后是它那台 Tuwunel 的原样字节（TLS 在两台 Tuwunel 之间）。
-    match peer.read_status(&mut stream).await {
-        Ok(()) => established(stream, tcp, request.rest, &name).await,
-        Err(TunnelError::UpstreamUnavailable) => {
-            info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
-            stream.abort();
-            respond(&mut tcp, BAD_GATEWAY).await;
-        }
+    let mut status = [0u8; 1];
+    match stream.recv.read_exact(&mut status).await {
         Err(err) => {
-            debug!(server = %name, %err, "federation outbound: the stream did not carry the request");
+            debug!(server = %name, "federation outbound: failed to read the status: {err}");
             stream.abort();
             respond(&mut tcp, BAD_GATEWAY).await;
         }
+        Ok(_) => match Status::from_byte(status[0]) {
+            Some(Status::Ok) => {
+                peer.note_confirmed(stream.conn_id);
+                established(stream, tcp, request.rest, &name).await;
+            }
+            Some(Status::UpstreamUnavailable) => {
+                info!(server = %name, "federation outbound: the peer cannot reach its Tuwunel");
+                stream.abort();
+                respond(&mut tcp, BAD_GATEWAY).await;
+            }
+            _ => {
+                warn!(server = %name, kind = status[0], "federation outbound: the peer does not support this request");
+                stream.abort();
+                respond(&mut tcp, BAD_GATEWAY).await;
+            }
+        },
     }
 }
 
 /// 对方已接上它的 Tuwunel：回 200，把请求头之后已经读到的字节先转过去，之后双向原样转发。
-async fn established(mut stream: TunnelStream, mut tcp: TcpStream, rest: Vec<u8>, name: &str) {
+async fn established(mut stream: ForwardStream, mut tcp: TcpStream, rest: Vec<u8>, name: &str) {
     if let Err(err) = tcp.write_all(ESTABLISHED).await {
         debug!(server = %name, "federation outbound: failed to answer the CONNECT: {err}");
         stream.abort();
@@ -239,11 +252,11 @@ async fn established(mut stream: TunnelStream, mut tcp: TcpStream, rest: Vec<u8>
 }
 
 /// CONNECT 已确认：之后的字节双向原样转发。
-async fn relay(mut stream: TunnelStream, tcp: TcpStream) {
+async fn relay(mut stream: ForwardStream, tcp: TcpStream) {
     let (mut tcp_read, mut tcp_write) = tcp.into_split();
     if let Err(err) = tokio::try_join!(
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),
-        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write, None),
+        forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write),
     ) {
         debug!("federation forwarding interrupted: {err}");
         stream.abort();

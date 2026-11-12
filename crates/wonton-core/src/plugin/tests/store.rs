@@ -18,13 +18,9 @@ use wonton_protocol::{InstallRequest, PluginTrust, StoreFailure};
 
 /// 在 `dir` 里放一份官方索引：`acme/hello` 的 1.0.0 版，文件按 sha256 放在 `blobs/` 下（同 `plugin index-entry`）。
 fn write_index(dir: &Path, compose: &str, icon: &str) {
-    write_index_source(dir, compose, icon, "github:acme/hello", &"c".repeat(40));
-}
-
-fn write_index_source(dir: &Path, compose: &str, icon: &str, source: &str, commit: &str) {
     let files = [("icon.svg".to_owned(), icon.as_bytes().to_vec())].into();
     let package = PluginPackage::with_files(compose, files, &super::langs()).unwrap();
-    let entry = IndexEntry::of(&package, source, commit).unwrap();
+    let entry = IndexEntry::of(&package, "github:acme/hello", &"c".repeat(40)).unwrap();
     entry.write_to(dir, &package).unwrap();
 }
 
@@ -98,14 +94,11 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         preview.notices
     );
     let request = InstallRequest {
-        scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
-        plan: preview.plan,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: Default::default(),
-        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
         install_together: Vec::new(),
@@ -441,66 +434,4 @@ async fn store_details_warn_about_isolation_before_install_in_the_requested_lang
             assert!(localized[1].is_ascii());
         }
     }
-}
-
-/// 本地索引里的子目录条目：列得出、装得上、能检查升级（完成标准 6）。
-#[tokio::test]
-async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
-    let index = tempfile::tempdir().unwrap();
-    let source = "github:acme/hello/agents/codex";
-    write_index_source(
-        index.path(),
-        &compose("0.1.0", "nginx"),
-        ICON,
-        source,
-        &"a".repeat(40),
-    );
-    let bed = bed(index.path(), false).await;
-    let m = &bed.m;
-
-    let listing = m.store_listing(&zh(), false).await;
-    let [item] = &listing.official.plugins[..] else {
-        panic!("{listing:?}");
-    };
-    assert_eq!(item.source, source);
-    assert_eq!(item.provider.as_deref(), Some("github.com/acme/hello"));
-    assert_eq!(listing.official.problem, None);
-
-    let preview = m.preview_source(source, &zh()).await.unwrap();
-    assert_eq!(preview.trust, PluginTrust::Official);
-    m.install_source(&InstallRequest {
-        scope: None,
-        source: preview.source.unwrap(),
-        digest: preview.digest,
-        plan: preview.plan,
-        grant: Vec::new(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
-        devices: Vec::new(),
-        lan_webui: false,
-        install_together: Vec::new(),
-        connect_plugins: Vec::new(),
-    })
-    .await
-    .unwrap();
-    let id = PluginId::parse("app.hello").unwrap();
-    assert_eq!(
-        m.installed_plugin(&id, &zh()).unwrap().trust,
-        PluginTrust::Official
-    );
-
-    // 新版本上架（同一个来源换一项）：升级检查能看到，不用 GitHub。
-    write_index_source(
-        index.path(),
-        &compose("0.2.0", "nginx"),
-        ICON,
-        source,
-        &"b".repeat(40),
-    );
-    let upgrade = m
-        .preview_upgrade(&id, super::super::UpgradeTo::Offered, &zh())
-        .await
-        .unwrap();
-    assert_eq!(upgrade.version, "0.2.0");
 }

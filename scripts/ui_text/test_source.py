@@ -8,7 +8,7 @@ from __future__ import annotations
 import unittest
 
 from ui_text.components import kotlin_components, swift_components
-from ui_text.source import scan_source, source_lang
+from ui_text.source import scan_source
 
 KOTLIN_DESIGN = """
 @Composable
@@ -145,21 +145,3 @@ class RustRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestSourceLangs(unittest.TestCase):
-    def test_test_source_sets_are_skipped(self):
-        # 测试源集里的假数据和预览名是写死的，不进字符串目录。
-        for path in (
-            "apps/compose/shared/src/test/kotlin/app/wonton/ui/Foo.kt",
-            "apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/Foo.kt",
-            "apps/compose/shared/src/androidHostTest/kotlin/app/wonton/ui/Foo.kt",
-        ):
-            self.assertIsNone(source_lang(path))
-
-    def test_main_source_sets_are_checked(self):
-        for path in (
-            "apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/Foo.kt",
-            "apps/compose/androidApp/src/main/kotlin/app/wonton/android/Foo.kt",
-        ):
-            self.assertEqual(source_lang(path), "kotlin")

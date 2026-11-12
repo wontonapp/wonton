@@ -5,9 +5,8 @@ use std::time::{Duration, Instant};
 use futures_util::StreamExt;
 use wonton_client::{Action, ChatSync, HomeStatus, TimelineContent};
 use wonton_matrix::{ChatRoom, MatrixSession, MessageBody, OwnedRoomId};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use super::support::{Home, Phone, Timeline, WAIT, is_room_list};
+use super::support::{Home, Phone, Timeline, WAIT};
 use super::{accept_the_bots_invite, text};
 
 struct Chat {
@@ -52,34 +51,26 @@ impl Chat {
             .await
             .expect("Bot 发消息");
         self.phone
-            .dispatch(Action::Timeline {
-                action: TimelineAction::SendText {
-                    target: TimelineTarget {
-                        room_id: self.room_id.to_string(),
-                        thread_root: None,
-                    },
-                    body: "断开时主人发的".to_owned(),
-                    reply_to: None,
-                },
+            .dispatch(Action::SendText {
+                room_id: self.room_id.to_string(),
+                body: "断开时主人发的".to_owned(),
             })
             .unwrap();
     }
 
     /// 恢复以后两条都到了对面，同步在跑，用的还是原来的会话。
     async fn caught_up(&mut self) {
-        // 先等同步真的跑起来（恢复的后置条件），再等断开期间的消息：同步没跑起来时，等消息只会白等满一个
-        // 时限，也分不清是同步没恢复还是消息没到。
-        self.phone
-            .wait_chat("同步恢复", |view| {
-                (view.sync == ChatSync::Running).then_some(())
-            })
-            .await;
         self.timeline
             .until("打开着的房间收到断开时 Bot 发的", |item| {
                 text(item, "断开时 Bot 发的")
             })
             .await;
         self.bot_received("断开时主人发的").await;
+        self.phone
+            .wait_chat("同步恢复", |view| {
+                (view.sync == ChatSync::Running).then_some(())
+            })
+            .await;
         assert_eq!(
             self.home.login_tokens(),
             self.login_tokens,
@@ -256,7 +247,7 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
         .home
         .sync_requests()
         .into_iter()
-        .filter(|request| is_room_list(&request["conn_id"]))
+        .filter(|request| request["conn_id"] == "room-list")
         .rev()
         .find_map(|request| {
             request["room_subscriptions"][chat.room_id.as_str()]["timeline_limit"].as_u64()
@@ -284,7 +275,6 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
     chat.timeline.until_cleared().await;
     chat.bot_room.send_text("之后的").await.expect("Bot 发消息");
 
-    // 重建已经发生，前面的消息只可能靠往回翻补回来。
     chat.timeline
         .until_items("新消息到了，更早的也翻回来了", |items| {
             let has = |body| items.iter().any(|item| text(item, body).is_some());

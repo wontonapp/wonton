@@ -8,7 +8,7 @@ use wonton_matrix::ChatRoom;
 
 use super::confirmation::joined_direct_chat;
 use super::stale_join::StaleJoin;
-use super::support::{Home, OWNER, Phone, Timeline, WAIT, is_room_list};
+use super::support::{Home, OWNER, Phone, Timeline, WAIT};
 use super::text;
 
 /// 本地入口序号之后的房间列表请求，含首条无 pos 请求；取消前的旧请求可比替代请求晚到。
@@ -16,7 +16,7 @@ fn room_list_requests(home: &Home, after: u64) -> Vec<(Option<String>, Vec<Strin
     home.sync_requests()
         .into_iter()
         .filter(|request| {
-            is_room_list(request.get("conn_id").unwrap_or(&serde_json::Value::Null))
+            request.get("conn_id").and_then(|v| v.as_str()) == Some("room-list")
                 && request["test_sequence"].as_u64().unwrap() > after
         })
         .map(|request| {

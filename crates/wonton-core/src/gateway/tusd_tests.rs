@@ -34,9 +34,14 @@ const CHUNK: usize = 256 << 10;
 /// tusd 退出、容器被 `--rm` 收掉以后，`docker logs` 说的话。
 const GONE: [&str; 2] = ["No such container", "can not get logs from container"];
 
-/// 此刻没人监听的端口。号码要交给别人去绑，所以用避开临时端口段的挑法。
+/// 此刻没人监听的端口：绑 0 拿到号码就放掉。只给 `a_tusd_that_is_not_running_shows_as_unavailable` 用，它要的就是没人监听。
+/// 别拿它当“安全地把端口交给别的进程”的办法：放掉到对方绑上之间，别人能抢走，那正是这里修掉的问题。
 fn free_port() -> u16 {
-    wonton_tunnel::test_support::unused_port()
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 /// 退出时删掉的 tusd 容器：名字由调用方的 test_docker::Names 登记并回收。
@@ -76,7 +81,7 @@ impl Tusd {
                     .iter()
                     .flat_map(|(name, value)| ["--env".to_owned(), format!("{name}={value}")]),
             )
-            .arg(wonton_test_images::image(&service.image))
+            .arg(&service.image)
             .args(["-host=127.0.0.1", "-port=0"]);
         for flag in service.command {
             docker.arg(if flag.starts_with("-hooks-http=") {

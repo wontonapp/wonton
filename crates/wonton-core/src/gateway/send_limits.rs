@@ -1,48 +1,39 @@
-//! Bot 发消息的频率和跳数（ADR-0045 的“频率和跳数”）。只数
+//! Bot 发消息的频率和跳数（ADR-0045 的“频率和跳数”），只看请求路径，不看内容（房间是加密的）。只数
 //! `PUT /_matrix/client/{版本}/rooms/{房间}/send/{类型}/{txn}`，类型是 `m.room.message`、`m.room.encrypted`、
 //! `m.sticker`；状态事件、回执、输入状态、to-device 都不算。设备和 Bot 两个入口分开：Bot 的发送按（Bot 的
 //! 访问令牌哈希，房间）限频、按房间数跳数；设备（人）的发送只把所在房间的跳数清零。
 //!
 //! - **频率**：令牌桶，每个（令牌哈希，房间）每分钟最多 [`SendLimits::per_minute`] 条，桶容量
-//!   [`SendLimits::burst`]。超了回 429 `M_LIMIT_EXCEEDED` 带 `retry_after_ms`，SDK 自己会等。编辑也算。
-//! - **跳数**：数人上一次说话之后，不同 Bot 之间的来回：一条 Bot 消息的发送者和这个房间上一条 Bot 消息的发送者
-//!   不同，才算一跳。同一个 Bot 连着发（进度、分段回复）不算；编辑（`m.relates_to.rel_type` 是 `m.replace`）
-//!   既不算一跳，也不改“上一条是谁发的”。设备发一条清零；房间闲置 [`SendLimits::idle_reset`] 没有消息也清零，
-//!   条目一并清掉，内存不无限涨；主人在“已停下”卡片上选“继续”也清零（[`SendLimiter::resume`]）。到了
-//!   [`SendLimits::hop_limit`] 跳，再来一跳回 403，`errcode` 是 [`HOP_LIMIT_ERRCODE`]、`x-wonton-error: hop_limit`，
-//!   SDK 不重试；还是上一条那个 Bot 接着说照样放行。
+//!   [`SendLimits::burst`]。超了回 429 `M_LIMIT_EXCEEDED` 带 `retry_after_ms`，SDK 自己会等。
+//! - **跳数**：每个房间记“人上一次在这里说话之后，Bot 连着发了几条”。设备发一条清零；房间闲置
+//!   [`SendLimits::idle_reset`] 没有消息也清零，条目一并清掉，内存不无限涨。超过 [`SendLimits::hop_limit`] 条后
+//!   回 403 `M_FORBIDDEN`（`x-wonton-error: hop_limit`），SDK 不重试。
 //! - **同一个 txn 重发**（SDK 重试）不重复计数：数过的 txn 记在桶里，重发直接放行，由上游按 txn 去重。
 //! - 计数只在内存里，核心重启从头算（ADR-0045 允许近似）。
 //!
-//! 只为认编辑读一遍请求体：`m.relates_to` 在加密消息里也是明文（Matrix 规范要求，matrix-sdk 照做），读到的原始
-//! 字节原样装回。Bot 的用户 ID 用 `whoami` 取，按令牌哈希缓存；取不到不挡消息，按令牌哈希认 Bot。
-
-pub(super) mod hop_card;
-#[cfg(test)]
-mod hop_limit_tests;
+//! 跳数到顶时发一个 [`HopLimitReached`]（`tokio::sync::broadcast`），给后续发“继续”卡片的任务订阅；现在只记
+//! 日志。Bot 的用户 ID 用 `whoami` 取，按令牌哈希缓存（`family-bots` 合并后可换成它的缓存）；取不到不挡消息，
+//! 事件里少一个名字，限频和跳数照常按令牌哈希执行。
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use axum::body::{Body, to_bytes};
 use axum::extract::Request;
 use axum::response::{IntoResponse, Response};
-use hyper::header::{AUTHORIZATION, HeaderName, HeaderValue};
+use hyper::header::{AUTHORIZATION, HeaderValue};
 use hyper::{Method, StatusCode};
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
-use wonton_protocol::{GATEWAY_REFUSAL_HEADER, GatewayRefusal, HOP_LIMIT_ERRCODE};
+use tokio::sync::broadcast;
+use wonton_protocol::GatewayRefusal;
 
-use super::matrix::{matrix_error, percent_decode};
+use super::matrix::{percent_decode, refusal};
 use super::pages;
 use crate::matrix::Matrix;
 
 /// 数得上的发送事件类型：只有这三种算 Bot 在说话。
 const COUNTED_TYPES: [&str; 3] = ["m.room.message", "m.room.encrypted", "m.sticker"];
-
-/// 认编辑时读请求体的上限：Matrix 的事件最大 64 KiB，留一倍余量。
-const MAX_BODY: usize = 128 * 1024;
 
 /// 每个（令牌哈希，房间）记多少条发过的 txn：SDK 的重试都在几秒内，64 条绰绰有余。
 const TXN_RING: usize = 64;
@@ -57,7 +48,7 @@ pub struct SendLimits {
     pub per_minute: u32,
     /// 令牌桶容量：可以突发多少条（`WONTON_BOT_MSG_BURST`）。
     pub burst: u32,
-    /// 每个房间里，人上一次说话之后不同 Bot 之间最多来回几跳（`WONTON_BOT_MSG_HOP_LIMIT`）。
+    /// 每个房间里，人上一次说话之后 Bot 连着最多发几条（`WONTON_BOT_MSG_HOP_LIMIT`）。
     pub hop_limit: u32,
     /// 房间多久没有消息就把跳数清零（`WONTON_BOT_MSG_IDLE_RESET_SECS`）。
     pub idle_reset: Duration,
@@ -74,27 +65,12 @@ impl Default for SendLimits {
     }
 }
 
-/// 跳数到顶：某个房间里几个 Bot 来回说得太多，被网关停下。一个回合只出一次，拿它发“继续”卡片。
+/// 跳数到顶：某个房间里 Bot 连着发得太多，被网关停下。后续发“继续”卡片的任务订阅这个事件。
 #[derive(Clone, Debug)]
 pub(crate) struct HopLimitReached {
     pub room_id: String,
-    /// 这个回合里在说话的 Bot（含被停下的那个），排序去重；认不出用户 ID 的按令牌哈希记，不在这里。
+    /// 这个回合里在说话的 Bot（含被停下的那个）；令牌辨认不出来时缺一个名字。
     pub bot_user_ids: Vec<String>,
-}
-
-/// Bot 的发送被挡住：给 Bot 的响应，跳数到顶的那一次带上事件。
-pub(crate) struct Refused {
-    pub response: Response,
-    pub stopped: Option<HopLimitReached>,
-}
-
-impl Refused {
-    fn plain(response: Response) -> Self {
-        Self {
-            response,
-            stopped: None,
-        }
-    }
 }
 
 /// Unix 毫秒。测试注入假的时钟，不许 sleep。
@@ -159,7 +135,7 @@ fn bearer(req: &Request) -> Option<String> {
         .map(str::to_owned)
 }
 
-pub(crate) fn token_hash(token: &str) -> [u8; 32] {
+fn token_hash(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
@@ -206,14 +182,12 @@ impl TxnRing {
     }
 }
 
-/// 一个房间的跳数：人上一次说话之后不同 Bot 之间来回了几跳，上一条（不算编辑的）Bot 消息是谁发的，和这个
-/// 回合里在说话的 Bot。
+/// 一个房间的跳数：人上一次说话之后 Bot 连着发的条数，和这个回合里在说话的 Bot（按令牌辨认出的用户 ID）。
 #[derive(Default)]
 struct RoomRun {
     hop: u32,
     last_message: u64,
     fired: bool,
-    last_bot: Option<String>,
     bots: BTreeSet<String>,
 }
 
@@ -255,15 +229,15 @@ impl State {
             .retain(|_, user| now.saturating_sub(user.last_used) < idle);
     }
 
-    fn decide(&mut self, limits: &SendLimits, send: &BotSend<'_>, now: u64) -> Decision {
-        let BotSend {
-            hash,
-            room,
-            txn,
-            bot,
-            user,
-            edit,
-        } = *send;
+    fn decide(
+        &mut self,
+        limits: &SendLimits,
+        hash: [u8; 32],
+        room: &str,
+        txn: &str,
+        now: u64,
+        user: Option<&str>,
+    ) -> Decision {
         self.sweep(limits, now);
         let idle_ms = limits.idle_reset.as_millis() as u64;
         let bucket = self
@@ -284,9 +258,7 @@ impl State {
         if now.saturating_sub(run.last_message) >= idle_ms {
             run.reset(now);
         }
-        // 换了一个 Bot 说话才算一跳；同一个 Bot 接着说、任何 Bot 改自己的消息都不算。
-        let turn = !edit && run.last_bot.as_deref().is_some_and(|last| last != bot);
-        if turn && run.hop >= limits.hop_limit {
+        if run.hop >= limits.hop_limit {
             let announce = !run.fired;
             run.fired = true;
             return Decision::HopLimited {
@@ -302,12 +274,7 @@ impl State {
         }
         bucket.tokens -= 1.0;
         bucket.last = now;
-        if turn {
-            run.hop += 1;
-        }
-        if !edit {
-            run.last_bot = Some(bot.to_owned());
-        }
+        run.hop += 1;
         run.last_message = now;
         if let Some(user) = user {
             run.bots.insert(user.to_owned());
@@ -325,23 +292,12 @@ fn refill(bucket: &mut Bucket, limits: &SendLimits, now: u64) {
     bucket.last = now;
 }
 
-/// 一条要判断的 Bot 发送。
-#[derive(Clone, Copy)]
-struct BotSend<'a> {
-    hash: [u8; 32],
-    room: &'a str,
-    txn: &'a str,
-    /// 认 Bot 用的键：用户 ID，认不出时是令牌哈希。
-    bot: &'a str,
-    user: Option<&'a str>,
-    edit: bool,
-}
-
 /// Bot 发消息的频率和跳数。状态全在内存里。
 pub struct SendLimiter {
     limits: SendLimits,
     now: Clock,
     state: Mutex<State>,
+    events: broadcast::Sender<HopLimitReached>,
 }
 
 impl SendLimiter {
@@ -350,40 +306,35 @@ impl SendLimiter {
     }
 
     pub(crate) fn with_clock(limits: SendLimits, now: Clock) -> Self {
+        let (events, _) = broadcast::channel(16);
         Self {
             limits,
             now,
             state: Mutex::new(State::default()),
+            events,
         }
     }
 
-    pub(crate) fn hop_limit(&self) -> u32 {
-        self.limits.hop_limit
+    /// 订阅跳数到顶的事件。发“继续”卡片的任务还没来，现在只有测试在收；它落地时去掉 `cfg` 就行。
+    #[cfg(test)]
+    pub(crate) fn subscribe(&self) -> broadcast::Receiver<HopLimitReached> {
+        self.events.subscribe()
     }
 
     /// 设备（人）在这个房间发了一条消息：跳数清零，重新计时。只对数得上的发送调用。
     pub(crate) fn device_sent(&self, room: &str) {
-        self.reset(room);
-    }
-
-    /// 主人在“已停下”卡片上选了“继续”：同人说话一样清零。
-    pub(crate) fn resume(&self, room: &str) {
-        self.reset(room);
-    }
-
-    fn reset(&self, room: &str) {
         let now = (self.now)();
         let mut state = self.state.lock().expect("发送限制的锁");
         state.sweep(&self.limits, now);
         state.rooms.entry(room.to_owned()).or_default().reset(now);
     }
 
-    /// Bot 入口的发送：数得上的请求先过频率和跳数，放行的原样返回（请求体读过一遍，原样装回）。
+    /// Bot 入口的发送：数得上的请求先过频率和跳数，放行的原样返回（请求体动都没动）。
     pub(crate) async fn check_bot_send(
         &self,
         req: Request,
         matrix: Option<&Matrix>,
-    ) -> Result<Request, Box<Refused>> {
+    ) -> Result<Request, Box<Response>> {
         let Some((room, txn)) = counted_send(req.method(), req.uri().path()) else {
             return Ok(req);
         };
@@ -392,27 +343,17 @@ impl SendLimiter {
             return Ok(req);
         };
         let hash = token_hash(&token);
-        let user = self.user_id(&token, hash, matrix).await;
-        let (req, edit) = read_edit(req).await?;
         let now = (self.now)();
-        let bot = user.clone().unwrap_or_else(|| hex(&hash));
-        let send = BotSend {
-            hash,
-            room: &room,
-            txn: &txn,
-            bot: &bot,
-            user: user.as_deref(),
-            edit,
-        };
+        let user = self.user_id(&token, hash, matrix).await;
         let decision = {
             let mut state = self.state.lock().expect("发送限制的锁");
-            state.decide(&self.limits, &send, now)
+            state.decide(&self.limits, hash, &room, &txn, now, user.as_deref())
         };
         match decision {
             Decision::Pass => Ok(req),
             Decision::RateLimited { retry_after_ms } => {
                 tracing::info!(room = %room, retry_after_ms, "Bot 发消息太快，先挡住");
-                Err(Box::new(Refused::plain(rate_limited(retry_after_ms))))
+                Err(Box::new(rate_limited(retry_after_ms)))
             }
             Decision::HopLimited {
                 announce,
@@ -425,18 +366,21 @@ impl SendLimiter {
                 tracing::warn!(
                     room = %event.room_id,
                     bots = ?event.bot_user_ids,
-                    "几个 Bot 在一个房间里来回说得太多，已停下"
+                    "Bot 在一个房间里连着说得太多，已停下"
                 );
-                Err(Box::new(Refused {
-                    response: hop_limited(),
-                    stopped: announce.then_some(event),
-                }))
+                if announce {
+                    let _ = self.events.send(event);
+                }
+                Err(Box::new(refusal(
+                    GatewayRefusal::HopLimit,
+                    "人上一次在这个房间说话之后，Bot 连着发得太多了，等人说一句再继续",
+                )))
             }
         }
     }
 
     /// 令牌是谁：先查缓存，没有就问 Tuwunel 的 `whoami`。取不到不挡消息。
-    pub(crate) async fn user_id(
+    async fn user_id(
         &self,
         token: &str,
         hash: [u8; 32],
@@ -473,52 +417,6 @@ fn with_the_stopped_bot(bot_user_ids: Vec<String>, user: Option<String>) -> Vec<
         ids.insert(user);
     }
     ids.into_iter().collect()
-}
-
-fn hex(hash: &[u8; 32]) -> String {
-    hash.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// 读出请求体看是不是编辑（`m.relates_to.rel_type` 是 `m.replace`），再把原始字节装回去。读不出 JSON 的不算编辑，
-/// 交给上游判断。
-async fn read_edit(req: Request) -> Result<(Request, bool), Box<Refused>> {
-    let (parts, body) = req.into_parts();
-    let Ok(bytes) = to_bytes(body, MAX_BODY).await else {
-        return Err(Box::new(Refused::plain(matrix_error(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            "M_TOO_LARGE",
-            "invalid_input",
-            "消息太大",
-        ))));
-    };
-    let edit = serde_json::from_slice::<Value>(&bytes)
-        .ok()
-        .and_then(|content| {
-            content
-                .pointer("/m.relates_to/rel_type")
-                .and_then(Value::as_str)
-                .map(|kind| kind == "m.replace")
-        })
-        .unwrap_or(false);
-    Ok((Request::from_parts(parts, Body::from(bytes)), edit))
-}
-
-/// 跳数到顶的拒绝：403，`errcode` 是 [`HOP_LIMIT_ERRCODE`]，SDK 不重试，又能从错误里认出类别（matrix-sdk 读
-/// 不到响应头，`M_FORBIDDEN` 的其余字段它也丢掉）；响应头照样带 [`GATEWAY_REFUSAL_HEADER`]。
-fn hop_limited() -> Response {
-    let mut response = (
-        StatusCode::FORBIDDEN,
-        axum::Json(json!({
-            "errcode": HOP_LIMIT_ERRCODE,
-            "error": "人上一次在这个房间说话之后，几个 Bot 来回说得太多了，等人说一句或主人选“继续”",
-        })),
-    )
-        .into_response();
-    response.headers_mut().insert(
-        HeaderName::from_static(GATEWAY_REFUSAL_HEADER),
-        HeaderValue::from_static(GatewayRefusal::HopLimit.as_str()),
-    );
-    response
 }
 
 fn rate_limited(retry_after_ms: u64) -> Response {

@@ -19,6 +19,7 @@ use super::docker::{Engine, EngineError, GATEWAY_MODES, NetworkReach, from_bolla
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::{Manifest, Sso};
+use super::upstreams::core_aliases;
 use crate::l10n;
 
 /// 别的核心或程序可能同时选中同一段。沿用 #474 的重试次数与间隔，不把并发碰撞当地址池耗尽。
@@ -499,7 +500,6 @@ impl PluginManager {
         core: &str,
         manifest: &Manifest,
     ) -> Result<(), InstallError> {
-        self.attach_mailpit(network, manifest).await?;
         let address = self.engine.core_address(network).await?.to_string();
         let current = self.engine.endpoint_address(core, network).await?;
         if current.as_deref() == Some(address.as_str()) {
@@ -510,7 +510,7 @@ impl PluginManager {
         }
         let endpoint = Endpoint {
             address: Some(address),
-            aliases: self.core_aliases_of(manifest),
+            aliases: core_aliases(&self.cfg.public, manifest),
             gw_priority: Some(-1),
         };
         self.engine

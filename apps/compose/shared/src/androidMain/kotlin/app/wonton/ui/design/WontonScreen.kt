@@ -28,9 +28,7 @@ import androidx.compose.ui.unit.dp
 
 /** Total bottom obstruction, supplied by the native shell without resizing its viewport. */
 val LocalWontonBottomInset = compositionLocalOf { 0.dp }
-
-/** Pinned bar's measured height (status bar included). */
-val LocalWontonTopInset = compositionLocalOf { 0.dp }
+private val LocalWontonTopInset = compositionLocalOf { 0.dp }
 
 /** Apply inside verticalScroll, so these clearances scroll away rather than clipping the viewport. */
 @Composable
