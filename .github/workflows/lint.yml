@@ -31,6 +31,9 @@ jobs:
           persist-credentials: false
       - name: 残留的合并冲突标记
         run: bash scripts/check-conflict-markers.sh
+      # ADR 多半是只改文档的 PR，不能挂在结构门禁后面（那些步骤只改文档时跳过）。
+      - name: ADR 的文件名和标题编号一致、不重号
+        run: python3 scripts/adr-index.py --check
       - name: 装 gitleaks（版本和 sha256 固定）
         run: |
           curl -fsSL --retry 3 -o gitleaks.tar.gz \
