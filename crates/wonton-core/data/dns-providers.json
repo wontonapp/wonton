@@ -9,7 +9,7 @@
   {
     "code": "cloudflare",
     "name": "Cloudflare",
-    "credential_vars": ["CF_DNS_API_TOKEN"],
+    "credential_vars": ["CLOUDFLARE_DNS_API_TOKEN"],
     "signup_url": "https://dash.cloudflare.com/sign-up",
     "recommended": false
   },
