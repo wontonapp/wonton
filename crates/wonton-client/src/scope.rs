@@ -16,6 +16,7 @@ use wonton_protocol::{
 
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
+use crate::composer::{ComposerLink, uplink::LiveUplink};
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
@@ -39,6 +40,7 @@ pub(crate) struct Scope {
     pub(crate) plugins: Arc<PluginsLink>,
     pub(crate) tabs: Arc<TabsLink>,
     pub(crate) files: Arc<FilesLink>,
+    pub(crate) composer: Arc<ComposerLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
     pub(crate) peers: Arc<PeersLink>,
     pub(crate) friends: Arc<FriendsLink>,
@@ -289,6 +291,15 @@ impl Scope {
             room_panel.1,
             external,
         )?;
+        let composer = ComposerLink::new(
+            handle.clone(),
+            Arc::new(LiveUplink {
+                chat: links.chat.clone(),
+                files: links.files.clone(),
+                home: home.clone(),
+            }),
+            dir,
+        );
         let people = people_links(&shared, servers, &links.chat)?;
         let shared_apps =
             crate::sharing::SharedAppsLink::new(handle.clone(), &links.chat, &plugins, hub);
@@ -306,6 +317,7 @@ impl Scope {
             plugins,
             tabs: links.tabs,
             files: links.files,
+            composer,
             onboarding: links.onboarding,
             peers: people.0,
             friends: people.1,

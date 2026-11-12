@@ -25,9 +25,17 @@ pub(super) fn message_actions(
     quote: impl FnOnce(String) -> QuotedMessage,
 ) -> Vec<MessageAction> {
     let mut actions = Vec::new();
-    if let MessageContent::Text {
-        body: text, blocks, ..
-    } = body
+    let copied = match body {
+        MessageContent::Text {
+            body: text, blocks, ..
+        } => Some((text, blocks)),
+        MessageContent::Image { image } => image
+            .caption
+            .as_ref()
+            .map(|caption| (&caption.body, &caption.blocks)),
+        _ => None,
+    };
+    if let Some((text, blocks)) = copied
         && !text.trim().is_empty()
     {
         actions.push(MessageAction::Copy {

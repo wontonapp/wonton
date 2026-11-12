@@ -29,6 +29,7 @@ mod appearance;
 mod bot_contacts;
 mod chat;
 mod client;
+mod composer;
 mod files;
 mod friends;
 mod home;

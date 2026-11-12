@@ -158,7 +158,14 @@ chat-contacts-invalid-user-id = 使用者 ID 無效：{ $reason }
 
 # 透過 Siri、捷徑或聊天頁傳送訊息、內容為空時顯示。
 chat-empty-message = 訊息不能為空。
-composer-not-ready = 這個版本的用戶端核心還不支援附件區。
+composer-tray-full = 附件區最多放 { $max } 個附件。
+composer-has-failed = 附件區裡有沒傳上去的附件，先重試或刪掉它。
+composer-attachment-not-found = 找不到這個附件，可能已經刪掉或發出去了。
+composer-outgoing-not-found = 找不到這則待發訊息，可能已經交出去了。
+composer-store-failed = 附件區存不到手機上（{ $path }）：{ $reason }
+composer-attachment-failed = 附件「{ $name }」沒傳上去。
+composer-transfer-gone = 這個檔案的上傳紀錄不見了，請重試。
+composer-upload-record-unreadable = 照片的上傳紀錄讀不懂：{ $reason }
 # Siri 或捷徑傳入的 Bot ID 剖析失敗時顯示。
 chat-ask-invalid-bot-id = 預設 Agent 的 ID 格式不對。
 # 已有私訊的聊天室 ID 剖析失敗時顯示。

@@ -49,6 +49,8 @@ pub struct Message {
     /// MSC4564 的 Agent 进度状态对象（ADR-0082），被编辑过时是最新编辑里的；不是状态消息时为 `None`。
     /// 发送者是不是 Bot 由客户端核心判断。
     pub agent_run: Option<AgentRunStatus>,
+    /// 一次发送里的几条之一（`app.wonton.batch`，ADR-0094），被编辑过时按最新的内容；本地回显还没有原始事件，为 `None`。
+    pub group: Option<wonton_protocol::MessageGroup>,
     /// 本账号在这个房间的权限（power level）能不能撤回这条：自己的看“撤回自己的”，别人的看“撤回别人的”。
     /// 只看权限，发没发出去、是不是已撤回由调用方判断。
     pub can_redact: bool,
@@ -113,6 +115,8 @@ pub struct ImageContent {
     pub width: Option<u64>,
     /// 像素高度。
     pub height: Option<u64>,
+    /// 说明文字（Matrix v1.10：`filename` 和 `body` 不同时 `body` 是说明）。
+    pub caption: Option<String>,
     pub(crate) source: MediaSource,
     pub(crate) thumbnail: Option<MediaSource>,
 }
@@ -125,6 +129,7 @@ impl PartialEq for ImageContent {
             && self.size == other.size
             && self.width == other.width
             && self.height == other.height
+            && self.caption == other.caption
             && self.media_token() == other.media_token()
             && self.thumbnail_token() == other.thumbnail_token()
     }
@@ -142,6 +147,7 @@ impl From<&ImageMessageEventContent> for ImageContent {
             size: info.and_then(|info| info.size).map(u64::from),
             width: info.and_then(|info| info.width).map(u64::from),
             height: info.and_then(|info| info.height).map(u64::from),
+            caption: image.caption().map(str::to_owned),
             source: image.source.clone(),
             thumbnail: info.and_then(|info| info.thumbnail_source.clone()),
         }
@@ -223,6 +229,9 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         .map(|reader| names.name(reader))
         .collect();
     let raw = content(event, kind);
+    let group = raw_content(event)
+        .as_ref()
+        .and_then(wonton_protocol::MessageGroup::from_content);
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
@@ -234,6 +243,7 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         custom: raw.as_ref().map(custom_fields).unwrap_or_default(),
         mentions: raw.as_ref().map(mentions_of).unwrap_or_default(),
         agent_run: raw.as_ref().and_then(agent_run::parse),
+        group,
         thread_root: msglike.thread_root.clone(),
         edited,
         read_by,
@@ -303,6 +313,11 @@ fn content(event: &EventTimelineItem, kind: &MsgLikeKind) -> Option<Map<String, 
     if !is_text {
         return None;
     }
+    raw_content(event)
+}
+
+/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象，任何消息类型都有；本地回显没有原始事件。
+fn raw_content(event: &EventTimelineItem) -> Option<Map<String, Value>> {
     // SDK 核对过编辑：发送者和原消息相同才算数。
     let edit = event.latest_edit_json();
     let raw = edit.or(event.original_json())?;

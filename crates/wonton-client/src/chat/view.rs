@@ -16,9 +16,9 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary, QuotedMessage,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, extract_file_links,
+    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
+    QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -215,7 +215,7 @@ fn timeline_message(
         actions,
         body,
         read_by,
-        group: None,
+        group: message.group,
     }
 }
 
@@ -227,11 +227,7 @@ pub(super) fn message_content(
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
-            let blocks = if is_own {
-                rich::plain(&body, links)
-            } else {
-                rich::markdown(&body, links)
-            };
+            let blocks = blocks_of(&body, is_own, links);
             MessageContent::Text {
                 body,
                 blocks,
@@ -249,12 +245,23 @@ pub(super) fn message_content(
                 size: image.size,
                 width: image.width,
                 height: image.height,
-                caption: None,
+                caption: image.caption.map(|body| ImageCaption {
+                    blocks: blocks_of(&body, is_own, links),
+                    body,
+                }),
             },
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
+    }
+}
+
+fn blocks_of(body: &str, is_own: bool, links: &LinkTargets) -> Vec<RichBlock> {
+    if is_own {
+        rich::plain(body, links)
+    } else {
+        rich::markdown(body, links)
     }
 }
 
@@ -464,6 +471,7 @@ mod tests {
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
+                group: None,
                 can_redact: true,
             })),
         }
