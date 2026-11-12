@@ -6,6 +6,7 @@ import android.icu.text.ListFormatter
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -64,7 +65,7 @@ internal fun OnboardingModelStep(
                         onSelect = { form.collapse(); send(Action.UseCurrentModel) },
                     )
                     // 网关给的模型名带着内部地址，收进默认收起的“详情”。
-                    ProblemDetail(current, Modifier.padding(start = WontonTheme.spacing.s16))
+                    ProblemDetail(current, modifier = Modifier.padding(start = WontonTheme.spacing.s16))
                 }
             }
             if (providers.providers.isNullOrEmpty() && providers.webUrl != null) {
