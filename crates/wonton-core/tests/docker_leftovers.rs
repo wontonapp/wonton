@@ -106,6 +106,7 @@ impl Core {
             data_dir: self.dir.path().to_owned(),
             apps_dir: self.dir.path().join("apps"),
             shares_dir: self.dir.path().join("shares"),
+            relay_dir: self.dir.path().join("relay"),
             core_container: Some(self.core_container.clone()),
             tz: "UTC".into(),
             puid: owner.uid(),

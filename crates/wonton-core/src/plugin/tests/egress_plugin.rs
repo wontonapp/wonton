@@ -1,4 +1,7 @@
+use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
+
+use ipnet::Ipv4Net;
 
 use serde_json::json;
 use wonton_protocol::{EgressFailure, EgressProxySource, EgressProxyUpdate};
@@ -157,6 +160,47 @@ async fn egress_plugin_selection_switches_only_relay_between_providers_and_survi
         )
         .await
         .unwrap();
+}
+
+/// 宿主网络的服务过不了别名：代理写出口容器在插件网络里的固定地址（核心地址的前一个，[`egress_address`]）。
+#[tokio::test]
+async fn host_networked_services_proxy_through_the_pinned_relay_address() {
+    let (docker, engine) = FakeDocker::start().await;
+    add_default_bridge(&docker);
+    let dir = tempfile::tempdir().unwrap();
+    let m = Arc::new(manager_in_instance(engine, &dir, "hst").with_egress(Egress::default()));
+    let compose = package(
+        "  esp:\n    image: esphome/esphome\n    network_mode: host",
+        "  permissions: [network.egress, network.host]",
+    );
+    let grants = PluginPackage::parse(&compose, &super::langs())
+        .unwrap()
+        .manifest
+        .permissions;
+    m.install(&compose, &grants, super::langs()).await.unwrap();
+    m.set_egress_proxy(
+        update(Some("http://proxy.lan:1"), false, &["app.test"]),
+        Languages::from_header(Some("zh")),
+    )
+    .await
+    .unwrap();
+
+    let network = "wonton-hst--app-test";
+    let request = docker.network(network).unwrap();
+    let subnet: Ipv4Net = request["IPAM"]["Config"][0]["Subnet"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let address = Ipv4Addr::from(subnet.broadcast().to_bits() - 2).to_string();
+    assert_eq!(
+        env_of_container(&docker, "wonton-hst--app-test--esp")["HTTP_PROXY"],
+        format!("http://{address}:3128")
+    );
+    let pinned = docker
+        .endpoint(network, &m.cfg.instance.egress())
+        .expect("出口容器接在插件网络上");
+    assert_eq!(pinned["IPAMConfig"]["IPv4Address"], address.as_str());
 }
 
 #[tokio::test]

@@ -57,6 +57,7 @@ install-images-from = イメージの取得元：{ $images }
 install-images-unpinned = イメージがダイジェストで固定されていません：{ $images }
 install-webui-sso = Wontonでウェブページを開くと自動的にログインします
 install-host-network-egress = ホストネットワークのサービスは、Wontonのプロキシを経由せず、ホスト自身の経路でインターネットに接続します
+install-host-network-proxied = ホストネットワークのサービスもインターネットプロキシ経由で接続します
 install-system-preinstalled = システムアプリは自宅サーバーにプレインストールされているものに限ります
 install-already-installed = { $id }はすでにインストールされています（バージョン{ $version }）
 install-unreviewed-provider = Wontonはこのアプリを審査していません。コードとイメージは{ $provider }が提供しています

@@ -3,6 +3,7 @@
 use std::fs;
 use std::io::Read;
 use std::os::unix::fs::MetadataExt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -98,20 +99,21 @@ pub(super) fn manager_with_oidc(
     )
 }
 
-/// 应用数据目录在 `apps_dir` 的管理器，其余同 [`manager_with`]：模拟数据目录在很深的路径下。
-pub(super) fn manager_with_apps_dir(
+/// 中继套接字目录在 `relay_dir` 的管理器，其余同 [`manager_with`]。
+pub(super) fn manager_with_relay_dir(
     engine: Engine,
     dir: &tempfile::TempDir,
-    apps_dir: &std::path::Path,
+    relay_dir: &std::path::Path,
 ) -> PluginManager {
-    manager_for(
+    manager_for_opts(
         engine,
         dir,
-        apps_dir,
+        &dir.path().join("apps"),
         None,
         None,
         Instance::default(),
         ImageWorker::in_process(),
+        Some(relay_dir.to_owned()),
     )
 }
 
@@ -124,6 +126,30 @@ fn manager_for(
     instance: Instance,
     images: ImageWorker,
 ) -> PluginManager {
+    manager_for_opts(
+        engine,
+        dir,
+        apps_dir,
+        core_container,
+        oidc,
+        instance,
+        images,
+        None,
+    )
+}
+
+/// [`manager_for`]，可以另指中继套接字目录。
+#[allow(clippy::too_many_arguments)]
+fn manager_for_opts(
+    engine: Engine,
+    dir: &tempfile::TempDir,
+    apps_dir: &std::path::Path,
+    core_container: Option<String>,
+    oidc: Option<Hydra>,
+    instance: Instance,
+    images: ImageWorker,
+    relay_dir: Option<PathBuf>,
+) -> PluginManager {
     let owner = fs::metadata(dir.path()).unwrap();
     let cfg = LifecycleConfig {
         public: PublicUrls {
@@ -134,6 +160,8 @@ fn manager_for(
         data_dir: dir.path().to_owned(),
         apps_dir: apps_dir.to_owned(),
         shares_dir: dir.path().join("shares"),
+        // 默认不是 `/run`：测试要能同时跑，套接字得落在各自的临时目录里。
+        relay_dir: relay_dir.unwrap_or_else(|| dir.path().join("relay")),
         core_container,
         tz: "UTC".into(),
         puid: owner.uid(),

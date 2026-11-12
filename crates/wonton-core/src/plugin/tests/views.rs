@@ -5,13 +5,16 @@ use axum::{Router, routing::get};
 use tokio::net::TcpListener;
 use wonton_protocol::{PluginKind, PluginState, PluginTrust, TabDisplay, TabLayout};
 
+use super::super::egress::address::ProxyAddress;
+use super::super::egress::settings::Egress;
 use super::super::fake_docker::FakeDocker;
 use super::super::gallery::Variant;
+use super::super::host_relay::{HostRelay, Purpose};
 use super::super::languages::Languages;
 use super::super::manifest::PluginId;
 use super::super::package::PluginPackage;
 use super::super::package_files::{PackageFiles, sha256_hex};
-use super::manager::{manager_with, manager_with_apps_dir};
+use super::manager::{manager_with, manager_with_relay_dir};
 use super::package;
 
 pub(super) const ICON: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#22aa66"/></svg>"##;
@@ -384,22 +387,56 @@ async fn previews_explain_what_will_be_installed_or_why_not() {
     assert!(preview.permissions[0].supported);
 }
 
+/// 配了代理时宿主网络的服务也经代理：确认页要如实说，不能还说走宿主自己的路由。
+#[tokio::test]
+async fn the_preview_says_whether_host_network_services_use_the_proxy() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let compose = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
+        "  webui: {service: web, port: 8123, sso: none}\n  permissions: [network.host, network.egress]",
+    );
+    let host = PluginPackage::parse(&compose, &super::langs()).unwrap();
+    let notice = |key: &str| crate::l10n::text(&english(), key, &[]);
+
+    let direct = manager_with(engine.clone(), &dir);
+    let preview = direct.preview_install(&host, &english()).await.unwrap();
+    assert!(
+        preview
+            .notices
+            .iter()
+            .any(|n| n.text == notice("install-host-network-egress")),
+        "{:?}",
+        preview.notices
+    );
+
+    let proxy = Egress::new(
+        Some(ProxyAddress::parse("http://proxy.lan:1", &english()).unwrap()),
+        None,
+    );
+    let proxied = manager_with(engine, &dir).with_egress(proxy);
+    let preview = proxied.preview_install(&host, &english()).await.unwrap();
+    let texts: Vec<&str> = preview.notices.iter().map(|n| n.text.as_str()).collect();
+    assert!(
+        texts.contains(&notice("install-host-network-proxied").as_str()),
+        "{texts:?}"
+    );
+    assert!(!texts.contains(&notice("install-host-network-egress").as_str()));
+}
+
 #[tokio::test]
 async fn a_too_long_relay_socket_path_is_blocked_in_the_preview() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    // 中继套接字加上网页地址那段（/app-test/relay/webui.sock）才超上限：只算 apps 目录本身放得下，
-    // 防止预检漏掉网页地址。join 的段之间还有一个分隔符字节，apps 目录取 89 字节。
+    // 套接字只在 `/run` 下按哈希命名（16 位加 `.sock`，末段 21 字节）；中继目录被指到长路径时仍然超上限，
+    // 预检要报出来。join 的段之间还有一个分隔符字节。
     let base = dir.path().as_os_str().len();
-    let apps = dir.path().join("d".repeat(89 - base - 1));
-    std::fs::create_dir_all(&apps).unwrap();
-    assert_eq!(apps.as_os_str().len(), 89);
-    assert_eq!(apps.join("relay/webui.sock").as_os_str().len(), 106);
+    let relay_dir = dir.path().join("d".repeat(120 - base - 1));
     assert_eq!(
-        apps.join("app-test/relay/webui.sock").as_os_str().len(),
-        115
+        relay_dir.join("0000000000000000.sock").as_os_str().len(),
+        142
     );
-    let m = manager_with_apps_dir(engine, &dir, &apps);
+    let m = manager_with_relay_dir(engine, &dir, &relay_dir);
     let host = package(
         "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}\n",
         "  webui: {service: web, port: 8123, sso: none}\n  permissions: [network.host]",
@@ -407,7 +444,16 @@ async fn a_too_long_relay_socket_path_is_blocked_in_the_preview() {
     let host = PluginPackage::parse(&host, &super::langs()).unwrap();
     let preview = m.preview_install(&host, &english()).await.unwrap();
     let blocked = preview.blocked.unwrap();
-    let socket = apps.join("app-test/relay/webui.sock");
+    let socket = super::super::host_relay::socket_path(
+        &relay_dir,
+        &Default::default(),
+        "app-test",
+        &HostRelay {
+            purpose: Purpose::Webui,
+            service: "web".to_owned(),
+            port: 8123,
+        },
+    );
     let expected = crate::l10n::text(
         &english(),
         "plugin-install-relay-path-too-long",

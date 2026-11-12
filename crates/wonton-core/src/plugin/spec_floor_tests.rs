@@ -193,6 +193,21 @@ fn smtp_names_outside_interpolated_values_do_not_raise_the_floor() {
 }
 
 #[test]
+fn the_gateway_cidr_and_app_host_variables_require_spec_0_14() {
+    for (name, reference) in [
+        ("WONTON_GATEWAY_CIDR", "TRUST: ${WONTON_GATEWAY_CIDR}"),
+        ("WONTON_APP_HOST", "HOSTS: $WONTON_APP_HOST"),
+    ] {
+        let mut doc = document("0.13", json!({}), plain());
+        doc["services"]["web"]["environment"] = json!({"VALUE": reference});
+        let found = problems(&doc);
+        assert_eq!(found.len(), 1, "{name}: {found:?}");
+        doc["x-wonton"]["spec"] = json!("0.14");
+        assert!(problems(&doc).is_empty(), "{name}");
+    }
+}
+
+#[test]
 fn all_new_variables_are_checked_even_after_an_unrelated_reference() {
     let service = json!({"image": "nginx", "environment": {"SMTP":
         "${OTHER} ${WONTON_SMTP_HOST}:${WONTON_SMTP_PORT} ${WONTON_MAIL_FROM} ${WONTON_SMTP_HOST}"

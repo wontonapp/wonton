@@ -71,7 +71,12 @@ async fn host_capability_routes_over_unix_and_recovers_after_watch_and_restore()
     let dir = tempfile::tempdir().unwrap();
     let manager = manager_with(engine.clone(), &dir);
     let relay = HostRelay::capability("api", 8080);
-    let socket = host_relay::socket_path(&dir.path().join("apps/app-search"), &relay);
+    let socket = host_relay::socket_path(
+        &manager.cfg.relay_dir,
+        &Default::default(),
+        "app-search",
+        &relay,
+    );
     let server = serve(&socket);
     manager
         .install(&host_provider(), &[Permission::NetworkHost], langs())
@@ -135,12 +140,17 @@ fn capability_relays_are_unique_per_host_service_and_port() {
         assert_eq!(relay.purpose, Purpose::Capability);
         let name = host_relay::container(&Default::default(), "app-test", &relay);
         let container = plan.containers.iter().find(|c| c.name == name).unwrap();
-        let socket = host_relay::socket_path(Path::new("/apps/app-test"), &relay);
+        let socket = host_relay::socket_path(
+            Path::new(crate::config::DEFAULT_RELAY_DIR),
+            &Default::default(),
+            "app-test",
+            &relay,
+        );
         assert_eq!(
             container.body.cmd.as_ref().unwrap()[0],
             format!(
-                "UNIX-LISTEN:/s/{},fork,mode=0660,unlink-early",
-                socket.file_name().unwrap().to_str().unwrap()
+                "UNIX-LISTEN:{},fork,mode=0660,unlink-early",
+                socket.display()
             )
         );
     }

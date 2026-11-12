@@ -109,6 +109,8 @@ services:
     environment:
       <<: *core
       WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/owner
+      # 两套核心在同一台 Docker 上：中继套接字目录各一套，不共用。
+      WONTON_RELAY_DIR: ${SHARE_SMOKE_STATE}/owner/relay
       WONTON_BASE_DOMAIN: owner.test
       WONTON_INSTANCE: ${SHARE_SMOKE_INSTANCE}o
       WONTON_CORE_CONTAINER: ${SHARE_SMOKE_PROJECT}--owner
@@ -122,6 +124,7 @@ services:
       retries: 90
     volumes:
       - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - ${SHARE_SMOKE_STATE}/owner/relay:${SHARE_SMOKE_STATE}/owner/relay
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.20"}
@@ -135,6 +138,7 @@ services:
     environment:
       <<: *core
       WONTON_DATA_DIR: ${SHARE_SMOKE_STATE}/friend
+      WONTON_RELAY_DIR: ${SHARE_SMOKE_STATE}/friend/relay
       WONTON_BASE_DOMAIN: friend.test
       WONTON_INSTANCE: ${SHARE_SMOKE_INSTANCE}f
       WONTON_CORE_CONTAINER: ${SHARE_SMOKE_PROJECT}--friend
@@ -147,6 +151,7 @@ services:
       retries: 90
     volumes:
       - ${SHARE_SMOKE_STATE}:${SHARE_SMOKE_STATE}
+      - ${SHARE_SMOKE_STATE}/friend/relay:${SHARE_SMOKE_STATE}/friend/relay
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       core: {ipv4_address: "${SHARE_SMOKE_PREFIX}.21"}

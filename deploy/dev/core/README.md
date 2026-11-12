@@ -47,6 +47,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
   检出目录外：同一个项目名的各份检出（worktree）共用一份，换个检出起同一个栈不用重发 OIDC 客户端（Ed25519 要
   OpenSSL 3 及以上，macOS 自带的 LibreSSL 不行：`brew install openssl@3`）。检出目录里旧的 `.secrets/` 不再读，
   也不迁移。两者都不提交。
+- 宿主网络中继的 unix 套接字在 `${XDG_RUNTIME_DIR:-/run/user/<uid>}/wonton-dev/<实例名>`（`WONTON_DEV_RELAY` 可改）：
+  `sun_path` 只有 108 字节，检出目录再深也不影响。建不了这个目录时 `up` 直接失败，换一个短的。
 - `dev.sh` 的 HTTP 请求在一个与核心共享网络的 curl 容器里发出，所以 `DOCKER_HOST` 指向远端主机时
   也能用（远端只需要 Docker）。下文提到远端主机时都写成 `$DEV_HOST`，先 `export DEV_HOST=<那台的 SSH 目标>`，
   运行时这样用：`DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/dev.sh up`。

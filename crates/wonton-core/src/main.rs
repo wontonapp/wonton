@@ -463,6 +463,7 @@ fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
         data_dir: cfg.data_dir.clone(),
         apps_dir: cfg.apps_dir(),
         shares_dir: cfg.shares_dir(),
+        relay_dir: cfg.relay_dir.clone(),
         core_container: cfg.core_container.clone(),
         tz: cfg.tz.clone(),
         puid: cfg.puid,

@@ -93,13 +93,14 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 | --- | --- |
 | `/opt/wonton/compose.yaml`、`/opt/wonton/wonton` | 由当前的核心镜像写出，每次 `init` 重写 |
 | `/usr/local/bin/wonton` | 链接到 `/opt/wonton/wonton` |
-| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录，由 `install.sh` 写 |
+| `/opt/wonton/.env` | 核心镜像的来源（`WONTON_CORE_SOURCE`）和按 digest 写下的镜像（`WONTON_CORE_IMAGE`）、端口、基础域名、用户名、时区、数据目录、中继目录，由 `install.sh` 写 |
 | `/opt/wonton/secrets/` | Matrix 签发私钥、Matrix 服务器名（`matrix-server-name`）、注册共享密钥、Hydra 的系统密钥；0700 |
 | `/opt/wonton/secrets/tuwunel/` | Tuwunel 自己的文件：配置（含公钥）、联邦名单、不要名字模式的自签证书；只读挂进 Tuwunel，0700 |
 | `/opt/wonton/entry-input/` | 安装输入文件的私有副本与 `init.env`，CA 和 DNS 凭据文件供状态查询、续期复用 |
 | `/opt/wonton/entry/` | `settings.json`（名字、注册凭据、证书设置）、入口和连接器配置、`certs/site.pem` 与 `site.key`、ACME 状态；含私钥，不对外分享 |
 | `/etc/systemd/system/wonton_plugins.slice` | systemd + cgroup v2 主机上由安装脚本生成的插件总量限制；删除时先删 `.env` 里的 `WONTON_PLUGIN_SLICE` 行，再删这个文件并执行 `systemctl daemon-reload` |
 | `/var/lib/wonton/`（`WONTON_DATA_DIR`） | 核心和插件的数据，容器内外路径相同 |
+| `/run/wonton/relay/`（`WONTON_RELAY_DIR`） | 宿主网络中继的 unix 套接字，按哈希命名；`sun_path` 只有 108 字节，所以不放在数据目录下 |
 | Docker 卷 `wonton_hydra`、`wonton_tuwunel` | Hydra 的 SQLite、Tuwunel 的数据库 |
 
 显示名和邮箱在 App 的设置里填（ADR-0030）。用户名不能改（ADR-0022）：核心把它们都记在

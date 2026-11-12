@@ -95,6 +95,8 @@ const TABLE: &[(SpecVersion, Added)] = &[
         V0_14,
         Added::ValueAt(&["secrets", "*", "generate", "encoding"], "base64url"),
     ),
+    (V0_14, Added::Variable("WONTON_GATEWAY_CIDR")),
+    (V0_14, Added::Variable("WONTON_APP_HOST")),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。

@@ -57,6 +57,7 @@ install-images-from = 映像檔來自 { $images }
 install-images-unpinned = 映像檔沒有按摘要固定：{ $images }
 install-webui-sso = 在雲吞裡開啟它的網頁時自動登入
 install-host-network-egress = 主機網路裡的服務連外走主機自己的路由，不經 Wonton 的代理伺服器
+install-host-network-proxied = 主機網路裡的服務也經你的出網代理連外
 install-system-preinstalled = 系統應用程式只能隨家用伺服器預先安裝
 install-already-installed = 已經安裝了 { $id }（版本 { $version }）
 install-unreviewed-provider = 雲吞沒有審核過這個應用程式，程式碼和映像檔由 { $provider } 提供

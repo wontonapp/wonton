@@ -7,7 +7,7 @@ use std::path::Path;
 
 use bollard::models::ContainerCreateBody;
 
-use super::core_address::VAR;
+use super::core_address::{CIDR_VAR, VAR};
 use super::egress::hardcoded_proxy;
 use super::image_worker::ImageWorker;
 use super::images::IconFormat;
@@ -203,7 +203,7 @@ fn check_trusts_core(package: &PluginPackage, official: bool, report: &mut Repor
     }
     let m = &package.manifest;
     let advice = format!(
-        "the web app authenticates users from request headers but doesn't trust only the home server: set the trusted proxy address to ${{{VAR}}}, not 0.0.0.0/0 or ::/0"
+        "the web app authenticates users from request headers but doesn't trust only the home server: set the trusted proxy address to ${{{CIDR_VAR}}} (or ${{{VAR}}}/32), not 0.0.0.0/0 or ::/0"
     );
     if official && m.permissions.contains(&Permission::NetworkEgress) {
         report.problems.push(format!(

@@ -38,10 +38,19 @@ pub const PLACEHOLDER: &str = "192.0.2.254";
 /// 注入给 `webui.sso: proxy` 的插件的插值变量。
 pub const VAR: &str = "WONTON_CORE_ADDRESS";
 
+/// 同一个地址的 CIDR 写法（`<地址>/32`），直接写进应用的“信任的代理地址”：有的应用只收 CIDR。
+pub const CIDR_VAR: &str = "WONTON_GATEWAY_CIDR";
+
 /// 留给核心的地址：网段的最后一个可用地址。
 pub fn last_usable(subnet: Ipv4Net) -> Option<Ipv4Addr> {
     // 网段小到前一半和后一半放不下容器和核心时，Docker 也不会自动分配。
     (subnet.prefix_len() <= 30).then(|| Ipv4Addr::from(subnet.broadcast().to_bits() - 1))
+}
+
+/// 出口容器在插件网络里的固定地址：核心地址的前一个（倒数第二个可用地址）。网段小到只剩网关和核心时为空。
+pub(super) fn egress_address(subnet: Ipv4Net, gateway: Option<&str>) -> Option<Ipv4Addr> {
+    let address = Ipv4Addr::from(last_usable(subnet)?.to_bits() - 1);
+    (address > subnet.network() && gateway != Some(address.to_string().as_str())).then_some(address)
 }
 
 /// 容器自动分配用的范围：网段的前一半。

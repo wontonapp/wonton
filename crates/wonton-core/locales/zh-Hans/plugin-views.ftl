@@ -57,6 +57,7 @@ install-images-from = 镜像来自 { $images }
 install-images-unpinned = 镜像没有按摘要固定：{ $images }
 install-webui-sso = 在 App 里打开它的网页时自动登录
 install-host-network-egress = 宿主网络里的服务出网走宿主自己的路由，不经 Wonton 的出网代理
+install-host-network-proxied = 宿主网络里的服务也经你的出网代理出网
 install-system-preinstalled = 系统应用只能随家里的服务器预装
 install-already-installed = 已经装了 { $id }（版本 { $version }）
 install-unreviewed-provider = 云吞没有审核过这个应用，代码和镜像由 { $provider } 提供

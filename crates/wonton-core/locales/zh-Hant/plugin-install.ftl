@@ -443,8 +443,9 @@ plugin-install-coreaddr-no-core-address = 網路還沒有為家用伺服器保�
 plugin-install-upstream-container-missing = 容器 { $container } 不存在，或者在網路 { $network } 裡沒有位址
 plugin-install-upstream-mcp-headers = 無法解析應用程式 { $id } 的 MCP 請求標頭：{ $error }
 plugin-install-relay-prepare-dir-failed = 無法準備中繼目錄：{ $error }
-plugin-install-relay-path-too-long = 應用程式資料目錄的路徑太長，unix socket 放不下，把家用伺服器的資料目錄換到短一點的路徑（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
+plugin-install-relay-path-too-long = 中繼 socket 的目錄路徑太長，unix socket 放不下，把 WONTON_RELAY_DIR 換到短一點的目錄（{ $path }：{ $bytes } 位元組，上限 { $max } 位元組）
 plugin-install-relay-listens-unknown = 讀不到監聽表，略過防火牆判斷
+plugin-install-egress-host-no-address = 出口容器在插件網路 { $network } 裡沒有位址，宿主網路的服務過不了代理
 
 # ── 圖片（images.rs、images/preflight.rs、image_worker.rs）──────────────────
 
