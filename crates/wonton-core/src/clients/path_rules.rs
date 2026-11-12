@@ -109,7 +109,8 @@ pub fn candidates(raw_path: &str) -> Vec<String> {
         .collect()
 }
 
-/// 按整段前缀匹配，不分大小写：`/share` 只匹配 `/share` 和 `/share/...`。
+/// 按整段前缀匹配，不分大小写：`/share` 只匹配 `/share` 和 `/share/...`。清单值都以 `/` 开头（C1 校验），
+/// 这里仍把空值当作根，匹配全部。
 fn matches_prefix(prefix: &str, candidate: &str) -> bool {
     let prefix = prefix.trim_end_matches('/').to_lowercase();
     candidate == prefix

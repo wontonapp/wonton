@@ -121,6 +121,7 @@ fn prefix_slashes_trimmed() {
     assert!(public_allows(&allow(&["/share//"]), "/share/x"));
     assert!(public_allows(&allow(&["/"]), "/anything"));
     assert!(!public_allows(&deny(&["/"]), "/anything"));
+    assert!(public_allows(&allow(&[""]), "/anything"));
 }
 
 #[test]
