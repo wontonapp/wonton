@@ -18,6 +18,8 @@ final class BottomPin {
     private var heldOffset: CGFloat?
     private var updateGeneration = 0
     private var settling = false
+    /// 比可见区还高的行，List 报的 `contentSize` 少算它后半截（见 `rememberReachedBottom`）。
+    private var bottomDeficit: CGFloat = 0
 
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
@@ -40,7 +42,8 @@ final class BottomPin {
         guard let heldOffset, let scrollView, !isPinned,
               !scrollView.isDragging, !scrollView.isDecelerating else { return }
         scrollView.layoutIfNeeded()
-        scrollView.contentOffset.y = min(scrollView.bottomOffset, max(-scrollView.adjustedContentInset.top, heldOffset))
+        let target = scrollView.bottomOffset + bottomDeficit
+        scrollView.contentOffset.y = min(target, max(-scrollView.adjustedContentInset.top, heldOffset))
     }
 
     func attach(_ scrollView: UIScrollView) {
@@ -77,6 +80,24 @@ final class BottomPin {
         stick()
     }
 
+    /// 末尾换了条目：少算的差额跟着内容走，先归零，滚到底后再量。
+    func forgetDeficit() {
+        bottomDeficit = 0
+    }
+
+    /// 按条目滚到最后一条之后调用：`contentSize` 比真实内容矮时，按它算的“底部”到不了最后一段，
+    /// 把这次实际滚到的位置和它差多少记下来，后面贴底按差额补上（iOS 26.5 模拟器实测差 1029，一条比屏还高的消息）。
+    func rememberReachedBottom() {
+        guard let scrollView else { return }
+        bottomDeficit = max(0, scrollView.contentOffset.y - scrollView.bottomOffset)
+    }
+
+    /// 贴底该去的位置：`contentSize` 算出来的底部加上少算的差额。
+    private func bottomTarget() -> CGFloat? {
+        guard let scrollView else { return nil }
+        return scrollView.bottomOffset + bottomDeficit
+    }
+
     /// 摆进房间的落点（ADR-0071）：停在别处，不跟着贴底。之后主人滚回底部会经 KVO 再 pin 回来。
     func unpin() {
         isPinned = false
@@ -85,7 +106,7 @@ final class BottomPin {
     func stick() {
         guard let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
         if isPinned {
-            scrollView.contentOffset.y = scrollView.bottomOffset
+            scrollView.contentOffset.y = scrollView.bottomOffset + bottomDeficit
         } else {
             restoreOffset()
         }
@@ -101,15 +122,15 @@ final class BottomPin {
     /// 内容高度也不再变，等不到下一次 stick（iOS 26.5 模拟器实测，在 stick 之后固定等两轮再拉也赶不上它）。所以贴底时
     /// 不是主人手势带来的位移一律拉回底部；放到下一轮，不在 KVO 回调里改正在观察的属性。
     private func holdAtBottom() {
-        guard !settling, let scrollView,
-              scrollView.bottomOffset - scrollView.contentOffset.y > Self.slack else { return }
+        guard !settling, let scrollView, let target = bottomTarget(),
+              target - scrollView.contentOffset.y > Self.slack else { return }
         settling = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.settling = false
             guard self.isPinned, let scrollView = self.scrollView,
                   !scrollView.isDragging, !scrollView.isDecelerating else { return }
-            scrollView.contentOffset.y = scrollView.bottomOffset
+            scrollView.contentOffset.y = target
         }
     }
 }
@@ -154,5 +175,17 @@ struct EnclosingScrollView: UIViewRepresentable {
                 ancestor = view.superview
             }
         }
+    }
+}
+
+/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。
+struct ScrollDebug: View {
+    let text: String
+
+    var body: some View {
+        Text(verbatim: text)
+            .accessibilityIdentifier("roomScroll")
+            .allowsHitTesting(false)
+            .opacity(0.02)
     }
 }

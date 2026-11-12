@@ -36,16 +36,8 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
-                .overlay(alignment: .topLeading) { scrollDebug }
+                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
-    }
-
-    /// 走查用：看不见的一行，连着 `BottomPin` 的贴底状态，UI 测试按标识读它。
-    private var scrollDebug: some View {
-        Text(verbatim: pin.snapshot)
-            .accessibilityIdentifier("roomScroll")
-            .allowsHitTesting(false)
-            .opacity(0.02)
     }
 
     /// 撤回别人的消息时标题写明是谁的。
@@ -204,8 +196,13 @@ struct ChatRoomView: View {
                 DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
             }
             .onChange(of: timeline.items.last?.id) { _, last in
-                guard last != nil else { return }
-                if pin.isPinned, placed { reportPosition(true) }
+                guard let last, pin.isPinned, placed else { return }
+                // contentSize 少算了比可见区还高的行的后半截（iOS 26.5 模拟器实测差 1029），按它算的底部到不了最后一段：
+                // 按条目滚过去才排得到，再滚一次后把差额量下来，之后贴底按差额补上。
+                pin.forgetDeficit()
+                scroller.scrollTo(last, anchor: .bottom)
+                DispatchQueue.main.async { scroller.scrollTo(last, anchor: .bottom); pin.rememberReachedBottom() }
+                reportPosition(true)
             }
             .onChange(of: pin.isPinned) { _, pinned in
                 // 报告发生在实际滚动之后，不把按钮意图或尚未摆好的首屏当成已读。
