@@ -14,6 +14,7 @@
 #   dev.sh diag                        只读诊断：插件登录用的主机名解析、出口代理设置和可达性、注入的代理变量
 #   dev.sh token                       输出主人令牌
 #   dev.sh install <compose 文件或插件包目录> [--yes]  预览插件和权限，确认后安装（一条命令装好插件）
+#   dev.sh upgrade <compose 文件或插件包目录> [--yes]  预览后升级已装的插件：换容器不吊销 Bot 的设备，数据和密钥都留着
 #   dev.sh uninstall <插件 ID> [--purge]   卸载；--purge 同时删除插件数据
 #   dev.sh list                        列出插件（一行一个：ID、状态、网页地址）
 #   dev.sh open <插件 ID>              以主人身份走完核心登录和插件的会话交接、OIDC，打印网页地址和 Cookie 罐路径
@@ -346,47 +347,6 @@ for p in plugins:
     if reason:
         line += "  " + reason
     print(line)' <<<"$info"
-}
-
-# 插件包：compose 文件原样发送；目录打成 tar 归档发送（compose 引用了包里的文件时，如 Hermes 的 config.yaml）。
-package() {
-  if [[ -d "$1" ]]; then
-    COPYFILE_DISABLE=1 tar -C "$1" -cf - .
-  else
-    cat "$1"
-  fi
-}
-
-package_type() {
-  if [[ -d "$1" ]]; then echo application/x-tar; else echo application/yaml; fi
-}
-
-install() {
-  local file="$1" yes="${2:-}" secrets="${3:-}" preview grants type blocked headers
-  [[ -e "$file" ]] || die "找不到插件包：$file"
-  type="$(package_type "$file")"
-  preview="$(package "$file" | api POST /_wonton/api/plugins/preview -H "Content-Type: $type" --data-binary @-)" ||
-    die "预览失败：$preview"
-  grants="$(json_field permissions <<<"$preview" | python3 -c 'import json,sys
-print(",".join(p["permission"] for p in json.load(sys.stdin)))')"
-  echo "插件：$(json_field id <<<"$preview")（$(json_field title <<<"$preview")）" >&2
-  echo "需要的权限：${grants:-无}" >&2
-  python3 -c 'import json,sys
-for notice in json.load(sys.stdin)["notices"]:
-    print("提示：" + notice["text"])' <<<"$preview" >&2
-  blocked="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["blocked"] or "")' <<<"$preview")"
-  [[ -z "$blocked" ]] || die "这台主机上装不了：$blocked"
-  if [[ "$yes" != "--yes" ]]; then
-    read -r -p "确认安装？[y/N] " answer
-    [[ "$answer" == y || "$answer" == Y ]] || die "已取消"
-  fi
-  headers=(-H "Content-Type: $type")
-  if [[ -n "$secrets" ]]; then
-    # 值是 base64url(JSON)：查询串会进日志，密钥放头里。
-    headers+=(-H "Wonton-Plugin-Secrets: $(python3 -c 'import base64,json,sys;print(base64.urlsafe_b64encode(json.dumps(json.loads(sys.argv[1])).encode()).decode().rstrip("="))' "$secrets")")
-  fi
-  package "$file" | api POST "/_wonton/api/plugins?grant=$grants" "${headers[@]}" --data-binary @-
-  echo
 }
 
 # 填一项密钥或清空可选项（ADR-0064）。值留空是清空。
@@ -730,7 +690,12 @@ case "${1:-}" in
     ;;
   token) token ;;
   install)
+    source "$here/plugin-cmds.sh"
     install "${2:?用法：$0 install <compose 文件或插件包目录> [--yes] [密钥 JSON]}" "${3:-}" "${4:-}"
+    ;;
+  upgrade)
+    source "$here/plugin-cmds.sh"
+    upgrade "${2:?用法：$0 upgrade <compose 文件或插件包目录> [--yes] [密钥 JSON]}" "${3:-}" "${4:-}"
     ;;
   secret) secret "${@:2}" ;;
   secret-env) secret_env "${2:?用法：$0 secret-env <插件 ID>}" ;;
@@ -784,5 +749,5 @@ case "${1:-}" in
     fi
     exec env WONTON_SHARE_SMOKE_CORE_IMAGE="$image" WONTON_SHARE_SMOKE_BIN_DIR="$bin" bash "$here/smoke-sharing.sh"
     ;;
-  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]|share-smoke" ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|upgrade <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]|share-smoke" ;;
 esac

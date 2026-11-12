@@ -10,6 +10,7 @@ Mailpit 与正式部署使用同一个固定摘要的官方镜像，等核心健
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
+deploy/dev/core/dev.sh upgrade plugins/examples/grafana   # 预览后升级已装的插件：换容器不吊销 Bot 的设备，数据和密钥都留着
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh logs hydra            # 跟日志：核心栈的服务（core、hydra 等）或插件的服务名
