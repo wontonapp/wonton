@@ -110,7 +110,9 @@ impl PluginManager {
         let langs = self.owner_languages();
         super::super::install_entry::check_runtime(&package.manifest, &langs)?;
         self.check_not_upgrading(&langs)?;
-        dry_run(&package, &langs)?;
+        if !super::super::install_hosted::is_containerless(&package.manifest) {
+            dry_run(&package, &langs)?;
+        }
         self.check_icon(&package, &langs).await?;
         let manifest = &package.manifest;
         let id = &manifest.id;
@@ -132,6 +134,11 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
+        super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
+        if super::super::install_hosted::is_containerless(manifest) {
+            return self.upgrade_containerless(package, granted, &langs).await;
+        }
+        self.check_hosted_provider(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self
@@ -419,6 +426,8 @@ impl PluginManager {
             family: old.record.family,
             settings: ctx.settings.clone().into_iter().collect(),
             settings_changed_ms: old.record.settings_changed_ms,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })?;
         Ok(Deployed {
             upstream,
@@ -433,6 +442,7 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
+            hosted: self.hosted_upstreams(manifest, &network).await?,
         })
     }
 

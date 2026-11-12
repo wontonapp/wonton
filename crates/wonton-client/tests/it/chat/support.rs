@@ -30,6 +30,7 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+mod confirmations;
 mod diagnostics;
 mod endpoint;
 mod fake_core;
@@ -118,6 +119,14 @@ impl PairHandler for Pairing {
 }
 
 /// 模拟的核心记下的东西。
+/// 假核心记着的确认卡片。测试直接塞核心的卡片 JSON，字段同 `ConfirmationCard`。
+#[derive(Default, Clone)]
+pub(super) struct FakeConfirmations {
+    pub(super) pending: Vec<Value>,
+    pub(super) finished: Vec<Value>,
+    pub(super) revision: u64,
+}
+
 struct Core {
     tuwunel: String,
     issuer: Issuer,
@@ -159,6 +168,8 @@ struct Core {
     /// 为真时取聊天显示方式账号数据的请求一接上就断开，别的请求不受影响。
     layout_down: AtomicBool,
     reject_backup_creation: AtomicBool,
+    /// 请求行（小写）含其中一段的 Matrix 请求由假核心直接回这个状态码和错误码，不转给 Tuwunel。
+    refusals: Mutex<Vec<matrix::Refusal>>,
     /// 同步应答保持错标直到测试显式清除，避免其他同步连接提前把状态覆盖回来。
     stale_join: watch::Sender<Option<StaleJoin>>,
     join_reported_as_invited: AtomicUsize,
@@ -186,6 +197,20 @@ struct Core {
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
+    /// “等你确认”列表的假数据（ADR-0016）：卡片和 revision 由测试改，改了挂着的取列表请求就回来。
+    confirmations: Mutex<FakeConfirmations>,
+    /// [`Self::confirmations`] 的 revision，等的一方靠它的事件变化再查。
+    confirmations_revision: watch::Sender<u64>,
+    /// 接下来这么多次取列表的请求回 502，像隧道那一次没连上。
+    failing_confirmations: AtomicUsize,
+    /// 取列表的请求次数。
+    confirmations_requests: AtomicUsize,
+    /// 为真时单张卡片接口回 404，像卡片已经结束太久或核心重启过。
+    single_confirmation_missing: AtomicBool,
+    /// 接下来这么多次单张卡片接口回 503，像核心忙不过来。
+    failing_single_confirmation: AtomicUsize,
+    /// 单张卡片接口的请求次数。
+    single_confirmation_requests: AtomicUsize,
     bot_api: Arc<super::bot_profile_support::BotApi>,
     /// 好友接口的假名单（ADR-0051）。
     friends: Mutex<friends::FakeFriends>,
@@ -239,6 +264,7 @@ impl Home {
             members_requests_dropped: AtomicUsize::new(0),
             layout_down: AtomicBool::new(false),
             reject_backup_creation: AtomicBool::new(false),
+            refusals: Mutex::default(),
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicUsize::new(0),
             expire_room_list: AtomicBool::new(false),
@@ -256,6 +282,13 @@ impl Home {
             issued_pairing_code: Mutex::default(),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
+            confirmations: Mutex::default(),
+            confirmations_revision: watch::Sender::new(0),
+            failing_confirmations: AtomicUsize::new(0),
+            confirmations_requests: AtomicUsize::new(0),
+            single_confirmation_missing: AtomicBool::new(false),
+            failing_single_confirmation: AtomicUsize::new(0),
+            single_confirmation_requests: AtomicUsize::new(0),
             bot_api: Arc::default(),
             friends: Mutex::default(),
             files: Mutex::default(),
@@ -304,6 +337,16 @@ impl Home {
     /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
     pub fn fail_sends(&self, fail: bool) {
         self.core.fail_sends.send_replace(fail);
+    }
+
+    /// 请求行（小写，如 `post /_matrix/client/v3/createroom`）含 `request` 的 Matrix 请求回 `status` 和 Matrix 错误码
+    /// `errcode`，像 Tuwunel 拒绝了它。
+    pub fn refuse_matrix(&self, request: &str, status: u16, errcode: &str) {
+        self.core.refusals.lock().unwrap().push(matrix::Refusal {
+            request: request.to_owned(),
+            status,
+            errcode: errcode.to_owned(),
+        });
     }
 
     /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。

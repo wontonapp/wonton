@@ -64,24 +64,27 @@ use tokio::runtime::Handle;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
-use wonton_matrix::{ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus};
+use wonton_matrix::{
+    ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus, UserId,
+};
 use wonton_protocol::{
-    Action, ChatAccount, ChatFailure, ChatSync, ChatViewModel, CoreError, DeviceVerification,
-    EncryptionStatus, MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus,
-    RoomPanel, TimelineAction, TimelineScroll, TimelineTarget,
+    Action, CORE_LOCALPART, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationView,
+    ConfirmationsViewModel, CoreError, DeviceVerification, EncryptionStatus, MediaHandle,
+    PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomPanel, TimelineAction,
+    TimelineScroll, TimelineTarget,
 };
 
 pub use bots::bot_current_avatar;
-pub(crate) use confirmation::{PushedCard, core_account, pushed_card};
+pub(crate) use confirmation::fetch_card;
 pub(crate) use links::{LinkTargets, matrix_target};
 pub(crate) use login::proxy_url;
-pub use timeline::TimelineSubscription;
+pub use timeline::{TimelineSource, TimelineSubscription};
 pub(crate) use view::{failure, summary};
 
 use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
 use crate::scope::reuse;
-use confirmation::{Answers, Cards};
+use confirmation::Answers;
 use draft::DraftWrite;
 use layout::Layouts;
 pub(crate) use storage::{ChatStorage, StoredSession};
@@ -113,6 +116,13 @@ pub(crate) struct ChatLink {
     side_chat_support: Arc<side_chat::Support>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
+    /// “等你确认”列表（ADR-0016）：长轮询核心的确认接口得到的视图，壳订阅它。换服务器时给壳接着订阅用，
+    /// 所以从通道进来。
+    confirmations: watch::Sender<ConfirmationsViewModel>,
+    /// 会话里能显示的卡片（等回答的，加上这个进程里看着结束的），按 `origin.room_id` 由时间线的出口过滤。
+    room_cards: watch::Sender<Arc<Vec<ConfirmationView>>>,
+    /// `Action::RetryConfirmations` 放行长轮询的退避等待。
+    retry_confirmations: Arc<tokio::sync::Notify>,
     /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
     card_success: CardSuccess,
     /// 正在重置恢复。途中 SDK 会报“未设置”，不能覆盖“处理中”或触发自动开启。
@@ -187,6 +197,8 @@ impl Drop for ChatLink {
 pub(crate) struct ChatChannels {
     /// ViewModel 发送端，换服务器时给壳接着订阅用。
     pub(crate) view: Option<watch::Sender<ChatViewModel>>,
+    /// “等你确认”列表的发送端，同上。
+    pub(crate) confirmations: Option<watch::Sender<ConfirmationsViewModel>>,
     /// 推送方式。
     pub(crate) method: watch::Receiver<PushMethod>,
     /// 登录着的会话。
@@ -195,6 +207,23 @@ pub(crate) struct ChatChannels {
     pub(crate) room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 外部 Matrix 账号的槽位（ADR-0051）：不跟着家里的连接走，直连 homeserver，用登录时存下的状态恢复。
     pub(crate) external: bool,
+}
+
+/// 还没登录时的加密状态：只知道本机存没存着恢复密钥。
+fn initial_encryption(storage: &ChatStorage) -> Result<EncryptionStatus, CoreError> {
+    let mut encryption = EncryptionStatus {
+        verification: DeviceVerification::Unknown,
+        recovery: RecoveryStatus::Unknown,
+        recovery_key: storage.recovery_key()?,
+        backup_reminder: None,
+        can_verify_with_other_device: false,
+        can_reset: false,
+        recovery_next_step: RecoveryNextStep::None,
+        verification_flow: None,
+        key_handoff: None,
+    };
+    recovery::refresh(&mut encryption);
+    Ok(encryption)
 }
 
 impl ChatLink {
@@ -209,24 +238,14 @@ impl ChatLink {
     ) -> Result<Arc<Self>, CoreError> {
         let ChatChannels {
             view,
+            confirmations,
             method,
             session_out,
             room_panel_out,
             external,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
-        let mut encryption = EncryptionStatus {
-            verification: DeviceVerification::Unknown,
-            recovery: RecoveryStatus::Unknown,
-            recovery_key: storage.recovery_key()?,
-            backup_reminder: None,
-            can_verify_with_other_device: false,
-            can_reset: false,
-            recovery_next_step: RecoveryNextStep::None,
-            verification_flow: None,
-            key_handoff: None,
-        };
-        recovery::refresh(&mut encryption);
+        let encryption = initial_encryption(&storage)?;
         let view = reuse(
             view,
             ChatViewModel {
@@ -267,6 +286,15 @@ impl ChatLink {
             open: Mutex::default(),
             side_chat_support: Arc::default(),
             answers: watch::Sender::default(),
+            confirmations: reuse(
+                confirmations,
+                ConfirmationsViewModel {
+                    loading: true,
+                    ..Default::default()
+                },
+            ),
+            room_cards: watch::Sender::new(Arc::new(Vec::new())),
+            retry_confirmations: Arc::new(tokio::sync::Notify::new()),
             card_success,
             resetting_recovery: AtomicBool::default(),
             primary_bot: Arc::new(Mutex::new(None)),
@@ -293,6 +321,10 @@ impl ChatLink {
         } else {
             runtime.spawn(follow_home::run(Arc::downgrade(&chat), home.subscribe()));
         }
+        runtime.spawn(pending::follow_cards(
+            Arc::downgrade(&chat),
+            home.subscribe(),
+        ));
         Ok(chat)
     }
 
@@ -364,14 +396,9 @@ impl ChatLink {
             | Action::ConfirmVerification { .. }
             | Action::DenyVerification { .. }
             | Action::CancelDeviceVerification { .. }) => self.verification_action(action),
-            Action::AnswerConfirmation {
-                id,
-                answer,
-                choice_id,
-                secrets,
-                settings,
-            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
-            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
+            action @ (Action::AnswerConfirmation { .. }
+            | Action::StopConfirmationWindow { .. }
+            | Action::RetryConfirmations) => self.confirmation_action(action),
             Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
             _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
         }
@@ -489,17 +516,19 @@ impl ChatLink {
         if plugins.installed.is_none() && !plugins.refreshing {
             self.plugins.refresh_installed();
         }
-        let cards = Cards::new(session.user_id(), self.answers.subscribe());
         let subscription = TimelineSubscription::start(
             &self.runtime,
-            room.clone(),
-            cards,
-            self.plugins.clone(),
-            self.previews.clone(),
-            menus.clone(),
-            room_view,
-            self.view.subscribe(),
-            support,
+            TimelineSource {
+                room: room.clone(),
+                room_id: room_id.clone(),
+                confirmations: self.room_cards.subscribe(),
+                plugins: self.plugins.clone(),
+                previews: self.previews.clone(),
+                menus: menus.clone(),
+                room_view,
+                chat: self.view.subscribe(),
+                support,
+            },
         );
         lock(&self.open).insert(target::OpenTimeline {
             key,
@@ -671,8 +700,7 @@ impl ChatLink {
         self.home.set_catching_up(false);
         self.view.send_modify(|view| {
             recovery::forgot_session(&mut view.encryption);
-            view.pending_confirmations.clear();
-            view.settled_confirmations.clear();
+            // 确认卡片跟家里的连接走，不和 Matrix 会话绑定：这里不清。
         });
         let session = lock(&self.session).take();
         if let Some(session) = session {
@@ -723,12 +751,6 @@ impl ChatLink {
             self.runtime
                 .spawn(async move { session.keep_syncing().await })
         };
-        let cards = self.runtime.spawn(pending::follow_cards(
-            view,
-            session.clone(),
-            self.answers.clone(),
-            self.card_success.clone(),
-        ));
         let catching_up = {
             let updates = session.catching_up();
             let home = self.home.clone();
@@ -747,7 +769,6 @@ impl ChatLink {
             sync,
             events,
             syncing,
-            cards,
             catching_up,
         ];
         tasks.extend(self.verification_tasks(session));
@@ -767,6 +788,14 @@ fn invalid(reason: &str) -> CoreError {
     CoreError::InvalidInput {
         reason: reason.to_owned(),
     }
+}
+
+/// 核心账号：和登录的账号 `own_user` 在同一台服务器上。通知房间（核心发插件通知、邮件的私聊）以它认，
+/// 别人发的同样结构的内容是普通消息。
+pub(crate) fn core_account(own_user: &UserId) -> OwnedUserId {
+    format!("@{CORE_LOCALPART}:{}", own_user.server_name())
+        .parse()
+        .expect("the account's server name with the fixed core localpart is still a valid user ID")
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

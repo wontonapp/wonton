@@ -261,6 +261,7 @@ impl Install {
                 method,
                 &format!("{}/_matrix/client/v3/{path}", self.address),
                 token,
+                &[],
                 RequestBody::Json(&body),
                 WAIT,
             )

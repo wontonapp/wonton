@@ -34,9 +34,11 @@ use switch::Replay;
 mod bot_contacts;
 mod browser;
 mod composer;
+mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod plugin_detail;
 mod push_route;
 mod settings;
 mod sharing;
@@ -283,29 +285,17 @@ impl ClientCore {
         self.views().onboarding.borrow().clone()
     }
 
+    /// 关掉从设置进去的重看引导：这次记下的选择全部丢弃，什么都不保存，壳回到设置。
+    /// 没在重看时调用没有效果。
+    pub fn close_onboarding(&self) {
+        self.scope().onboarding.close();
+    }
+
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
     pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
         Arc::new(OnboardingSubscription::new(
             self.views().onboarding.subscribe(),
         ))
-    }
-
-    /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
-    pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
-        let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.store_plugin(&source).await })
-            .await
-    }
-
-    /// 一个已安装插件的详情（装着的版本）。
-    pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
-        let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.installed_plugin(&id).await })
-            .await
     }
 
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是

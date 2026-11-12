@@ -2,6 +2,7 @@
 //! （网页、模型网关、MCP 服务）。普通网络里连 [`names::service_host`] 的稳定域名（上游看到的 Host 就是它），
 //! 宿主网络里的服务经 [`super::host_relay`] 的 unix 套接字访问。
 
+use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 
@@ -229,6 +230,34 @@ impl PluginManager {
         )
         .await
         .map(|address| address.map(Endpoint::Tcp))
+    }
+
+    /// 托管能力的提供方（ADR-0080）：网关把托管插件的请求转到这些地址。容器不在时少了那一项，
+    /// 网关如实回“提供方没有在运行”。
+    pub(super) async fn hosted_upstreams(
+        &self,
+        manifest: &Manifest,
+        network: &str,
+    ) -> Result<BTreeMap<String, Endpoint>, InstallError> {
+        let mut found = BTreeMap::new();
+        let Some(provides) = &manifest.provides else {
+            return Ok(found);
+        };
+        let slug = manifest.id.slug();
+        for (capability, spec) in &provides.capabilities {
+            if super::capabilities::lookup(capability).is_none_or(|c| c.hosted.is_none()) {
+                continue;
+            }
+            let name = self.cfg.instance.container(&slug, &spec.service);
+            let host = names::service_host(&slug, &spec.service);
+            if let Some(address) = self
+                .service_address(&name, &host, spec.port, network)
+                .await?
+            {
+                found.insert(capability.clone(), Endpoint::Tcp(address));
+            }
+        }
+        Ok(found)
     }
 
     /// 网页探测的状态码（ADR-0033 的 `wonton__plugin_status`）：请求一次网页入口，和装完时的探测

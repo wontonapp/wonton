@@ -1,5 +1,5 @@
 use super::*;
-use wonton_matrix::{Message, MessageBody, OwnedUserId, SendStatus};
+use wonton_matrix::{Message, MessageBody, SendStatus};
 use wonton_protocol::{MessageContent, RichLinkKind, TimelineContent};
 
 fn text_entry(id: &str, body: &str) -> TimelineEntry {
@@ -47,9 +47,6 @@ fn kind(diff: &TimelineDiff) -> RichLinkKind {
 /// 行为：先把插件网址渲染成外部网页，插件装好以后同一段文字重算成插件页。
 #[test]
 fn an_arriving_plugin_reclassifies_links() {
-    let owner: OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
-    let (_, answers) = watch::channel(Default::default());
-    let cards = Cards::new(&owner, answers).view();
     let read = ReadMark::default();
     let entries: Vector<TimelineEntry> = vec![text_entry(
         "1",
@@ -60,7 +57,6 @@ fn an_arriving_plugin_reclassifies_links() {
 
     let before = relinked(
         &entries,
-        &cards,
         &read,
         &LinkTargets::default(),
         &BotsView::default(),
@@ -74,7 +70,6 @@ fn an_arriving_plugin_reclassifies_links() {
     )]);
     let after = relinked(
         &entries,
-        &cards,
         &read,
         &links,
         &BotsView::default(),

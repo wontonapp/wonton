@@ -102,6 +102,12 @@ extension ChatFailure {
                 nextStep: String(localized: .problemUnauthorizedNextStep),
                 detail: detail
             )
+        case .forbidden:
+            return Problem(
+                title: String(localized: .problemForbiddenTitle),
+                nextStep: String(localized: .problemForbiddenNextStep),
+                detail: detail
+            )
         case .upstream:
             return Problem(
                 title: String(localized: .problemUpstreamTitle),
@@ -112,6 +118,12 @@ extension ChatFailure {
             return Problem(title: String(localized: .problemNotReadyTitle), nextStep: detail)
         case .invalidInput:
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: detail)
+        case .other:
+            return Problem(
+                title: String(localized: .problemGenericTitle),
+                nextStep: String(localized: .problemUpstreamNextStep),
+                detail: detail
+            )
         }
     }
 }

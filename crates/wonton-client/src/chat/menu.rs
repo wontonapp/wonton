@@ -8,10 +8,11 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::sync::watch;
 use wonton_l10n::l10n;
-use wonton_matrix::{EntryKind, MessageBody, OwnedEventId, TimelineEntry, Vector};
+use wonton_matrix::{EntryKind, MessageBody, OwnedEventId, OwnedRoomId, TimelineEntry, Vector};
 use wonton_protocol::{
-    BackPagination, ChatViewModel, CoreError, KeyNotice, MessageAction, MessageContent,
-    QuotedMessage, TimelineContent, TimelineDiff, TimelineItem, TimelineUpdate, TimelineViewport,
+    BackPagination, ChatViewModel, ConfirmationView, CoreError, KeyNotice, MessageAction,
+    MessageContent, QuotedMessage, TimelineContent, TimelineDiff, TimelineItem, TimelineUpdate,
+    TimelineViewport,
 };
 
 use super::{ChatLink, TimelineKey, invalid, lock, rich};
@@ -166,12 +167,15 @@ fn is_own_message(item: &TimelineItem) -> bool {
     matches!(&item.content, TimelineContent::Message { message } if message.is_own)
 }
 
-/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）和加密入口。
+/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）、加密入口，
+/// 和显示在这个房间的确认卡片（ADR-0016）。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
     room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     chat: watch::Receiver<ChatViewModel>,
+    room_id: OwnedRoomId,
+    confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     /// 旁聊订阅的头部（ADR-0093 §5）：每批都带上现在的；主对话是空的。
     side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
 }
@@ -182,12 +186,16 @@ impl Outbox {
         menus: Arc<Mutex<Menus>>,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
         chat: watch::Receiver<ChatViewModel>,
+        room_id: OwnedRoomId,
+        confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     ) -> Self {
         Self {
             sender,
             menus,
             room_view,
             chat,
+            room_id,
+            confirmations,
             side_chat: Mutex::new(None),
         }
     }
@@ -211,6 +219,28 @@ impl Outbox {
         super::view::key_notice(&self.chat.borrow().encryption, has_undecryptable)
     }
 
+    /// 显示在这个房间的确认卡片：`origin.room_id` 是这个房间的（话题发起的也算），等回答的，
+    /// 加上这个进程里看着结束的。每批都给当前的列表；时间线的 AgentRun 条目也从这里读等回答的卡片。
+    pub(super) fn confirmations(&self) -> Vec<ConfirmationView> {
+        self.confirmations
+            .borrow()
+            .iter()
+            .filter(|view| {
+                view.card
+                    .origin
+                    .as_ref()
+                    .is_some_and(|origin| origin.room_id == self.room_id.as_str())
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// 等这个房间能显示的确认卡片变化；发给壳的每一批都现取当前的列表，所以等到了就发一批空的。
+    pub(super) async fn confirmations_changed(&self) -> Result<(), watch::error::RecvError> {
+        let mut confirmations = self.confirmations.clone();
+        confirmations.changed().await
+    }
+
     pub(super) fn send(
         &self,
         entries: &Vector<TimelineEntry>,
@@ -226,6 +256,7 @@ impl Outbox {
             None => (Vec::new(), None, false),
         };
         let key_notice = self.key_notice(entries);
+        let confirmations = self.confirmations();
         self.sender
             .send(TimelineUpdate {
                 diffs,
@@ -237,7 +268,7 @@ impl Outbox {
                 panel_selected,
                 entry_blocked,
                 key_notice,
-                confirmations: Vec::new(),
+                confirmations,
                 side_chat: lock(&self.side_chat).clone(),
             })
             .map_err(|_| ())
@@ -401,7 +432,15 @@ mod tests {
             bots: Vec::new(),
             chat_layout_default: Default::default(),
         });
-        let outbox = Outbox::new(tx, Arc::default(), room_view, chat);
+        let (_, confirmations) = watch::channel(Arc::new(Vec::new()));
+        let outbox = Outbox::new(
+            tx,
+            Arc::default(),
+            room_view,
+            chat,
+            OwnedRoomId::try_from("!room:example.com").unwrap(),
+            confirmations,
+        );
         let item = |id: &str, own: bool| TimelineItem {
             id: id.to_owned(),
             content: TimelineContent::Message {

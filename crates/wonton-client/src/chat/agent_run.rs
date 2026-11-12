@@ -4,19 +4,18 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use wonton_matrix::{AgentRunStatus, ChatRoom, EntryKind, TimelineEntry, Vector};
+use wonton_matrix::{AgentRunStatus, ChatRoom};
 use wonton_protocol::{
-    AgentRunState, BotActivity, ChatViewModel, ConfirmationRequester, ConfirmationState, CoreError,
-    TimelineContent,
+    AgentRunState, BotActivity, ChatViewModel, ConfirmationRequester, ConfirmationState,
+    ConfirmationView, CoreError, TimelineContent,
 };
 
-use super::confirmation::CardsView;
 use super::side_chat::{SideChatsView, Support};
 use super::{ChatLink, TimelineKey, lock};
 
 /// 合成 AgentRun 条目要用的 Bot 情况：Bot 列表和每个账号的活动来自 [`ChatViewModel`]；这个房间里
-/// 等回答的卡片来自房间自己的时间线（ADR-0082 第 4 节：卡片在这个对话里）。Bot 列表、活动或卡片变了，
-/// AgentRun 条目的显示跟着变，所以每批都带上一份。
+/// 等回答的卡片来自「等你确认」列表按 `origin.room_id` 过滤后的房间卡片（ADR-0016：卡片不在时间线里）。
+/// Bot 列表、活动或卡片变了，AgentRun 条目的显示跟着变，所以每批都带上一份。
 #[derive(Clone, Default, PartialEq)]
 pub(super) struct BotsView {
     users: HashSet<String>,
@@ -29,12 +28,8 @@ pub(super) struct BotsView {
 }
 
 impl BotsView {
-    /// Bot 列表、活动、房间里的等回答卡片，一次算齐。
-    pub(super) fn of(
-        view: &ChatViewModel,
-        entries: &Vector<TimelineEntry>,
-        cards: &CardsView,
-    ) -> Self {
+    /// Bot 列表、活动、这个房间等回答的卡片，一次算齐。
+    pub(super) fn of(view: &ChatViewModel, cards: &[ConfirmationView]) -> Self {
         Self {
             users: view.bots.iter().map(|bot| bot.user_id.clone()).collect(),
             activity: view
@@ -42,7 +37,7 @@ impl BotsView {
                 .iter()
                 .map(|bot| (bot.user_id.clone(), bot.activity))
                 .collect(),
-            waiting_cards: waiting_cards_from(entries, cards),
+            waiting_cards: waiting_cards_from(cards),
             side_chats: SideChatsView::default(),
         }
     }
@@ -64,14 +59,10 @@ impl BotsView {
         support.supports(&room.room_id().to_owned(), &self.users)
     }
 
-    /// 房间里的等回答卡片变了（来了、答了、到期了）而 Bot 列表没变时，只重算卡片映射。
-    pub(super) fn with_waiting_cards(
-        &self,
-        entries: &Vector<TimelineEntry>,
-        cards: &CardsView,
-    ) -> Self {
+    /// 这个房间等回答的卡片变了（来了、答了、到期了）而 Bot 列表没变时，只重算卡片映射。
+    pub(super) fn with_waiting_cards(&self, cards: &[ConfirmationView]) -> Self {
         Self {
-            waiting_cards: waiting_cards_from(entries, cards),
+            waiting_cards: waiting_cards_from(cards),
             ..self.clone()
         }
     }
@@ -117,21 +108,12 @@ impl BotsView {
     }
 }
 
-/// 这个房间里每个 Bot 等回答的卡片：时间线里的卡片消息按发起者归组，多张时取最早到期的。
+/// 这个房间里每个 Bot 等回答的卡片：房间的确认卡片按发起者归组，多张时取最早到期的。
 /// 答过、到期、发送中的不算（和提示条列表同一个口径）。
-fn waiting_cards_from(
-    entries: &Vector<TimelineEntry>,
-    cards: &CardsView,
-) -> HashMap<String, String> {
+fn waiting_cards_from(cards: &[ConfirmationView]) -> HashMap<String, String> {
     let mut found: HashMap<String, (u64, String)> = HashMap::new();
-    for entry in entries.iter() {
-        let EntryKind::Message(message) = &entry.kind else {
-            continue;
-        };
-        let Some(view) = cards.view_of(message) else {
-            continue;
-        };
-        let card = view.card;
+    for view in cards {
+        let card = &view.card;
         if view.sending.is_some() || card.state != ConfirmationState::Pending {
             continue;
         }

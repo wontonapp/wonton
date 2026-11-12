@@ -899,8 +899,8 @@
     <string name="message_image_saved">已保存到相册</string>
     <string name="message_image_share">分享</string>
     <string name="message_image_share_failed">没能分享这张图片</string>
-    <!-- Description of an agent row in setup when it has no account login. -->
-    <string name="onboarding_agent_connection_key">key</string>
+    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
+    <string name="onboarding_agent_connection_key">在下一步填模型服务商的 key</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s或 key</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -942,7 +942,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">连不上服务商，完成时照样保存。</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">用现在的</string>
+    <string name="onboarding_model_use_current">用现在的模型</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">用%1$s</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -1027,10 +1027,20 @@
     <string name="onboarding_review_keep_current">用现在的</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">正在准备</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">资料</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">模型</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">应用</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">设为默认</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">装好后在聊天里登录</string>
+    <!-- Row description in the review step: finishing will not touch this. -->
+    <string name="onboarding_review_unchanged">不变</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">不确定装好没有，请到应用页查看。</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
@@ -1213,6 +1223,10 @@
     <string name="problem_appearance_title">外观设置没有存上</string>
     <string name="problem_apps_not_ready">应用列表还没有准备好，请稍后重试。</string>
     <string name="problem_no_default_agent">还没有默认 Agent，请先在引导中选择并安装。</string>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">请求被拒绝了</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">登录没有问题。可能是没有权限、对方屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
     <string name="problem_invalid_input_title">这个操作做不了</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">正在加载</string>
@@ -1648,6 +1662,8 @@
     <string name="push_status_unavailable">收不到推送，请检查系统通知和分发器</string>
     <string name="push_status_failed_transport">注册失败，连上家里的服务器后重试</string>
     <string name="push_status_failed_unauthorized">注册失败，请重新配对</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">注册失败，家里的服务器拒绝了</string>
     <string name="push_status_failed_upstream">注册失败，家里的服务器出错了</string>
     <string name="push_status_failed_not_ready">注册失败，请等聊天连接就绪</string>
     <string name="push_status_failed_invalid_input">注册失败，推送地址无效</string>

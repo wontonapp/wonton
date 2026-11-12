@@ -38,11 +38,13 @@ pub mod host_check;
 pub mod host_facts;
 pub mod host_relay;
 pub mod hostdir;
+pub mod hosted;
 pub mod image_worker;
 pub mod images;
 pub mod index_location;
 mod install_entry;
 mod install_error;
+pub(crate) mod install_hosted;
 mod installation;
 pub mod interpolate;
 pub mod lan;
@@ -82,7 +84,10 @@ mod owner_secrets;
 pub mod package;
 pub mod package_archive;
 pub mod package_files;
+// 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod personal_data;
 pub mod pins;
 pub mod preinstall;
 pub mod privileges;
