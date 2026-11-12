@@ -106,10 +106,12 @@ pub use confirmation_origin::{
     ORIGIN_THREAD_HEADER, confirmation_path,
 };
 pub use core_upgrade::{
-    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
-    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
-    CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
+    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeBreakingPlugin,
+    CoreUpgradeBreakingReason, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
+    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
+    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun,
+    CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget,
+    CoreUpgradeViewModel, CoreVersion,
 };
 pub use egress::{
     EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
