@@ -21,6 +21,9 @@ impl PluginManager {
         let langs = self.owner_languages();
         let id = PluginId::parse(plan.labels.get(LABEL_PLUGIN).expect("渲染计划带插件归属"))
             .expect("渲染计划的插件 ID 已校验");
+        if let Some(devices) = &ctx.devices {
+            devices.retain_available(plan);
+        }
         self.recovery_stage(&id, PluginRecoveryStage::Preparing)?;
         let result = self
             .replace_prepared(&id, ctx, &mut plan, gate, &langs)

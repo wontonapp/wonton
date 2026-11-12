@@ -184,11 +184,16 @@ impl PluginManager {
         }
         let checked = self.check_containers(package, &langs).await?;
         self.refresh_bot_web_routes(manifest).await?;
+        let devices = self.recovery_devices(manifest, record)?;
+        let blocked = devices.blocked_services(package, &langs)?;
         let health = match checked.state {
-            ContainersState::Stopped => return Ok(None),
+            ContainersState::Stopped if blocked.is_empty() => return Ok(None),
+            ContainersState::Stopped => Health::Unknown,
             ContainersState::Running(health) => health,
         };
-        let problem = checked.problem(&langs).map(|problem| problem.to_string());
+        let problem = devices
+            .problem(&langs)
+            .or_else(|| checked.problem(&langs).map(|problem| problem.to_string()));
         self.ensure_relays(manifest, record).await?;
         self.check_bot(manifest).await?;
         let secrets = self.check_secrets(manifest).await?;
@@ -237,7 +242,7 @@ impl PluginManager {
         };
         Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
-            serving: checked.serving().clone(),
+            serving: checked.serving().difference(&blocked).cloned().collect(),
             problem,
             health,
             models: self.models_upstream(manifest, &network).await?,

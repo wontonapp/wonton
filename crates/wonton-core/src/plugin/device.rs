@@ -21,6 +21,7 @@ pub use preview::{apply, blocked, preview_items};
 
 pub mod host;
 mod preview;
+mod recovery;
 pub mod watch;
 
 /// 一个可以交给服务的宿主设备。
@@ -105,6 +106,8 @@ pub struct GrantedDevice {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeviceGrant {
     pub services: BTreeMap<String, Vec<GrantedDevice>>,
+    /// 恢复时缺设备的服务：保留授权，但不启动它或依赖它的服务。
+    pub unavailable: BTreeMap<String, String>,
     /// 宿主有没有 `/run/udev`：有就给拿到设备或 USB 的服务只读挂上，让上游自己的自动发现能用。
     pub udev: bool,
 }

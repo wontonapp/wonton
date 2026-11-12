@@ -1,4 +1,4 @@
-//! 串口拔插（ADR-0036）：选中的设备不在了就把插件标为异常，插回来并稳定 2 秒后只 restart 拿到它的服务，别的服务不动。
+//! 串口拔插（ADR-0036）：拔出标为异常；插回稳定两秒后重启设备服务，拉起等待它的服务，不动无关服务。
 //!
 //! 实测（Docker Engine 29.7.2、cgroup v2）：`restart` 重新解析 `PathOnHost` 的 by-id 拿到了新节点；重启策略拉起的容器也一样，
 //! 所以不用重建容器，容器 ID、日志和匿名卷都留着。硬盘是固定装着的，不在这里盯。
@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::time::Instant as TokioInstant;
 
 use super::super::languages::Languages;
-use super::super::manager::{Health, PluginManager, PluginStatus};
+use super::super::manager::{Entry, PluginManager, PluginStatus};
 use super::super::manifest::{DeviceClass, PluginId};
 use super::super::store::InstalledDevice;
 use crate::l10n::{list, text};
@@ -28,7 +28,6 @@ pub struct DeviceWatch {
 struct Gone {
     /// 设备全部回来的时刻；没全回来时为空。
     back: Option<TokioInstant>,
-    reason: String,
 }
 
 impl PluginManager {
@@ -127,13 +126,11 @@ impl PluginManager {
             ),
             text(langs, "plugin-install-device-gone-replug", &[]),
         );
-        self.devices.gone.lock().await.insert(
-            (id.clone(), serial[0].service.clone()),
-            Gone {
-                back: None,
-                reason: reason.clone(),
-            },
-        );
+        self.devices
+            .gone
+            .lock()
+            .await
+            .insert((id.clone(), serial[0].service.clone()), Gone { back: None });
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
@@ -165,26 +162,17 @@ impl PluginManager {
             return;
         }
         let services = [serial[0].service.clone()];
-        match self.restart_services(id, &services, langs).await {
-            Ok(()) => {
-                let mut gone = self.devices.gone.lock().await;
-                let removed = gone.remove(&key);
-                let pending = gone
-                    .iter()
-                    .find(|((plugin, _), _)| plugin == id)
-                    .map(|(_, state)| state.reason.clone());
-                drop(gone);
+        match self.resume_device_services(id, &services, langs).await {
+            Ok(deployed) => {
+                self.devices.gone.lock().await.remove(&key);
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
                 if let Some(entry) = plugins.get_mut(id)
-                    && matches!(&entry.status, PluginStatus::Degraded { reason } if removed.as_ref().is_some_and(|state| state.reason == *reason))
+                    && let Some(listed) = entry.listed.clone()
                 {
-                    entry.status = pending.map_or(PluginStatus::Running, |reason| {
-                        PluginStatus::Degraded { reason }
-                    });
-                    entry.health = Some(Health::Unknown);
+                    *entry = Entry::running(listed, deployed);
                     self.changed();
                 }
-                tracing::info!(plugin = %id, "设备回来了，服务已重启");
+                tracing::info!(plugin = %id, "设备回来了，服务已恢复");
             }
             Err(error) => {
                 tracing::warn!(plugin = %id, %error, "设备回来了，重启服务失败，下次再试");
@@ -194,44 +182,5 @@ impl PluginManager {
                 }
             }
         }
-    }
-
-    /// 重启拿到这些设备的容器。Bot 服务的容器名带 Bot 名，按前缀匹配。
-    async fn restart_services(
-        &self,
-        id: &PluginId,
-        services: &[String],
-        langs: &Languages,
-    ) -> Result<(), String> {
-        let Some(listed) = self
-            .plugins
-            .read()
-            .expect("插件表锁中毒")
-            .get(id)
-            .and_then(|entry| entry.listed.clone())
-        else {
-            return Ok(());
-        };
-        let owned = self
-            .own_resources(id)
-            .await
-            .map_err(|error| error.to_string())?;
-        for service in services {
-            let base = self
-                .cfg
-                .instance
-                .container(&listed.manifest.id.slug(), service);
-            for container in &owned.containers {
-                let ours = container == &base || container.starts_with(&format!("{base}--"));
-                if !ours {
-                    continue;
-                }
-                self.engine
-                    .restart_container(container, langs)
-                    .await
-                    .map_err(|error| error.to_string())?;
-            }
-        }
-        Ok(())
     }
 }
