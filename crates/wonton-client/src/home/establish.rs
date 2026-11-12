@@ -25,11 +25,11 @@ const BIND_DEADLINE: Duration = Duration::from_secs(10);
 const RETRY_FIRST: Duration = Duration::from_secs(1);
 const RETRY_MAX: Duration = Duration::from_secs(30);
 /// 冷启动的头 [`COLD_DIALS`] 次拨号用这个时限。设备刚重装、进程刚起来时，翻译层和冷缓存让一次握手要
-/// 十几二十秒，12 秒的差额每次都把它掐在快成功的时候，客户端一轮一轮重来。名额用完照样按
-/// [`wonton_tunnel::DIAL_DEADLINE`] 放弃，服务器真没了不多等。
+/// 十几二十秒，12 秒的差额每次都把它掐在快成功的时候，客户端一轮一轮重来。名额用完、或者这一轮已经连上过
+/// 一次，就回到 [`wonton_tunnel::DIAL_DEADLINE`]：断线重拨的握手已经是热的，服务器真没了也不多等。
 const COLD_DIAL_DEADLINE: Duration = Duration::from_secs(30);
 /// 冷启动的头几次拨号可以用 [`COLD_DIAL_DEADLINE`]。两次：第一轮被什么拖慢了都还够一次重拨；
-/// 用完之后回到 [`wonton_tunnel::DIAL_DEADLINE`]。
+/// 用完之后、或者第一次连上之后，回到 [`wonton_tunnel::DIAL_DEADLINE`]。
 const COLD_DIALS: u32 = 2;
 
 impl HomeLink {

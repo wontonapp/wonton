@@ -179,6 +179,11 @@ impl DialTiming {
         }
         self.warm
     }
+
+    /// 已经连上过：剩下的名额作废。名额只给这一轮第一次连上之前的拨号，之后断了重拨按正常的时限。
+    fn connected(&self) {
+        self.allowance.store(0, Ordering::SeqCst);
+    }
 }
 
 /// 名额还有就扣掉一个并返回真。
@@ -569,6 +574,7 @@ impl Inner {
                 return Err(self.dial_failed(err, &server, deadline));
             }
         };
+        lock(&self.dial).connected();
         if self.closed.load(Ordering::SeqCst) {
             conn.close(CLOSE_NORMAL, b"client closed");
             return Err(TunnelError::Closed);
