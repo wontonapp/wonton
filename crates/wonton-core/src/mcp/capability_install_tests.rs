@@ -4,7 +4,9 @@ use std::fs;
 use std::time::Duration;
 
 use serde_json::json;
-use wonton_protocol::{Answer, ConfirmationState, PluginTrust, SecretString, SecretValues};
+use wonton_protocol::{
+    Answer, ConfirmationState, PluginState, PluginTrust, SecretString, SecretValues,
+};
 
 use super::agent_install_tests::{Bench, INSTALL, plain};
 use super::tests::{failed, setup};
@@ -191,20 +193,62 @@ async fn capability_official_install_uses_the_same_confirmed_dependency_path() {
 }
 
 #[tokio::test]
-async fn capability_invalid_or_rejected_confirmation_installs_neither_plugin() {
+async fn capability_installation_waits_for_an_omitted_provider_secret_and_recovers() {
     let (b, docker) = fixture(false, false).await;
     let call = b.s.spawn(INSTALL, json!({"dir": "consumer"}));
     let card = b.s.cards.wait_for(1).await;
-    let missing = [(
+    let partial = [(
         "token".to_owned(),
         SecretString::new("consumer-private-value"),
     )]
     .into();
-    assert!(
-        b.s.answer_with_secrets(&card.id, Answer::Approve, missing)
-            .is_err()
-    );
     assert_not_installed(&b, &docker);
+    b.s.answer_with_secrets(&card.id, Answer::Approve, partial)
+        .unwrap();
+    let result = call.await.unwrap();
+    assert!(!failed(&result), "{result:?}");
+    assert!(b.installed(CONSUMER));
+
+    let id = PluginId::parse(PROVIDER).unwrap();
+    let langs = Languages::default();
+    let provider = b.s.manager.installed_plugin(&id, &langs).unwrap();
+    assert_eq!(provider.status, PluginState::NeedsConfiguration);
+    let detail = b.s.manager.judged_detail(&id, &langs).await.unwrap();
+    assert!(
+        detail
+            .secret_inputs
+            .iter()
+            .any(|input| input.name == "token" && input.required && !input.filled)
+    );
+    let provider_web = container_name(&id.slug(), "web");
+    assert!(docker.env(&provider_web).iter().any(|value| value == "TOKEN="));
+
+    b.s.manager
+        .set_secret_input(&id, "token", Some("provider-private-value"), &langs)
+        .await
+        .unwrap();
+    let provider = b.s.manager.installed_plugin(&id, &langs).unwrap();
+    assert!(matches!(provider.status, PluginState::Running { .. }));
+    assert!(
+        docker
+            .env(&provider_web)
+            .iter()
+            .any(|value| value == "TOKEN=provider-private-value")
+    );
+    let consumer_web = container_name(&PluginId::parse(CONSUMER).unwrap().slug(), "web");
+    assert!(
+        docker
+            .env(&consumer_web)
+            .iter()
+            .any(|value| value == "TOKEN=consumer-private-value")
+    );
+}
+
+#[tokio::test]
+async fn capability_invalid_or_rejected_confirmation_installs_neither_plugin() {
+    let (b, docker) = fixture(false, false).await;
+    let call = b.s.spawn(INSTALL, json!({"dir": "consumer"}));
+    let card = b.s.cards.wait_for(1).await;
     let mut unknown = values();
     unknown.insert(
         "app.unknown/token".to_owned(),
