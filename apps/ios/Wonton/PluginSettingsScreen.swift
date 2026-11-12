@@ -142,7 +142,11 @@ struct PluginSettingsScreen: View {
             } catch let failure as CoreError {
                 // 候选值没过校验：明细逐字段标红。
                 if case let .SettingsInvalid(_, fields) = failure {
-                    fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message)) })
+                    fieldProblems = Dictionary(
+                        uniqueKeysWithValues: fields.map {
+                            ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message))
+                        }
+                    )
                 }
             } catch {
                 // 别的失败维持现状。
@@ -197,7 +201,11 @@ struct PluginSettingsScreen: View {
             problem = failure.problem
             if case let .SettingsInvalid(_, fields) = failure {
                 // 校验没过：明细逐字段标到控件旁，不用再问核心。
-                fieldProblems = Dictionary(uniqueKeysWithValues: fields.map { ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message)) })
+                fieldProblems = Dictionary(
+                    uniqueKeysWithValues: fields.map {
+                        ($0.name, SettingsFieldProblem(kind: $0.kind, message: $0.message))
+                    }
+                )
             } else {
                 // 别的失败（如设置文件换过了）：重读整页拿最新状态；主人填的不动。
                 if let refreshed = try? await model.core.pluginSettings(id: pluginId) {
