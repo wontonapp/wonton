@@ -7,14 +7,35 @@
 # 直接运行本脚本时设 WONTON_SKIP_MERGED_CHECK=1。
 # 编译命令：默认 `cargo`；WONTON_CARGO 可以换成别的命令（例如把编译转到别的机器的包装脚本），参数原样传过去。
 # main 从哪拉：WONTON_MAIN_REMOTE（remote 名或 URL）；不设时找 URL 指向 wontonapp/wonton 的 remote，找不到用 origin。
+#
+# 合并后的树检出到一个一次性的临时工作区里编，不碰调用方工作区的 HEAD 和工作区。早先复用一个固定目录时，
+# 有分支的 HEAD 停在临时合并提交上、工作区还是原分支的文件，看上去像几十个未提交改动（11-12 一次停了 1 小时）。
 set -euo pipefail
+
+top=$(git rev-parse --show-toplevel)
+dir=
+# 成功、失败、中断都要把临时工作区删掉，不然留在对象库里的注册会把 git 的目录弄脏。
+cleanup() {
+  if [[ -n $dir ]]; then
+    git -C "$top" worktree remove --force "$dir" >/dev/null 2>&1 || rm -rf -- "$dir"
+    git -C "$top" worktree prune >/dev/null 2>&1 || :
+  fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ ${WONTON_SKIP_MERGED_CHECK:-} == 1 ]]; then
   echo "跳过：WONTON_SKIP_MERGED_CHECK=1"
   exit 0
 fi
+# Mac 上不编 Rust：wonton-core 那里编不过，还会在工作区留下几个 G 的 target。有 WONTON_CARGO 说明编译另有去处
+# （远端包装），照走；没有就把这一步交给 CI，别让每次推送都卡在编不过上。
+if [[ $(uname) == Darwin && -z ${WONTON_CARGO:-} ]]; then
+  echo "Mac 上不在本机编；要在这里也查，设 WONTON_CARGO 指到远端编译的包装脚本。这次跳过，由 CI 兜底"
+  exit 0
+fi
 
-top=$(git rev-parse --show-toplevel)
 cd "$top"
 
 remote=${WONTON_MAIN_REMOTE:-}
@@ -44,17 +65,10 @@ if ! tree=$(git merge-tree --write-tree "$head" "$main"); then
 fi
 merged=$(git commit-tree "$tree" -p "$head" -p "$main" -m "推送前检查：合上最新的 main")
 
-# 合并后的树检出到 git 目录里一个固定的工作区，每次推送复用：源码只换改了的文件，target 也留着，
-# 第二次起只编改到的 crate。目录名带上本工作区的名字，几个工作区各用各的。
-dir="$(git rev-parse --path-format=absolute --git-path wonton-merged-check)/$(basename "$top")-merged"
-if [[ -e $dir/.git ]]; then
-  git -C "$dir" checkout --quiet --detach --force "$merged"
-  git -C "$dir" clean --quiet -fdx
-else
-  rm -rf "$dir"
-  git worktree prune
-  git worktree add --quiet --detach "$dir" "$merged"
-fi
+# 一次性的临时工作区：源码每次都是新的，工作区的 crate 每推一次要重编（4 核约 4 分钟）；依赖的产物留在
+# 和本工作区共用的 target 里，不用重编。用完由上面的 trap 删掉。
+dir=$(mktemp -d "${TMPDIR:-/tmp}/wonton-merged-check.XXXXXX")
+git worktree add --quiet --detach "$dir" "$merged"
 
 echo "==> 在合上最新 main（${main:0:10}）的树上：cargo check --workspace --tests --locked"
 cd "$dir"
