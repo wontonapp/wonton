@@ -80,6 +80,13 @@ fn refused<T: std::fmt::Debug>(result: Result<T, ImageError>) -> String {
     }
 }
 
+fn timed_out<T: std::fmt::Debug>(result: Result<T, ImageError>) -> String {
+    match result {
+        Err(ImageError::TimedOut(reason)) => reason,
+        other => panic!("{other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn icons_and_screenshots_come_back_reencoded() {
     let _serial = SERIAL.lock().await;
@@ -128,7 +135,7 @@ async fn slow_images_are_stopped_at_the_deadline_and_the_process_is_gone() {
     } else {
         Vec::new()
     };
-    let reason = refused(task.await.unwrap());
+    let reason = timed_out(task.await.unwrap());
     assert!(reason.contains("处理超过 2 秒"), "{reason}");
     assert!(started.elapsed() < Duration::from_secs(5));
     for pid in images {
@@ -319,4 +326,80 @@ fn parent_of(pid: u32) -> Option<u32> {
         .nth(1)?
         .parse()
         .ok()
+}
+
+/// 每项是一页内容流的最小 PDF：交叉引用表按真实偏移写，字体对象编号按页数算。
+fn pdf(pages: &[&str]) -> Vec<u8> {
+    let font = 3 + pages.len() * 2;
+    let mut objects: Vec<Vec<u8>> = vec![
+        b"<< /Type /Catalog /Pages 2 0 R >>".to_vec(),
+        format!(
+            "<< /Type /Pages /Kids [{}] /Count {} >>",
+            (0..pages.len())
+                .map(|i| format!("{} 0 R", 3 + i * 2))
+                .collect::<Vec<_>>()
+                .join(" "),
+            pages.len()
+        )
+        .into_bytes(),
+    ];
+    for (index, content) in pages.iter().enumerate() {
+        objects.push(
+            format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {} 0 R /Resources << /Font << /F1 {font} 0 R >> >> >>",
+                4 + index * 2
+            )
+            .into_bytes(),
+        );
+        objects.push(
+            format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            )
+            .into_bytes(),
+        );
+    }
+    objects.push(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_vec());
+    let mut out = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (number, body) in objects.iter().enumerate() {
+        offsets.push(out.len());
+        out.extend_from_slice(format!("{} 0 obj\n", number + 1).as_bytes());
+        out.extend_from_slice(body);
+        out.extend_from_slice(b"\nendobj\n");
+    }
+    let xref = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n", objects.len() + 1).as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
+    for offset in &offsets {
+        out.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+#[tokio::test]
+async fn pdf_text_comes_back_through_a_real_child() {
+    let _serial = SERIAL.lock().await;
+    let (worker, _langs) = zh_worker(None);
+    let pages = [
+        "BT /F1 12 Tf 72 712 Td (MARKER-ONE) Tj ET",
+        "BT /F1 12 Tf 72 712 Td (MARKER-TWO) Tj ET",
+    ];
+    let got = worker.pdf_text(&pdf(&pages)).await.unwrap();
+    assert!(got.text.contains("MARKER-ONE"), "{}", got.text);
+    assert!(got.text.contains("MARKER-TWO"), "{}", got.text);
+    assert_eq!((got.pages_read, got.pages_total), (2, 2));
+    assert!(!got.truncated);
+
+    // 没有文字层：子进程按拒绝回，原因里带页数。
+    let scan = worker.pdf_text(&pdf(&["q 10 0 0 10 0 0 cm Q"])).await;
+    let reason = refused(scan);
+    assert!(reason.contains("1 页"), "{reason}");
 }
