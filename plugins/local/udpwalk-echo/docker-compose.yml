@@ -1,0 +1,21 @@
+services:
+  echo:
+    image: alpine/socat:1.8.0.3
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        socat TCP-LISTEN:8000,reuseaddr,fork EXEC:/bin/cat &
+        exec socat UDP-RECVFROM:8001,fork EXEC:/bin/cat
+
+x-wonton:
+  spec: '0.11'
+  id: app.udpwalk-echo
+  version: 0.1.0
+  kind: app
+  title: { zh: 走查回显, en: Walk echo }
+  description: { zh: 走查用的 TCP、UDP 回显, en: TCP and UDP echo for the walkthrough }
+  permissions: []
+  tunnel:
+    ports:
+      - { service: echo, port: 8000, protocol: tcp }
+      - { service: echo, port: 8001, protocol: udp }
