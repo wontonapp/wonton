@@ -153,10 +153,18 @@ impl MatrixSession {
     /// 用恢复密钥恢复：取回交叉签名的秘密和密钥备份，本设备随之被验证。
     pub async fn recover(&self, recovery_key: &str) -> Result<()> {
         let recovery = self.client.encryption().recovery();
-        recovery
-            .recover(recovery_key.trim())
-            .await
-            .map_err(|error| recovery_error(&error))?;
+        if let Err(error) = recovery.recover(recovery_key.trim()).await {
+            // SDK 导入完秘密还要再读一次账号数据算恢复状态，这一步的网络错误是顶层的 `Sdk`（开秘密存储、导入秘密的错误
+            // 包在 `SecretStorage` 里）。导入秘密触发的 keys/query 往往已先把状态算成 Enabled，这时秘密已经齐了，
+            // 只是刷新那一下断在半路（matrix-sdk 0.19.1，隧道正好断开时实测）。报失败的话界面把状态退回恢复前，
+            // 还留着一条“连不上”的错误。
+            let only_refresh_failed = matches!(error, RecoveryError::Sdk(_))
+                && matches!(recovery.state(), RecoveryState::Enabled);
+            if !only_refresh_failed {
+                return Err(recovery_error(&error));
+            }
+            tracing::info!("恢复已完成，之后刷新恢复状态失败：{error}");
+        }
         // 密钥对、秘密存储却缺东西时 SDK 也算成功，这台设备其实什么也没取回。
         if matches!(recovery.state(), RecoveryState::Incomplete) {
             return Err(Error::NotReady(
