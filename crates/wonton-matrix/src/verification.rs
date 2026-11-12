@@ -242,7 +242,10 @@ impl SelfVerification {
     /// 主人的显式取消须先标记，不能与 SDK 的自动并发取消混为一谈。
     pub async fn cancel(&self) -> Result<()> {
         let _control = self.inner.control.lock().await;
-        self.ensure_active()?;
+        // 对方的取消、确认可能比主人这一次点击先到：已经结束的流程再点取消按完成算。
+        if !self.active()? {
+            return Ok(());
+        }
         {
             let mut snapshot = self
                 .inner
@@ -251,7 +254,7 @@ impl SelfVerification {
                 .expect("verification snapshot poisoned");
             // Crypto 同步不持有 control；不要把已经发生的自动取消改记成手动取消。
             if self.inner.request.is_cancelled() {
-                return Err(Error::NotReady("这次设备确认已经结束".to_owned()));
+                return Ok(());
             }
             snapshot.explicit_cancel = true;
         }
@@ -260,7 +263,10 @@ impl SelfVerification {
 
     async fn compare_operation(&self, matches: bool) -> Result<()> {
         let _control = self.inner.control.lock().await;
-        self.ensure_active()?;
+        // 两台设备可能几乎同时点：后到的一次落在已结束的流程上，快照里已经是对方的结论（例如表情对不上）。
+        if !self.active()? {
+            return Ok(());
+        }
         let sas = self
             .sas()
             .ok_or_else(|| Error::NotReady("SAS 尚未开始".to_owned()))?;
@@ -276,10 +282,14 @@ impl SelfVerification {
     }
 
     fn ensure_active(&self) -> Result<()> {
-        if mapping::terminal(&self.flow()?.stage) {
+        if !self.active()? {
             return Err(Error::NotReady("这次设备确认已经结束".to_owned()));
         }
         Ok(())
+    }
+
+    fn active(&self) -> Result<bool> {
+        Ok(!mapping::terminal(&self.flow()?.stage))
     }
 
     fn sas(&self) -> Option<SasVerification> {

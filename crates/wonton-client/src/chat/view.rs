@@ -161,7 +161,7 @@ pub(crate) fn timeline_item(
                     MessageBody::Text(text) | MessageBody::Notice(text) => text.clone(),
                     _ => String::new(),
                 };
-                bots.content(status, &body, message.sender.as_str())
+                bots.content(status, &body, message.sender.as_str(), &message.sender_name)
             }
             // 旁聊的结果行和带标记的根（ADR-0093 §4）。
             _ => match bots.side_chats().content(&message) {

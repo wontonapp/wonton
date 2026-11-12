@@ -587,6 +587,7 @@ async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFa
         recipient: None,
         requester: Some(requester),
         origin,
+        category: None,
     };
     let asked = bus
         .confirmations

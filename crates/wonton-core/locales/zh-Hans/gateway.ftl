@@ -147,3 +147,5 @@ gateway-confirmation-gone = 没有这张确认，或它已结束超过一天
 gateway-web-storage-undeclared = 这个应用不存数据
 gateway-web-storage-cross-site = 只有这个应用自己的页面能改它的数据
 gateway-web-storage-not-ready = 替这个应用存数据的应用没有在运行，请稍后再试
+
+gateway-chains-disabled = 家里的服务器没有启用调用链账本

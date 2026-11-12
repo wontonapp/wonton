@@ -297,6 +297,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             post(devices::first_pairing_code),
         )
         .merge(confirmation_routes())
+        .merge(chain_routes())
         .merge(files::routes(gateway.clone()))
         .fallback(|headers: HeaderMap| async move {
             let langs = api::languages(&headers);
@@ -419,6 +420,31 @@ fn member_routes() -> Router<Arc<Gateway>> {
         .route(
             "/_wonton/api/plugins/{id}/family",
             put(family::set_plugin_family),
+        )
+}
+
+/// 调用链（ADR-0061 第 10 节）：App 的列表长轮询、停链、改上限和并发。账本没接上时各自的处理如实报不可用。
+fn chain_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::AGENT_CHAINS_API_PATH,
+            get(super::agent_chains_api::list),
+        )
+        .route(
+            &wonton_protocol::agent_chain_stop_path("{chain}"),
+            post(super::agent_chains_api::stop),
+        )
+        .route(
+            wonton_protocol::AGENT_SETTINGS_PATH,
+            get(super::agent_chains_api::settings),
+        )
+        .route(
+            wonton_protocol::AGENT_LIMITS_PATH,
+            put(super::agent_chains_api::set_limits).layer(DefaultBodyLimit::max(4 << 10)),
+        )
+        .route(
+            &wonton_protocol::agent_consumer_concurrency_path("{id}"),
+            put(super::agent_chains_api::set_concurrency).layer(DefaultBodyLimit::max(4 << 10)),
         )
 }
 
