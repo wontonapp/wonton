@@ -64,3 +64,5 @@ install-unreviewed-provider = 云吞没有审核过这个应用，代码和镜�
 install-unreviewed-provider-via = 云吞没有审核过这个应用，代码和镜像由 { $provider } 提供，经 { $host } 的索引
 install-unreviewed-upload-author = 云吞没有审核过这个应用，它来自你上传的文件，清单里写的作者是 { $author }，核实不了
 install-unreviewed-upload = 云吞没有审核过这个应用，它来自你上传的文件，清单里没写作者
+plugin-widget-high = 这个应用的网页能在你打开它的房间里读到聊天内容，或以你的名义发消息、撤回消息。
+plugin-widget-normal = 这个应用的网页还能收发通话和给设备的消息、定时发出事件、查通话服务器，并拿到你的登录凭证。

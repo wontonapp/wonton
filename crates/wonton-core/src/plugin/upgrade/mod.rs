@@ -165,6 +165,51 @@ fn closing_ports(
     })
 }
 
+/// 升级确认页上要主人再看一遍的东西：新申请的权限和 widget 能力（标出新增的），以及风险提示。
+struct Consent {
+    permissions: Vec<wonton_protocol::PermissionLine>,
+    widget_capability_lines: Vec<wonton_protocol::WidgetCapability>,
+    notices: Vec<CardLine>,
+}
+
+/// 新版本比装着的版本多要的项。权限是装的时候就记下的 `granted_permissions` 对比，widget 能力是装着的清单对比：
+/// 多出来的能力要主人再确认一次，App 见到 `added` 就照权限那样弹确认页。
+fn consent_of(
+    record: &InstalledRecord,
+    package: &PluginPackage,
+    old: &PluginPackage,
+    langs: &Languages,
+) -> Consent {
+    let mut permissions = super::views_permissions::permission_lines(
+        &package.manifest,
+        &record.enabled_permissions,
+        langs,
+    );
+    for line in &mut permissions {
+        line.added = !record
+            .granted_permissions
+            .iter()
+            .any(|granted| granted.to_string() == line.permission);
+    }
+    let added = super::manifest_widget::added(Some(&old.manifest), &package.manifest);
+    let mut widget_capability_lines = super::manifest_widget::capabilities(&package.manifest);
+    for line in &mut widget_capability_lines {
+        line.added = added.contains(&line.capability);
+    }
+    let notices = super::manifest_widget::notices(
+        widget_capability_lines
+            .iter()
+            .filter(|line| line.added)
+            .map(|line| line.level),
+        langs,
+    );
+    Consent {
+        permissions,
+        widget_capability_lines,
+        notices,
+    }
+}
+
 impl PluginManager {
     /// 官方索引里对应这个插件的一项：按来源装的看仓库；随核心预装的没有来源，看插件 ID。上传的不算。
     fn official_entry<'a>(
@@ -340,16 +385,11 @@ impl PluginManager {
         }
         let warnings = chosen_warnings(&record, &package, langs);
         preview.notices.splice(0..0, warnings);
-        preview.permissions = super::views_permissions::permission_lines(
-            &package.manifest,
-            &record.enabled_permissions,
-            langs,
-        );
-        for line in &mut preview.permissions {
-            let granted = &record.granted_permissions;
-            line.added = !granted.iter().any(|p| p.to_string() == line.permission);
-        }
         let old = installed_package(&record, langs)?;
+        let consent = consent_of(&record, &package, &old, langs);
+        preview.permissions = consent.permissions;
+        preview.widget_capabilities = consent.widget_capability_lines;
+        preview.notices.extend(consent.notices);
         preview
             .notices
             .extend(closing_ports(&old, &record, &package, langs));
