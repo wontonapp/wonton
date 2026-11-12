@@ -7,6 +7,7 @@ struct ChatRoomView: View {
     let roomId: String
     let title: String
     @State private var timeline: TimelineModel
+    @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
     @State private var isKeyboardVisible = false
@@ -29,6 +30,7 @@ struct ChatRoomView: View {
         self.roomId = roomId
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
+        _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId))
         _presenter = State(initialValue: RoomPresenter(files: model.files))
     }
 
@@ -36,7 +38,17 @@ struct ChatRoomView: View {
         RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                       blocked: entryBlocked, pullAnchor: roomPull) {
             roomContent
+                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
+    }
+
+    /// 撤回别人的消息时标题写明是谁的。
+    private var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .messageRedactTitle)
+        }
+        return String(localized: .messageRedactOthersTitle(message.senderName))
     }
 
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
@@ -62,7 +74,7 @@ struct ChatRoomView: View {
                         model.appendDraft($0, to: roomId)
                     }
                 }
-                ComposerView(model: model, roomId: roomId, pin: pin)
+                ComposerView(model: model, composer: composer, pin: pin)
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
@@ -76,7 +88,7 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .messageRedactTitle),
+            redactTitle,
             message: String(localized: .messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
@@ -103,6 +115,7 @@ struct ChatRoomView: View {
             model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
         }
         .task(id: roomId) { await model.loadDraft(roomId) }
+        .task(id: roomId) { await composer.observe() }
         .task(id: timeline.attempt) {
             if await timeline.observe(pin: pin) {
                 model.path = []
@@ -167,6 +180,12 @@ struct ChatRoomView: View {
                         model.startReply(.ready(message: quote), in: roomId)
                     })
                 }
+                // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
+                ForEach(composer.outgoing, id: \.id) { message in
+                    OutgoingRow(message: message, composer: composer)
+                        .id(message.id)
+                        .timelineListRow()
+                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
@@ -185,6 +204,8 @@ struct ChatRoomView: View {
                 guard let pageAnchor, !pin.isPinned else { return }
                 DispatchQueue.main.async { scroller.scrollTo(pageAnchor, anchor: .top) }
             }
+            // 待发消息出现、交出去换成本地回显时，贴底的跟着到底；等这一轮排版完再滚。
+            .onChange(of: composer.outgoing.map(\.id)) { DispatchQueue.main.async { pin.stick() } }
             .onChange(of: timeline.items.last?.id) { _, last in
                 guard last != nil else { return }
                 if pin.isPinned, placed { reportPosition(true) }

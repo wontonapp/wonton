@@ -255,6 +255,9 @@ pub struct TimelineMessage {
     /// 的根只显示成卡片。不是卡片时为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat: Option<crate::SideChatCard>,
+    /// 第一个链接的预览卡片（ADR-0065）：事件里带的直接用，没有的向家里的核心取；没有链接、还没取到或取不到时
+    /// 按 [`crate::LinkPreviewState`] 给。
+    pub preview: Option<crate::LinkPreviewState>,
     /// 长按这条消息能做的事，按菜单顺序排好。空的就没有菜单。
     pub actions: Vec<MessageAction>,
     /// 一次发送里的几条之一（ADR-0094）：壳把同一发送者、同一 `id`、挨着的几条画在一起。不是一组时为空。
@@ -813,6 +816,7 @@ mod tests {
                 read_by: vec!["主人".into()],
                 reply: None,
                 side_chat: None,
+                preview: None,
                 actions: vec![MessageAction::Copy {
                     text: "好的".into(),
                 }],

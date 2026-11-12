@@ -868,6 +868,10 @@
     <string name="message_delete_everyone_message">这个房间里所有人都会看到它被撤回。</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">对所有人生效，撤回这条消息？</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">删除 %1$s 的消息</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">删除 %1$s 的这条消息？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">转发</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
@@ -1876,4 +1880,17 @@
     <string name="handoff_no_other_device">手边没有别的设备</string>
     <string name="invite_device_added">已加好</string>
     <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
+    <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等连上家里的服务器</string>
+    <string name="composer_attachment_failed">传不上去</string>
+    <string name="composer_attachment_retry">重新上传</string>
+    <string name="composer_attachment_too_large">照片超过了家里服务器的大小上限，可以改用文件发。</string>
+    <string name="composer_attachment_source_unavailable">原文件读不了了，请重新选一次。</string>
+    <string name="composer_attachment_storage_full">家里服务器的磁盘满了。</string>
+    <string name="composer_attachment_rejected">家里的服务器拒收了这个附件。</string>
+    <string name="composer_attachment_upstream">家里的服务器出错了。</string>
+    <string name="composer_attachment_local_storage">手机上存不下了。</string>
+    <string name="timeline_sending_progress">发送中 %1$s</string>
+    <string name="timeline_cancel_send">取消发送</string>
 </resources>
