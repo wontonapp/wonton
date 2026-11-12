@@ -42,15 +42,6 @@ struct ChatRoomView: View {
         }
     }
 
-    /// 撤回别人的消息时标题写明是谁的。
-    private var redactTitle: String {
-        let target = timeline.items.first { $0.id == redactItem }
-        guard case let .message(message)? = target?.content, !message.isOwn else {
-            return String(localized: .messageRedactTitle)
-        }
-        return String(localized: .messageRedactOthersTitle(message.senderName))
-    }
-
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
     private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
 
@@ -236,16 +227,6 @@ struct ChatRoomView: View {
         }
     }
 
-    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
-    private var oldestEvent: String? {
-        timeline.items.first { item in
-            switch item.content {
-            case .dateDivider, .readMarker, .timelineStart: false
-            default: true
-            }
-        }?.id
-    }
-
     /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
     private func placeAnchor(_ scroller: ScrollViewProxy) {
@@ -403,5 +384,27 @@ private struct PageRequest: Equatable {
         isLoaded = timeline.isLoaded
         count = timeline.items.count
         state = timeline.backPagination
+    }
+}
+
+// 这两项只读状态、不碰布局，放在类型体外，免得 `ChatRoomView` 的身体越过 SwiftLint 的 250 行。
+private extension ChatRoomView {
+    /// 撤回别人的消息时标题写明是谁的。
+    var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .messageRedactTitle)
+        }
+        return String(localized: .messageRedactOthersTitle(message.senderName))
+    }
+
+    /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。
+    var oldestEvent: String? {
+        timeline.items.first { item in
+            switch item.content {
+            case .dateDivider, .readMarker, .timelineStart: false
+            default: true
+            }
+        }?.id
     }
 }
