@@ -2,7 +2,7 @@
 
 - 状态：已接受（2026-11-12），取舍由主人定（见“已定”）。实施要等 [ADR-0083](0083-bot-contacts-and-group-chat.md) 先合：AI 动手的封顶用它的轮次报告和档位。
   修订 [ADR-0045](0045-family-members.md)（主人、家人两级改成主人加可配置的角色，邀请加上同意一步，“只给主人”的管理和卡片改成给管理员，
-  插件的“家人能用”开关和 OIDC 的 `groups`）、[ADR-0051](0051-friends-and-plugin-sharing.md)（好友的分组和分享改成按角色）、
+  插件的“家人能用”开关和 OIDC 的 `groups`）、[ADR-0051](0051-friends-and-plugin-sharing.md)（没有账号的朋友能在主人的服务器上开账号，好友的分组和分享改成按角色）、
   [ADR-0007](0007-agents-and-bots.md)（家人不等 M2）。一个 Bot 里按人分档用 ADR-0083 的档位，本篇只加按角色的上限
 
 ## 背景
