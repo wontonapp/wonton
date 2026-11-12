@@ -7,6 +7,9 @@ name: test-images
 # 每次合进 main 也跑一遍：main-image 的构建要用副本，合并时就把它补上（同一 push 里两边并发，第一次可能
 # 谁先谁后；main-image 先到就等这边绿了重跑一次）。PR 在改到工作流或镜像发现脚本时跑。
 # 测试拉取失败说缺镜像时，把引用补进 scripts/mirror-test-images.sh 的来源。
+#
+# 同一份工作流还发布冒烟的验收工具镜像（tunnel-client、echo-bot）：插件仓库的 Agent 冒烟要按摘要拉，
+# 不发布就得每台机器现编。合进 main 构建并推 :main、:sha-<提交>，手动触发可传 tag 推 :<tag>。
 on:
   schedule:
     # 周一 02:00 UTC，赶在每天的全量测试（03:00 起）前面。
@@ -18,6 +21,11 @@ on:
       - ".github/workflows/test-images.yml"
       - "scripts/mirror-test-images.sh"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 验收工具镜像的 tag（不带冒号；留空只跑镜像复制）
+        required: false
+        default: ''
 
 # PR 上又推了一个提交就取消上一次；定时、main 上的复制和手动触发都跑完（main-image 等 main 上这一次的结果）。
 concurrency:
@@ -50,3 +58,43 @@ jobs:
           password: ${{ github.token }}
       - name: 复制到 ghcr.io/<owner>/test-images
         run: scripts/mirror-test-images.sh "$PWD/crane"
+
+  # 冒烟的验收工具镜像。PR 上不构建：要机器现编的地方都还在，等发布后再切过去。
+  tools:
+    name: 验收工具镜像 ${{ matrix.target }}
+    # 每个目标一条并发组：同一目标的新构建等旧的跑完，别的目标不受影响。
+    concurrency:
+      group: test-images-tools-${{ matrix.target }}
+      cancel-in-progress: false
+    if: github.event_name != 'pull_request' || inputs.tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [tunnel-client, echo-bot]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 镜像标签
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-${{ matrix.target }}"
+          tag="${{ inputs.tag }}"
+          if [[ -n "$tag" ]]; then
+            echo "tags=$image:$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=$image:main,$image:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          fi
+          echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/push-image
+        with:
+          tags: ${{ steps.meta.outputs.tags }}
+          platforms: linux/amd64
+          file: deploy/dev/core/Dockerfile
+          version: ${{ inputs.tag || 'main' }}
+          extra-build-args: |-
+            WONTON_BUILD_COMMIT=${{ github.sha }}
+          cache-ref: ${{ steps.meta.outputs.cache }}
+          cache-write: ${{ github.ref == 'refs/heads/main' && 'true' || 'false' }}

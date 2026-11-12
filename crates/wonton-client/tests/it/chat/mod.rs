@@ -16,6 +16,7 @@ mod file_link;
 mod key_handoff;
 mod key_upload_order;
 mod layout;
+mod link_preview;
 mod message_actions;
 mod onboarding;
 mod pending;

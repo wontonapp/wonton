@@ -23,6 +23,7 @@ permissions-cancelled = 権限リクエストを取り消しました。エー�
 output-limited = 上流のエラー：エージェントの応答が出力上限を超えたため、このターンを取り消しました。
 no-text = エージェントはこのターンでテキストを出力しませんでした（stopReason={ $stop_reason }）。
 transport-disconnected = 通信できません：ACP エージェントとの接続が切れたため、まもなく再接続します。
+crypto-undecryptable = 送られた暗号化メッセージを読めません。暗号化データが失われた可能性があります。Wonton でこのプラグインを再インストールすると（データは残す）回復できます。それより前のメッセージは復元できません。
 
 # ログにだけ出る文（ログは翻訳しない。種別の接頭辞とつながって読む）。
 agent-connect-socket = ACP ソケット { $path } に接続できません：{ $error }

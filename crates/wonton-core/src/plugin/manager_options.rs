@@ -40,7 +40,16 @@ impl PluginManager {
     /// 接上 Matrix 服务器：声明了 `matrix.bot` 的插件这才装得上。
     #[must_use]
     pub fn with_matrix(mut self, matrix: Option<Arc<Matrix>>) -> Self {
+        self.matrix_server_name = matrix.as_ref().map(|m| m.server_name().to_owned());
         self.matrix = matrix;
+        self
+    }
+
+    /// 测试用：只给出 Matrix 服务器名，不连真的 Tuwunel。
+    #[cfg(test)]
+    #[must_use]
+    pub fn with_matrix_server_name(mut self, server_name: &str) -> Self {
+        self.matrix_server_name = Some(server_name.to_owned());
         self
     }
 

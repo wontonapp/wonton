@@ -231,6 +231,7 @@ impl PluginManager {
             );
         }
         self.check_proxy_provider(manifest, &plugins, langs)?;
+        self.check_matrix_rtc_provider(manifest, &plugins, langs)?;
         let slug = manifest.id.slug();
         if let Some(other) = plugins.keys().find(|id| id.slug() == slug) {
             return Err(InstallError::Conflict(l10n::text(
@@ -259,6 +260,7 @@ impl PluginManager {
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             self.check_proxy_provider(manifest, &plugins, langs)?;
+            self.check_matrix_rtc_provider(manifest, &plugins, langs)?;
         }
         let provides_models = manifest
             .provides

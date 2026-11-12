@@ -76,8 +76,8 @@ async fn sending_the_link_stops_the_expiry() {
         let id = new_id();
         let public = placed(&f, &id).await;
         let now = now_secs();
-        // 到期前一秒把链接发出去。
-        let soon = now.saturating_add(1);
+        // 马上到期时把链接发出去。留一分钟余量：grant/send 内部会再取一次当前时间，慢 runner 上取秒能跨过去。
+        let soon = now.saturating_add(60);
         expires_at(&f, &id, soon);
         if send_to_devices {
             f.files.send_to_devices(&id, &any_langs()).await.unwrap();
