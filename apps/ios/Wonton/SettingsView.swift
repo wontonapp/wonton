@@ -10,7 +10,6 @@ struct SettingsTab: View {
     var isModal = false
     var isActive = true
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.appVersionOverride) private var appVersionOverride
     @State private var isEditingProfile = false
     @State private var isChoosingAgent = false
     @Environment(OnboardingModel.self) private var onboarding
@@ -67,6 +66,7 @@ struct SettingsView: View {
     let editProfile: () -> Void
     let chooseAgent: () -> Void
     @Environment(OnboardingModel.self) private var onboarding
+    @Environment(\.appVersionOverride) private var appVersionOverride
 
     var body: some View {
         ScrollView {
@@ -142,7 +142,11 @@ struct SettingsView: View {
             }
         case .about:
             NavigationLink(value: SettingsRoute.about) {
-                WontonRow(title: String(localized: .settingsAbout), value: appVersionOverride ?? AppVersion.full, showsForward: true)
+                WontonRow(
+                    title: String(localized: .settingsAbout),
+                    value: appVersionOverride ?? AppVersion.full,
+                    showsForward: true
+                )
             }
         case .matrixAccount, .matrixDevices, .addWontonServer, .other:
             EmptyView()
@@ -179,8 +183,10 @@ private struct AboutView: View {
     @Environment(\.appVersionOverride) private var appVersionOverride
     var body: some View {
         ScrollView {
-            WontonGroup { WontonRow(title: String(localized: .pluginInfoVersion), value: appVersionOverride ?? AppVersion.full) }
-                .padding(WontonTheme.spacing.pageInset)
+            WontonGroup {
+                WontonRow(title: String(localized: .pluginInfoVersion), value: appVersionOverride ?? AppVersion.full)
+            }
+            .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .settingsAbout))
     }
