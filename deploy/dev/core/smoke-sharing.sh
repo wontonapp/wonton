@@ -83,7 +83,7 @@ export SHARE_SMOKE_IDENTITY_PREFIX="11.213.$slot"
 export SHARE_SMOKE_PLUGIN_POOL="${WONTON_SHARE_SMOKE_PLUGIN_POOL:-10.213.$slot.0/24}"
 # 必须是含分享实现的镜像（dev.sh share-smoke 会编好它）。
 export SHARE_SMOKE_CORE_IMAGE="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
-export SHARE_SMOKE_TUWUNEL_IMAGE="ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec"
+export SHARE_SMOKE_TUWUNEL_IMAGE="ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730"
 export SHARE_SMOKE_PEBBLE_IMAGE="ghcr.io/letsencrypt/pebble:2.8.0@sha256:d9080f68f6cb6af8d82134ab26de0aaaf312ac9cba42aecc6d3aede6cb63007b"
 export SHARE_SMOKE_CERTBOT_IMAGE="certbot/certbot:v5.1.0@sha256:bb72eb98a32ecc5dcef8eeeb8fb6a2a8c50d4d93e2a2c3542f8cb679840c990c"
 export SHARE_SMOKE_PYTHON_IMAGE="python:3.13.3-alpine3.21@sha256:452682e4648deafe431ad2f2391d726d7c52f0ff291be8bd4074b10379bb89ff"

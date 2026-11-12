@@ -1,18 +1,11 @@
 name: lint
 
-# 轻检查，草稿 PR 也跑。冲突标记和密钥可能写在任何文件里（.md 也算），不按路径过滤，所以不能并进
-# 带 paths-ignore 的工作流。结构门禁只查源码文件，只改文档的提交和草稿 PR 上跳过。
-# 三件事在一个作业里依次做完：各起一台 runner 只为了报检查，占并发名额，却都不是重活。
+# 轻检查，由 gate.yml 调用：PR 上（草稿也跑）和 push 到 main 都跑。冲突标记和密钥可能写在任何文件里（.md 也算），
+# 不按路径过滤。结构门禁只查源码文件，只改文档的提交和草稿 PR 上跳过。
+# 几件事在一个作业里依次做完：各起一台 runner 只为了报检查，占并发名额，却都不是重活。
+# 并发由 gate 管：PR 又推了新提交时整轮取消。
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
-
-# 同一个 PR 又推了新提交，旧的运行就取消，别占着 runner；main 上的每次合并都跑完。
-concurrency:
-  group: lint-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  workflow_call:
 
 permissions:
   contents: read
@@ -47,8 +40,7 @@ jobs:
         run: PATH="$PWD:$PATH" bash scripts/test-gitleaks.sh
       # 改了协议的 PR，main 在分支切出之后又改过协议就挡下：两边各自按旧协议写，合起来才坏，各自的 CI 看不出来。
       # 只在这个 PR 的 CI 跑时判断一次，之后 main 再改协议不会回头把它变红（规则集不要求 PR 先追上 main）。
-      # 没改协议的 PR 先按合并提交的差异跳过，不去补历史；放在这个作业里而不是另起作业，检查名就是 lint 汇总，
-      # 不会出现路径过滤导致必需检查等不来。
+      # 没改协议的 PR 先按合并提交的差异跳过，不去补历史；放在 lint 这个不按路径过滤的作业里，每个 PR 都有结果。
       - name: 改了协议的 PR 基于最新 main
         if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
         env:
@@ -127,24 +119,3 @@ jobs:
       - name: 安装脚本的行为测试（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 -m unittest discover -q -s scripts/install -t scripts
-
-  # 必需检查只有这一个：任一作业失败或被取消就红，成功和跳过算过。规则集按这个名字配，
-  # 草稿 PR 上只跑冲突标记和密钥扫描，汇总跟着来。
-  summary:
-    name: lint 汇总
-    needs: [lint]
-    if: always()
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    env:
-      RESULTS: ${{ join(needs.*.result, ' ') }}
-    steps:
-      - name: 各作业的结果
-        run: |
-          echo "$RESULTS"
-          for result in $RESULTS; do
-            case "$result" in
-              success|skipped) ;;
-              *) exit 1 ;;
-            esac
-          done

@@ -57,7 +57,7 @@ pub use matrix_sdk::ruma::{
     RoomId, ServerName, UserId, events::relation::RelationType,
 };
 pub use matrix_sdk_ui::eyeball_im::{Vector, VectorDiff};
-pub use media::media_token;
+pub use media::{PreviewImageSource, encrypted_media_token, media_token};
 pub use message::{FileContent, ImageContent, Message, MessageBody, SendStatus, UploadProgress};
 pub use panels::{LAYOUT_EVENT, LayoutContent, ROOM_PANEL_EVENT, RoomPanelContent};
 pub use profile::UserProfile;

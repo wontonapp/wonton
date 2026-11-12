@@ -36,6 +36,7 @@ mod fake_core;
 mod files;
 mod friends;
 mod io;
+mod link_preview;
 mod matrix;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
@@ -192,6 +193,12 @@ struct Core {
     files: Mutex<HashMap<String, FakeFile>>,
     file_grants: Mutex<Vec<(String, String)>>,
     next_file: AtomicU64,
+    /// 链接预览的假应答：网址 → 状态码和响应体（ADR-0065）。没配的网址回 404。
+    link_previews: Mutex<HashMap<String, (u16, String)>>,
+    /// 链接预览的图片：id → 类型和字节。
+    link_preview_images: Mutex<HashMap<String, (String, Vec<u8>)>>,
+    /// 取预览的请求到了几次（图片的请求不算）。
+    link_preview_requests: AtomicUsize,
 }
 
 /// 假核心记下的一个 tus 上传。
@@ -254,6 +261,9 @@ impl Home {
             files: Mutex::default(),
             file_grants: Mutex::default(),
             next_file: AtomicU64::new(0),
+            link_previews: Mutex::default(),
+            link_preview_images: Mutex::default(),
+            link_preview_requests: AtomicUsize::new(0),
         });
         let (addr, task) = fake_core(core.clone()).await;
         let tunnel_key = SecretKey::generate();
@@ -355,6 +365,29 @@ impl Home {
     /// 取已装列表的请求次数，数的是这个测试会话里的全部。
     pub fn installed_requests(&self) -> usize {
         self.core.installed_requests.load(Ordering::SeqCst)
+    }
+
+    /// 配一个网址的预览应答：`status` 和核心会回的 `body`（成功是预览 JSON，失败是错误 JSON）。
+    pub fn set_link_preview(&self, url: &str, status: u16, body: Value) {
+        self.core
+            .link_previews
+            .lock()
+            .unwrap()
+            .insert(url.to_owned(), (status, body.to_string()));
+    }
+
+    /// 配一张预览图片：按 id 给回类型和字节。
+    pub fn set_link_preview_image(&self, id: &str, mime_type: &str, bytes: &[u8]) {
+        self.core
+            .link_preview_images
+            .lock()
+            .unwrap()
+            .insert(id.to_owned(), (mime_type.to_owned(), bytes.to_vec()));
+    }
+
+    /// 取预览的请求到了几次；图片的请求不算，断言“没向核心请求”用它。
+    pub fn link_preview_requests(&self) -> usize {
+        self.core.link_preview_requests.load(Ordering::SeqCst)
     }
 
     /// 取房间成员的请求断开或恢复。

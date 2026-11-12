@@ -44,6 +44,7 @@ use crate::{
     commands::{CommandSink, Commands},
     config::Config,
     error::{Detail, Error, Result as BridgeResult, format_error},
+    health,
     l10n::text,
     locale::{Locales, Origin},
     login::{LoginChat, LoginEvent, LoginFlow, LoginSink},
@@ -51,6 +52,7 @@ use crate::{
     room_owner::room_owner,
     state::{LastSeen, SessionStore},
     topics::{SessionKey, Topics},
+    undecryptable,
 };
 
 use permissions::ApprovalWaiter;
@@ -242,6 +244,8 @@ struct RoomState {
     refused: refused::Refused,
     /// 上次清理工作区附件的时间。
     last_sweep: Instant,
+    /// 解不开的加密消息（`undecryptable`）。
+    undecryptable: undecryptable::Tracker,
 }
 
 /// 主对话里存多少条最近消息；开局最多带 6 条前文，留够余量。
@@ -323,6 +327,15 @@ pub async fn run() -> Result<()> {
         .context("创建桥数据目录")?;
     // 工作区里上次的附件按保留期和总量清一轮；失败只记日志。
     attachments::sweep(&config.workspace).await;
+    health::touch_alive();
+    // 心跳让容器的健康检查知道主进程活着；进程退出文件自然就不新了。
+    tokio::spawn(async {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(10));
+        loop {
+            tick.tick().await;
+            health::touch_alive();
+        }
+    });
     let matrix = MatrixSession::login_with_access_token(
         &SessionConfig {
             homeserver_url: config.homeserver.clone(),
@@ -491,6 +504,21 @@ async fn prepare_room<R: Room>(
     (owner, lang)
 }
 
+/// 起跑时的新桥内状态：会话、已读、解不开消息的记录都从零开始；运行状态按房间开。
+async fn fresh_state<R: Room>(bridge: &Bridge, room: &R, owner: OwnedUserId) -> RoomState {
+    RoomState {
+        owner,
+        sessions: sessions::Sessions::default(),
+        run_status: open_run_status(bridge, room).await,
+        waiters: Vec::new(),
+        history: VecDeque::new(),
+        last_activity: Instant::now(),
+        refused: refused::Refused::default(),
+        last_sweep: Instant::now(),
+        undecryptable: undecryptable::Tracker::default(),
+    }
+}
+
 async fn run_room<R: Room>(
     bridge: Bridge,
     room: Arc<R>,
@@ -502,7 +530,6 @@ async fn run_room<R: Room>(
     let mut commands = Commands::new();
     let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
-    let run_status = open_run_status(&bridge, room.as_ref()).await;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();
     let mut acp_closed = bridge.acp.closed();
@@ -515,16 +542,7 @@ async fn run_room<R: Room>(
     let mut arrived = HashSet::new();
     let (context, mut finished_rx, mut ask_rx, mut cards_rx) =
         turn_context(&bridge, room.clone(), login, group, start_lang);
-    let mut state = RoomState {
-        owner,
-        sessions: sessions::Sessions::default(),
-        run_status,
-        waiters: Vec::new(),
-        history: VecDeque::new(),
-        last_activity: Instant::now(),
-        refused: refused::Refused::default(),
-        last_sweep: Instant::now(),
-    };
+    let mut state = fresh_state(&bridge, room.as_ref(), owner).await;
     // 进循环前先分发首屏快照：补上停机期间发来的，超出上限的如实列出。
     routing::route_backlog(
         &context,
@@ -538,9 +556,14 @@ async fn run_room<R: Room>(
     let mut idle_tick = tokio::time::interval(bridge.config.limits.idle_tick);
     // 步骤变化的合并编辑每 3 秒最多一次；每秒看一眼有没有攒着的要发。
     let mut status_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    // 扫“解不开”的节奏：时限的 1/4，最快 100 毫秒扫一次（测试把时限配短）。
+    let mut undecryptable_tick = tokio::time::interval(
+        (bridge.config.limits.undecryptable_after / 4).max(std::time::Duration::from_millis(100)),
+    );
     loop {
         tokio::select! {
             Some(messages) = updates.next() => {
+                state.undecryptable.observe(&messages, &bridge.config.allowed_users);
                 on_messages(
                     &context,
                     &mut state,
@@ -576,6 +599,9 @@ async fn run_room<R: Room>(
             }
             _ = status_tick.tick() => {
                 state.run_status.flush(room.as_ref(), Instant::now()).await;
+            }
+            _ = undecryptable_tick.tick() => {
+                report_undecryptable(&bridge, &mut state, room.as_ref()).await;
             }
             changed = acp_closed.changed() => {
                 if changed.is_ok() && *acp_closed.borrow() {
@@ -620,6 +646,24 @@ async fn handle_acp_notice<R: Room>(
     match &notice {
         Ok(AgentNotice::Task { params }) => tasks::handle(context, state, topics, params).await,
         _ => updates::handle_notice(context, state, topics, commands, notice).await,
+    }
+}
+
+/// 解不开的加密消息到点还没解开：在这个房间说一次，并给健康检查写上原因。发失败只记日志，
+/// 下一个提醒间隔（`undecryptable_every`）再试。
+async fn report_undecryptable<R: Room>(bridge: &Bridge, state: &mut RoomState, room: &R) {
+    if !state.undecryptable.report_due(
+        bridge.config.limits.undecryptable_after,
+        bridge.config.limits.undecryptable_every,
+        Instant::now(),
+    ) {
+        return;
+    }
+    let lang = bridge.lang(&state.owner).await;
+    let notice = text(lang, "crypto-undecryptable", &[]);
+    health::mark_degraded(&notice);
+    if let Err(error) = room.send_text(&notice).await {
+        tracing::warn!(error = %error, "发“解不开”提示失败");
     }
 }
 
