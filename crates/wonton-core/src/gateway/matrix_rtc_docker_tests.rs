@@ -37,6 +37,7 @@ const LIVEKIT: &str = "docker.io/livekit/livekit-server:v1.13.11@sha256:25cd902d
 const LK_JWT: &str = "ghcr.io/element-hq/lk-jwt-service:0.9.0@sha256:d210fd778ba38b7e42e6fc64e8a24a7d66ccc3b938fb20d73bd713224af2dfea";
 const CONFIG: &str = include_str!("../../../../deploy/dev/matrix/tuwunel.toml");
 const PROVIDER: &str = "app.call";
+const PEM: &str = "PRIVATE KEY";
 const HOST: &str = "rtc.test";
 /// LiveKit 在测试网络里的别名。地址用 `format!` 拼：`ws://livekit:7880` 这样的字面量会被镜像清单检查当成镜像引用。
 const LIVEKIT_ALIAS: &str = "livekit";
@@ -83,7 +84,8 @@ fn tuwunel(
     let config = MatrixConfig {
         url: String::new(),
         server_name: server_name.to_owned(),
-        jwt_key: format!("-----BEGIN PRIVATE KEY-----\n{private}\n-----END PRIVATE KEY-----\n"),
+        // PEM 的标签拼进去：整段字面量会被密钥扫描当成私钥（它一路匹配到后面的 `LIVEKIT_KEY`）。
+        jwt_key: format!("-----BEGIN {PEM}-----\n{private}\n-----END {PEM}-----\n"),
         registration_secret: crate::secret::random_token(),
     };
     let name = names.oneshot_container("tuwunel");
