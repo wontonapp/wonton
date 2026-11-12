@@ -129,8 +129,17 @@ impl TabsLink {
     }
 
     /// 拉一次，把视图需要的红点和同意跟着更新。失败记进 problem，保留原来的列表。
+    ///
+    /// 已知连不上家里的服务器时不拉，拉到一半才知道的也不记：连接提示已经说了连不上，这里再记一条
+    /// 会在插件页的出错页上面弹“读不了导航栏设置”，把一件事报成两件。
     pub(super) async fn refresh_bot_pins(self: &Arc<Self>) {
+        if self.home_link.tunnel_outage().is_some() {
+            return;
+        }
         let result = self.fetch_bot_pins().await;
+        if result.is_err() && self.home_link.tunnel_outage().is_some() {
+            return;
+        }
         let changed = {
             let mut state = lock(&self.state);
             match result {

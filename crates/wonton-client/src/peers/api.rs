@@ -36,7 +36,7 @@ impl Failure {
         Self { error, message }
     }
 
-    fn transport(reason: String) -> Self {
+    pub(super) fn transport(reason: String) -> Self {
         Self::new(
             PeerError::TransportUnavailable,
             l10n!(CATALOG, language(), "peers-transport", reason = reason),
