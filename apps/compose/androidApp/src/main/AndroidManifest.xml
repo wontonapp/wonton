@@ -19,6 +19,9 @@
     <!-- 扫家里服务器上的配对二维码。没有相机的设备也能装，粘贴配对码即可。 -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- 插件网页（通话等）要麦克风；和相机一样没有也不挡安装，网页拿到拒绝。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!-- M0 的网关和插件网页只有 http（HTTPS 方案在 M1 定），WebView 要放开明文。 -->
     <application

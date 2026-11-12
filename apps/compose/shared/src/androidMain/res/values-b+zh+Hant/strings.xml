@@ -1073,6 +1073,7 @@
     <string name="photo_unreadable">讀不出這張照片</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">可儲存檔案的資料夾</string>
+    <string name="plugin_media_title">網頁的相機和麥克風</string>
     <string name="plugin_save_revoke">撤銷</string>
     <string name="plugin_settings_section">設定</string>
     <string name="plugin_settings_open">開啟設定</string>
@@ -1511,6 +1512,14 @@
     <string name="tab_load_not_ready">應用程式還沒準備好</string>
     <string name="tab_load_upstream">應用程式的網頁打不開</string>
     <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
+    <string name="tab_media_prompt_camera">允許 %1$s 使用相機嗎？</string>
+    <string name="tab_media_prompt_microphone">允許 %1$s 使用麥克風嗎？</string>
+    <string name="tab_media_prompt_both">允許 %1$s 使用相機和麥克風嗎？</string>
+    <string name="tab_media_allow">允許</string>
+    <string name="tab_media_deny">不允許</string>
+    <string name="tab_media_system_denied_title">相機或麥克風用不了</string>
+    <string name="tab_media_system_denied">系統設定裡沒有允許 Wonton 使用相機或麥克風，這次不給網頁。可以到系統設定裡打開。</string>
+    <string name="tab_media_system_settings">去設定</string>
     <string name="tab_settings_unreadable">無法讀取底部導覽列設定</string>
     <string name="tab_open_settings">底部導覽列設定</string>
     <string name="tab_menu_open_fullscreen">全螢幕開啟</string>

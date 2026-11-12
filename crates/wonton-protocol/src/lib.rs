@@ -207,17 +207,17 @@ pub use plugin::{
     OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure,
     OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine, PermissionOpened,
     PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDevice, PluginFailure,
-    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
-    PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
-    PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
-    PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel,
-    RequirementLine, RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues,
-    SecurityTier, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
-    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
-    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
+    PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginMediaGrant,
+    PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginSettingField,
+    PluginSettingKind, PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState,
+    PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter,
+    PluginsViewModel, RequirementLine, RequirementStatus, SecretInput, SecretInputState,
+    SecretUpdate, SecretValues, SecurityTier, SettingValue, SettingValues, SettingsFieldError,
+    SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm, SettingsInvalidError,
+    SettingsProblem, SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind,
+    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest,
+    UpgradeOffer, UpgradeRequest, UpgradeResult, plugin_scope_path, plugin_settings_path,
     plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
@@ -263,7 +263,8 @@ pub use side_chat::{
 pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
 pub use tabs::{
     CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
-    TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
+    TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem,
+    TabsViewModel,
 };
 pub use timeline::{
     BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,

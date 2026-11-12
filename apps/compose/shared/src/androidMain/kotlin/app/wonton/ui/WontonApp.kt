@@ -98,6 +98,7 @@ internal fun ServerApp(
                 AppContent(navigation, home, settings, appearance, chatView)
                 tabs.pinRequest?.let { TabPinSheet(tabs.viewModel, it) { tabs.pinRequest = null } }
             }
+            TabMediaPermissions(tabs)
             DeviceVerificationDialogs(chatView, navigation, tabs.core)
             KeyHandoffHost(chatView, navigation, tabs.core)
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }

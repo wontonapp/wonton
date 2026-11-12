@@ -145,6 +145,10 @@ pub struct TabsViewModel {
     /// 每个 Bot 往主面板钉页的同意（服务器上的）；设置里按它显示和收回。
     #[serde(default)]
     pub bot_pin_consents: Vec<crate::BotPinOwner>,
+    /// 插件页在问摄像头和麦克风：壳画成平台风格的弹窗（允许 / 不允许）。一次只有一张，
+    /// 页面关掉或答完就清；决定按插件记在本机（[`Action::SetPluginMediaPermission`](crate::Action::SetPluginMediaPermission)）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_prompt: Option<TabMediaPrompt>,
 }
 
 /// 底栏上的一项。
@@ -274,6 +278,18 @@ pub struct TabsProblem {
     pub message: String,
 }
 
+/// 插件页在问摄像头和麦克风。发请求的必须是这个页面自己的源，页面里嵌的其他源（如第三方 iframe）直接拒，
+/// 不出这张询问。要不要摄像头、要不要麦克风分开给，壳按它写询问的文字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct TabMediaPrompt {
+    pub plugin_id: String,
+    /// 插件的显示名；装着列表里没有时是插件 ID。
+    pub plugin_title: String,
+    pub camera: bool,
+    pub microphone: bool,
+}
+
 #[cfg(test)]
 mod tests {
     use serde::Serialize;
@@ -392,6 +408,12 @@ mod tests {
             uninstalled: vec!["相册".into()],
             problem: Some(TabsProblem {
                 message: "读不了 tabs.json".into(),
+            }),
+            media_prompt: Some(TabMediaPrompt {
+                plugin_id: "app.example.feed".into(),
+                plugin_title: "动态".into(),
+                camera: true,
+                microphone: true,
             }),
             labels: false,
             candidates: vec![

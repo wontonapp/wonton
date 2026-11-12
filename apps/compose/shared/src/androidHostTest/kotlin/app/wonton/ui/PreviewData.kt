@@ -197,6 +197,7 @@ internal fun previewPlugins() = PluginsViewModel(
     sharedApps = null,
     portMappings = emptyList(),
     ownerSecrets = null,
+    mediaGrants = emptyList(),
 )
 
 internal fun previewCard() = PendingConfirmation(

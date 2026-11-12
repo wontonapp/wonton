@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use super::store::{StoreConfirmation, UpdatablePlugin};
 use super::{
-    InstalledPlugins, OwnerSecretsView, PluginProblem, PluginTakeover, PluginTask, StorageUsage,
-    StoreListing,
+    InstalledPlugins, OwnerSecretsView, PluginMediaGrant, PluginProblem, PluginTakeover,
+    PluginTask, StorageUsage, StoreListing,
 };
 use crate::{CoreUpgradeViewModel, EgressViewModel, RegistryMirrorViewModel};
 
@@ -58,4 +58,7 @@ pub struct PluginsViewModel {
     /// 仅在详情页主动展开时存在；收起、离页、后台和服务器切换时清除，不进入任何磁盘缓存。
     #[serde(default)]
     pub owner_secrets: Option<OwnerSecretsView>,
+    /// 网页要摄像头/麦克风的决定，按插件 ID 记在本机；没问过的不在里面。按插件 ID 排序。
+    #[serde(default)]
+    pub media_grants: Vec<PluginMediaGrant>,
 }

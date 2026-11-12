@@ -146,6 +146,7 @@ private fun PageWebView(
     val url = page.url ?: return
     val proxy = if (publicPage) null else home.proxy ?: return
     val density = LocalDensity.current
+    if (!publicPage) state.controller.permissionHandler = state.media::handle
     PluginWebView(
         url, proxy, page.reload,
         onLoaded = { state.loadFinished(environment) },
