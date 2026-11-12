@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Banner when several approval cards are waiting. Argument: the number of cards. -->
+    <plurals name="onboarding_pending_card_many">
+        <item quantity="other">%1$d 张卡片等你确认</item>
+    </plurals>
+    <!-- Problem title in setup: the model gateway on the home server isn't ready. -->
+    <string name="onboarding_problem_model_gateway_not_ready">模型网关还没就绪，请重试或跳过这一步。</string>
+    <!-- Problem title while installing: the home server's internet proxy can't be reached. -->
+    <string name="onboarding_problem_plugin_egress_proxy_unavailable">服务器的代理连不上，请检查后重试。</string>
+    <!-- Problem title while installing: no local network address is available for the app. -->
+    <string name="onboarding_problem_plugin_lan_unavailable">没有可用的局域网地址，请检查服务器的网络设置。</string>
+    <!-- Problem title while installing: the app and the home server versions don't work together. -->
+    <string name="onboarding_problem_plugin_protocol">App 和家里的服务器版本对不上，请更新 App 或服务器。</string>
+    <!-- Problem title in setup: the recommendation source is turned off. -->
+    <string name="onboarding_problem_store_disabled">推荐清单的来源已关闭，可以跳过。</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">应用</string>
+    <!-- Button that uninstalls the agent that a new one replaces. -->
+    <string name="onboarding_uninstall">卸载</string>
+</resources>

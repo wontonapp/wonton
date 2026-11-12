@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button that revokes one save permission. No arguments; short label. -->
+    <string name="plugin_save_revoke">Revoke</string>
+    <string name="plugin_settings_open">Open settings</string>
+    <!-- Section title for the app's updates. No arguments. -->
+    <string name="plugin_updates_section">Updates</string>
+    <!-- Line under the app's name and summary naming the agent that wrote it. Argument: the agent's title. -->
+    <string name="plugin_written_by_agent">Your agent · %1$s</string>
+    <!-- Meta row: the app's tags. No arguments. -->
+    <string name="plugin_tags">Tags</string>
+    <!-- Meta row: the app's license. -->
+    <string name="plugin_license">License</string>
+    <!-- Meta row link: the app's homepage. -->
+    <string name="plugin_homepage">Homepage</string>
+    <string name="plugin_permission_open">Turn on</string>
+    <string name="plugin_permission_opened_owner">You turned this on %1$s</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">Add</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">Updated</string>
+</resources>

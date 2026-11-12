@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">Pairing</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">Pair again</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">On your home network, open the server\'s IP address in a browser (the installer prints it), then scan the pairing QR code on that page.</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">Paste the pairing code</string>
+    <!-- Persistent label above the paste field; also the field's accessibility label. -->
+    <string name="pairing_paste_label">Pairing code</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">Pair</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">Pairing…</string>
+    <!-- Shown after a while under the spinner while the pairing request has not reached the server yet. -->
+    <string name="pairing_still_connecting">Still connecting…</string>
+    <!-- Shown after a while under the spinner once the pairing request has reached the server and it hasn't answered. -->
+    <string name="pairing_still_confirming">Still waiting for the server…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">This device\'s name</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">The server didn\'t accept this pairing code</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">The pairing code has expired</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">This pairing code has been deactivated</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">Can\'t reach the server in this pairing code</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <!-- Next step under a rejected or expired pairing code: where a new code comes from. No arguments. -->
+    <string name="pairing_next_new_code">Get a new code: on a paired device, pick Add Device; or run sudo wonton pair on the computer.</string>
+    <!-- Next step under a deactivated pairing code: the first code only works once. No arguments. -->
+    <string name="pairing_next_closed">This server already has a paired device, so a first pairing code can\'t be used again. Add a device from the paired device, or run sudo wonton pair on the computer for a new code.</string>
+    <string name="pairing_retry_same_code">Try again with this code</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">The app and the server versions don\'t match</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">Check that your home server is on and connected to the network, then try again.</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">Update the app and the server to the latest versions.</string>
+</resources>

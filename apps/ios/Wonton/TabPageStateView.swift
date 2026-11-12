@@ -62,7 +62,7 @@ struct TabPageStateView: View {
         case .uninstalling:
             skeleton(TabText.uninstalling)
         case let .failed(reason):
-            failure(String(localized: .tabFailedTitle(page.title)), detail: reason) {
+            failure(String(localized: .Tab1.tabFailedTitle(page.title)), detail: reason) {
                 if case .plugin = session.tab { Button(TabText.details, action: details) }
                 Button(TabText.retry, action: session.retry)
                 if isPanel { Button(TabText.removePanelPage, action: remove) }
@@ -144,9 +144,9 @@ struct TabPageStateView: View {
 private extension TabLoadFailure {
     var label: String {
         switch self {
-        case .transport: String(localized: .tabFailureTransport)
-        case .pluginNotReady: String(localized: .tabFailurePluginNotReady)
-        case .upstream: String(localized: .tabFailureUpstream)
+        case .transport: String(localized: .Tab1.tabFailureTransport)
+        case .pluginNotReady: String(localized: .Tab2.tabFailurePluginNotReady)
+        case .upstream: String(localized: .Tab1.tabFailureUpstream)
         }
     }
 }

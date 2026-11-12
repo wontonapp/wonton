@@ -28,18 +28,18 @@ struct ServersSection: View {
                 }
                 .accessibilityAddTraits(server.current ? .isSelected : [])
                 .contextMenu {
-                    Button(.commonRename, systemImage: "pencil") {
+                    Button(.Common.commonRename, systemImage: "pencil") {
                         name = server.name.localizedDisplayName
                         renaming = server
                     }
-                    Button(.commonRemove, systemImage: "trash", role: .destructive) { removing = server }
+                    Button(.Common.commonRemove, systemImage: "trash", role: .destructive) { removing = server }
                 }
                 WontonSeparator()
             }
             Button { model.send(.addServer) } label: {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     WontonIcon.add.view(size: WontonTheme.size.iconSmall)
-                    Text(.serversAdd).wontonText(WontonTheme.typography.body)
+                    Text(.Servers.serversAdd).wontonText(WontonTheme.typography.body)
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Color(colors.textPrimary))
@@ -52,12 +52,12 @@ struct ServersSection: View {
             NavigationLink(value: SettingsRoute.matrixLogin) { MatrixLoginEntryLabel() }
         }
         .buttonStyle(.plain)
-        .alert(String(localized: .commonRename), isPresented: Binding(
+        .alert(String(localized: .Common.commonRename), isPresented: Binding(
             get: { renaming != nil }, set: { if !$0 { renaming = nil } }
         )) {
-            TextField(String(localized: .serversName), text: $name)
-            Button(.commonCancel, role: .cancel) { renaming = nil }
-            Button(.commonSave) {
+            TextField(String(localized: .Servers.serversName), text: $name)
+            Button(.Common.commonCancel, role: .cancel) { renaming = nil }
+            Button(.Common.commonSave) {
                 if let renameID { model.send(.renameServer(id: renameID, name: name)) }
                 renaming = nil
             }
@@ -70,14 +70,14 @@ extension View {
     func removeServerDialog(_ removing: Binding<ServerRow?>, model: HomeModel) -> some View {
         let server = removing.wrappedValue
         return wontonDialog(
-            String(localized: .serversRemoveTitle(server?.name.localizedDisplayName ?? "")),
-            message: String(localized: .serversRemoveMessage),
+            String(localized: .Servers.serversRemoveTitle(server?.name.localizedDisplayName ?? "")),
+            message: String(localized: .Servers.serversRemoveMessage),
             isPresented: Binding(
                 get: { removing.wrappedValue != nil }, set: { if !$0 { removing.wrappedValue = nil } }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { removing.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .commonRemove), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
                     if let id = server?.id { model.send(.removeServer(id: id)) }
                     removing.wrappedValue = nil
                 }
@@ -90,8 +90,8 @@ extension ServerName {
     var localizedDisplayName: String {
         switch self {
         case let .named(name): name
-        case .default(number: 1): String(localized: .serversDefaultFirst)
-        case let .default(number): String(localized: .serversDefaultNumbered(Int(number)))
+        case .default(number: 1): String(localized: .Servers.serversDefaultFirst)
+        case let .default(number): String(localized: .Servers.serversDefaultNumbered(Int(number)))
         }
     }
 }

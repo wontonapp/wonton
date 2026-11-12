@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Destructive menu action or confirmation button that removes an item from this device. No arguments; short label. -->
+    <string name="common_remove">移除</string>
+    <!-- Menu action and dialog title for renaming an item. No arguments; short label. -->
+    <string name="common_rename">重新命名</string>
+    <!-- Dialog button that closes the dialog without doing anything. -->
+    <string name="common_cancel">取消</string>
+    <!-- Icon button that dismisses an inline notice. -->
+    <string name="common_close">關閉</string>
+    <!-- Trash button that removes the item after you confirm. -->
+    <string name="common_delete">刪除</string>
+    <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
+    <string name="common_details">詳細資訊</string>
+    <!-- Button that closes the video player after watching. -->
+    <string name="common_done">完成</string>
+    <!-- Button that loads the page's data again after it failed. -->
+    <string name="common_retry">重試</string>
+    <!-- Toolbar button that saves the page's settings. Short, fits a small pill button. -->
+    <string name="common_save">儲存</string>
+    <!-- Danger button while the update is running and can still be cancelled: nothing was touched yet. -->
+    <string name="core_upgrade_cancel_upgrade">取消更新</string>
+    <!-- Stage line after the owner cancelled the update. -->
+    <string name="core_upgrade_canceled">已取消更新</string>
+    <!-- Secondary button when the update's outcome is unknown: ask the home server again. -->
+    <string name="core_upgrade_check_again">重新檢查</string>
+    <!-- Channel state while the check is running. -->
+    <string name="core_upgrade_check_checking">正在檢查新版本</string>
+    <!-- Channel state while the new version downloads; a progress bar with sizes is shown below. -->
+    <string name="core_upgrade_check_downloading">正在下載新版本</string>
+    <!-- Button on the update page that checks the channel for a new version. -->
+    <string name="core_upgrade_check_for_update">檢查更新</string>
+    <!-- Channel state on the update page: the server wasn't installed with the install script, so one-tap updates aren't available. -->
+    <string name="core_upgrade_check_not_installed">這台伺服器不是用安裝腳本安裝的，無法一鍵更新</string>
+    <!-- Channel state: the home server reported something this app doesn't understand. -->
+    <string name="core_upgrade_check_other">家用伺服器回報了雲吞不認得的狀態，請更新雲吞後再檢查</string>
+    <!-- Channel state: this installation is pinned to one version and doesn't follow the channel. -->
+    <string name="core_upgrade_check_pinned">這次安裝固定在某個版本，不會隨版本類型更新</string>
+    <!-- Channel state: the server already runs the newest version. -->
+    <string name="core_upgrade_check_up_to_date">已經是最新版</string>
+    <!-- Button on the update page while the channel check is running. -->
+    <string name="core_upgrade_checking">正在檢查…</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">更新後這些應用會用不了</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">沒查到哪些應用會受影響</string>
+    <!-- Stage line after the update finished. Argument: the version now running. -->
+    <string name="core_upgrade_completed_to">已更新到 %1$s</string>
+    <!-- Primary button in the confirm step: start the update. -->
+    <string name="core_upgrade_confirm_upgrade">更新</string>
+    <!-- Heading of the offer card in the confirm step. Argument: the new version. -->
+    <string name="core_upgrade_confirm_version">更新到 %1$s？</string>
+    <!-- Row label in the update page and in the collapsed details: the core version currently running. -->
+    <string name="core_upgrade_current_version">目前版本</string>
+    <!-- Secondary button in the confirm step: don't update now. -->
+    <string name="core_upgrade_decline_upgrade">稍後再說</string>
+    <!-- Collapsed details row: the update channel's name. -->
+    <string name="core_upgrade_detail_channel">版本類型</string>
+    <!-- Collapsed details row: the data kinds this version migrates, as a localized list. -->
+    <string name="core_upgrade_detail_migrates">會遷移的資料</string>
+    <!-- Collapsed details row: the new version's full digest. -->
+    <string name="core_upgrade_detail_new_version">新版本</string>
+    <!-- Collapsed details row on the update page: the core's own reason for the failed update, shown verbatim. -->
+    <string name="core_upgrade_detail_reason">原因</string>
+    <!-- Version label when the core reports no version and no digest: a development build. -->
+    <string name="core_upgrade_dev_version">開發版</string>
+    <!-- Stage line after the update failed early, before anything was changed. -->
+    <string name="core_upgrade_failed_no_changes">更新沒有完成，沒有做任何變更。</string>
+    <!-- Update failure summary: an update is already running. -->
+    <string name="core_upgrade_failure_busy">已經在更新了</string>
+    <!-- Update failure summary: the version on the channel changed since the owner approved it. -->
+    <string name="core_upgrade_failure_changed">可用的新版本變了，請重新確認</string>
+    <!-- Update failure summary: the new version crashed after it started. -->
+    <string name="core_upgrade_failure_crashed">新版本啟動後當掉了</string>
+    <!-- Update failure summary: the new version rejected the update, for example because it needs an older core first. -->
+    <string name="core_upgrade_failure_init_failed">新版本拒絕了這次更新</string>
+    <!-- Update failure summary: the computer is out of disk space. -->
+    <string name="core_upgrade_failure_no_space">磁碟空間不足</string>
+    <!-- Update failure summary: the new version hasn't finished downloading. -->
+    <string name="core_upgrade_failure_not_ready">新版本還沒下載好</string>
+    <!-- Update failure summary for the protocol and unknown reasons: the app and the home server version don't match. -->
+    <string name="core_upgrade_failure_protocol">雲吞和家用伺服器的版本不相符</string>
+    <!-- Update failure summary: the image registry can't be reached. -->
+    <string name="core_upgrade_failure_registry_unavailable">無法連線到映像檔倉庫</string>
+    <!-- Update failure summary: a step of the update exceeded its time limit. -->
+    <string name="core_upgrade_failure_timed_out">更新逾時</string>
+    <!-- Update failure summary: cancelling came too late, the update already started changing things. -->
+    <string name="core_upgrade_failure_too_late">更新已經開始，無法取消</string>
+    <!-- Update failure summary: the new version didn't pass the health check. -->
+    <string name="core_upgrade_failure_unhealthy">新版本沒通過健康檢查</string>
+    <!-- Update failure summary: the updater itself stopped working. -->
+    <string name="core_upgrade_failure_updater_failed">更新程式出了問題</string>
+    <!-- Update failure summary: Docker reported an error. -->
+    <string name="core_upgrade_failure_upstream">Docker 發生錯誤</string>
+    <!-- Warning in the confirm step of the update: this version migrates data and the update can't be undone. -->
+    <string name="core_upgrade_migrates_warning">這個版本會遷移資料，更新後無法退回舊版。</string>
+    <!-- Heading of the offer card while the new version is shown for review. Argument: the new version, like 1.2.3 or a short digest. -->
+    <string name="core_upgrade_new_version">新版本 %1$s</string>
+    <!-- Update phase: backing up data before switching. -->
+    <string name="core_upgrade_phase_backing_up">正在備份資料</string>
+    <!-- Update phase: watching the new version for a few minutes to make sure it is healthy. -->
+    <string name="core_upgrade_phase_observing">正在確認新版本是否穩定</string>
+    <!-- Update phase for a step this app doesn't know. -->
+    <string name="core_upgrade_phase_other">處理中</string>
+    <!-- Update phase shown under the stage line: pulling the new image. Nothing was touched yet. -->
+    <string name="core_upgrade_phase_pulling">正在下載新版本</string>
+    <!-- Update phase: restoring the old version after a failure. -->
+    <string name="core_upgrade_phase_rolling_back">正在退回舊版本</string>
+    <!-- Update phase: waiting for the new core to start. -->
+    <string name="core_upgrade_phase_starting">正在等新版本啟動</string>
+    <!-- Update phase: switching the services to the new version. -->
+    <string name="core_upgrade_phase_switching">正在切換到新版本</string>
+    <!-- Detail under the updating stage line: the app lost its connection and is reconnecting. -->
+    <string name="core_upgrade_reconnecting">暫時連不上家用伺服器</string>
+    <!-- Stage line right after the owner confirmed: the request is on its way. -->
+    <string name="core_upgrade_requesting_upgrade">正在開始更新…</string>
+    <!-- Stage line after the update failed and the old version was restored. Argument: the version now running. -->
+    <string name="core_upgrade_rolled_back_to">已退回 %1$s</string>
+    <!-- Secondary button on the offer card: skip this version and don't ask again until the channel changes. -->
+    <string name="core_upgrade_skip_version">跳過這個版本</string>
+    <!-- Note on the offer card after the owner skipped this version. -->
+    <string name="core_upgrade_skipped">已跳過</string>
+    <!-- Title of the home server update page, shown in the top bar while it is pushed. -->
+    <string name="core_upgrade_title">更新家用伺服器</string>
+    <!-- Stage line when the connection dropped mid-update and the outcome is not known yet. -->
+    <string name="core_upgrade_uncertain">結果不確定</string>
+    <!-- Primary button on the offer card: open the confirm step. -->
+    <string name="core_upgrade_upgrade">更新</string>
+    <!-- Stage line while the update runs and the target version is unknown. -->
+    <string name="core_upgrade_upgrading">正在更新…</string>
+    <!-- Stage line while the update runs. Argument: the target version. -->
+    <string name="core_upgrade_upgrading_to">正在更新到 %1$s…</string>
+    <!-- Device verification (ADR-0046): confirm a new device with an already-verified one. -->
+    <string name="common_ok">好</string>
+</resources>

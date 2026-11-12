@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="friends_paste_placeholder">貼上對方的碼</string>
+    <!-- Approve button on a received request. -->
+    <string name="friends_request_approve">同意</string>
+    <!-- Cancel button on a request I sent. -->
+    <string name="friends_request_cancel">取消</string>
+    <!-- Empty page: the one sentence above the add button. -->
+    <string name="friends_empty">還沒有好友</string>
+    <!-- Row that opens the new-group dialog. -->
+    <string name="friends_group_new">新增群組</string>
+    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
+    <string name="friends_group_delete_title">刪除「%1$s」？</string>
+    <!-- Sheet action on a friend row that opens the group chooser. -->
+    <string name="friends_groups">群組</string>
+    <!-- Sheet action on a friend row: remove the friend. -->
+    <string name="friends_remove_friend">刪除好友</string>
+    <!-- Confirmation dialog body: what removing a friend does. -->
+    <string name="friends_remove_message">你分享給他的外掛會收回，私聊留著。</string>
+    <!-- Section heading above blocked people and servers. -->
+    <string name="friends_blocked_title">已封鎖</string>
+    <!-- Row that opens the block-a-server dialog; only shown to the server's owner. -->
+    <string name="friends_block_server">封鎖整台伺服器</string>
+    <!-- Row subtitle for a blocked person. -->
+    <string name="friends_block_invitations">已封鎖邀請</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。</string>
+    <!-- Section heading on the peers page above the friend requests. -->
+    <string name="friends_peers_title">好友邀請</string>
+</resources>

@@ -25,7 +25,7 @@ struct OptionalPermissionRow: View {
                     title: problem.title,
                     lines: problem.nextStep.map { [$0] } ?? []
                 ) {
-                    Button(String(localized: .commonRetry)) {
+                    Button(String(localized: .Common.commonRetry)) {
                         guard let failedTarget else { return }
                         Task { await apply(failedTarget) }
                     }
@@ -59,8 +59,8 @@ struct OptionalPermissionRow: View {
         let date = Date(timeIntervalSince1970: TimeInterval(opened.since))
             .formatted(.dateTime.month(.defaultDigits).day())
         let text = opened.bot.map {
-            String(localized: .pluginPermissionOpenedBot($0.title, date))
-        } ?? String(localized: .pluginPermissionOpenedOwner(date))
+            String(localized: .Plugin0.pluginPermissionOpenedBot($0.title, date))
+        } ?? String(localized: .Plugin1.pluginPermissionOpenedOwner(date))
         return Text(text)
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))

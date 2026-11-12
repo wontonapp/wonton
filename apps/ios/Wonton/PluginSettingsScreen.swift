@@ -28,7 +28,7 @@ struct PluginSettingsScreen: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(String(localized: .pluginSettingsTitle)) {
+            .wontonPushedScreen(String(localized: .Plugin1.pluginSettingsTitle)) {
                 PluginSettingsSaveTrailing(saving: saving, blocked: blocked) {
                     Task { await save() }
                 }
@@ -58,13 +58,16 @@ struct PluginSettingsScreen: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if restartHint {
-                    WontonNotice(icon: .info, title: String(localized: .pluginSettingsRestartHint), isError: false)
+                    WontonNotice(
+                        icon: .info,
+                        title: String(localized: .Plugin2.pluginSettingsRestartHint),
+                        isError: false)
                 }
                 if let problem {
                     ProblemNotice(problem: problem, onClose: { self.problem = nil })
                 }
                 if unknownValue(in: displayed.form) {
-                    WontonNotice(icon: .warning, title: String(localized: .pluginSettingsUpdatesApp))
+                    WontonNotice(icon: .warning, title: String(localized: .Plugin0.pluginSettingsUpdatesApp))
                 }
                 ForEach(displayed.form.fields, id: \.name) { field in
                     PluginSettingFieldView(
@@ -261,7 +264,7 @@ struct PluginSettingsSaveTrailing: View {
         if saving {
             ProgressView().padding(.trailing, WontonTheme.spacing.s12)
         } else {
-            Button(String(localized: .commonSave)) { onSave() }
+            Button(String(localized: .Common.commonSave)) { onSave() }
                 .buttonStyle(WontonSmallButtonStyle())
                 .disabled(blocked)
                 .padding(.trailing, WontonTheme.spacing.s12)

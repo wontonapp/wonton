@@ -1,0 +1,396 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "chatBackup.detail.enabled": {
+      "comment": "Explanation under the heading when backup is on.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When you switch to a new phone, enter your recovery key to see your past messages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换手机或新设备时，输入恢复密钥就能看到以前的消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "換手機或新裝置時，輸入復原金鑰就能看到以前的訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機種変更などの際に復旧キーを入力すると、過去のメッセージが表示されます。"
+          }
+        }
+      }
+    },
+    "chatBackup.detail.incomplete": {
+      "comment": "Explanation when the recovery key is missing on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter the recovery key you saved when you turned on backup. If you lost it, reset the backup."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入开启备份时保存的恢复密钥。密钥丢了，就重置备份。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輸入開啟備份時儲存的復原金鑰。如果金鑰遺失了，就重置備份。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックアップを有効にしたときに保存した復旧キーを入力してください。キーを紛失した場合はバックアップをリセットしてください。"
+          }
+        }
+      }
+    },
+    "chatBackup.detail.unverified": {
+      "comment": "Explanation when backup is off because this device isn't verified; the earliest paired device turns it on.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open the device that was paired first; backup turns on by itself. If it isn't at hand, reset the backup."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请打开最早配对的那台设备，备份会自动开启。那台设备不在手边，就重置备份。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請打開最早配對的那台裝置，備份會自動開啟。那台裝置不在手邊，就重置備份。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最初にペアリングしたデバイスで開くと、バックアップは自動的に有効になります。そのデバイスが手元になければバックアップをリセットしてください。"
+          }
+        }
+      }
+    },
+    "chatBackup.detail.verified": {
+      "comment": "Explanation when this device is verified: backup turns on by itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Backup turns on by itself after the device is verified."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备验证后会自动开启备份。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裝置驗證後會自動開啟備份。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイスの認証後にバックアップは自動的に有効になります。"
+          }
+        }
+      }
+    },
+    "chatBackup.recoveryKey": {
+      "comment": "Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recovery Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キー"
+          }
+        }
+      }
+    },
+    "chatBackup.reminder.saveKey": {
+      "comment": "Banner in the chat list asking the owner to save their recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save your recovery key — you'll need it when you switch phones"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存恢复密钥，换手机时要用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存復原金鑰，換手機時會用到"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを保存しましょう。機種変更時に必要です"
+          }
+        }
+      }
+    },
+    "chatBackup.resetMessage": {
+      "comment": "Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You'll get a new recovery key and the old one stops working. Old messages may become unreadable, and your other devices will need the new key."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会换一把新的恢复密钥，旧的作废。重置后旧消息可能读不了，其他设备要输入新密钥。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "會產生新的復原金鑰，舊的會失效。重置後可能無法讀取舊訊息，其他裝置也要輸入新金鑰。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しい復旧キーが発行され、古いキーは使えなくなります。リセット後は過去のメッセージが読めなくなることがあり、他のデバイスでは新しいキーの入力が必要です。"
+          }
+        }
+      }
+    },
+    "chatBackup.saveKeyNote": {
+      "comment": "Note under the freshly issued recovery key: it is only shown once.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You'll need it when you switch phones. It's only shown once; after \"Saved\" this device keeps no copy."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换手机时要用它。只显示这一次，点“已保存”后本机不再留着它。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "換手機時會用到。只會顯示這一次，點一下「已儲存」後，這台裝置就不會再保留。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機種変更時に必要です。表示されるのは一度だけです。「保存しました」をタップすると、このデバイスには残りません。"
+          }
+        }
+      }
+    },
+    "chatBackup.saveKeyTitle": {
+      "comment": "Heading above the freshly issued recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Your Recovery Key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを保存"
+          }
+        }
+      }
+    },
+    "chatBackup.status.enabled": {
+      "comment": "Page heading when chat backup is on and verified.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat Backup Is On"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天记录已备份"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聊天記錄已備份"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チャットはバックアップ済みです"
+          }
+        }
+      }
+    },
+    "chatBackup.status.incomplete": {
+      "comment": "Page heading when the recovery key is missing on this device, so past messages can't be shown.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device can't see past messages yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备还看不到以前的消息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置還看不到以前的訊息"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスではまだ過去のメッセージを表示できません"
+          }
+        }
+      }
+    },
+    "chatBackup.value.inProgress": {
+      "comment": "Value on the Settings row: backup or recovery is running.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "处理中"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "處理中"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "処理中"
+          }
+        }
+      }
+    },
+    "chatBackup.value.unknown": {
+      "comment": "Value on the Settings row: the status can't be determined.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不确定"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不確定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明"
+          }
+        }
+      }
+    }
+  }
+}

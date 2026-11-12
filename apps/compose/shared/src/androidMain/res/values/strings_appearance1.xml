@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accessibility state of the More row while the extra colors are shown. -->
+    <string name="appearance_expanded">Expanded</string>
+    <!-- Section title for the font. -->
+    <string name="appearance_font">Font</string>
+    <!-- Choice row: the system default font. -->
+    <string name="appearance_font_default">Default</string>
+    <!-- Choice row: the monospaced system font design. -->
+    <string name="appearance_font_monospaced">Monospaced</string>
+    <!-- Choice row: the rounded system font design. -->
+    <string name="appearance_font_rounded">Rounded</string>
+    <!-- Row that expands the extra color swatches and the color input field. -->
+    <string name="appearance_more">More</string>
+    <!-- Sample chat bubble on the appearance page, hidden from accessibility; it shows how the theme looks. -->
+    <string name="appearance_preview_message">What\'s for dinner tonight?</string>
+    <!-- Choice row: large text size. -->
+    <string name="appearance_size_large">Large</string>
+    <!-- Choice row: standard text size. -->
+    <string name="appearance_size_standard">Standard</string>
+    <!-- Section title on the appearance page for light and dark mode. -->
+    <string name="appearance_theme">Theme</string>
+</resources>
