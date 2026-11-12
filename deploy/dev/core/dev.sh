@@ -25,6 +25,9 @@
 #   dev.sh pair [直连地址]             发一个配对码：终端里出二维码，最后一行是码的文字；直连地址默认 127.0.0.1:隧道端口
 #   dev.sh commit                      构建镜像用的提交号（工作区的 Cargo 源码有没提交的改动时带 -dirty）
 #   dev.sh share-smoke                 编好探针和隔离冒烟用的核心镜像，跑 ADR-0051 的双云吞分享冒烟（自己占名额）
+#   dev.sh friend <插件包目录或 compose 文件>
+#                                      在同一套隔离夹具里装上插件、分享给好友 Bob，以 Bob 的身份打开它，打印插件收到的
+#                                      请求头和 OIDC 的 ID 令牌声明（也是 userinfo）；见 friend-probe.sh
 #
 # 浏览器打开 http://wonton.localhost:18480 ，用 `dev.sh token` 的输出登录。
 # 用 IP 当 Host 打核心 API 会一律 404 not_found：网关按 Host 分类，IP 只回 GET / 的局域网状态页（局域网防 DNS
@@ -623,6 +626,28 @@ if [[ " $* " == *" --entry-cloud "* ]]; then
   exec python3 "$repo/deploy/dev/entry-cloud/smoke.py" "${rest[@]}"
 fi
 
+# 分享冒烟（share-smoke、friend）要的探针二进制和含分享实现的核心镜像：缺了才编，导出给 smoke-sharing.sh。
+# 参数是要的 wonton-core 示例名；中继 share-smoke-relay 总是要。
+share_smoke_prepare() {
+  export PATH="$HOME/.cargo/bin:$PATH"
+  local bin="${WONTON_SHARE_SMOKE_BIN:-$HOME/wonton-dev/share-smoke-bin}" example missing=0
+  local -a examples=()
+  [[ -n "${WONTON_SHARE_SMOKE_BIN:-}" || -x "$bin/fr_share_smoke" ]] ||
+    bin="$(dirname "$repo")/share-smoke-bin"
+  for example in "$@" share-smoke-relay; do [[ -x "$bin/$example" ]] || missing=1; done
+  if (( missing )); then
+    for example in "$@"; do examples+=(--example "$example"); done
+    mkdir -p "$bin"
+    ( cd "$repo" && cargo build -p wonton-core "${examples[@]}" -p wonton-tunnel --example share-smoke-relay &&
+      for example in "$@" share-smoke-relay; do cp "target/debug/examples/$example" "$bin/"; done ) || exit 1
+  fi
+  local image="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
+  if [[ -z "$(docker image ls -q "$image")" ]]; then
+    build_image --target dev -t "$image" -f "$here/Dockerfile" "$repo" >&2 || exit 1
+  fi
+  export WONTON_SHARE_SMOKE_CORE_IMAGE="$image" WONTON_SHARE_SMOKE_BIN_DIR="$bin"
+}
+
 # 被 source（instance-label_test.py 测实例标签）时只拿函数定义和上面的环境，不执行子命令。
 # return 0 要写全：不带参数的 return 会把左边失败的 [[ ]] 的状态带出去，source 它的脚本开着 set -e 就会退出。
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
@@ -736,20 +761,12 @@ case "${1:-}" in
     docker exec "$core" wonton-core pair "$addr"
     ;;
   share-smoke)
-    export PATH="$HOME/.cargo/bin:$PATH"
-    bin="${WONTON_SHARE_SMOKE_BIN:-$HOME/wonton-dev/share-smoke-bin}"
-    [[ -n "${WONTON_SHARE_SMOKE_BIN:-}" || -x "$bin/fr_share_smoke" ]] ||
-      bin="$(dirname "$repo")/share-smoke-bin"
-    if [[ ! -x "$bin/fr_share_smoke" || ! -x "$bin/share-smoke-relay" ]]; then
-      mkdir -p "$bin"
-      ( cd "$repo" && cargo build -p wonton-core --example fr_share_smoke -p wonton-tunnel --example share-smoke-relay &&
-        cp target/debug/examples/fr_share_smoke target/debug/examples/share-smoke-relay "$bin/" ) || exit 1
-    fi
-    image="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
-    if [[ -z "$(docker image ls -q "$image")" ]]; then
-      build_image --target dev -t "$image" -f "$here/Dockerfile" "$repo" >&2 || exit 1
-    fi
-    exec env WONTON_SHARE_SMOKE_CORE_IMAGE="$image" WONTON_SHARE_SMOKE_BIN_DIR="$bin" bash "$here/smoke-sharing.sh"
+    share_smoke_prepare fr_share_smoke
+    exec bash "$here/smoke-sharing.sh"
     ;;
-  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|upgrade <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]|share-smoke" ;;
+  friend)
+    share_smoke_prepare fr_share_smoke fr_friend_probe
+    exec bash "$here/friend-probe.sh" "${2:?用法：$0 friend <插件包目录或 compose 文件>}"
+    ;;
+  *) die "用法：$0 up|down|reset [--keep-tunnel-identity]|clean-data|status|logs [<服务>]|diag|token|build <docker build 的参数>|install <compose 文件或插件包目录> [--yes]|upgrade <compose 文件或插件包目录> [--yes]|uninstall <插件 ID> [--purge]|list|open <插件 ID>|tunnel|devices|revoke <endpoint ID>|pair [直连地址]|share-smoke|friend <插件包目录或 compose 文件>" ;;
 esac
