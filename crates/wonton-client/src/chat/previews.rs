@@ -417,15 +417,12 @@ impl ChatLink {
     }
 
     /// 主人点掉了发送框的预览：存着的草稿里第一个链接还是它，这条草稿就不再出。
-    pub(super) fn dismiss_preview(self: &Arc<Self>, room_id: &str) {
+    pub(super) fn dismiss_preview(self: &Arc<Self>, key: super::TimelineKey) {
         let chat = self.clone();
-        let room = room_id.to_owned();
         self.runtime.spawn(async move {
-            let Ok((_, room_id)) = chat.target(&room) else {
-                return;
-            };
+            let room_id = key.room_id.clone();
             let (ack, received) = oneshot::channel();
-            chat.enqueue_draft(DraftWrite::Read(room_id.clone(), ack));
+            chat.enqueue_draft(DraftWrite::Read(key, ack));
             let Ok(Some(stored)) = received.await else {
                 return;
             };

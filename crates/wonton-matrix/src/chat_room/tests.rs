@@ -7,6 +7,7 @@ use matrix_sdk::{
     config::SyncSettings,
     ruma::{api::MatrixVersion, room_id, user_id},
 };
+use matrix_sdk_ui::timeline::RoomExt;
 use serde_json::json;
 
 use super::*;
