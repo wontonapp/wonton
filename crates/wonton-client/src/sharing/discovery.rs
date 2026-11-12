@@ -22,6 +22,10 @@ pub(super) async fn discover_and_token<T>(
 }
 
 pub(super) async fn http_client() -> Result<Client, ShareProblem> {
+    if let Err(reason) = wonton_matrix::platform_tls::check() {
+        tracing::warn!("cannot verify HTTPS certificates: {reason}");
+        return Err(problem(ShareFailure::Unreachable, None));
+    }
     let mut builder = client_builder();
     if let Some(path) = std::env::var_os("WONTON_SHARE_CA_FILE") {
         let pem = tokio::fs::read(path)

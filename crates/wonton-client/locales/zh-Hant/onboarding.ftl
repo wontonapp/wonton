@@ -27,6 +27,9 @@ home-pairing-name-empty = 裝置名是空的。
 
 home-pairing-bind-failed = 無法建立網路連線：{ $error }
 
+# $seconds 是綁定的時限秒數。建立連線時本機網路在這段時間內沒準備好，會自動再試。
+home-bind-timeout = 本機網路在 { $seconds } 秒內沒有準備好。
+
 # $reason 是連線資訊剖析器的原始錯誤。
 home-ticket-corrupt = 儲存的連線資訊已損毀：{ $reason }
 

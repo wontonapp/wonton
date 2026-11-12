@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 生产只信系统 CA；debug 变体同 R 名覆盖，额外信任用户装的 CA（调试用自签 homeserver，ADR-0051 的实测）。
-     Android 官方调试模式：https://developer.android.com/privacy-and-security/security-config -->
+     Android 官方调试模式：https://developer.android.com/privacy-and-security/security-config
+     放行明文的原因见 main 下的同名文件。 -->
 <network-security-config>
-    <base-config>
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
             <certificates src="user" />

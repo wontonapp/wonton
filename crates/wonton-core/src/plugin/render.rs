@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, Mount, MountType};
 
@@ -124,6 +125,10 @@ pub struct InstallContext {
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
+    /// 这个插件最多等多久：核心的安装期限和清单声明的期限取大的（见
+    /// [`PluginManager::install_limit`](super::manager::PluginManager::install_limit)）。安装、启动、重建都按它
+    /// 算健康门的时限。
+    pub install_limit: Duration,
     /// 额外写进每个容器 `/etc/hosts` 的条目（核心不在容器里运行时，用来让插件访问网关）。
     pub extra_hosts: Vec<String>,
     /// 申请了 `devices.gpu` 且本机有可用的显卡时：交给 `gpu.services` 里的服务的设备（见 [`super::gpu`]）。
@@ -298,6 +303,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         tz: "UTC".into(),
         puid: 1000,
         pgid: 1000,
+        install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
         lan: dry_run_lan(manifest, &slug),

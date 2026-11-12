@@ -4,4 +4,8 @@
     <string name="keepalive_channel_name">保持连接</string>
     <!-- “保持连接”前台服务的常驻通知标题。 -->
     <string name="keepalive_notification_title">正在保持与家里的服务器的连接</string>
+    <!-- “保持连接”常驻通知的标题：正在连接家里的服务器（还没连上或断开后在重连）。 -->
+    <string name="keepalive_notification_connecting">正在连接家里的服务器…</string>
+    <!-- “保持连接”常驻通知的标题：连不上家里的服务器。 -->
+    <string name="keepalive_notification_unreachable">连不上家里的服务器</string>
 </resources>

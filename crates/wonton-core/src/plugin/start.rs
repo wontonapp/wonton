@@ -301,7 +301,7 @@ impl PluginManager {
         }
         Ok(super::health_gate::deadline_from_configs(
             configs.iter().map(Option::as_ref),
-            self.cfg.install_timeout,
+            self.install_limit(&package.manifest),
             Instant::now(),
         ))
     }

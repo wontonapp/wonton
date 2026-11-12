@@ -78,9 +78,12 @@ psl = "2.1.248"
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "=0.2.189"
 
-# MIT OR Apache-2.0。把 Application 交给 iroh 读系统 DNS，见 `src/android.rs`。
+# 见 `src/android.rs`：把 Application 交给 iroh 读系统 DNS，初始化证书校验器。
 [target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+# MIT OR Apache-2.0。和 rustls-platform-verifier 用同一个大版本，它的初始化接口收的是这个版本的类型。
+jni = "0.22.4"
+# MIT OR Apache-2.0。reqwest 的 rustls 特性已经带进来；这里直接依赖，好在 App 启动时初始化它的 Android 部分。
+rustls-platform-verifier = "0.7.1"
 
 [dev-dependencies]
 # MIT。测试挑本机空闲端口（`wonton_tunnel::test_support`）要 `test-hooks`。
