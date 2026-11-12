@@ -133,7 +133,7 @@ pub(crate) fn pushed_card(
                 PushedCard::Waiting(PushConfirmation {
                     id: card.id,
                     expires_at_ms: card.expires_at_ms,
-                    origin: None,
+                    origin: card.origin,
                 })
             }
         }

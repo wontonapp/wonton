@@ -177,7 +177,6 @@ chat-layout-change-failed = チャットの表示方法を変更できません�
 chat-session-device-revoked = このデバイスはMatrixで取り消されました。もう一度自宅サーバーとペアリングしてください。
 
 # シェルからコアの知らないチャット操作が渡されたときに表示します。
-side-chat-not-ready = このバージョンのクライアントコアはサイドチャットにまだ対応していません。
 chat-invalid-action = チャット操作ではありません
 # ダイレクトチャットの開始時に、@名前:サーバーの形でないIDが渡されたときに表示します。
 chat-invalid-user-id = ユーザーIDの形式が正しくありません。@名前:サーバーのように入力してください
@@ -643,3 +642,4 @@ browser-not-connected = Wontonは今、自宅のサーバーにつながって�
 browser-bad-request = このページはWontonから開いてください。
 
 contacts-invalid-action = Bot の連絡先の操作ではありません。
+composer-side-chat-unsupported = サイドチャットでは添付ファイルを追加できません。

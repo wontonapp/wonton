@@ -504,6 +504,7 @@ pub fn owner_message_at(
         mentions: Vec::new(),
         agent_run: None,
         thread_root: thread_root.map(|root| root.parse().unwrap()),
+        thread_replies: None,
         edited: false,
         read_by: Vec::new(),
         reply: None,

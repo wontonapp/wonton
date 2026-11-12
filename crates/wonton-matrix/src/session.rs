@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use futures_util::{Stream, stream};
 use matrix_sdk::{
     Client, ClientBuildError, ClientBuilder, SessionChange, SessionMeta, SessionTokens,
+    ThreadingSupport,
     authentication::matrix::MatrixSession as SdkSession,
     cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
@@ -139,6 +140,8 @@ pub struct MatrixSession {
     /// 本会话第一次看到每个房间的时刻（Unix 毫秒）。Tuwunel 2.0 的邀请剥离状态不带时间戳，邀请的
     /// 建房时间读不到时用它代替；只用来排序，不持久化，重启后按列表顺序回退。
     invited_seen: std::sync::Mutex<std::collections::BTreeMap<OwnedRoomId, u64>>,
+    /// 叫醒房间列表重算一遍：话题回执只改话题的未读，SDK 不当成房间的变化（ADR-0093 §4）。
+    pub(crate) rooms_changed: Arc<Notify>,
 }
 
 impl Drop for MatrixSession {
@@ -250,6 +253,7 @@ impl MatrixSession {
             sending,
             resume_sending,
             resume_sync: Notify::new(),
+            rooms_changed: Arc::new(Notify::new()),
             subscriptions: tokio::sync::Mutex::default(),
             verifications: Arc::default(),
             invited_seen: std::sync::Mutex::default(),
@@ -436,6 +440,11 @@ pub(crate) fn client_builder(
 ) -> ClientBuilder {
     let mut builder = Client::builder()
         .handle_refresh_tokens()
+        // 事件缓存按话题分开记、主对话的未读不算话题回复，话题的未读按话题回执另算（ADR-0093 §4）。
+        // 不订阅话题（MSC4306），所有话题都照常同步。
+        .with_threading_support(ThreadingSupport::Enabled {
+            with_subscriptions: false,
+        })
         .with_encryption_settings(EncryptionSettings {
             // 登录后自动建交叉签名身份（账号还没有时）；服务器要支持 MSC3967，首次上传不要求再次认证。
             auto_enable_cross_signing: cross_signing,

@@ -19,6 +19,7 @@ use super::menu::{Menus, Outbox};
 use super::previews::Previews;
 use super::read_mark::ReadMark;
 use super::reply::QuoteFetches;
+use super::side_chat::{SideChatsView, Support};
 use super::timeline_previews::{ensure_previews, preview_diffs};
 use super::view::{timeline_diff, timeline_item};
 
@@ -46,6 +47,7 @@ impl TimelineSubscription {
         menus: Arc<std::sync::Mutex<Menus>>,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
         chat: watch::Receiver<wonton_protocol::ChatViewModel>,
+        support: Arc<Support>,
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
@@ -54,7 +56,7 @@ impl TimelineSubscription {
         runtime.spawn(async move {
             let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
             tokio::select! {
-                () = forward(&room, cards, &plugins, previews, &outbox, &mut scrolled, room_view, chat) => {}
+                () = forward(&room, cards, &plugins, previews, &outbox, &mut scrolled, room_view, chat, &support) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -119,8 +121,8 @@ impl View {
         }
     }
 
-    fn refresh_unread(&mut self, room: &ChatRoom) {
-        self.unread = u32::try_from(room.unread_messages()).unwrap_or(u32::MAX);
+    async fn refresh_unread(&mut self, room: &ChatRoom) {
+        self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
     }
 }
 
@@ -161,6 +163,7 @@ async fn forward(
     scrolled: &mut watch::Receiver<TimelineScroll>,
     mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
+    support: &Support,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
     'outer: loop {
@@ -177,7 +180,10 @@ async fn forward(
         };
         let links = LinkTargets::of(&plugins.view());
         // Bot 列表、活动和等回答的卡片变了，AgentRun 条目的显示跟着变：每批都带上现在的情况，变了就重算。
-        let mut bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
+        let bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
+        let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
+        sender.set_side_chat(side_chats.header());
+        let mut bots = bots.with_side_chats(side_chats);
         let Some(mut view) = start_batch(
             room, &entries, &shown, &read, &links, sender, status, &bots, &previews,
         )
@@ -198,7 +204,7 @@ async fn forward(
         let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            view.refresh_unread(room);
+            view.refresh_unread(room).await;
             let next_expiry = shown.next_expiry(&entries);
             let sent = tokio::select! {
                 batch = diffs.next() => {
@@ -224,7 +230,11 @@ async fn forward(
                             rebuilt_for = Some(missed.id);
                             Batch::Sent(Ok(()), true)
                         }
-                        None => continue,
+                        // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
+                        None => match side_chat_batch(room, support, &entries, &shown, &read, plugins, sender, &mut view, &mut bots, &previews).await {
+                            Some(batch) => batch,
+                            None => continue,
+                        },
                     }
                 }
                 changed = room_view.changed() => {
@@ -261,7 +271,7 @@ async fn forward(
                         continue;
                     }
                     view.scroll = next;
-                    view.refresh_unread(room);
+                    view.refresh_unread(room).await;
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = chat.changed() => {
@@ -269,7 +279,8 @@ async fn forward(
                         return;
                     }
                     // 加密状态变了入口跟着变；Bot 列表、活动或等回答的卡片变了，AgentRun 条目跟着重算（ADR-0082）。
-                    let new_bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown);
+                    let new_bots = BotsView::of(&chat.borrow_and_update(), &entries, &shown)
+                        .with_side_chats(bots.side_chats().clone());
                     let diffs = refreshed_agent_runs(
                         &entries,
                         &shown,
@@ -341,7 +352,7 @@ async fn start_batch(
         sent_unread: 0,
         notice: None,
     };
-    view.refresh_unread(room);
+    view.refresh_unread(room).await;
     let position = read_index(room, entries).await;
     let anchor = anchor_of(entries, view.unread, position);
     if anchor.as_deref() != entries.last().map(|entry| entry.id.as_str()) {
@@ -592,6 +603,50 @@ fn refreshed_batch(
     Some(Batch::Sent(send(sender, entries, diffs, view, None), false))
 }
 
+/// 旁聊情况重算以后：卡片、结果行、根的显示变了的发 `Set`，头部变了也发一批；都没变时返回 `None`。
+#[allow(clippy::too_many_arguments)] // 同 [`apply`]，参数就是批处理要用的那几个。
+async fn side_chat_batch(
+    room: &ChatRoom,
+    support: &Support,
+    entries: &Vector<TimelineEntry>,
+    shown: &CardsView,
+    read: &ReadMark,
+    plugins: &crate::plugins::PluginsLink,
+    sender: &Outbox,
+    view: &mut View,
+    bots: &mut BotsView,
+    previews: &Previews,
+) -> Option<Batch> {
+    let side_chats = SideChatsView::load(room, bots.supports(support, room)).await;
+    if &side_chats == bots.side_chats() {
+        return None;
+    }
+    let header_changed = sender.set_side_chat(side_chats.header());
+    let next = bots.with_side_chats(side_chats);
+    let links = links_of(plugins);
+    let diffs: Vec<TimelineDiff> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, entry)| {
+            matches!(&entry.kind, EntryKind::Message(message) if SideChatsView::affects(message))
+        })
+        .filter_map(|(index, entry)| {
+            let item = timeline_item(entry.clone(), shown, read, &links, &next, previews);
+            (timeline_item(entry.clone(), shown, read, &links, bots, previews) != item).then_some(
+                TimelineDiff::Set {
+                    index: u32::try_from(index).unwrap_or(u32::MAX),
+                    item,
+                },
+            )
+        })
+        .collect();
+    *bots = next;
+    if diffs.is_empty() && !header_changed {
+        return None;
+    }
+    Some(Batch::Sent(send(sender, entries, diffs, view, None), false))
+}
+
 /// 记下这次重建时间线的原因，失败时能从日志看出是哪条路。
 fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEvent>) {
     match missed {
@@ -752,93 +807,5 @@ fn back_pagination(status: BackPaginationStatus) -> BackPagination {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use wonton_matrix::{Message, MessageBody, OwnedUserId, SendStatus};
-    use wonton_protocol::{MessageContent, RichLinkKind, TimelineContent};
-
-    fn text_entry(id: &str, body: &str) -> TimelineEntry {
-        TimelineEntry {
-            id: id.to_owned(),
-            kind: wonton_matrix::EntryKind::Message(Box::new(Message {
-                event_id: None,
-                sender: "@bot:wonton.localhost".parse().unwrap(),
-                sender_name: "Bot".to_owned(),
-                is_own: false,
-                timestamp_ms: 0,
-                status: SendStatus::Sent,
-                body: MessageBody::Text(body.to_owned()),
-                custom: Default::default(),
-                mentions: Vec::new(),
-                agent_run: None,
-                thread_root: None,
-                edited: false,
-                read_by: Vec::new(),
-                reply: None,
-                group: None,
-                can_redact: false,
-            })),
-        }
-    }
-
-    fn kind(diff: &TimelineDiff) -> RichLinkKind {
-        let TimelineDiff::Set { item, .. } = diff else {
-            panic!("{diff:?}");
-        };
-        let TimelineContent::Message { message } = &item.content else {
-            panic!("文字还是消息");
-        };
-        let MessageContent::Text { blocks, .. } = &message.body else {
-            panic!("文字还是文字");
-        };
-        blocks
-            .iter()
-            .flat_map(|block| &block.spans)
-            .find_map(|span| span.link.as_ref().map(|link| link.kind.clone()))
-            .expect("链接还在")
-    }
-
-    /// 行为：先把插件网址渲染成外部网页，插件装好以后同一段文字重算成插件页。
-    #[test]
-    fn an_arriving_plugin_reclassifies_links() {
-        let owner: OwnedUserId = "@owner:wonton.localhost".parse().unwrap();
-        let (_, answers) = watch::channel(Default::default());
-        let cards = Cards::new(&owner, answers).view();
-        let read = ReadMark::default();
-        let entries: Vector<TimelineEntry> = vec![text_entry(
-            "1",
-            "打开 http://app-grafana.home.example:18480/",
-        )]
-        .into_iter()
-        .collect();
-
-        let before = relinked(
-            &entries,
-            &cards,
-            &read,
-            &LinkTargets::default(),
-            &BotsView::default(),
-            &Previews::new(),
-        );
-        assert_eq!(kind(&before[0]), RichLinkKind::External);
-
-        let links = super::super::links::test_targets(&[(
-            "app.grafana",
-            "http://app-grafana.home.example:18480/",
-        )]);
-        let after = relinked(
-            &entries,
-            &cards,
-            &read,
-            &links,
-            &BotsView::default(),
-            &Previews::new(),
-        );
-        assert_eq!(
-            kind(&after[0]),
-            RichLinkKind::Plugin {
-                plugin_id: "app.grafana".to_owned()
-            }
-        );
-    }
-}
+#[path = "timeline_tests.rs"]
+mod tests;

@@ -282,6 +282,12 @@ pub(crate) fn push_notification(
         PushedCard::Expired => return None,
     };
     let notice = plugin_notice(own_user, &message.sender, &message.custom);
+    // 点通知直接进旁聊（ADR-0093 §5）：话题里的消息按它的话题根；确认卡片按卡片记的来源。
+    let thread_root = thread_of(&message.custom).or_else(|| {
+        confirmation
+            .as_ref()
+            .and_then(|card| card.origin.as_ref()?.thread_id.clone())
+    });
     let content = match message.body {
         MessageBody::Undecryptable => PushContent::Unavailable {
             reason: ChatFailure::NotReady,
@@ -308,8 +314,16 @@ pub(crate) fn push_notification(
         },
         confirmation,
         contact_request: None,
-        thread_root: None,
+        thread_root,
     })
+}
+
+/// 话题里的消息的话题根（`m.relates_to` 的 `m.thread`）。
+fn thread_of(custom: &Map<String, Value>) -> Option<String> {
+    let relation = custom.get("m.relates_to")?;
+    (relation.get("rel_type")?.as_str()? == "m.thread")
+        .then(|| relation.get("event_id")?.as_str().map(str::to_owned))
+        .flatten()
 }
 
 fn invalid(reason: &str) -> CoreError {

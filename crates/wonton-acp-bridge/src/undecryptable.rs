@@ -86,6 +86,7 @@ mod tests {
             custom: Default::default(),
             mentions: Vec::new(),
             thread_root: None,
+            thread_replies: None,
             edited: false,
             read_by: Vec::new(),
             reply: None,

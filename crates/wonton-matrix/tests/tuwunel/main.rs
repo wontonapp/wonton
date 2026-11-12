@@ -25,6 +25,7 @@ mod recovery_order;
 mod reset_order;
 mod restore_beside_old;
 mod send_queue;
+mod side_chat;
 mod state;
 mod store_loss;
 mod support;

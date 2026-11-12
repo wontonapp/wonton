@@ -1,4 +1,4 @@
-//! 输入框里的草稿：只存本机，按房间分开，主人换房间、关掉 App 再回来还在。正在回复的消息和正文一起存
+//! 输入框里的草稿：只存本机，按时间线（主对话、每个旁聊）分开，主人换房间、关掉 App 再回来还在。正在回复的消息和正文一起存
 //! （ADR-0073 第 2 节）。
 //!
 //! 每敲一个字发一次，写进 matrix-sdk 的状态库（和 Element 一样用 `m.room.draft` 的那套存储）。写入排一个队，
@@ -8,25 +8,25 @@ use std::sync::{Arc, Weak};
 
 use tokio::sync::{mpsc, oneshot};
 use wonton_l10n::l10n;
-use wonton_matrix::{Draft, Error, MatrixSession, OwnedEventId, OwnedRoomId};
+use wonton_matrix::{Draft, Error, MatrixSession, OwnedEventId};
 use wonton_protocol::{ComposerDraft, CoreError, ReplyQuote};
 
-use super::ChatLink;
 use super::confirmation::core_account;
 use super::links::{LinkTargets, first_external_link};
 use super::reply::quoted_message;
 use super::send::reply_target;
+use super::{ChatLink, TimelineKey};
 use crate::l10n::{CATALOG, language};
 
 /// 排队落盘的一笔草稿。
 pub(super) enum DraftWrite {
-    Save(OwnedRoomId, Draft),
+    Save(TimelineKey, Draft),
     /// 已经发出去的正文：存着的草稿还是它才删，回复对象一起删（发送途中又打了字就不是它了）。
-    Forget(OwnedRoomId, String),
+    Forget(TimelineKey, String),
     /// 用图片回复了这条：存着的草稿还在回复它的话，只去掉回复对象，正文留着。
-    ForgetReply(OwnedRoomId, OwnedEventId),
+    ForgetReply(TimelineKey, OwnedEventId),
     /// 读回草稿，发给 `ack`。排在前面的写入都落盘了才回。
-    Read(OwnedRoomId, oneshot::Sender<Option<Draft>>),
+    Read(TimelineKey, oneshot::Sender<Option<Draft>>),
 }
 
 /// 按排队的顺序写草稿。会话没了就结束。
@@ -42,14 +42,19 @@ pub(super) async fn write_drafts(
         };
         let session = chat.current().ok();
         match write {
-            DraftWrite::Save(room_id, draft) => {
-                if let Err(error) = save_draft(&session, &room_id, &draft).await {
+            DraftWrite::Save(key, draft) => {
+                if let Err(error) = save_draft(&session, &key, &draft).await {
                     chat.report_op_failure("chat-draft-save-failed", &error);
                 }
             }
-            DraftWrite::Forget(room_id, body) => {
+            DraftWrite::Forget(key, body) => {
                 let Some(session) = &session else { continue };
-                let Some(stored) = session.draft(&room_id).await.ok().flatten() else {
+                let Some(stored) = session
+                    .draft(&key.room_id, key.thread())
+                    .await
+                    .ok()
+                    .flatten()
+                else {
                     continue;
                 };
                 if stored.body.trim() != body.trim() {
@@ -59,13 +64,18 @@ pub(super) async fn write_drafts(
                     body: String::new(),
                     reply_to: None,
                 };
-                if let Err(error) = session.save_draft(&room_id, &empty).await {
+                if let Err(error) = session.save_draft(&key.room_id, key.thread(), &empty).await {
                     chat.report_op_failure("chat-draft-clear-failed", &error);
                 }
             }
-            DraftWrite::ForgetReply(room_id, event_id) => {
+            DraftWrite::ForgetReply(key, event_id) => {
                 let Some(session) = &session else { continue };
-                let Some(stored) = session.draft(&room_id).await.ok().flatten() else {
+                let Some(stored) = session
+                    .draft(&key.room_id, key.thread())
+                    .await
+                    .ok()
+                    .flatten()
+                else {
                     continue;
                 };
                 if stored.reply_to.as_ref() != Some(&event_id) {
@@ -75,13 +85,17 @@ pub(super) async fn write_drafts(
                     body: stored.body,
                     reply_to: None,
                 };
-                if let Err(error) = session.save_draft(&room_id, &kept).await {
+                if let Err(error) = session.save_draft(&key.room_id, key.thread(), &kept).await {
                     chat.report_op_failure("chat-draft-clear-failed", &error);
                 }
             }
-            DraftWrite::Read(room_id, ack) => {
+            DraftWrite::Read(key, ack) => {
                 let draft = match &session {
-                    Some(session) => session.draft(&room_id).await.ok().flatten(),
+                    Some(session) => session
+                        .draft(&key.room_id, key.thread())
+                        .await
+                        .ok()
+                        .flatten(),
                     None => None,
                 };
                 let _ = ack.send(draft);
@@ -92,11 +106,11 @@ pub(super) async fn write_drafts(
 
 async fn save_draft(
     session: &Option<Arc<MatrixSession>>,
-    room_id: &OwnedRoomId,
+    key: &TimelineKey,
     draft: &Draft,
 ) -> Result<(), Error> {
     match session {
-        Some(session) => session.save_draft(room_id, draft).await,
+        Some(session) => session.save_draft(&key.room_id, key.thread(), draft).await,
         None => Err(Error::NotReady(l10n!(
             CATALOG,
             language(),
@@ -108,21 +122,22 @@ async fn save_draft(
 impl ChatLink {
     pub(super) fn set_draft(
         &self,
-        room_id: &str,
+        key: &TimelineKey,
         body: &str,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
         let reply_to = reply_target(reply_to)?;
-        let (_, room_id) = self.target(room_id)?;
+        self.current()?;
         // 第一个链接换了或没有了，点掉的预览记录跟着作废（ADR-0065）。
         let links = LinkTargets::of(&self.plugins.view());
         let first = first_external_link(body, &links).map(|found| found.url);
-        self.previews.retain_dismissal(&room_id, first.as_deref());
+        self.previews
+            .retain_dismissal(&key.room_id, first.as_deref());
         let draft = Draft {
             body: body.to_owned(),
             reply_to,
         };
-        self.enqueue_draft(DraftWrite::Save(room_id, draft));
+        self.enqueue_draft(DraftWrite::Save(key.clone(), draft));
         Ok(())
     }
 
@@ -131,12 +146,17 @@ impl ChatLink {
         let _ = self.draft_writes.send(write);
     }
 
-    /// 房间输入框里的草稿，没打过字也没在回复时是 `None`。只在本机，换房间、重启核心都还在。回复对象那条消息本机
-    /// 没有时向服务器取，取不到给 `Unavailable`（壳照样能拿它的事件 ID 发回复）。
-    pub(crate) async fn draft(&self, room_id: &str) -> Result<Option<ComposerDraft>, CoreError> {
-        let (session, room_id) = self.target(room_id)?;
+    /// 一条时间线（主对话或旁聊）输入框里的草稿，没打过字也没在回复时是 `None`。只在本机，换房间、重启核心都还在。
+    /// 回复对象那条消息本机没有时向服务器取，取不到给 `Unavailable`（壳照样能拿它的事件 ID 发回复）。
+    pub(crate) async fn draft(
+        &self,
+        target: &wonton_protocol::TimelineTarget,
+    ) -> Result<Option<ComposerDraft>, CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let session = self.current()?;
+        let room_id = key.room_id.clone();
         let (ack, received) = oneshot::channel();
-        self.enqueue_draft(DraftWrite::Read(room_id.clone(), ack));
+        self.enqueue_draft(DraftWrite::Read(key, ack));
         let stored = received.await.map_err(|_| CoreError::NotReady {
             reason: l10n!(CATALOG, language(), "chat-draft-read-interrupted"),
         })?;
