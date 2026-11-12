@@ -92,6 +92,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             enabled_permissions: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
+            entry_label: None,
             origin: None,
             written_by: None,
             ask_every_update: false,

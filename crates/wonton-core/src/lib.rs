@@ -23,6 +23,7 @@ pub mod device;
 pub mod entry_certificate;
 pub mod entry_compose;
 pub mod entry_dns;
+pub mod entry_haproxy;
 pub mod entry_runtime;
 pub mod entry_settings;
 pub mod files;
