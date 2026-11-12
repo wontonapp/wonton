@@ -56,6 +56,10 @@ pub enum Effect {
         thread: Option<String>,
         content: Value,
     },
+    /// 一条旁聊结果行（ADR-0093），内容原样。
+    SideChatResult {
+        content: Value,
+    },
     /// 对状态消息的编辑（`m.replace`），内容原样。
     ReplaceRunStatus {
         event_id: String,
@@ -137,6 +141,7 @@ impl FakeRoom {
                 | Effect::Redact(_)
                 | Effect::State(_)
                 | Effect::RunStatus { .. }
+                | Effect::SideChatResult { .. }
                 | Effect::ReplaceRunStatus { .. } => None,
             })
             .collect()
@@ -279,6 +284,11 @@ impl Room for FakeRoom {
     async fn send_notice(&self, body: &str) -> Result<()> {
         let mut state = self.recorded.lock().unwrap();
         text(&mut state, "notice", body);
+        Ok(())
+    }
+
+    async fn send_side_chat_result(&self, content: Value) -> Result<()> {
+        self.record(Effect::SideChatResult { content });
         Ok(())
     }
 

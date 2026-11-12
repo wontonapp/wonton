@@ -297,9 +297,9 @@ impl Topics {
     }
 
     /// 一轮结束（ACP prompt 调用返回）时调：记结论、给改文件记录盖章（结束后再保留
-    /// 10 分钟）、状态放回“空闲”。话题会话返回主对话里那行 notice 的文字；主对话
-    /// 返回 `None`（它的结论由话题的下一轮动态带上，不往话题里发）。排队中的话题
-    /// 没跑过轮，接到这个调用时忽略。
+    /// 10 分钟）、状态放回“空闲”。话题会话返回主对话里结果行（ADR-0093）要用的标题；
+    /// 主对话返回 `None`（它的结论由话题的下一轮动态带上，不往话题里发）。排队中的
+    /// 话题没跑过轮，接到这个调用时忽略。
     pub async fn turn_finished(
         &mut self,
         key: &SessionKey,
@@ -331,11 +331,25 @@ impl Topics {
                 false,
             );
         }
-        let notice = key
-            .is_topic()
-            .then(|| digest::finish_notice(&name, files.len(), lang));
+        let title = key.is_topic().then_some(name);
         self.board.persist().await?;
-        Ok(notice)
+        Ok(title)
+    }
+
+    /// 话题第一轮开始时把工作板上的名字定为 ADR-0093 §1 的标题（根消息带标题字段用
+    /// 它，否则取根正文第一行的前 20 个字符）。没有这个会话的行就不动。
+    pub async fn set_name(&mut self, key: &SessionKey, name: &str) -> Result<()> {
+        let changed = match self.board.row_mut(key) {
+            Some(row) if row.name != name => {
+                row.name = name.to_owned();
+                true
+            }
+            _ => false,
+        };
+        if changed {
+            self.board.persist().await?;
+        }
+        Ok(())
     }
 
     /// 编排器发来任务事件时调：任务话题入场（第一次）并登记工作板，不受活跃话题上限管。
