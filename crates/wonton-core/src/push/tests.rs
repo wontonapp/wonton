@@ -346,3 +346,63 @@ fn invalid_subscriptions_are_refused() {
         "带 = 填充的 base64url 也接受"
     );
 }
+
+/// 设备用自己的私钥解开推送，拿到原始明文（确认推送不是房间消息，按 JSON 看）。
+fn decrypt_raw(body: &[u8]) -> serde_json::Value {
+    let secret = p256::SecretKey::from_slice(&URL_SAFE_NO_PAD.decode(UA_PRIVATE).unwrap()).unwrap();
+    let auth = Auth::clone_from_slice(&URL_SAFE_NO_PAD.decode(AUTH).unwrap());
+    let plaintext = web_push_native::decrypt(body.to_vec(), &secret, &auth).unwrap();
+    serde_json::from_slice(&plaintext).unwrap()
+}
+
+#[tokio::test]
+async fn a_confirmation_push_reaches_only_the_recipients_devices() {
+    let dir = tempfile::tempdir().unwrap();
+    let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
+    let owners = SecretKey::generate().public();
+    devices.add(owners, None).unwrap();
+    let alices = SecretKey::generate().public();
+    devices
+        .add_if(alices, None, Some("alice".into()), |_| true)
+        .unwrap();
+    let server = SecretKey::generate().public();
+    let push = Push::open(dir.path().join("push.json"), devices, server).unwrap();
+    // 两台设备各对一个推送服务：收到请求的端口说明是哪台设备收到的。
+    let for_owner = PushService::start().await;
+    let for_alice = PushService::start().await;
+    push.register(
+        owners,
+        Subscription::new(&for_owner.endpoint(), UA_PUBLIC, AUTH).unwrap(),
+    )
+    .unwrap();
+    push.register(
+        alices,
+        Subscription::new(&for_alice.endpoint(), UA_PUBLIC, AUTH).unwrap(),
+    )
+    .unwrap();
+
+    let card = DeviceConfirmationPush {
+        id: "card-1".into(),
+        title: "claw 想安装 Grafana".into(),
+        expires_at_ms: 42,
+        origin: None,
+    };
+    let sent = push.send_confirmation("alice", &card).await.unwrap();
+    assert_eq!(sent, 1, "只发给 alice 的设备");
+    assert!(for_owner.take().is_empty(), "主人的设备不收别人的卡片");
+    let received = for_alice.take();
+    assert_eq!(received.len(), 1);
+    // 明文里是 `confirmation` 段和服务器的 endpoint ID，设备凭它弹通知、点开去对的会话（ADR-0016）。
+    assert_eq!(
+        decrypt_raw(&received[0].body),
+        json!({
+            "server": server.to_string(),
+            "confirmation": {"id": "card-1", "title": "claw 想安装 Grafana", "expires_at_ms": 42},
+        }),
+    );
+
+    // 名下没有设备的人收不到：如实地失败，不假装发出去了。
+    let error = push.send_confirmation("nobody", &card).await.unwrap_err();
+    assert!(matches!(error, PushError::Invalid(_)), "{error}");
+    assert!(for_alice.take().is_empty());
+}

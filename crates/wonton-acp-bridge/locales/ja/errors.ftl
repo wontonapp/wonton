@@ -11,6 +11,7 @@ err-invalid = 入力が正しくありません：{ $message }
 err-confirmation = 確認カードを利用できません：{ $message }
 err-busy = 取り込み中：{ $message }
 err-matrix = Matrix のエラー：{ $message }
+err-hop-limit = 複数の Bot がここで何度もやり取りしたため、ゲートウェイが私のメッセージ { $count } 件を止めていました。今送り直しました。
 
 # ブリッジ自身が書く詳細。上の接頭辞の後ろに入ります。
 acp-no-http-mcp = エージェントが HTTP MCP に対応していません

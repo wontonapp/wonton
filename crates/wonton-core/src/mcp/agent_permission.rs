@@ -9,10 +9,12 @@ use wonton_protocol::{
     ConfirmationState,
 };
 
+use super::audience::Subject;
 use super::audit::{AgentPermissionRecord, Decision};
 use super::confirm::Refusal;
 use super::{Bus, Caller, cards};
 use crate::l10n;
+use crate::plugin::languages::Languages;
 
 /// 没能请主人确认的原因。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,8 @@ struct Asked {
     caller: String,
     card: String,
     request: AgentPermissionRequest,
+    /// 收件人的语言：卡片结束时的文字也用它。
+    langs: Languages,
     settled: bool,
 }
 
@@ -78,10 +82,9 @@ impl Asked {
         };
         if option.kind.answer() == Answer::Approve {
             self.audit(Decision::Approved, Some(option));
-            let langs = self.bus.plugins.owner_languages();
             let state = ConfirmationState::Succeeded {
                 message: l10n::text(
-                    &langs,
+                    &self.langs,
                     "chat-agent-chose",
                     &[("choice", option.name.as_str().into())],
                 ),
@@ -107,8 +110,8 @@ impl Drop for Asked {
             return;
         };
         let (bus, card) = (self.bus.clone(), std::mem::take(&mut self.card));
+        let langs = self.langs.clone();
         runtime.spawn(async move {
-            let langs = bus.plugins.owner_languages();
             let state = ConfirmationState::Failed {
                 message: l10n::text(&langs, "chat-agent-abandoned", &[]),
             };
@@ -125,31 +128,36 @@ impl Bus {
         request: AgentPermissionRequest,
     ) -> Result<AgentPermissionOutcome, AgentPermissionError> {
         check(&request)?;
-        let langs = self.plugins.owner_languages();
+        // 适配层知道 Agent 在哪个会话里干活，来源在请求体里；规则同 MCP 调用报的来源。
+        let mut caller = caller.clone();
+        caller.origin = request.origin.clone().and_then(super::audience::checked);
+        let langs = self.card_languages(&caller, Subject::Tool);
         let draft = cards::agent_permission(&caller.name, &request, &langs);
+        let (notifier, audience) = self.audience(&caller, Subject::Tool).await;
         let mut asked = Asked {
             bus: self.clone(),
             caller: caller.id.to_string(),
             card: String::new(),
             request,
+            langs,
             settled: true,
         };
-        let (card, answered) = match self.confirmations.open(
-            self.confirmations.default_notifier_arc(),
-            &caller.id,
-            draft,
-        ) {
-            Ok(opened) => opened,
-            Err(refusal) => {
-                asked.audit(Decision::Unconfirmed, None);
-                return Err(refused(&refusal));
-            }
-        };
+        let (card, answered) =
+            match self
+                .confirmations
+                .open_as(notifier.clone(), &caller.id, draft, audience)
+            {
+                Ok(opened) => opened,
+                Err(refusal) => {
+                    asked.audit(Decision::Unconfirmed, None);
+                    return Err(refused(&refusal));
+                }
+            };
         asked.card.clone_from(&card.id);
         asked.settled = false;
         match self
             .confirmations
-            .deliver(self.confirmations.default_notifier(), &card, answered)
+            .deliver(&*notifier, &card, answered)
             .await
         {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),

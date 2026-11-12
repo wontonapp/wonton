@@ -11,6 +11,7 @@ err-invalid = Invalid input: { $message }
 err-confirmation = Confirmation card unavailable: { $message }
 err-busy = Busy: { $message }
 err-matrix = Matrix error: { $message }
+err-hop-limit = Several bots went back and forth here too many times, so the gateway held { $count } of my messages. They have been sent now.
 
 # Details written by the bridge itself; they appear inside the prefixes above.
 acp-no-http-mcp = the agent doesn't advertise HTTP MCP

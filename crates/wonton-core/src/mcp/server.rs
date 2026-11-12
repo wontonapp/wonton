@@ -13,7 +13,7 @@ use rmcp::service::{NotificationContext, RequestContext, RoleServer, Subscriptio
 use super::Bus;
 use crate::plugin::PluginId;
 use crate::plugin::manifest::LocalizedText;
-use wonton_protocol::BotKeeper;
+use wonton_protocol::{BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
 
 /// 调用总线的插件：网关按来源地址认出它（同模型网关），放进请求扩展。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +24,9 @@ pub struct Caller {
     /// 总线令牌认出的 Bot：私人 Bot 是归属人，共享 Bot 归全家（ADR-0045）。没有 Bot 记录的插件
     /// （不进聊天的工具插件）按来源地址认，是 `None`。
     pub bot: Option<BotIdentity>,
+    /// 这次调用报的来源会话（`_meta` 的 [`ORIGIN_META_KEY`] 或请求头），没核对过；卡片上用的是核对后的，见
+    /// [`super::audience`]。
+    pub origin: Option<ConfirmationOrigin>,
 }
 
 /// 令牌认出的 Bot。
@@ -47,6 +50,7 @@ impl Caller {
             id,
             name,
             bot: None,
+            origin: None,
         }
     }
 
@@ -108,7 +112,13 @@ impl ServerHandler for Handler {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let caller = caller(&ctx)?;
+        let mut caller = caller(&ctx)?;
+        let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
+        let meta = request
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.0.0.get(ORIGIN_META_KEY));
+        caller.origin = super::audience::reported_origin(meta, headers);
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())
     }

@@ -131,10 +131,10 @@ pub use egress::{
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
-    ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member, MemberInvite, MemberList,
-    MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus, NewSharedBot, Role,
-    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_path,
-    member_removal_path, plugin_family_path,
+    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
+    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus,
+    NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
+    member_path, member_removal_path, plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,

@@ -1,4 +1,5 @@
-//! 把确认卡片交给主人的两种方式：核心接了 Matrix 时发进和主人的通知房间；没接时如实报“没法请主人确认”。
+//! 把确认卡片交出去的几种方式：核心接了 Matrix 时发进和主人的通知房间；没接时如实报“没法请主人确认”；
+//! 发给家人的不进任何房间（[`ListOnly`]）。
 
 use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
@@ -119,6 +120,24 @@ impl Notifier for NoMatrix {
             Err("the home server has no Matrix connection (WONTON_MATRIX_URL), so the confirmation card can't reach the owner".to_owned())
         }
         .boxed()
+    }
+
+    fn update<'a>(
+        &'a self,
+        _handle: &'a str,
+        _card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async { Ok(None) }.boxed()
+    }
+}
+
+/// 不发进任何 Matrix 房间的卡片（发给家人的，ADR-0016）：核心记着，他的 App 从“等你确认”列表取，推送另走
+/// [`super::RecipientPush`]。
+pub struct ListOnly;
+
+impl Notifier for ListOnly {
+    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
+        async move { Ok(card.id.clone()) }.boxed()
     }
 
     fn update<'a>(

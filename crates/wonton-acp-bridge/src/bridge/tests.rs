@@ -8,6 +8,7 @@ mod downtime;
 mod downtime_real;
 mod limits;
 mod mode;
+mod refused;
 mod restore;
 mod run_status;
 mod tasks;

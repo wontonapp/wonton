@@ -10,6 +10,7 @@ use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
 
 use super::agent_cards::{install_ran, upgrade_ran};
+use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::cards;
 use super::{Bus, Caller, ToolFailure, with_failure};
@@ -74,7 +75,7 @@ async fn official(
         Ok(package) => package,
         Err(failure) => return bus.deny(caller, name, value, &failure),
     };
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let inputs = match bus.plugins.secret_inputs(&package.manifest, None, &langs) {
         Ok(inputs) => inputs,
         Err(e) => {
@@ -201,7 +202,7 @@ async fn from_dir(
         Ok((opened, _)) => opened,
         Err(failure) => return deny(ToolFailure::new(failure.kind.as_str(), failure.to_string())),
     };
-    let langs = bus.plugins.owner_languages();
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     // 只读一次：对这个包做检查，装的就是校验的这一份，中间改文件换不掉。
     let package = match PluginPackage::load_dir_at(opened.as_fd(), &langs) {
         Ok(package) => package,
