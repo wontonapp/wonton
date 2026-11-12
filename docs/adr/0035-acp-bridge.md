@@ -28,7 +28,15 @@ ACP 桥是每个 ACP Agent 插件的一部分，不进核心，也不在核心�
 
 图片和文件也收：收到 `m.image`/`m.file` 时一条事件一轮，桥用 matrix-sdk 下载并解密媒体（加密房间同样适用），落到 Agent 工作区的 `wonton-attachments/{房间}/{事件}/` 下（目录名和文件名都做清洗，工作区目录必须已存在）。发提示词时按 Agent 在 initialize 里声明的 `promptCapabilities` 组块：声明了 image 的给 `image` 块（base64 + mimeType），其余给 `resource_link`（`file://` 工作区路径）——text 和 resource_link 是所有 Agent 必须支持的两类，不给外部 HTTP 地址（ACP 安全指引）。附件自带的说明文字作为 `text` 块放进同一轮；下载失败、超过大小上限（20 MiB，见 `bridge/attachments.rs` 的说明）、不支持的类型（语音、视频等）都按类别回主人，不发残缺的一轮。`prompt` 从此接收内容块数组，多块一轮的口子已留好；多条消息分组成一轮等 ADR-0094 定了标记字段再做。附件文件按时间和总量清理：桥每小时和启动时各清一次，删超过 7 天的，总量超 1 GiB 时从最旧的删起。工作区由 bridge 和 agent 两个服务共享挂载（这是两服务唯一的共享目录）；`wonton://file` 链接不解析，当文字转给 Agent。
 
-同一 session 同时只有一个 `session/prompt`。默认排队，队列满返回 busy。主人发送“打断重来”操作时，桥先 `session/cancel`，等原 prompt 的响应（包括 `cancelled`）后再用新文本调用 `session/prompt`；取消后的迟到 chunk 在该 prompt 的边界外丢弃。桥在 ACP `initialize` 的顶层 `_meta.steering.supported` 为真时支持现成的 `_session/steering`：进行中直接发送，返回 `injected`；空闲返回 `promptRequired`，再走普通 prompt。没有该能力就排队，不调用 Qwen 私有方法。Matrix 控制消息只由桥识别，不发给 ACP：`/wonton interrupt <文字>` 是打断重来，`/wonton queue <文字>` 是显式排队；普通聊天文本默认排队。
+同一 session 同时只有一个 `session/prompt`（Kimi 拒绝、Gemini 中断前一轮，ADR-0007）。一轮在跑时主人又发来的消息（文字、图片、文件都一样）只有一种走法，主人不用选：
+
+- **插话**：Agent 在 `initialize` 的顶层 `_meta.steering.supported` 为真时，桥把这条消息按发一轮时同样的内容块（图片照 `promptCapabilities` 给 `image` 或 `resource_link`）用现成的 `_session/steering` 发过去，总带 `_meta.steering.idleBehavior: "promptRequired"`。返回 `injected` 就算进这一轮，原来的 `session/prompt` 照常以这一轮的结束返回。什么时候投递由 Agent 定，协议里没有让客户端选的字段：claude-agent-acp 用 SDK 的 `now` 优先级，生成中会打断当前这段生成、在跑的前台工具转到后台，等确认卡片时自己改用 `later`；omp 进它的 steering 队列；codex-acp 并入正在跑的 turn。不调用 Qwen、Goose 的私有方法。
+- **攒着**：Agent 不声明插话（Kimi、Qwen 等），或者插话返回 `promptRequired`、`failed`、不认识的结果、请求出错，这条就攒在桥里；已经攒了消息、或者正在打断时，后来的也直接攒，不越过先到的插进去。这一轮结束后，攒着的全部合成**一轮**：各条文字按到达顺序空一行接成一个文字块，附件块跟在后面，状态消息（ADR-0082）的 `run` 是这批里最后一条。攒满上限（`WONTON_ACP_MAX_QUEUE`，默认 8 条）的那条按 busy 报错，不收。话题结束或 Agent 断开时攒着的丢弃。
+- 返回 `startedNewTurn`（不认 `idleBehavior` 的旧适配器在一轮刚结束时会这样）：Agent 已经自己拿这条开了一轮，没有对应的 `session/prompt`，桥收不到那一轮的回复，就在房间里如实说一句，不再重发这条。
+
+给主人的反馈只有已读回执：Agent 真的收到一条消息时（插话返回 `injected`/`startedNewTurn`，或者含这条的一轮发出去了），桥对它发 `m.read` 回执；合成一轮时只对最后一条发，回执只往前走，覆盖前面几条。攒着、插话失败都不另发“排队中”“已收到”之类的提示。回执用 matrix-sdk 时间线的单条回执，不分话题（unthreaded），所以一个会话收到消息时，房间里在它之前的消息也显示为已读。
+
+Matrix 控制消息只由桥识别，不发给 ACP，帮助和命令菜单里只列 `/wonton login`、`/wonton end`。另有调试用的 `/wonton interrupt <文字>`，不进帮助：桥先 `session/cancel`，这段文字和攒着的消息等原 prompt 的响应（包括 `cancelled`）回来后合成一轮发；取消后的迟到 chunk 在该 prompt 的边界外丢弃。
 
 房间空闲达到 10 分钟时桥调用 `session/close`，释放 Agent 会话内存；这是本设计的回收决定。session ID、cwd 和 workspace 持久化在 `${WONTON_BOT_DATA}/agent`。下条消息按 Agent 能力选择 `session/load` 或 `session/resume`（必须带完整的 `mcpServers`），不支持或返回会话不存在时才新建并如实丢失旧上下文。容器重启时对每个持久 session 做同样的恢复；工作区不存在是插件错误，不创建一个空目录掩盖它。
 

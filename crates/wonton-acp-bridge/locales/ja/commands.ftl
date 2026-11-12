@@ -3,6 +3,6 @@
 ## `cmd-hint` は「 | 」区切りで、ヘルプ文はそれを改行に分けます。
 
 cmd-description = Wonton のコマンド
-cmd-hint = login | end | interrupt <テキスト> | queue <テキスト> | steer <テキスト>
+cmd-hint = login | end
 cmd-help-header = Wonton のコマンド：
 cmd-no-permission = コマンドメニューを公開する権限がありません。/ を入力してもこのエージェントのコマンドは出ません。

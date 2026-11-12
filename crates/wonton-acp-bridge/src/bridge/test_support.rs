@@ -42,6 +42,8 @@ pub enum Effect {
         text: String,
     },
     Typing(bool),
+    /// 对这条消息发的已读回执。
+    Receipt(String),
     Redact(String),
     State(String),
     /// 一条 Agent 进度状态消息（ADR-0082），内容原样。
@@ -126,6 +128,7 @@ impl FakeRoom {
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
                 Effect::Typing(_)
+                | Effect::Receipt(_)
                 | Effect::Redact(_)
                 | Effect::State(_)
                 | Effect::RunStatus { .. }
@@ -140,6 +143,17 @@ impl FakeRoom {
             .into_iter()
             .filter_map(|effect| match effect {
                 Effect::MainText(text) => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 发过已读回执的消息（按发送顺序）。
+    pub fn receipts(&self) -> Vec<String> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::Receipt(event_id) => Some(event_id),
                 _ => None,
             })
             .collect()
@@ -292,6 +306,11 @@ impl Room for FakeRoom {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         self.record(Effect::Typing(typing));
+        Ok(())
+    }
+
+    async fn read_receipt(&self, event_id: &str) -> Result<()> {
+        self.record(Effect::Receipt(event_id.to_owned()));
         Ok(())
     }
 

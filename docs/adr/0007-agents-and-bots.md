@@ -227,9 +227,8 @@ claude-agent-acp 和 codex-acp 实现了同一个约定（两家都写在各自�
 - 结果：`injected` 表示并入进行中的这一轮，原来那个 `session/prompt` 照常以这一轮的结束返回；`promptRequired`
   表示 agent 空闲，由桥用 `session/prompt` 发。
 - 桥只在自己有一轮进行中时发。codex-acp 2.3.0 不认 `idleBehavior`（codex-acp#440），空闲时会返回 `startedNewTurn`、
-  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥要处理这个竞态：把后续输出当作新一轮。M2 实现时
-  写测试覆盖。
-- 不支持的运行时（Kimi、Qwen、Qoder）退回排队，聊天里另给“打断重来”。Qwen 有私有的插话方法
+  自己开一轮，而这一轮没有对应的 `session/prompt` 响应。桥怎么处理见 ADR-0035。
+- 不支持的运行时（Kimi、Qwen、Qoder）由桥攒着，这一轮结束后合成一轮发（ADR-0035）。Qwen 有私有的插话方法
   （`craft/drainMidTurnQueue`、`craft/midTurnSendNow`，不带 `_` 前缀，不符合 ACP 的扩展约定），不接。
 - ACP v2 草案把 `session/prompt` 改成“插入即返回”，但仍没规定排队和插话；claude-agent-acp 的插话只在 v1 上。
   v2 定稿后再看是否迁移。

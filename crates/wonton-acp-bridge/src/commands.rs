@@ -29,7 +29,10 @@ pub trait CommandSink {
 /// 桥自己的命令名，永远排第一。
 const OWN_NAME: &str = "wonton";
 /// 子命令名（匹配用，不翻译）；参数写法在 `cmd-hint` 的译文里。
-const SUBCOMMANDS: [&str; 5] = ["login", "end", "interrupt", "queue", "steer"];
+const SUBCOMMANDS: [&str; 2] = ["login", "end"];
+/// 调试用的子命令：桥照样处理，但不进帮助和菜单。Agent 忙时进来的消息只有一种走法（插话，插不进就
+/// 攒着），普通用户不需要选。
+const DEBUG_SUBCOMMANDS: [&str; 1] = ["interrupt"];
 
 /// `/wonton` 的帮助文字，也让 `/wonton` 出现在菜单里时能照抄。
 /// 各条来自 `cmd-hint` 的 “ | ” 分隔。
@@ -57,6 +60,7 @@ pub fn is_help_request(text: &str) -> bool {
     subcommand.is_empty()
         || !SUBCOMMANDS
             .iter()
+            .chain(&DEBUG_SUBCOMMANDS)
             .any(|known| subcommand.split(' ').next() == Some(*known))
 }
 

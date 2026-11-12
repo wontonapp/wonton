@@ -527,6 +527,18 @@ impl ChatRoom {
             .await?;
         Ok(receipt || marker)
     }
+
+    /// 对某一条消息发已读回执（不动 `m.fully_read`）。回执只往前走：比现有回执旧的不发，返回 `false`。
+    pub async fn send_read_receipt(&self, event_id: &str) -> Result<bool> {
+        let event_id: OwnedEventId = event_id
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
+        Ok(self
+            .timeline()
+            .await
+            .send_single_receipt(ReceiptType::Read, event_id)
+            .await?)
+    }
 }
 
 fn back_pagination(status: PaginationStatus) -> BackPaginationStatus {
