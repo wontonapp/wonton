@@ -213,16 +213,28 @@ async fn relay(tcp: &mut TcpStream, route: &Route, prefix: &[u8]) -> io::Result<
 }
 
 async fn connect_downstream(route: &Route) -> io::Result<TcpStream> {
-    let mut tcp = TcpStream::connect(route.downstream).await?;
-    let credential = &route.downstream_credential;
+    connect_through(
+        route.downstream,
+        &route.downstream_credential,
+        &route.domain,
+    )
+    .await
+}
+
+/// 经凭据保护的本地代理（`LocalProxy` 或中枢）`CONNECT` 到 `host`，之后的字节原样进隧道。
+pub(crate) async fn connect_through(
+    proxy: SocketAddr,
+    credential: &ProxyCredential,
+    host: &str,
+) -> io::Result<TcpStream> {
+    let mut tcp = TcpStream::connect(proxy).await?;
     let encoded = STANDARD.encode(format!(
         "{}:{}",
         credential.username(),
         credential.password()
     ));
     let request = format!(
-        "CONNECT {}:80 HTTP/1.1\r\nHost: {}:80\r\nProxy-Authorization: Basic {encoded}\r\n\r\n",
-        route.domain, route.domain
+        "CONNECT {host}:80 HTTP/1.1\r\nHost: {host}:80\r\nProxy-Authorization: Basic {encoded}\r\n\r\n"
     );
     // Cancellation must abort an upgraded downstream socket, not merely half-close
     // its upload and leave its download waiting indefinitely.

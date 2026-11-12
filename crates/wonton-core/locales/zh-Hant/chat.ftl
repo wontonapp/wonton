@@ -56,12 +56,13 @@ chat-card-highest-line = 程式會以本機 root 身分執行
 chat-card-highest-confirm = 我知道這個應用程式能控制整台主機
 
 # 解除安裝卡片：應用程式的資料怎麼處理。
-chat-card-uninstall-purge = 並刪除它的資料，無法復原
+chat-card-uninstall-purge = 並刪除它的資料，與 Bot 的舊加密訊息將無法再查看，無法復原
 chat-card-uninstall-keep = 保留它的資料，以後重新安裝還在
 
 # 工具呼叫卡片的行。$args 是原始 JSON 參數，太長時截斷。
 chat-card-tool-data = 這個工具會更改資料
 chat-card-tool-root = 這個操作以本機 root 身分執行
+chat-card-tool-deletes = 應用程式標明這個工具會刪除或覆寫資料
 chat-card-args = 參數：{ $args }
 
 # Bot 存檔案的卡片。$name 和 $size 描述一個檔案；$total 是加在一起的大小。

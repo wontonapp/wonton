@@ -255,6 +255,7 @@ async fn egress_plugin_failures_block_consumers_but_allow_provider_install_upgra
         grants,
         Vec::new(),
         false,
+        &Default::default(),
         &super::langs(),
     )
     .await
@@ -327,6 +328,7 @@ async fn egress_plugin_upgrade_retargets_relay_without_restarting_consumers() {
         grants,
         Vec::new(),
         false,
+        &Default::default(),
         &super::langs(),
     )
     .await

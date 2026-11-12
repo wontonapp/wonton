@@ -75,8 +75,15 @@ impl LocaleSource for FakeSource {
 
 /// 抓 `warn` 日志：断言只看带自己这个人的行。
 ///
-/// 用全局订阅器：线程内订阅器（`set_default`）在并行测试里会互相把兴趣缓存刷成关，
-/// 偶尔漏掉事件。
+/// 每条测试装自己的线程内订阅器（`set_default`），返回的 guard 要活到断言结束：`downtime_real`
+/// 的 testkit 会把全局订阅器装成写 stderr 的（wonton-matrix testkit 的 `init_test_logging`），
+/// 后装全局的 `set_global_default` 静默失败、自己的缓冲恒空——全量带 `--include-ignored` 跑时
+/// 那 3 条日志断言就是这么红的。线程内订阅器不参与全局竞争，`tokio::test`（current_thread）把
+/// 整个测试体跑在装 guard 的线程上，warn 全落进自己的缓冲。
+///
+/// 装完调一次 `rebuild_interest_cache()`：订阅器的增删会触发全表兴趣重建，重建与别的线程上
+/// callsite 懒注册并发时（tracing-core 的无锁链表），后注册的 callsite 可能缓存成
+/// `Interest::never` 并把日志全丢，显式重建一遍把毒化的修掉。
 #[derive(Clone, Default)]
 struct Logs(Arc<Mutex<Vec<u8>>>);
 
@@ -110,29 +117,27 @@ impl<'a> MakeWriter<'a> for Logs {
     }
 }
 
-/// 装好全局日志捕获（先调用再发事件）。
-fn logs() -> Logs {
-    static LOGS: std::sync::OnceLock<Logs> = std::sync::OnceLock::new();
-    LOGS.get_or_init(|| {
-        let logs = Logs::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(logs.clone())
-            .with_max_level(tracing::Level::WARN)
-            .without_time()
-            .finish();
-        let _ = tracing::subscriber::set_global_default(subscriber);
-        logs
-    })
-    .clone()
+fn logs() -> (Logs, tracing::subscriber::DefaultGuard) {
+    let logs = Logs::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(logs.clone())
+        .with_max_level(tracing::Level::WARN)
+        .without_time()
+        .finish();
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing_core::callsite::rebuild_interest_cache();
+    (logs, guard)
 }
 
 /// 日志里带某个人（`user=@…`）的行。
-fn lines_with(marker: &str) -> Vec<String> {
-    let text = String::from_utf8(logs().0.lock().unwrap().clone()).unwrap();
-    text.lines()
-        .filter(|line| line.contains(marker))
-        .map(ToOwned::to_owned)
-        .collect()
+impl Logs {
+    fn lines_with(&self, marker: &str) -> Vec<String> {
+        let text = String::from_utf8(self.0.lock().unwrap().clone()).unwrap();
+        text.lines()
+            .filter(|line| line.contains(marker))
+            .map(ToOwned::to_owned)
+            .collect()
+    }
 }
 
 #[tokio::test]
@@ -145,7 +150,7 @@ async fn the_room_owner_s_language_wins() {
 
 #[tokio::test]
 async fn a_denied_room_owner_falls_back_to_the_bot_owner_and_warns() {
-    logs();
+    let (logs, _guard) = logs();
     let room_owner = user("@denied:example.org");
     let source = FakeSource::with(&[
         ("@denied:example.org", Err(Failure::PermissionDenied)),
@@ -155,7 +160,7 @@ async fn a_denied_room_owner_falls_back_to_the_bot_owner_and_warns() {
     assert_eq!(tags(locales.lang(&room_owner).await), "ja");
     // 先按房间主人查，退到 Bot 主人再查一次。
     assert_eq!(locales.source.calls(), ["@denied:example.org", BOB]);
-    let logged = lines_with("@denied:example.org");
+    let logged = logs.lines_with("@denied:example.org");
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert!(logged[0].contains("permission_denied"), "{logged:?}");
     assert!(logged[0].contains("bot_owner"), "{logged:?}");
@@ -163,7 +168,7 @@ async fn a_denied_room_owner_falls_back_to_the_bot_owner_and_warns() {
 
 #[tokio::test]
 async fn when_both_have_no_language_the_core_default_is_used() {
-    logs();
+    let (logs, _guard) = logs();
     let room_owner = user("@unrecorded:example.org");
     let bot_owner = user("@offline:example.org");
     let source = FakeSource::with(&[
@@ -173,11 +178,11 @@ async fn when_both_have_no_language_the_core_default_is_used() {
     let locales = Locales::new(source, bot_owner);
     assert_eq!(tags(locales.lang(&room_owner).await), "en");
     // 一级一条 warn：先写房间主人退到 Bot 主人，再写 Bot 主人退到英文。
-    let first = lines_with("@unrecorded:example.org");
+    let first = logs.lines_with("@unrecorded:example.org");
     assert_eq!(first.len(), 1, "{first:?}");
     assert!(first[0].contains("locale_null"), "{first:?}");
     assert!(first[0].contains("bot_owner"), "{first:?}");
-    let second = lines_with("@offline:example.org");
+    let second = logs.lines_with("@offline:example.org");
     assert_eq!(second.len(), 1, "{second:?}");
     assert!(second[0].contains("transport"), "{second:?}");
     assert!(second[0].contains("english"), "{second:?}");
@@ -185,7 +190,6 @@ async fn when_both_have_no_language_the_core_default_is_used() {
 
 #[tokio::test]
 async fn the_bot_owner_is_queried_once_when_he_is_the_room_owner() {
-    logs();
     let source = FakeSource::with(&[(BOB, Err(Failure::NoRecord))]);
     let locales = Locales::new(source, user(BOB));
     assert_eq!(tags(locales.lang(&user(BOB)).await), "en");
@@ -194,7 +198,7 @@ async fn the_bot_owner_is_queried_once_when_he_is_the_room_owner() {
 
 #[tokio::test]
 async fn one_person_is_queried_once_within_the_cache_ttl() {
-    logs();
+    let (logs, _guard) = logs();
     let source = FakeSource::with(&[
         ("@cached:example.org", Ok(vec!["ja".into()])),
         (BOB, Err(Failure::NoRecord)),
@@ -205,7 +209,7 @@ async fn one_person_is_queried_once_within_the_cache_ttl() {
         // 房间主人成功，不退级；Bot 主人一次都不查。
         assert_eq!(locales.source.calls(), ["@cached:example.org"]);
     }
-    assert!(lines_with("@cached:example.org").is_empty());
+    assert!(logs.lines_with("@cached:example.org").is_empty());
 
     // 房间主人一直取不到时，warn 每个缓存周期只打一次。
     let source = FakeSource::with(&[
@@ -217,7 +221,7 @@ async fn one_person_is_queried_once_within_the_cache_ttl() {
         assert_eq!(tags(locales.lang(&user("@stale:example.org")).await), "en");
     }
     assert_eq!(locales.source.calls(), ["@stale:example.org", BOB]);
-    assert_eq!(lines_with("@stale:example.org").len(), 1);
+    assert_eq!(logs.lines_with("@stale:example.org").len(), 1);
 }
 
 #[tokio::test]

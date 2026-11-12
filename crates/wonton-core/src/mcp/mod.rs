@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
@@ -20,6 +21,7 @@ mod notifier;
 mod panel_tools;
 mod people_tools;
 mod profile_tools;
+mod risky;
 mod save_tools;
 mod server;
 mod takeover;
@@ -383,6 +385,7 @@ impl Bus {
     }
 
     /// 插件工具的声明：清单这会儿取不到、或插件没有这个工具时，给 Agent 的失败。
+    /// 错误装箱：serde_json 开 `preserve_order` 时 `CallToolResult` 撑过 clippy `result_large_err` 的 128 字节阈值。
     async fn definition_of(
         &self,
         caller: &Caller,
@@ -390,26 +393,26 @@ impl Bus {
         args: &Value,
         server: &McpServer,
         tool: &str,
-    ) -> Result<rmcp::model::Tool, CallToolResult> {
+    ) -> Result<rmcp::model::Tool, Box<CallToolResult>> {
         let listed = match self.upstreams.tools(server).await {
             Ok(tools) => tools,
             // 插件的工具清单这会儿取不到：多半是插件没就绪或连接断了，Agent 该晚点再试。
             Err(e) => {
-                return Err(self.deny(
+                return Err(Box::new(self.deny(
                     caller,
                     name,
                     args,
                     &ToolFailure::new("source_unavailable", e),
-                ));
+                )));
             }
         };
         listed.into_iter().find(|t| t.name == tool).ok_or_else(|| {
-            self.deny(
+            Box::new(self.deny(
                 caller,
                 name,
                 args,
                 &ToolFailure::new("not_found", format!("插件 {} 没有工具 {tool}", server.id)),
-            )
+            ))
         })
     }
 
@@ -424,7 +427,7 @@ impl Bus {
         let args = Value::Object(arguments.clone());
         let definition = match self.definition_of(caller, name, &args, server, tool).await {
             Ok(definition) => definition,
-            Err(result) => return result,
+            Err(result) => return *result,
         };
         let read_only = definition
             .annotations
@@ -432,9 +435,10 @@ impl Bus {
             .and_then(|a| a.read_only_hint)
             == Some(true);
         let highest = self.plugins.requires_root_confirmation(&server.id);
+        let every_time = highest || risky::deletes(&definition);
         let policy = self.plugins.tool_policy();
         let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
-        let not_sensitive = if highest {
+        let not_sensitive = if every_time {
             None
         } else if read_only {
             Some(Basis::PluginReadOnly)
@@ -453,10 +457,10 @@ impl Bus {
                 .await
             {
                 Ok(held_ms) => held_ms,
-                Err(result) => return result,
+                Err(result) => return *result,
             };
-            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。最高级的工具全部不放宽。
-            let cleared = if highest {
+            // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
+            let cleared = if every_time {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
@@ -487,20 +491,12 @@ impl Bus {
                 _ => outcome.result,
             };
         }
-        let plugin = cards::text(&server.title);
-        let langs = self.card_languages(caller, Subject::Tool);
-        let mut draft = cards::tool_call(&caller.name, &plugin, tool, &args, highest, &langs);
-        // 放行时段按插件记，不分 Bot：家人打开的时段会连主人的 Bot 一起放行，所以发给家人的卡片不给这个选项。
-        if !highest && self.recipient(caller, Subject::Tool).is_none() {
-            draft = draft.with_window(
-                server.id.as_str(),
-                self.confirmations.window_length(),
-                &langs,
-            );
-        }
+        let draft = self.tool_card(caller, server, &definition, &args, highest);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
-        let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        let run = move |bus: Arc<Bus>,
+                        _secrets: SecretValues,
+                        _settings: wonton_protocol::SettingValues| async move {
             forward(
                 &bus,
                 &agent,
@@ -630,6 +626,8 @@ mod panel_tests;
 mod people_tests;
 #[cfg(test)]
 mod profile_tests;
+#[cfg(test)]
+mod risky_tests;
 #[cfg(test)]
 mod save_tests;
 #[cfg(test)]

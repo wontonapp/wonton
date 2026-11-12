@@ -19,7 +19,6 @@ import androidx.compose.ui.zIndex
 import app.wonton.client.TabEnvironment
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
-import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabPage
@@ -33,7 +32,7 @@ import app.wonton.ui.design.toColor
 @Composable
 internal fun PageLayers(
     state: WebPageState, item: TabItem, page: TabPage, tabs: TabsState, connection: SharedPageConnection,
-    plugin: InstalledPlugin?, appearance: AppearanceViewModel, environment: TabEnvironment, viewport: TabViewport,
+    appearance: AppearanceViewModel, environment: TabEnvironment, viewport: TabViewport,
     supported: Boolean, crossOriginBlocked: Boolean, active: Boolean, overlay: Boolean, cover: Boolean,
     takeover: PageTakeover?, bannerTop: Dp, setTop: (Dp) -> Unit, onDetails: (String) -> Unit,
     onDraft: (String) -> Unit, openLink: (String) -> Unit, back: () -> Unit,
@@ -45,7 +44,7 @@ internal fun PageLayers(
         if (active) Box(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()))
         val canLoad = state.started && supported && script != null
         if (canLoad && connection.authorized) {
-            PageWebView(state, page, plugin, connection.proxy, environment, requireNotNull(script), viewport.inset,
+            PageWebView(state, page, connection.proxy, environment, requireNotNull(script), viewport.inset,
                 active && !cover, openLink, onDraft, connection.profile)
         }
         if (active && page.fullscreen) state.controller.customView?.let { video ->

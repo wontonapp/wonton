@@ -156,5 +156,6 @@ fn draft(stopped: &HopLimitReached, hops: u32, langs: &Languages) -> Draft {
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
+        settings: None,
     }
 }

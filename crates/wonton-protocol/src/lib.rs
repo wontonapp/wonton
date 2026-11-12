@@ -10,6 +10,7 @@ uniffi::setup_scaffolding!();
 
 mod action;
 mod agent_permission;
+mod agent_run;
 mod appearance;
 mod bot_commands;
 mod bot_contacts;
@@ -42,6 +43,7 @@ mod port_mapping;
 mod push;
 mod registry_mirror;
 mod reply;
+mod roles;
 mod secret;
 mod server_version;
 mod servers;
@@ -59,6 +61,7 @@ pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
 };
+pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
@@ -96,9 +99,9 @@ pub use chat_layout::{
     ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
 };
 pub use confirmation::{
-    Answer, CARD_FIELD, CORE_LOCALPART, CardChoice, CardLine, ConfirmationAnswer, ConfirmationCard,
-    ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView, ConfirmationWindow,
-    WindowEnd, WindowView, answer_path, window_path,
+    Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
+    ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView,
+    ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -106,10 +109,12 @@ pub use confirmation_origin::{
     ORIGIN_THREAD_HEADER, confirmation_path,
 };
 pub use core_upgrade::{
-    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeCheck, CoreUpgradeCheckRequest,
-    CoreUpgradeFailure, CoreUpgradeOffer, CoreUpgradePhase, CoreUpgradeProblem,
-    CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState, CoreUpgradeStage,
-    CoreUpgradeStatus, CoreUpgradeTarget, CoreUpgradeViewModel, CoreVersion,
+    CORE_UPGRADE_CHECK_PATH, CORE_UPGRADE_PATH, CoreUpgradeBreakingPlugin,
+    CoreUpgradeBreakingReason, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
+    CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
+    CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeProgress, CoreUpgradeRequest, CoreUpgradeRun,
+    CoreUpgradeRunState, CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeTarget,
+    CoreUpgradeViewModel, CoreVersion,
 };
 pub use egress::{
     EgressConfirmation, EgressCurrent, EgressFailure, EgressPathState, EgressProbe, EgressProblem,
@@ -133,8 +138,8 @@ pub use file::{
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState,
-    FriendsViewModel,
+    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
+    FriendsState, FriendsViewModel, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -198,9 +203,9 @@ pub use plugin::{
     PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginOperation,
     PluginProblem, PluginRuntime, PluginScope, PluginSettingField, PluginSettingKind,
     PluginSettingOption, PluginSettingsUpdate, PluginSettingsView, PluginState, PluginTakeover,
-    PluginTask, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
-    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
+    PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel,
+    RequirementLine, RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues,
+    SecurityTier, SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
     SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
     SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
     StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
@@ -221,6 +226,14 @@ pub use registry_mirror::{
     RegistryProblem,
 };
 pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
+pub use roles::{
+    AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
+    DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
+    OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
+    PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
+    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    join_request_reject_path, member_role_path, plugin_audience_path, role_path,
+};
 pub use secret::SecretString;
 pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
@@ -247,5 +260,5 @@ pub use timeline::{
     TimelineViewport,
 };
 pub use verification::{
-    VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
+    KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
 };

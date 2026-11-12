@@ -10,7 +10,7 @@ async fn paired(phone: &Phone, home: &Home) {
         .wait_for(|view| {
             view.status == HomeStatus::Connected
                 && view.server_id.as_deref() == Some(server_id.as_str())
-                && view.pairing.is_none()
+                && matches!(view.pairing, Some(PairingStatus::Paired))
         })
         .await;
     tokio::time::timeout(WAIT, async {

@@ -351,16 +351,15 @@ async fn serve() -> anyhow::Result<()> {
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
-    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
-        wonton_core::entry_runtime::spawn(
-            dir,
-            &cfg.data_dir,
-            engine.clone(),
-            container.clone(),
-            notices.clone(),
-        )?;
-    }
+    spawn_entry_runtime(&cfg, &engine, &notices)?;
     let push = open_push_for_confirmations(&cfg, &tunnel, &manager, &confirmations)?;
+    let contacts = serve::open_contacts(
+        &cfg,
+        (&manager, &members, &owner),
+        Some(push.clone()),
+        matrix.as_ref(),
+        peers.as_ref(),
+    )?;
     let upgrades_after_serve = upgrades.clone();
     let gateway = Arc::new(
         Gateway::new(
@@ -388,6 +387,7 @@ async fn serve() -> anyhow::Result<()> {
         .with_upgrades(Some(upgrades))
         .with_peers(peers.clone())
         .with_friends(Some(friends))
+        .with_contacts(contacts)
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing)),
     );
@@ -604,6 +604,24 @@ fn mcp_bus(
     );
     let bus = mcp::Bus::new(manager, confirmations.clone(), audit);
     (bus, confirmations)
+}
+
+/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
+fn spawn_entry_runtime(
+    cfg: &Config,
+    engine: &Engine,
+    notices: &Option<Arc<NoticeRoom>>,
+) -> anyhow::Result<()> {
+    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
+        wonton_core::entry_runtime::spawn(
+            dir,
+            &cfg.data_dir,
+            engine.clone(),
+            container.clone(),
+            notices.clone(),
+        )?;
+    }
+    Ok(())
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
