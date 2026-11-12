@@ -248,6 +248,9 @@ fn preview() -> InstallPreview {
             target: "/dev/zigbee".into(),
             service: "homeassistant".into(),
             optional: true,
+            kind: wonton_protocol::PluginDeviceKind::Serial,
+            system: false,
+            chosen: false,
         }]),
         lan_webui: Some(LanWebuiOffer {
             ports: vec![LanPort {
@@ -321,6 +324,7 @@ fn detail() -> PluginDetail {
         installed: Some(installed()),
         blocked: None,
         notices: Vec::new(),
+        problems: Vec::new(),
         hints: vec![PluginHint {
             category: PluginHintCategory::ModelsNotConnected,
             detail: Some("模型网关没在运行".into()),

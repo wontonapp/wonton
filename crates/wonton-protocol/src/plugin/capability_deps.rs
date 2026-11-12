@@ -160,6 +160,8 @@ pub struct UninstallRequest {
 pub enum BlockedCategory {
     /// 新版本不再提供某个有人 requires 的能力，又没有别的提供方能接上。
     CapabilityDropped,
+    /// 插件必需的设备这台主机上没有，或者上次装的设备不在了（ADR-0036）。
+    DeviceUnavailable,
     /// 比这个 App 新的核心给的类别。
     #[serde(other)]
     Other,

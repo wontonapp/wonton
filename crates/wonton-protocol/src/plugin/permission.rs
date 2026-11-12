@@ -82,4 +82,26 @@ pub struct PluginDevice {
     pub service: String,
     /// 是否可以不选择。
     pub optional: bool,
+    /// 设备属于哪一类（ADR-0036）；不认识的类落到 [`PluginDeviceKind::Other`]，壳提示先更新 App。
+    #[serde(default)]
+    pub kind: PluginDeviceKind,
+    /// 是装着 Wonton 系统或者核心数据的那块盘；只有硬盘会标。
+    #[serde(default)]
+    pub system: bool,
+    /// 主人在预览里选中了它（ADR-0036）：安装请求按选中的 `id` 提交，和 `lan_webui` 的开关一样在预览里改。
+    #[serde(default)]
+    pub chosen: bool,
+}
+
+/// 预览里可选设备的类别。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PluginDeviceKind {
+    Serial,
+    Disk,
+    /// 比这个 App 新的核心给的类别。
+    #[default]
+    #[serde(other)]
+    Other,
 }

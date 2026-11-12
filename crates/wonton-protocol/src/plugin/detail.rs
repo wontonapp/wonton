@@ -6,7 +6,7 @@ use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginRuntime, PluginScope,
-    PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginProblem, PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
 };
 use crate::{CardLine, PluginShares};
 
@@ -97,6 +97,9 @@ pub struct PluginDetail {
     /// 能力都接上了）时是空列表。
     #[serde(default)]
     pub hints: Vec<hint::PluginHint>,
+    /// 装着的插件现在的问题，壳按类别提示主人下一步（目前是选中的设备不在了，ADR-0036）；状态照常，没有时为空。
+    #[serde(default)]
+    pub problems: Vec<PluginProblem>,
     /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
     #[serde(default)]
     pub missing_requires: Vec<MissingCapability>,
