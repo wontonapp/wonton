@@ -97,7 +97,7 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
     deviceId = "0".repeat(64),
     serverId = null,
     status = HomeStatus.Connected,
-    path = HomePath(relay = relay, lan = false, rttMs = 1240u),
+    path = HomePath(relay = relay, publicRelay = false, lan = false, rttMs = 1240u),
     notice = null,
     details = ConnectionDetails(
         network = DeviceNetwork.WIFI,

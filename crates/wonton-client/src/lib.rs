@@ -142,5 +142,5 @@ pub use wonton_protocol::{
     ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
 };
 pub use wonton_protocol::{
-    MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, PortProtocol, UdpFlowStats,
 };

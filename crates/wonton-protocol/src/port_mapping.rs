@@ -15,6 +15,20 @@ pub struct PluginPortMapping {
     pub state: PortMappingState,
     /// 清单声明的端口；同号的 TCP 和 UDP 是两项。
     pub ports: Vec<MappedPort>,
+    /// 映射能用的提示类别（如带宽不够）；文字由原生壳本地化，没有提示时为空。
+    #[serde(default)]
+    pub warning: Option<PortMappingWarning>,
+}
+
+/// 映射照常工作但有一条如实的提醒；不是失败，[`PortMappingState`] 照旧。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PortMappingWarning {
+    /// 路径走的是 n0 公共中继，带宽不够传画面（ADR-0072）。
+    PublicRelayBandwidth,
+    #[serde(other)]
+    Other,
 }
 
 /// 插件映射的结果类别；文字由原生壳本地化。
@@ -77,12 +91,25 @@ mod tests {
         let mut value = serde_json::to_value(PluginsViewModel::default()).unwrap();
         value["port_mappings"] = json!([{
             "plugin_id": "app.remote", "enabled": true, "state": "future_state",
+            "warning": "future_warning",
             "ports": [{"port": 47998, "protocol": "future_transport"}]
         }]);
         let view: PluginsViewModel = serde_json::from_value(value).unwrap();
         assert_eq!(view.port_mappings[0].plugin_id, "app.remote");
         assert_eq!(view.port_mappings[0].state, PortMappingState::Other);
+        assert_eq!(
+            view.port_mappings[0].warning,
+            Some(PortMappingWarning::Other)
+        );
         assert_eq!(view.port_mappings[0].ports[0].protocol, PortProtocol::Other);
+        // 旧核心没有 warning 字段，一样读得懂。
+        let mut value = serde_json::to_value(PluginsViewModel::default()).unwrap();
+        value["port_mappings"] = json!([{
+            "plugin_id": "app.remote", "enabled": true, "state": "on",
+            "ports": [{"port": 47998, "protocol": "udp"}]
+        }]);
+        let view: PluginsViewModel = serde_json::from_value(value).unwrap();
+        assert_eq!(view.port_mappings[0].warning, None);
     }
 
     #[test]

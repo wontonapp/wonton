@@ -18,7 +18,7 @@ use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, HomeStatus, MappedPort, PluginPortMapping, PluginsViewModel, PortMappingState,
-    PortProtocol,
+    PortMappingWarning, PortProtocol,
 };
 
 use crate::home::HomeLink;
@@ -47,6 +47,8 @@ struct Shared {
     connected: bool,
     /// 唤醒这次 reconcile 的事由（手动开关、页面可见、前后台、隧道、安装列表），取走打进生命周期日志。
     triggers: BTreeSet<&'static str>,
+    /// 当前路径走的是 n0 公共中继：带宽不够传画面，开着的映射要如实提示（ADR-0072）。
+    public_relay: bool,
 }
 
 /// 后台任务手里的一个插件：监听任务和它们报回来的拒绝原因。
@@ -170,6 +172,15 @@ impl PortMapper {
         }
     }
 
+    fn set_public_relay(&self, public_relay: bool) {
+        let mut shared = lock(&self.shared);
+        if shared.public_relay != public_relay {
+            shared.public_relay = public_relay;
+            drop(shared);
+            self.wake.notify_one();
+        }
+    }
+
     /// 让本机监听和开关、声明一致，再发出 ViewModel。只在后台任务里调，同一时刻只有一次。
     async fn reconcile(
         &self,
@@ -249,16 +260,19 @@ impl PortMapper {
         logged: &mut Option<Logged>,
     ) {
         let shared = lock(&self.shared);
+        let public_relay = shared.public_relay;
         let mappings: Vec<PluginPortMapping> = shared
             .declared
             .iter()
             .map(|(id, ports)| {
                 let enabled = shared.enabled.contains(id);
+                let state = state(maps(&shared, id), active.get(id), shared.connected);
                 PluginPortMapping {
                     plugin_id: id.clone(),
                     enabled,
-                    state: state(maps(&shared, id), active.get(id), shared.connected),
+                    state,
                     ports: ports.clone(),
+                    warning: warning(state, public_relay),
                 }
             })
             .collect();
@@ -295,6 +309,13 @@ fn state(mapped: bool, active: Option<&Active>, connected: bool) -> PortMappingS
         Outcome::Bound if !connected => PortMappingState::TunnelDisconnected,
         Outcome::Bound => lock(&active.refusal).unwrap_or(PortMappingState::On),
     }
+}
+
+/// 映射真的开着（端口绑上了、没有拒绝原因）而路径又在 n0 公共中继时才提示；别的状态各有各的话，
+/// 不叠这一条。
+fn warning(state: PortMappingState, public_relay: bool) -> Option<PortMappingWarning> {
+    (state == PortMappingState::On && public_relay)
+        .then_some(PortMappingWarning::PublicRelayBandwidth)
 }
 
 /// 一个插件的端口全绑上才算数；有一个绑不上就全放掉，不留半个映射。协议未知的端口不绑。
@@ -348,11 +369,20 @@ async fn follow_tunnel(mapper: Weak<PortMapper>) {
         return;
     };
     loop {
-        let connected = home.borrow_and_update().status == HomeStatus::Connected;
+        let (connected, public_relay) = {
+            let view = home.borrow_and_update();
+            let connected = view.status == HomeStatus::Connected;
+            // 没连上就没有路径；路径换了中继（掉档回退）也要跟着改。
+            (
+                connected,
+                connected && view.path.as_ref().is_some_and(|path| path.public_relay),
+            )
+        };
         let Some(link) = mapper.upgrade() else {
             return;
         };
         link.set_connected(connected);
+        link.set_public_relay(public_relay);
         drop(link);
         if home.changed().await.is_err() {
             return;
@@ -455,4 +485,30 @@ fn ports_str(ports: &[MappedPort]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_on_mapping_over_the_public_relay_carries_the_warning() {
+        let on = PortMappingState::On;
+        assert_eq!(
+            warning(on, true),
+            Some(PortMappingWarning::PublicRelayBandwidth)
+        );
+        assert_eq!(warning(on, false), None);
+        // 自建中继照传，不提示；没开着的映射也没有。
+        for state in [
+            PortMappingState::Off,
+            PortMappingState::PortInUse,
+            PortMappingState::TunnelDisconnected,
+            PortMappingState::ServerTooOld,
+            PortMappingState::Other,
+        ] {
+            assert_eq!(warning(state, true), None);
+            assert_eq!(warning(state, false), None);
+        }
+    }
 }

@@ -13,9 +13,9 @@
 //! 每次翻倍、封顶 16 秒的退避重连。这一层不再自己加节奏——改 endpoint 的中继表会让 iroh 跑一遍完整
 //! net_report（每台中继 3 个 HTTPS 探测），所以探针只用单台中继的 map，档位不变时一次都不动。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -221,6 +221,16 @@ pub fn canonical_relay(relay: Relay) -> Relay {
         url: canonical_url(relay.url),
         ..relay
     }
+}
+
+/// 这个地址是不是 n0 公共中继（[`n0_relays`] 那一组，含强制预发时的预发中继）。
+///
+/// 映射开着、路径走 n0 公共中继时带宽不够传画面，App 要如实提示（ADR-0072）；自建中继不提示。
+/// iroh 报告的中继路径地址就是配置里的 URL，和这里用的是同一份表。
+pub fn is_public_relay(url: &RelayUrl) -> bool {
+    static N0: LazyLock<HashSet<RelayUrl>> =
+        LazyLock::new(|| n0_relays(0).map(|relay| relay.url).collect());
+    N0.contains(&canonical_url(url.clone()))
 }
 
 /// 解析一项中继地址：`https://TOKEN@relay.example.org`。令牌取 userinfo 的用户名（按百分号编码
