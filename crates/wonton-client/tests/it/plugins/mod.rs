@@ -5,6 +5,7 @@ mod bots;
 mod chat_rows;
 mod connection;
 mod core_upgrade;
+mod detail;
 mod egress;
 mod now;
 mod onboarding;
