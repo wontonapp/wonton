@@ -477,7 +477,10 @@ impl Gateway {
             Ok(wonton_protocol::Me {
                 user_id,
                 username: profile.username,
-                role: Role::Owner,
+                is_owner: true,
+                role_id: None,
+                role_name: None,
+                permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
                 can_install_plugins: true,
@@ -493,7 +496,10 @@ impl Gateway {
             Ok(wonton_protocol::Me {
                 user_id,
                 username: record.username,
-                role: Role::Member,
+                is_owner: false,
+                role_id: None,
+                role_name: None,
+                permissions: None,
                 display_name: Some(record.display_name),
                 email: record.email,
                 can_install_plugins: record.can_install_plugins,
