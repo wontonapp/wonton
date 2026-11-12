@@ -17,12 +17,12 @@ use super::lan::webui;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
-use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
+use super::manifest::{Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
 use super::render::dry_run;
 use super::{
-    gallery::{IconSource, Variant},
+    gallery::IconSource,
     github_source::{Origin, Trust},
 };
 use super::{
@@ -375,51 +375,6 @@ impl PluginManager {
         }
     }
 
-    /// 图标地址对应的 PNG：只有已安装的插件和最近预览过的插件包的图标。不认识的地址为 `Ok(None)`。
-    pub async fn icon_png(
-        &self,
-        sha256: &str,
-        variant: Variant,
-    ) -> Result<Option<Vec<u8>>, ImageError> {
-        let tab = matches!(variant, Variant::TabSmall | Variant::TabLarge);
-        let installed = {
-            let plugins = self.plugins.read().expect("插件表锁中毒");
-            plugins
-                .values()
-                .filter_map(|entry| entry.listed.as_ref())
-                .flat_map(|listed| {
-                    listed
-                        .tab_icons
-                        .iter()
-                        .flat_map(|(icon, selected)| {
-                            [icon.as_ref(), selected.as_ref()]
-                                .into_iter()
-                                .flatten()
-                                .map(|icon| (icon.clone(), true))
-                        })
-                        .chain(listed.icon.as_ref().map(|icon| (icon.clone(), false)))
-                })
-                .find(|(icon, is_tab)| icon.sha256 == sha256 && *is_tab == tab)
-        };
-        let Some((source, is_tab)) = installed.or_else(|| {
-            (!tab)
-                .then(|| self.gallery.preview(sha256))
-                .flatten()
-                .map(|source| (source, false))
-        }) else {
-            return Ok(None);
-        };
-        let icon = if is_tab {
-            self.gallery.render_tab(&source).await?
-        } else {
-            self.gallery.render(&source).await?
-        };
-        Ok(Some(match variant {
-            Variant::Small | Variant::TabSmall => icon.small.clone(),
-            Variant::Large | Variant::TabLarge => icon.large.clone(),
-        }))
-    }
-
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
     async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
@@ -612,37 +567,6 @@ impl PluginManager {
     }
 }
 
-impl PluginManager {
-    /// 已安装 Agent 的账号登录选项，文字按请求语言挑选。
-    pub fn agent_logins(
-        &self,
-        id: &PluginId,
-        langs: &Languages,
-    ) -> Vec<wonton_protocol::AgentLogin> {
-        let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins
-            .get(id)
-            .and_then(|entry| entry.listed.as_ref())
-            .and_then(|listed| listed.manifest.agent.as_ref())
-            .map(|agent| agent_login_options(agent, langs))
-            .unwrap_or_default()
-    }
-}
-
-pub(crate) fn agent_login_options(
-    agent: &AgentSpec,
-    langs: &Languages,
-) -> Vec<wonton_protocol::AgentLogin> {
-    agent
-        .login
-        .iter()
-        .map(|login| wonton_protocol::AgentLogin {
-            id: login.id.clone(),
-            title: langs.pick_owned(&login.title),
-        })
-        .collect()
-}
-
 /// 检查的结果：这台主机上装不了时是原因，别的错误原样报。
 fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, InstallError> {
     match checked {
@@ -653,6 +577,7 @@ fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, Insta
     }
 }
 
+pub(crate) use super::views_agent_logins::agent_login_options;
 pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
