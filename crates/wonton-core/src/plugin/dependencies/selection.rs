@@ -26,7 +26,9 @@ impl PluginManager {
         })?;
         let mut failure: Option<InstallError> = None;
         for consumer in self.capability_consumers() {
-            if !declarations(&consumer.manifest).any(|c| c == capability)
+            // ADR-0061 第 9 节：提供方自己不能连到自己。
+            if consumer.manifest.id == *id
+                || !declarations(&consumer.manifest).any(|c| c == capability)
                 || before
                     .selected
                     .get(consumer.manifest.id.as_str())
@@ -72,6 +74,14 @@ impl PluginManager {
             return Err(InstallError::Invalid(
                 self.capability_missing(&choice.capability, langs),
             ));
+        }
+        // ADR-0061 第 9 节：提供方不能选自己当提供方。
+        if choice.provider.as_deref() == Some(consumer.as_str()) {
+            return Err(InstallError::Invalid(self.capability_missing_other(
+                &package.manifest,
+                &choice.capability,
+                langs,
+            )));
         }
         let providers = self.capability_providers();
         let mut next = self.dependencies.load()?;
@@ -137,6 +147,8 @@ impl PluginManager {
                         && !replacement.is_some_and(|m| service(m, capability).is_some())
                         && !providers.iter().any(|p| {
                             p.id != *provider
+                                // 自己提供不算替代：requires 要的是别的插件（ADR-0061 第 9 节）。
+                                && p.id != consumer.manifest.id
                                 && service(&p.listed.manifest, capability).is_some()
                                 && (replacement.is_none()
                                     || !high(&p.listed.manifest, capability)

@@ -7,10 +7,11 @@ use wonton_protocol::{PluginHintCategory, PluginState};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
+use super::super::package::PluginPackage;
 use super::super::{InstallError, PluginId, PluginStatus};
 use super::lan::{granted, office, on};
 use super::manager::manager_with;
-use super::{env_of_container, langs, package};
+use super::{env_of_container, langs, message, package};
 
 pub(super) fn id(value: &str) -> PluginId {
     PluginId::parse(value).unwrap()
@@ -429,4 +430,135 @@ async fn refused_uninstall_keeps_the_consumers_working_credential() {
         .await
         .unwrap();
     assert!(!keys.lock().unwrap().contains_key("app.test"));
+}
+
+/// 既提供也使用 `agent_acp` 的插件（ADR-0061 第 9 节的 Agent 和编排器形态）。
+fn agent_acp_plugin(plugin: &str, declaration: &str) -> String {
+    package(
+        "  api:\n    image: nginx\n    environment:\n      URL: ${WONTON_AGENT_ACP_URL}",
+        &format!(
+            "  permissions: []\n  {declaration}: [agent_acp]\n  provides:\n    agent_acp:\n      service: api\n      port: 8080"
+        ),
+    )
+    .replace("spec: '0.5'", "spec: '0.11'")
+    .replace("id: app.test", &format!("id: {plugin}"))
+}
+
+/// 连接记录里没有使用方连到自己的。
+fn no_self_connections(dir: &std::path::Path) -> bool {
+    let bytes = std::fs::read(dir.join("plugins/capabilities/connections.json")).unwrap();
+    let state: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    state["connections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c["consumer"] != c["provider"])
+}
+
+#[tokio::test]
+async fn an_agent_acp_provider_never_connects_to_itself_and_requires_another_provider() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+
+    // 只装 P（provides + requires agent_acp）：缺别的提供方，装不上，也没建容器。
+    let alone = agent_acp_plugin("app.p", "requires");
+    let error = manager.install(&alone, &[], langs()).await.unwrap_err();
+    assert_eq!(error.kind(), "conflict");
+    // 原因不是普通的缺提供方：要的是另一个提供方（不是文案断言，只断言两种原因分得开）。
+    assert_ne!(
+        error.to_string(),
+        message("plugin-capability-missing", &[("capability", "agent_acp")])
+    );
+    assert!(docker.containers().is_empty());
+    assert!(docker.writes().is_empty());
+    assert!(docker.execs().is_empty());
+    assert!(manager.installed(&langs()).plugins.is_empty());
+
+    // 先装 Q（provides + wants）：wants 只剩自己，照装、不连。
+    manager
+        .install(&agent_acp_plugin("app.q", "wants"), &[], langs())
+        .await
+        .unwrap();
+    assert!(no_self_connections(dir.path()));
+    assert!(matches!(
+        manager
+            .capability_route(&id("app.q"), "agent_acp", &langs())
+            .await,
+        Err(super::super::dependencies::CapabilityAccessError::Unavailable(_))
+    ));
+
+    // 再装 P（provides + requires）：P 连到 Q，不报环。
+    manager
+        .install(&agent_acp_plugin("app.p", "requires"), &[], langs())
+        .await
+        .unwrap();
+    let route = manager
+        .capability_route(&id("app.p"), "agent_acp", &langs())
+        .await
+        .unwrap();
+    assert_eq!(route.provider, id("app.q"));
+    let env = env_of_container(&docker, &container_name("app-p", "api"));
+    assert_eq!(env["URL"], "http://agent_acp.wonton.internal:8080");
+
+    // Q 的 wants 连的是别的提供方，不是自己；高权限的新连接要主人确认后才有。
+    assert!(no_self_connections(dir.path()));
+    manager
+        .set_capability_default("agent_acp", &id("app.p"), &langs())
+        .await
+        .unwrap();
+    let route = manager
+        .capability_route(&id("app.q"), "agent_acp", &langs())
+        .await
+        .unwrap();
+    assert_eq!(route.provider, id("app.p"));
+    assert!(no_self_connections(dir.path()));
+}
+
+#[tokio::test]
+async fn removing_the_only_other_agent_acp_provider_is_blocked_while_required() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    manager
+        .install(&agent_acp_plugin("app.q", "wants"), &[], langs())
+        .await
+        .unwrap();
+    manager
+        .install(&agent_acp_plugin("app.p", "requires"), &[], langs())
+        .await
+        .unwrap();
+    // 卸 Q 时 P 的 requires 没有替代（P 自己提供不算），拦下。
+    let error = manager
+        .uninstall(&id("app.q"), false, &langs())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "in_use");
+    assert!(
+        manager.installed_plugin(&id("app.q"), &langs()).is_some(),
+        "被拦下的卸载不能动到 Q"
+    );
+}
+
+/// 编排器清单装上时的连接确认按高权限能力走（ADR-0061 第 7 节）：预览里出现强调的连接提示。
+#[tokio::test]
+async fn installing_an_agent_acp_consumer_confirms_the_connection_as_high_privilege() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    manager
+        .install(&agent_acp_plugin("app.q", "wants"), &[], langs())
+        .await
+        .unwrap();
+    let source = agent_acp_plugin("app.p", "requires");
+    let package = PluginPackage::parse(&source, &langs()).unwrap();
+    let preview = manager.preview_upload(package, &langs()).await.unwrap();
+    assert!(
+        preview
+            .notices
+            .iter()
+            .any(|line| line.emphasis && line.text.contains("agent_acp")),
+        "缺连接确认提示：{:?}",
+        preview.notices
+    );
 }

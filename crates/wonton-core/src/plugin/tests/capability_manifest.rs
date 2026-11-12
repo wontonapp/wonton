@@ -80,3 +80,43 @@ fn capability_provider_with_valid_services_parses() {
     );
     PluginPackage::parse(&source, &super::langs()).unwrap();
 }
+
+fn provider_manifest(dependency: &str, provides: &str) -> String {
+    package(
+        SERVICES,
+        &format!("  permissions: []\n{dependency}  provides:\n{provides}"),
+    )
+}
+
+/// ADR-0061 第 9 节：提供 agent_acp 的插件可以 requires/wants 同一个能力（按名字比，不写死某个能力）。
+#[test]
+fn a_provider_may_declare_the_capability_it_provides() {
+    let provides = "    agent_acp: {service: qbittorrent, port: 8080}";
+    PluginPackage::parse(
+        &provider_manifest("  wants: [agent_acp]\n", provides),
+        &super::langs(),
+    )
+    .unwrap();
+    PluginPackage::parse(
+        &provider_manifest("  requires: [agent_acp]\n", provides),
+        &super::langs(),
+    )
+    .unwrap();
+    let source = provider_manifest(
+        "  requires: [torrent_client]\n",
+        "    torrent_client: {service: qbittorrent, port: 8080}",
+    );
+    PluginPackage::parse(&source, &super::langs()).unwrap();
+}
+
+#[test]
+fn a_provider_still_cannot_require_a_capability_it_does_not_provide() {
+    let source = provider_manifest(
+        "  requires: [jellyfin]\n",
+        "    torrent_client: {service: qbittorrent, port: 8080}",
+    );
+    let text = PluginPackage::parse(&source, &super::langs())
+        .unwrap_err()
+        .to_string();
+    assert!(text.contains("jellyfin"), "实际错误：{text}");
+}

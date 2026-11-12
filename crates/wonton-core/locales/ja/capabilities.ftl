@@ -15,3 +15,4 @@ plugin-capability-model-migration = モデルゲートウェイを任意の機�
 plugin-capability-plan-changed = プレビュー後にインストール計画が変わりました。プレビューを開き直し、接続先を確認してください。
 plugin-capability-choices-unsupported = このコアでは選択したデバイスや制限付きの Bot 範囲を適用できません。選択内容は変更もインストールもされていません。
 plugin-capability-uninstall-selection = 選択した提供元は使用中か、今回の削除候補にありません。アンインストールのプレビューを開き直してください。
+plugin-capability-self-only = 機能 { $capability } には別の提供元が必要です：このアプリ自身が提供しているため、先に別の提供元をインストールしてください

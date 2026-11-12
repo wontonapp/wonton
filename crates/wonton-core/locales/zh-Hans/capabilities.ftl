@@ -15,3 +15,4 @@ plugin-capability-model-migration = 把模型网关声明为可选能力需要�
 plugin-capability-plan-changed = 安装计划在预览后发生变化，请重新预览并确认连接。
 plugin-capability-choices-unsupported = 这份核心无法应用所选设备或限定的 Bot 范围，未修改这些选择，也未开始安装。
 plugin-capability-uninstall-selection = 所选提供方仍在使用中，或不在本次可卸载列表里，请重新打开卸载预览。
+plugin-capability-self-only = 能力 { $capability } 需要别的提供方：应用自己就提供它，请先安装另一个提供方再装它

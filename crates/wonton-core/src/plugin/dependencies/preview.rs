@@ -135,7 +135,7 @@ impl PluginManager {
                 })
                 .collect();
             if matches.is_empty() && preview.blocked.is_none() {
-                preview.blocked = Some(self.capability_missing(capability, langs));
+                preview.blocked = Some(self.capability_missing_other(manifest, capability, langs));
             }
             preview.missing_requires.push(MissingCapability {
                 capability: capability.clone(),
