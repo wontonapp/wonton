@@ -123,8 +123,10 @@ final class ChatPanelUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.exists, "房间里没有消息列表")
         let now = frames(list: list, field: field)
-        attach("after-draft \(now) \(scrollState())")
-        XCTAssertTrue(now.stuckToBottom, "发完以后列表没贴底：\(now)")
+        let state = scrollState()
+        attach("after-draft \(now) \(state)")
+        // 贴底看 App 自己的位置：List 的内容高度比真实内容矮一段，按内容外框比较在长行上必败（见 PR 说明）。
+        XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "发完以后列表没贴底：\(now) \(state)")
         XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
     }
 
@@ -246,7 +248,6 @@ final class ChatPanelUITests: XCTestCase {
         /// 停在别处时才有“回到底部”按钮：它出现说明 App 自己也知道没到底。
         let back: Bool
 
-        var stuckToBottom: Bool { contentBottom <= listBottom + 2 }
         var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop) back=\(back)" }
     }
 
@@ -259,6 +260,17 @@ final class ChatPanelUITests: XCTestCase {
     /// App 里 `BottomPin` 的自述：贴底没贴底、真实位置和底部差多少。
     private func scrollState() -> String {
         app.staticTexts["roomScroll"].label
+    }
+
+    /// `snapshot` 里的 y 是不是到位（`bottom` 是 App 算出来的底部）。
+    private func isAtBottom(_ state: String) -> Bool {
+        let values = Dictionary(uniqueKeysWithValues: state.split(separator: " ").compactMap { part -> (String, Double)? in
+            let pair = part.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, let value = Double(pair[1]) else { return nil }
+            return (String(pair[0]), value)
+        })
+        guard let y = values["y"], let bottom = values["bottom"] else { return false }
+        return y >= bottom - 2
     }
 
     private func attach(_ text: String) {
