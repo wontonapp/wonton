@@ -69,6 +69,11 @@ apps/ios/scripts/build-core.sh
 xcodegen generate --spec apps/ios/project.yml
 ```
 
+版本号在生成工程时由仓库根的 `scripts/app-version.sh` 写进不提交的 `Version.xcconfig`（规则和 Android
+共用，见 `apps/compose/README.md` 的「构建」）：发版生成工程时传 `WONTON_VERSION=0.2.4`，构建时给
+`xcodebuild` 显式传 `MARKETING_VERSION=0.2.4 CURRENT_PROJECT_VERSION=2004` 也能覆盖；不传时取最近的
+`vX.Y.Z` tag。
+
 然后用 Xcode 打开 `apps/ios/Wonton.xcodeproj` 运行。改了 Rust 代码后重新运行 `build-core.sh`；
 增删 Swift 文件后重新运行 `xcodegen`。模拟器只支持 Apple 芯片的 Mac。
 
