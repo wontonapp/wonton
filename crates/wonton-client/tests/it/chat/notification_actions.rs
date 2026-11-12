@@ -3,6 +3,7 @@
 use serde_json::json;
 use wonton_client::{Action, CoreError, SettingsEntry};
 use wonton_matrix::MessageBody;
+use wonton_protocol::{ComposerViewModel, ImageUpload, SendState, TimelineAction, TimelineTarget};
 
 use super::push::wait_connected;
 use super::support::{Home, Phone, WAIT};
@@ -149,7 +150,7 @@ async fn assert_answer_failures(
     assert!(matches!(missing, Err(CoreError::NotReady { .. })));
 }
 
-/// 通知里打的回复（ADR-0101 §1）：作为对那条消息的回复发出去，沿用发送文字的路。
+/// 通知回复先持久化到待发队列，不拿输入框的草稿和附件；重启后仍按顺序发出。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_reply_typed_in_the_notification_reaches_the_room() {
@@ -158,102 +159,214 @@ async fn a_reply_typed_in_the_notification_reaches_the_room() {
     let home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone.signed_in().await;
-
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room.send_text("你的快递到了").await.expect("Bot 发送");
-    let original = bot_receives(&bot_room, "Bot 看到自己发的消息", |message| {
-        (message.event_id.is_some() && message.body == MessageBody::Text("你的快递到了".to_owned()))
-            .then(|| message.clone())
+    let original_id = bot_receives(&bot_room, "原消息有服务器 ID", |message| {
+        (message.body == MessageBody::Text("你的快递到了".into()))
+            .then(|| message.event_id.clone())
+            .flatten()
     })
     .await;
-
-    let target = wonton_protocol::TimelineTarget {
+    let target = TimelineTarget {
         room_id: room_id.to_string(),
         thread_root: None,
     };
-    phone
-        .dispatch(Action::Timeline {
-            action: wonton_protocol::TimelineAction::SetDraft {
-                target: target.clone(),
-                body: "现在就下来".into(),
-                reply_to: None,
-            },
-        })
-        .unwrap();
-    wait_for_saved_draft(&phone, target.clone()).await;
+    home.pause_uploads();
+    let tray_id = prepare_notification_composer(&phone, &target).await;
     drop(phone);
     let phone = Phone::open(dir.path());
-    // 不先等 signed_in：通知动作自己等冷启动恢复，会话必须活到服务器接受发送。
-    let original_id = original.event_id.clone().expect("服务器给了事件 ID");
-
+    // 通知动作自己等待冷启动恢复；成功仅表示进入持久化队列，不要求服务器已收到。
     phone
         .reply_to_push(
             Some("1".into()),
-            room_id.to_string(),
+            target.room_id.clone(),
             None,
             Some(original_id.to_string()),
-            " 现在就下来 ".to_owned(),
+            " 现在就下来 ".into(),
         )
         .await
-        .expect("发出去了");
-    let reply = bot_receives(
-        &bot_room,
-        "Bot 收到手机在通知里的回复",
-        |message| {
-            (message.body == MessageBody::Text("现在就下来".to_owned())).then(|| message.clone())
-        },
-    )
+        .expect("回复进入待发队列");
+    let pending = notification_composer(&phone, &target, 2).await;
+    assert_notification_pending(&pending, &tray_id);
+    assert_notification_draft(&phone, &target).await;
+    assert_notification_rejections(&phone, &target, original_id.as_ref()).await;
+    let after_rejection = notification_composer(&phone, &target, 2).await;
+    assert_eq!(
+        after_rejection
+            .outgoing
+            .iter()
+            .map(|message| &message.id)
+            .collect::<Vec<_>>(),
+        pending
+            .outgoing
+            .iter()
+            .map(|message| &message.id)
+            .collect::<Vec<_>>()
+    );
+
+    // 回复尚未交给 Matrix 时再重启：ID、正文、无附件和附件区都从持久化状态恢复。
+    drop(phone);
+    let phone = Phone::open(dir.path());
+    let restored = notification_composer(&phone, &target, 2).await;
+    assert_notification_pending(&restored, &tray_id);
+    for (before, after) in pending.outgoing.iter().zip(&restored.outgoing) {
+        assert_eq!(before.id, after.id);
+        assert_eq!(before.body, after.body);
+        assert_eq!(
+            before
+                .attachments
+                .iter()
+                .map(|item| &item.id)
+                .collect::<Vec<_>>(),
+            after
+                .attachments
+                .iter()
+                .map(|item| &item.id)
+                .collect::<Vec<_>>()
+        );
+    }
+    phone.signed_in().await;
+    assert_notification_draft(&phone, &target).await;
+    home.resume_uploads();
+    let reply = bot_receives(&bot_room, "Bot 收到持久化通知回复", |message| {
+        (message.body == MessageBody::Text("现在就下来".into())).then(|| message.clone())
+    })
     .await;
     assert_eq!(
         reply.reply.map(|reply| reply.event_id),
-        Some(original_id.clone()),
-        "回复带着原消息"
+        Some(original_id.clone())
     );
+    assert!(reply.thread_root.is_none());
+    notification_composer(&phone, &target, 0).await;
+    assert_thread_notification_reply(&phone, &target, &original_id, &bot_room).await;
+    let final_view = notification_composer(&phone, &target, 0).await;
+    assert_eq!(final_view.attachments.len(), 1);
+    assert_eq!(final_view.attachments[0].id, tray_id);
+    assert_notification_draft(&phone, &target).await;
+}
+
+async fn assert_thread_notification_reply(
+    phone: &Phone,
+    target: &TimelineTarget,
+    original_id: &wonton_matrix::EventId,
+    bot_room: &wonton_matrix::ChatRoom,
+) {
     phone
         .reply_to_push(
             Some("1".into()),
-            room_id.to_string(),
+            target.room_id.clone(),
             Some(original_id.to_string()),
             None,
             "旁聊回复".into(),
         )
         .await
         .unwrap();
-    let threaded = bot_receives(&bot_room, "thread reply", |message| {
+    let threaded = bot_receives(bot_room, "Bot 收到旁聊通知回复", |message| {
         (message.body == MessageBody::Text("旁聊回复".into())).then(|| message.clone())
     })
     .await;
-    assert_eq!(threaded.thread_root.as_ref(), Some(&original_id));
+    assert_eq!(threaded.thread_root.as_deref(), Some(original_id));
+}
+
+async fn assert_notification_draft(phone: &Phone, target: &TimelineTarget) {
+    assert_eq!(
+        phone.draft(target.clone()).await.unwrap().unwrap().body,
+        "还没写完的草稿"
+    );
+}
+
+async fn prepare_notification_composer(phone: &Phone, target: &TimelineTarget) -> String {
+    phone
+        .add_image_attachment(target.clone(), notification_photo("先发.png"))
+        .unwrap();
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendComposer {
+                target: target.clone(),
+                body: String::new(),
+                reply_to: None,
+            },
+        })
+        .unwrap();
+    notification_composer(phone, target, 1).await;
+    let tray_id = phone
+        .add_image_attachment(target.clone(), notification_photo("留在输入框.png"))
+        .unwrap();
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SetDraft {
+                target: target.clone(),
+                body: "还没写完的草稿".into(),
+                reply_to: None,
+            },
+        })
+        .unwrap();
+    wait_for_saved_draft(phone, target.clone()).await;
+    tray_id
+}
+
+fn notification_photo(filename: &str) -> ImageUpload {
+    ImageUpload {
+        filename: filename.into(),
+        mime_type: "image/png".into(),
+        data: vec![0xA5; 1024],
+        width: None,
+        height: None,
+        thumbnail: None,
+    }
+}
+
+async fn notification_composer(
+    phone: &Phone,
+    target: &TimelineTarget,
+    outgoing_count: usize,
+) -> ComposerViewModel {
+    let subscription = phone.subscribe_composer(target.clone()).unwrap();
+    tokio::time::timeout(WAIT, async {
+        loop {
+            let view = subscription.next().await.expect("附件区订阅仍有效");
+            if view.outgoing.len() == outgoing_count {
+                return view;
+            }
+        }
+    })
+    .await
+    .expect("待发队列达到预期数量")
+}
+
+fn assert_notification_pending(view: &ComposerViewModel, tray_id: &str) {
+    assert_eq!(view.attachments.len(), 1);
+    assert_eq!(view.attachments[0].id, tray_id);
+    assert_eq!(view.outgoing[0].attachments.len(), 1);
+    let reply = &view.outgoing[1];
+    assert_eq!(reply.body, "现在就下来");
+    assert!(reply.attachments.is_empty());
+    assert!(matches!(reply.state, SendState::Sending { .. }));
+}
+
+async fn assert_notification_rejections(phone: &Phone, target: &TimelineTarget, original_id: &str) {
     let mismatched = phone
         .reply_to_push(
             Some("1".into()),
-            room_id.to_string(),
+            target.room_id.clone(),
             Some("$wrong:example.org".into()),
-            Some(original_id.to_string()),
+            Some(original_id.into()),
             "不能错发".into(),
         )
         .await;
     assert!(matches!(mismatched, Err(CoreError::InvalidInput { .. })));
-    assert_eq!(
-        phone.draft(target).await.unwrap().unwrap().body,
-        "现在就下来"
-    );
-
-    // 空白正文在通知上发不出去。
-    assert!(matches!(
-        phone
-            .reply_to_push(
-                Some("1".into()),
-                room_id.to_string(),
-                None,
-                Some(original_id.to_string()),
-                "  ".to_owned()
-            )
-            .await,
-        Err(CoreError::InvalidInput { .. })
-    ));
+    let blank = phone
+        .reply_to_push(
+            Some("1".into()),
+            target.room_id.clone(),
+            None,
+            Some(original_id.into()),
+            "  ".into(),
+        )
+        .await;
+    assert!(matches!(blank, Err(CoreError::InvalidInput { .. })));
 }
 
 async fn wait_for_saved_draft(phone: &Phone, target: wonton_protocol::TimelineTarget) {
@@ -263,7 +376,7 @@ async fn wait_for_saved_draft(phone: &Phone, target: wonton_protocol::TimelineTa
                 .draft(target.clone())
                 .await
                 .unwrap()
-                .is_some_and(|draft| draft.body == "现在就下来")
+                .is_some_and(|draft| draft.body == "还没写完的草稿")
             {
                 break;
             }

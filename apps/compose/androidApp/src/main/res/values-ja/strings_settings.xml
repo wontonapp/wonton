@@ -18,6 +18,10 @@
     <string name="push_hidden_notice">新しいお知らせ</string>
     <!-- Notification action button: reply to the message right in the notification. -->
     <string name="push_reply">返信</string>
+    <!-- Progress while a notification reply is being persisted to the shared pending outbox, not delivered. -->
+    <string name="push_reply_queuing">返信を保存中…</string>
+    <!-- Reply enqueue result is uncertain. Argument: core reason; inspect/retry only in the conversation. -->
+    <string name="push_reply_failed">返信の確認が必要です：%1$s。Wonton で会話を開いて送信待ちのメッセージを確認し、必要ならそこで再試行してください</string>
     <!-- Replaces the notification text while a notification action is being sent. -->
     <string name="push_sending">送信中…</string>
     <!-- Notification text when an action couldn't be sent. Argument: the reason. -->

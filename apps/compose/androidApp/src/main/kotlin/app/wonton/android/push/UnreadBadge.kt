@@ -27,6 +27,8 @@ object UnreadBadge {
 
     fun summary(context: Context, unread: Int) {
         if (!PushNotifications.allowed(context)) return
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (manager.activeNotifications.any { it.id == SUMMARY_ID && it.notification.number == unread }) return
         PushNotifications.createChannels(context)
         val summary = Notification.Builder(context, NotificationCategory.MESSAGE.notificationChannelId)
             .setSmallIcon(android.R.drawable.stat_notify_chat)
@@ -47,6 +49,6 @@ object UnreadBadge {
                 ),
             )
             .build()
-        context.getSystemService(NotificationManager::class.java).notify(SUMMARY_ID, summary)
+        manager.notify(SUMMARY_ID, summary)
     }
 }

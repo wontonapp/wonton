@@ -23,12 +23,16 @@ object NotificationActions {
         val manager = context.getSystemService(NotificationManager::class.java)
         val existing = current(manager, tag)?.takeIf { matches(it, target) } ?: return
         val original = original(existing)
+        val progressText = context.getString(if (target.action == PushActionReceiver.ACTION_REPLY) {
+            R.string.push_reply_queuing
+        } else {
+            R.string.push_sending
+        })
         val extras = Bundle(original.extras).apply { putParcelable(ORIGINAL, original) }
-        val progress = Notification.Builder.recoverBuilder(context, original.clone())
+        val progress = Notification.Builder.recoverBuilder(context, original.clone().apply { actions = null })
             .setExtras(extras)
-            .setActions()
-            .setContentText(context.getString(R.string.push_sending))
-            .setStyle(Notification.BigTextStyle().bigText(context.getString(R.string.push_sending)))
+            .setContentText(progressText)
+            .setStyle(Notification.BigTextStyle().bigText(progressText))
             .setProgress(0, 0, true)
             .setOnlyAlertOnce(true)
             .build()
@@ -42,11 +46,20 @@ object NotificationActions {
         val manager = context.getSystemService(NotificationManager::class.java)
         val existing = tag?.let { current(manager, it) }?.takeIf { matches(it, target) }
         val original = existing?.let(::original)
-        if (original != null) manager.notify(tag, NOTIFICATION_ID, original)
+        val isReply = target.action == PushActionReceiver.ACTION_REPLY
+        if (original != null) {
+            // A failed enqueue may already have persisted the reply. Retry only from the timeline.
+            val restored = if (isReply) {
+                Notification.Builder.recoverBuilder(context, original.clone().apply { actions = null }).build()
+            } else {
+                original
+            }
+            manager.notify(tag, NOTIFICATION_ID, restored)
+        }
         val category = NotificationCategory.entries.firstOrNull {
             it.notificationChannelId == target.getStringExtra(PushActionReceiver.EXTRA_CHANNEL)
         } ?: NotificationCategory.MESSAGE
-        val text = context.getString(R.string.push_action_failed, reason)
+        val text = context.getString(if (isReply) R.string.push_reply_failed else R.string.push_action_failed, reason)
         val error = Notification.Builder(context, category.notificationChannelId)
             .setSmallIcon(android.R.drawable.stat_notify_error)
             .setContentTitle(context.getString(R.string.app_name))

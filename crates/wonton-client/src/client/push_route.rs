@@ -115,7 +115,7 @@ impl ClientCore {
         }
     }
 
-    /// 通知里的回复等服务器接受发送；旁聊根和被回复事件必须匹配。不切换当前房间、不动草稿或附件区。
+    /// 通知回复先校验目标，再存进待发队列；成功表示已入队，送达或失败由时间线显示。不动草稿和附件区。
     pub async fn reply_to_push(
         &self,
         server_id: Option<String>,
@@ -127,34 +127,57 @@ impl ClientCore {
         match self.route_push_server(server_id.as_deref())? {
             Route::Current(scope) => {
                 let chat = scope.chat.clone();
+                let composer = scope.composer.clone();
                 scope
                     .run(async move {
-                        chat.send_push_reply(
-                            &room_id,
-                            &text,
-                            reply_to.as_deref(),
-                            thread_root.as_deref(),
-                        )
-                        .await
+                        let reply = chat
+                            .prepare_push_reply(
+                                &room_id,
+                                &text,
+                                reply_to.as_deref(),
+                                thread_root.as_deref(),
+                            )
+                            .await?;
+                        composer.send_push_reply(&room_id, &text, reply)
                     })
                     .await
             }
             Route::Visit(entered) => {
                 let visit = entered.visit.clone();
                 let chat = visit.chat.clone();
+                let composer = visit.composer()?;
+                let sending_room = room_id.clone();
                 let result = visit
                     .runtime
                     .run(async move {
-                        chat.send_push_reply(
-                            &room_id,
-                            &text,
-                            reply_to.as_deref(),
-                            thread_root.as_deref(),
-                        )
-                        .await
+                        let reply = chat
+                            .prepare_push_reply(
+                                &sending_room,
+                                &text,
+                                reply_to.as_deref(),
+                                thread_root.as_deref(),
+                            )
+                            .await?;
+                        composer.send_push_reply(&sending_room, &text, reply)
                     })
                     .await;
-                drop(entered);
+                if result.is_ok() {
+                    let composer = visit.composer()?;
+                    let chat = visit.chat.clone();
+                    // 入队不是送达：后台槽位留出发送窗口，不影响当前页面，也不无限持有另一台的作用域。
+                    visit.runtime.spawn(async move {
+                        let _using = entered;
+                        let _ = tokio::time::timeout(Duration::from_secs(30), async {
+                            composer.wait_for_handover(&room_id).await;
+                            if let Ok(session) = chat.current()
+                                && let Ok(room) = room_id.parse::<wonton_matrix::OwnedRoomId>()
+                            {
+                                let _ = session.wait_for_queued_sends(&room).await;
+                            }
+                        })
+                        .await;
+                    });
+                }
                 result
             }
             Route::Removed => Err(removed()),

@@ -76,15 +76,14 @@ impl ChatLink {
         Ok(())
     }
 
-    /// 通知里打的回复（ADR-0101 §1）：和输入框发文字同一条路，但等结果——推送唤醒的进程随时会被系统收走，
-    /// 发送不能丢在一边。通知里只能打字：不带附件，也不出链接预览。失败同时记进 `problem`，打开 App 看得到。
-    pub(crate) async fn send_push_reply(
+    /// 冷启动先等会话和目标房间恢复；校验旁聊关系后交给持久待发队列，不改草稿。
+    pub(crate) async fn prepare_push_reply(
         self: &Arc<Self>,
         room_id: &str,
         body: &str,
         reply_to: Option<&str>,
         thread_root: Option<&str>,
-    ) -> Result<(), CoreError> {
+    ) -> Result<wonton_matrix::PreparedReply, CoreError> {
         let body = body.trim().to_owned();
         if body.is_empty() {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
@@ -106,23 +105,10 @@ impl ChatLink {
                 })?;
             }
             let (session, room_id) = self.send_target(room_id)?;
-            let sent = match &reply_to {
-                Some(event_id) => {
-                    session
-                        .send_reply_to(&room_id, &body, event_id, thread_root.as_deref())
-                        .await
-                }
-                None => match &thread_root {
-                    Some(root) => {
-                        session
-                            .send_reply_to(&room_id, &body, root, Some(root))
-                            .await
-                    }
-                    None => session.send_text_to(&room_id, &body).await,
-                },
-            };
-            sent.map_err(|error| self.convert_op_failure("chat-op-send-text-failed", &error))?;
-            Ok(room_id)
+            session
+                .prepare_reply(&room_id, &body, reply_to.as_deref(), thread_root.as_deref())
+                .await
+                .map_err(|error| self.convert_op_failure("chat-op-send-text-failed", &error))
         };
         let result = tokio::time::timeout(std::time::Duration::from_secs(30), sending)
             .await
@@ -151,9 +137,7 @@ impl ChatLink {
                 })
             });
         }
-        let room_id = result?;
-        onboarding::record_sent(&self.sent, room_id.to_string());
-        Ok(())
+        result
     }
 
     /// 操作失败：记进 `problem`（打开 App 看得到），同时把类别交回去给通知。

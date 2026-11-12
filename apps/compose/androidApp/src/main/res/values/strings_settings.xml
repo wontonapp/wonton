@@ -30,6 +30,10 @@
     <string name="push_hidden_notice">New notice</string>
     <!-- Notification action button: reply to the message right in the notification. -->
     <string name="push_reply">Reply</string>
+    <!-- Progress while a notification reply is being persisted to the shared pending outbox, not delivered. -->
+    <string name="push_reply_queuing">Saving reply…</string>
+    <!-- Reply enqueue result is uncertain. Argument: core reason; inspect/retry only in the conversation. -->
+    <string name="push_reply_failed">Reply needs checking: %1$s. Open the conversation in Wonton to check pending messages and retry there if needed</string>
     <!-- Replaces the notification text while a notification action is being sent. -->
     <string name="push_sending">Sending…</string>
     <!-- Notification text when an action couldn't be sent. Argument: the reason. -->

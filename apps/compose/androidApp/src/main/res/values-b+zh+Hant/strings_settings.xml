@@ -18,6 +18,10 @@
     <string name="push_hidden_notice">有新提醒</string>
     <!-- Notification action button: reply to the message right in the notification. -->
     <string name="push_reply">回覆</string>
+    <!-- Progress while a notification reply is being persisted to the shared pending outbox, not delivered. -->
+    <string name="push_reply_queuing">正在儲存回覆…</string>
+    <!-- Reply enqueue result is uncertain. Argument: core reason; inspect/retry only in the conversation. -->
+    <string name="push_reply_failed">回覆需要確認：%1$s。請在雲吞中開啟對話，查看待傳訊息，必要時在那裡重試</string>
     <!-- Replaces the notification text while a notification action is being sent. -->
     <string name="push_sending">正在傳送…</string>
     <!-- Notification text when an action couldn't be sent. Argument: the reason. -->

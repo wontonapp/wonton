@@ -1,10 +1,9 @@
-//! 为另一台服务器临时开的作用域（ADR-0042 的“推送带上服务器 ID”）：推送来自不是当前这台的服务器、推送地址变了
-//! 要给那台重新登记时，只开连接、聊天和推送三个部件（聊天要的插件部件不轮询），用完就关掉。底栏、文件这些不开：它们会
-//! 轮询、会接着传文件。
+//! 为另一台服务器临时开的作用域（ADR-0042）：推送不切换当前服务器。通知回复按需打开持久待发队列，
+//! 不打开底栏和引导；最后一个使用者归还后关闭运行时。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::thread::JoinHandle;
 
 use tokio::sync::watch;
@@ -12,6 +11,8 @@ use wonton_protocol::CoreError;
 
 use super::ScopeRuntime;
 use crate::chat::ChatLink;
+use crate::composer::{ComposerLink, uplink::LiveUplink};
+use crate::files::FilesLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::lock_screen::LockScreenLink;
 use crate::plugins::PluginsLink;
@@ -24,6 +25,9 @@ pub(crate) struct Visit {
     pub(crate) chat: Arc<ChatLink>,
     pub(crate) push: Arc<PushLink>,
     pub(crate) runtime: ScopeRuntime,
+    home: Arc<HomeLink>,
+    dir: PathBuf,
+    composer: OnceLock<Arc<ComposerLink>>,
 }
 
 impl Visit {
@@ -72,7 +76,7 @@ impl Visit {
         chat.backgrounded();
         let push = PushLink::new(
             handle,
-            home,
+            home.clone(),
             chat.clone(),
             dir,
             push_method.subscribe(),
@@ -83,7 +87,42 @@ impl Visit {
             chat,
             push,
             runtime,
+            home,
+            dir: dir.to_owned(),
+            composer: OnceLock::new(),
         }))
+    }
+
+    pub(crate) fn composer(&self) -> Result<Arc<ComposerLink>, CoreError> {
+        let handle = self.runtime.handle().ok_or_else(|| CoreError::NotReady {
+            reason: wonton_l10n::l10n!(
+                crate::l10n::CATALOG,
+                crate::l10n::language(),
+                "scope-switched-server"
+            ),
+        })?;
+        Ok(self
+            .composer
+            .get_or_init(|| {
+                let _entered = handle.enter();
+                let files = FilesLink::new(
+                    handle.clone(),
+                    self.home.clone(),
+                    self.chat.clone(),
+                    &self.dir,
+                    None,
+                );
+                ComposerLink::new(
+                    handle.clone(),
+                    Arc::new(LiveUplink {
+                        chat: self.chat.clone(),
+                        files,
+                        home: self.home.clone(),
+                    }),
+                    &self.dir,
+                )
+            })
+            .clone())
     }
 }
 

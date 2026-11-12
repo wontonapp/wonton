@@ -25,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [32], application = Application::class)
@@ -55,9 +56,11 @@ class PushActionsTest {
     @Test
     fun failureRestoresCardAndKeepsPrivacyAndRoutingOnSeparateError() {
         PushNotifications.createChannels(context)
-        val target = target("card-event").putExtra(PushBuilder.EXTRA_CARD, "card")
-        val source = message().copy(eventId = "card-event",
-            confirmation = PushConfirmation(id = "card", expiresAtMs = 10000uL, origin = null, choices = emptyList()))
+        val target = target("card-event").setAction(PushActionReceiver.ACTION_ANSWER)
+            .putExtra(PushBuilder.EXTRA_CARD, "card")
+        val source = message().copy(eventId = "card-event", category = NotificationCategory.CONFIRMATION,
+            confirmation = PushConfirmation(id = "card", expiresAtMs = 10000uL, origin = null,
+                choices = listOf(CardChoice(Answer.APPROVE, "Allow", null))))
         val public = Notification.Builder(context, "confirmation")
             .setSmallIcon(android.R.drawable.stat_notify_chat).setContentText("hidden").build()
         val original = Notification.Builder(context, "confirmation")
@@ -65,6 +68,7 @@ class PushActionsTest {
             .setContentText("private card")
             .setExtras(PushBuilder.extras(source))
             .setContentIntent(PushBuilder.open(context, source, "room"))
+            .setActions(*PushBuilder.actions(context, source, "room", "Agent").toTypedArray())
             .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(public).build()
         manager.notify("room", 1, original)
 
@@ -76,9 +80,64 @@ class PushActionsTest {
         val restored = manager.activeNotifications.single { it.id == 1 }.notification
         val error = manager.activeNotifications.single { it.id == 6 }.notification
         assertEquals("private card", restored.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertEquals(1, restored.actions.size)
         assertEquals(original.contentIntent, error.contentIntent)
         assertEquals(Notification.VISIBILITY_PRIVATE, error.visibility)
         assertEquals("hidden", error.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT))
+    }
+
+    @Test
+    fun replyFailureKeepsPrivateTargetButRemovesNotificationRetry() {
+        PushNotifications.createChannels(context)
+        val source = message().copy(threadRoot = "thread", lockScreenPrivate = true)
+        val target = target("event").setAction(PushActionReceiver.ACTION_REPLY)
+            .putExtra(PushActionReceiver.EXTRA_THREAD, "thread")
+        val public = Notification.Builder(context, "message")
+            .setSmallIcon(android.R.drawable.stat_notify_chat).setContentText("hidden").build()
+        val original = Notification.Builder(context, "message")
+            .setSmallIcon(android.R.drawable.stat_notify_chat)
+            .setContentText("private message")
+            .setExtras(PushBuilder.extras(source))
+            .setContentIntent(PushBuilder.open(context, source, "room"))
+            .setActions(*PushBuilder.actions(context, source, "room", "Agent").toTypedArray())
+            .setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(public).build()
+        manager.notify("room", 1, original)
+
+        NotificationActions.progress(context, target)
+        val progress = manager.activeNotifications.single().notification
+        assertEquals(Notification.VISIBILITY_PRIVATE, progress.visibility)
+        assertEquals("hidden", progress.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertEquals(original.contentIntent, progress.contentIntent)
+
+        NotificationActions.failure(context, target, "offline")
+        val restored = manager.activeNotifications.single { it.id == 1 }.notification
+        val error = manager.activeNotifications.single { it.id == 6 }.notification
+        assertEquals("private message", restored.extras.getCharSequence(Notification.EXTRA_TEXT))
+        assertTrue(restored.actions.isNullOrEmpty())
+        assertTrue(error.actions.isNullOrEmpty())
+        assertEquals(original.contentIntent, error.contentIntent)
+        assertEquals(Notification.VISIBILITY_PRIVATE, error.visibility)
+        assertEquals("hidden", error.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT))
+        val open = shadowOf(error.contentIntent).savedIntent
+        assertEquals("server", open.getStringExtra(IncomingRequests.EXTRA_SERVER))
+        assertEquals("!room:example.org", open.getStringExtra(IncomingRequests.EXTRA_ROOM))
+        assertEquals("thread", open.getStringExtra(PushActionReceiver.EXTRA_THREAD))
+    }
+
+    @Test
+    fun replyFailureWithoutOriginalDefaultsToPrivateConversationTarget() {
+        val target = target("event").setAction(PushActionReceiver.ACTION_REPLY)
+            .putExtra(PushActionReceiver.EXTRA_THREAD, "thread")
+        NotificationActions.failure(context, target, "offline")
+
+        val error = manager.activeNotifications.single().notification
+        assertEquals(Notification.VISIBILITY_PRIVATE, error.visibility)
+        assertEquals(context.getString(R.string.push_hidden),
+            error.publicVersion.extras.getCharSequence(Notification.EXTRA_TEXT))
+        val open = shadowOf(error.contentIntent).savedIntent
+        assertEquals("server", open.getStringExtra(IncomingRequests.EXTRA_SERVER))
+        assertEquals("!room:example.org", open.getStringExtra(IncomingRequests.EXTRA_ROOM))
+        assertEquals("thread", open.getStringExtra(PushActionReceiver.EXTRA_THREAD))
     }
 
     @Test

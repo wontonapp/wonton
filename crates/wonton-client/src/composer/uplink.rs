@@ -35,13 +35,37 @@ pub(crate) struct Uploaded {
 }
 
 /// 一组里的一条事件。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) enum Part {
     Image {
         uploaded: Uploaded,
         caption: Option<String>,
     },
     Text(String),
+    Reply(wonton_matrix::PreparedReply),
+}
+
+#[cfg(test)]
+impl PartialEq for Part {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Text(left), Self::Text(right)) => left == right,
+            (
+                Self::Image {
+                    uploaded: left,
+                    caption: left_caption,
+                },
+                Self::Image {
+                    uploaded: right,
+                    caption: right_caption,
+                },
+            ) => left == right && left_caption == right_caption,
+            (Self::Reply(left), Self::Reply(right)) => {
+                serde_json::to_value(left).unwrap() == serde_json::to_value(right).unwrap()
+            }
+            _ => false,
+        }
+    }
 }
 
 /// 交出一组事件的请求。
@@ -281,6 +305,7 @@ impl Uplink for LiveUplink {
 fn group_part(part: Part) -> Result<GroupPart, UplinkError> {
     Ok(match part {
         Part::Text(body) => GroupPart::Text { body },
+        Part::Reply(reply) => GroupPart::Reply(reply),
         Part::Image { uploaded, caption } => GroupPart::Image {
             image: serde_json::from_value::<UploadedImage>(uploaded.handle).map_err(|error| {
                 UplinkError::Failed(
