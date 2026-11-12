@@ -1,5 +1,6 @@
 //! Agent 一轮任务的进度（ADR-0082）：Bot 发的状态消息在时间线里是一条随编辑推进的 AgentRun；只对 Bot 账号
-//! 解读；Bot 离线时显示成不确定；waiting 时带上这个 Bot 等回答的核心卡片；Bot 自己发的 `choices` 以反应回答。
+//! 解读；Bot 离线时显示成不确定；waiting 时带上这个 Bot 在这个房间等回答的卡片（从「等你确认」列表来，
+//! ADR-0016，不在时间线里）；Bot 自己发的 `choices` 以反应回答。
 
 use std::time::Duration;
 
@@ -12,7 +13,7 @@ use wonton_protocol::{
     AgentRunChoice, AgentRunState, BotActivityFacts, TimelineAction, TimelineTarget,
 };
 
-use super::confirmation::{card, content, core_room, in_ten_minutes, joined_direct_chat, send};
+use super::confirmation::{in_ten_minutes, joined_direct_chat, send};
 use super::support::{Home, Phone, Timeline};
 use crate::plugins::rig::running;
 
@@ -49,6 +50,28 @@ fn agent_run(item: &TimelineContent) -> Option<AgentRunState> {
         TimelineContent::AgentRun { state, .. } => Some(state.clone()),
         _ => None,
     }
+}
+
+/// 核心列表里的一张卡片：这个 Bot 在这个房间发起的，等主人回答。
+fn pending_card(id: &str, room: &str, plugin: &str, bot: &str, user_id: &str) -> Value {
+    let mut card = json!({
+        "id": id,
+        "state": {"type": "pending"},
+        "title": format!("{id} 要确认"),
+        "lines": [],
+        "choices": [
+            {"answer": "approve", "label": "允许"},
+            {"answer": "reject", "label": "拒绝"},
+        ],
+        "expires_at_ms": in_ten_minutes(),
+        "origin": {"room_id": room},
+    });
+    card["requester"] = json!({
+        "type": "bot",
+        "bot": {"plugin_id": plugin, "bot": bot},
+        "user_id": user_id,
+    });
+    card
 }
 
 struct Setup {
@@ -337,29 +360,17 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
         &setup.bot_room,
     );
 
-    // 核心在这个房间里发一张这个 Bot 发起的卡片，等主人回答。核心得先进房间才能发。
-    let (core, _notices) = core_room(phone, home).await;
-    bot_room.invite(core.user_id()).await.expect("邀请核心");
-    core.join_room(room).await.expect("核心加入");
-    eventually(
-        "核心看到自己进了房间",
-        core.rooms().await.unwrap(),
-        |rooms| {
-            rooms
-                .iter()
-                .find(|info| info.room_id == *room && info.membership == Membership::Joined)
-                .map(|_| ())
-        },
-    )
-    .await;
-    let core_room = core.open_room(room).await.expect("核心打开房间");
-    let mut pending = card("card-1", in_ten_minutes());
-    pending["requester"] = json!({
-        "type": "bot",
-        "bot": {"plugin_id": PLUGIN, "bot": "default"},
-        "user_id": hermes.user_id().to_string(),
-    });
-    send(&core_room, content(&pending)).await;
+    // 核心的「等你确认」列表里放一张这个 Bot 在这个房间发起的卡片（ADR-0016：卡片从列表来，不经 Matrix）。
+    home.set_confirmations(
+        vec![pending_card(
+            "card-1",
+            room.as_str(),
+            PLUGIN,
+            "default",
+            hermes.user_id().as_str(),
+        )],
+        vec![],
+    );
 
     bot_room
         .send_raw_message(status("waiting", json!({})))

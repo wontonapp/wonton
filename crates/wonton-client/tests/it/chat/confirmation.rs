@@ -36,7 +36,7 @@ fn json_card(id: &str) -> serde_json::Value {
     })
 }
 
-fn in_ten_minutes() -> u64 {
+pub(crate) fn in_ten_minutes() -> u64 {
     (SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -53,7 +53,7 @@ fn old_card_message(id: &str) -> serde_json::Value {
     })
 }
 
-async fn send(room: &ChatRoom, content: serde_json::Value) {
+pub(crate) async fn send(room: &ChatRoom, content: serde_json::Value) {
     room.send_raw_message(content).await.expect("发消息");
 }
 
