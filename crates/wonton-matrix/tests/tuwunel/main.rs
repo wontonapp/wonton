@@ -19,6 +19,7 @@ mod group;
 mod layout;
 mod login;
 mod messaging;
+mod new_device;
 mod profile;
 mod push;
 mod recovery_order;
