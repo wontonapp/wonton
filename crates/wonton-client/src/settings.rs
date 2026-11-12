@@ -381,33 +381,40 @@ mod tests {
         );
     }
 
-    /// App 锁的开关和档位跟着核心的设置走。
+    /// App 锁的开关和档位跟着核心的设置走。发送端都留着：`SettingsLink` 的等待循环在任一通道断开时收尾，
+    /// 一进来就断开会让它连第一次变化都不算。
     #[tokio::test]
     async fn the_app_lock_entry_follows_the_settings() {
         let (_app_lock_tx, app_lock_rx) = watch::channel(AppLockViewModel::default());
+        let (_home, home_rx) = watch::channel(HomeViewModel {
+            device_id: "device".into(),
+            server_id: Some("server".into()),
+            status: HomeStatus::Connected,
+            path: None,
+            notice: None,
+            details: Default::default(),
+            proxy: None,
+            web_url: None,
+            pairing: None,
+            invite: None,
+            keep_connection: false,
+            just_recovered: false,
+        });
+        let (_chat, chat_rx) = watch::channel(chat_view_model());
+        let (_plugins, plugins_rx) = watch::channel(PluginsViewModel::default());
+        let (_peers, peers_rx) = watch::channel(peers_view_model());
+        let (_friends, friends_rx) = watch::channel(friends_view_model());
+        let (_servers, servers_rx) = watch::channel(ServersViewModel::default());
+        let (_method, method_rx) = watch::channel(PushMethod::default());
         let link = SettingsLink::new(
             &Handle::current(),
-            watch::channel(HomeViewModel {
-                device_id: "device".into(),
-                server_id: Some("server".into()),
-                status: HomeStatus::Connected,
-                path: None,
-                notice: None,
-                details: Default::default(),
-                proxy: None,
-                web_url: None,
-                pairing: None,
-                invite: None,
-                keep_connection: false,
-                just_recovered: false,
-            })
-            .1,
-            watch::channel(chat_view_model()).1,
-            watch::channel(PluginsViewModel::default()).1,
-            watch::channel(peers_view_model()).1,
-            watch::channel(friends_view_model()).1,
-            watch::channel(ServersViewModel::default()).1,
-            watch::channel(PushMethod::default()).1,
+            home_rx,
+            chat_rx,
+            plugins_rx,
+            peers_rx,
+            friends_rx,
+            servers_rx,
+            method_rx,
             app_lock_rx,
             None,
         );
