@@ -108,16 +108,9 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         R.string.problem_unauthorized_next_step,
         detail,
     )
-    ChatFailure.FORBIDDEN -> problem(
-        R.string.problem_forbidden_title,
-        R.string.problem_forbidden_next_step,
-        detail,
-    )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
     ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
     ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
-    // 比这个壳新的类别：先按服务器出错说。
-    ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
 
 val ChatProblem.problem: Problem
@@ -204,9 +197,9 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
         detail = detail,
     )
-    PluginFailure.RECORD_UNUSABLE -> Problem(
-        titleRes = R.string.problem_plugin_record_unusable_title,
-        nextStepRes = R.string.problem_plugin_record_unusable_next_step,
+    PluginFailure.OWNER_PROFILE_INCOMPLETE -> Problem(
+        titleRes = R.string.problem_plugin_owner_profile_incomplete_title,
+        nextStepRes = R.string.problem_plugin_owner_profile_incomplete_next_step,
         detail = detail,
     )
     PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
@@ -215,13 +208,6 @@ fun PluginFailure.problem(detail: String?): Problem = when (this) {
         nextStepRes = R.string.problem_plugin_protocol_next_step,
         detail = detail,
     )
-    PluginFailure.SERVER_TOO_OLD -> Problem(
-        titleRes = R.string.problem_plugin_server_too_old_title,
-        nextStepRes = R.string.problem_upgrade_server_next_step,
-        detail = detail,
-    )
-    // 比这个壳新的类别：先按服务器出错说。
-    else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
 
 val StoreProblem.problem: Problem
@@ -287,18 +273,6 @@ val CoreException.problem: Problem
                 detail = detail,
             )
             is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            is CoreException.SettingsInvalid -> Problem(
-                titleRes = R.string.problem_invalid_input_title,
-                nextStep = reason,
-            )
-            is CoreException.ServerTooOld -> Problem(
-                titleRes = R.string.problem_plugin_server_too_old_title,
-                nextStepRes = R.string.problem_upgrade_server_next_step,
-                detail = detail,
-            )
-            // 比这个壳新的类别：先按服务器出错说。
-            else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
         }
     }
 
@@ -326,7 +300,6 @@ fun ProblemDetail(
             Text(label, style = style, color = tint)
             Icon(
                 WontonIcon.Forward,
-                // 装饰：标签文字在左边，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconTiny).rotate(if (expanded) EXPANDED_DEGREES else 0f),
                 tint = tint,
@@ -349,7 +322,6 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
     ) {
         Icon(
             WontonIcon.Warning,
-            // 装饰：下面就是标题。
             contentDescription = null,
             Modifier.size(WontonTheme.size.icon),
             tint = colors.textSecondary.toColor(),
@@ -403,7 +375,6 @@ fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Icon(
             WontonIcon.Info,
-            // 装饰：提示文字在右边。
             contentDescription = null,
             Modifier.size(WontonTheme.size.iconSmall),
             tint = colors.textSecondary.toColor(),

@@ -176,7 +176,6 @@ impl PluginManager {
         let origin = package.origin.as_ref();
         let facts = self.host_facts(langs).await;
         let installed = self.installed_plugin(&m.id, langs);
-        let dependencies = self.dependency_preview(m, langs).await;
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
             provider: origin.map(Origin::provider),
@@ -189,12 +188,6 @@ impl PluginManager {
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
             kind: kind(m.kind),
-            runtime: m.runtime.into(),
-            security_tier: Some(crate::plugin::security_tier::security_tier(m)),
-            link_url: m.link.as_ref().map(|link| link.url.clone()),
-            scope: installed
-                .as_ref()
-                .map(|_| wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
                 Some(Trust::Official) => PluginTrust::Official,
@@ -212,38 +205,17 @@ impl PluginManager {
                 .map(|p| permission_line(p, langs))
                 .collect(),
             requirements: requirement_checks(m, &facts, langs),
-            secret_inputs: Vec::new(),
             has_web: m.webui.is_some(),
-            has_settings: false,
             installed,
-            blocked: blocked(m, &facts, langs).or_else(|| match &dependencies {
-                Ok(dependencies) => dependencies.blocked.clone(),
-                Err(error) => Some(error.to_string()),
-            }),
+            blocked: blocked(m, &facts, langs),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
-                .chain(
-                    dependencies
-                        .as_ref()
-                        .ok()
-                        .into_iter()
-                        .flat_map(|d| d.notices.iter().cloned()),
-                )
                 .collect(),
             // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
             hints: self
                 .installed_detail(&m.id, langs)
                 .map(|detail| detail.hints)
                 .unwrap_or_default(),
-            missing_requires: dependencies
-                .as_ref()
-                .map(|d| d.missing_requires.clone())
-                .unwrap_or_default(),
-            missing_wants: dependencies
-                .as_ref()
-                .map(|d| d.missing_wants.clone())
-                .unwrap_or_default(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,
@@ -256,7 +228,6 @@ impl PluginManager {
             limits: self
                 .installed_detail(&m.id, langs)
                 .and_then(|detail| detail.limits),
-            shares: None,
         }
     }
 
@@ -266,7 +237,6 @@ impl PluginManager {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(&m.id).map(|e| e.version.clone())
         };
-        let tier = crate::plugin::security_tier::security_tier(m);
         StoreItem {
             source: shown.source.clone(),
             provider: Some(shown.provider.clone()),
@@ -282,8 +252,7 @@ impl PluginManager {
             author: author(m),
             stars: shown.stars,
             installed_version,
-            security_tier: Some(tier),
-            high_permissions: crate::plugin::security_tier::prominent(tier),
+            high_permissions: m.permissions.iter().any(|p| p.is_high()),
             blocked: blocked(m, facts, langs),
         }
     }
@@ -323,7 +292,7 @@ impl PluginManager {
             }
             let shown = Shown {
                 source: listed.entry.source.clone(),
-                provider: listed.provider(),
+                provider: listed.entry.source.replacen("github:", "github.com/", 1),
                 via_index: None,
                 manifest: &listed.manifest,
                 icon,

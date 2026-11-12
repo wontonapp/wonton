@@ -6,17 +6,14 @@ use matrix_sdk::ruma::{
     OwnedEventId, OwnedUserId, UserId,
     events::room::{
         MediaSource,
-        message::{FileMessageEventContent, ImageMessageEventContent, MessageType},
+        message::{ImageMessageEventContent, MessageType},
     },
 };
 use matrix_sdk_ui::timeline::{EventSendState, EventTimelineItem, MsgLikeKind, TimelineDetails};
 use serde_json::{Map, Value};
 
-use crate::agent_run::{self, AgentRunStatus};
-use crate::reply::{ReplyTo, reply_to};
-
 /// 时间线里的一条消息。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     /// 服务器分配的事件 ID；本地回显还没发出去时为 `None`。
     pub event_id: Option<OwnedEventId>,
@@ -44,16 +41,6 @@ pub struct Message {
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
     pub read_by: Vec<String>,
-    /// 这条回复的是哪条消息（`m.in_reply_to`）；不是回复时为 `None`。
-    pub reply: Option<ReplyTo>,
-    /// MSC4564 的 Agent 进度状态对象（ADR-0082），被编辑过时是最新编辑里的；不是状态消息时为 `None`。
-    /// 发送者是不是 Bot 由客户端核心判断。
-    pub agent_run: Option<AgentRunStatus>,
-    /// 一次发送里的几条之一（`app.wonton.batch`，ADR-0094），被编辑过时按最新的内容；本地回显还没有原始事件，为 `None`。
-    pub group: Option<wonton_protocol::MessageGroup>,
-    /// 本账号在这个房间的权限（power level）能不能撤回这条：自己的看“撤回自己的”，别人的看“撤回别人的”。
-    /// 只看权限，发没发出去、是不是已撤回由调用方判断。
-    pub can_redact: bool,
 }
 
 /// SDK 按加密前文件大小估算的进度，包含原图和缩略图；重试时可倒退，总量为零时未知。
@@ -91,13 +78,11 @@ pub enum MessageBody {
     Notice(String),
     /// 图片。
     Image(ImageContent),
-    /// 文件。
-    File(FileContent),
     /// 端到端加密的消息，本设备没有解密密钥。
     Undecryptable,
     /// 已撤回。
     Redacted,
-    /// 其他类型（语音、贴纸、投票等），还不展开；`kind` 是消息或事件类型。
+    /// 其他类型（文件、语音、贴纸、投票等），还不展开；`kind` 是消息或事件类型。
     Other {
         /// 消息或事件类型。
         kind: String,
@@ -117,8 +102,6 @@ pub struct ImageContent {
     pub width: Option<u64>,
     /// 像素高度。
     pub height: Option<u64>,
-    /// 说明文字：`body` 和文件名都有且不同时才是说明（Matrix 的 media captions）。
-    pub caption: Option<String>,
     pub(crate) source: MediaSource,
     pub(crate) thumbnail: Option<MediaSource>,
 }
@@ -131,7 +114,6 @@ impl PartialEq for ImageContent {
             && self.size == other.size
             && self.width == other.width
             && self.height == other.height
-            && self.caption == other.caption
             && self.media_token() == other.media_token()
             && self.thumbnail_token() == other.thumbnail_token()
     }
@@ -149,80 +131,19 @@ impl From<&ImageMessageEventContent> for ImageContent {
             size: info.and_then(|info| info.size).map(u64::from),
             width: info.and_then(|info| info.width).map(u64::from),
             height: info.and_then(|info| info.height).map(u64::from),
-            caption: image.caption().map(str::to_owned),
             source: image.source.clone(),
             thumbnail: info.and_then(|info| info.thumbnail_source.clone()),
         }
     }
 }
 
-/// 文件消息（`m.file`）。
-#[derive(Clone, Debug)]
-pub struct FileContent {
-    /// 文件名。
-    pub filename: String,
-    /// MIME 类型，发送方没有声明时为 `None`。
-    pub mime_type: Option<String>,
-    /// 字节数。
-    pub size: Option<u64>,
-    /// 说明文字：同 [`ImageContent::caption`]。
-    pub caption: Option<String>,
-    pub(crate) source: MediaSource,
-}
-
-/// 媒体来源没有实现相等比较，按它的 JSON（即句柄）比较。
-impl PartialEq for FileContent {
-    fn eq(&self, other: &Self) -> bool {
-        self.filename == other.filename
-            && self.mime_type == other.mime_type
-            && self.size == other.size
-            && self.caption == other.caption
-            && self.media_token() == other.media_token()
-    }
-}
-
-impl Eq for FileContent {}
-
-impl From<&FileMessageEventContent> for FileContent {
-    fn from(file: &FileMessageEventContent) -> Self {
-        let info = file.info.as_deref();
-        Self {
-            filename: file.filename.clone().unwrap_or_else(|| file.body.clone()),
-            mime_type: info.and_then(|info| info.mimetype.clone()),
-            size: info.and_then(|info| info.size).map(u64::from),
-            caption: file.caption().map(str::to_owned),
-            source: file.source.clone(),
-        }
-    }
-}
-
-/// 房间成员的显示名（显示发送者、“谁已读”和引用的发送者），以及本账号在房间里的撤回权限。没有记录的成员显示用户 ID。
-///
-/// 两样都跟着房间状态变，一起放在这里，变了的时候时间线按 [`Self::affects`] 重发受影响的条目。
+/// 房间成员的显示名，用来显示“谁已读”。没有记录的成员显示用户 ID。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub(crate) struct MemberNames {
-    names: HashMap<OwnedUserId, String>,
-    redaction: RedactionPower,
-}
-
-/// 本账号在房间里能撤回谁的消息（Matrix 的 power level）。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct RedactionPower {
-    pub(crate) own: bool,
-    pub(crate) others: bool,
-}
+pub(crate) struct MemberNames(HashMap<OwnedUserId, String>);
 
 impl MemberNames {
     pub(crate) fn new(names: HashMap<OwnedUserId, String>) -> Self {
-        Self {
-            names,
-            redaction: RedactionPower::default(),
-        }
-    }
-
-    pub(crate) fn with_redaction(mut self, redaction: RedactionPower) -> Self {
-        self.redaction = redaction;
-        self
+        Self(names)
     }
 
     pub(crate) fn name(&self, user: &UserId) -> String {
@@ -230,28 +151,11 @@ impl MemberNames {
     }
 
     fn get<'a>(&'a self, user: &'a UserId) -> &'a str {
-        self.names.get(user).map_or(user.as_str(), String::as_str)
-    }
-
-    fn can_redact(&self, event: &EventTimelineItem) -> bool {
-        if event.is_own() {
-            self.redaction.own
-        } else {
-            self.redaction.others
-        }
+        self.0.get(user).map_or(user.as_str(), String::as_str)
     }
 
     pub(crate) fn affects(&self, event: &EventTimelineItem, next: &Self) -> bool {
-        let quoted_sender = event
-            .content()
-            .in_reply_to()
-            .and_then(|reply| match reply.event {
-                TimelineDetails::Ready(quoted) => Some(quoted.sender),
-                _ => None,
-            });
-        self.redaction != next.redaction
-            || self.get(event.sender()) != next.get(event.sender())
-            || quoted_sender.is_some_and(|user| self.get(&user) != next.get(&user))
+        self.get(event.sender()) != next.get(event.sender())
             || event
                 .read_receipts()
                 .keys()
@@ -270,10 +174,6 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         .filter(|reader| *reader != event.sender())
         .map(|reader| names.name(reader))
         .collect();
-    let raw = content(event, kind);
-    let group = raw_content(event)
-        .as_ref()
-        .and_then(wonton_protocol::MessageGroup::from_content);
     Some(Message {
         event_id: event.event_id().map(ToOwned::to_owned),
         sender: event.sender().to_owned(),
@@ -282,18 +182,11 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         timestamp_ms: event.timestamp().get().into(),
         status: status(event.send_state()),
         body: body(kind),
-        custom: raw.as_ref().map(custom_fields).unwrap_or_default(),
-        mentions: raw.as_ref().map(mentions_of).unwrap_or_default(),
-        agent_run: raw.as_ref().and_then(agent_run::parse),
-        group,
+        custom: custom(event, kind),
+        mentions: mentions(event, kind),
         thread_root: msglike.thread_root.clone(),
         edited,
         read_by,
-        reply: msglike
-            .in_reply_to
-            .as_ref()
-            .map(|details| reply_to(details, names)),
-        can_redact: names.can_redact(event),
     })
 }
 
@@ -327,13 +220,18 @@ fn status(state: Option<&EventSendState>) -> SendStatus {
     }
 }
 
-/// 原始事件（被编辑过时为编辑后的新内容）里带命名空间的自定义字段；不是文字或提示消息时没有。
-fn custom_fields(content: &Map<String, Value>) -> Map<String, Value> {
-    content
-        .iter()
+fn custom(event: &EventTimelineItem, kind: &MsgLikeKind) -> Map<String, Value> {
+    content(event, kind)
+        .unwrap_or_default()
+        .into_iter()
         .filter(|(key, _)| key.contains('.') && !key.starts_with("m."))
-        .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
+}
+
+fn mentions(event: &EventTimelineItem, kind: &MsgLikeKind) -> Vec<OwnedUserId> {
+    content(event, kind)
+        .map(|content| mentions_of(&content))
+        .unwrap_or_default()
 }
 
 /// `m.mentions.user_ids`；不认识的名字跳过。
@@ -348,18 +246,13 @@ pub(crate) fn mentions_of(content: &Map<String, Value>) -> Vec<OwnedUserId> {
         .collect()
 }
 
-/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象；文字和 `m.notice` 都有（Bot 的状态消息是 notice）。
+/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象；不是文字消息时没有。
 fn content(event: &EventTimelineItem, kind: &MsgLikeKind) -> Option<Map<String, Value>> {
     let is_text = matches!(kind, MsgLikeKind::Message(message)
-        if matches!(message.msgtype(), MessageType::Text(_) | MessageType::Notice(_)));
+        if matches!(message.msgtype(), MessageType::Text(_)));
     if !is_text {
         return None;
     }
-    raw_content(event)
-}
-
-/// 原始事件（被编辑过时为编辑后的新内容）里的内容对象，任何消息类型都有；本地回显没有原始事件。
-fn raw_content(event: &EventTimelineItem) -> Option<Map<String, Value>> {
     // SDK 核对过编辑：发送者和原消息相同才算数。
     let edit = event.latest_edit_json();
     let raw = edit.or(event.original_json())?;
@@ -385,25 +278,18 @@ pub(crate) fn body(kind: &MsgLikeKind) -> MessageBody {
         kind: kind.to_owned(),
     };
     match kind {
-        MsgLikeKind::Message(message) => msgtype_body(message.msgtype()),
+        MsgLikeKind::Message(message) => match message.msgtype() {
+            MessageType::Text(text) => MessageBody::Text(text.body.clone()),
+            MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
+            MessageType::Image(image) => MessageBody::Image(image.into()),
+            msgtype => other(msgtype.msgtype()),
+        },
         MsgLikeKind::UnableToDecrypt(_) => MessageBody::Undecryptable,
         MsgLikeKind::Redacted => MessageBody::Redacted,
         MsgLikeKind::Sticker(_) => other("m.sticker"),
         MsgLikeKind::Poll(_) => other("m.poll.start"),
         MsgLikeKind::LiveLocation(_) => other("m.beacon_info"),
         MsgLikeKind::Other(message) => other(&message.event_type().to_string()),
-    }
-}
-
-pub(crate) fn msgtype_body(msgtype: &MessageType) -> MessageBody {
-    match msgtype {
-        MessageType::Text(text) => MessageBody::Text(text.body.clone()),
-        MessageType::Notice(notice) => MessageBody::Notice(notice.body.clone()),
-        MessageType::Image(image) => MessageBody::Image(image.into()),
-        MessageType::File(file) => MessageBody::File(file.into()),
-        msgtype => MessageBody::Other {
-            kind: msgtype.msgtype().to_owned(),
-        },
     }
 }
 

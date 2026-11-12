@@ -1,0 +1,37 @@
+08:31:07 等 mini 的重活锁：ios npchy-bp-shells（6 分钟） 占着 —— 等外部：mini
+08:31:37 等 mini 的重活锁：ios npchy-bp-shells（7 分钟） 占着 —— 等外部：mini
+08:32:37 等 mini 的重活锁：ios npchy-bp-shells（8 分钟） 占着 —— 等外部：mini
+08:33:37 等 mini 的重活锁：ios npchy-bp-shells（9 分钟） 占着 —— 等外部：mini
+08:34:37 等 mini 的重活锁：ios npchy-bp-shells（10 分钟） 占着 —— 等外部：mini
+08:35:07 等 mini 的重活锁：ios ci-42429171911-build（0 分钟） 占着 —— 等外部：mini
+08:36:07 等 mini 的重活锁：ios tt-752（0 分钟） 占着 —— 等外部：mini
+08:37:08 等 mini 的重活锁：ios tt-752（1 分钟） 占着 —— 等外部：mini
+08:38:08 等 mini 的重活锁：ios tt-752（2 分钟） 占着 —— 等外部：mini
+08:39:08 等 mini 的重活锁：ios tt-752（3 分钟） 占着 —— 等外部：mini
+08:39:38 等 mini 的重活锁：ios ci-42430310057-build（0 分钟） 占着 —— 等外部：mini
+08:40:38 等 mini 的重活锁：ios ci-42430310057-build（1 分钟） 占着 —— 等外部：mini
+08:41:38 等 mini 的重活锁：ios ci-42430310057-build（2 分钟） 占着 —— 等外部：mini
+mini-slot：拿到锁（ios npchy-linksv），根盘剩 66 GB
+== Devices ==
+-- iOS 26.5 --
+    app-polish-17pro (0BA8BA2C-CFFB-4E0D-B6A6-3E32D5766A1E) (Shutdown) 
+    bp-shells (5CBF952D-4A00-4334-ACF7-C51252BF9999) (Shutdown) 
+    i18n-17pro (57C22B45-5880-4836-B86F-38FE45F32237) (Booted) 
+    iPhone 17 Pro (78774D13-B96E-46DD-9862-A461CE952F32) (Shutdown) 
+    term-17pro (3B7E5C7B-F57B-4F5F-9DEE-7890312D9B6E) (Booted) 
+    iPhone 17 Pro Max (331CB18C-D036-40A9-939A-0C5D0CD8D10C) (Shutdown) 
+    iPhone 17e (C4970887-A8D6-4BD7-BBEA-EB597963F761) (Shutdown) 
+    iPhone Air (E04ED1F4-E2B8-44F0-AED2-F7AE327F7099) (Shutdown) 
+    iPhone 17 (AEAB2924-4FF7-4AB3-94FE-0A726AB700D0) (Shutdown) 
+    iPad Pro 13-inch (M5) (2D41249B-C279-4F6E-B384-4B580F47C817) (Shutdown) 
+    iPad Pro 11-inch (M5) (1EEFBD64-22A3-4328-80F6-2197C82E151D) (Shutdown) 
+    iPad mini (A17 Pro) (00808AAB-7EC0-42CA-8963-3982E2EFD819) (Shutdown) 
+    iPad Air 13-inch (M4) (4186879D-A843-485C-94B5-023ED2036920) (Shutdown) 
+    iPad Air 11-inch (M4) (7EEE63A5-EDA0-491B-A79E-00CEA4925EDD) (Shutdown) 
+    iPad (A16) (A58A6AFE-335A-416D-BCED-8BF0720B8DCA) (Shutdown) 
+-- watchOS 11.5 --
+    Apple Watch Series 10 (46mm) (14249575-315A-4658-8404-111201689438) (Shutdown) 
+    Apple Watch Series 10 (42mm) (0B6506CD-100B-45B3-934F-88D644369E76) (Shutdown) 
+    Apple Watch Ultra 2 (49mm) (78853C83-268E-4316-9A5C-019DDAF26B4E) (Shutdown) 
+    Apple Watch SE (44mm) (2nd generation) (65D4BB3E-AF50-499E-A08E-459AECE93FAC) (Shutdown) 
+    Apple Watch SE (40mm) (2nd generation) (B02B5D9D-9748-4234-95D3-8DD4246BCE06) (Shutdown) 

@@ -1,0 +1,73 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile:
+#1 transferring dockerfile: 8.51kB done
+#1 DONE 0.5s
+
+#2 [internal] load metadata for public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
+#2 ...
+
+#3 [internal] load metadata for public.ecr.aws/docker/library/debian:trixie-slim
+#3 DONE 0.5s
+
+#4 [docs 1/3] FROM public.ecr.aws/docker/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+#4 resolve public.ecr.aws/docker/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 0.1s done
+#4 DONE 0.2s
+
+#5 [build 1/7] FROM public.ecr.aws/docker/library/rust:1.99.1-slim-trixie@sha256:59f72d5265cfcf281fcfa4d990e75f09c53f911def9913c47a4a89dca690a887
+#5 resolve public.ecr.aws/docker/library/rust:1.99.1-slim-trixie@sha256:59f72d5265cfcf281fcfa4d990e75f09c53f911def9913c47a4a89dca690a887 0.1s done
+#5 DONE 0.2s
+
+#2 [internal] load metadata for public.ecr.aws/docker/library/rust:1.99.1-slim-trixie
+#2 DONE 0.5s
+
+#6 [internal] load build context
+#6 transferring context:
+#6 transferring context: 9.45MB 0.3s done
+#6 DONE 0.5s
+
+#7 [build 2/7] RUN case "amd64" in       amd64) triple=x86_64-unknown-linux-gnu gcc=gcc-x86-64-linux-gnu ;;       arm64) triple=aarch64-unknown-linux-gnu gcc=gcc-aarch64-linux-gnu ;;       *) echo "不支持的架构 amd64，只支持 amd64 和 arm64" >&2; exit 1 ;;     esac     && echo "$triple" >/rust-target     && if [ "amd64" != "amd64" ]; then          apt-get update && apt-get install -y --no-install-recommends "$gcc" "libc6-dev-amd64-cross"          && rm -rf /var/lib/apt/lists/* && rustup target add "$triple";        fi
+#7 CACHED
+
+#8 [build 3/7] WORKDIR /src
+#8 CACHED
+
+#9 [build 4/7] COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+#9 DONE 0.7s
+
+#10 [build 5/7] COPY crates crates
+#10 DONE 0.3s
+
+#11 [build 6/7] COPY deploy/install/compose.yaml deploy/install/wonton deploy/install/
+#11 DONE 0.2s
+
+#12 [build 7/7] RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked     --mount=type=cache,target=/src/target,sharing=locked     find crates -exec touch {} +     && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-core     && cp "target/$(cat /rust-target)/release/wonton-core" /usr/local/bin/wonton-core     && if [ "amd64" = "amd64" ]; then          cp /usr/local/bin/wonton-core /usr/local/bin/wonton-core-native;        else          cargo build --release --locked -p wonton-core          && cp target/release/wonton-core /usr/local/bin/wonton-core-native;        fi
+#12 88.57    Compiling wonton-core v0.0.0 (/src/crates/wonton-core)
+#12 88.57    Compiling wonton-l10n v0.0.0 (/src/crates/wonton-l10n)
+#12 88.57    Compiling wonton-protocol v0.0.0 (/src/crates/wonton-protocol)
+#12 88.58    Compiling wonton-tunnel v0.0.0 (/src/crates/wonton-tunnel)
+#12 197.9     Finished `release` profile [optimized] target(s) in 1m 49s
+#12 DONE 199.4s
+
+#13 [echo-bot-build 1/1] RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked     --mount=type=cache,target=/src/target,sharing=locked     find crates -exec touch {} +     && cargo build --release --locked --target "$(cat /rust-target)" -p wonton-echo-bot     && cp "target/$(cat /rust-target)/release/echo-bot" /usr/local/bin/echo-bot
+#13 8.332    Compiling wonton-echo-bot v0.0.0 (/src/crates/wonton-echo-bot)
+#13 46.64     Finished `release` profile [optimized] target(s) in 39.23s
+#13 DONE 47.2s
+
+#14 [echo-bot 2/3] RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates     && rm -rf /var/lib/apt/lists/*
+#14 CACHED
+
+#15 [echo-bot 3/3] COPY --from=echo-bot-build /usr/local/bin/echo-bot /usr/local/bin/echo-bot
+#15 CACHED
+
+#16 exporting to image
+#16 exporting layers done
+#16 exporting manifest sha256:6c19412c57af91398fab1af6aaafed62fd4edea10bd2c6c3ebf0f09486560444 done
+#16 exporting config sha256:b2cdf25c250322a222316b7ce57d11721c4b8bb90b0575006e14bf7d4cd5cdc3 done
+#16 exporting attestation manifest sha256:08ea5af4197bdbf19e83ebc4e11142a5bd5802fea4fa032d72fd4fa48a583cff 0.0s done
+#16 exporting manifest list sha256:1f2013311d38897e6b9703187234cad2be7e192d60c7797cc9203b98f5c4c499 0.0s done
+#16 naming to docker.io/library/wonton-echo-bot:dev done
+#16 unpacking to docker.io/library/wonton-echo-bot:dev
+#16 unpacking to docker.io/library/wonton-echo-bot:dev 0.7s done
+#16 DONE 0.8s

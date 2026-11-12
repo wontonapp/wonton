@@ -20,7 +20,7 @@ permission-models = 使用模型閘道
 permission-tools = 呼叫家用伺服器和其他應用程式的工具
 permission-plugins-health = 讀取所有應用程式的健康狀態
 permission-matrix-bot = 以 Bot 身分收發訊息
-permission-notify = 傳送通知和信件給家人
+permission-notify = 傳送通知給你
 permission-owner-identity = 知道你的使用者名稱和電子郵件，也能查詢家人使用的語言
 permission-network-egress = 存取外部網路和區域網路
 permission-egress-proxy = 提供代理伺服器（高權限）
@@ -48,7 +48,7 @@ permission-notice-devices = 這個應用程式可以存取你交給它的主機�
 # 應用程式詳情裡的提示。
 plugin-firewall-notice = 本機防火牆可能擋住了外來連線，區域網路裝置可能連不進來
 plugin-egress-proxy-select = 在代理伺服器設定裡選它
-plugin-cross-origin-isolation = 這個應用程式需要跨來源隔離：在 Android 上，它的頁面會在瀏覽器裡開啟。
+plugin-cross-origin-isolation = 這個應用程式放寬了跨來源隔離：在 Android 上，它的頁面可能和別的網頁共用行程。
 
 # 安裝和更新預覽裡的提示與裝不了的原因。
 install-retained-data = 這台伺服器上留著 { $id } 以前的資料和金鑰，這個應用程式裝上後能讀到它們；不想這樣就先徹底刪除

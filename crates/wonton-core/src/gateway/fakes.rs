@@ -12,7 +12,7 @@ use axum::Json;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::{RawQuery, Request};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use axum::routing::get;
 use hyper::StatusCode;
 use hyper::header;
@@ -45,29 +45,12 @@ pub(super) async fn bind() -> (TcpListener, SocketAddr) {
     (listener, addr)
 }
 
-/// 假身份提供方的发现文档：和 Hydra v26.2.0 实测的一样混着两种主机名，端口留给网关改写。
-async fn discovery() -> Json<Value> {
-    Json(json!({
-        "issuer": "http://auth.wonton.internal",
-        "authorization_endpoint": "http://auth.wonton.localhost/oauth2/auth",
-        "token_endpoint": "http://auth.wonton.localhost/oauth2/token",
-        "userinfo_endpoint": "http://auth.wonton.localhost/userinfo",
-        "jwks_uri": "http://auth.wonton.internal/.well-known/jwks.json",
-        "revocation_endpoint": "http://auth.wonton.internal/oauth2/revoke",
-        "end_session_endpoint": "http://auth.wonton.localhost/oauth2/sessions/logout",
-        "scopes_supported": ["openid"],
-    }))
-}
-
 /// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
-/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回；`/unauthorized` 回应用自己的 401（网关
-/// 只放行到这里，请求已经到达插件）。
+/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
 pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
         .route("/set-cookie", get(set_cookies))
-        .route("/unauthorized", get(unauthorized))
-        .route("/.well-known/openid-configuration", get(discovery))
         .fallback(move |req: Request| {
             let hits = hits.clone();
             async move {
@@ -83,14 +66,6 @@ pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
     let (listener, addr) = bind().await;
     serve(listener, router).await;
     addr
-}
-
-async fn unauthorized() -> Response {
-    (
-        StatusCode::UNAUTHORIZED,
-        Json(json!({"error": "app_login_required"})),
-    )
-        .into_response()
 }
 
 async fn set_cookies(RawQuery(query): RawQuery) -> Response {
@@ -169,7 +144,7 @@ pub(super) async fn fake_hydra_scopes(
                 move |axum::extract::Query(challenge): axum::extract::Query<
                     HashMap<String, String>,
                 >| {
-                    // challenge 兼作客户端 ID：按客户端区分声明的测试用（oidc.admin_groups）。
+                    // challenge 兼作客户端 ID：按客户端区分声明的测试用（oidc.owner_groups）。
                     let client_id = challenge
                         .get("consent_challenge")
                         .cloned()
@@ -216,7 +191,7 @@ pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
 
 /// 测试用的隧道：空的设备登记表和家人记录，加一个只走回环地址的 endpoint。返回家人记录，
 /// 和隧道里的配对用的是同一份。局域网地址给一个测试值（ADR-0032 的直连地址选择）。
-pub(crate) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
+pub(super) async fn loopback_tunnel(dir: &Path) -> (Tunnel, Arc<Members>) {
     loopback_tunnel_with(dir, ["192.168.1.2".parse().unwrap()].into()).await
 }
 
@@ -226,22 +201,16 @@ pub(super) async fn loopback_tunnel_with(
     lan: std::collections::BTreeSet<std::net::IpAddr>,
 ) -> (Tunnel, Arc<Members>) {
     let members = Arc::new(Members::open(dir.join("members.json")).unwrap());
-    let tunnel = loopback_tunnel_with_members(dir, members.clone(), lan).await;
-    (tunnel, members)
-}
-
-pub(super) async fn loopback_tunnel_with_members(
-    dir: &Path,
-    members: Arc<Members>,
-    lan: std::collections::BTreeSet<std::net::IpAddr>,
-) -> Tunnel {
-    Tunnel::new(
-        Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+    (
+        Tunnel::new(
+            Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+            members.clone(),
+            Arc::new(|| Languages::from_header(None)),
+            loopback_endpoint(SecretKey::generate()).await,
+            0,
+            RelayTable::builtin_n0(),
+            tokio::sync::watch::channel(lan).1,
+        ),
         members,
-        Arc::new(|| Languages::from_header(None)),
-        loopback_endpoint(SecretKey::generate()).await,
-        0,
-        RelayTable::builtin_n0(),
-        tokio::sync::watch::channel(lan).1,
     )
 }

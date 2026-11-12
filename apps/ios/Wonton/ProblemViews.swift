@@ -57,13 +57,11 @@ extension PluginFailure {
             categorizedProblem(
                 .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
             )
+        case .ownerProfileIncomplete:
+            categorizedProblem(
+                .problemPluginOwnerProfileIncompleteTitle, .problemPluginOwnerProfileIncompleteNextStep, detail
+            )
         case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
-        case .recordUnusable:
-            categorizedProblem(.problemPluginRecordUnusableTitle, .problemPluginRecordUnusableNextStep, detail)
-        case .serverTooOld:
-            categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
-        // 比这个壳新的类别：先按服务器出错说。
-        default: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
         }
     }
 }
@@ -102,12 +100,6 @@ extension ChatFailure {
                 nextStep: String(localized: .problemUnauthorizedNextStep),
                 detail: detail
             )
-        case .forbidden:
-            return Problem(
-                title: String(localized: .problemForbiddenTitle),
-                nextStep: String(localized: .problemForbiddenNextStep),
-                detail: detail
-            )
         case .upstream:
             return Problem(
                 title: String(localized: .problemUpstreamTitle),
@@ -118,87 +110,12 @@ extension ChatFailure {
             return Problem(title: String(localized: .problemNotReadyTitle), nextStep: detail)
         case .invalidInput:
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: detail)
-        case .other:
-            return Problem(
-                title: String(localized: .problemGenericTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
         }
     }
 }
 
 extension ChatProblem {
     var problem: Problem { reason.problem(detail: message) }
-}
-
-extension BotProfileFailure {
-    /// 改资料没成：类别由核心给，文字写在这里（ADR-0043）。名字和文件的细节是单独的键。
-    func problem(detail: String) -> Problem {
-        switch self {
-        case .transportUnavailable:
-            return Problem(
-                title: String(localized: .problemTransportTitle),
-                nextStep: String(localized: .problemTransportNext),
-                detail: detail
-            )
-        case .notReady:
-            return Problem(
-                title: String(localized: .botProfileProblemNotReadyTitle),
-                nextStep: String(localized: .botProfileProblemNotReadyNext),
-                detail: detail
-            )
-        case let .invalidName(reason):
-            return Problem(title: reason.problem)
-        case let .mediaRejected(reason):
-            return Problem(title: reason.problem)
-        case .upstream:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNext),
-                detail: detail
-            )
-        // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .permissionRequired:
-            return Problem(
-                title: String(localized: .botProfileProblemOwnerOnlyTitle),
-                nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
-                detail: detail
-            )
-        case .other:
-            return Problem(
-                title: String(localized: .botProfileProblemOtherTitle),
-                nextStep: String(localized: .problemUpstreamNext),
-                detail: detail
-            )
-        }
-    }
-}
-
-extension BotNameProblem {
-    var problem: String {
-        switch self {
-        case .empty: String(localized: .botProfileProblemNameEmpty)
-        case .tooLong: String(localized: .botProfileProblemNameTooLong)
-        case .controlCharacters: String(localized: .botProfileProblemNameControlCharacters)
-        case .reserved: String(localized: .botProfileProblemNameReserved)
-        case .other: String(localized: .botProfileProblemNameOther)
-        }
-    }
-}
-
-extension AvatarMediaProblem {
-    var problem: String {
-        switch self {
-        case .format: String(localized: .botProfileProblemMediaFormat)
-        case .tooLarge: String(localized: .botProfileProblemMediaTooLarge)
-        case .tooBig: String(localized: .botProfileProblemMediaTooBig)
-        case .notSquare: String(localized: .botProfileProblemMediaNotSquare)
-        case .tooLong: String(localized: .botProfileProblemMediaTooLong)
-        case .unreadable: String(localized: .botProfileProblemMediaUnreadable)
-        case .other: String(localized: .botProfileProblemMediaOther)
-        }
-    }
 }
 
 extension StoreProblem {
@@ -284,22 +201,6 @@ extension Error {
             )
         case let .InvalidInput(reason):
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
-        case let .SettingsInvalid(reason, _):
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
-        case .ServerTooOld:
-            return Problem(
-                title: String(localized: .problemPluginServerTooOldTitle),
-                nextStep: String(localized: .problemUpgradeServerNextStep),
-                detail: detail
-            )
-        // 比这个壳新的类别：先按服务器出错说。
-        default:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
         }
     }
 }
@@ -367,24 +268,10 @@ struct ProblemView: View {
 struct ProblemNotice: View {
     let problem: Problem
     var icon: WontonIcon = .warning
-    /// 这件事只关这一处显示时给关闭按钮；核心里的状态由调用方清。
-    var onClose: (() -> Void)?
-    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         WontonNotice(icon: icon, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
             if let detail = problem.detail { ProblemDetail(text: detail) }
-            if let onClose {
-                HStack {
-                    Spacer(minLength: 0)
-                    Button(action: onClose) {
-                        WontonIcon.close.view(size: WontonTheme.size.iconSmall)
-                            .foregroundStyle(Color(colors.textSecondary))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: .commonClose))
-                }
-            }
         }
     }
 }

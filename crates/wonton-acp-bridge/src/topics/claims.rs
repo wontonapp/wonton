@@ -25,7 +25,7 @@ pub(crate) struct Claim {
 pub(crate) enum ToolEdit {
     /// edit/delete/move 带的文件路径。
     Files(Vec<String>),
-    /// execute 命令的标题；Agent 没带时为空串，由调用方补一句。
+    /// execute 命令的标题。
     Executed(String),
     /// 其他类别，或没有 kind 的部分更新（ACP 的 tool_call_update 只带变化字段）。
     Ignored,
@@ -41,14 +41,14 @@ pub(crate) fn parse_tool_call(update: &Value) -> ToolEdit {
     match update["kind"].as_str() {
         Some("edit" | "delete" | "move") => ToolEdit::Files(locations(update)),
         Some("execute") => {
-            ToolEdit::Executed(update["title"].as_str().unwrap_or_default().to_owned())
+            ToolEdit::Executed(update["title"].as_str().unwrap_or("命令").to_owned())
         }
         _ => ToolEdit::Ignored,
     }
 }
 
 fn locations(update: &Value) -> Vec<String> {
-    let listed: Vec<String> = update["locations"]
+    update["locations"]
         .as_array()
         .map(|items| {
             items
@@ -57,17 +57,7 @@ fn locations(update: &Value) -> Vec<String> {
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default();
-    if !listed.is_empty() {
-        return listed;
-    }
-    // 有的适配层不带 locations，只在参数里给文件路径（如 Claude 的 file_path）。
-    ["file_path", "path", "notebook_path"]
-        .iter()
-        .filter_map(|field| update["rawInput"][field].as_str())
-        .filter(|path| !path.is_empty())
-        .map(str::to_owned)
-        .collect()
+        .unwrap_or_default()
 }
 
 fn active(claim: &Claim, now: u64) -> bool {

@@ -1,0 +1,49 @@
+04:09:44 等名额：负载 89（上限 40）；优先排队的 bp-shells ；名额登记：wonton-openclawb62e（没经 acquire，自动登记） tko family-bots-smoke ；别的机器有空名额：194 有 4 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:14:45 等名额：负载 45（上限 40）；名额登记：wonton-openclawb62e（没经 acquire，自动登记） tko family-bots-smoke bp-shells ；别的机器有空名额：194 有 4 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:19:46 等名额：有优先的在等；名额登记：wonton-openclawb62e（没经 acquire，自动登记） tko family-bots-smoke bp-shells ；别的机器有空名额：194 有 4 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:24:47 等名额：有优先的在等；名额登记：wonton-openclawb62e（没经 acquire，自动登记） tko family-bots-smoke bp-shells ；别的机器有空名额：194 有 3 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:29:48 等名额：有优先的在等；名额登记：wonton-openclawb62e（没经 acquire，自动登记） push-install desk-shell bp-shells ；别的机器有空名额：194 有 2 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:34:49 等名额：在跑的栈 4 个（上限 4）：wonton-bpshells wonton-deskshell wonton-openclawb62e wonton-pushfix-dind ；名额登记：wonton-openclawb62e（没经 acquire，自动登记） push-install desk-shell bp-shells 
+04:39:50 等名额：docling-pull 独占着磁盘 IO（最晚到 05:06）；名额登记：plat-727 push-install desk-shell bp-shells ；别的机器有空名额：194 有 3 个、61 有 1 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+04:44:51 等名额：docling-pull 独占着磁盘 IO（最晚到 05:06）；名额登记：plat-727 push-install desk-shell bp-shells ；别的机器有空名额：194 有 3 个、61 有 1 个、（dev 栈可直接去那边起：~/wonton-dev/remote-dev.sh linksv up；用完在那台 remote-dev.sh linksv down）
+拿到 npchy 的名额 4，核心网络用 WONTON_DEV_CORE_SUBNET=10.214.4.0/24
+提醒：smoke.sh 自己起栈，跑之前先拆掉你的 dev.sh 栈；拆完才算让出名额，不要拆之前 release。
+ Volume wonton-tt-linksv_hydra Creating 
+ Volume wonton-tt-linksv_hydra Creating 
+ Volume wonton-tt-linksv_tuwunel Creating 
+ Volume wonton-tt-linksv_tuwunel Creating 
+ Network wonton-tt-linksv_core Creating 
+ Network wonton-tt-linksv_core Creating 
+ Volume wonton-tt-linksv_hydra Created 
+ Volume wonton-tt-linksv_hydra Created 
+ Volume wonton-tt-linksv_tuwunel Created 
+ Volume wonton-tt-linksv_tuwunel Created 
+ Network wonton-tt-linksv_core Created 
+ Network wonton-tt-linksv_core Created 
+ Container wonton-tt-linksv-hydra-migrate-1 Creating 
+ Container wonton-tt-linksv-tuwunel-1 Creating 
+ Container wonton-tt-linksv-hydra-migrate-1 Created 
+ Container wonton-tt-linksv-hydra-1 Creating 
+ Container wonton-tt-linksv-tuwunel-1 Created 
+ Container wonton-tt-linksv-hydra-1 Created 
+ Container wonton-tt-linksv Creating 
+ Container wonton-tt-linksv Created 
+ Container wonton-tt-linksv-tusd-1 Creating 
+ Container wonton-tt-linksv-tusd-1 Created 
+ Container wonton-tt-linksv-tuwunel-1 Starting 
+ Container wonton-tt-linksv-hydra-migrate-1 Starting 
+ Container wonton-tt-linksv-tuwunel-1 Started 
+ Container wonton-tt-linksv-hydra-migrate-1 Started 
+ Container wonton-tt-linksv-hydra-migrate-1 Waiting 
+ Container wonton-tt-linksv-hydra-migrate-1 Exited 
+ Container wonton-tt-linksv-hydra-1 Starting 
+ Container wonton-tt-linksv-hydra-1 Started 
+ Container wonton-tt-linksv-hydra-1 Waiting 
+ Container wonton-tt-linksv-tuwunel-1 Waiting 
+ Container wonton-tt-linksv-tuwunel-1 Healthy 
+ Container wonton-tt-linksv-hydra-1 Healthy 
+ Container wonton-tt-linksv Starting 
+ Container wonton-tt-linksv Started 
+ Container wonton-tt-linksv Waiting 
+ Container wonton-tt-linksv Error dependency core failed to start
+dependency failed to start: container wonton-tt-linksv is unhealthy

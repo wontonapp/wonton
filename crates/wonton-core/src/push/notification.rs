@@ -47,9 +47,6 @@ pub struct DevicePayload {
     pub room_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prio: Option<String>,
-    /// 新的联系人请求（ADR-0045）：不对应房间里的消息，`room_id`、`event_id` 为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub contact_request: Option<wonton_protocol::ContactRequestPush>,
 }
 
 impl Notification {
@@ -63,7 +60,6 @@ impl Notification {
             sender_display_name: self.sender_display_name.clone(),
             room_name: self.room_name.clone(),
             prio: self.prio.clone(),
-            contact_request: None,
         })
     }
 
@@ -94,7 +90,6 @@ mod tests {
             sender_display_name: Some("Hermes".into()),
             room_name: None,
             prio: Some("high".into()),
-            contact_request: None,
         };
         assert_eq!(
             serde_json::to_value(&payload).unwrap(),

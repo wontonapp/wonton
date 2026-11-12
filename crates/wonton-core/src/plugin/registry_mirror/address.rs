@@ -40,6 +40,17 @@ pub(crate) fn validate(address: &str, langs: &Languages) -> Result<(), String> {
     Ok(())
 }
 
+pub(in crate::plugin) fn choices(
+    value: serde_json::Value,
+    langs: &Languages,
+) -> Result<Vec<String>, String> {
+    let choices: Vec<String> = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    for address in &choices {
+        validate(address, langs)?;
+    }
+    Ok(choices)
+}
+
 #[cfg(test)]
 fn langs() -> crate::plugin::languages::Languages {
     crate::plugin::languages::Languages::default()

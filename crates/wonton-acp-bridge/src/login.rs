@@ -4,12 +4,10 @@ use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,
 };
-use wonton_l10n::{Arg, Lang};
 
 use crate::{
     acp::{AcpClient, auth::AuthMethod},
-    error::{Detail, Error, Result, format_error},
-    l10n::text as t,
+    error::{Error, Result},
 };
 
 mod terminal;
@@ -32,9 +30,7 @@ pub struct LoginChat<'a, S: LoginSink> {
 }
 
 /// 撤回已转交 Agent 的密钥消息时写的理由，房间里的人都能看到。
-fn redact_reason(lang: Lang) -> String {
-    t(lang, "login-redact-reason", &[])
-}
+const REDACT_REASON: &str = "已转交 Agent 登录";
 
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -91,8 +87,6 @@ impl LoginFlow {
     }
 
     /// 私聊里的收发：登录命令和回复都在同一个房间。
-    // 各行其事的一组入参（消息、聊天目标、ACP、socket、忙状态、语言），再包一层也是逐个填。
-    #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub async fn receive(
         &mut self,
@@ -102,7 +96,6 @@ impl LoginFlow {
         acp: &Arc<AcpClient>,
         socket: &Path,
         busy: bool,
-        lang: Lang,
     ) -> Result<bool> {
         self.receive_from(
             text,
@@ -115,13 +108,10 @@ impl LoginFlow {
             acp,
             socket,
             busy,
-            lang,
         )
         .await
     }
 
-    // 各行其事的一组入参（消息、聊天目标、ACP、socket、忙状态、语言），再包一层也是逐个填。
-    #[allow(clippy::too_many_arguments)]
     pub async fn receive_from(
         &mut self,
         text: &str,
@@ -130,14 +120,12 @@ impl LoginFlow {
         acp: &Arc<AcpClient>,
         socket: &Path,
         busy: bool,
-        lang: Lang,
     ) -> Result<bool> {
         let command = text
             .strip_prefix("/wonton login")
             .filter(|rest| rest.is_empty() || rest.starts_with(' '));
         if let Some(rest) = command {
-            self.handle_command(rest, chat, acp, socket, busy, lang)
-                .await?;
+            self.handle_command(rest, chat, acp, socket, busy).await?;
             return Ok(true);
         }
         // 群里的普通消息照常走 ACP；登录里的码和 key 在私聊里回。
@@ -146,7 +134,9 @@ impl LoginFlow {
         }
         if self.answer.is_some() {
             chat.current
-                .send_login_text(&t(lang, "login-answer-first", &[]))
+                .send_login_text(
+                    "请先回复 /wonton login accept 或 /wonton login decline 处理登录链接。",
+                )
                 .await?;
             return Ok(true);
         }
@@ -156,18 +146,20 @@ impl LoginFlow {
         if active.terminal {
             if text.len() > 16 * 1024 || text.contains(['\n', '\r', '\0']) {
                 chat.current
-                    .send_login_text(&t(lang, "login-code-limits", &[]))
+                    .send_login_text("授权码必须是单行文字，且不能超过 16 KiB。")
                     .await?;
             } else if active.input.send(text.to_owned()).await.is_ok() {
-                Self::redact_forwarded_message(event_id, chat.current, lang).await?;
+                Self::redact_forwarded_message(event_id, chat.current).await?;
             } else {
                 chat.current
-                    .send_login_text(&t(lang, "login-not-sent", &[]))
+                    .send_login_text("登录已结束，这条消息没有发送给 Agent。")
                     .await?;
             }
         } else {
             chat.current
-                .send_login_text(&t(lang, "login-no-forward", &[]))
+                .send_login_text(
+                    "登录期间不转发普通聊天；请在官方页面完成登录，或发送 /wonton login cancel。",
+                )
                 .await?;
         }
         Ok(true)
@@ -180,20 +172,19 @@ impl LoginFlow {
         acp: &Arc<AcpClient>,
         socket: &Path,
         busy: bool,
-        lang: Lang,
     ) -> Result<()> {
         let rest = rest.trim();
         // 群里发起时链接和码都不能留在群里：登录改到和主人的私聊里做。
         let sink = match (chat.group, chat.direct) {
             (true, None) => {
                 chat.current
-                    .send_login_text(&t(lang, "login-no-direct", &[]))
+                    .send_login_text("找不到和你的私聊，请在私聊里发 /wonton login。")
                     .await?;
                 return Ok(());
             }
             (true, Some(direct)) => {
                 chat.current
-                    .send_login_text(&t(lang, "login-in-direct", &[]))
+                    .send_login_text("登录在我们的私聊里进行。")
                     .await?;
                 direct
             }
@@ -202,8 +193,7 @@ impl LoginFlow {
         if rest == "cancel" {
             self.answer.take().map(|answer| answer.send("cancel"));
             self.active.take();
-            sink.send_login_text(&t(lang, "login-cancelled", &[]))
-                .await?;
+            sink.send_login_text("登录已取消。").await?;
             return Ok(());
         }
         if matches!(rest, "accept" | "decline") {
@@ -214,16 +204,15 @@ impl LoginFlow {
                     "decline"
                 });
             } else {
-                sink.send_login_text(&t(lang, "login-no-pending", &[]))
-                    .await?;
+                sink.send_login_text("没有等待回答的登录链接。").await?;
             }
             return Ok(());
         }
         if self.active() || busy {
-            sink.send_login_text(&t(lang, "login-finish-current", &[]))
+            sink.send_login_text("请先结束当前操作，再发起登录。")
                 .await?;
         } else if rest.is_empty() {
-            sink.send_login_text(&methods_text(acp.auth_methods(), lang))
+            sink.send_login_text(&methods_text(acp.auth_methods()))
                 .await?;
         } else if let Some(method) = acp
             .auth_methods()
@@ -232,30 +221,25 @@ impl LoginFlow {
         {
             match self.start(method.clone(), acp.clone(), socket).await {
                 Ok(()) => {
-                    sink.send_login_text(&t(lang, "login-starting", &[]))
+                    sink.send_login_text("正在发起 Agent 登录。取消请发送 /wonton login cancel。")
                         .await?
                 }
-                Err(error) => sink.send_login_text(&format_error(&error, lang)).await?,
+                Err(error) => sink.send_login_text(&error.to_string()).await?,
             }
         } else if acp.auth_methods().iter().any(|method| method.id == rest) {
-            sink.send_login_text(&t(lang, "login-unsupported-method", &[]))
-                .await?;
+            sink.send_login_text("桥还不支持这种登录方式。").await?;
         } else {
-            sink.send_login_text(&t(lang, "login-unknown-method", &[]))
+            sink.send_login_text("Agent 没有提供这种登录方式；发送 /wonton login 查看。")
                 .await?;
         }
         Ok(())
     }
 
     /// 密钥已转交 Agent，原文不能留在聊天记录里：撤回；撤不动就明说，让用户自己删。
-    async fn redact_forwarded_message(
-        event_id: &str,
-        sink: &impl LoginSink,
-        lang: Lang,
-    ) -> Result<()> {
-        if let Err(error) = sink.redact(event_id, &redact_reason(lang)).await {
+    async fn redact_forwarded_message(event_id: &str, sink: &impl LoginSink) -> Result<()> {
+        if let Err(error) = sink.redact(event_id, REDACT_REASON).await {
             tracing::warn!(event_id, error = %error, "撤回登录密钥消息失败");
-            sink.send_login_text(&t(lang, "login-secret-delete", &[]))
+            sink.send_login_text("这条消息里有登录用的密钥，请自己删掉它。")
                 .await?;
         }
         Ok(())
@@ -268,9 +252,7 @@ impl LoginFlow {
         socket: &Path,
     ) -> Result<()> {
         if !method.is_terminal() && !matches!(method.kind.as_deref(), None | Some("agent")) {
-            return Err(Error::InvalidInput(Detail::msg(
-                "login-auth-kind-unsupported",
-            )));
+            return Err(Error::InvalidInput("不支持 Agent 提供的登录类型".into()));
         }
         let terminal = method.is_terminal();
         let (input, input_rx) = mpsc::channel(1);
@@ -286,7 +268,7 @@ impl LoginFlow {
             };
             let result = tokio::time::timeout(LOGIN_TIMEOUT, operation)
                 .await
-                .unwrap_or_else(|_| Err(Error::Upstream(Detail::msg("login-timeout"))));
+                .unwrap_or_else(|_| Err(Error::Upstream("登录超时，请重新发起".into())));
             let _ = events
                 .send(LoginEvent::Finished {
                     reconnect: terminal && result.is_ok(),
@@ -302,12 +284,7 @@ impl LoginFlow {
         Ok(())
     }
 
-    pub async fn event(
-        &mut self,
-        event: LoginEvent,
-        sink: &impl LoginSink,
-        lang: Lang,
-    ) -> Result<bool> {
+    pub async fn event(&mut self, event: LoginEvent, sink: &impl LoginSink) -> Result<bool> {
         // 取消后已排队的旧事件不能污染下一次登录。
         if self.active.is_none() {
             return Ok(false);
@@ -318,15 +295,7 @@ impl LoginFlow {
                 message,
                 answer,
             } => {
-                sink.send_login_text(&t(
-                    lang,
-                    "login-link",
-                    &[
-                        ("message", Arg::from(message.as_str())),
-                        ("url", Arg::from(url.as_str())),
-                    ],
-                ))
-                .await?;
+                sink.send_login_text(&format!("Agent 登录：\n{message}\n{url}\n打开此链接登录请回复 /wonton login accept；拒绝请回复 /wonton login decline。" )).await?;
                 self.answer = Some(answer);
             }
             LoginEvent::Output(text) => {
@@ -337,11 +306,11 @@ impl LoginFlow {
                 self.active.take();
                 match result {
                     Ok(()) if !reconnect => {
-                        sink.send_login_text(&t(lang, "login-done", &[])).await?;
+                        sink.send_login_text("Agent 登录完成。").await?;
                     }
                     Ok(()) => {}
                     Err(error) => {
-                        sink.send_login_text(&format_error(&error, lang)).await?;
+                        sink.send_login_text(&error.to_string()).await?;
                     }
                 }
                 return Ok(reconnect);
@@ -351,22 +320,14 @@ impl LoginFlow {
     }
 }
 
-fn methods_text(methods: &[AuthMethod], lang: Lang) -> String {
+fn methods_text(methods: &[AuthMethod]) -> String {
     let methods: Vec<&AuthMethod> = methods.iter().filter(|method| method.supported()).collect();
     if methods.is_empty() {
-        return t(lang, "login-no-methods", &[]);
+        return "Agent 没有提供登录方式。".into();
     }
-    let mut text = t(lang, "login-methods-header", &[]);
+    let mut text = String::from("选择 Agent 登录方式：");
     for method in methods {
-        text.push('\n');
-        text.push_str(&t(
-            lang,
-            "login-method-line",
-            &[
-                ("name", Arg::from(method.name.as_str())),
-                ("id", Arg::from(method.id.as_str())),
-            ],
-        ));
+        text.push_str(&format!("\n{}：/wonton login {}", method.name, method.id));
     }
     text
 }
@@ -383,8 +344,7 @@ async fn authenticate(
             result = &mut operation => return result,
             Some(request) = acp.next_login_url() => {
                 events.send(LoginEvent::Url { url: request.url, message: request.message, answer: request.answer })
-                    .await
-                .map_err(|_| Error::TransportUnavailable(Detail::msg("login-chat-closed")))?;
+                    .await.map_err(|_| Error::TransportUnavailable("登录聊天已关闭".into()))?;
             }
         }
     }

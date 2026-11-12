@@ -107,7 +107,6 @@ gateway-body-invalid = リクエストボディが不正です：{ $error }
 gateway-bot-not-found = そのボットはありません：{ $caller }
 gateway-bot-not-in-plugin = アプリ{ $id }にそのボットはありません：{ $caller }
 gateway-tool-not-found = アプリ{ $id }にツール{ $tool }はありません
-gateway-tool-deletes = ツール{ $tool }はデータを削除または上書きするため、毎回確認が必要で、読み取り専用にはできません
 gateway-plugin-not-running = このアプリは起動していないか、ツールを宣言していません
 
 # Appが確認カードに答えるとき。
@@ -120,27 +119,3 @@ gateway-pair-code-used = このペアリングコードは既に使用済みで�
 gateway-pair-code-expired = ペアリングコードの有効期限が切れています。新しいコードを発行してください
 gateway-pair-first-used = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは再利用できません。サーバー上でsudo wonton pairを実行して新しいコードを発行してください
 gateway-pair-register-failed = サーバーがデバイスを登録できませんでした：{ $error }
-
-# オーナーがAppでプラグインのキーを確認する。
-gateway-owner-secrets-plugin-not-installed = アプリ{ $id }はインストールされていません
-gateway-owner-secrets-record-unreadable = アプリ{ $id }の記録を読み取れないため、キーを一覧できません
-gateway-owner-secrets-not-viewable = アプリ{ $id }は、閲覧できるキーとして{ $name }を宣言していません
-gateway-owner-secrets-not-generated = キー{ $name }にはまだ値がありません。アプリを一度起動する（またはアップグレードする）と再生成されます
-gateway-owner-secrets-store-failed = アプリのキーを読み取れませんでした：{ $error }
-gateway-owner-secrets-not-text = キー{ $name }に保存されている値はテキストではありません
-gateway-owner-secrets-audit-unavailable = 自宅サーバーに監査ログが接続されていないため、キーの値を表示できません
-gateway-plugin-scope-unsupported = このコアではプラグインを使える Bot を変更できません。先にコアを更新してください。
-gateway-bot-plugin-access-unsupported = このコアでは Bot ごとにプラグインの利用を切り替えられません。先にコアを更新してください。
-
-# MCP Apps 宿主页（#35）。
-mcp-app-loading = 読み込み中…
-mcp-app-failed = インターフェースを読み込めません：{ $error }
-mcp-app-page-failed = インターフェースを読み込めませんでした。
-mcp-app-retry = 再試行
-
-# 共有リンク経由で友人がページを開く（ADR-0051）。
-gateway-share-identity = このサーバーはあなたの身元を確認できません
-gateway-share-required = 所有者はこのアプリをあなたに共有していません
-gateway-share-revoked = 所有者がこのアプリの共有を止めました
-gateway-share-expired = 共有の期限が切れました
-gateway-confirmation-gone = その確認はありません。終了して1日以上経過しています

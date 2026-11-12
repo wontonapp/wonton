@@ -7,6 +7,11 @@
 ## with_note は元のメッセージと補足を1文につなげる。
 plugin-settings-note-appended = { $message }（{ $note }）
 
+# ── メール未設定（owner.rs、インストールとWebポートで使用）────────────────────
+
+plugin-settings-email-missing = メールアドレスが未入力です。Wontonの設定で入力してからもう一度お試しください
+plugin-settings-email-needed = このアプリにはあなたのメールアドレスが必要です。入力してからインストールしてください
+
 # ── Webページのローカルネットワークポートのリスク説明（lan/webui.rs、詳細で表示）──
 
 plugin-settings-lan-webui-risk-impersonate = ローカルネットワーク上のデバイスや、このホスト上でインターネットに出られるアプリが、パスワードなしであなたとしてこのページを開けます
@@ -141,8 +146,7 @@ plugin-settings-egress-token-not-used = 旧バージョンではトークンを�
 
 plugin-settings-mirror-address-invalid = ダウンロードミラーのアドレス{ $address }が不正です。ホスト名と任意のポートのみを書き、方式・パス・認証情報は付けません
 plugin-settings-mirror-policy-never = イメージ{ $image }はpull_policy: neverですが、ローカルにありません
-plugin-settings-mirror-all-failed = イメージ{ $image }はどのミラーからも取得できませんでした。{ $tries }。設定でテストして、別のミラーを選んでください
-plugin-settings-mirror-try-failed = { $mirror }：{ $error }
+plugin-settings-mirror-pull-failed = ミラー{ $mirror }：{ $error }。設定でテストして、別のミラーを選んでください
 plugin-settings-mirror-digest-mismatch = ローカルイメージのRepoDigestsに必要なダイジェスト{ $digest }がありません。使用を拒否します
 plugin-settings-mirror-probe-timeout = テスト全体がタイムアウトしました（{ $ms }ミリ秒）：{ $error }
 plugin-settings-mirror-no-challenge = 有効なBearer WWW-Authenticateチャレンジがありません
@@ -234,7 +238,6 @@ plugin-settings-github-file-what = コミット{ $commit }の{ $repo }から{ $p
 plugin-settings-github-missing = { $what }が見つかりません
 plugin-settings-github-url-what = { $url }を取得する
 plugin-settings-github-api-what = API経由で{ $reference }の{ $repo }から{ $path }を取得する
-plugin-settings-github-tree-what = { $repo } の { $commit } にある { $dir } のファイル一覧を取得中
 plugin-settings-github-rate-limited = { $what }：GitHubにレート制限されました。数分後に再試行してください
 plugin-settings-github-rate-limited-plain = GitHubにレート制限されました。数分後に再試行してください
 plugin-settings-github-api-status = { $what }：GitHubが{ $status }を返しました
@@ -252,14 +255,10 @@ plugin-settings-github-no-release = { $repo }には正式リリースがあり�
 plugin-settings-github-no-release-tag = v<セマンティックバージョン>の正式リリースtagがありません
 plugin-settings-github-tag-version-mismatch = tag { $tag }がマニフェストのバージョン{ $version }と一致しません。公開時のtagはv<マニフェストのバージョン>にしてください
 plugin-settings-github-tag-version-short = tag { $tag }がマニフェストのバージョン{ $version }と一致しません
-plugin-settings-github-source-invalid = 提供元`{ $text }`が正しくありません：{ $why }。github:<owner>/<repo>[/<サブディレクトリ>]の形式で、@<tag>や@<40桁のコミット>を付けられます
+plugin-settings-github-source-invalid = 提供元`{ $text }`が正しくありません：{ $why }。github:<owner>/<repo>の形式で、@<tag>や@<40桁のコミット>を付けられます
 plugin-settings-github-source-scheme = github:で始まる提供元のみ対応しています
 plugin-settings-github-source-no-name = リポジトリ名がありません
 plugin-settings-github-source-name-chars = ownerとリポジトリ名には英数字、`-`、`_`、`.`のみ使えます
-plugin-settings-github-source-subdir-empty = サブディレクトリに空のパス要素があります。先頭や末尾の`/`も空の要素として扱います
-plugin-settings-github-source-subdir-long = サブディレクトリが200文字を超えています
-plugin-settings-github-source-subdir-dot = サブディレクトリに`.`または`..`の要素があります
-plugin-settings-github-source-subdir-chars = サブディレクトリには英数字、`-`、`_`、`.`、`/`のみ使えます
 plugin-settings-github-source-bad-tag = @の後のtagが不正です
 plugin-settings-github-sibling-url = { $url }の隣の{ $path }は有効なアドレスではありません：{ $error }
 
@@ -270,7 +269,7 @@ plugin-settings-source-address-tls = httpsのみ対応：未審査の提供元�
 plugin-settings-source-address-https-only = httpsアドレスとGitHubリポジトリのみ対応しています
 plugin-settings-source-address-formats = リポジトリのアドレス、owner/repo、またはインデックスのhttpsアドレスで書いてください
 plugin-settings-source-not-a-repo = `{ $text }`はアプリのリポジトリではありません。インデックスはストアで追加し、そこからインストールしてください
-plugin-settings-source-page-invalid = GitHubアドレス`{ $path }`が正しくありません。https://github.com/<owner>/<repo>の形式で、/tree/<tag>[/<サブディレクトリ>]や/commit/<コミット>を付けられます
+plugin-settings-source-page-invalid = GitHubアドレス`{ $path }`が正しくありません。https://github.com/<owner>/<repo>の形式で、/tree/<tag>や/commit/<コミット>を付けられます
 plugin-settings-index-address-invalid = インデックスのアドレス`{ $text }`が正しくありません：{ $why }
 plugin-settings-index-address-https = httpsのみ対応しています
 plugin-settings-item-source-invalid = 提供元`{ $source }`が正しくありません
@@ -285,10 +284,6 @@ plugin-settings-models-reconcile-failed = モデルゲートウェイの資格�
 plugin-settings-models-credential-rejected = モデルゲートウェイ{ $provider }がサーバーが発行した資格情報{ $name }を受け付けません。発行後にモデル一覧を要求しても401が返ります
 plugin-settings-models-unreachable = モデルゲートウェイ{ $provider }に接続できません：{ $error }
 plugin-settings-models-list-error = モデルゲートウェイ{ $provider }がモデル一覧の応答でエラーを返しました：HTTP { $status }
-plugin-settings-models-provider-error = デフォルトモデルのプロバイダーでエラーが発生しました：{ $error }
-plugin-settings-models-provider-invalid-reply = プロバイダーが有効なチャット完了を返しませんでした
-plugin-settings-models-list-malformed = モデルゲートウェイ{ $provider }のモデル一覧の形式が不正です
-plugin-settings-models-connect-first = Bot が返信できるように、「モデル設定」でモデルを接続してください。
 plugin-settings-models-not-ready = モデルゲートウェイ{ $provider }の準備ができていません：{ $error }
 plugin-settings-models-command-rejected = モデルゲートウェイ{ $provider }が資格情報のコマンドを拒否しました（{ $command }、終了コード{ $code }）：{ $stderr }
 plugin-settings-model-action-save = 保存
@@ -342,9 +337,9 @@ plugin-settings-secret-too-big = 64 KiBを超えています
 
 plugin-settings-bot-avatar-missing = bot.avatarが指す{ $path }がアプリのパッケージにありません
 plugin-settings-bot-avatar-type = bot.avatarはpng・jpg・gif・webpのみ使えます：{ $path }
-plugin-settings-bot-device-name = Wontonアプリ{ $id }（ボット{ $bot }）
+plugin-settings-bot-device-name = Wontonアプリ{ $id }
 plugin-settings-bot-account-deactivated = ボットのアカウント{ $user }は停止済みです。データを削除してこのアプリをアンインストールし、再インストールすると新しいアカウントが割り当てられます
-plugin-settings-bot-device-record-missing = ボット{ $bot }のデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
+plugin-settings-bot-device-record-missing = このアプリのボットのデバイスの記録がありません。アプリを再インストールしてください（データは削除しなくてかまいません）
 plugin-settings-bot-device-revoked = ボット{ $user }のデバイスが取り消されたため、アプリが持っているMatrixトークンは無効になりました。アプリを再インストールすると（データは削除しなくてかまいません）再発行されます
 
 # ── LAN検出・送信コンテナ・ストアインデックスの補足（lan/detect.rs、docker_limits.rs、egress、storefront）──
@@ -367,54 +362,3 @@ plugin-settings-store-index-docs-problem = 公式インデックスのdocsを読
 plugin-settings-store-index-onboarding-problem = 公式インデックスのonboardingを読み取れません：{ $error }
 plugin-settings-store-index-mirrors-problem = 公式インデックスのregistry_mirrorsを読み取れません：{ $error }
 plugin-settings-store-index-read-failed = 公式インデックス{ $path }を読み取れません：{ $error }
-
-plugin-secret-unknown = リクエストに知らない鍵があります: { $names }
-plugin-secret-required-missing = 必須の鍵がまだ入力されていません: { $names }
-plugin-secret-required-clear = 必須の鍵 { $name } は空にできません
-plugin-secret-not-input = { $name } はオーナーが入力する鍵ではありません
-chat-card-secrets-not-used = この確認では鍵を受け取りません
-
-# ── プラグイン設定の値と Schema（ADR-0077）─────────────────────────────────
-
-plugin-settings-schema-invalid-json = 設定ファイルが正しい JSON ではありません
-plugin-settings-schema-object = 設定 Schema はオブジェクト Schema でなければなりません
-plugin-settings-schema-properties = 設定 Schema に properties オブジェクトがありません
-plugin-settings-schema-too-many = 設定 Schema の項目が 64 個を超えています
-plugin-settings-schema-draft = $schema は https://json-schema.org/draft/2020-12/schema でなければなりません
-plugin-settings-schema-additional = additionalProperties は false でなければなりません
-plugin-settings-schema-unsupported = ネイティブコントロールは { $key } に対応していません
-plugin-settings-schema-required-duplicate = required の { $key } が重複しています
-plugin-settings-schema-required-unknown = required の { $key } はプロパティではありません
-plugin-settings-schema-required = required はプロパティ名の一覧でなければなりません
-plugin-settings-schema-order = x-wonton-order のプロパティはそれぞれ1回までです
-plugin-settings-schema-field = 各プロパティは Schema オブジェクトでなければなりません
-plugin-settings-schema-name = プロパティ名は小文字で始め、小文字・数字・_ のみ、64 文字までです
-plugin-settings-schema-secret-name = この名前はシークレット名でもあります。どちらかを変えてください
-plugin-settings-schema-sensitive = 機密項目です。入力シークレットへ移してください
-plugin-settings-schema-title = x-wonton-title がありません
-plugin-settings-schema-description = x-wonton-description は言語タグのオブジェクトでなければなりません
-plugin-settings-schema-type = type は対応する単一の名前でなければなりません
-plugin-settings-schema-enum = enum には重複しない文字列が 1 つ以上必要です
-plugin-settings-schema-pattern = pattern が正しい正規表現ではありません
-plugin-settings-schema-bound = minimum と maximum は数値でなければなりません
-plugin-settings-schema-length = minLength と maxLength は非負の整数でなければなりません
-plugin-settings-schema-items = 配列の items は文字列 enum でなければなりません
-plugin-settings-schema-unique = 配列項目には uniqueItems: true が必要です
-plugin-settings-schema-enum-duplicate = enum に重複した値があります
-plugin-settings-schema-enum-titles = x-wonton-enum-titles は各列挙値に 1 つずつタイトルが必要です
-plugin-settings-schema-problems = 設定 Schema に { $count } 件の問題があります
-plugin-settings-value-unknown-field = このアプリにはこの項目がありません
-plugin-settings-value-missing = 必須です。入力してください
-plugin-settings-value-wrong-type = { $type } でなければなりません
-plugin-settings-value-below-minimum = { $min } 以上にしてください
-plugin-settings-value-above-maximum = { $max } 以下にしてください
-plugin-settings-value-too-short = { $min } 文字以上にしてください
-plugin-settings-value-too-long = { $max } 文字以内にしてください
-plugin-settings-value-pattern = 決められた形式と一致しません
-plugin-settings-value-duplicate = 重複した値があります
-plugin-settings-value-not-in-options = 選択肢から選んでください
-plugin-settings-value-string-too-big = { $max } バイトを超えています
-plugin-settings-value-array-too-big = { $max } 件を超えています
-plugin-settings-value-too-big = 設定の合計が { $max } バイトを超えています
-plugin-settings-value-unknown-type = この App の版では送れない値です。App を更新してください
-plugin-settings-value-problems = { $count } 件の設定が検証を通りません

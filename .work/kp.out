@@ -1,0 +1,9 @@
+07:02:22 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+07:03:22 等 mini 的重活锁：ios ci-42423241575-build（0 分钟） 占着 —— 等外部：mini
+07:04:22 等 mini 的重活锁：ios ci-42423241575-build（1 分钟） 占着 —— 等外部：mini
+07:05:22 等 mini 的重活锁：ios ci-42423241575-build（2 分钟） 占着 —— 等外部：mini
+07:06:23 等 mini 的重活锁：ios ci-42423319077-build（0 分钟） 占着 —— 等外部：mini
+07:07:23 等 mini 的重活锁：ios ci-42423319077-build（1 分钟） 占着 —— 等外部：mini
+07:08:23 等 mini 的重活锁：ios ci-42423319077-build（2 分钟） 占着 —— 等外部：mini
+mini-slot：拿到锁（ios npchy-linksv），根盘剩 48 GB
+app.wonton.ios: 87068

@@ -1,0 +1,564 @@
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.8.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+Calculating task graph as no cached configuration is available for tasks: :androidApp:assembleDebug
+
+> Configure project :shared
+w: ⚠️ Unused Kotlin Source Sets
+The Kotlin source set commonTest was configured but not added to any Kotlin compilation.
+Solution: You can add a source set to a target's compilation by connecting it with the compilation's default source set using 'dependsOn'.
+See https://kotl.in/connecting-source-sets
+
+
+> Task :shared:androidPreBuild UP-TO-DATE
+> Task :shared:generateAndroidMainAssets UP-TO-DATE
+> Task :androidApp:preBuild UP-TO-DATE
+> Task :androidApp:generateDebugAssets UP-TO-DATE
+> Task :shared:preAndroidMainBuild UP-TO-DATE
+> Task :androidApp:preDebugBuild UP-TO-DATE
+> Task :androidApp:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :shared:kmpPartiallyResolvedDependenciesChecker
+> Task :shared:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :androidApp:generateLocalesConfig
+> Task :shared:generateAndroidMainEmptyResourceFiles
+> Task :androidApp:javaPreCompileDebug FROM-CACHE
+> Task :androidApp:generateDebugResources FROM-CACHE
+> Task :shared:packageAndroidMainResources FROM-CACHE
+> Task :androidApp:desugarDebugFileDependencies FROM-CACHE
+> Task :androidApp:packageDebugResources FROM-CACHE
+> Task :androidApp:generateDebugGlobalSynthetics FROM-CACHE
+> Task :androidApp:mapDebugSourceSetPaths
+> Task :androidApp:createDebugCompatibleScreenManifests
+> Task :shared:mergeAndroidMainAssets
+> Task :androidApp:extractDeepLinksDebug FROM-CACHE
+> Task :shared:processAndroidMainManifest FROM-CACHE
+> Task :shared:parseAndroidMainLocalResources FROM-CACHE
+> Task :shared:generateAndroidMainRFile FROM-CACHE
+> Task :shared:mapAndroidMainSourceSetPaths
+> Task :shared:compileAndroidMainLibraryResources FROM-CACHE
+> Task :shared:writeAndroidMainAarMetadata
+> Task :androidApp:mergeDebugJniLibFolders
+
+> Task :shared:buildRustCore
+    Building x86_64 (x86_64-linux-android)
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling serde_core v1.0.229
+   Compiling typenum v1.20.1
+   Compiling bytes v1.12.1
+   Compiling memchr v2.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling log v0.4.34
+   Compiling serde v1.0.229
+   Compiling once_cell v1.21.4
+   Compiling futures-core v0.3.34
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.16.4
+   Compiling thiserror v2.0.21
+   Compiling itoa v1.0.18
+   Compiling find-msvc-tools v0.1.15
+   Compiling shlex v2.0.1
+   Compiling slab v0.4.12
+   Compiling futures-io v0.3.34
+   Compiling futures-sink v0.3.34
+   Compiling cpufeatures v0.3.1
+   Compiling futures-task v0.3.34
+   Compiling equivalent v1.0.3
+   Compiling foldhash v0.2.0
+   Compiling version_check v0.9.5
+   Compiling litemap v0.8.3
+   Compiling hashbrown v0.17.1
+   Compiling writeable v0.6.4
+   Compiling tracing-core v0.1.36
+   Compiling subtle v2.6.1
+   Compiling utf8_iter v1.0.4
+
+> Task :androidApp:processDebugNavigationResources FROM-CACHE
+> Task :androidApp:parseDebugLocalResources FROM-CACHE
+> Task :androidApp:generateDebugRFile FROM-CACHE
+> Task :androidApp:compileDebugNavigationResources FROM-CACHE
+> Task :androidApp:writeDebugAppMetadata
+> Task :androidApp:writeDebugSigningConfigVersions
+> Task :androidApp:validateSigningDebug
+> Task :androidApp:processDebugMainManifest FROM-CACHE
+
+> Task :shared:buildRustCore
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling pkg-config v0.3.34
+   Compiling percent-encoding v2.3.2
+   Compiling futures-channel v0.3.34
+   Compiling winnow v1.0.4
+   Compiling indexmap v2.14.2
+   Compiling semver v1.0.28
+   Compiling cmov v0.5.4
+   Compiling const-oid v0.10.2
+   Compiling generic-array v0.14.7
+   Compiling cfg_aliases v0.2.2
+   Compiling fastrand v2.5.0
+   Compiling base64 v0.23.1
+   Compiling fs_extra v1.3.0
+   Compiling siphasher v1.0.4
+   Compiling dunce v1.0.5
+   Compiling zmij v1.0.23
+   Compiling rustc_version v0.4.1
+   Compiling hybrid-array v0.4.15
+
+> Task :androidApp:processDebugManifest FROM-CACHE
+> Task :androidApp:processDebugManifestForPackage FROM-CACHE
+> Task :androidApp:mergeDebugAssets
+> Task :androidApp:compressDebugAssets FROM-CACHE
+> Task :androidApp:checkDebugDuplicateClasses
+> Task :androidApp:checkDebugAarMetadata
+> Task :androidApp:mergeDebugResources FROM-CACHE
+
+> Task :shared:buildRustCore
+   Compiling http v1.5.0
+   Compiling errno v0.3.14
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.4
+   Compiling jobserver v0.1.35
+   Compiling form_urlencoded v1.2.2
+   Compiling ctutils v0.4.6
+   Compiling getrandom v0.2.17
+   Compiling aws-lc-rs v1.18.2
+   Compiling syn v3.0.9
+   Compiling syn v2.0.119
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling serde_json v1.0.154
+   Compiling anyhow v1.0.104
+   Compiling autocfg v1.5.1
+   Compiling phf_shared v0.13.1
+   Compiling untrusted v0.9.0
+   Compiling httparse v1.10.1
+   Compiling parking_lot_core v0.9.12
+   Compiling signal-hook-registry v1.4.8
+   Compiling rustls v0.23.46
+   Compiling base64ct v1.8.3
+   Compiling cc v1.10.0
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling block-padding v0.4.2
+   Compiling toml_edit v0.25.17+spec-1.1.0
+   Compiling bitflags v2.13.2
+   Compiling phf_generator v0.13.1
+   Compiling curve25519-dalek v5.0.0
+   Compiling scopeguard v1.2.0
+   Compiling atomic-waker v1.1.2
+   Compiling serde_spanned v1.1.2
+   Compiling combine v4.6.9
+   Compiling phf_codegen v0.13.1
+   Compiling string_cache_codegen v0.6.1
+   Compiling inout v0.2.5
+   Compiling pem-rfc7468 v1.0.0
+   Compiling http-body v1.1.0
+   Compiling num-conv v0.2.2
+   Compiling crc32fast v1.5.3
+   Compiling digest v0.11.3
+   Compiling proc-macro-crate v3.5.0
+   Compiling try-lock v0.2.5
+   Compiling tower-service v0.3.3
+   Compiling new_debug_unreachable v1.0.6
+   Compiling toml_writer v1.1.3+spec-1.1.0
+   Compiling crypto-common v0.1.7
+   Compiling lock_api v0.4.14
+   Compiling fnv v1.0.7
+   Compiling time-core v0.1.9
+   Compiling ipnet v2.12.2
+   Compiling deranged v0.5.9
+   Compiling powerfmt v0.2.1
+   Compiling zerocopy v0.8.63
+   Compiling want v0.3.2
+   Compiling cipher v0.5.2
+   Compiling cmake v0.1.58
+   Compiling toml v1.1.8+spec-1.1.0
+   Compiling web_atoms v0.2.6
+   Compiling sha2 v0.11.1
+   Compiling aho-corasick v1.1.5
+   Compiling httpdate v1.0.3
+   Compiling heck v0.5.0
+   Compiling phf v0.13.1
+   Compiling parking_lot v0.12.5
+   Compiling simd-adler32 v0.3.10
+   Compiling unicode-segmentation v1.13.3
+   Compiling base16ct v1.0.0
+   Compiling adler2 v2.0.1
+   Compiling cpufeatures v0.2.17
+   Compiling same-file v1.0.6
+   Compiling precomputed-hash v0.1.1
+   Compiling rustix v1.1.6
+   Compiling chacha20 v0.10.2
+   Compiling regex-syntax v0.8.11
+   Compiling walkdir v2.5.0
+
+> Task :androidApp:processDebugResources FROM-CACHE
+
+> Task :shared:buildRustCore
+   Compiling num-traits v0.2.19
+   Compiling jni-macros v0.22.4
+   Compiling convert_case v0.10.0
+   Compiling signature v3.0.0
+   Compiling parking v2.2.1
+   Compiling simdutf8 v0.1.5
+   Compiling unicode-xid v0.2.6
+   Compiling string_cache v0.9.0
+   Compiling time v0.3.55
+   Compiling http-body-util v0.1.5
+   Compiling miniz_oxide v0.9.1
+   Compiling tendril v0.5.1
+   Compiling typewit v1.15.2
+   Compiling thiserror v1.0.69
+   Compiling compression-core v0.4.34
+   Compiling rand v0.10.3
+   Compiling js_int v0.2.2
+   Compiling aws-lc-sys v0.46.0
+   Compiling ring v0.17.14
+   Compiling synstructure v0.14.0
+   Compiling regex-automata v0.4.18
+   Compiling jni v0.22.4
+   Compiling simd_cesu8 v1.2.0
+   Compiling tower-layer v0.3.3
+   Compiling serde_bytes v0.11.19
+   Compiling sync_wrapper v1.0.2
+   Compiling bytemuck v1.25.2
+   Compiling flate2 v1.1.10
+   Compiling base64 v0.22.1
+   Compiling wildmatch v2.7.0
+   Compiling as_variant v1.3.0
+   Compiling ruma-common v0.20.2
+   Compiling const_panic v0.2.17
+   Compiling blake3 v1.8.7
+   Compiling serde_html_form v0.4.1
+   Compiling universal-hash v0.6.1
+   Compiling uuid v1.29.0
+   Compiling date_header v1.0.5
+   Compiling rustls-platform-verifier-android v0.2.0
+   Compiling web-time v1.1.0
+   Compiling rustc-hash v2.1.3
+   Compiling rand_core v0.9.5
+   Compiling tinyvec v1.13.3
+   Compiling ruma-events v0.35.2
+   Compiling hmac v0.13.0
+   Compiling markup5ever v0.39.0
+   Compiling aead v0.6.1
+   Compiling js_option v0.2.0
+   Compiling n0-future v0.3.2
+   Compiling either v1.19.0
+   Compiling ruma-client-api v0.25.2
+   Compiling spin v0.10.1
+
+> Task :androidApp:mergeExtDexDebug FROM-CACHE
+
+> Task :shared:buildRustCore
+   Compiling serde_derive v1.0.229
+   Compiling zerofrom-derive v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling zerovec-derive v0.11.7
+   Compiling tokio-macros v2.7.2
+   Compiling zeroize_derive v1.5.0
+   Compiling displaydoc v0.2.7
+   Compiling thiserror-impl v2.0.21
+   Compiling tracing-attributes v0.1.31
+   Compiling futures-macro v0.3.34
+   Compiling jni-sys-macros v0.4.1
+   Compiling curve25519-dalek-derive v0.1.1
+   Compiling zerocopy-derive v0.8.63
+   Compiling derive_more-impl v2.1.1
+   Compiling compression-codecs v0.4.46
+   Compiling thiserror-impl v1.0.69
+   Compiling konst v0.4.3
+   Compiling html5ever v0.39.0
+   Compiling spez v0.1.2
+   Compiling n0-error-macros v1.0.1
+   Compiling safe_arch v0.7.4
+   Compiling rand_xoshiro v0.7.0
+   Compiling poly1305 v0.9.1
+   Compiling pin-project-internal v1.1.13
+   Compiling cordyceps v0.3.5
+   Compiling constant_time_eq v0.4.2
+   Compiling archery v1.2.3
+   Compiling imbl-sized-chunks v0.2.0
+   Compiling diatomic-waker v0.2.3
+   Compiling chacha20poly1305 v0.11.0
+   Compiling itertools v0.14.0
+   Compiling zeroize v1.9.1
+   Compiling futures-buffered v0.2.13
+   Compiling hkdf v0.13.0
+   Compiling wide v0.7.33
+   Compiling futures-lite v2.6.1
+   Compiling inout v0.1.4
+   Compiling maplit v1.0.2
+   Compiling tokio v1.54.1
+   Compiling assign v1.1.1
+   Compiling rustls-pki-types v1.15.1
+   Compiling jni-sys v0.4.1
+   Compiling der v0.8.3
+   Compiling rustversion v1.0.23
+   Compiling paste v1.0.15
+   Compiling matrix-pickle-derive v0.2.3
+   Compiling regex v1.13.1
+   Compiling futures-util v0.3.34
+   Compiling cipher v0.4.4
+   Compiling rmp v0.8.15
+   Compiling universal-hash v0.5.1
+   Compiling noq-udp v1.4.0
+   Compiling pin-project v1.1.13
+   Compiling n0-error v1.0.1
+   Compiling linux-raw-sys v0.12.1
+   Compiling zerofrom v0.1.8
+   Compiling opaque-debug v0.3.1
+   Compiling ruma-identifiers-validation v0.14.0
+   Compiling vcpkg v0.2.15
+   Compiling portable-atomic v1.15.0
+   Compiling cpubits v0.1.1
+   Compiling ndk-context v0.1.1
+   Compiling jni-sys v0.3.1
+   Compiling matrix-sdk-common v0.19.1
+   Compiling matrix-pickle v0.2.3
+   Compiling tracing v0.1.44
+   Compiling yoke v0.8.4
+   Compiling polyval v0.6.2
+   Compiling imbl v7.0.2
+   Compiling prost-derive v0.14.4
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling spki v0.8.1
+   Compiling aes v0.9.3
+   Compiling uniffi_internal_macros v0.32.2
+   Compiling cbc v0.2.1
+   Compiling pbkdf2 v0.13.0
+   Compiling block-buffer v0.10.4
+   Compiling rand_core v0.6.4
+   Compiling ruma-html v0.9.0
+   Compiling android_system_properties v0.1.6
+   Compiling slotmap v1.1.1
+   Compiling data-encoding v2.11.1
+   Compiling readlock v0.1.11
+   Compiling pkcs8 v0.11.0
+   Compiling decancer v3.3.3
+   Compiling digest v0.10.7
+   Compiling iana-time-zone v0.1.65
+   Compiling itertools v0.15.0
+   Compiling libsqlite3-sys v0.38.2
+   Compiling ghash v0.5.1
+   Compiling derive_more v2.1.1
+   Compiling ctr v0.9.2
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling netlink-packet-core v0.8.2
+   Compiling aes v0.8.4
+   Compiling async-trait v0.1.92
+   Compiling ulid v3.0.0
+   Compiling ctr v0.10.1
+   Compiling data-encoding-macro-internal v0.1.19
+   Compiling aead v0.5.2
+   Compiling fs-err v3.3.2
+   Compiling serde_path_to_error v0.1.20
+   Compiling ruma-macros v0.20.2
+   Compiling bs58 v0.5.1
+   Compiling icu_collections v2.4.0
+   Compiling icu_locale_core v2.4.0
+   Compiling serdect v0.4.3
+   Compiling arrayvec v0.7.8
+   Compiling rmp-serde v1.3.1
+   Compiling unic-langid-impl v0.9.6
+   Compiling netdev v0.46.3
+   Compiling netlink-packet-core v0.9.0
+   Compiling n0-dns-resolver v0.1.0
+   Compiling byteorder v1.5.0
+   Compiling camino v1.2.6
+   Compiling prost v0.14.4
+   Compiling tempfile v3.27.0
+   Compiling ed25519 v3.0.0
+   Compiling cesu8 v1.1.0
+   Compiling xxhash-rust v0.8.19
+   Compiling aes-gcm v0.10.3
+   Compiling matrix-sdk-store-encryption v0.19.1
+   Compiling chrono v0.4.45
+   Compiling uniffi_pipeline v0.32.2
+   Compiling futures-executor v0.3.34
+   Compiling jni v0.21.1
+   Compiling data-encoding-macro v0.1.21
+   Compiling sha2 v0.10.9
+   Compiling webpki-roots v1.0.11
+   Compiling unicode-normalization v0.1.26
+   Compiling num_enum_derive v0.7.6
+   Compiling tokio-util v0.7.20
+   Compiling async-compression v0.4.51
+   Compiling tower v0.5.3
+   Compiling icu_provider v2.4.0
+   Compiling eyeball-im v0.9.1
+   Compiling readlock-tokio v0.1.6
+   Compiling deadpool-runtime v0.3.1
+   Compiling growable-bloom-filter v2.1.1
+   Compiling unic-langid v0.9.6
+   Compiling backon v1.6.0
+   Compiling netlink-sys v0.8.8
+   Compiling ppv-lite86 v0.2.21
+   Compiling netlink-packet-route v0.33.0
+   Compiling strum_macros v0.28.0
+   Compiling iroh-metrics-derive v1.0.1
+   Compiling enum-assoc v1.4.1
+   Compiling simple-dns v0.12.0
+   Compiling netwatch v0.19.3
+   Compiling iroh-dns v1.4.1
+   Compiling noq v1.4.0
+   Compiling lru v0.18.5
+   Compiling netlink-sys v0.9.0
+   Compiling hashlink v0.12.2
+   Compiling ed25519-dalek v3.0.0
+   Compiling x25519-dalek v3.0.0
+   Compiling h2 v0.4.20
+   Compiling tokio-stream v0.1.19
+   Compiling eyeball v0.8.8
+   Compiling rand_chacha v0.3.1
+   Compiling dlopen2 v0.8.2
+   Compiling rand_pcg v0.10.2
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling icu_normalizer v2.4.0
+   Compiling icu_properties v2.4.0
+   Compiling hpke v0.14.1
+   Compiling mac-addr v0.3.0
+   Compiling lru-slab v0.1.3
+   Compiling xml-rs v0.8.29
+   Compiling fallible-iterator v0.3.0
+   Compiling sorted-index-buffer v0.2.1
+   Compiling identity-hash v0.1.0
+   Compiling ryu v1.0.23
+   Compiling num_enum v0.7.6
+   Compiling n0-watcher v1.0.1
+   Compiling rand v0.8.8
+   Compiling netlink-proto v0.12.2
+   Compiling deadpool v0.13.1
+   Compiling deadpool-sync v0.2.0
+   Compiling futures v0.3.34
+   Compiling uniffi_meta v0.32.2
+   Compiling netlink-packet-route v0.31.0
+   Compiling arc-swap v1.9.3
+   Compiling cobs v0.3.0
+   Compiling postcard-derive v0.2.2
+   Compiling rusqlite v0.40.2
+   Compiling xmltree v0.10.3
+   Compiling async-stream-impl v0.3.6
+   Compiling iroh-metrics v1.0.2
+   Compiling cargo-platform v0.3.3
+   Compiling vodozemac v0.11.1
+   Compiling iroh-relay v1.4.1
+   Compiling idna_adapter v1.2.2
+   Compiling num_cpus v1.17.0
+   Compiling thread_local v1.1.10
+   Compiling sha1_smol v1.0.1
+   Compiling matrix-sdk v0.19.1
+   Compiling static_assertions v1.1.0
+   Compiling idna v1.1.0
+   Compiling cargo_metadata v0.23.1
+   Compiling type-map v0.5.1
+   Compiling event-listener v5.4.2
+   Compiling iroh v1.4.1
+   Compiling anymap2 v0.13.0
+   Compiling bytesize v2.7.0
+   Compiling mime2ext v0.1.54
+   Compiling hex v0.4.3
+   Compiling postcard v1.1.3
+   Compiling uniffi_core v0.32.2
+   Compiling seize v0.5.1
+   Compiling language-tags v0.3.2
+   Compiling async-stream v0.3.6
+   Compiling mime v0.3.17
+   Compiling fuzzy-matcher v0.3.7
+   Compiling eyeball-im-util v0.11.0
+   Compiling papaya v0.2.5
+   Compiling intl_pluralrules v7.0.2
+   Compiling fluent-langneg v0.13.1
+   Compiling fluent-syntax v0.12.0
+   Compiling emojis v0.9.1
+   Compiling async-rx v0.2.1
+   Compiling lazy_static v1.5.1
+   Compiling url v2.5.8
+   Compiling intl-memoizer v0.5.3
+   Compiling by_address v1.2.1
+   Compiling uniffi_macros v0.32.2
+   Compiling async_cell v0.2.3
+   Compiling pulldown-cmark v0.13.6
+   Compiling self_cell v1.3.0
+   Compiling sharded-slab v0.1.7
+   Compiling matchers v0.2.0
+   Compiling tracing-log v0.2.0
+   Compiling nu-ansi-term v0.50.3
+   Compiling unicase v2.10.0
+   Compiling palette_math v0.7.7
+   Compiling linkify v0.11.0
+   Compiling strum v0.28.0
+   Compiling palette_derive v0.7.7
+   Compiling fluent-bundle v0.16.0
+   Compiling tower-http v0.6.11
+   Compiling attohttpc v0.30.1
+   Compiling iroh-base v1.4.1
+   Compiling oauth2 v5.0.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling wonton-l10n v0.0.0 (/home/npchy/wonton-dev/tt/link-survey/crates/wonton-l10n)
+   Compiling hyper v1.12.0
+   Compiling palette v0.7.7
+   Compiling hyper-util v0.1.21
+   Compiling uniffi v0.32.2
+   Compiling wonton-protocol v0.0.0 (/home/npchy/wonton-dev/tt/link-survey/crates/wonton-protocol)
+   Compiling igd-next v0.17.1
+   Compiling rustls-webpki v0.103.16
+   Compiling portmapper v0.19.3
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling noq-proto v1.4.0
+   Compiling hyper-rustls v0.27.10
+   Compiling tokio-websockets v0.13.3
+   Compiling reqwest v0.13.5
+   Compiling oauth2-reqwest v0.1.0-alpha.3
+   Compiling ruma v0.17.2
+   Compiling wonton-tunnel v0.0.0 (/home/npchy/wonton-dev/tt/link-survey/crates/wonton-tunnel)
+   Compiling matrix-sdk-crypto v0.19.1
+   Compiling matrix-sdk-base v0.19.1
+   Compiling matrix-sdk-sqlite v0.19.1
+   Compiling matrix-sdk-ui v0.19.1
+   Compiling wonton-matrix v0.0.0 (/home/npchy/wonton-dev/tt/link-survey/crates/wonton-matrix)
+   Compiling wonton-client v0.0.0 (/home/npchy/wonton-dev/tt/link-survey/crates/wonton-client)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4m 37s
+     Copying libraries to /home/npchy/wonton-dev/tt/link-survey/apps/compose/shared/build/generated/jniLibs/buildRustCore
+
+> Task :shared:mergeAndroidMainJniLibFolders
+> Task :shared:compileAndroidMain FROM-CACHE
+> Task :shared:mergeAndroidMainNativeLibs
+> Task :shared:processAndroidMainJavaRes
+> Task :shared:copyAndroidMainJniLibsProjectOnly
+> Task :shared:bundleAndroidMainClassesToCompileJar
+> Task :androidApp:compileDebugKotlin FROM-CACHE
+> Task :androidApp:compileDebugJavaWithJavac NO-SOURCE
+> Task :androidApp:processDebugJavaRes
+> Task :androidApp:dexBuilderDebug FROM-CACHE
+> Task :androidApp:mergeProjectDexDebug FROM-CACHE
+> Task :androidApp:mergeDebugNativeLibs
+> Task :shared:bundleLibRuntimeToDirAndroidMain
+
+> Task :androidApp:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libandroidx.graphics.path.so, libimage_processing_util_jni.so, libiroh-107d83e4190cb641.so, libiroh_relay-6077ea463be93bc6.so, libjnidispatch.so, libsurface_util_jni.so, libwonton_client.so. Run with --info option to learn more.
+
+> Task :androidApp:mergeLibDexDebug FROM-CACHE
+> Task :androidApp:mergeDebugJavaResource
+> Task :androidApp:packageDebug
+> Task :androidApp:assembleDebug
+> Task :androidApp:createDebugApkListingFileRedirect
+
+[Incubating] Problems report is available at: file:///home/npchy/wonton-dev/tt/link-survey/apps/compose/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.8.2/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 9m 40s
+55 actionable tasks: 28 executed, 27 from cache
+Configuration cache entry stored.

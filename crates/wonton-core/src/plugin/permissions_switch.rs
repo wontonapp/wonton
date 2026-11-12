@@ -10,7 +10,6 @@ use std::sync::Arc;
 use wonton_protocol::PluginDetail;
 
 use super::entry::PluginStatus;
-use super::health_gate::Gate;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager, detached};
@@ -123,8 +122,7 @@ impl PluginManager {
         let mut plan = after;
         plan.retain_services(&changed);
         let ctx = self.switch_context(listed, package, to, &langs).await?;
-        self.replace_containers(&ctx, plan, Gate::StartPeriod)
-            .await?;
+        self.replace_containers(&ctx, plan).await?;
         self.store.save(to)?;
         Ok(())
     }
@@ -155,7 +153,7 @@ impl PluginManager {
         self.rebuild_context(package, record, grant, None).await
     }
 
-    pub(in crate::plugin) fn listed(&self, id: &PluginId) -> Result<Listed, InstallError> {
+    fn listed(&self, id: &PluginId) -> Result<Listed, InstallError> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
             .get(id)
@@ -163,10 +161,7 @@ impl PluginManager {
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))
     }
 
-    pub(in crate::plugin) fn package_of(
-        &self,
-        record: &InstalledRecord,
-    ) -> Result<PluginPackage, InstallError> {
+    fn package_of(&self, record: &InstalledRecord) -> Result<PluginPackage, InstallError> {
         let mut package = PluginPackage::with_files(
             &record.source,
             record.files.clone(),
@@ -176,7 +171,7 @@ impl PluginManager {
         Ok(package)
     }
 
-    pub(in crate::plugin) fn set_degraded(&self, id: &PluginId, reason: String) {
+    fn set_degraded(&self, id: &PluginId, reason: String) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id) {
             entry.status = PluginStatus::Degraded { reason };

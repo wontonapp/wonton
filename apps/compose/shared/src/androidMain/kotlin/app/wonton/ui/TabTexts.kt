@@ -1,16 +1,18 @@
 package app.wonton.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalConfiguration
 import app.wonton.protocol.TabItem
 import app.wonton.protocol.TabRef
 
 @Composable
+fun tabText(zh: String, en: String): String =
+    if (LocalConfiguration.current.locales[0].language == "zh") zh else en
+
+@Composable
 fun TabItem.tabTitle(): String = when (tab) {
-    TabRef.Chat -> stringResource(R.string.tab_chat)
-    TabRef.Apps -> stringResource(R.string.tab_apps)
-    TabRef.Settings -> stringResource(R.string.tab_settings)
-    is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> page?.title
-        ?: stringResource(R.string.tab_app_page)
+    TabRef.Chat -> tabText("聊天", "Chats")
+    TabRef.Apps -> tabText("应用", "Apps")
+    TabRef.Settings -> tabText("设置", "Settings")
+    is TabRef.Plugin -> page?.title ?: tabText("应用页面", "App page")
 }

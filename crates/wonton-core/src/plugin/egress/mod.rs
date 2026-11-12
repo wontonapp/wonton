@@ -19,7 +19,7 @@ pub(in crate::plugin) mod provider;
 mod relay;
 pub mod settings;
 mod switch;
-pub(in crate::plugin) use switch::{PLACEHOLDER, cannot_read, token_uses};
+pub(in crate::plugin) use switch::cannot_read;
 
 use std::collections::BTreeSet;
 
@@ -39,9 +39,8 @@ const NO_PROXY_VARS: [&str; 2] = ["NO_PROXY", "no_proxy"];
 /// Node 22.21、24.5 起有这个开关，不设就不读代理变量。
 const NODE_SWITCH: (&str, &str) = ("NODE_USE_ENV_PROXY", "1");
 
-/// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的别名（`.wonton.internal`，含身份提供方）和本插件的服务名。
-/// `*.localhost` 是基础域名，出口容器不认，也没有 DNS 解它。
-const NO_PROXY_LOOPBACK: &str = "localhost,.localhost,127.0.0.1,::1,.wonton.internal";
+/// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的身份提供方和本插件的服务名。
+const NO_PROXY_LOOPBACK: &str = "localhost,127.0.0.1,::1,.wonton.internal";
 /// 私有网段只写 IPv4。IPv6 网段（`fc00::/7`、`fe80::/10`）带冒号，httpx 把 NO_PROXY 条目转成挂载键时给
 /// IPv6 加方括号，`fc00::/7` 变成 `all://[fc00::/7]`，建客户端解析这个键就报 `InvalidURL: Invalid port: ':'`
 /// 崩掉（Immich 机器学习下载模型就是这样 500 的，httpx 0.28.1 实测），也没有一种所有客户端都认的 IPv6
@@ -52,11 +51,14 @@ const NO_PROXY_PRIVATE: &str = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,
 
 /// 主人配了代理时，注入给出网插件的内容。没配代理时没有它，插件和没有这个功能时一样直连。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EgressVars;
+pub struct EgressVars {
+    /// 身份提供方在插件网络里的别名 `auth.<基础域名>`：插件经核心访问它，不能走代理。
+    pub auth_host: String,
+}
 
 impl EgressVars {
     fn no_proxy<'a>(&self, services: impl Iterator<Item = &'a str>) -> String {
-        let mut parts = vec![NO_PROXY_LOOPBACK];
+        let mut parts = vec![NO_PROXY_LOOPBACK, self.auth_host.as_str()];
         parts.extend(services.map(|service| -> &str { service }));
         parts.push(NO_PROXY_PRIVATE);
         parts.join(",")
@@ -134,7 +136,9 @@ mod tests {
     use super::*;
 
     fn vars() -> EgressVars {
-        EgressVars
+        EgressVars {
+            auth_host: "auth.wonton.example".to_owned(),
+        }
     }
 
     fn injected(env: &[&str]) -> Vec<String> {
@@ -160,7 +164,7 @@ mod tests {
             assert_eq!(value(&env, name), Some(PROXY_URL), "{name}");
         }
         assert_eq!(value(&env, "NODE_USE_ENV_PROXY"), Some("1"));
-        let expected = "localhost,.localhost,127.0.0.1,::1,.wonton.internal,web,db,\
+        let expected = "localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.example,web,db,\
                         .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
                         172.16.0.0/12,192.168.0.0/16";
         assert_eq!(value(&env, "NO_PROXY"), Some(expected));
@@ -210,7 +214,7 @@ mod tests {
         assert_eq!(
             value(&env, "NO_PROXY"),
             Some(
-                "web,localhost,127.0.0.1,.localhost,::1,.wonton.internal,db,\
+                "web,localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.example,db,\
                  .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
                  172.16.0.0/12,192.168.0.0/16"
             )

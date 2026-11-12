@@ -32,8 +32,6 @@ use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginId, PluginManager, PluginPackage, PluginStatus};
 use crate::tunnel::{Tunnel, TunnelEntry};
 
-const BUS_TOKEN: &str = "activity-token";
-
 const BOT: &str = "services:
   bot:
     image: example/bot
@@ -100,18 +98,6 @@ impl Home {
                 ImageWorker::in_process(),
             )
             .with_matrix(Some(matrix)),
-        );
-        // 有 Bot 记录的 Agent 必须用带总线令牌的地址；先记一个固定令牌的 Bot，装的时候沿用。
-        plugins.bot_records_for_test(
-            &PluginId::parse("app.activity").unwrap(),
-            &[(
-                "default",
-                "@activity:test",
-                wonton_protocol::BotKeeper::User {
-                    username: "owner".to_owned(),
-                },
-                BUS_TOKEN,
-            )],
         );
         plugins
             .install(
@@ -197,8 +183,7 @@ impl Home {
             vec![Permission::Tools],
         );
         let mut request = hyper::Request::builder()
-            .method("POST")
-            .uri(format!("{}/{BUS_TOKEN}", wonton_protocol::AGENT_PERMISSION_PATH))
+            .method("POST").uri(wonton_protocol::AGENT_PERMISSION_PATH)
             .header(header::HOST, "mcp.wonton.internal:8080")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(json!({"tool_call_id": "call-1", "title": "Run a tool", "options": [{"choice_id": "once", "kind": "allow_once", "name": "Allow"}]}).to_string())).unwrap();

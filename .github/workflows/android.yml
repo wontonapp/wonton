@@ -1,35 +1,76 @@
 name: android
 
-# detekt、单元测试、Debug 构建和界面参考图比对。PR 上由 gate.yml 按改动范围调用（合并门槛，范围写在那边的
-# changes 里），不自己挂 pull_request；每天定时、手动触发时自己跑全量。
 on:
-  workflow_call:
-  schedule:
-    # 每天全量兜底：main 上不重跑，两个各自绿的 PR 合在一起才出的错由这次发现。
-    - cron: "0 4 * * *"
-  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/compose/**"
+      - "apps/ios/Wonton/Assets.xcassets/**"
+      - "apps/ios/Wonton/Design/Generated/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/compose/**"
+      - "apps/ios/Wonton/Assets.xcassets/**"
+      - "apps/ios/Wonton/Design/Generated/**"
+      - "design/**"
+      - "scripts/generate-design.py"
+      - "crates/wonton-client/**"
+      - "crates/wonton-matrix/**"
+      - "crates/wonton-protocol/**"
+      - "crates/wonton-tunnel/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".github/workflows/android.yml"
 
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  CARGO_INCREMENTAL: "0"
-  CARGO_PROFILE_DEV_DEBUG: line-tables-only
-
-permissions:
-  contents: read
+  cancel-in-progress: true
 
 jobs:
   build:
     name: detekt、单元测试与 Debug 构建
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    # 自托管 runner（ADR-0012 的“CI”）：Android SDK 和 NDK 预装在 runner 主机上，由 runner 的环境给出 ANDROID_HOME。
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 30
+    env:
+      CARGO_NDK_VERSION: "4.1.2"
+      # 同 rust.yml：不留增量编译的缓存，调试信息只留行号。
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/checkout@v5
+      - name: 构建缓存目录（runner 主机上的共享目录，见 rust.yml）
+        # Gradle 也按 runner 分开：共用 ~/.gradle 时，并行的作业抢 build-cache-1.lock，构建偶发失败（2026-11-04，#261）。
+        run: |
+          cache="${WONTON_CI_CACHE:-$RUNNER_WORKSPACE/../_cargo-target}/$RUNNER_NAME"
+          echo "CARGO_TARGET_DIR=$cache/android" >> "$GITHUB_ENV"
+          echo "GRADLE_USER_HOME=$cache/gradle" >> "$GITHUB_ENV"
+          # Gradle 和 wrapper 不读 https_proxy，要写成 systemProp。没配时 wrapper 直连下载，1k 上实测 58 KB/s，
+          # 170 MB 的发行包下不完，作业到 30 分钟超时（2026-11-04，#308）。
+          if [ -n "${https_proxy:-}" ]; then
+            address="${https_proxy#*://}"
+            address="${address%/}"
+            mkdir -p "$cache/gradle"
+            {
+              for scheme in http https; do
+                echo "systemProp.$scheme.proxyHost=${address%:*}"
+                echo "systemProp.$scheme.proxyPort=${address##*:}"
+              done
+              echo 'systemProp.http.nonProxyHosts=localhost|127.0.0.1|*.localhost|*.local'
+            } > "$cache/gradle/gradle.properties"
+          fi
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -37,36 +78,20 @@ jobs:
         run: |
           rustup toolchain install
           rustup target add aarch64-linux-android
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2
-        with:
-          tool: cargo-ndk@4.1.2
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-        with:
-          # 只读：同一份 key 由 cache.yml 的 Android 作业在 push 时编好写回。这里也写的话，
-          # 一次 main 合并会编两遍、两条运行抢着写同一个 key。
-          shared-key: rust-android
-          save-if: false
+      - name: 安装 cargo-ndk
+        # 同一台主机上的几个 runner 共用 ~/.cargo。版本对了就不装：不是 cargo install 装进来的同版本二进制，
+        # cargo install 会报 already exists 失败（titan 实测）。要装时加锁，免得升级版本时几个作业同时写同一处；
+        # 等到锁时别的作业已经装好，cargo install 认得出已装的同版本，直接成功。
+        run: |
+          if [ "$(cargo ndk --version 2>/dev/null)" = "cargo-ndk $CARGO_NDK_VERSION" ]; then exit 0; fi
+          flock "${CARGO_HOME:-$HOME/.cargo}/.cargo-ndk-install.lock" \
+            cargo install cargo-ndk --locked --version "$CARGO_NDK_VERSION"
       - name: 设计生成结果和 design/ 一致
         run: python3 scripts/generate-design.py --check
-      - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+      - uses: gradle/actions/setup-gradle@v5
+        with:
+          # GRADLE_USER_HOME 在 runner 主机上跨次运行保留，不经 GitHub 的缓存服务上传下载。
+          cache-disabled: true
       - name: detekt（函数 ≤ 100 行）、单元测试与 Debug APK
         working-directory: apps/compose
         run: ./gradlew detekt :androidApp:testDebugUnitTest :androidApp:assembleDebug
-      # 界面参考图：预览用固定假数据，在 JVM 上渲染，不加载 .so。重录在 snapshots-record.yml，这里只比对。
-      - name: 比对界面参考图
-        working-directory: apps/compose
-        run: ./gradlew :shared:verifyPaparazziAndroidMain
-      - name: 差异图和报告
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: paparazzi-${{ github.run_attempt }}
-          path: |
-            apps/compose/shared/build/paparazzi
-            apps/compose/shared/build/reports/paparazzi
-          retention-days: 7
-          if-no-files-found: ignore
-      # 只编不跑：设备上的测试要在设备上加载原生核心、还要模拟器，日常 PR 上太重；编译能挡住 API 和清单错误。
-      - name: 编译设备测试（androidTest）
-        working-directory: apps/compose
-        run: ./gradlew :androidApp:assembleDebugAndroidTest

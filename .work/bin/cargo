@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /home/npchy/wonton-dev/cargo-slot.sh cargo "$@"

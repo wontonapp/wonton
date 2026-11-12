@@ -7,13 +7,11 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool, ToolAnnotations};
 use serde_json::{Value, json};
-use wonton_protocol::SecretValues;
 
-use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
-    panel_tools, people_tools, profile_tools, save_tools,
+    Bus, Caller, Outcome, agent_install, authoring_tools, cards, file_tools, naming, people_tools,
+    profile_tools, save_tools,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -24,11 +22,11 @@ use crate::plugin::{InstallError, PluginId, PluginPackage};
 use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
-pub(super) const SEARCH: &str = "search_catalog";
+const SEARCH: &str = "search_catalog";
 const INSTALL: &str = "install_plugin";
 const UNINSTALL: &str = "uninstall_plugin";
 const SET_PERMISSION: &str = "set_plugin_permission";
-pub(super) const HELP: &str = "help";
+const HELP: &str = "help";
 
 fn schema(value: Value) -> Arc<JsonObject> {
     match value {
@@ -73,17 +71,16 @@ pub fn definitions() -> Vec<Tool> {
         tool(
             INSTALL,
             "安装一个插件。`id` 是官方索引里的插件；`dir` 是你自己写的、放在 outbox 里的插件目录\
-             （先用 wonton__plugin_guide 读说明、wonton__check_plugin 校验到没有 problems）。两种安装都要主人确认：\
-             调用前告诉主人的是“我会发起安装，确认卡片会发到 Wonton App 里的“Wonton”私聊”，主人点了允许才会装。\
-             调用会一直等到主人回答或者确认过期（10 分钟）。装没装上以这条调用返回的结果为准：说失败就是没装上，\
-             把原因和下一步照实转告；等结果的期间主人问起来，说正在等确认。",
+             （先用 wonton__plugin_guide 读说明、wonton__check_plugin 校验到没有 problems）。两种安装都会\
+             先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，请去那里确认。调用会一直等到\
+             主人回答或者确认过期（10 分钟）；确认后安装，返回结果。",
             json!({"type": "object", "properties": {"id": id, "dir": dir_param}, "required": []}),
             false,
         ),
         tool(
             UNINSTALL,
-            "卸载一个已经装的插件。调用前先告诉主人你会发起卸载，确认卡片会发到 Wonton App 里的“Wonton”私聊。\
-             调用会一直等到主人回答或者确认过期（10 分钟）；卸没卸掉以返回的结果为准，照实转告。",
+            "卸载一个已经装的插件。调用前先用一句话告诉主人：确认卡片会发到 Wonton App 里的“Wonton”私聊，\
+             请去那里确认。调用会一直等到主人回答或者确认过期（10 分钟）。",
             json!({"type": "object", "properties": {
                 "id": id,
                 "delete_data": {"type": "boolean", "description": "同时删除它的数据，不可恢复；默认保留"},
@@ -94,7 +91,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.push(tool(
         SET_PERMISSION,
         "打开或关掉一个插件的可选权限（如 docker.socket）。打开每次都要主人点确认卡片，关掉是收权限、可以按你的\
-         放宽直接做。调用前先告诉主人你会发起这项改动，卡片会发到“Wonton”私聊；改没改成以返回的结果为准，照实转告。",
+         放宽直接做。调用前先用一句话告诉主人卡片会发到“Wonton”私聊。",
         json!({"type": "object", "properties": {
             "id": id,
             "permission": {"type": "string", "description": "权限写法，如 docker.socket"},
@@ -117,11 +114,10 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(authoring_tools::definitions());
     tools.extend(profile_tools::definitions());
     tools.extend(people_tools::definitions());
-    tools.extend(panel_tools::definitions());
     tools
 }
 
-pub(super) fn success(value: &Value) -> CallToolResult {
+fn success(value: &Value) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(value.to_string())])
 }
 
@@ -153,13 +149,7 @@ pub async fn call(
             return profile_tools::call(bus, caller, tool, args).await;
         }
         people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
-        panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
-            return panel_tools::call(bus, caller, tool, args, activity).await;
-        }
-        _ => Err(ToolFailure::new(
-            "invalid_input",
-            format!("没有工具 {name}"),
-        )),
+        _ => Err(format!("没有工具 {name}")),
     };
     match read {
         Ok(result) => {
@@ -174,20 +164,17 @@ pub async fn call(
             });
             success(&result)
         }
-        Err(failure) => bus.deny(caller, &name, &value, &failure),
+        Err(message) => bus.deny(caller, &name, &value, &message),
     }
 }
 
-async fn help(bus: &Bus, args: &JsonObject) -> Result<Value, ToolFailure> {
-    let Some(help) = bus.help.get() else {
-        return Err(ToolFailure::new(
-            "service_unavailable",
-            "帮助文档没有接上，过一会再试",
-        ));
-    };
+async fn help(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
+    let help = bus
+        .help
+        .get()
+        .ok_or("service_unavailable: 帮助文档没有接上")?;
     let text = |key: &str| args.get(key).and_then(Value::as_str);
-    let answer = help.answer(text("topic"), text("lang")).await;
-    answer.map_err(|e| ToolFailure::new(e.kind(), e.to_string()))
+    help.answer(text("topic"), text("lang")).await
 }
 
 fn list(bus: &Bus) -> Value {
@@ -211,7 +198,7 @@ fn list(bus: &Bus) -> Value {
 
 /// 官方索引里 Bot 能看到的插件（系统插件随核心预装，哪种来源都装不了），和读索引时遇到的问题。一个都读不到又
 /// 有问题时报错，免得 Bot 以为索引是空的。
-async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), ToolFailure> {
+async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), String> {
     let (index, problem) = bus.plugins.official_index().await;
     let problem = problem.map(|p| p.details);
     let listed: Vec<Listed> = index
@@ -220,15 +207,12 @@ async fn official(bus: &Bus) -> Result<(Vec<Listed>, Option<String>), ToolFailur
         .filter(|l| l.manifest.kind != PluginKind::System)
         .collect();
     match problem {
-        Some(problem) if listed.is_empty() => Err(ToolFailure::new(
-            "source_unavailable",
-            format!("官方索引用不了：{problem}"),
-        )),
+        Some(problem) if listed.is_empty() => Err(format!("官方索引用不了：{problem}")),
         problem => Ok((listed, problem)),
     }
 }
 
-async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, ToolFailure> {
+async fn search(bus: &Bus, args: &JsonObject) -> Result<Value, String> {
     let words: Vec<String> = args
         .get("query")
         .and_then(Value::as_str)
@@ -279,96 +263,43 @@ fn searchable(manifest: &Manifest) -> String {
     text.to_lowercase()
 }
 
-fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, ToolFailure> {
+fn required<'a>(args: &'a JsonObject, key: &str) -> Result<&'a str, String> {
     args.get(key)
         .and_then(Value::as_str)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| ToolFailure::new("invalid_input", format!("缺少参数 {key}")))
+        .ok_or_else(|| format!("缺少参数 {key}"))
 }
 
 /// 不需要主人确认就能做的检查：官方索引里有没有、装没装、这台主机放不放得下、插件包取不取得到、合不合法。
-/// 文字都从“没有装上”说起：模型先读到结论，再读哪一步、为什么、能做什么。
-pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, ToolFailure> {
+pub(super) async fn installable(bus: &Bus, id: &str) -> Result<PluginPackage, String> {
     let (listed, _) = official(bus).await?;
     let listed = listed
         .iter()
         .find(|l| l.manifest.id.as_str() == id)
-        .ok_or_else(|| {
-            ToolFailure::new(
-                "not_found",
-                format!(
-                    "没有装上 {id}：官方索引里没有它。用 wonton__search_catalog 找到正确的 ID 再装"
-                ),
-            )
-        })?;
+        .ok_or_else(|| format!("官方索引里没有 {id}，先用 wonton__search_catalog 找"))?;
     let manifest = &listed.manifest;
     if bus.plugins.is_installed(&manifest.id) {
-        return Err(ToolFailure::new(
-            "conflict",
-            format!("{id} 已经装了，不用再装"),
-        ));
+        return Err(format!("{id} 已经装了"));
     }
     let langs = bus.plugins.owner_languages();
     bus.plugins
         .fits_host(manifest, &langs)
         .await
-        .map_err(|e| ToolFailure::new(e.kind(), format!("没有装上 {id}（{}）：{e}", e.kind())))?;
-    let package = bus.plugins.official_package(listed).await.map_err(|e| {
-        let mut message = format!("没有装上 {id}（{}）：{e}", e.kind());
-        if e.kind() == "source_unavailable" {
-            message.push_str("。可能是连插件源慢，稍后再让我试一次");
-        }
-        ToolFailure::new(e.kind(), message)
-    })?;
+        .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
+    let package = bus
+        .plugins
+        .official_package(listed)
+        .await
+        .map_err(|e| format!("取不到 {id} 的插件包（{}）：{e}", e.kind()))?;
     dry_run(&package, &langs)
         .map_err(InstallError::from)
-        .map_err(|e| ToolFailure::new(e.kind(), format!("没有装上 {id}（{}）：{e}", e.kind())))?;
+        .map_err(|e| format!("{id} 现在装不了（{}）：{e}", e.kind()))?;
+    if bus.plugins.missing_profile(&package, &langs).is_some() {
+        return Err(format!(
+            "{id} 要用主人的邮箱，主人还没填：请主人在 App 的设置里填好再装"
+        ));
+    }
     Ok(package)
-}
-
-/// 开关一项可选权限的参数和现状检查：装没装、有没有把这项权限声明成可选。
-async fn checked_permission(
-    bus: &Bus,
-    args: &JsonObject,
-) -> Result<
-    (
-        PluginId,
-        Permission,
-        bool,
-        wonton_protocol::PermissionLine,
-        String,
-    ),
-    ToolFailure,
-> {
-    let id = required(args, "id")?;
-    let id = PluginId::parse(id).map_err(|e| ToolFailure::new("invalid_input", e.to_string()))?;
-    let enabled = args
-        .get("enabled")
-        .and_then(Value::as_bool)
-        .ok_or_else(|| ToolFailure::new("invalid_input", "enabled 要是 true 或 false"))?;
-    let permission = required(args, "permission")?
-        .parse::<Permission>()
-        .map_err(|e| ToolFailure::new("invalid_input", e.to_string()))?;
-    let view = bus
-        .plugins
-        .list()
-        .into_iter()
-        .find(|p| p.id == id)
-        .ok_or_else(|| ToolFailure::new("not_installed", format!("没有装 {id}")))?;
-    let line = bus
-        .plugins
-        .installed_detail(&id, &bus.plugins.owner_languages())
-        .ok_or_else(|| ToolFailure::new("internal_error", format!("{id} 的详情读不到")))?
-        .permissions
-        .into_iter()
-        .find(|line| line.permission == permission.to_string() && line.optional)
-        .ok_or_else(|| {
-            ToolFailure::new(
-                "invalid_input",
-                format!("{id} 没有把 {permission} 声明成可选"),
-            )
-        })?;
-    Ok((id, permission, enabled, line, cards::text(&view.title)))
 }
 
 /// 开关一项可选权限（ADR-0057）：打开必发卡片、不能被放宽；关掉按 ADR-0024 的放宽走。
@@ -380,12 +311,37 @@ async fn set_permission(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
-    let checked = checked_permission(bus, &args).await;
+    let checked = required(&args, "id")
+        .and_then(|id| PluginId::parse(id).map_err(|e| e.to_string()))
+        .and_then(|id| {
+            let enabled = args
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(|| "enabled 要是 true 或 false".to_owned())?;
+            let permission = required(&args, "permission")?
+                .parse::<Permission>()
+                .map_err(|e| e.to_string())?;
+            let view = bus
+                .plugins
+                .list()
+                .into_iter()
+                .find(|p| p.id == id)
+                .ok_or_else(|| format!("没有装 {id}"))?;
+            let line = bus
+                .plugins
+                .installed_detail(&id, &bus.plugins.owner_languages())
+                .ok_or_else(|| format!("{id} 的详情读不到"))?
+                .permissions
+                .into_iter()
+                .find(|line| line.permission == permission.to_string() && line.optional)
+                .ok_or_else(|| format!("{id} 没有把 {permission} 声明成可选"))?;
+            Ok((id, permission, enabled, line, cards::text(&view.title)))
+        });
     let (id, permission, enabled, line, title) = match checked {
         Ok(found) => found,
-        Err(failure) => return bus.deny(caller, name, &value, &failure),
+        Err(message) => return bus.deny(caller, name, &value, &message),
     };
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
+    let langs = bus.plugins.owner_languages();
     let highest = line.risk == Some(wonton_protocol::PermissionRisk::Highest);
     let bot = crate::plugin::store::OpenedBy::Bot {
         plugin_id: caller.id.to_string(),
@@ -393,7 +349,7 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
+        move |bus: Arc<Bus>| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -410,14 +366,11 @@ async fn set_permission(
                         .to_string(),
                     l10n::text(&langs, "chat-permission-done", &[("title", title.into())]),
                 ),
-                Err(e) => Outcome::failed(
-                    e.kind(),
-                    l10n::text(
-                        &langs,
-                        "chat-permission-failed",
-                        &[("id", id.to_string().into()), ("error", e.to_string().into())],
-                    ),
-                ),
+                Err(e) => Outcome::failed(l10n::text(
+                    &langs,
+                    "chat-permission-failed",
+                    &[("id", id.to_string().into()), ("error", e.to_string().into())],
+                )),
             }
         }
     };
@@ -434,7 +387,7 @@ async fn set_permission(
         .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
         .is_some();
     if cleared {
-        let outcome = run(Arc::clone(bus), SecretValues::new(), Default::default()).await;
+        let outcome = run(Arc::clone(bus)).await;
         let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
         bus.audit.record(&Record {
             caller: caller.id.as_str(),
@@ -461,47 +414,35 @@ async fn uninstall(
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
     let checked = required(&args, "id").and_then(|id| {
-        let id =
-            PluginId::parse(id).map_err(|e| ToolFailure::new("invalid_input", e.to_string()))?;
+        let id = PluginId::parse(id).map_err(|e| e.to_string())?;
         let view = bus
             .plugins
             .list()
             .into_iter()
             .find(|p| p.id == id)
-            .ok_or_else(|| ToolFailure::new("not_installed", format!("没有装 {id}")))?;
+            .ok_or_else(|| format!("没有装 {id}"))?;
         if id == caller.id {
-            return Err(ToolFailure::new("invalid_input", "不能卸载自己"));
+            return Err("不能卸载自己".to_owned());
         }
         if bus.plugins.is_system(&id) {
-            return Err(ToolFailure::new(
-                "unsupported",
-                format!("{id} 是系统插件，不能卸载"),
-            ));
+            return Err(format!("{id} 是系统插件，不能卸载"));
         }
         Ok((id, cards::text(&view.title)))
     });
     let (id, title) = match checked {
         Ok(found) => found,
-        Err(failure) => return bus.deny(caller, name, &value, &failure),
+        Err(message) => return bus.deny(caller, name, &value, &message),
     };
     let purge = args
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
+    let langs = bus.plugins.owner_languages();
     let draft = cards::uninstall(&caller.name, &title, purge, &langs);
-    let run = move |bus: Arc<Bus>,
-                    _secrets: SecretValues,
-                    _settings: wonton_protocol::SettingValues| async move {
+    let run = move |bus: Arc<Bus>| async move {
         match bus
             .plugins
-            .uninstall_detached(
-                id.clone(),
-                purge,
-                Vec::new(),
-                true,
-                bus.plugins.owner_languages(),
-            )
+            .uninstall_detached(id.clone(), purge, bus.plugins.owner_languages())
             .await
         {
             Ok(report) => {
@@ -521,18 +462,15 @@ async fn uninstall(
                 let result = json!({"uninstalled": id, "report": report});
                 Outcome::ok(result.to_string(), message)
             }
-            Err(e) => Outcome::failed(
-                e.kind(),
-                l10n::text(
-                    &langs,
-                    "chat-uninstall-failed",
-                    &[
-                        ("id", id.as_str().into()),
-                        ("kind", e.kind().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ),
-            ),
+            Err(e) => Outcome::failed(l10n::text(
+                &langs,
+                "chat-uninstall-failed",
+                &[
+                    ("id", id.as_str().into()),
+                    ("kind", e.kind().into()),
+                    ("error", e.to_string().into()),
+                ],
+            )),
         }
     };
     bus.confirmed(caller, name, value, (draft, activity), run)

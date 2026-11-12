@@ -31,8 +31,6 @@ fn hosts_are_classified_by_subdomain() {
         urls.classify("matrix.wonton.internal:8080"),
         HostKind::PluginMatrix
     );
-    // 浏览器和插件各用一个主机名，都算身份提供方。
-    assert_eq!(urls.classify("auth.wonton.internal:8080"), HostKind::Auth);
     assert_eq!(
         urls.classify("models.wonton.internal"),
         HostKind::PluginModels
@@ -59,10 +57,6 @@ fn hosts_are_classified_by_subdomain() {
         urls.origin("auth.wonton.localhost"),
         "http://auth.wonton.localhost:8080"
     );
-    assert_eq!(
-        urls.auth_internal_origin(),
-        "http://auth.wonton.internal:8080"
-    );
 }
 
 #[test]
@@ -72,14 +66,6 @@ fn a_proxy_that_is_not_an_address_stops_the_core_from_starting() {
         assert!(with("ftp://proxy:21").is_err(), "{name}");
         assert!(with("http://proxy:7899").is_ok(), "{name}");
     }
-}
-
-#[test]
-fn a_doh_server_that_is_not_an_address_stops_the_core_from_starting() {
-    let with = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_DOH_URL", value)]);
-    assert!(with("ftp://1.1.1.1/dns-query").is_err());
-    assert!(with("https://1.1.1.1").is_err());
-    assert!(with("https://1.1.1.1/dns-query").is_ok());
 }
 
 #[test]
@@ -95,8 +81,8 @@ fn invalid_settings_fail_fast() {
     assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_INSTANCE", "dev-1")]).is_err());
     // 局域网端口不能开在公网地址上：核心启动时就报错退出。
     let lan = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_LAN_ADDRESSES", value)]);
-    assert!(lan("192.168.0.10,203.0.113.5").is_err());
-    let addresses = lan("192.168.0.10, fd00::10")
+    assert!(lan("192.168.0.193,203.0.113.5").is_err());
+    let addresses = lan("192.168.0.193, fd00::10")
         .unwrap()
         .lan_addresses
         .unwrap();

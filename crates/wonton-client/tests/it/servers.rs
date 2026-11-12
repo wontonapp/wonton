@@ -2,7 +2,6 @@
 //! 隧道服务端跑在本机。聊天的部分（切回来不用重新登录）在 `chat::server_switch`，传输的部分在 `files`。
 
 use wonton_client::{Action, CoreError, HomeStatus, ServerName, ServerRow, SettingsEntry};
-use wonton_protocol::ServerKind;
 
 use crate::home::{Home, Phone};
 
@@ -10,7 +9,6 @@ fn row(id: &str, number: u32, current: bool) -> ServerRow {
     ServerRow {
         id: id.to_owned(),
         name: ServerName::Default { number },
-        kind: ServerKind::Wonton,
         current,
     }
 }
@@ -214,7 +212,6 @@ async fn pairing_the_same_server_again_replaces_its_old_place() {
                 name: ServerName::Named {
                     name: "办公室".into(),
                 },
-                kind: ServerKind::Wonton,
                 current: true,
             }]
             && !servers.adding

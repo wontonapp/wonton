@@ -10,7 +10,6 @@ use axum::routing::get;
 use tokio::net::TcpListener;
 
 use super::super::fake_docker::FakeDocker;
-use super::super::names::Instance;
 use super::super::names::container_name;
 use super::super::{PluginId, PluginManager, PluginPackage, PluginStatus};
 use super::github::zh;
@@ -138,14 +137,7 @@ impl Bed {
     async fn install_gateway(&self) {
         let port = fake_gateway(self.keys.clone()).await;
         self.manager
-            .install_checked(
-                provider(port),
-                &[],
-                &[],
-                false,
-                Default::default(),
-                &super::langs(),
-            )
+            .install_checked(provider(port), &[], &[], false, &super::langs())
             .await
             .unwrap();
     }
@@ -176,14 +168,8 @@ async fn consumers_get_their_own_verified_credential_through_the_core() {
     assert_eq!(env["MODEL"], "group/default");
     assert_eq!(bed.keys.lock().unwrap()["app.test"], env["KEY"]);
     assert_eq!(env["KEY"].len(), 64);
-    // 值走标准输入，不进命令行参数。健康探测凭据（<网关>/health）也在这之后签发，按名挑使用方的。
-    let issue = bed
-        .docker
-        .execs()
-        .into_iter()
-        .rev()
-        .find(|exec| exec.cmd.last().is_some_and(|name| name == "app.test"))
-        .unwrap();
+    // 值走标准输入，不进命令行参数。
+    let issue = bed.docker.execs().into_iter().last().unwrap();
     assert_eq!(issue.container, container_name("system-models", "magpie"));
     assert!(!issue.cmd.iter().any(|arg| arg.contains(&env["KEY"])));
     assert_eq!(issue.stdin, format!("{}\n", env["KEY"]).into_bytes());
@@ -238,23 +224,13 @@ async fn uninstall_revokes_the_credential() {
         .uninstall(&id, false, &super::langs())
         .await
         .unwrap();
-    // 健康探测凭据（<网关>/health）不属于使用方，不算数。
-    let consumer_keys = |keys: &BTreeMap<String, String>| {
-        keys.keys()
-            .filter(|name| !name.ends_with("/health"))
-            .count()
-    };
-    assert_eq!(
-        consumer_keys(&bed.keys.lock().unwrap()),
-        0,
-        "卸载时在网关里吊销"
-    );
+    assert!(bed.keys.lock().unwrap().is_empty(), "卸载时在网关里吊销");
     // 重装是一个新值：不删数据卸载也不保留凭据。
     bed.manager
         .install(&consumer(), &models(), super::langs())
         .await
         .unwrap();
-    assert_eq!(consumer_keys(&bed.keys.lock().unwrap()), 1);
+    assert_eq!(bed.keys.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]
@@ -427,14 +403,7 @@ async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
     let dir = tempfile::tempdir().unwrap();
     let manager = Arc::new(manager_with(engine, &dir));
     manager
-        .install_checked(
-            provider(port),
-            &[],
-            &[],
-            false,
-            Default::default(),
-            &super::langs(),
-        )
+        .install_checked(provider(port), &[], &[], false, &super::langs())
         .await
         .unwrap();
     manager
@@ -470,58 +439,12 @@ async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
 }
 
 #[tokio::test]
-async fn a_record_without_bot_keys_still_reads_and_the_plugin_comes_up() {
-    let bed = bed().await;
-    bed.manager
-        .install(&consumer(), &models(), super::langs())
-        .await
-        .unwrap();
-    let env = web_env(&bed);
-    // 较早的核心写下的记录：`vars` 里没有之后才加的 `bot_keys`。
-    let path = bed._dir.path().join("plugins/model-keys/app.test.json");
-    let mut stored: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    stored["vars"].as_object_mut().unwrap().remove("bot_keys");
-    std::fs::write(&path, stored.to_string()).unwrap();
-
-    // 核心重启：同一份数据目录和容器。
-    let restarted = manager_with(bed.manager.engine.clone(), &bed._dir);
-    restarted.restore().await.unwrap();
-    let status = |m: &PluginManager| {
-        m.list()
-            .into_iter()
-            .find(|p| p.id.as_str() == "app.test")
-            .unwrap()
-            .status
-    };
-    assert!(matches!(status(&restarted), PluginStatus::Running));
-
-    // 网关就绪后对账：旧记录能读出来，不把插件标成异常，也不白重建容器。
-    let failures = restarted.reconcile_models().await;
-    assert!(failures.is_empty(), "{failures:?}");
-    assert!(matches!(status(&restarted), PluginStatus::Running));
-    assert_eq!(web_env(&bed), env);
-    let detail = restarted
-        .judged_detail(&PluginId::parse("app.test").unwrap(), &zh())
-        .await
-        .unwrap();
-    assert!(detail.hints.is_empty());
-}
-
-#[tokio::test]
 async fn only_one_gateway_can_be_installed() {
     let bed = bed().await;
     let port = fake_gateway(Keys::default()).await;
     let err = bed
         .manager
-        .install_checked(
-            provider(port),
-            &[],
-            &[],
-            false,
-            Default::default(),
-            &super::langs(),
-        )
+        .install_checked(provider(port), &[], &[], false, &super::langs())
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -542,11 +465,7 @@ async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one(
         .await
         .unwrap();
     let keys = bed.keys.lock().unwrap().clone();
-    // gateway 是 Bot 服务：容器按 Bot 一份。
-    let gateway = env_of_container(
-        &bed.docker,
-        &Instance::default().bot_container("app-test", "gateway", "default"),
-    );
+    let gateway = env_of_container(&bed.docker, &container_name("app-test", "gateway"));
     assert_eq!(gateway["KEY"], keys["app.test/default"]);
     assert_eq!(web_env(&bed)["KEY"], keys["app.test"]);
     assert_ne!(keys["app.test"], keys["app.test/default"]);

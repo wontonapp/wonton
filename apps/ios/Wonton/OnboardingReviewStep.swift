@@ -30,9 +30,6 @@ private struct OnboardingReviewRow: View {
                     PluginIconView(icon: icon, size: WontonTheme.size.taskIcon, model: plugins)
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                    Text(item.kind.section)
-                        .wontonText(WontonTheme.typography.supporting)
-                        .foregroundStyle(Color(colors.textSecondary))
                     Text(item.titles.formatted(.list(type: .and)))
                         .wontonText(WontonTheme.typography.itemTitle)
                         .foregroundStyle(Color(colors.textPrimary))
@@ -102,19 +99,6 @@ private extension OnboardingReviewDetail {
             model.map { String(localized: .onboardingReviewUnreachableModel($0)) }
                 ?? String(localized: .onboardingReviewUnreachable)
         case .signInAfterSetup: String(localized: .onboardingReviewSignInAfterSetup)
-        case .unchanged: String(localized: .onboardingReviewUnchanged)
-        }
-    }
-}
-
-/// 每一行的类别，写在标题上面。
-private extension OnboardingReviewKind {
-    var section: String {
-        switch self {
-        case .profile: String(localized: .onboardingReviewSectionProfile)
-        case .agent: String(localized: .onboardingReviewSectionAgent)
-        case .model: String(localized: .onboardingReviewSectionModel)
-        case .app: String(localized: .onboardingReviewSectionApps)
         }
     }
 }

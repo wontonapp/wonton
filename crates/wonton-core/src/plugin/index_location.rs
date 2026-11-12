@@ -14,11 +14,8 @@ pub const INDEX_FILE: &str = "index.json";
 /// 第三方索引的位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IndexLocation {
-    /// 仓库里的 `index.json`（可以在子目录里），跟着默认分支。
-    Repo {
-        repo: Repo,
-        subdir: Option<String>,
-    },
+    /// 仓库根目录的 `index.json`，跟着默认分支。
+    Repo(Repo),
     Url(Url),
 }
 
@@ -42,22 +39,10 @@ impl IndexLocation {
         }
         if url.host_str() == Some(RAW_HOST) {
             let parts: Vec<&str> = url.path().split('/').filter(|p| !p.is_empty()).collect();
-            if let [owner, name, "HEAD", rest @ ..] = parts.as_slice()
-                && rest.last() == Some(&INDEX_FILE)
-            {
-                let dir = &rest[..rest.len() - 1];
-                let source = match dir {
-                    [] => SourceRef::parse(&format!("github:{owner}/{name}"), langs)?,
-                    dir => SourceRef::parse(
-                        &format!("github:{owner}/{name}/{}", dir.join("/")),
-                        langs,
-                    )?,
-                };
+            if let [owner, name, "HEAD", INDEX_FILE] = parts.as_slice() {
+                let source = SourceRef::parse(&format!("github:{owner}/{name}"), langs)?;
                 debug_assert_eq!(source.wanted, Wanted::Latest);
-                return Ok(Self::Repo {
-                    repo: source.repo,
-                    subdir: source.subdir,
-                });
+                return Ok(Self::Repo(source.repo));
             }
         }
         Ok(Self::Url(url))
@@ -65,10 +50,7 @@ impl IndexLocation {
 
     pub fn address(&self) -> String {
         match self {
-            Self::Repo { repo, subdir } => {
-                let dir = subdir.as_ref().map_or(String::new(), |s| format!("/{s}"));
-                format!("https://{RAW_HOST}/{repo}/HEAD{dir}/{INDEX_FILE}")
-            }
+            Self::Repo(repo) => format!("https://{RAW_HOST}/{repo}/HEAD/{INDEX_FILE}"),
             Self::Url(url) => url.to_string(),
         }
     }
@@ -76,7 +58,7 @@ impl IndexLocation {
     /// 给主人看的提供方：`github.com/owner/repo`，或者索引所在的主机。
     pub fn provider(&self) -> String {
         match self {
-            Self::Repo { repo, .. } => format!("github.com/{repo}"),
+            Self::Repo(repo) => format!("github.com/{repo}"),
             Self::Url(url) => url.host_str().unwrap_or_default().to_owned(),
         }
     }
@@ -122,12 +104,7 @@ impl IndexLocation {
         langs: &Languages,
     ) -> Result<Vec<u8>, GitHubError> {
         match self {
-            Self::Repo { repo, subdir } => {
-                let full = subdir
-                    .as_ref()
-                    .map_or_else(|| path.to_owned(), |subdir| format!("{subdir}/{path}"));
-                github.file(repo, "HEAD", &full, max, langs).await
-            }
+            Self::Repo(repo) => github.file(repo, "HEAD", path, max, langs).await,
             Self::Url(url) if path == INDEX_FILE => github.url(url, max, langs).await,
             Self::Url(url) => {
                 let sibling = url.join(path).map_err(|e| {
@@ -156,10 +133,7 @@ mod tests {
     fn an_index_in_a_repository_follows_the_default_branch_and_names_the_repository() {
         let text = "https://raw.githubusercontent.com/o/r/HEAD/index.json";
         let location = IndexLocation::parse(text, &Languages::default()).unwrap();
-        assert!(matches!(
-            &location,
-            IndexLocation::Repo { repo, subdir: None } if repo.to_string() == "o/r"
-        ));
+        assert!(matches!(&location, IndexLocation::Repo(repo) if repo.to_string() == "o/r"));
         assert_eq!(location.address(), text);
         assert_eq!(location.provider(), "github.com/o/r");
     }

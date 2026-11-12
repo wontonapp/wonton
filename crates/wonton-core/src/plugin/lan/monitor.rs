@@ -15,7 +15,6 @@ use wonton_protocol::{LanChoice, LanFailure};
 use super::select::{self, Bound, Host, Plan, Problem};
 use super::{LanGrant, LanSpec, published};
 use crate::l10n;
-use crate::plugin::health_gate::Gate;
 use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::Undo;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
@@ -356,12 +355,10 @@ impl PluginManager {
         };
         let bind: Vec<IpAddr> = plan.bind.iter().map(|bound| bound.ip).collect();
         let grant = self.lan_grant_on(package, record.lan_webui, bind, plan.announce.clone());
-        let mut ctx = self
+        let ctx = self
             .rebuild_context(package, record, Some(grant), pending.as_ref())
             .await?;
         let langs = self.owner_languages();
-        // Bot 的 Matrix 变量和总线地址也要填：Bot 服务的容器引用了它们，令牌从旧容器读回。
-        self.fill_bot_vars(package, &mut ctx, &langs).await?;
         let mut render_plan = render(package, &ctx, &langs)?;
         match (&pending, reservation) {
             (Some(pending), Some(reservation)) => {
@@ -393,9 +390,7 @@ impl PluginManager {
             }
             _ => unreachable!("迁移标记和预留成对出现"),
         }
-        // 局域网重建是主人正在等着的一次性操作，和安装、启动同一条规则。
-        self.replace_containers(&ctx, render_plan, Gate::StartPeriod)
-            .await
+        self.replace_containers(&ctx, render_plan).await
     }
 
     /// 重建已装插件的容器时的上下文：和安装时一样，凭据用存下的。Bot 的 Matrix 变量另外填（见 [`crate::plugin::egress`]）。
@@ -422,7 +417,6 @@ impl PluginManager {
             )
             .await?;
         ctx.limits = record.limits;
-        ctx.settings = record.settings.clone();
         ctx.gpu = self
             .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
             .await?;
@@ -456,22 +450,21 @@ impl PluginManager {
         Ok(ctx)
     }
 
-    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。等健康的时限按 `gate` 取。
+    /// 先把镜像拉好，再换掉计划里的容器：拉不到时旧容器还在跑。
     pub(in crate::plugin) async fn replace_containers(
         &self,
         ctx: &InstallContext,
         mut plan: Deployment,
-        gate: Gate,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        self.prepare_images(&mut plan, None, &langs).await?;
+        self.prepare_images(&mut plan, &langs).await?;
         // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
         for container in plan.containers.iter() {
             self.engine.remove_container(&container.name).await?;
         }
         self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline = gate.deadline(&plan, self.cfg.install_timeout, Instant::now());
-        self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs)
+        let deadline = Instant::now() + self.cfg.install_timeout;
+        self.start_containers(&plan, &mut Undo::default(), deadline, &langs)
             .await?;
         Ok(())
     }

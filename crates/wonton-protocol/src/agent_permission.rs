@@ -28,15 +28,6 @@ pub struct AgentPermissionRequest {
     pub arguments: Option<serde_json::Value>,
     /// 按顺序显示成卡片上的按钮。没有拒绝类的选项时，核心加一个“取消”按钮。
     pub options: Vec<AgentPermissionOption>,
-    /// 这次请求来自哪个会话（适配层知道 Agent 在哪个房间、哪个话题里干活）。核心当不可信输入核对，规则同 MCP 的
-    /// [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)；不带时卡片落到 Bot 的主房间。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub origin: Option<crate::ConfirmationOrigin>,
-    /// 这条请求属于链上哪个会话（ADR-0061 第 10 节）：核心据此把卡片认到链上，停链时撤回，
-    /// [`HAND_OFF_STATUS_TOOL`](crate::HAND_OFF_STATUS_TOOL) 报
-    /// [`HandOffState::WaitingPermission`](crate::HandOffState::WaitingPermission)。不带时卡片不归任何链。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session: Option<String>,
 }
 
 /// 主人可选的一项。
@@ -124,33 +115,6 @@ mod tests {
         .unwrap();
         assert_eq!(bare.description, None);
         assert_eq!(bare.arguments, None);
-    }
-
-    /// 契约：不带 `session` 的请求照样解析，核心比插件旧也收得下（字段不出现）。
-    #[test]
-    fn a_request_without_a_session_omits_the_field() {
-        let request: AgentPermissionRequest = serde_json::from_value(json!({
-            "tool_call_id": "call-3",
-            "title": "运行 ls",
-            "options": [],
-        }))
-        .unwrap();
-        assert_eq!(request.session, None);
-        assert!(
-            serde_json::to_value(&request)
-                .unwrap()
-                .get("session")
-                .is_none()
-        );
-
-        let chained: AgentPermissionRequest = serde_json::from_value(json!({
-            "tool_call_id": "call-4",
-            "title": "运行 ls",
-            "options": [],
-            "session": "s-1",
-        }))
-        .unwrap();
-        assert_eq!(chained.session.as_deref(), Some("s-1"));
     }
 
     /// 契约：不认识的类别解析不了，核心据此返回 `invalid_input`，不会把它当成同意或拒绝。

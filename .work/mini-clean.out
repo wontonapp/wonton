@@ -1,0 +1,10 @@
+05:34:42 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+05:35:12 等 mini 的重活锁：05:34:41 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+ios ci-42412689480-swiftlint（0 分钟） 占着 —— 等外部：mini
+05:36:12 等 mini 的重活锁：05:34:41 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+ios ci-42412689480-swiftlint（1 分钟） 占着 —— 等外部：mini
+05:37:12 等 mini 的重活锁：05:34:41 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+ios ci-42412689480-swiftlint（2 分钟） 占着 —— 等外部：mini
+05:38:12 等 mini 的重活锁：05:34:41 等 mini 的重活锁：ios npchy-terminal（0 分钟） 占着 —— 等外部：mini
+ios ci-42412689480-swiftlint（3 分钟） 占着 —— 等外部：mini
+mini-slot：拿到锁（ios npchy-linksv），根盘剩 66 GB

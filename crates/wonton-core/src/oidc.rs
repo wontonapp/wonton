@@ -18,20 +18,6 @@ use wonton_protocol::Role;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 发现文档的路径。经网关的两个主机名（`auth.<base>`、[`crate::config::PLUGIN_AUTH_HOST`]）都走它。
-pub const DISCOVERY_PATH: &str = "/.well-known/openid-configuration";
-
-/// 浏览器访问的端点。
-const BROWSER_ENDPOINTS: [&str; 2] = ["authorization_endpoint", "end_session_endpoint"];
-
-/// 插件后端访问的端点。
-const BACKEND_ENDPOINTS: [&str; 4] = [
-    "token_endpoint",
-    "userinfo_endpoint",
-    "jwks_uri",
-    "revocation_endpoint",
-];
-
 /// 客户端可以申请的 scope；`groups` 让应用按家庭角色授权。
 pub const CLIENT_SCOPES: &[&str] = &["openid", "profile", "email", "groups", "offline_access"];
 
@@ -49,7 +35,7 @@ pub enum OidcError {
     Protocol(String),
 }
 
-/// 改写后的发现文档里注入插件用的端点：签发方和后台端点在插件网络里，授权和登出端点是浏览器地址。
+/// 注入给插件的 OIDC 端点（浏览器和插件看到的公开地址）。
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Discovery {
     pub issuer: String,
@@ -132,21 +118,10 @@ impl Hydra {
         }
     }
 
-    /// 身份提供方的原始发现文档。
-    pub async fn discovery(&self) -> Result<Value, OidcError> {
-        let url = format!("{}{DISCOVERY_PATH}", self.public);
-        self.call(Method::GET, &url, None, "读取发现文档").await
-    }
-
-    /// 按谁访问改写端点后的发现文档（[`rewrite_discovery`]）。
-    pub async fn resolved_discovery(
-        &self,
-        browser_origin: &str,
-        backend_origin: &str,
-    ) -> Result<Discovery, OidcError> {
-        let mut document = self.discovery().await?;
-        rewrite_discovery(&mut document, browser_origin, backend_origin)?;
-        serde_json::from_value(document).map_err(|e| OidcError::Protocol(e.to_string()))
+    pub async fn discovery(&self) -> Result<Discovery, OidcError> {
+        let url = format!("{}/.well-known/openid-configuration", self.public);
+        let value = self.call(Method::GET, &url, None, "读取发现文档").await?;
+        serde_json::from_value(value).map_err(|e| OidcError::Protocol(e.to_string()))
     }
 
     /// 登记或更新客户端（幂等），核心重启时用它把记录同步到 Hydra。
@@ -283,46 +258,6 @@ fn rejected(context: &str, status: StatusCode, body: &Value) -> OidcError {
     }
 }
 
-/// 按谁访问改写发现文档里的端点（ADR-0063）：浏览器走的换成 `browser_origin`，插件后端走的换成 `backend_origin`。
-/// 只换 scheme、主机和端口，路径和查询原样；其余字段不动。没写的端点跳过，写不成地址的报协议错。
-pub fn rewrite_discovery(
-    document: &mut Value,
-    browser_origin: &str,
-    backend_origin: &str,
-) -> Result<(), OidcError> {
-    let origin = |text: &str| -> Result<url::Url, OidcError> {
-        text.parse()
-            .map_err(|e| OidcError::Protocol(format!("起点 {text} 不是地址（{e}）")))
-    };
-    let browser = origin(browser_origin)?;
-    let backend = origin(backend_origin)?;
-    for (keys, origin) in [
-        (&BROWSER_ENDPOINTS[..], &browser),
-        (&BACKEND_ENDPOINTS[..], &backend),
-    ] {
-        for key in keys {
-            let Some(field) = document.get_mut(key) else {
-                continue;
-            };
-            let Some(text) = field.as_str() else {
-                return Err(OidcError::Protocol(format!("端点 {key} 不是字符串")));
-            };
-            let mut url: url::Url = text
-                .parse()
-                .map_err(|e| OidcError::Protocol(format!("端点 {key} 不是地址（{e}）")))?;
-            if url.set_scheme(origin.scheme()).is_err() {
-                return Err(OidcError::Protocol(format!("端点 {key} 换不了协议")));
-            }
-            url.set_host(origin.host_str())
-                .map_err(|e| OidcError::Protocol(format!("端点 {key} 换不了主机名（{e}）")))?;
-            url.set_port(origin.port())
-                .map_err(|_| OidcError::Protocol(format!("端点 {key} 换不了端口")))?;
-            *field = Value::String(url.into());
-        }
-    }
-    Ok(())
-}
-
 /// 只授予客户端可申请范围内的 scope。
 pub fn granted_scopes(requested: &[String]) -> Vec<String> {
     requested
@@ -332,9 +267,9 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是角色：主人 `["owner"]` 加客户端声明的组
-/// （清单 `oidc.admin_groups`），家人 `["member"]`，好友 `["friend"]`；未知角色不授予任何组。
-/// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
+/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是家庭角色：主人 `["owner"]` 加客户端声明的组
+/// （清单 `oidc.owner_groups`，只发给这个客户端），家人 `["member"]`（ADR-0045）。Hydra 把
+/// `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 pub fn id_token_claims(
     owner: &Owner,
     role: Role,
@@ -352,12 +287,10 @@ pub fn id_token_claims(
             claims.insert("locale".into(), json!(locale));
         }
     }
-    if has("email") {
-        // 一律是固定用户名派生的内部地址，只认人不收信（ADR-0056）；真实邮箱只留在资料里。
-        claims.insert(
-            "email".into(),
-            json!(crate::owner::internal_email(&owner.username)),
-        );
+    if has("email")
+        && let Some(email) = &owner.email
+    {
+        claims.insert("email".into(), json!(email));
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
@@ -367,9 +300,7 @@ pub fn id_token_claims(
                 groups.extend(extra_groups.iter().cloned());
                 groups
             }
-            Role::Member => vec!["member".to_owned()],
-            Role::Friend => vec!["friend".to_owned()],
-            Role::Other => Vec::new(),
+            _ => vec!["member".to_owned()],
         };
         claims.insert("groups".into(), json!(groups));
     }
@@ -393,25 +324,15 @@ mod tests {
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "profile", "email", "groups"]);
         let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "owner@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
+        assert_eq!(claims["email"], "owner@wonton.localhost");
         assert_eq!(claims["groups"], serde_json::json!(["owner"]));
         assert_eq!(claims["name"], "云吞");
-        let changed = Owner {
-            email: Some("changed@example.com".into()),
-            ..owner.clone()
-        };
-        assert_eq!(
-            id_token_claims(&changed, Role::Owner, &granted, &[], None),
-            claims
-        );
         let no_email = Owner {
             email: None,
             ..owner
         };
         let claims = id_token_claims(&no_email, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "owner@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
+        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
         let member = Owner {
             username: "alice".into(),
             display_name: "爱丽丝".into(),
@@ -420,15 +341,6 @@ mod tests {
         let claims = id_token_claims(&member, Role::Member, &granted, &[], None);
         assert_eq!(claims["groups"], serde_json::json!(["member"]));
         assert_eq!(claims["preferred_username"], "alice");
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &profile, &[], None);
-        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
-        let email: Vec<String> = ["openid", "email"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &email, &[], None);
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert!(claims.get("name").is_none() && claims.get("preferred_username").is_none());
     }
 
     #[test]
@@ -448,34 +360,6 @@ mod tests {
         // 这个人还没有记录时也不发，不猜。
         let claims = id_token_claims(&alice, Role::Member, &profile, &[], None);
         assert!(claims.get("locale").is_none());
-    }
-
-    #[test]
-    fn a_friend_gets_the_internal_mailbox_derived_from_the_fixed_name() {
-        let friend = Owner {
-            username: "friend-0011".into(),
-            display_name: "Bob".into(),
-            email: None,
-        };
-        let granted: Vec<String> = ["openid", "profile", "email", "groups"]
-            .map(String::from)
-            .into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        assert_eq!(claims["groups"], serde_json::json!(["friend"]));
-        // 没授予 email scope 就不发，主人自己的邮箱也不套到好友身上。
-        let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert!(claims.get("email").is_none());
-        let owner = Owner {
-            email: Some("owner@wonton.internal".into()),
-            ..friend
-        };
-        let granted: Vec<String> = ["openid", "email"].map(String::from).into();
-        // 主人也一样：发的是派生内部地址，资料里的真实邮箱不发给插件。
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
     }
 
     #[test]
@@ -502,102 +386,5 @@ mod tests {
         let granted: Vec<String> = vec!["groups".to_owned()];
         let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()], None);
         assert_eq!(claims["groups"], json!(["member"]));
-        let claims = id_token_claims(&owner, Role::Friend, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!(["friend"]));
-        let claims = id_token_claims(&owner, Role::Other, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!([]));
-    }
-
-    #[test]
-    fn friends_get_their_own_identity_without_admin_groups() {
-        let granted = ["openid", "profile", "groups"].map(String::from);
-        for (username, name) in [("friend_bob", "Bob"), ("friend_eve", "Eve")] {
-            let identity = Owner {
-                username: username.into(),
-                display_name: name.into(),
-                email: None,
-            };
-            let claims = id_token_claims(
-                &identity,
-                Role::Friend,
-                &granted,
-                &["owner".into(), "admin".into()],
-                None,
-            );
-            assert_eq!(claims["preferred_username"], username);
-            assert_eq!(claims["name"], name);
-            assert_eq!(claims["groups"], json!(["friend"]));
-            let claims = id_token_claims(&identity, Role::Friend, &[], &["admin".into()], None);
-            assert!(claims.get("groups").is_none());
-            assert!(claims.get("preferred_username").is_none());
-        }
-    }
-
-    /// Hydra v26.2.0 实测的混合文档：授权和登出端点用 public，其余后台端点用 issuer，两边各错一半。
-    fn mixed_document() -> Value {
-        json!({
-            "issuer": "http://auth.wonton.internal:8080",
-            "authorization_endpoint": "http://auth.wonton.localhost:8080/oauth2/auth?prompt=login",
-            "token_endpoint": "http://auth.wonton.localhost:8080/oauth2/token",
-            "userinfo_endpoint": "http://auth.wonton.localhost:8080/userinfo",
-            "jwks_uri": "http://auth.wonton.internal:8080/.well-known/jwks.json",
-            "revocation_endpoint": "http://auth.wonton.internal:8080/oauth2/revoke",
-            "end_session_endpoint": "http://auth.wonton.localhost:8080/oauth2/sessions/logout",
-            "scopes_supported": ["openid", "email"],
-            "claims_supported": ["sub"],
-        })
-    }
-
-    #[test]
-    fn endpoints_are_rewritten_by_who_reaches_them() {
-        let mut document = mixed_document();
-        rewrite_discovery(
-            &mut document,
-            "http://auth.wonton.localhost:8080",
-            "http://auth.wonton.internal:8080",
-        )
-        .unwrap();
-        let expected = json!({
-            "issuer": "http://auth.wonton.internal:8080",
-            "authorization_endpoint": "http://auth.wonton.localhost:8080/oauth2/auth?prompt=login",
-            "token_endpoint": "http://auth.wonton.internal:8080/oauth2/token",
-            "userinfo_endpoint": "http://auth.wonton.internal:8080/userinfo",
-            "jwks_uri": "http://auth.wonton.internal:8080/.well-known/jwks.json",
-            "revocation_endpoint": "http://auth.wonton.internal:8080/oauth2/revoke",
-            "end_session_endpoint": "http://auth.wonton.localhost:8080/oauth2/sessions/logout",
-            "scopes_supported": ["openid", "email"],
-            "claims_supported": ["sub"],
-        });
-        assert_eq!(document, expected);
-    }
-
-    #[test]
-    fn rewriting_also_changes_port_and_leaves_missing_endpoints_alone() {
-        let mut document = json!({
-            "authorization_endpoint": "http://auth.wonton.localhost/oauth2/auth",
-            "token_endpoint": "http://auth.wonton.localhost/oauth2/token",
-        });
-        rewrite_discovery(
-            &mut document,
-            "http://auth.wonton.localhost:18480",
-            "http://auth.wonton.internal:18480",
-        )
-        .unwrap();
-        assert_eq!(
-            document["authorization_endpoint"],
-            "http://auth.wonton.localhost:18480/oauth2/auth"
-        );
-        assert_eq!(
-            document["token_endpoint"],
-            "http://auth.wonton.internal:18480/oauth2/token"
-        );
-        assert!(document.get("jwks_uri").is_none());
-    }
-
-    #[test]
-    fn an_endpoint_that_is_not_an_address_is_a_protocol_error() {
-        let mut document = json!({"token_endpoint": "/oauth2/token"});
-        let error = rewrite_discovery(&mut document, "http://a:1", "http://b:1").unwrap_err();
-        assert!(matches!(error, OidcError::Protocol(_)), "{error}");
     }
 }

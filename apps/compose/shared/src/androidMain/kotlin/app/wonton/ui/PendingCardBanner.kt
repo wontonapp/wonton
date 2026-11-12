@@ -48,8 +48,7 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
         Modifier
             .fillMaxWidth()
             .background(colors.accentFill.toColor())
-            // 没有会话的卡片该去“等你确认”列表；列表页还没有，先不跳。
-            .clickable(role = Role.Button) { cards[0].roomId?.let(onOpen) }
+            .clickable(role = Role.Button) { onOpen(cards[0].roomId) }
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
@@ -59,7 +58,6 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
-            // 装饰：提示文字在右边。
             Icon(WontonIcon.Notify, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
             Text(
                 pendingCardsText(cards),
@@ -69,7 +67,6 @@ fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            // 装饰：整条可点，箭头只表示能过去。
             Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall), tint = text)
         }
         colors.accentFillBorder?.let { border ->

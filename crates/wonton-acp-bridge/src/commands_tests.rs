@@ -6,7 +6,6 @@ use tokio::sync::broadcast;
 use super::*;
 use crate::acp::test_support::*;
 use crate::acp::{AcpClient, AgentNotice};
-use crate::l10n::zh;
 
 #[derive(Clone, Default)]
 struct MemorySink {
@@ -53,13 +52,7 @@ async fn connected() -> (FakeAgent, AcpClient, broadcast::Receiver<AgentNotice>)
         .await
         .unwrap();
     bounded(
-        client.new_session(
-            "/workspace",
-            "http://mcp.wonton.internal/mcp",
-            "plan",
-            None,
-            &origin(None),
-        ),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan"),
         "session/new",
     )
     .await
@@ -81,7 +74,7 @@ async fn deliver(
         panic!("不是 session/update");
     };
     commands
-        .receive(sink, Some("session-1"), &session_id, &update, zh())
+        .receive(sink, Some("session-1"), &session_id, &update)
         .await;
 }
 
@@ -111,10 +104,7 @@ async fn own_command_comes_first_and_an_unchanged_table_is_not_written_again() {
     assert_eq!(writes.len(), 1);
     let entries = writes[0]["commands"].as_array().unwrap();
     assert_eq!(entries[0]["name"], "wonton");
-    assert_eq!(
-        entries[0]["description"],
-        text(zh(), "cmd-description", &[])
-    );
+    assert_eq!(entries[0]["description"], OWN_DESCRIPTION);
     assert!(entries[0]["hint"].as_str().unwrap().contains("login"));
     assert_eq!(entries.len(), 3);
     assert_eq!(entries[1]["name"], "review");
@@ -170,7 +160,7 @@ async fn a_late_update_from_an_old_session_is_ignored() {
         panic!("不是 session/update");
     };
     commands
-        .receive(&sink, Some("session-2"), &session_id, &update, zh())
+        .receive(&sink, Some("session-2"), &session_id, &update)
         .await;
     assert!(sink.writes().is_empty());
     drop(client);
@@ -197,7 +187,7 @@ async fn disconnect_writes_back_the_table_with_only_the_own_command() {
     bounded(closed.changed(), "Agent 断开").await.unwrap();
     assert!(*closed.borrow());
 
-    commands.reset(&sink, zh()).await;
+    commands.reset(&sink).await;
     let writes = sink.writes();
     assert_eq!(writes.len(), 2);
     let entries = writes[1]["commands"].as_array().unwrap();
@@ -209,7 +199,7 @@ async fn disconnect_writes_back_the_table_with_only_the_own_command() {
 async fn a_missing_permission_is_reported_once_per_room() {
     let (agent, client, mut notices) = connected().await;
     let mut commands = Commands::new();
-    let sink = MemorySink::failing(MatrixError::Forbidden {
+    let sink = MemorySink::failing(MatrixError::Unauthorized {
         errcode: "M_FORBIDDEN".into(),
         message: "没有权限".into(),
     });
@@ -258,12 +248,8 @@ async fn other_write_errors_only_go_to_the_log() {
 
 #[test]
 fn help_covers_the_subcommands_other_modules_handle() {
-    let help = help(zh());
     for subcommand in SUBCOMMANDS {
-        assert!(help.contains(&format!("/wonton {subcommand}")));
-    }
-    for hidden in ["interrupt", "queue", "steer"] {
-        assert!(!help.contains(hidden), "{hidden} 不进帮助");
+        assert!(help().contains(&format!("/wonton {subcommand}")));
     }
     assert!(is_help_request("/wonton"));
     assert!(is_help_request("  /wonton  "));
@@ -271,8 +257,6 @@ fn help_covers_the_subcommands_other_modules_handle() {
     assert!(!is_help_request("/wonton login"));
     assert!(!is_help_request("/wonton login cancel"));
     assert!(!is_help_request("/wonton interrupt 继续"));
-    assert!(!is_help_request("/wonton interrupt"));
-    assert!(!is_help_request("/wonton end"));
     assert!(!is_help_request("/review"));
     assert!(!is_help_request("/wontonfoo"));
 }

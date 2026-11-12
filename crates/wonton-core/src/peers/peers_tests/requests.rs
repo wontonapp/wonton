@@ -6,7 +6,7 @@ use super::*;
 #[tokio::test]
 async fn the_same_endpoint_sends_again_without_a_new_request_or_notice() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -27,7 +27,7 @@ async fn the_same_endpoint_sends_again_without_a_new_request_or_notice() {
 #[tokio::test]
 async fn the_notice_follows_the_owners_language() {
     let a = TestCore::start_in("ja", "Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -43,7 +43,7 @@ async fn the_notice_follows_the_owners_language() {
 #[tokio::test]
 async fn a_rejection_is_remembered_until_the_owner_unrejects() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -76,7 +76,7 @@ async fn a_rejection_is_remembered_until_the_owner_unrejects() {
 #[tokio::test]
 async fn requests_and_rejections_survive_a_restart() {
     let mut a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     let c = TestCore::start("Chen", "c.example.internal").await;
 
     let code = a.peers.issue_code();
@@ -99,7 +99,7 @@ async fn requests_and_rejections_survive_a_restart() {
 #[tokio::test]
 async fn a_rejection_is_picked_up_by_the_poll() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_as(
@@ -125,7 +125,7 @@ async fn a_rejection_is_picked_up_by_the_poll() {
 #[tokio::test]
 async fn a_user_id_outside_the_reported_server_name_is_refused() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     let error = b
@@ -133,7 +133,7 @@ async fn a_user_id_outside_the_reported_server_name_is_refused() {
             &code,
             &a,
             PeerIdentity {
-                owner_user_id: "@alice:elsewhere.example".to_owned(),
+                owner_user_id: "@jiale:elsewhere.example".to_owned(),
                 ..b.peers.own_identity()
             },
         )
@@ -151,7 +151,7 @@ async fn a_user_id_outside_the_reported_server_name_is_refused() {
 /// 待处理的请求满 20 条、或一小时新收满 10 条：回“对方暂时收不了请求”。
 #[tokio::test]
 async fn the_request_limits_refuse_with_too_many_requests() {
-    let scanner = TestCore::start("Alice", "b.example.internal").await;
+    let scanner = TestCore::start("Jiale", "b.example.internal").await;
 
     // 20 条一直在等的请求（收到的时间很旧，不算进这一小时）。
     let a = TestCore::start_seeded("zh", "Alex", "a.example.internal", (0..20).collect(), 0).await;
@@ -179,7 +179,7 @@ async fn the_request_limits_refuse_with_too_many_requests() {
 #[tokio::test]
 async fn cancelling_our_request_removes_it_on_the_other_side() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
@@ -198,7 +198,7 @@ async fn cancelling_our_request_removes_it_on_the_other_side() {
 #[tokio::test]
 async fn approving_a_gone_request_says_not_found() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
     let code = a.peers.issue_code();
     b.scan_code(&code, &a).await.unwrap();
     a.request_now("b.example.internal");
@@ -248,7 +248,7 @@ async fn a_display_name_conflict_is_marked_on_the_request() {
 #[tokio::test]
 async fn mutual_requests_pair_without_an_approval() {
     let a = TestCore::start("Alex", "a.example.internal").await;
-    let b = TestCore::start("Alice", "b.example.internal").await;
+    let b = TestCore::start("Jiale", "b.example.internal").await;
 
     let a_code = a.peers.issue_code();
     let b_code = b.peers.issue_code();

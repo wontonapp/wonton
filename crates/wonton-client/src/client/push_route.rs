@@ -1,8 +1,7 @@
 //! 推送跟着服务器走（ADR-0042 的“推送带上服务器 ID”）：推送来自哪台，就在哪台的作用域里取消息；推送地址变了，
 //! 其他几台也要重新登记。单独放一个文件，`client.rs` 不超过行数上限。
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use wonton_l10n::l10n;
@@ -11,18 +10,12 @@ use wonton_protocol::{ChatFailure, CoreError, PushEndpoint, PushNotification, Pu
 use super::ClientCore;
 use super::switch::lock;
 use crate::l10n::{CATALOG, language};
-use crate::push::{DirectConfirmation, Payload, record};
+use crate::push::{Payload, record};
 use crate::scope::{Entered, Scope, Visits};
 use crate::servers::ServerList;
 
 /// 给不是当前这台的服务器重新登记，每台最多等这么久（要建隧道、恢复会话、登记、注册 pusher）。
 const REGISTER_WAIT: Duration = Duration::from_secs(60);
-
-/// 正在给哪台后台登记哪个地址。`SetPushEndpoint` 每次启动壳都会再来一遍（Android 的 UnifiedPush 开机时常常
-/// 连着回调几次 `onNewEndpoint`），而另一台的登记要等 PUT 返回、注册完 pusher 才写盘（`record::save`）。
-/// 只靠磁盘记录去重的话，写盘前窗口里的重复地址会登记第二次；内存里记下在登记的地址，和磁盘记录一起去重。
-/// 登记结束（成败都算）就清掉，失败的下回照常再登记。
-pub(super) type InFlightRegistrations = Arc<Mutex<HashMap<String, PushEndpoint>>>;
 
 enum Route {
     Current(Arc<Scope>),
@@ -43,10 +36,6 @@ impl ClientCore {
         &self,
         payload: Vec<u8>,
     ) -> Result<Option<PushNotification>, CoreError> {
-        // 家人的确认卡片直推（ADR-0016）：卡片内容就在推送里，认出槽位就行，不用连上服务器取消息。
-        if let Some(direct) = DirectConfirmation::parse(&payload) {
-            return Ok(Some(self.route_direct(direct)?));
-        }
         let payload = Payload::parse(&payload)?;
         let (slot, notification) = match self.route(&payload.server)? {
             Route::Current(scope) => (scope.slot.clone(), in_scope(&scope, &payload).await?),
@@ -83,18 +72,6 @@ impl ClientCore {
 }
 
 impl ClientCore {
-    /// 确认卡片直推不用连上那台服务器：卡片内容是全的，认出本机的槽位就行。推送来自已移除的服务器时
-    /// `server_id` 留空，壳照实说。
-    fn route_direct(&self, direct: DirectConfirmation) -> Result<PushNotification, CoreError> {
-        let slot = self.servers.slot_of(&direct.server);
-        Ok(slot
-            .map(|slot| PushNotification {
-                server_id: Some(slot),
-                ..direct.notification()
-            })
-            .unwrap_or_else(|| direct.notification()))
-    }
-
     /// 和换服务器串行：判断是不是当前这台、为它开临时作用域，中间不会换服务器。
     fn route(&self, server: &str) -> Result<Route, CoreError> {
         let _switching = lock(&self.switching);
@@ -111,99 +88,42 @@ impl ClientCore {
     /// 推送地址变了：配过的其他几台在后台逐台临时连上去重新登记。连不上的，下次切过去时当前作用域会补上。
     /// 地址没变（每次启动壳都会再给一遍）的不动。
     pub(super) fn register_others(&self, scope: &Scope, endpoint: PushEndpoint) {
-        let others = others_to_register(
-            &self.servers,
-            &self.in_flight_registrations,
-            &scope.slot,
-            &endpoint,
-        );
+        let others = others_to_register(&self.servers, &scope.slot, &endpoint);
         if others.is_empty() {
             return;
         }
         let visits = self.visits.clone();
-        let in_flight = self.in_flight_registrations.clone();
         scope.spawn(async move {
             for slot in others {
-                register_on(&visits, &in_flight, &slot, endpoint.clone()).await;
+                register_on(&visits, &slot, endpoint.clone()).await;
             }
         });
     }
 }
 
-/// 已落盘的记录相同、或者正在登记的地址相同，都不用再登记。查“在途”和记下“要登记”要在同一把锁里做完：
-/// 分开的话，挨得极近的两次同一地址会在第一次记下之前都放进来。
-fn others_to_register(
-    servers: &ServerList,
-    in_flight: &InFlightRegistrations,
-    current: &str,
-    endpoint: &PushEndpoint,
-) -> Vec<String> {
-    let candidates: Vec<String> = servers
+fn others_to_register(servers: &ServerList, current: &str, endpoint: &PushEndpoint) -> Vec<String> {
+    servers
         .view()
         .servers
         .into_iter()
         .map(|row| row.id)
         .filter(|slot| slot != current && !record::matches(&servers.slot_dir(slot), endpoint))
-        .collect();
-    let mut in_flight = lock(in_flight);
-    candidates
-        .into_iter()
-        .filter(|slot| {
-            if in_flight.get(slot) == Some(endpoint) {
-                return false;
-            }
-            in_flight.insert(slot.clone(), endpoint.clone());
-            true
-        })
         .collect()
 }
 
-async fn register_on(
-    visits: &Arc<Visits>,
-    in_flight: &InFlightRegistrations,
-    slot: &str,
-    endpoint: PushEndpoint,
-) {
-    let registered = register_on_another(visits, slot, endpoint.clone()).await;
-    // 登记结束（成败都算）就清掉这条“正在登记”；条目已经被后来的新地址顶掉的话不动，那边有自己的登记要清。
-    {
-        let mut in_flight = lock(in_flight);
-        if in_flight.get(slot) == Some(&endpoint) {
-            in_flight.remove(slot);
-        }
-    }
-    match registered {
-        Ok(Some(PushStatus::Registered)) => {
-            tracing::info!(slot, "re-registered push for another server")
-        }
-        Ok(Some(status)) => tracing::info!(
-            slot,
-            ?status,
-            "could not re-register push for another server"
-        ),
-        // 没做登记：已经切到这台（当前作用域会登记），或者没能临时连上（内层已记日志）。
-        Ok(None) => {}
-        Err(error) => tracing::info!(slot, %error, "could not re-register push for another server"),
-    }
-}
-
-async fn register_on_another(
-    visits: &Arc<Visits>,
-    slot: &str,
-    endpoint: PushEndpoint,
-) -> Result<Option<PushStatus>, CoreError> {
+async fn register_on(visits: &Arc<Visits>, slot: &str, endpoint: PushEndpoint) {
     let entered = match visits.other(slot) {
         Ok(Some(entered)) => entered,
         // 已经切到这台了，当前作用域会登记。
-        Ok(None) => return Ok(None),
+        Ok(None) => return,
         Err(error) => {
             tracing::warn!(%error, slot, "could not open another server to re-register push");
-            return Ok(None);
+            return;
         }
     };
     let chat = entered.visit.chat.clone();
     let push = entered.visit.push.clone();
-    entered
+    let registered = entered
         .visit
         .runtime
         .run(async move {
@@ -216,7 +136,7 @@ async fn register_on_another(
                 )
             });
             match tokio::time::timeout(REGISTER_WAIT, settled).await {
-                Ok(Ok(view)) => Ok(Some(view.push.clone())),
+                Ok(Ok(view)) => Ok(view.push.clone()),
                 Ok(Err(_)) => Err(CoreError::NotReady {
                     reason: l10n!(CATALOG, language(), "servers-push-scope-closed"),
                 }),
@@ -230,7 +150,16 @@ async fn register_on_another(
                 }),
             }
         })
-        .await
+        .await;
+    match registered {
+        Ok(PushStatus::Registered) => tracing::info!(slot, "re-registered push for another server"),
+        Ok(status) => tracing::info!(
+            slot,
+            ?status,
+            "could not re-register push for another server"
+        ),
+        Err(error) => tracing::info!(slot, %error, "could not re-register push for another server"),
+    }
 }
 
 async fn in_scope(scope: &Scope, payload: &Payload) -> Result<Option<PushNotification>, CoreError> {

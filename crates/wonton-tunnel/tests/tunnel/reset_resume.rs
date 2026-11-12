@@ -23,7 +23,6 @@ use crate::{
     stall::{DROP_ALL, Flaky, PASS},
     support::{
         Phone, Response, Timeouts, WAIT, endpoint_on, loopback_endpoint, parse_response, read_head,
-        wait_until_quiet,
     },
 };
 
@@ -46,7 +45,6 @@ async fn queued_proxy_requests_survive_retired_embedded_connection_cleanup() {
         .await;
 
     flaky.drop_above(DROP_ALL);
-    wait_until_quiet(&flaky, &phone).await;
     let mut status = phone.client.watch_status();
     let revalidating = phone.client.revalidate();
     tokio::pin!(revalidating);

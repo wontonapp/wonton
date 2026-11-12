@@ -1,6 +1,6 @@
 # ADR-0047 插件通知：插件经核心发进“Wonton”私聊，按级别决定推不推送
 
-- 状态：已接受（2026-11-06；2026-11-12 放宽载荷、成功改回 200，见“上游的写法”）
+- 状态：已接受（2026-11-06）
 
 ## 背景
 
@@ -8,8 +8,6 @@
 Bot 插件不能申请很高和最高级的权限（ADR-0036），监控插件往往要这些权限。插件自带的告警渠道（Webhook、邮件、
 Telegram）主人要另外配，配好了也和 Wonton 的聊天、推送是两套。ADR-0017 把插件通知（`notify` 权限）列为预留，
 ADR-0016 定了核心发给主人的东西都在“Wonton”私聊里。
-
-上游应用只按自己的格式发 Webhook 或通知，插件改不了载荷；只收一种固定格式时，这些应用接不上通知。
 
 ## 决策
 
@@ -20,26 +18,14 @@ ADR-0016 定了核心发给主人的东西都在“Wonton”私聊里。
 
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
-| `title` | 否 | 一句话，最多 120 个字符；没有时核心从正文或载荷里取 |
+| `title` | 是 | 一句话，最多 120 个字符 |
 | `body` | 否 | 纯文本，最多 2000 个字符 |
 | `level` | 否 | `info`（默认）、`warning`、`critical` |
 | `path` | 否 | 插件网页里的一页，规则同 `webui.path`；主人点通知打开插件的这一页。插件没有网页时不能写 |
 
 核心按来源地址认出是哪个插件（同 `mcp.wonton.internal`），不用令牌。没申请 `notify` 的是 403 `permission_denied`，
 插件网络以外的是 403 `unauthenticated`，字段不合法是 400 `invalid_input`，超了频率是 429 `rate_limited`，聊天服务
-不可用是 503 `matrix_unavailable`。发成功是 200（上游的通用 Webhook 普遍只认 200，201 会被记成失败）。
-
-### 上游的写法
-
-插件把上游应用的通知地址直接填成 `WONTON_NOTIFY_URL` 就能用，路径不看（ntfy 的主题、Gotify 的 `/message` 都落在
-它后面），`POST` 和 `PUT` 都收。除上面那套字段，还收：
-
-- ntfy：纯文本正文，`Title` 头是标题，`Priority` 头 4 是 `warning`、5 是 `critical`，`Tags` 头并进正文末行；
-- Gotify：`{title, message, priority}`，`message` 当正文，`priority` 8 及以上是 `warning`、10 是 `critical`；
-- 其它 JSON：拍平成“键: 值”行当正文，从 `title`、`subject`、`name`、`summary` 里找一个当标题，再没有就用第一行，
-  最后兜底“通知”。标题、正文超长的截断（自己填的字段超长仍是 400）。
-
-`level` 也认上游的级别名（`low`、`high`、`max` 等）。`path` 只有自己那套格式带。
+不可用是 503 `matrix_unavailable`。发成功是 201。
 
 ### 核心怎么投
 

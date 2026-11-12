@@ -8,7 +8,7 @@ use ipnet::IpNet;
 
 use super::EgressVars;
 use super::address::ProxyAddress;
-use super::gost::{ALIAS, Relay, RelayFiles, config_yaml, runner};
+use super::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use super::lists::{self, Reach};
 use super::provider::provides_proxy;
 use super::settings::EgressConfig;
@@ -36,10 +36,7 @@ impl PluginManager {
     /// 设置读不出来时不用代理：设置页和探测都会报这个错。
     pub(in crate::plugin) fn follow_core_proxy(&self) {
         match self.egress_config() {
-            Ok(config) => {
-                self.core_proxy.set(config.url.as_ref());
-                self.core_proxy.set_doh(config.doh_url);
-            }
+            Ok(config) => self.core_proxy.set(config.url.as_ref()),
             Err(e) => {
                 tracing::warn!(error = %e, "读不出代理的设置");
                 self.core_proxy.set(None);
@@ -58,7 +55,9 @@ impl PluginManager {
         {
             return Ok(None);
         }
-        Ok(Some(EgressVars))
+        Ok(Some(EgressVars {
+            auth_host: self.cfg.public.auth_host(),
+        }))
     }
 
     fn relay_files(&self) -> RelayFiles {
@@ -89,8 +88,7 @@ impl PluginManager {
         };
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
-        // 同 lifecycle.rs deploy_inner 的减帧：sync_relay 往下到 bollard 的反序列化很深。
-        Box::pin(self.sync_relay(proxy, &config, Some(network))).await
+        self.sync_relay(proxy, &config, Some(network)).await
     }
 
     /// 卸载或回滚时，删网络之前断开：Docker 不让删还有端点的网络。
@@ -152,21 +150,19 @@ impl PluginManager {
         let current = created
             .and_then(|c| c.image.as_deref())
             .is_some_and(|image| {
-                crate::plugin::registry_mirror::reference::same_image(image, &super::gost::image())
+                crate::plugin::registry_mirror::reference::same_image(image, IMAGE)
             });
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
         // 镜像拉不到时什么都不动，正在跑的出口容器继续跑。
-        let owner_langs = self.owner_languages();
-        let mirrors = self.registry_mirrors(&owner_langs).await?;
-        let accelerated =
-            crate::plugin::registry_mirror::accelerated(&super::gost::image(), &mirrors);
+        let mirror = self.registry_mirror_address(&self.owner_languages())?;
         let image = self
             .engine
-            .ensure_image(&super::gost::image(), PullPolicy::Missing, &accelerated)
+            .ensure_image(IMAGE, PullPolicy::Missing, mirror.as_deref())
             .await
             .map_err(|error| {
-                self.registry_pull_error(error, mirrors.docker_hub.is_empty(), &owner_langs)
+                let langs = self.owner_languages();
+                self.registry_pull_error(error, mirror.as_deref(), &langs)
             })?;
         let files = self.relay_files();
         let langs = self.owner_languages();

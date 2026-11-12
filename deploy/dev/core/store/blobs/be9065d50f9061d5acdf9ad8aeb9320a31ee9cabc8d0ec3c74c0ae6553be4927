@@ -1,0 +1,150 @@
+# Hermes：云吞的默认 Agent。核心镜像带着同一份，核心第一次启动时自动装上；这个仓库让主人卸掉以后还能从商店装回来。
+#
+# Hermes 用自带的 Matrix 平台以 bot 身份登录 Tuwunel，只收发消息；模型请求只发给模型网关（magpie）。
+# 每个 Bot 一组 init + gateway 容器（x-wonton.bots）：Hermes 的 profile 不隔离文件系统，
+# 不同人的 Bot 不能共用一个容器。
+name: hermes
+
+x-image: &image nousresearch/hermes-agent:v0.22.5@sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+
+services:
+  # 每次创建容器时（安装、升级、重建）把 Wonton 的 Hermes 插件（wonton/）放进这个 Bot 的数据目录，覆盖旧版本；包里的
+  # config.yaml 只在首次启动前写入，已有配置时不覆盖（Hermes 自己也会改写它，比如 /model）。
+  # 帮助 skill（skills/wonton-help/）同样每次都覆盖，内容从公开文档原样取来。
+  init:
+    image: *image
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        mkdir -p /opt/data/plugins/wonton /opt/data/skills/wonton-help &&
+        cp /seed/wonton/plugin.yaml /seed/wonton/__init__.py /opt/data/plugins/wonton/ &&
+        cp /seed/skills/wonton-help/SKILL.md /opt/data/skills/wonton-help/ &&
+        { test -f /opt/data/config.yaml || cp /seed/config.yaml /opt/data/config.yaml; } &&
+        /opt/hermes/.venv/bin/python /seed/gateway_trust_env.py
+    volumes:
+      - ${WONTON_BOT_DATA}:/opt/data
+    configs:
+      - source: config
+        target: /seed/config.yaml
+      - source: wonton_manifest
+        target: /seed/wonton/plugin.yaml
+      - source: wonton_hooks
+        target: /seed/wonton/__init__.py
+      - source: gateway_trust_env
+        target: /seed/gateway_trust_env.py
+      - source: wonton_help_skill
+        target: /seed/skills/wonton-help/SKILL.md
+    network_mode: none
+    restart: "no"
+
+  gateway:
+    image: *image
+    restart: unless-stopped
+    command: ["gateway", "run"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      # 镜像启动时把内部用户改成这个 uid/gid，再修正数据目录属主。
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+      # matrix.bot：核心代这个 Bot 登录后签发的身份，只给令牌，不给密码。
+      MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      # 私人 Bot 只接受主人的指令；主房间是核心替主人建的加密私聊，定时任务结果发到这里。
+      # 变量名是 MATRIX_HOME_ROOM，不是 Hermes 插件清单里写的 MATRIX_HOME_CHANNEL。
+      MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_OWNER}
+      MATRIX_HOME_ROOM: ${WONTON_MATRIX_HOME_ROOM}
+      # 主流客户端默认加密私聊；依赖缺失时直接失败，不静默退回明文。
+      MATRIX_E2EE_MODE: required
+      # 交叉签名的恢复密钥写在这里，核心收走保管（x-wonton.secrets.matrix_recovery_key）。
+      MATRIX_RECOVERY_KEY_OUTPUT_FILE: /opt/data/platforms/matrix/recovery-key.txt
+      # models：模型网关的地址、只属于这个 Bot 的网关凭据和默认模型，config.yaml 里引用。
+      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}
+      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}
+      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}
+      # tools：核心的 MCP 总线（核心和其他插件的工具），config.yaml 的 mcp_servers.wonton 引用。
+      WONTON_MCP_URL: ${WONTON_MCP_URL}
+      # 默认放行 MEDIA: 发黑名单以外的任何文件，恢复密钥 platforms/matrix/recovery-key.txt 不在黑名单里。这样只放行缓存目录
+      # 和刚产生的文件。
+      HERMES_MEDIA_DELIVERY_STRICT: "1"
+    volumes:
+      - ${WONTON_BOT_DATA}:/opt/data
+      # wonton__save_file 只从这里取文件：Agent 的数据目录里有密钥。
+      - ${WONTON_APP_DATA}/outbox:/opt/data/outbox
+    healthcheck:
+      # Matrix 连上才算健康：用 Hermes 自己生成的本机 API 密钥查详细状态。
+      test:
+        - CMD-SHELL
+        - >-
+          k="$$(sed -n 's/^API_SERVER_KEY=//p' /opt/data/.env)" &&
+          curl -fsS -H "Authorization: Bearer $$k" http://127.0.0.1:8642/health/detailed |
+          python3 -c 'import json, sys; sys.exit(json.load(sys.stdin)["platforms"]["matrix"]["state"] != "connected")'
+      interval: 30s
+      timeout: 10s
+      start_period: 3m
+      start_interval: 2s
+
+configs:
+  config:
+    file: ./config.yaml
+  wonton_manifest:
+    file: ./wonton/plugin.yaml
+  wonton_hooks:
+    file: ./wonton/__init__.py
+  gateway_trust_env:
+    file: ./gateway_trust_env.py
+  wonton_help_skill:
+    file: ./skills/wonton-help/SKILL.md
+
+x-wonton:
+  spec: "0.4"
+  id: com.nousresearch.hermes
+  version: 0.5.4
+  kind: agent
+  title: { zh: Hermes, en: Hermes }
+  description:
+    zh: 默认 Agent：以 Matrix bot 身份和你对话，模型经 magpie
+    en: Default agent that chats as a Matrix bot and reaches models through magpie
+  icon: icon.png
+  notices: [NOTICE]
+  author: { name: geraldpeng6 }
+  homepage: https://github.com/NousResearch/hermes-agent
+  license: MIT
+  tags: { zh: [AI], en: [AI] }
+  about:
+    zh: |
+      Nous Research 的 Hermes Agent：在 App 里和它私聊，它能联网搜索、用你装的插件提供的工具、读你授权的文件夹。
+
+      消息走加密的 Matrix 私聊，模型请求只发给模型网关，要先在“模型设置”里接好模型。它改数据、装卸插件前会发确认卡片，由你决定。
+    en: |
+      Hermes Agent by Nous Research: chat with it in the app. It can search the web, use the tools your plugins provide and read the folders you allow.
+
+      Messages travel in an encrypted Matrix chat, and model requests only go to the model gateway, so connect a model in Model settings first. It sends a confirmation card before changing data or installing plugins, and you decide.
+  release_notes:
+    zh: 初始配置显式关闭会话自动清理，不再在主人配对前询问是否启用；不覆盖已有配置，不恢复历史消息密钥。
+    en: Explicitly disables automatic session pruning in the initial configuration, avoiding the pre-pairing opt-in prompt. Existing configuration and historical message keys are unchanged.
+  agent:
+    protocol: matrix
+  bot:
+    display_name: { zh: Hermes, en: Hermes }
+  # init 和 gateway 每个 Bot 一份；每个 Bot 有自己的数据目录、Matrix 令牌和网关凭据。
+  bots:
+    services: [init, gateway]
+  secrets:
+    # Hermes 只凭令牌就自动建好交叉签名，恢复密钥只写在数据目录里；交给核心保管，数据丢了还能恢复。
+    matrix_recovery_key:
+      collect: { service: gateway, path: /opt/data/platforms/matrix/recovery-key.txt }
+  permissions:
+    - models
+    - matrix.bot
+    # 经核心的 MCP 总线用工具：装卸插件、在授权的文件夹里找文件等。
+    - tools
+    # 网页搜索等工具。
+    - network.egress
+  requirements:
+    arch: [amd64, arm64]
+    memory: 1G

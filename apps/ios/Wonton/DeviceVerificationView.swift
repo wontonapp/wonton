@@ -132,9 +132,16 @@ struct DeviceVerificationFlowView: View {
             reasonText(reason)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textPrimary))
-            // 下一步只给发起确认的这台设备：“重新开始”是主按钮，恢复密钥是备选。没取全钥匙也先重来：可能只是请求丢了。
+            // 下一步只给发起确认的这台设备；拒绝和表情对不上时，“重新开始”是主按钮，恢复密钥是备选。
             if flow.startedHere {
                 switch reason {
+                case .keysMissing:
+                    if let useRecoveryKey {
+                        Button(action: useRecoveryKey) {
+                            Text(.verificationUseRecoveryKey).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(WontonButtonStyle(kind: .primary))
+                    }
                 case .acceptedElsewhere, .other:
                     EmptyView()
                 default:

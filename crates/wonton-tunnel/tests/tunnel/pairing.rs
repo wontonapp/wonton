@@ -68,11 +68,11 @@ async fn a_device_with_the_right_secret_is_paired_and_others_are_turned_away() {
     let phone = loopback_endpoint(phone_key.clone(), 0, Timeouts::Default).await;
 
     let good = code_for(&server, handler.secret.clone());
-    let reply = pair(&phone, &good, "Alice 的 iPhone").await.unwrap();
+    let reply = pair(&phone, &good, "Jiale 的 iPhone").await.unwrap();
     assert_eq!(reply, PairResponse::Paired);
     assert_eq!(
         *handler.paired.lock().unwrap(),
-        vec![(phone_key.public(), "Alice 的 iPhone".to_owned())],
+        vec![(phone_key.public(), "Jiale 的 iPhone".to_owned())],
         "登记的应是握手认证过的设备身份"
     );
 

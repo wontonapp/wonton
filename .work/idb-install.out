@@ -1,0 +1,35 @@
+mini-slot：拿到锁（ios npchy-linksv），根盘剩 38 GB
++ export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
++ HOMEBREW_NO_AUTO_UPDATE=1
++ HOMEBREW_NO_INSTALL_CLEANUP=1
++ export https_proxy=http://127.0.0.1:7899 http_proxy=http://127.0.0.1:7899 all_proxy=http://127.0.0.1:7899
++ https_proxy=http://127.0.0.1:7899
++ http_proxy=http://127.0.0.1:7899
++ all_proxy=http://127.0.0.1:7899
++ brew install facebook/fb/idb-companion
++ tail -15
+casks and commands from the listed taps. Trust whole taps with:
+  brew trust antoniorodr/memo farion1231/ccswitch ghostwright/ghost-os oven-sh/bun steipete/tap teamookla/speedtest tw93/tap
+Untap them with:
+  brew untap antoniorodr/memo farion1231/ccswitch ghostwright/ghost-os oven-sh/bun steipete/tap teamookla/speedtest tw93/tap
+To disable trust checks:
+  export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+This is not recommended and will be removed in a later release.
+For more information, see:
+  https://docs.brew.sh/Tap-Trust
+==> Would install 1 formula:
+idb-companion
+==> Fetching downloads for: idb-companion
+✔︎ Formula idb-companion (1.7.8)
+==> Installing idb-companion from facebook/fb
+🍺  /opt/homebrew/Cellar/idb-companion/1.7.8: 37 files, 117.5MB, built in 1 second
++ /opt/homebrew/bin/python3 -m pip install --user --break-system-packages fb-idb
++ tail -4
+  WARNING: The script idb is installed in '/Users/jiale/Library/Python/3.14/bin' which is not on PATH.
+  Consider adding this directory to PATH or, if you prefer to suppress this warning, use --no-warn-script-location.
+
+Successfully installed aiofiles-25.1.0 fb-idb-1.7.7 grpclib-0.4.9 multidict-7.2.1 protobuf-7.36.2
++ ls -la /opt/homebrew/bin/idb_companion /opt/homebrew/bin/idb
++ tail -3
+ls: /opt/homebrew/bin/idb: No such file or directory
+lrwxr-xr-x@ 1 jiale  admin  47 11月  8 04:29 /opt/homebrew/bin/idb_companion -> ../Cellar/idb-companion/1.7.8/bin/idb_companion

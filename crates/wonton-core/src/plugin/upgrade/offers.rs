@@ -10,7 +10,7 @@ use tokio::time::Instant;
 use wonton_protocol::{CardLine, InstalledPlugins, StoreProblem, UpgradeOffer};
 
 use super::super::github::{GitHubError, Tag};
-use super::super::github_source::{SourceRef, Trust, latest, version_of};
+use super::super::github_source::{SourceRef, Trust, latest};
 use super::super::index_location::IndexLocation;
 use super::super::install_error::InstallError;
 use super::super::languages::Languages;
@@ -72,7 +72,7 @@ pub struct Upgrades {
 }
 
 impl Upgrades {
-    pub(in crate::plugin) fn forget(&self, id: &PluginId) {
+    pub(super) fn forget(&self, id: &PluginId) {
         self.checked.write().expect("升级检查锁中毒").remove(id);
         let mut failed = self.bundled_failed.write().expect("升级检查锁中毒");
         failed.remove(id);
@@ -307,11 +307,8 @@ impl PluginManager {
                     &[("tag", t.name.as_str().into())],
                 )
             });
-        let offer = match latest(tags, source.tag_prefix()) {
-            Some(tag)
-                if version_of(&tag.name, source.tag_prefix())
-                    .is_some_and(|version| newer(version, &record.version)) =>
-            {
+        let offer = match latest(tags) {
+            Some(tag) if newer(tag.name.trim_start_matches('v'), &record.version) => {
                 self.community_offer(&source, &tag, record, langs).await?
             }
             _ => None,
@@ -370,13 +367,15 @@ impl PluginManager {
             tracing::info!(plugin = %record.id, tag = %tag.name, reason = %why, "新版本不提示");
             Ok(None)
         };
-        let path = source.subdir.as_ref().map_or_else(
-            || COMPOSE_FILE.to_owned(),
-            |subdir| format!("{subdir}/{COMPOSE_FILE}"),
-        );
         let compose = self
             .github
-            .file(&source.repo, &tag.commit, &path, MAX_FILE_BYTES, langs)
+            .file(
+                &source.repo,
+                &tag.commit,
+                COMPOSE_FILE,
+                MAX_FILE_BYTES,
+                langs,
+            )
             .await;
         let compose = match compose {
             Err(e @ (GitHubError::NotFound(_) | GitHubError::TooBig(_))) => {
@@ -402,7 +401,7 @@ impl PluginManager {
                 &[("id", manifest.id.to_string().into())],
             ));
         }
-        if version_of(&tag.name, source.tag_prefix()) != Some(manifest.version.as_str()) {
+        if tag.name.strip_prefix('v') != Some(manifest.version.as_str()) {
             return skip(crate::l10n::text(
                 langs,
                 "plugin-settings-upgrade-manifest-version",

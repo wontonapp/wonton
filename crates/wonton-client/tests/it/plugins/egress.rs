@@ -336,11 +336,7 @@ async fn the_choice_on_the_confirmation_page_reaches_the_core() {
         client_problem: None,
     });
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
-        })
+        .dispatch(Action::InstallPlugin { preview: shown })
         .unwrap();
     let path = "/_wonton/api/plugins";
     let deadline = Instant::now() + WAIT;

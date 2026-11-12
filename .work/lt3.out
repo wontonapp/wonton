@@ -1,0 +1,5 @@
+06:20:09 等 mini 的重活锁：ios ci-42418306165-build（0 分钟） 占着 —— 等外部：mini
+06:20:39 等 mini 的重活锁：ios ci-42418306165-build（1 分钟） 占着 —— 等外部：mini
+06:21:39 等 mini 的重活锁：ios ci-42418306165-build（2 分钟） 占着 —— 等外部：mini
+mini-slot：拿到锁（ios npchy-linksv），根盘剩 57 GB
+bash: /Users/jiale/wonton-dev/lt3.sh: No such file or directory

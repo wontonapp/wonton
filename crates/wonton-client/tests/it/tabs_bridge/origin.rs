@@ -2,7 +2,7 @@ use axum::http::Method;
 use serde_json::{Value, json};
 use wonton_client::{TabBridgeAction, TabBridgeResult, TabDisplay, TabState};
 
-use super::support::{PAGE_ORIGIN, bar, environment, open_page, selected_page, wait_quiet};
+use super::support::{PAGE_ORIGIN, environment, open_page, selected_page, wait_quiet};
 
 fn page_requests() -> [Value; 4] {
     [
@@ -32,7 +32,7 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
     let before = rig.app.tabs();
     for message in page_requests() {
         assert_ignored(rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             true,
             PAGE_ORIGIN.to_owned(),
             message.to_string(),
@@ -49,7 +49,7 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
     .await
     .unwrap();
     let reply = rig.app.tab_handle_message(
-        bar(&tab),
+        tab,
         true,
         PAGE_ORIGIN.to_owned(),
         page_requests()[0].to_string(),
@@ -83,7 +83,7 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
             // 正文伪造的来源不能盖过原生回调给出的来源。
             message["origin"] = PAGE_ORIGIN.into();
             assert_ignored(rig.app.tab_handle_message(
-                bar(&tab),
+                tab.clone(),
                 true,
                 origin.to_owned(),
                 message.to_string(),
@@ -91,7 +91,7 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
             ));
         }
         assert_ignored(rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             true,
             origin.to_owned(),
             "{".to_owned(),
@@ -109,7 +109,7 @@ async fn matching_origin_accepts_implicit_and_explicit_default_ports() {
     let (rig, tab) = open_page(TabDisplay::Standard, true).await;
     for origin in [PAGE_ORIGIN, "http://APP.FEED.wonton.localhost:80"] {
         let reply = rig.app.tab_handle_message(
-            bar(&tab),
+            tab.clone(),
             true,
             origin.to_owned(),
             page_requests()[0].to_string(),
