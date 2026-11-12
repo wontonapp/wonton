@@ -23,6 +23,8 @@
     <string name="friends_block_server">サーバーをブロック</string>
     <!-- Row subtitle for a blocked person. -->
     <string name="friends_block_invitations">招待をブロック中</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。</string>
     <!-- Section heading on the peers page above the friend requests. -->
     <string name="friends_peers_title">友だちリクエスト</string>
 </resources>

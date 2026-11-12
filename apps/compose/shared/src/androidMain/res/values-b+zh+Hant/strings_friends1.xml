@@ -23,6 +23,8 @@
     <string name="friends_block_server">封鎖整台伺服器</string>
     <!-- Row subtitle for a blocked person. -->
     <string name="friends_block_invitations">已封鎖邀請</string>
+    <!-- Next step under the refused failure. -->
+    <string name="friends_error_forbidden_next">對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。</string>
     <!-- Section heading on the peers page above the friend requests. -->
     <string name="friends_peers_title">好友邀請</string>
 </resources>
