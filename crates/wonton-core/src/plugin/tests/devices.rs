@@ -334,6 +334,7 @@ async fn upgrades_keep_the_chosen_devices_and_uninstall_releases_them() {
         .unwrap()
         .unwrap();
     assert_eq!(record.devices.len(), 2);
+    let entry_label = record.entry_label.expect("安装后应保存入口标签");
 
     // 新版本没改设备写法：升级不带选择，沿用记下的那一个。
     let next = plugin("").replace("version: 1.0.0", "version: 1.1.0");
@@ -352,6 +353,7 @@ async fn upgrades_keep_the_chosen_devices_and_uninstall_releases_them() {
         .load(&super::super::manifest::PluginId::parse("app.test").unwrap())
         .unwrap()
         .unwrap();
+    assert_eq!(record.entry_label.as_deref(), Some(entry_label.as_str()));
     assert!(
         record
             .devices
