@@ -243,6 +243,24 @@ internal fun RoomRoute(
 /** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
 private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
 
+/**
+ * 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
+ * 横屏时导航栏或挖孔在侧边，左右也要让。
+ */
+@Composable
+private fun messageMenuBounds(): Rect {
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val direction = LocalLayoutDirection.current
+    return Rect(
+        safe.getLeft(density, direction).toFloat(),
+        safe.getTop(density, direction).toFloat(),
+        (windowSize.width - safe.getRight(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density, direction)).toFloat(),
+    )
+}
+
 @Composable
 private fun messageMenuBounds(): Rect {
     // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
