@@ -193,6 +193,24 @@ private fun Placeholder(size: Dp) {
     }
 }
 
+/** 谁在哪台设备上处理了这条卡片；没记回答者时为空。 */
+@Composable
+internal fun answeredLine(view: ConfirmationView): Pair<String, String>? {
+    val who = view.card.answeredBy ?: return null
+    val device = view.card.answeredByDevice
+    val rejected = if (device != null) {
+        stringResource(R.string.confirmations_rejected_by_device, device, who)
+    } else {
+        stringResource(R.string.confirmations_rejected_by, who)
+    }
+    val approved = if (device != null) {
+        stringResource(R.string.confirmations_approved_by_device, device, who)
+    } else {
+        stringResource(R.string.confirmations_approved_by, who)
+    }
+    return rejected to approved
+}
+
 /** 收起行上显示的一句：等回答时是到期时刻，结束的是结果。 */
 @Composable
 private fun rowLine(view: ConfirmationView): String? = when (val state = view.card.state) {
@@ -204,13 +222,15 @@ private fun rowLine(view: ConfirmationView): String? = when (val state = view.ca
             )
         }
     ConfirmationState.Running -> stringResource(R.string.confirmation_card_running)
-    is ConfirmationState.Succeeded -> stringResource(R.string.confirmations_state_succeeded)
+    is ConfirmationState.Succeeded ->
+        answeredLine(view)?.approved ?: stringResource(R.string.confirmations_state_succeeded)
     is ConfirmationState.Failed -> state.message.takeIf { it.isNotEmpty() }
         ?.let { stringResource(R.string.confirmation_card_failed_result, it) }
         ?: stringResource(R.string.confirmations_state_failed)
     is ConfirmationState.Uncertain -> state.message.takeIf { it.isNotEmpty() }
         ?.let { stringResource(R.string.confirmation_card_uncertain_result, it) }
         ?: stringResource(R.string.confirmations_state_uncertain)
-    ConfirmationState.Rejected -> stringResource(R.string.confirmation_card_rejected)
+    ConfirmationState.Rejected ->
+        answeredLine(view)?.rejected ?: stringResource(R.string.confirmation_card_rejected)
     ConfirmationState.Expired -> stringResource(R.string.confirmation_card_expired)
 }

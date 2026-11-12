@@ -13,6 +13,7 @@ use crate::plugin::languages::Languages;
 use super::confirm::{AnswerError, Confirmations, DEFAULT_WINDOW};
 use super::test_support::Cards;
 use super::tests::{Setup, setup_window, text};
+use super::windows::AnsweredBy;
 use super::{Caller, cards};
 use crate::plugin::PluginId;
 
@@ -334,6 +335,34 @@ async fn a_window_does_not_answer_an_agents_own_permission_card() {
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].id, agent_card.id);
     asked.abort();
+}
+
+/// 回答记下是谁、哪台设备（原始值，给壳拼“在设备上被谁拒了”）；超时自动拒的没有回答者。
+#[tokio::test]
+async fn answering_records_who_and_which_device() {
+    let s = setup_window(DEFAULT_WINDOW).await;
+    let first = s.spawn(DELETE, delete_args("first"));
+    let card = s.cards.wait_for(1).await;
+    let answered = AnsweredBy {
+        by: "mom/device:abc",
+        user_id: Some("@mom:home.example"),
+        device: Some("Mom 的手机"),
+    };
+    s.bus
+        .answer_card_with_secrets(
+            &card.id,
+            Answer::Reject,
+            None,
+            Default::default(),
+            Default::default(),
+            &answered,
+        )
+        .unwrap();
+    let stored = s.bus.confirmations().card(&card.id).expect("卡片还在");
+    assert_eq!(stored.state, ConfirmationState::Rejected);
+    assert_eq!(stored.answered_by.as_deref(), Some("@mom:home.example"));
+    assert_eq!(stored.answered_by_device.as_deref(), Some("Mom 的手机"));
+    first.abort();
 }
 
 /// 列表的版本：开卡、过期各加一，挂着的长轮询被唤醒（ADR-0016）。

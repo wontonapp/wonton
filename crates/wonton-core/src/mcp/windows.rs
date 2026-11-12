@@ -13,6 +13,16 @@ use super::confirm::{AnswerError, EndedWindow};
 /// 上次运行的卡片还改不了时（Matrix 没好），隔这么久再试。
 const RECOVER_RETRY: Duration = Duration::from_secs(60);
 
+/// 谁回答了这张卡片：审计串 `by`，以及要记到卡片上的用户 ID 和设备名（原始值，给壳拼说明）。
+pub struct AnsweredBy<'a> {
+    /// 审计串，口径同 [`acted_by`](crate::gateway::api::acted_by)：主人令牌是 `owner_token`，设备是 `用户名/device:<id>`。
+    pub by: &'a str,
+    /// 回答者的 Matrix 用户 ID。
+    pub user_id: Option<&'a str>,
+    /// 回答的设备名；主人令牌或设备没报名字时为空。
+    pub device: Option<&'a str>,
+}
+
 impl Bus {
     /// 主人回答卡片。`by` 是谁回答的。
     pub fn answer_card(
@@ -22,13 +32,18 @@ impl Bus {
         choice_id: Option<&str>,
         by: &str,
     ) -> Result<ConfirmationState, AnswerError> {
+        let answered = AnsweredBy {
+            by,
+            user_id: None,
+            device: None,
+        };
         self.answer_card_with_secrets(
             id,
             answer,
             choice_id,
             SecretValues::new(),
             Default::default(),
-            by,
+            &answered,
         )
     }
 
@@ -40,7 +55,7 @@ impl Bus {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
-        by: &str,
+        answered: &AnsweredBy<'_>,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = self.confirmations.answer_with_secrets(
             id,
@@ -48,10 +63,11 @@ impl Bus {
             choice_id,
             secrets,
             settings,
+            answered,
             &self.owner_languages(),
         )?;
         if answer == Answer::AllowWindow {
-            self.window_opened(id, by);
+            self.window_opened(id, answered.by);
         }
         Ok(state)
     }

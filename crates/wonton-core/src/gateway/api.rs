@@ -252,6 +252,32 @@ fn from_another_page(headers: &HeaderMap, origin: &str) -> Option<Response> {
     ))
 }
 
+/// 回答卡片的请求是谁、哪台设备发的：审计串口径同 [`acted_by`]，另给出用户 ID 和设备名（原始值，记到卡片上）。
+pub(super) fn answerer(
+    gateway: &Gateway,
+    peer: Option<&Extension<TunnelPeer>>,
+    headers: &HeaderMap,
+) -> (String, Option<String>, Option<String>) {
+    let by = acted_by(gateway, peer, headers);
+    let person = if by == "owner_token" {
+        Some(Person::owner(gateway.owner.username()))
+    } else {
+        gateway.device_person(peer.copied().map(|Extension(peer)| peer))
+    };
+    let server = gateway.matrix.as_ref().map(|matrix| matrix.server_name());
+    let user_id = person
+        .zip(server)
+        .map(|(person, server)| format!("@{}:{server}", person.username));
+    let device = peer.copied().and_then(|Extension(TunnelPeer(id))| {
+        gateway
+            .tunnel
+            .devices
+            .get(&id)
+            .and_then(|device| device.name.clone())
+    });
+    (by, user_id, device)
+}
+
 /// 过了 [`plugin_denied`] 的请求是谁发的，写审计用：主人令牌是 `owner_token`，设备是 `<用户名>/device:<id>`。
 pub(super) fn acted_by(
     gateway: &Gateway,

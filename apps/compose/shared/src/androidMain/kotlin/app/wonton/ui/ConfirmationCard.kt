@@ -67,7 +67,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 onShownChange = { shown = it },
             ) { name, value -> secrets = secrets + (name to value) }
         }
-        CardState(card.state)
+        CardState(view)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
         // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
@@ -131,7 +131,8 @@ private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, on
 }
 
 @Composable
-private fun CardState(state: ConfirmationState) {
+private fun CardState(view: ConfirmationView) {
+    val state = view.card.state
     val style = WontonTheme.typography.supporting
     val colors = WontonTheme.colors
     when (state) {
@@ -143,7 +144,10 @@ private fun CardState(state: ConfirmationState) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
             Text(stringResource(R.string.confirmation_card_running), style = style)
         }
-        is ConfirmationState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, state.message, colors.success)
+        is ConfirmationState.Succeeded -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+            StateLine(WontonIcon.CheckCircleFill, state.message, colors.success)
+            answeredLine(view)?.let { Text(it.second, style = style, color = colors.textSecondary.toColor()) }
+        }
         is ConfirmationState.Failed -> StateLine(
             WontonIcon.Error,
             stringResource(R.string.confirmation_card_failed_result, state.message),
@@ -155,7 +159,7 @@ private fun CardState(state: ConfirmationState) {
             colors.warning,
         )
         ConfirmationState.Rejected -> Text(
-            stringResource(R.string.confirmation_card_rejected),
+            answeredLine(view)?.first ?: stringResource(R.string.confirmation_card_rejected),
             style = style,
             color = colors.textSecondary.toColor(),
         )

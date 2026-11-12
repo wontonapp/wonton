@@ -361,12 +361,18 @@ impl Setup {
         answer: Answer,
         secrets: wonton_protocol::SecretValues,
     ) -> Result<ConfirmationState, AnswerError> {
+        let unanswered = super::windows::AnsweredBy {
+            by: "owner_token",
+            user_id: None,
+            device: None,
+        };
         self.bus.confirmations().answer_with_secrets(
             id,
             answer,
             None,
             secrets,
             Default::default(),
+            &unanswered,
             &Languages::from_header(None),
         )
     }

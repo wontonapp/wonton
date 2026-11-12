@@ -29,7 +29,7 @@ mod server;
 mod takeover;
 mod tool_policy;
 pub mod upstream;
-mod windows;
+pub(crate) mod windows;
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;

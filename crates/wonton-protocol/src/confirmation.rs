@@ -59,6 +59,11 @@ pub struct ConfirmationCard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub requester: Option<crate::ConfirmationRequester>,
+    /// 回答的设备名：设备配对时报的名字。经主人令牌回答、或设备没报名字时为空。
+    /// 壳拼“在<设备>上被<谁>拒绝了/允许了”，只在结束时出现。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub answered_by_device: Option<String>,
     /// 卡片是关于什么的（ADR-0061）：核心按它写文字和按钮，壳按它做类别特有的跳转。旧核心没写时为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]

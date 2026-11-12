@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
 import app.wonton.protocol.BotView
+import app.wonton.client.ClientCore
 import app.wonton.protocol.ConfirmationsViewModel
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonPushedBar
@@ -26,6 +27,16 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.icons.CheckCircle
 import app.wonton.ui.icons.WontonIcon
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
+fun ClientCore.confirmationsUpdates(): Flow<ConfirmationsViewModel> = flow {
+    subscribeConfirmations().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
+    }
+}
 
 /** “等你确认”列表（ADR-0016）：代替原来 Wonton 私聊里的卡片记录。等回答的在前、结束 24 小时内的在后，
  * 每张能点开回答。取不到列表时上次的还在，照实提示并给重试。 */

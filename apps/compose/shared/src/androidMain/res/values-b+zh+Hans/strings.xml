@@ -240,7 +240,7 @@
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">发送</string>
     <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
-    <string name="confirmation_card_expired">已过期，没有执行</string>
+    <string name="confirmation_card_expired">超时未确认，已自动拒绝</string>
     <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
     <string name="confirmation_card_failed_result">没有成功：%1$s</string>
     <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
@@ -269,6 +269,10 @@
     <string name="confirmations_title">等你确认</string>
     <!-- Collapsed card row while a card is waiting: when the request expires. Argument: the time, already formatted. -->
     <string name="confirmations_until">至 %1$s</string>
+    <string name="confirmations_rejected_by_device">在 %1$s 上被 %2$s 拒绝</string>
+    <string name="confirmations_rejected_by">被 %1$s 拒绝</string>
+    <string name="confirmations_approved_by_device">在 %1$s 上被 %2$s 允许</string>
+    <string name="confirmations_approved_by">被 %1$s 允许</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <string name="connection_unpaired">未配对</string>
     <string name="connection_connected">已连接</string>

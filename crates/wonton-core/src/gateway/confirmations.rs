@@ -15,9 +15,10 @@ use wonton_protocol::{
     CONFIRMATIONS_WAIT_SECS, ConfirmationAnswer, ConfirmationList, ConfirmationReply, WindowEnd,
 };
 
-use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
+use super::api::{acted_by, answerer, denied, error_response, languages, plugin_denied, requester};
 use super::{Gateway, TunnelPeer};
 use crate::l10n;
+use crate::mcp::windows::AnsweredBy;
 use crate::mcp::{AnswerError, Confirmations};
 use crate::plugin::languages::Languages;
 
@@ -140,7 +141,12 @@ pub async fn answer(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    let by = acted_by(&gateway, peer.as_ref(), &headers);
+    let (by, user_id, device) = answerer(&gateway, peer.as_ref(), &headers);
+    let answered = AnsweredBy {
+        by: &by,
+        user_id: user_id.as_deref(),
+        device: device.as_deref(),
+    };
     let langs = languages(&headers);
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
@@ -168,7 +174,7 @@ pub async fn answer(
         answer.choice_id.as_deref(),
         answer.secrets,
         answer.settings,
-        &by,
+        &answered,
     ) {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),
         Err(e) => {

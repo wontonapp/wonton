@@ -292,6 +292,7 @@ impl Confirmations {
             origin: audience.origin,
             audience: wonton_protocol::CardAudience::Keeper,
             answered_by: None,
+            answered_by_device: None,
             category: None,
         };
         let (waiter, answered) = oneshot::channel();
@@ -441,12 +442,18 @@ impl Confirmations {
         answer: Answer,
         choice_id: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
+        let answered = super::windows::AnsweredBy {
+            by: "owner_token",
+            user_id: None,
+            device: None,
+        };
         self.answer_with_secrets(
             id,
             answer,
             choice_id,
             SecretValues::new(),
             Default::default(),
+            &answered,
             &Languages::from_header(None),
         )
     }
@@ -459,6 +466,7 @@ impl Confirmations {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
+        answered: &super::windows::AnsweredBy<'_>,
         langs: &Languages,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
@@ -532,6 +540,9 @@ impl Confirmations {
             self.bump();
             return Err(AnswerError::Expired);
         }
+        // 记录谁、哪台设备回答的：结束的卡片上写明，别的设备也看得到是谁处理的。
+        slot.card.answered_by = answered.user_id.map(str::to_owned);
+        slot.card.answered_by_device = answered.device.map(str::to_owned);
         slot.card.state = state.clone();
         slot.ended = Some(now);
         if answer == Answer::AllowWindow {

@@ -7,7 +7,7 @@ struct ConfirmationCardRow: View {
     let view: ConfirmationView
     let bots: [BotView]
     let plugins: PluginsModel
-    let answer: (CardChoice) -> Void
+    let answer: (CardChoice, [String: String]) -> Void
     let stopWindow: () -> Void
 
     @State private var expanded = false
@@ -44,7 +44,7 @@ struct ConfirmationCardBar: View {
     let views: [ConfirmationView]
     let bots: [BotView]
     let plugins: PluginsModel
-    let answer: (CardChoice) -> Void
+    let answer: (CardChoice, [String: String]) -> Void
     let stopWindow: () -> Void
 
     @State private var expanded = false
@@ -165,7 +165,35 @@ struct ConfirmationRequesterAvatar: View {
 }
 
 /// 收起行上显示的一句：等回答时是到期时刻，结束的是结果。
-private enum CardRowLine {
+enum CardRowLine {
+    /// 谁在哪台设备上拒绝了；没记回答者时为空。
+    static func rejected(of view: ConfirmationView) -> String? {
+        answered(view.card) { device, who in
+            String(localized: .confirmationsRejectedByDevice(device, who))
+        } plain: { who in
+            String(localized: .confirmationsRejectedBy(who))
+        }
+    }
+
+    /// 谁在哪台设备上允许了；没记回答者时为空。
+    static func approved(of view: ConfirmationView) -> String? {
+        answered(view.card) { device, who in
+            String(localized: .confirmationsApprovedByDevice(device, who))
+        } plain: { who in
+            String(localized: .confirmationsApprovedBy(who))
+        }
+    }
+
+    /// 有回答者时拼一句：有设备名带设备，没有时只说人。
+    private static func answered(
+        _ card: ConfirmationCard,
+        both: (String, String) -> String,
+        plain: (String) -> String
+    ) -> String? {
+        guard let who = card.answeredBy else { return nil }
+        guard let device = card.answeredByDevice else { return plain(who) }
+        return both(device, who)
+    }
     static func text(of view: ConfirmationView) -> String? {
         switch view.card.state {
         case .pending:
@@ -175,7 +203,7 @@ private enum CardRowLine {
         case .running:
             return String(localized: .confirmationCardRunning)
         case .succeeded:
-            return String(localized: .confirmationsStateSucceeded)
+            return CardRowLine.approved(of: view) ?? String(localized: .confirmationsStateSucceeded)
         case let .failed(message):
             if message.isEmpty { return String(localized: .confirmationsStateFailed) }
             return String(localized: .confirmationCardFailedResult(message))
@@ -183,7 +211,7 @@ private enum CardRowLine {
             if message.isEmpty { return String(localized: .confirmationsStateUncertain) }
             return String(localized: .confirmationCardUncertainResult(message))
         case .rejected:
-            return String(localized: .confirmationCardRejected)
+            return CardRowLine.rejected(of: view) ?? String(localized: .confirmationCardRejected)
         case .expired:
             return String(localized: .confirmationCardExpired)
         }

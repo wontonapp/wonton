@@ -268,7 +268,7 @@
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">Send</string>
     <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
-    <string name="confirmation_card_expired">Expired, not carried out</string>
+    <string name="confirmation_card_expired">Timed out without a response, denied automatically</string>
     <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
     <string name="confirmation_card_failed_result">Didn\'t go through: %1$s</string>
     <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
@@ -298,6 +298,10 @@
     <string name="confirmations_title">Waiting for you</string>
     <!-- Collapsed card row while a card is waiting: when the request expires. Argument: the time, already formatted. -->
     <string name="confirmations_until">Until %1$s</string>
+    <string name="confirmations_rejected_by_device">Denied by %2$s on %1$s</string>
+    <string name="confirmations_rejected_by">Denied by %1$s</string>
+    <string name="confirmations_approved_by_device">Allowed by %2$s on %1$s</string>
+    <string name="confirmations_approved_by">Allowed by %1$s</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <!-- Connection state value: this device isn't paired with a home server yet. -->
     <string name="connection_unpaired">Not paired</string>

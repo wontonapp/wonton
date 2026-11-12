@@ -1,13 +1,43 @@
 import SwiftUI
 import WontonClient
 
+/// 列表页的接线：订阅核心的列表，回答经聊天模型发出，问题经它的弹窗显示。
+struct ConfirmationsPage: View {
+    let chat: ChatModel
+    let plugins: PluginsModel
+    @State private var confirmations: ConfirmationsModel
+
+    init(chat: ChatModel, plugins: PluginsModel) {
+        self.chat = chat
+        self.plugins = plugins
+        _confirmations = State(initialValue: ConfirmationsModel(core: chat.core))
+    }
+
+    var body: some View {
+        ConfirmationsListView(
+            view: confirmations.viewModel,
+            bots: chat.viewModel.bots,
+            plugins: plugins,
+            answer: { view, choice, secrets in
+                chat.send(.answerConfirmation(
+                    id: view.card.id, answer: choice.answer, choiceId: choice.choiceId,
+                    secrets: secrets, settings: [:]
+                ))
+            },
+            stopWindow: { view in chat.send(.stopConfirmationWindow(id: view.card.id)) },
+            retry: { chat.send(.retryConfirmations) }
+        )
+        .task { await confirmations.observe() }
+    }
+}
+
 /// “等你确认”列表（ADR-0016）：代替原来 Wonton 私聊里的卡片记录。等回答的在前、结束 24 小时内的在后，
 /// 每张能点开回答。取不到列表时上次的还在，照实提示并给重试。
 struct ConfirmationsListView: View {
     let view: ConfirmationsViewModel
     let bots: [BotView]
     let plugins: PluginsModel
-    let answer: (ConfirmationView, CardChoice) -> Void
+    let answer: (ConfirmationView, CardChoice, [String: String]) -> Void
     let stopWindow: (ConfirmationView) -> Void
     let retry: () -> Void
 

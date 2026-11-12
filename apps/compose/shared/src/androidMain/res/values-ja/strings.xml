@@ -240,7 +240,7 @@
     <!-- Screen-reader label of the round send button at the right of the chat composer. -->
     <string name="composer_send">送信</string>
     <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
-    <string name="confirmation_card_expired">期限切れのため実行されていません</string>
+    <string name="confirmation_card_expired">時間切れのため、自動的に拒否されました</string>
     <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
     <string name="confirmation_card_failed_result">実行できませんでした：%1$s</string>
     <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
@@ -269,6 +269,10 @@
     <string name="confirmations_title">確認待ち</string>
     <!-- Collapsed card row while a card is waiting: when the request expires. Argument: the time, already formatted. -->
     <string name="confirmations_until">%1$s まで</string>
+    <string name="confirmations_rejected_by_device">%1$s で %2$s に拒否されました</string>
+    <string name="confirmations_rejected_by">%1$s に拒否されました</string>
+    <string name="confirmations_approved_by_device">%1$s で %2$s に許可されました</string>
+    <string name="confirmations_approved_by">%1$s に許可されました</string>
     <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
     <string name="connection_unpaired">未ペアリング</string>
     <string name="connection_connected">接続済み</string>

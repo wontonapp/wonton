@@ -202,7 +202,7 @@ enum SnapshotFixtures {
                     confirmation(id: "c2", title: "File Sync wants to save into Shared folder", state: .pending, requester: .plugin(pluginId: "app.files")),
                 ],
                 bots: [hermesBot], plugins: plugins,
-                answer: { _ in }, stopWindow: {}
+                answer: { _, _ in }, stopWindow: {}
             )
             .environment(TabsModel(core: core))
             .environment(plugins)
@@ -220,12 +220,21 @@ enum SnapshotFixtures {
                         confirmation(id: "c2", title: "File Sync wants to save into Shared folder", state: .pending, requester: .plugin(pluginId: "app.files")),
                     ],
                     finished: [
-                        confirmation(id: "c3", title: "Hermes wants to install Grafana", state: .succeeded(message: "Installed Grafana 10.2"), requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example")),
+                        confirmation(
+                            id: "c3", title: "Hermes wants to install Grafana", state: .succeeded(message: "Installed Grafana 10.2"),
+                            requester: .bot(bot: BotRef(pluginId: "app.hermes", bot: "owner"), userId: "@hermes:home.example"),
+                            answeredBy: "@owner:home.example", answeredByDevice: "Owner's iPhone"
+                        ),
+                        confirmation(
+                            id: "c4", title: "File Sync wants to delete Shared/photos", state: .rejected,
+                            requester: .plugin(pluginId: "app.files"),
+                            answeredBy: "@mom:home.example", answeredByDevice: "Mom's phone"
+                        ),
                     ],
                     loading: false, problem: nil
                 ),
                 bots: [hermesBot], plugins: plugins,
-                answer: { _, _ in }, stopWindow: { _ in }, retry: {}
+                answer: { _, _, _ in }, stopWindow: { _ in }, retry: {}
             )
             .environment(TabsModel(core: core))
             .environment(plugins)
@@ -244,7 +253,7 @@ enum SnapshotFixtures {
                     problem: ChatProblem(reason: .transportUnavailable, message: "GET /_wonton/api/confirmations: connection refused")
                 ),
                 bots: [hermesBot], plugins: plugins,
-                answer: { _, _ in }, stopWindow: { _ in }, retry: {}
+                answer: { _, _, _ in }, stopWindow: { _ in }, retry: {}
             )
             .environment(TabsModel(core: core))
             .environment(plugins)
@@ -253,14 +262,16 @@ enum SnapshotFixtures {
 
     private static func confirmation(
         id: String, title: String, state: ConfirmationState, requester: ConfirmationRequester?,
-        lines: [CardLine] = [], choices: [CardChoice] = []
+        lines: [CardLine] = [], choices: [CardChoice] = [],
+        answeredBy: String? = nil, answeredByDevice: String? = nil
     ) -> ConfirmationView {
         ConfirmationView(
             card: ConfirmationCard(
                 id: id, state: state, title: title, lines: lines, choices: choices,
                 expiresAtMs: timestampMs + 5 * 60_000,
                 window: nil, pluginId: nil, secretInputs: [], settings: nil,
-                requester: requester, origin: nil
+                requester: requester, answeredByDevice: answeredByDevice,
+                category: nil, origin: nil, audience: .keeper, answeredBy: answeredBy
             ),
             sending: nil, sendingChoiceId: nil, problem: nil, window: nil
         )
