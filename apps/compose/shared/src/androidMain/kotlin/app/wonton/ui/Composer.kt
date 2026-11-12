@@ -142,6 +142,7 @@ fun Composer(
 }
 
 /** 附件区的入口：选照片、选文件和粘贴，都只放进附件区，不发。 */
+@OptIn(ExperimentalFoundationApi::class)
 private class Attachments(
     val choose: () -> Unit,
     val pasteListener: ReceiveContentListener,
