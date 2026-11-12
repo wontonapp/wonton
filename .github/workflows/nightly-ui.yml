@@ -41,9 +41,9 @@ jobs:
       issues: write
     env:
       XCODEGEN_VERSION: "2.46.0"
-      # 要后端的走屏（好友、粘贴、安装行、图片查看、Bot 资料）读这两个变量；没有就 XCTSkip。
-      PAIRING_CODE: ${{ inputs.pairing_code }}
-      PAIR_CODES: ${{ inputs.pairing_code }}
+      # 要后端的走屏（好友、粘贴、安装行、图片查看、Bot 资料）读 PAIRING_CODE；没有就 XCTSkip。
+      # xcodebuild 只把 TEST_RUNNER_ 开头的变量（去掉前缀）交给模拟器里的测试进程。
+      TEST_RUNNER_PAIRING_CODE: ${{ inputs.pairing_code }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:

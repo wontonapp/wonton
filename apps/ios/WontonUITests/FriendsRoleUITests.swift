@@ -15,7 +15,7 @@ final class FriendsRoleUITests: XCTestCase {
         try UITestBackend.require()
         app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        UITestBackend.passPairingCode(to: app)
+        try UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 

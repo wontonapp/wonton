@@ -22,7 +22,7 @@ final class BotContactsUITests: XCTestCase {
                       "需要 CONTACTS_BOT_B 和 CONTACTS_USER_A")
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        UITestBackend.passPairingCode(to: app)
+        try UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 
