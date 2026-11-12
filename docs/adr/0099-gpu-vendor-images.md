@@ -1,7 +1,7 @@
 # ADR-0099 按主机显卡厂商选插件镜像：同一插件，NVIDIA 用 CUDA 版，AMD 用 ROCm 版
 
-- 状态：提议（2026-11-12）。方向由主人定（11-12：底座按主机显卡厂商选镜像，只用上游官方发的各厂商镜像，上游没有的不自建）；
-  标“待定”的几处等主人定。补充 [ADR-0018](0018-gpu-for-plugins.md)：那篇定“给容器什么设备”，这篇定“给容器什么镜像”，
+- 状态：已接受（2026-11-12）。方向和下面几处取舍由主人定（11-12：底座按主机显卡厂商选镜像，只用上游官方发的各厂商镜像，
+  上游没有的不自建；预览里不能手动换厂商；显卡厂商发的官方镜像算上游官方；只按厂商分；Ollama 在 AMD 上用 ROCm 版）。补充 [ADR-0018](0018-gpu-for-plugins.md)：那篇定“给容器什么设备”，这篇定“给容器什么镜像”，
   设备的给法、探测和失败原因不变
 
 ## 背景
@@ -78,7 +78,7 @@ x-wonton:
 - **选哪家**：按 `requirements.gpu.vendors` 的书写顺序，取本机第一家能用的，`vendors` 从此是有序的列表。一家都没有：`required`
   装不了（`gpu_unavailable`，原因写成“本机的显卡（AMD）不在这个插件支持的 NVIDIA 里”），`optional` 用通用镜像、不给设备，
   预览写明。两家都有的主机只给选中那家的设备，和 ADR-0018 的“限定了厂商时只给那家的”一致；AMD 和 Intel 混装时设备仍然分不开
-  （都在 `/dev/dri`），只是镜像按选中的那家。**待定 1**：主人能不能在预览里换一家。
+  （都在 `/dev/dri`），只是镜像按选中的那家。预览里不能手动换一家：选哪家只看作者的顺序和本机的显卡。
 - **镜像的架构也要对**：选中那家的镜像不支持本机架构时，这家算不能用，接着看下一家，都不行就按上一条处理。核心在预览时经
   Docker 的 `GET /distribution/{name}/json` 读镜像的平台列表（不拉镜像，核心升级已经这样读过）。读不到（离线、仓库拒绝）时如实
   显示查不出来，不拦安装，拉不下来照常报 `image_pull_failed`。`requirements.arch` 仍管整个插件，只对通用镜像。
@@ -105,7 +105,10 @@ x-wonton:
 - `plugin check --official` 和 `check-index`：厂商版镜像和通用镜像一样要按摘要固定；读每个镜像的平台列表，比 `requirements.arch`
   少时给提醒，不算错误（上一节“镜像的架构也要对”兜住了），读不到算不合格（官方索引收录时要联网）。
 - “只用上游官方镜像，上游没有的不自建”是官方索引的收录规则，写进商店仓库的审核清单，由人审；核心不判断镜像是不是官方的，
-  社区插件照旧可以用任何镜像。**待定 2**：显卡厂商发的镜像（`rocm/comfyui`、`rocm/vllm`）算不算“上游官方”。
+  社区插件照旧可以用任何镜像。
+- 显卡厂商官方发的镜像（AMD 的 `rocm/comfyui`、`rocm/vllm`，NVIDIA 同理）算上游官方。官方索引收录**每一个**厂商版镜像之前，
+  都要先在有那家显卡的真实主机上实测通过（AMD 的在主人的 gfx1151 服务器上），实测项见下面的“待验证项”第 1 条，结果写进
+  对应插件仓库的 PR；没实测过的厂商版不收，插件可以先不带它上架。
 
 ## 没选的做法
 
@@ -115,12 +118,13 @@ x-wonton:
 - **厂商版里也能覆盖 `environment`、`command`**：先不放，用 `WONTON_GPU_VENDOR` 插值；有插件真用得上时再加，加字段比删字段容易。
 - **核心自建 ROCm 镜像或给上游补**：主人定了不自建；改上游、发修改版也违反 AGENTS.md 的“不改上游源码”。
 - **AMD 用 Vulkan 的通用镜像代替 ROCm**：Ollama、llama.cpp 都能这样跑，不用这篇的机制；但 PyTorch 系（ComfyUI、vLLM）没有 Vulkan
-  这条路。作者觉得 Vulkan 够用时，`vendors` 写上 `amd`、`images` 里不写它，就是这条路，两种做法并存。
+  这条路。机制上两种并存（`vendors` 写 `amd`、`images` 里不写它就是 Vulkan 这条），官方的 Ollama 插件在 AMD 上用 ROCm 版，
+  和 Vulkan 的差距由实测跑分给出。
 - **AMD Container Toolkit（`amd-ctk`，CDI `amd.com/gpu=all`）**：要主人在宿主装包、改 daemon 或生成 CDI 规范，文档只写 Instinct 卡和
   Ubuntu 22.04、24.04；`--device` 什么都不用装，ADR-0018 已在 gfx1151 上跑通。
-- **让主人选“我的显卡是哪家”**：探测已经准确，多一个选项只会填错。允不允许改，见待定 1。
-- **按显卡架构细分（`rdna`、`cdna`、`gfx1151`）**：`rocm/vllm` 这样分了，但家用主机几乎都是 RDNA，先只分到厂商；要细分时在厂商
-  下面再加一层，见代价。
+- **让主人选“我的显卡是哪家”，或在预览里换一家**：探测已经准确，多一个选项只会填错；两家都有的主机按作者的顺序选就够了。
+- **按显卡架构细分（`rdna`、`cdna`、`gfx1151`）**：`rocm/vllm` 这样分了，但家用主机几乎都是 RDNA，只分到厂商；要细分时在厂商
+  下面再加一层，另写 ADR。
 
 ## 代价与待验证项
 
@@ -132,13 +136,15 @@ x-wonton:
 
 待验证（实现之后在主人的一台 Strix Halo 服务器上做，另开卡）：
 
-1. Ollama `-rocm`：以非 root、`cap_drop: [ALL]`、只加宿主 `render`、`video` 的 GID 起来，`ollama ps` 显示模型在 GPU 上，`rocminfo`
-   认出 gfx1151，不设 `HSA_OVERRIDE_GFX_VERSION`。同一台上拿通用镜像（Vulkan）对比一次速度。
+1. 每个厂商版镜像收进官方索引前的实测（AMD 的在 gfx1151 上）：以非 root、`cap_drop: [ALL]`、只加宿主 `render`、`video` 的 GID
+   起来，不加 `SYS_PTRACE`、`seccomp=unconfined`、`ipc=host`，不设 `HSA_OVERRIDE_GFX_VERSION`；容器里的 ROCm 认出 gfx1151，
+   插件的主要功能真的跑在显卡上，健康检查通过。Ollama `-rocm` 第一个做：`ollama ps` 显示模型在 GPU 上，并在同一台上和通用镜像
+   （Vulkan）用同一个模型对比跑分（生成和预填充的 tokens/s），数字写进验证结果。
 2. 同一插件在没有显卡的主机上（或可选权限关着）用通用镜像跑 CPU；`required`、`vendors: [nvidia]` 的插件在只有 AMD 的主机上，
    预览的 `blocked` 写清原因。
 3. 只划了 512 MiB 显存的那台：`requirements.gpu.memory` 查不出来时如实显示、不拦安装，模型实际能用 GTT 的内存跑起来。
-4. `rocm/comfyui` 在 gfx1151 上能不能用（它的文档只列数据中心卡），不加 `SYS_PTRACE`、`seccomp=unconfined`、`ipc=host` 能不能跑。
-   不能用就是“上游没有合适的镜像”，按主人的规矩不自建，ComfyUI 先不做。
+4. `rocm/comfyui`、`rocm/vllm`（RDNA 的标签）按第 1 条在 gfx1151 上实测；它们的文档只列数据中心卡。不能用就是“上游没有合适的
+   镜像”，不自建，对应插件先不带 AMD 版。
 5. arm64 主机选到只有 amd64 的厂商版时，预览写明这家不能用，退到下一家或通用镜像。
 6. 没有 NVIDIA 主机：NVIDIA 这条只有假 Docker 和假 sysfs 的行为测试，和 ADR-0018 一样。
 
