@@ -36,7 +36,7 @@ use wonton_protocol::{
 use wonton_tunnel::relays::{FALLBACK_AFTER, RelayTable, is_public_relay, spawn_tier_fallback};
 use wonton_tunnel::{
     LocalProxy, PathInfo, PathKind, ProxyAccess, ProxyCredential, TunnelClient, TunnelError,
-    TunnelStatus,
+    TunnelStats, TunnelStatus,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -603,17 +603,7 @@ impl HomeLink {
         let relay = relay_check(endpoint);
         let stats = client.stats();
         let mut tracker = self.lock_tracker();
-        if let Some(recovery) = tracker.observe(
-            &status,
-            relay,
-            stats.failed_dials,
-            stats.disconnects,
-            stats.last_failure.as_ref().map(failure),
-            now,
-        ) {
-            let outage_ms = recovery.outage.as_millis();
-            tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
-        }
+        observe_tunnel(&mut tracker, &status, relay, &stats, now);
         let notice = tracker.notice(&status, now);
         let just_recovered = tracker.just_recovered(&notice, now);
         let details = ConnectionDetails {
@@ -716,6 +706,28 @@ impl HomeLink {
 enum Published {
     Superseded,
     Tick(Option<Duration>),
+}
+
+/// 把这次的状态和现场统计交给断线跟踪，连接恢复时记一条日志。
+fn observe_tunnel(
+    tracker: &mut Tracker,
+    status: &HomeStatus,
+    relay: ConnectionCheck,
+    stats: &TunnelStats,
+    now: Instant,
+) {
+    let last_failure = stats.last_failure.as_ref().map(failure);
+    if let Some(recovery) = tracker.observe(
+        status,
+        relay,
+        stats.failed_dials,
+        stats.disconnects,
+        last_failure,
+        now,
+    ) {
+        let outage_ms = recovery.outage.as_millis();
+        tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
+    }
 }
 
 /// 手机连不连得上中继：连得上说明手机能上网，这时家里没有回应，多半是家里的问题。没配中继时无从判断。
