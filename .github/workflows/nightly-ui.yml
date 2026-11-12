@@ -57,8 +57,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # 和 ios.yml 共用 key：cache.yml 在 main 上用同一个 key 编，夜跑才不用每次冷编。
+          # 只读：同一份 key 由 cache.yml 在 push 时编好写回；夜跑再写一遍只是同一个 key 重编重写。
           shared-key: rust-ios
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: false
       - name: 安装 XcodeGen（版本和 sha256 固定）
         run: |
           curl -sSfL -o "$RUNNER_TEMP/xcodegen.zip" \
@@ -189,8 +190,9 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # 和 android.yml 共用 key（cache.yml 在 main 上编）。
+          # 只读：同一份 key 由 cache.yml 在 push 时编好写回；夜跑再写一遍只是同一个 key 重编重写。
           shared-key: rust-android
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          save-if: false
       - uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
       # 模拟器要 KVM：官方文档的 udev 规则写法（ubuntu-24.04 默认只有 root 能读写 /dev/kvm）。
       - name: 打开 KVM
