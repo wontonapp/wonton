@@ -60,7 +60,10 @@ main_dir=""
 main_project="wonton-p727main--core"
 main_browser="wonton-p727main-browser"
 
-step() { printf '\n== %s\n' "$*"; }
+step() {
+  step_now="$*"
+  printf '\n== %s\n' "$*"
+}
 ok() { printf '   ✓ %s\n' "$*"; }
 fail() {
   printf '   ✗ %s\n' "$*" >&2
@@ -79,9 +82,13 @@ print(json.dumps(value) if isinstance(value, (bool, dict, list)) else value)' "$
 # 浏览器替身：同一个 Cookie 罐，共享核心容器的网络命名空间。核心重启后要重建。
 start_browser() {
   docker rm -f "$browser" >/dev/null 2>&1 || true
-  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 1800 >/dev/null
+  # 活 3600 秒：容器只是 exec 的宿主，寿命按整轮冒烟算，慢机上一轮会超过 1 小时。
+  docker run -d --name "$browser" --network "container:$core" --entrypoint sleep "$curl_image" 7200 >/dev/null
 }
-b() { docker exec "$browser" curl --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
+# 探针的 curl 统一走 smoke-curl.sh 里的 curl_in：都带超时，超时报出是哪一步（见该文件）。
+# shellcheck source=deploy/dev/core/smoke-curl.sh
+source "$here/smoke-curl.sh"
+b() { curl_in "$browser" --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 # 插件以主人身份打开一次，取回它的 Cookie 罐（`dev.sh open` 打印在最后一行）。
 session_jar() { # <插件 ID> <罐文件>
   local out
@@ -264,8 +271,9 @@ main down >/dev/null
   "$dev" up >/dev/null) || fail "换成新核心失败"
 # 新的浏览器替身：主机不共享 Cookie，重新登录一次核心，走它自己的 OIDC 进 Grafana。
 docker rm -f "$main_browser" >/dev/null 2>&1 || true
-docker run -d --name "$main_browser" --network "container:$main_project" --entrypoint sleep "$curl_image" 1800 >/dev/null
-mb() { docker exec "$main_browser" curl --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
+# 同上：这套流程要换一次核心再跑，比核心冒烟更长，寿命给足。
+docker run -d --name "$main_browser" --network "container:$main_project" --entrypoint sleep "$curl_image" 7200 >/dev/null
+mb() { curl_in "$main_browser" --noproxy '*' -sS -c /tmp/jar -b /tmp/jar "$@"; }
 main_base="http://$WONTON_DEV_DOMAIN:18495"
 code="$(mb -o /dev/null -w '%{http_code}' -X POST --data-urlencode "token=$(main token)" "$main_base/_wonton/login")"
 expect "在新核心上登录" "$code" 303

@@ -53,7 +53,7 @@ from_hermes() {
   local key="$1" method="$2" path="$3" body="${4:-}"
   # shellcheck disable=SC2016 # 变量在容器里的 sh 展开
   GW_KEY="$key" GW_BODY="$body" compose exec -T -e GW_KEY -e GW_BODY hermes sh -c '
-    set -- -s -o /tmp/gw-body -w "%{http_code}" -X "$1" "http://magpie:3425$2"
+    set -- -s --max-time 30 -o /tmp/gw-body -w "%{http_code}" -X "$1" "http://magpie:3425$2"
     [ -n "$GW_KEY" ] && set -- "$@" -H "Authorization: Bearer $GW_KEY"
     [ -n "$GW_BODY" ] && set -- "$@" -H "content-type: application/json" -d "$GW_BODY"
     code="$(curl "$@")"; printf "%s " "$code"; cat /tmp/gw-body; rm -f /tmp/gw-body' sh "$method" "$path"
@@ -106,7 +106,7 @@ check_magpie_auth() {
   models="$(jq -r '[.data[].id] | join(",")' <<<"${resp#* }")"
   expect "Hermes 的凭据只看得到默认路由组" "$group" "$models"
   # 任取一个 provider 直接提供的模型（不经路由组），Hermes 的凭据点名它应被拒绝。
-  model="$(compose exec -T magpie curl -s http://127.0.0.1:3425/v1/models |
+  model="$(compose exec -T magpie curl -s --max-time 30 http://127.0.0.1:3425/v1/models |
     jq -r '[.data[].id | select(startswith("group/") | not)][0] // empty')"
   if [[ -n "$model" ]]; then
     resp="$(from_hermes "$hermes_key" POST /v1/chat/completions \
@@ -128,14 +128,15 @@ check_magpie_auth() {
   compose exec -T magpie magpie gateway-key remove "$temp_id" >/dev/null
   resp="$(from_hermes "$temp_key" GET /v1/models)"
   expect "吊销的凭据立即失效" 401 "${resp%% *}"
-  resp="$(compose exec -T magpie curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3425/v1/models)"
+  resp="$(compose exec -T magpie curl -s --max-time 30 -o /dev/null -w '%{http_code}' http://127.0.0.1:3425/v1/models)"
   expect "magpie 容器内回环不带凭据（上游的本机例外）" 200 "$resp"
 }
 
+# 同步是 20 秒长轮询，超时给到 60 秒。
 mx() {
   local method="$1" path="$2"
   shift 2
-  curl -sS -X "$method" "$base_url/_matrix/client/v3$path" \
+  curl -sS --max-time 60 -X "$method" "$base_url/_matrix/client/v3$path" \
     -H "Authorization: Bearer $owner_token" -H 'content-type: application/json' "$@"
 }
 
@@ -149,7 +150,7 @@ owner_login() {
   body="$(jq -nc --arg p "$password" \
     '{type: "m.login.password", identifier: {type: "m.id.user", user: "owner"}, password: $p,
       initial_device_display_name: "wonton smoke"}')"
-  owner_token="$(curl -sS -X POST "$base_url/_matrix/client/v3/login" \
+  owner_token="$(curl -sS --max-time 30 -X POST "$base_url/_matrix/client/v3/login" \
     -H 'content-type: application/json' -d "$body" | jq -er .access_token)"
   printf 'OWNER_ACCESS_TOKEN=%s\n' "$owner_token" >>"$secrets/owner.env"
 }

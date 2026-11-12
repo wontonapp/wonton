@@ -46,7 +46,10 @@ relay="wonton-$WONTON_DEV_INSTANCE--egress"
 core_version=0.1.0
 plugins=(ai.usemagpie.magpie app.onboarding.probe)
 
-step() { printf '\n== %s\n' "$*"; }
+step() {
+  step_now="$*"
+  printf '\n== %s\n' "$*"
+}
 ok() { printf '   ✓ %s\n' "$*"; }
 fail() {
   printf '   ✗ %s\n' "$*" >&2
@@ -58,6 +61,9 @@ expect() {
 expect_contains() {
   if [[ "$2" == *"$3"* ]]; then ok "$1"; else fail "$1：实际里没有「$3」：$2"; fi
 }
+# 探针的 curl 统一走 smoke-curl.sh 里的 curl_in：都带超时，超时报出是哪一步（见该文件）。
+# shellcheck source=deploy/dev/core/smoke-curl.sh
+source "$here/smoke-curl.sh"
 json() {
   python3 -c 'import json,sys
 value = json.load(sys.stdin)
@@ -103,23 +109,27 @@ cleanup() {
 
 # 与核心共享网络的 curl。结果存 REPLY（正文）和 CODE（状态码）：网关错误的用例要读 4xx/5xx 的正文。
 api() {
-  local method="$1" path="$2" body="${3:-}" out
+  local method="$1" path="$2" body="${3:-}" out rc=0
   local args=(-sS -X "$method" -H "Authorization: Bearer $token" -w '\n%{http_code}')
   [[ -n "$body" ]] && args+=(-H 'Content-Type: application/json' -d "$body")
-  out="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' "${args[@]}" "$core_url$path")"
+  out="$(docker run --rm --network "container:$core" "$curl_image" --noproxy '*' \
+    --max-time "$SMOKE_WEB_MAX_TIME" --connect-timeout "$SMOKE_CONNECT_TIMEOUT" \
+    "${args[@]}" "$core_url$path")" || rc=$?
+  timed_out "$rc" "$SMOKE_WEB_MAX_TIME" "$core_url$path"
   CODE="${out##*$'\n'}"
   REPLY="${out%$'\n'*}"
+  return "$rc"
 }
 # 探针插件（tools 权限）经真实 MCP 总线调 wonton__help。会话和调用都在探针容器里发。
 mcp_session() {
   docker exec "$probe" sh -c '
-    curl -sS -D /tmp/session-headers -o /dev/null -X POST "http://mcp.wonton.internal:'"$WONTON_DEV_PORT"'/mcp" \
+    curl -sS --max-time 120 -D /tmp/session-headers -o /dev/null -X POST "http://mcp.wonton.internal:'"$WONTON_DEV_PORT"'/mcp" \
       -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
       -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"onboarding-smoke\",\"version\":\"0.1.0\"}}}"
     grep -i "^mcp-session-id:" /tmp/session-headers | tr -d "\r" | cut -d" " -f2'
 }
 mcp_call() {
-  docker exec "$probe" curl -sS -X POST "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp" \
+  docker exec "$probe" curl -sS --max-time 120 -X POST "http://mcp.wonton.internal:$WONTON_DEV_PORT/mcp" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
     -H "mcp-session-id: $session" -d "$1"
 }
@@ -267,7 +277,8 @@ cat >"$probe_file" <<'YAML'
 services:
   probe:
     image: curlimages/curl:8.23.0
-    entrypoint: ["sh", "-c", "exec sleep 1800"]
+    # 容器只是探针的宿主，寿命按整轮冒烟算。
+    entrypoint: ["sh", "-c", "exec sleep 7200"]
 x-wonton:
   spec: '0.4'
   id: app.onboarding.probe
