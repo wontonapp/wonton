@@ -8,6 +8,10 @@ pre-commit:
   commands:
     rustfmt:
       glob: "*.rs"
+      # vendor/ 是带补丁的上游代码，保持上游格式（vendor/README.md）。合并 main 时 vendor 的改动也在暂存区，
+      # 不排除的话会按我们的格式整个重排，PR 里平白多出几百行。
+      exclude:
+        - "vendor/**"
       # cargo 是 rustup 的转发，按 rust-toolchain.toml 选版本；交给 cargo 是为了拿到各 crate 的 edition。
       run: |
         echo "rustfmt 格式化："
