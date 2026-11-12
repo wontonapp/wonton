@@ -20,10 +20,11 @@ enum CoreUpgradeCompatPreviews {
 
     static var apps: [CoreUpgradeCompatApp] {
         [
-            CoreUpgradeCompatApp(id: "app.immich.photos", title: String(localized: .previewAppName1), icon: nil),
+            CoreUpgradeCompatApp(id: "app.immich.photos", title: String(localized: .Plugins.previewAppName1),
+                icon: nil),
             CoreUpgradeCompatApp(
                 id: "app.copyparty.files",
-                title: String(localized: .previewAppName2),
+                title: String(localized: .Plugins.previewAppName2),
                 icon: nil
             )
         ]

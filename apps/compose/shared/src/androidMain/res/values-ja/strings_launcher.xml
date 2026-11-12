@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">デフォルトのエージェント</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">アプリはまだインストールされていません</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">ストアを開く</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">Webページを開く</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">ナビゲーションバーに追加</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">アプリ</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">アップデート%1$d件あり</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">%1$sにアップデート</string>
+    <string name="launcher_badge_degraded">問題があります</string>
+</resources>

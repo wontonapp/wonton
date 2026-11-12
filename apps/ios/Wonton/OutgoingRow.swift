@@ -56,16 +56,18 @@ struct OutgoingRow: View {
                     isChoosingSending = true
                 } label: {
                     if let progress {
-                        Text(.messageSendingProgress(
+                        Text(.Message2.messageSendingProgress(
                             Double(progress).formatted(.percent.precision(.fractionLength(0)))
                         ))
                     } else {
-                        Text(.messageSending)
+                        Text(.Message2.messageSending)
                     }
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingSending, actions: [
-                    WontonSheetAction(title: String(localized: .messageCancelSend), icon: .close, isDanger: true) {
+                    WontonSheetAction(
+                        title: String(localized: .Message2.messageCancelSend), icon: .close, isDanger: true
+                    ) {
                         composer.cancel(message)
                     }
                 ])
@@ -75,16 +77,16 @@ struct OutgoingRow: View {
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        Text(.messageSendFailed(reason))
+                        Text(.Message1.messageSendFailed(reason))
                     }
                     .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
-                    WontonSheetAction(title: String(localized: .messageResend), icon: .refresh) {
+                    WontonSheetAction(title: String(localized: .Message1.messageResend), icon: .refresh) {
                         composer.retry(message)
                     },
-                    WontonSheetAction(title: String(localized: .commonDelete), icon: .trash, isDanger: true) {
+                    WontonSheetAction(title: String(localized: .Common.commonDelete), icon: .trash, isDanger: true) {
                         composer.cancel(message)
                     }
                 ])

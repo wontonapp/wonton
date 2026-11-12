@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">Installed</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">Model settings</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">Custom</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">API key</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">More providers</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">Next</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">This app is already installed or busy. Refresh when the current task finishes.</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">This action wasn\'t accepted. Check the details, then change it and try again.</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">Can\'t get the app\'s info. Try again once its source is back.</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">Your home server hit an error. Try again later.</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · Unreachable when tested</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">Choose apps</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">Your profile</string>
+</resources>

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
+    <string name="contacts_title">Contacts</string>
+    <!-- Choice in the add-contact sheet: the other side is a person. -->
+    <string name="contacts_add_kind_person">A person</string>
+    <!-- Placeholder of the Matrix ID field in the add-contact sheet. -->
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <!-- Button that sends the contact request. -->
+    <string name="contacts_add_submit">Send request</string>
+    <!-- Section heading for contact requests waiting for me. -->
+    <string name="contacts_requests_title">Requests</string>
+    <!-- Section heading for contacts both sides approved. -->
+    <string name="contacts_active_title">Added</string>
+    <!-- Section heading for requests I sent that aren't in effect. -->
+    <string name="contacts_sent_title">Sent</string>
+    <!-- Reject button on an incoming contact request. -->
+    <string name="contacts_reject">Reject</string>
+    <!-- Row status: waiting for the person to accept the chat invite. -->
+    <string name="contacts_status_waiting_person">Waiting for them to accept</string>
+    <!-- Row status: no such user on that server. -->
+    <string name="contacts_status_not_found">No such user</string>
+    <!-- Row status this version doesn't know. -->
+    <string name="contacts_status_unknown">Status unknown</string>
+    <!-- On a contact from another server whose pairing was removed. -->
+    <string name="contacts_remote_unpaired">That server isn\'t connected anymore, so messages won\'t get through</string>
+    <!-- Failure title: their server isn't paired with mine. -->
+    <string name="contacts_error_not_paired">Their server isn\'t connected to yours</string>
+    <!-- Failure title: already a contact or already requested. -->
+    <string name="contacts_error_already_contact">Already a contact, or the request was already sent</string>
+    <!-- Failure title: the bot was uninstalled. -->
+    <string name="contacts_error_bot_not_found">This bot is no longer installed</string>
+    <!-- Failure title: their server can't be reached; nothing was sent. -->
+    <string name="contacts_error_peer_unreachable">Can\'t reach their server. Nothing was sent.</string>
+    <!-- Failure title: this device isn't a paired device. -->
+    <string name="contacts_error_unauthenticated">This device isn\'t allowed to do this</string>
+</resources>

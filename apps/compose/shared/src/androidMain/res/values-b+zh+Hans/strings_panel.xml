@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="panel_add">添加</string>
+    <string name="panel_add_pages">添加页面</string>
+    <string name="panel_can_add">可以放进面板的页面</string>
+    <string name="panel_close">关掉面板</string>
+    <string name="panel_edit">编辑面板</string>
+    <string name="panel_in_panel">面板里的页面</string>
+    <string name="panel_open">打开面板</string>
+    <string name="panel_public_unsupported">这台设备的 WebView 分不开公网网页和插件页面的存储，打不开公网网页</string>
+    <string name="panel_remove">移除</string>
+    <string name="panel_url">填写网址</string>
+</resources>

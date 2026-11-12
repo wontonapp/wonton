@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">ペアリング</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">再ペアリング</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">自宅のローカルネットワークで、ブラウザーでサーバーのIPアドレス（インストール時にターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">ペアリングコードをペースト</string>
+    <string name="pairing_paste_label">ペアリングコード</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">ペアリング</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">ペアリング中…</string>
+    <string name="pairing_still_connecting">まだ接続中…</string>
+    <string name="pairing_still_confirming">まだサーバーの確認待ち…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">このデバイスの名前</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">サーバーがこのペアリングコードを受け付けません</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">ペアリングコードの有効期限が切れています</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">このペアリングコードは無効化されています</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">このペアリングコードのサーバーに接続できません</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">新しいコードを取得してください。ペアリング済みのデバイスで「デバイスを追加」を選ぶか、ホストでsudo wonton pairを実行します。</string>
+    <string name="pairing_next_closed">このサーバーにはすでにペアリング済みのデバイスがあるため、最初のペアリングコードはもう使えません。ペアリング済みのデバイスから追加するか、ホストでsudo wonton pairを実行して新しいコードを発行してください。</string>
+    <string name="pairing_retry_same_code">このコードでもう一度試す</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">Appとサーバーのバージョンが一致していません</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">自宅サーバーの電源とネットワーク接続を確認して、もう一度試してください。</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">Appとサーバーを最新バージョンに更新してください。</string>
+</resources>

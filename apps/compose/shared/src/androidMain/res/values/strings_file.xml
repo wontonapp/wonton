@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button in the video player's failure view: download the file, then open it in another app. -->
+    <string name="file_download_and_open">Download and open in another app</string>
+    <!-- Title of the problem shown when no installed app can open a downloaded file. Android only. -->
+    <string name="file_no_app_opens_it">No app on this phone can open this file</string>
+    <!-- Title of the problem shown when the file can't be handed to the system (outside configured FileProvider roots). Android only. -->
+    <string name="file_handoff_failed">Couldn\'t hand this file to the system</string>
+    <!-- Link under a file card: open the downloaded file with another app. -->
+    <string name="file_open_elsewhere">Open in another app</string>
+    <!-- Line under a file card while its download is paused. Argument: the home server's reason, shown as is. -->
+    <string name="file_paused">Paused: %1$s</string>
+    <!-- Line under a file card while its download is paused without a reason: it resumes when the connection recovers. -->
+    <string name="file_paused_waiting">Resumes downloading when the connection is back</string>
+    <!-- Caption under a file card: which bot sent the file. First argument: the bot's name; second: the plugin's name. -->
+    <string name="file_source_bot">From %1$s (%2$s)</string>
+    <!-- Caption under a file card: the sender is unknown. -->
+    <string name="file_source_unknown">Unknown source</string>
+    <!-- Reason in the collapsed details of an upload problem: the system didn't provide the picked file. Android only. -->
+    <string name="file_system_no_file">The system didn\'t provide this file</string>
+    <!-- Fallback name for an uploaded file when the system doesn't provide one. Shown as the file's name. Android only. -->
+    <string name="file_unnamed">File</string>
+</resources>

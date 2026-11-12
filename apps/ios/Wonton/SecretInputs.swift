@@ -51,7 +51,7 @@ struct SecretInputField: View {
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
                 if !input.required {
-                    Tag(text: String(localized: .secretOptional), tint: colors.textSecondary)
+                    Tag(text: String(localized: .Plugins.secretOptional), tint: colors.textSecondary)
                 }
             }
             if let description = input.description {
@@ -88,10 +88,10 @@ struct SecretInputField: View {
                         .contentShape(Rectangle())
                 }
                 .disabled(!enabled)
-                .accessibilityLabel(Text(shown ? .secretHide : .secretShow))
+                .accessibilityLabel(Text(shown ? .Plugins.secretHide : .Plugins.secretShow))
             }
             if let link = input.url.flatMap(URL.init(string:)) {
-                Button(String(localized: .secretGetOne)) { openURL(link) }
+                Button(String(localized: .Plugins.secretGetOne)) { openURL(link) }
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.accentInk))
             }

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="other">已分享给 %1$d 个好友</item>
+    </plurals>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">编辑分享</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">没有可选的好友或分组</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">好友</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">分组</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 小时</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">验证的用户 ID 与身份服务器不匹配。</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">无法获取分享的应用</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">这个应用未在运行</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">这位好友没有把这个应用分享给你</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">连不上这位好友的服务器</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">好友会以自己的用户名登录这个应用，应用可能给他建账号、让他看到你的数据。</string>
+</resources>

@@ -14,7 +14,7 @@ struct HomeStatusPanel: View {
         WontonGroup {
             Button(action: showConnection) {
                 WontonRow(
-                    title: String(localized: .homeStatusConnection), value: connection,
+                    title: String(localized: .HomeStatus.homeStatusConnection), value: connection,
                     valueTint: needsTheOwner ? colors.danger : nil, showsForward: true
                 )
             }
@@ -23,17 +23,18 @@ struct HomeStatusPanel: View {
             if let first = cards.first {
                 Button { if let room = first.roomId { openCardRoom(room) } } label: {
                     WontonRow(
-                        title: String(localized: .homeStatusPending),
-                        value: String(localized: .homeStatusPendingCount(count: cards.count)),
+                        title: String(localized: .HomeStatus.homeStatusPending),
+                        value: String(localized: .HomeStatus.homeStatusPendingCount(count: cards.count)),
                         showsForward: true
                     )
                 }
                 .buttonStyle(.plain)
             } else {
-                WontonRow(title: String(localized: .homeStatusPending), value: String(localized: .homeStatusNone))
+                WontonRow(title: String(localized: .HomeStatus.homeStatusPending),
+                    value: String(localized: .HomeStatus.homeStatusNone))
             }
             WontonSeparator()
-            WontonRow(title: String(localized: .homeStatusStorage), value: storage)
+            WontonRow(title: String(localized: .HomeStatus.homeStatusStorage), value: storage)
             if let problem = plugins.storageProblem {
                 Text(problem.message)
                     .wontonText(WontonTheme.typography.supporting)
@@ -53,7 +54,9 @@ struct HomeStatusPanel: View {
         switch home.status {
         case .connected:
             guard let path = home.path else { return home.status.connectionText }
-            let route = path.relay ? String(localized: .connectionRelay) : String(localized: .connectionDirect)
+            let route = path.relay
+                ? String(localized: .Connection0.connectionRelay)
+                : String(localized: .Connection2.connectionDirect)
             return "\(home.status.connectionText) · \(route)"
         default:
             return home.notice?.sentence ?? home.status.connectionText
@@ -61,9 +64,9 @@ struct HomeStatusPanel: View {
     }
 
     private var storage: String {
-        guard let usage = plugins.storage else { return String(localized: .commonUnknown) }
+        guard let usage = plugins.storage else { return String(localized: .Common.commonUnknown) }
         let free = ByteCountFormatter.string(fromByteCount: Int64(clamping: usage.freeBytes), countStyle: .file)
         let total = ByteCountFormatter.string(fromByteCount: Int64(clamping: usage.totalBytes), countStyle: .file)
-        return String(localized: .homeStatusStorageUsage(free, total))
+        return String(localized: .HomeStatus.homeStatusStorageUsage(free, total))
     }
 }

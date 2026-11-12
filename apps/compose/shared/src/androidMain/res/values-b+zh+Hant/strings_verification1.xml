@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_title">裝置確認</string>
+    <string name="verification_accept">開始確認</string>
+    <string name="verification_deny">拒絕</string>
+    <string name="verification_same">相同</string>
+    <string name="verification_different">不同</string>
+    <string name="verification_compare_title">兩部裝置上顯示的一樣嗎？</string>
+    <string name="verification_requested">等待另一部裝置接受…</string>
+    <string name="verification_requested_hint">打開你另一支手機上的雲吞。</string>
+    <string name="verification_waiting_for_other">等待另一部裝置確認…</string>
+    <string name="verification_done_other">確認完成</string>
+    <string name="verification_retry">重新開始</string>
+    <string name="verification_use_recovery_key">輸入復原金鑰</string>
+    <string name="verification_cancelled_accepted_elsewhere">這次確認由你的另一部裝置接手了。</string>
+</resources>

@@ -14,10 +14,10 @@ struct BotContactsEmpty: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text(.contactsEmpty)
+            Text(.Contacts1.contactsEmpty)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button(.contactsAdd, action: add)
+            Button(.Contacts0.contactsAdd, action: add)
                 .buttonStyle(WontonButtonStyle())
         }
         .frame(maxWidth: .infinity)
@@ -34,14 +34,14 @@ struct IncomingContactRowView: View {
 
     var body: some View {
         ContactRowFrame(contact: contact) {
-            Text(.contactsIncomingWarning)
+            Text(.Contacts1.contactsIncomingWarning)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.warning))
             HStack(spacing: WontonTheme.spacing.s8) {
                 Spacer(minLength: 0)
-                Button(.contactsReject, action: reject)
+                Button(.Contacts1.contactsReject, action: reject)
                     .buttonStyle(WontonSmallButtonStyle(kind: .danger))
-                Button(.contactsApprove, action: approve)
+                Button(.Contacts1.contactsApprove, action: approve)
                     .buttonStyle(WontonSmallButtonStyle())
             }
             .padding(.top, WontonTheme.spacing.s4)
@@ -61,8 +61,8 @@ struct ActiveContactRowView: View {
         ContactRowFrame(contact: contact) {
             EmptyView()
         } trailing: {
-            WontonIconButton(icon: .trash, label: String(localized: .contactsRemove), tint: Color(colors.danger),
-                             action: remove)
+            WontonIconButton(icon: .trash, label: String(localized: .Contacts0.contactsRemove),
+                             tint: Color(colors.danger), action: remove)
         }
     }
 }
@@ -75,7 +75,7 @@ struct SentContactRowView: View {
 
     var body: some View {
         let waiting = contact.state == .pending
-        let action: LocalizedStringResource = waiting ? .contactsWithdraw : .contactsClear
+        let action: LocalizedStringResource = waiting ? .Contacts1.contactsWithdraw : .Contacts1.contactsClear
         ContactRowFrame(contact: contact) {
             Text(contactStatus(contact))
                 .wontonText(WontonTheme.typography.supporting)
@@ -101,7 +101,7 @@ private struct ContactRowFrame<Content: View, Trailing: View>: View {
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
                 if let keeper = contact.keeperDisplayName, !keeper.isEmpty {
-                    Text(.contactsKeeper(keeper))
+                    Text(.Contacts0.contactsKeeper(keeper))
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
@@ -127,10 +127,11 @@ private struct ContactRowFrame<Content: View, Trailing: View>: View {
 /// 还没生效的一行写什么：等对方时按对方是 Bot 还是人选“同意”或“接受”（ADR-0050）。
 func contactStatus(_ contact: BotContact) -> LocalizedStringResource {
     switch contact.state {
-    case .pending: contact.kind == .person ? .contactsStatusWaitingPerson : .contactsStatusWaitingBot
-    case .declined: .contactsStatusDeclined
-    case .notFound: .contactsStatusNotFound
-    case .incoming, .active, .other: .contactsStatusUnknown
+    case .pending: contact.kind == .person
+        ? .Contacts0.contactsStatusWaitingPerson : .Contacts0.contactsStatusWaitingBot
+    case .declined: .Contacts1.contactsStatusDeclined
+    case .notFound: .Contacts1.contactsStatusNotFound
+    case .incoming, .active, .other: .Contacts0.contactsStatusUnknown
     }
 }
 
@@ -138,9 +139,9 @@ func contactStatus(_ contact: BotContact) -> LocalizedStringResource {
 func contactRemoteProblem(_ contact: BotContact) -> LocalizedStringResource? {
     guard let remote = contact.remote else { return nil }
     switch remote.peerStatus {
-    case nil: return .contactsRemoteUnpaired
-    case .offline: return .peersStatusOffline
-    case .removedByPeer: return .peersStatusRemoved
+    case nil: return .Contacts0.contactsRemoteUnpaired
+    case .offline: return .Peers2.peersStatusOffline
+    case .removedByPeer: return .Peers1.peersStatusRemoved
     case .connected, .checking, .awaitingApproval, .declined, .other: return nil
     }
 }
@@ -148,18 +149,18 @@ func contactRemoteProblem(_ contact: BotContact) -> LocalizedStringResource? {
 /// 联系人接口失败的一句话，按核心给的类别写（ADR-0043）；核心写好的说明收进“详情”。不认识的类别用通用的一句。
 func contactsProblem(_ error: ContactError, message: String) -> Problem {
     let title: LocalizedStringResource = switch error {
-    case .invalidUserId: .contactsErrorInvalidUserId
-    case .notPaired: .contactsErrorNotPaired
-    case .alreadyContact: .contactsErrorAlreadyContact
-    case .botNotFound: .contactsErrorBotNotFound
-    case .contactNotFound: .contactsErrorContactNotFound
-    case .notKeeper: .contactsErrorNotKeeper
-    case .peerUnreachable: .contactsErrorPeerUnreachable
-    case .unauthenticated: .contactsErrorUnauthenticated
-    case .upstream: .contactsErrorUpstream
-    case .transportUnavailable: .problemTransportUnavailableTitle
-    case .protocol, .other: .peersErrorOther
+    case .invalidUserId: .Contacts0.contactsErrorInvalidUserId
+    case .notPaired: .Contacts0.contactsErrorNotPaired
+    case .alreadyContact: .Contacts1.contactsErrorAlreadyContact
+    case .botNotFound: .Contacts0.contactsErrorBotNotFound
+    case .contactNotFound: .Contacts0.contactsErrorContactNotFound
+    case .notKeeper: .Contacts1.contactsErrorNotKeeper
+    case .peerUnreachable: .Contacts0.contactsErrorPeerUnreachable
+    case .unauthenticated: .Contacts1.contactsErrorUnauthenticated
+    case .upstream: .Contacts1.contactsErrorUpstream
+    case .transportUnavailable: .Problem2.problemTransportUnavailableTitle
+    case .protocol, .other: .Peers1.peersErrorOther
     }
-    let next: String? = error == .notPaired ? String(localized: .contactsErrorNotPairedNext) : nil
+    let next: String? = error == .notPaired ? String(localized: .Contacts0.contactsErrorNotPairedNext) : nil
     return Problem(title: String(localized: title), nextStep: next, detail: message)
 }

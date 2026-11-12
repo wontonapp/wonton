@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_settings_update_app">要更新 App 才能改</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">應用會重新啟動一下</string>
+    <string name="plugin_source">來源</string>
+    <string name="plugin_permission_added">新增</string>
+    <!-- Small tag next to a permission the core doesn't support. -->
+    <string name="plugin_permission_unsupported">不支援</string>
+    <string name="plugin_permission_optional">可選</string>
+    <string name="plugin_permission_risk_highest">最高風險</string>
+    <string name="plugin_permission_opened_bot">Bot %1$s 在 %2$s 開啟</string>
+    <!-- Reason shown when the picked file can't be opened. -->
+    <string name="plugin_sources_file_unreadable">打不開這個檔案</string>
+    <!-- Button that opens the file picker to install from an archive. -->
+    <string name="plugin_sources_install_from_file">從檔案安裝</string>
+    <!-- Title of the page where you add a source by address or install from a file. -->
+    <string name="plugin_sources_title">新增來源</string>
+    <!-- Failed install task line. Argument: the reason from the core. -->
+    <string name="plugin_task_install_failed">安裝失敗：%1$s</string>
+    <!-- Button on a failed task whose app package changed after the confirmation: reopen the confirmation. -->
+    <string name="plugin_task_review">重新查看</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">正在等待連線</string>
+    <!-- Failed update task line. Argument: the reason from the core. -->
+    <string name="plugin_task_upgrade_failed">升級失敗：%1$s</string>
+    <!-- Button that uninstalls but keeps the app's data. -->
+    <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
+</resources>

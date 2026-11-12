@@ -4,8 +4,10 @@ import WontonClient
 /// SAS 表情的本地化名字：按 Matrix 规范 SAS 表情表的序号从字符串目录取（ADR-0046），名字不在代码里写。
 private enum VerificationEmojiNames {
     static func name(_ index: Int) -> String {
+        // 表情名按编号分成几张表（verificationEmoji0…4），和下面的取模一致。
         NSLocalizedString(
             "verification.emoji.\(index)",
+            tableName: "verificationEmoji\(index % 5)",
             comment: "Name of the SAS emoji at this index in the Matrix spec table"
         )
     }
@@ -25,18 +27,21 @@ struct DeviceVerificationFlowView: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             switch flow.stage {
             case .incoming: incomingRequest
-            case .requested: waiting(Text(.verificationRequested), hint: Text(.verificationRequestedHint))
-            case .starting: waiting(Text(.verificationStarting))
+            case .requested: waiting(Text(.Verification1.verificationRequested),
+                hint: Text(.Verification0.verificationRequestedHint))
+            case .starting: waiting(Text(.Verification0.verificationStarting))
             case let .compare(emoji, decimals): compare(emoji, decimals)
-            case .waitingForOther: waiting(Text(.verificationWaitingForOther))
-            case .fetchingKeys: waiting(Text(.verificationFetchingKeys))
+            case .waitingForOther: waiting(Text(.Verification1.verificationWaitingForOther))
+            case .fetchingKeys: waiting(Text(.Verification1.verificationFetchingKeys))
             case .done:
-                (flow.startedHere ? Text(.verificationDoneHere) : Text(.verificationDoneOther))
+                (flow.startedHere
+                    ? Text(.Verification1.verificationDoneHere)
+                    : Text(.Verification0.verificationDoneOther))
                     .wontonText(WontonTheme.typography.itemTitle)
                     .foregroundStyle(Color(colors.textPrimary))
             case let .cancelled(reason): cancelled(reason)
             case .other:
-                Text(.verificationCancelledOther)
+                Text(.Verification0.verificationCancelledOther)
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textPrimary))
             }
@@ -51,11 +56,11 @@ struct DeviceVerificationFlowView: View {
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
                 Button { model.send(.acceptDeviceVerification(flowId: flow.flowId)) } label: {
-                    Text(.verificationAccept).frame(maxWidth: .infinity)
+                    Text(.Verification0.verificationAccept).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
                 Button { model.send(.cancelDeviceVerification(flowId: flow.flowId)) } label: {
-                    Text(.verificationDeny).frame(maxWidth: .infinity)
+                    Text(.Verification0.verificationDeny).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
@@ -65,7 +70,7 @@ struct DeviceVerificationFlowView: View {
     /// 对方设备用配对时起的名字，没起过就用设备 ID。
     private var incomingMessage: String {
         let name = flow.otherDeviceName.flatMap { $0.isEmpty ? nil : $0 } ?? flow.otherDeviceId
-        return String(localized: .verificationIncomingMessage(name))
+        return String(localized: .Verification0.verificationIncomingMessage(name))
     }
 
     private func waiting(_ text: Text, hint: Text? = nil) -> some View {
@@ -87,7 +92,7 @@ struct DeviceVerificationFlowView: View {
 
     private func compare(_ emoji: [VerificationEmoji], _ decimals: [UInt16]) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            Text(.verificationCompareTitle)
+            Text(.Verification0.verificationCompareTitle)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             if emoji.isEmpty {
@@ -115,11 +120,11 @@ struct DeviceVerificationFlowView: View {
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 Button { model.send(.confirmVerification(flowId: flow.flowId)) } label: {
-                    Text(.verificationSame).frame(maxWidth: .infinity)
+                    Text(.Verification0.verificationSame).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
                 Button { model.send(.denyVerification(flowId: flow.flowId)) } label: {
-                    Text(.verificationDifferent).frame(maxWidth: .infinity)
+                    Text(.Verification1.verificationDifferent).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
@@ -139,12 +144,12 @@ struct DeviceVerificationFlowView: View {
                     EmptyView()
                 default:
                     Button { model.send(.startDeviceVerification) } label: {
-                        Text(.verificationRetry).frame(maxWidth: .infinity)
+                        Text(.Verification1.verificationRetry).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
                     if let useRecoveryKey {
                         Button(action: useRecoveryKey) {
-                            Text(.verificationUseRecoveryKey).frame(maxWidth: .infinity)
+                            Text(.Verification1.verificationUseRecoveryKey).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
@@ -155,22 +160,22 @@ struct DeviceVerificationFlowView: View {
 
     private var cancelButton: some View {
         Button { model.send(.cancelDeviceVerification(flowId: flow.flowId)) } label: {
-            Text(.commonCancel).frame(maxWidth: .infinity)
+            Text(.Common.commonCancel).frame(maxWidth: .infinity)
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
     }
 
     private func reasonText(_ reason: VerificationCancel) -> Text {
         switch reason {
-        case .byMe: Text(.verificationCancelledByMe)
-        case .byOther: Text(.verificationCancelledByOther)
-        case .mismatch: Text(.verificationCancelledMismatch)
-        case .timeout: Text(.verificationCancelledTimeout)
-        case .acceptedElsewhere: Text(.verificationCancelledAcceptedElsewhere)
-        case .concurrentRequest: Text(.verificationCancelledConcurrentRequest)
-        case .keysMissing: Text(.verificationCancelledKeysMissing)
-        case .failed: Text(.verificationCancelledFailed)
-        case .other: Text(.verificationCancelledOther)
+        case .byMe: Text(.Verification0.verificationCancelledByMe)
+        case .byOther: Text(.Verification1.verificationCancelledByOther)
+        case .mismatch: Text(.Verification0.verificationCancelledMismatch)
+        case .timeout: Text(.Verification1.verificationCancelledTimeout)
+        case .acceptedElsewhere: Text(.Verification1.verificationCancelledAcceptedElsewhere)
+        case .concurrentRequest: Text(.Verification1.verificationCancelledConcurrentRequest)
+        case .keysMissing: Text(.Verification1.verificationCancelledKeysMissing)
+        case .failed: Text(.Verification1.verificationCancelledFailed)
+        case .other: Text(.Verification0.verificationCancelledOther)
         }
     }
 }
@@ -185,14 +190,14 @@ struct DeviceVerificationDialogs: ViewModifier {
     func body(content: Content) -> some View {
         content
             .wontonDialog(
-                String(localized: .verificationTitle),
+                String(localized: .Verification1.verificationTitle),
                 message: incomingPrompt,
                 isPresented: incomingPresented,
                 actions: [
-                    WontonDialogAction(title: String(localized: .verificationAccept), kind: .primary) {
+                    WontonDialogAction(title: String(localized: .Verification0.verificationAccept), kind: .primary) {
                         if let flow = currentFlow { model.send(.acceptDeviceVerification(flowId: flow.flowId)) }
                     },
-                    WontonDialogAction(title: String(localized: .verificationDeny)) {
+                    WontonDialogAction(title: String(localized: .Verification0.verificationDeny)) {
                         if let flow = currentFlow { model.send(.cancelDeviceVerification(flowId: flow.flowId)) }
                     }
                 ]
@@ -214,7 +219,7 @@ struct DeviceVerificationDialogs: ViewModifier {
     private var incomingPrompt: String {
         guard let flow = currentFlow else { return "" }
         let name = flow.otherDeviceName.flatMap { $0.isEmpty ? nil : $0 } ?? flow.otherDeviceId
-        return String(localized: .verificationIncomingMessage(name))
+        return String(localized: .Verification0.verificationIncomingMessage(name))
     }
 
     /// 请求必须由主人点按钮回答，点空白处不算回答，弹窗不走。
@@ -257,6 +262,6 @@ private struct DeviceVerificationScreen: View {
                     .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(String(localized: .verificationTitle))
+        .wontonModalScreen(String(localized: .Verification1.verificationTitle))
     }
 }

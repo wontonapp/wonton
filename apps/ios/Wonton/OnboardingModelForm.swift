@@ -65,19 +65,19 @@ struct OnboardingProviderForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             if form.expanded == .custom {
-                TextField(String(localized: .onboardingModelFormBaseUrl), text: input(\.baseURL),
+                TextField(String(localized: .Onboarding0.onboardingModelFormBaseUrl), text: input(\.baseURL),
                           prompt: Text("https://"))
                     .keyboardType(.URL)
                     .focused($focusedField, equals: "onboarding-model-url")
                     .id("onboarding-model-url")
                     .wontonField()
-                TextField(String(localized: .onboardingModelFormModelName), text: input(\.model))
+                TextField(String(localized: .Onboarding0.onboardingModelFormModelName), text: input(\.model))
                     .focused($focusedField, equals: "onboarding-model-name")
                     .id("onboarding-model-name")
                     .wontonField()
             }
-            SecureField(String(localized: .onboardingModelFormApiKey), text: input(\.key))
-                .accessibilityLabel(String(localized: .onboardingModelFormApiKey))
+            SecureField(String(localized: .Onboarding3.onboardingModelFormApiKey), text: input(\.key))
+                .accessibilityLabel(String(localized: .Onboarding3.onboardingModelFormApiKey))
                 .accessibilityIdentifier("onboarding-provider-key")
                 .textContentType(.none)
                 .submitLabel(.done)
@@ -86,7 +86,7 @@ struct OnboardingProviderForm: View {
                 .wontonField()
             HStack(spacing: WontonTheme.spacing.s12) {
                 if let url = keyURL.flatMap(URL.init(string:)) {
-                    Button(String(localized: .onboardingModelGetKey)) { openURL(url) }
+                    Button(String(localized: .Onboarding4.onboardingModelGetKey)) { openURL(url) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
                 Spacer(minLength: 0)
@@ -95,7 +95,7 @@ struct OnboardingProviderForm: View {
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if testing { ProgressView() }
-                        Text(.onboardingModelTest)
+                        Text(.Onboarding5.onboardingModelTest)
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))

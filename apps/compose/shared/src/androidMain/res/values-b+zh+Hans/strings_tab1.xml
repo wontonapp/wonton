@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_uninstalling">正在卸载…</string>
+    <string name="tab_upgrading">正在更新…</string>
+    <string name="tab_opens_in_browser">%1$s 在浏览器里打开</string>
+    <string name="tab_open_in_browser">打开</string>
+    <string name="tab_unpin_from_bar">从底栏移除</string>
+    <string name="tab_load_not_ready">应用还没有准备好</string>
+    <string name="tab_media_prompt_microphone">允许 %1$s 使用麦克风吗？</string>
+    <string name="tab_media_system_settings">去设置</string>
+    <string name="tab_fullscreen">全屏</string>
+    <string name="tab_add_to_bar">添加到底栏</string>
+    <string name="tab_chat">聊天</string>
+    <string name="tab_apps">应用</string>
+    <string name="tab_app_page">应用页面</string>
+    <!-- 全屏胶囊菜单项:重新加载页面。 -->
+    <string name="tab_menu_reload">重新加载</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">打开</string>
+    <!-- 全屏页面胶囊左键的无障碍标签,点它打开菜单。 -->
+    <string name="tab_page_menu">页面菜单</string>
+</resources>

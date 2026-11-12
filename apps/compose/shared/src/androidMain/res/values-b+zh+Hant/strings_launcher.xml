@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the default agent picker, opened from Settings. -->
+    <string name="launcher_default_agent">預設 Agent</string>
+    <!-- Shown on the launcher when no apps are installed yet. -->
+    <string name="launcher_empty">還沒有安裝應用程式</string>
+    <!-- Button under it that opens the Store. -->
+    <string name="launcher_go_to_store">前往商店</string>
+    <!-- Action-sheet item that opens the app's web page. -->
+    <string name="launcher_open_web">開啟網頁</string>
+    <!-- Action-sheet item that pins one of the app's web pages to the bottom navigation bar. -->
+    <string name="launcher_pin_to_bar">固定到底部導覽列</string>
+    <!-- Title of the launcher screen with the installed apps. -->
+    <string name="launcher_title">應用程式</string>
+    <!-- Badge in the Store entry row: how many installed apps have updates. Argument: the count. -->
+    <plurals name="launcher_updates_available">
+        <item quantity="other">%1$d 個可更新</item>
+    </plurals>
+    <!-- Action-sheet item that updates the app. Argument: the new version. -->
+    <string name="launcher_upgrade_to">升級到 %1$s</string>
+    <string name="launcher_badge_degraded">有問題</string>
+</resources>

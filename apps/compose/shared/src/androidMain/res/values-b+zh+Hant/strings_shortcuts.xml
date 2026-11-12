@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcuts_not_updated">桌面捷徑沒有更新</string>
+    <string name="shortcuts_rejected">系統沒有接受捷徑。</string>
+    <string name="shortcuts_unlock">請解鎖裝置後重新開啟雲吞。</string>
+    <string name="shortcuts_not_allowed">系統不允許更新捷徑。</string>
+    <string name="shortcuts_rate_limited">系統暫時限制了捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_update_refused">系統沒有接受捷徑更新，請稍後重新開啟雲吞。</string>
+    <string name="shortcuts_app_uninstalled">這個應用程式已解除安裝</string>
+    <string name="shortcuts_too_few">系統只允許 %1$d 個捷徑，無法同時顯示「新增聊天」和「詢問 Bot」。</string>
+    <string name="shortcuts_too_many">系統最多允許 %1$d 個捷徑，已優先保留「新增聊天」「詢問 Bot」，應用程式頁面依底部導覽列順序顯示。</string>
+</resources>

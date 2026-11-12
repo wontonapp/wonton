@@ -27,7 +27,7 @@ struct OnboardingAppsStep: View {
                         },
                         trailing: {
                             if item.installedVersion != nil {
-                                Text(.onboardingAppInstalled)
+                                Text(.Onboarding4.onboardingAppInstalled)
                                     .wontonText(WontonTheme.typography.supporting)
                                     .foregroundStyle(Color(colors.success))
                             }

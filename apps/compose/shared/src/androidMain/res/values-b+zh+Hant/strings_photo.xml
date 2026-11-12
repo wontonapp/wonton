@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Detail of the photo problem: the GIF's header is invalid. Android only. -->
+    <string name="photo_gif_unreadable">認不出這張 GIF</string>
+    <!-- Next step under a photo problem: pick a different photo. -->
+    <string name="photo_try_another">換一張試試。</string>
+    <!-- Title of the photo problem on iOS, detail on Android: the photo was decoded but couldn't be re-encoded for sending. -->
+    <string name="photo_unencodable">照片轉換失敗</string>
+    <!-- Title of the photo problem: the picked photo can't be read or decoded. -->
+    <string name="photo_unreadable">讀不出這張照片</string>
+</resources>

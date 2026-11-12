@@ -24,12 +24,12 @@ struct FriendsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .friendsTitle)) {
-                WontonIconButton(icon: .add, label: String(localized: .friendsAdd)) { showsAdd = true }
+            .wontonPushedScreen(String(localized: .Friends2.friendsTitle)) {
+                WontonIconButton(icon: .add, label: String(localized: .Friends1.friendsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .friendsAdd)) { close in
+            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Friends1.friendsAdd)) { close in
                 addPanel(close)
             }
             .wontonSheet(isPresented: isEditingGroup, title: groupPanelTitle) { close in
@@ -39,7 +39,7 @@ struct FriendsView: View {
                 isPresented: Binding(
                     get: { choosingGroups != nil }, set: { if !$0 { choosingGroups = nil } }
                 ),
-                title: String(localized: .friendsGroupsChoose)
+                title: String(localized: .Friends1.friendsGroupsChoose)
             ) { _ in
                 groupsPanel
             }
@@ -115,7 +115,7 @@ struct FriendsView: View {
                     .listRowSeparatorTint(Color(colors.separator))
                 }
             } header: {
-                sectionHeader(.friendsIncoming)
+                sectionHeader(.Friends2.friendsIncoming)
             }
         }
     }
@@ -132,7 +132,7 @@ struct FriendsView: View {
                     .listRowSeparatorTint(Color(colors.separator))
                 }
             } header: {
-                sectionHeader(.friendsOutgoing)
+                sectionHeader(.Friends0.friendsOutgoing)
             }
         }
     }
@@ -151,19 +151,19 @@ struct FriendsView: View {
                 .listRowSeparatorTint(Color(colors.separator))
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) { removing = row } label: {
-                        Label(String(localized: .friendsRemove), systemImage: "trash")
+                        Label(String(localized: .Friends2.friendsRemove), systemImage: "trash")
                     }
                 }
             }
             if model.viewModel.friends.isEmpty {
-                Text(.friendsEmpty)
+                Text(.Friends1.friendsEmpty)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
                     .listRowBackground(Color(colors.surfaceSubtle))
                     .listRowSeparatorTint(Color(colors.separator))
             }
         } header: {
-            sectionHeader(.friendsList)
+            sectionHeader(.Friends1.friendsList)
         }
     }
 
@@ -178,7 +178,7 @@ struct FriendsView: View {
                 .listRowSeparatorTint(Color(colors.separator))
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     Button(role: .destructive) { deletingGroup = group } label: {
-                        Label(String(localized: .commonRemove), systemImage: "trash")
+                        Label(String(localized: .Common.commonRemove), systemImage: "trash")
                     }
                 }
             }
@@ -188,7 +188,7 @@ struct FriendsView: View {
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     WontonIcon.add.view(size: WontonTheme.size.iconSmall)
-                    Text(.friendsGroupsNew)
+                    Text(.Friends0.friendsGroupsNew)
                         .wontonText(WontonTheme.typography.body)
                     Spacer(minLength: 0)
                 }
@@ -198,7 +198,7 @@ struct FriendsView: View {
             .listRowBackground(Color(colors.surfaceSubtle))
             .listRowSeparatorTint(Color(colors.separator))
         } header: {
-            sectionHeader(.friendsGroups)
+            sectionHeader(.Friends2.friendsGroups)
         }
     }
 
@@ -208,13 +208,13 @@ struct FriendsView: View {
             if model.viewModel.canBlockFederation {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                     // verbatim：占位符不是链接，也不是已经填好的内容。
-                    TextField(String(localized: .friendsBlockServerField), text: $serverName,
+                    TextField(String(localized: .Friends0.friendsBlockServerField), text: $serverName,
                               prompt: Text(verbatim: "example.org"))
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .wontonField()
-                    Button(.friendsBlockServer) { blockServer() }
+                    Button(.Friends3.friendsBlockServer) { blockServer() }
                         .buttonStyle(WontonSmallButtonStyle())
                         .disabled(normalizedServerName.isEmpty)
                 }
@@ -230,7 +230,7 @@ struct FriendsView: View {
                 .listRowSeparatorTint(Color(colors.separator))
             }
         } header: {
-            sectionHeader(.friendsBlocked)
+            sectionHeader(.Friends2.friendsBlocked)
         }
     }
 
@@ -247,7 +247,9 @@ private extension FriendsView {
 
     /// 新建和改名共用一个面板，标题按有没有在改的组选。
     private var groupPanelTitle: String {
-        editingGroup == nil ? String(localized: .friendsGroupsNew) : String(localized: .friendsGroupsRename)
+        editingGroup == nil
+            ? String(localized: .Friends0.friendsGroupsNew)
+            : String(localized: .Friends2.friendsGroupsRename)
     }
 
     /// 组 ID 换成人能看的分组名；组已被删掉的不显示。
@@ -271,7 +273,7 @@ private extension FriendsView {
 
     private func addPanel(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            TextField(String(localized: .friendsAddField), text: $newUserId,
+            TextField(String(localized: .Friends2.friendsAddField), text: $newUserId,
                       prompt: Text(verbatim: "@bob:example.org"))
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.never)
@@ -283,7 +285,7 @@ private extension FriendsView {
             Button {
                 submitAdd(close)
             } label: {
-                Text(.friendsAddSubmit).frame(maxWidth: .infinity)
+                Text(.Friends3.friendsAddSubmit).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(!canSubmitAdd)
@@ -306,13 +308,13 @@ private extension FriendsView {
     private func groupPanel(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         let editing = editingGroup
         return VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            TextField(String(localized: .friendsGroupsName), text: $groupName)
+            TextField(String(localized: .Friends1.friendsGroupsName), text: $groupName)
                 .submitLabel(.done)
                 .wontonField()
             Button {
                 saveGroup(close)
             } label: {
-                Text(.commonSave).frame(maxWidth: .infinity)
+                Text(.Common.commonSave).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -340,7 +342,7 @@ private extension FriendsView {
         let selected = Set(row?.groups ?? [])
         return VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             if model.viewModel.groups.isEmpty {
-                Text(.friendsGroupsEmpty)
+                Text(.Friends1.friendsGroupsEmpty)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             } else {
@@ -383,30 +385,30 @@ private extension FriendsView {
         let detail = friendProblemDetail(problem)
         switch problem.reason {
         case .invalidUserId:
-            return Problem(title: String(localized: .friendsErrorInvalidUserId),
-                           nextStep: String(localized: .friendsErrorInvalidUserIdNextStep), detail: detail)
+            return Problem(title: String(localized: .Friends3.friendsErrorInvalidUserId),
+                           nextStep: String(localized: .Friends0.friendsErrorInvalidUserIdNextStep), detail: detail)
         case .requestNotFound:
-            return Problem(title: String(localized: .friendsErrorRequestNotFound),
-                           nextStep: String(localized: .friendsErrorRequestNotFoundNextStep), detail: detail)
+            return Problem(title: String(localized: .Friends0.friendsErrorRequestNotFound),
+                           nextStep: String(localized: .Friends0.friendsErrorRequestNotFoundNextStep), detail: detail)
         case .rateLimited:
             let wait = problem.retryAfterMs.map { max(1, Int((Double($0) / 1000).rounded(.up))) } ?? 60
-            return Problem(title: String(localized: .friendsErrorRateLimited),
-                           nextStep: String(localized: .friendsErrorRateLimitedNextStep(wait)), detail: detail)
+            return Problem(title: String(localized: .Friends0.friendsErrorRateLimited),
+                           nextStep: String(localized: .Friends0.friendsErrorRateLimitedNextStep(wait)), detail: detail)
         case .unauthorized:
-            return Problem(title: String(localized: .problemUnauthorizedTitle),
-                           nextStep: String(localized: .problemUnauthorizedNextStep), detail: detail)
+            return Problem(title: String(localized: .Problem3.problemUnauthorizedTitle),
+                           nextStep: String(localized: .Problem2.problemUnauthorizedNextStep), detail: detail)
         case .forbidden:
-            return Problem(title: String(localized: .friendsErrorForbidden),
-                           nextStep: String(localized: .friendsErrorForbiddenNextStep), detail: detail)
+            return Problem(title: String(localized: .Friends1.friendsErrorForbidden),
+                           nextStep: String(localized: .Friends1.friendsErrorForbiddenNextStep), detail: detail)
         case .transportUnavailable:
-            return Problem(title: String(localized: .problemTransportUnavailableTitle),
-                           nextStep: String(localized: .problemTransportUnavailableNextStep), detail: detail)
+            return Problem(title: String(localized: .Problem2.problemTransportUnavailableTitle),
+                           nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep), detail: detail)
         case .upstream:
-            return Problem(title: String(localized: .problemUpstreamTitle),
-                           nextStep: String(localized: .problemUpstreamNextStep), detail: detail)
+            return Problem(title: String(localized: .Problem2.problemUpstreamTitle),
+                           nextStep: String(localized: .Problem2.problemUpstreamNextStep), detail: detail)
         case .other:
-            return Problem(title: String(localized: .problemGenericTitle),
-                           nextStep: String(localized: .problemUpstreamNextStep), detail: detail)
+            return Problem(title: String(localized: .Problem1.problemGenericTitle),
+                           nextStep: String(localized: .Problem2.problemUpstreamNextStep), detail: detail)
         }
     }
 }
@@ -465,14 +467,14 @@ extension View {
     func friendsRemoveDialog(_ removing: Binding<FriendRow?>, model: FriendsModel) -> some View {
         let row = removing.wrappedValue
         return wontonDialog(
-            String(localized: .friendsRemoveTitle(friendName(row?.displayName, userId: row?.userId ?? ""))),
-            message: String(localized: .friendsRemoveMessage),
+            String(localized: .Friends3.friendsRemoveTitle(friendName(row?.displayName, userId: row?.userId ?? ""))),
+            message: String(localized: .Friends3.friendsRemoveMessage),
             isPresented: Binding(
                 get: { removing.wrappedValue != nil }, set: { if !$0 { removing.wrappedValue = nil } }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { removing.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .friendsRemove), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Friends2.friendsRemove), kind: .danger) {
                     if let row { model.send(.removeFriend(userId: row.userId)) }
                     removing.wrappedValue = nil
                 }
@@ -484,14 +486,14 @@ extension View {
     func friendsGroupDeleteDialog(_ deleting: Binding<FriendGroup?>, model: FriendsModel) -> some View {
         let group = deleting.wrappedValue
         return wontonDialog(
-            String(localized: .friendsGroupsDeleteTitle(group?.name ?? "")),
-            message: String(localized: .friendsGroupsDeleteMessage),
+            String(localized: .Friends0.friendsGroupsDeleteTitle(group?.name ?? "")),
+            message: String(localized: .Friends3.friendsGroupsDeleteMessage),
             isPresented: Binding(
                 get: { deleting.wrappedValue != nil }, set: { if !$0 { deleting.wrappedValue = nil } }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { deleting.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .commonRemove), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { deleting.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
                     if let group { model.send(.removeFriendGroup(id: group.id)) }
                     deleting.wrappedValue = nil
                 }

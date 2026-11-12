@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="home_connection">接続</string>
+    <string name="home_awaiting">確認待ち</string>
+    <plurals name="home_cards">
+        <item quantity="other">%1$d件</item>
+    </plurals>
+    <string name="home_none">なし</string>
+    <string name="home_storage">ストレージ</string>
+    <string name="home_storage_value">空き%1$s／全体%2$s</string>
+</resources>

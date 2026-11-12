@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
+    <string name="port_mapping_toggle">この端末にマッピング</string>
+    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
+    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
+    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
+    <string name="port_mapping_protocol_other">その他</string>
+    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
+    <string name="port_mapping_reason_port_in_use">このポートは端末上の別のアプリが使用中です。</string>
+    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
+    <string name="port_mapping_reason_server_too_old">自宅サーバーのバージョンが古いため、先にアップデートが必要です。</string>
+    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
+    <string name="port_mapping_reason_tunnel_disconnected">自宅サーバーへのトンネルに接続していません。</string>
+    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
+    <string name="port_mapping_reason_plugin_not_installed">このアプリは自宅サーバーにインストールされていません。</string>
+    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
+    <string name="port_mapping_reason_port_not_declared">このアプリはそのポートを宣言していません。</string>
+    <!-- Reason shown while the mapping is on but the app isn't running. -->
+    <string name="port_mapping_reason_plugin_not_running">このアプリが動いていません。</string>
+    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
+    <string name="port_mapping_reason_plugin_unreachable">自宅サーバーからこのアプリに接続できません。</string>
+    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
+    <string name="port_mapping_reason_other">マッピングで問題が発生しました。</string>
+    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
+    <string name="port_mapping_no_notification_permission">通知権限がないため、マッピング中でも通知バーに表示されません。マッピングはそのまま使えます。</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">公共リレー経由でしか接続できておらず、映像を送る帯域が足りません。</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">カスタム</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">カスタムミラーのアドレス</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub（直接接続）</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">利用可能</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">ダイジェスト不一致</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">その他のエラー</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">拒否されました</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">不明</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">接続できません</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">Docker Hubに接続できません。ダウンロードミラーをオンにすることをおすすめします。</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">これらは第三者が無料で提供しているサービスです。どのイメージをダウンロードしたかは見えますが、ダイジェストを1つずつ照合するため、内容を書き換えることはできません。</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">ミラーのアドレスは保存されていません</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">速度をテスト</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">ダウンロードミラー</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">このボットは、すべてのアプリのツールを確認なしで使えます。あとからインストールしたアプリも含まれます。プロンプトインジェクションによって、確認なしでデータの変更や削除、外部への送信が行われるおそれがあります。</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">常に許可（すべてのアプリ）</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">このボットは、このアプリのツールを確認なしで使えます。データを変更するツールも含まれます。</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">常に許可</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">オンにしたツールは読み取り専用として扱われ、すべてのボットが確認なしで呼び出せます</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">読み取り専用</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">停止</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">ツール</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">現在は毎回確認を求められ、ここでは変更できません。</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">設定を読み込めません</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$sは%2$sまで許可</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">一時的に許可</string>
+    <string name="secret_section_title">このアプリに必要な鍵</string>
+    <string name="secret_optional">任意</string>
+    <string name="secret_get_one">取得先</string>
+    <string name="secret_show">値を表示</string>
+    <string name="secret_hide">値を隠す</string>
+    <string name="secret_edit">変更</string>
+    <string name="secret_clear">クリア</string>
+    <string name="secret_filled">入力済み</string>
+    <string name="secret_unfilled">未準備：トークンを先に入力してください</string>
+</resources>

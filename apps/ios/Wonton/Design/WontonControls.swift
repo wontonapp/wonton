@@ -109,7 +109,7 @@ struct WontonRow: View {
             }
             if badge {
                 Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
-                    .accessibilityLabel(String(localized: .designUpdateBadge))
+                    .accessibilityLabel(String(localized: .Design.designUpdateBadge))
             }
             if let badgeText {
                 Text(badgeText)
@@ -118,7 +118,7 @@ struct WontonRow: View {
                     .padding(.horizontal, WontonTheme.spacing.s4)
                     .frame(minWidth: 20, minHeight: 20)
                     .background(Capsule().fill(Color(colors.primary)))
-                    .accessibilityLabel(String(localized: .friendsRequestsBadge(Int(badgeText) ?? 0)))
+                    .accessibilityLabel(String(localized: .Friends2.friendsRequestsBadge(Int(badgeText) ?? 0)))
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
@@ -305,7 +305,7 @@ private struct SidebarButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: .sidebarOpen))
+        .accessibilityLabel(String(localized: .Sidebar.sidebarOpen))
     }
 }
 
@@ -316,7 +316,7 @@ private struct SidebarButton: View {
 struct WontonPushedBar<Trailing: View>: View {
     let title: String
     var icon: WontonIcon = .back
-    var iconLabel = String(localized: .designBack)
+    var iconLabel = String(localized: .Design.designBack)
     var showsStatus = false
     var showsStatusLine = false
     /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
@@ -396,7 +396,7 @@ extension View {
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
     func wontonModalScreen(_ title: String, showsStatus: Bool = false) -> some View {
         let bar = WontonPushedBar(
-            title: title, icon: .close, iconLabel: String(localized: .designClose),
+            title: title, icon: .close, iconLabel: String(localized: .Design.designClose),
             showsStatus: showsStatus
         ) { EmptyView() }
         return wontonTopBar { bar }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="connection_waiting_network">等待网络…</string>
+    <string name="connection_server_offline">家里的服务器好像离线了</string>
+    <string name="connection_new_version">有新版本</string>
+    <string name="connection_mobile_network">手机网络</string>
+    <string name="connection_unknown">不确定</string>
+    <string name="connection_latency">延迟</string>
+    <string name="connection_loss_rate">丢包率</string>
+    <string name="connection_poor">网络较差，可能会卡</string>
+    <string name="connection_poor_relay">网络较差，正在经中转连接</string>
+    <string name="connection_quality">连接质量</string>
+    <string name="connection_quality_good">好</string>
+    <string name="connection_quality_poor">较差</string>
+</resources>

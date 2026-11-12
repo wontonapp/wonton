@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title in setup when no agent can be chosen. -->
+    <string name="onboarding_agent_empty">選べるエージェントがありません。再読み込みして再試行できます。</string>
+    <!-- Notice when tapping "Get API key" found no browser to open the link. -->
+    <string name="onboarding_model_no_browser">このリンクを開けるブラウザがありません。ブラウザをインストールまたは有効にしてから再試行してください。</string>
+    <!-- Button that opens the model gateway's settings page. -->
+    <string name="onboarding_model_open_settings">モデル設定を開く</string>
+    <!-- Button that checks the typed API key against the model provider. -->
+    <string name="onboarding_model_test">テスト</string>
+    <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
+    <string name="onboarding_model_use_login">%1$sを使用</string>
+    <!-- Problem title in setup: the provider rejected the API key. -->
+    <string name="onboarding_problem_model_key_rejected">プロバイダーがこのAPIキーを拒否しました。修正して再テストしてください。</string>
+    <!-- Problem title in setup: the provider's address can't be reached. -->
+    <string name="onboarding_problem_model_provider_unreachable">プロバイダーに接続できません。アドレスかネットワークを確認して再試行してください。</string>
+    <!-- Problem title in setup: the home server hit an error answering the request. -->
+    <string name="onboarding_problem_model_upstream">自宅サーバーがリクエストを完了できませんでした。しばらくしてから再試行してください。</string>
+    <!-- Problem title while installing: the app changed after it was confirmed. -->
+    <string name="onboarding_problem_plugin_changed">アプリが確認後に変更されました。もう一度確認してください。</string>
+    <!-- Problem title while installing: the home server is updating itself right now. -->
+    <string name="onboarding_problem_plugin_core_upgrading">自宅サーバーをアップデート中です。終わってから再試行してください。</string>
+    <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
+    <string name="onboarding_review_uncertain">インストールされたか確認できません。アプリのページを確認してください。</string>
+    <!-- Secondary button on the setup error screen: leave setup without finishing. -->
+    <string name="onboarding_skip_anyway">スキップ</string>
+    <!-- Card title after setup finished. -->
+    <string name="onboarding_step_finished">完了</string>
+    <!-- Card title fallback in setup when the step is unknown. -->
+    <string name="onboarding_step_other">セットアップ</string>
+    <!-- Card title at the top of the review step in setup: check everything before finishing. -->
+    <string name="onboarding_step_review">確認</string>
+</resources>

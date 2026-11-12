@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_stopped">%1$sは停止しました</string>
+    <string name="tab_problem">%1$sで問題が発生しました</string>
+    <string name="tab_page_removed">このページは新しいバージョンでは提供されません</string>
+    <string name="tab_status_unknown">アプリの状態を確認できません</string>
+    <string name="tab_start">起動</string>
+    <string name="tab_view_details">詳細を表示</string>
+    <string name="tab_load_upstream">アプリのページを開けません</string>
+    <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_media_prompt_camera">%1$sにカメラの使用を許可しますか？</string>
+    <string name="tab_media_deny">許可しない</string>
+    <string name="tab_media_system_denied_title">カメラまたはマイクが使えません</string>
+    <string name="tab_menu_open_fullscreen">全画面で開く</string>
+    <string name="tab_choose_page">ページを選択</string>
+    <string name="tab_bar_full">ナビゲーションバーがいっぱいです：%1$sを追加</string>
+    <string name="tab_pin_a11y">%1$s、%2$s</string>
+    <string name="tab_show_labels">ラベルを表示</string>
+    <string name="tab_move_down">下へ移動</string>
+    <string name="tab_defaults_shown">デフォルトのナビゲーションバーを表示しています。変更すると設定が保存されます。</string>
+    <!-- 全画面カプセルのメニュー項目:タブバーから開いたときに全画面にするスイッチ。 -->
+    <string name="tab_menu_always_fullscreen">常に全画面</string>
+    <!-- 全画面カプセルのメニュー項目:ページ履歴を一つ戻る。 -->
+    <string name="tab_menu_back">戻る</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">タブバーに追加</string>
+</resources>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Server list button that opens pairing to add another server. No arguments; short button label. -->
+    <string name="servers_add">サーバーを追加</string>
+    <!-- Navigation title while pairing an additional server. No arguments; fits a phone navigation bar. -->
+    <string name="servers_add_title">サーバーを追加</string>
+    <!-- Default display name for server number 1 in the server list and Settings. No arguments; keep it short enough for a settings row. -->
+    <string name="servers_default_first">自宅サーバー</string>
+    <!-- Default server name in the server list and Settings. Argument: the stable server number, not the number of servers. Keep it short enough for a settings row. -->
+    <plurals name="servers_default_numbered">
+        <item quantity="other">サーバー%1$d</item>
+    </plurals>
+    <!-- Accessibility long-press action label for a server row; opens rename and remove actions. No arguments; short action label. -->
+    <string name="servers_manage">サーバーを管理</string>
+    <!-- Text field label in the server rename dialog. The value is the owner's editable server name. No format arguments; short label. -->
+    <string name="servers_name">名前</string>
+    <!-- Problem dialog title when a notification targets a server that cannot be connected. The upstream reason is shown separately in collapsed details. No arguments; may wrap. -->
+    <string name="servers_notification_unreachable">この通知のサーバーに接続できません</string>
+    <!-- Body of the server removal confirmation. Only this phone's chat history and files are deleted; data on the server is unaffected. No arguments; wraps in a dialog. -->
+    <string name="servers_remove_message">このスマートフォンに保存されたチャット履歴とファイルが削除されます。サーバー上のデータは削除されません。</string>
+    <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
+    <string name="servers_remove_title">「%1$s」を削除しますか？</string>
+</resources>

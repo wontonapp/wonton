@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tab_uninstalling">アンインストールしています…</string>
+    <string name="tab_upgrading">アップデートしています…</string>
+    <string name="tab_opens_in_browser">%1$sはブラウザで開きます</string>
+    <string name="tab_open_in_browser">開く</string>
+    <string name="tab_unpin_from_bar">ナビゲーションバーから外す</string>
+    <string name="tab_load_not_ready">アプリの準備ができていません</string>
+    <string name="tab_media_prompt_microphone">%1$sにマイクの使用を許可しますか？</string>
+    <string name="tab_media_system_settings">設定を開く</string>
+    <string name="tab_fullscreen">全画面</string>
+    <string name="tab_add_to_bar">ナビゲーションバーに追加</string>
+    <string name="tab_chat">チャット</string>
+    <string name="tab_apps">アプリ</string>
+    <string name="tab_app_page">アプリのページ</string>
+    <!-- 全画面カプセルのメニュー項目:ページを再読み込みする。 -->
+    <string name="tab_menu_reload">再読み込み</string>
+    <!-- Small button on an approval request card: open the app that was just installed. -->
+    <string name="tab_open">開く</string>
+    <!-- 全画面ページのカプセル左ボタンのラベル。タップでメニューを開く。 -->
+    <string name="tab_page_menu">ページメニュー</string>
+</resources>

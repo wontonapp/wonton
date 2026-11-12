@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection details row: the stored server address may be out of date; the app keeps fetching it. -->
+    <!-- Connection state value: this device isn't paired with a home server yet. -->
+    <string name="connection_unpaired">Not paired</string>
+    <!-- Connection state value: the tunnel to the home server is up. -->
+    <string name="connection_connected">Connected</string>
+    <!-- Connection notice: the tunnel is being established. -->
+    <string name="connection_connecting">Connecting…</string>
+    <!-- Connection progress while a real connection attempt or manual retry is running. -->
+    <string name="connection_retrying">Trying to reach your home server…</string>
+    <!-- Connection notice: the home server no longer accepts this device; the user has to pair again. -->
+    <string name="connection_device_rejected">Your home server no longer recognizes this phone</string>
+    <!-- Connection notice: app and home server versions don't match. -->
+    <string name="connection_version_mismatch">Wonton or your home server needs an update</string>
+    <!-- Page title of the connection details page and the label of the row that opens it. -->
+    <string name="connection_details_title">Details</string>
+    <string name="connection_path">Path</string>
+    <!-- Label of the disconnect count in the connection details. -->
+    <string name="connection_disconnects">Disconnects</string>
+    <!-- Label of the last successful connection time in the connection details. -->
+    <string name="connection_last_connected">Last connected</string>
+    <string name="connection_addresses_stale">The server\'s address may be out of date; it will be fetched again</string>
+</resources>

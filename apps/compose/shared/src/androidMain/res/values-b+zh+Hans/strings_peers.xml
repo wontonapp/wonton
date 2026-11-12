@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">等待相机权限…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">云吞没有相机权限，扫不了码。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">允许使用相机</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">云吞没有相机权限，可以在系统设置里打开。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">打开系统设置</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">这台设备没有相机。</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">相机被系统策略停用了</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">相机出错了（CameraX 错误码 %1$d）</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">相机打不开，请粘贴配对码</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">相机正被别的 App 占用</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">勿扰模式下打不开相机</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">这台设备没有后置相机</string>
+    <string name="keepalive_toggle">保持连接</string>
+    <!-- 系统里关了通知时，开关下面的一行说明：服务照常运行，但新消息弹不出通知。 -->
+    <string name="keepalive_without_permission">没有通知权限：新消息弹不出通知，连接照常保持。</string>
+</resources>

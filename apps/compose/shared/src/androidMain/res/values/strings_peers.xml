@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">Waiting for camera permission…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">Wonton doesn\'t have camera access, so it can\'t scan codes.</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">Allow camera access</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">Wonton doesn\'t have camera access. Turn it on in system settings to scan codes.</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">Open system settings</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">This device has no camera.</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">The camera is disabled by system policy</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">Camera error (CameraX code %1$d)</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">The camera can\'t open. Paste the pairing code instead</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">The camera is in use by another app</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">The camera can\'t open in Do Not Disturb</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">This device has no rear camera</string>
+    <!-- Switch on the notification settings page: on = a foreground service keeps the tunnel to the home server connected and new messages arrive as local notifications; off = push via UnifiedPush (ADR-0003). -->
+    <string name="keepalive_toggle">Keep connection</string>
+    <!-- Supporting line under the keep-connection switch when notifications are disabled in the system: the service still runs, but new messages can't pop up. -->
+    <string name="keepalive_without_permission">Without the notification permission, new messages won&#8217;t show as notifications. The connection is still kept.</string>
+</resources>

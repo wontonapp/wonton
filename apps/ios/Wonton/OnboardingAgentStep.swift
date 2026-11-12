@@ -20,7 +20,7 @@ struct OnboardingAgentStep: View {
 
     /// 接模型的方式，如“ChatGPT 账号或 key”；没有账号登录时只有 key。
     private func connection(_ logins: [String]) -> String {
-        guard !logins.isEmpty else { return String(localized: .onboardingAgentConnectionKey) }
-        return String(localized: .onboardingAgentConnectionLogins(logins.formatted(.list(type: .or))))
+        guard !logins.isEmpty else { return String(localized: .Onboarding0.onboardingAgentConnectionKey) }
+        return String(localized: .Onboarding4.onboardingAgentConnectionLogins(logins.formatted(.list(type: .or))))
     }
 }

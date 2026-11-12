@@ -40,7 +40,7 @@ struct OpenPageIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         guard let link = parseAppLink(url: page.id), case .tab = link else {
-            throw IntentProblem(CoreError.InvalidInput(reason: String(localized: .shortcutsInvalidPageLink)))
+            throw IntentProblem(CoreError.InvalidInput(reason: String(localized: .Shortcuts.shortcutsInvalidPageLink)))
         }
         try shared().request { try await $0.open(link) }
         return .result()
@@ -76,12 +76,12 @@ struct IntentProblem: LocalizedError, CustomLocalizedStringResourceConvertible {
         let problem = error.problem
         message = (error as? IntentProblem)?.message
             ?? [problem.title, problem.nextStep].compactMap { $0 }
-            .joined(separator: String(localized: .commonSentenceSeparator))
+            .joined(separator: String(localized: .Common.commonSentenceSeparator))
     }
 
     init(problem: Problem) {
         message = [problem.title, problem.nextStep].compactMap { $0 }
-            .joined(separator: String(localized: .commonSentenceSeparator))
+            .joined(separator: String(localized: .Common.commonSentenceSeparator))
     }
 
     var errorDescription: String? { message }

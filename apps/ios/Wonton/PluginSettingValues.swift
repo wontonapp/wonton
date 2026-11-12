@@ -27,7 +27,7 @@ func submitted(
         if let integer = Int64(input) {
             return .set(.integer(value: integer))
         }
-        errors[field.name] = String(localized: .pluginSettingsInvalidInteger)
+        errors[field.name] = String(localized: .Plugin1.pluginSettingsInvalidInteger)
         return .invalid
     case let (.decimal, .text(input)):
         if input.isEmpty {
@@ -36,7 +36,7 @@ func submitted(
         if Decimal(string: input) != nil {
             return .set(.decimal(value: input))
         }
-        errors[field.name] = String(localized: .pluginSettingsInvalidDecimal)
+        errors[field.name] = String(localized: .Plugin1.pluginSettingsInvalidDecimal)
         return .invalid
     case let (.text, .text(input)):
         if input.isEmpty { return .clear }

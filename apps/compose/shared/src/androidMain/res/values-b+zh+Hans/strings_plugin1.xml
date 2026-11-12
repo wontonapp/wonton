@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_save_revoke">撤销</string>
+    <string name="plugin_settings_open">打开设置</string>
+    <string name="plugin_updates_section">更新</string>
+    <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
+    <string name="plugin_tags">标签</string>
+    <string name="plugin_license">许可证</string>
+    <string name="plugin_homepage">主页</string>
+    <string name="plugin_permission_open">打开</string>
+    <string name="plugin_permission_opened_owner">你在 %1$s 打开</string>
+    <!-- Button that adds the typed source address. -->
+    <string name="plugin_sources_add">添加</string>
+    <!-- Status of a finished update task. -->
+    <string name="plugin_task_upgrade_done">已升级</string>
+</resources>

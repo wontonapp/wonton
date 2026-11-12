@@ -25,18 +25,18 @@ struct AppearanceView: View {
                     ProblemNotice(problem: problem)
                 }
                 SettingsPreview()
-                section(String(localized: .appearanceTheme)) {
+                section(String(localized: .Appearance1.appearanceTheme)) {
                     choices(appearance.themeModes, title: \.label, selected: appearance.themeMode) {
                         model.send(.setThemeMode(mode: $0))
                     }
                 }
-                section(String(localized: .appearanceAccent)) { accent }
-                section(String(localized: .appearanceTextSize)) {
+                section(String(localized: .Appearance1.appearanceAccent)) { accent }
+                section(String(localized: .Appearance0.appearanceTextSize)) {
                     choices(appearance.textSizes, title: \.label, selected: appearance.textSize) {
                         model.send(.setTextSize(size: $0))
                     }
                 }
-                section(String(localized: .appearanceFont)) { fonts }
+                section(String(localized: .Appearance0.appearanceFont)) { fonts }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
@@ -90,7 +90,7 @@ struct AppearanceView: View {
     private var accent: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             WontonGroup {
-                swatches(appearance.presets, label: String(localized: .appearanceAccent))
+                swatches(appearance.presets, label: String(localized: .Appearance1.appearanceAccent))
                     .padding(WontonTheme.spacing.s8)
                 WontonSeparator()
                 Button {
@@ -105,7 +105,7 @@ struct AppearanceView: View {
                 .buttonStyle(.plain)
                 if showsMoreColors {
                     WontonSeparator()
-                    swatches(appearance.moreColors, label: String(localized: .appearanceMoreColors))
+                    swatches(appearance.moreColors, label: String(localized: .Appearance1.appearanceMoreColors))
                         .padding(WontonTheme.spacing.s8)
                 }
             }
@@ -126,9 +126,9 @@ struct AppearanceView: View {
             .onSubmit(submitHex)
             .onChange(of: hexText) { isHexInvalid = false }
             .wontonField()
-            .accessibilityLabel(String(localized: .appearanceColorValue))
+            .accessibilityLabel(String(localized: .Appearance0.appearanceColorValue))
         if isHexInvalid {
-            Text(.appearanceHexInvalid)
+            Text(.Appearance1.appearanceHexInvalid)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.danger))
         }
@@ -164,9 +164,9 @@ struct AppearanceView: View {
 private extension ThemeMode {
     var label: String {
         switch self {
-        case .system: String(localized: .appearanceSystem)
-        case .light: String(localized: .appearanceThemeLight)
-        case .dark: String(localized: .appearanceThemeDark)
+        case .system: String(localized: .Appearance1.appearanceSystem)
+        case .light: String(localized: .Appearance0.appearanceThemeLight)
+        case .dark: String(localized: .Appearance0.appearanceThemeDark)
         }
     }
 }
@@ -174,11 +174,11 @@ private extension ThemeMode {
 private extension TextSize {
     var label: String {
         switch self {
-        case .system: String(localized: .appearanceSystem)
-        case .small: String(localized: .appearanceSizeSmall)
-        case .standard: String(localized: .appearanceSizeStandard)
-        case .large: String(localized: .appearanceSizeLarge)
-        case .extraLarge: String(localized: .appearanceSizeExtraLarge)
+        case .system: String(localized: .Appearance1.appearanceSystem)
+        case .small: String(localized: .Appearance1.appearanceSizeSmall)
+        case .standard: String(localized: .Appearance0.appearanceSizeStandard)
+        case .large: String(localized: .Appearance0.appearanceSizeLarge)
+        case .extraLarge: String(localized: .Appearance0.appearanceSizeExtraLarge)
         }
     }
 }
@@ -186,10 +186,10 @@ private extension TextSize {
 private extension FontStyle {
     var label: String {
         switch self {
-        case .default: String(localized: .appearanceFontDefault)
-        case .rounded: String(localized: .appearanceFontRounded)
-        case .serif: String(localized: .appearanceFontSerif)
-        case .monospaced: String(localized: .appearanceFontMonospaced)
+        case .default: String(localized: .Appearance0.appearanceFontDefault)
+        case .rounded: String(localized: .Appearance0.appearanceFontRounded)
+        case .serif: String(localized: .Appearance0.appearanceFontSerif)
+        case .monospaced: String(localized: .Appearance1.appearanceFontMonospaced)
         }
     }
 }
@@ -237,7 +237,7 @@ private struct MoreColorsRow: View {
 
     var body: some View {
         HStack(spacing: WontonTheme.spacing.s12) {
-            Text(.appearanceMore)
+            Text(.Appearance0.appearanceMore)
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textPrimary))
             Spacer(minLength: 0)
@@ -254,7 +254,7 @@ private struct MoreColorsRow: View {
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.target)
         .contentShape(Rectangle())
-        .accessibilityValue(isExpanded ? Text(.appearanceExpanded) : Text(.appearanceCollapsed))
+        .accessibilityValue(isExpanded ? Text(.Appearance1.appearanceExpanded) : Text(.Appearance0.appearanceCollapsed))
     }
 }
 
@@ -265,7 +265,7 @@ private struct SettingsPreview: View {
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
             HStack {
-                Text(.appearancePreviewMessage)
+                Text(.Appearance1.appearancePreviewMessage)
                     .foregroundStyle(Color(colors.textPrimary))
                     .padding(.horizontal, WontonTheme.spacing.s12)
                     .padding(.vertical, WontonTheme.spacing.s8)
@@ -277,7 +277,7 @@ private struct SettingsPreview: View {
             HStack {
                 Spacer(minLength: WontonTheme.spacing.s48)
                 HStack(alignment: .lastTextBaseline, spacing: WontonTheme.spacing.s8) {
-                    Text(.appearancePreviewName).foregroundStyle(Color(colors.textOnAccentFill))
+                    Text(.Appearance1.appearancePreviewName).foregroundStyle(Color(colors.textOnAccentFill))
                     Text("21:08")
                         .wontonText(WontonTheme.typography.caption)
                         .foregroundStyle(Color(colors.accentInkOnFill))

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_requirements">要求</string>
+    <string name="plugin_stars">星标</string>
+    <string name="plugin_repository">代码仓库</string>
+    <string name="plugin_permission_risk_high">高风险</string>
+    <string name="plugin_permission_risk_very_high">很高风险</string>
+    <string name="plugin_permission_understand_title">我知道这个插件能控制整台主机</string>
+    <string name="plugin_permission_host_root">打开后它能以 root 身份管理这台主机上的容器。</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">文件太大了，最多 %1$s</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">我添加的</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">新增的工具：%1$s</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">已安装</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">正在安装</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">到已安装列表看看装上没有。</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">已卸载</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">正在卸载</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">正在升级</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">已审核</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">系统</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">卸载并删除数据</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">卸载“%1$s”？</string>
+    <string name="plugin_screenshot">截图</string>
+</resources>

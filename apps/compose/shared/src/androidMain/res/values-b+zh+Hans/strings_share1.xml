@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Button that dismisses the share editor without saving changes. No arguments. -->
+    <string name="share_cancel">取消</string>
+    <!-- Identity verification detail when the identity server could not confirm the user. No arguments. -->
+    <string name="share_identity_userinfo">身份服务器无法确认你的身份。</string>
+    <!-- Shared app problem when the access grant has expired. No arguments. -->
+    <string name="share_problem_expired">分享已到期</string>
+    <!-- Shared app problem when the sharing friend's server cannot verify the current user. No arguments. -->
+    <string name="share_problem_identity">这位好友的服务器认不出你</string>
+    <!-- Shared app problem when the owner has revoked access. No arguments. -->
+    <string name="share_problem_revoked">这位好友已停止分享这个应用</string>
+    <!-- Label of the friend or group picker for an app share. No arguments. -->
+    <string name="share_recipient">好友或分组</string>
+    <!-- Destructive action that immediately removes access granted by an app share. No arguments. -->
+    <string name="share_revoke">收回分享</string>
+    <!-- Plugin detail section and share management page title. No arguments. -->
+    <string name="share_title">分享给好友</string>
+    <!-- Expiration choice that grants access until the end of today. No arguments. -->
+    <string name="share_today">今天</string>
+</resources>

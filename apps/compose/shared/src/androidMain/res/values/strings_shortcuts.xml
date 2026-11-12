@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title when the desktop shortcuts couldn't be updated. No arguments. -->
+    <string name="shortcuts_not_updated">Desktop shortcuts weren\'t updated</string>
+    <!-- Next step when the system rejected a shortcut. No arguments. -->
+    <string name="shortcuts_rejected">The system didn\'t accept the shortcut.</string>
+    <!-- Next step when the launcher needs the device unlocked. No arguments. -->
+    <string name="shortcuts_unlock">Unlock the device and open Wonton again.</string>
+    <!-- Next step when the system doesn't allow shortcuts. No arguments. -->
+    <string name="shortcuts_not_allowed">The system doesn\'t allow updating shortcuts.</string>
+    <!-- Shortcut problem detail when the system is rate limiting updates. No arguments. -->
+    <string name="shortcuts_rate_limited">The system is limiting shortcut updates right now. Open Wonton again later.</string>
+    <!-- Shortcut problem detail when the system refused the update. No arguments. -->
+    <string name="shortcuts_update_refused">The system didn\'t accept the shortcut update. Open Wonton again later.</string>
+    <!-- Label launcher shows on the shortcut of a disabled app that was uninstalled. No arguments. -->
+    <string name="shortcuts_app_uninstalled">This app was uninstalled</string>
+    <!-- Shortcut problem detail when the launcher allows fewer shortcuts than the two fixed ones. Argument: the maximum count. -->
+    <string name="shortcuts_too_few">The system allows only %1$d shortcuts, so “New chat” and “Ask a Bot” can\'t both show.</string>
+    <!-- Shortcut problem detail when more app pages exist than the launcher allows. Argument: the maximum count. -->
+    <string name="shortcuts_too_many">The system allows at most %1$d shortcuts. “New chat” and “Ask a Bot” come first, then app pages in navigation bar order.</string>
+</resources>

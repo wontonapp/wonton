@@ -157,7 +157,9 @@ private struct CodeBlock: View {
                 .frame(minHeight: WontonTheme.size.target)
             WontonIconButton(
                 icon: copied ? .check : .copy,
-                label: copied ? String(localized: .messageCodeCopied) : String(localized: .messageCodeCopy),
+                label: copied
+                    ? String(localized: .Message2.messageCodeCopied)
+                    : String(localized: .Message0.messageCodeCopy),
                 tint: ink
             ) {
                 UIPasteboard.general.string = text

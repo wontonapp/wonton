@@ -1,0 +1,726 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "pairing.reopenCamera": {
+      "comment": "Button under the camera problem: try the scanner again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reopen Camera"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新打开相机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新開啟相機"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラを再度開く"
+          }
+        }
+      }
+    },
+    "pairing.back": {
+      "comment": "Button on the pairing failure: return to code entry or leave the pushed pairing screen without pairing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "戻る"
+          }
+        }
+      }
+    },
+    "pairing.cameraDenied": {
+      "comment": "Notice when camera access was denied. Names both ways out.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton can't scan without camera access. Allow it in Settings, or paste the pairing code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞没有相机权限，扫不了码。可以在设置里打开，或者粘贴配对码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞沒有相機權限，無法掃碼。可以在設定裡開啟，或者貼上配對碼。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonにカメラの権限がないため、コードをスキャンできません。設定で許可するか、ペアリングコードをペーストしてください。"
+          }
+        }
+      }
+    },
+    "pairing.failure.transport": {
+      "comment": "Failure title when the server identified by the pairing code can't be reached.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach the server in this pairing code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上配对码里的服务器"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連不上配對碼裡的伺服器"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペアリングコードのサーバに接続できません"
+          }
+        }
+      }
+    },
+    "pairing.failure.upstream": {
+      "comment": "Failure title when the home server errored while pairing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something went wrong on your home server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器出错了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器出錯了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバでエラーが発生しました"
+          }
+        }
+      }
+    },
+    "pairing.nextStep.newCode": {
+      "comment": "Next step after a rejected or expired code: get another one. Names both ways.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get a new code: use Add Device on a paired device, or run `sudo wonton pair` on the computer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "换一个新码：在已配对的设备上用“添加设备”出码，或在主机上执行 `sudo wonton pair`。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "換一個新碼：在已配對的裝置上用「新增裝置」取得新碼，或在主機上執行 `sudo wonton pair`。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいコードを発行してください：ペアリング済みのデバイスで「デバイスを追加」を使うか、ホストで `sudo wonton pair` を実行します。"
+          }
+        }
+      }
+    },
+    "pairing.nextStep.closed": {
+      "comment": "Next step when the first-pairing code was already used up: this server has paired devices.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server already has paired devices, so its first-pairing code can't be used again. Use Add Device on a paired device, or run `sudo wonton pair` on the computer for a new code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器已经有配对的设备，首次配对码不能再用；在已配对的设备上用“添加设备”，或在主机上执行 `sudo wonton pair` 另发一个码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台伺服器已經有配對的裝置，首次配對碼不能再用；在已配對的裝置上用「新增裝置」，或在主機上執行 `sudo wonton pair` 另發一個碼。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバにはペアリング済みのデバイスがあるため、初回ペアリング用のコードは使えません。ペアリング済みのデバイスで「デバイスを追加」を使うか、ホストで `sudo wonton pair` を実行して新しいコードを発行してください。"
+          }
+        }
+      }
+    },
+    "pairing.instructions": {
+      "comment": "Explanation above the paste field: where the pairing QR code lives. May wrap.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On your home network, open your home server's IP address in a browser (the installer prints it on the computer), then scan the pairing QR code on that page."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在家里的局域网里，用浏览器打开家里服务器的 IP 地址（装好时主机的终端里会给出），页面上有配对二维码。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在家用區域網路裡，用瀏覽器開啟家用伺服器的 IP 位址（安裝時主機的終端機裡會給出），頁面上有配對 QR 碼。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅のローカルネットワークで、ブラウザーで自宅サーバのIPアドレス（インストール時にホストのターミナルに表示されます）を開くと、ペアリング用QRコードが表示されます。"
+          }
+        }
+      }
+    },
+    "pairing.title": {
+      "comment": "Title of the page that pairs this phone with the home server by scanning.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング"
+          }
+        }
+      }
+    },
+    "pairing.deviceName": {
+      "comment": "Label of the field for this device's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device's name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备的名字"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置的名字"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスの名前"
+          }
+        }
+      }
+    },
+    "pairing.inProgress": {
+      "comment": "Shown next to a spinner while pairing is in progress.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在配对…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在配對…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング中…"
+          }
+        }
+      }
+    },
+    "pairing.retrySameCode": {
+      "comment": "Button under the failed notice: retry pairing with the same code.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again with This Code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用这个码再试一次"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用這個碼再試一次"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このコードでもう一度試す"
+          }
+        }
+      }
+    },
+    "pairing.titleAgain": {
+      "comment": "Title of the page for pairing the same phone again from the server settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair Again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再ペアリング"
+          }
+        }
+      }
+    },
+    "pairing.submit": {
+      "comment": "Button under the paste field: pair with the pasted code.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pair"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリング"
+          }
+        }
+      }
+    },
+    "pairing.failure.rejected": {
+      "comment": "Failure title when the server rejected the pairing code.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server didn't accept this pairing code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器不认这个配对码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器不認這個配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバがこのペアリングコードを受け付けません"
+          }
+        }
+      }
+    },
+    "pairing.failure.expired": {
+      "comment": "Failure title when the pairing code ran out of time.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The pairing code has expired"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码过期了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對碼過期了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリングコードの有効期限が切れています"
+          }
+        }
+      }
+    },
+    "pairing.failure.closed": {
+      "comment": "Failure title when the pairing code was deactivated.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This pairing code has been deactivated"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个配对码已经停用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個配對碼已經停用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペアリングコードは無効化されています"
+          }
+        }
+      }
+    },
+    "pairing.failure.protocol": {
+      "comment": "Failure title when the app and the server speak different versions.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton and your home server versions don't match"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞和家里的服务器版本对不上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞和家用伺服器的版本對不上"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonと自宅サーバのバージョンが一致していません"
+          }
+        }
+      }
+    },
+    "pairing.hint.protocol": {
+      "comment": "Next step under the protocol failure. May wrap.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update Wonton and your home server to the latest versions."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "把云吞和家里的服务器都更新到最新版本。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請把雲吞和家用伺服器都更新到最新版本。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonと自宅サーバを最新バージョンに更新してください。"
+          }
+        }
+      }
+    },
+    "pairing.hint.transport": {
+      "comment": "Next step under the transport failure. May wrap.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check that your home server is on and connected to the network, then try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认家里的服务器已开机并联网，再试一次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認家用伺服器已開機並連上網路，再試一次。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバの電源とネットワーク接続を確認して、もう一度試してください。"
+          }
+        }
+      }
+    },
+    "pairing.paste.placeholder": {
+      "comment": "Placeholder of the field to paste the pairing code when scanning is not possible.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste the pairing code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴配对码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貼上配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリングコードをペースト"
+          }
+        }
+      }
+    },
+    "pairing.paste.label": {
+      "comment": "Persistent label above the field to paste the pairing code; also the field's accessibility label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pairing code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配对码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配對碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペアリングコード"
+          }
+        }
+      }
+    },
+    "pairing.still.connecting": {
+      "comment": "Shown after a while under the spinner while the pairing request has not reached the server yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still connecting…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还在连接…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還在連線…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだ接続中…"
+          }
+        }
+      }
+    },
+    "pairing.still.confirming": {
+      "comment": "Shown after a while under the spinner once the pairing request has reached the server and it hasn't answered.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Still waiting for the server…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还在等服务器确认…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還在等伺服器確認…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まだサーバーの確認待ち…"
+          }
+        }
+      }
+    }
+  }
+}

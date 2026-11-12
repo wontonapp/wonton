@@ -67,7 +67,7 @@ struct SidebarContainer<Main: View, Panel: View>: View {
             Color.black.opacity(0.22 * progress)
                 .contentShape(Rectangle())
                 .onTapGesture { set(open: false) }
-                .accessibilityLabel(String(localized: .sidebarCollapse))
+                .accessibilityLabel(String(localized: .Sidebar.sidebarCollapse))
                 .accessibilityAddTraits(.isButton)
         }
     }
@@ -134,7 +134,7 @@ struct SidebarPanel: View {
                         (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
                     } action: { openDestination(.chat) }
                     SidebarRow(
-                        title: String(localized: .storeTitle),
+                        title: String(localized: .Store.storeTitle),
                         badge: Int(sidebar.updates),
                         selected: false
                     ) {
@@ -160,7 +160,7 @@ struct SidebarPanel: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-            Text(.sidebarTitle)
+            Text(.Sidebar.sidebarTitle)
                 .wontonText(WontonTheme.typography.screenTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: 6) {
@@ -175,13 +175,13 @@ struct SidebarPanel: View {
 
     @ViewBuilder private var myApps: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(.sidebarMyApps)
+            Text(.Sidebar.sidebarMyApps)
                 .wontonText(WontonTheme.typography.supporting)
                 .fontWeight(.semibold)
                 .foregroundStyle(Color(colors.textSecondary))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
-            Button(String(localized: .sidebarAll)) { openDestination(.allApps) }
+            Button(String(localized: .Sidebar.sidebarAll)) { openDestination(.allApps) }
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.accentInk))
                 .buttonStyle(.plain)
@@ -204,7 +204,7 @@ struct SidebarPanel: View {
             .contextMenu { pinMenu(app) }
         }
         if sidebar.moreApps {
-            SidebarRow(title: String(localized: .sidebarAllApps), selected: current == .apps) {
+            SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: current == .apps) {
                 WontonIcon.apps.view()
             } action: { openDestination(.allApps) }
         }
@@ -245,7 +245,7 @@ struct SidebarPanel: View {
                     .overlay(alignment: .topTrailing) {
                         if sidebar.settingsBadge {
                             Circle().fill(Color(colors.danger)).frame(width: 8, height: 8)
-                                .accessibilityLabel(String(localized: .sidebarNeedsAttention))
+                                .accessibilityLabel(String(localized: .Sidebar.sidebarNeedsAttention))
                         }
                     }
                     .contentShape(Circle())
@@ -256,7 +256,7 @@ struct SidebarPanel: View {
             Button { openDestination(.newChat) } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     WontonIcon.compose.view(size: WontonTheme.size.iconSmall)
-                    Text(.chatNewChat).wontonText(WontonTheme.typography.itemTitle)
+                    Text(.Chat1.chatNewChat).wontonText(WontonTheme.typography.itemTitle)
                 }
                 .foregroundStyle(Color(colors.onPrimary))
                 .padding(.horizontal, WontonTheme.spacing.s24)
@@ -270,9 +270,9 @@ struct SidebarPanel: View {
 
     private var statusText: String {
         guard home.viewModel.status != .notConfigured else {
-            return String(localized: .chatNotSignedIn)
+            return String(localized: .Chat0.chatNotSignedIn)
         }
-        let server = String(localized: .serversDefaultFirst)
+        let server = String(localized: .Servers.serversDefaultFirst)
         return "\(server) · \(home.viewModel.status.connectionText)"
     }
 
@@ -316,12 +316,12 @@ private struct SidebarRow<Icon: View>: View {
                 if pinned {
                     WontonIcon.pinFill.view(size: 11)
                         .foregroundStyle(Color(colors.textSecondary))
-                        .accessibilityLabel(String(localized: .sidebarPinned))
+                        .accessibilityLabel(String(localized: .Sidebar.sidebarPinned))
                 }
                 if badge > 0 {
                     if dotOnly {
                         Circle().fill(Color(colors.danger)).frame(width: 8, height: 8)
-                            .accessibilityLabel(String(localized: .sidebarUpdatable))
+                            .accessibilityLabel(String(localized: .Sidebar.sidebarUpdatable))
                     } else {
                         Text("\(badge)")
                             .font(.system(size: 13, weight: .semibold).monospacedDigit())
@@ -329,7 +329,7 @@ private struct SidebarRow<Icon: View>: View {
                             .padding(.horizontal, 7)
                             .frame(minWidth: 22, minHeight: 22)
                             .background(Color(colors.danger), in: Capsule())
-                            .accessibilityLabel(String(localized: .launcherUpdatesAvailable(count: badge)))
+                            .accessibilityLabel(String(localized: .Launcher.launcherUpdatesAvailable(count: badge)))
                     }
                 }
             }

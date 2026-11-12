@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Problem title when the app was stopped. Argument: the app's name. -->
+    <string name="tab_stopped">%1$s has stopped</string>
+    <!-- Problem title when the app failed. Argument: the app's name. -->
+    <string name="tab_problem">%1$s has a problem</string>
+    <!-- Problem title when the newer app version no longer has this page. No arguments. -->
+    <string name="tab_page_removed">This page is no longer available in the new version</string>
+    <!-- Problem title when the app's state can't be read. No arguments. -->
+    <string name="tab_status_unknown">Can\'t tell the app\'s status</string>
+    <!-- Button that starts a stopped app. No arguments; short label. -->
+    <string name="tab_start">Start</string>
+    <!-- Button that opens the app's details page. No arguments; short label. -->
+    <string name="tab_view_details">View details</string>
+    <!-- Problem title when the app's page itself fails to load. No arguments. -->
+    <string name="tab_load_upstream">Can\'t open the app\'s page</string>
+    <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->
+    <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from the navigation bar</string>
+    <!-- Camera and microphone permission for plugin web pages. Arguments: app title. -->
+    <string name="tab_media_prompt_camera">Allow %1$s to use your camera?</string>
+    <string name="tab_media_deny">Don\'t allow</string>
+    <string name="tab_media_system_denied_title">Camera or microphone unavailable</string>
+    <!-- Menu row that opens the page in fullscreen. No arguments. -->
+    <string name="tab_menu_open_fullscreen">Open full screen</string>
+    <!-- Sheet title that asks which page to pin. No arguments. -->
+    <string name="tab_choose_page">Choose a page</string>
+    <!-- Line above the replacement list when the navigation bar is full. Argument: the page's title. -->
+    <string name="tab_bar_full">Navigation bar full: pin %1$s</string>
+    <!-- Accessibility label of a pin switch: the page's title, then the action. Arguments: title, action label. -->
+    <string name="tab_pin_a11y">%1$s, %2$s</string>
+    <!-- Switch row title that shows or hides the tab labels. No arguments. -->
+    <string name="tab_show_labels">Show labels</string>
+    <!-- Accessibility action that moves a tab down one position. No arguments. -->
+    <string name="tab_move_down">Move down</string>
+    <!-- Next step under the unreadable-settings problem: default tabs are shown and changes save again. No arguments. -->
+    <string name="tab_defaults_shown">Showing the default tabs. Changing the navigation bar saves the settings again.</string>
+    <!-- Fullscreen capsule menu item with the switch that opens this page fullscreen from the tab bar. -->
+    <string name="tab_menu_always_fullscreen">Always fullscreen</string>
+    <!-- Fullscreen capsule menu item that goes one step back in the page's history. -->
+    <string name="tab_menu_back">Back</string>
+    <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
+    <string name="tab_pin_to_bar">Pin to tab bar</string>
+</resources>

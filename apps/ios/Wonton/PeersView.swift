@@ -29,8 +29,8 @@ struct PeersView: View {
     var body: some View {
         ScrollViewReader { proxy in
             content(proxy)
-                .wontonPushedScreen(String(localized: .peersTitle)) {
-                    WontonIconButton(icon: .add, label: String(localized: .peersAdd)) { showsAdd = true }
+                .wontonPushedScreen(String(localized: .Peers3.peersTitle)) {
+                    WontonIconButton(icon: .add, label: String(localized: .Peers3.peersAdd)) { showsAdd = true }
                 }
                 .task { await model.observe() }
                 .task { await friends.observe() }
@@ -50,13 +50,13 @@ struct PeersView: View {
                         get: { wantsCode && model.viewModel.code != nil },
                         set: { if !$0 { hideCode() } }
                     ),
-                    title: String(localized: .peersShowCodeTitle)
+                    title: String(localized: .Peers1.peersShowCodeTitle)
                 ) { _ in
                     PeersCodePanel(viewModel: model.viewModel) { model.send(.resetPeerCode) }
                 }
                 .fullScreenCover(isPresented: $showsScanner) {
                     NavigationStack {
-                        PeersScannerView(model: model).wontonModalScreen(String(localized: .peersScanCodeTitle))
+                        PeersScannerView(model: model).wontonModalScreen(String(localized: .Peers2.peersScanCodeTitle))
                     }
                 }
                 .peersRemoveDialog($removing, model: model)
@@ -127,7 +127,7 @@ struct PeersView: View {
                         .listRowSeparatorTint(Color(colors.separator))
                     }
                 } header: {
-                    Text(.friendsRequests)
+                    Text(.Friends1.friendsRequests)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
             }
@@ -143,7 +143,7 @@ struct PeersView: View {
                         .listRowSeparatorTint(Color(colors.separator))
                     }
                 } header: {
-                    Text(.peersRequests)
+                    Text(.Peers3.peersRequests)
                         .foregroundStyle(Color(colors.textSecondary))
                         .id("requests")
                 }
@@ -155,7 +155,7 @@ struct PeersView: View {
                     .listRowSeparatorTint(Color(colors.separator))
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) { requestRemove(row) } label: {
-                            Label(String(localized: .commonRemove), systemImage: "trash")
+                            Label(String(localized: .Common.commonRemove), systemImage: "trash")
                         }
                     }
             }
@@ -175,7 +175,7 @@ struct PeersView: View {
                         withAnimation { showsRejected.toggle() }
                     } label: {
                         HStack(spacing: WontonTheme.spacing.s4) {
-                            Text(.peersRejected)
+                            Text(.Peers3.peersRejected)
                             WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
                                 .rotationEffect(showsRejected ? .degrees(90) : .zero)
                         }
@@ -192,10 +192,10 @@ struct PeersView: View {
 private extension PeersView {
     private var addActions: [WontonSheetAction] {
         [
-            WontonSheetAction(title: String(localized: .peersShowCodeButton), icon: .qrCode) {
+            WontonSheetAction(title: String(localized: .Peers2.peersShowCodeButton), icon: .qrCode) {
                 showCode()
             },
-            WontonSheetAction(title: String(localized: .peersScanCodeButton), icon: .expand) {
+            WontonSheetAction(title: String(localized: .Peers2.peersScanCodeButton), icon: .expand) {
                 showsScanner = true
             }
         ]
@@ -247,18 +247,18 @@ private extension PeersView {
     private func peersProblem(_ error: PeerError, message: String) -> Problem {
         // TransportUnavailable 和插件、聊天那边共用同一句；连不上家里的服务器时列表取不到，是这里最常见的原因。
         let title: LocalizedStringResource = switch error {
-        case .codeInvalid: .peersErrorCodeInvalid
-        case .codeRevoked: .peersErrorCodeRevoked
-        case .tooManyRequests: .peersErrorTooManyRequests
-        case .requestNotFound: .peersNoticeRequestNotFound
-        case .peerUnreachable: .peersErrorPeerUnreachable
-        case .peerRejected: .peersErrorPeerRejected
-        case .alreadyPaired: .peersErrorAlreadyPaired
-        case .selfPairing: .peersErrorSelfPairing
-        case .notPaired: .peersErrorNotPaired
-        case .unauthenticated: .peersErrorUnauthenticated
-        case .transportUnavailable: .problemTransportUnavailableTitle
-        case .protocol, .other: .peersErrorOther
+        case .codeInvalid: .Peers0.peersErrorCodeInvalid
+        case .codeRevoked: .Peers1.peersErrorCodeRevoked
+        case .tooManyRequests: .Peers0.peersErrorTooManyRequests
+        case .requestNotFound: .Peers1.peersNoticeRequestNotFound
+        case .peerUnreachable: .Peers1.peersErrorPeerUnreachable
+        case .peerRejected: .Peers2.peersErrorPeerRejected
+        case .alreadyPaired: .Peers0.peersErrorAlreadyPaired
+        case .selfPairing: .Peers1.peersErrorSelfPairing
+        case .notPaired: .Peers2.peersErrorNotPaired
+        case .unauthenticated: .Peers0.peersErrorUnauthenticated
+        case .transportUnavailable: .Problem2.problemTransportUnavailableTitle
+        case .protocol, .other: .Peers1.peersErrorOther
         }
         return Problem(title: String(localized: title), detail: message)
     }
@@ -329,12 +329,12 @@ private struct PeersCodePanel: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .wontonDialog(
-            String(localized: .peersResetTitle),
-            message: String(localized: .peersResetMessage),
+            String(localized: .Peers2.peersResetTitle),
+            message: String(localized: .Peers2.peersResetMessage),
             isPresented: $confirmingReset,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { confirmingReset = false },
-                WontonDialogAction(title: String(localized: .peersReset), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { confirmingReset = false },
+                WontonDialogAction(title: String(localized: .Peers1.peersReset), kind: .danger) {
                     reset()
                     confirmingReset = false
                 }
@@ -358,14 +358,14 @@ private struct PeersCode: View {
                     .scaledToFit()
                     .frame(maxWidth: 260)
                     .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.control))
-                    .accessibilityLabel(String(localized: .peersCodeQrLabel))
+                    .accessibilityLabel(String(localized: .Peers0.peersCodeQrLabel))
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 ShareLink(item: code.code) {
-                    Text(.peersShare).frame(maxWidth: .infinity)
+                    Text(.Peers2.peersShare).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
-                Button(.peersReset, action: reset)
+                Button(.Peers1.peersReset, action: reset)
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }
@@ -381,14 +381,14 @@ extension View {
         let row = removing.wrappedValue
         let name = row.map { $0.ownerDisplayName.isEmpty ? $0.serverName : $0.ownerDisplayName } ?? ""
         return wontonDialog(
-            String(localized: .peersRemoveTitle(name)),
-            message: String(localized: .peersRemoveMessage),
+            String(localized: .Peers1.peersRemoveTitle(name)),
+            message: String(localized: .Peers0.peersRemoveMessage),
             isPresented: Binding(
                 get: { removing.wrappedValue != nil }, set: { if !$0 { removing.wrappedValue = nil } }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { removing.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .commonRemove), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
                     if let row { model.send(.removePeer(serverName: row.serverName)) }
                     removing.wrappedValue = nil
                 }

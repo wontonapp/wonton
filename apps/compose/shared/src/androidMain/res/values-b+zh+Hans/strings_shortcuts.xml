@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcuts_not_updated">桌面快捷方式没有更新</string>
+    <string name="shortcuts_rejected">系统没有接受快捷方式。</string>
+    <string name="shortcuts_unlock">请解锁设备后重新打开云吞。</string>
+    <string name="shortcuts_not_allowed">系统不允许更新快捷方式。</string>
+    <string name="shortcuts_rate_limited">系统暂时限制了快捷方式更新，请稍后重新打开云吞。</string>
+    <string name="shortcuts_update_refused">系统没有接受快捷方式更新，请稍后重新打开云吞。</string>
+    <string name="shortcuts_app_uninstalled">这个应用已卸载</string>
+    <string name="shortcuts_too_few">系统只允许 %1$d 个快捷方式，不能同时显示“新建聊天”和“问 Bot”。</string>
+    <string name="shortcuts_too_many">系统最多允许 %1$d 个快捷方式，已优先保留“新建聊天”“问 Bot”，应用页面按底栏顺序显示。</string>
+</resources>

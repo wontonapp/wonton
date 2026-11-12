@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_title">デバイスの確認</string>
+    <string name="verification_accept">確認を開始</string>
+    <string name="verification_deny">拒否</string>
+    <string name="verification_same">同じ</string>
+    <string name="verification_different">違う</string>
+    <string name="verification_compare_title">両方のデバイスに同じものが表示されていますか？</string>
+    <string name="verification_requested">もう一方のデバイスの承認を待っています…</string>
+    <string name="verification_requested_hint">もう一方のスマホでWontonを開いてください。</string>
+    <string name="verification_waiting_for_other">もう一方のデバイスの確認を待っています…</string>
+    <string name="verification_done_other">確認が完了しました</string>
+    <string name="verification_retry">再試行</string>
+    <string name="verification_use_recovery_key">復旧キーを入力</string>
+    <string name="verification_cancelled_accepted_elsewhere">別のデバイスがこの確認を引き継ぎました。</string>
+</resources>

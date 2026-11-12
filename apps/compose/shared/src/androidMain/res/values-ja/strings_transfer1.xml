@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the cleanup dialog for a downloaded transfer. Argument: the file's name. -->
+    <string name="transfer_cleanup_title">「%1$s」を削除</string>
+    <!-- Title of the sheet listing downloaded transfers. -->
+    <string name="transfer_downloaded">ダウンロード済み</string>
+    <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
+    <plurals name="transfer_downloaded_count">
+        <item quantity="other">%1$d件ダウンロード済み</item>
+    </plurals>
+    <!-- Line under a paused transfer. First argument: the transferred size, already formatted as a byte count; second: the home server's reason, shown as is. -->
+    <string name="transfer_paused_progress">一時停止、%1$s転送済み：%2$s</string>
+    <!-- Caption under a transfer that was sent to another room. Argument: that room's name. -->
+    <string name="transfer_sent_to">%1$sに送信</string>
+    <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
+    <string name="transfer_stop_sending">送信を中止</string>
+</resources>

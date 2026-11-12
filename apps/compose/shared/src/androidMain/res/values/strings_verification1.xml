@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the device verification dialog and screen. -->
+    <string name="verification_title">Device verification</string>
+    <!-- Button that starts confirming the other device. -->
+    <string name="verification_accept">Start verification</string>
+    <!-- Button that refuses the confirmation request. -->
+    <string name="verification_deny">Deny</string>
+    <!-- Button confirming the emoji (or numbers) match on both devices. -->
+    <string name="verification_same">Match</string>
+    <!-- Button saying the emoji (or numbers) differ: the other device is not trusted. -->
+    <string name="verification_different">Don\'t match</string>
+    <!-- Question above the emoji or numbers both devices show. -->
+    <string name="verification_compare_title">Do both devices show the same?</string>
+    <!-- Status while waiting for the other device to accept the request. -->
+    <string name="verification_requested">Waiting for your other device to accept…</string>
+    <!-- Shown under the waiting status: the other phone only sees the request when its app is open. -->
+    <string name="verification_requested_hint">Open Wonton on your other phone.</string>
+    <!-- Status while this device already confirmed and waits for the other one. -->
+    <string name="verification_waiting_for_other">Waiting for your other device to confirm…</string>
+    <!-- Shown on the device that handed out the keys when verification finished. -->
+    <string name="verification_done_other">Verification complete</string>
+    <!-- Button that starts the verification again after it was cancelled. -->
+    <string name="verification_retry">Try again</string>
+    <!-- Button that switches to entering the recovery key instead of verifying. -->
+    <string name="verification_use_recovery_key">Enter recovery key</string>
+    <!-- Result: another of the user's devices took over the verification. -->
+    <string name="verification_cancelled_accepted_elsewhere">Another of your devices took over the verification.</string>
+</resources>

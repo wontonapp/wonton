@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">其他伺服器</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">出示我的碼</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">掃描對方的碼</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">剛剛</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">對方已中斷連線</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">等對方同意</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">正在確認</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">請求</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">這不是伺服器配對碼</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">對方沒有同意</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">伺服器配對QR碼</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">舊碼會作廢，用舊碼發來的請求一併清掉</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">貼上配對碼</string>
+</resources>

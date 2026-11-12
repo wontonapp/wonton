@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Name of the notification channel for the ongoing port-mapping foreground service (ADR-0072). Shown in the system notification settings. -->
+    <string name="mapping_channel_name">Port mapping</string>
+    <!-- Title of the ongoing port-mapping notification when one app's ports are mapped. Argument: the app's name. -->
+    <string name="mapping_notification_title">Mapping ports for %1$s</string>
+    <!-- Title of the ongoing port-mapping notification when several apps have the mapping on. Argument: the number of apps. -->
+    <string name="mapping_notification_title_multiple">Mapping ports for %1$d apps</string>
+</resources>

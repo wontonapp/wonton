@@ -38,7 +38,7 @@ struct ComposerView: View {
             }
             ComposerTray(composer: composer)
             HStack(alignment: .bottom, spacing: 0) {
-                WontonIconButton(icon: .attach, label: String(localized: .composerAttach)) {
+                WontonIconButton(icon: .attach, label: String(localized: .Composer.composerAttach)) {
                     isChoosingAttachment = true
                 }
                 ComposerField(
@@ -61,10 +61,10 @@ struct ComposerView: View {
         }
         .onAppear { model.acceptPendingDraft(in: roomId) }
         .wontonActionSheet(isPresented: $isChoosingAttachment, actions: [
-            WontonSheetAction(title: String(localized: .composerPhoto), icon: .image) {
+            WontonSheetAction(title: String(localized: .Composer.composerPhoto), icon: .image) {
                 if hasRoom() { isPickingPhoto = true }
             },
-            WontonSheetAction(title: String(localized: .composerFile), icon: .attach) {
+            WontonSheetAction(title: String(localized: .Composer.composerFile), icon: .attach) {
                 if hasRoom() { isPickingFiles = true }
             }
         ])
@@ -85,7 +85,7 @@ struct ComposerView: View {
                 composer.addFiles(urls)
             case let .failure(error):
                 model.rejection = Problem(
-                    title: String(localized: .composerChooseFailed), detail: error.localizedDescription
+                    title: String(localized: .Composer.composerChooseFailed), detail: error.localizedDescription
                 )
             }
         }
@@ -94,7 +94,7 @@ struct ComposerView: View {
     /// 附件区满了就不开选择器，说一声最多几个。
     private func hasRoom() -> Bool {
         guard composer.remaining == 0 else { return true }
-        model.rejection = Problem(title: String(localized: .composerTrayFull(Int(composer.maxAttachments))))
+        model.rejection = Problem(title: String(localized: .Composer.composerTrayFull(Int(composer.maxAttachments))))
         return false
     }
 
@@ -102,7 +102,7 @@ struct ComposerView: View {
     private func pasteImage(from providers: [NSItemProvider]) async {
         guard let (data, type) = await ComposerPaste.image(from: providers) else {
             model.rejection = Problem(
-                title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+                title: String(localized: .Photo.photoUnreadable), nextStep: String(localized: .Photo.photoTryAnother)
             )
             return
         }
@@ -111,7 +111,7 @@ struct ComposerView: View {
 
     private func pasteFiles(_ urls: [URL]) {
         guard !urls.isEmpty, urls.allSatisfy(\.isFileURL) else {
-            model.rejection = Problem(title: String(localized: .composerChooseFailed))
+            model.rejection = Problem(title: String(localized: .Composer.composerChooseFailed))
             return
         }
         composer.addFiles(urls)
@@ -141,6 +141,6 @@ private struct SendButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(.composerSend))
+        .accessibilityLabel(Text(.Composer.composerSend))
     }
 }

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Trailing label on a recommended app row that is already installed. -->
+    <string name="onboarding_app_installed">已安装</string>
+    <!-- Bar title of the in-app browser that opens the model gateway's settings. -->
+    <string name="onboarding_gateway_title">模型设置</string>
+    <!-- Row title: type a model provider by hand instead of picking a recommended one. -->
+    <string name="onboarding_model_custom">自定义</string>
+    <!-- Label of the password field for the provider's API key. -->
+    <string name="onboarding_model_form_api_key">API key</string>
+    <!-- Button that expands the list of less common model providers. -->
+    <string name="onboarding_model_more">更多服务商</string>
+    <!-- Primary button that advances to the next setup step. -->
+    <string name="onboarding_next">下一步</string>
+    <!-- Problem title while installing: the app is already installed or another task is busy. -->
+    <string name="onboarding_problem_plugin_conflict">这个应用已经装了或正在忙，等当前任务结束后刷新。</string>
+    <!-- Problem title while installing: the request was rejected as invalid. -->
+    <string name="onboarding_problem_plugin_invalid">这个操作没被接受，查看详情后修改重试。</string>
+    <!-- Problem title while installing: the app's source is temporarily unreachable. -->
+    <string name="onboarding_problem_plugin_source_unavailable">取不到应用的信息，来源恢复后再试。</string>
+    <!-- Problem title while installing: the home server hit an error. -->
+    <string name="onboarding_problem_plugin_upstream">家里的服务器出错了，稍后再试。</string>
+    <!-- Row description in the review step. Argument: the model's name. -->
+    <string name="onboarding_review_unreachable_model">%1$s · 测试时没连上</string>
+    <!-- Card title at the top of the apps step in setup: pick the apps to install. -->
+    <string name="onboarding_step_apps">选应用</string>
+    <!-- Card title at the top of the profile step in setup. -->
+    <string name="onboarding_step_profile">你的资料</string>
+</resources>

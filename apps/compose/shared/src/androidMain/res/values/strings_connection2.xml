@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Connection notice: the phone is waiting for a network. -->
+    <string name="connection_waiting_network">Waiting for the network…</string>
+    <!-- Connection notice: the tunnel dropped and the home server doesn't answer. -->
+    <string name="connection_server_offline">Your home server seems to be offline</string>
+    <!-- Value of the update row while a new version is available. -->
+    <string name="connection_new_version">New version</string>
+    <!-- Label of the link kind in the connection details. -->
+    <!-- Row label in the connection page: whether the phone's mobile network works. No arguments. -->
+    <string name="connection_mobile_network">Mobile network</string>
+    <!-- Value of the phone's mobile network check when it can't be told. No arguments. -->
+    <string name="connection_unknown">Unknown</string>
+    <!-- Label of the round-trip time in the connection details. -->
+    <string name="connection_latency">Latency</string>
+    <!-- Label of the connection quality in the connection details. -->
+    <string name="connection_quality">Connection quality</string>
+    <!-- Value of the connection quality: the connection is fine. -->
+    <string name="connection_quality_good">Good</string>
+    <!-- Value of the connection quality: connected, but lossy or slow. -->
+    <string name="connection_quality_poor">Poor</string>
+    <!-- Label of the recent loss rate in the connection details; a percentage with one decimal. -->
+    <string name="connection_loss_rate">Packet loss</string>
+    <!-- Short status shown while connected and the connection quality is poor. -->
+    <string name="connection_poor">Poor connection, things may lag</string>
+    <!-- Short status shown while connected, the quality is poor, and the traffic goes through a relay. -->
+    <string name="connection_poor_relay">Poor connection, going through a relay</string>
+</resources>

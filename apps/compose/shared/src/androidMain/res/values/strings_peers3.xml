@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">Other servers</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">Show my code</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">Scan their code</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">just now</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">The other server disconnected</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">Waiting for the other owner to approve</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">Checking connection</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">Requests</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">This isn\'t a server pairing code</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">The other owner didn\'t approve</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">Server pairing QR code</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">The current code will stop working, and pending requests sent with it are cleared.</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">Paste their code</string>
+</resources>

@@ -3,7 +3,8 @@
 
 检查三件事：源码字符串里的中文、日文和全角字符（规则一）；Swift、Kotlin 里直接传给界面接口（系统控件、设计系统组件、
 文字类参数）的写死文字和 TabText.choose、tabText 的调用（规则二）；
-四种语言的字符串目录是否完整（规则三）。例外写在仓库根目录的 .ui-text-allowlist。
+四种语言的字符串目录是否完整（规则三），以及每个键在不在按前缀该在的文件里、有没有在别的文件里也有一份。
+例外写在仓库根目录的 .ui-text-allowlist。
 
 --print-violating 列出现在有问题的文件（忽略白名单），用来生成白名单的初始内容。
 """
@@ -16,15 +17,14 @@ import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from ui_text import catalogs, components, source  # noqa: E402
+from ui_text import catalogs, components, paths, source  # noqa: E402
 from ui_text.allowlist import ALLOWLIST_NAME, check_entries, parse_allowlist  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ANDROID_EN_SUFFIX = "/res/values/strings.xml"
 
 
 def list_tracked_files(root: str) -> List[str]:
@@ -41,36 +41,71 @@ def read(root: str, path: str) -> str:
 def collect_problems(root: str, files: List[str]) -> Dict[str, List[source.Problem]]:
     problems: Dict[str, List[source.Problem]] = defaultdict(list)
     design = components.find_components(files, lambda path: read(root, path))
+    found: Dict[str, List[Tuple[str, List[Tuple[str, int]]]]] = {"ios": [], "android": [], "fluent": []}
     for path in files:
         lang = source.source_lang(path)
         if lang is not None:
             problems[path] += source.scan_source(read(root, path), lang, design.get(lang, ()))
-        if path.startswith("apps/ios/") and path.endswith(".xcstrings"):
-            problems[path] += catalogs.check_xcstrings(read(root, path))
-    for path, found in _android_problems(root, files).items():
-        problems[path] += found
+        kind = paths.file_kind(path)
+        catalog = path.startswith("apps/ios/") and path.endswith(".xcstrings")
+        if kind is None and lang is None and not catalog:
+            continue
+        text = read(root, path)
+        if catalog:
+            problems[path] += catalogs.check_xcstrings(text)
+            if kind is not None:
+                found["ios"].append((path, catalogs.xcstring_keys(text)))
+            continue
+        if kind is None:
+            continue
+        keys = catalogs.android_keys(text) if kind[0] == "android" else catalogs.ftl_keys(text)
+        found[kind[0]].append((path, keys))
+    for platform, items in found.items():
+        _merge(problems, catalogs.layout_problems(items, platform))
+    _merge(problems, _android_pairs(root, files, found["android"]))
+    _merge(problems, _fluent_pairs(root, found["fluent"]))
     return problems
 
 
-def _android_problems(root: str, files: List[str]) -> Dict[str, List[source.Problem]]:
-    """每个带 values/strings.xml 的 res 目录检查一次；问题记在对应语言的文件上。"""
+def _merge(into: Dict[str, List[source.Problem]], extra: Dict[str, List[source.Problem]]) -> None:
+    for path, found in extra.items():
+        into[path] += found
+
+
+def _android_pairs(root: str, files: List[str], items: List[Tuple[str, List[Tuple[str, int]]]]) -> Dict[str, List[source.Problem]]:
+    """同一份文件在四种语言之间比缺键、多余键、占位符和平复数；问题记在对应语言的文件上。"""
     tracked: Set[str] = set(files)
     result: Dict[str, List[source.Problem]] = {}
-    for en_path in files:
-        if not (en_path.startswith("apps/compose/") and en_path.endswith(ANDROID_EN_SUFFIX)):
-            continue
-        res_dir = en_path[: -len("values/strings.xml")]
-        paths = {"en": en_path}
-        others: Dict[str, object] = {}
-        for lang, dirname in catalogs.ANDROID_DIRS.items():
-            if lang == "en":
-                continue
-            rel = res_dir + dirname + "/strings.xml"
-            paths[lang] = rel
-            others[lang] = read(root, rel) if rel in tracked else None
-        per_lang = catalogs.android_problems(read(root, en_path), others)
-        for lang, found in per_lang.items():
-            result.setdefault(paths[lang], []).extend(found)
+    for module, stem in sorted({(_android_module(path), paths.file_kind(path)[2]) for path, _ in items}):
+        en_path = paths.android_path(module, "en", stem)
+        others = {
+            lang: read(root, paths.android_path(module, lang, stem))
+            if paths.android_path(module, lang, stem) in tracked
+            else None
+            for lang in paths.ANDROID_DIRS
+            if lang != "en"
+        }
+        en_text = read(root, en_path) if en_path in tracked else ""
+        for lang, found in catalogs.android_problems(en_text, others).items():
+            result.setdefault(paths.android_path(module, lang, stem), []).extend(found)
+    return result
+
+
+def _android_module(path: str) -> str:
+    return path.rsplit("/", 2)[0]
+
+
+def _fluent_pairs(root: str, items: List[Tuple[str, List[Tuple[str, int]]]]) -> Dict[str, List[source.Problem]]:
+    """同一份 Fluent 文件在四种语言之间比缺键和多余键。"""
+    by_stem: Dict[str, Dict[str, str]] = defaultdict(dict)
+    for path, _ in items:
+        kind = paths.file_kind(path)
+        by_stem[kind[2]][kind[1]] = read(root, path)
+    result: Dict[str, List[source.Problem]] = {}
+    for stem, texts in sorted(by_stem.items()):
+        texts.setdefault("en", "")
+        for path, found in catalogs.ftl_missing(stem, texts).items():
+            result.setdefault(path, []).extend(found)
     return result
 
 

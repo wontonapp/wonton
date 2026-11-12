@@ -98,13 +98,13 @@ struct LinkedMessageText: UIViewRepresentable {
             _ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu
         ) -> UITextItem.MenuConfiguration? {
             guard case let .link(url) = textItem.content, link(for: url) != nil else { return nil }
-            let copy = UIAction(title: String(localized: .messageCopy)) { _ in
+            let copy = UIAction(title: String(localized: .Message2.messageCopy)) { _ in
                 UIPasteboard.general.string = url.absoluteString
             }
-            let browser = UIAction(title: String(localized: .messageLinkOpenBrowser)) { _ in
+            let browser = UIAction(title: String(localized: .Message1.messageLinkOpenBrowser)) { _ in
                 UIApplication.shared.open(url)
             }
-            let share = UIAction(title: String(localized: .viewerShare)) { [weak self] _ in
+            let share = UIAction(title: String(localized: .Viewer.viewerShare)) { [weak self] _ in
                 self?.parent.presentShare(url)
             }
             return UITextItem.MenuConfiguration(preview: nil, menu: UIMenu(children: [copy, browser, share]))

@@ -45,7 +45,8 @@ final class ComposerModel {
         for item in items {
             guard let data = try? await item.loadTransferable(type: Data.self) else {
                 reject(Problem(
-                    title: String(localized: .photoUnreadable), nextStep: String(localized: .photoTryAnother)
+                    title: String(localized: .Photo.photoUnreadable),
+                    nextStep: String(localized: .Photo.photoTryAnother)
                 ))
                 continue
             }
@@ -66,7 +67,7 @@ final class ComposerModel {
                 try core.addImageAttachment(target: target, image: upload)
             }.value
         } catch let failure as PhotoUpload.Failure {
-            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .photoTryAnother)))
+            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .Photo.photoTryAnother)))
         } catch {
             reject(error.problem)
         }
@@ -85,7 +86,7 @@ final class ComposerModel {
             } catch let error as CoreError {
                 reject(error.problem)
             } catch {
-                reject(Problem(title: String(localized: .fileOpenFailed(error.localizedDescription))))
+                reject(Problem(title: String(localized: .File.fileOpenFailed(error.localizedDescription))))
             }
         }
     }

@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the page that pairs this phone with the home server by scanning. -->
+    <string name="pairing_title">配對</string>
+    <!-- Title of the page for pairing the same phone again from the server settings. -->
+    <string name="pairing_title_again">重新配對</string>
+    <!-- Explanation above the paste field: where the pairing QR code lives. May wrap. -->
+    <string name="pairing_instructions">在家用區域網路裡，用瀏覽器開啟伺服器的 IP 位址（安裝時終端裡會給出），頁面上有配對 QR 碼。</string>
+    <!-- Placeholder of the field to paste the pairing code when scanning is not possible. -->
+    <string name="pairing_paste_placeholder">貼上配對碼</string>
+    <string name="pairing_paste_label">配對碼</string>
+    <!-- Button under the paste field: pair with the code. -->
+    <string name="pairing_submit">配對</string>
+    <!-- Shown next to a spinner while pairing is in progress. -->
+    <string name="pairing_in_progress">正在配對…</string>
+    <string name="pairing_still_connecting">還在連線…</string>
+    <string name="pairing_still_confirming">還在等伺服器確認…</string>
+    <!-- Label of the field for this device's name. -->
+    <string name="pairing_device_name">這台裝置的名字</string>
+    <!-- Failure title when the server rejected the pairing code. -->
+    <string name="pairing_failure_rejected">伺服器不認這個配對碼</string>
+    <!-- Failure title when the pairing code ran out of time. -->
+    <string name="pairing_failure_expired">配對碼過期了</string>
+    <!-- Failure title when the pairing code was deactivated. -->
+    <string name="pairing_failure_closed">這個配對碼已經停用</string>
+    <!-- Failure title when none of the pairing code's server addresses can be reached. No arguments. -->
+    <string name="pairing_failure_transport">連不上配對碼裡的伺服器</string>
+    <!-- Button under the failed notice: retry pairing with the same code. -->
+    <string name="pairing_next_new_code">換一個新的配對碼：在已配對的裝置上點「新增裝置」取得，或在主機上執行 sudo wonton pair。</string>
+    <string name="pairing_next_closed">這台伺服器已經有配對的裝置，首次配對碼無法再用；請從已配對的裝置新增，或在主機上執行 sudo wonton pair 另發一個碼。</string>
+    <string name="pairing_retry_same_code">用這個碼再試一次</string>
+    <!-- Failure title when the app and the server speak different versions. -->
+    <string name="pairing_failure_protocol">App 和伺服器的版本對不上</string>
+    <!-- Next step under the transport failure. May wrap. -->
+    <string name="pairing_hint_transport">確認家用伺服器已開機並連上網路，再試一次。</string>
+    <!-- Next step under the protocol failure. May wrap. -->
+    <string name="pairing_hint_protocol">請把 App 和伺服器都更新到最新版本。</string>
+</resources>

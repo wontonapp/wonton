@@ -11,7 +11,7 @@ final class BookmarkFileOpener: FileOpener {
 
     func openSource(handle: String) throws -> Int32 {
         guard let bookmark = Data(base64Encoded: handle) else {
-            throw FileOpenError.Unavailable(reason: String(localized: .fileBookmarkUnreadable))
+            throw FileOpenError.Unavailable(reason: String(localized: .File.fileBookmarkUnreadable))
         }
         let url: URL
         do {
@@ -25,7 +25,8 @@ final class BookmarkFileOpener: FileOpener {
 
         // 文件可能只在 iCloud 上：协调读取会先把它取下来。核心在后台线程上调这里，等待不卡界面。
         var coordination: NSError?
-        var opened: Result<Int32, FileOpenError> = .failure(.Unavailable(reason: String(localized: .fileSystemNoRead)))
+        var opened: Result<Int32,
+            FileOpenError> = .failure(.Unavailable(reason: String(localized: .File.fileSystemNoRead)))
         NSFileCoordinator().coordinate(readingItemAt: url, error: &coordination) { readable in
             opened = Self.open(readable)
         }

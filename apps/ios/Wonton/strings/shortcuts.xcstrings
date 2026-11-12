@@ -1,0 +1,186 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "shortcuts.invalidPageLink": {
+      "comment": "Error when the page picked in a shortcut no longer resolves to a page link.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This page link isn't valid. Choose the page again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个页面链接无效，请重新选择页面。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個頁面連結無效，請重新選擇頁面。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このページリンクは無効です。ページを選び直してください。"
+          }
+        }
+      }
+    },
+    "shortcuts.notReady.launchFailed": {
+      "comment": "Shortcut error when the app wasn't started yet, so there's no navigation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton didn't start. Open Wonton and check."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞没有启动成功，请打开云吞查看。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞沒有啟動成功，請開啟雲吞查看。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonを起動できませんでした。Wontonを開いて確認してください。"
+          }
+        }
+      }
+    },
+    "shortcuts.notReady.askAgent": {
+      "comment": "Shortcut error when pairing or setup isn't done yet, so no agent can be asked.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finish pairing and setup first, then ask the bot."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先完成配对和引导，再问 Bot。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先完成配對和初始設定，再問 Bot。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先にペアリングとセットアップを済ませてからボットに聞いてください。"
+          }
+        }
+      }
+    },
+    "shortcuts.notReady.noDefaultAgent": {
+      "comment": "Shortcut error when no default agent is set in settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There's no default agent yet. Pick one in Settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有默认 Agent：先在设置里选一个"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒有預設 Agent：先在設定裡選一個"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのエージェントがまだありません。設定で選んでください。"
+          }
+        }
+      }
+    },
+    "shortcuts.notReady.slowServer": {
+      "comment": "Shortcut error when the server didn't answer within the shortcut's time limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach your home server yet. Open Wonton, connect, and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没连上家里的服务器，请打开云吞，连上后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒連上家用伺服器，請開啟雲吞，連上後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバにまだ接続できていません。Wontonを開いて接続し、もう一度試してください。"
+          }
+        }
+      }
+    },
+    "shortcuts.notReady.pluginsNotLoaded": {
+      "comment": "Shortcut error when the plugin list wasn't loaded in time.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app list hasn't loaded yet. Connect to your home server and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用列表还没有加载好，请连上家里的服务器后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App 清單還沒載入好，請連上家用伺服器後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ一覧がまだ読み込まれていません。自宅サーバに接続してからもう一度試してください。"
+          }
+        }
+      }
+    }
+  }
+}

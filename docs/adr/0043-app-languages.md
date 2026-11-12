@@ -41,7 +41,7 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 **客户端核心：界面上的文字一律不出，只出“详情”。** ViewModel 给枚举、类别和原始值（数目、字节数、时间戳、名字），壳按它们挑文字和格式化。
 
 - 已经在核心里写好的文字改成枚举：外观选项的 `label`、引导的步骤标题和提示、核心升级的说明、文件操作和聊天操作的“某某失败”、推送通知的正文（图片和文件的占位、邀请、不知道发送者）。这些是接口改动，按 AGENTS.md 先单独提改 `wonton-protocol` 的 PR。
-- 默认收起的“详情”（`CoreError` 的原因、问题里的 `detail` 和 `message`）也按 App 的语言写。它们在核心深处的各条路径上生成，带着状态码、超时秒数这些参数，有几百种，一一变成枚举交给壳写不现实，所以由客户端核心用 Fluent 写：`crates/wonton-client/locales/<语言标签>.ftl`，语言取 `SetLanguages` 的第一项，也就是 App 实际在用的语言。
+- 默认收起的“详情”（`CoreError` 的原因、问题里的 `detail` 和 `message`）也按 App 的语言写。它们在核心深处的各条路径上生成，带着状态码、超时秒数这些参数，有几百种，一一变成枚举交给壳写不现实，所以由客户端核心用 Fluent 写：`crates/wonton-client/locales/<语言标签>/*.ftl`，语言取 `SetLanguages` 的第一项，也就是 App 实际在用的语言。
 - 数据原样嵌在句子里，不翻：错误码、HTTP 状态、仓库名、镜像名、上游返回的原文。翻的是包在它们外面的说明。
 - 日志写英文，不翻译：只有开发者看。
 - 别人写的内容照原样传：聊天消息、Bot 的回复、插件和家里服务器挑好语言的文字。
@@ -56,6 +56,7 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 ### 键的写法
 
 - 键按含义起名，两端用同一组名字：iOS 写 `settings.language`，Android 写 `settings_language`。前缀是界面或功能（`chat.`、`store.`、`problem.transport.`），多处共用的放 `common.`。同样的意思在两端说法不同时（“轻点”和“点按”），各写各的，键名照旧对得上。
+- 文字按功能分文件、按前缀放：一个键落在哪个文件由它前缀决定（分组表在 `scripts/ui_text/groups.py`，`check-ui-text.py` 检查），前缀装不进 800 行就再拆细。iOS 的 common 组留在默认表 `Localizable.xcstrings`，其余表的生成符号多一层表名（`.Chat.chatReply`）；Fluent 在 `locales/<语言标签>/` 下按组分文件，`build.rs` 按语言拼成一份（同 `crates/wonton-core`）。
 - 一条文字是一个完整的句子或短语，不在代码里拼。参数用位置占位符，每条都写给译者的注释：显示在哪里、参数是什么、有没有长度限制。
 - 基础语言是英文：iOS 的 `sourceLanguage` 和 `CFBundleDevelopmentRegion` 是 `en`，Android 的 `values/` 是英文。四种语言缺一条，检查就失败，不靠运行时回退补洞。
 
@@ -88,7 +89,7 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 ### 以后加一种语言
 
 1. 术语表加一列。
-2. iOS 在两个 String Catalog 里加这种语言；Android 加 `values-<限定符>/strings.xml`；客户端核心和服务器各加一个 `.ftl`。
+2. iOS 在两个 String Catalog 的每份表里加这种语言；Android 在每个 `values-<限定符>/` 下按同样的文件名各加一份；客户端核心和服务器在 `locales/<语言标签>/` 下各加一套 `.ftl`。
 3. 代码不用改：Android 选择器的列表从 `locales_config` 读，设置行显示的语言名由平台按标签给出。
 
 ### 防止再写死

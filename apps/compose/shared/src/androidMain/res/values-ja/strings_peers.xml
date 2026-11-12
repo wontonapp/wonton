@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shown while waiting for the camera permission. -->
+    <string name="camera_waiting">カメラの権限を待っています…</string>
+    <!-- Notice when the camera permission was declined but can be asked again. -->
+    <string name="camera_denied">Wontonにカメラの権限がないため、コードをスキャンできません。</string>
+    <!-- Button to ask for the camera permission again. -->
+    <string name="camera_allow">カメラを許可</string>
+    <!-- Notice when the camera permission was declined permanently. -->
+    <string name="camera_blocked">Wontonにカメラの権限がありません。システム設定で許可してください。</string>
+    <!-- Button that opens the app's page in system settings. -->
+    <string name="camera_settings">システム設定を開く</string>
+    <!-- Notice when the device has no camera at all. -->
+    <string name="camera_missing">このデバイスにはカメラがありません。</string>
+    <!-- Reason shown when system policy disabled the camera. -->
+    <string name="qr_scanner_camera_disabled">カメラはシステムポリシーにより無効です</string>
+    <!-- Reason shown for other CameraX errors. Argument: the numeric CameraX error code. -->
+    <string name="qr_scanner_camera_error_code">カメラエラー（CameraX エラーコード %1$d）</string>
+    <!-- Reason shown when the camera can't open at all; the pairing code can be pasted instead. -->
+    <string name="qr_scanner_camera_failed">カメラを開けません。ペアリングコードを貼り付けてください</string>
+    <!-- Reason shown when the camera is used by another app. -->
+    <string name="qr_scanner_camera_in_use">カメラはほかのアプリで使用中です</string>
+    <!-- Reason shown when Do Not Disturb mode blocks the camera. -->
+    <string name="qr_scanner_do_not_disturb">サイレントモード中はカメラを開けません</string>
+    <!-- Reason shown when the device has no rear camera to scan with. -->
+    <string name="qr_scanner_no_back_camera">このデバイスには背面カメラがありません</string>
+    <string name="keepalive_toggle">接続を維持</string>
+    <!-- システムで通知が無効のとき、スイッチの下に出る説明：サービスは動き続けるが、新着メッセージは通知されない。 -->
+    <string name="keepalive_without_permission">通知権限がないため、新着メッセージは通知として表示されません。接続は維持されます。</string>
+</resources>

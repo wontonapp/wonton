@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Toolbar button that opens the Add Source page. -->
+    <string name="store_add_source">提供元を追加</string>
+    <!-- Button on a store row to install an app you don't have. -->
+    <string name="store_get">入手</string>
+    <!-- Small tag on a store row for an app that asks for risky permissions. -->
+    <string name="store_high_permissions">高い権限</string>
+    <!-- Shown when a store search found nothing. -->
+    <string name="store_no_results">見つかりません</string>
+    <!-- Button on a store row to open an installed app. -->
+    <string name="store_open">開く</string>
+    <!-- Problem title in the store with the source it came from. Arguments: the provider's name, the problem title from the core. -->
+    <string name="store_problem_from_source">%1$s：%2$s</string>
+    <!-- Placeholder under an added source whose list hasn't been fetched yet. Argument: the source's provider name. -->
+    <string name="store_reading">%1$sを読み込み中…</string>
+    <!-- Placeholder of the search field on the Store screen. -->
+    <string name="store_search_prompt">検索</string>
+    <!-- Section title above community apps in the store. -->
+    <string name="store_section_community">コミュニティ</string>
+    <!-- Section title above reviewed apps in the store. -->
+    <string name="store_section_reviewed">審査済み</string>
+    <!-- Chip that clears the tag filter in the store. -->
+    <string name="store_tag_all">すべて</string>
+    <!-- Title of the Store screen and of the row that opens it. -->
+    <string name="store_title">ストア</string>
+    <!-- Notice for an app in a source whose manifest can't be read. Arguments: the source address, the reason from the core. -->
+    <string name="store_unreadable">%1$sを読み込めません：%2$s</string>
+    <!-- Button on a store row to update an installed app. -->
+    <string name="store_update">アップデート</string>
+    <!-- Caption on a store row whose listing comes through an index. Argument: the index's name. -->
+    <string name="store_via_index">%1$s経由</string>
+    <!-- アップデートのあるアプリをまとめて更新する前のボトムシートのタイトル。 -->
+    <string name="store_update_all_title">%1$d個のアプリをアップデート</string>
+    <!-- そのシートですべてのアップデートを始めるボタン。 -->
+    <string name="store_update_all">すべてアップデート</string>
+    <!-- そのシートを開くツールバーのダウンロードアイコンの読み上げ。 -->
+    <string name="store_update_all_a11y">すべてアップデート、%1$d件</string>
+</resources>

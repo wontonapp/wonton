@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top-right button on the friends page that opens the add-friend sheet. -->
+    <string name="friends_add">追加</string>
+    <string name="friends_my_code">自分のQRコード</string>
+    <!-- Section heading above the pending requests, received and sent. -->
+    <string name="friends_requests_title">リクエスト</string>
+    <!-- Section heading above the friend list. -->
+    <string name="friends_list_title">友だち</string>
+    <!-- Row subtitle when a friend is in no group. -->
+    <string name="friends_no_group">グループなし</string>
+    <!-- Title of the new-group dialog. -->
+    <string name="friends_group_create_title">グループを作成</string>
+    <!-- Title of the rename-group dialog. Argument: the current name. -->
+    <string name="friends_group_rename_title">「%1$s」の名前を変更</string>
+    <!-- Confirmation dialog body: what deleting a group does. -->
+    <string name="friends_group_delete_message">グループの人は友だちのままです。このグループに与えたプラグインのアクセスは取り消されます。</string>
+    <!-- Title of the block-a-server dialog. -->
+    <string name="friends_block_server_title">サーバーをブロック</string>
+    <!-- Placeholder of the server name field; no scheme, no wildcards. -->
+    <string name="friends_block_server_placeholder">example.org</string>
+    <!-- Submit button under the server name field. -->
+    <string name="friends_block_submit">ブロック</string>
+    <!-- Failure title when the Matrix server can't be reached. -->
+    <string name="friends_error_transport">Matrix サーバーに接続できません</string>
+    <!-- Next step under the invalid-ID failure. -->
+    <string name="friends_error_invalid_user_id_next">@bob:example.org のような完全な ID を入れてください。</string>
+    <!-- Failure title when the server asks to wait before trying again. Argument: seconds to wait. -->
+    <string name="friends_error_rate_limited">リクエストが多すぎます。%1$d 秒お待ちください。</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="friends_error_other">問題が起きました。後でもう一度お試しください。</string>
+</resources>

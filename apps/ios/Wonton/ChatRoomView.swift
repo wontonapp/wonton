@@ -69,7 +69,8 @@ struct ChatRoomView: View {
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
-        .wontonSheet(isPresented: $pickingForwardRoom, title: String(localized: .messageForwardTitle)) { close in
+        .wontonSheet(isPresented: $pickingForwardRoom,
+            title: String(localized: .Message0.messageForwardTitle)) { close in
             ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
                 close {
                     guard let item = forwarding else { return }
@@ -80,11 +81,11 @@ struct ChatRoomView: View {
         }
         .wontonDialog(
             redactTitle,
-            message: String(localized: .messageRedactMessage),
+            message: String(localized: .Message2.messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)),
-                WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)),
+                WontonDialogAction(title: String(localized: .Message1.messageRedact), kind: .danger) {
                     if let item = redactItem { sendTimeline(.redactMessage(target: mainTimeline, itemId: item)) }
                 }
             ],
@@ -310,7 +311,7 @@ private struct KeyNoticeBanner: View {
     let notice: KeyNotice
 
     var body: some View {
-        WontonNotice(icon: .lockKey, title: String(localized: .messageUndecryptableNotice), isError: false) {
+        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
             // 更新的核心给出的类别没有按钮，说明照常显示。
             if let action = notice.action {
                 NavigationLink(value: ChatRoute.chatBackup) {
@@ -393,9 +394,9 @@ private extension ChatRoomView {
     var redactTitle: String {
         let target = timeline.items.first { $0.id == redactItem }
         guard case let .message(message)? = target?.content, !message.isOwn else {
-            return String(localized: .messageRedactTitle)
+            return String(localized: .Message1.messageRedactTitle)
         }
-        return String(localized: .messageRedactOthersTitle(message.senderName))
+        return String(localized: .Message2.messageRedactOthersTitle(message.senderName))
     }
 
     /// 分隔线这类虚拟条目的 id 不稳定，定位用消息。

@@ -2,11 +2,18 @@ use std::sync::{LazyLock, RwLock};
 
 use wonton_l10n::{Arg, Catalog, Lang};
 
-pub(crate) const RESOURCES: &[(&str, &str)] = &[
-    ("en", include_str!("../locales/en.ftl")),
-    ("zh-Hans", include_str!("../locales/zh-Hans.ftl")),
-    ("zh-Hant", include_str!("../locales/zh-Hant.ftl")),
-    ("ja", include_str!("../locales/ja.ftl")),
+/// 各语言由 `build.rs` 把 `locales/<语言>/` 下的各 .ftl 拼成一份；en 必须排第一，协商拿它兜底。
+pub(crate) static RESOURCES: &[(&str, &str)] = &[
+    ("en", include_str!(concat!(env!("OUT_DIR"), "/en.ftl"))),
+    (
+        "zh-Hans",
+        include_str!(concat!(env!("OUT_DIR"), "/zh-Hans.ftl")),
+    ),
+    (
+        "zh-Hant",
+        include_str!(concat!(env!("OUT_DIR"), "/zh-Hant.ftl")),
+    ),
+    ("ja", include_str!(concat!(env!("OUT_DIR"), "/ja.ftl"))),
 ];
 
 pub(crate) static CATALOG: LazyLock<Catalog> = LazyLock::new(|| Catalog::new(RESOURCES));

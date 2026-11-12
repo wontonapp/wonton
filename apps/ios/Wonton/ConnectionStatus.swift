@@ -5,8 +5,8 @@ import WontonClient
 extension HomeStatus {
     var connectionText: String {
         switch self {
-        case .notConfigured: String(localized: .connectionNotPaired)
-        case .connected: String(localized: .connectionConnected)
+        case .notConfigured: String(localized: .Connection1.connectionNotPaired)
+        case .connected: String(localized: .Connection0.connectionConnected)
         case .connecting: ConnectionNotice.connecting.sentence
         case .disconnected: ConnectionNotice.unreachable(retrying: false).sentence
         }
@@ -16,13 +16,13 @@ extension HomeStatus {
 extension ConnectionNotice {
     var sentence: String {
         switch self {
-        case .waitingForNetwork: String(localized: .connectionNoticeWaitingForNetwork)
-        case .connecting: String(localized: .connectionNoticeConnecting)
-        case .updating: String(localized: .connectionNoticeUpdating)
-        case .serverOffline: String(localized: .connectionNoticeServerOffline)
-        case .unreachable: String(localized: .connectionNoticeUnreachable)
-        case .deviceRejected: String(localized: .connectionNoticeDeviceRejected)
-        case .versionMismatch: String(localized: .connectionNoticeVersionMismatch)
+        case .waitingForNetwork: String(localized: .Connection1.connectionNoticeWaitingForNetwork)
+        case .connecting: String(localized: .Connection2.connectionNoticeConnecting)
+        case .updating: String(localized: .Connection1.connectionNoticeUpdating)
+        case .serverOffline: String(localized: .Connection0.connectionNoticeServerOffline)
+        case .unreachable: String(localized: .Connection1.connectionNoticeUnreachable)
+        case .deviceRejected: String(localized: .Connection2.connectionNoticeDeviceRejected)
+        case .versionMismatch: String(localized: .Connection0.connectionNoticeVersionMismatch)
         }
     }
 
@@ -50,8 +50,8 @@ enum ConnectionQualityHint: Equatable {
 
     var sentence: String {
         switch self {
-        case .poor: String(localized: .connectionNoticePoor)
-        case .poorRelay: String(localized: .connectionNoticePoorRelay)
+        case .poor: String(localized: .Connection2.connectionNoticePoor)
+        case .poorRelay: String(localized: .Connection1.connectionNoticePoorRelay)
         }
     }
 
@@ -75,7 +75,7 @@ extension WontonBarStatus {
             pathRelay: home.path?.relay
         )
         // “刚恢复”由核心给：只在连接正常、没有别的提示时为真，壳直接把短状态换成“已连接”。
-        let connected = recovered ? String(localized: .connectionConnected) : nil
+        let connected = recovered ? String(localized: .Connection0.connectionConnected) : nil
         self.init(
             title: home.notice.flatMap { $0.isShort ? $0.sentence : nil }
                 ?? connected ?? hint?.sentence,
@@ -99,7 +99,7 @@ struct ConnectionLine: View {
             if retrying {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     ProgressView().controlSize(.small)
-                    Text(.connectionNoticeRetrying)
+                    Text(.Connection2.connectionNoticeRetrying)
                         .wontonText(WontonTheme.typography.body)
                         .foregroundStyle(Color(colors.textPrimary))
                 }
@@ -110,14 +110,14 @@ struct ConnectionLine: View {
             }
             HStack(spacing: WontonTheme.spacing.s8) {
                 if notice == .deviceRejected {
-                    Button(.connectionPairAgain) { open(.pairing) }
+                    Button(.Connection2.connectionPairAgain) { open(.pairing) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 } else {
                     if notice.retrying == false {
-                        Button(.commonRetry, action: retry)
+                        Button(.Common.commonRetry, action: retry)
                             .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
-                    Button(.connectionViewConnection) { open(.server) }
+                    Button(.Connection1.connectionViewConnection) { open(.server) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             }
@@ -134,7 +134,7 @@ private struct RetryButton: View {
         Button(action: retry) {
             HStack(spacing: WontonTheme.spacing.s4) {
                 if retrying { ProgressView().controlSize(.small) }
-                Text(.commonRetry)
+                Text(.Common.commonRetry)
             }
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -182,35 +182,37 @@ struct ConnectionView: View {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
                 ServersSection(model: model, removing: $removing)
                 WontonGroup {
-                    WontonRow(title: String(localized: .connectionCellular), value: view.details.network.check.text)
+                    WontonRow(
+                        title: String(localized: .Connection2.connectionCellular),
+                        value: view.details.network.check.text)
                     WontonSeparator()
-                    WontonRow(title: String(localized: .connectionRelay), value: view.details.relay.text)
+                    WontonRow(title: String(localized: .Connection0.connectionRelay), value: view.details.relay.text)
                     WontonSeparator()
-                    WontonRow(title: String(localized: .egressPathHomeServer), value: view.details.server.text)
+                    WontonRow(title: String(localized: .Egress.egressPathHomeServer), value: view.details.server.text)
                 }
                 if let retrying = view.notice?.retrying {
                     RetryButton(retrying: retrying) { model.send(.retryConnection) }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.connectionDetails) {
-                        WontonRow(title: String(localized: .commonDetails), showsForward: true)
+                        WontonRow(title: String(localized: .Common.commonDetails), showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.egress) {
-                        WontonRow(title: String(localized: .egressTitle), showsForward: true)
+                        WontonRow(title: String(localized: .Egress.egressTitle), showsForward: true)
                     }
                     WontonSeparator()
                     NavigationLink(value: SettingsRoute.registryMirror) {
-                        WontonRow(title: String(localized: .registryMirrorTitle), showsForward: true)
+                        WontonRow(title: String(localized: .RegistryMirror.registryMirrorTitle), showsForward: true)
                     }
                     WontonSeparator()
                     NavigationLink(value: SettingsRoute.coreUpgrade) {
                         WontonRow(
-                            title: String(localized: .coreUpgradeTitle),
+                            title: String(localized: .CoreUpgrade2.coreUpgradeTitle),
                             value: plugins.viewModel.coreUpgrade.isPrompting
-                                ? String(localized: .designUpdateBadge) : nil,
+                                ? String(localized: .Design.designUpdateBadge) : nil,
                             showsForward: true
                         )
                     }
@@ -218,14 +220,14 @@ struct ConnectionView: View {
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.invite) {
-                        WontonRow(title: String(localized: .inviteTitle), showsForward: true)
+                        WontonRow(title: String(localized: .Invite.inviteTitle), showsForward: true)
                     }
                 }
                 .buttonStyle(.plain)
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.pairing) {
                         WontonRow(
-                            title: String(localized: .connectionPairAgain),
+                            title: String(localized: .Connection2.connectionPairAgain),
                             titleTint: colors.danger, showsForward: true
                         )
                     }
@@ -235,7 +237,7 @@ struct ConnectionView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .removeServerDialog($removing, model: model)
-        .wontonPushedScreen(String(localized: .egressPathHomeServer))
+        .wontonPushedScreen(String(localized: .Egress.egressPathHomeServer))
     }
 }
 
@@ -250,13 +252,13 @@ struct ConnectionDetailsView: View {
                 ConnectionDetailsRows(details: details, path: model.viewModel.path)
                 if let failure = details.lastFailure {
                     WontonGroup {
-                        WontonRow(title: String(localized: .connectionDetailLastFailure), value: failure)
+                        WontonRow(title: String(localized: .Connection0.connectionDetailLastFailure), value: failure)
                     }
                 }
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .commonDetails))
+        .wontonPushedScreen(String(localized: .Common.commonDetails))
     }
 }
 
@@ -270,33 +272,39 @@ struct ConnectionDetailsRows: View {
     var body: some View {
         WontonGroup {
             if details.addressesStale {
-                WontonRow(title: String(localized: .connectionAddressesStale))
+                WontonRow(title: String(localized: .Connection1.connectionAddressesStale))
                 WontonSeparator()
             }
             if let path {
-                WontonRow(title: String(localized: .connectionDetailPath), value: path.kindText)
+                WontonRow(title: String(localized: .Connection2.connectionDetailPath), value: path.kindText)
                 WontonSeparator()
             }
-            WontonRow(title: String(localized: .connectionDetailQuality), value: details.quality.text)
+            WontonRow(title: String(localized: .Connection2.connectionDetailQuality), value: details.quality.text)
             WontonSeparator()
             WontonRow(
-                title: String(localized: .connectionDetailLossRate),
+                title: String(localized: .Connection0.connectionDetailLossRate),
                 value: details.lossPerMille.map(Self.lossPercent) ?? Self.missing
             )
             WontonSeparator()
             WontonRow(
-                title: String(localized: .connectionDetailLatency),
+                title: String(localized: .Connection1.connectionDetailLatency),
                 value: details.rttMs.map { "\($0) ms" } ?? Self.missing
             )
             if let handshake = details.handshakeMs {
                 WontonSeparator()
-                WontonRow(title: String(localized: .connectionDetailLastHandshake), value: "\(handshake) ms")
+                WontonRow(
+                    title: String(localized: .Connection1.connectionDetailLastHandshake),
+                    value: "\(handshake) ms")
             }
             WontonSeparator()
-            WontonRow(title: String(localized: .connectionDetailDisconnects), value: "\(details.disconnects)")
+            WontonRow(
+                title: String(localized: .Connection1.connectionDetailDisconnects),
+                value: "\(details.disconnects)")
             if let connected = details.lastConnectedAtMs {
                 WontonSeparator()
-                WontonRow(title: String(localized: .connectionDetailLastConnected), value: Self.time(connected))
+                WontonRow(
+                    title: String(localized: .Connection0.connectionDetailLastConnected),
+                    value: Self.time(connected))
             }
         }
     }
@@ -315,17 +323,19 @@ private extension ConnectionQuality {
     /// Other 是比这个 App 新的取值，按 Unknown 显示。
     var text: String {
         switch self {
-        case .good: String(localized: .connectionQualityGood)
-        case .poor: String(localized: .connectionQualityPoor)
-        case .unknown, .other: String(localized: .commonUnknown)
+        case .good: String(localized: .Connection2.connectionQualityGood)
+        case .poor: String(localized: .Connection2.connectionQualityPoor)
+        case .unknown, .other: String(localized: .Common.commonUnknown)
         }
     }
 }
 
 private extension HomePath {
     var kindText: String {
-        if lan { return String(localized: .connectionLan) }
-        return relay ? String(localized: .connectionRelay) : String(localized: .connectionDirect)
+        if lan { return String(localized: .Connection0.connectionLan) }
+        return relay
+            ? String(localized: .Connection0.connectionRelay)
+            : String(localized: .Connection2.connectionDirect)
     }
 }
 
@@ -343,9 +353,9 @@ private extension Optional<DeviceNetwork> {
 private extension ConnectionCheck {
     var text: String {
         switch self {
-        case .ok: String(localized: .connectionCheckOk)
-        case .failing: String(localized: .connectionCheckFailing)
-        case .unknown: String(localized: .commonUnknown)
+        case .ok: String(localized: .Connection1.connectionCheckOk)
+        case .failing: String(localized: .Connection0.connectionCheckFailing)
+        case .unknown: String(localized: .Common.commonUnknown)
         }
     }
 }

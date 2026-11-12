@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcuts_not_updated">ショートカットを更新できませんでした</string>
+    <string name="shortcuts_rejected">システムがショートカットを受け付けませんでした。</string>
+    <string name="shortcuts_unlock">デバイスのロックを解除して、Wontonをもう一度開いてください。</string>
+    <string name="shortcuts_not_allowed">システムがショートカットの更新を許可していません。</string>
+    <string name="shortcuts_rate_limited">システムがショートカットの更新を一時的に制限しています。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_update_refused">システムがショートカットの更新を受け付けませんでした。しばらくしてからWontonをもう一度開いてください。</string>
+    <string name="shortcuts_app_uninstalled">このアプリはアンインストールされました</string>
+    <string name="shortcuts_too_few">システムが許可するショートカットは%1$d個だけなので、「新しいチャット」と「ボットに質問」を同時に表示できません。</string>
+    <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはナビゲーションバーの順に表示します。</string>
+</resources>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_requirements">要件</string>
+    <string name="plugin_stars">スター数</string>
+    <string name="plugin_repository">リポジトリ</string>
+    <string name="plugin_permission_risk_high">高リスク</string>
+    <string name="plugin_permission_risk_very_high">非常に高いリスク</string>
+    <string name="plugin_permission_understand_title">このプラグインがホスト全体を操作できることを理解しました</string>
+    <string name="plugin_permission_host_root">オンにすると、root としてこのホストのコンテナを操作します。</string>
+    <!-- Reason shown when the picked archive is bigger than the server accepts. Argument: the size limit, formatted as a file size. -->
+    <string name="plugin_sources_file_too_large">ファイルが大きすぎます。最大 %1$s です。</string>
+    <!-- Section title above the sources you added, in the store list and on the Add Source page. -->
+    <string name="plugin_sources_mine">追加した提供元</string>
+    <!-- Succeeded task line listing the tools the app gained. Argument: the tool names, formatted as a list. -->
+    <string name="plugin_task_added_tools">追加されたツール：%1$s</string>
+    <!-- Status of a finished install task. -->
+    <string name="plugin_task_install_done">インストールしました</string>
+    <!-- Status of a running install task. -->
+    <string name="plugin_task_install_running">インストール中</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">インストールされたかアプリ一覧で確認してください。</string>
+    <!-- Status of a finished uninstall task. -->
+    <string name="plugin_task_uninstall_done">アンインストールしました</string>
+    <!-- Status of a running uninstall task. -->
+    <string name="plugin_task_uninstall_running">アンインストール中</string>
+    <!-- Status of a running update task. -->
+    <string name="plugin_task_upgrade_running">アップデート中</string>
+    <!-- Small tag on a store row and the install preview: the app is reviewed. -->
+    <string name="plugin_trust_official">審査済み</string>
+    <!-- Small tag: a system app that's always installed. -->
+    <string name="plugin_trust_system">システム</string>
+    <!-- Destructive button that uninstalls and deletes the app's data. -->
+    <string name="plugin_uninstall_delete_data">アンインストール（データも削除）</string>
+    <!-- Message of the uninstall confirmation. -->
+    <string name="plugin_uninstall_delete_data_warning">データを削除すると、鍵とボットのアカウントも一緒に削除され、ボットとの過去の暗号化メッセージも読めなくなります。元に戻せません。</string>
+    <!-- Title of the uninstall confirmation. Argument: the app's name. -->
+    <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
+    <string name="plugin_screenshot">スクリーンショット</string>
+</resources>

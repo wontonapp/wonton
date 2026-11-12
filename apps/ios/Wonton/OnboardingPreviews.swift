@@ -13,7 +13,8 @@ private enum OnboardingPreviews {
             item(id: "profile", kind: .profile, titles: ["Ada Lovelace"], detail: .unchanged),
             item(id: "app.hermes.agent", kind: .agent, titles: ["Hermes"], detail: .setAsDefault),
             item(id: "model", kind: .model, titles: ["OpenAI"], detail: .unchanged),
-            item(id: "app.immich.photos", kind: .app, titles: [String(localized: .previewAppName1)], detail: nil)
+            item(id: "app.immich.photos", kind: .app, titles: [String(localized: .Plugins.previewAppName1)],
+                detail: nil)
         ], commit: .notStarted)
     }
 
@@ -50,15 +51,15 @@ private struct OnboardingPreviewFrame<Content: View>: View {
 
 #Preview("Redo setup, first step") {
     OnboardingPreviewFrame(
-        step: 1, title: String(localized: .onboardingStepProfile),
-        primaryTitle: String(localized: .onboardingNext)
+        step: 1, title: String(localized: .Onboarding4.onboardingStepProfile),
+        primaryTitle: String(localized: .Onboarding2.onboardingNext)
     ) { EmptyView() }
 }
 
 #Preview("Redo setup, later step") {
     OnboardingPreviewFrame(
-        step: 2, title: String(localized: .onboardingStepAgent),
-        primaryTitle: String(localized: .onboardingNext)
+        step: 2, title: String(localized: .Onboarding1.onboardingStepAgent),
+        primaryTitle: String(localized: .Onboarding2.onboardingNext)
     ) { EmptyView() }
 }
 
@@ -67,8 +68,8 @@ private struct OnboardingPreviewFrame<Content: View>: View {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent("onboarding-preview")
     if let core = try? ClientCore(dataDir: directory.path) {
         OnboardingPreviewFrame(
-            step: 5, title: String(localized: .onboardingStepReview),
-            primaryTitle: String(localized: .onboardingDone)
+            step: 5, title: String(localized: .Onboarding3.onboardingStepReview),
+            primaryTitle: String(localized: .Onboarding3.onboardingDone)
         ) {
             OnboardingReviewStep(review: OnboardingPreviews.review, plugins: PluginsModel(core: core)) { _ in }
         }

@@ -33,7 +33,7 @@ struct ReplyQuoteView: View {
                 case .loading:
                     ProgressView().controlSize(.small)
                 case .unavailable:
-                    line(Text(.messageQuoteUnavailable))
+                    line(Text(.Message2.messageQuoteUnavailable))
                 }
             }
             Spacer(minLength: 0)
@@ -45,7 +45,7 @@ struct ReplyQuoteView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(.messageReplyCancel))
+                .accessibilityLabel(Text(.Message2.messageReplyCancel))
                 .accessibilityIdentifier("replyCancel")
             }
         }
@@ -65,11 +65,11 @@ struct ReplyQuoteView: View {
                 QuotedThumbnail(media: thumbnail, core: core)
                     .padding(.top, WontonTheme.spacing.s4)
             case .redacted:
-                line(Text(.messageQuoteRedacted))
+                line(Text(.Message2.messageQuoteRedacted))
             case .undecryptable:
-                line(Text(.messageQuoteUndecryptable))
+                line(Text(.Message2.messageQuoteUndecryptable))
             case .other:
-                line(Text(.messageQuoteOther))
+                line(Text(.Message1.messageQuoteOther))
             }
         }
         .foregroundStyle(ink)

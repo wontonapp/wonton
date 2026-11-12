@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_title">设备确认</string>
+    <string name="verification_accept">开始确认</string>
+    <string name="verification_deny">拒绝</string>
+    <string name="verification_same">相同</string>
+    <string name="verification_different">不同</string>
+    <string name="verification_compare_title">两台设备上显示的一样吗？</string>
+    <string name="verification_requested">等待另一台设备接受…</string>
+    <string name="verification_requested_hint">打开你另一台手机上的云吞。</string>
+    <string name="verification_waiting_for_other">等待另一台设备确认…</string>
+    <string name="verification_done_other">确认完成</string>
+    <string name="verification_retry">重新开始</string>
+    <string name="verification_use_recovery_key">输入恢复密钥</string>
+    <string name="verification_cancelled_accepted_elsewhere">这次确认由你的另一台设备接手了。</string>
+</resources>

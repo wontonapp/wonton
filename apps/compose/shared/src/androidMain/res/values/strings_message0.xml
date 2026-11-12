@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Accessibility label of that copy button right after the code was copied. -->
+    <string name="message_code_copied">Copied</string>
+    <!-- Item in the message menu: remove the message for everyone in the chat. Android only. -->
+    <string name="message_delete_everyone">Delete for everyone</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">Delete %1$s\'s message</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">Delete %1$s\'s message for everyone?</string>
+    <!-- Item in the message menu: send the message to another room. Android only. -->
+    <string name="message_forward">Forward</string>
+    <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_empty">No other chats</string>
+    <!-- Title of the room list that picks where a message is forwarded to. Android only. -->
+    <string name="message_forward_title">Forward to</string>
+    <!-- Fallback under an image message when it can't be decoded: the format isn't supported. Android only. -->
+    <string name="message_image_format_unsupported">This image format isn\'t supported</string>
+    <!-- Fallback under an image message when it can't be loaded and the error carries no reason. Android only. -->
+    <string name="message_image_unavailable">Can\'t load this image</string>
+    <!-- Item in the message menu: reply to the message. Android only. -->
+    <string name="message_reply">Reply</string>
+    <!-- Notice when handing the picture to the share sheet failed. Android only. -->
+    <string name="message_image_share_failed">Couldn\'t share this picture</string>
+    <!-- Notice when saving the picture into the gallery failed. Android only. -->
+    <string name="message_image_save_failed">Couldn\'t save to the gallery</string>
+    <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
+    <string name="message_reply_cancel">Stop replying</string>
+    <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->
+    <string name="message_quote_image">Photo</string>
+    <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
+    <string name="message_quote_other">Message</string>
+    <!-- Placeholder for a message the sender deleted. -->
+    <string name="message_summary_redacted">[Message deleted]</string>
+    <string name="message_link_open_failed">Couldn\'t open this link</string>
+</resources>

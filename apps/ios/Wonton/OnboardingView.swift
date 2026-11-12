@@ -107,11 +107,11 @@ struct OnboardingView: View {
     }
 
     private var primaryTitle: String {
-        guard view.step == .review else { return String(localized: .onboardingNext) }
+        guard view.step == .review else { return String(localized: .Onboarding2.onboardingNext) }
         switch view.review.commit {
-        case .notStarted: return String(localized: .onboardingDone)
-        case .running: return String(localized: .onboardingRunning)
-        case .done: return String(localized: .onboardingEnterChat)
+        case .notStarted: return String(localized: .Onboarding3.onboardingDone)
+        case .running: return String(localized: .Onboarding2.onboardingRunning)
+        case .done: return String(localized: .Onboarding2.onboardingEnterChat)
         }
     }
 
@@ -128,13 +128,13 @@ struct OnboardingView: View {
 private extension OnboardingStep {
     var title: String {
         switch self {
-        case .profile: String(localized: .onboardingStepProfile)
-        case .agent: String(localized: .onboardingStepAgent)
-        case .model: String(localized: .onboardingStepModel)
-        case .apps: String(localized: .onboardingStepApps)
-        case .review: String(localized: .onboardingStepReview)
-        case .finished: String(localized: .onboardingStepFinished)
-        case .other: String(localized: .onboardingStepOther)
+        case .profile: String(localized: .Onboarding4.onboardingStepProfile)
+        case .agent: String(localized: .Onboarding1.onboardingStepAgent)
+        case .model: String(localized: .Onboarding1.onboardingStepModel)
+        case .apps: String(localized: .Onboarding0.onboardingStepApps)
+        case .review: String(localized: .Onboarding3.onboardingStepReview)
+        case .finished: String(localized: .Onboarding0.onboardingStepFinished)
+        case .other: String(localized: .Onboarding4.onboardingStepOther)
         }
     }
 }

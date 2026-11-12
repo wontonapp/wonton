@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon button that dismisses a tip or a dialog without doing anything. -->
+    <!-- Accessibility label for a Bot's avatar: the Bot's name, then what it is doing right now. -->
+    <string name="bot_avatar_label">%1$s、%2$s</string>
+    <!-- Button under the large avatar on the Bot profile: pick a new profile picture. -->
+    <string name="bot_avatar_choose">写真を選択</string>
+    <!-- Sheet action on a status avatar cell: pick a new picture or video. -->
+    <string name="bot_avatar_choose_media">写真か動画を選択</string>
+    <!-- Text inside an empty status avatar cell; tapping it picks a picture or video. -->
+    <string name="bot_avatar_add">追加</string>
+    <!-- Sheet action that removes the Bot's static avatar or one status avatar. -->
+    <string name="bot_avatar_remove">削除</string>
+    <!-- Section on an installed Agent app's page: the Bot's name, avatar and status avatars. -->
+    <string name="bot_profile_title">プロフィール</string>
+    <!-- Label of the field for editing the Bot's name. -->
+    <string name="bot_name_title">名前</string>
+    <!-- The Bot name was empty. -->
+    <string name="bot_name_empty">名前を入力してください</string>
+    <!-- The Bot name was longer than the limit; the number isn\'t shown. -->
+    <string name="bot_name_too_long">名前が長すぎます</string>
+    <!-- The Bot name contains line breaks or control characters. -->
+    <string name="bot_name_control">使えない文字が含まれています</string>
+    <!-- The Bot name collides with Wonton\'s or the owner\'s name, so Bots can\'t use it. -->
+    <string name="bot_name_reserved">ボットはWontonやあなたと同じ名前を名乗れません</string>
+    <!-- The Bot name failed validation for another reason. -->
+    <string name="bot_name_other">この名前は使えません</string>
+    <!-- Saving the Bot profile failed because the home server couldn\'t be reached. -->
+    <string name="bot_problem_transport">自宅サーバーに接続できません</string>
+    <!-- Saving failed because the app isn\'t installed, has no Bot, or its Matrix login isn\'t ready. -->
+    <string name="bot_problem_not_ready">アプリの準備がまだできていません</string>
+    <!-- Saving failed because the home server or Matrix reported an error. -->
+    <string name="bot_problem_upstream">自宅サーバーでエラーが発生しました</string>
+    <string name="bot_problem_owner_only">ボットのプロフィールを変更できるのはホームのオーナーだけです</string>
+    <!-- Saving the Bot profile failed for another reason. -->
+    <string name="bot_problem_other">プロフィールを保存できませんでした</string>
+    <!-- The picked avatar file is in a format the home server doesn\'t accept. -->
+    <string name="bot_media_format">対応していない形式のファイルです</string>
+    <!-- The picked avatar file exceeds the size limit; the number isn\'t shown. -->
+    <string name="bot_media_too_large">ファイルが大きすぎます</string>
+    <!-- The picked avatar image is larger in pixels than the home server accepts. -->
+    <string name="bot_media_too_big">画像のサイズが上限を超えています</string>
+    <!-- The picked avatar image isn\'t square. -->
+    <string name="bot_media_not_square">画像が正方形ではありません</string>
+    <!-- The picked avatar animation or video exceeds the duration limit; the number isn\'t shown. -->
+    <string name="bot_media_too_long">アニメーションか動画が長すぎます</string>
+    <!-- The home server couldn\'t read the picked avatar file. -->
+    <string name="bot_media_unreadable">ファイルを読み取れません</string>
+    <!-- The picked file failed for another reason. -->
+    <string name="bot_media_other">このファイルはアイコンに使えません</string>
+    <!-- An animated GIF or WebP was too large to send as-is; the Bot profile accepts videos instead. -->
+    <string name="bot_media_use_video">このアニメーション画像は大きすぎます。短い動画を使ってください</string>
+    <!-- The four states of a Bot, shown as status avatar grid labels and read out for the avatar. -->
+    <string name="bot_state_idle">待機</string>
+    <!-- Status: the Bot has model requests, tool calls, or is typing. -->
+    <string name="bot_state_working">作業中</string>
+    <!-- Status: a confirmation card from the Bot is waiting for the owner. -->
+    <string name="bot_state_waiting">確認待ち</string>
+    <!-- Status: the app isn\'t running, or is installing, updating or starting. -->
+    <string name="bot_state_offline">オフライン</string>
+    <string name="timeline_new_messages_below">以下が新着メッセージです</string>
+    <string name="room_scroll_to_bottom">一番下へ戻る</string>
+    <string name="room_scroll_to_bottom_count">一番下へ戻る、新着 %1$d 件</string>
+    <string name="timeline_start">チャットの最初です</string>
+    <string name="timeline_edited">編集済み</string>
+    <string name="timeline_sending">送信中</string>
+    <string name="timeline_read">既読</string>
+    <string name="timeline_send_failed_retrying">送信できませんでした。自動で再試行します</string>
+    <string name="timeline_send_failed">送信できませんでした：%1$s</string>
+    <string name="timeline_resend">再送信</string>
+    <string name="timeline_undecryptable">復号できません：このデバイスにこのメッセージの鍵がありません</string>
+    <string name="timeline_undecryptable_notice">このデバイスでは以前の暗号化メッセージを読めません。</string>
+    <string name="timeline_redacted">メッセージは削除されました</string>
+    <string name="timeline_unsupported">まだ表示に対応していないメッセージ（%1$s）</string>
+    <!-- Timeline note: someone renamed themselves. Arguments: the old and the new name. -->
+    <string name="timeline_profile_rename">%1$sの名前が%2$sに変わりました</string>
+    <!-- Timeline note: someone changed their avatar. Argument: their name. -->
+    <string name="timeline_profile_avatar">%1$sのアイコンが変わりました</string>
+    <!-- Status line on an approval request card: the request expired, so nothing was carried out. -->
+    <string name="confirmation_card_expired">期限切れのため実行されていません</string>
+    <!-- Status line on an approval request card: the action ran but failed. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_failed_result">実行できませんでした：%1$s</string>
+    <!-- Status line on an approval request card: it was denied, so nothing was carried out. -->
+    <string name="confirmation_card_rejected">拒否したため実行されていません</string>
+    <!-- Status line on an approval request card while the action is being carried out, next to a spinner. -->
+    <string name="confirmation_card_running">実行中</string>
+    <!-- Button on an approval request card: stop the approval window during which further actions run without asking. -->
+    <string name="confirmation_card_stop_window">停止</string>
+    <!-- Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is. -->
+    <string name="confirmation_card_uncertain_result">結果を確認できません：%1$s</string>
+    <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
+    <string name="confirmation_card_window_until">%1$sまで許可</string>
+    <string name="bot_avatar_pick_state">%1$sの画像を変更</string>
+    <string name="timeline_sending_progress">送信中 %1$s</string>
+    <string name="timeline_cancel_send">送信を取り消す</string>
+</resources>

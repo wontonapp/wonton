@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Icon button at the left of the chat composer: opens the attachment menu (photo or file). Also its screen-reader label. -->
+    <string name="composer_attach">附件</string>
+    <!-- Title of the problem shown when the file picker fails. The detail is the system's reason. -->
+    <string name="composer_choose_failed">选不了这个文件</string>
+    <!-- Item in the composer's attachment menu: pick files to send. -->
+    <string name="composer_file">文件</string>
+    <!-- Placeholder in the chat composer's empty text field. -->
+    <string name="composer_message">消息</string>
+    <!-- Item in the composer's attachment menu: pick a photo to send. -->
+    <string name="composer_photo">照片</string>
+    <!-- Screen-reader label of the round send button at the right of the chat composer. -->
+    <string name="composer_send">发送</string>
+    <string name="composer_file_unreadable">无法读取这个文件。请重新复制，或选择其他文件。</string>
+    <string name="composer_tray_full">一次最多发 %1$d 个附件。</string>
+    <string name="composer_attachment_remove">移除 %1$s</string>
+    <string name="composer_attachment_paused">等连上家里的服务器</string>
+    <string name="composer_attachment_failed">传不上去</string>
+    <string name="composer_attachment_retry">重新上传</string>
+    <string name="composer_attachment_too_large">照片超过了家里服务器的大小上限，可以改用文件发。</string>
+    <string name="composer_attachment_source_unavailable">原文件读不了了，请重新选一次。</string>
+    <string name="composer_attachment_storage_full">家里服务器的磁盘满了。</string>
+    <string name="composer_attachment_rejected">家里的服务器拒收了这个附件。</string>
+    <string name="composer_attachment_upstream">家里的服务器出错了。</string>
+    <string name="composer_attachment_local_storage">手机上存不下了。</string>
+</resources>

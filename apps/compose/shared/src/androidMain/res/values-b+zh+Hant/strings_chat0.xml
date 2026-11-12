@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_signing_in">正在登入…</string>
+    <string name="chat_encrypted">已加密</string>
+    <string name="chat_unread_count">%1$d 則未讀</string>
+    <string name="chat_invite_direct">%1$s 邀請你私訊</string>
+    <string name="chat_invite_accept">接受</string>
+    <string name="chat_start">發起</string>
+    <!-- Install row subtitle while containers start. No arguments. -->
+    <string name="chat_install_stage_starting">正在啟動</string>
+    <!-- Install row subtitle while health checks pass and the bot comes online. No arguments. -->
+    <string name="chat_install_stage_waiting_for_bot">等待 Bot 就緒</string>
+    <string name="chat_backup_copy">複製</string>
+    <!-- Explanation under the heading when backup is on. -->
+    <string name="chat_backup_detail_enabled">換手機或新裝置時，輸入復原金鑰就能看到以前的訊息。</string>
+    <!-- Explanation when the recovery key is missing on this device. -->
+    <string name="chat_backup_detail_incomplete">輸入開啟備份時儲存的復原金鑰。如果金鑰遺失了，就重置備份。</string>
+    <!-- Explanation when backup is off because this device isn't verified; the earliest paired device turns it on. -->
+    <string name="chat_backup_detail_unverified">請開啟最早配對的那台裝置，備份會自動開啟。那台裝置不在手邊，就重置備份。</string>
+    <!-- Explanation when this device is verified: backup turns on by itself. -->
+    <string name="chat_backup_detail_verified">裝置驗證後會自動開啟備份。</string>
+    <!-- Placeholder of the recovery key field and the clipboard label when copying the key. The key restores past messages. -->
+    <string name="chat_backup_recovery_key">復原金鑰</string>
+    <!-- Banner in the chat list asking for the recovery key to restore past messages. -->
+    <string name="chat_backup_reminder_enter_key">輸入復原金鑰，取回以前的訊息</string>
+    <!-- Button that opens the reset confirmation; it replaces the recovery key with a new one. -->
+    <string name="chat_backup_reset">重置備份</string>
+    <!-- Body of the reset confirmation dialog: a new recovery key is issued, the old one stops working. -->
+    <string name="chat_backup_reset_message">會產生新的復原金鑰，舊的會失效。重置後可能無法讀取舊訊息，其他裝置也要輸入新金鑰。</string>
+    <!-- Heading above the freshly issued recovery key. -->
+    <string name="chat_backup_save_key_title">儲存復原金鑰</string>
+    <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
+    <string name="chat_backup_saved">已儲存</string>
+    <string name="chat_backup_saved_confirm_title">已經存好了嗎？</string>
+    <!-- Page heading when chat backup is on and verified. -->
+    <string name="chat_backup_status_enabled">聊天記錄已備份</string>
+    <!-- Page heading while backup or recovery runs. -->
+    <string name="chat_backup_status_in_progress">正在處理…</string>
+    <!-- Page heading when the recovery key is missing on this device, so past messages can't be shown. -->
+    <string name="chat_backup_status_incomplete">這台裝置還看不到以前的訊息</string>
+    <!-- Title of the chat backup page. -->
+    <string name="chat_backup_title">聊天記錄備份</string>
+    <!-- Value on the Settings row: backup needs the recovery key on this device. -->
+    <string name="chat_backup_value_incomplete">需要復原金鑰</string>
+    <!-- Value on the Settings row: the status can't be determined. -->
+    <string name="chat_backup_value_unknown">不確定</string>
+    <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
+    <string name="chat_status_reconnecting">正在重新連線…</string>
+</resources>

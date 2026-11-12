@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Label of the back button in pushed pages' top bars. -->
+    <string name="design_back">Back</string>
+    <!-- Accessibility label of the small spinner shown while a step's action runs. Android only. -->
+    <string name="design_busy">Working</string>
+    <!-- Label of the button that empties the search field. -->
+    <string name="design_clear">Clear</string>
+    <!-- Label of the close button in modal pages' top bars. -->
+    <string name="design_close">Close</string>
+    <!-- Default single button of the app's dialog, which just closes it. -->
+    <string name="design_ok">OK</string>
+    <!-- Button on setup steps: skip this step. -->
+    <string name="design_skip">Skip</string>
+    <!-- Button on setup steps: go back to the previous step. -->
+    <string name="design_step_back">Previous step</string>
+    <!-- Accessibility label of the step counter on setup steps, shown as 2/4. Arguments: the current step and the total. -->
+    <string name="design_step_progress">Step %1$d of %2$d</string>
+    <!-- Name of the custom accessibility action that opens a tab's menu. Android only. -->
+    <string name="design_tab_menu">Tab menu</string>
+    <!-- Accessibility state of a list row with the update badge dot. -->
+    <string name="design_update_badge">Update available</string>
+    <!-- Accessibility state of a list row with a counted badge. Argument: the count. -->
+    <string name="design_badge_count">%1$d pending</string>
+</resources>

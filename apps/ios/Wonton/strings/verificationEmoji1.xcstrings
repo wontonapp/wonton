@@ -1,0 +1,396 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "verification.emoji.1": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cat"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "猫"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "貓"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "猫"
+          }
+        }
+      }
+    },
+    "verification.emoji.11": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turtle"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "乌龟"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "烏龜"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "亀"
+          }
+        }
+      }
+    },
+    "verification.emoji.16": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tree"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "树"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "樹"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "木"
+          }
+        }
+      }
+    },
+    "verification.emoji.21": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cloud"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲朵"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲"
+          }
+        }
+      }
+    },
+    "verification.emoji.26": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Corn"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "玉米"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "玉米"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "とうもろこし"
+          }
+        }
+      }
+    },
+    "verification.emoji.31": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Robot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "机器人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "機器人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ロボット"
+          }
+        }
+      }
+    },
+    "verification.emoji.36": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Thumbs Up"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "赞"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "讚"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いいね"
+          }
+        }
+      }
+    },
+    "verification.emoji.41": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light Bulb"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "灯泡"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "燈泡"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電球"
+          }
+        }
+      }
+    },
+    "verification.emoji.46": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lock"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "锁"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "鎖頭"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "錠前"
+          }
+        }
+      }
+    },
+    "verification.emoji.51": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Train"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "火车"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "火車"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "電車"
+          }
+        }
+      }
+    },
+    "verification.emoji.56": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ball"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "球"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "足球"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボール"
+          }
+        }
+      }
+    },
+    "verification.emoji.6": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elephant"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大象"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "大象"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ゾウ"
+          }
+        }
+      }
+    },
+    "verification.emoji.61": {
+      "comment": "Name of the SAS verification emoji at this index in the Matrix spec table (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Headphones"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "耳机"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "耳機"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ヘッドホン"
+          }
+        }
+      }
+    }
+  }
+}

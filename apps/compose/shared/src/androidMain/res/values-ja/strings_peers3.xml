@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the "Other servers" page and the settings row that opens it. -->
+    <string name="peers_title">他のサーバー</string>
+    <!-- Action that shows this server's pairing QR code for the other owner to scan. -->
+    <string name="peers_show_code">自分のコードを表示</string>
+    <!-- Action that scans the other server's pairing code; also the scan page's title. -->
+    <string name="peers_scan_code">相手のコードをスキャン</string>
+    <!-- Used when the last connection was less than a minute ago. -->
+    <string name="peers_just_now">たった今</string>
+    <!-- Row subtitle when the other side removed the pairing. -->
+    <string name="peers_status_removed">相手が接続を切断しました</string>
+    <!-- Row subtitle while the other owner hasn't approved the pairing yet. -->
+    <string name="peers_status_awaiting">相手の承認待ち</string>
+    <!-- Row subtitle while the first reachability check after pairing hasn't returned yet. -->
+    <string name="peers_status_checking">確認中</string>
+    <!-- Section heading above the pairing requests other servers sent. -->
+    <string name="peers_requests_title">リクエスト</string>
+    <!-- Failure title when the scanned text isn't a pairing code. -->
+    <string name="peers_error_code_invalid">これはサーバーのペアリングコードではありません</string>
+    <!-- Failure title when the other owner declined the pairing. -->
+    <string name="peers_error_peer_rejected">相手が承認しませんでした</string>
+    <!-- Accessibility label of the server pairing QR code image. -->
+    <string name="peers_code_qr_label">サーバーのペアリング用QRコード</string>
+    <!-- Confirmation dialog body: what resetting does. -->
+    <string name="peers_reset_message">古いコードは使えなくなり、そのコードで届いたリクエストも削除されます</string>
+    <!-- Placeholder of the field for pasting the code when scanning is not possible. -->
+    <string name="peers_paste_placeholder">コードをペースト</string>
+</resources>

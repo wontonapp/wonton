@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notice title when the pairing code ran out of time. -->
+    <string name="invite_expired">このコードの有効期限が切れています。</string>
+    <!-- Under the QR code: how long the code is still valid. Argument: the remaining time as m:ss. -->
+    <string name="invite_expires_in">有効期限まで残り%1$s</string>
+    <!-- Notice title when the pairing code couldn't be fetched; the core's reason is shown below. -->
+    <string name="invite_failed_title">ペアリングコードを取得できませんでした</string>
+    <!-- Explanation under the QR code: what the new device's owner should do. The code works only once. -->
+    <string name="invite_instructions">新しいデバイスでWontonを開いてこのコードをスキャンすると、デバイスを追加できます。コードは1回だけ使えます。</string>
+    <!-- Label above the pairing code as text, for when the QR code can't be scanned. -->
+    <string name="invite_paste_fallback">スキャンできない場合はこのテキストを貼り付けてください</string>
+    <!-- Accessibility label of the QR code image with the pairing code. -->
+    <string name="invite_qr_label">ペアリング用QRコード</string>
+    <!-- Button under the expired notice: get a new code. -->
+    <string name="invite_renew">新しいコードを発行</string>
+    <!-- Shown next to a spinner while the pairing code is being requested. -->
+    <string name="invite_requesting">自宅サーバーにペアリングコードを要求しています…</string>
+    <!-- Button under the failed notice: request a pairing code again. -->
+    <string name="invite_try_again">再試行</string>
+    <string name="invite_device_added">追加しました</string>
+    <string name="invite_cannot_give">このデバイスにもすべての鍵がないため、新しいデバイスでは以前のメッセージを読めません。</string>
+</resources>

@@ -10,7 +10,7 @@ struct SecretSection: View {
 
     var body: some View {
         if isOwner, !detail.secretInputs.isEmpty {
-            DetailSection(title: String(localized: .secretSectionTitle)) {
+            DetailSection(title: String(localized: .Plugins.secretSectionTitle)) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(detail.secretInputs.enumerated()), id: \.element.name) { index, input in
                         if index > 0 { WontonSeparator() }
@@ -49,7 +49,7 @@ private struct SecretRow: View {
                 }
                 Spacer(minLength: 0)
                 if !editing {
-                    Button(String(localized: .secretEdit)) { editing = true }
+                    Button(String(localized: .Plugins.secretEdit)) { editing = true }
                         .buttonStyle(WontonSmallButtonStyle())
                         .disabled(busy)
                 }
@@ -60,17 +60,17 @@ private struct SecretRow: View {
                 )
                 SecretInputField(field, draft) { draft = $0 }
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    Button(String(localized: .commonSave)) {
+                    Button(String(localized: .Common.commonSave)) {
                         perform(draft)
                     }
                     .buttonStyle(WontonSmallButtonStyle())
                     .disabled(busy || draft.isEmpty)
                     if !input.required {
-                        Button(String(localized: .secretClear)) { perform(nil) }
+                        Button(String(localized: .Plugins.secretClear)) { perform(nil) }
                             .buttonStyle(WontonSmallButtonStyle())
                             .disabled(busy)
                     }
-                    Button(String(localized: .commonCancel)) {
+                    Button(String(localized: .Common.commonCancel)) {
                         editing = false
                         draft = ""
                         problem = nil
@@ -87,7 +87,9 @@ private struct SecretRow: View {
     }
 
     private var stateText: String {
-        let filled = input.filled ? String(localized: .secretFilled) : String(localized: .secretUnfilled)
+        let filled = input.filled
+            ? String(localized: .Plugins.secretFilled)
+            : String(localized: .Plugins.secretUnfilled)
         guard let changedAtMs = input.changedAtMs else { return filled }
         let changed = Date(timeIntervalSince1970: Double(changedAtMs) / 1000)
             .formatted(date: .abbreviated, time: .shortened)

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Title of the cleanup dialog for a downloaded transfer. Argument: the file's name. -->
+    <string name="transfer_cleanup_title">清理“%1$s”</string>
+    <!-- Title of the sheet listing downloaded transfers. -->
+    <string name="transfer_downloaded">已下载</string>
+    <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
+    <plurals name="transfer_downloaded_count">
+        <item quantity="other">已下载 %1$d 个</item>
+    </plurals>
+    <!-- Line under a paused transfer. First argument: the transferred size, already formatted as a byte count; second: the home server's reason, shown as is. -->
+    <string name="transfer_paused_progress">暂停，已传 %1$s：%2$s</string>
+    <!-- Caption under a transfer that was sent to another room. Argument: that room's name. -->
+    <string name="transfer_sent_to">发到 %1$s</string>
+    <!-- Text button on an upload whose link hasn't been sent: cancel it. -->
+    <string name="transfer_stop_sending">不发了</string>
+</resources>

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="other">已分享給 %1$d 位好友</item>
+    </plurals>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">編輯分享</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">沒有可選的好友或群組</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">好友</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">群組</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 小時</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">驗證的使用者 ID 與身分伺服器不符。</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">無法取得分享的應用程式</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">這個應用程式未在執行</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">這位好友沒有將這個應用程式分享給你</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">無法連上這位好友的伺服器</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">好友會以自己的使用者名稱登入這個應用程式，應用程式可能為他建立帳號，讓他看到你的資料。</string>
+</resources>

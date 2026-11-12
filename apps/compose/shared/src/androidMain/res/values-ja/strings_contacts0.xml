@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="contacts_title">連絡先</string>
+    <string name="contacts_add_kind_person">人</string>
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <string name="contacts_add_submit">リクエストを送信</string>
+    <string name="contacts_requests_title">リクエスト</string>
+    <string name="contacts_active_title">追加済み</string>
+    <string name="contacts_sent_title">送信済み</string>
+    <string name="contacts_reject">拒否</string>
+    <string name="contacts_status_waiting_person">相手の承諾待ち</string>
+    <string name="contacts_status_not_found">該当するユーザーがいません</string>
+    <string name="contacts_status_unknown">状態不明</string>
+    <string name="contacts_remote_unpaired">そのサーバーとの接続が解除されたため、メッセージは届きません</string>
+    <string name="contacts_error_not_paired">相手のサーバーはあなたのサーバーと接続されていません</string>
+    <string name="contacts_error_already_contact">すでに連絡先か、リクエストを送信済みです</string>
+    <string name="contacts_error_bot_not_found">このボットはもうインストールされていません</string>
+    <string name="contacts_error_peer_unreachable">相手のサーバーに接続できません。送信されていません。</string>
+    <string name="contacts_error_unauthenticated">この端末ではこの操作はできません</string>
+</resources>

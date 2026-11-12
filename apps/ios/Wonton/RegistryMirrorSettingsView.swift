@@ -20,11 +20,11 @@ struct RegistryMirrorSettingsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(String(localized: .registryMirrorTitle)) {
+            .wontonPushedScreen(String(localized: .RegistryMirror.registryMirrorTitle)) {
                 if mirror.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
-                    Button(String(localized: .commonSave)) {
+                    Button(String(localized: .Common.commonSave)) {
                         model.send(.saveRegistryMirror(mirror: enabled ? draft : ""))
                     }
                     .buttonStyle(WontonSmallButtonStyle())
@@ -53,27 +53,27 @@ struct RegistryMirrorSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if settings.recommended && !enabled {
-                    Text(.registryMirrorRecommended)
+                    Text(.RegistryMirror.registryMirrorRecommended)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.warning))
                 }
                 if let problem = mirror.loadProblem {
                     ProblemNotice(problem: problem.problem)
-                    Button(String(localized: .commonRetry)) { model.send(.refreshRegistryMirror) }
+                    Button(String(localized: .Common.commonRetry)) { model.send(.refreshRegistryMirror) }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                         .disabled(mirror.loading)
                 }
                 if let problem = mirror.saveProblem {
                     ProblemNotice(problem: problem.reason == .invalid
-                                  ? Problem(title: String(localized: .registryMirrorSaveFailed),
+                                  ? Problem(title: String(localized: .RegistryMirror.registryMirrorSaveFailed),
                                             detail: problem.message)
                                   : problem.saveProblem)
                 }
                 if let problem = mirror.testProblem { ProblemNotice(problem: problem.problem) }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                    Toggle(String(localized: .registryMirrorTitle), isOn: $enabled)
+                    Toggle(String(localized: .RegistryMirror.registryMirrorTitle), isOn: $enabled)
                         .toggleStyle(WontonToggleStyle())
-                    Text(.registryMirrorRisk)
+                    Text(.RegistryMirror.registryMirrorRisk)
                         .wontonText(WontonTheme.typography.supporting)
                         .foregroundStyle(Color(colors.textSecondary))
                 }
@@ -98,12 +98,13 @@ struct RegistryMirrorSettingsView: View {
                     RegistryProbeLabel(probe: probe(address))
                 })
             }
-            StepOptionRow(title: String(localized: .registryMirrorCustom), isSelected: custom || removedChoice) {
+            StepOptionRow(title: String(localized: .RegistryMirror.registryMirrorCustom),
+                isSelected: custom || removedChoice) {
                 if removedChoice { customAddress = customValue }
                 custom = true
             }
             if custom || removedChoice {
-                TextField(String(localized: .registryMirrorCustom), text: Binding(
+                TextField(String(localized: .RegistryMirror.registryMirrorCustom), text: Binding(
                     get: { customValue },
                     set: {
                         customAddress = $0
@@ -125,7 +126,7 @@ struct RegistryMirrorSettingsView: View {
         Button { model.send(.testRegistryMirrors) } label: {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if mirror.testing { ProgressView().controlSize(.small) }
-                Text(.registryMirrorTest)
+                Text(.RegistryMirror.registryMirrorTest)
             }
         }
         .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -143,7 +144,7 @@ struct RegistryMirrorSettingsView: View {
                     }
                 }
             }
-            RegistryProbeRow(title: String(localized: .registryMirrorDockerHubDirect),
+            RegistryProbeRow(title: String(localized: .RegistryMirror.registryMirrorDockerHubDirect),
                              probe: mirror.tests == nil ? settings.dockerHub : mirror.tests?.dockerHub)
         }
     }
@@ -181,20 +182,20 @@ private struct RegistryProbeLabel: View {
     }
 
     private var label: String {
-        guard let probe else { return String(localized: .registryMirrorProbeUnknown) }
+        guard let probe else { return String(localized: .RegistryMirror.registryMirrorProbeUnknown) }
         if let problem = probe.problem {
             switch problem.reason {
-            case .unreachable: return String(localized: .registryMirrorProbeUnreachable)
-            case .rejected: return String(localized: .registryMirrorProbeRejected)
-            case .digestMismatch: return String(localized: .registryMirrorProbeDigestMismatch)
-            case .other: return String(localized: .registryMirrorProbeOther)
+            case .unreachable: return String(localized: .RegistryMirror.registryMirrorProbeUnreachable)
+            case .rejected: return String(localized: .RegistryMirror.registryMirrorProbeRejected)
+            case .digestMismatch: return String(localized: .RegistryMirror.registryMirrorProbeDigestMismatch)
+            case .other: return String(localized: .RegistryMirror.registryMirrorProbeOther)
             }
         }
         if let latency = probe.latencyMs {
             return Measurement(value: Double(latency), unit: UnitDuration.milliseconds)
                 .formatted(.measurement(width: .abbreviated))
         }
-        return String(localized: .registryMirrorProbeAvailable)
+        return String(localized: .RegistryMirror.registryMirrorProbeAvailable)
     }
 }
 

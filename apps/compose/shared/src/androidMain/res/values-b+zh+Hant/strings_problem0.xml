@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="problem_apps_not_ready">應用程式清單還沒準備好，請稍後重試。</string>
+    <string name="problem_no_default_agent">還沒有預設 Agent，請先在初始設定中選擇並安裝。</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">這個應用程式正忙</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">選擇的裝置無法使用</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">應用程式的安裝記錄不可用</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">暫時無法取得應用程式的資訊</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">還在載入，網路慢時要多等一會兒</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">檢查儲存空間後再試。</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">這台裝置讀寫資料時出錯了</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">無法讀取應用程式清單</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">應用程式的來源出了問題</string>
+</resources>

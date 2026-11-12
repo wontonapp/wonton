@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="problem_apps_not_ready">应用列表还没有准备好，请稍后重试。</string>
+    <string name="problem_no_default_agent">还没有默认 Agent，请先在引导中选择并安装。</string>
+    <!-- Problem title: the app is busy with another task. -->
+    <string name="problem_plugin_conflict_title">这个应用正忙</string>
+    <!-- Problem title: the device the app should run on isn't available. -->
+    <string name="problem_plugin_device_unavailable_title">选择的设备不可用</string>
+    <!-- Problem title: the home server can't read this app's install record. -->
+    <string name="problem_plugin_record_unusable_title">应用的安装记录不可用</string>
+    <!-- Problem title: the app's information can't be fetched from its source right now. -->
+    <string name="problem_plugin_source_unavailable_title">暂时取不到应用的信息</string>
+    <!-- Shown after a few seconds under a spinner: the network is slow, loading still goes on. -->
+    <string name="problem_slow_loading">还在加载，网络慢时要多等一会儿</string>
+    <!-- Next step under the storage problem. Also used when settings couldn't be saved. -->
+    <string name="problem_storage_next_step">检查存储空间后再试。</string>
+    <!-- Problem title: this device failed to read or write its own data. -->
+    <string name="problem_storage_title">这台设备读写数据出错了</string>
+    <!-- Problem title: the store's index can't be read. -->
+    <string name="problem_store_invalid_index_title">应用列表读不懂</string>
+    <!-- Problem title: the app's source itself reported a problem. -->
+    <string name="problem_store_upstream_title">应用的来源出了问题</string>
+</resources>

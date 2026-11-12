@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 端口映射前台服务的常驻通知渠道名（ADR-0072），显示在系统的通知设置里。 -->
+    <string name="mapping_channel_name">端口映射</string>
+    <!-- 端口映射的常驻通知标题：只有一个应用开着映射。参数是应用名。 -->
+    <string name="mapping_notification_title">正在映射 %1$s 的端口</string>
+    <!-- 端口映射的常驻通知标题：不止一个应用开着映射。参数是应用个数。 -->
+    <string name="mapping_notification_title_multiple">正在映射 %1$d 个应用的端口</string>
+</resources>

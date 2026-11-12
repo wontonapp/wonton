@@ -78,8 +78,8 @@ extension MainView {
         }),
               let choice = plugin.tabChoices.first else {
             onboarding.rejection = Problem(
-                title: String(localized: .onboardingGatewayMissingTitle),
-                nextStep: String(localized: .onboardingGatewayMissingNextStep)
+                title: String(localized: .Onboarding1.onboardingGatewayMissingTitle),
+                nextStep: String(localized: .Onboarding3.onboardingGatewayMissingNextStep)
             )
             return
         }

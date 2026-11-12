@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">安裝</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">更新</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">這些 Bot 用這個應用程式的工具不再問，新版本多出來的工具也算在內</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">換版本</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">安裝完成</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">正在安裝…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">安裝應用程式</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">安裝結果不確定</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">完成</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">填寫資料</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">權限</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">更新說明</string>
+</resources>

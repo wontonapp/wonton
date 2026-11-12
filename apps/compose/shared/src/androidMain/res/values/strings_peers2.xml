@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Top-right button on the peers page that offers the two ways to add a server. -->
+    <string name="peers_add">Add</string>
+    <!-- Warning on a request row whose self-reported name matches a paired server. Argument: that server\'s display name. -->
+    <string name="peers_request_conflicts">Has the same name as connected “%1$s”, but isn\'t that server</string>
+    <!-- Undo button on a declined-request row: they can ask again. -->
+    <string name="peers_rejected_undo">Undo</string>
+    <!-- Confirmation dialog body: what removing does. -->
+    <string name="peers_remove_message">You\'ll stop exchanging messages with this server.</string>
+    <!-- Failure title when the code was replaced by a reset and no longer works. -->
+    <string name="peers_error_code_revoked">This code has been revoked. Ask them to send a new one.</string>
+    <!-- Failure title when the scanned code is from your own server. -->
+    <string name="peers_error_self_pairing">This is your own server\'s code</string>
+    <!-- Failure title when this server isn't paired. -->
+    <string name="peers_error_not_paired">This server isn\'t connected</string>
+    <!-- Failure title for the remaining categories. -->
+    <string name="peers_error_other">Something went wrong. Try again later.</string>
+    <!-- Button under the QR code: replaces the code so the old one stops working. -->
+    <string name="peers_code_reset">Reset</string>
+    <!-- Button under the paste field: submit the pasted code. -->
+    <string name="peers_paste_submit">Pair</string>
+</resources>

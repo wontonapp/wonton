@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Switch on an app's page: map the ports the app declares onto this device's loopback interface, so other apps on the phone can reach them (ADR-0072). -->
+    <string name="port_mapping_toggle">Map to this device</string>
+    <!-- One declared port under the switch: the loopback address with the port number, then the protocol. -->
+    <string name="port_mapping_port_line">127.0.0.1:%1$d · %2$s</string>
+    <!-- Protocol label of a declared port whose protocol Wonton doesn't recognize. -->
+    <string name="port_mapping_protocol_other">Other</string>
+    <!-- Reason shown while the mapping is on but another app on this phone has taken the port. -->
+    <string name="port_mapping_reason_port_in_use">The port is already in use by another app on this phone.</string>
+    <!-- Reason shown while the mapping is on but the home server is too old to map ports. -->
+    <string name="port_mapping_reason_server_too_old">Your home server is too old and needs an update.</string>
+    <!-- Reason shown while the mapping is on but the tunnel isn't connected. -->
+    <string name="port_mapping_reason_tunnel_disconnected">The tunnel to your home server isn\'t connected.</string>
+    <!-- Reason shown while the mapping is on but the app isn't installed on the home server. -->
+    <string name="port_mapping_reason_plugin_not_installed">This app isn\'t installed on your home server.</string>
+    <!-- Reason shown while the mapping is on but the app doesn't declare that port. -->
+    <string name="port_mapping_reason_port_not_declared">This app doesn\'t declare that port.</string>
+    <!-- Reason shown while the mapping is on but the app isn't running. -->
+    <string name="port_mapping_reason_plugin_not_running">This app isn\'t running on your home server.</string>
+    <!-- Reason shown while the mapping is on but the home server can't reach the app. -->
+    <string name="port_mapping_reason_plugin_unreachable">Your home server can\'t reach this app.</string>
+    <!-- Reason shown while the mapping is on and failed for a reason Wonton doesn't recognize. -->
+    <string name="port_mapping_reason_other">Port mapping ran into a problem.</string>
+    <!-- Notice while the mapping is on but the notification permission is denied, so the service notification stays out of the shade. -->
+    <string name="port_mapping_no_notification_permission">Without the notification permission, you won\'t see the mapping notification. Mapping still works.</string>
+    <string name="port_mapping_warning_public_relay_bandwidth">Connected only through the public relay — not enough bandwidth for streaming.</string>
+    <!-- Radio option for typing a mirror address that isn't in the list. -->
+    <string name="registry_mirror_custom">Custom</string>
+    <!-- Text field label for a custom mirror address (like mirror.example.com:5000). -->
+    <string name="registry_mirror_custom_address">Custom mirror address</string>
+    <!-- Row title for the speed test result of Docker Hub reached directly, without a mirror. Keep Docker Hub as is. -->
+    <string name="registry_mirror_docker_hub_direct">Docker Hub (direct)</string>
+    <!-- Speed test result: the mirror works but no latency was measured. -->
+    <string name="registry_mirror_probe_available">Available</string>
+    <!-- Speed test result: the mirror returned content whose digest doesn't match. -->
+    <string name="registry_mirror_probe_digest_mismatch">Digest mismatch</string>
+    <!-- Speed test result: some other failure; details are collapsed below. -->
+    <string name="registry_mirror_probe_other">Other error</string>
+    <!-- Speed test result: the mirror refused the request. -->
+    <string name="registry_mirror_probe_rejected">Rejected</string>
+    <!-- Speed test result when this address hasn't been tested. -->
+    <string name="registry_mirror_probe_unknown">Unknown</string>
+    <!-- Speed test result: the mirror can't be reached. -->
+    <string name="registry_mirror_probe_unreachable">Unreachable</string>
+    <!-- Warning on the Download Mirror page when Docker Hub can't be reached directly. Keep Docker Hub as is. -->
+    <string name="registry_mirror_recommended">Can\'t reach Docker Hub. Try turning on a download mirror.</string>
+    <!-- Explanation under the Download Mirror switch: the mirrors are run by third parties, can see what is downloaded, but can't tamper with it because every image is checked against its digest. -->
+    <string name="registry_mirror_risk">These are free third-party services. They can see which images you download, but they can\'t change them: every image\'s digest is checked.</string>
+    <!-- Problem title when the typed mirror address is invalid and wasn't saved. The server's reason is in the collapsed details. -->
+    <string name="registry_mirror_save_failed">Mirror address wasn\'t saved</string>
+    <!-- Button that measures how fast each mirror and Docker Hub respond. -->
+    <string name="registry_mirror_test">Test speed</string>
+    <!-- Title of the Download Mirror settings page, its row in Settings > Home Server, and the switch that turns it on. A mirror makes the home server download apps faster. -->
+    <string name="registry_mirror_title">Download mirror</string>
+    <!-- Warning under the allow-all switches. -->
+    <string name="tool_policy_allow_all_risk">This bot can use every app\'s tools without asking, including apps installed later. A prompt injection could make it change data, delete things, or send content out without your approval.</string>
+    <!-- Section title for bots that may use every app's tools without asking. -->
+    <string name="tool_policy_allow_all_title">Always allow (all apps)</string>
+    <!-- Warning under the Always Allow switches. -->
+    <string name="tool_policy_always_risk">This bot can use this app\'s tools without asking, including tools that change data.</string>
+    <!-- Section title for bots that may use this app's tools without asking; also in the install preview. -->
+    <string name="tool_policy_always_title">Always allow</string>
+    <!-- Explanation shown when the tool list is expanded. -->
+    <string name="tool_policy_read_only_hint">Tools switched on here count as read-only. Every bot can call them without asking.</string>
+    <!-- Caption in place of the switch for tools the app itself marks read-only. -->
+    <string name="tool_policy_read_only_tag">Read-only</string>
+    <!-- Button that ends a bot's open time window. -->
+    <string name="tool_policy_stop">Stop</string>
+    <!-- Collapsible section title for the app's tools. -->
+    <string name="tool_policy_tools_title">Tools</string>
+    <!-- Next step under that problem. -->
+    <string name="tool_policy_unreadable_next">Every tool call will ask you, and these settings can\'t be changed here.</string>
+    <!-- Problem title when the tool policy can't be read. -->
+    <string name="tool_policy_unreadable_title">Can\'t load these settings</string>
+    <!-- Row for an open time window. Arguments: the bot's name, the time it ends. -->
+    <string name="tool_policy_window_until">%1$s allowed until %2$s</string>
+    <!-- Section title for the time windows during which a bot may act without asking. -->
+    <string name="tool_policy_windows_title">Allowed for now</string>
+    <string name="secret_section_title">Keys this app needs</string>
+    <string name="secret_optional">Optional</string>
+    <string name="secret_get_one">Where to get one</string>
+    <string name="secret_show">Show value</string>
+    <string name="secret_hide">Hide value</string>
+    <string name="secret_edit">Change</string>
+    <string name="secret_clear">Clear</string>
+    <string name="secret_filled">Filled</string>
+    <string name="secret_unfilled">Not ready: paste a token first</string>
+</resources>

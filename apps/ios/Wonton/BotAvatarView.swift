@@ -38,7 +38,7 @@ struct BotAvatarView: View {
     private var a11yLabel: String {
         guard let bot else { return "" }
         guard let activity = bot.activity else { return bot.name }
-        return String(localized: .botStateLabel(bot.name, activity.text))
+        return String(localized: .Chat.botStateLabel(bot.name, activity.text))
     }
 }
 
@@ -371,10 +371,10 @@ extension BotActivity {
     /// 读屏和状态格的名字（ADR-0044 的四个状态）。
     var text: String {
         switch self {
-        case .idle: String(localized: .botStateIdle)
-        case .working: String(localized: .botStateWorking)
-        case .waiting: String(localized: .botStateWaiting)
-        case .offline: String(localized: .botStateOffline)
+        case .idle: String(localized: .Chat.botStateIdle)
+        case .working: String(localized: .Chat.botStateWorking)
+        case .waiting: String(localized: .Chat.botStateWaiting)
+        case .offline: String(localized: .Chat.botStateOffline)
         }
     }
 

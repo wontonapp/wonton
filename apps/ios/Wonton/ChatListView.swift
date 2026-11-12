@@ -93,7 +93,7 @@ struct ChatListView: View {
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(.chatNewChat))
+        .accessibilityLabel(Text(.Chat1.chatNewChat))
     }
 
     @ViewBuilder private var notices: some View {
@@ -169,9 +169,9 @@ private enum ChatStatus {
         case .signedOut:
             self = .signedOut
         case .signingIn:
-            self = .progress(String(localized: .chatLoggingIn))
+            self = .progress(String(localized: .Chat1.chatLoggingIn))
         case .reconnecting:
-            self = .progress(String(localized: .chatStatusReconnecting))
+            self = .progress(String(localized: .Chat.chatStatusReconnecting))
         case let .failed(reason, message):
             // 连不上由标题栏说，连上后自动重来。
             if reason == .transportUnavailable { return nil }
@@ -196,7 +196,7 @@ private struct ChatStatusView: View {
     var body: some View {
         switch status {
         case .signedOut:
-            WontonNotice(icon: .connection, title: String(localized: .chatNotSignedIn), isError: false)
+            WontonNotice(icon: .connection, title: String(localized: .Chat0.chatNotSignedIn), isError: false)
         case let .progress(text):
             Text(text)
                 .wontonText(WontonTheme.typography.supporting)
@@ -244,7 +244,7 @@ private struct NoChats: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Text(.chatEmpty)
+        Text(.Chat1.chatEmpty)
             .wontonText(WontonTheme.typography.itemTitle)
             .foregroundStyle(Color(colors.textPrimary))
     }
@@ -269,7 +269,7 @@ private struct RoomRowView: View {
                         if row.isEncrypted {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
                                 .foregroundStyle(Color(colors.textSecondary))
-                                .accessibilityLabel(Text(.chatEncrypted))
+                                .accessibilityLabel(Text(.Chat0.chatEncrypted))
                         }
                     }
                     Spacer(minLength: 0)
@@ -296,7 +296,7 @@ private struct RoomRowView: View {
                             .padding(.horizontal, WontonTheme.spacing.s8)
                             .padding(.vertical, WontonTheme.spacing.s4)
                             .accentFill(Capsule())
-                            .accessibilityLabel(Text(.chatUnread(count: Int(row.unreadCount))))
+                            .accessibilityLabel(Text(.Chat0.chatUnread(count: Int(row.unreadCount))))
                     }
                 }
             }
@@ -309,7 +309,7 @@ private struct RoomRowView: View {
 
     /// 预览正文原样显示；自己发的在前面标一句“我：”。
     private func previewLine(_ preview: RoomPreview) -> Text {
-        preview.isOwn ? Text(.chatPreviewOwn(preview.body.line)) : Text(preview.body.line)
+        preview.isOwn ? Text(.Chat1.chatPreviewOwn(preview.body.line)) : Text(preview.body.line)
     }
 }
 
@@ -348,7 +348,7 @@ private enum RoomTime {
         let date = Date(timeIntervalSince1970: TimeInterval(timestampMs) / 1000)
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return date.formatted(.dateTime.hour().minute()) }
-        if calendar.isDateInYesterday(date) { return String(localized: .chatTimeYesterday) }
+        if calendar.isDateInYesterday(date) { return String(localized: .Chat1.chatTimeYesterday) }
         let days = calendar.dateComponents(
             [.day],
             from: calendar.startOfDay(for: date),
@@ -369,13 +369,13 @@ private struct InviteRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-            Text(row.isDirect ? .chatInviteDirect(row.name) : .chatInviteRoom(row.name))
+            Text(row.isDirect ? .Chat0.chatInviteDirect(row.name) : .Chat1.chatInviteRoom(row.name))
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.chatInviteAccept) { model.send(.joinRoom(roomId: row.roomId)) }
+                Button(.Chat0.chatInviteAccept) { model.send(.joinRoom(roomId: row.roomId)) }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button(.chatInviteDecline) { model.send(.leaveRoom(roomId: row.roomId)) }
+                Button(.Chat1.chatInviteDecline) { model.send(.leaveRoom(roomId: row.roomId)) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }
@@ -394,7 +394,7 @@ private struct StartChatView: View {
         let contacts = model.core.chatContacts(query: input)
         ScrollView {
             VStack(spacing: WontonTheme.spacing.s12) {
-                TextField(String(localized: .chatStartField), text: $peer)
+                TextField(String(localized: .Chat0.chatStartField), text: $peer)
                     .textFieldStyle(.plain)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -402,7 +402,7 @@ private struct StartChatView: View {
                 Button {
                     model.openDirectChat(with: input)
                 } label: {
-                    Text(.chatStartSubmit).frame(maxWidth: .infinity)
+                    Text(.Chat0.chatStartSubmit).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
                 .disabled(input.isEmpty)
@@ -422,7 +422,7 @@ private struct StartChatView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .chatStartTitle))
+        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle))
     }
 }
 
@@ -431,12 +431,12 @@ private extension MessageSummary {
     var line: String {
         switch self {
         case let .text(text): text
-        case .files: String(localized: .messageSummaryFiles)
-        case .image: String(localized: .messageSummaryImage)
-        case .undecryptable: String(localized: .messageSummaryUndecryptable)
-        case .redacted: String(localized: .messageSummaryRedacted)
+        case .files: String(localized: .Message0.messageSummaryFiles)
+        case .image: String(localized: .Message0.messageSummaryImage)
+        case .undecryptable: String(localized: .Message0.messageSummaryUndecryptable)
+        case .redacted: String(localized: .Message0.messageSummaryRedacted)
         case let .sideChat(title, _): title
-        case let .other(kind): String(localized: .chatSummaryOther(kind))
+        case let .other(kind): String(localized: .Chat0.chatSummaryOther(kind))
         }
     }
 }

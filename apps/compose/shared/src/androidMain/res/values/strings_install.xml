@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Confirm button and title of the page that installs an app from the Store or a file. -->
+    <string name="install_action_install">Install</string>
+    <!-- Confirm button and title of the page that updates an installed app to a newer version. -->
+    <string name="install_action_upgrade">Update</string>
+    <!-- Warning under the Always Allow switches in the install preview. -->
+    <string name="install_always_allowed_risk">These bots can use this app\'s tools without asking, including tools added in newer versions.</string>
+    <!-- Title of the page that switches an installed app to a version from another source or a file. -->
+    <string name="install_change_version">Change version</string>
+    <!-- Status when the install succeeded. -->
+    <string name="install_completion_done">Installed</string>
+    <!-- Status while the app installs. -->
+    <string name="install_completion_installing">Installing…</string>
+    <!-- Title of the page that stays open while the app installs. -->
+    <string name="install_completion_title">Install app</string>
+    <!-- Problem title when the core couldn't confirm the install result. -->
+    <string name="install_completion_uncertain">Installation result is uncertain</string>
+    <!-- Button that closes the install page. -->
+    <string name="install_done">Done</string>
+    <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->
+    <string name="install_fill_profile">Complete profile</string>
+    <!-- Section title above the permissions the app asks for, in the install preview and the detail page. -->
+    <string name="install_permissions">Permissions</string>
+    <!-- Section title above the release notes in the install preview. -->
+    <string name="install_release_notes">What\'s new</string>
+</resources>

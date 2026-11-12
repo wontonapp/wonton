@@ -23,7 +23,7 @@ struct PeersScannerView: View {
                 case .authorized:
                     if let scannerProblem {
                         WontonNotice(icon: .cameraOff, title: scannerProblem) {
-                            Button(.peersCameraReopen) { self.scannerProblem = nil }
+                            Button(.Peers3.peersCameraReopen) { self.scannerProblem = nil }
                                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                         }
                     } else {
@@ -34,18 +34,19 @@ struct PeersScannerView: View {
                 case .notDetermined:
                     HStack(spacing: WontonTheme.spacing.s12) {
                         ProgressView()
-                        Text(.peersCameraWaiting).wontonText(WontonTheme.typography.body)
+                        Text(.Peers3.peersCameraWaiting).wontonText(WontonTheme.typography.body)
                     }
                     .foregroundStyle(Color(colors.textPrimary))
                 case .denied:
-                    WontonNotice(icon: .cameraOff, title: String(localized: .peersCameraDenied)) {
-                        Button(.commonOpenSettings) {
+                    WontonNotice(icon: .cameraOff, title: String(localized: .Peers1.peersCameraDenied)) {
+                        Button(.Common.commonOpenSettings) {
                             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
                 case .unsupported:
-                    WontonNotice(icon: .cameraOff, title: String(localized: .qrScannerUnsupportedPaste), isError: false)
+                    WontonNotice(icon: .cameraOff, title: String(localized: .Peers.qrScannerUnsupportedPaste),
+                        isError: false)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -86,7 +87,7 @@ struct PeersScannerView: View {
     /// 扫不到时的退路：粘贴对方的配对码，提交方式和扫到的一样。
     private var pasteSection: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
-            TextField(String(localized: .peersPasteCode), text: $pastedCode, axis: .vertical)
+            TextField(String(localized: .Peers0.peersPasteCode), text: $pastedCode, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(pastedCode.isEmpty ? nil : .caption.monospaced())
                 .textInputAutocapitalization(.never)
@@ -99,7 +100,7 @@ struct PeersScannerView: View {
             Button {
                 submit(pastedCode)
             } label: {
-                Text(.peersPasteSubmit).frame(maxWidth: .infinity)
+                Text(.Peers2.peersPasteSubmit).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(pastedCode.isEmpty || submitted)
@@ -116,8 +117,8 @@ struct PeersScannerView: View {
 
     private func scanTitle(_ error: PeerError) -> String {
         switch error {
-        case .codeRevoked: String(localized: .peersErrorCodeRevoked)
-        default: String(localized: .peersErrorCodeInvalid)
+        case .codeRevoked: String(localized: .Peers1.peersErrorCodeRevoked)
+        default: String(localized: .Peers0.peersErrorCodeInvalid)
         }
     }
 

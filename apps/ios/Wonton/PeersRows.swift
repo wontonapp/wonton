@@ -9,12 +9,12 @@ struct PeersEmpty: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s12) {
-            Text(.peersEmpty)
+            Text(.Peers0.peersEmpty)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
-            Button(.peersShowCodeButton, action: showCode)
+            Button(.Peers2.peersShowCodeButton, action: showCode)
                 .buttonStyle(WontonButtonStyle())
-            Button(.peersScanCodeButton, action: scan)
+            Button(.Peers2.peersScanCodeButton, action: scan)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
         }
         .frame(maxWidth: .infinity)
@@ -37,13 +37,13 @@ struct PeerRowView: View {
                     .layoutPriority(1)
                 Spacer(minLength: 0)
                 if showsRemove {
-                    Button(String(localized: .commonRemove), action: remove)
+                    Button(String(localized: .Common.commonRemove), action: remove)
                         .buttonStyle(WontonSmallButtonStyle(kind: .danger))
                 }
             }
             statusLine
             if row.status == .offline, let last = row.lastConnectedMs {
-                Text(.peersLastConnected(relative(last)))
+                Text(.Peers2.peersLastConnected(relative(last)))
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
@@ -67,13 +67,13 @@ struct PeerRowView: View {
 
     @ViewBuilder private var statusLine: some View {
         let status: LocalizedStringResource? = switch row.status {
-        case .checking: .peersStatusChecking
+        case .checking: .Peers1.peersStatusChecking
         case .connected: nil
-        case .offline: .peersStatusOffline
-        case .removedByPeer: .peersStatusRemoved
-        case .awaitingApproval: .peersStatusAwaiting
-        case .declined: .peersStatusDeclined
-        case .other: .peersStatusUnknown
+        case .offline: .Peers2.peersStatusOffline
+        case .removedByPeer: .Peers1.peersStatusRemoved
+        case .awaitingApproval: .Peers1.peersStatusAwaiting
+        case .declined: .Peers3.peersStatusDeclined
+        case .other: .Peers3.peersStatusUnknown
         }
         if let status {
             Text(status)
@@ -110,20 +110,20 @@ struct PeerRequestRowView: View {
             }
             if let conflict = request.conflictsWith {
                 Label {
-                    Text(.peersConflict(conflict))
+                    Text(.Peers1.peersConflict(conflict))
                 } icon: {
                     WontonIcon.warning.view(size: WontonTheme.size.iconSmall)
                 }
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.warning))
             }
-            Text(.peersReceived(relativeTime(request.receivedAtMs)))
+            Text(.Peers1.peersReceived(relativeTime(request.receivedAtMs)))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.peersApprove, action: approve)
+                Button(.Peers3.peersApprove, action: approve)
                     .buttonStyle(WontonSmallButtonStyle())
-                Button(.peersReject, action: reject)
+                Button(.Peers2.peersReject, action: reject)
                     .buttonStyle(WontonSmallButtonStyle(kind: .secondary))
             }
             .padding(.top, WontonTheme.spacing.s4)
@@ -152,10 +152,10 @@ struct RejectedRequestRowView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                     .layoutPriority(1)
                 Spacer(minLength: 0)
-                Button(.peersUndo, action: unreject)
+                Button(.Peers0.peersUndo, action: unreject)
                     .buttonStyle(WontonSmallButtonStyle())
             }
-            Text(.peersRejectedAt(relativeTime(row.rejectedAtMs)))
+            Text(.Peers0.peersRejectedAt(relativeTime(row.rejectedAtMs)))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
             ProblemDetail(text: peerDetails(serverName: row.serverName, detail: row.detail))

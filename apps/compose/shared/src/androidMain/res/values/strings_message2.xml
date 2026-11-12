@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Label of the clipboard entry when a message is copied. Rarely shown, but must not fall back to another language. Android only. -->
+    <string name="message_clip_label">Message</string>
+    <!-- Item in the message menu: copy the message text. Android only. -->
+    <string name="message_copy">Copy</string>
+    <!-- Accessibility label of the copy button on a code block in a message. -->
+    <string name="message_code_copy">Copy code</string>
+    <!-- Confirm button in the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_confirm">Delete</string>
+    <!-- Body of the dialog that removes a message for everyone, saying the scope of it. Android only. -->
+    <string name="message_delete_everyone_message">It disappears from the chat for everyone in this room.</string>
+    <!-- Title of the dialog that removes a message for everyone. Android only. -->
+    <string name="message_delete_everyone_title">Delete this message for everyone?</string>
+    <!-- Label of the fullscreen viewer action that hands the picture to the system share sheet. Android only. -->
+    <string name="message_image_share">Share</string>
+    <!-- Label of the fullscreen viewer action that saves the picture into the system gallery. Android only. -->
+    <string name="message_image_save">Save to gallery</string>
+    <!-- Notice after the picture was saved into the gallery. Android only. -->
+    <string name="message_image_saved">Saved to the gallery</string>
+    <!-- Placeholder for a message that only has file links, in the chat list preview and in notifications. -->
+    <string name="message_summary_files">[File]</string>
+    <!-- Placeholder for a photo message, in the chat list preview and in notifications. -->
+    <string name="message_summary_image">[Photo]</string>
+    <string name="message_image_permission_denied">Android denied access. Check this app\'s permissions in Settings and try again.</string>
+    <string name="message_link_share_failed">Couldn\'t share this link</string>
+    <string name="message_link_no_handler">Install an app that can open this type of link, then try again.</string>
+</resources>

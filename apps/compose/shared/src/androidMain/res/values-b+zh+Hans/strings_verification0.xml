@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="verification_incoming_message">用这台设备确认「%1$s」？</string>
+    <string name="verification_starting">正在准备确认…</string>
+    <string name="verification_fetching_keys">正在取回密钥…</string>
+    <string name="verification_done_here">已验证，以前的消息可以查看了。</string>
+    <string name="verification_verify_with_other_device">用另一台设备确认</string>
+    <string name="verification_cancelled_by_me">你取消了确认。</string>
+    <string name="verification_cancelled_by_other">另一台设备取消了确认。</string>
+    <string name="verification_cancelled_mismatch">两台设备上的表情对不上，确认已取消。</string>
+    <string name="verification_cancelled_timeout">另一台设备太久没有回应，确认已取消。</string>
+    <string name="verification_cancelled_concurrent_request">同时收到了另一个确认请求，两个都取消了。</string>
+    <string name="verification_cancelled_keys_missing">没能从另一台设备取全密钥，以前的消息还是解不开。</string>
+    <string name="verification_cancelled_failed">确认没有完成，出了点问题。</string>
+    <string name="verification_cancelled_other">确认没有完成。</string>
+    <!-- Localized names of the 64 SAS verification emoji, by index in the Matrix spec table
+         (matrix-org/matrix-spec, data-definitions/sas-emoji.json, Apache-2.0). -->
+    <string-array name="verification_emoji">
+        <item>狗</item>
+        <item>猫</item>
+        <item>狮子</item>
+        <item>马</item>
+        <item>独角兽</item>
+        <item>猪</item>
+        <item>大象</item>
+        <item>兔子</item>
+        <item>熊猫</item>
+        <item>公鸡</item>
+        <item>企鹅</item>
+        <item>乌龟</item>
+        <item>鱼</item>
+        <item>章鱼</item>
+        <item>蝴蝶</item>
+        <item>花</item>
+        <item>树</item>
+        <item>仙人掌</item>
+        <item>蘑菇</item>
+        <item>地球</item>
+        <item>月亮</item>
+        <item>云</item>
+        <item>火</item>
+        <item>香蕉</item>
+        <item>苹果</item>
+        <item>草莓</item>
+        <item>玉米</item>
+        <item>披萨</item>
+        <item>蛋糕</item>
+        <item>心</item>
+        <item>笑脸</item>
+        <item>机器人</item>
+        <item>帽子</item>
+        <item>眼镜</item>
+        <item>扳手</item>
+        <item>圣诞老人</item>
+        <item>赞</item>
+        <item>伞</item>
+        <item>沙漏</item>
+        <item>时钟</item>
+        <item>礼物</item>
+        <item>灯泡</item>
+        <item>书</item>
+        <item>铅笔</item>
+        <item>回形针</item>
+        <item>剪刀</item>
+        <item>锁</item>
+        <item>钥匙</item>
+        <item>锤子</item>
+        <item>电话</item>
+        <item>旗帜</item>
+        <item>火车</item>
+        <item>自行车</item>
+        <item>飞机</item>
+        <item>火箭</item>
+        <item>奖杯</item>
+        <item>球</item>
+        <item>吉他</item>
+        <item>喇叭</item>
+        <item>铃铛</item>
+        <item>锚</item>
+        <item>耳机</item>
+        <item>文件夹</item>
+        <item>图钉</item>
+    </string-array>
+</resources>

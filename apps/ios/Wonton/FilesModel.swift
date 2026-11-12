@@ -42,7 +42,7 @@ final class FilesModel {
                 room: room
             ))
         } catch {
-            reject(String(localized: .fileOpenFailed(error.localizedDescription)))
+            reject(String(localized: .File.fileOpenFailed(error.localizedDescription)))
         }
     }
 

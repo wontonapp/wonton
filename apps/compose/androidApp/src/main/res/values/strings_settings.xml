@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Notification text when a message is in a group room: sender name, then the message. -->
+    <string name="push_in_room">%1$s: %2$s</string>
+    <!-- Shown as the sender when the push didn't say who sent the message. -->
+    <string name="push_unknown_sender">Someone</string>
+    <!-- Notification text when someone invites you to a room. -->
+    <string name="push_invite">Invited you to join</string>
+    <!-- Notification text when the message arrived but this device can't load or decrypt it yet. -->
+    <string name="push_unavailable">New message (can\'t load it right now)</string>
+    <!-- Lock screen version of a notification when sensitive content is hidden: no sender, no text. -->
+    <string name="push_hidden">New message</string>
+    <!-- Push status detail: the user denied the notification permission. -->
+    <string name="push_no_permission">No notification permission: new messages can\'t show while Wonton is closed or the screen is locked</string>
+    <!-- Push status detail: no UnifiedPush distributor app (such as ntfy) is installed. -->
+    <string name="push_no_distributor">No UnifiedPush distributor installed (such as ntfy): new messages can\'t arrive while Wonton is closed or the screen is locked</string>
+    <!-- Push status detail: the distributor gave no Web Push public key. -->
+    <string name="push_no_public_key">The distributor gave no Web Push public key, so pushes can\'t be encrypted</string>
+    <!-- Push status detail: the distributor rejected the registration. Argument: the reason UnifiedPush reported. -->
+    <string name="push_registration_rejected">The distributor rejected the registration: %1$s</string>
+    <!-- Push status detail: the distributor unregistered the app. -->
+    <string name="push_unregistered">The distributor unregistered Wonton</string>
+    <!-- Notification text: a bot asks to be your bot's contact. -->
+    <string name="push_contact_request">Wants to be your bot\'s contact</string>
+    <!-- Same, when the asking bot belongs to someone. Argument: that person's name. -->
+    <string name="push_contact_request_keeper">%1$s\'s bot wants to be your bot\'s contact</string>
+</resources>

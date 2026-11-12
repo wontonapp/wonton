@@ -36,7 +36,7 @@ struct PendingCardBanner: View {
         }
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
         if onboarding.viewModel.tips.confirmationCard {
-            OnboardingTipView(text: String(localized: .onboardingTipConfirmationCard)) {
+            OnboardingTipView(text: String(localized: .Onboarding1.onboardingTipConfirmationCard)) {
                 onboarding.send(.dismissOnboardingTip(tip: .confirmationCard))
             }
         }
@@ -45,8 +45,8 @@ struct PendingCardBanner: View {
     /// 只有一张卡片时说是什么事。
     private var title: String {
         if cards.count == 1 {
-            return String(localized: .onboardingPendingCardOne(cards[0].title))
+            return String(localized: .Onboarding1.onboardingPendingCardOne(cards[0].title))
         }
-        return String(localized: .onboardingPendingCardMany(cards: cards.count))
+        return String(localized: .Onboarding0.onboardingPendingCardMany(cards: cards.count))
     }
 }

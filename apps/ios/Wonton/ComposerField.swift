@@ -26,7 +26,7 @@ struct ComposerField: View {
             fontSize: fontSize,
             line: line,
             colors: colors,
-            placeholder: String(localized: .composerMessage)
+            placeholder: String(localized: .Composer.composerMessage)
         )
         .fixedSize(horizontal: false, vertical: true)
         .frame(minHeight: WontonTheme.size.composerField)

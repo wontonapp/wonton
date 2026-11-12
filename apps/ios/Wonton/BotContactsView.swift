@@ -19,12 +19,12 @@ struct BotContactsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .contactsTitle)) {
-                WontonIconButton(icon: .add, label: String(localized: .contactsAdd)) { showsAdd = true }
+            .wontonPushedScreen(String(localized: .Contacts0.contactsTitle)) {
+                WontonIconButton(icon: .add, label: String(localized: .Contacts0.contactsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .contactsAdd)) { close in
+            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Contacts0.contactsAdd)) { close in
                 addPanel(close)
             }
             .contactsRemoveDialog($removing, model: model)
@@ -72,24 +72,24 @@ struct BotContactsView: View {
                 ProblemRow(problem: contactsProblem(failure.error, message: failure.message)) { model.retry() }
                     .listRowSeparator(.hidden)
             }
-            section(.contactsSectionRequests, model.contacts.filter { $0.state == .incoming }) { contact in
+            section(.Contacts0.contactsSectionRequests, model.contacts.filter { $0.state == .incoming }) { contact in
                 IncomingContactRowView(
                     contact: contact,
                     approve: { model.send(.approveBotContact(bot: model.bot, userId: contact.userId)) },
                     reject: { model.send(.rejectBotContact(bot: model.bot, userId: contact.userId)) }
                 )
             }
-            section(.contactsSectionActive, model.contacts.filter { $0.state == .active }) { contact in
+            section(.Contacts1.contactsSectionActive, model.contacts.filter { $0.state == .active }) { contact in
                 ActiveContactRowView(contact: contact) { removing = contact }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button(role: .destructive) { removing = contact } label: {
-                            Label(String(localized: .contactsRemove), systemImage: "trash")
+                            Label(String(localized: .Contacts0.contactsRemove), systemImage: "trash")
                         }
                     }
             }
             // 撤销请求、清掉被拒或查无此人的行都不用确认：对方那边什么都没成立。
             let sent = model.contacts.filter { $0.state != .incoming && $0.state != .active }
-            section(.contactsSectionSent, sent) { contact in
+            section(.Contacts1.contactsSectionSent, sent) { contact in
                 SentContactRowView(contact: contact) {
                     model.send(.removeBotContact(bot: model.bot, userId: contact.userId))
                 }
@@ -128,20 +128,20 @@ private extension BotContactsView {
     private func addPanel(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             WontonGroup {
-                StepOptionRow(title: String(localized: .contactsAddKindBot), isSelected: !addsPerson) {
+                StepOptionRow(title: String(localized: .Contacts1.contactsAddKindBot), isSelected: !addsPerson) {
                     addsPerson = false
                 } trailing: {
                     EmptyView()
                 }
                 WontonSeparator()
-                StepOptionRow(title: String(localized: .contactsAddKindPerson), isSelected: addsPerson) {
+                StepOptionRow(title: String(localized: .Contacts0.contactsAddKindPerson), isSelected: addsPerson) {
                     addsPerson = true
                 } trailing: {
                     EmptyView()
                 }
             }
-            TextField(String(localized: .contactsAdd), text: $newUserId,
-                      prompt: Text(.contactsAddPlaceholder))
+            TextField(String(localized: .Contacts0.contactsAdd), text: $newUserId,
+                      prompt: Text(.Contacts1.contactsAddPlaceholder))
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -153,7 +153,7 @@ private extension BotContactsView {
             Button {
                 submitAdd(close)
             } label: {
-                Text(.contactsAddSubmit).frame(maxWidth: .infinity)
+                Text(.Contacts0.contactsAddSubmit).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .accessibilityIdentifier("contactsSubmit")
@@ -253,14 +253,14 @@ extension View {
     func contactsRemoveDialog(_ removing: Binding<BotContact?>, model: BotContactsModel) -> some View {
         let contact = removing.wrappedValue
         return wontonDialog(
-            String(localized: .contactsRemoveTitle(contact.map(contactName) ?? "")),
-            message: String(localized: .contactsRemoveMessage),
+            String(localized: .Contacts0.contactsRemoveTitle(contact.map(contactName) ?? "")),
+            message: String(localized: .Contacts1.contactsRemoveMessage),
             isPresented: Binding(
                 get: { removing.wrappedValue != nil }, set: { if !$0 { removing.wrappedValue = nil } }
             ),
             actions: [
-                WontonDialogAction(title: String(localized: .commonCancel)) { removing.wrappedValue = nil },
-                WontonDialogAction(title: String(localized: .commonRemove), kind: .danger) {
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
+                WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
                     if let contact { model.send(.removeBotContact(bot: model.bot, userId: contact.userId)) }
                     removing.wrappedValue = nil
                 }

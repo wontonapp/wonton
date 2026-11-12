@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Plugin detail badge showing how many friends can access this app. Argument: count, an integer; use native plural rules. -->
+    <plurals name="share_count">
+        <item quantity="other">%1$d 人の友だちと共有中</item>
+    </plurals>
+    <!-- Title of the editor for an existing app share. No arguments. -->
+    <string name="share_edit">共有を編集</string>
+    <!-- Empty state when no friends or groups can be selected for sharing. No arguments. -->
+    <string name="share_empty">選択できる友だち・グループがありません</string>
+    <!-- Section title for individual friends in the share recipient picker. No arguments. -->
+    <string name="share_friends">友だち</string>
+    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
+    <string name="share_groups">グループ</string>
+    <!-- Expiration choice that grants access for one hour from now. No arguments. -->
+    <string name="share_hour">1 時間</string>
+    <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->
+    <string name="share_identity_mismatch">確認されたユーザー ID が認証サーバーと一致しません。</string>
+    <!-- Shared app problem for an unavailable source not covered by a more specific category. No arguments. -->
+    <string name="share_problem_other">共有アプリを利用できません</string>
+    <!-- Shared app problem when the app is not running; recipients cannot start it. No arguments. -->
+    <string name="share_problem_plugin">このアプリは停止しています</string>
+    <!-- Shared app problem when the current user has no grant for the app. No arguments. -->
+    <string name="share_problem_required">このアプリは友だちから共有されていません</string>
+    <!-- Shared app problem when the sharing friend's server cannot be reached. No arguments. -->
+    <string name="share_problem_unreachable">友だちのサーバーに接続できません</string>
+    <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
+    <string name="share_risk">友だちは自分のユーザー名でこのアプリにログインします。アプリが友だちのアカウントを作成し、あなたのデータを閲覧できるようにする可能性があります。</string>
+</resources>

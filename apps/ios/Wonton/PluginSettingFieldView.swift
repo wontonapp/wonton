@@ -93,7 +93,7 @@ struct PluginSettingFieldView: View {
     var body: some View {
         DetailSection(title: field.title) {
             if unknownField(field) {
-                SupportingText(String(localized: .pluginSettingsUpdatesApp), danger: false)
+                SupportingText(String(localized: .Plugin0.pluginSettingsUpdatesApp), danger: false)
             } else {
                 control
             }
@@ -107,7 +107,7 @@ struct PluginSettingFieldView: View {
                 SupportingText(problem.message, danger: true)
             }
             if missing(field, drafts: drafts, localErrors: localErrors) {
-                SupportingText(String(localized: .pluginSettingsRequired), danger: true)
+                SupportingText(String(localized: .Plugin3.pluginSettingsRequired), danger: true)
             }
         }
     }
@@ -123,7 +123,7 @@ struct PluginSettingFieldView: View {
             .toggleStyle(WontonToggleStyle())
             .disabled(!editable)
         case .integer, .decimal, .text:
-            TextField(String(localized: .pluginSettingsEmptyPrompt), text: textBinding)
+            TextField(String(localized: .Plugin3.pluginSettingsEmptyPrompt), text: textBinding)
                 .textFieldStyle(.plain)
                 .keyboardType(keyboard)
                 .textInputAutocapitalization(.never)

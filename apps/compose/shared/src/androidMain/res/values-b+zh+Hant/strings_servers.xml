@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Server list button that opens pairing to add another server. No arguments; short button label. -->
+    <string name="servers_add">新增伺服器</string>
+    <!-- Navigation title while pairing an additional server. No arguments; fits a phone navigation bar. -->
+    <string name="servers_add_title">新增伺服器</string>
+    <!-- Default display name for server number 1 in the server list and Settings. No arguments; keep it short enough for a settings row. -->
+    <string name="servers_default_first">家用伺服器</string>
+    <!-- Default server name in the server list and Settings. Argument: the stable server number, not the number of servers. Keep it short enough for a settings row. -->
+    <plurals name="servers_default_numbered">
+        <item quantity="other">伺服器 %1$d</item>
+    </plurals>
+    <!-- Accessibility long-press action label for a server row; opens rename and remove actions. No arguments; short action label. -->
+    <string name="servers_manage">管理伺服器</string>
+    <!-- Text field label in the server rename dialog. The value is the owner's editable server name. No format arguments; short label. -->
+    <string name="servers_name">名稱</string>
+    <!-- Problem dialog title when a notification targets a server that cannot be connected. The upstream reason is shown separately in collapsed details. No arguments; may wrap. -->
+    <string name="servers_notification_unreachable">無法連上這則通知所屬的伺服器</string>
+    <!-- Body of the server removal confirmation. Only this phone's chat history and files are deleted; data on the server is unaffected. No arguments; wraps in a dialog. -->
+    <string name="servers_remove_message">將刪除這支手機上這台伺服器的聊天記錄和檔案，不會影響伺服器上的資料。</string>
+    <!-- Destructive confirmation title for removing a server from this phone. Argument: the server's displayed name, including a localized default or the owner's unmodified name. May wrap. -->
+    <string name="servers_remove_title">移除「%1$s」？</string>
+</resources>
