@@ -339,7 +339,6 @@ fn a_widget_needs_spec_0_14() {
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("x-wonton.matrix_widget"), "{found:?}");
     assert!(problems(&document("0.14", manifest, plain())).is_empty());
-    assert!(problems(&document("0.14", manifest, plain())).is_empty());
 }
 
 #[test]
