@@ -234,6 +234,7 @@ plugin-settings-github-file-what = コミット{ $commit }の{ $repo }から{ $p
 plugin-settings-github-missing = { $what }が見つかりません
 plugin-settings-github-url-what = { $url }を取得する
 plugin-settings-github-api-what = API経由で{ $reference }の{ $repo }から{ $path }を取得する
+plugin-settings-github-tree-what = { $repo } の { $commit } にある { $dir } のファイル一覧を取得中
 plugin-settings-github-rate-limited = { $what }：GitHubにレート制限されました。数分後に再試行してください
 plugin-settings-github-rate-limited-plain = GitHubにレート制限されました。数分後に再試行してください
 plugin-settings-github-api-status = { $what }：GitHubが{ $status }を返しました

@@ -35,6 +35,8 @@ chat-recovery-key-not-saved = Your recovery key couldn't be saved on this device
 # $error is the HTTP client's original error.
 chat-confirmation-stop-lost = No response from your home server. You can try again. ({ $error })
 
+chat-confirmation-fetch-failed = Couldn't load the confirmation: { $message }
+
 # Shown when starting a direct chat with an empty username.
 chat-contacts-empty-username = Enter a username.
 

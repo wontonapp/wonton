@@ -34,9 +34,11 @@ use switch::Replay;
 mod bot_contacts;
 mod browser;
 mod composer;
+mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod plugin_detail;
 mod push_route;
 mod settings;
 mod sharing;
@@ -308,24 +310,6 @@ impl ClientCore {
         Arc::new(OnboardingSubscription::new(
             self.views().onboarding.subscribe(),
         ))
-    }
-
-    /// 商店里一个插件的详情（来源最新的版本）。`source` 是 [`StoreItem::source`]。
-    pub async fn store_plugin(&self, source: String) -> Result<PluginDetail, CoreError> {
-        let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.store_plugin(&source).await })
-            .await
-    }
-
-    /// 一个已安装插件的详情（装着的版本）。
-    pub async fn installed_plugin(&self, id: String) -> Result<PluginDetail, CoreError> {
-        let scope = self.scope();
-        let plugins = scope.plugins.clone();
-        scope
-            .run(async move { plugins.installed_plugin(&id).await })
-            .await
     }
 
     /// 安装前的预览：家里的服务器解析来源、取插件包，给出要主人确认的权限和说明，确认页渲染它。`source` 是

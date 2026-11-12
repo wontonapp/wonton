@@ -84,9 +84,6 @@ fn server_only_fields(manifest: &Manifest) -> Vec<&'static str> {
             "optional_permissions",
             !manifest.optional_permissions.is_empty(),
         ),
-        // 静态网页的展示字段（不带 service、port 的 webui）随托管实现放开。
-        ("webui", manifest.webui.is_some()),
-        ("tabs", manifest.tabs.is_some()),
     ]
     .into_iter()
     .filter_map(|(field, declared)| declared.then_some(field))
@@ -103,8 +100,51 @@ fn reject_fields(runtime: &str, fields: &[&str]) -> Result<(), ManifestError> {
     )))
 }
 
+impl Manifest {
+    /// 静态网页本身就是网页：没写 `webui` 时按 `{path: /}` 算，App 照样有打开的入口，`tabs` 也有所依。
+    pub(super) fn imply_static_webui(&mut self) {
+        if self.runtime == Runtime::StaticWeb && self.webui.is_none() {
+            self.webui = Some(super::manifest::WebUi {
+                service: String::new(),
+                port: 0,
+                path: super::manifest::default_web_path(),
+                display: super::manifest::default_web_display(),
+                sso: super::manifest::Sso::None,
+                oidc: None,
+                proxy: None,
+                accounts: None,
+                health: None,
+                cross_origin_isolated: false,
+            });
+        }
+    }
+}
+
+/// 静态网页的 `webui` 只收展示字段（`path`、`display`、`cross_origin_isolated`）。
+fn static_webui_fields(manifest: &Manifest) -> Vec<&'static str> {
+    let Some(webui) = &manifest.webui else {
+        return Vec::new();
+    };
+    [
+        ("webui.service", !webui.service.is_empty()),
+        ("webui.port", webui.port != 0),
+        ("webui.sso", webui.sso != super::manifest::Sso::None),
+        ("webui.oidc", webui.oidc.is_some()),
+        ("webui.proxy", webui.proxy.is_some()),
+        // 按人分开的数据存储没定，第一步不收（ADR-0080 第 3 节）。
+        ("webui.accounts", webui.accounts.is_some()),
+        // 静态网页没有服务，健康检查没有可探的东西。
+        ("webui.health", webui.health.is_some()),
+    ]
+    .into_iter()
+    .filter_map(|(field, declared)| declared.then_some(field))
+    .collect()
+}
+
 fn validate_static_web(manifest: &Manifest) -> Result<(), ManifestError> {
-    reject_fields("static_web", &server_only_fields(manifest))?;
+    let mut fields = server_only_fields(manifest);
+    fields.extend(static_webui_fields(manifest));
+    reject_fields("static_web", &fields)?;
     let spec = manifest.static_web.clone().unwrap_or_default();
     if !is_package_path(&spec.root) {
         return Err(invalid(format!(
@@ -162,6 +202,14 @@ fn validate_static_web(manifest: &Manifest) -> Result<(), ManifestError> {
 
 fn validate_link(manifest: &Manifest) -> Result<(), ManifestError> {
     let mut fields = server_only_fields(manifest);
+    for (field, declared) in [
+        ("webui", manifest.webui.is_some()),
+        ("tabs", manifest.tabs.is_some()),
+    ] {
+        if declared {
+            fields.push(field);
+        }
+    }
     if !manifest.permissions.is_empty() {
         fields.push("permissions");
     }
@@ -184,6 +232,40 @@ fn validate_link(manifest: &Manifest) -> Result<(), ManifestError> {
         )));
     }
     Ok(())
+}
+
+/// 网关给静态页下发的 `Content-Security-Policy`（ADR-0080 第 4 节）：只能连清单声明的来源，声明的来源对
+/// 每一种取资源的指令都放行。`'unsafe-inline'`、`'unsafe-eval'` 放行：这条管的是出网，不是防 XSS。
+pub fn content_security_policy(spec: &StaticWebSpec) -> String {
+    let with = |base: &str| {
+        std::iter::once(base)
+            .chain(spec.connect.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let frames = if spec.connect.is_empty() {
+        "'none'".to_owned()
+    } else {
+        spec.connect.join(" ")
+    };
+    [
+        "default-src 'self'".to_owned(),
+        format!(
+            "script-src {}",
+            with("'self' 'unsafe-inline' 'unsafe-eval' blob:")
+        ),
+        format!("style-src {}", with("'self' 'unsafe-inline'")),
+        format!("img-src {}", with("'self' data: blob:")),
+        format!("font-src {}", with("'self' data:")),
+        format!("media-src {}", with("'self' data: blob:")),
+        format!("connect-src {}", with("'self'")),
+        "worker-src 'self' blob:".to_owned(),
+        format!("frame-src {frames}"),
+        "object-src 'none'".to_owned(),
+        "base-uri 'self'".to_owned(),
+        "form-action 'self'".to_owned(),
+    ]
+    .join("; ")
 }
 
 /// 包里的相对路径：非空，不以 `/` 开头，没有 `..`、`.` 开头的段和 `_wonton` 段（网关占用）。

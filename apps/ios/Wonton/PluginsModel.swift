@@ -112,6 +112,14 @@ extension InstalledPlugin {
 enum PluginRoute: Hashable {
     case store(source: String)
     case installed(id: String)
+
+    /// 核心认得的同一页。
+    var coreRoute: PluginDetailRoute {
+        switch self {
+        case let .store(source): .store(source: source)
+        case let .installed(id): .installed(id: id)
+        }
+    }
 }
 
 /// 安装或升级的确认页。

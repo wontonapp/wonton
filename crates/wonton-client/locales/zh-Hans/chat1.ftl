@@ -31,6 +31,8 @@ chat-recovery-key-not-saved = 恢复密钥没能存到本机，请现在就抄�
 # $error 是 HTTP 客户端的原始错误。
 chat-confirmation-stop-lost = 没等到家里服务器的回应，可以再点一次（{ $error }）
 
+chat-confirmation-fetch-failed = 取不到确认卡片：{ $message }
+
 # 开始私聊时用户名为空时显示。
 chat-contacts-empty-username = 用户名不能为空。
 

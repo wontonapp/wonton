@@ -31,6 +31,8 @@ chat-recovery-key-not-saved = 復旧キーをこのデバイスに保存でき�
 # $error はHTTPクライアントの元のエラーです。
 chat-confirmation-stop-lost = 自宅サーバーからの応答がありませんでした。もう一度試せます（{ $error }）
 
+chat-confirmation-fetch-failed = 確認カードを読み込めませんでした：{ $message }
+
 # 個人チャットを始めるとき、ユーザー名が空の場合に表示します。
 chat-contacts-empty-username = ユーザー名を入力してください。
 

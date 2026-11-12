@@ -287,6 +287,9 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             mcp,
             firewalled,
+            hosted: self
+                .hosted_upstreams(&package.manifest, &plan.network)
+                .await?,
         })
     }
 
@@ -323,6 +326,8 @@ impl PluginManager {
             family: false,
             settings: ctx.settings.clone().into_iter().collect(),
             settings_changed_ms: None,
+            static_files: Default::default(),
+            hosted: Vec::new(),
         })?;
         Ok(())
     }
@@ -469,8 +474,10 @@ impl PluginManager {
             vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
             vars
         };
+        self.prepare_hosted_roots(manifest, langs)?;
         Ok(InstallContext {
             app_data: self.cfg.apps_dir.join(&slug),
+            hosted_root: self.hosted_dirs().root().to_path_buf(),
             config_store: self.cfg.data_dir.join("core").join("configs"),
             slug,
             instance: self.cfg.instance.clone(),
@@ -795,6 +802,7 @@ impl PluginManager {
             self.store.secrets().remove(id)?;
             report.data_removed = true;
         }
+        self.remove_hosted(id, langs)?;
         self.store.save_grants().clear(id)?;
         self.store.remove(id)?;
         let left = self.own_resources(id).await?;

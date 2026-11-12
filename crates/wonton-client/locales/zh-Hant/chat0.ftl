@@ -34,6 +34,8 @@ chat-confirmation-response-unreadable = 讀不懂家用伺服器的回應（{ $e
 # $status 是原始 HTTP 狀態碼。
 chat-confirmation-core-status = 家用伺服器傳回 HTTP { $status }
 
+chat-confirmations-list-failed = 取不到確認清單：{ $message }
+
 # $reason 是 Matrix ID 剖析器的原始錯誤。
 chat-contacts-invalid-user-id = 使用者 ID 無效：{ $reason }
 

@@ -31,6 +31,8 @@ chat-recovery-key-not-saved = 復原金鑰無法儲存到本機，請現在就�
 # $error 是 HTTP 用戶端的原始錯誤。
 chat-confirmation-stop-lost = 沒等到家用伺服器的回應，可以再點一次（{ $error }）
 
+chat-confirmation-fetch-failed = 取不到確認卡片：{ $message }
+
 # 開始私聊時使用者名稱為空時顯示。
 chat-contacts-empty-username = 使用者名稱不能為空。
 
