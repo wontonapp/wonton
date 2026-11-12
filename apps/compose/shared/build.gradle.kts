@@ -108,6 +108,8 @@ kotlin {
                 implementation(libs.androidx.core)
                 // Apache-2.0。应用语言（AppCompatDelegate.setApplicationLocales），设置里的语言选择器。
                 implementation(libs.androidx.appcompat)
+                // Apache-2.0。看恢复密钥前先过系统验证（指纹、面容或锁屏密码）。
+                implementation(libs.androidx.biometric)
                 // Apache-2.0。WebView 的代理设置（ProxyController），插件网页经核心的本地代理打开。
                 implementation(libs.androidx.webkit)
                 implementation(libs.androidx.browser)

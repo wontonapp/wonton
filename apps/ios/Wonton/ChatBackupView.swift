@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
@@ -192,13 +193,42 @@ extension BackupReminder {
 private struct RecoveryKeySection: View {
     let recoveryKey: String
     let confirm: () -> Void
+    // 验证只对这一次显示有效：收起页面再进会重建这个视图，要重新验证。
+    @State private var revealed: Bool
     @Environment(\.wontonColors) private var colors
+
+    /// 没设锁屏密码的设备不拦（canEvaluatePolicy 报 passcodeNotSet），密钥直接显示。
+    init(recoveryKey: String, confirm: @escaping () -> Void) {
+        self.recoveryKey = recoveryKey
+        self.confirm = confirm
+        let context = LAContext()
+        var error: NSError?
+        _revealed = State(
+            initialValue: !context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
+                && (error as? LAError)?.code == .passcodeNotSet
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             Text(.ChatBackup0.chatBackupSaveKeyTitle)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
+            if revealed {
+                revealedKey
+            } else {
+                Button {
+                    authenticate()
+                } label: {
+                    Text(.ChatBackup1.chatBackupRevealKey).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+    }
+
+    private var revealedKey: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             // 不能长按选中：系统的拷贝不带下面的保护，复制只走“复制”按钮。
             Text(recoveryKey)
                 .font(.body.monospaced())
@@ -224,6 +254,25 @@ private struct RecoveryKeySection: View {
                     Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+    }
+
+    @MainActor
+    private func authenticate() {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            // 生物识别坏了这类失败：留在本页，可再点一次；系统提示里会说明原因，这里不另弹提示。
+            return
+        }
+        Task {
+            // 成功才显示；取消和失败都不显示，也不另弹提示。
+            if (try? await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: String(localized: .ChatBackup1.chatBackupVerifyReason)
+            )) == true {
+                revealed = true
             }
         }
     }

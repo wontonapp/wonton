@@ -25,6 +25,8 @@
     <string name="chat_backup_reset_confirm">重置</string>
     <!-- Title of the reset confirmation dialog. -->
     <string name="chat_backup_reset_title">重置聊天記錄備份？</string>
+    <!-- Button that asks the system to verify the owner before showing the recovery key. -->
+    <string name="chat_backup_reveal_key">查看復原金鑰</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">換手機時會用到。只會顯示這一次，點一下「已儲存」後，這台裝置就不會再保留。</string>
     <string name="chat_backup_saved_confirm_message">確認後這台裝置不再顯示這把密鑰。先複製或抄下來，再點確認。</string>

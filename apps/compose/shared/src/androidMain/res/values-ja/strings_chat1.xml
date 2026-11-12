@@ -25,6 +25,8 @@
     <string name="chat_backup_reset_confirm">リセット</string>
     <!-- Title of the reset confirmation dialog. -->
     <string name="chat_backup_reset_title">チャットのバックアップをリセットしますか？</string>
+    <!-- Button that asks the system to verify the owner before showing the recovery key. -->
+    <string name="chat_backup_reveal_key">復旧キーを表示</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">機種変更時に必要です。表示されるのは一度だけです。「保存しました」をタップすると、このデバイスには残りません。</string>
     <string name="chat_backup_saved_confirm_message">確認すると、このデバイスにはもう表示されません。先にコピーかメモをしてください。</string>

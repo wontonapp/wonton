@@ -33,6 +33,8 @@
     <string name="chat_backup_reset_confirm">Reset</string>
     <!-- Title of the reset confirmation dialog. -->
     <string name="chat_backup_reset_title">Reset chat backup?</string>
+    <!-- Button that asks the system to verify the owner before showing the recovery key. -->
+    <string name="chat_backup_reveal_key">View recovery key</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">You\'ll need it when you switch phones. It\'s only shown once; after \"Saved\" this device keeps no copy.</string>
     <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
