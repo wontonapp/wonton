@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.StepNav
 import app.wonton.ui.R
+import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.WontonIcon
 @Composable
 fun StepCardFrame(
