@@ -28,13 +28,23 @@ pub(crate) fn contacts(
     plugins: &[InstalledPlugin],
     rooms: &[RoomRow],
 ) -> Vec<ChatContact> {
+    // 和对方的私聊里对方声明了支持旁聊，发起时就在那个房间里开旁聊（ADR-0093 §4）；否则壳走 StartDirectChat。
+    let side_chat_room = |user_id: &str| {
+        rooms
+            .iter()
+            .find(|room| {
+                room.side_chats
+                    && room.membership == RoomMembership::Joined
+                    && room.direct_user_id.as_deref() == Some(user_id)
+            })
+            .map(|room| room.room_id.clone())
+    };
     let bots = plugins.iter().filter_map(|plugin| {
         let user_id = plugin.bot_user_id.clone()?;
-        // 旁聊房间按支持声明算（ADR-0093 §4），还没实现：先都给空，壳走 StartDirectChat。
         Some(ChatContact {
+            side_chat_room_id: side_chat_room(&user_id),
             user_id,
             name: plugin.title.clone(),
-            side_chat_room_id: None,
         })
     });
     let peers = rooms
@@ -43,9 +53,9 @@ pub(crate) fn contacts(
         .filter_map(|room| {
             let user_id = room.direct_user_id.clone()?;
             Some(ChatContact {
+                side_chat_room_id: room.side_chats.then(|| room.room_id.clone()),
                 user_id,
                 name: room.name.clone(),
-                side_chat_room_id: None,
             })
         });
     let query = query.trim().to_lowercase();

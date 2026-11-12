@@ -21,6 +21,7 @@ fn message_from(sender: &str, event_id: &str, undecryptable: bool) -> Message {
         custom: Default::default(),
         mentions: Vec::new(),
         thread_root: None,
+        thread_replies: None,
         edited: false,
         read_by: Vec::new(),
         reply: None,

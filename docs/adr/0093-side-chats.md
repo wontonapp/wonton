@@ -85,10 +85,11 @@
   不留下空旁聊。
 - **未读**：旁聊里读到哪用 Matrix 的话题已读回执（`ReceiptThread::Thread(root)`），主时间线改发 `ReceiptThread::Main`。
   每个旁聊的未读数由核心按话题回执算；聊天列表里这个房间的未读数是主对话加所有旁聊。实测约束（Tuwunel 1.9.4、matrix-sdk 0.19.1）：
-  SDK 的 `Receipts` 没有 thread 字段，话题回执要核心自己 POST；Tuwunel 只认**请求体**里的 `thread_id`（`{"thread_id":"$root"}`），
-  `?thread_id=` 查询参数被忽略（与 Synapse 和规范写法相反），发错就存成不挂话题的回执。服务端校验 `thread_id` 必须是 `"main"`
-  或话题根、事件必须属于该话题。`/sync` 的话题未读要 filter `{"room":{"timeline":{"unread_thread_notifications":true}}}` 显式打开
-  （键在 `room.timeline` 下，不在顶层），响应按话题根给计数，回执后清零。
+  Tuwunel 只认**请求体**里的 `thread_id`（`{"thread_id":"$root"}`），`?thread_id=` 查询参数被忽略（与 Synapse 和规范写法相反），
+  发错就存成不挂话题的回执；服务端校验 `thread_id` 必须是 `"main"` 或话题根、事件必须属于该话题。SDK 的单条回执
+  （`Timeline::mark_as_read`，按时间线的焦点选 `Main` 或 `Thread(root)`）用的 ruma 请求把 `thread_id` 放在请求体里，不用自己 POST。
+  客户端走 Sliding Sync，拿不到 `/sync` 的话题未读计数，话题未读用 SDK 的话题支持（`ThreadingSupport::Enabled`）在本机按话题回执算：
+  打开后房间自己的未读不再算话题里的消息，两者相加才是这一行的未读。本机没缓存到的旧话题不知道有没有未读。
 - **卡片的状态**由核心合成：
 
   | 状态 | 什么时候 |
@@ -101,7 +102,8 @@
 
 - **新建聊天**：选的人已有私聊、且私聊里有支持声明时，开新旁聊；没有私聊时照旧建私聊。已有私聊但没有支持声明时打开主对话，壳提示一句
   “这个 AI 不支持旁聊”。不为“新的对话”再建一个私聊房间。
-- **聊天列表**一个 AI 一行。最后一条预览是主时间线的最后一条；那是根或结果行时，预览给旁聊的标题和状态。
+- **聊天列表**一个 AI 一行。最后一条预览是房间的最后一条；那是根、结果行或旁聊里的消息时，预览给旁聊的标题和状态（旁聊里的消息
+  按它的根）。SDK 给的“最后一条”不分主对话和话题，旁聊里刚有动静时预览说的是那个旁聊。
 - 确认卡片的来源（`ConfirmationOrigin.thread_id`）和推送都带话题根：点了都进那个旁聊。
 
 ### 5. 协议（`wonton-protocol`）

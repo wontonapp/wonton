@@ -7,7 +7,7 @@ use wonton_matrix::OwnedEventId;
 use wonton_protocol::{ChatAccount, CoreError, ImageUpload};
 
 use super::draft::DraftWrite;
-use super::{ChatLink, invalid, onboarding};
+use super::{ChatLink, TimelineKey, invalid, onboarding};
 use crate::l10n::{CATALOG, language};
 
 /// 壳给的被回复消息的事件 ID。
@@ -29,7 +29,7 @@ pub(super) fn reply_target(reply_to: Option<&str>) -> Result<Option<OwnedEventId
 impl ChatLink {
     pub(super) fn send_text(
         self: &Arc<Self>,
-        room_id: &str,
+        key: &TimelineKey,
         body: &str,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
@@ -40,14 +40,15 @@ impl ChatLink {
         let reply_to = reply_target(reply_to)?;
         let chat = self.clone();
         let sent = self.sent.clone();
-        let (_, room_id) = self.send_target(room_id)?;
-        let sent_room = room_id.to_string();
+        self.send_target(key.room_id.as_str())?;
+        let key = key.clone();
+        let sent_room = key.room_id.to_string();
         self.spawn_op_with_success(
             "chat-op-send-text-failed",
             async move {
-                let room = chat.room(&room_id).await?;
+                let room = chat.room(&key).await?;
                 // 预览的图片传不上去时不挡消息：正文照发，原因报出来（取不到的类别发送框里已经显示过）。
-                let extra = match chat.preview_extra(&room, &room_id, &body).await {
+                let extra = match chat.preview_extra(&room, &key.room_id, &body).await {
                     Ok(extra) => extra,
                     Err(error) => {
                         chat.report_op_failure("chat-op-send-preview-failed", &error);
@@ -65,9 +66,9 @@ impl ChatLink {
                     },
                 }
                 // 发出去了，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
-                chat.enqueue_draft(DraftWrite::Forget(room_id.clone(), body));
                 // 点掉的预览记录跟着作废：下次打同样的链接重新出预览。
-                chat.previews.forget(&room_id);
+                chat.previews.forget(&key.room_id);
+                chat.enqueue_draft(DraftWrite::Forget(key, body));
                 Ok(())
             },
             move || onboarding::record_sent(&sent, sent_room),
@@ -77,7 +78,7 @@ impl ChatLink {
 
     pub(super) fn send_image(
         self: &Arc<Self>,
-        room_id: &str,
+        key: &TimelineKey,
         image: ImageUpload,
         reply_to: Option<&str>,
     ) -> Result<(), CoreError> {
@@ -92,8 +93,9 @@ impl ChatLink {
         let reply_to = reply_target(reply_to)?;
         let chat = self.clone();
         let sent = self.sent.clone();
-        let (_, room_id) = self.send_target(room_id)?;
-        let sent_room = room_id.to_string();
+        self.send_target(key.room_id.as_str())?;
+        let key = key.clone();
+        let sent_room = key.room_id.to_string();
         let upload = wonton_matrix::ImageUpload {
             filename: image.filename,
             mime_type: image.mime_type,
@@ -112,12 +114,12 @@ impl ChatLink {
         self.spawn_op_with_success(
             "chat-op-send-image-failed",
             async move {
-                let room = chat.room(&room_id).await?;
+                let room = chat.room(&key).await?;
                 match reply_to {
                     Some(event_id) => {
                         room.send_image_reply(upload, &event_id).await?;
                         // 图片不带输入框里的字，草稿的正文留着，回复对象用掉了。
-                        chat.enqueue_draft(DraftWrite::ForgetReply(room_id, event_id));
+                        chat.enqueue_draft(DraftWrite::ForgetReply(key, event_id));
                     }
                     None => room.send_image(upload).await?,
                 }
@@ -171,7 +173,10 @@ impl ChatLink {
     /// 点了发送：字已经交给附件区，草稿（连同回复对象）留着没用了；发送途中又打的字不算。
     pub(crate) fn forget_sent_draft(&self, room_id: &str, body: &str) {
         if let Ok((_, room_id)) = self.target(room_id) {
-            self.enqueue_draft(DraftWrite::Forget(room_id, body.trim().to_owned()));
+            self.enqueue_draft(DraftWrite::Forget(
+                TimelineKey::main(room_id),
+                body.trim().to_owned(),
+            ));
         }
     }
 

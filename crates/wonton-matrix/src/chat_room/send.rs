@@ -12,7 +12,7 @@ use matrix_sdk::ruma::{
 
 use matrix_sdk_ui::timeline::{EventSendState, MsgLikeKind};
 
-use super::ChatRoom;
+use super::{ChatRoom, ensure_recipient_devices};
 use crate::{Error, Result};
 
 impl ChatRoom {
@@ -159,5 +159,38 @@ impl ChatRoom {
             self.room.send_queue().set_enabled(true);
         }
         Ok(resent)
+    }
+
+    /// 开旁聊的第一步（ADR-0093 §4）：发根消息（带 `app.wonton.side_chat` 的 `m.notice`，正文就是标题），
+    /// 不经发送队列、等服务器回事件 ID。发不出去时按原因返回错误，房间里什么也不留下。
+    pub async fn send_side_chat_root(&self, title: &str) -> Result<OwnedEventId> {
+        ensure_recipient_devices(&self.room).await?;
+        let mut content = serde_json::json!({ "msgtype": "m.notice", "body": title });
+        content[crate::SIDE_CHAT_FIELD] = serde_json::json!({ "v": 1, "title": title });
+        // 主人在等这一步：重试几次就报错，不像发送队列那样一直重试（5xx 时 SDK 默认会重试很久）。
+        let sent = self
+            .room
+            .send_raw("m.room.message", content)
+            .with_request_config(matrix_sdk::config::RequestConfig::short_retry())
+            .await?;
+        Ok(sent.response.event_id)
+    }
+
+    /// 把一条文字放进话题 `root` 的发送队列：本地回显照常出现在这个话题的时间线里，发送失败的照常重发或取消。
+    /// 话题里还没有别的消息，回退的 `m.in_reply_to` 指向根。
+    pub async fn queue_text_in_thread(&self, root: &EventId, body: &str) -> Result<()> {
+        let thread = Thread::plain(root.to_owned(), root.to_owned());
+        let content = RoomMessageEventContent::text_plain(body).make_for_thread(
+            // `AddMentions::No` 下不读 sender，填自己只为满足签名。
+            ReplyMetadata::new(root, self.room.own_user_id(), Some(&thread)),
+            ReplyWithinThread::No,
+            AddMentions::No,
+        );
+        self.room
+            .send_queue()
+            .send(content.into())
+            .await
+            .map_err(|error| crate::Error::Upstream(format!("放不进发送队列：{error}")))?;
+        Ok(())
     }
 }

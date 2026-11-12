@@ -23,6 +23,17 @@ pub(super) fn is_composer_action(action: &TimelineAction) -> bool {
     )
 }
 
+/// 附件区按房间记，只管主对话：旁聊里的附件区另行实现，这之前旁聊里发文字和图片用
+/// [`TimelineAction::SendText`]、[`TimelineAction::SendImage`]。
+fn composer_room(target: &TimelineTarget) -> Result<String, CoreError> {
+    if target.thread_root.is_some() {
+        return Err(CoreError::NotReady {
+            reason: l10n!(CATALOG, language(), "composer-side-chat-unsupported"),
+        });
+    }
+    Ok(target.room_id.clone())
+}
+
 impl ClientCore {
     pub(super) fn composer_action(
         &self,
@@ -35,23 +46,23 @@ impl ClientCore {
                 target,
                 body,
                 reply_to,
-            } => composer.send(&self.chat_timeline_target(&target)?, &body, reply_to),
+            } => composer.send(&composer_room(&target)?, &body, reply_to),
             TimelineAction::RemoveAttachment {
                 target,
                 attachment_id,
-            } => composer.remove(&self.chat_timeline_target(&target)?, &attachment_id),
+            } => composer.remove(&composer_room(&target)?, &attachment_id),
             TimelineAction::RetryAttachment {
                 target,
                 attachment_id,
-            } => composer.retry(&self.chat_timeline_target(&target)?, &attachment_id),
+            } => composer.retry(&composer_room(&target)?, &attachment_id),
             TimelineAction::RetryOutgoing {
                 target,
                 outgoing_id,
-            } => composer.retry_outgoing(&self.chat_timeline_target(&target)?, &outgoing_id),
+            } => composer.retry_outgoing(&composer_room(&target)?, &outgoing_id),
             TimelineAction::CancelOutgoing {
                 target,
                 outgoing_id,
-            } => composer.cancel_outgoing(&self.chat_timeline_target(&target)?, &outgoing_id),
+            } => composer.cancel_outgoing(&composer_room(&target)?, &outgoing_id),
             // dispatch 只把 [`is_composer_action`] 认的交过来。
             _ => Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "chat-invalid-action"),
@@ -68,7 +79,7 @@ impl ClientCore {
         &self,
         target: TimelineTarget,
     ) -> Result<Arc<ComposerSubscription>, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
+        let room_id = composer_room(&target)?;
         let receiver = self.scope().composer.subscribe(&room_id);
         Ok(Arc::new(ComposerSubscription::new(receiver)))
     }
@@ -82,7 +93,7 @@ impl ClientCore {
         target: TimelineTarget,
         image: ImageUpload,
     ) -> Result<String, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
+        let room_id = composer_room(&target)?;
         self.scope().composer.add_image(&room_id, image)
     }
 
@@ -95,7 +106,7 @@ impl ClientCore {
         name: String,
         mime_type: Option<String>,
     ) -> Result<String, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
+        let room_id = composer_room(&target)?;
         self.scope()
             .composer
             .add_file(&room_id, source, name, mime_type)
@@ -107,7 +118,7 @@ impl ClientCore {
         target: TimelineTarget,
         attachment_id: String,
     ) -> Result<Vec<u8>, CoreError> {
-        let room_id = self.chat_timeline_target(&target)?;
+        let room_id = composer_room(&target)?;
         let scope = self.scope();
         let composer = scope.composer.clone();
         scope

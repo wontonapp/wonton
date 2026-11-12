@@ -18,6 +18,10 @@ pub struct Timeline {
     subscription: Arc<TimelineSubscription>,
     core: Arc<ClientCore>,
     room_id: String,
+    /// 旁聊的话题根；主对话是 `None`。
+    thread_root: Option<String>,
+    /// 核心给的旁聊头部（只在旁聊的时间线里有）。
+    pub side_chat: Option<wonton_protocol::SideChatCard>,
     back_pagination: BackPagination,
     /// 最近一批的核心给的位置，壳按它画和滚。
     viewport: TimelineViewport,
@@ -44,10 +48,15 @@ const PAGE_EVERY: Duration = Duration::from_millis(250);
 
 impl Timeline {
     pub async fn open(phone: &Phone, room_id: &str) -> Self {
+        Self::open_target(phone, room_id, None).await
+    }
+
+    /// 打开主对话（`thread_root` 为 `None`）或一个旁聊的时间线。
+    pub async fn open_target(phone: &Phone, room_id: &str, thread_root: Option<&str>) -> Self {
         let subscription = phone
             .subscribe_timeline(TimelineTarget {
                 room_id: room_id.to_owned(),
-                thread_root: None,
+                thread_root: thread_root.map(str::to_owned),
             })
             .await
             .expect("订阅时间线");
@@ -56,6 +65,8 @@ impl Timeline {
             subscription,
             core: phone.core.clone(),
             room_id: room_id.to_owned(),
+            thread_root: thread_root.map(str::to_owned),
+            side_chat: None,
             back_pagination: BackPagination::Idle,
             viewport: TimelineViewport::Bottom,
             scroll: TimelineScroll::Bottom,
@@ -75,6 +86,7 @@ impl Timeline {
     fn apply_update(&mut self, update: wonton_client::TimelineUpdate) {
         self.viewport = update.viewport;
         self.notice = update.key_notice;
+        self.side_chat = update.side_chat;
         self.confirmations = update.confirmations;
         let diffs = update.diffs;
         let back_pagination = update.back_pagination;
@@ -108,6 +120,13 @@ impl Timeline {
         self.at_start = back_pagination == BackPagination::ReachedStart;
     }
 
+    fn target(&self) -> TimelineTarget {
+        TimelineTarget {
+            room_id: self.room_id.clone(),
+            thread_root: self.thread_root.clone(),
+        }
+    }
+
     /// 最近一批核心给的位置。
     pub fn viewport(&self) -> TimelineViewport {
         self.viewport
@@ -127,10 +146,7 @@ impl Timeline {
         self.core
             .dispatch(Action::Timeline {
                 action: TimelineAction::SetTimelineScroll {
-                    target: TimelineTarget {
-                        room_id: self.room_id.clone(),
-                        thread_root: None,
-                    },
+                    target: self.target(),
                     scroll,
                 },
             })
@@ -193,10 +209,7 @@ impl Timeline {
             self.core
                 .dispatch(Action::Timeline {
                     action: TimelineAction::PaginateBackwards {
-                        target: TimelineTarget {
-                            room_id: self.room_id.clone(),
-                            thread_root: None,
-                        },
+                        target: self.target(),
                     },
                 })
                 .expect("往回翻");

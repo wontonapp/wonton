@@ -10,9 +10,6 @@ core-error-forbidden = 家用伺服器不允許這個操作：{ $reason }
 core-error-upstream = 家用伺服器發生錯誤：{ $reason }
 core-error-server-too-old = 家裡的伺服器太舊，還做不了這件事。升級伺服器後再試。
 
-# 殼把不認得的操作交給聊天時顯示。
-side-chat-not-ready = 這個版本的用戶端核心還不支援旁聊。
-
 ## 外掛程式模組的技術詳細資訊，預設收合在錯誤、應用程式任務和代理伺服器、下載鏡像站設定頁的「詳細資訊」裡。
 ## 不限長度。參數是診斷資料，不是翻譯鍵。
 # 外掛程式管理介面（crates/wonton-client/src/plugins/api.rs）。

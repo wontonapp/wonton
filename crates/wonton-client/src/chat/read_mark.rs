@@ -67,6 +67,7 @@ mod tests {
                 mentions: Vec::new(),
                 agent_run: None,
                 thread_root: None,
+                thread_replies: None,
                 edited: false,
                 read_by: read_by.iter().map(|&name| name.to_owned()).collect(),
                 reply: None,

@@ -40,6 +40,8 @@ pub struct Message {
     /// 所属话题的根消息事件 ID（`m.relates_to` 里 `rel_type: m.thread` 的 `event_id`）；不是话题回复、
     /// 以及话题的根消息自己是 `None`。被编辑过时按原消息：编辑不改所属话题。
     pub thread_root: Option<OwnedEventId>,
+    /// 这条是话题根时话题里的回复数（SDK 的话题汇总，根不算）；不是话题根时为 `None`。
+    pub thread_replies: Option<u64>,
     /// 是否被编辑过。
     pub edited: bool,
     /// 读到这条为止的其他人（显示名）。
@@ -287,6 +289,10 @@ pub(crate) fn message(event: &EventTimelineItem, names: &MemberNames) -> Option<
         agent_run: raw.as_ref().and_then(agent_run::parse),
         group,
         thread_root: msglike.thread_root.clone(),
+        thread_replies: msglike
+            .thread_summary
+            .as_ref()
+            .map(|summary| u64::from(summary.num_replies)),
         edited,
         read_by,
         reply: msglike

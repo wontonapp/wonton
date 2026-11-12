@@ -13,3 +13,5 @@ composer-attachment-failed = The attachment "{ $name }" didn't upload.
 composer-transfer-gone = The upload record for this file is missing. Please retry.
 
 composer-upload-record-unreadable = Couldn't read the photo's upload record: { $reason }
+
+composer-side-chat-unsupported = Attachments can't be added in side chats.

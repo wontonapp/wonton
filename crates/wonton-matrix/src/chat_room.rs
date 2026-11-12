@@ -23,7 +23,7 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::{
     eyeball_im::{Vector, VectorDiff},
-    timeline::{EventTimelineItem, RoomExt, Timeline, TimelineItem},
+    timeline::{EventTimelineItem, Timeline, TimelineItem},
 };
 use tokio::{
     sync::{Notify, broadcast::error::RecvError, watch},
@@ -109,6 +109,8 @@ pub struct ChatRoom {
     refresh: JoinHandle<()>,
     /// 在后台向服务器取全部成员，取到为止，补上时间线里发送者的资料；房间关掉时停止。
     profiles: JoinHandle<()>,
+    /// 这条时间线看的是哪一段：整个房间平铺、主对话（话题收起）或一个话题（ADR-0093）。
+    pub(crate) focus: Focus,
 }
 
 impl Drop for ChatRoom {
@@ -129,12 +131,12 @@ impl ChatRoom {
     /// 打开前只经房间列表同步过最新一条时，更早的消息隔着缺口，服务器不一定随房间订阅补发，要向前翻页
     /// （[`Self::paginate_backwards`]，界面滚到顶时自动翻）。
     pub(crate) async fn open(room: Room) -> Result<Self> {
-        let timeline = Arc::new(
-            room.timeline_builder()
-                .event_filter(timeline::shown)
-                .build()
-                .await?,
-        );
+        Self::open_with(room, Focus::Flat).await
+    }
+
+    /// 同 [`Self::open`]，时间线看 `focus` 那一段。
+    pub(crate) async fn open_with(room: Room, focus: Focus) -> Result<Self> {
+        let timeline = Arc::new(build_timeline(&room, &focus).await?);
         let (names_tx, names) = watch::channel(Arc::new(local_member_names(&room).await));
         let fetched = Arc::new(Notify::new());
         let refresh = tokio::spawn(refresh_member_names(
@@ -154,6 +156,7 @@ impl ChatRoom {
             names,
             refresh,
             profiles,
+            focus,
         })
     }
 
@@ -168,6 +171,10 @@ impl ChatRoom {
     pub async fn missed_cached_event(&self, seen: Option<&EventId>) -> Option<MissedEvent> {
         /// 往回看几条就放弃（流式回复一次能连出好几条编辑）。
         const LOOK_BACK: usize = 5;
+        // 话题时间线的事件在话题缓存里，房间缓存对不上它；话题时间线不比。
+        if matches!(self.focus, Focus::Thread(_)) {
+            return None;
+        }
         let Ok((cache, _handles)) = self
             .room
             .client()
@@ -204,6 +211,10 @@ impl ChatRoom {
             if !own_item(&raw) && !undecrypted {
                 continue;
             }
+            // 主对话收起了话题回复，它们本来就不在时间线里。
+            if self.focus == Focus::Main && focus::in_thread(event.raw().json().get()) {
+                continue;
+            }
             if timeline.item_by_event_id(id).await.is_some() {
                 continue;
             }
@@ -226,13 +237,7 @@ impl ChatRoom {
     pub async fn rebuild_timeline(&self) -> Result<()> {
         // 整段持写锁：换的工夫别人要时间线（翻页、比对缓存）就等新的，不拿到马上要被换掉的那一条。
         let mut slot = self.timeline.write().await;
-        let timeline = Arc::new(
-            self.room
-                .timeline_builder()
-                .event_filter(timeline::shown)
-                .build()
-                .await?,
-        );
+        let timeline = Arc::new(build_timeline(&self.room, &self.focus).await?);
         tokio::spawn(fetch_members_until_done(
             self.room.clone(),
             timeline.clone(),
@@ -463,7 +468,8 @@ impl ChatRoom {
         impl Stream<Item = Vec<VectorDiff<TimelineEntry>>> + Unpin + use<>,
     ) {
         let (items, diffs) = self.timeline().await.subscribe().await;
-        named_entries(items, diffs, self.names.clone())
+        let (entries, diffs) = named_entries(items, diffs, self.names.clone());
+        visible::project(self.focus.clone(), entries, diffs)
     }
 
     /// 当前的消息，从旧到新；成员变化、日期分隔线等不在其中。
@@ -499,8 +505,9 @@ impl ChatRoom {
         let before = timeline.subscribe().await.0.len();
         let hit_start = timeline.paginate_backwards(count).await?;
         let current = self.timeline().await;
-        if hit_start {
-            return Ok(true);
+        // 话题时间线自己向话题缓存翻页，房间缓存的兜底帮不上。
+        if hit_start || matches!(self.focus, Focus::Thread(_)) {
+            return Ok(hit_start);
         }
         let swapped = !Arc::ptr_eq(&timeline, &current);
         if !swapped && current.subscribe().await.0.len() != before {
@@ -532,12 +539,21 @@ impl ChatRoom {
 
     /// 把房间标为读到最新一条：发出已读回执，房间的未读数随之清零；已读位置（`m.fully_read`）也移到最新一条，
     /// 房间开着时时间线里的“已读位置”不会停在中间。已经读到最新时什么都不做，返回 `false`。
+    ///
+    /// 回执挂在哪个话题上由时间线定（ADR-0093 §4）：主对话是 `main`，话题时间线是话题根，平铺的不挂。话题时间线不动
+    /// `m.fully_read`：它不分话题。
     pub async fn mark_as_read(&self) -> Result<bool> {
         let receipt = self
             .timeline()
             .await
             .mark_as_read(ReceiptType::Read)
             .await?;
+        if let Focus::Thread(root) = &self.focus {
+            if receipt {
+                crate::side_chat::until_thread_read(&self.room, root).await;
+            }
+            return Ok(receipt);
+        }
         let marker = self
             .timeline()
             .await
@@ -740,6 +756,7 @@ async fn local_member_names(room: &Room) -> MemberNames {
 mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
+mod focus;
 mod image;
 pub(crate) use image::check_upload_size;
 mod pagination_status;
@@ -747,6 +764,9 @@ mod raw;
 mod send;
 #[cfg(test)]
 mod tests;
+mod visible;
+
+pub(crate) use focus::{Focus, build_timeline};
 
 /// 这条事件会不会在时间线里自己成为一项：编辑（任何消息类型的 `m.replace`）、表情回应、撤回都不会。
 fn own_item(event: &AnySyncTimelineEvent) -> bool {

@@ -158,6 +158,7 @@ mod tests {
             mentions: mentions.iter().map(|user| user.parse().unwrap()).collect(),
             agent_run: None,
             thread_root: None,
+            thread_replies: None,
             edited: false,
             read_by: Vec::new(),
             reply: None,

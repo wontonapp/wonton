@@ -13,3 +13,5 @@ composer-attachment-failed = 添付「{ $name }」をアップロードできま
 composer-transfer-gone = このファイルのアップロード記録が見つかりません。再試行してください。
 
 composer-upload-record-unreadable = 写真のアップロード記録を読み取れません：{ $reason }
+
+composer-side-chat-unsupported = サイドチャットでは添付ファイルを追加できません。

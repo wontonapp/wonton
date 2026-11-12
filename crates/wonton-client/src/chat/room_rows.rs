@@ -22,6 +22,8 @@ impl ChatLink {
         let primary_bot = self.primary_bot.clone();
         let layouts = self.layouts.clone();
         let bots = self.bots.clone();
+        let support = self.side_chat_support.clone();
+        let runtime = self.runtime.clone();
         let chat = Arc::downgrade(self);
         self.runtime.spawn(async move {
             let rooms = match session.rooms().await {
@@ -34,6 +36,7 @@ impl ChatLink {
             let core = core_account(session.user_id());
             let mut rooms = std::pin::pin!(rooms);
             let mut layouts = layouts.subscribe();
+            let mut declarations = support.subscribe();
             // 列表流只给房间的变化，留着最近一批按新的选择重排。
             let mut latest = Vec::new();
             let mut ready = false;
@@ -45,6 +48,7 @@ impl ChatLink {
                         ready = true;
                     }
                     Ok(()) = layouts.changed() => {}
+                    Ok(()) = declarations.changed() => {}
                 }
                 if !ready {
                     continue;
@@ -56,6 +60,16 @@ impl ChatLink {
                     .iter()
                     .map(|bot| bot.user_id.clone())
                     .collect();
+                // 和 Bot 的私聊取一次旁聊的支持声明（ADR-0093 §1）；进房间时再取。
+                for room in &latest {
+                    if room
+                        .direct_user_id
+                        .as_ref()
+                        .is_some_and(|user| bot_users.contains(user.as_str()))
+                    {
+                        support.ensure(&runtime, &session, &room.room_id);
+                    }
+                }
                 let mut rows: Vec<_> = latest
                     .iter()
                     .cloned()
@@ -68,7 +82,8 @@ impl ChatLink {
                             ),
                             None => compose(&settings, None),
                         };
-                        room_row(room, &core, layout, &bot_users)
+                        let side_chats = support.supports(&room.room_id, &bot_users);
+                        room_row(room, &core, layout, &bot_users, side_chats)
                     })
                     .collect();
                 sort_rooms(&mut rows);

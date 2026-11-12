@@ -22,7 +22,8 @@ impl ChatRoom {
     ) -> impl Stream<Item = BackPaginationStatus> + Unpin + use<> {
         let Some((current, updates)) = self.timeline().await.live_back_pagination_status().await
         else {
-            // 只有聚焦到某个事件的时间线才没有这个状态；本封装打开的都是实时时间线。
+            // 不是实时时间线（旁聊的话题时间线）没有这个状态：给一次 Idle，之后不再变。流不能结束，
+            // 调用方把流结束当成时间线关了。
             return Statuses {
                 first: Some(BackPaginationStatus::Idle),
                 updates: None,
@@ -62,7 +63,7 @@ impl Stream for Statuses {
         }
         match &mut self.updates {
             Some(updates) => updates.poll_recv(cx),
-            None => Poll::Ready(None),
+            None => Poll::Pending,
         }
     }
 }

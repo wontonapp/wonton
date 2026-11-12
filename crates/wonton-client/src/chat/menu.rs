@@ -15,7 +15,7 @@ use wonton_protocol::{
     TimelineViewport,
 };
 
-use super::{ChatLink, invalid, lock, rich};
+use super::{ChatLink, TimelineKey, invalid, lock, rich};
 use crate::l10n::{CATALOG, language};
 
 /// 一条消息的菜单项，按菜单顺序。`event_id` 为空是还没发出去的本地回显；`quote` 是回复它时输入框上方画的引用。
@@ -176,6 +176,8 @@ pub(super) struct Outbox {
     chat: watch::Receiver<ChatViewModel>,
     room_id: OwnedRoomId,
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
+    /// 旁聊订阅的头部（ADR-0093 §5）：每批都带上现在的；主对话是空的。
+    side_chat: Mutex<Option<wonton_protocol::SideChatCard>>,
 }
 
 impl Outbox {
@@ -194,7 +196,18 @@ impl Outbox {
             chat,
             room_id,
             confirmations,
+            side_chat: Mutex::new(None),
         }
+    }
+
+    /// 换上新的旁聊头部，返回变了没有。
+    pub(super) fn set_side_chat(&self, card: Option<wonton_protocol::SideChatCard>) -> bool {
+        let mut current = lock(&self.side_chat);
+        if *current == card {
+            return false;
+        }
+        *current = card;
+        true
     }
 
     /// 这一批之后该显示的加密入口。`entries` 是壳那边的整条时间线：只要还有解不开的消息，就看本设备缺的是哪条路。
@@ -250,7 +263,7 @@ impl Outbox {
                 entry_blocked,
                 key_notice,
                 confirmations,
-                side_chat: None,
+                side_chat: lock(&self.side_chat).clone(),
             })
             .map_err(|_| ())
     }
@@ -265,15 +278,14 @@ impl ChatLink {
     /// 没有这一条或菜单里没有这一项是输入非法。
     pub(super) fn menu_event(
         &self,
-        room_id: &str,
+        key: &TimelineKey,
         item_id: &str,
         wanted: impl Fn(&MessageAction) -> bool,
     ) -> Result<OwnedEventId, CoreError> {
-        self.opened(room_id)?;
-        let menus = match &*lock(&self.open_menus) {
-            Some((id, menus)) if id.as_str() == room_id => menus.clone(),
-            _ => return Err(not_subscribed(room_id)),
-        };
+        let menus = lock(&self.open)
+            .get(key)
+            .map(|open| open.menus.clone())
+            .ok_or_else(|| super::target::not_subscribed(key))?;
         let event_id = lock(&menus).event_with(item_id, wanted);
         event_id.ok_or_else(|| {
             invalid(&l10n!(
@@ -282,17 +294,6 @@ impl ChatLink {
                 "chat-message-action-unavailable"
             ))
         })
-    }
-}
-
-fn not_subscribed(room_id: &str) -> CoreError {
-    CoreError::NotReady {
-        reason: l10n!(
-            CATALOG,
-            language(),
-            "chat-room-not-subscribed",
-            room = room_id
-        ),
     }
 }
 
