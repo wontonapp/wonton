@@ -58,7 +58,7 @@ impl CertificateManager {
             Ok(None) => "ACME helper wait ended without an exit status".to_owned(),
             Err(_) => "ACME helper exceeded its 600-second deadline".to_owned(),
         };
-        let logs = self.engine.logs_tail(name, 1000).await;
+        let logs = self.engine.logs_tail(name, 80).await;
         bail!("{error}\n{logs}")
     }
 

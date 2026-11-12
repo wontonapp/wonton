@@ -226,6 +226,15 @@ impl Domain {
         }
         validate_provider(&request.provider).map_err(invalid)?;
         validate_credentials(&request.credentials).map_err(invalid)?;
+        // 主人自己放了 site.pem 的安装不跑 ACME：收下设置也没人签，直接说清楚。
+        if EntrySettings::load(&self.install_dir)
+            .map_err(invalid)?
+            .is_some_and(|settings| settings.external_certificate)
+        {
+            return Err(DomainError::Conflict(
+                "装的是自己的证书（WONTON_ENTRY_CERTIFICATE=external），核心不签发".into(),
+            ));
+        }
         let fixed = self.fixed_suffix().map_err(invalid)?;
         let current = self.effective().map_err(invalid)?;
         let suffix = match fixed {
@@ -347,7 +356,8 @@ impl Domain {
 
     /// 装机路径：同步签发一次，失败让安装停下。主人自己放 `site.pem` 的装机只核对文件在不在。
     pub async fn issue_now(self: &Arc<Self>) -> Result<()> {
-        if EntrySettings::load(&self.install_dir)?
+        if EntrySettings::load(&self.install_dir)
+            .map_err(invalid)?
             .is_some_and(|settings| settings.external_certificate)
         {
             ensure!(

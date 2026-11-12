@@ -116,6 +116,22 @@ async fn credentials_write_only_and_private() {
     assert!(view.credentials_set);
 }
 
+/// 自己的证书：设置收下也没人签，PUT 直接回冲突。
+#[tokio::test]
+async fn external_certificate_conflicts() {
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("abcdefgh.example.test"));
+    let path = dir.path().join("entry/settings.json");
+    let mut settings: serde_json::Value =
+        serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    settings["external_certificate"] = serde_json::json!(true);
+    fs::write(path, serde_json::to_vec(&settings).unwrap()).unwrap();
+    assert!(matches!(
+        domain(dir.path()).save(request(None)).await,
+        Err(DomainError::Conflict(_))
+    ));
+}
+
 #[tokio::test]
 async fn suffix_fixed_when_server_name_set() {
     let dir = tempfile::tempdir().unwrap();
