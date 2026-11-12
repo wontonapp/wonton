@@ -21,6 +21,7 @@ import app.wonton.protocol.PluginSettingField
 import app.wonton.protocol.PluginSettingKind
 import app.wonton.protocol.PluginSettingOption
 import app.wonton.protocol.SettingValue
+import app.wonton.protocol.SettingsFieldProblem
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonRadioRow
 import app.wonton.ui.design.WontonSwitch
@@ -36,6 +37,7 @@ internal fun SettingsField(
     field: PluginSettingField,
     value: SettingValue?,
     draft: String,
+    problem: SettingsFieldProblem?,
     disabled: Boolean,
     missing: Boolean,
     onEdit: (name: String, value: SettingValue?) -> Unit,
@@ -55,13 +57,17 @@ internal fun SettingsField(
                 else SettingsSingleChoice(field, kind, value, disabled, onEdit)
             else -> SettingsTextInput(field, draft, disabled, onDraft)
         }
-        SettingsFieldProblem(field, disabled, missing)
+        SettingsFieldProblem(problem, disabled, missing)
     }
 }
 
-/** 控件旁的问题：改不了的说明要更新 App；核心标出的问题和必填缺值标红。 */
+/** 控件旁的问题：改不了的说明要更新 App；核心按字段给的问题和必填缺值标红。 */
 @Composable
-private fun SettingsFieldProblem(field: PluginSettingField, disabled: Boolean, missing: Boolean) {
+private fun SettingsFieldProblem(
+    problem: SettingsFieldProblem?,
+    disabled: Boolean,
+    missing: Boolean,
+) {
     val colors = WontonTheme.colors
     if (disabled) {
         Text(
@@ -70,7 +76,7 @@ private fun SettingsFieldProblem(field: PluginSettingField, disabled: Boolean, m
             color = colors.warning.toColor(),
         )
     }
-    field.problem?.let {
+    problem?.let {
         Text(it.message, style = WontonTheme.typography.caption, color = colors.danger.toColor())
     }
     if (missing) {

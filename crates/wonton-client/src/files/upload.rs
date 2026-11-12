@@ -473,6 +473,10 @@ fn chat_problem(error: CoreError) -> Problem {
         CoreError::ServerTooOld { reason, .. } => {
             Problem::Failed(FileFailure::UpstreamError, reason)
         }
+        // 文件上传不传设置，走不到这一类；真到了按输入错误说。
+        CoreError::SettingsInvalid { reason, .. } => {
+            Problem::Failed(FileFailure::InvalidInput, reason)
+        }
     }
 }
 

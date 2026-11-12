@@ -2,7 +2,7 @@ import SwiftUI
 import WontonClient
 
 /// 单个设置项的草稿值；只在主人动过的项上生成提交值，没动的不动。
-enum Draft {
+enum Draft: Equatable {
     case toggle(Bool)
     case text(String)
     case choice(Int)
@@ -82,8 +82,10 @@ func missing(_ field: PluginSettingField, drafts: [String: Draft], localErrors: 
 // MARK: 单个设置项的渲染
 
 /// 一个设置项的一节：标题、控件、说明和问题文案；草稿存在页面层，这里只读写自己这项的草稿。
+/// 预检或保存被拒时核心按字段给的明细从 `overlay` 进来，盖过视图里带着的问题。
 struct PluginSettingFieldView: View {
     let field: PluginSettingField
+    var overlay: SettingsFieldProblem?
     @Binding var drafts: [String: Draft]
     @Binding var touched: Set<String>
     @Binding var localErrors: [String: String]
@@ -101,7 +103,7 @@ struct PluginSettingFieldView: View {
             if let local = localErrors[field.name] {
                 SupportingText(local, danger: true)
             }
-            if let problem = field.problem {
+            if let problem = overlay ?? field.problem {
                 SupportingText(problem.message, danger: true)
             }
             if missing(field, drafts: drafts, localErrors: localErrors) {

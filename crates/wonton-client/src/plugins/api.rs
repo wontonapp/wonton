@@ -697,10 +697,13 @@ pub(super) fn to_core_error(problem: PluginProblem) -> CoreError {
     match problem.reason {
         PluginFailure::TransportUnavailable => CoreError::TransportUnavailable { reason },
         PluginFailure::Unauthorized => CoreError::Unauthorized { reason },
+        PluginFailure::SettingsInvalid => CoreError::SettingsInvalid {
+            reason,
+            fields: problem.settings.map(|settings| settings.fields).unwrap_or_default(),
+        },
         PluginFailure::NotFound
         | PluginFailure::Invalid
         | PluginFailure::Changed
-        | PluginFailure::SettingsInvalid
         | PluginFailure::SettingsSchemaInvalid => CoreError::InvalidInput { reason },
         PluginFailure::Unsupported
         | PluginFailure::Conflict

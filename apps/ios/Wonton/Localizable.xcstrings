@@ -10942,6 +10942,36 @@
         }
       }
     },
+    "plugin.settings.restartHint": {
+      "comment": "Shown after saving when the app will restart to apply the new values. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The app will restart to apply this"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用会重新启动一下"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用會重新啟動一下"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリを一度再起動します"
+          }
+        }
+      }
+    },
     "plugin.settings.title": {
       "comment": "Title of a plugin's settings page and the row on the plugin detail page that opens it.",
       "extractionState": "manual",
@@ -29915,25 +29945,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Not filled"
+            "value": "Not ready: paste a token first"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "未填写"
+            "value": "未就绪：要先填令牌"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "未填寫"
+            "value": "未就緒：要先填令牌"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未入力"
+            "value": "未準備：トークンを先に入力してください"
           }
         }
       }

@@ -272,6 +272,9 @@ extension Error {
             )
         case let .InvalidInput(reason):
             return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
+        case let .SettingsInvalid(reason, _):
+            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
+            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
         case .ServerTooOld:
             return Problem(
                 title: String(localized: .problemPluginServerTooOldTitle),

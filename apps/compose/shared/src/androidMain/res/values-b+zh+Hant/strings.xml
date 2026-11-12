@@ -1024,6 +1024,8 @@
     <string name="plugin_settings_open">開啟設定</string>
     <string name="plugin_settings_update_app">要更新 App 才能改</string>
     <string name="plugin_settings_required">必填</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">應用會重新啟動一下</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都詢問</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1686,7 +1688,7 @@
     <string name="secret_edit">修改</string>
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填寫</string>
-    <string name="secret_unfilled">未填寫</string>
+    <string name="secret_unfilled">未就緒：要先填令牌</string>
     <string name="pin_to_bar">固定到底部導覽列</string>
     <!-- 長按側邊欄裡的一行，把應用程式的頁面從底部導覽列拿掉。 -->
     <string name="unpin_from_bar">從底部導覽列拿掉</string>
