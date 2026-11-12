@@ -44,7 +44,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{PluginView, Route};
+pub use views::{HostedRoute, PluginView, Route};
 
 pub(super) use busy::{busy, detached};
 
@@ -569,9 +569,11 @@ impl PluginManager {
     }
 
     async fn restore_one(&self, record: &InstalledRecord, langs: &Languages) -> Entry {
-        match PluginPackage::with_files(&record.source, record.files.clone(), langs) {
-            Ok(mut package) => {
-                package.origin = record.origin.clone();
+        match record.package(langs) {
+            Ok(package) if super::install_hosted::is_containerless(&package.manifest) => {
+                self.restore_containerless(&package, record, langs)
+            }
+            Ok(package) => {
                 // 不管核对结果如何都先登记来源：插件暂时不健康，也要能经核心重新连上 Matrix 恢复过来。
                 let manifest = &package.manifest;
                 let network = self.cfg.instance.network(&manifest.id.slug());

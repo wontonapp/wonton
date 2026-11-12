@@ -899,8 +899,8 @@
     <string name="message_image_saved">アルバムに保存しました</string>
     <string name="message_image_share">共有</string>
     <string name="message_image_share_failed">画像を共有できませんでした</string>
-    <!-- Description of an agent row in setup when it has no account login. -->
-    <string name="onboarding_agent_connection_key">APIキー</string>
+    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
+    <string name="onboarding_agent_connection_key">次のステップでモデルプロバイダーのキーを入力します</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s、またはAPIキー</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -942,7 +942,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">プロバイダーに接続できませんが、完了時に保存されます。</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">現在のモデルを使用</string>
+    <string name="onboarding_model_use_current">今のモデルを使う</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">%1$sを使用</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -1027,10 +1027,20 @@
     <string name="onboarding_review_keep_current">現在のものを使用</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">準備中</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">プロフィール</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">モデル</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">アプリ</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">デフォルトに設定</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">セットアップ後にチャットでログイン</string>
+    <!-- Row description in the review step: finishing will not touch this. -->
+    <string name="onboarding_review_unchanged">変更なし</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">インストールされたか確認できません。アプリのページを確認してください。</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->
@@ -1213,6 +1223,10 @@
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
     <string name="problem_no_default_agent">デフォルトのエージェントがありません。セットアップで選択してインストールしてください。</string>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">リクエストが拒否されました</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">ログインは有効です。権限がないか、相手にブロックされているか、相手のサーバーがまだ自宅サーバーとつながっていない可能性があります。</string>
     <string name="problem_invalid_input_title">この操作は実行できません</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">読み込み中</string>
@@ -1648,6 +1662,8 @@
     <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
     <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
     <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">登録に失敗しました。自宅サーバーに拒否されました</string>
     <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
     <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
     <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>

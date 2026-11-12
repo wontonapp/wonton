@@ -218,6 +218,7 @@ impl PluginManager {
                 Method::POST,
                 &url,
                 Some(key),
+                &[],
                 RequestBody::Json(&body),
                 PROBE_TIMEOUT,
             )
@@ -373,6 +374,7 @@ impl PluginManager {
                 Method::GET,
                 &url,
                 Some(value),
+                &[],
                 RequestBody::Empty,
                 VERIFY_TIMEOUT,
             )

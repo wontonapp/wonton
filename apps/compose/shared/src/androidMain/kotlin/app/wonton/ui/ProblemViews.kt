@@ -108,9 +108,16 @@ fun ChatFailure.problem(detail: String): Problem = when (this) {
         R.string.problem_unauthorized_next_step,
         detail,
     )
+    ChatFailure.FORBIDDEN -> problem(
+        R.string.problem_forbidden_title,
+        R.string.problem_forbidden_next_step,
+        detail,
+    )
     ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
     ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
     ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
+    // 比这个壳新的类别：先按服务器出错说。
+    ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
 }
 
 val ChatProblem.problem: Problem

@@ -117,9 +117,7 @@ pub(in crate::plugin) fn installed_package(
     record: &InstalledRecord,
     langs: &Languages,
 ) -> Result<PluginPackage, InstallError> {
-    let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
-    package.origin = record.origin.clone();
-    Ok(package)
+    Ok(record.package(langs)?)
 }
 
 /// 官方索引这次没取到：上次的索引里没有新版本，不等于真的没有。

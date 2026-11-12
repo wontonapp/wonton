@@ -39,12 +39,17 @@ struct PluginDetailView: View {
         task?.state == .running
     }
 
-    /// 详情只在打开时取一次，任务做完要重取，按钮才对。主屏上打开的插件卸载以后，这一页没有东西可看了。
+    /// 详情只在打开时取一次，任务做完要重取，按钮才对。要不要关这一页由核心判断：插件已经卸掉了，核心让关。
     private func taskEnded() {
-        if case .installed = route, task?.operation == .uninstall, task?.state == .succeeded {
-            dismiss()
-        } else {
-            Task { await load() }
+        Task {
+            do {
+                switch try await model.core.pluginDetailAfterTask(route: route.coreRoute) {
+                case .close: dismiss()
+                case let .detail(detail): loaded = .success(detail)
+                }
+            } catch {
+                loaded = .failure(error)
+            }
         }
     }
 
@@ -164,14 +169,15 @@ struct PluginDetailView: View {
 
     private func load() async {
         loaded = nil
+        // 主屏打开的插件先知道 ID：取详情的请求还没回来、任务就做完时，也要看得到“进行中 → 结束”这一步。
+        if case let .installed(id) = route { pluginId = id }
         do {
-            switch route {
-            case let .store(source):
-                loaded = .success(try await model.core.storePlugin(source: source))
-                pluginId = try loaded?.get().id
-            case let .installed(id):
-                pluginId = id
-                loaded = .success(try await model.core.installedPlugin(id: id))
+            switch try await model.core.pluginDetail(route: route.coreRoute) {
+            case .close:
+                dismiss()
+            case let .detail(detail):
+                pluginId = detail.id
+                loaded = .success(detail)
             }
         } catch {
             loaded = .failure(error)

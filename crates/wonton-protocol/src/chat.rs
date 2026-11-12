@@ -170,14 +170,19 @@ pub enum ChatSync {
 pub enum ChatFailure {
     /// 连不上 Matrix 服务器：隧道没连上、网络断开或请求超时。
     TransportUnavailable,
-    /// 服务器拒绝了身份或权限：登录凭据无效或过期、设备已被吊销、无权操作。
+    /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
     Unauthorized,
+    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
+    Forbidden,
     /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
     NotReady,
     /// 服务器或 Matrix SDK 出错。
     Upstream,
     /// 输入非法。
     InvalidInput,
+    /// 比这个壳新的类别。
+    #[serde(other)]
+    Other,
 }
 
 /// 后台操作失败的说明。

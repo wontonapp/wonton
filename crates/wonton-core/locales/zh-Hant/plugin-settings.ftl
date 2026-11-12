@@ -234,6 +234,7 @@ plugin-settings-github-file-what = 取得 { $repo } 在提交 { $commit } 裡的
 plugin-settings-github-missing = 沒有 { $what }
 plugin-settings-github-url-what = 取得 { $url }
 plugin-settings-github-api-what = 經 API 取 { $repo } 在 { $reference } 裡的 { $path }
+plugin-settings-github-tree-what = 讀取 { $repo } 在 { $commit } 中 { $dir } 的檔案清單
 plugin-settings-github-rate-limited = { $what }：GitHub 限速了，幾分鐘後再試
 plugin-settings-github-rate-limited-plain = GitHub 限速了，幾分鐘後再試
 plugin-settings-github-api-status = { $what }：GitHub 回了 { $status }

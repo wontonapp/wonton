@@ -69,6 +69,14 @@ impl PluginManager {
     }
 
     fn follows_containers(&self, id: &PluginId, entry: &Entry) -> bool {
+        // 不起容器的形态没有容器可看：静态网页的状态由提供方决定（见 install_hosted::effective_status）。
+        if entry
+            .listed
+            .as_ref()
+            .is_some_and(|listed| super::install_hosted::is_containerless(&listed.manifest))
+        {
+            return false;
+        }
         let ours = match entry.status {
             PluginStatus::Running | PluginStatus::Stopped => true,
             PluginStatus::Degraded { .. } => entry.follows_containers,

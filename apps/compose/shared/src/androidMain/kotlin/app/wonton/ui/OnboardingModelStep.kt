@@ -6,6 +6,7 @@ import android.icu.text.ListFormatter
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -15,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -56,12 +58,15 @@ internal fun OnboardingModelStep(
             if (providers.configured.isNotEmpty()) {
                 val current = ListFormatter.getInstance(LocalConfiguration.current.locales[0])
                     .format(providers.configured.map { it.title })
-                StepOptionRow(
-                    title = stringResource(R.string.onboarding_model_use_current),
-                    description = current,
-                    selected = model.choice is OnboardingModelChoice.Current,
-                    onSelect = { form.collapse(); send(Action.UseCurrentModel) },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
+                    StepOptionRow(
+                        title = stringResource(R.string.onboarding_model_use_current),
+                        selected = model.choice is OnboardingModelChoice.Current,
+                        onSelect = { form.collapse(); send(Action.UseCurrentModel) },
+                    )
+                    // 网关给的模型名带着内部地址，收进默认收起的“详情”。
+                    ProblemDetail(current, modifier = Modifier.padding(start = WontonTheme.spacing.s16))
+                }
             }
             if (providers.providers.isNullOrEmpty() && providers.webUrl != null) {
                 WontonButton(stringResource(R.string.onboarding_model_open_settings),

@@ -29,4 +29,9 @@ final class OnboardingModel {
             rejection = error.problem
         }
     }
+
+    /// 关掉重看的引导：不保存任何东西，壳负责回到设置。
+    func close() {
+        core.closeOnboarding()
+    }
 }
