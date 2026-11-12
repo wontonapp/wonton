@@ -10,7 +10,7 @@ use crate::plugin::docker::Engine;
 
 /// Tuwunel：本地按标签拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
 pub(super) fn image() -> String {
-    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v1.9.4")
+    wonton_test_images::image("ghcr.io/matrix-construct/tuwunel:v2.0.0")
 }
 const WAIT: Duration = Duration::from_secs(15);
 

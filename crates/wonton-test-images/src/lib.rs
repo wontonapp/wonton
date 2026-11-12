@@ -53,7 +53,7 @@ mod tests {
     // 没有别的线程同时读环境变量，不会读到改了一半的值。
     #[test]
     fn maps_refs_only_with_the_env_set() {
-        const TUWUNEL: &str = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
+        const TUWUNEL: &str = "ghcr.io/matrix-construct/tuwunel:v2.0.0";
 
         unsafe { std::env::remove_var("WONTON_TEST_IMAGES") };
         assert_eq!(image(TUWUNEL), TUWUNEL);
