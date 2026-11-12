@@ -31,10 +31,7 @@ pub(super) enum HomeserverConfig {
     HomeserverUrl(String),
 
     /// A server name, with the protocol put apart.
-    ServerName {
-        server: OwnedServerName,
-        protocol: UrlScheme,
-    },
+    ServerName { server: OwnedServerName, protocol: UrlScheme },
 
     /// A server name with or without the protocol (it will fallback to `https`
     /// if absent), or a homeserver URL.
@@ -108,12 +105,7 @@ impl HomeserverConfig {
                     )
                     .await?;
 
-                HomeserverDiscoveryResult {
-                    server,
-                    homeserver,
-                    supported_versions,
-                    well_known,
-                }
+                HomeserverDiscoveryResult { server, homeserver, supported_versions, well_known }
             }
         })
     }
@@ -225,10 +217,7 @@ async fn discover_homeserver(
             err => ClientBuildError::Http(err),
         })?;
 
-    debug!(
-        homeserver_url = well_known.homeserver.base_url,
-        "Discovered the homeserver"
-    );
+    debug!(homeserver_url = well_known.homeserver.base_url, "Discovered the homeserver");
 
     Ok((server, well_known))
 }
@@ -265,10 +254,8 @@ mod tests {
 
     #[async_test]
     async fn test_url() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let result = HomeserverConfig::HomeserverUrl("https://matrix-client.matrix.org".to_owned())
             .discover(&http_client, false)
@@ -276,19 +263,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.server, None);
-        assert_eq!(
-            result.homeserver,
-            Url::parse("https://matrix-client.matrix.org").unwrap()
-        );
+        assert_eq!(result.homeserver, Url::parse("https://matrix-client.matrix.org").unwrap());
         assert!(result.supported_versions.is_none());
     }
 
     #[async_test]
     async fn test_server_name() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let server = MockServer::start().await;
         let homeserver = MockServer::start().await;
@@ -318,10 +300,8 @@ mod tests {
 
     #[async_test]
     async fn test_server_name_or_url_with_name() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let server = MockServer::start().await;
         let homeserver = MockServer::start().await;
@@ -348,10 +328,8 @@ mod tests {
 
     #[async_test]
     async fn test_server_name_or_url_with_url() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let homeserver = MockServer::start().await;
 
@@ -391,10 +369,8 @@ mod tests {
 
     #[async_test]
     async fn test_url_with_well_known_lookup_disabled() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         // A homeserver URL never needs a lookup, so the flag changes nothing.
         let result = HomeserverConfig::HomeserverUrl("https://matrix-client.matrix.org".to_owned())
@@ -403,19 +379,14 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.server, None);
-        assert_eq!(
-            result.homeserver,
-            Url::parse("https://matrix-client.matrix.org").unwrap()
-        );
+        assert_eq!(result.homeserver, Url::parse("https://matrix-client.matrix.org").unwrap());
         assert!(result.supported_versions.is_none());
     }
 
     #[async_test]
     async fn test_server_name_with_well_known_lookup_disabled() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let server = MockServer::start().await;
         let homeserver = MockServer::start().await;
@@ -438,10 +409,8 @@ mod tests {
 
     #[async_test]
     async fn test_server_name_or_url_with_name_and_well_known_lookup_disabled() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let server = MockServer::start().await;
         let homeserver = MockServer::start().await;
@@ -462,10 +431,8 @@ mod tests {
 
     #[async_test]
     async fn test_server_name_or_url_with_url_and_well_known_lookup_disabled() {
-        let http_client = HttpClient::new(
-            HttpSettings::default().make_client().unwrap(),
-            Default::default(),
-        );
+        let http_client =
+            HttpClient::new(HttpSettings::default().make_client().unwrap(), Default::default());
 
         let homeserver = MockServer::start().await;
 

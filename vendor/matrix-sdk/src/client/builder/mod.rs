@@ -300,10 +300,8 @@ impl ClientBuilder {
     #[cfg(feature = "sqlite")]
     pub fn sqlite_store(mut self, path: impl AsRef<Path>, passphrase: Option<&str>) -> Self {
         let sqlite_store_config = SqliteStoreConfig::new(path).passphrase(passphrase);
-        self.store_config = BuilderStoreConfig::Sqlite {
-            config: sqlite_store_config,
-            cache_path: None,
-        };
+        self.store_config =
+            BuilderStoreConfig::Sqlite { config: sqlite_store_config, cache_path: None };
 
         self
     }
@@ -509,9 +507,7 @@ impl ClientBuilder {
 
     #[cfg(not(target_family = "wasm"))]
     fn http_settings(&mut self) -> &mut HttpSettings {
-        self.http_cfg
-            .get_or_insert_with(Default::default)
-            .settings()
+        self.http_cfg.get_or_insert_with(Default::default).settings()
     }
 
     /// Handle [refreshing access tokens] automatically.
@@ -660,9 +656,7 @@ impl ClientBuilder {
     pub async fn build(self) -> Result<Client, ClientBuildError> {
         debug!("Starting to build the Client");
 
-        let homeserver_cfg = self
-            .homeserver_cfg
-            .ok_or(ClientBuildError::MissingHomeserver)?;
+        let homeserver_cfg = self.homeserver_cfg.ok_or(ClientBuildError::MissingHomeserver)?;
         Span::current().record("homeserver", debug(&homeserver_cfg));
 
         #[cfg_attr(target_family = "wasm", allow(clippy::infallible_destructuring_match))]
@@ -702,31 +696,20 @@ impl ClientBuilder {
         let http_client = HttpClient::new(inner_http_client.clone(), self.request_config);
 
         #[allow(unused_variables)]
-        let HomeserverDiscoveryResult {
-            server,
-            homeserver,
-            supported_versions,
-            well_known,
-        } = homeserver_cfg
-            .discover(&http_client, self.well_known_lookup_disabled)
-            .await?;
+        let HomeserverDiscoveryResult { server, homeserver, supported_versions, well_known } =
+            homeserver_cfg.discover(&http_client, self.well_known_lookup_disabled).await?;
 
         let sliding_sync_version = {
             let supported_versions = match supported_versions {
                 Some(versions) => Some(versions),
-                None if self
-                    .sliding_sync_version_builder
-                    .needs_get_supported_versions() =>
-                {
+                None if self.sliding_sync_version_builder.needs_get_supported_versions() => {
                     Some(get_supported_versions(&homeserver, &http_client).await?)
                 }
                 None => None,
             };
 
             let version = self.sliding_sync_version_builder.build(
-                supported_versions
-                    .map(|response| response.as_supported_versions())
-                    .as_ref(),
+                supported_versions.map(|response| response.as_supported_versions()).as_ref(),
             )?;
 
             tracing::info!(?version, "selected sliding sync version");
@@ -735,10 +718,7 @@ impl ClientBuilder {
         };
 
         let allow_insecure_oauth = homeserver.scheme() == "http";
-        let auth_ctx = Arc::new(AuthCtx::new(
-            self.handle_refresh_tokens,
-            allow_insecure_oauth,
-        ));
+        let auth_ctx = Arc::new(AuthCtx::new(self.handle_refresh_tokens, allow_insecure_oauth));
 
         // Enable the send queue by default.
         let send_queue = Arc::new(SendQueueData::new(true));
@@ -760,10 +740,8 @@ impl ClientBuilder {
         let thread_subscriptions_catchup = OnceCell::new();
 
         #[cfg(feature = "experimental-search")]
-        let search_index = SearchIndex::new(
-            Arc::new(Mutex::new(HashMap::new())),
-            self.search_index_store_kind,
-        );
+        let search_index =
+            SearchIndex::new(Arc::new(Mutex::new(HashMap::new())), self.search_index_store_kind);
 
         let inner = ClientInner::new(
             auth_ctx,
@@ -804,10 +782,7 @@ impl ClientBuilder {
 /// slashes before being parsed.
 pub fn sanitize_server_name(s: &str) -> crate::Result<OwnedServerName, IdParseError> {
     ServerName::parse(
-        s.trim()
-            .trim_start_matches("http://")
-            .trim_start_matches("https://")
-            .trim_end_matches('/'),
+        s.trim().trim_start_matches("http://").trim_start_matches("https://").trim_end_matches('/'),
     )
 }
 
@@ -949,19 +924,16 @@ impl fmt::Debug for BuilderStoreConfig {
         #[allow(clippy::infallible_destructuring_match)]
         match self {
             #[cfg(feature = "sqlite")]
-            Self::Sqlite {
-                config, cache_path, ..
-            } => f
+            Self::Sqlite { config, cache_path, .. } => f
                 .debug_struct("Sqlite")
                 .field("config", config)
                 .field("cache_path", cache_path)
                 .finish_non_exhaustive(),
 
             #[cfg(feature = "indexeddb")]
-            Self::IndexedDb { name, .. } => f
-                .debug_struct("IndexedDb")
-                .field("name", name)
-                .finish_non_exhaustive(),
+            Self::IndexedDb { name, .. } => {
+                f.debug_struct("IndexedDb").field("name", name).finish_non_exhaustive()
+            }
 
             Self::Custom(store_config) => f.debug_tuple("Custom").field(store_config).finish(),
         }
@@ -1036,40 +1008,22 @@ pub(crate) mod tests {
 
     #[test]
     fn test_sanitize_server_name() {
+        assert_eq!(sanitize_server_name("matrix.org").unwrap().as_str(), "matrix.org");
+        assert_eq!(sanitize_server_name("https://matrix.org").unwrap().as_str(), "matrix.org");
+        assert_eq!(sanitize_server_name("http://matrix.org").unwrap().as_str(), "matrix.org");
         assert_eq!(
-            sanitize_server_name("matrix.org").unwrap().as_str(),
-            "matrix.org"
-        );
-        assert_eq!(
-            sanitize_server_name("https://matrix.org").unwrap().as_str(),
-            "matrix.org"
-        );
-        assert_eq!(
-            sanitize_server_name("http://matrix.org").unwrap().as_str(),
-            "matrix.org"
-        );
-        assert_eq!(
-            sanitize_server_name("https://matrix.server.org")
-                .unwrap()
-                .as_str(),
+            sanitize_server_name("https://matrix.server.org").unwrap().as_str(),
             "matrix.server.org"
         );
         assert_eq!(
-            sanitize_server_name("https://matrix.server.org/")
-                .unwrap()
-                .as_str(),
+            sanitize_server_name("https://matrix.server.org/").unwrap().as_str(),
             "matrix.server.org"
         );
         assert_eq!(
-            sanitize_server_name("  https://matrix.server.org// ")
-                .unwrap()
-                .as_str(),
+            sanitize_server_name("  https://matrix.server.org// ").unwrap().as_str(),
             "matrix.server.org"
         );
-        assert_matches!(
-            sanitize_server_name("https://matrix.server.org/something"),
-            Err(_)
-        )
+        assert_matches!(sanitize_server_name("https://matrix.server.org/something"), Err(_))
     }
 
     // Note: Due to a limitation of the http mocking library the following tests all
@@ -1235,10 +1189,7 @@ pub(crate) mod tests {
 
         // Then the homeserver should have been resolved through the
         // `/_matrix/client/versions` check alone.
-        assert_eq!(
-            client.homeserver().as_str().trim_end_matches('/'),
-            homeserver.uri()
-        );
+        assert_eq!(client.homeserver().as_str().trim_end_matches('/'), homeserver.uri());
     }
 
     #[async_test]
@@ -1252,14 +1203,9 @@ pub(crate) mod tests {
         let homeserver_name = format!("matrix.server.com:{port}");
 
         // Every host is resolved to the mock server and recorded.
-        let resolver = Arc::new(RecordingResolver {
-            address,
-            hosts: StdMutex::new(Vec::new()),
-        });
-        let http_client = reqwest::Client::builder()
-            .dns_resolver(resolver.clone())
-            .build()
-            .unwrap();
+        let resolver = Arc::new(RecordingResolver { address, hosts: StdMutex::new(Vec::new()) });
+        let http_client =
+            reqwest::Client::builder().dns_resolver(resolver.clone()).build().unwrap();
 
         Mock::given(method("GET"))
             .and(path("/.well-known/matrix/client"))
@@ -1289,20 +1235,12 @@ pub(crate) mod tests {
 
         // Then homeserver should be the only host that was contacted while building.
         let resolved_hosts = resolver.hosts.lock().unwrap();
+        assert!(!resolved_hosts.is_empty(), "The homeserver should have been contacted");
         assert!(
-            !resolved_hosts.is_empty(),
-            "The homeserver should have been contacted"
-        );
-        assert!(
-            resolved_hosts
-                .iter()
-                .all(|host| host == "matrix.server.com"),
+            resolved_hosts.iter().all(|host| host == "matrix.server.com"),
             "A connection was attempted to an unexpected host: {resolved_hosts:?}"
         );
-        assert_eq!(
-            client.homeserver(),
-            Url::parse(&format!("http://{homeserver_name}")).unwrap()
-        );
+        assert_eq!(client.homeserver(), Url::parse(&format!("http://{homeserver_name}")).unwrap());
         assert_eq!(client.server(), None);
     }
 
@@ -1336,10 +1274,7 @@ pub(crate) mod tests {
 
         let client = builder.build().await.unwrap();
         assert_matches!(
-            client
-                .base_client()
-                .decryption_settings
-                .sender_device_trust_requirement,
+            client.base_client().decryption_settings.sender_device_trust_requirement,
             TrustRequirement::CrossSigned
         );
     }
@@ -1357,10 +1292,7 @@ pub(crate) mod tests {
 
         let client = builder.build().await.unwrap();
         assert_matches!(
-            client
-                .base_client()
-                .decryption_settings
-                .sender_device_trust_requirement,
+            client.base_client().decryption_settings.sender_device_trust_requirement,
             TrustRequirement::Untrusted
         );
     }
@@ -1369,11 +1301,8 @@ pub(crate) mod tests {
     async fn test_cross_process_store_locks_holder_name() {
         {
             let homeserver = make_mock_homeserver().await;
-            let client = ClientBuilder::new()
-                .homeserver_url(homeserver.uri())
-                .build()
-                .await
-                .unwrap();
+            let client =
+                ClientBuilder::new().homeserver_url(homeserver.uri()).build().await.unwrap();
 
             assert_let!(
                 CrossProcessLockConfig::MultiProcess { holder_name } =

@@ -259,13 +259,7 @@ impl Recovery {
     /// ```
     #[instrument(skip_all)]
     pub async fn enable_backup(&self) -> Result<()> {
-        if !self
-            .client
-            .encryption()
-            .backups()
-            .fetch_exists_on_server()
-            .await?
-        {
+        if !self.client.encryption().backups().fetch_exists_on_server().await? {
             self.mark_backup_as_enabled().await?;
 
             self.client.encryption().backups().create().await?;
@@ -315,12 +309,8 @@ impl Recovery {
         // deserialize the content and find out the key ID.
         //
         // Then we finally set the event to an empty JSON content.
-        if let Ok(Some(default_event)) = self
-            .client
-            .encryption()
-            .secret_storage()
-            .fetch_default_key_id()
-            .await
+        if let Ok(Some(default_event)) =
+            self.client.encryption().secret_storage().fetch_default_key_id().await
             && let Ok(default_event) = default_event.deserialize()
         {
             let key_id = default_event.key_id;
@@ -333,20 +323,11 @@ impl Recovery {
         }
 
         // Now let's "delete" the actual `m.secret.storage.default_key` event.
-        self.client
-            .account()
-            .set_account_data(SecretStorageDisabledContent {})
-            .await?;
+        self.client.account().set_account_data(SecretStorageDisabledContent {}).await?;
         // Make sure that we don't re-enable backups automatically.
-        self.client
-            .account()
-            .set_account_data(KeyBackupContent { enabled: false })
-            .await?;
+        self.client.account().set_account_data(KeyBackupContent { enabled: false }).await?;
         // (Unstable prefix version of KeyBackupContent)
-        self.client
-            .account()
-            .set_account_data(BackupDisabledContent { disabled: true })
-            .await?;
+        self.client.account().set_account_data(BackupDisabledContent { disabled: true }).await?;
         // Finally, "delete" all the known secrets we have in the account data.
         self.delete_all_known_secrets().await?;
 
@@ -455,22 +436,11 @@ impl Recovery {
     /// # anyhow::Ok(()) };
     /// ```
     pub async fn reset_identity(&self) -> Result<Option<IdentityResetHandle>> {
-        self.client
-            .encryption()
-            .backups()
-            .disable_and_delete()
-            .await?; // 1.
+        self.client.encryption().backups().disable_and_delete().await?; // 1.
 
         // 2. (We can't delete account data events)
-        self.client
-            .account()
-            .set_account_data(SecretStorageDisabledContent {})
-            .await?;
-        self.client
-            .encryption()
-            .recovery()
-            .update_recovery_state()
-            .await?;
+        self.client.account().set_account_data(SecretStorageDisabledContent {}).await?;
+        self.client.encryption().recovery().update_recovery_state().await?;
 
         let cross_signing_reset_handle = self.client.encryption().reset_cross_signing().await?;
 
@@ -482,13 +452,7 @@ impl Recovery {
             }))
         } else {
             // No authentication required, re-enable backups
-            if self
-                .client
-                .encryption()
-                .recovery()
-                .should_auto_enable_backups()
-                .await?
-            {
+            if self.client.encryption().recovery().should_auto_enable_backups().await? {
                 self.client.encryption().recovery().enable_backup().await?; // 4.
             }
 
@@ -523,12 +487,8 @@ impl Recovery {
     /// ```
     #[instrument(skip_all)]
     pub async fn recover(&self, recovery_key: &str) -> Result<()> {
-        let store = self
-            .client
-            .encryption()
-            .secret_storage()
-            .open_secret_store(recovery_key)
-            .await?;
+        let store =
+            self.client.encryption().secret_storage().open_secret_store(recovery_key).await?;
 
         store.import_secrets().await?;
         self.update_recovery_state().await?;
@@ -566,12 +526,8 @@ impl Recovery {
     /// ```
     #[instrument(skip_all)]
     pub async fn recover_and_fix_backup(&self, recovery_key: &str) -> Result<()> {
-        let store = self
-            .client
-            .encryption()
-            .secret_storage()
-            .open_secret_store(recovery_key)
-            .await?;
+        let store =
+            self.client.encryption().secret_storage().open_secret_store(recovery_key).await?;
 
         let delete_and_recreate_backup = match store.import_secrets().await {
             Ok(()) => false,
@@ -589,11 +545,7 @@ impl Recovery {
         };
 
         if delete_and_recreate_backup {
-            self.client
-                .encryption()
-                .backups()
-                .disable_and_delete()
-                .await?;
+            self.client.encryption().backups().disable_and_delete().await?;
             self.enable_backup().await?;
             store.export_secrets().await?;
         }
@@ -653,33 +605,18 @@ impl Recovery {
         // If we didn't already enable backups, we don't see a backup version on the
         // server, and finally if backups have not been marked to be explicitly
         // disabled, then we can automatically enable them.
-        Ok(self
-            .client
-            .inner
-            .e2ee
-            .encryption_settings
-            .auto_enable_backups
+        Ok(self.client.inner.e2ee.encryption_settings.auto_enable_backups
             && !self.client.encryption().backups().are_enabled().await
-            && !self
-                .client
-                .encryption()
-                .backups()
-                .fetch_exists_on_server()
-                .await?
+            && !self.client.encryption().backups().fetch_exists_on_server().await?
             && !self.are_backups_marked_as_disabled().await?)
     }
 
     pub(crate) async fn setup(&self) -> Result<()> {
         info!("Setting up account data listeners and trying to setup recovery");
 
-        self.client
-            .add_event_handler(Self::default_key_event_handler);
-        self.client
-            .add_event_handler(Self::secret_send_event_handler);
-        self.client
-            .inner
-            .e2ee
-            .initialize_recovery_state_update_task(&self.client);
+        self.client.add_event_handler(Self::default_key_event_handler);
+        self.client.add_event_handler(Self::secret_send_event_handler);
+        self.client.inner.e2ee.initialize_recovery_state_update_task(&self.client);
 
         self.update_recovery_state().await?;
 
@@ -710,10 +647,7 @@ impl Recovery {
                 to_raw_value(&content)
                     .expect("We should be able to serialize a raw empty secret event content"),
             );
-            self.client
-                .account()
-                .set_account_data_raw(event_type, secret_content)
-                .await?;
+            self.client.account().set_account_data_raw(event_type, secret_content).await?;
         }
 
         Ok(())
@@ -722,66 +656,41 @@ impl Recovery {
     /// Run a network request to figure whether backups have been disabled at
     /// the account level.
     async fn are_backups_marked_as_disabled(&self) -> Result<bool> {
-        if let Some(key_backup_content) = self
-            .client
-            .account()
-            .fetch_account_data_static::<KeyBackupContent>()
-            .await?
+        if let Some(key_backup_content) =
+            self.client.account().fetch_account_data_static::<KeyBackupContent>().await?
         {
-            Ok(key_backup_content
-                .deserialize()
-                .map(|event| !event.enabled)
-                .unwrap_or(false))
+            Ok(key_backup_content.deserialize().map(|event| !event.enabled).unwrap_or(false))
         } else {
             Ok(self
                 .client
                 .account()
                 .fetch_account_data_static::<BackupDisabledContent>()
                 .await?
-                .map(|event| {
-                    event
-                        .deserialize()
-                        .map(|event| event.disabled)
-                        .unwrap_or(false)
-                })
+                .map(|event| event.deserialize().map(|event| event.disabled).unwrap_or(false))
                 .unwrap_or(false))
         }
     }
 
     async fn mark_backup_as_enabled(&self) -> Result<()> {
-        self.client
-            .account()
-            .set_account_data(KeyBackupContent { enabled: true })
-            .await?;
+        self.client.account().set_account_data(KeyBackupContent { enabled: true }).await?;
 
         // Unstable prefix: will be removed when sufficient time has passed for clients
         // to use the stable prefix.
-        self.client
-            .account()
-            .set_account_data(BackupDisabledContent { disabled: false })
-            .await?;
+        self.client.account().set_account_data(BackupDisabledContent { disabled: false }).await?;
 
         Ok(())
     }
 
     async fn check_recovery_state(&self) -> Result<RecoveryState> {
-        Ok(
-            if self
-                .client
-                .encryption()
-                .secret_storage()
-                .is_enabled()
-                .await?
-            {
-                if self.all_known_secrets_available().await? {
-                    RecoveryState::Enabled
-                } else {
-                    RecoveryState::Incomplete
-                }
+        Ok(if self.client.encryption().secret_storage().is_enabled().await? {
+            if self.all_known_secrets_available().await? {
+                RecoveryState::Enabled
             } else {
-                RecoveryState::Disabled
-            },
-        )
+                RecoveryState::Incomplete
+            }
+        } else {
+            RecoveryState::Disabled
+        })
     }
 
     async fn update_recovery_state(&self) -> Result<()> {
@@ -803,20 +712,12 @@ impl Recovery {
 
     #[instrument]
     async fn secret_send_event_handler(_: ToDeviceSecretSendEvent, client: Client) {
-        client
-            .encryption()
-            .recovery()
-            .update_recovery_state_no_fail()
-            .await;
+        client.encryption().recovery().update_recovery_state_no_fail().await;
     }
 
     #[instrument]
     async fn default_key_event_handler(_: SecretStorageDefaultKeyEvent, client: Client) {
-        client
-            .encryption()
-            .recovery()
-            .update_recovery_state_no_fail()
-            .await;
+        client.encryption().recovery().update_recovery_state_no_fail().await;
     }
 
     /// Listen for changes in the [`BackupState`] and, if necessary, update the
@@ -849,11 +750,7 @@ impl Recovery {
                         Err(_) => {
                             // We missed some updates, let's update our state in case something
                             // changed.
-                            client
-                                .encryption()
-                                .recovery()
-                                .update_recovery_state_no_fail()
-                                .await;
+                            client.encryption().recovery().update_recovery_state_no_fail().await;
                         }
                     }
                 } else {
@@ -897,13 +794,7 @@ impl IdentityResetHandle {
     pub async fn reset(&self, auth: Option<AuthData>) -> Result<()> {
         self.cross_signing_reset_handle.auth(auth).await?;
 
-        if self
-            .client
-            .encryption()
-            .recovery()
-            .should_auto_enable_backups()
-            .await?
-        {
+        if self.client.encryption().recovery().should_auto_enable_backups().await? {
             self.client.encryption().recovery().enable_backup().await?;
         }
 
@@ -968,18 +859,15 @@ pub(crate) mod tests {
 
         let recovery = Recovery { client };
 
-        let ret = recovery
-            .recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd")
-            .await;
+        let ret =
+            recovery.recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd").await;
 
         assert_matches!(
             ret,
-            Err(RecoveryError::SecretStorage(
-                SecretStorageError::ImportError {
-                    name: SecretName::CrossSigningMasterKey,
-                    error: _
-                }
-            ))
+            Err(RecoveryError::SecretStorage(SecretStorageError::ImportError {
+                name: SecretName::CrossSigningMasterKey,
+                error: _
+            }))
         );
     }
 
@@ -1012,26 +900,19 @@ pub(crate) mod tests {
             .ok(client.user_id().unwrap(), "abc")
             .mount()
             .await;
-        server
-            .mock_get_master_signing_key()
-            .ok(client.user_id().unwrap(), json!({}))
-            .mount()
-            .await;
+        server.mock_get_master_signing_key().ok(client.user_id().unwrap(), json!({})).mount().await;
 
         let recovery = Recovery { client };
 
-        let ret = recovery
-            .recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd")
-            .await;
+        let ret =
+            recovery.recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd").await;
 
         assert_matches!(
             ret,
-            Err(RecoveryError::SecretStorage(
-                SecretStorageError::ImportError {
-                    name: SecretName::CrossSigningMasterKey,
-                    error: _
-                }
-            ))
+            Err(RecoveryError::SecretStorage(SecretStorageError::ImportError {
+                name: SecretName::CrossSigningMasterKey,
+                error: _
+            }))
         );
     }
 
@@ -1083,18 +964,15 @@ pub(crate) mod tests {
 
         let recovery = Recovery { client };
 
-        let ret = recovery
-            .recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd")
-            .await;
+        let ret =
+            recovery.recover("EsTj 3yST y93F SLpB jJsz eAXc 2XzA ygD3 w69H fGaN TKBj jXEd").await;
 
         assert_matches!(
             ret,
-            Err(RecoveryError::SecretStorage(
-                SecretStorageError::ImportError {
-                    name: SecretName::CrossSigningMasterKey,
-                    error: _
-                }
-            ))
+            Err(RecoveryError::SecretStorage(SecretStorageError::ImportError {
+                name: SecretName::CrossSigningMasterKey,
+                error: _
+            }))
         );
     }
 }

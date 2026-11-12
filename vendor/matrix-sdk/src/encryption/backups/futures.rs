@@ -91,25 +91,14 @@ impl<'a> IntoFuture for WaitForSteadyState<'a> {
 
     fn into_future(self) -> Self::IntoFuture {
         Box::pin(async move {
-            let Self {
-                backups,
-                timeout,
-                progress,
-            } = self;
+            let Self { backups, timeout, progress } = self;
 
             trace!("Creating a stream to wait for the steady state");
 
             let mut progress_stream = progress.subscribe();
 
             let old_delay = if let Some(delay) = timeout {
-                let mut lock = backups
-                    .client
-                    .inner
-                    .e2ee
-                    .backup_state
-                    .upload_delay
-                    .write()
-                    .unwrap();
+                let mut lock = backups.client.inner.e2ee.backup_state.upload_delay.write().unwrap();
                 let old_delay = Some(lock.to_owned());
 
                 *lock = delay;
@@ -130,10 +119,7 @@ impl<'a> IntoFuture for WaitForSteadyState<'a> {
                 // waiting and prevent the total from increasing, in case new room
                 // keys arrive after we started waiting.
                 while let Some(state) = progress_stream.next().await {
-                    trace!(
-                        ?state,
-                        "Update state while waiting for the backup steady state"
-                    );
+                    trace!(?state, "Update state while waiting for the backup steady state");
 
                     match state {
                         Ok(UploadState::Done) => {
@@ -163,14 +149,7 @@ impl<'a> IntoFuture for WaitForSteadyState<'a> {
             };
 
             if let Some(old_delay) = old_delay {
-                let mut lock = backups
-                    .client
-                    .inner
-                    .e2ee
-                    .backup_state
-                    .upload_delay
-                    .write()
-                    .unwrap();
+                let mut lock = backups.client.inner.e2ee.backup_state.upload_delay.write().unwrap();
                 *lock = old_delay;
             }
 

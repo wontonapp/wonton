@@ -97,10 +97,7 @@ impl<Value, Error> Cache<Value, Error> {
 
     /// Construct a new `Cache` with the given value.
     pub(crate) fn with_value(value: CachedValue<TtlValue<Value>>) -> Self {
-        Self {
-            value: Mutex::new(value),
-            refresh_lock: AsyncMutex::new(Ok(())),
-        }
+        Self { value: Mutex::new(value), refresh_lock: AsyncMutex::new(Ok(())) }
     }
 
     /// Set the value.
