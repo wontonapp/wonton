@@ -448,8 +448,17 @@ impl Inner {
         if let Some(attempt) = current.as_ref() {
             let stale = match attempt.outcome() {
                 None => false,
-                // 服务端不认这台设备时，重拨只会再被拒一次，状态还会在“连接中”和“要配对”之间跳。等 `retry_now`。
-                Some(Ok(conn)) => conn.close_reason().is_some() && !was_rejected(&conn),
+                Some(Ok(conn)) => {
+                    // 连接已死就先把断开写进状态再换：另一处写它的 watch_close 是独立任务，和新拨号竞跑，
+                    // 输了的话状态从“已连接”直接跳到“连接中”，断开原因丢失，上层“断开时立刻失败”的
+                    // 闸门就没有依据。本函数持有 attempt 锁，这条连接此刻必是当前连接，直接写，不用 mark。
+                    let closed = conn.close_reason();
+                    if let Some(reason) = &closed {
+                        self.set_status(TunnelStatus::Disconnected(from_connection_error(reason)));
+                    }
+                    // 服务端不认这台设备时，重拨只会再被拒一次，状态还会在“连接中”和“要配对”之间跳。等 `retry_now`。
+                    closed.is_some() && !was_rejected(&conn)
+                }
                 Some(Err(TunnelError::Unauthorized)) => false,
                 Some(Err(_)) => !attempt.recently_revalidated(suspend::now(self.clock.as_deref())),
             };

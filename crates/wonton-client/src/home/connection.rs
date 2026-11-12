@@ -33,6 +33,9 @@ pub(super) struct Tracker {
     trigger: Option<&'static str>,
     /// 客户端报来的失败次数上一次看到的值：只认增加，回落说明连上了，旧失败不属于这一轮。
     seen_failures: u32,
+    /// 统计里“连接从可用变成不可用”的次数上一次看到的值：只认增加。断开和自动重拨挤在两次发布之间时
+    /// “断开”这一态会被状态推送合并掉，靠这个增量把它补回来。
+    seen_disconnects: u32,
     /// 这一轮建连已经失败过：如实说连不上，不等 30 秒。
     round_failed: bool,
     /// 这次断开期间提示过一句（宽限过后、没网或被拒）：恢复的提示只跟着主人看得见的断开走，
@@ -42,6 +45,8 @@ pub(super) struct Tracker {
     recovered_until: Option<Instant>,
     /// 上次连上之后最近一次断开的原因。断开后自动重试会回到“连接中”，这期间连接仍是已知不通的，
     /// 核心自己经隧道的请求照旧立刻失败，不能因为状态在断开和连接中之间来回跳就时拦时不拦。
+    /// 断开的证据有两处：观察到的 `Disconnected` 发布，和现场统计里 `disconnects` 的增量（发布把
+    /// 中间态合并掉时的兜底，原因取 `last_failure`）。
     known_failure: Option<HomeFailure>,
 }
 
@@ -54,11 +59,16 @@ pub(super) struct Recovery {
 
 impl Tracker {
     /// 隧道状态或中继的情况变了。连接恢复时返回这次断了多久、是什么促成的。
+    ///
+    /// `disconnects` 和 `last_failure` 是现场读的连接统计，不经状态推送：断开和自动重拨挤在两次发布
+    /// 之间时，“断开”这一态会被合并掉，只有它们的增量还留着那次断开的痕迹。
     pub(super) fn observe(
         &mut self,
         status: &HomeStatus,
         relay: ConnectionCheck,
         failed_dials: u32,
+        disconnects: u32,
+        last_failure: Option<HomeFailure>,
         now: Instant,
     ) -> Option<Recovery> {
         if failed_dials > self.seen_failures {
@@ -69,6 +79,8 @@ impl Tracker {
             self.round_failed = false;
         }
         self.seen_failures = failed_dials;
+        let dropped = disconnects > self.seen_disconnects;
+        self.seen_disconnects = disconnects;
         self.observe_relay(relay, now);
         match status {
             HomeStatus::NotConfigured => {
@@ -105,6 +117,10 @@ impl Tracker {
                 self.recovered_until = None;
                 if let HomeStatus::Disconnected { reason, .. } = status {
                     self.known_failure = Some(*reason);
+                } else if dropped {
+                    // 只观察到“连接中”：断开和自动重拨挤在了两次发布之间，watch 把“断开”合并掉了。
+                    // 统计是现场读的，断开的次数和原因都还在，照实武装，闸门不能时拦时不拦。
+                    self.known_failure = last_failure;
                 }
                 // 断开不重开诊断窗口，只有建连失败（上面的计数）才重开。建连成功、服务器却不回应时，探活超时断开、
                 // 马上重拨，每轮不到 30 秒，建连失败次数一直是 0：在这里清零的话“连接中”会一直转，永远给不出原因。
@@ -308,7 +324,7 @@ mod tests {
         failures: u32,
     ) -> Option<ConnectionNotice> {
         let now = start + Duration::from_secs(seconds);
-        tracker.observe(&DOWN, tracker.relay, failures, now);
+        tracker.observe(&DOWN, tracker.relay, failures, 0, None, now);
         tracker.notice(&DOWN, now)
     }
 
@@ -316,7 +332,7 @@ mod tests {
     fn a_blip_shows_nothing_and_a_long_outage_says_the_server_seems_offline() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         assert_eq!(after(&mut tracker, start, 1, 0), None);
         assert_eq!(
             after(&mut tracker, start, 3, 0),
@@ -336,7 +352,7 @@ mod tests {
     fn a_long_outage_without_the_relay_does_not_blame_the_server() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Failing, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Failing, 0, 0, None, start);
         assert_eq!(
             after(&mut tracker, start, 30, 0),
             Some(ConnectionNotice::Unreachable { retrying: false })
@@ -347,11 +363,11 @@ mod tests {
     fn the_first_failed_dial_shows_after_the_grace() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Failing, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Failing, 1, 0, None, start);
 
         // 宽限在前：换网时建连立即失败很常见，0.5 秒还不能闪“连不上”。
         let half = start + Duration::from_millis(500);
-        tracker.observe(&DOWN, ConnectionCheck::Failing, 1, half);
+        tracker.observe(&DOWN, ConnectionCheck::Failing, 1, 0, None, half);
         assert_eq!(tracker.notice(&DOWN, half), None);
         assert_eq!(after(&mut tracker, start, 1, 1), None);
         assert_eq!(
@@ -361,7 +377,7 @@ mod tests {
 
         // 连得上中继时，怪家里的服务器。
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, 0, None, start);
         assert_eq!(
             after(&mut tracker, start, 3, 1),
             Some(ConnectionNotice::ServerOffline { retrying: false })
@@ -372,7 +388,7 @@ mod tests {
     fn a_new_round_does_not_inherit_the_previous_failures() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, 0, None, start);
         assert_eq!(
             after(&mut tracker, start, 3, 1),
             Some(ConnectionNotice::ServerOffline { retrying: false })
@@ -383,10 +399,12 @@ mod tests {
             &HomeStatus::Connected,
             ConnectionCheck::Ok,
             0,
+            0,
+            None,
             start + Duration::from_secs(10),
         );
         let again = start + Duration::from_secs(20);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, again);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, again);
         assert_eq!(tracker.notice(&DOWN, again), None);
         assert_eq!(
             after(&mut tracker, again, 3, 0),
@@ -406,7 +424,7 @@ mod tests {
         let at = |seconds| start + Duration::from_secs(seconds);
         let mut tracker = Tracker::default();
         let mut relay_says = |relay, seconds| {
-            tracker.observe(&DOWN, relay, 0, at(seconds));
+            tracker.observe(&DOWN, relay, 0, 0, None, at(seconds));
             tracker.notice(&DOWN, at(seconds))
         };
         let offline = Some(ConnectionNotice::ServerOffline { retrying: false });
@@ -427,7 +445,7 @@ mod tests {
         let start = Instant::now();
         let mut tracker = Tracker::default();
         tracker.network_changed(DeviceNetwork::None, start);
-        tracker.observe(&DOWN, ConnectionCheck::Failing, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Failing, 0, 0, None, start);
         assert_eq!(
             after(&mut tracker, start, 0, 0),
             Some(ConnectionNotice::WaitingForNetwork)
@@ -443,7 +461,7 @@ mod tests {
         let start = Instant::now();
         let mut tracker = Tracker::default();
         tracker.network_changed(DeviceNetwork::None, start);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         let back = start + Duration::from_secs(300);
         tracker.network_changed(DeviceNetwork::Wifi, back);
         assert_eq!(tracker.notice(&DOWN, back), None);
@@ -464,7 +482,7 @@ mod tests {
             Some(ConnectionNotice::WaitingForNetwork)
         );
         tracker.network_changed(DeviceNetwork::Wifi, back);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 2, back);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 2, 0, None, back);
         assert_eq!(tracker.notice(&DOWN, back), None);
         assert_eq!(
             after(&mut tracker, back, 3, 2),
@@ -481,7 +499,14 @@ mod tests {
         let start = Instant::now();
         let mut tracker = Tracker::default();
         tracker.network_changed(DeviceNetwork::None, start);
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
         assert_eq!(tracker.notice(&HomeStatus::Connected, start), None);
     }
 
@@ -492,7 +517,7 @@ mod tests {
         let start = Instant::now();
         let mut tracker = Tracker::default();
         let at = |seconds| start + Duration::from_secs(seconds);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         // 断开期间提示过一句（publish 每秒重算一次）：这一次恢复才算“看得见”。
         assert_eq!(
             tracker.notice(&DOWN, at(3)),
@@ -500,9 +525,23 @@ mod tests {
         );
 
         // 连上：窗口开着，期间每秒一次的连着重算不动它。
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(10));
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            at(10),
+        );
         assert!(tracker.just_recovered(&None, at(10)));
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(11));
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            at(11),
+        );
         assert!(tracker.just_recovered(&None, at(11)));
         // 窗口里有“更新中”就不显示恢复：壳只按核心给的画。
         assert!(!tracker.just_recovered(&Some(ConnectionNotice::Updating), at(11)));
@@ -519,7 +558,7 @@ mod tests {
         // 到点翻回去；再断开（这次也提示过一句）马上收掉，连上又开一个新窗口。
         assert!(!tracker.just_recovered(&None, at(14)));
         assert!(!tracker.just_recovered(&None, at(15)));
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, at(16));
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, at(16));
         assert_eq!(
             tracker.next_tick(true, at(16)),
             Some(Duration::from_secs(1))
@@ -528,7 +567,14 @@ mod tests {
             tracker.notice(&DOWN, at(19)),
             Some(ConnectionNotice::Connecting)
         );
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, at(20));
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            at(20),
+        );
         assert!(tracker.just_recovered(&None, at(20)));
     }
 
@@ -538,19 +584,28 @@ mod tests {
     fn a_connection_that_never_dropped_visibly_shows_no_recovery() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
         assert!(!tracker.just_recovered(&None, start));
         tracker.observe(
             &HomeStatus::Connected,
             ConnectionCheck::Ok,
             0,
+            0,
+            None,
             start + Duration::from_secs(1),
         );
         assert!(!tracker.just_recovered(&None, start + Duration::from_secs(1)));
 
         // 一秒的抖动：期间提示是空（宽限挡住），连上后不开窗口。
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         assert_eq!(
             tracker.notice(&DOWN, start + Duration::from_millis(500)),
             None
@@ -559,6 +614,8 @@ mod tests {
             &HomeStatus::Connected,
             ConnectionCheck::Ok,
             0,
+            0,
+            None,
             start + Duration::from_secs(1),
         );
         assert!(!tracker.just_recovered(&None, start + Duration::from_secs(1)));
@@ -568,7 +625,7 @@ mod tests {
     fn a_rejected_device_is_told_at_once() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&rejected(), ConnectionCheck::Ok, 0, start);
+        tracker.observe(&rejected(), ConnectionCheck::Ok, 0, 0, None, start);
         assert_eq!(
             tracker.notice(&rejected(), start),
             Some(ConnectionNotice::DeviceRejected)
@@ -579,7 +636,7 @@ mod tests {
     fn retry_progress_ends_after_failure_or_at_the_diagnostic_deadline() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 1, 0, None, start);
         let clicked = start + Duration::from_secs(40);
         tracker.retry_started(clicked);
         let progress = Some(ConnectionNotice::ServerOffline { retrying: true });
@@ -607,7 +664,7 @@ mod tests {
         let start = Instant::now();
         for relay in [ConnectionCheck::Ok, ConnectionCheck::Failing] {
             let mut tracker = Tracker::default();
-            tracker.observe(&DOWN, relay, 1, start);
+            tracker.observe(&DOWN, relay, 1, 0, None, start);
             let retry = start + Duration::from_secs(40);
             let failure = tracker.notice(&DOWN, retry);
             assert!(matches!(
@@ -618,7 +675,7 @@ mod tests {
                 )
             ));
 
-            tracker.observe(&HomeStatus::Connecting, relay, 1, retry);
+            tracker.observe(&HomeStatus::Connecting, relay, 1, 0, None, retry);
             assert_eq!(
                 tracker.notice(&HomeStatus::Connecting, retry),
                 Some(ConnectionNotice::Connecting)
@@ -628,23 +685,25 @@ mod tests {
                 &HomeStatus::Connecting,
                 relay,
                 1,
+                0,
+                None,
                 boundary - Duration::from_nanos(1),
             );
             assert_eq!(
                 tracker.notice(&HomeStatus::Connecting, boundary - Duration::from_nanos(1)),
                 Some(ConnectionNotice::Connecting)
             );
-            tracker.observe(&HomeStatus::Connecting, relay, 1, boundary);
+            tracker.observe(&HomeStatus::Connecting, relay, 1, 0, None, boundary);
             assert_eq!(tracker.notice(&HomeStatus::Connecting, boundary), failure);
 
-            tracker.observe(&DOWN, relay, 2, boundary);
+            tracker.observe(&DOWN, relay, 2, 0, None, boundary);
             assert_eq!(tracker.notice(&DOWN, boundary), failure);
-            tracker.observe(&HomeStatus::Connecting, relay, 2, boundary);
+            tracker.observe(&HomeStatus::Connecting, relay, 2, 0, None, boundary);
             assert_eq!(
                 tracker.notice(&HomeStatus::Connecting, boundary),
                 Some(ConnectionNotice::Connecting)
             );
-            tracker.observe(&HomeStatus::Connected, relay, 0, boundary);
+            tracker.observe(&HomeStatus::Connected, relay, 0, 0, None, boundary);
             assert_eq!(tracker.notice(&HomeStatus::Connected, boundary), None);
         }
     }
@@ -666,7 +725,7 @@ mod tests {
             let mut tracker = Tracker::default();
             let mut at = |status: &HomeStatus, millis: u64| {
                 let now = start + Duration::from_millis(millis);
-                tracker.observe(status, relay, 0, now);
+                tracker.observe(status, relay, 0, 0, None, now);
                 tracker.notice(status, now)
             };
             at(&HomeStatus::Connecting, 0);
@@ -695,12 +754,19 @@ mod tests {
         let start = Instant::now();
         let mut tracker = Tracker::default();
         tracker.set_catching_up(true);
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
         assert_eq!(
             tracker.notice(&HomeStatus::Connected, start),
             Some(ConnectionNotice::Updating)
         );
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         assert_eq!(
             after(&mut tracker, start, 3, 0),
             Some(ConnectionNotice::Connecting)
@@ -712,26 +778,99 @@ mod tests {
     fn a_failure_is_remembered_while_retrying_until_connected() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 0, start);
+        tracker.observe(
+            &HomeStatus::Connecting,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
         assert_eq!(tracker.known_failure(), None, "第一次建连还没失败过");
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
-        tracker.observe(&HomeStatus::Connecting, ConnectionCheck::Ok, 1, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
+        tracker.observe(
+            &HomeStatus::Connecting,
+            ConnectionCheck::Ok,
+            1,
+            0,
+            None,
+            start,
+        );
         assert_eq!(
             tracker.known_failure(),
             Some(HomeFailure::TransportUnavailable)
         );
-        tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, start);
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
         assert_eq!(tracker.known_failure(), None);
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         tracker.foregrounded(start);
         assert_eq!(tracker.known_failure(), None, "回前台先给新一轮建连机会");
+    }
+
+    /// 断开和自动重拨挤在两次发布之间：“断开”这一态被 watch 合并掉，只观察到“连接中”。
+    /// 统计是现场读的，断开在 `disconnects` 的增量里留了痕，闸门的依据照样要武装上，不能时拦时不拦。
+    #[test]
+    fn a_disconnect_merged_away_by_the_status_push_still_arms_the_gate() {
+        let start = Instant::now();
+        let mut tracker = Tracker::default();
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            0,
+            None,
+            start,
+        );
+        // 下一次发布只看到“连接中”，但统计里多了一次断开、带着原因。
+        tracker.observe(
+            &HomeStatus::Connecting,
+            ConnectionCheck::Ok,
+            0,
+            1,
+            Some(HomeFailure::TransportUnavailable),
+            start,
+        );
+        assert_eq!(
+            tracker.known_failure(),
+            Some(HomeFailure::TransportUnavailable)
+        );
+        // 之后的“连接中”没有新的断开：武装保持，不被冲掉。
+        tracker.observe(
+            &HomeStatus::Connecting,
+            ConnectionCheck::Ok,
+            0,
+            1,
+            None,
+            start,
+        );
+        assert_eq!(
+            tracker.known_failure(),
+            Some(HomeFailure::TransportUnavailable)
+        );
+        // 连上才算恢复。
+        tracker.observe(
+            &HomeStatus::Connected,
+            ConnectionCheck::Ok,
+            0,
+            1,
+            None,
+            start,
+        );
+        assert_eq!(tracker.known_failure(), None);
     }
 
     #[test]
     fn coming_back_restarts_the_clock_and_recovery_reports_the_outage() {
         let start = Instant::now();
         let mut tracker = Tracker::default();
-        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, start);
+        tracker.observe(&DOWN, ConnectionCheck::Ok, 0, 0, None, start);
         let back = start + Duration::from_secs(600);
         tracker.foregrounded(back);
         assert_eq!(tracker.notice(&DOWN, back), None);
@@ -742,7 +881,14 @@ mod tests {
         );
         let recovered = back + Duration::from_secs(5);
         assert_eq!(
-            tracker.observe(&HomeStatus::Connected, ConnectionCheck::Ok, 0, recovered),
+            tracker.observe(
+                &HomeStatus::Connected,
+                ConnectionCheck::Ok,
+                0,
+                0,
+                None,
+                recovered
+            ),
             Some(Recovery {
                 outage: Duration::from_secs(5),
                 trigger: "foreground",
