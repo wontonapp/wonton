@@ -45,11 +45,19 @@ impl PluginManager {
         self
     }
 
-    /// 测试用：只给出 Matrix 服务器名，不连真的 Tuwunel。
+    /// `matrix_rtc` 别名的 CA（ADR-0096），接了 Matrix 时由核心启动时给出。
+    #[must_use]
+    pub fn with_matrix_rtc_ca(mut self, ca: Option<Arc<super::matrix_rtc_ca::CoreCa>>) -> Self {
+        self.matrix_rtc_ca = ca;
+        self
+    }
+
+    /// 测试用：只给出 Matrix 服务器名和一个不落盘的 CA，不连真的 Tuwunel。
     #[cfg(test)]
     #[must_use]
     pub fn with_matrix_server_name(mut self, server_name: &str) -> Self {
         self.matrix_server_name = Some(server_name.to_owned());
+        self.matrix_rtc_ca = Some(super::matrix_rtc_ca::CoreCa::ephemeral());
         self
     }
 
