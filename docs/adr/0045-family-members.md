@@ -3,7 +3,8 @@
 - 状态：已接受（2026-11-06），产品取舍由主人定（见“已定”）。修订 [ADR-0007](0007-agents-and-bots.md)（Bot 听谁的、Bot 之间的规则）、
   [ADR-0009](0009-identity-pairing-sso.md)（设备和配对码属于人）、[ADR-0010](0010-storage-and-nas.md)（私人空间）、
   [ADR-0016](0016-mcp-bus-and-confirmations.md)（总线按 Bot 授权、卡片发给谁）、[ADR-0020](0020-file-service.md)（访问范围、设备上传放哪）、
-  [ADR-0024](0024-confirmation-scope.md)（谁能放宽）。好友和对整个 Matrix 开放联邦见 [ADR-0051](0051-friends-and-plugin-sharing.md)
+  [ADR-0024](0024-confirmation-scope.md)（谁能放宽）。好友和对整个 Matrix 开放联邦见 [ADR-0051](0051-friends-and-plugin-sharing.md)。
+  主人以外的人按可配置的角色分权限，邀请加上管理员同意，“只给主人”的管理和卡片改成给管理员，“家人能用”开关和 OIDC 的 `groups` 由 [ADR-0088](0088-family-accounts.md) 修订
 
 ## 背景
 
@@ -36,6 +37,8 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 
 ### 谁能做什么
 
+> 已被 [ADR-0088](0088-family-accounts.md) 第 1 至 5 节修订：主人以外的人能做什么由角色的权限项决定，“家人”是一个模板；AI 动手按角色封顶。
+
 | | 主人 | 家人 | 私人 Bot | 共享 Bot |
 | --- | --- | --- | --- | --- |
 | 配对、吊销自己的设备 | 能 | 能 | — | — |
@@ -57,6 +60,8 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 - 审计（`core/audit.jsonl`）的 `acted_by` 加上人：`<用户名>/device:<id>`。
 
 ### 邀请和配对
+
+> 第 1、2 步由 [ADR-0088](0088-family-accounts.md) 第 4 节修订：邀请时选角色，扫码后要管理员同意，不再是谁先用谁就是这个家人。
 
 1. 主人在 App 的“设置 → 家人”里点“邀请”，填显示名，选要不要建私人 Bot（默认建；内存不够时如实说，可以只加人）。家人的数量不设上限。核心先查用户名没被占（已有的 Matrix 账号、
    已有的家人记录、核心的管理账号、Bot 用户名），记成“已邀请”。
@@ -135,7 +140,7 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   Bot 不存在为 404 `not_found`，未认证为 401 `unauthenticated`，服务未就绪为 503 `not_ready`，
   无网页为 404 `no_webui`。这些是接口和目标行为约定，不是网关路由、App 打开行为或端到端验证结论；
   接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
-- **身份**：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
+- **身份**（`groups` 改成按能力给、`owner_groups` 改名 `admin_groups`、`{role}` 的取值，由 [ADR-0088](0088-family-accounts.md) 第 8 节修订）：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
   `{user}`、`{name}`、`{email}` 也是当前这个人。`owner.identity` 不变，注入的是主人（服务器管理员）；在 `bots.services` 里注入的是这个 Bot 的归属人，
   共享 Bot 是主人。
 - **工具带上替谁办事**：总线给插件的 `tools/call` 在 `_meta` 里带 `app.wonton/user`：私人 Bot 是归属人的用户名，共享 Bot 不带。
