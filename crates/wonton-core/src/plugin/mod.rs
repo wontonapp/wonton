@@ -82,7 +82,10 @@ mod owner_secrets;
 pub mod package;
 pub mod package_archive;
 pub mod package_files;
+// 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) mod personal_data;
 pub mod pins;
 pub mod preinstall;
 pub mod privileges;

@@ -63,6 +63,7 @@ mod oidc;
 mod optional_permissions;
 mod owner;
 mod people_languages;
+mod personal_data_contract;
 mod plugin_settings;
 mod preinstall;
 mod privileges;
