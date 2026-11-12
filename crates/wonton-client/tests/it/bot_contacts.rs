@@ -6,7 +6,8 @@ use std::time::Duration;
 use axum::http::{Method, StatusCode};
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, BotContactsState, BotContactsViewModel, ContactError, ContactKind, ContactState,
+    Action, BotContactFailure, BotContactsState, BotContactsViewModel, ContactError, ContactKind,
+    ContactState,
 };
 use wonton_protocol::{
     BotRef, CONTACT_ERROR_HEADER, bot_contact_approve_path, bot_contact_path,
@@ -189,19 +190,16 @@ async fn approving_rejecting_and_removing_hit_the_contacts_own_paths() {
     assert_eq!(rig.core.seen(&Method::DELETE, &remove).len(), 1);
 }
 
-/// 失败照类别报：核心的错误读响应头，说明用核心写的那句；本地代理自己回的（没有头）按状态码分。
+/// 取列表失败照类别报：核心的错误读响应头，说明用核心写的那句；本地代理自己回的（没有头）按状态码分。
 #[tokio::test]
-async fn failures_keep_their_category() {
+async fn list_failures_keep_their_category() {
     let rig = Rig::new().await;
     rig.connected().await;
     let path = bot_contacts_path(&alice());
     rig.core
-        .answer_headered(Method::POST, &path, contact_error(502, "peer_unreachable"));
+        .answer_headered(Method::GET, &path, contact_error(404, "bot_not_found"));
     rig.app
-        .dispatch(Action::RequestBotContact {
-            bot: alice(),
-            user_id: BOT.into(),
-        })
+        .dispatch(Action::RefreshBotContacts { bot: alice() })
         .unwrap();
     let view = wait_contacts(&rig, |view| {
         matches!(view.state, BotContactsState::Failed { .. })
@@ -210,7 +208,7 @@ async fn failures_keep_their_category() {
     assert_eq!(
         view.state,
         BotContactsState::Failed {
-            error: ContactError::PeerUnreachable,
+            error: ContactError::BotNotFound,
             message: "核心写的说明".into(),
         }
     );
@@ -234,6 +232,88 @@ async fn failures_keep_their_category() {
     })
     .await;
     assert!(view.contacts.is_empty());
+}
+
+/// 发起、同意之类的动作失败不换掉列表：原因带着类别单独放，列表照旧；随后重取一次跟上别处的处理，
+/// 壳的下一个动作清掉这次的失败。
+#[tokio::test]
+async fn an_action_failure_keeps_the_list_and_reports_on_its_own() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let path = bot_contacts_path(&alice());
+    rig.core
+        .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "active")]));
+    rig.app
+        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .unwrap();
+    wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
+    let listed = rig.core.seen(&Method::GET, &path).len();
+
+    rig.core
+        .answer_headered(Method::POST, &path, contact_error(400, "invalid_user_id"));
+    rig.app
+        .dispatch(Action::RequestBotContact {
+            bot: alice(),
+            user_id: "sam".into(),
+        })
+        .unwrap();
+    let view = wait_contacts(&rig, |view| view.action_failure.is_some()).await;
+    assert_eq!(
+        view.action_failure,
+        Some(BotContactFailure {
+            error: ContactError::InvalidUserId,
+            message: "核心写的说明".into(),
+        })
+    );
+    assert_eq!(view.state, BotContactsState::Ready);
+    assert_eq!(view.contacts.len(), 1);
+
+    tokio::time::timeout(WAIT, async {
+        while rig.core.seen(&Method::GET, &path).len() == listed {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("动作失败后没有重取列表");
+    let view = rig.app.bot_contacts();
+    assert!(view.action_failure.is_some(), "后台重取不清掉动作的失败");
+    assert_eq!(view.contacts.len(), 1);
+
+    rig.app
+        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .unwrap();
+    assert_eq!(rig.app.bot_contacts().action_failure, None);
+}
+
+/// 刚切到一个还没取过列表的 Bot 就做动作、又失败了：没有列表可留，重取一次补上。
+#[tokio::test]
+async fn an_action_failure_on_a_fresh_bot_fetches_its_list() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let path = bot_contacts_path(&alice());
+    let approve = bot_contact_approve_path(&alice(), BOT);
+    rig.core.answer_always(
+        Method::GET,
+        &path,
+        list(&[contact(PERSON, "person", "active")]),
+    );
+    rig.core.answer_headered(
+        Method::POST,
+        &approve,
+        contact_error(404, "contact_not_found"),
+    );
+    rig.app
+        .dispatch(Action::ApproveBotContact {
+            bot: alice(),
+            user_id: BOT.into(),
+        })
+        .unwrap();
+    let view = wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
+    assert_eq!(
+        view.action_failure.map(|failure| failure.error),
+        Some(ContactError::ContactNotFound)
+    );
+    assert_eq!(view.contacts[0].user_id, PERSON);
 }
 
 #[tokio::test]

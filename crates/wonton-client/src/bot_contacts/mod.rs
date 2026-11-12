@@ -1,7 +1,8 @@
 //! Bot 资料页的“联系人”（ADR-0045、ADR-0050）：一次看一个 Bot，经隧道取自家核心的联系人接口。
 //!
 //! [`Action::RefreshBotContacts`] 选定一个 Bot；之后对任何 Bot 的操作（包括在“等你确认”里同意别的 Bot 的请求）
-//! 都把 ViewModel 切到那个 Bot，结果和失败原因都落在这里。有一行在等对方（Bot 等它的归属人同意，人等他接受）
+//! 都把 ViewModel 切到那个 Bot，结果和失败原因都落在这里。取列表失败换掉列表（`state`）；发起、同意、拒绝、删除失败
+//! 不动列表，原因单独放在 `action_failure`，随后在后台重取一次列表（失败多半说明手上的列表过时了）。有一行在等对方（Bot 等它的归属人同意，人等他接受）
 //! 时隔几秒取一次列表，跟上对方的处理；都没有了就停。
 
 mod api;
@@ -14,8 +15,8 @@ use tokio::sync::watch::Sender as WatchSender;
 use tokio::sync::{mpsc, watch};
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, BotContactsState, BotContactsViewModel, BotRef, ContactError, ContactKind,
-    ContactRequest, ContactState, CoreError, HomeStatus,
+    Action, BotContactFailure, BotContactsState, BotContactsViewModel, BotRef, ContactError,
+    ContactKind, ContactRequest, ContactState, CoreError, HomeStatus,
 };
 
 use crate::home::HomeLink;
@@ -54,6 +55,7 @@ impl BotContactsLink {
             bot: None,
             state: BotContactsState::Ready,
             contacts: Vec::new(),
+            action_failure: None,
         };
         let (jobs, queued) = mpsc::unbounded_channel();
         let link = Arc::new(Self {
@@ -90,7 +92,7 @@ impl BotContactsLink {
                 });
             }
         };
-        self.select(&bot);
+        self.select(&bot, &op);
         self.enqueue(bot, op, true);
         Ok(())
     }
@@ -109,14 +111,18 @@ impl BotContactsLink {
         }
     }
 
-    /// 切到这个 Bot：换了 Bot 时清掉上一个的列表，拨成“正在取”。
-    fn select(&self, bot: &BotRef) {
+    /// 切到这个 Bot，清掉上一个动作的失败。换了 Bot 时清掉上一个的列表、拨成“正在取”；同一个 Bot 只有取列表才拨，
+    /// 别的动作在列表上做，结果回来前列表照旧。
+    fn select(&self, bot: &BotRef, op: &Op) {
         self.view.send_modify(|view| {
+            view.action_failure = None;
             if view.bot.as_ref() != Some(bot) {
                 view.bot = Some(bot.clone());
                 view.contacts.clear();
+                view.state = BotContactsState::Loading;
+            } else if matches!(op, Op::List) {
+                view.state = BotContactsState::Loading;
             }
-            view.state = BotContactsState::Loading;
         });
     }
 
@@ -126,6 +132,8 @@ impl BotContactsLink {
             Ok(api) => api.run(&bot, &op).await,
             Err(failure) => Err(failure),
         };
+        let action = !matches!(op, Op::List);
+        let mut stale = false;
         self.view.send_modify(|view| {
             if view.bot.as_ref() != Some(&bot) {
                 return;
@@ -134,6 +142,14 @@ impl BotContactsLink {
                 Ok(list) => {
                     view.contacts = list.contacts;
                     view.state = BotContactsState::Ready;
+                }
+                Err(failure) if action => {
+                    tracing::info!(error = failure.error.as_str(), "bot contact action failed");
+                    view.action_failure = Some(BotContactFailure {
+                        error: failure.error,
+                        message: failure.message,
+                    });
+                    stale = true;
                 }
                 Err(failure) if report || view.state != BotContactsState::Ready => {
                     tracing::info!(
@@ -149,6 +165,10 @@ impl BotContactsLink {
                 Err(_) => {}
             }
         });
+        if stale {
+            // 比如“那一行已经不在了”：别的设备处理过。刚切过来还没有列表时也靠这次取。
+            self.enqueue(bot, Op::List, false);
+        }
     }
 
     fn api(&self) -> Result<api::Api, Failure> {

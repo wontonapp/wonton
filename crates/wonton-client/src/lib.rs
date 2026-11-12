@@ -138,8 +138,8 @@ pub use wonton_protocol::{
     ChatTextScale, CodeOverflow, PluginChat,
 };
 pub use wonton_protocol::{
-    BotContact, BotContactsState, BotContactsViewModel, ContactError, ContactKind,
-    ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
+    BotContact, BotContactFailure, BotContactsState, BotContactsViewModel, ContactError,
+    ContactKind, ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
 };
 pub use wonton_protocol::{
     MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
