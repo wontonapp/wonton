@@ -199,27 +199,7 @@ impl PluginManager {
         }
         let langs = self.owner_languages();
         self.store_input_values(&package.manifest, &request.secrets, None, &langs)?;
-        let settings = match super::settings::load(&package, &langs)? {
-            Some(schema) => super::settings::value::initial(&schema, &request.settings, &langs)
-                .map_err(|fields| super::settings::value_error(fields, &langs))?,
-            None if request.settings.is_empty() => Default::default(),
-            None => {
-                let fields = request
-                    .settings
-                    .keys()
-                    .map(|name| wonton_protocol::SettingsFieldError {
-                        name: name.clone(),
-                        kind: wonton_protocol::SettingsFieldProblemKind::UnknownField,
-                        message: crate::l10n::text(
-                            &langs,
-                            "plugin-settings-value-unknown-field",
-                            &[],
-                        ),
-                    })
-                    .collect();
-                return Err(super::settings::value_error(fields, &langs));
-            }
-        };
+        let settings = super::settings::install_values(&package, &request.settings, &langs)?;
         let installed = self
             .install_detached_enabled(
                 package,
