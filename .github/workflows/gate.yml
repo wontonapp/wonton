@@ -139,7 +139,7 @@ jobs:
       RESULTS: ${{ join(needs.*.result, ' ') }}
     steps:
       - name: 草稿 PR 不跑重作业
-        if: github.event_name == pull_request && github.event.pull_request.draft
+        if: github.event_name == 'pull_request' && github.event.pull_request.draft
         run: |
           echo "::error::草稿 PR：rust/android/ios 重作业按设计没跑，这份汇总不算数——转 ready 会重跑，以那次为准"
           exit 1
