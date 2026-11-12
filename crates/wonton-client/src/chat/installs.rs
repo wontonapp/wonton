@@ -80,7 +80,14 @@ impl Installs {
                 }
             });
         }
-        self.view.send_modify(|view| view.installing_bots = rows);
+        // 插件表变得频繁，行没变时别惊动壳：时间线订阅跟着发批次，空转时一秒几千批会把主线程占死。
+        self.view.send_if_modified(|view| {
+            if view.installing_bots == rows {
+                return false;
+            }
+            view.installing_bots = rows;
+            true
+        });
     }
 }
 
