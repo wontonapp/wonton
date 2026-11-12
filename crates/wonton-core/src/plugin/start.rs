@@ -345,8 +345,55 @@ impl PluginManager {
                 group.push((service.as_str(), None));
             }
         }
-        // 启动前逐个确认归属：同名但被别的容器占用时不碰它。
+        self.check_ownership(id, &group, &name_of, langs).await?;
+        self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
+            .await?;
         for (service, bot) in &group {
+            // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
+            let deps: Vec<(String, DependCondition)> = dependencies[service]
+                .iter()
+                .map(|(dependency, condition)| {
+                    let condition = if one_shot.contains(dependency.as_str()) {
+                        DependCondition::ServiceCompletedSuccessfully
+                    } else {
+                        *condition
+                    };
+                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
+                    let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
+                    (name_of(dependency, dep_bot), condition)
+                })
+                .collect();
+            health::wait_for_all(&self.engine, &self.http, &deps, deadline, langs).await?;
+            let name = name_of(service, *bot);
+            self.engine.start_container(&name).await?;
+        }
+        for (service, bot) in &group {
+            let name = name_of(service, *bot);
+            let webui_health = self.webui_health(&package.manifest, service).await?;
+            health::wait_for(
+                &self.engine,
+                &self.http,
+                &name,
+                Target::Ready,
+                webui_health.as_ref(),
+                deadline,
+                langs,
+            )
+            .await?;
+        }
+        self.ensure_relays(&package.manifest, record).await?;
+        Ok(())
+    }
+
+    /// 启动前逐个确认归属：同名但被别的容器占用时不碰它。
+    async fn check_ownership(
+        &self,
+        id: &PluginId,
+        group: &[(&str, Option<&str>)],
+        name_of: &impl Fn(&str, Option<&str>) -> String,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        for (service, bot) in group {
             let name = name_of(service, *bot);
             let info = self.engine.inspect_container(&name).await?.ok_or_else(|| {
                 InstallError::Unhealthy(l10n::text(
@@ -372,32 +419,6 @@ impl PluginManager {
                 )));
             }
         }
-        self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
-            .await?;
-        for (service, bot) in &group {
-            // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
-            let deps: Vec<(String, DependCondition)> = dependencies[service]
-                .iter()
-                .map(|(dependency, condition)| {
-                    let condition = if one_shot.contains(dependency.as_str()) {
-                        DependCondition::ServiceCompletedSuccessfully
-                    } else {
-                        *condition
-                    };
-                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
-                    let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
-                    (name_of(dependency, dep_bot), condition)
-                })
-                .collect();
-            health::wait_for_all(&self.engine, &deps, deadline, langs).await?;
-            let name = name_of(service, *bot);
-            self.engine.start_container(&name).await?;
-        }
-        for (service, bot) in &group {
-            let name = name_of(service, *bot);
-            health::wait_for(&self.engine, &name, Target::Ready, deadline, langs).await?;
-        }
-        self.ensure_relays(&package.manifest, record).await?;
         Ok(())
     }
 }

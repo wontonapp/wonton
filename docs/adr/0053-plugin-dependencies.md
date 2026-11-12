@@ -1,7 +1,8 @@
 # ADR-0053 插件之间按能力依赖：只写直接依赖，装时一起装，卸时拦下
 
 - 状态：已接受（2026-11-07）。“高权限能力”一节 2026-11-07 补充；“使用方怎么用变量”“共享凭据”“连接变了就重建使用方”三节和 `tcp` 能力
-  2026-11-12 补充（主人定：*arr 共享凭据，`mqtt` 进能力表并由核心按使用方做四层中继，连接变了自动重建使用方、高权限的先确认）
+  2026-11-12 补充（主人定：*arr 共享凭据，`mqtt` 进能力表并由核心按使用方做四层中继，连接变了自动重建使用方、高权限的先确认）；
+  `personal_data` 能力 2026-11-12 补充（ADR-0098）
 
 ## 背景
 
@@ -39,6 +40,7 @@ Debian 的虚拟包）能换提供者；按插件名依赖的（飞牛的 `insta
 | `sonarr` | Sonarr 的 HTTP API v3（`/api/v3/`），`X-Api-Key` 鉴权 | 共享 | `http` |
 | `radarr` | Radarr 的 HTTP API v3（`/api/v3/`），`X-Api-Key` 鉴权 | 共享 | `http` |
 | `lidarr` | Lidarr 的 HTTP API v1（`/api/v1/`），`X-Api-Key` 鉴权 | 共享 | `http` |
+| `personal_data` | 位置和健康数据的存取契约，见 [ADR-0098](0098-location-and-health.md) 第 5 节；类型在 `wonton-protocol` | 按使用方，必须声明 | `http` |
 
 都不是高权限。官方插件里写成 `x-wonton.mqtt`、`x-wonton.sonarr` 这类第三方名字的，改用表里的名字。
 
