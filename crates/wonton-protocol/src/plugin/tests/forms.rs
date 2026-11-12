@@ -23,8 +23,6 @@ fn runtimes_round_trip_with_their_wire_values() {
         (PluginRuntime::Compose, "compose"),
         (PluginRuntime::RemoteMcp, "remote_mcp"),
         (PluginRuntime::Skills, "skills"),
-        (PluginRuntime::StaticWeb, "static_web"),
-        (PluginRuntime::Link, "link"),
         (PluginRuntime::Other, "other"),
     ] {
         assert_eq!(serde_json::to_value(runtime).unwrap(), json!(wire));
@@ -115,20 +113,20 @@ fn older_cores_and_apps_can_omit_plugin_forms_fields() {
 #[test]
 fn newer_plugin_forms_do_not_break_older_clients() {
     let mut installed = serde_json::to_value(installed()).unwrap();
-    installed["runtime"] = json!("future_form");
+    installed["runtime"] = json!("static_web");
     let installed: InstalledPlugin = serde_json::from_value(installed).unwrap();
     assert_eq!(installed.runtime, PluginRuntime::Other);
 
     let unknown_scope = json!({"type": "future_scope", "selection": ["future_bot"]});
     let mut detail = serde_json::to_value(detail()).unwrap();
-    detail["runtime"] = json!("future_form");
+    detail["runtime"] = json!("static_web");
     detail["scope"] = unknown_scope.clone();
     let detail: PluginDetail = serde_json::from_value(detail).unwrap();
     assert_eq!(detail.runtime, PluginRuntime::Other);
     assert_eq!(detail.scope, Some(PluginScope::Other));
 
     let mut preview = serde_json::to_value(preview()).unwrap();
-    preview["runtime"] = json!("future_form");
+    preview["runtime"] = json!("static_web");
     let preview: InstallPreview = serde_json::from_value(preview).unwrap();
     assert_eq!(preview.runtime, PluginRuntime::Other);
 
@@ -136,63 +134,6 @@ fn newer_plugin_forms_do_not_break_older_clients() {
     request["scope"] = unknown_scope;
     let request: InstallRequest = serde_json::from_value(request).unwrap();
     assert_eq!(request.scope, Some(PluginScope::Other));
-}
-
-#[test]
-fn security_tiers_round_trip_and_unknown_tiers_fall_to_other() {
-    for (tier, wire) in [
-        (SecurityTier::Minimal, "minimal"),
-        (SecurityTier::Standard, "standard"),
-        (SecurityTier::High, "high"),
-        (SecurityTier::VeryHigh, "very_high"),
-        (SecurityTier::Highest, "highest"),
-        (SecurityTier::Other, "other"),
-    ] {
-        assert_eq!(serde_json::to_value(tier).unwrap(), json!(wire));
-        let detail = PluginDetail {
-            security_tier: Some(tier),
-            ..detail()
-        };
-        let preview = InstallPreview {
-            security_tier: Some(tier),
-            ..preview()
-        };
-        assert_eq!(round_trip(&detail), detail);
-        assert_eq!(round_trip(&preview), preview);
-    }
-    let mut detail = serde_json::to_value(detail()).unwrap();
-    detail["security_tier"] = json!("future_tier");
-    let detail: PluginDetail = serde_json::from_value(detail).unwrap();
-    assert_eq!(detail.security_tier, Some(SecurityTier::Other));
-}
-
-#[test]
-fn older_cores_can_omit_security_tier_and_link_url() {
-    let mut detail = serde_json::to_value(detail()).unwrap();
-    detail.as_object_mut().unwrap().remove("security_tier");
-    detail.as_object_mut().unwrap().remove("link_url");
-    let detail: PluginDetail = serde_json::from_value(detail).unwrap();
-    assert_eq!((detail.security_tier, detail.link_url), (None, None));
-
-    let mut preview = serde_json::to_value(preview()).unwrap();
-    preview.as_object_mut().unwrap().remove("security_tier");
-    let preview: InstallPreview = serde_json::from_value(preview).unwrap();
-    assert_eq!(preview.security_tier, None);
-}
-
-#[test]
-fn link_plugins_carry_their_address() {
-    let detail = PluginDetail {
-        runtime: PluginRuntime::Link,
-        security_tier: Some(SecurityTier::Minimal),
-        link_url: Some("https://example.com/dashboard".into()),
-        ..detail()
-    };
-    assert_eq!(round_trip(&detail), detail);
-    assert_eq!(
-        serde_json::to_value(&detail).unwrap()["link_url"],
-        json!("https://example.com/dashboard")
-    );
 }
 
 #[test]

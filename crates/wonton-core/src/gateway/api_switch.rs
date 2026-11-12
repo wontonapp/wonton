@@ -17,7 +17,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{EnabledPermission, OpenedBy};
 use crate::plugin::{InstallError, Permission, PluginId, PluginPackage};
-use wonton_protocol::{PermissionUpdate, SecretValues, SettingValues};
+use wonton_protocol::{PermissionUpdate, SecretValues};
 
 /// 开关一项可选权限（ADR-0057），重建完返回详情。`{permission}` 用清单写法，如 `docker.socket`。
 pub async fn set_plugin_permission(
@@ -85,34 +85,17 @@ pub(super) const SECRETS_HEADER: &str = "wonton-plugin-secrets";
 
 /// 上传请求头里的密钥；没带是空表。
 pub(super) fn secrets(headers: &HeaderMap) -> Result<SecretValues, InstallError> {
-    json_header(headers, SECRETS_HEADER, "Wonton-Plugin-Secrets")
-}
-
-/// 上传安装、升级带设置值的请求头，编码同密钥头，值的写法同 JSON 安装请求的 `settings`。插件包是请求体，
-/// 设置值只能放头里；必填又没有默认值的设置（如要主人同意的许可）不带就装不上。
-pub(super) const SETTINGS_HEADER: &str = "wonton-plugin-settings";
-
-/// 上传请求头里的设置值；没带是空表。
-pub(super) fn settings(headers: &HeaderMap) -> Result<SettingValues, InstallError> {
-    json_header(headers, SETTINGS_HEADER, "Wonton-Plugin-Settings")
-}
-
-fn json_header<T: serde::de::DeserializeOwned + Default>(
-    headers: &HeaderMap,
-    name: &str,
-    shown: &str,
-) -> Result<T, InstallError> {
-    let Some(raw) = headers.get(name) else {
-        return Ok(T::default());
+    let Some(raw) = headers.get(SECRETS_HEADER) else {
+        return Ok(SecretValues::new());
     };
     let raw = raw
         .to_str()
-        .map_err(|_| InstallError::Invalid(format!("{shown} 不是 ASCII")))?;
+        .map_err(|_| InstallError::Invalid("Wonton-Plugin-Secrets 不是 ASCII".to_owned()))?;
     let json = URL_SAFE_NO_PAD
         .decode(raw.trim())
-        .map_err(|e| InstallError::Invalid(format!("{shown} 不是 base64url：{e}")))?;
+        .map_err(|e| InstallError::Invalid(format!("Wonton-Plugin-Secrets 不是 base64url：{e}")))?;
     serde_json::from_slice(&json)
-        .map_err(|e| InstallError::Invalid(format!("{shown} 不是 JSON 对象：{e}")))
+        .map_err(|e| InstallError::Invalid(format!("Wonton-Plugin-Secrets 不是 JSON 对象：{e}")))
 }
 
 pub(super) fn enabled(query: &InstallQuery) -> Result<Vec<EnabledPermission>, InstallError> {

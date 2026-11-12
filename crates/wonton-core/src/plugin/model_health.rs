@@ -33,7 +33,7 @@ pub(crate) enum RouteProbe {
     ProviderError(String),
 }
 
-/// 计费节奏：30 秒巡检只读模型列表，不花一块钱；
+/// 计费节奏（负责人 2026-11-06 定）：30 秒巡检只读模型列表，不花一块钱；
 /// 最小补全只在核心启动首轮、使用方刚安装、刚启动时各做一次，服务商出错后每 5 分钟复查，
 /// 恢复即停。缺模型时不发补全；每 30 秒补全一次是每天约 2880 次的用量污染，不做健康稳态验证。
 #[derive(Default)]
@@ -218,7 +218,6 @@ impl PluginManager {
                 Method::POST,
                 &url,
                 Some(key),
-                &[],
                 RequestBody::Json(&body),
                 PROBE_TIMEOUT,
             )
@@ -374,7 +373,6 @@ impl PluginManager {
                 Method::GET,
                 &url,
                 Some(value),
-                &[],
                 RequestBody::Empty,
                 VERIFY_TIMEOUT,
             )

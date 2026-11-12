@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    MAX_DISPLAY_NAME_CHARS, Me, ModelProviderInput, ModelProviders, Onboarding, OnboardingAgent,
+    MAX_DISPLAY_NAME_CHARS, Me, ModelProviderInput, ModelProviders, Onboarding,
     OnboardingModelChoice, OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, SecretString,
     check_display_name, check_email_change, normalized_email,
 };
@@ -114,26 +114,6 @@ impl Draft {
                     .map(|agent| agent.id.clone())
             }),
         }
-    }
-
-    /// 完成时会被设成默认 Agent 的那个；为空时完成不发 `primary_agent`，服务器上的现值不动。
-    /// 重看引导里没点过 Agent（或者又点回原来那个）都不算改：首次引导的“用推荐的”才替主人定一个。
-    pub fn primary_change<'a>(
-        &self,
-        onboarding: &'a Onboarding,
-        revisit: bool,
-    ) -> Option<&'a OnboardingAgent> {
-        let agent = match &self.agent {
-            AgentChoice::Chosen(id) => onboarding.agents.iter().find(|agent| agent.id == *id)?,
-            AgentChoice::Current if !revisit => {
-                let id = self.agent(onboarding)?;
-                onboarding.agents.iter().find(|agent| agent.id == id)?
-            }
-            _ => return None,
-        };
-        let already_default = agent.status.is_some()
-            && onboarding.primary_agent.as_deref() == Some(agent.id.as_str());
-        (!already_default).then_some(agent)
     }
 
     pub fn model<'a>(&'a self, providers: Option<&ModelProviders>) -> Option<&'a ModelDraft> {

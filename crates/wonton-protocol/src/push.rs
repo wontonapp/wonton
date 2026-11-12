@@ -72,14 +72,6 @@ pub struct PushNotification {
     pub category: NotificationCategory,
     /// 这条消息是确认卡片时才有。
     pub confirmation: Option<PushConfirmation>,
-    /// 这条通知是新的联系人请求时才有；这时不对应房间里的消息，`room_id`、`event_id` 为空。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub contact_request: Option<crate::ContactRequestPush>,
-    /// 消息发在旁聊里时是旁聊根的事件 ID（ADR-0093 §4）：点通知进那个旁聊，不是主对话。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub thread_root: Option<String>,
 }
 
 /// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
@@ -89,7 +81,7 @@ pub struct PushNotification {
 pub enum NotificationCategory {
     /// 聊天消息。
     Message,
-    /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。新的联系人请求也用这个类别（“等你确认”）。
+    /// 等主人回答的确认卡片：Agent 停在那里等，默认比消息更醒目。
     Confirmation,
     /// 插件通知（ADR-0047）的 `warning`、`critical` 级别，以及应用邮件（ADR-0056）。
     PluginNotice,
@@ -108,11 +100,6 @@ pub struct PushConfirmation {
     pub id: String,
     /// 过期的时刻，Unix 毫秒。
     pub expires_at_ms: u64,
-    /// 卡片显示在哪个会话：点开通知进这个房间。为空时（核心自己发起的卡片）打开“等你确认”列表。确认卡片的通知
-    /// 不对应房间里的消息，[`PushNotification::room_id`] 是这里的房间（没有时为空），`event_id` 是卡片 ID。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub origin: Option<crate::ConfirmationOrigin>,
 }
 
 /// 通知的正文。核心只给类别和原文，通知上的文字（图片、文件的占位，邀请，取不到时的说明）由壳按系统语言写。
@@ -192,13 +179,7 @@ mod tests {
             confirmation: Some(PushConfirmation {
                 id: "card".into(),
                 expires_at_ms: 1_793_000_000_000,
-                origin: Some(crate::ConfirmationOrigin {
-                    room_id: "!bot:home.example".into(),
-                    thread_id: None,
-                }),
             }),
-            contact_request: None,
-            thread_root: None,
         };
         assert_eq!(round_trip(&notification), notification);
     }

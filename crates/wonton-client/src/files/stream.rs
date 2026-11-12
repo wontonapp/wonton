@@ -9,20 +9,19 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use http_body_util::combinators::BoxBody;
-use http_body_util::{BodyExt, Empty, Full, StreamBody};
+use http_body_util::{BodyExt, Empty, StreamBody};
 use hyper::body::{Bytes, Frame, Incoming};
 use hyper::header::{HeaderValue, IF_RANGE, RANGE};
 use hyper::service::service_fn;
 use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::TokioIo;
-use reqwest::header::HeaderMap;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, FileId};
 use wonton_tunnel::ERROR_HEADER;
 
-use super::api::{Api, Problem, classify, header};
+use super::api::Api;
 use crate::home::HomeLink;
 use crate::l10n::{CATALOG, language};
 
@@ -38,9 +37,8 @@ const FORWARDED: [&str; 6] = [
     "x-wonton-error",
 ];
 
-/// 这次播放连家里时碰上过什么。播放器放不了时用：等问起来家里可能已经恢复了，再问一遍会把吊销说成隧道、
-/// 把没了的文件说成放不了。
-type Interruptions = Arc<Mutex<HashMap<FileId, Problem>>>;
+/// 这次播放连家里时断过哪些文件，说明是什么。播放器放不了时用：等问起来隧道可能又好了，不能说成格式不支持。
+type Interruptions = Arc<Mutex<HashMap<FileId, String>>>;
 
 pub(super) struct StreamServer {
     token: String,
@@ -72,7 +70,7 @@ impl StreamServer {
         Ok(format!("http://{addr}/{}/files/{id}/content", self.token))
     }
 
-    pub(super) fn take_interruption(&self, id: &FileId) -> Option<Problem> {
+    pub(super) fn take_interruption(&self, id: &FileId) -> Option<String> {
         lock(&self.interruptions).remove(id)
     }
 
@@ -132,8 +130,8 @@ struct Shared {
 }
 
 impl Shared {
-    fn interrupted(&self, file: &FileId, problem: Problem) {
-        lock(&self.interruptions).insert(file.clone(), problem);
+    fn interrupted(&self, file: &FileId, detail: String) {
+        lock(&self.interruptions).insert(file.clone(), detail);
     }
 }
 
@@ -183,19 +181,6 @@ fn status(code: StatusCode) -> Response<Body> {
     response
 }
 
-/// 隧道这头的错误算什么、要不要记下来给壳问：吊销不算——核心会说明白，留给 `probe` 去问；
-/// 其他隧道毛病当场记成“连不上”，本来就不是核心的话。
-fn tunnel_problem(code: &str) -> Option<Problem> {
-    (code != "unauthorized").then(|| {
-        Problem::Interrupted(l10n!(
-            CATALOG,
-            language(),
-            "files-stream-tunnel-unavailable",
-            code = format!("{code:?}")
-        ))
-    })
-}
-
 /// 比较时不提前返回：同机的其他 App 不能靠响应时间一个字符一个字符地猜令牌。
 fn same(left: &str, right: &str) -> bool {
     left.len() == right.len()
@@ -227,7 +212,7 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
     let Ok(api) = Api::connect(&shared.home) else {
         shared.interrupted(
             &file,
-            Problem::Interrupted(l10n!(CATALOG, language(), "files-stream-not-connected")),
+            l10n!(CATALOG, language(), "files-stream-not-connected"),
         );
         return status(StatusCode::SERVICE_UNAVAILABLE);
     };
@@ -241,44 +226,30 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
         Ok(upstream) => upstream,
         Err(e) => {
             tracing::info!(file = %file, error = %e, "cannot reach the home server during playback");
-            shared.interrupted(&file, Problem::Interrupted(e.to_string()));
+            shared.interrupted(&file, e.to_string());
             return status(StatusCode::BAD_GATEWAY);
         }
     };
     let code = upstream.status();
     let headers = upstream.headers().clone();
-    // 这一趟在家里碰上过什么：记下来，壳问起来按这次的说。等它问的时候家里可能已经恢复了，
-    // 再问一遍会把没了的文件、报错的插件说成“放不了这个格式”。
-    match header(&headers, ERROR_HEADER) {
-        Some(found) => {
-            if let Some(problem) = tunnel_problem(found) {
-                shared.interrupted(&file, problem);
-            }
-        }
-        None if !code.is_success() => {
-            // 核心自己回的错误：响应体是小错误说明，读出来当场记下、原样给播放器。
-            let body = upstream.bytes().await.unwrap_or_default();
-            shared.interrupted(&file, classify(code, &headers, &body));
-            let response = if method == Method::HEAD {
-                status(code)
-            } else {
-                let mut response = Response::new(BodyExt::boxed(
-                    Full::new(body).map_err(|never| match never {}),
-                ));
-                *response.status_mut() = code;
-                response
-            };
-            return forwarded_headers(response, &headers);
-        }
-        None => {}
+    if let Some(code) = headers.get(ERROR_HEADER) {
+        shared.interrupted(
+            &file,
+            l10n!(
+                CATALOG,
+                language(),
+                "files-stream-tunnel-unavailable",
+                code = format!("{code:?}")
+            ),
+        );
     }
-    let response = if method == Method::HEAD {
+    let mut response = if method == Method::HEAD {
         status(code)
     } else {
         let (shared, file) = (shared.clone(), file.clone());
         let frames = upstream.bytes_stream().map(move |chunk| {
             chunk.map(Frame::data).map_err(|e| {
-                shared.interrupted(&file, Problem::Interrupted(e.to_string()));
+                shared.interrupted(&file, e.to_string());
                 std::io::Error::other(e)
             })
         });
@@ -286,11 +257,6 @@ async fn respond(shared: Arc<Shared>, request: Request<Incoming>) -> Response<Bo
         *response.status_mut() = code;
         response
     };
-    forwarded_headers(response, &headers)
-}
-
-/// 转给播放器的响应头，加上文件内容不可信要的两条。
-fn forwarded_headers(mut response: Response<Body>, headers: &HeaderMap) -> Response<Body> {
     let extra = response.headers_mut();
     for name in FORWARDED {
         if let Some(value) = headers.get(name) {
@@ -306,23 +272,4 @@ fn forwarded_headers(mut response: Response<Body>, headers: &HeaderMap) -> Respo
         HeaderValue::from_static("sandbox"),
     );
     response
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_revoked_device_is_left_to_the_probe() {
-        assert_eq!(tunnel_problem("unauthorized"), None);
-        assert_eq!(
-            tunnel_problem("service_unavailable"),
-            Some(Problem::Interrupted(l10n!(
-                CATALOG,
-                language(),
-                "files-stream-tunnel-unavailable",
-                code = "\"service_unavailable\""
-            )))
-        );
-    }
 }

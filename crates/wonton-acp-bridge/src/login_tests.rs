@@ -4,30 +4,6 @@ use crate::l10n::zh;
 use crate::login::LoginSink;
 use serde_json::json;
 
-/// 连上要求登录的 Agent：`new_session` 被拒（`-32000`），登录完成后才能建会话。
-async fn gated_client(scenario: Scenario) -> (FakeAgent, Arc<AcpClient>) {
-    let agent = FakeAgent::start(scenario).await;
-    let client = Arc::new(
-        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
-            .await
-            .unwrap(),
-    );
-    let error = bounded(
-        client.new_session(
-            "/workspace",
-            "http://mcp.wonton.internal/mcp",
-            "plan",
-            None,
-            &origin(None),
-        ),
-        "gated session",
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(error, Error::AuthenticationRequired));
-    (agent, client)
-}
-
 #[derive(Clone, Default)]
 struct MemorySink {
     texts: Arc<std::sync::Mutex<Vec<String>>>,
@@ -111,7 +87,20 @@ async fn broken_login_method_is_skipped_without_failing_connect() {
 #[tokio::test]
 async fn url_login_completes_through_chat_commands() {
     use crate::login::LoginFlow;
-    let (agent, client) = gated_client(Scenario::LoginUrl).await;
+    let agent = FakeAgent::start(Scenario::LoginUrl).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let error = bounded(
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        "gated session",
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, Error::AuthenticationRequired));
+
     let (mut login, mut events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
@@ -185,13 +174,7 @@ async fn url_login_completes_through_chat_commands() {
     assert!(!reconnect);
 
     let session = bounded(
-        client.new_session(
-            "/workspace",
-            "http://mcp.wonton.internal/mcp",
-            "plan",
-            None,
-            &origin(None),
-        ),
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session after login",
     )
     .await
@@ -204,7 +187,20 @@ async fn url_login_completes_through_chat_commands() {
 #[tokio::test]
 async fn terminal_login_forwards_code_and_reconnects() {
     use crate::login::{LoginEvent, LoginFlow};
-    let (agent, client) = gated_client(Scenario::LoginTerminal).await;
+    let agent = FakeAgent::start(Scenario::LoginTerminal).await;
+    let client = Arc::new(
+        bounded(AcpClient::connect(&agent.socket, broker()), "initialize")
+            .await
+            .unwrap(),
+    );
+    let error = bounded(
+        client.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
+        "gated session",
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, Error::AuthenticationRequired));
+
     let (mut login, mut events) = LoginFlow::new();
     let sink = MemorySink::default();
     bounded(
@@ -263,13 +259,7 @@ async fn terminal_login_forwards_code_and_reconnects() {
         .await
         .unwrap();
     let session = bounded(
-        reconnected.new_session(
-            "/workspace",
-            "http://mcp.wonton.internal/mcp",
-            "plan",
-            None,
-            &origin(None),
-        ),
+        reconnected.new_session("/workspace", "http://mcp.wonton.internal/mcp", "plan", None),
         "session after reconnect",
     )
     .await

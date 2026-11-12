@@ -63,6 +63,5 @@ pub(crate) fn set_permission(
         scope: None,
         plugin_id: None,
         secret_inputs: Vec::new(),
-        settings: None,
     }
 }

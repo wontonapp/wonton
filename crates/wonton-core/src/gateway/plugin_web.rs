@@ -2,44 +2,19 @@
 
 use axum::extract::Request;
 use axum::response::Response;
-use hyper::header::CONTENT_TYPE;
-use hyper::{Method, StatusCode};
+use hyper::StatusCode;
 
 use super::{Gateway, client_addr, isolation, pages, proxy, proxy_sso};
-use crate::config::PublicUrls;
 use crate::l10n;
 use crate::plugin::PluginStatus;
 use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::Endpoint;
-
-/// 回调只借用网关的转发能力；登录请求关联与令牌仍由应用校验（ADR-0078）。
-pub(super) fn oidc_callback_post(
-    route: &crate::plugin::manager::Route,
-    req: &Request,
-    public: &PublicUrls,
-    origin: &str,
-) -> bool {
-    req.method() == Method::POST
-        && route.oidc_callback
-        && req
-            .headers()
-            .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(';').next())
-            .is_some_and(|media| {
-                media
-                    .trim()
-                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-            })
-        && isolation::oidc_callback_origin_allowed(req.headers(), public, origin)
-}
 
 /// 插件网页的上游地址：运行中直接给；辅助容器坏了但网页还服务着也照常转发，网页里依赖坏掉的
 /// 那部分由应用自己报错。没运行时给要直接回给客户端的错误页。
 pub(super) fn upstream(
     route: &crate::plugin::manager::Route,
     langs: &Languages,
-    format: pages::Format,
 ) -> Result<Endpoint, Box<Response>> {
     match (&route.status, &route.upstream) {
         (PluginStatus::Running, Some(upstream)) => Ok(upstream.clone()),
@@ -48,7 +23,6 @@ pub(super) fn upstream(
             "no_webui",
             &l10n::text(langs, "gateway-no-webui", &[]),
             langs,
-            format,
         ))),
         (PluginStatus::Degraded { .. }, Some(upstream)) if route.web_serving => {
             Ok(upstream.clone())
@@ -65,7 +39,6 @@ pub(super) fn upstream(
                 ),
                 Some(&detail),
                 langs,
-                format,
             )))
         }
     }
@@ -79,8 +52,7 @@ pub(super) async fn self_request(
     mut req: Request,
 ) -> Response {
     let langs = crate::gateway::api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    let upstream = match upstream(route, &langs, format) {
+    let upstream = match upstream(route, &langs) {
         Ok(upstream) => upstream,
         Err(response) => return *response,
     };
@@ -98,7 +70,7 @@ pub(super) async fn self_request(
     let mut response =
         match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
             Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs, format),
+            Err(error) => return error.response(route.id.as_str(), &langs),
         };
     isolation::sanitize_set_cookies(response.headers_mut());
     if route.cross_origin_isolated {

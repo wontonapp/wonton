@@ -105,7 +105,6 @@ internal fun InstallAccessDetails(notices: List<CardLine>, permissions: List<Per
 fun LineIcon(icon: ImageVector, tint: Color) {
     Icon(
         icon,
-        // 装饰：小图标紧贴说明文字。
         contentDescription = null,
         modifier = Modifier.padding(top = LINE_ICON_OFFSET).size(WontonTheme.size.iconSmall),
         tint = tint,

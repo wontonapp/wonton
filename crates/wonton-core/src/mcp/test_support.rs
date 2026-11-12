@@ -16,12 +16,11 @@ use rmcp::transport::streamable_http_server::session::local::LocalSessionManager
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::json;
 use tokio::net::TcpListener;
-use wonton_protocol::ConfirmationCard;
+use wonton_protocol::{ConfirmationCard, ConfirmationState};
 
 use super::Notifier;
 
-/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据），`purge` 标了会删东西
-/// （`destructiveHint`）。`deleted` 记下删过的笔记。
+/// 假插件：`search`、`find` 标了只读，`delete`、`archive` 没标（会改数据）。`deleted` 记下删过的笔记。
 #[derive(Clone)]
 pub struct Notes {
     pub deleted: Arc<Mutex<Vec<String>>>,
@@ -68,28 +67,13 @@ impl ServerHandler for Notes {
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let search = Tool::new("search", "找笔记", schema())
-            .with_annotations(ToolAnnotations::new().read_only(true))
-            .with_meta(rmcp::model::MetaObject(
-                json!({"ui": {"visibility": ["app"]}})
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
-            ));
-        let delete = Tool::new("delete", "删笔记", schema()).with_meta(rmcp::model::MetaObject(
-            json!({"ui": {"visibility": ["app"]}})
-                .as_object()
-                .cloned()
-                .unwrap_or_default(),
-        ));
+            .with_annotations(ToolAnnotations::new().read_only(true));
+        let delete = Tool::new("delete", "删笔记", schema());
         let find = Tool::new("find", "找文件", schema())
             .with_annotations(ToolAnnotations::new().read_only(true));
         let archive = Tool::new("archive", "归档文件", schema());
-        let boom = Tool::new("boom", "总是报错", schema())
-            .with_annotations(ToolAnnotations::new().read_only(true));
-        let purge = Tool::new("purge", "彻底删掉笔记", schema())
-            .with_annotations(ToolAnnotations::new().read_only(false).destructive(true));
         Ok(ListToolsResult::with_all_items(vec![
-            search, delete, find, archive, boom, purge,
+            search, delete, find, archive,
         ]))
     }
 
@@ -117,10 +101,9 @@ impl ServerHandler for Notes {
             .unwrap_or_default()
             .to_owned();
         let text = match request.name.as_ref() {
-            "boom" => return Err(ErrorData::internal_error("炸了", None)),
             "find" | "archive" => return Ok(self.found.lock().unwrap().clone().into()),
             "search" => format!("找到 {name}.txt"),
-            "delete" | "purge" => {
+            "delete" => {
                 self.deleted.lock().unwrap().push(name.clone());
                 format!("删掉了 {name}.txt")
             }
@@ -143,17 +126,6 @@ impl ServerHandler for Notes {
 fn resource(uri: &str) -> Result<ResourceContents, ErrorData> {
     match uri {
         "notes://text" => Ok(ResourceContents::text("一条笔记", uri)),
-        "ui://monitor" => Ok(ResourceContents::TextResourceContents {
-            uri: uri.to_owned(),
-            mime_type: Some("text/html;profile=mcp-app".to_owned()),
-            text: "<p>ok</p>".to_owned(),
-            meta: Some(rmcp::model::MetaObject(
-                json!({"ui": {"csp": {"connectDomains": ["https://api.example.com"]}}})
-                    .as_object()
-                    .cloned()
-                    .unwrap_or_default(),
-            )),
-        }),
         "notes://huge" => Ok(ResourceContents::text(
             "x".repeat(crate::files::MAX_RESOURCE_BYTES + 1),
             uri,
@@ -183,13 +155,16 @@ pub async fn serve_notes(notes: Notes) -> String {
     format!("http://{addr}/mcp")
 }
 
-/// 假的卡片通道：记下推送了哪些卡片、推给谁。
+/// 假的卡片通道：记下发出的卡片和每次更新。
 #[derive(Default)]
 pub struct Cards {
     pub posted: Mutex<Vec<ConfirmationCard>>,
-    /// 和 `posted` 一一对应：推给了谁（家人的用户名；`None` 是主人）。
-    pub recipients: Mutex<Vec<Option<String>>>,
-    /// 为真时发卡片失败，模拟没有能答的设备。
+    pub updates: Mutex<Vec<ConfirmationCard>>,
+    /// 每次更新用的标识。
+    pub update_handles: Mutex<Vec<String>>,
+    /// 下一次更新时卡片换了地方，给出这个新标识。
+    pub moves_to: Mutex<Option<String>>,
+    /// 为真时发卡片和更新卡片都失败，模拟 Matrix 不可用。
     pub broken: std::sync::atomic::AtomicBool,
 }
 
@@ -204,26 +179,43 @@ impl Cards {
         }
         panic!("等了 5 秒还没有第 {n} 张卡片");
     }
+
+    /// 卡片 `id` 经历过的状态，按更新的顺序。
+    pub fn states(&self, id: &str) -> Vec<ConfirmationState> {
+        let updates = self.updates.lock().unwrap();
+        updates
+            .iter()
+            .filter(|card| card.id == id)
+            .map(|card| card.state.clone())
+            .collect()
+    }
 }
 
 impl Notifier for Cards {
-    fn post<'a>(
-        &'a self,
-        recipient: Option<&'a str>,
-        card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>> {
+    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
         async move {
             if self.broken.load(std::sync::atomic::Ordering::SeqCst) {
-                return Err("没有已配对的设备".to_owned());
+                return Err("Matrix 连不上".to_owned());
             }
-            // 两张表在同一把锁下追加，下标才对得上。
             let mut posted = self.posted.lock().unwrap();
             posted.push(card.clone());
-            self.recipients
-                .lock()
-                .unwrap()
-                .push(recipient.map(str::to_owned));
-            Ok(())
+            Ok(format!("$card{}", posted.len()))
+        }
+        .boxed()
+    }
+
+    fn update<'a>(
+        &'a self,
+        handle: &'a str,
+        card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async move {
+            if self.broken.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err("Matrix 连不上".to_owned());
+            }
+            self.updates.lock().unwrap().push(card.clone());
+            self.update_handles.lock().unwrap().push(handle.to_owned());
+            Ok(self.moves_to.lock().unwrap().take())
         }
         .boxed()
     }

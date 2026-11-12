@@ -13,33 +13,6 @@ use tokio::sync::watch;
 use wonton_protocol::ChatViewModel;
 
 impl ChatLink {
-    pub(super) fn mark_room_read(
-        self: &std::sync::Arc<Self>,
-        room_id: &str,
-    ) -> Result<(), wonton_protocol::CoreError> {
-        let (_, room_id) = self.target(room_id)?;
-        let subscription = super::lock(&self.open_timeline)
-            .as_ref()
-            .filter(|(id, _)| id == &room_id)
-            .and_then(|(_, subscription)| subscription.upgrade());
-        if subscription
-            .as_ref()
-            .is_none_or(|timeline| !timeline.is_at_bottom())
-        {
-            return Ok(());
-        }
-        let chat = self.clone();
-        self.spawn_op("chat-op-mark-read-failed", async move {
-            // 主人可能在任务排队时翻走，取到房间后再核对同一个订阅。
-            let room = chat.room(&room_id).await?;
-            if subscription.is_some_and(|timeline| timeline.is_at_bottom()) {
-                room.mark_as_read().await?;
-            }
-            Ok(())
-        });
-        Ok(())
-    }
-
     /// 在后台执行一个操作，成功时先回调，失败时把原因放进 `problem`。
     pub(super) fn spawn_op_with_success(
         &self,
@@ -80,72 +53,4 @@ fn report_failure(view: &watch::Sender<ChatViewModel>, failure_id: &str, error: 
         _ => l10n!(CATALOG, language(), failure_id, error = error.to_string()),
     };
     view.send_modify(|view| view.problem = Some(ChatProblem { reason, message }));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use wonton_protocol::{
-        ChatAccount, ChatSync, DeviceVerification, EncryptionStatus, PushStatus, RecoveryNextStep,
-        RecoveryStatus,
-    };
-
-    fn signed_in() -> watch::Sender<ChatViewModel> {
-        watch::Sender::new(ChatViewModel {
-            account: ChatAccount::SignedIn {
-                user_id: "@owner:wonton.localhost".to_owned(),
-                device_id: "PHONE".to_owned(),
-            },
-            sync: ChatSync::Running,
-            encryption: EncryptionStatus {
-                verification: DeviceVerification::Verified,
-                recovery: RecoveryStatus::Enabled,
-                recovery_key: None,
-                backup_reminder: None,
-                can_verify_with_other_device: false,
-                can_reset: false,
-                recovery_next_step: RecoveryNextStep::None,
-                verification_flow: None,
-                key_handoff: None,
-            },
-            rooms: Vec::new(),
-            installing_bots: Vec::new(),
-            problem: None,
-            push: PushStatus::NoEndpoint,
-            pending_confirmations: Vec::new(),
-            settled_confirmations: Vec::new(),
-            background_notifications: Vec::new(),
-            bots: Vec::new(),
-            chat_layout_default: Default::default(),
-        })
-    }
-
-    /// 行为：服务器不让做（403 M_FORBIDDEN 这类）报“被拒绝”，令牌、账号失效才报登录失效；两种都不动登录本身，
-    /// 登录失效由会话的令牌事件单独处理。
-    #[test]
-    fn a_refused_action_is_not_an_expired_login() {
-        for (error, expected) in [
-            (
-                Error::Forbidden {
-                    errcode: "M_FORBIDDEN".to_owned(),
-                    message: "blocked".to_owned(),
-                },
-                ChatFailure::Forbidden,
-            ),
-            (
-                Error::Unauthorized {
-                    errcode: "M_UNKNOWN_TOKEN".to_owned(),
-                    message: "expired".to_owned(),
-                },
-                ChatFailure::Unauthorized,
-            ),
-        ] {
-            let view = signed_in();
-            report_failure(&view, "chat-op-direct-chat-failed", &error);
-            let view = view.borrow();
-            assert_eq!(view.problem.as_ref().map(|p| p.reason), Some(expected));
-            assert!(matches!(view.account, ChatAccount::SignedIn { .. }));
-            assert_eq!(view.sync, ChatSync::Running);
-        }
-    }
 }

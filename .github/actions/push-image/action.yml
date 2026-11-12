@@ -1,84 +1,73 @@
 name: 构建并推送 GHCR 镜像
 description: >-
-  buildx 构建、ghcr 登录和 OCI labels 的镜像构建推送。release.yml 的核心、桥镜像和 main-image.yml 的
-  :main 镜像共用，别在调用方复制这些步骤，构建器等写法只在这里改。
+  buildx 容器构建器、host 网络、代理透传、ghcr 登录和 OCI labels 的镜像构建推送。release.yml 的核心、
+  桥镜像和 main-image.yml 的 :main 镜像共用，别在调用方复制这些步骤，构建器等写法只在这里改。
 inputs:
   tags:
-    description: 完整的镜像 tag 列表，逗号分隔；push-by-digest 为 true 时不传
-    required: false
-    default: ""
-  image:
-    description: 镜像仓库（push-by-digest 为 true 时必填，digest 按它推）
-    required: false
-    default: ""
+    description: 完整的镜像 tag 列表，逗号分隔
+    required: true
   platforms:
-    description: 构建的平台；发版是单架构矩阵，每次只传一个
+    description: 构建的平台，如 linux/amd64
     required: true
   file:
     description: Dockerfile 路径，构建上下文是仓库根目录
     required: true
-  target:
-    description: Dockerfile 的构建目标（--target）；空着建最后一个阶段
-    required: false
-    default: ""
   version:
     description: 写进 org.opencontainers.image.version 的值
     required: true
   extra-build-args:
-    description: 追加的 build-arg，一行一个
+    description: 追加的 build-arg，一行一个。代理透传是固定的，不用写。
     required: false
     default: ""
-  cache-ref:
-    description: >-
-      层缓存的 registry 引用（type=registry，形如 ghcr.io/<owner>/wonton-ci-cache:core-image）；空着不用层缓存。
-      缓存放镜像仓库里，不占 10 GB 的 actions 缓存。
-    required: false
-    default: ""
-  cache-write:
-    description: 构建后把层缓存写回 cache-ref；只有 main 上的构建传 true，发版和 PR 只读
-    required: false
-    default: "false"
-  push-by-digest:
-    description: >-
-      发版的单架构构建按 digest 推（多架构 manifest 最后由 merge-image-manifest 合成），传 true；输出 digest。
-    required: false
-    default: "false"
   github-token:
     description: 推 ghcr.io 用的令牌。组合 action 读不到 secrets，只能从输入拿。
     required: false
     default: ${{ github.token }}
-outputs:
-  digest:
-    description: push-by-digest 为 true 时推上去的镜像 digest
-    value: ${{ steps.push.outputs.digest }}
 
 runs:
   using: composite
   steps:
-    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-    - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+    # runner 环境里的代理监听在主机的回环地址上，构建步骤（cargo 下载依赖）用 host 网络才连得上。
+    # 代理值在 runner 环境里，这里透传成 build-arg。
+    - name: 构建参数
+      id: meta
+      shell: bash
+      env:
+        EXTRA_BUILD_ARGS: ${{ inputs.extra-build-args }}
+      run: |
+        {
+          echo "build_args<<EOF"
+          echo "http_proxy=${http_proxy:-}"
+          echo "https_proxy=${https_proxy:-}"
+          if [ -n "${EXTRA_BUILD_ARGS}" ]; then
+            printf '%s\n' "${EXTRA_BUILD_ARGS}"
+          fi
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+    # 容器里的构建器：Docker 自带的构建器用的是 Docker 的镜像存储，本机已有 amd64 的 debian:trixie-slim 时，构建 arm64
+    # 也拿它当基础镜像（Docker 29.7.2、overlayfs 存储驱动上实测，镜像里的 arm64 程序找不到动态链接器）。每次都是新的
+    # 构建器，Rust 从头编译。构建器自己的镜像 moby/buildkit 要预先放在 runner 主机上：国内的主机连不上 Docker Hub
+    # （所以基础镜像也改从 ECR Public 拉，见核心的 Dockerfile）。
+    - uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: network=host
+        buildkitd-flags: --allow-insecure-entitlement network.host
+    - uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ inputs.github-token }}
-    - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-      id: push
+    - uses: docker/build-push-action@v6
       with:
         context: .
         file: ${{ inputs.file }}
-        target: ${{ inputs.target }}
         platforms: ${{ inputs.platforms }}
-        # digest 模式不带 tag：镜像名和 push 都在 outputs 里说（build-push-action 没有直接接收
-        # push-by-digest 的输入，官方多平台构建的写法就是这样）。
-        outputs: ${{ inputs.push-by-digest == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', inputs.image) || '' }}
-        push: ${{ inputs.push-by-digest == 'true' && 'false' || 'true' }}
-        tags: ${{ inputs.push-by-digest == 'true' && '' || inputs.tags }}
-        build-args: ${{ inputs.extra-build-args }}
-        # 层缓存走镜像仓库（type=registry）：gha 缓存曾让 main-image 一份占掉 10 GB 里的 9 GB，把 rust-cache
-        # 全挤掉。mode=max 才存 cargo-chef 的依赖层，改源码不用重编依赖。
-        cache-from: ${{ inputs.cache-ref != '' && format('type=registry,ref={0}', inputs.cache-ref) || '' }}
-        cache-to: ${{ inputs.cache-ref != '' && inputs.cache-write == 'true' && format('type=registry,ref={0},mode=max', inputs.cache-ref) || '' }}
+        network: host
+        allow: network.host
+        build-args: ${{ steps.meta.outputs.build_args }}
         labels: |
           org.opencontainers.image.source=https://github.com/${{ github.repository }}
           org.opencontainers.image.version=${{ inputs.version }}
           org.opencontainers.image.revision=${{ github.sha }}
+        tags: ${{ inputs.tags }}
+        push: true

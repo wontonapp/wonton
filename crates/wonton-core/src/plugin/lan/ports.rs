@@ -206,7 +206,7 @@ pub(in crate::plugin) fn unheard(
         .collect()
 }
 
-/// 从原话里取出 `地址:端口`：`Bind for 0.0.0.0:2222 failed: …`、`failed to bind host port 192.168.0.15:2222/tcp: …`、
+/// 从原话里取出 `地址:端口`：`Bind for 0.0.0.0:2222 failed: …`、`failed to bind host port 192.168.0.7:2222/tcp: …`、
 /// `listen tcp4 0.0.0.0:2222: bind: …` 都取到第一个空格为止，再去掉 `/协议` 和结尾的冒号。
 fn place(message: &str) -> Option<String> {
     [

@@ -83,18 +83,12 @@ pub enum Error {
     Busy(Detail),
     #[error("Matrix 操作失败：{0}")]
     Matrix(Detail),
-    /// 几个 Bot 在房间里来回太多，网关停下了本 Bot 的 `count` 条消息（ADR-0045 的跳数）。
-    #[error("跳数到顶，网关停下了 {count} 条消息")]
-    HopLimit { count: usize },
 }
 
 /// 聊天里显示的一条错误：类别前缀在前，详情按语言写或原样嵌进句子（ADR-0043）。
 pub fn format_error(error: &Error, lang: Lang) -> String {
     let (template, detail) = match error {
         Error::AuthenticationRequired => return text(lang, "err-auth-required", &[]),
-        Error::HopLimit { count } => {
-            return text(lang, "err-hop-limit", &[("count", Arg::from(*count))]);
-        }
         Error::AgentNotReady(detail) => ("err-not-ready", detail),
         Error::TransportUnavailable(detail) => ("err-transport", detail),
         Error::SessionUnavailable(detail) => ("err-session", detail),
@@ -125,9 +119,7 @@ impl From<MatrixError> for Error {
         match error {
             MatrixError::Transport(message) => Self::TransportUnavailable(Detail::data(message)),
             MatrixError::InvalidInput(message) => Self::InvalidInput(Detail::data(message)),
-            MatrixError::Unauthorized { message, .. } | MatrixError::Forbidden { message, .. } => {
-                Self::Matrix(Detail::data(message))
-            }
+            MatrixError::Unauthorized { message, .. } => Self::Matrix(Detail::data(message)),
             MatrixError::NotReady(message) | MatrixError::Upstream(message) => {
                 Self::Matrix(Detail::data(message))
             }

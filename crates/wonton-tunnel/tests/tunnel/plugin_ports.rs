@@ -1,5 +1,5 @@
-//! 插件端口（ADR-0072）的客户端：`Port` 流、`Udp` 流向和数据报分片，服务端用真的 `TunnelServer`。
-//! “旧服务端”是不接端口解析的 `TunnelServer`，它对 `Port`/`Udp` 回 `UnsupportedRequest`。
+//! 插件端口（ADR-0072）的客户端：`Port` 流、`Udp` 流向和数据报分片。服务端是 `test_server` 里的最小假服务端，
+//! 真正的服务端实现不在这里测；“旧服务端”用现有的 `TunnelServer`，它对 `Port`/`Udp` 回 `UnsupportedRequest`。
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -9,6 +9,7 @@ use iroh::SecretKey;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use wonton_protocol::PortProtocol;
+use wonton_tunnel::test_server::PortServer;
 use wonton_tunnel::{
     Allowlist, PortError, PortResolveError, PortResolver, TunnelClient, TunnelServer, UdpFlow,
 };
@@ -39,15 +40,13 @@ impl PortResolver for Resolver {
     }
 }
 
-async fn serve(routes: Routes) -> (TunnelServer, TunnelClient) {
-    let phone_key = SecretKey::generate();
-    let server = TunnelServer::spawn_with_resolver(
+async fn serve(routes: Routes) -> (PortServer, TunnelClient) {
+    let server = PortServer::spawn(
         loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await,
-        Allowlist::new([phone_key.public()]),
-        (Ipv4Addr::LOCALHOST, 9).into(),
-        Arc::new(Resolver(Arc::new(routes))),
+        Resolver(Arc::new(routes)),
+        None,
     );
-    let phone = loopback_endpoint(phone_key, 0, Timeouts::Default).await;
+    let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
     let client = TunnelClient::new(phone, server.endpoint().addr());
     (server, client)
 }

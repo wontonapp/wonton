@@ -5,33 +5,6 @@
 
 use serde_json::{Value, json};
 
-use super::{AcpClient, rpc_detail};
-use crate::error::{Error, Result};
-
-/// 恢复后按建会话时的模式补切一次：适配器不都记得上次的模式（Codex 恢复后回默认档
-/// 就不问了）。不分模式的 Agent 回 Method not found，照 `new` 的路子跳过；其余错误
-/// 和 `new` 一样往上报。
-pub(super) async fn set_after_restore(
-    client: &AcpClient,
-    session_id: &str,
-    mode: &str,
-) -> Result<()> {
-    if let Err(error) = client
-        .request(
-            "session/set_mode",
-            json!({"sessionId": session_id, "modeId": mode}),
-        )
-        .await
-    {
-        if error.code == -32601 {
-            tracing::debug!(mode, "Agent 不分工作模式，跳过恢复后的切换");
-        } else {
-            return Err(Error::Upstream(rpc_detail(&error)));
-        }
-    }
-    Ok(())
-}
-
 /// 要发给 Agent 的切模式请求；`None` 是 Agent 不分模式。
 pub(super) fn request(
     session: &Value,

@@ -28,7 +28,7 @@ services:
 x-wonton:
   spec: '0.4'
   id: agent.echo
-  version: 0.2.0
+  version: 0.1.1
   kind: agent
   title: { zh: 回声, en: Echo }
   description:

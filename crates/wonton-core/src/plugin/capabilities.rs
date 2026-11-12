@@ -5,7 +5,7 @@
 //! 不缓冲、不限时，Agent 协议会用到），第 2 步实现转发时不得另起一套。
 
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, Runtime};
+use super::manifest::{Manifest, ManifestError};
 use super::provides::Provides;
 use crate::l10n::text;
 
@@ -20,26 +20,6 @@ pub struct Capability {
     /// 是不是高权限能力（ADR-0053 的“高权限能力”）：使用方连上它要主人确认。第三方能力不在这张表里，
     /// 按提供方算——提供方申请了 ADR-0036 的任一级高权限，或者它是 Agent 插件，就算高权限。
     pub high_privilege: bool,
-    /// 托管形态（ADR-0080）：核心不执行，交给提供方。要挂目录的，提供方在 `provides.<名字>.mount`
-    /// 写挂载点；不是托管能力的写了 `mount` 不合法。
-    pub hosted: Option<HostedForm>,
-}
-
-/// 托管能力交给提供方的目录（`<核心数据目录>/hosted/<能力名>/`，每个插件一个子目录）怎么挂。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HostedForm {
-    /// 能写在清单 `runtime` 里的形态；只能被 `requires`/`wants` 的为空。
-    pub runtime: Option<Runtime>,
-    /// 包里交给提供方的目录取自哪个清单字段；没有包内目录的为空。
-    pub package_dir: Option<&'static str>,
-    /// 交给提供方的目录怎么挂；不挂目录的托管形态（提供方只靠清单字段干活）为空，这时提供方不写 `mount`。
-    pub mount: Option<HostedMount>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HostedMount {
-    ReadOnly,
-    ReadWrite,
 }
 
 /// 提供方要不要声明签发和吊销凭据的命令（ADR-0053）。
@@ -59,7 +39,6 @@ pub const MODELS: Capability = Capability {
     interface: "OpenAI 兼容 API（provides.models.apis），凭据按使用方隔离",
     credentials: Credentials::Required,
     high_privilege: false,
-    hosted: None,
 };
 
 /// 出网代理（ADR-0039）：没有使用方声明，申请了 `network.egress` 的插件都经它，不能写在 requires/wants 里。
@@ -69,7 +48,6 @@ pub const EGRESS_PROXY: Capability = Capability {
     interface: "HTTP 代理：出口设置在提供方（provides.egress_proxy）",
     credentials: Credentials::None,
     high_privilege: false,
-    hosted: None,
 };
 
 /// 种子下载器：Flood、Prowlarr 这些使用方连它。
@@ -78,7 +56,6 @@ pub const TORRENT_CLIENT: Capability = Capability {
     interface: "qBittorrent Web API v2（/api/v2/）",
     credentials: Credentials::None,
     high_privilege: false,
-    hosted: None,
 };
 
 /// 媒体服务器：Seerr 这些使用方连它，凭据是每个使用方一把的 API key。
@@ -87,79 +64,10 @@ pub const JELLYFIN: Capability = Capability {
     interface: "Jellyfin 的 HTTP API",
     credentials: Credentials::Required,
     high_privilege: false,
-    hosted: None,
 };
-
-/// 静态网页托管（ADR-0080）：HTTP 静态文件语义，按 `X-Wonton-Plugin` 选子目录。
-pub const STATIC_WEB: Capability = Capability {
-    name: "static_web",
-    interface: "HTTP 静态文件（RFC 9110 的 GET/HEAD、条件请求、Range），站点根是挂载点下的 <X-Wonton-Plugin>/",
-    credentials: Credentials::None,
-    high_privilege: false,
-    hosted: Some(HostedForm {
-        runtime: Some(Runtime::StaticWeb),
-        package_dir: Some("static_web.root"),
-        mount: Some(HostedMount::ReadOnly),
-    }),
-};
-
-/// 静态网页的数据存储（ADR-0080）：WebDAV 整文件读写的子集。
-pub const WEB_STORAGE: Capability = Capability {
-    name: "web_storage",
-    interface: "WebDAV（RFC 4918）整文件子集：GET/HEAD/PUT/DELETE/MKCOL/PROPFIND（Depth 0、1）加 RFC 9110 条件请求；\
-                每个插件 64 MiB、1024 个文件、单文件 8 MiB，超了回 507",
-    credentials: Credentials::None,
-    high_privilege: false,
-    hosted: Some(HostedForm {
-        runtime: None,
-        package_dir: None,
-        mount: Some(HostedMount::ReadWrite),
-    }),
-};
-
-/// 个人数据（ADR-0098）：手机的位置和健康数据，按人分开存。路径和类型在 `wonton-protocol::personal_data`。
-/// 使用方是核心自己的 MCP 工具，凭据仍按使用方签发（ADR-0053 的能力表）。
-pub const PERSONAL_DATA: Capability = Capability {
-    name: "personal_data",
-    interface: "位置和健康数据的存取（POST /location、POST /health、GET /query、DELETE /data、GET /export、\
-                 POST /cleanup），每个请求带 X-Wonton-User",
-    credentials: Credentials::Required,
-    high_privilege: false,
-    hosted: None,
-};
-
-/// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
-/// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
-pub const MATRIX_RTC: Capability = Capability {
-    name: "matrix_rtc",
-    interface: "MSC4195 的 LiveKit 授权服务（/sfu/get、/get_token），用 Matrix OpenID 令牌换 LiveKit 令牌",
-    credentials: Credentials::None,
-    high_privilege: false,
-    hosted: None,
-};
-
-/// Tuwunel 公布的 `livekit_url` 在 Matrix 对外地址下的路径，网关去掉它转给 [`MATRIX_RTC`] 的提供方。
-pub const MATRIX_RTC_PREFIX: &str = "/_wonton/matrix-rtc";
-
-/// 注入给 [`MATRIX_RTC`] 提供方的 Matrix 服务器名（填 lk-jwt-service 的 `LIVEKIT_FULL_ACCESS_HOMESERVERS`）。
-pub const MATRIX_SERVER_NAME_VAR: &str = "WONTON_MATRIX_SERVER_NAME";
-
-/// 没有使用方声明的能力：核心或网关自己用，不能写在 requires/wants 里。
-pub fn has_no_consumer(name: &str) -> bool {
-    name == EGRESS_PROXY.name || name == MATRIX_RTC.name
-}
 
 /// 全部核心定义的能力。加一项要改核心、发版：第三方插件作者不能自己发明不带 `x-` 的能力。
-pub const ALL: &[Capability] = &[
-    MODELS,
-    EGRESS_PROXY,
-    TORRENT_CLIENT,
-    JELLYFIN,
-    STATIC_WEB,
-    WEB_STORAGE,
-    MATRIX_RTC,
-    PERSONAL_DATA,
-];
+pub const ALL: &[Capability] = &[MODELS, EGRESS_PROXY, TORRENT_CLIENT, JELLYFIN];
 
 pub fn lookup(name: &str) -> Option<&'static Capability> {
     ALL.iter().find(|capability| capability.name == name)
@@ -248,11 +156,11 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     for (field, names) in [("requires", &manifest.requires), ("wants", &manifest.wants)] {
         for name in names {
             check_name(name, langs)?;
-            if has_no_consumer(name) {
+            if name == EGRESS_PROXY.name {
                 return Err(ManifestError::Invalid(text(
                     langs,
-                    "plugin-capability-no-consumer",
-                    &[("capability", name.as_str().into())],
+                    "plugin-capability-egress-no-consumer",
+                    &[],
                 )));
             }
         }
@@ -297,25 +205,6 @@ fn validate_provides(provides: &Provides, langs: &Languages) -> Result<(), Manif
                 "plugin-capability-port-zero",
                 &[("capability", name.as_str().into())],
             )));
-        }
-        let hosted = lookup(name)
-            .and_then(|capability| capability.hosted)
-            .and_then(|hosted| hosted.mount);
-        match (&service.mount, hosted) {
-            (None, Some(_)) => {
-                return Err(ManifestError::Invalid(format!(
-                    "provides.{name}.mount 必填：托管能力要声明核心把目录挂到哪里"
-                )));
-            }
-            (Some(_), None) => {
-                return Err(ManifestError::Invalid(format!(
-                    "provides.{name}.mount 只能写在要挂目录的托管能力上"
-                )));
-            }
-            (Some(mount), Some(_)) => {
-                super::manifest_agent::validate_mount(&format!("provides.{name}.mount"), mount)?;
-            }
-            (None, None) => {}
         }
         let required = matches!(
             lookup(name).map(|capability| capability.credentials),
@@ -374,17 +263,19 @@ fn first_duplicate(names: &[String]) -> Option<&str> {
     })
 }
 
-/// 模型网关使用方迁移单独切换；通用能力已由连接记录兑现。
-pub fn unsupported_model_dependency(
+/// 第 2 步接上行为之前的拦截：清单声明了按能力依赖（`requires`/`wants`），或者提供了能力表里的
+/// 新能力（`models`、`egress_proxy` 的专用字段照旧能用），照常装上但依赖一样都不兑现——不一起装、
+/// 不转发、没有 `<能力>.wonton.internal`，是伪装成功，所以按 `unsupported` 拒绝。
+/// **第 2 步接上行为时删掉这个函数和它的调用。**
+pub fn unsupported_dependencies(
     manifest: &Manifest,
     langs: &Languages,
 ) -> Result<(), super::install_error::InstallError> {
-    if !manifest
-        .requires
-        .iter()
-        .chain(&manifest.wants)
-        .any(|name| name == MODELS.name)
-    {
+    let new_provides = manifest
+        .provides
+        .as_ref()
+        .is_some_and(|provides| !provides.capabilities.is_empty());
+    if manifest.requires.is_empty() && manifest.wants.is_empty() && !new_provides {
         return Ok(());
     }
     Err(super::install_error::InstallError::Unsupported(
@@ -413,8 +304,8 @@ mod tests {
     fn aliases_route_through_the_same_gateway_path() {
         assert_eq!(alias(MODELS.name), crate::config::PLUGIN_MODELS_HOST);
         for capability in ALL {
-            if has_no_consumer(capability.name) {
-                continue; // 没有使用方声明：出网插件拿的是 WONTON_PROXY_URL，matrix_rtc 经 Matrix 对外地址。
+            if capability.name == EGRESS_PROXY.name {
+                continue; // egress_proxy 没有使用方声明，出网插件拿的是 WONTON_PROXY_URL。
             }
             assert!(
                 alias(capability.name).ends_with(".wonton.internal"),
@@ -508,15 +399,20 @@ mod tests {
         drop(e);
     }
 
-    /// 出网代理和 matrix_rtc 的使用方不是插件，写进 requires/wants 当场报错。
     #[test]
-    fn capabilities_without_consumers_cannot_be_declared() {
-        for name in ["egress_proxy", "matrix_rtc"] {
-            let e = validate(&manifest(&[name], &[], false), &Languages::default()).unwrap_err();
-            assert!(e.to_string().contains(name));
-            let e = validate(&manifest(&[], &[name], false), &Languages::default()).unwrap_err();
-            assert!(e.to_string().contains(name));
-        }
+    fn egress_proxy_has_no_consumer_declaration() {
+        let e = validate(
+            &manifest(&["egress_proxy"], &[], false),
+            &Languages::default(),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("egress_proxy"));
+        let e = validate(
+            &manifest(&[], &["egress_proxy"], false),
+            &Languages::default(),
+        )
+        .unwrap_err();
+        assert!(e.to_string().contains("egress_proxy"));
     }
 
     #[test]
@@ -585,16 +481,6 @@ mod tests {
             serde_json::json!({"torrent_client": {"service": "q", "port": 8080}}),
         );
         validate(&manifest, &Languages::default()).unwrap();
-    }
-
-    #[test]
-    fn personal_data_providers_must_declare_credentials() {
-        let manifest = manifest_with_provides(
-            serde_json::json!({"personal_data": {"service": "store", "port": 8090}}),
-        );
-        let e = validate(&manifest, &Languages::default()).unwrap_err();
-        assert!(e.to_string().contains("personal_data"));
-        assert!(e.to_string().contains("credentials"));
     }
 
     #[test]

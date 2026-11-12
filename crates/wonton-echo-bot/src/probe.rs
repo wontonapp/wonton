@@ -192,8 +192,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         println!("令牌 {token}");
         return Ok(());
     }
-    // 设备刚建好时服务器偶尔还回 404 说它不存在，等它落盘再开始收发（实测 404 出现在登录后几毫秒）。
-    tokio::time::sleep(Duration::from_secs(2)).await;
     let result = converse(&client, &options).await;
     if let Err(e) = client.matrix_auth().logout().await {
         tracing::warn!(error = %e, "冒烟设备退出登录失败");

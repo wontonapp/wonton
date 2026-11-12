@@ -31,15 +31,6 @@ fn a_newer_field_under_an_older_spec_names_the_field_and_the_version() {
 }
 
 #[test]
-fn setup_needs_spec_0_11() {
-    let manifest = json!({"setup": {"zh": "把公钥加到宿主", "en": "Add the key"}});
-    let found = problems(&document("0.10", manifest.clone(), plain()));
-    assert_eq!(found.len(), 1, "{found:?}");
-    assert!(found[0].contains("x-wonton.setup"), "{found:?}");
-    assert!(problems(&document("0.11", manifest, plain())).is_empty());
-}
-
-#[test]
 fn compose_fields_and_permissions_count_too() {
     let manifest = json!({"permissions": ["plugins.health"]});
     let service = json!({"image": "nginx", "cap_drop": ["ALL"], "network_mode": "service:db"});
@@ -114,17 +105,12 @@ fn an_input_secret_needs_0_8() {
 }
 
 #[test]
-fn role_fields_require_0_13() {
-    for webui in [
-        json!({"service": "web", "port": 80, "accounts": "per_user"}),
-        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"], "admin_groups": ["admin"]}}),
-        json!({"service": "web", "port": 80, "oidc": {"redirect_paths": ["/cb"],
-            "role_claim": {"name": "immich_role", "admin": "admin", "user": "user"}}}),
-    ] {
-        let manifest = json!({ "webui": webui });
-        let found = problems(&document("0.12", manifest.clone(), plain()));
+fn friend_declaration_requires_0_9_even_when_false() {
+    for friends in [false, true] {
+        let manifest = json!({"webui": {"service": "web", "port": 80, "friends": friends}});
+        let found = problems(&document("0.8", manifest.clone(), plain()));
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(problems(&document("0.13", manifest, plain())).is_empty());
+        assert!(problems(&document("0.9", manifest, plain())).is_empty());
     }
 }
 
@@ -225,81 +211,4 @@ fn tunnel_ports_need_0_11() {
         1
     );
     assert!(problems(&document("0.11", manifest, plain())).is_empty());
-}
-
-#[test]
-fn proxy_role_templates_require_0_9_in_headers_and_cookies_only() {
-    for kind in ["headers", "cookies"] {
-        let manifest = json!({"webui": {"proxy": {(kind): {
-            "identity": "prefix.{role}",
-            "username": "{user}",
-            "secret": "{secret:role}",
-            "literal": "role"
-        }}}});
-        for version in ["0.7", "0.8"] {
-            assert_eq!(
-                problems(&document(version, manifest.clone(), plain())).len(),
-                1
-            );
-        }
-        assert!(problems(&document("0.9", manifest, plain())).is_empty());
-    }
-    let manifest = json!({"webui": {"proxy": {"headers": {
-        "username": "{user}", "secret": "{secret:role}", "literal": "role"
-    }}}});
-    assert!(problems(&document("0.8", manifest, plain())).is_empty());
-}
-
-#[test]
-fn capability_dependencies_need_spec_0_11_including_models() {
-    for field in ["requires", "wants"] {
-        for capability in ["models", "torrent_client", "x-acme.ledger"] {
-            let manifest = json!({field: [capability]});
-            assert_eq!(
-                problems(&document("0.10", manifest.clone(), plain())).len(),
-                1,
-                "{field}: {capability}"
-            );
-            assert!(problems(&document("0.11", manifest, plain())).is_empty());
-        }
-        let manifest = json!({field: []});
-        assert_eq!(
-            problems(&document("0.10", manifest.clone(), plain())).len(),
-            1
-        );
-        assert!(problems(&document("0.11", manifest, plain())).is_empty());
-    }
-}
-
-#[test]
-fn every_generic_provider_needs_spec_0_11_without_raising_legacy_provider_floors() {
-    let mut manifest = json!({"provides": {
-        "models": {"service": "web", "port": 80},
-        "egress_proxy": {"service": "web", "port": 80}
-    }});
-    assert!(problems(&document("0.10", manifest.clone(), plain())).is_empty());
-    for (index, capability) in ["torrent_client", "x-acme.ledger"].into_iter().enumerate() {
-        manifest["provides"][capability] = json!({"service": "web", "port": 80});
-        assert_eq!(
-            problems(&document("0.10", manifest.clone(), plain())).len(),
-            index + 1
-        );
-        assert!(problems(&document("0.11", manifest.clone(), plain())).is_empty());
-    }
-}
-
-#[test]
-fn dedicated_provider_fields_keep_their_original_spec_floors() {
-    let models = json!({"provides": {"models": {"service": "web", "port": 80}}});
-    assert!(problems(&document("0.6", models.clone(), plain())).is_empty());
-    let mut with_commands = models;
-    with_commands["provides"]["models"]["providers"] = json!({"list": ["list"]});
-    let egress = json!({"provides": {"egress_proxy": {"service": "web", "port": 80}}});
-    for manifest in [with_commands, egress] {
-        assert_eq!(
-            problems(&document("0.6", manifest.clone(), plain())).len(),
-            1
-        );
-        assert!(problems(&document("0.7", manifest, plain())).is_empty());
-    }
 }

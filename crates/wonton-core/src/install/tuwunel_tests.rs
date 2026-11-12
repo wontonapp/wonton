@@ -63,9 +63,8 @@ fn a_fresh_install_starts_tuwunel_with_the_compose_mounts() {
             args.extend(["--env".to_owned(), format!("{var}={value}")]);
         }
     }
-    // 镜像引用经 WONTON_TEST_IMAGES 指到 CI 的副本（wonton-test-images）；docker run 按摘要取，
-    // 本地和 CI 用的是同一个引用。
-    args.push(wonton_test_images::image(&tuwunel.image));
+    // 测试机按 docker-test-images.txt 预先放好的是不带 digest 的标签。
+    args.push(tuwunel.image.split('@').next().unwrap().to_owned());
     args.extend(tuwunel.command);
     let started = docker(&args);
     assert!(

@@ -1,0 +1,30 @@
+# 走查用的最小插件：whoami 加上 tunnel.ports 声明（ADR-0072 的清单写法）。
+# 只用于本机模拟器走查，不进仓库（.git/info/exclude 已排除本目录）。
+name: whoami
+services:
+  web:
+    image: traefik/whoami:v1.11
+    command: --port 8000 --name ${WONTON_APP_ID}
+
+x-wonton:
+  spec: '0.11'
+  id: app.whoami
+  version: 0.1.0
+  kind: app
+  title: { zh: 回显, en: Who am I }
+  description:
+    zh: 回显请求头的最小示例插件
+    en: Minimal example plugin that echoes request headers
+  icon: icon.svg
+  webui:
+    service: web
+    port: 8000
+  tunnel:
+    ports:
+      - service: web
+        port: 8080
+        protocol: tcp
+      - service: web
+        port: 8080
+        protocol: udp
+  permissions: []

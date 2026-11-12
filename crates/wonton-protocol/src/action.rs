@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
-    FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
-    MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip, PushEndpoint,
-    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef, TextSize, ThemeMode,
-    UploadSource,
+    Answer, AvatarUpload, BotActivity, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork, FileId,
+    FontStyle, FriendBlockScope, FriendBlockTarget, ImageUpload, InstallPreview,
+    MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip,
+    PushEndpoint, PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef,
+    TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -15,9 +15,6 @@ use crate::{
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Action {
-    Timeline {
-        action: crate::TimelineAction,
-    },
     /// 新建一个会话并选中它。标题去掉首尾空白后不能为空。
     CreateSession {
         title: String,
@@ -46,14 +43,10 @@ pub enum Action {
     },
     /// 收起本次配对失败，返回扫码或粘贴；不取消正在进行的配对、不移除已保存的服务器。
     DismissPairingFailure,
-    /// 取消正在进行的配对，回到扫码或粘贴；没有正在进行的配对时返回 `InvalidInput`。本机放弃这一次尝试，
-    /// 服务器可能已经按交出的码登记了这台设备：同一个码再配对，服务端幂等地回成功，不会卡在“码已用过”。
-    CancelPairing,
-    /// “添加设备”：经隧道要一个一次性配对码给新设备扫（ADR-0009），页面开着时自动接上新设备的确认请求（ADR-0087）。
-    /// 没配对时返回 `NotReady`；进展和码在 `HomeViewModel::invite`。再发一次换新码，旧码到期前仍能用。
+    /// “添加设备”：经隧道向家里的服务器要一个一次性配对码，显示给新设备扫（ADR-0009 的“接口：扫码配对”）。还没配对
+    /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
+    /// 旧码到期前仍然能用。
     InviteDevice,
-    // 离开“添加设备”页。这个和 SkipKeyHandoff 的说明在 ADR-0087：Action 的 uniffi 元数据已到 32 KB 上限，不加文档注释。
-    CloseDeviceInvite,
     /// 添加一台服务器：在一个新位置上走配对，当前那台的连接先断开、数据留着。配对成功后新的那台成为当前这台；
     /// 配对前可以 [`Action::CancelAddServer`] 回去（ADR-0042）。
     AddServer,
@@ -123,11 +116,41 @@ pub enum Action {
     AskAgent {
         text: String,
     },
-    /// 以反应回答 Bot 的提问。
-    AnswerAgentChoice {
+    /// 发送文字。正文去掉首尾空白后不能为空。消息先以本地回显出现在时间线里。
+    SendText {
+        room_id: String,
+        body: String,
+    },
+    /// 发送图片。上传和发送的进展同 [`Action::SendText`]。
+    SendImage {
+        room_id: String,
+        image: ImageUpload,
+    },
+    /// 马上重发一条发送失败的消息（[`SendState::Failed`](crate::SendState::Failed)），不等核心自动重发。`item_id` 是
+    /// 它的 [`TimelineItem::id`](crate::TimelineItem::id)，要先订阅这个房间的时间线。
+    RetrySend {
         room_id: String,
         item_id: String,
-        key: String,
+    },
+    /// 取消发送：删掉一条还没发出去的消息（排队中或发送失败的），同一房间排在它后面的接着发。`item_id` 同
+    /// [`Action::RetrySend`]。已经发出去的取消不了。
+    CancelSend {
+        room_id: String,
+        item_id: String,
+    },
+    /// 加载更早的消息。要先订阅这个房间的时间线，结果体现在时间线的增量和翻页状态里。
+    PaginateBackwards {
+        room_id: String,
+    },
+    /// 把房间标为读到最新一条，发出已读回执，房间的未读数随之清零。
+    MarkRoomRead {
+        room_id: String,
+    },
+    /// 记下这个房间输入框里的草稿，主人换个房间、关掉 App 再回来还在；空串表示清掉。只存本机，不上服务器。
+    /// 发送成功后核心自己清掉。
+    SetDraft {
+        room_id: String,
+        body: String,
     },
     /// 重置恢复：删掉账号的密钥备份和秘密存储，换新的交叉签名身份，本设备成为新身份下已验证的设备，再开启备份，
     /// 新的恢复密钥放进 `EncryptionStatus::recovery_key`。旧的恢复密钥作废，备份里的旧消息取不回了，其他设备要
@@ -158,13 +181,11 @@ pub enum Action {
     CancelDeviceVerification {
         flow_id: String,
     },
-    // 交接页上的“手边没有别的设备”（见 CloseDeviceInvite 上的说明）。
-    SkipKeyHandoff,
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用
-    /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在卡片上
-    /// （[`ConfirmationView`](crate::ConfirmationView)，会话里和“等你确认”列表里是同一份），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
+    /// [`CardChoice::answer`](crate::CardChoice::answer)。核心经隧道发出去，进展和结果都在时间线里的卡片上
+    /// （[`ConfirmationView`](crate::ConfirmationView)），不进 `ChatViewModel::problem`。这张卡片已经在发、或者已经答完时
     /// 什么都不做。[`Answer::Unknown`] 返回 `InvalidInput`，家里的服务器还没连上时返回 `NotReady`。`choice_id` 原样用
     /// [`CardChoice::choice_id`](crate::CardChoice::choice_id)。
     AnswerConfirmation {
@@ -174,9 +195,6 @@ pub enum Action {
         choice_id: Option<String>,
         /// 装插件、升级插件的卡片上填的密钥（ADR-0064）；别的卡片是空表。
         secrets: crate::SecretValues,
-        /// 装插件、升级插件的卡片上填的设置（ADR-0077）；别的卡片是空表。
-        #[serde(default)]
-        settings: crate::SettingValues,
     },
     /// 主人点了卡片上放行时段的“停止”：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。进展和结果在
     /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回
@@ -184,8 +202,6 @@ pub enum Action {
     StopConfirmationWindow {
         id: String,
     },
-    /// 重新取“等你确认”列表（[`ConfirmationsViewModel::problem`](crate::ConfirmationsViewModel::problem) 之后）。
-    RetryConfirmations,
 
     // Bot 的资料（ADR-0044）。进展和结果在 `ChatViewModel::bots` 对应那一项的 `saving`、`problem` 里。
     /// 改 Bot 的名字。名字先过 [`check_bot_name`](crate::check_bot_name)，不行时返回 `InvalidInput`。
@@ -234,24 +250,6 @@ pub enum Action {
     },
     /// 重新取已安装的插件和它们能不能升级。
     RefreshPlugins,
-    /// 展开插件生成给主人的密钥分组；每次重新取列表，不预取值。
-    ListOwnerSecrets {
-        plugin_id: String,
-    },
-    /// 展开一项密钥，每次向服务器重新取值；只接受列表里的名字。
-    ShowOwnerSecret {
-        plugin_id: String,
-        name: String,
-    },
-    /// 收起一项并清除值；作废尚未完成的取值请求。
-    HideOwnerSecret {
-        plugin_id: String,
-        name: String,
-    },
-    /// 收起分组或离开详情页，清除列表、值和问题；晚到的请求不能恢复它们。
-    DismissOwnerSecrets {
-        plugin_id: String,
-    },
     /// 启动已停止的插件；已经运行时由核心幂等处理。
     StartPlugin {
         plugin_id: String,
@@ -260,14 +258,6 @@ pub enum Action {
     SetPortMapping {
         plugin_id: String,
         enabled: bool,
-    },
-    /// 屏幕上正显示着哪个插件的页面；没有插件页面在屏幕上时发 `None`。
-    ///
-    /// 壳在页面换走、被盖住、重新露出来时发。App 进后台不用补发：核心按 [`Action::AppBackgrounded`] 一律当作
-    /// 不可见，回前台恢复，壳也不用重报。核心照它自动开关这个插件的端口映射（ADR-0072），不动
-    /// [`Action::SetPortMapping`] 记下的手动开关：手动打开的不因页面看不见而关掉。
-    SetVisiblePlugin {
-        plugin_id: Option<String>,
     },
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore {
@@ -279,16 +269,11 @@ pub enum Action {
         preview: InstallPreview,
         /// 主人在确认页上填的密钥（ADR-0064）。
         secrets: crate::SecretValues,
-        /// 主人在确认页上填的设置（ADR-0077）。
-        #[serde(default)]
-        settings: crate::SettingValues,
     },
     /// 主人在升级确认页上点了“升级”，同 [`Action::InstallPlugin`]。
     UpgradePlugin {
         preview: InstallPreview,
         secrets: crate::SecretValues,
-        #[serde(default)]
-        settings: crate::SettingValues,
     },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
     UninstallPlugin {
@@ -299,22 +284,6 @@ pub enum Action {
     DismissPluginTask {
         id: String,
     },
-    /// 主人在商店列表或详情页点了"获取"：核心取预览、判断要不要请主人拿主意（规则在核心，ADR-0017）。
-    /// 不用拿主意的直接开始装（ [`PluginsViewModel::tasks`](crate::PluginsViewModel::tasks) 里出现任务）；
-    /// 要拿主意的放进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，壳打开确认页。
-    /// 取预览失败也进 `tasks`，按钮回到"获取"。正在取预览的插件在 [`PluginsViewModel::pending`](crate::PluginsViewModel::pending) 里。
-    InstallNow {
-        source: String,
-    },
-    /// 主人点了"更新"，同 [`Action::InstallNow`]，对装着的应用升级到提示的版本。
-    UpgradeNow {
-        plugin_id: String,
-    },
-    /// 主人在商店页点了"全部更新"：逐个升级 [`PluginsViewModel::updatable`](crate::PluginsViewModel::updatable) 里的应用，
-    /// 不用拿主意的直接开始；要拿主意的排进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，一次一条。
-    UpgradeAll,
-    /// 主人关掉了一键操作的确认页，没装也没升。还有排着队的就放下一条进来，没有就清空。
-    DismissStoreConfirmation,
 
     // “我来操作”（ADR-0024）。续约在核心里，进展和结果在 `PluginsViewModel.takeover` 里。
     /// 主人在插件网页的标题栏上点了“我来操作”。正在操作别的插件时，那个先交还。
@@ -432,8 +401,7 @@ pub enum Action {
         delete_local_file: bool,
     },
     /// 只重发链接：再授权一次，再把链接发进上传时的房间，不重传文件。只对
-    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有动作；不欠链接的传输什么都不做
-    /// （连点两下第二下不算错，壳不用弹窗），记录不在了返回 `InvalidInput`。
+    /// [`TransferState::LinkNotSent`](crate::TransferState::LinkNotSent) 的传输有效，其他返回 `InvalidInput`。
     ResendFileLink {
         id: String,
     },
@@ -506,60 +474,9 @@ pub enum Action {
         tab: TabRef,
         replacing: Option<TabRef>,
     },
-    /// 从栏上拿掉。聊天不能拿，返回 `InvalidInput`。
+    /// 从栏上拿掉。聊天和应用不能拿，返回 `InvalidInput`。
     UnpinTab {
         tab: TabRef,
-    },
-    /// 把页面放进面板的最后（ADR-0052）。`tab` 必须是插件页、插件里的某一页或 `https://` 公网网页，
-    /// 聊天、应用、设置和分享页不行；已经在面板里、面板已满
-    /// （[`MAX_PANEL_PAGES`](crate::MAX_PANEL_PAGES)）或页面现在放不了时返回 `InvalidInput`。
-    /// 写进账号数据才算成功；连不上服务器时改动不生效，错误按类别返回。
-    AddPanelPage {
-        scope: crate::PanelScope,
-        tab: TabRef,
-    },
-    /// 从面板拿掉。不在面板里时返回 `InvalidInput`。
-    RemovePanelPage {
-        scope: crate::PanelScope,
-        tab: TabRef,
-    },
-    /// 把面板里的一项移到 `index`（移动后的下标，从 0 开始）。不在面板里或下标越界时返回 `InvalidInput`。
-    MovePanelPage {
-        scope: crate::PanelScope,
-        tab: TabRef,
-        index: u32,
-    },
-    /// 壳报告正在看面板的哪一页：核心记住它（本机，下次拉开还是它），并清掉这一页的红点。
-    /// 拉开面板和翻页时都发。
-    SelectPanelPage {
-        scope: crate::PanelScope,
-        tab: TabRef,
-    },
-    /// 收回或给回一个 Bot 往主面板钉页的同意（设置里）；只改以后还问不问，已经钉上的页面不动。
-    SetBotPinConsent {
-        plugin_id: String,
-        bot: String,
-        allowed: bool,
-    },
-    /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
-    ///
-    /// `url` 是页面此刻的网址，核心按它算出要钉的是哪一种页面：装着的插件的网页入口下的路径，
-    /// 钉成插件里的某一页（路径和清单里的页面对上时是那个页面本身）；不是插件的网站就只收
-    /// `https://`，钉成公网网页。`title` 是页面自己的标题，没有时核心按插件或域名补。
-    /// 目标是底栏且栏满了时，`replacing` 同 [`Action::PinTab`]。
-    PinCurrentPage {
-        url: String,
-        title: Option<String>,
-        to: crate::PinTarget,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        replacing: Option<TabRef>,
-    },
-    /// 壳报告房间里盖着消息列表的东西开没开：长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、
-    /// 斜杠命令列表。核心把它和核心自己知道的状态合成 [`TimelineUpdate::entry_blocked`]，
-    /// 壳只读那一个字段决定上推拉面板的入口响不响应。换房间后按没盖算，壳不用补发。
-    SetRoomEntryBlocked {
-        room_id: String,
-        blocked: bool,
     },
     /// 把一项移到 `index`（移动后的下标，从 0 开始）。
     MoveTab {
@@ -583,20 +500,18 @@ pub enum Action {
     ExitFullscreen {
         tab: TabRef,
     },
-    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：底栏的和面板里的同一页面
-    /// 各自加载，互不影响（ADR-0052）。
+    /// 重新加载插件页（重试、“···”里的重新加载）。
     ReloadTab {
-        page: crate::PlacedTab,
+        tab: TabRef,
     },
     /// 壳报告网页加载失败。`status` 是 HTTP 状态码，没拿到响应时为空；原因由核心判断。
-    /// `page` 指是哪一份实例。
     TabLoadFailed {
-        page: crate::PlacedTab,
+        tab: TabRef,
         status: Option<u16>,
     },
     /// 壳报告网页加载成功（如按返回回到成功的历史页），核心清掉这个页面的加载失败显示。
     TabLoadSucceeded {
-        page: crate::PlacedTab,
+        tab: TabRef,
     },
     /// 主人看过了“已卸载，已从底栏移除”的提示。
     DismissUninstalledTabs,
@@ -635,39 +550,6 @@ pub enum Action {
     /// 两边的名单各自撤掉，已有的跨机房间留着，消息停发。`server_name` 是 [`PeerRow::server_name`](crate::PeerRow::server_name)。
     RemovePeer {
         server_name: String,
-    },
-
-    // Bot 的联系人（ADR-0045、ADR-0050），归属人在 Bot 资料页管；共享 Bot 是主人。结果和失败原因都在
-    // BotContactsViewModel 里。`user_id` 是 [`BotContact::user_id`](crate::BotContact::user_id)。
-    /// 打开某个 Bot 的联系人或下拉刷新（`GET`
-    /// [`bot_contacts_path`](crate::bot_contacts_path)），之后的结果都是这个 Bot 的。
-    RefreshBotContacts {
-        bot: BotRef,
-    },
-    /// 请另一个 Bot（本机的，或配对过的服务器上的）做这个 Bot 的联系人，等它的归属人同意。
-    RequestBotContact {
-        bot: BotRef,
-        user_id: String,
-    },
-    /// 请配对过的服务器上的一个人做这个 Bot 的联系人：Bot 给他发带标记的私聊邀请，他接受才算数，之前一直是“等对方接受”。
-    RequestPersonContact {
-        bot: BotRef,
-        user_id: String,
-    },
-    /// 同意对方发来的请求（[`ContactState::Incoming`](crate::ContactState::Incoming)）。
-    ApproveBotContact {
-        bot: BotRef,
-        user_id: String,
-    },
-    /// 拒绝对方发来的请求。
-    RejectBotContact {
-        bot: BotRef,
-        user_id: String,
-    },
-    /// 删掉联系人、取消自己发出的请求，或清掉“对方拒绝了”“没有这个人”的行；同时通知对方。
-    RemoveBotContact {
-        bot: BotRef,
-        user_id: String,
     },
 
     /// 取当前账号的好友、请求和屏蔽名单；外部 Matrix 账号同样可用。

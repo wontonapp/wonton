@@ -9,22 +9,26 @@ use std::{
 use futures_util::{Stream, StreamExt, future, stream};
 use matrix_sdk::{
     Room, RoomMemberships,
+    attachment::{AttachmentInfo, BaseImageInfo, Thumbnail},
     event_cache::PaginationStatus,
     ruma::{
-        EventId, OwnedEventId, RoomId, UserId,
+        EventId, OwnedEventId, RoomId, UInt,
         api::client::receipt::create_receipt::v3::ReceiptType,
         api::client::state::get_state_events,
         events::{
-            AnySyncMessageLikeEvent, AnySyncTimelineEvent, reaction::ReactionEventContent,
-            relation::Annotation, relation::RelationType, room::message::RoomMessageEventContent,
+            AnySyncMessageLikeEvent, AnySyncTimelineEvent, relation::RelationType,
+            room::message::RoomMessageEventContent,
         },
     },
     send_queue::SendHandle,
 };
 use matrix_sdk_ui::{
     eyeball_im::{Vector, VectorDiff},
-    timeline::{EventTimelineItem, RoomExt, Timeline, TimelineItem},
+    timeline::{
+        AttachmentConfig, AttachmentSource, EventTimelineItem, RoomExt, Timeline, TimelineItem,
+    },
 };
+use mime::Mime;
 use tokio::{
     sync::{Notify, broadcast::error::RecvError, watch},
     task::JoinHandle,
@@ -32,7 +36,7 @@ use tokio::{
 
 use crate::{
     Error, Message, Result,
-    message::{MemberNames, RedactionPower, message},
+    message::MemberNames,
     timeline::{self, EntryKind, TimelineEntry, entry},
 };
 
@@ -99,7 +103,7 @@ pub struct MissedEvent {
 
 /// 一个已打开的房间。
 pub struct ChatRoom {
-    pub(crate) room: Room,
+    room: Room,
     /// 时间线。事件缓存被清空重来时要换一条，房间对象本身不换（发消息、翻页都还走它）。
     timeline: tokio::sync::RwLock<Arc<Timeline>>,
     /// 缓存里有、时间线里一直没有的事件第一次被看到缺席的时间。
@@ -254,7 +258,7 @@ impl ChatRoom {
 
     /// 发送文字。消息先以本地回显出现在时间线里，发送结果见 [`Message::status`]。
     pub async fn send_text(&self, body: &str) -> Result<()> {
-        ensure_recipient_devices(&self.room).await?;
+        self.ensure_recipient_devices().await?;
         self.timeline()
             .await
             .send(RoomMessageEventContent::text_plain(body).into())
@@ -262,30 +266,34 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 发送文字，事件内容里带上额外字段（链接预览的 `com.beeper.linkpreviews`，ADR-0065）。其余同
-    /// [`Self::send_text`]。
-    pub async fn send_text_with_extra(
-        &self,
-        body: &str,
-        extra: serde_json::Map<String, serde_json::Value>,
-    ) -> Result<()> {
-        ensure_recipient_devices(&self.room).await?;
-        self.timeline()
-            .await
-            .send_with_extra_content(
-                RoomMessageEventContent::text_plain(body).into(),
-                Some(extra),
-            )
-            .await?;
+    /// 加密房间里发东西之前，先把对方的设备表查全。SDK 分享房间密钥时只等 5 秒 `/keys/query`（
+    /// `get_missing_sessions`），没回来就带着不完整的设备表往下走，可以把密钥分享给 0 个设备：事件照样发出去，
+    /// 收端永远解不开，也没有重试。这里对有成员没有设备的房间先查一次，回到本地已经有设备为止（每个房间只查缺的人，
+    /// 拿到以后再发不再查）。
+    async fn ensure_recipient_devices(&self) -> Result<()> {
+        if !self.room.latest_encryption_state().await?.is_encrypted() {
+            return Ok(());
+        }
+        let encryption = self.room.client().encryption();
+        for member in self.room.members_no_sync(RoomMemberships::JOIN).await? {
+            let user = member.user_id();
+            if user == self.room.own_user_id() {
+                continue;
+            }
+            if encryption
+                .get_user_devices(user)
+                .await
+                .is_ok_and(|devices| devices.devices().next().is_some())
+            {
+                continue;
+            }
+            // 查不到也照样发：分享密钥时 SDK 还会自己再等一次，别把离线时的发送挡在这里。
+            encryption.request_user_identity(user).await.ok();
+        }
         Ok(())
     }
 
     /// 发一个房间状态事件；`state_key` 为空串时是房间级状态。内容原样发，不需要 ruma 认识事件类型。
-    pub async fn invite(&self, user: &UserId) -> Result<()> {
-        self.room.invite_user_by_id(user).await?;
-        Ok(())
-    }
-
     pub async fn send_state_event_raw(
         &self,
         event_type: &str,
@@ -353,35 +361,6 @@ impl ChatRoom {
         Ok(())
     }
 
-    /// 以反应回答 Bot 的提问（MSC4564 的 `choices`，ADR-0082）：对状态消息发 `m.annotation` 反应，
-    /// `item_id` 是它的 [`TimelineEntry::id`]，`key` 是选项的键。只对现在还是状态消息、还带这个选项的
-    /// 条目发；条目不在时间线里或选项没有了报 `InvalidInput`。发送者是不是 Bot 由调用方判断。
-    pub async fn answer_agent_choice(&self, item_id: &str, key: &str) -> Result<()> {
-        let timeline = self.timeline().await;
-        let items = timeline.items().await;
-        let item = items
-            .iter()
-            .find(|item| item.unique_id().0 == item_id)
-            .and_then(|item| item.as_event())
-            .ok_or_else(|| Error::InvalidInput("状态行不在时间线里".to_owned()))?;
-        let names = self.names.borrow().clone();
-        let status = message(item, &names)
-            .and_then(|message| message.agent_run)
-            .ok_or_else(|| Error::InvalidInput("这条不是 Agent 状态消息".to_owned()))?;
-        if !status.choices.iter().any(|choice| choice.key == key) {
-            return Err(Error::InvalidInput("这个选项没有了".to_owned()));
-        }
-        let event_id = item
-            .event_id()
-            .map(ToOwned::to_owned)
-            .ok_or_else(|| Error::InvalidInput("状态消息还没发出去".to_owned()))?;
-        ensure_recipient_devices(&self.room).await?;
-        timeline
-            .send(ReactionEventContent::new(Annotation::new(event_id, key.to_owned())).into())
-            .await?;
-        Ok(())
-    }
-
     /// 设置本账号在房间里的输入状态。
     pub async fn typing_notice(&self, typing: bool) -> Result<()> {
         self.room.typing_notice(typing).await?;
@@ -410,6 +389,63 @@ impl ChatRoom {
             .await
             .map_err(|error| Error::Upstream(format!("发送失败：{error}")))?;
         Ok(sent.response.event_id)
+    }
+
+    /// 发送图片：和文字一样经发送队列，原图和缩略图先存进本机的媒体缓存，马上以本地回显出现在时间线里（取图的句柄
+    /// 指向缓存），之后在后台上传（加密房间里先在本机加密）、发 `m.image` 消息，结果见 [`Message::status`]。
+    ///
+    /// 比服务器上传上限（`m.upload.size`）大的图片按输入非法当场拒绝，错误里写出图片大小和上限，不进队列：进了队列，
+    /// 上传被服务器拒收后会停在队首，挡住这个房间之后的消息。
+    pub async fn send_image(&self, image: ImageUpload) -> Result<()> {
+        let mime_type: Mime = image.mime_type.parse().map_err(|_| {
+            Error::InvalidInput(format!("无法识别的 MIME 类型：{}", image.mime_type))
+        })?;
+        if mime_type.type_() != mime::IMAGE {
+            return Err(Error::InvalidInput(format!("不是图片类型：{mime_type}")));
+        }
+        let size = image.data.len() as u64;
+        // SDK 只在内存里记着上限，每次启动后第一次发图才向服务器要；隧道断开时这个请求要等建连失败才返回。要不到时
+        // 不拦，和文字一样进队列、马上有本地回显：连上后由服务器判断，太大的被拒收，停在队首等主人取消。
+        let client = self.room.client();
+        match tokio::time::timeout(UPLOAD_LIMIT_WAIT, client.load_or_fetch_max_upload_size()).await
+        {
+            Ok(Ok(limit)) if size > u64::from(limit) => {
+                return Err(Error::InvalidInput(format!(
+                    "图片有 {}，超过服务器的上传上限 {}",
+                    megabytes(size),
+                    megabytes(u64::from(limit))
+                )));
+            }
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => tracing::info!("要不到服务器的上传上限，图片照样进队列：{error}"),
+            Err(_) => {
+                tracing::info!("{UPLOAD_LIMIT_WAIT:?} 内没要到服务器的上传上限，图片照样进队列")
+            }
+        }
+        let info = BaseImageInfo {
+            width: image.width.map(UInt::from),
+            height: image.height.map(UInt::from),
+            size: UInt::new(image.data.len() as u64),
+            blurhash: None,
+            is_animated: None,
+        };
+        let thumbnail = image.thumbnail.map(thumbnail).transpose()?;
+        let config = AttachmentConfig {
+            info: Some(AttachmentInfo::Image(info)),
+            thumbnail,
+            ..Default::default()
+        };
+        let source = AttachmentSource::Data {
+            bytes: image.data,
+            filename: image.filename,
+        };
+        self.ensure_recipient_devices().await?;
+        self.timeline()
+            .await
+            .send_attachment(source, mime_type, config)
+            .use_send_queue()
+            .await?;
+        Ok(())
     }
 
     /// 马上重发一条发送失败的消息（`item_id` 是 [`TimelineEntry::id`]）：服务器拒收的那条重新排回队首再发，连接
@@ -545,18 +581,29 @@ impl ChatRoom {
             .await?;
         Ok(receipt || marker)
     }
+}
 
-    /// 对某一条消息发已读回执（不动 `m.fully_read`）。回执只往前走：比现有回执旧的不发，返回 `false`。
-    pub async fn send_read_receipt(&self, event_id: &str) -> Result<bool> {
-        let event_id: OwnedEventId = event_id
-            .parse()
-            .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
-        Ok(self
-            .timeline()
-            .await
-            .send_single_receipt(ReceiptType::Read, event_id)
-            .await?)
+/// 1 MB 按 1024 × 1024 字节算，保留一位小数。
+fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+}
+
+fn thumbnail(thumbnail: ImageThumbnail) -> Result<Thumbnail> {
+    let content_type: Mime = thumbnail.mime_type.parse().map_err(|_| {
+        Error::InvalidInput(format!("无法识别的缩略图类型：{}", thumbnail.mime_type))
+    })?;
+    if content_type.type_() != mime::IMAGE {
+        return Err(Error::InvalidInput(format!(
+            "缩略图不是图片类型：{content_type}"
+        )));
     }
+    Ok(Thumbnail {
+        size: UInt::new(thumbnail.data.len() as u64).unwrap_or(UInt::MAX),
+        data: thumbnail.data,
+        content_type,
+        height: UInt::from(thumbnail.height),
+        width: UInt::from(thumbnail.width),
+    })
 }
 
 fn back_pagination(status: PaginationStatus) -> BackPaginationStatus {
@@ -641,33 +688,6 @@ fn renamed_entries(
         .collect()
 }
 
-/// 加密房间里发东西之前，先把对方的设备表查全。SDK 分享房间密钥时只等 5 秒 `/keys/query`（
-/// `get_missing_sessions`），没回来就带着不完整的设备表往下走，可以把密钥分享给 0 个设备：事件照样发出去，
-/// 收端永远解不开，也没有重试。这里对有成员没有设备的房间先查一次，回到本地已经有设备为止（每个房间只查缺的人，
-/// 拿到以后再发不再查）。
-pub(crate) async fn ensure_recipient_devices(room: &Room) -> Result<()> {
-    if !room.latest_encryption_state().await?.is_encrypted() {
-        return Ok(());
-    }
-    let encryption = room.client().encryption();
-    for member in room.members_no_sync(RoomMemberships::JOIN).await? {
-        let user = member.user_id();
-        if user == room.own_user_id() {
-            continue;
-        }
-        if encryption
-            .get_user_devices(user)
-            .await
-            .is_ok_and(|devices| devices.devices().next().is_some())
-        {
-            continue;
-        }
-        // 查不到也照样发：分享密钥时 SDK 还会自己再等一次，别把离线时的发送挡在这里。
-        encryption.request_user_identity(user).await.ok();
-    }
-    Ok(())
-}
-
 /// `fetch_members` 失败时只把错误记在时间线的条目上，不报告也不重试，要靠 `are_members_synced` 才知道取到没有。房间还没
 /// 加入时它什么也不取，同样直接返回，也算没取到。
 async fn fetch_members_until_done(room: Room, timeline: Arc<Timeline>, fetched: Arc<Notify>) {
@@ -710,8 +730,7 @@ async fn refresh_member_names(
     }
 }
 
-/// 本机已有的已加入成员的显示名，以及本账号的撤回权限。成员读不到时记一条警告，“谁已读”显示用户 ID，不影响聊天；
-/// 权限读不到时按房间的默认权限算（SDK 的 `power_levels_or_default`），服务器才是最后的判断。
+/// 本机已有的已加入成员的显示名。读不到时记一条警告，“谁已读”显示用户 ID，不影响聊天。
 async fn local_member_names(room: &Room) -> MemberNames {
     let members = match room.members_no_sync(RoomMemberships::JOIN).await {
         Ok(members) => members,
@@ -720,8 +739,6 @@ async fn local_member_names(room: &Room) -> MemberNames {
             Vec::new()
         }
     };
-    let power = room.power_levels_or_default().await;
-    let own = room.own_user_id();
     MemberNames::new(
         members
             .into_iter()
@@ -731,19 +748,11 @@ async fn local_member_names(room: &Room) -> MemberNames {
             })
             .collect::<HashMap<_, _>>(),
     )
-    .with_redaction(RedactionPower {
-        own: power.user_can_redact_own_event(own),
-        others: power.user_can_redact_event_of_other(own),
-    })
 }
 
-mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
-mod image;
-pub(crate) use image::check_upload_size;
 mod pagination_status;
-mod raw;
 mod send;
 #[cfg(test)]
 mod tests;

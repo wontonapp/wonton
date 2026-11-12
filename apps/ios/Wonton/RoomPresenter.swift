@@ -118,7 +118,7 @@ struct RoomPresentations: ViewModifier {
                     FilePlayer(info: info) { presenter.closeCoverToOpenElsewhere(info) }
                         .environment(presenter.files)
                 case let .original(image):
-                    ImageViewer(image: image, core: presenter.files.core)
+                    OriginalImage(image: image, core: presenter.files.core)
                 }
             }
     }

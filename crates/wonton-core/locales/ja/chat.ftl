@@ -33,8 +33,6 @@ chat-card-agent-ask-again = 今後{ $requester }がこのアプリを更新す�
 chat-card-update-header-added = このアップデートで追加される項目：
 chat-card-update-header-risky = このアップデートは危険度の高い権限を要求しています：
 chat-card-update-header-ask-every = 権限は変わっていませんが、「毎回確認」が有効になっています：
-chat-card-update-header-adopt = このアプリはあなたがインストールしたものです。承認すると { $requester } が管理します：
-chat-card-update-adopt-replace = 承認するとインストール済みの版を置き換えます。データは保持され、失敗時は元に戻ります
 
 # カードのタイトル。$requester は Bot の名前、$title・$plugin・$tool はアプリが渡す名前。
 chat-card-install-title = { $requester }が{ $title }のインストールを要求しています
@@ -59,13 +57,12 @@ chat-card-highest-line = コードはこのホストのroot権限で実行され
 chat-card-highest-confirm = このアプリがホスト全体を制御することを承知しました
 
 # アンインストールのカード：アプリのデータの扱い。
-chat-card-uninstall-purge = データも削除します。ボットとの過去の暗号化メッセージも読めなくなり、元に戻せません
+chat-card-uninstall-purge = データも削除します。元に戻せません
 chat-card-uninstall-keep = データは残します。次にインストールしたときにも使えます
 
 # ツール呼び出しカードの行。$args は生の JSON パラメーターで、長いときは切り詰めます。
 chat-card-tool-data = このツールはデータを変更します
 chat-card-tool-root = この操作はこのホストのroot権限で実行されます
-chat-card-tool-deletes = アプリはこのツールがデータを削除または上書きすると示しています
 chat-card-args = 引数：{ $args }
 
 # Bot のファイル保存カード。$name と $size は1つのファイル、$total は合計サイズ。
@@ -144,28 +141,3 @@ chat-help-refresh-needs-core = 新しいヘルプがありますが、サーバ�
 chat-help-docs-age = { $problem }。これは{ $days }日前のヘルプです
 chat-help-topic-missing = トピック「{ $topic }」はありません。選べるトピック：{ $topics }
 chat-help-page-needs-core = このページの機能を使うには、サーバーを{ $required }以上にアップデートする必要があります（このサーバーは{ $core }）。先にサーバーをアップデートしてください
-
-chat-mail-convert-failed = メールの HTML 本文をテキストに変換できませんでした。元の HTML を message.html として添付しています。
-chat-mail-unknown-source = 送信元が不明、またはメール送信権限のないアプリからのメールを受信しました。誰にも配信していません。
-chat-mail-recipients-failed = アプリのメール受信者を更新できませんでした：{ $error }。家族の変更時かサーバーの再起動時に再試行します。
-chat-notify-rate-limited = { $plugin } の通知とメールが多すぎるため、一時停止しました。約{ $seconds }秒後に自動で再開します。
-# Bot がパネルにページをピン留めする（ADR-0052）。
-panel-pin-card-title = { $bot } がパネルにページを置こうとしています
-panel-pin-card-line = 許可すると、この Bot は以後メインパネルに確認なしでページを追加できます。設定で取り消せます。
-panel-pin-allowed = 許可しました
-panel-pin-bot-only = ページをピン留めできるのは Bot だけです。プラグイン { $plugin } に Bot の身元がありません
-panel-pin-bot-missing = Bot { $bot } の記録がありません
-panel-pin-full = パネルは満杯です（最大 { $max } ページ）。先にページを外してください
-panel-pin-already-asking = メインパネルへの確認カードがすでに回答待ちです
-panel-pin-matrix = Matrix に接続できません：{ $error }
-panel-pin-not-there = そのページはパネルにピン留めされていません
-
-# MCP Apps 界面里的调用在卡片上把调用方写成主人。
-mcp-app-owner = あなた
-
-# 跳数到顶（ADR-0045）：几个 Bot 在一个房间里来回说得太多，网关停下了。
-chat-card-hop-limit-title = { $bots }が{ $hops }回やり取りしたため、停止しました
-chat-choice-hop-limit-continue = 続ける
-chat-choice-hop-limit-stay = 止めておく
-chat-hop-limit-resumed = 再開しました
-chat-hop-limit-kept-by-other = 相手が止めておくを選んだため、停止したままです

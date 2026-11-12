@@ -16,7 +16,7 @@ use super::state::{self, ImageRef, Layout, Outcome, UpgradeState, WATCHDOG_MARGI
 use super::{LABEL_MIGRATIONS, LABEL_VERSION, UPDATER_CONTAINER, backup};
 use crate::plugin::languages::Languages;
 
-const SOURCE: &str = "reg/core:stable";
+const SOURCE: &str = "reg/core:beta";
 
 struct Scene {
     root: PathBuf,
@@ -132,7 +132,7 @@ async fn a_new_digest_on_the_channel_is_offered_with_what_the_image_says() {
     s.upgrades.check_now(false).await;
 
     let status = s.upgrades.status(&langs()).await.unwrap();
-    assert_eq!(status.channel.as_deref(), Some("stable"));
+    assert_eq!(status.channel.as_deref(), Some("beta"));
     assert_eq!(status.current.version.as_deref(), Some("0.1.0"));
     assert_eq!(status.current.digest.as_deref(), Some("sha256:old"));
     let CoreUpgradeCheck::Ready { offer } = status.check else {

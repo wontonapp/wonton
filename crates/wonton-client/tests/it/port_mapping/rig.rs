@@ -1,5 +1,5 @@
-//! 端口映射测试的家里服务器：真的 `wonton_tunnel::TunnelServer` 接 `Port`/`Udp`，`Forward` 交给插件测试的
-//! 假核心（给已安装列表）；插件服务是本机的 TCP、UDP 回显。
+//! 端口映射测试的家里服务器：`wonton_tunnel::test_server` 的假服务端接 `Port`/`Udp`，`Forward` 交给插件测试的
+//! 假核心（给已安装列表）；插件服务是本机的 TCP、UDP 回显。真正的服务端实现不在这里。
 
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -15,9 +15,10 @@ use wonton_client::{
     Action, ClientCore, HomeViewModel, MappedPort, Network, PluginPortMapping, PluginsViewModel,
     PortMappingState, PortProtocol,
 };
-use wonton_tunnel::test_support::unused_port;
-use wonton_tunnel::{Allowlist, PortResolveError, PortResolver, TunnelServer};
+use wonton_tunnel::test_server::PortServer;
+use wonton_tunnel::{PortResolveError, PortResolver};
 
+use crate::home::support::wait_until_port_is_free;
 use crate::plugins::rig::{CoreState, WAIT, fake_core, running, ticket};
 
 pub const PLUGIN: &str = "app.remote";
@@ -49,9 +50,15 @@ impl PortResolver for Resolver {
     }
 }
 
-/// 回环上一个现在没人用的端口号，见 [`unused_port`]。
+/// 回环上一个现在没人用的端口号；映射要同号，测试只能先挑一个空的。
 pub fn free_port() -> u16 {
-    unused_port()
+    let tcp = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let port = tcp.local_addr().unwrap().port();
+    // 同号的 UDP 也得空着：映射同时绑两种协议。
+    if std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_ok() {
+        return port;
+    }
+    free_port()
 }
 
 pub struct MapHome {
@@ -59,10 +66,9 @@ pub struct MapHome {
     pub udp: u16,
     key: SecretKey,
     port: u16,
-    resolver: Arc<Resolver>,
+    resolver: Resolver,
     upstream: SocketAddr,
-    allowlist: Allowlist,
-    server: Option<TunnelServer>,
+    server: Option<PortServer>,
 }
 
 impl MapHome {
@@ -77,18 +83,16 @@ impl MapHome {
             ((tcp, PortProtocol::Tcp), tcp_echo().await),
             ((udp, PortProtocol::Udp), udp_echo().await),
         ]));
-        let resolver = Arc::new(Resolver {
+        let resolver = Resolver {
             routes,
             refusal: Arc::default(),
-        });
+        };
         core.set_lists(vec![vec![remote(tcp, udp)]]);
         let key = SecretKey::generate();
-        let allowlist = Allowlist::default();
-        let server = TunnelServer::spawn_with_resolver(
+        let server = PortServer::spawn(
             endpoint(key.clone(), 0).await,
-            allowlist.clone(),
-            upstream,
             resolver.clone(),
+            Some(upstream),
         );
         let port = server.endpoint().bound_sockets()[0].port();
         Self {
@@ -98,7 +102,6 @@ impl MapHome {
             port,
             resolver,
             upstream,
-            allowlist,
             server: Some(server),
         }
     }
@@ -117,18 +120,13 @@ impl MapHome {
     }
 
     pub async fn start_again(&mut self) {
+        wait_until_port_is_free(self.port).await;
         let endpoint = endpoint(self.key.clone(), self.port).await;
-        self.server = Some(TunnelServer::spawn_with_resolver(
+        self.server = Some(PortServer::spawn(
             endpoint,
-            self.allowlist.clone(),
-            self.upstream,
             self.resolver.clone(),
+            Some(self.upstream),
         ));
-    }
-
-    /// 让服务端放行这台设备：真的服务端只认白名单。
-    pub fn allow(&self, app: &App) {
-        self.allowlist.allow(app.device());
     }
 }
 
@@ -142,27 +140,14 @@ pub fn remote(tcp: u16, udp: u16) -> wonton_client::InstalledPlugin {
 }
 
 async fn endpoint(key: SecretKey, port: u16) -> Endpoint {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
-    loop {
-        let bound = Endpoint::builder(presets::Minimal)
-            .secret_key(key.clone())
-            .clear_ip_transports()
-            .bind_addr((Ipv4Addr::LOCALHOST, port))
-            .unwrap()
-            .bind()
-            .await;
-        match bound {
-            Ok(endpoint) => return endpoint,
-            Err(error) if crate::home::support::port_in_use(&error) => {
-                assert!(
-                    tokio::time::Instant::now() < deadline,
-                    "旧服务端的 UDP 端口 {port} 一直没有释放"
-                );
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-            Err(error) => panic!("回环地址的端点起不来：{error}"),
-        }
-    }
+    Endpoint::builder(presets::Minimal)
+        .secret_key(key)
+        .clear_ip_transports()
+        .bind_addr((Ipv4Addr::LOCALHOST, port))
+        .unwrap()
+        .bind()
+        .await
+        .unwrap()
 }
 
 async fn tcp_echo() -> SocketAddr {
@@ -203,13 +188,7 @@ impl App {
         }
     }
 
-    /// 这台设备的 endpoint ID。
-    pub fn device(&self) -> iroh::EndpointId {
-        self.core.home().device_id.parse().unwrap()
-    }
-
     pub fn connect(&self, home: &MapHome) {
-        home.allow(self);
         self.core
             .dispatch(Action::ConnectHome {
                 ticket: home.ticket(),
@@ -222,15 +201,6 @@ impl App {
             .dispatch(Action::SetPortMapping {
                 plugin_id: PLUGIN.into(),
                 enabled,
-            })
-            .unwrap();
-    }
-
-    /// 壳报“屏幕上在显示哪个插件的页面”：`None` 是屏幕上没有插件页面。
-    pub fn show(&self, plugin: Option<&str>) {
-        self.core
-            .dispatch(Action::SetVisiblePlugin {
-                plugin_id: plugin.map(str::to_owned),
             })
             .unwrap();
     }

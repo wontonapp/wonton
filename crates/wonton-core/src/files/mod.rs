@@ -484,36 +484,26 @@ impl Files {
         })
     }
 
-    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
-    /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
+    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时什么都不做：App 发链接时不用先判断。
     pub async fn grant_room(
         self: &Arc<Self>,
         id: &FileId,
         room: &str,
         langs: &Languages,
     ) -> Result<Vec<String>, Failure> {
-        let (task, room, langs) = (id.clone(), room.to_owned(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let bots = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
+        let (id, room, langs) = (id.clone(), room.to_owned(), langs.clone());
+        self.blocking(move |files| {
+            files.authorize(&id, &Accessor::Owner, &langs)?;
+            let bots = files.host.bots_in_room(&room)?;
+            for bot in &bots {
                 files
                     .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
+                    .grant_by_owner(&id, bot, now_secs())?
                     .ok_or_else(|| Failure::unknown(&langs))?;
-                let bots = files.host.bots_in_room(&room)?;
-                for bot in &bots {
-                    files
-                        .registry
-                        .grant_by_owner(&task, bot, now_secs())?
-                        .ok_or_else(|| Failure::unknown(&langs))?;
-                }
-                Ok(bots)
-            })
-            .await;
-        drop(turn);
-        bots
+            }
+            Ok(bots)
+        })
+        .await
     }
 
     /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
@@ -536,26 +526,9 @@ impl Files {
         .await
     }
 
-    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期（和到期清理排同一个队），发不出去时文件多留一阵也好过链接被删掉。
-    pub async fn send_to_devices(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let (task, langs) = (id.clone(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let granted = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                files
-                    .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                Ok(())
-            })
-            .await;
-        drop(turn);
-        granted?;
+    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。
+    pub async fn send_to_devices(&self, id: &FileId, langs: &Languages) -> Result<(), Failure> {
+        self.authorize(id, &Accessor::Owner, langs)?;
         self.host.notify_owner(&id.link()).await
     }
 
@@ -623,43 +596,6 @@ impl Files {
                 FileFailure::FileChanged,
                 l10n::text(langs, "files-path-collision", &[]),
             )),
-        }
-    }
-
-    /// 传完但链接没发出去的上传到期了：和 App 里删同一条核对，记录跟着删。调用方排着这个上传的队，没有请求头，里面的错误按英文说。
-    /// 开始之后才授权出去（链接又发了）的不删；名字上已经换成主人的文件时不再过期，留着记录。返回审计要写的结果。
-    fn delete_expired_now(&self, id: &FileId, now: u64) -> Result<&'static str, Failure> {
-        let record = match self.registry.get(id, now) {
-            Lookup::Expired(record) => record,
-            // 已经被删掉或者刚刚授权出去。
-            _ => return Ok("kept"),
-        };
-        let Origin::Upload { reference, placed } = &record.origin else {
-            return Ok("kept");
-        };
-        let langs = Languages::from_header(None);
-        if !self.forget_now(id, true) {
-            return Err(Failure::internal(l10n::text(
-                &langs,
-                "files-residual-undeletable",
-                &[],
-            )));
-        }
-        match self.shares.delete_if_unchanged(reference, placed, &langs) {
-            Ok(Deleted::AlreadyGone) => {
-                self.registry.remove(id)?;
-                Ok("expired")
-            }
-            Ok(Deleted::Removed { durable }) => {
-                // 文件已经没了，记录留着就删不掉这个编号。
-                self.registry.remove(id)?;
-                Ok(if durable { "expired" } else { DELETED_UNSYNCED })
-            }
-            Ok(Deleted::Changed) => {
-                self.registry.keep(id)?;
-                Ok("file_changed")
-            }
-            Err(e) => Err(share_failure(e, &langs)),
         }
     }
 }

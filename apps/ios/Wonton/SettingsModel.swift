@@ -16,14 +16,6 @@ final class SettingsModel {
         viewModel = core.settings()
     }
 
-    #if DEBUG
-        /// 截图测试拿固定 ViewModel 画界面，不订阅核心推送。
-        init(core: ClientCore, viewModel: SettingsViewModel) {
-            self.core = core
-            self.viewModel = viewModel
-        }
-    #endif
-
     func observe() async {
         for await viewModel in core.subscribeSettings().updates() {
             self.viewModel = viewModel
@@ -50,12 +42,10 @@ final class SettingsModel {
 
 enum SettingsRoute: Hashable {
     case server
-    case matrixLogin
     case connectionDetails
     case invite
     case pairing
     case peers
-    case friends
     case egress
     case registryMirror
     case coreUpgrade

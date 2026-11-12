@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,12 +41,9 @@ fun SettingsPage(
     onClose: (() -> Unit)? = null,
     peersOpenRequests: Boolean = false,
     onPeersOpenRequestsHandled: () -> Unit = {},
-    onContinueHandoff: () -> Unit,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
-    // 好友项只在列表取到过以后出现；进设置先取一次。
-    LaunchedEffect(core) { core.send(Action.RefreshFriends) }
     val back = { onSubpage(subpage.parent()) }
     val version = appVersion()
     var rejection by remember { mutableStateOf<Problem?>(null) }
@@ -57,7 +53,6 @@ fun SettingsPage(
         SettingsSubpage.BACKUP -> ChatBackupScreen(
             chat.encryption,
             onAction = { action -> rejection = core.send(action) },
-            onContinueHandoff = onContinueHandoff,
             onClose = back,
         )
         SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
@@ -69,7 +64,6 @@ fun SettingsPage(
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
-        SettingsSubpage.FRIENDS -> FriendsPage(core, back)
         SettingsSubpage.MAIN -> WontonScreen(bar = {
             val title = stringResource(R.string.tab_settings)
             if (onClose != null) WontonPushedBar(title, onClose) else WontonRootBar(title)
@@ -130,24 +124,16 @@ private fun SettingsEntryRow(
             stringResource(R.string.peers_title), entry.count.toString(),
             showsForward = true, onClick = { onSubpage(SettingsSubpage.PEERS) },
         )
-        // 好友（ADR-0051）；核心只在列表取到过时给这一项，请求数做角标。
-        is SettingsEntry.Friends -> WontonRow(
-            stringResource(R.string.friends_title),
-            entry.count.toString(),
-            showsForward = true,
-            badgeCount = entry.requests.toInt(),
-            onClick = { onSubpage(SettingsSubpage.FRIENDS) },
-        )
         SettingsEntry.BottomBar -> WontonRow(stringResource(R.string.settings_nav_bar), showsForward = true) {
             onSubpage(SettingsSubpage.TABS)
         }
         is SettingsEntry.Notifications -> WontonRow(
             stringResource(R.string.notification_title),
-            // 摘要和通知页的“系统通知”一行同源：收不收得到提醒只看系统有没有允许，推送注册状态在通知页里说。
-            stringResource(
-                if (notificationsEnabled()) R.string.notification_value_on
-                else R.string.notification_value_system_blocked,
-            ),
+            if (notificationsEnabled()) {
+                entry.push.notificationValue
+            } else {
+                stringResource(R.string.notification_value_off)
+            },
             showsForward = true,
             onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },
         )
@@ -166,12 +152,6 @@ private fun SettingsEntryRow(
         SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
             onSubpage(SettingsSubpage.ABOUT)
         }
-        // 外部 Matrix 账号和添加 Wonton 服务器的入口（ADR-0051）：账号流程还没建，核心从不下发这几项，
-        // 和 iOS 一样先不渲染；显式列出，核心开始下发时不至于静默漏掉。
-        is SettingsEntry.MatrixAccount,
-        is SettingsEntry.MatrixDevices,
-        SettingsEntry.AddWontonServer -> Unit
-        // 未知入口不显示：新核心加的按钮不能变成空行。
         else -> Unit
     }
 }

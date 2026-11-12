@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, InstallPreview, ModelProviderFailure, Onboarding, OnboardingCommit,
-    OnboardingItemProblem, OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem,
-    OnboardingReviewKind, OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon,
-    PluginProblem, PluginTask, PluginTaskState, normalized_email,
+    CoreError, InstallPreview, ModelProviderFailure, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
+    OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask,
+    PluginTaskState, normalized_email,
 };
 
 use super::draft::ModelDraft;
@@ -18,8 +18,6 @@ use crate::l10n::{CATALOG, language};
 
 pub(super) const PROFILE: &str = "profile";
 pub(super) const MODEL: &str = "model";
-const AGENT: &str = "agent";
-const APPS: &str = "apps";
 
 pub(super) struct ReviewEntry {
     pub id: String,
@@ -47,13 +45,6 @@ impl ReviewEntry {
         }
     }
 
-    /// 没改的一类：列现值、标“不变”，完成时不发请求。
-    fn unchanged(id: &str, kind: OnboardingReviewKind, titles: Vec<String>) -> Self {
-        let mut entry = Self::new(id, kind, titles);
-        entry.detail = Some(OnboardingReviewDetail::Unchanged);
-        entry
-    }
-
     pub fn item(&self) -> OnboardingReviewItem {
         OnboardingReviewItem {
             id: self.id.clone(),
@@ -79,110 +70,70 @@ impl ReviewEntry {
 }
 
 /// 按记下的选择列出这一页的项。要装的插件先是 `Preparing`，取到预览后再定。
-/// 资料、Agent、模型、应用四类各至少一行：改了的列要提交的值，没改的列现值、标“不变”。
 pub(super) fn entries(state: &LocalState) -> Vec<ReviewEntry> {
     let Some(onboarding) = state.onboarding.as_ref() else {
         return Vec::new();
     };
     let mut entries = Vec::new();
     // 服务器太旧没显示资料这一步时不列它：它存不了。
-    if !state.unavailable.contains(&OnboardingStep::Profile) {
-        entries.push(profile_entry(state));
+    if !state.draft.profile_skipped && !state.unavailable.contains(&OnboardingStep::Profile) {
+        let (name, email) = state.draft.profile_values(state.owner.as_ref());
+        let mut entry = ReviewEntry::new(
+            PROFILE,
+            OnboardingReviewKind::Profile,
+            vec![name.trim().to_owned()],
+        );
+        entry.detail = normalized_email(Some(&email)).map(|email| OnboardingReviewDetail::Email {
+            email: email.to_owned(),
+        });
+        entries.push(entry);
     }
-    entries.push(agent_entry(state, onboarding));
-    entries.push(model_entry(state));
-    // 选的 Agent 同时在推荐清单里时，装它的项已经在 Agent 那一行，不重复列。
-    let chosen_agent = state.draft.agent(onboarding);
-    let mut seen: HashSet<&str> = chosen_agent.iter().map(String::as_str).collect();
+    let agent_id = state.draft.agent(onboarding);
+    if let Some(agent) = agent_id
+        .as_deref()
+        .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
+    {
+        let mut entry = ReviewEntry::new(
+            &agent.id,
+            OnboardingReviewKind::Agent,
+            vec![agent.title.clone()],
+        );
+        if agent.status.is_some() {
+            entry.detail = (onboarding.primary_agent.as_deref() != Some(agent.id.as_str()))
+                .then_some(OnboardingReviewDetail::SetAsDefault);
+        } else {
+            prepare(&mut entry, agent.source.clone(), agent.blocked.clone());
+        }
+        entries.push(entry);
+    }
+    if let Some(model) = state.draft.model(state.providers.as_ref()) {
+        entries.push(model_entry(model, state));
+    }
+    let mut seen: HashSet<&str> = agent_id.iter().map(String::as_str).collect();
     let needs = state.draft.needs(onboarding);
-    let mut apps: Vec<ReviewEntry> = onboarding
+    for plugin in onboarding
         .needs
         .iter()
         .filter(|need| needs.contains(&need.id))
         .flat_map(|need| &need.plugins)
-        .filter(|plugin| plugin.installed_version.is_none() && seen.insert(plugin.id.as_str()))
-        .map(|plugin| {
-            let mut entry = ReviewEntry::new(
-                &plugin.id,
-                OnboardingReviewKind::App,
-                vec![plugin.title.clone()],
-            );
-            entry.icon = plugin.icon.clone();
-            prepare(
-                &mut entry,
-                Some(plugin.source.clone()),
-                plugin.blocked.clone(),
-            );
-            entry
-        })
-        .collect();
-    if apps.is_empty() {
-        apps.push(ReviewEntry::unchanged(
-            APPS,
+    {
+        if plugin.installed_version.is_some() || !seen.insert(&plugin.id) {
+            continue;
+        }
+        let mut entry = ReviewEntry::new(
+            &plugin.id,
             OnboardingReviewKind::App,
-            Vec::new(),
-        ));
+            vec![plugin.title.clone()],
+        );
+        entry.icon = plugin.icon.clone();
+        prepare(
+            &mut entry,
+            Some(plugin.source.clone()),
+            plugin.blocked.clone(),
+        );
+        entries.push(entry);
     }
-    entries.extend(apps);
     entries
-}
-
-fn profile_entry(state: &LocalState) -> ReviewEntry {
-    let owner = state.owner.as_ref();
-    let (name, email) = state.draft.profile_values(owner);
-    match state.draft.profile_update(owner) {
-        Some(_) => {
-            let mut entry = ReviewEntry::new(
-                PROFILE,
-                OnboardingReviewKind::Profile,
-                vec![name.trim().to_owned()],
-            );
-            entry.detail =
-                normalized_email(Some(&email)).map(|email| OnboardingReviewDetail::Email {
-                    email: email.to_owned(),
-                });
-            entry
-        }
-        None => ReviewEntry::unchanged(
-            PROFILE,
-            OnboardingReviewKind::Profile,
-            vec![name.trim().to_owned()],
-        ),
-    }
-}
-
-fn agent_entry(state: &LocalState, onboarding: &Onboarding) -> ReviewEntry {
-    match state.draft.primary_change(onboarding, state.revisit) {
-        Some(agent) => {
-            let mut entry = ReviewEntry::new(
-                &agent.id,
-                OnboardingReviewKind::Agent,
-                vec![agent.title.clone()],
-            );
-            if agent.status.is_some() {
-                entry.detail = Some(OnboardingReviewDetail::SetAsDefault);
-            } else {
-                prepare(&mut entry, agent.source.clone(), agent.blocked.clone());
-            }
-            entry
-        }
-        None => {
-            let current = onboarding
-                .primary_agent
-                .as_deref()
-                .and_then(|id| onboarding.agents.iter().find(|agent| agent.id == id))
-                .map(|agent| vec![agent.title.clone()])
-                .unwrap_or_default();
-            ReviewEntry::unchanged(AGENT, OnboardingReviewKind::Agent, current)
-        }
-    }
-}
-
-fn model_entry(state: &LocalState) -> ReviewEntry {
-    match state.draft.model(state.providers.as_ref()) {
-        Some(model) => model_choice_entry(model, state),
-        None => ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new()),
-    }
 }
 
 fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<String>) {
@@ -196,8 +147,7 @@ fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<Stri
     entry.source = source;
 }
 
-/// 接模型这一步记下的选择对应的行；“用现在的”不动模型，也照常列出来。
-fn model_choice_entry(model: &ModelDraft, state: &LocalState) -> ReviewEntry {
+fn model_entry(model: &ModelDraft, state: &LocalState) -> ReviewEntry {
     let (titles, detail) = match model {
         ModelDraft::Current => {
             let titles = state
@@ -228,10 +178,7 @@ fn model_choice_entry(model: &ModelDraft, state: &LocalState) -> ReviewEntry {
             vec![title.clone()],
             Some(OnboardingReviewDetail::SignInAfterSetup),
         ),
-        // draft.model() 把跳过折成 None，到这里只会是防御；也按“不变”显示。
-        ModelDraft::Skipped => {
-            return ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new());
-        }
+        ModelDraft::Skipped => (Vec::new(), None),
     };
     let mut entry = ReviewEntry::new(MODEL, OnboardingReviewKind::Model, titles);
     entry.detail = detail;
@@ -276,21 +223,15 @@ pub(super) fn can_commit(entries: &[ReviewEntry]) -> bool {
 pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) -> bool {
     let mut changed = false;
     for entry in entries.iter_mut().filter(|entry| entry.installs()) {
-        // 失败和不确定都不是这一项在这里的终点：重试以后上一份快照还带着旧的那次失败，不能让它把刚起来的
-        // 安装卡住。
         if !matches!(
             entry.state,
-            OnboardingItemState::Waiting
-                | OnboardingItemState::Running
-                | OnboardingItemState::Failed { .. }
-                | OnboardingItemState::Uncertain { .. }
+            OnboardingItemState::Waiting | OnboardingItemState::Running
         ) {
             continue;
         }
         let Some(task) = tasks.iter().find(|task| task.id == entry.id) else {
             continue;
         };
-        tracing::debug!(id = entry.id.as_str(), ?entry.state, ?task.state, "followed a task");
         let next = match &task.state {
             PluginTaskState::Running => OnboardingItemState::Running,
             PluginTaskState::Succeeded => OnboardingItemState::Done,
@@ -300,11 +241,10 @@ pub(super) fn follow_tasks(entries: &mut [ReviewEntry], tasks: &[PluginTask]) ->
                         reason: *reason,
                         min_version: None,
                         message: message.clone(),
-                        settings: None,
                     },
                 },
             },
-            PluginTaskState::Uncertain { message, .. } => OnboardingItemState::Uncertain {
+            PluginTaskState::Uncertain { message } => OnboardingItemState::Uncertain {
                 message: message.clone(),
             },
         };
@@ -331,14 +271,11 @@ fn core_problem(error: &CoreError) -> PluginProblem {
             PluginFailure::Upstream
         }
         CoreError::ServerTooOld { .. } => PluginFailure::ServerTooOld,
-        // 引导流程不写设置，走不到这一类；按输入错误说。
-        CoreError::SettingsInvalid { .. } => PluginFailure::Invalid,
     };
     PluginProblem {
         reason,
         message: error.to_string(),
         min_version: None,
-        settings: None,
     }
 }
 
@@ -429,10 +366,7 @@ impl OnboardingLink {
     }
 
     fn install(self: &Arc<Self>, id: &str, preview: InstallPreview) {
-        if let Err(error) = self
-            .plugins
-            .install(preview, Default::default(), Default::default())
-        {
+        if let Err(error) = self.plugins.install(preview, Default::default()) {
             let mut state = lock(&self.state);
             if let Some(entry) = state.review.iter_mut().find(|entry| entry.id == id) {
                 entry.state = plugin_failed(core_problem(&error));
@@ -585,11 +519,7 @@ impl OnboardingLink {
             };
             OnboardingUpdate {
                 step: Some(OnboardingStep::Finished),
-                // 只提交这次动过的：重看引导里没碰 Agent（或又点回原来那个）就不发，服务器上的默认不动。
-                primary_agent: state
-                    .draft
-                    .primary_change(onboarding, state.revisit)
-                    .map(|agent| agent.id.clone()),
+                primary_agent: state.draft.agent(onboarding),
                 replaced_agent_asked: None,
             }
         };

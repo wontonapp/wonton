@@ -21,7 +21,7 @@ struct HomeStatusPanel: View {
             .buttonStyle(.plain)
             WontonSeparator()
             if let first = cards.first {
-                Button { if let room = first.roomId { openCardRoom(room) } } label: {
+                Button { openCardRoom(first.roomId) } label: {
                     WontonRow(
                         title: String(localized: .homeStatusPending),
                         value: String(localized: .homeStatusPendingCount(count: cards.count)),

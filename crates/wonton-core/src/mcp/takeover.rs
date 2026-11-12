@@ -222,7 +222,6 @@ impl Bus {
     }
 
     /// 主人正在操作这个插件就先停住，等操作结束。返回停了多久，没停过是 `None`；没等到时返回给 Agent 的结果。
-    /// 错误装箱：serde_json 开 `preserve_order` 时 `CallToolResult` 撑过 clippy `result_large_err` 的 128 字节阈值。
     pub(super) async fn hold(
         &self,
         caller: &Caller,
@@ -230,19 +229,19 @@ impl Bus {
         args: &Value,
         plugin: &PluginId,
         mut cancelled: Pin<&mut (impl Future<Output = ()> + Send)>,
-    ) -> Result<Option<u64>, Box<CallToolResult>> {
+    ) -> Result<Option<u64>, CallToolResult> {
         // 先订阅再看：看完到开始等之间结束的，也叫得醒。
         let mut ended = self.takeovers.ended.subscribe();
         if !self.takeovers.is_operating(plugin) {
             return Ok(None);
         }
         let Some(_slot) = self.takeovers.take_slot(&caller.id) else {
-            return Err(Box::new(self.not_run(
+            return Err(self.not_run(
                 caller,
                 name,
                 args,
-                "你正在操作这个插件，等着的调用太多了，这次调用没有执行。",
-            )));
+                "主人正在操作这个插件，等着的调用太多了，这次调用没有执行。",
+            ));
         };
         let started = Instant::now();
         let deadline = tokio::time::sleep(self.confirmations.ttl());
@@ -252,14 +251,14 @@ impl Bus {
                 // 发送方在这个结构体里，收不到错误。
                 _ = ended.changed() => {}
                 () = &mut deadline => {
-                    return Err(Box::new(self.not_run(
+                    return Err(self.not_run(
                         caller,
                         name,
                         args,
-                        "你操作这个插件的时间太长，这次调用没有执行，过一会再试。",
-                    )));
+                        "主人操作这个插件的时间太长，这次调用没有执行，过一会再试。",
+                    ));
                 }
-                () = cancelled.as_mut() => return Err(Box::new(self.withdrawn(caller, name, args))),
+                () = cancelled.as_mut() => return Err(self.withdrawn(caller, name, args)),
             }
         }
         let held = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);

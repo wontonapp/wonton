@@ -22,12 +22,6 @@ use crate::plugin::hostdir::Owner;
 pub const IMAGE: &str =
     "gogost/gost:3@sha256:f266f957c6e4f8d433ed23202a5745fa4969d08f3f0ef034fb9357345e16ad67";
 
-/// CI 把测试镜像复制到自己的仓库后经 `WONTON_TEST_IMAGES` 指过去（wonton-test-images）；
-/// 没设时就是 [`IMAGE`]，本地行为不变。
-pub fn image() -> String {
-    wonton_test_images::image(IMAGE)
-}
-
 /// 插件网络里的别名。没声明出网的插件网络里没有它，也就连不到出口容器。
 pub const ALIAS: &str = "egress.wonton.internal";
 

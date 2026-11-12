@@ -37,7 +37,7 @@ fn nic(name: &str, addresses: &[&str]) -> HostInterface {
 
 /// 有线 eno1 走默认路由，另有 Wi-Fi、Tailscale 和 Docker 的默认网桥。
 pub(super) fn host(eno1: &[&str]) -> HostNetwork {
-    let mut wifi = nic("wlp2s0", &["192.168.0.11"]);
+    let mut wifi = nic("wlp2s0", &["192.168.0.82"]);
     wifi.devtype = Some("wlan".into());
     let mut tailscale = nic("tailscale0", &["100.101.102.103"]);
     tailscale.physical = false;
@@ -64,7 +64,7 @@ pub(super) fn host(eno1: &[&str]) -> HostNetwork {
 }
 
 pub(super) fn office() -> HostNetwork {
-    host(&["192.168.0.10", "fd00::10", "2001:db8::1"])
+    host(&["192.168.0.193", "fd00::10", "2408:8207::1"])
 }
 
 /// Docker 的默认网桥：网卡名写在网络的选项里。
@@ -135,7 +135,7 @@ pub(super) fn binding(ip: &str, port: &str) -> Value {
     json!([{"HostIp": ip, "HostPort": port}])
 }
 
-pub(super) fn status(m: &PluginManager) -> PluginStatus {
+fn status(m: &PluginManager) -> PluginStatus {
     m.list().into_iter().next().expect("装了插件").status
 }
 
@@ -149,11 +149,11 @@ async fn ports_are_published_only_on_the_chosen_address() {
 
     let samba = created(&docker, "samba");
     let bindings = &samba["HostConfig"]["PortBindings"];
-    assert_eq!(bindings["445/tcp"], binding("192.168.0.10", "445"));
-    assert_eq!(bindings["137/udp"], binding("192.168.0.10", "137"));
+    assert_eq!(bindings["445/tcp"], binding("192.168.0.193", "445"));
+    assert_eq!(bindings["137/udp"], binding("192.168.0.193", "137"));
     assert_eq!(samba["ExposedPorts"], json!({"445/tcp": {}, "137/udp": {}}));
     let env = env_of_container(&docker, "wonton-app-test--samba");
-    assert_eq!(env["ADDRESSES"], "192.168.0.10");
+    assert_eq!(env["ADDRESSES"], "192.168.0.193");
     // 插件网络是内部网络，Docker 不在上面发布端口：samba 另接一个关掉伪装的网络，默认路由也走它。
     let lan = docker
         .network("wonton-app-test--lan")
@@ -194,7 +194,7 @@ async fn egress_plugins_publish_on_their_own_network() {
         .unwrap();
     assert_eq!(endpoints.len(), 1);
     let bindings = &samba["HostConfig"]["PortBindings"];
-    assert_eq!(bindings["445/tcp"], binding("192.168.0.10", "445"));
+    assert_eq!(bindings["445/tcp"], binding("192.168.0.193", "445"));
 }
 
 /// 和插件网络一样：上次没装完留下的清掉，主人建的不动。
@@ -244,7 +244,7 @@ async fn previews_show_each_port_and_why_it_cannot_be_installed() {
         .collect();
     let place = &super::message(
         "plugin-settings-lan-bound",
-        &[("interface", "eno1"), ("ip", "192.168.0.10")],
+        &[("interface", "eno1"), ("ip", "192.168.0.193")],
     );
     let line = |key: &str| {
         super::message(
@@ -342,17 +342,17 @@ async fn an_address_change_rebuilds_lan_containers_and_variable_consumers_only()
         m.lan_pass(&Languages::default()).await.unwrap();
         assert_eq!(docker.writes().len(), before);
 
-        *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
+        *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
         m.lan_pass(&Languages::default()).await.unwrap();
         assert_eq!(
             created(&docker, "samba")["HostConfig"]["PortBindings"]["445/tcp"],
-            binding("192.168.0.14", "445")
+            binding("192.168.0.68", "445")
         );
         let web = created(&docker, "web");
         if usage.contains("environment") {
             assert_eq!(
                 env_of_container(&docker, "wonton-app-test--web")["ADDRESSES"],
-                "192.168.0.14"
+                "192.168.0.68"
             );
         } else {
             let field = if usage.contains("entrypoint") {
@@ -360,7 +360,7 @@ async fn an_address_change_rebuilds_lan_containers_and_variable_consumers_only()
             } else {
                 "Cmd"
             };
-            assert_eq!(web[field], json!(["serve", "192.168.0.14"]));
+            assert_eq!(web[field], json!(["serve", "192.168.0.68"]));
         }
         let writes = docker.writes()[before..].to_vec();
         let removed: Vec<&str> = writes
@@ -414,7 +414,7 @@ async fn an_address_change_rebuilds_inline_config_consumers_but_not_literal_file
         .await
         .unwrap();
     let before = docker.writes().len();
-    *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass(&Languages::default()).await.unwrap();
     let uploaded = docker.archive("wonton-app-test--web").unwrap();
     let mut archive = tar::Archive::new(uploaded.as_slice());
@@ -427,7 +427,7 @@ async fn an_address_change_rebuilds_inline_config_consumers_but_not_literal_file
         .unwrap()
         .read_to_string(&mut text)
         .unwrap();
-    assert_eq!(text, "192.168.0.14");
+    assert_eq!(text, "192.168.0.68");
     let writes = docker.writes()[before..].to_vec();
     assert!(writes.contains(&"DELETE /containers/wonton-app-test--web".to_owned()));
     assert!(
@@ -457,7 +457,7 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
         .await
         .unwrap();
     let before = docker.writes().len();
-    *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass(&Languages::default()).await.unwrap();
     let writes = docker.writes()[before..].to_vec();
     let starts: Vec<&str> = writes
@@ -475,7 +475,7 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
     );
     assert_eq!(
         created(&docker, "init")["Cmd"],
-        json!(["write-address", "192.168.0.14"])
+        json!(["write-address", "192.168.0.68"])
     );
     assert!(
         !writes
@@ -487,7 +487,7 @@ async fn an_address_change_reruns_consuming_one_shots_in_dependency_order() {
 }
 
 #[tokio::test]
-async fn a_rebuild_without_a_real_email_keeps_the_internal_address() {
+async fn a_rebuild_that_needs_a_missing_email_leaves_the_old_container_alone() {
     let (docker, mut m, detected, dir) = on(office()).await;
     let compose = package(
         "  samba:\n    image: example/samba\n    environment: {MAIL: '${WONTON_OWNER_EMAIL:?}'}",
@@ -502,13 +502,15 @@ async fn a_rebuild_without_a_real_email_keeps_the_internal_address() {
     Arc::get_mut(&mut m).unwrap().cfg.profile = crate::owner::OwnerStore::open(&state).unwrap();
 
     let before = docker.writes().len();
-    *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     m.lan_pass(&Languages::default()).await.unwrap();
-    assert!(docker.writes().len() > before);
-    assert_eq!(status(&m), PluginStatus::Running);
-    assert_eq!(
-        super::env_of_container(&docker, "wonton-app-test--samba")["MAIL"],
-        "owner@wonton.internal"
+    assert_eq!(docker.writes().len(), before, "旧容器不动");
+    let PluginStatus::Degraded { reason } = status(&m) else {
+        panic!("应标为异常：{:?}", status(&m));
+    };
+    assert!(
+        reason.contains(&super::message("plugin-settings-email-missing", &[])),
+        "{reason}"
     );
 }
 
@@ -565,15 +567,14 @@ async fn a_core_restarted_after_a_dhcp_change_moves_the_ports() {
         .remove_container("wonton-app-test--samba")
         .await
         .unwrap();
-    *detected.lock().unwrap() = Ok(host(&["192.168.0.14"]));
+    *detected.lock().unwrap() = Ok(host(&["192.168.0.68"]));
     let m = Arc::new(manager_with(engine, &dir).with_lan(lan()));
     m.restore().await.unwrap();
-    // 容器不在，核对按检测到的新地址重建，端口直接搬过去。
-    assert_eq!(status(&m), PluginStatus::Running);
+    assert!(matches!(status(&m), PluginStatus::Degraded { .. }));
     m.lan_pass(&Languages::default()).await.unwrap();
     assert_eq!(status(&m), PluginStatus::Running);
     let bindings = &created(&docker, "samba")["HostConfig"]["PortBindings"];
-    assert_eq!(bindings["445/tcp"], binding("192.168.0.14", "445"));
+    assert_eq!(bindings["445/tcp"], binding("192.168.0.68", "445"));
 }
 
 #[tokio::test]
@@ -588,7 +589,7 @@ async fn settings_list_interfaces_and_check_new_choices() {
     assert_eq!(settings.choice, LanChoice::Auto);
     assert!(!settings.fixed_by_environment);
     assert_eq!(settings.addresses.len(), 1);
-    assert_eq!(settings.addresses[0].address, "192.168.0.10");
+    assert_eq!(settings.addresses[0].address, "192.168.0.193");
     assert_eq!(settings.addresses[0].interface.as_deref(), Some("eno1"));
     // Docker 的网桥按 Docker 的网络列表认出来，不进候选。
     let kinds: Vec<(&str, LanInterfaceKind)> = settings
@@ -609,7 +610,7 @@ async fn settings_list_interfaces_and_check_new_choices() {
         .iter()
         .map(|a| (a.address.as_str(), a.proxied))
         .collect();
-    assert_eq!(eno1, [("192.168.0.10", false), ("fd00::10", true)]);
+    assert_eq!(eno1, [("192.168.0.193", false), ("fd00::10", true)]);
     assert_eq!(settings.plugins.len(), 1);
     assert_eq!(settings.plugins[0].ports.len(), 2);
 
@@ -620,7 +621,7 @@ async fn settings_list_interfaces_and_check_new_choices() {
     for (choice, kind) in [
         (manual(&[], &[]), "invalid_input"),
         (manual(&["docker0"], &[]), "invalid_input"),
-        (manual(&[], &["2001:db8::1"]), "invalid_input"),
+        (manual(&[], &["2408:8207::1"]), "invalid_input"),
         (LanChoice::Unknown, "invalid_input"),
     ] {
         let err = m.set_lan_choice(choice, langs.clone()).await.unwrap_err();
@@ -638,12 +639,12 @@ async fn settings_list_interfaces_and_check_new_choices() {
         .iter()
         .map(|a| (a.address.as_str(), a.proxied))
         .collect();
-    assert_eq!(addresses, [("192.168.0.10", false), ("fd00::10", true)]);
+    assert_eq!(addresses, [("192.168.0.193", false), ("fd00::10", true)]);
     let bindings = &created(&docker, "samba")["HostConfig"]["PortBindings"];
     assert_eq!(
         bindings["445/tcp"],
         json!([
-            {"HostIp": "192.168.0.10", "HostPort": "445"},
+            {"HostIp": "192.168.0.193", "HostPort": "445"},
             {"HostIp": "fd00::10", "HostPort": "445"}
         ])
     );
@@ -659,13 +660,13 @@ async fn addresses_fixed_by_the_environment_cannot_be_changed() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let detected: Host = Arc::new(Mutex::new(Err("不该用到".into())));
-    let fixed = vec!["192.168.0.10".parse().unwrap()];
+    let fixed = vec!["192.168.0.193".parse().unwrap()];
     let lan = Lan::new(Detector::Fixed(detected), Some(fixed));
     let m = Arc::new(manager_with(engine, &dir).with_lan(lan));
     // 检测不了网卡时照样用指定的地址。
     let settings = m.lan_settings(&Languages::default()).await.unwrap();
     assert!(settings.fixed_by_environment);
-    assert_eq!(settings.addresses[0].address, "192.168.0.10");
+    assert_eq!(settings.addresses[0].address, "192.168.0.193");
     assert_eq!(settings.addresses[0].interface, None);
     let err = m
         .set_lan_choice(LanChoice::Auto, Languages::default())
@@ -684,7 +685,7 @@ async fn the_probe_runs_unprivileged_in_the_host_network_and_is_always_removed()
     let probe = "wonton-lan-probe";
     docker.set_output(probe, 0, &serde_json::to_string(&office()).unwrap(), "");
     let settings = m.lan_settings(&Languages::default()).await.unwrap();
-    assert_eq!(settings.addresses[0].address, "192.168.0.10");
+    assert_eq!(settings.addresses[0].address, "192.168.0.193");
     let body = docker.created(probe).unwrap();
     assert_eq!(body["Image"], "sha256:core");
     assert_eq!(body["Cmd"], json!(["lan-probe"]));

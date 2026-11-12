@@ -339,7 +339,6 @@ async fn the_choice_on_the_confirmation_page_reaches_the_core() {
         .dispatch(Action::InstallPlugin {
             preview: shown,
             secrets: Default::default(),
-            settings: Default::default(),
         })
         .unwrap();
     let path = "/_wonton/api/plugins";

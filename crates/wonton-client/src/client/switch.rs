@@ -39,16 +39,6 @@ impl ClientCore {
     }
 }
 
-impl crate::matrix_login::SlotSwitch for ClientCore {
-    fn add_matrix_slot(
-        &self,
-        slot: &str,
-        account: wonton_protocol::MatrixAccount,
-    ) -> Result<(), CoreError> {
-        self.change_servers(|servers| servers.add_matrix(slot, account))
-    }
-}
-
 impl ClientCore {
     pub(super) fn scope(&self) -> Arc<Scope> {
         self.scope
@@ -104,18 +94,13 @@ impl ClientCore {
     }
 
     fn open_scope(&self, slot: &str) -> Result<Arc<Scope>, CoreError> {
-        // feature 开时 views() 返回读锁，关时直接返回引用；这里统一拿成 &Views。
-        #[cfg(feature = "ui-fake")]
-        let views = &*self.views();
-        #[cfg(not(feature = "ui-fake"))]
-        let views = self.views();
         Scope::open(
             slot,
             &self.root,
             &self.servers.slot_dir(slot),
             self.network,
             self.servers.subscribe(),
-            Some(views),
+            Some(&self.views),
         )
     }
 

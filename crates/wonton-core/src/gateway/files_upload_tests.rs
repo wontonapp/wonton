@@ -555,12 +555,6 @@ async fn sweeping_places_finished_uploads_and_clears_abandoned_ones() {
     assert!(orphan.exists(), "不知道是谁的文件，放够久才删");
 
     let later = now_secs() + crate::files::uploads::STALE_SECS + 60;
-    // 把链接发出去，免得传完的这条在同一个 24 小时里到期。
-    home.f
-        .files
-        .send_to_devices(&finished, &any_langs())
-        .await
-        .unwrap();
     home.f.files.sweep(later).await;
     assert!(!uploads.join(partial.as_str()).exists());
     assert!(!orphan.exists());

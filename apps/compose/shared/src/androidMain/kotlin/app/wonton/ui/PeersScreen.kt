@@ -34,8 +34,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
-import app.wonton.protocol.FriendRequest
-import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.PeerError
 import app.wonton.protocol.PeerRow
 import app.wonton.protocol.PeerStatus
@@ -85,8 +83,6 @@ internal fun PeersPage(
     onOpenRequestsHandled: () -> Unit = {},
 ) {
     val peers by remember(core) { core.peersUpdates() }.collectAsState(remember(core) { core.peers() })
-    // 别人的私聊邀请和好友请求也进这一页（ADR-0051），和配对请求分开一节。
-    val friends by remember(core) { core.friendsUpdates() }.collectAsState(remember(core) { core.friends() })
     var adding by remember { mutableStateOf(false) }
     var scanning by remember { mutableStateOf(false) }
     var showingCode by remember { mutableStateOf(false) }
@@ -96,10 +92,7 @@ internal fun PeersPage(
     var lastScan by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val send = { action: Action -> rejection = core.send(action) }
-    LaunchedEffect(core) {
-        send(Action.RefreshPeers)
-        send(Action.RefreshFriends)
-    }
+    LaunchedEffect(core) { send(Action.RefreshPeers) }
     // 出码页开着时核心才快取列表；进和出都告诉它（ADR-0050）。
     val showCode = {
         showingCode = true
@@ -122,7 +115,6 @@ internal fun PeersPage(
     val refresh = {
         lastScan = false
         send(Action.RefreshPeers)
-        send(Action.RefreshFriends)
     }
     val retry = { if (lastScan) scanning = true else refresh() }
     val scanSubmitted = { code: String ->
@@ -159,15 +151,16 @@ internal fun PeersPage(
                 onRefresh = refresh,
                 modifier = Modifier.fillMaxSize(),
             ) {
-                PeerPageContent(
-                    peers,
-                    friends,
-                    scroll,
-                    retry,
-                    requestRemove,
-                    send,
-                    showCode,
-                ) { scanning = true }
+                val state = peers.state
+                // 页面上有没有内容看三份：请求、配对过的服务器、已拒绝。有内容时失败都降成列表顶部的一条。
+                val hasRows = peers.peers.isNotEmpty() || peers.requests.isNotEmpty() || peers.rejected.isNotEmpty()
+                when {
+                    hasRows -> PeerList(peers, scroll, retry, requestRemove, send)
+                    state is PeersState.Failed ->
+                        ProblemView(state.problem(), retry.takeIf { state.error.retriesHelpfully() })
+                    state == PeersState.Loading -> LoadingView()
+                    else -> PeerEmpty(onShow = showCode, onScan = { scanning = true })
+                }
             }
         }
     }
@@ -187,7 +180,6 @@ internal fun PeersPage(
     }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
-
 
 /** 加一台服务器：出我的码给对方扫，或去扫对方的码。 */
 @Composable
@@ -236,7 +228,7 @@ internal fun PeersState.Failed.problem() = Problem(
 
 /** 还没有配对过的服务器：一句话和两个添加的办法。 */
 @Composable
-internal fun PeerEmpty(onShow: () -> Unit, onScan: () -> Unit) {
+private fun PeerEmpty(onShow: () -> Unit, onScan: () -> Unit) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -261,11 +253,10 @@ internal fun PeerEmpty(onShow: () -> Unit, onScan: () -> Unit) {
     }
 }
 
-/** 列表：好友请求最上面，往下是配对请求和配对过的服务器，最底下默认收起的“已拒绝”。失败和刷新中的提示都让开列表的位置。 */
+/** 列表：发来的请求在上面，往下是配对过的服务器，最底下默认收起的“已拒绝”。失败和刷新中的提示都让开列表的位置。 */
 @Composable
-internal fun PeerList(
+private fun PeerList(
     peers: PeersViewModel,
-    friendRequests: List<FriendRequest>,
     scroll: ScrollState,
     onRetry: () -> Unit,
     onRemove: (PeerRow) -> Unit,
@@ -276,11 +267,6 @@ internal fun PeerList(
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        FriendRequestsSection(
-            friendRequests,
-            onApprove = { onAction(Action.ApproveFriendRequest(it.roomId)) },
-            onReject = { onAction(Action.RejectFriendRequest(it.roomId)) },
-        )
         val state = peers.state
         if (state is PeersState.Failed) {
             if (state.error == PeerError.REQUEST_NOT_FOUND) ProblemNotice(state.problem(), WontonIcon.Info)

@@ -39,7 +39,7 @@ struct PeersScannerView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                 case .denied:
                     WontonNotice(icon: .cameraOff, title: String(localized: .peersCameraDenied)) {
-                        Button(.commonOpenSettings) {
+                        Button(.peersCameraSettings) {
                             if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))

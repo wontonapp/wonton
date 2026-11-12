@@ -170,15 +170,10 @@ async fn the_core_host_tells_why_a_resource_cannot_be_read() {
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = Arc::new(manager_with(engine, &dir));
-    let manifest = crate::plugin::PluginPackage::parse(
-        &app("app.notes", "server").replace(
-            "  permissions: []",
-            "  permissions: []\n  mcp: {service: server, port: 9000, transport: streamable-http}",
-        ),
-        &super::langs(),
-    )
-    .unwrap()
-    .manifest;
+    let manifest =
+        crate::plugin::PluginPackage::parse(&app("app.notes", "server"), &super::langs())
+            .unwrap()
+            .manifest;
     let notes = manifest.id.clone();
     m.register_for_test(manifest, crate::plugin::PluginStatus::Running, None);
     m.mcp_for_test(&notes, serve_notes(Notes::default()).await);

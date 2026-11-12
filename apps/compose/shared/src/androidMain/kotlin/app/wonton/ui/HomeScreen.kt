@@ -29,10 +29,9 @@ fun HomeRoute(
     settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,
 ) {
-    val servers = LocalServers.current
     BackHandler(enabled = page != HomePage.LAUNCHER) { onPage(HomePage.LAUNCHER) }
     when {
-        viewModel.status is HomeStatus.NotConfigured && (servers.adding || servers.servers.none { it.current }) ->
+        viewModel.status is HomeStatus.NotConfigured ->
             PairingPage(
                 stringResource(R.string.pairing_title), core, viewModel.pairing, onBack = null,
                 actions = if (onSettings != null) {
@@ -40,7 +39,7 @@ fun HomeRoute(
                 } else null,
             )
         else -> PluginPages(plugins, navigation) {
-            if (page == HomePage.STORE && app.wonton.protocol.AppsAction.STORE in plugins.viewModel.actions) {
+            if (page == HomePage.STORE) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
             } else {
                 LauncherScreen(
@@ -84,7 +83,6 @@ internal fun PairingPage(
             )
         },
     ) {
-        // 配上了由核心说：进展停在 Paired 才算配上，取消不会到那一步。
         PairingScreen(core, pairing, onPaired = { onBack?.invoke() }, onBack = onBack)
     }
 }

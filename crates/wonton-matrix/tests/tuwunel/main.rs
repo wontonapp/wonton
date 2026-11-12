@@ -11,22 +11,15 @@
 #![recursion_limit = "256"]
 
 mod chat;
-mod client_lifetime;
 mod egress;
 mod encryption;
-mod friends;
-mod group;
-mod layout;
 mod login;
 mod messaging;
-mod new_device;
 mod profile;
 mod push;
 mod recovery_order;
-mod reset_order;
 mod restore_beside_old;
 mod send_queue;
 mod state;
-mod store_loss;
 mod support;
 mod thread;

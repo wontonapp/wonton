@@ -19,8 +19,8 @@ pub enum AppsAction {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PluginShares {
-    /// 清单声明了 `webui.accounts: per_user`（应用按登录的人分开数据）；false 不禁止分享，但授权确认必须提示账号和数据风险。
-    pub per_user_accounts: bool,
+    /// 清单 `webui.friends` 的原值；false 不禁止分享，但授权确认必须提示账号和数据风险。
+    pub friends_supported: bool,
     /// 当前有效授权涉及的不同好友数；组与直接授权重叠只算一次，已到期不算。
     pub friend_count: u32,
     pub grants: Vec<ShareGrant>,
@@ -56,7 +56,7 @@ pub struct ShareGrantUpdate {
     pub plugin_id: String,
     pub recipient: ShareRecipient,
     pub expires_at_ms: Option<u64>,
-    /// 清单未声明 `webui.accounts: per_user` 时，主人看过风险提示后才能设为 true。
+    /// 清单未声明 `webui.friends` 时，主人看过风险提示后才能设为 true。
     pub acknowledge_risk: bool,
 }
 

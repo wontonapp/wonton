@@ -19,10 +19,9 @@ impl PluginManager {
             let records = self.store.bots().load(id)?;
             let running =
                 entry.status == PluginStatus::Running && entry.health == Some(Health::Healthy);
-            for (name, bot) in &records.bots {
+            for bot in records.bots.values() {
                 bots.push(BotActivityFacts {
                     plugin_id: id.to_string(),
-                    bot: Some(name.clone()),
                     user_id: bot.account.user_id.clone(),
                     running,
                     model_requests: 0,

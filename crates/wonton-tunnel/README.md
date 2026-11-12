@@ -12,8 +12,7 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
     endpoint ID。核心用它在进程内服务网关，并把设备身份交给网关。正常结束要 `shutdown`；没有 shutdown 就
     丢弃时复位流，客户端不会把被截断的数据当成正常结束。
 - **客户端**：`TunnelClient` 让所有请求复用一条连接，断开后下一次使用时自动重连，建连的时限和退避都在它这里（ADR-0032），
-  `retry_now` 跳过等待；开新流要等服务端给额度，等过 1 秒记一条带各类开着的流数的告警，3 秒还没有就关掉这条连接、
-  报 `transport-unavailable`，开流的那一次重试换新连接（同一条连接上开着的流一起断开）；`stats().streams` 是开着的流数；不设在线超时门禁；
+  `retry_now` 跳过等待；不设在线超时门禁；
   用 `watch` 报告 `TunnelStatus`，只保留最新状态。App 不可见时调用 `set_suspendable(true)`（保持连接也在内），回前台检查后关掉：
   双时钟检测执行断档，在首个新流之前开始共享检查，不等壳的前台事件、不重放请求。判据见 ADR-0032。App 回前台也调用 `revalidate`：服务端可能已经
   放弃了这条连接而手机收不到关闭帧。快直连限时 1.5 秒，无慢证据的中继 3 秒，经主动 probe 证实的慢路径 8 秒；
@@ -90,9 +89,8 @@ iroh 1.x 应用内隧道，服务端与客户端共用。设计和验证结论�
   和地址）选路，对方接上它的 Tuwunel 后回 200，之后的字节（两台 Tuwunel 之间的 TLS）原样转发，不终结 TLS。
   别的端口（Tuwunel 先拨 443 取 well-known）回 502，Tuwunel 随即改拨 8448；名字不在配对名单里回 403，
   记一次 `unknown_server`；开头不是能读懂的 CONNECT 回 400，记一次 `invalid_request`；对方连不上回 502。
-- **每台对方服务器一条共享连接**：就是 [`TunnelClient`](src/client.rs)，ALPN 换成 `wonton/federation/0`
-  （`TunnelClient::with_alpn`），复用、退避、判死都归它。断了下次用时自动重连；定时 ping 探活，周期和
-  超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
+- **每台对方服务器一条共享连接**（`TunnelClient` 的形状：复用、退避、探活）。断了下次用时按退避重连；
+  定时 ping 探活，周期和超时由 `bind` 的参数给。名字从查找函数里消失（对方被删除）时，连接和探活一起停。
 - **状态**：`watch_status` 给出每台对方服务器的 `PeerStatus`。`Connected` 是最近一次探活或数据往返成功；
   `Offline { since, last_error }` 是连不上（传输问题，不是对方的态度）；`RemovedByPeer` 是握手后被对方用
   403 关闭（对方名单里没有本机），对方的名单恢复后自动回到 `Connected`。Tuwunel 分不清“对方离线”和

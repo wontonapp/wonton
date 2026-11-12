@@ -27,9 +27,8 @@ struct Half {
     at: Instant,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct Reassembler {
-    ttl: Duration,
     pending: HashMap<u64, Half>,
     /// 半包进来的先后，过期和挤掉都从头取；表里可能留着已经拼完的旧项，取到时跳过。
     arrivals: VecDeque<(u64, Instant)>,
@@ -37,27 +36,8 @@ pub(crate) struct Reassembler {
     settled_order: VecDeque<(u64, Instant)>,
 }
 
-impl Default for Reassembler {
-    fn default() -> Self {
-        Self {
-            ttl: FRAGMENT_TTL,
-            pending: HashMap::new(),
-            arrivals: VecDeque::new(),
-            settled: HashSet::new(),
-            settled_order: VecDeque::new(),
-        }
-    }
-}
-
 impl Reassembler {
     /// `datagram` 是 `frame` 借用的那份数据报，完整包不复制，切出它的载荷。
-    pub(crate) fn with_ttl(ttl: Duration) -> Self {
-        Self {
-            ttl,
-            ..Self::default()
-        }
-    }
-
     pub(crate) fn accept(
         &mut self,
         datagram: &Bytes,
@@ -123,7 +103,7 @@ impl Reassembler {
 
     fn expire(&mut self, now: Instant) {
         while let Some(&(id, at)) = self.arrivals.front() {
-            if now.duration_since(at) < self.ttl {
+            if now.duration_since(at) < FRAGMENT_TTL {
                 break;
             }
             self.arrivals.pop_front();

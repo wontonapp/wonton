@@ -20,8 +20,8 @@
 
 - Docker（本机验证用 OrbStack，arm64，Engine 29.8）。镜像共约 4 GB，测完 `run.sh clean`。
 - 开发机的 magpie 网关（容器里是 `http://host.docker.internal:3425`，OrbStack 上任意 key 都行）。
-  模型名经 `MODEL` 传入（要一个 Chat Completions、Anthropic Messages、Responses 三种接口都通的模型）；
-  `MODEL_URL`、`MODEL_KEY` 可以覆盖。只经网关调用，不读 magpie 的配置。
+  默认模型 `auto/glm-5.3-flash`：Chat Completions、Anthropic Messages、Responses 三种接口都通。
+  `MODEL`、`MODEL_URL`、`MODEL_KEY` 可以覆盖。只经网关调用，不读 magpie 的配置。
 
 ## 复跑
 

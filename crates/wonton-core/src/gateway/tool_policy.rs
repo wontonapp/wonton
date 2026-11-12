@@ -174,15 +174,6 @@ pub async fn read_only(
         );
         return not_found(&message);
     }
-    if method == Method::PUT && granted.mcp.bus.tool_deletes(&granted.plugin, &tool).await {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(
-            &langs,
-            "gateway-tool-deletes",
-            &[("tool", tool.as_str().into())],
-        );
-        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
-    }
     let change = PolicyChange::ReadOnly {
         plugin: &id,
         tool: &tool,

@@ -2,11 +2,9 @@
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use wonton_client::{
-    Action, BackPagination, ClientCore, KeyNotice, TimelineDiff, TimelineItem, TimelineScroll,
-    TimelineSubscription, TimelineViewport,
+    Action, BackPagination, ClientCore, TimelineDiff, TimelineItem, TimelineSubscription,
 };
 
 use super::support::{Phone, WAIT, take_rebuild_reason};
@@ -19,12 +17,6 @@ pub struct Timeline {
     core: Arc<ClientCore>,
     room_id: String,
     back_pagination: BackPagination,
-    /// 最近一批的核心给的位置，壳按它画和滚。
-    viewport: TimelineViewport,
-    /// 壳现在报告的位置，发 `SetTimelineScroll` 用。
-    scroll: TimelineScroll,
-    /// 核心给的加密入口，和壳一样逐批换。
-    pub notice: Option<KeyNotice>,
     dispatched: usize,
     started: bool,
     cleared: bool,
@@ -43,10 +35,7 @@ const PAGE_EVERY: Duration = Duration::from_millis(250);
 impl Timeline {
     pub async fn open(phone: &Phone, room_id: &str) -> Self {
         let subscription = phone
-            .subscribe_timeline(TimelineTarget {
-                room_id: room_id.to_owned(),
-                thread_root: None,
-            })
+            .subscribe_timeline(room_id.to_owned())
             .await
             .expect("订阅时间线");
         Self {
@@ -55,9 +44,6 @@ impl Timeline {
             core: phone.core.clone(),
             room_id: room_id.to_owned(),
             back_pagination: BackPagination::Idle,
-            viewport: TimelineViewport::Bottom,
-            scroll: TimelineScroll::Bottom,
-            notice: None,
             dispatched: 0,
             started: false,
             cleared: false,
@@ -69,11 +55,7 @@ impl Timeline {
     }
 
     /// 应用一批增量。首批之后的 `Clear`、`Reset` 是列表被清空重来。
-    fn apply_update(&mut self, update: wonton_client::TimelineUpdate) {
-        self.viewport = update.viewport;
-        self.notice = update.key_notice;
-        let diffs = update.diffs;
-        let back_pagination = update.back_pagination;
+    fn apply_update(&mut self, diffs: Vec<TimelineDiff>, back_pagination: BackPagination) {
         // 翻页开始了，或者翻回来的条目到了：这一页算翻过，下回还在顶上就再翻。
         if back_pagination != BackPagination::Idle || !diffs.is_empty() {
             self.paging = false;
@@ -104,50 +86,6 @@ impl Timeline {
         self.at_start = back_pagination == BackPagination::ReachedStart;
     }
 
-    /// 最近一批核心给的位置。
-    pub fn viewport(&self) -> TimelineViewport {
-        self.viewport
-    }
-
-    /// 等下一批，应用它，并把它本身交回去：断言这一批里给的位置和落点。
-    pub async fn next(&mut self) -> wonton_client::TimelineUpdate {
-        let update = self.subscription.next().await.expect("时间线订阅提前结束");
-        self.apply_update(update.clone());
-        update
-    }
-
-    /// 像壳一样报告列表滚到哪儿，再等核心按新位置送一批。位置没变时核心不会送，调用方自己保证变了。
-    /// 队列里可能还有报着旧位置的批次，等到位置真的变成报告的那样为止。
-    pub async fn report_scroll(&mut self, scroll: TimelineScroll) {
-        self.scroll = scroll;
-        self.core
-            .dispatch(Action::Timeline {
-                action: TimelineAction::SetTimelineScroll {
-                    target: TimelineTarget {
-                        room_id: self.room_id.clone(),
-                        thread_root: None,
-                    },
-                    scroll,
-                },
-            })
-            .expect("报告滚动位置");
-        let waiting = async {
-            loop {
-                let arrived = match scroll {
-                    TimelineScroll::Bottom => self.viewport == TimelineViewport::Bottom,
-                    TimelineScroll::Away => matches!(self.viewport, TimelineViewport::Away { .. }),
-                };
-                if arrived {
-                    return;
-                }
-                self.next().await;
-            }
-        };
-        tokio::time::timeout(WAIT, waiting)
-            .await
-            .unwrap_or_else(|_| panic!("报告 {scroll:?} 之后核心没按新位置送一批"));
-    }
-
     pub fn was_cleared(&self) -> bool {
         self.cleared
     }
@@ -161,7 +99,7 @@ impl Timeline {
                     .next()
                     .await
                     .expect("timeline subscription ended");
-                self.apply_update(update);
+                self.apply_update(update.diffs, update.back_pagination);
             }
         };
         match tokio::time::timeout(WAIT, waiting).await {
@@ -187,13 +125,8 @@ impl Timeline {
             self.last_page = Instant::now();
             self.dispatched += 1;
             self.core
-                .dispatch(Action::Timeline {
-                    action: TimelineAction::PaginateBackwards {
-                        target: TimelineTarget {
-                            room_id: self.room_id.clone(),
-                            thread_root: None,
-                        },
-                    },
+                .dispatch(Action::PaginateBackwards {
+                    room_id: self.room_id.clone(),
                 })
                 .expect("往回翻");
         }
@@ -207,27 +140,6 @@ impl Timeline {
     ) -> R {
         self.until_items(what, |items| items.iter().find_map(&mut check))
             .await
-    }
-
-    /// 应用增量，直到核心给的加密入口变成 `wanted`（解密失败时给的入口、拿到密钥后收起）。
-    pub async fn until_notice(&mut self, what: &str, wanted: Option<KeyNotice>) {
-        let waiting = async {
-            loop {
-                if self.notice == wanted {
-                    return;
-                }
-                let update = self.subscription.next().await.expect("时间线订阅提前结束");
-                self.apply_update(update);
-            }
-        };
-        tokio::time::timeout(WAIT, waiting)
-            .await
-            .unwrap_or_else(|_| {
-                panic!(
-                    "{what}：{WAIT:?} 内入口没有变成 {wanted:?}，现在是 {:?}",
-                    self.notice
-                )
-            });
     }
 
     /// 应用增量，直到整个列表满足条件。
@@ -247,7 +159,7 @@ impl Timeline {
                 tokio::select! {
                     update = self.subscription.next() => {
                         let update = update.expect("时间线订阅提前结束");
-                        self.apply_update(update);
+                        self.apply_update(update.diffs, update.back_pagination);
                     }
                     () = tokio::time::sleep(rest) => {}
                 }

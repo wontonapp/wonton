@@ -14,9 +14,6 @@ pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
 /// 插件经核心在插件网络里的这个别名发通知（`WONTON_NOTIFY_URL`，ADR-0047）。
 pub const PLUGIN_NOTIFY_HOST: &str = "notify.wonton.internal";
 
-/// 申请了 `notify` 的插件经这个 Mailpit 别名向家里人发信（ADR-0056）。
-pub const PLUGIN_SMTP_HOST: &str = "smtp.wonton.internal";
-
 /// Tuwunel 经核心私有网络上的这个别名直连推送专用监听（ADR-0003 的“接口：推送”）。
 pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
 
@@ -46,9 +43,6 @@ pub enum HostKind {
 
     /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
     PluginModels,
-
-    /// 插件网络里访问清单声明的通用能力（ADR-0053）。
-    PluginCapability(String),
 
     /// 插件网络里的插件发通知（[`PLUGIN_NOTIFY_HOST`]，ADR-0047）。
     PluginNotify,
@@ -164,14 +158,6 @@ impl PublicUrls {
             return HostKind::FileHooks;
         }
 
-        if let Some(capability) = host.strip_suffix(".wonton.internal")
-            && !crate::plugin::capabilities::has_no_consumer(capability)
-            && (crate::plugin::capabilities::lookup(capability).is_some()
-                || crate::plugin::capabilities::is_third_party(capability))
-        {
-            return HostKind::PluginCapability(capability.to_owned());
-        }
-
         match host.strip_suffix(&format!(".{}", self.base_domain)) {
             Some("auth") => HostKind::Auth,
 
@@ -182,46 +168,6 @@ impl PublicUrls {
             }
 
             _ => HostKind::Unknown,
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn capability_hosts_follow_the_registry_and_third_party_name_rules() {
-        let public = PublicUrls {
-            scheme: "http".into(),
-            base_domain: "wonton.example".into(),
-            port: 8080,
-        };
-        for capability in crate::plugin::capabilities::ALL {
-            let expected = match capability.name {
-                "models" => HostKind::PluginModels,
-                "egress_proxy" | "matrix_rtc" => HostKind::Unknown,
-                name => HostKind::PluginCapability(name.to_owned()),
-            };
-            assert_eq!(
-                public.classify(&crate::plugin::capabilities::alias(capability.name)),
-                expected,
-            );
-        }
-        assert_eq!(
-            public.classify("X-Acme.Ledger.Wonton.Internal.:8080"),
-            HostKind::PluginCapability("x-acme.ledger".into()),
-        );
-        for host in [
-            "unknown.wonton.internal",
-            "x-acme.wonton.internal",
-            "x-.ledger.wonton.internal",
-            "x-acme..wonton.internal",
-            "x-acme.ledger.extra.wonton.internal",
-            "x-acme.bad_name.wonton.internal",
-            "torrent_client.wonton.internal.attacker.example",
-        ] {
-            assert_eq!(public.classify(host), HostKind::Unknown, "{host}");
         }
     }
 }

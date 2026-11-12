@@ -45,17 +45,3 @@ impl PortResolveError {
         }
     }
 }
-/// 还没接上插件端口转发的嵌入方：`Port`/`Udp` 一律拒绝。
-#[derive(Debug)]
-pub struct UnsupportedPortResolver;
-
-impl PortResolver for UnsupportedPortResolver {
-    async fn resolve(
-        &self,
-        _plugin: &str,
-        _port: u16,
-        _protocol: PortProtocol,
-    ) -> Result<SocketAddr, PortResolveError> {
-        Err(PortResolveError::Unsupported)
-    }
-}
