@@ -139,11 +139,10 @@ curl --noproxy '' -x http://127.0.0.1:18008 -U wonton:<密码> -H 'content-type:
 `WONTON_DEV_DEFAULT_PLUGINS= dev.sh up` 起核心。声明了 `models` 的插件经 `models.wonton.internal` 访问 magpie，凭据由
 核心签发。“模型设置”网页（`http://ai-usemagpie-magpie.wonton.localhost:18480/`）由网关代登录：登录过核心的浏览器和
 已配对设备直接打开，不用输 magpie 的网页密钥。也可以用 magpie 的命令行配置 provider，比如指向开发机上已在运行的
-magpie（同 `deploy/dev/agent`）；加了 provider，默认路由组 `wonton-default` 自动有了它的模型（ADR-0008）：
-
-```bash
-docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=http://host.docker.internal:3425/v1 key=placeholder models='<上游 /v1/models 里的模型 ID>'
-```
+magpie（同 `deploy/dev/agent`）；上游地址别写 `http://host.docker.internal:3425`——核心不给插件容器加 host-gateway（有意的
+隔离），Linux 上这个名字解析不了。用[端到端冒烟](#端到端冒烟)一节的 socat 中继（`WONTON_SMOKE_MODEL_RELAY` 指向只监听
+回环的 magpie），宿主防火墙要放行插件网段到中继端口（13425）。加了 provider，默认路由组 `wonton-default` 自动有了它的
+模型（ADR-0008）。
 
 ## MCP 总线
 
