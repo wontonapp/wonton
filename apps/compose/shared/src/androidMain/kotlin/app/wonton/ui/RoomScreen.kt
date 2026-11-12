@@ -255,9 +255,9 @@ private fun messageMenuBounds(): Rect {
     val direction = LocalLayoutDirection.current
     return Rect(
         safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density, direction).toFloat(),
+        safe.getTop(density).toFloat(),
         (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density)).toFloat(),
     )
 }
 
