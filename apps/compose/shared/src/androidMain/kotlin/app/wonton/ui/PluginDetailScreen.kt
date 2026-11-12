@@ -131,6 +131,7 @@ private fun DetailContent(
         val working = task?.state is PluginTaskState.Running
         if (bot != null) {
             BotProfileSection(bot, plugins)
+            BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {

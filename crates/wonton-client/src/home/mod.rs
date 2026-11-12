@@ -149,6 +149,7 @@ impl HomeLink {
                 pairing: None,
                 invite: None,
                 keep_connection: false,
+                just_recovered: false,
             },
         );
         let home = Arc::new(Self {
@@ -397,6 +398,7 @@ impl HomeLink {
             view.path = None;
             view.proxy = None;
             view.notice = None;
+            view.just_recovered = false;
         });
         self.runtime.spawn(self.clone().establish(ticket));
     }
@@ -576,6 +578,7 @@ impl HomeLink {
             tracing::info!(outage_ms, trigger = recovery.trigger, "connection restored");
         }
         let notice = tracker.notice(&status, now);
+        let just_recovered = tracker.just_recovered(&notice, now);
         let details = ConnectionDetails {
             network: tracker.network(),
             relay: tracker.relay(),
@@ -596,7 +599,7 @@ impl HomeLink {
             udp_flows: client.udp_flows(),
             udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
         };
-        let tick = tracker.next_tick(connected);
+        let tick = tracker.next_tick(connected, now);
         drop(tracker);
         let stats_due = connected && self.stats_due(now);
         let mut withheld = false;
@@ -636,10 +639,12 @@ impl HomeLink {
             let changed = view.status != status
                 || view.path != path
                 || view.notice != notice
+                || view.just_recovered != just_recovered
                 || view.details != details;
             view.status = status;
             view.path = path;
             view.notice = notice;
+            view.just_recovered = just_recovered;
             view.details = details;
             changed
         });

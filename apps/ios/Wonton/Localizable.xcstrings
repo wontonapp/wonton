@@ -12232,6 +12232,66 @@
         }
       }
     },
+    "problem.plugin.recordUnusable.nextStep": {
+      "comment": "Problem next step: reinstall the app.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall this app and install it again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "卸载这个应用（数据可以保留）后重新安装。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "解除安裝這個應用程式（資料可以保留）後重新安裝。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリをアンインストール（データは残せます）して、もう一度インストールしてください。"
+          }
+        }
+      }
+    },
+    "problem.plugin.recordUnusable.title": {
+      "comment": "Problem title: the app's install record can't be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app's install record is unusable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用的安装记录不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用程式的安裝記錄不可用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのインストール記録が壊れています"
+          }
+        }
+      }
+    },
     "problem.plugin.serverTooOld.title": {
       "comment": "Problem title: the home server is older than this app needs.",
       "extractionState": "manual",
@@ -29574,6 +29634,1086 @@
           "stringUnit": {
             "state": "translated",
             "value": "その他"
+          }
+        }
+      }
+    },
+    "contacts.title": {
+      "comment": "Title of a bot's contacts page and the entry row on the bot's detail page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "联系人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "聯絡人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先"
+          }
+        }
+      }
+    },
+    "contacts.add": {
+      "comment": "Toolbar button and sheet title for adding a contact to this bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add contact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加联系人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加聯絡人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を追加"
+          }
+        }
+      }
+    },
+    "contacts.add.kindBot": {
+      "comment": "Choice in the add-contact sheet: the other side is a bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A bot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボット"
+          }
+        }
+      }
+    },
+    "contacts.add.kindPerson": {
+      "comment": "Choice in the add-contact sheet: the other side is a person.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A person"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一个人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一個人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "人"
+          }
+        }
+      }
+    },
+    "contacts.add.placeholder": {
+      "comment": "Placeholder of the Matrix ID field in the add-contact sheet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@someone:example.org"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@someone:example.org"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@someone:example.org"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@someone:example.org"
+          }
+        }
+      }
+    },
+    "contacts.add.submit": {
+      "comment": "Button that sends the contact request.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエストを送信"
+          }
+        }
+      }
+    },
+    "contacts.section.requests": {
+      "comment": "Section heading for contact requests waiting for me.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requests"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リクエスト"
+          }
+        }
+      }
+    },
+    "contacts.section.active": {
+      "comment": "Section heading for contacts both sides approved.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已添加"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已新增"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加済み"
+          }
+        }
+      }
+    },
+    "contacts.section.sent": {
+      "comment": "Section heading for requests I sent that aren't in effect.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已发出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信済み"
+          }
+        }
+      }
+    },
+    "contacts.incoming.warning": {
+      "comment": "Shown on an incoming contact request: what approving means.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its messages will be handled like messages to your bot, and sensitive tools will ask you every time."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方 Bot 的话，你的 Bot 会当作给它的话处理；敏感工具每次都要你确认。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方 Bot 的話，你的 Bot 會當作給它的話處理；敏感工具每次都要你確認。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のボットの発言は、あなたのボットへの発言として扱われます。重要なツールは毎回あなたの確認が必要になります。"
+          }
+        }
+      }
+    },
+    "contacts.approve": {
+      "comment": "Approve button on an incoming contact request.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同意"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同意"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "承認"
+          }
+        }
+      }
+    },
+    "contacts.reject": {
+      "comment": "Reject button on an incoming contact request.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reject"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒絕"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒否"
+          }
+        }
+      }
+    },
+    "contacts.withdraw": {
+      "comment": "Button that withdraws a request I sent and they haven't answered.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Withdraw"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤销"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撤回"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取り消す"
+          }
+        }
+      }
+    },
+    "contacts.clear": {
+      "comment": "Button that clears a declined or failed request row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除"
+          }
+        }
+      }
+    },
+    "contacts.remove": {
+      "comment": "Content description of the button that removes an added contact.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove contact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除联系人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除聯絡人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先を削除"
+          }
+        }
+      }
+    },
+    "contacts.remove.title": {
+      "comment": "Confirmation title for removing a contact. Argument: the contact's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove “%@”?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除“%@”？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刪除「%@」？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%@」を削除しますか？"
+          }
+        }
+      }
+    },
+    "contacts.remove.message": {
+      "comment": "Confirmation body: what removing a contact does.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your bot stops handling their messages. Existing chats stay."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 Bot 不再处理对方的话，已有的聊天留着。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "你的 Bot 不再處理對方的話，已有的聊天會保留。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボットは相手の発言を処理しなくなります。既存のチャットは残ります。"
+          }
+        }
+      }
+    },
+    "contacts.status.waitingBot": {
+      "comment": "Row status: waiting for the other bot's keeper to approve.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for them to approve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等对方同意"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等對方同意"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の承認待ち"
+          }
+        }
+      }
+    },
+    "contacts.status.waitingPerson": {
+      "comment": "Row status: waiting for the person to accept the chat invite.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for them to accept"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等对方接受"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等對方接受"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手の承諾待ち"
+          }
+        }
+      }
+    },
+    "contacts.status.declined": {
+      "comment": "Row status: they declined.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "They declined"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方拒绝了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方拒絕了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手が拒否しました"
+          }
+        }
+      }
+    },
+    "contacts.status.notFound": {
+      "comment": "Row status: no such user on that server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No such user"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有这个人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有這個人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "該当するユーザーがいません"
+          }
+        }
+      }
+    },
+    "contacts.status.unknown": {
+      "comment": "Row status this version doesn't know.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状态未知"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "狀態未知"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "状態不明"
+          }
+        }
+      }
+    },
+    "contacts.keeper": {
+      "comment": "Under a bot contact's name: whose bot it is. Argument: the keeper's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@'s bot"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的 Bot"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的 Bot"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のボット"
+          }
+        }
+      }
+    },
+    "contacts.remote.unpaired": {
+      "comment": "On a contact from another server whose pairing was removed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That server isn't connected anymore, so messages won't get through"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和那台服务器的配对已移除，消息过不去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "和那台伺服器的配對已移除，訊息傳不過去"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "そのサーバーとの接続が解除されたため、メッセージは届きません"
+          }
+        }
+      }
+    },
+    "contacts.empty": {
+      "comment": "Empty contacts page: the one sentence above the add button.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No contacts yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有联系人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還沒有聯絡人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連絡先はまだありません"
+          }
+        }
+      }
+    },
+    "contacts.error.invalidUserId": {
+      "comment": "Failure title: not a full Matrix ID, or the bot itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not a valid Matrix ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是有效的 Matrix ID"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是有效的 Matrix ID"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効な Matrix ID ではありません"
+          }
+        }
+      }
+    },
+    "contacts.error.notPaired": {
+      "comment": "Failure title: their server isn't paired with mine.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Their server isn't connected to yours"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对方的服务器没和你的配对"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "對方的伺服器沒和你的配對"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のサーバーはあなたのサーバーと接続されていません"
+          }
+        }
+      }
+    },
+    "contacts.error.notPairedNext": {
+      "comment": "Next step under that failure.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect it in Other Servers first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先在“其他服务器”里配对。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先在「其他伺服器」裡配對。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に「ほかのサーバ」で接続してください。"
+          }
+        }
+      }
+    },
+    "contacts.error.alreadyContact": {
+      "comment": "Failure title: already a contact or already requested.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Already a contact, or the request was already sent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经是联系人，或者请求已经发出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已經是聯絡人，或請求已經送出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでに連絡先か、リクエストを送信済みです"
+          }
+        }
+      }
+    },
+    "contacts.error.botNotFound": {
+      "comment": "Failure title: the bot was uninstalled.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This bot is no longer installed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个 Bot 已经不在了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個 Bot 已經不在了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このボットはもうインストールされていません"
+          }
+        }
+      }
+    },
+    "contacts.error.contactNotFound": {
+      "comment": "Failure title: that row was already handled elsewhere.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That was already handled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这一条已经处理过了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這一則已經處理過了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すでに処理済みです"
+          }
+        }
+      }
+    },
+    "contacts.error.notKeeper": {
+      "comment": "Failure title: only the bot's keeper can manage contacts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only this bot's keeper can manage its contacts"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有这个 Bot 的归属人能管它的联系人"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只有這個 Bot 的歸屬人能管理它的聯絡人"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このボットの連絡先は持ち主だけが管理できます"
+          }
+        }
+      }
+    },
+    "contacts.error.peerUnreachable": {
+      "comment": "Failure title: their server can't be reached; nothing was sent.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can't reach their server. Nothing was sent."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连不上对方的服务器，这次没发出去"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連不上對方的伺服器，這次沒有送出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相手のサーバーに接続できません。送信されていません。"
+          }
+        }
+      }
+    },
+    "contacts.error.unauthenticated": {
+      "comment": "Failure title: this device isn't a paired device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device isn't allowed to do this"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备不能做这件事"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台裝置不能做這件事"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この端末ではこの操作はできません"
+          }
+        }
+      }
+    },
+    "contacts.error.upstream": {
+      "comment": "Failure title: the home server failed to save it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server couldn't save this"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器没能记下这件事"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器沒能記下這件事"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーが保存できませんでした"
+          }
+        }
+      }
+    },
+    "friends.botContact.badge": {
+      "comment": "Label on an incoming chat invite from a bot that asks you to be its contact.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot contact request"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot 联系人请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bot 聯絡人請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ボットの連絡先リクエスト"
           }
         }
       }

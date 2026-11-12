@@ -80,8 +80,13 @@ impl Contacts {
             keeper_display_name: keeper,
         };
         let Some(local) = local else {
-            self.reply(sender_server, reply(ContactOutcome::NotFound, None))
-                .await;
+            let event = reply(ContactOutcome::NotFound, None);
+            if self
+                .log_commit(|stored| Self::enqueue(stored, sender_server, event))
+                .is_ok()
+            {
+                self.flush_or_later(sender_server).await;
+            }
             return;
         };
         let now = now_ms();
@@ -99,16 +104,17 @@ impl Contacts {
                 keeper_display_name: from.keeper_display_name.clone(),
                 ..active(row, now)
             };
-            if self
-                .log_commit(|stored| stored.put(&local.bot, &from.user_id, row))
-                .is_ok()
-                && !was_active
-            {
-                self.ports.effects.allowed_users_changed(&local.bot);
+            let event = reply(ContactOutcome::Approved, local.keeper_display_name.clone());
+            let committed = self.log_commit(|stored| {
+                stored.put(&local.bot, &from.user_id, row);
+                Self::enqueue(stored, sender_server, event);
+            });
+            if committed.is_ok() {
+                if !was_active {
+                    self.ports.effects.allowed_users_changed(&local.bot);
+                }
+                self.flush_or_later(sender_server).await;
             }
-            let keeper = local.keeper_display_name.clone();
-            self.reply(sender_server, reply(ContactOutcome::Approved, keeper))
-                .await;
             return;
         }
         let fresh = existing
@@ -200,13 +206,6 @@ impl Contacts {
     ) -> Result<(), super::ContactFailure> {
         self.commit(change)
             .inspect_err(|e| tracing::error!(error = %e, "联系人记录写不进去"))
-    }
-
-    /// 回对方一个结果。发不出去时对方一直是“等对方同意”，记日志。
-    async fn reply(&self, server: &str, event: ContactEvent) {
-        if let Err(e) = self.ports.link.send(server, event).await {
-            tracing::warn!(%server, error = %e, "联系人结果没能发给对方");
-        }
     }
 }
 
