@@ -29,6 +29,14 @@ upgrade-download-no-space = 空き容量が足りません：ダウンロード�
 upgrade-download-failed = ダウンロードできませんでした：{ $error }
 upgrade-image-missing-after-pull = ダウンロード後も{ $reference }がこのホストに見つかりません
 
+# 互換性チェック（ADR-0085）は失敗してもアップデートを妨げません：詳細に「確認できな
+# かった」旨を示し、アップデートはそのまま進められます。
+upgrade-compat-records-unreadable = インストール済みアプリの記録を読み込めませんでした：{ $error }
+upgrade-compat-materialize-failed = 互換性チェックのためのアプリのパッケージを書き出せませんでした：{ $error }
+upgrade-compat-run-failed = 新しいイメージ{ $image }内で互換性チェックを実行できませんでした：{ $error }
+upgrade-compat-command-failed = 新しいイメージ{ $image }内の互換性チェックが終了コード{ $code }で終了しました：{ $error }
+upgrade-compat-output-unreadable = 互換性チェックの出力を読み取れませんでした：{ $error }
+
 # アップデーターは自分の作業を状態ファイルに書き込みます（オーナーの言語で）。
 upgrade-updater-crashed = アップデーターが繰り返しクラッシュしています
 upgrade-phase-unreadable = 状態ファイルのフェーズを読み取れません

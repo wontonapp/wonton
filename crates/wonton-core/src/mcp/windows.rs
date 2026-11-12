@@ -22,7 +22,14 @@ impl Bus {
         choice_id: Option<&str>,
         by: &str,
     ) -> Result<ConfirmationState, AnswerError> {
-        self.answer_card_with_secrets(id, answer, choice_id, SecretValues::new(), by)
+        self.answer_card_with_secrets(
+            id,
+            answer,
+            choice_id,
+            SecretValues::new(),
+            Default::default(),
+            by,
+        )
     }
 
     /// 带密钥的回答卡片（ADR-0064）。
@@ -32,6 +39,7 @@ impl Bus {
         answer: Answer,
         choice_id: Option<&str>,
         secrets: SecretValues,
+        settings: wonton_protocol::SettingValues,
         by: &str,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = self.confirmations.answer_with_secrets(
@@ -39,6 +47,7 @@ impl Bus {
             answer,
             choice_id,
             secrets,
+            settings,
             &self.owner_languages(),
         )?;
         if answer == Answer::AllowWindow {

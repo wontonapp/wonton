@@ -7,9 +7,8 @@ use std::time::Duration;
 use reqwest::header::{ACCEPT_LANGUAGE, CONTENT_TYPE};
 use reqwest::{Client, Method};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use url::Url;
-use wonton_protocol::{FriendFailure, FriendGroup, FriendProblem, FriendRow, ProxySettings};
+use wonton_protocol::{FriendFailure, FriendGroup, FriendProblem, FriendsList, ProxySettings};
 
 use crate::l10n::text;
 
@@ -18,25 +17,6 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// `X-Wonton-Error` 的响应头。
 pub(super) const ERROR_HEADER: &str = "x-wonton-error";
-
-/// 核心存着的那部分好友页数据。
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct View {
-    pub(super) friends: Vec<FriendRow>,
-    pub(super) groups: Vec<FriendGroup>,
-    pub(super) blocked_servers: Vec<String>,
-    /// 删过的人；他们留在私聊里的好友标记不算数，除非重新收到邀请再同意。
-    pub(super) removed: Vec<RemovedFriend>,
-    pub(super) can_block_federation: bool,
-    /// 名单是不是主人的；家人只留本机清单。
-    pub(super) owner_scope: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct RemovedFriend {
-    pub(super) user_id: String,
-    pub(super) removed_at_ms: u64,
-}
 
 #[derive(Clone, Debug)]
 pub(super) struct Failure {
@@ -205,7 +185,7 @@ impl Api {
         Err(problem(&bytes, status.as_u16(), kind))
     }
 
-    pub(super) async fn list(&self) -> Result<View, Failure> {
+    pub(super) async fn list(&self) -> Result<FriendsList, Failure> {
         let bytes = self.call(Method::GET, "/_wonton/api/friends", None).await?;
         parse(&bytes)
     }
@@ -299,9 +279,9 @@ fn problem(bytes: &[u8], status: u16, kind: Option<String>) -> Failure {
         Some("request_not_found") => FriendFailure::RequestNotFound,
         Some("rate_limited") => FriendFailure::RateLimited,
         Some("unauthenticated") => FriendFailure::Unauthorized,
-        Some("owner_only" | "cross_site") => FriendFailure::Forbidden,
         _ if status == 429 => FriendFailure::RateLimited,
         _ if status == 401 => FriendFailure::Unauthorized,
+        // 核心的 403（只给主人、跨站）不论哪个类别名都是“不让做”，按状态码分，不跟着类别名改。
         _ if status == 403 => FriendFailure::Forbidden,
         _ if status == 404 => FriendFailure::RequestNotFound,
         _ => FriendFailure::Upstream,

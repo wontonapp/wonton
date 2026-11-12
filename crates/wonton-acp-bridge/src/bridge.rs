@@ -7,8 +7,10 @@
 //! 停机期间（容器重建、升级）发来的消息在重启后的首屏快照里：按已读位置（`LastSeen`）
 //! 认出来，补处理最近几条，超出的在房间里如实列出（`routing::route_backlog`）。
 
+pub(crate) mod attachments;
 mod permissions;
 mod routing;
+mod run_status;
 mod sessions;
 mod tasks;
 mod turns;
@@ -22,7 +24,7 @@ mod tests;
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -43,7 +45,6 @@ use crate::{
     l10n::text,
     locale::{Locales, Origin},
     login::{LoginChat, LoginEvent, LoginFlow, LoginSink},
-    matrix::IncomingText,
     room::Room,
     room_owner::room_owner,
     state::{LastSeen, SessionStore},
@@ -80,8 +81,23 @@ enum JobKind {
 
 #[derive(Clone, Debug)]
 struct Job {
+    /// 文字部分：文字消息是正文，媒体消息是说明（caption），都没有时为空。
     text: String,
     kind: JobKind,
+    /// 这条请求的消息事件 ID，状态消息的 `run`（ADR-0082）。
+    event_id: String,
+    /// 已落工作区的附件；纯文字为 None。
+    media: Option<attachments::PreparedAttachment>,
+}
+
+impl Job {
+    /// 给工作板和话题开局看的用户输入摘要：附件没有说明时用文件名。
+    fn display(&self) -> &str {
+        match (self.text.trim(), &self.media) {
+            ("", Some(media)) => &media.name,
+            _ => &self.text,
+        }
+    }
 }
 
 struct PromptFinished {
@@ -163,7 +179,8 @@ impl<R: Room> LoginService<R> {
         room: &Arc<R>,
         group: bool,
         thread: Option<&str>,
-        incoming: &IncomingText,
+        text: &str,
+        event_id: &str,
         busy: bool,
         lang: Lang,
     ) -> BridgeResult<bool> {
@@ -178,8 +195,8 @@ impl<R: Room> LoginService<R> {
             .lock()
             .await
             .receive_from(
-                &incoming.text,
-                &incoming.event_id,
+                text,
+                event_id,
                 &LoginChat {
                     current: &current,
                     direct: direct.as_ref(),
@@ -213,21 +230,96 @@ impl<R: Room> LoginService<R> {
 struct RoomState {
     owner: OwnedUserId,
     sessions: sessions::Sessions,
+    /// 一轮一条的 Agent 进度状态消息（ADR-0082）。
+    run_status: run_status::Board,
     /// 等对方做完再改的权限请求。
     waiters: Vec<ApprovalWaiter>,
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
     last_activity: Instant,
+    /// 上次清理工作区附件的时间。
+    last_sweep: Instant,
 }
 
 /// 主对话里存多少条最近消息；开局最多带 6 条前文，留够余量。
 const HISTORY_MAX: usize = 20;
+
+/// 断线收尾最多等多久：在跑的轮次会马上以传输错误结束，等它们交回结果（ADR-0082）。
+const DRAIN_GRACE: Duration = Duration::from_secs(2);
+
+/// Agent 断了：在跑的轮次马上会以传输错误结束，等它们交回结果（错误照发、状态消息
+/// 按 ADR-0082 收尾），不再开新轮；收完退出由 Compose 重启、启动恢复处理遗留状态。
+async fn drain_in_flight<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    topics: &mut Topics,
+    finished_rx: &mut mpsc::Receiver<PromptFinished>,
+) -> BridgeResult<()> {
+    state.sessions.drop_pending();
+    let deadline = Instant::now() + DRAIN_GRACE;
+    while state.run_status.busy() {
+        let Some(finished) =
+            tokio::time::timeout_at(tokio::time::Instant::from(deadline), finished_rx.recv())
+                .await
+                .ok()
+                .flatten()
+        else {
+            return Ok(());
+        };
+        turns::finished(context, state, topics, finished).await?;
+    }
+    Ok(())
+}
+
+/// 打开一轮一条的状态消息看板，把重启前还停在 working/waiting 的编辑成不确定。
+async fn open_run_status<R: Room>(bridge: &Bridge, room: &R) -> run_status::Board {
+    let mut board =
+        run_status::Board::open(bridge.config.bridge_data.clone(), room.room_id().as_str()).await;
+    board.recover(room).await;
+    board
+}
+
+/// 一轮循环的发送上下文：三对通道在这里建好，接收端交回循环，发送端装进 [`TurnContext`]。
+#[allow(clippy::type_complexity)]
+fn turn_context<R: Room>(
+    bridge: &Bridge,
+    room: Arc<R>,
+    login: Arc<LoginService<R>>,
+    group: bool,
+    lang: Lang,
+) -> (
+    TurnContext<R>,
+    mpsc::Receiver<PromptFinished>,
+    mpsc::Receiver<PermissionAsk>,
+    mpsc::Receiver<permissions::CardDone>,
+) {
+    let (finished_tx, finished_rx) = mpsc::channel(16);
+    let (ask_tx, ask_rx) = mpsc::channel(8);
+    let (cards_tx, cards_rx) = mpsc::channel(8);
+    (
+        TurnContext {
+            bridge: bridge.clone(),
+            room,
+            login,
+            group,
+            lang,
+            finished_tx,
+            ask_tx,
+            cards_tx,
+        },
+        finished_rx,
+        ask_rx,
+        cards_rx,
+    )
+}
 
 pub async fn run() -> Result<()> {
     let config = Config::from_env()?;
     tokio::fs::create_dir_all(&config.bridge_data)
         .await
         .context("创建桥数据目录")?;
+    // 工作区里上次的附件按保留期和总量清一轮；失败只记日志。
+    attachments::sweep(&config.workspace).await;
     let matrix = MatrixSession::login_with_access_token(
         &SessionConfig {
             homeserver_url: config.homeserver.clone(),
@@ -407,6 +499,7 @@ async fn run_room<R: Room>(
     let mut commands = Commands::new();
     let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
+    let run_status = open_run_status(&bridge, room.as_ref()).await;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();
     let mut acp_closed = bridge.acp.closed();
@@ -417,25 +510,16 @@ async fn run_room<R: Room>(
     let mut seen = HashSet::new();
     // 本轮到过的事件（含没解开的）：迟解密重投、重启竞态下旧消息当增量到达，都靠它分辨。
     let mut arrived = HashSet::new();
-    let (finished_tx, mut finished_rx) = mpsc::channel(16);
-    let (ask_tx, mut ask_rx) = mpsc::channel(8);
-    let (cards_tx, mut cards_rx) = mpsc::channel(8);
-    let context = TurnContext {
-        bridge: bridge.clone(),
-        room: room.clone(),
-        login,
-        group,
-        lang: start_lang,
-        finished_tx,
-        ask_tx,
-        cards_tx,
-    };
+    let (context, mut finished_rx, mut ask_rx, mut cards_rx) =
+        turn_context(&bridge, room.clone(), login, group, start_lang);
     let mut state = RoomState {
         owner,
         sessions: sessions::Sessions::default(),
+        run_status,
         waiters: Vec::new(),
         history: VecDeque::new(),
         last_activity: Instant::now(),
+        last_sweep: Instant::now(),
     };
     // 进循环前先分发首屏快照：补上停机期间发来的，超出上限的如实列出。
     routing::route_backlog(
@@ -448,6 +532,8 @@ async fn run_room<R: Room>(
     )
     .await?;
     let mut idle_tick = tokio::time::interval(bridge.config.limits.idle_tick);
+    // 步骤变化的合并编辑每 3 秒最多一次；每秒看一眼有没有攒着的要发。
+    let mut status_tick = tokio::time::interval(std::time::Duration::from_secs(1));
     loop {
         tokio::select! {
             Some(messages) = updates.next() => {
@@ -484,8 +570,12 @@ async fn run_room<R: Room>(
             _ = idle_tick.tick() => {
                 turns::idle(&context, &mut state, &mut topics).await?;
             }
+            _ = status_tick.tick() => {
+                state.run_status.flush(room.as_ref(), Instant::now()).await;
+            }
             changed = acp_closed.changed() => {
                 if changed.is_ok() && *acp_closed.borrow() {
+                    drain_in_flight(&context, &mut state, &mut topics, &mut finished_rx).await?;
                     return stop_for_agent_disconnect(
                         room.as_ref(),
                         &mut commands,

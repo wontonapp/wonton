@@ -42,6 +42,7 @@ fun SettingsPage(
     onClose: (() -> Unit)? = null,
     peersOpenRequests: Boolean = false,
     onPeersOpenRequestsHandled: () -> Unit = {},
+    onContinueHandoff: () -> Unit,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
@@ -56,6 +57,7 @@ fun SettingsPage(
         SettingsSubpage.BACKUP -> ChatBackupScreen(
             chat.encryption,
             onAction = { action -> rejection = core.send(action) },
+            onContinueHandoff = onContinueHandoff,
             onClose = back,
         )
         SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)
@@ -141,11 +143,11 @@ private fun SettingsEntryRow(
         }
         is SettingsEntry.Notifications -> WontonRow(
             stringResource(R.string.notification_title),
-            if (notificationsEnabled()) {
-                entry.push.notificationValue
-            } else {
-                stringResource(R.string.notification_value_off)
-            },
+            // 摘要和通知页的“系统通知”一行同源：收不收得到提醒只看系统有没有允许，推送注册状态在通知页里说。
+            stringResource(
+                if (notificationsEnabled()) R.string.notification_value_on
+                else R.string.notification_value_system_blocked,
+            ),
             showsForward = true,
             onClick = { onSubpage(SettingsSubpage.NOTIFICATIONS) },
         )
@@ -164,6 +166,12 @@ private fun SettingsEntryRow(
         SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
             onSubpage(SettingsSubpage.ABOUT)
         }
+        // 外部 Matrix 账号和添加 Wonton 服务器的入口（ADR-0051）：账号流程还没建，核心从不下发这几项，
+        // 和 iOS 一样先不渲染；显式列出，核心开始下发时不至于静默漏掉。
+        is SettingsEntry.MatrixAccount,
+        is SettingsEntry.MatrixDevices,
+        SettingsEntry.AddWontonServer -> Unit
+        // 未知入口不显示：新核心加的按钮不能变成空行。
         else -> Unit
     }
 }

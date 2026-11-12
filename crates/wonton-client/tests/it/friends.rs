@@ -348,3 +348,57 @@ async fn a_refused_invite_is_not_reported_as_an_expired_login() {
     // 聊天的登录不受影响。
     phone.signed_in().await;
 }
+
+// 不用连上 Matrix：输入在发邀请之前就按类别挡下，不连家也该如实报。
+#[tokio::test]
+async fn scanning_something_that_is_not_a_user_link_fails_as_invalid_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    for scanned in [
+        "https://matrix.to/#/#room:wonton.localhost", // 房间链接不是用户
+        "https://element.io/",                        // 普通网址
+        "随手扫到的一段乱码",                         // 什么都不是
+    ] {
+        phone
+            .dispatch(Action::AddFriend {
+                user_id: scanned.to_owned(),
+            })
+            .unwrap();
+        match &phone.friends().state {
+            FriendsState::Failed { problem } => {
+                assert_eq!(problem.reason, FriendFailure::InvalidUserId, "{scanned}");
+            }
+            other => panic!("{scanned}：应报输入非法，当前 {other:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn a_matrix_to_user_link_sends_the_request() {
+    let dir = tempfile::tempdir().unwrap();
+    let (home, phone) = signed_in_phone(dir.path()).await;
+    let bob = home.matrix.login(&unique("bob"), "Bob 的手机").await;
+    let bob_id = bob.user_id().to_string();
+
+    // 二维码里是百分号转义的用户链接（matrix.to 的标准写法），扫到的原文原样交上来。
+    let link = format!(
+        "https://matrix.to/#/{}",
+        bob_id.replace('@', "%40").replace(':', "%3A"),
+    );
+    phone.dispatch(Action::AddFriend { user_id: link }).unwrap();
+    until(&phone, "扫用户链接发出请求", |view| {
+        view.outgoing
+            .iter()
+            .find(|request| request.user_id == bob_id)
+            .map(|_| ())
+    })
+    .await;
+
+    // 出示自己的码：就绪的页面带着自己的 matrix.to 用户链接。
+    let my_link = format!("https://matrix.to/#/{OWNER}");
+    until(&phone, "给出自己的用户链接", |view| {
+        (view.my_link.as_deref() == Some(my_link.as_str())).then_some(())
+    })
+    .await;
+}

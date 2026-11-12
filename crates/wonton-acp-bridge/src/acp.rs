@@ -10,7 +10,7 @@ use std::{
 
 use serde_json::{Value, json};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncWriteExt, BufReader},
     net::{UnixStream, unix::OwnedReadHalf},
     sync::{Mutex, broadcast, mpsc, oneshot, watch},
 };
@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub mod auth;
+mod frame;
 mod mode;
 mod permissions;
 use permissions::PermissionWaiter;
@@ -51,6 +52,9 @@ pub struct Capabilities {
     pub close: bool,
     pub steering: bool,
     pub mcp_http: bool,
+    /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
+    /// resource_link 所有 Agent 都必须支持，image 要声明）。
+    pub prompt_image: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +90,7 @@ pub struct PromptResult {
 pub struct NewSession {
     pub session_id: String,
     pub ask_before_edit: bool,
+    pub mode: String,
 }
 
 /// 桥接层接管一次权限请求的机会：Agent 发来 `session/request_permission`，ACP 把它连同
@@ -184,6 +189,7 @@ impl AcpClient {
                 close: false,
                 steering: false,
                 mcp_http: false,
+                prompt_image: false,
             },
             auth_methods: Vec::new(),
         };
@@ -299,6 +305,7 @@ impl AcpClient {
         Ok(NewSession {
             session_id,
             ask_before_edit,
+            mode: mode.to_owned(),
         })
     }
 
@@ -308,6 +315,7 @@ impl AcpClient {
         cwd: &str,
         mcp_url: &str,
         origin: &ConfirmationOrigin,
+        mode: &str,
     ) -> Result<()> {
         let params = json!({
             "sessionId": session_id,
@@ -323,6 +331,7 @@ impl AcpClient {
                 "acp-restore-unsupported",
             )));
         }
+        mode::set_after_restore(self, session_id, mode).await?;
         self.inner
             .origins
             .lock()
@@ -409,10 +418,12 @@ impl AcpClient {
         Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
     }
 
+    /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见
+    /// `bridge/attachments.rs`），一轮可以多个块。
     pub async fn prompt(
         &self,
         session_id: &str,
-        text: &str,
+        prompt: Vec<Value>,
         max_output: usize,
         timeout: Duration,
         lang: Lang,
@@ -445,10 +456,10 @@ impl AcpClient {
             .get(session_id)
             .cloned()
             .unwrap_or_default();
-        tracing::debug!(session_id, bytes = text.len(), "发送 ACP prompt");
+        tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
         let response = self.request(
             "session/prompt",
-            json!({"sessionId": session_id, "prompt": [{"type": "text", "text": text}]}),
+            json!({"sessionId": session_id, "prompt": prompt}),
         );
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
@@ -594,16 +605,16 @@ impl AcpClient {
 }
 
 async fn read_loop(inner: Arc<Inner>, reader: OwnedReadHalf) {
-    let mut lines = BufReader::new(reader).lines();
+    let mut reader = BufReader::new(reader);
+    let mut frame = Vec::new();
     loop {
-        let line = match lines.next_line().await {
-            Ok(Some(line)) => line,
-            Ok(None) | Err(_) => break,
-        };
-        if line.len() > MAX_FRAME_BYTES {
-            break;
+        match frame::read_frame(&mut reader, &mut frame).await {
+            frame::FrameRead::Frame => {}
+            frame::FrameRead::Oversize | frame::FrameRead::Eof | frame::FrameRead::Transport => {
+                break;
+            }
         }
-        let Ok(message) = serde_json::from_str::<Value>(&line) else {
+        let Ok(message) = serde_json::from_slice::<Value>(&frame) else {
             break;
         };
         if message.get("method").is_some() {
@@ -792,5 +803,8 @@ fn parse_capabilities(result: &Value) -> Capabilities {
             .unwrap_or(false),
         mcp_http: agent["mcpCapabilities"]["http"].is_object()
             || agent["mcpCapabilities"]["http"].as_bool().unwrap_or(false),
+        prompt_image: agent["promptCapabilities"]["image"]
+            .as_bool()
+            .unwrap_or(false),
     }
 }

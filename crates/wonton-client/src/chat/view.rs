@@ -1,5 +1,8 @@
 //! 把 `wonton-matrix` 的结果转成 ViewModel：房间行、时间线条目和增量、加密状态、按原因分类的错误。
 
+use std::collections::HashSet;
+
+use super::agent_run::BotsView;
 use super::confirmation::CardsView;
 use super::links::LinkTargets;
 use super::menu::message_actions;
@@ -42,7 +45,8 @@ pub(crate) fn key_notice(
     encryption: &EncryptionStatus,
     has_undecryptable: bool,
 ) -> Option<KeyNotice> {
-    if !has_undecryptable {
+    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
+    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
         return None;
     }
     match encryption.recovery {
@@ -54,7 +58,12 @@ pub(crate) fn key_notice(
     }
 }
 
-pub(crate) fn room_row(room: RoomInfo, core: &UserId, layout: ChatLayout) -> RoomRow {
+pub(crate) fn room_row(
+    room: RoomInfo,
+    core: &UserId,
+    layout: ChatLayout,
+    bots: &HashSet<String>,
+) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
         layout,
@@ -69,14 +78,19 @@ pub(crate) fn room_row(room: RoomInfo, core: &UserId, layout: ChatLayout) -> Roo
             Membership::Invited => RoomMembership::Invited,
             Membership::Left | Membership::Knocked | Membership::Banned => RoomMembership::Left,
         },
-        preview: room.latest.and_then(preview),
+        preview: room.latest.and_then(|latest| preview(latest, bots)),
         unread_count: room.unread_count,
     }
 }
 
 /// 预览。不是消息的事件（成员变化等）不做预览。
-fn preview(latest: LatestMessage) -> Option<RoomPreview> {
+fn preview(latest: LatestMessage, bots: &HashSet<String>) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
+        return None;
+    }
+    // Agent 的状态行不进预览（ADR-0082）：状态对象在 SDK 的最新消息里读不到，只能按“Bot 发的提示消息”认，
+    // 显示不出上一条就先空着，答案到了预览跟着换。
+    if matches!(&latest.body, MessageBody::Notice(_)) && bots.contains(latest.sender_id.as_str()) {
         return None;
     }
     let body = summary(latest.body, latest.is_own, &LinkTargets::default());
@@ -104,6 +118,10 @@ pub(crate) fn summary(body: MessageBody, is_own: bool, links: &LinkTargets) -> M
             }
         }
         MessageBody::Image(_) => MessageSummary::Image,
+        // App 不渲染文件消息；按不认识的消息类型一样显示，交给 Agent 是桥的事。
+        MessageBody::File(_) => MessageSummary::Other {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Undecryptable => MessageSummary::Undecryptable,
         MessageBody::Redacted => MessageSummary::Redacted,
         MessageBody::Other { kind } => MessageSummary::Other { kind },
@@ -115,11 +133,22 @@ pub(crate) fn timeline_item(
     cards: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
+    bots: &BotsView,
 ) -> TimelineItem {
     let read_by = read.readers_of(&entry.id);
     let content = match entry.kind {
-        EntryKind::Message(message) => TimelineContent::Message {
-            message: timeline_message(*message, cards, read_by, links),
+        EntryKind::Message(message) => match &message.agent_run {
+            // 只有核心认得的 Bot 发的状态对象才是 AgentRun，别人发的按普通消息显示（ADR-0082 第 4 节）。
+            Some(status) if bots.is_bot(message.sender.as_str()) => {
+                let body = match &message.body {
+                    MessageBody::Text(text) | MessageBody::Notice(text) => text.clone(),
+                    _ => String::new(),
+                };
+                bots.content(status, &body, message.sender.as_str())
+            }
+            _ => TimelineContent::Message {
+                message: timeline_message(*message, cards, read_by, links),
+            },
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
         EntryKind::ProfileChange {
@@ -228,6 +257,9 @@ pub(super) fn message_content(
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
+        MessageBody::File(_) => MessageContent::Unsupported {
+            kind: "m.file".to_owned(),
+        },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }
 }
@@ -242,8 +274,9 @@ pub(crate) fn timeline_diff(
     cards: &CardsView,
     read: &ReadMark,
     links: &LinkTargets,
+    bots: &BotsView,
 ) -> TimelineDiff {
-    let item = |entry| timeline_item(entry, cards, read, links);
+    let item = |entry| timeline_item(entry, cards, read, links, bots);
     match diff {
         VectorDiff::Append { values } => TimelineDiff::Append {
             items: values.into_iter().map(item).collect(),
@@ -338,6 +371,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         }
     }
 
@@ -401,6 +435,7 @@ mod tests {
                 &cards,
                 &ReadMark::default(),
                 &LinkTargets::default(),
+                &BotsView::default(),
             );
             let TimelineContent::Message { message } = item.content else {
                 panic!("the message must stay in the timeline");
@@ -432,6 +467,7 @@ mod tests {
                 body: MessageBody::Text("attachment".to_owned()),
                 custom: Default::default(),
                 mentions: Vec::new(),
+                agent_run: None,
                 thread_root: None,
                 edited: false,
                 read_by: Vec::new(),

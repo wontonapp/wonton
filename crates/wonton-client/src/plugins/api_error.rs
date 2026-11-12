@@ -106,6 +106,7 @@ mod tests {
     use wonton_protocol::{SettingsFieldProblemKind, SettingsSchemaProblemKind};
 
     use super::*;
+    use wonton_protocol::CoreError;
 
     #[test]
     fn settings_validation_keeps_the_field_and_schema_categories() {
@@ -138,5 +139,25 @@ mod tests {
             SettingsSchemaProblemKind::Sensitive
         );
         assert!(details.fields.is_empty());
+    }
+
+    #[test]
+    fn settings_invalid_reaches_the_shells_with_the_field_detail() {
+        let body = json!({"error": {
+            "kind": "settings_invalid",
+            "message": "1 settings don't pass validation",
+            "fields": [{"name": "months", "kind": "above_maximum", "message": "Must be at most 12"}],
+        }});
+        let problem = core_error(400, &serde_json::to_vec(&body).unwrap(), None, None);
+        let CoreError::SettingsInvalid { reason, fields } =
+            crate::plugins::api::to_core_error(problem)
+        else {
+            panic!("settings_invalid must carry its field detail to the shells")
+        };
+        assert_eq!(reason, "1 settings don't pass validation");
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "months");
+        assert_eq!(fields[0].kind, SettingsFieldProblemKind::AboveMaximum);
+        assert_eq!(fields[0].message, "Must be at most 12");
     }
 }
