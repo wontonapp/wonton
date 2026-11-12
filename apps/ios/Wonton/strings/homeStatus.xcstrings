@@ -97,7 +97,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 张"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {
@@ -119,7 +119,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 張"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {
@@ -141,7 +141,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@件"
+            "value": "%#@count@"
           },
           "substitutions": {
             "count": {

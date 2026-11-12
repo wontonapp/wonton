@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -71,7 +72,7 @@ internal fun UpdateAllSheet(
 ) {
     val colors = WontonTheme.colors
     val spacing = WontonTheme.spacing
-    WontonSheet(onDismiss, stringResource(R.string.store_update_all_title, updating.size)) { close ->
+    WontonSheet(onDismiss, pluralStringResource(R.plurals.store_update_all_title, updating.size, updating.size)) { close ->
         Column(
             Modifier.fillMaxWidth().padding(horizontal = spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(spacing.s16),
