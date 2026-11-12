@@ -35,18 +35,6 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
         checkInstalled = { checkInstalled() },
     )
 
-    /** 结果不确定时去已安装列表看：关掉叠着的页面，回到主屏。 */
-    fun checkInstalled() {
-        appsPage = HomePage.LAUNCHER
-        settingsOverlay = false
-        plugins.detail = null
-        plugins.confirmation = null
-        plugins.changingVersion = null
-        plugins.addingSource = false
-        plugins.uninstalling = null
-        tabs.send(Action.SelectTab(TabRef.Apps))
-    }
-
     fun openRoom(roomId: String) {
         settingsOverlay = false
         tabMenu = null
