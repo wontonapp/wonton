@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use bollard::models::{
     ContainerCreateBody, EndpointIpamConfig, EndpointSettings, HostConfig, HostConfigLogConfig,
-    NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
+    NetworkCreateRequest, NetworkingConfig, PortBinding, RestartPolicy, RestartPolicyNameEnum,
 };
 
 use crate::entry_haproxy::{CONNECTOR_ADDRESS, ENTRY_EDGE_ADDRESS};
@@ -194,7 +194,11 @@ impl EntryContainers {
                 resolved = Some(self.networks(core).await?);
             }
             let (project, networks) = resolved.as_ref().expect("网络刚取过");
-            let side = self.side(component, networks, settings.expect("要有设置才可能有容器"))?;
+            let settings = settings.expect("要有设置才可能有容器");
+            if networks.connector != CONNECTOR_ADDRESS {
+                self.rewrite_config(settings, &networks.connector)?;
+            }
+            let side = self.side(component, networks, settings)?;
             self.ensure(&side, project).await?;
         }
         Ok(())
@@ -261,10 +265,12 @@ impl EntryContainers {
             .ok_or_else(|| EntryError::NetworkMissing("compose 项目标签".to_owned()))?
             .clone();
         let network = |key: &str| format!("{project}_{key}");
-        let networks = Networks {
+        let mut networks = Networks {
             clients: network("clients"),
             edge: network("edge"),
             relay: network("relay"),
+            connector: CONNECTOR_ADDRESS.to_owned(),
+            entry: ENTRY_EDGE_ADDRESS.to_owned(),
         };
         // `clients` 核心自己在用，compose 会建；`edge`、`relay` 没有任何 compose 服务引用，compose 跳过它们
         // （实测：全新安装时这两张网络不存在），所以由核心按原来的参数建。
@@ -276,12 +282,25 @@ impl EntryContainers {
         {
             return Err(EntryError::NetworkMissing(networks.clients.clone()));
         }
-        self.ensure_network(
-            &networks.edge,
-            Some(crate::entry_haproxy::EDGE_SUBNET),
-            true,
-        )
-        .await?;
+        let subnet = self
+            .ensure_network(
+                &networks.edge,
+                Some(crate::entry_haproxy::EDGE_SUBNET),
+                true,
+            )
+            .await?
+            .unwrap_or_else(|| crate::entry_haproxy::EDGE_SUBNET.to_owned());
+        // 固定地址跟着实际网段走：同一台机器上另起一套云吞时冒烟会把网段改掉（`edge` 的默认网段只能有一份）。
+        let base = subnet
+            .split('/')
+            .next()
+            .and_then(|address| address.parse::<std::net::Ipv4Addr>().ok())
+            .unwrap_or_else(|| "10.90.0.0".parse().expect("固定字符串"));
+        let offset = |add: u8| {
+            std::net::Ipv4Addr::from(u32::from(base).saturating_add(u32::from(add))).to_string()
+        };
+        networks.connector = offset(2);
+        networks.entry = offset(3);
         self.ensure_network(&networks.relay, None, false).await?;
         Ok((project, networks))
     }
@@ -293,9 +312,13 @@ impl EntryContainers {
         name: &str,
         subnet: Option<&str>,
         isolated: bool,
-    ) -> Result<(), EntryError> {
-        if self.engine.inspect_network(name).await?.is_some() {
-            return Ok(());
+    ) -> Result<Option<String>, EntryError> {
+        if let Some(found) = self.engine.inspect_network(name).await? {
+            return Ok(found
+                .ipam
+                .and_then(|ipam| ipam.config)
+                .and_then(|config| config.first().cloned())
+                .and_then(|config| config.subnet));
         }
         let mut labels = self.instance.core_labels();
         labels.insert(LABEL_MANAGED_BY.to_owned(), "core".to_owned());
@@ -322,8 +345,28 @@ impl EntryContainers {
             }),
             ..Default::default()
         };
-        self.engine.create_network_from(request).await?;
-        Ok(())
+        match self.engine.create_network_from(request.clone()).await {
+            Ok(()) => {}
+            // 同一台机器上有第二套云吞时默认网段被占：改用 Docker 的默认地址池挑一个空闲网段。
+            Err(EngineError::Rejected { message, .. })
+                if subnet.is_some() && message.contains("Pool overlaps") =>
+            {
+                let retry = NetworkCreateRequest {
+                    ipam: None,
+                    ..request
+                };
+                self.engine.create_network_from(retry).await?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        Ok(self
+            .engine
+            .inspect_network(name)
+            .await?
+            .and_then(|found| found.ipam)
+            .and_then(|ipam| ipam.config)
+            .and_then(|config| config.first().cloned())
+            .and_then(|config| config.subnet))
     }
 
     /// 创建一侧的容器：已经在了就只补齐网络；镜像或运行参数变了、或者是上一版 compose 留下的同名容器，删了重建；
@@ -546,6 +589,22 @@ impl EntryContainers {
         })
     }
 
+    /// `edge` 的网段和装机时不一样：按实际地址重写入口配置（连接器地址写在 TLS 前端的对端条件里）。
+    fn rewrite_config(&self, settings: &EntrySettings, connector: &str) -> Result<(), EntryError> {
+        let mut model =
+            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
+        model.connectors = vec![connector.to_owned()];
+        crate::entry_compose::write_model(&self.install_dir, &model).map_err(|error| {
+            EntryError::Docker(EngineError::Rejected {
+                context: "重写入口配置".to_owned(),
+                message: error.to_string(),
+            })
+        })?;
+        crate::entry_compose::prepare_permissions(&self.install_dir).map_err(|error| {
+            EntryError::Docker(EngineError::NotFound(format!("入口文件权限：{error}")))
+        })
+    }
+
     /// 运行的用户跟证书的属主走：证书可能是主人自己放的（`WONTON_ENTRY_CERTIFICATE=external`）。
     fn user(&self) -> Result<String, EntryError> {
         let path = self.install_dir.join("entry/certs/site.pem");
@@ -584,7 +643,7 @@ fn endpoints(component: &str, networks: &Networks) -> Vec<(String, Endpoint)> {
             (
                 networks.edge.clone(),
                 Endpoint {
-                    address: Some(CONNECTOR_ADDRESS.to_owned()),
+                    address: Some(networks.connector.clone()),
                     aliases: vec![CONNECTOR_ALIAS.to_owned()],
                     // edge 是 internal：优先级压到最低，默认路由留在 relay 上。
                     gw_priority: Some(-1),
@@ -597,7 +656,7 @@ fn endpoints(component: &str, networks: &Networks) -> Vec<(String, Endpoint)> {
         (
             networks.edge.clone(),
             Endpoint {
-                address: Some(ENTRY_EDGE_ADDRESS.to_owned()),
+                address: Some(networks.entry.clone()),
                 aliases: vec![ENTRY_EDGE_ALIAS.to_owned()],
                 gw_priority: None,
             },
@@ -670,6 +729,10 @@ struct Networks {
     clients: String,
     edge: String,
     relay: String,
+    /// 入口和连接器在 `edge` 上的固定地址：网段基址 +2/+3（默认网段就是
+    /// [`CONNECTOR_ADDRESS`]/[`ENTRY_EDGE_ADDRESS`]）。
+    connector: String,
+    entry: String,
 }
 
 #[cfg(test)]

@@ -214,8 +214,9 @@ class Home:
             "docker", "network", "connect", self.cloud["network"], connector, check=False
         ).returncode == 0, seconds=60)
         run("docker", "start", connector)
+        # 核心已经把 settings 里的解析器写进创建请求；只读根文件系统上 resolv.conf 是只读的，这步在旧核心上才需要。
         run("docker", "exec", "-u", "0", connector, "sh", "-c",
-            f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf")
+            f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf", check=False)
 
     def api(self, path, body=None):
         headers = {"Authorization": "Bearer " + self.token, "Host": f"wonton.localhost:{self.port}"}

@@ -152,6 +152,9 @@ def install(home, acquire, entry=True):
         "WONTON_ACME_RESOLVERS": home.cloud["resolver"] + ":53",
         "WONTON_RELAYS": f"https://iroh.{home.cloud['zone']}",
     }
+    if not entry:
+        # 无入口的那台用私用名，旧版本也认这个变量。
+        values["WONTON_MATRIX_NAME_MODE"] = "none"
     (inputs / "init.env").write_text("".join(f"{key}={value}\n" for key, value in values.items()))
     def init_once():
         return run("docker", "run", "--rm", "--network", home.cloud["network"], "--dns", home.cloud["resolver"],

@@ -86,23 +86,11 @@ pub fn render(
 }
 
 pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()> {
+    write_model(
+        install_dir,
+        &crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain),
+    )?;
     let directory = install_dir.join("entry");
-    std::fs::create_dir_all(&directory)?;
-    let rendered = crate::entry_haproxy::render(&crate::entry_haproxy::Model::federation_only(
-        &settings.domain,
-        &settings.domain,
-    ))
-    .map_err(anyhow::Error::msg)?;
-    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
-    std::fs::create_dir_all(directory.join("certs"))?;
-    crate::install::write_private(
-        &directory.join("certs/public.crt-list"),
-        &rendered.public_crt_list,
-    )?;
-    crate::install::write_private(
-        &directory.join("certs/lan.crt-list"),
-        &rendered.lan_crt_list,
-    )?;
     if let Some(home) = &settings.registration {
         let trusted_ca = settings
             .relay_ca
@@ -126,7 +114,24 @@ pub fn write(install_dir: &Path, settings: &EntrySettings) -> anyhow::Result<()>
             "global\n  maxconn 1024\ndefaults\n  mode tcp\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend public\n  bind :8443\n  default_backend entry\nbackend entry\n  server entry entry-edge.wonton.internal:8443 send-proxy-v2\n",
         )?;
     }
-    prepare_permissions(install_dir)?;
+    prepare_permissions(install_dir)
+}
+
+/// 按给定模型重写入口配置和两份 crt-list（对账发现网络地址和装机时不一样时用）。落盘和权限照旧。
+pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> anyhow::Result<()> {
+    let directory = install_dir.join("entry");
+    std::fs::create_dir_all(&directory)?;
+    let rendered = crate::entry_haproxy::render(model).map_err(anyhow::Error::msg)?;
+    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
+    std::fs::create_dir_all(directory.join("certs"))?;
+    crate::install::write_private(
+        &directory.join("certs/public.crt-list"),
+        &rendered.public_crt_list,
+    )?;
+    crate::install::write_private(
+        &directory.join("certs/lan.crt-list"),
+        &rendered.lan_crt_list,
+    )?;
     Ok(())
 }
 
