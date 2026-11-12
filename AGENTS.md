@@ -116,8 +116,8 @@
 - 一个分支一个 PR；squash 合并后自动删除分支。
 - 一个 issue 可以分几个 PR：最后一个写 `Closes #N`，合并时 GitHub 自动关掉 issue；之前的写 `Refs #N`，并在
   issue 里留言说明还剩什么。不写的话 issue 不会自己关，做完的和没做的混在一起。
-- 合并走 GitHub 合并队列：PR 的必需检查绿了，`gh pr merge --squash` 把它放进队列；队列把它和排在前面的 PR 合在一起，
-  在最新的 `main` 上再跑一遍检查，绿了才真正合进去，红了把它踢出队列。不要求 PR 自己先追上 `main`。
+- 合并用自动合并：`gh pr merge --auto --squash`，PR 的必需检查绿了直接进 `main`。不要求 PR 先追上 `main`，
+  不在最新的 `main` 上重跑。转 ready 前自己确认 PR 是绿的。
 - 必需检查在每个 PR 上都要有结果：工作流不在触发器上按路径过滤，由 `changes` 作业判断改动范围，没改到的重作业报 skipped。
   新增必需检查时同步改规则集。
 - `main` 每次合并后都跑 CI。红了，谁合的谁马上看：是 PR 引起的，30 分钟内修不好就 revert 那次合并让 `main` 回绿，再在新 PR
