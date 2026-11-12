@@ -55,7 +55,8 @@ bash scripts/check-merged-main.sh
 # --include-ignored 连文档里标了 ignore 的示例也会运行，所以文档示例不要用 ```ignore（用 text 或 no_run）。
 if docker_error="$(docker_reachable)"; then
   echo "==> Docker 可用：连同依赖 Docker 的集成测试一起运行"
-  cargo test --workspace --locked -- --include-ignored
+  # 每个 Docker 测试自己起容器，默认按核数开线程会一起撞 Docker 的建容器超时（chat::pending 一条 120 秒起不开），限 4 条。
+  cargo test --workspace --locked -- --include-ignored --test-threads=4
   if [[ "$(uname -s)" != Linux ]]; then
     echo "==> 只在 Linux 上编译的 Docker 测试没有运行，CI 的“Rust Docker 测试”作业会运行"
   fi
@@ -67,7 +68,7 @@ else
     原因：
       $docker_error
     有 Docker 的机器上手动运行：
-      cargo test --workspace --locked -- --ignored
+      cargo test --workspace --locked -- --ignored --test-threads=4
     CI 的“Rust Docker 测试”作业会运行它们，那里 Docker 不可用即失败。
 EOF
 fi
