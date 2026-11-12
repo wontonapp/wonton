@@ -2,10 +2,7 @@
 
 name-main = 主對話
 
-topic-interrupt-pending = 忙碌：已有一個打斷請求在等待處理。
 topic-no-active-session = 沒有進行中的 ACP 工作階段
-topic-steer-rejected = Agent 沒有接受插話請求。
-topic-queue-full = ACP 佇列已滿，請稍後再試。
 topic-input-too-long = 輸入超過 { $size } 位元組限制
 topic-input-empty = 輸入不能為空
 topic-control-no-text = 控制命令缺少文字

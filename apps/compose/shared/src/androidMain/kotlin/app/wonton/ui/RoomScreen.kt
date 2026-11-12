@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -45,8 +47,10 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.KeyNotice
+import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
@@ -56,6 +60,8 @@ import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
 import app.wonton.protocol.TimelineViewport
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonButton
@@ -95,6 +101,11 @@ internal class TimelineState {
     /** 时间线被清空重建的次数：重建的 Reset 里带新落点，壳要重新摆。 */
     var clears by mutableIntStateOf(0)
 
+    /** 每一批更新的序号，编辑流和内容增高都要触发布局跟随。 */
+    var revision by mutableIntStateOf(0)
+    /** 核心要求自己发出的消息回到底部的次数。 */
+    var bottomRequest by mutableIntStateOf(0)
+    var handledBottomRequest by mutableIntStateOf(0)
     /** 打不开时点“重试”加一，按它重新订阅。 */
     var attempt by mutableIntStateOf(0)
 
@@ -122,6 +133,7 @@ internal class TimelineState {
             is TimelineDiff.Reset -> {
                 items.clear()
                 items.addAll(diff.items)
+                clears++
             }
         }
     }
@@ -156,12 +168,23 @@ fun RoomRoute(
                 timeline.panel = update.panel
                 timeline.panelSelected = update.panelSelected
                 timeline.entryBlocked = update.entryBlocked
+                if (update.scrollToBottom) timeline.bottomRequest++
+                timeline.revision++
                 timeline.loaded = true
             }
             currentCoroutineContext().ensureActive()
             onClose()
         } catch (failure: CoreException) {
             timeline.failure = failure.problem
+        }
+    }
+    // 附件区和点了发送、还没交出去的消息（ADR-0094）：附件区画在输入框上方，待发消息画在最新一条下面。
+    var composer by remember(roomId) { mutableStateOf<ComposerViewModel?>(null) }
+    LaunchedEffect(core, roomId) {
+        try {
+            core.composerUpdates(roomId).collect { composer = it }
+        } catch (failure: CoreException) {
+            onReject(failure.problem)
         }
     }
     val first = remember(core) { core.transfers() }
@@ -177,6 +200,7 @@ fun RoomRoute(
             plugins,
             rooms,
             timeline,
+            composer,
             onAction,
             onReject,
             onOpenRoom,
@@ -200,6 +224,7 @@ private fun RoomScreen(
     plugins: PluginsState,
     rooms: List<RoomRow>,
     timeline: TimelineState,
+    composer: ComposerViewModel?,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
@@ -260,7 +285,7 @@ private fun RoomScreen(
                 },
             ) {
                 Conversation(
-                    core, roomId, isDirect, isReadOnly, timeline, draft, onAction, onReject, openMenu,
+                    core, roomId, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject, openMenu,
                     onOpenBackup,
                 )
             }
@@ -281,7 +306,11 @@ private fun RoomScreen(
             ForwardSheet(
                 rooms = rooms.filter { it.forwardTarget(roomId) },
                 onPick = { row ->
-                    onAction(Action.ForwardMessage(roomId, itemId, row.roomId))
+                    onAction(
+                        Action.Timeline(
+                            TimelineAction.ForwardMessage(TimelineTarget(roomId, null), itemId, row.roomId),
+                        ),
+                    )
                     onOpenRoom(row.roomId)
                 },
                 onDismiss = { forwarding = null },
@@ -290,7 +319,7 @@ private fun RoomScreen(
         redacting?.let { itemId ->
             RedactConfirm(
                 onConfirm = {
-                    onAction(Action.RedactMessage(roomId, itemId))
+                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), itemId)))
                     redacting = null
                 },
                 onDismiss = { redacting = null },
@@ -307,6 +336,7 @@ private fun Conversation(
     isDirect: Boolean,
     isReadOnly: Boolean,
     timeline: TimelineState,
+    composer: ComposerViewModel?,
     draft: RoomDraft,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
@@ -331,6 +361,7 @@ private fun Conversation(
                 core,
                 roomId,
                 timeline,
+                composer?.outgoing.orEmpty(),
                 showsSender = !isDirect,
                 onAction = onAction,
                 onOpenMenu = onOpenMenu,
@@ -346,10 +377,10 @@ private fun Conversation(
                 draft = draft.text,
                 reply = draft.reply,
                 focusToken = draft.focusToken,
+                composer = composer,
                 core = core,
                 onDraftChange = draft::change,
                 onSent = draft::sent,
-                onReplySent = draft::replySent,
                 onReplyCancel = draft::stopReplying,
                 onAction = onAction,
                 onReject = onReject,
@@ -403,6 +434,7 @@ private fun Messages(
     core: ClientCore,
     roomId: String,
     timeline: TimelineState,
+    outgoing: List<OutgoingMessage>,
     showsSender: Boolean,
     onAction: (Action) -> Unit,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
@@ -412,6 +444,12 @@ private fun Messages(
     val listState = rememberLazyListState()
     val panel = LocalChatPanel.current
     ScrollEffects(listState, timeline, roomId, onAction)
+    // 待发消息出现、交出去换成本地回显时，在底部附近的跟着到底：插在第 0 项前面的行，列表按键记位置不会自己露出来。
+    val outgoingIds = outgoing.map { it.id }
+    LaunchedEffect(outgoingIds) {
+        withFrameNanos { }
+        if (listState.firstVisibleItemIndex <= outgoing.size + 1) listState.scrollToItem(0)
+    }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
@@ -419,7 +457,7 @@ private fun Messages(
         snapshotFlow { listState.reachedTop(timeline) }
             .distinctUntilChanged()
             .filter { it }
-            .collect { onAction(Action.PaginateBackwards(roomId)) }
+            .collect { onAction(Action.Timeline(TimelineAction.PaginateBackwards(TimelineTarget(roomId, null)))) }
     }
     Box(modifier) {
         LazyColumn(
@@ -438,6 +476,12 @@ private fun Messages(
             ),
             verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
         ) {
+            // 倒着排：最后点发送的那条在最下面。
+            items(outgoing.asReversed(), key = { it.id }) { message ->
+                Box(Modifier.padding(top = WontonTheme.spacing.s8 - JOINED_GAP)) {
+                    OutgoingRow(message, roomId, core, onAction)
+                }
+            }
             itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
                 // 倒着排：下标大的是更早的一条。
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
@@ -449,8 +493,12 @@ private fun Messages(
                         showsSender,
                         joinsPrevious,
                         joinsNext,
-                        onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
-                        onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                        onRetry = {
+                            onAction(Action.Timeline(TimelineAction.RetrySend(TimelineTarget(roomId, null), item.id)))
+                        },
+                        onCancel = {
+                            onAction(Action.Timeline(TimelineAction.CancelSend(TimelineTarget(roomId, null), item.id)))
+                        },
                         onCardAction = onAction,
                         onOpenMenu = onOpenMenu,
                     onReply = onReply,

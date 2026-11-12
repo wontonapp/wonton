@@ -35,7 +35,12 @@ pub(super) async fn keep_checking(home: Weak<HomeLink>, endpoint: Endpoint, clie
     let mut wait = CHECK_INTERVAL;
     let mut relay_lost = 0u32;
     loop {
-        tokio::time::sleep(wait).await;
+        // 请求在隧道流上等不到服务端回执时会催一下：连接可能已经死了，
+        // 立即确认，不等满一个周期。催多次只存一个许可，不会连环检查。
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = client.wait_for_check_nudge() => {}
+        }
         if background.wait_for(|background| !background).await.is_err() {
             return;
         }

@@ -45,7 +45,8 @@ impl TimelineSubscription {
     ) -> Arc<Self> {
         let (sender, receiver) = mpsc::unbounded_channel();
         let (cancelled, mut stop) = watch::channel(false);
-        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Bottom);
+        // 落点摆好并由壳确认之前，不能把首屏量出来的默认位置当成已经读到底。
+        let (scroll, mut scrolled) = watch::channel(TimelineScroll::Away);
         runtime.spawn(async move {
             let outbox = Outbox::new(sender, menus, room_view.clone(), chat.clone());
             tokio::select! {
@@ -59,6 +60,10 @@ impl TimelineSubscription {
             cancelled,
             scroll,
         })
+    }
+
+    pub(super) fn is_at_bottom(&self) -> bool {
+        *self.scroll.borrow() == TimelineScroll::Bottom && !*self.cancelled.borrow()
     }
 }
 
@@ -76,7 +81,7 @@ impl TimelineSubscription {
         }
     }
 
-    /// 壳报告列表停在哪（[`Action::SetTimelineScroll`](wonton_protocol::Action::SetTimelineScroll)）。
+    /// 壳报告列表停在哪（[`TimelineAction::SetTimelineScroll`](wonton_protocol::TimelineAction::SetTimelineScroll)）。
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
         self.scroll.send_replace(scroll);
@@ -723,6 +728,7 @@ mod tests {
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
+                group: None,
                 can_redact: false,
             })),
         }

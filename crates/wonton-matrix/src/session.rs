@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::{Stream, stream};
 use matrix_sdk::{
@@ -11,7 +12,7 @@ use matrix_sdk::{
     cross_process_lock::CrossProcessLockConfig,
     encryption::{BackupDownloadStrategy, EncryptionSettings},
     reqwest,
-    ruma::{DeviceId, OwnedDeviceId, OwnedUserId, UserId, serde::JsonObject},
+    ruma::{DeviceId, OwnedDeviceId, OwnedRoomId, OwnedUserId, RoomId, UserId, serde::JsonObject},
     sliding_sync::VersionBuilder,
     store::RoomLoadSettings,
 };
@@ -135,6 +136,9 @@ pub struct MatrixSession {
     pub(crate) resume_sending: Arc<Notify>,
     /// 叫醒等着重启同步的任务，见 [`MatrixSession::resume`]。
     pub(crate) resume_sync: Notify,
+    /// 本会话第一次看到每个房间的时刻（Unix 毫秒）。Tuwunel 2.0 的邀请剥离状态不带时间戳，邀请的
+    /// 建房时间读不到时用它代替；只用来排序，不持久化，重启后按列表顺序回退。
+    invited_seen: std::sync::Mutex<std::collections::BTreeMap<OwnedRoomId, u64>>,
 }
 
 impl Drop for MatrixSession {
@@ -157,7 +161,9 @@ impl MatrixSession {
             .map_err(|error| Error::InvalidInput(error.to_string()))?
             .initial_device_display_name(&config.device_name)
             .request_refresh_token()
-            .await?;
+            .await
+            // Tuwunel 拒绝 JWT（过期、签发方不对、伪造）回 403 `M_FORBIDDEN`：登录被拒说的是身份。
+            .map_err(|error| Error::from(error).into_unauthorized())?;
         Self::with_client(client, response.user_id, response.device_id, config).await
     }
 
@@ -246,6 +252,18 @@ impl MatrixSession {
             resume_sync: Notify::new(),
             subscriptions: tokio::sync::Mutex::default(),
             verifications: Arc::default(),
+            invited_seen: std::sync::Mutex::default(),
+        })
+    }
+
+    /// 本会话第一次看到 `room_id` 的时刻；第一次问时记成现在。
+    pub(crate) async fn invited_seen_ms(&self, room_id: &RoomId) -> u64 {
+        let mut seen = self.invited_seen.lock().expect("invited_seen 锁");
+        *seen.entry(room_id.to_owned()).or_insert_with(|| {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64
         })
     }
 

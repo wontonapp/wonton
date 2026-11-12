@@ -7,6 +7,7 @@ pub(crate) mod cards;
 mod core_upgrade;
 mod egress;
 mod me;
+mod media;
 mod now;
 mod polling;
 mod registry_mirror;
@@ -92,6 +93,8 @@ pub(crate) struct PluginsLink {
     confirmations: Mutex<VecDeque<StoreConfirmation>>,
     /// 插件端口在本机的同号映射（ADR-0072），结果写进 `view.port_mappings`。
     ports: Arc<PortMapper>,
+    /// 网页用摄像头/麦克风的记忆，结果写进 `view.media_grants`。
+    media: media::MediaGrants,
 }
 
 impl PluginsLink {
@@ -123,6 +126,7 @@ impl PluginsLink {
             },
         );
         let ports = PortMapper::new(&runtime, home.clone(), data_dir, view.clone());
+        let media = media::MediaGrants::new(data_dir, view.clone());
         let link = Arc::new(Self {
             runtime: runtime.clone(),
             home,
@@ -151,6 +155,7 @@ impl PluginsLink {
             previews: Mutex::new(HashMap::new()),
             confirmations: Mutex::new(VecDeque::new()),
             ports,
+            media,
         });
         link.restore_core_upgrade();
         link.refresh_derived();
@@ -483,6 +488,10 @@ impl PluginsLink {
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {
+        // 已知隧道不通就立刻失败，不等超时。
+        if self.home.tunnel_outage().is_some() {
+            return Err(api::not_connected());
+        }
         let proxy = self.home.view().proxy.ok_or_else(api::not_connected)?;
         let base = self.home.core_url().ok_or_else(api::not_connected)?;
         let client = {

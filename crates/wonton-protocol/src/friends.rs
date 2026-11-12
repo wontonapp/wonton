@@ -146,13 +146,38 @@ pub struct FriendProblem {
 #[serde(rename_all = "snake_case")]
 pub enum FriendFailure {
     TransportUnavailable,
+    /// 登录失效：设备被吊销、令牌过期。要重新登录或配对。
     Unauthorized,
+    /// 登录有效，但这件事不让做：对方屏蔽了自己、对方的服务器不和这台互通、只有主人能改。
+    Forbidden,
     InvalidUserId,
     RequestNotFound,
     RateLimited,
     Upstream,
     #[serde(other)]
     Other,
+}
+
+/// `GET /_wonton/api/friends` 的响应：核心存着的那部分好友数据。请求和屏蔽在客户端从 Matrix 同步里拼，
+/// 不在这里，所以它不是 [`FriendsViewModel`]，也没有页面状态。核心和客户端共用这一个类型，两边不各写一份。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FriendsList {
+    pub friends: Vec<FriendRow>,
+    pub groups: Vec<FriendGroup>,
+    /// 整台服务器黑名单（Tuwunel 的 `forbidden_remote_server_names`）。
+    pub blocked_servers: Vec<String>,
+    /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
+    pub removed: Vec<RemovedFriend>,
+    /// 这台设备的人能不能改整台服务器的黑名单：只有主人，且服务器能热加载配置。
+    pub can_block_federation: bool,
+    /// 名单是不是主人的：家人没有核心名单，好友只存在客户端本机。
+    pub owner_scope: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemovedFriend {
+    pub user_id: String,
+    pub removed_at_ms: u64,
 }
 
 #[cfg(test)]

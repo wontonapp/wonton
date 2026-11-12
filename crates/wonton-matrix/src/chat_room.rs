@@ -527,6 +527,18 @@ impl ChatRoom {
             .await?;
         Ok(receipt || marker)
     }
+
+    /// 对某一条消息发已读回执（不动 `m.fully_read`）。回执只往前走：比现有回执旧的不发，返回 `false`。
+    pub async fn send_read_receipt(&self, event_id: &str) -> Result<bool> {
+        let event_id: OwnedEventId = event_id
+            .parse()
+            .map_err(|_| Error::InvalidInput(format!("不是事件 ID：{event_id}")))?;
+        Ok(self
+            .timeline()
+            .await
+            .send_single_receipt(ReceiptType::Read, event_id)
+            .await?)
+    }
 }
 
 fn back_pagination(status: PaginationStatus) -> BackPaginationStatus {
@@ -615,7 +627,7 @@ fn renamed_entries(
 /// `get_missing_sessions`），没回来就带着不完整的设备表往下走，可以把密钥分享给 0 个设备：事件照样发出去，
 /// 收端永远解不开，也没有重试。这里对有成员没有设备的房间先查一次，回到本地已经有设备为止（每个房间只查缺的人，
 /// 拿到以后再发不再查）。
-async fn ensure_recipient_devices(room: &Room) -> Result<()> {
+pub(crate) async fn ensure_recipient_devices(room: &Room) -> Result<()> {
     if !room.latest_encryption_state().await?.is_encrypted() {
         return Ok(());
     }
@@ -711,6 +723,7 @@ mod actions;
 #[cfg(test)]
 mod bootstrap_tests;
 mod image;
+pub(crate) use image::check_upload_size;
 mod pagination_status;
 mod raw;
 mod send;

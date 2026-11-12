@@ -8,7 +8,13 @@ pre-commit:
   commands:
     rustfmt:
       glob: "*.rs"
+      # vendor/ 是带补丁的上游代码，保持上游格式（vendor/README.md）。合并 main 时 vendor 的改动也在暂存区，
+      # 不排除的话会按我们的格式整个重排，PR 里平白多出几百行。
+      exclude:
+        - "vendor/**"
       # cargo 是 rustup 的转发，按 rust-toolchain.toml 选版本；交给 cargo 是为了拿到各 crate 的 edition。
+      # exclude 会从 {staged_files} 里去掉 vendor；只暂存了 vendor 时整条命令跳过，不会空着参数跑 cargo fmt --all
+      # （lefthook 2.2.2 实测）。
       run: |
         echo "rustfmt 格式化："
         printf '  %s\n' {staged_files}
@@ -66,6 +72,11 @@ pre-push:
         echo "==> cargo clippy ${targets% } --all-targets --locked -- -D warnings"
         # targets 是按空格分开的参数，不能加引号。
         cargo clippy ${targets% } --all-targets --locked -- -D warnings
+    merged-main:
+      # 合上最新 main 后的树能不能编过：PR 的 CI 只编 PR 自己的提交，main 上新加的字段这里先拦下。
+      # 只跳这一项：LEFTHOOK_EXCLUDE=merged-main git push。说明见脚本开头。
+      glob: "{crates/**,Cargo.toml,Cargo.lock,clippy.toml,rust-toolchain.toml}"
+      run: bash scripts/check-merged-main.sh
     swiftlint:
       glob: "apps/ios/**"
       run: |

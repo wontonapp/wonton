@@ -42,6 +42,10 @@ pub enum Effect {
         text: String,
     },
     Typing(bool),
+    /// 重发了被拒收的消息。
+    ResendRefused,
+    /// 对这条消息发的已读回执。
+    Receipt(String),
     Redact(String),
     State(String),
     /// 一条 Agent 进度状态消息（ADR-0082），内容原样。
@@ -126,6 +130,8 @@ impl FakeRoom {
                 | Effect::ThreadMention { text, .. }
                 | Effect::ThreadNotice { text, .. } => Some(text),
                 Effect::Typing(_)
+                | Effect::ResendRefused
+                | Effect::Receipt(_)
                 | Effect::Redact(_)
                 | Effect::State(_)
                 | Effect::RunStatus { .. }
@@ -140,6 +146,17 @@ impl FakeRoom {
             .into_iter()
             .filter_map(|effect| match effect {
                 Effect::MainText(text) => Some(text),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// 发过已读回执的消息（按发送顺序）。
+    pub fn receipts(&self) -> Vec<String> {
+        self.effects()
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::Receipt(event_id) => Some(event_id),
                 _ => None,
             })
             .collect()
@@ -292,6 +309,16 @@ impl Room for FakeRoom {
 
     async fn typing(&self, typing: bool) -> Result<()> {
         self.record(Effect::Typing(typing));
+        Ok(())
+    }
+
+    async fn resend_refused(&self) -> Result<usize> {
+        self.record(Effect::ResendRefused);
+        Ok(1)
+    }
+
+    async fn read_receipt(&self, event_id: &str) -> Result<()> {
+        self.record(Effect::Receipt(event_id.to_owned()));
         Ok(())
     }
 
@@ -480,7 +507,19 @@ pub fn owner_message_at(
         edited: false,
         read_by: Vec::new(),
         reply: None,
+        group: None,
         can_redact: false,
+    }
+}
+
+/// Bot 自己发的一条消息，`status` 是它现在的发送状态。
+pub fn own_message(text: &str, status: SendStatus) -> Message {
+    Message {
+        event_id: None,
+        sender: "@bot:example.org".parse::<OwnedUserId>().unwrap(),
+        is_own: true,
+        status,
+        ..owner_message("$unused", text, None)
     }
 }
 

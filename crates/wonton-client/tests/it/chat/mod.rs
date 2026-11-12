@@ -13,6 +13,7 @@ mod confirmation;
 mod device_name;
 mod draft;
 mod file_link;
+mod key_handoff;
 mod key_upload_order;
 mod layout;
 mod message_actions;
@@ -44,6 +45,7 @@ use wonton_client::{
 };
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Message, MessageBody, OwnedRoomId, OwnedUserId};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use support::{Home, OWNER, Phone, Timeline, WAIT};
 
@@ -123,8 +125,13 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
     // 新设备上只同步到了最新一条，像界面那样向前翻一页。
     phone
-        .dispatch(Action::PaginateBackwards {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::PaginateBackwards {
+                target: TimelineTarget {
+                    room_id: room_id.to_string(),
+                    thread_root: None,
+                },
+            },
         })
         .unwrap();
     timeline
@@ -218,8 +225,13 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
 
     home.set_members_down(false);
     phone
-        .dispatch(Action::PaginateBackwards {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::PaginateBackwards {
+                target: TimelineTarget {
+                    room_id: room_id.to_string(),
+                    thread_root: None,
+                },
+            },
         })
         .unwrap();
     timeline
@@ -337,10 +349,15 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
         .await;
 
     phone
-        .dispatch(Action::SendText {
-            room_id: room_id.to_string(),
-            body: "  你好，Hermes  ".to_owned(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: TimelineTarget {
+                    room_id: room_id.to_string(),
+                    thread_root: None,
+                },
+                body: "  你好，Hermes  ".to_owned(),
+                reply_to: None,
+            },
         })
         .unwrap();
     bot_receives(&bot_room, "Bot 收到主人的文字", |message| {
@@ -358,22 +375,27 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
 
     // 主人发图片：核心上传原图和壳生成的缩略图，时间线里出现自己的图片，Bot 收到的也带缩略图。
     phone
-        .dispatch(Action::SendImage {
-            room_id: room_id.to_string(),
-            image: ImageUpload {
-                filename: "reply.png".to_owned(),
-                mime_type: "image/png".to_owned(),
-                data: PNG.to_vec(),
-                width: Some(2),
-                height: Some(2),
-                thumbnail: Some(ImageThumbnail {
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendImage {
+                target: TimelineTarget {
+                    room_id: room_id.to_string(),
+                    thread_root: None,
+                },
+                image: ImageUpload {
+                    filename: "reply.png".to_owned(),
                     mime_type: "image/png".to_owned(),
-                    data: THUMBNAIL.to_vec(),
-                    width: 1,
-                    height: 1,
-                }),
+                    data: PNG.to_vec(),
+                    width: Some(2),
+                    height: Some(2),
+                    thumbnail: Some(ImageThumbnail {
+                        mime_type: "image/png".to_owned(),
+                        data: THUMBNAIL.to_vec(),
+                        width: 1,
+                        height: 1,
+                    }),
+                },
+                reply_to: None,
             },
-            reply_to: None,
         })
         .unwrap();
     timeline
@@ -430,9 +452,22 @@ async fn bot_receives<R>(
 
 /// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
 async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
+    let target = TimelineTarget {
+        room_id: room_id.to_string(),
+        thread_root: None,
+    };
+    let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
     phone
-        .dispatch(Action::MarkRoomRead {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SetTimelineScroll {
+                target: target.clone(),
+                scroll: wonton_client::TimelineScroll::Bottom,
+            },
+        })
+        .unwrap();
+    phone
+        .dispatch(Action::Timeline {
+            action: TimelineAction::MarkRead { target },
         })
         .unwrap();
     phone
@@ -443,6 +478,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
                 .then_some(())
         })
         .await;
+    drop(timeline);
     phone
         .wait_chat("恢复自动开启", |view| {
             (view.encryption.recovery == RecoveryStatus::Enabled)

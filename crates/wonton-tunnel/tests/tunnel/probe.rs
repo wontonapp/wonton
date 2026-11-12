@@ -34,19 +34,26 @@ const GAP: Duration = Duration::from_millis(100);
 struct SlowPing {
     upstream: SocketAddr,
     served: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    /// 为真时收下 `Forward` 却永远不回状态字节：模拟服务端忙到接不动，客户端的请求卡在等回执上。
+    hang_forward: bool,
 }
 
 impl ProtocolHandler for SlowPing {
     async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
         while let Ok((send, recv)) = conn.accept_bi().await {
-            let streaming = tokio::spawn(serve(send, recv, self.upstream));
+            let streaming = tokio::spawn(serve(send, recv, self.upstream, self.hang_forward));
             self.served.lock().unwrap().push(streaming);
         }
         Ok(())
     }
 }
 
-async fn serve(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
+async fn serve(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    upstream: SocketAddr,
+    hang_forward: bool,
+) {
     let mut kind = [0u8; 1];
     if recv.read_exact(&mut kind).await.is_err() {
         return;
@@ -56,6 +63,8 @@ async fn serve(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr)
             tokio::time::sleep(SLOW_PING).await;
             reply(&mut send, Status::Ok).await;
         }
+        // 收下请求但永远不回：客户端的请求卡在等服务端回执上，和服务器过载到接不动一样。
+        Some(Request::Forward) if hang_forward => std::future::pending::<()>().await,
         Some(Request::Forward) => forward(send, recv, upstream).await,
         _ => reply(&mut send, Status::UnsupportedRequest).await,
     }
@@ -169,10 +178,11 @@ struct Server {
     connections: Arc<Mutex<Vec<JoinHandle<()>>>>,
     key: SecretKey,
     upstream: SocketAddr,
+    hang_forward: bool,
 }
 
 impl Server {
-    async fn start(key: SecretKey, port: u16, upstream: SocketAddr) -> Self {
+    async fn start(key: SecretKey, port: u16, upstream: SocketAddr, hang_forward: bool) -> Self {
         let endpoint = loopback_endpoint(key.clone(), port, Timeouts::Default).await;
         // 自己收连接时没有 Router 帮忙登记 ALPN，得写在自己身上。
         endpoint.set_alpns(vec![ALPN.to_vec()]);
@@ -183,6 +193,7 @@ impl Server {
             let handler = SlowPing {
                 upstream,
                 served: spawned.clone(),
+                hang_forward,
             };
             while let Some(incoming) = accepting.accept().await {
                 let Ok(accepting) = incoming.accept() else {
@@ -207,6 +218,7 @@ impl Server {
             key,
             task,
             upstream,
+            hang_forward,
         }
     }
 
@@ -224,8 +236,7 @@ impl Server {
 
     /// 不出声地消失：停掉收连接的循环，再把 endpoint 丢掉，谁也不再持有它的套接字。活着的连接没有关闭帧，
     /// 和真的把服务端进程冻住一样。
-    async fn vanish(&mut self) {
-        let (port, key, upstream) = (self.port(), self.key.clone(), self.upstream);
+    async fn disappear(&mut self) {
         self.task.abort();
         let served: Vec<_> = self.connections.lock().unwrap().drain(..).collect();
         for connection in &served {
@@ -237,7 +248,18 @@ impl Server {
             let _ = connection.await;
         }
         drop(self.endpoint.take());
-        let restarted = Self::start(key, port, upstream).await;
+    }
+
+    /// 消失后按同样的身份和端口重启：模拟服务端悄悄换了一个 endpoint。
+    async fn vanish(&mut self) {
+        let (port, key, upstream, hang) = (
+            self.port(),
+            self.key.clone(),
+            self.upstream,
+            self.hang_forward,
+        );
+        self.disappear().await;
+        let restarted = Self::start(key, port, upstream, hang).await;
         self.endpoint = restarted.endpoint;
         self.task = restarted.task;
     }
@@ -254,8 +276,13 @@ struct Rig {
 
 impl Rig {
     async fn start() -> Self {
+        Self::start_with_hanging_forward(false).await
+    }
+
+    /// 服务端收下 Forward 却永远不回状态字节：请求卡在等服务端回执上（催促测试用）。
+    async fn start_with_hanging_forward(hang_forward: bool) -> Self {
         let upstream = SlowBody::spawn().await;
-        let server = Server::start(SecretKey::generate(), 0, upstream.addr).await;
+        let server = Server::start(SecretKey::generate(), 0, upstream.addr, hang_forward).await;
         let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
         let client = TunnelClient::new(
             phone.clone(),
@@ -335,4 +362,32 @@ async fn leftovers_of_a_silently_replaced_server_do_not_keep_the_connection() {
     assert_eq!(rig.client.status(), TunnelStatus::Connected);
     assert_eq!(http_get(rig.proxy.local_addr(), "/after").await.status, 200);
     reading.abort();
+}
+/// 本地代理等服务端回执等过 [`NUDGE_AFTER`] 时催一次定时检查：检查循环收到催促
+/// 立刻确认换连接，不等下一个周期。催促不能太早：中继负载下往返到过 2.8 秒（ADR-0004），
+/// 一卡就催会把忙线上的慢响应误当成断链。
+const NUDGE_AFTER: Duration = Duration::from_secs(2);
+/// 催促应该在一个定时检查周期内到达（home/check.rs 的周期是 5 秒），再晚催促就失去意义。
+const NUDGE_CEILING: Duration = Duration::from_secs(5);
+
+/// 服务端收下请求却不回状态字节时，卡在等服务端回执上的本地代理请求自己催一次检查，不用谁手动调用。
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_request_stalled_without_an_answer_nudges_the_periodic_check() {
+    let rig = Rig::start_with_hanging_forward(true).await;
+    let started = std::time::Instant::now();
+    let stalled = tokio::spawn({
+        let addr = rig.proxy.local_addr();
+        async move { http_get(addr, "/slow").await }
+    });
+    // 没人手动催：这条请求在等状态字节，超时后由代理催。
+    tokio::time::timeout(NUDGE_CEILING, rig.client.wait_for_check_nudge())
+        .await
+        .expect("请求等不到服务端回执时，代理应该催一次检查");
+    let waited = started.elapsed();
+    stalled.abort();
+    assert!(
+        waited < NUDGE_CEILING,
+        "催促应该早于下一个检查周期，实际 {waited:?}"
+    );
+    assert!(waited >= NUDGE_AFTER, "不该一卡就催，实际 {waited:?}");
 }

@@ -63,7 +63,10 @@ impl ClientCore {
             Action::PairHome { code, device_name } => self.pair_home(code.expose(), &device_name),
             Action::DismissPairingFailure => scope.home.dismiss_pairing_failure(),
             Action::CancelPairing => scope.home.cancel_pairing(),
-            Action::InviteDevice => scope.home.invite(),
+            action
+            @ (Action::InviteDevice | Action::CloseDeviceInvite | Action::SkipKeyHandoff) => {
+                key_handoff_action(&scope, &action)
+            }
             action @ (Action::AddServer
             | Action::CancelAddServer
             | Action::SwitchServer { .. }
@@ -136,6 +139,9 @@ impl ClientCore {
             Action::SetThemeMode { mode } => self.appearance.set_theme_mode(mode),
             Action::SetTextSize { size } => self.appearance.set_text_size(size),
             Action::SetFont { font } => self.appearance.set_font(font),
+            Action::Timeline { action } if super::composer::is_composer_action(&action) => {
+                self.composer_action(&scope, action)
+            }
             action if is_tab_action(&action) => scope.tabs.dispatch(action),
             other => self.dispatch_plugins_or_chat(&scope, other),
         }
@@ -143,6 +149,22 @@ impl ClientCore {
 }
 
 /// 分享相关的操作（含分享页的加载结果），整组交给 `dispatch_sharing`。
+/// 加设备时交接聊天密钥（ADR-0087）：“添加设备”页开着时，聊天那边自动接上一次新设备的确认请求。
+fn key_handoff_action(scope: &Scope, action: &Action) -> Result<(), CoreError> {
+    match action {
+        Action::InviteDevice => {
+            scope.home.invite()?;
+            scope.chat.open_device_invite();
+        }
+        Action::CloseDeviceInvite => {
+            scope.home.close_invite();
+            scope.chat.close_device_invite();
+        }
+        _ => return scope.chat.skip_key_handoff(),
+    }
+    Ok(())
+}
+
 fn is_sharing_action(action: &Action) -> bool {
     matches!(
         action,

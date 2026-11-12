@@ -62,6 +62,7 @@ chat-card-uninstall-keep = 保留它的資料，以後重新安裝還在
 # 工具呼叫卡片的行。$args 是原始 JSON 參數，太長時截斷。
 chat-card-tool-data = 這個工具會更改資料
 chat-card-tool-root = 這個操作以本機 root 身分執行
+chat-card-tool-deletes = 應用程式標明這個工具會刪除或覆寫資料
 chat-card-args = 參數：{ $args }
 
 # Bot 存檔案的卡片。$name 和 $size 描述一個檔案；$total 是加在一起的大小。
@@ -156,3 +157,10 @@ panel-pin-not-there = 這個頁面沒有釘在面板上
 
 # MCP Apps 界面里的调用在卡片上把调用方写成主人。
 mcp-app-owner = 你
+
+# 跳數到頂（ADR-0045）：幾個 Bot 在一個房間裡來回說得太多，閘道停下了。
+chat-card-hop-limit-title = { $bots } 來回說了 { $hops } 次，已停下
+chat-choice-hop-limit-continue = 繼續
+chat-choice-hop-limit-stay = 先停著
+chat-hop-limit-resumed = 已繼續
+chat-hop-limit-kept-by-other = 另一方選了先停著，房間還停著

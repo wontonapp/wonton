@@ -57,6 +57,7 @@ mod tests {
             },
             path: Some(HomePath {
                 relay: false,
+                public_relay: false,
                 lan: true,
                 rtt_ms: 3,
             }),

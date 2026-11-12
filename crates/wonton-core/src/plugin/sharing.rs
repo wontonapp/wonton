@@ -134,7 +134,8 @@ impl PluginManager {
             plugin_id: id.to_string(),
             installed: entry.is_some_and(|entry| entry.status != super::PluginStatus::Uninstalling),
             has_webui: webui.is_some(),
-            friends_supported: webui.is_some_and(|webui| webui.friends),
+            per_user_accounts: webui
+                .is_some_and(|webui| webui.accounts == Some(super::manifest::Accounts::PerUser)),
         })
     }
 
@@ -160,7 +161,7 @@ impl PluginManager {
             PluginState::Uninstalling => return None,
             PluginState::Degraded { reason } => {
                 if self
-                    .route(&id.slug())
+                    .route(&id.slug(), "/")
                     .is_some_and(|route| route.web_serving)
                 {
                     TabState::Ready

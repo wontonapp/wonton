@@ -36,6 +36,9 @@ use auth::{AuthMethod, AuthRequests, parse_auth_methods};
 use rpc_error::RpcError;
 use updates::PromptUpdates;
 #[cfg(test)]
+#[path = "acp_contract_tests.rs"]
+mod contract_tests;
+#[cfg(test)]
 #[path = "acp_test_support.rs"]
 pub(crate) mod test_support;
 #[cfg(test)]
@@ -55,6 +58,31 @@ pub struct Capabilities {
     /// Agent 在 `promptCapabilities` 里声明能收 `image` 内容块（ACP：text 和
     /// resource_link 所有 Agent 都必须支持，image 要声明）。
     pub prompt_image: bool,
+}
+
+/// `_session/steering` 的结果。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SteerOutcome {
+    /// 进了正在跑的一轮。
+    Injected,
+    /// 没有在跑的一轮，Agent 自己另起了一轮（不认 `idleBehavior` 的旧适配器）；那一轮没有 `session/prompt`
+    /// 跟着，回复桥收不到。
+    StartedNewTurn,
+    /// 没有在跑的一轮，内容没被收下，要走普通 `session/prompt`。
+    PromptRequired,
+    /// 没插进去（codex-acp、omp 会回），以及不认识的结果：都按没收下算。
+    Failed,
+}
+
+impl SteerOutcome {
+    fn parse(outcome: &Value) -> Self {
+        match outcome.as_str() {
+            Some("injected") => Self::Injected,
+            Some("startedNewTurn") => Self::StartedNewTurn,
+            Some("promptRequired") => Self::PromptRequired,
+            _ => Self::Failed,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -400,7 +428,10 @@ impl AcpClient {
             .await
     }
 
-    pub async fn steer(&self, session_id: &str, text: &str) -> Result<String> {
+    /// 把内容块插进正在跑的一轮（`_session/steering`，claude-agent-acp、codex-acp、omp、OpenCode 共用的
+    /// 预标准扩展）。总带 `idleBehavior: promptRequired`：一轮已经结束时 Agent 不自己另起一轮，内容留给桥
+    /// 走普通 `session/prompt`。投递的时机由 Agent 定，协议里没有让客户端选的字段。
+    pub async fn steer(&self, session_id: &str, prompt: Vec<Value>) -> Result<SteerOutcome> {
         if !self.capabilities.steering {
             return Err(Error::Upstream(Detail::msg("acp-no-steering")));
         }
@@ -409,13 +440,13 @@ impl AcpClient {
                 "_session/steering",
                 json!({
                     "sessionId": session_id,
-                    "prompt": [{"type": "text", "text": text}],
-                    "_meta": {"steering": {"queue": "steering", "idleBehavior": "promptRequired"}}
+                    "prompt": prompt,
+                    "_meta": {"steering": {"idleBehavior": "promptRequired"}}
                 }),
             )
             .await
             .map_err(|error| Error::Upstream(rpc_detail(&error)))?;
-        Ok(result["outcome"].as_str().unwrap_or("failed").to_owned())
+        Ok(SteerOutcome::parse(&result["outcome"]))
     }
 
     /// 发一轮提示词。`prompt` 是 ACP 内容块（text、image、resource_link，见

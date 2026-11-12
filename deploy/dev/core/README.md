@@ -63,6 +63,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
   核心经 Engine API 安装的插件不继承它。核心自己的 Compose 用 `x-no-proxy` 清空代理；插件的出网代理规则见
   [ADR-0023](../../../docs/adr/0023-egress-proxy.md#给插件什么)。`dev.sh`、`smoke.sh`、`smoke-onboarding.sh` 的 CLI curl
   探针用 `--noproxy '*'` 直连内部地址；隧道探针用 `--noproxy ''`，确保经过显式指定的本地代理，不必替换 `DOCKER_CONFIG`。
+- 这些 CLI curl 探针都带超时（接口 600 秒、网页 120 秒、连接 10 秒），网页或接口不回时不至于把开发栈和它占的验证栈名额一直占着；
+  `SMOKE_API_MAX_TIME`、`SMOKE_WEB_MAX_TIME`、`SMOKE_CONNECT_TIMEOUT` 可以覆盖，脚本里更慢的调用在自己的参数里给更长的 `--max-time`。
 - 所有 worktree 共用一份 cargo 编译缓存，而 cargo 按修改时间判断要不要重编：源码比别的 worktree 上次编译时
   还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
   工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
@@ -96,6 +98,10 @@ deploy/dev/core/dev.sh devices                 # 已登记的设备；revoke <en
 `reset` 删掉核心数据目录，隧道身份（endpoint ID）跟着换；App 用新码添加服务器，旧服务器的数据保留；
 `reset --keep-tunnel-identity` 保留 `core/tunnel-key` 和 `core/devices.json`，endpoint ID 不变，已配对的设备不用重新配对
 （家人设备记的用户名随核心数据删了，要重新登记）。
+
+加设备时交接聊天密钥（ADR-0087）没有第二台 App 时，用真实的客户端核心扮演旧设备：
+`cargo run -p wonton-client --example key-handoff-old-device -- <数据目录> <配对码> <写码的文件>` 登录、开好备份后打开
+“添加设备”，把给新设备的码写进文件；对表情时打印表情并替主人点“相同”，之后留两分钟回答新设备要密钥。
 
 在本机用隧道客户端示例扮演手机：`cargo run -p wonton-tunnel --example tunnel-client -- pair '<配对码>'` 用配对码
 登记它（`-- id` 输出它的 ID）。`--auth` 和 App 一样起带会话凭据的 HTTP 正向代理，启动时打印凭据：
@@ -165,9 +171,10 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
 
-两台云吞之间的有两条，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
+两台云吞之间的有两条冒烟和一个开发命令，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
 分享插件（ADR-0051）是 `dev.sh share-smoke`；跨机 Bot 联系人（ADR-0050）是 `deploy/dev/core/smoke-contacts.sh`，
-依赖和步骤写在脚本开头。
+依赖和步骤写在脚本开头。插件作者看好友打开自己的插件时插件拿到什么身份，用
+`dev.sh friend <插件包目录或 compose 文件>`（做法和限制见 `friend-probe.sh` 开头）。
 
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 
@@ -192,6 +199,30 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 Ed25519 密钥签一次主人 JWT，直接登录真实 Tuwunel；不覆盖设备配对/隧道（由主冒烟覆盖），也不注入家人记录来假造加入，
 家人加入/移除流程不在此脚本范围。凭据只在私有临时文件和本栈容器内使用，不进命令参数或输出；退出 trap 清本栈
 容器、网络、卷和临时目录（不保留现场、不 prune）。
+
+通用能力依赖有单独的一条（ADR-0053），同样只在目标主机的本机 Docker 上运行。**先用当前检出构建开发核心镜像**，显式传入
+`WONTON_CAPABILITY_CORE_IMAGE`；脚本不构建、不用已有的 main 镜像兜底。调用方提供未占用的独立 Docker 子网：
+
+```bash
+(
+  export WONTON_CAPABILITY_CORE_IMAGE='wonton-core:<当前检出的开发镜像标签>'
+  export WONTON_DEV_PROJECT="wonton-capability-$(date +%s)-$$"
+  export WONTON_DEV_CORE_SUBNET='10.214.1.0/24' # 换成测试主机未占用的子网
+  deploy/dev/core/smoke-capabilities.sh
+)
+```
+
+需要 Bash、Docker Compose、Python 3 和 OpenSSL 3；默认端口 18571/18573，可用 `WONTON_DEV_PORT` /
+`WONTON_DEV_TUNNEL_PORT` 改。脚本沿用开发栈的联邦/TLS 准备，以临时 override 关闭系统/默认插件。用待测核心镜像的
+`plugin index-entry` 从本地测试包生成私有索引，服务和使用方都是固定摘要的官方 Python 镜像；真实核心、Hydra、Tuwunel
+和 Docker Engine 执行安装与网关请求，不连接模型或外部业务服务。覆盖完整提供方安装决定及独立输入、真实凭据签发/校验、可信来源头、
+必需依赖卸载拦截、可选依赖后装自动连接/卸载提示、过期计划零副作用、真实非零退出后的整批回滚和保留数据。
+停止本栈提供方后验证 503，重启核心核对原凭据和选择，再显式启动必需使用方，验证先启动提供方且同一凭据恢复 HTTP；
+不把重启核心描述为自动取消手动停止。退出时只清本次精确项目/实例的容器、网络、卷和临时目录，清理完成后才输出最终成功；
+失败保留私有服务日志、失败命令的标准输出/错误、HTTP 错误响应及探针状态；日志可能含测试凭据，不上传。终端只输出步骤、错误类别与日志路径。
+插件中的 `restart: "no"` 表示一次性服务，安装会等待其以 0 退出；常驻 HTTP 服务用 `unless-stopped`，即使带健康检查也不写 `no`。
+此段是运行说明，不代表已执行通过。
+
 
 ```bash
 deploy/dev/core/smoke.sh        # 本机 Docker；要设 WONTON_SMOKE_MODEL（见下）
@@ -226,7 +257,7 @@ DOCKER_HOST=ssh://$DEV_HOST deploy/dev/core/smoke.sh  # 远端 Linux 主机
 Debian 基础镜像从 ECR Public 拉（见 Dockerfile），不用传：
 
 ```bash
-for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v1.9.4 tusproject/tusd:v2.10.1 \
+for image in oryd/hydra:v26.2.0 ghcr.io/matrix-construct/tuwunel:v2.0.0 tusproject/tusd:v2.10.1 \
   grafana/grafana:12.2.1 traefik/whoami:v1.11 curlimages/curl:8.23.0 alpine/socat:1.8.0.3; do
   docker pull --platform linux/amd64 "$image"
   docker save --platform linux/amd64 "$image" | ssh "$DEV_HOST" docker load

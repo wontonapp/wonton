@@ -65,6 +65,7 @@ fn fake_home(mut home: HomeViewModel) -> HomeViewModel {
     home.status = HomeStatus::Connected;
     home.path = Some(HomePath {
         relay: false,
+        public_relay: false,
         lan: true,
         rtt_ms: 12,
     });
@@ -103,6 +104,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         can_reset: false,
         recovery_next_step: RecoveryNextStep::None,
         verification_flow: None,
+        key_handoff: None,
     };
     // 和真核心同一份推导，备份页在假核心下也按真值表显示。
     crate::chat::recovery::refresh(&mut chat.encryption);
@@ -124,6 +126,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
             timestamp_ms: 1_792_000_000_000,
         }),
         unread_count: 1,
+        side_chats: false,
         layout: ChatLayout::default(),
     }];
     chat.problem = None;

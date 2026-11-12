@@ -340,19 +340,17 @@ fn first_duplicate(names: &[String]) -> Option<&str> {
     })
 }
 
-/// 第 2 步接上行为之前的拦截：清单声明了按能力依赖（`requires`/`wants`），或者提供了能力表里的
-/// 新能力（`models`、`egress_proxy` 的专用字段照旧能用），照常装上但依赖一样都不兑现——不一起装、
-/// 不转发、没有 `<能力>.wonton.internal`，是伪装成功，所以按 `unsupported` 拒绝。
-/// **第 2 步接上行为时删掉这个函数和它的调用。**
-pub fn unsupported_dependencies(
+/// 模型网关使用方迁移单独切换；通用能力已由连接记录兑现。
+pub fn unsupported_model_dependency(
     manifest: &Manifest,
     langs: &Languages,
 ) -> Result<(), super::install_error::InstallError> {
-    let new_provides = manifest
-        .provides
-        .as_ref()
-        .is_some_and(|provides| !provides.capabilities.is_empty());
-    if manifest.requires.is_empty() && manifest.wants.is_empty() && !new_provides {
+    if !manifest
+        .requires
+        .iter()
+        .chain(&manifest.wants)
+        .any(|name| name == MODELS.name)
+    {
         return Ok(());
     }
     Err(super::install_error::InstallError::Unsupported(

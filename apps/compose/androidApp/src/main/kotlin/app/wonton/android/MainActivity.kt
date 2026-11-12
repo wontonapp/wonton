@@ -22,6 +22,7 @@ import app.wonton.ui.LocalNotificationPermission
 import app.wonton.ui.NotificationPermission
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.WontonApp
+import app.wonton.ui.completeMatrixOidcCallback
 import app.wonton.ui.defaultDeviceName
 import app.wonton.ui.homeUpdates
 import app.wonton.ui.pluginsUpdates
@@ -65,7 +66,7 @@ class MainActivity : AppCompatActivity() {
         keepConnectionService(core)
         portMappingService(core)
         refreshMappingNotificationOnGrant(core)
-        requests.take(intent)
+        if (!takeMatrixCallback(intent)) requests.take(intent)
         setContent {
             CompositionLocalProvider(LocalNotificationPermission provides notificationPermission) {
                 WontonApp(
@@ -84,7 +85,7 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        requests.take(intent)
+        if (!takeMatrixCallback(intent)) requests.take(intent)
     }
 
     /** “保持连接”的前台服务只看 `keep_connection`（ADR-0003 的“设计：保持连接”）：已配对、方式是保持连接时开，
@@ -145,6 +146,15 @@ class MainActivity : AppCompatActivity() {
                 granted = now
             }
         }
+    }
+
+    /** Matrix 登录的浏览器回调不是 App 链接：有进行中的登录就交给核心续上，没有就当过期的丢掉；两种都不当 App 链接。 */
+    private fun takeMatrixCallback(intent: Intent): Boolean {
+        val url = intent.dataString?.takeIf { intent.action == Intent.ACTION_VIEW } ?: return false
+        val core = (application as WontonApplication).core.getOrNull()
+        val taken = core?.completeMatrixOidcCallback(url) == true
+        if (taken) intent.data = null
+        return taken
     }
 
     override fun onResume() {

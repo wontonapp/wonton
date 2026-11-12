@@ -1,6 +1,7 @@
 # ADR-0077 插件设置：清单带 JSON Schema，核心校验并存进记录，改了就只重建用到的服务
 
-- 状态：提议（2026-11-11；Schema、核心校验、渲染漂移重建和输入密钥的方向已定，接口细节待审）
+- 状态：已接受（2026-11-12）。主人 2026-11-12 定：放开 `boolean` + `const: true` 做必须同意的项；自由文本列表先用文本框；
+  不让用户给插件加任意环境变量；整份配置文件的编辑另写一篇
 
 ## 背景
 
@@ -70,23 +71,34 @@ Actual 的预算选择等普通设置需要在安装确认页和插件详情页�
 | 属性 Schema | 原生控件 | 可选约束 |
 | --- | --- | --- |
 | `type: boolean` | 开关 | `default` |
+| `type: boolean`，`const: true` | 必须勾上的复选框（同意条款） | 无；必须在 `required` 里，不能写 `default` |
 | `type: integer` | 整数输入 | `minimum`、`maximum`、`default` |
 | `type: number` | 小数输入 | `minimum`、`maximum`、`default` |
-| `type: string`，没有 `enum` | 文本框 | `minLength`、`maxLength`、`pattern`、`default` |
+| `type: string`，没有 `enum` | 文本框 | `minLength`、`maxLength`、`pattern`、`x-wonton-pattern-description`、`default` |
 | `type: string`，`enum` 全为字符串 | 单选 | `default`、`x-wonton-enum-titles` |
 | `type: array`，`items.type: string`，`items.enum` 全为字符串 | 多选 | `uniqueItems: true`（必需）、`default`、`x-wonton-enum-titles` |
 
 根只用 `$schema`、`type`、`properties`、`required`、`additionalProperties: false` 和 `x-wonton-order`。
 属性除表中的类型与约束，只能加 `x-wonton-title`、`x-wonton-description`；选项标题放在该属性的 `x-wonton-enum-titles`。
-`object`、嵌套数组、无字符串枚举的数组、非字符串枚举、`null`、`const`、`oneOf`/`anyOf`/`allOf`、`$ref`、
+`object`、嵌套数组、无字符串枚举的数组、非字符串枚举、`null`、上表之外的 `const`、`oneOf`/`anyOf`/`allOf`、`$ref`、
 `$dynamicRef` 和其他超出上表的写法均拒绝，不默默忽略。任何子 Schema 的敏感标记仍按敏感项拒绝。
+
+- **必须同意的项**（Minecraft 的 EULA 这类）：只放开 `type: boolean` + `const: true` 这一种 `const`。不写 `default`，否则等于
+  替主人勾上；不在 `required` 里也不合格，否则不勾也能装。核心照常用 `jsonschema` 校验，没勾的值过不了 `const`，安装和升级
+  都被拦下。注入的值是 `true`。条款换了版本要主人重新同意的，插件换一个属性名：新版本新增的必填项没有默认值，按下面
+  “校验时机”里升级预览的规则拦下，主人勾了才能升。
+- **自由文本列表**（白名单、订阅地址）没有专门的控件，用文本框：`pattern` 限定写法，`x-wonton-description` 写明分隔符，
+  如“用英文逗号分隔，例如 steve,alex”。插件自己拆。
+- **`x-wonton-pattern-description`**：值不匹配 `pattern` 时给主人看的一句话，`LocalizedText`，只能写在有 `pattern` 的文本框上。
+  不写时 App 用通用的“格式不对”，正则原文只进“详情”。
 
 - 敏感项不留在设置里：属性带 `writeOnly: true`、`format: "password"` 或 `x-wonton-secret: true` 时算错误（见
   “敏感项”）。
 - 属性名不得和 `x-wonton.secrets` 里的名字重复：同一个东西两头都能填，会分不清哪边生效。
 - 整份生效值序列化后不超过 64 KiB，单个字符串不超过 8 KiB，一个字符串数组不超过 64 项；大小按 UTF-8 字节计。
   超过时返回 `settings_invalid`。
-- 使用 `settings` 的清单至少写 `spec: "0.12"`。
+- 使用 `settings` 的清单至少写 `spec: "0.12"`；用到必须同意的项或 `x-wonton-pattern-description` 的至少写 `spec: "0.13"`，
+  旧核心先看版本号提示升级，而不是报 Schema 不合格。
 
 ### 校验和库
 
@@ -108,6 +120,8 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
   丢掉；不合法的留在表单里，带问题说明，主人改好才能确认升级。新版本新增的必填项没有默认值时同样标出来并被拦下，
   和 ADR-0064 对待新增密钥一样。
 - 装好以后写设置，只校验新值叠在当前值上的结果；不通过时原值不动、不重建。
+- `plugin check`（开发套件同一套）从 Schema 推出这个插件合法的 `WONTON_SETTING_*`：引用 Schema 里有的名字，裸写
+  `${WONTON_SETTING_X}` 就算已定义，不要求 `:-` 默认值；引用 Schema 里没有的名字，带不带 `:-` 都报错。
 - `additionalProperties` 只能写 `false`。请求里带 Schema 没有的属性也是 `settings_invalid`。
 
 ### 存哪
@@ -128,6 +142,8 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 的摘要不变。同值写入不重建；未被引用的设置只存值。卷和数据目录不动。
 重建失败时把值退回原样、按旧值再渲染一次，错误照原类别返回；退回也失败就把插件标成异常。
 
+用户不能给插件加 Schema 以外的环境变量。要让主人改的东西，由插件作者声明成设置项。
+
 ### 敏感项
 
 敏感项留在输入密钥（ADR-0064）：值不回显，走系统密码框。设置和密钥不重叠：Schema 任意位置出现敏感标记都拒绝，
@@ -140,6 +156,7 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 
 设置页是原生页，形状由核心按受支持 Schema 子集给：字段、标题、说明、控件类型、范围、枚举、当前值、默认值、
 用到它的服务和校验问题。壳只画控件、收值、提交。插件包给字段标题和说明，其余界面文字走本地化资源（ADR-0043）。
+控件类型 `PluginSettingKind` 里，必须同意的项是单独一种 `Agreement`，文本框带上可选的 `pattern_description`。
 新核心增加的控件或值类型落到 `Other` 时，该项显示“要更新 App 才能改”，禁止提交整份表单；
 不能省略或清空该项后提交，也不给 JSON 编辑器。Schema 本身不受核心支持与旧 App 不认识新控件是两种不同情况。
 
@@ -150,7 +167,9 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 - 视图和写请求都带 `schema_digest`（设置文件的 sha256）。插件在中间升级换了文件时对不上，返回 409 `changed`，App
   重新读。
 - 安装预览的 `settings` 带表单和默认值；安装、升级请求和确认卡片的回答用 `settings` 带值。Bot 经 MCP 装插件时，
-  主人在确认卡片里用同一套原生表单填，值不进 Matrix。
+  主人在确认卡片里用同一套原生表单填，值不进 Matrix。上传插件包（请求体是包本身）安装、升级时，值放在
+  `Wonton-Plugin-Settings` 请求头，编码同输入密钥的头（base64url 无填充的 JSON，ADR-0064），写法同 `settings`；
+  插件开发套件的 `--setting` 走这条路。
 - 核心只给已支持设置接口的版本置 `PluginDetail.has_settings`；接口阶段不凭 Schema 文件存在就开启入口。
 - 只有主人能读写，路由按 `owner_only`（同 ADR-0045）。
 
@@ -177,6 +196,10 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
   共用筛选，不用另写一套依赖分析。
 - **存记录**：设置属于这个插件实例，和权限、局域网开关一样，卸载时跟着走。单独目录只有一份文件，没多出任何隔离。
 - **敏感项走密钥**：见上，走已经定好的路径，App 只需按两种来源分别渲染。
+- **必须同意只放开 `const: true`**：Minecraft 这类上游不同意条款就不启动，没有它插件只能写死“已同意”替主人点头。
+  只放这一种，其余 `const` 照旧拒绝，子集不因此变宽。StartOS 用必须先完成的任务做同一件事。
+- **列表先用文本框**：上游大多要逗号分隔的字符串，而多选注入的是 JSON 数组文本；专门的列表控件要连同注入格式一起定，
+  等有足够多的插件需要再定。
 - **未知类型要求更新 App**：不把用户不认识的大括号当原生控件的替代品，也不把解析不了的值改成空值。支持子集之外的 Schema 直接拒绝。
 
 ## 代价与风险
@@ -187,6 +210,8 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 - 改设置会重启用到的服务，正在进行的任务会断。
 - 校验库带来一棵依赖树；不收 `$ref` 后，公共的片段只能复制到每个属性里。
 - 升级时删掉的属性丢值，降级回去只能重填。
+- 自由文本列表靠文本框和说明，填错只能靠 `pattern` 挡，没有逐项增删的控件。
+- 整份配置文件（如 Glance 的 `glance.yml`）不适合拆成设置项，它的编辑另写一篇 ADR。
 
 ## 没选的做法
 
@@ -197,6 +222,9 @@ Schema 自己在校验值之前先校验一遍：能解析、`$schema` 是 2020-
 - **JSON 文本编辑器兜底**：把插件作者的 Schema 复杂度交给普通用户，不符合原生表单的目标；超出控件子集直接报包的设置 Schema 不合法。
 - **只有插件网页，没有原生页**：就是现状；装的时候还要先起容器再碰网页，Bot 装的时候更没法填。
 - **每改一项就重建全部服务**：简单，但一个预算选择会断掉目录同步和网页。
+- **让用户给插件加任意环境变量**（Umbrel 的 customEnvironment、Portainer 改 stack 的环境变量）：绕过插件包摘要和 Schema 校验，
+  升级时也没法对出差异；写错了就是“容器起不来”。
+- **同意条款做成插件网页里的一步**：要先起容器才能同意，而上游不同意就不启动。
 
 ## 关联
 

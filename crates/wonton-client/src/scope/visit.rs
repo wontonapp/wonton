@@ -53,6 +53,7 @@ impl Visit {
         let chat = ChatLink::new(
             handle.clone(),
             home.clone(),
+            slot,
             dir,
             card_success,
             plugins,

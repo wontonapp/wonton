@@ -84,6 +84,9 @@ fn confirmation_cards_and_answers_carry_settings() {
         settings: Some(form()),
         requester: None,
         origin: None,
+        audience: crate::CardAudience::Keeper,
+        answered_by: None,
+        category: None,
     };
     let back: ConfirmationCard = round_trip(&card);
     assert_eq!(back.settings, card.settings);

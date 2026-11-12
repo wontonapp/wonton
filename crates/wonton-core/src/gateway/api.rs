@@ -33,10 +33,12 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, CACHE_CONTROL, CONTENT_TYPE,
 use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
-use wonton_protocol::{AddedTools, InstallRequest, InstallSource, UpgradeRequest, UpgradeResult};
+use wonton_protocol::{
+    AddedTools, InstallRequest, InstallSource, UninstallRequest, UpgradeRequest, UpgradeResult,
+};
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
-use super::api_switch::{enabled, granted, secrets, upload_parts};
+use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
 use super::{Gateway, Person, TunnelPeer, isolation, pages};
 
 pub use super::api_switch::set_plugin_permission;
@@ -65,6 +67,14 @@ pub(crate) fn error_response(status: StatusCode, kind: &'static str, message: &s
 }
 
 pub(crate) fn install_error(error: &InstallError) -> Response {
+    if let InstallError::InUse { message, plugins } = error {
+        let body = json!({"error": {"kind": "in_use", "message": message, "plugins": plugins}});
+        let mut response = (StatusCode::CONFLICT, Json(body)).into_response();
+        response
+            .headers_mut()
+            .insert(pages::ERROR_HEADER, HeaderValue::from_static("in_use"));
+        return response;
+    }
     if let InstallError::EgressProxyUnavailable { reason, message } = error {
         let body = json!({"error": {
             "kind": error.kind(),
@@ -88,6 +98,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::GpuUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_)
+        | InstallError::InUse { .. }
         | InstallError::NameTaken(_)
         | InstallError::Changed(_)
         | InstallError::PortTaken(_)
@@ -170,7 +181,7 @@ pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
 }
 
 /// 只给主人的接口（ADR-0045“谁能做什么”）：主人令牌，或者主人名下的设备（经隧道，且不是别的网页发起的）。
-/// 家人的设备回 403 `owner_only`。
+/// 家人的设备回 403 `permission_required`。
 pub(crate) fn owner_denied(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
@@ -181,7 +192,7 @@ pub(crate) fn owner_denied(
         Some(person) if person.is_owner() => from_another_page(headers, &gateway.core_origin()),
         Some(_) => Some(error_response(
             StatusCode::FORBIDDEN,
-            "owner_only",
+            "permission_required",
             "这个接口只有主人能用",
         )),
         None => denied(gateway, headers),
@@ -446,17 +457,12 @@ async fn install_upload(
     let granted = granted(query)?;
     let enabled = enabled(query)?;
     let secrets = secrets(headers)?;
+    let given = settings(headers)?;
     let package = package(langs, headers, body)?;
     gateway
         .plugins
         .store_input_values(&package.manifest, &secrets, None, langs)?;
-    let settings = match crate::plugin::settings::load(&package, langs)? {
-        Some(schema) => {
-            crate::plugin::settings::value::initial(&schema, &Default::default(), langs)
-                .map_err(|fields| crate::plugin::settings::value_error(fields, langs))?
-        }
-        None => Default::default(),
-    };
+    let settings = crate::plugin::settings::install_values(&package, &given, langs)?;
     gateway
         .plugins
         .install_detached_enabled(
@@ -533,8 +539,10 @@ pub async fn upgrade(
     let upgraded = match json_body::<UpgradeRequest>(&headers, &body) {
         Some(Err(e)) => return install_error(&e),
         Some(Ok(request)) => gateway.plugins.upgrade_source(&id, &request, &langs).await,
-        None => match upload_parts(&languages(&headers), &headers, &body, &query) {
-            Ok((grant, enabled, secrets, package)) => {
+        None => match upload_parts(&languages(&headers), &headers, &body, &query)
+            .and_then(|parts| Ok((parts, settings(&headers)?)))
+        {
+            Ok(((grant, enabled, secrets, package), given)) => {
                 let plugins = &gateway.plugins;
                 let filled = plugins.store().secrets().load(&id).ok().flatten();
                 if let Err(e) =
@@ -549,7 +557,7 @@ pub async fn upgrade(
                         grant,
                         enabled,
                         query.lan_webui,
-                        &Default::default(),
+                        &given,
                         &langs,
                     )
                     .await
@@ -593,6 +601,7 @@ pub async fn uninstall(
     headers: HeaderMap,
     Path(id): Path<String>,
     Query(query): Query<UninstallQuery>,
+    body: Bytes,
 ) -> Response {
     if let Some(denied) = install_denied(&gateway, peer, &headers) {
         return denied;
@@ -603,9 +612,25 @@ pub async fn uninstall(
     };
     let langs = languages(&headers);
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    let request = if body.is_empty() {
+        UninstallRequest::default()
+    } else {
+        match json_body::<UninstallRequest>(&headers, &body) {
+            Some(Ok(request)) => request,
+            Some(Err(error)) => return install_error(&error),
+            None => return install_error(&invalid_body(&headers, "expected application/json")),
+        }
+    };
+    let approve_connections = owner_denied(&gateway, peer, &headers).is_none();
     match gateway
         .plugins
-        .uninstall_detached(id, query.purge, langs)
+        .uninstall_detached(
+            id,
+            query.purge,
+            request.providers,
+            approve_connections,
+            langs,
+        )
         .await
     {
         Ok(report) => Json(report).into_response(),

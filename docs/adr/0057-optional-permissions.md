@@ -50,7 +50,7 @@ optional_permissions:
 - 同一项只能出现在一边，写成映射自然不重复。**`off_loss` 四种语言齐全**，和 `title`、`description` 一样；没写是清单错误，
   `plugin check --official` 也拦。
 - 对应的 compose 字段照旧写在清单里，说的是“开着时谁拿到什么”（`docker.socket` 的卷、`gpu.services` 的服务名、
-  `devices.serial`/`devices.usb` 的选设备块）；核心按开关决定渲染不渲染，**作者不用再写一遍映射**。可选和必需可以落在同一个
+  `devices.serial` 的选设备块、`devices.usb` 的服务列表）；核心按开关决定渲染不渲染，**作者不用再写一遍映射**。可选和必需可以落在同一个
   服务上，拿掉按字段逐项做。
 - `devices.gpu` 可选时不能再写 `requirements.gpu.need: required`（主人能关掉就不可能是必需）。
 

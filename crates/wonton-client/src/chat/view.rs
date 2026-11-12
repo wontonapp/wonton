@@ -16,9 +16,9 @@ use wonton_matrix::{
 };
 use wonton_protocol::{
     ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary, QuotedMessage,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, SendState, TimelineContent, TimelineDiff,
-    TimelineItem, TimelineMessage, extract_file_links,
+    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
+    QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
 
 use crate::l10n::{CATALOG, language};
@@ -45,7 +45,8 @@ pub(crate) fn key_notice(
     encryption: &EncryptionStatus,
     has_undecryptable: bool,
 ) -> Option<KeyNotice> {
-    if !has_undecryptable {
+    // 交接期间新设备在等另一台设备交出密钥，不提恢复密钥（ADR-0087）。
+    if !has_undecryptable || super::handoff::receiving(encryption).is_some() {
         return None;
     }
     match encryption.recovery {
@@ -78,6 +79,8 @@ pub(crate) fn room_row(
             Membership::Left | Membership::Knocked | Membership::Banned => RoomMembership::Left,
         },
         preview: room.latest.and_then(|latest| preview(latest, bots)),
+        // 旁聊支持声明还没实现（ADR-0093 §4），先都按没有算；实现 PR 从声明状态事件来。
+        side_chats: false,
         unread_count: room.unread_count,
     }
 }
@@ -216,9 +219,12 @@ fn timeline_message(
         reply: message
             .reply
             .map(|reply| reply_quote(reply, cards.core_account(), links)),
+        // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
+        side_chat: None,
         actions,
         body,
         read_by,
+        group: message.group,
     }
 }
 
@@ -230,11 +236,7 @@ pub(super) fn message_content(
     match body {
         MessageBody::Text(text) | MessageBody::Notice(text) => {
             let FileLinks { body, files } = extract_file_links(&text);
-            let blocks = if is_own {
-                rich::plain(&body, links)
-            } else {
-                rich::markdown(&body, links)
-            };
+            let blocks = blocks_of(&body, is_own, links);
             MessageContent::Text {
                 body,
                 blocks,
@@ -252,6 +254,10 @@ pub(super) fn message_content(
                 size: image.size,
                 width: image.width,
                 height: image.height,
+                caption: image.caption.map(|body| ImageCaption {
+                    blocks: blocks_of(&body, is_own, links),
+                    body,
+                }),
             },
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
@@ -260,6 +266,14 @@ pub(super) fn message_content(
             kind: "m.file".to_owned(),
         },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
+    }
+}
+
+fn blocks_of(body: &str, is_own: bool, links: &LinkTargets) -> Vec<RichBlock> {
+    if is_own {
+        rich::plain(body, links)
+    } else {
+        rich::markdown(body, links)
     }
 }
 
@@ -329,7 +343,8 @@ pub(crate) fn not_connected() -> String {
 pub(crate) fn failure(error: &Error) -> ChatFailure {
     match error {
         Error::Transport(_) => ChatFailure::TransportUnavailable,
-        Error::Unauthorized { .. } => ChatFailure::Unauthorized,
+        // ChatFailure 的 Unauthorized 包括“无权操作”。
+        Error::Unauthorized { .. } | Error::Forbidden { .. } => ChatFailure::Unauthorized,
         Error::NotReady(_) => ChatFailure::NotReady,
         Error::Upstream(_) => ChatFailure::Upstream,
         Error::InvalidInput(_) => ChatFailure::InvalidInput,
@@ -369,6 +384,7 @@ mod tests {
             can_reset: false,
             recovery_next_step: wonton_protocol::RecoveryNextStep::None,
             verification_flow: None,
+            key_handoff: None,
         }
     }
 
@@ -469,6 +485,7 @@ mod tests {
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,
+                group: None,
                 can_redact: true,
             })),
         }

@@ -2,11 +2,13 @@
 //! 的请求。房间是内存替身，ACP 是 Manual 场景的假 Agent，确认接口是假卡片。
 
 mod attachments;
+mod busy;
 mod cards;
 mod downtime;
 mod downtime_real;
 mod limits;
 mod mode;
+mod refused;
 mod restore;
 mod run_status;
 mod tasks;

@@ -30,6 +30,7 @@ mod bot_contacts;
 mod browser;
 mod chat;
 mod client;
+mod composer;
 mod files;
 mod friends;
 mod home;
@@ -63,15 +64,16 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, FriendsSubscription,
-    HomeSubscription, OnboardingSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TabsSubscription,
-    TransfersSubscription,
+    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
+    FriendsSubscription, HomeSubscription, OnboardingSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TabsSubscription, TransfersSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
 pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
+pub use tabs::media_permission::TabMediaPermission;
 pub use wonton_protocol::LanClient;
 pub use wonton_protocol::StoreUnreadable;
 pub use wonton_protocol::{
@@ -95,35 +97,36 @@ pub use wonton_protocol::{
     EncryptionStatus, FileCard, FileCardAction, FileCardActions, FileFailure, FileId, FileInfo,
     FileOperation, FileProblem, FileSource, FontStyle, HomeFailure, HomePath, HomeStatus,
     HomeViewModel, ImageContent, ImageThumbnail, ImageUpload, InstallPreview, InstalledPlugin,
-    InstalledPlugins, KeyNotice, LanAddress, LanChoice, LanFailure, LanInterface, LanInterfaceKind,
-    LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer, LanWebuiUpdate, Me,
-    MediaHandle, MessageContent, MessageSummary, ModelProvider, ModelProviderFailure,
-    ModelProviderInput, ModelProviderProblem, ModelProviders, NotificationCategory,
-    OnboardingAgentRow, OnboardingCommit, OnboardingItemProblem, OnboardingItemState,
-    OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow, OnboardingProfileStep,
-    OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
-    OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel, OpenWindow,
-    OwnerProfileUpdate, PairingFailure, PairingStage, PairingStatus, PeerCode, PeerError,
-    PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel, PendingConfirmation,
-    PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail, PluginDevice,
-    PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginOperation,
-    PluginProblem, PluginRuntime, PluginScope, PluginState, PluginTab, PluginTakeover, PluginTask,
-    PluginTaskNextStep, PluginTaskState, PluginTrust, PluginsViewModel, ProxySettings,
-    PushConfirmation, PushContent, PushEndpoint, PushMethod, PushNotification, PushStatus,
-    RecoveryNextStep, RecoveryStatus, RegistryFailure, RegistryMirrorSettings, RegistryMirrorTest,
-    RegistryMirrorTestRequest, RegistryMirrorTests, RegistryMirrorUpdate, RegistryMirrorViewModel,
-    RegistryProbe, RegistryProblem, RejectedPeerRow, ReplacedAgent, RequirementLine,
-    RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow, RoomTransfers, SecretString,
-    SendState, ServerName, ServerRow, ServersViewModel, SessionListViewModel, SessionRow,
-    SettingsEntry, SettingsSection, SettingsViewModel, SidebarApp, SidebarOpen, SidebarViewModel,
-    SourceKind, StepNav, StoreConfirmation, StoreFailure, StoreItem, StoreListing, StoreProblem,
-    StoreSection, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem, TabLayout,
-    TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize,
-    ThemeColors, ThemeMode, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineScroll, TimelineUpdate, TimelineViewport, ToolAccess, ToolPolicyEntry, ToolPolicyView,
-    Transfer, TransferAction, TransferDirection, TransferElsewhere, TransferState,
-    TransfersViewModel, UpdatablePlugin, UpgradeOffer, UploadSource, VerificationCancel,
-    VerificationEmoji, VerificationFlow, VerificationStage, WindowView,
+    InstalledPlugins, KeyHandoff, KeyNotice, LanAddress, LanChoice, LanFailure, LanInterface,
+    LanInterfaceKind, LanPlugin, LanPort, LanProblem, LanProtocol, LanSettings, LanWebuiOffer,
+    LanWebuiUpdate, Me, MediaHandle, MessageContent, MessageSummary, ModelProvider,
+    ModelProviderFailure, ModelProviderInput, ModelProviderProblem, ModelProviders,
+    NotificationCategory, OnboardingAgentRow, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingModelChoice, OnboardingModelStep, OnboardingNeedRow,
+    OnboardingProfileStep, OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem,
+    OnboardingReviewKind, OnboardingStep, OnboardingTip, OnboardingTips, OnboardingViewModel,
+    OpenWindow, OwnerProfileUpdate, PairingFailure, PairingStage, PairingStatus, PeerCode,
+    PeerError, PeerRequestRow, PeerRow, PeerStatus, PeersState, PeersViewModel,
+    PendingConfirmation, PermissionLine, PermissionRisk, PlacedTab, PluginAuthor, PluginDetail,
+    PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage, PluginKind,
+    PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope, PluginState,
+    PluginTab, PluginTakeover, PluginTask, PluginTaskNextStep, PluginTaskState, PluginTrust,
+    PluginsViewModel, ProxySettings, PushConfirmation, PushContent, PushEndpoint, PushMethod,
+    PushNotification, PushStatus, RecoveryNextStep, RecoveryStatus, RegistryFailure,
+    RegistryMirrorSettings, RegistryMirrorTest, RegistryMirrorTestRequest, RegistryMirrorTests,
+    RegistryMirrorUpdate, RegistryMirrorViewModel, RegistryProbe, RegistryProblem, RejectedPeerRow,
+    ReplacedAgent, RequirementLine, RequirementStatus, Rgb, RoomMembership, RoomPreview, RoomRow,
+    RoomTransfers, SecretString, SendState, ServerName, ServerRow, ServersViewModel,
+    SessionListViewModel, SessionRow, SettingsEntry, SettingsSection, SettingsViewModel,
+    SidebarApp, SidebarOpen, SidebarViewModel, SourceKind, StepNav, StoreConfirmation,
+    StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TabCandidate, TabDisplay,
+    TabDisplayChoice, TabIcon, TabItem, TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef,
+    TabState, TabsProblem, TabsViewModel, TakeoverState, TextSize, ThemeColors, ThemeMode,
+    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
+    TimelineViewport, ToolAccess, ToolPolicyEntry, ToolPolicyView, Transfer, TransferAction,
+    TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UpdatablePlugin,
+    UpgradeOffer, UploadSource, VerificationCancel, VerificationEmoji, VerificationFlow,
+    VerificationStage, WindowView,
 };
 pub use wonton_protocol::{
     AppsAction, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendGroup,
@@ -142,5 +145,5 @@ pub use wonton_protocol::{
     ContactKind, ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
 };
 pub use wonton_protocol::{
-    MappedPort, PluginPortMapping, PortMappingState, PortProtocol, UdpFlowStats,
+    MappedPort, PluginPortMapping, PortMappingState, PortMappingWarning, PortProtocol, UdpFlowStats,
 };
