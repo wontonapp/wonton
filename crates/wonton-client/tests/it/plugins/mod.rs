@@ -11,6 +11,7 @@ mod onboarding;
 mod registry_mirror;
 pub mod rig;
 mod share_recipients;
+mod stale_list;
 mod takeover;
 mod tool_policy;
 
