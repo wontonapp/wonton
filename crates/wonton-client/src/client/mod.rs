@@ -265,6 +265,15 @@ impl ClientCore {
         scope.run(async move { chat.load_media(media).await }).await
     }
 
+    /// 链接预览卡片的图片原文件（凭卡片图片里的 id）。核心负责从家里取回来。
+    pub async fn load_link_preview_image(&self, id: String) -> Result<Vec<u8>, CoreError> {
+        let scope = self.scope();
+        let chat = scope.chat.clone();
+        scope
+            .run(async move { chat.preview_image(&id).await })
+            .await
+    }
+
     /// 视频头像的本机缓存文件；相同媒体的并发请求共用一次下载。
     pub async fn avatar_file(&self, media: MediaHandle) -> Result<String, CoreError> {
         let scope = self.scope();
