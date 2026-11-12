@@ -100,7 +100,8 @@ Node-RED、ESPHome 都要连一个 broker，Mosquitto 插件提供它，现在�
 - 核心多一个常驻的 TCP 转发组件，连接数和流量都过核心进程。家用规模（几十个设备、每秒几百条消息）不是问题，没压测过。
 - 核心升级或重启时 MQTT 连接全断，设备消息在重连前那几秒会丢（QoS 0）或由客户端重发（QoS 1、2）。
 - 中继不认 MQTT，主题权限只能由提供方管（Mosquitto 的 ACL）。默认的 Mosquitto 插件里每个使用方能读写所有主题：
-  连上 broker 的插件能给 Zigbee2MQTT 发控制设备的消息。`mqtt` 按普通能力算，不是高权限，和 Home Assistant 一样。
+  连上 broker 的插件能给 Zigbee2MQTT 发控制设备的消息。`mqtt` 按普通能力算，不是高权限，和 Home Assistant 一样；
+  主题权限以后在 Mosquitto 插件里做（主人 2026-11-12 定）。
 - 第三方能力还是只能走 HTTP，社区插件要非 HTTP 的接口只能等能力进表。
 - 使用方要支持断线自动重连，否则换提供方后会停在断开的状态。主流 MQTT 客户端都会重连，不会的算插件的问题。
 
