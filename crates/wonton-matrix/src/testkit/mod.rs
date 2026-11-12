@@ -261,6 +261,30 @@ impl TestServer {
             .expect("冻住 Tuwunel 容器");
     }
 
+    /// 注册一个用密码登录的账号（用现成 Matrix 账号登录的测试用），返回完整用户 ID 和密码。容器要开着密码登录
+    /// （`TUWUNEL_LOGIN_WITH_PASSWORD=true`），只有测试自己起的容器能注册。
+    pub async fn register_password_user(&self, localpart: &str) -> (String, String) {
+        let secret = self
+            .registration_secret
+            .as_deref()
+            .expect("现成的服务器没有注册密钥");
+        let password = random_hex(16);
+        let response = admin::register_user(
+            &matrix_sdk::reqwest::Client::new(),
+            &self.url,
+            secret,
+            localpart,
+            &password,
+            false,
+        )
+        .await;
+        let user_id = response["user_id"]
+            .as_str()
+            .expect("注册接口应返回用户 ID")
+            .to_owned();
+        (user_id, password)
+    }
+
     /// 核心的管理账号，只有测试自己起的容器才有。
     pub async fn admin(&self) -> Admin {
         let secret = self
@@ -384,4 +408,50 @@ pub async fn eventually<T: Debug, R>(
         Ok(None) => panic!("{what}：流已结束，最后一项：{last:#?}"),
         Err(_) => panic!("{what}：{WAIT:?} 内没有等到，最后一项：{last:#?}"),
     }
+}
+
+/// 造一条测试用的图片消息内容（未加密来源）。上游测试（如桥的行为测试）要往消息流里
+/// 放图片时用它；生产代码走不了这条路（`source` 字段不公开）。
+impl crate::ImageContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            width: None,
+            height: None,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+            thumbnail: None,
+        }
+    }
+}
+
+/// 造一条测试用的文件消息内容（未加密来源）；用途同 [`crate::ImageContent::for_test`]。
+impl crate::FileContent {
+    pub fn for_test(
+        filename: &str,
+        mime_type: Option<&str>,
+        size: Option<u64>,
+        caption: Option<&str>,
+        mxc: &str,
+    ) -> Self {
+        Self {
+            filename: filename.to_owned(),
+            mime_type: mime_type.map(str::to_owned),
+            size,
+            caption: caption.map(str::to_owned),
+            source: plain_source(mxc),
+        }
+    }
+}
+
+fn plain_source(mxc: &str) -> matrix_sdk::ruma::events::room::MediaSource {
+    matrix_sdk::ruma::events::room::MediaSource::Plain(mxc.to_owned().into())
 }

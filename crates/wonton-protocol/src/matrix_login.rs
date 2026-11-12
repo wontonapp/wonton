@@ -92,6 +92,8 @@ pub enum MatrixLoginFailure {
     InvalidCallback,
     Expired,
     Storage,
+    /// homeserver 或它的授权服务器回了错误（5xx、限流、意外的回应），不是凭据或输入的问题。
+    Upstream,
     #[serde(other)]
     Other,
 }

@@ -63,6 +63,14 @@ impl Sessions {
     pub(super) fn key_of(&self, session_id: &str) -> Option<SessionKey> {
         self.acp.get(session_id).cloned()
     }
+
+    /// 丢掉所有会话排队的后续任务：连接断开时不再开新一轮，收尾只管在跑的。
+    pub(super) fn drop_pending(&mut self) {
+        for state in self.states.values_mut() {
+            state.queue.clear();
+            state.pending_interrupt = None;
+        }
+    }
 }
 
 /// 保证这个会话有一个可用的 ACP 会话，返回（会话 ID、是否丢了旧上下文、是否切到了
@@ -83,17 +91,19 @@ pub(super) async fn ensure_session(
     let mut lost = false;
     if let Some(session_id) = state.session_id.clone() {
         if !state.loaded {
-            let record = SessionRecord {
-                session_id: session_id.clone(),
-                cwd: bridge.config.workspace.clone(),
+            // 恢复后按建会话时的模式补切一次；旧记录里没记就退回配置的默认。
+            let mode = match bridge.sessions.get(room_id, key).await {
+                Some(record) if !record.mode.is_empty() => record.mode,
+                _ => bridge.config.mode.clone(),
             };
             match bridge
                 .acp
                 .load_or_resume(
-                    &record.session_id,
-                    &record.cwd,
+                    &session_id,
+                    &bridge.config.workspace,
                     &bridge.config.mcp_url,
                     &origin,
+                    &mode,
                 )
                 .await
             {
@@ -134,6 +144,7 @@ pub(super) async fn ensure_session(
             SessionRecord {
                 session_id: session_id.clone(),
                 cwd: bridge.config.workspace.clone(),
+                mode: created.mode.clone(),
             },
         )
         .await?;

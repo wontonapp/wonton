@@ -1,11 +1,14 @@
 //! 桥接层的行为测试：给定 Matrix 消息和 ACP 消息序列，断言 Matrix 侧副作用和发给 Agent
 //! 的请求。房间是内存替身，ACP 是 Manual 场景的假 Agent，确认接口是假卡片。
 
+mod attachments;
 mod cards;
 mod downtime;
 mod downtime_real;
 mod limits;
+mod mode;
 mod restore;
+mod run_status;
 mod tasks;
 mod topics;
 
@@ -45,17 +48,26 @@ impl Harness {
 
     /// 起一套运行环境，首屏快照里带上 `backlog`（重启后停机期间看得见的消息）。
     async fn start_with(backlog: Vec<Message>) -> Self {
-        Self::build(|_| {}, backlog).await
+        Self::build(|_| {}, backlog, Scenario::Manual).await
     }
 
     /// 起一套运行环境；`tune` 在启动前改配置（调小空闲、时限等）。
     async fn with(tune: impl FnOnce(&mut Config)) -> Self {
-        Self::build(tune, Vec::new()).await
+        Self::build(tune, Vec::new(), Scenario::Manual).await
     }
 
-    async fn build(tune: impl FnOnce(&mut Config), backlog: Vec<Message>) -> Self {
+    /// 同 [`Self::with`]，但换假 Agent 的场景。
+    async fn in_scenario(scenario: Scenario, tune: impl FnOnce(&mut Config)) -> Self {
+        Self::build(tune, Vec::new(), scenario).await
+    }
+
+    async fn build(
+        tune: impl FnOnce(&mut Config),
+        backlog: Vec<Message>,
+        scenario: Scenario,
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let agent = FakeAgent::start(Scenario::Manual).await;
+        let agent = FakeAgent::start(scenario).await;
         let cards = FakeCards::start().await;
         let mut config = Config {
             homeserver: "http://example.org".into(),

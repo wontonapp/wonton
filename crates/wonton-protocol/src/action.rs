@@ -151,6 +151,12 @@ pub enum Action {
         room_id: String,
         item_id: String,
     },
+    /// 以反应回答 Bot 的提问。
+    AnswerAgentChoice {
+        room_id: String,
+        item_id: String,
+        key: String,
+    },
     /// 马上重发一条发送失败的消息（[`SendState::Failed`](crate::SendState::Failed)），不等核心自动重发。`item_id` 是
     /// 它的 [`TimelineItem::id`](crate::TimelineItem::id)，要先订阅这个房间的时间线。
     RetrySend {

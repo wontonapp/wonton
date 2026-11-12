@@ -367,6 +367,7 @@ mod tests {
             pairing: None,
             invite: None,
             keep_connection: false,
+            just_recovered: false,
         };
         let (home_tx, home_rx) = watch::channel(home(HomeStatus::NotConfigured));
         let (chat_tx, chat_rx) = watch::channel(chat_view_model());
@@ -409,6 +410,7 @@ mod tests {
                 digest: "sha256:new".into(),
                 version: Some("0.2.0".into()),
                 migrates: Vec::new(),
+                compat: wonton_protocol::CoreUpgradeCompat::Unavailable,
             });
         });
         updates.changed().await.unwrap();
@@ -471,6 +473,7 @@ mod tests {
             outgoing: Vec::new(),
             blocked: Vec::new(),
             can_block_federation: false,
+            my_link: None,
         }
     }
 

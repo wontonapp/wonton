@@ -319,6 +319,10 @@
     <string name="core_upgrade_check_up_to_date">已经是最新版</string>
     <!-- Button on the update page while the channel check is running. -->
     <string name="core_upgrade_checking">正在检查</string>
+    <!-- Heading of the compatibility warning on the update offer: these installed apps won\'t work after the update. -->
+    <string name="core_upgrade_compat_breaking_title">升级后这些应用会用不了</string>
+    <!-- Light notice on the update offer: it couldn\'t check which installed apps would be affected. Tapping checks again. -->
+    <string name="core_upgrade_compat_not_checked">没查到哪些应用会受影响</string>
     <!-- Stage line after the update finished. Argument: the version now running. -->
     <string name="core_upgrade_completed_to">已升级到 %1$s</string>
     <!-- Primary button in the confirm step: start the update. -->
@@ -666,6 +670,9 @@
     <string name="friends_add_placeholder">@bob:example.org</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">发送请求</string>
+    <string name="friends_scan_code">扫对方的码</string>
+    <string name="friends_paste_placeholder">粘贴对方的码</string>
+    <string name="friends_my_code">我的二维码</string>
     <!-- Section heading above the pending requests, received and sent. -->
     <string name="friends_requests_title">请求</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -1013,6 +1020,10 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">能存文件的文件夹</string>
     <string name="plugin_save_revoke">撤销</string>
+    <string name="plugin_settings_section">设置</string>
+    <string name="plugin_settings_open">打开设置</string>
+    <string name="plugin_settings_update_app">要更新 App 才能改</string>
+    <string name="plugin_settings_required">必填</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都问</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1072,7 +1083,12 @@
     <string name="plugin_task_review">重新查看</string>
     <!-- Task whose result the core couldn't confirm. Argument: the core's message. -->
     <string name="plugin_task_uncertain">结果不确定：%1$s</string>
-    <string name="plugin_task_look">去看看</string>
+    <!-- Status of a running task while the connection to the home server is down. -->
+    <string name="plugin_task_waiting_for_connection">正在等待连接</string>
+    <!-- Next step when the result is uncertain: look in the installed list instead of installing again. -->
+    <string name="plugin_task_check_installed_next_step">到已安装列表看看装上没有。</string>
+    <!-- Button on an uncertain task that opens the installed list. -->
+    <string name="plugin_task_check_installed">检查已安装</string>
     <!-- Status of a finished uninstall task. -->
     <string name="plugin_task_uninstall_done">已卸载</string>
     <!-- Failed uninstall task line. Argument: the reason from the core. -->
@@ -1096,7 +1112,7 @@
     <!-- Destructive button that uninstalls and deletes the app's data. -->
     <string name="plugin_uninstall_delete_data">卸载并删除数据</string>
     <!-- Message of the uninstall confirmation. -->
-    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，不能恢复。</string>
+    <string name="plugin_uninstall_delete_data_warning">删除数据会一并删掉它的密钥和 Bot 账号，和 Bot 的旧加密消息将无法再查看，不能恢复。</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">卸载，保留数据</string>
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
@@ -1429,13 +1445,12 @@
     <string name="tab_starting">正在启动…</string>
     <string name="tab_uninstalling">正在卸载…</string>
     <string name="tab_upgrading">正在更新…</string>
-    <string name="tab_open_anyway">仍然打开</string>
+    <string name="tab_opens_in_browser">%1$s 在浏览器里打开</string>
+    <string name="tab_open_in_browser">打开</string>
+    <string name="tab_no_browser_next_step">装上或启用一个浏览器（如 Chrome）后再试。</string>
     <string name="tab_unpin_from_bar">从底栏移除</string>
     <string name="tab_start">启动</string>
     <string name="tab_view_details">查看详情</string>
-    <string name="tab_cross_origin_title">这个应用在 Android 版云吞里暂时打不开</string>
-    <string name="tab_cross_origin_detail">当前 Android System WebView：%1$s；需要 156 或更新。</string>
-    <string name="tab_webview_version_unknown">拿不到版本号</string>
     <string name="tab_load_not_ready">应用还没有准备好</string>
     <string name="tab_load_upstream">应用的网页打不开</string>
     <string name="tab_uninstalled_notice">%1$s 已卸载，已从底栏移除</string>
@@ -1542,10 +1557,13 @@
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天消息</string>
     <string name="notification_channel_confirmation">等你确认</string>
+    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_channel_plugin">应用通知</string>
     <string name="notification_value_on">已开启</string>
-    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_value_off">已关闭</string>
+    <string name="notification_value_registering">注册中</string>
+    <string name="notification_value_not_set">未开启</string>
+    <string name="notification_value_unavailable">收不到</string>
     <string name="notification_channel_created">已创建</string>
     <string name="notification_channel_not_created">未创建</string>
     <string name="push_status_no_endpoint">未注册</string>
@@ -1729,4 +1747,40 @@
     <string name="panel_public_unsupported">这台设备的 WebView 分不开公网网页和插件页面的存储，打不开公网网页</string>
     <string name="panel_remove">移除</string>
     <string name="panel_url">填写网址</string>
+    <string name="contacts_title">联系人</string>
+    <string name="contacts_add">加联系人</string>
+    <string name="contacts_add_kind_bot">Bot</string>
+    <string name="contacts_add_kind_person">一个人</string>
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <string name="contacts_add_submit">发送请求</string>
+    <string name="contacts_requests_title">请求</string>
+    <string name="contacts_active_title">已添加</string>
+    <string name="contacts_sent_title">已发出</string>
+    <string name="contacts_incoming_warning">对方 Bot 的话，你的 Bot 会当作给它的话处理；敏感工具每次都要你确认。</string>
+    <string name="contacts_approve">同意</string>
+    <string name="contacts_reject">拒绝</string>
+    <string name="contacts_withdraw">撤销</string>
+    <string name="contacts_clear">删除</string>
+    <string name="contacts_remove">删除联系人</string>
+    <string name="contacts_remove_title">删除“%1$s”？</string>
+    <string name="contacts_remove_message">你的 Bot 不再处理对方的话，已有的聊天留着。</string>
+    <string name="contacts_status_waiting_bot">等对方同意</string>
+    <string name="contacts_status_waiting_person">等对方接受</string>
+    <string name="contacts_status_declined">对方拒绝了</string>
+    <string name="contacts_status_not_found">没有这个人</string>
+    <string name="contacts_status_unknown">状态未知</string>
+    <string name="contacts_keeper">%1$s 的 Bot</string>
+    <string name="contacts_remote_unpaired">和那台服务器的配对已移除，消息过不去</string>
+    <string name="contacts_empty">还没有联系人</string>
+    <string name="contacts_error_invalid_user_id">不是有效的 Matrix ID</string>
+    <string name="contacts_error_not_paired">对方的服务器没和你的配对</string>
+    <string name="contacts_error_not_paired_next">先在“其他服务器”里配对。</string>
+    <string name="contacts_error_already_contact">已经是联系人，或者请求已经发出</string>
+    <string name="contacts_error_bot_not_found">这个 Bot 已经不在了</string>
+    <string name="contacts_error_contact_not_found">这一条已经处理过了</string>
+    <string name="contacts_error_not_keeper">只有这个 Bot 的归属人能管它的联系人</string>
+    <string name="contacts_error_peer_unreachable">连不上对方的服务器，这次没发出去</string>
+    <string name="contacts_error_unauthenticated">这台设备不能做这件事</string>
+    <string name="contacts_error_upstream">家里的服务器没能记下这件事</string>
+    <string name="friends_request_bot_contact">Bot 联系人请求</string>
 </resources>

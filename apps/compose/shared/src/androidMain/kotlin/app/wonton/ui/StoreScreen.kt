@@ -45,7 +45,6 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AddedSource
 import app.wonton.protocol.PluginTaskState
 import app.wonton.protocol.PluginTrust
-import app.wonton.protocol.SecurityTier
 import app.wonton.protocol.StoreItem
 import app.wonton.protocol.StoreListing
 import app.wonton.protocol.StoreConfirmation
@@ -127,9 +126,10 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
                         items(viewModel.tasks, key = { "task:${it.id}" }) { task ->
                             Box(Modifier.padding(horizontal = WontonTheme.spacing.pageInset, vertical = ROW_GAP)) {
                                 TaskRow(
-                                    task, plugins,
-                                    onReview = { navigation.confirmation = reconfirmation(task, plugins) },
-                                    onOpenApps = onBack,
+                                    task,
+                                    plugins,
+                                    { navigation.confirmation = reconfirmation(task, plugins) },
+                                    navigation.checkInstalled,
                                 )
                             }
                         }
@@ -379,8 +379,9 @@ private fun ItemTags(item: StoreItem) {
     val stars = item.stars
     val provider = item.viaIndex?.let { stringResource(R.string.store_via_index, it) } ?: item.provider
     val hasSource = showsTrust || provider != null
-    val highTier = item.securityTier.let { it != null && it != SecurityTier.MINIMAL && it != SecurityTier.STANDARD }
-    if (hasSource || highTier || stars != null) {
+    // 要不要标红由核心说（highPermissions），壳不比较档位。
+    val highPermissions = item.highPermissions
+    if (hasSource || highPermissions || stars != null) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             verticalAlignment = Alignment.CenterVertically,
@@ -395,7 +396,7 @@ private fun ItemTags(item: StoreItem) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (highTier) Tag(stringResource(R.string.store_high_permissions), colors.danger)
+            if (highPermissions) Tag(stringResource(R.string.store_high_permissions), colors.danger)
             stars?.let {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),

@@ -164,6 +164,12 @@ private fun SettingsEntryRow(
         SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
             onSubpage(SettingsSubpage.ABOUT)
         }
+        // 外部 Matrix 账号和添加 Wonton 服务器的入口（ADR-0051）：账号流程还没建，核心从不下发这几项，
+        // 和 iOS 一样先不渲染；显式列出，核心开始下发时不至于静默漏掉。
+        is SettingsEntry.MatrixAccount,
+        is SettingsEntry.MatrixDevices,
+        SettingsEntry.AddWontonServer -> Unit
+        // 未知入口不显示：新核心加的按钮不能变成空行。
         else -> Unit
     }
 }

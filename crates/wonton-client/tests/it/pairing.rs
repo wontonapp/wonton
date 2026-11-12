@@ -29,6 +29,11 @@ use wonton_tunnel::{Allowlist, PeerStream, TunnelListener, TunnelServer};
 /// 超过就是真的配不上。
 const WAIT: Duration = Duration::from_secs(60);
 
+/// 配上且连上了：核心把进展停在 `Paired`（壳离开配对页的类别），连接状态连着。
+fn paired(view: &HomeViewModel) -> bool {
+    matches!(view.pairing, Some(PairingStatus::Paired)) && view.status == HomeStatus::Connected
+}
+
 /// 服务端发过的码：密钥对应配对时要回的结果，`None` 表示配对成功。
 #[derive(Debug)]
 struct Codes {
@@ -377,15 +382,13 @@ async fn cancelling_a_slow_pairing_returns_to_the_form_and_a_retry_pairs() {
     phone.dispatch(Action::CancelPairing).unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
-    // 取消不是配上：serverId 还是空，壳的“配上了”判定（进展消失且 serverId 非空）不会把取消当成功。
+    // 取消不是配上：核心不给 Paired，壳的“配上了”只看这个类别，取消回到没有进展。
     assert!(phone.home().server_id.is_none());
     // 迟到的回应不算数：取消之后状态不再变。
     tokio::time::sleep(SLOW_REPLY).await;
     assert!(phone.home().pairing.is_none(), "{:?}", phone.home());
     phone.pair(&code).unwrap();
-    let view = phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    let view = phone.wait_for(paired).await;
     assert_eq!(
         view.server_id,
         Some(home_side.server.endpoint().id().to_string())
@@ -398,9 +401,7 @@ async fn scanning_a_code_pairs_the_phone_and_it_reconnects_after_restart() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     phone.pair(&home.code(None)).unwrap();
-    let view = phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    let view = phone.wait_for(paired).await;
     assert_eq!(
         view.server_id,
         Some(home.server.endpoint().id().to_string())
@@ -443,9 +444,7 @@ async fn reconnects_after_report(count: usize) {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     phone.pair(&code.to_uri()).unwrap();
-    phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    phone.wait_for(paired).await;
     let ticket_path = dir.path().join("servers/1/home-ticket.json");
     tokio::time::timeout(WAIT, async {
         loop {
@@ -522,9 +521,7 @@ async fn a_rejected_code_says_what_to_do_next() {
     }
     // 拒绝之后换一个好码照样能配上。
     phone.pair(&home.code(None)).unwrap();
-    phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    phone.wait_for(paired).await;
 }
 
 #[tokio::test]
@@ -560,9 +557,7 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
         "还没配对时不能添加设备"
     );
     phone.pair(&home.code(None)).unwrap();
-    phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    phone.wait_for(paired).await;
 
     phone.dispatch(Action::InviteDevice).unwrap();
     let view = phone
@@ -596,9 +591,7 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     let other = tempfile::tempdir().unwrap();
     let tablet = Phone::open(other.path());
     tablet.pair(code.expose()).unwrap();
-    tablet
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    tablet.wait_for(paired).await;
 }
 
 #[tokio::test]
@@ -642,9 +635,7 @@ async fn a_reply_after_the_deadline_still_pairs() {
     let phone = Phone::open(dir.path());
     phone.test_set_pair_deadlines(STAGE, WATCH);
     phone.pair(&home.code(None)).unwrap();
-    let view = phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    let view = phone.wait_for(paired).await;
     assert_eq!(
         view.server_id,
         Some(home.server.endpoint().id().to_string())
@@ -681,7 +672,5 @@ async fn retrying_the_same_code_after_a_failure_pairs() {
     // 手动重试本身也可能是冷启动：给它宽一点的一段，码已经不再慢，配上就完事。
     phone.test_set_pair_deadlines(Duration::from_secs(10), WATCH);
     phone.pair(&code).unwrap();
-    phone
-        .wait_for(|view| view.pairing.is_none() && view.status == HomeStatus::Connected)
-        .await;
+    phone.wait_for(paired).await;
 }

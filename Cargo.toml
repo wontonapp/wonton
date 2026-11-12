@@ -39,10 +39,14 @@ semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"
+# MIT。插件设置按包里的 JSON Schema 校验（ADR-0077）；不取网络和宿主上的引用。
+jsonschema = { version = "0.61.1", default-features = false }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.54.1"
 tracing = "0.1.44"
+# Apache-2.0 OR MIT。
+tracing-core = "0.1.36"
 tracing-subscriber = "0.3.23"
 uniffi = "0.32.2"
 url = "2.5.8"

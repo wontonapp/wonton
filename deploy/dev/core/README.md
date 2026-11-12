@@ -10,6 +10,7 @@ Mailpit 与正式部署使用同一个固定摘要的官方镜像，等核心健
 ```bash
 deploy/dev/core/dev.sh up                    # 构建核心镜像，启动核心、Hydra 和 Tuwunel，等到健康
 deploy/dev/core/dev.sh install plugins/examples/grafana   # 预览权限，确认后安装
+deploy/dev/core/dev.sh upgrade plugins/examples/grafana   # 预览后升级已装的插件：换容器不吊销 Bot 的设备，数据和密钥都留着
 deploy/dev/core/dev.sh token                 # 主人令牌（M0 代替配对，用来登录网关）
 deploy/dev/core/dev.sh list
 deploy/dev/core/dev.sh logs hydra            # 跟日志：核心栈的服务（core、hydra 等）或插件的服务名
@@ -145,6 +146,10 @@ docker exec wonton-ai-usemagpie-magpie--magpie magpie provider add upstream url=
 确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
+开发栈还没有配对设备时，用主人令牌经网关批，别干等（插件套件的 `scripts/dev.sh approve` 就是这么做的）：
+`dev.sh api GET /_wonton/api/confirmations` 列出等回答的卡片（`id`、`title`），
+`dev.sh api POST /_wonton/confirmations/<id> -d '{"answer":"approve"}'` 批准。`answer` 取 `approve`、`approve_wider`、
+`allow_window`、`reject`，必须和卡片上的按钮一致；按钮带 `choice_id` 的要原样带上，密钥类卡片随回答带 `secrets`。
 
 ## 推送
 
@@ -159,6 +164,10 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 验证官方索引读得懂、引导如实推荐、帮助文档跟着索引更新（更新、失败保旧、min_core 挡旧核心），以及模型网关
 三种错误的原因各不相同。GitHub 连不上时 export `https_proxy`；「错的 key」和「断网」两个用例要经出口容器到真实
 上游，设 `WONTON_SMOKE_EGRESS_PROXY=http://host.docker.internal:<宿主代理端口>`，不设时这两个用例跳过。
+
+两台云吞之间的有两条，共用一套隔离夹具（`share-smoke/`：两台核心经 iroh 配对、各自的 Tuwunel、自己的 DNS 和 Pebble）：
+分享插件（ADR-0051）是 `dev.sh share-smoke`；跨机 Bot 联系人（ADR-0050）是 `deploy/dev/core/smoke-contacts.sh`，
+依赖和步骤写在脚本开头。
 
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 

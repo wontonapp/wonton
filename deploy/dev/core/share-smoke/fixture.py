@@ -146,6 +146,8 @@ class Entrance(BaseHTTPRequestHandler):
 
     do_GET = handle_request
     do_POST = handle_request
+    # 联邦的邀请、加入和事件传输都是 PUT。
+    do_PUT = handle_request
 
 
 def frontend(bad):
