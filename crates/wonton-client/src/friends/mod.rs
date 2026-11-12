@@ -25,8 +25,8 @@ use tokio::sync::watch::Sender as WatchSender;
 use url::Url;
 use wonton_protocol::{
     Action, CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure,
-    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsState, FriendsViewModel,
-    MatrixTarget, ProxySettings,
+    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList, FriendsState,
+    FriendsViewModel, MatrixTarget, ProxySettings,
 };
 
 use crate::chat::{ChatLink, matrix_target};
@@ -226,7 +226,7 @@ impl FriendsLink {
     }
 
     /// 名单在服务器上时：取列表，并把同意过但没记上的补记（删掉的墓碑不补）。
-    async fn server_view(&self, joined: &[(String, String, u64)]) -> Result<api::View, Failure> {
+    async fn server_view(&self, joined: &[(String, String, u64)]) -> Result<FriendsList, Failure> {
         let first = self.api()?.list().await?;
         self.server_scope.store(first.owner_scope, Ordering::SeqCst);
         tracing::debug!(

@@ -17,6 +17,8 @@ use wonton_protocol::{ShareGrant, ShareGrantUpdate, ShareRecipient};
 mod guard_tests;
 #[path = "proxy_tests.rs"]
 mod proxy_tests;
+#[path = "recipients_tests.rs"]
+mod recipients_tests;
 
 struct Fixture {
     h: Harness,
@@ -37,9 +39,9 @@ impl Fixture {
         let identity = Arc::new(IdentityVerifier::new(Arc::new(|_| None)).unwrap());
         let clock = Arc::new(std::sync::atomic::AtomicU64::new(now_ms()));
         let sharing_clock = clock.clone();
-        let sharing = Arc::new(Sharing::new(friends, shares, identity).with_clock(Arc::new(
-            move || sharing_clock.load(std::sync::atomic::Ordering::SeqCst),
-        )));
+        let sharing = Arc::new(Sharing::new(friends.clone(), shares, identity).with_clock(
+            Arc::new(move || sharing_clock.load(std::sync::atomic::Ordering::SeqCst)),
+        ));
         let owner =
             crate::owner::OwnerStore::for_test(&h.data_dir, &crate::gateway::tests::owner());
         let gateway = Arc::new(
@@ -57,6 +59,7 @@ impl Fixture {
                 h.http.clone(),
                 h.tunnel.clone(),
             )
+            .with_friends(Some(friends))
             .with_sharing(Some(sharing.clone())),
         );
         let peer = SharePeer {

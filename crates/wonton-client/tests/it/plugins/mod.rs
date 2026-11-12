@@ -10,6 +10,7 @@ mod now;
 mod onboarding;
 mod registry_mirror;
 pub mod rig;
+mod share_recipients;
 mod takeover;
 mod tool_policy;
 

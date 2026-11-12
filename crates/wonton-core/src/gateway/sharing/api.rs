@@ -2,7 +2,7 @@
 //!
 //! | Method | Path | Body / response |
 //! | --- | --- | --- |
-//! | GET | `/_wonton/api/friends` | `FriendsViewModel` with accepted friends and current grants |
+//! | GET | `/_wonton/api/friends` | `FriendsList` with accepted friends and their effective grants (see `gateway::friends`) |
 //! | POST | `/_wonton/api/shares` | `ShareGrantUpdate` / 201 `ShareGrant` |
 //! | PUT | `/_wonton/api/shares/{id}` | `ShareGrantUpdate` / `ShareGrant` |
 //! | DELETE | `/_wonton/api/shares/{id}` | 204 |
