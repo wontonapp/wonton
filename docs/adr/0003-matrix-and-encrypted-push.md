@@ -272,8 +272,10 @@ specialUse 服务给出同样的说明和一段演示视频。国内应用市场
     不用 SDK 的加入，加入前读邀请里的私聊标记和邀请人，加入后用 `mark_as_dm`（先从服务器取最新的再改）记私聊。
   - Tuwunel v1.9.4 先让新事件对同步可见，再更新房间的当前状态。这中间的一次 Sliding Sync，时间线里有本人的加入
     事件，`required_state` 里本人还是邀请；SDK 只按 `required_state` 定状态，房间一直显示“受邀”，直到房间里来新
-    事件（CI 上偶发，抓同步应答确认）。上游问题 [tuwunel#685](https://github.com/matrix-construct/tuwunel/issues/685)，修复
-    [tuwunel#686](https://github.com/matrix-construct/tuwunel/pull/686)；v2.0.0 起上游已修，客户端加入后只留等同步标成已加入。
+    事件（CI 上偶发，抓同步应答确认）。客户端加入后等同步标成已加入，3 秒还没有就单独订阅这个房间，服务器按当前
+    状态重发。上游问题 [tuwunel#685](https://github.com/matrix-construct/tuwunel/issues/685)，修复
+    [tuwunel#686](https://github.com/matrix-construct/tuwunel/pull/686)；升到 v2.0.0 后去掉订阅这一步，main 的 Docker 测试
+    `chat::stale_join::a_join_the_server_reports_as_invited_still_ends_joined` 又失败（2026-11-12），所以保留。
   - Tuwunel 按（设备，Sliding Sync 连接号）一条一条地处理同步。重启后沿用原来的连接号时，新连接的第一个同步请求要排在
     死掉那条连接还没结束的 30 秒长轮询后面，起步干等半分钟（CI 上并发跑测试时超过 60 秒，`chat::card_plugin_refresh` 因此红过）。
     客户端不再一直用同一个号，改在两个固定号之间轮换（`room-list-a` / `room-list-b`，上次用哪个记在存储里），
