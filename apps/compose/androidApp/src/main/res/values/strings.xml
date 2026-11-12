@@ -5,6 +5,10 @@
     <string name="keepalive_channel_name">Keep connection</string>
     <!-- Title of the ongoing notification of the "keep connection" foreground service. -->
     <string name="keepalive_notification_title">Staying connected to your home server</string>
+    <!-- Title of the ongoing "keep connection" notification while the home server is not connected yet or is reconnecting. -->
+    <string name="keepalive_notification_connecting">Connecting to your home server…</string>
+    <!-- Title of the ongoing "keep connection" notification while the home server can't be reached. -->
+    <string name="keepalive_notification_unreachable">Can\u2019t reach your home server</string>
     <!-- Name of the notification channel for the ongoing port-mapping foreground service (ADR-0072). Shown in the system notification settings. -->
     <string name="mapping_channel_name">Port mapping</string>
     <!-- Title of the ongoing port-mapping notification when one app's ports are mapped. Argument: the app's name. -->

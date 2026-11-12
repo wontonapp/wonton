@@ -331,6 +331,8 @@ home-ticket-core-url-under-domain = The home server address must be an http(s) a
 # No parameters. The device name field on the pairing screen was left empty.
 home-pairing-name-empty = The device name is empty.
 home-pairing-bind-failed = Can't set up the network connection: { $error }
+# $seconds is the bind deadline in seconds. The phone's network stack wasn't ready in time; it retries on its own.
+home-bind-timeout = The phone's network wasn't ready within { $seconds } seconds.
 # $reason is the connection-info parser's original error.
 home-ticket-corrupt = Saved connection information is damaged: { $reason }
 home-no-connection-info = There's no connection information for your home server yet.
