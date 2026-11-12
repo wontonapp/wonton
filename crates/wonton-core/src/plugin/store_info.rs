@@ -12,7 +12,7 @@ use super::package_files;
 use crate::l10n;
 
 /// 核心支持的最新规范版本。
-pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 13);
+pub const SPEC_VERSION: SpecVersion = SpecVersion(0, 14);
 
 /// 规范版本 `主.次`，如 `0.2`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

@@ -8,21 +8,30 @@
 //! 不用绑定挂载交付普通服务：插件包存在核心自己的数据目录里，插件的容器访问不到它。所以 `uid`、
 //! `gid`、`mode` 对 `file` 和 `content` 都生效。
 
+use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
 
 use bollard::models::Mount;
+use bollard::query_parameters::DownloadFromContainerOptionsBuilder;
+use futures_util::StreamExt;
 
 use super::compose::{Scalar, Service, UserSpec};
+use super::docker::{Engine, EngineError, from_bollard};
 use super::interpolate::{UsedVars, Vars};
 use super::languages::Languages;
+use super::manager::InstallError;
 use super::mounts::mount_targets;
 use super::package::{PackageError, PluginPackage};
-use super::render::{InstallContext, RenderError, service_err};
+use super::render::{ContainerPlan, InstallContext, RenderError, service_err};
 
-/// 默认权限：所有用户可读，和 compose 一致。
-const DEFAULT_MODE: u32 = 0o444;
-/// 写权限位被忽略：写进容器的配置每次重建都会被覆盖，应用要改写的配置由一次性服务复制进数据目录。
-const WRITE_BITS: u32 = 0o222;
+/// 补建的上级目录的权限：所有用户可穿过、可读。
+const DIR_MODE: u32 = 0o755;
+/// 判断路径是什么时最多读多少归档字节：只要第一项的头部。
+const KIND_PROBE_BYTES: usize = 16 << 10;
+
+/// 默认权限：所有用户可读，属主可写。属主默认是 root 或服务的数字 `user`；一次性服务把配置复制进数据目录
+/// 后，复制出来的文件带写位才能再改，所以默认不是 `0444`。
+const DEFAULT_MODE: u32 = 0o644;
 
 /// 要写进容器的一个文件。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,8 +211,8 @@ fn id(value: Option<&Scalar>, field: &str, langs: &Languages) -> Result<Option<u
     })
 }
 
-/// `mode` 按八进制理解：字符串按八进制解析；`0o440` 这样的 YAML 八进制数原样使用；`0440` 被 YAML 1.2
-/// 解析成十进制浮点数 440，按它的数字当八进制，和 docker compose 一样得到 0440。写权限位被忽略。
+/// `mode` 按八进制理解：字符串按八进制解析；`0o640` 这样的 YAML 八进制数原样使用；`0640` 被 YAML 1.2
+/// 解析成十进制浮点数 640，按它的数字当八进制，和 docker compose 一样得到 0640。
 fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
     let parsed = match value {
         Scalar::Int(n) => u32::try_from(*n).ok(),
@@ -214,7 +223,7 @@ fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
         Scalar::Float(_) | Scalar::Bool(_) => None,
     };
     match parsed {
-        Some(mode) if mode <= 0o777 => Ok(mode & !WRITE_BITS),
+        Some(mode) if mode <= 0o777 => Ok(mode),
         _ => Err(crate::l10n::text(
             langs,
             "plugin-install-cfg-mode-invalid",
@@ -223,9 +232,159 @@ fn mode(value: &Scalar, langs: &Languages) -> Result<u32, String> {
     }
 }
 
-/// 把文件打成 tar，交给 Docker 解到容器的 `/` 下；属主和权限按归档里记录的写入。
-pub fn archive(files: &[ConfigFile]) -> std::io::Result<Vec<u8>> {
+/// 容器里不存在的目标上级目录：要写进容器根里的文件，先跟着归档补建这些目录，否则归档接口往不存在的目录里
+/// 解不出来（见 [`archive`]）。同一个目录只建一次，由浅到深。建出来的目录属主是 root：只要能穿过。
+pub async fn missing_parents(
+    engine: &Engine,
+    container: &str,
+    files: &[ConfigFile],
+) -> Result<Vec<PathBuf>, InstallError> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for file in files {
+        let mut parents: Vec<&Path> = file.target.ancestors().skip(1).collect();
+        parents.reverse();
+        for parent in parents.into_iter().filter(|p| p != &Path::new("/")) {
+            if dirs.iter().any(|known| known == parent) {
+                continue;
+            }
+            match path_kind(engine, container, &parent.display().to_string()).await? {
+                PathKind::Directory => {}
+                PathKind::File => {
+                    let langs = engine.owner_languages();
+                    return Err(InstallError::Invalid(crate::l10n::text(
+                        &langs,
+                        "plugin-install-cfg-parent-is-file",
+                        &[
+                            ("service", container.into()),
+                            ("parent", parent.display().to_string().into()),
+                        ],
+                    )));
+                }
+                PathKind::Missing => dirs.push(parent.to_path_buf()),
+            }
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
+}
+
+/// 把服务声明的 `configs` 交给 Docker 刚建好的容器（创建之后、启动之前）：只读根的服务先经一次性容器写进
+/// 核心数据目录，再由 [只读绑定挂载](super::configs_store)交给容器；其余服务写进容器根，目标上级目录不存在
+/// 时先补建。
+pub(super) async fn deliver(
+    engine: &Engine,
+    container: &ContainerPlan,
+    labels: &HashMap<String, String>,
+) -> Result<(), InstallError> {
+    let pack_failed = |e: &dyn std::fmt::Display| {
+        InstallError::Invalid(crate::l10n::text(
+            &engine.owner_languages(),
+            "plugin-install-configs-pack-failed",
+            &[
+                ("service", container.name.as_str().into()),
+                ("error", e.to_string().into()),
+            ],
+        ))
+    };
+    match &container.store_dir {
+        Some(dir) => {
+            let archive =
+                super::configs_store::archive(&container.files).map_err(|e| pack_failed(&e))?;
+            super::configs_store::seed(
+                engine,
+                &container.name,
+                &container.image,
+                dir,
+                archive,
+                labels,
+            )
+            .await
+        }
+        None if !container.files.is_empty() => {
+            // 目标上级目录在镜像里可能不存在：先补建，不然归档解不出来，装完才发现应用读不到配置。
+            let dirs = missing_parents(engine, &container.name, &container.files).await?;
+            let archive = archive(&container.files, &dirs).map_err(|e| pack_failed(&e))?;
+            engine
+                .upload_archive(&container.name, "/", archive)
+                .await
+                .map_err(InstallError::from)
+        }
+        None => Ok(()),
+    }
+}
+
+/// 容器里一个路径是什么。
+enum PathKind {
+    Missing,
+    /// 目录，或者指向它的软链接。
+    Directory,
+    /// 普通文件：往下写要先建目录，写它会覆盖。
+    File,
+}
+
+/// 经归档接口看容器里的一个路径：容器停着也行，只看归档的第一项，不读文件内容。
+async fn path_kind(engine: &Engine, container: &str, path: &str) -> Result<PathKind, InstallError> {
+    let langs = engine.owner_languages();
+    let context = crate::l10n::text(
+        &langs,
+        "plugin-install-docker-context-read-file",
+        &[("container", container.into()), ("path", path.into())],
+    );
+    let options = DownloadFromContainerOptionsBuilder::default()
+        .path(path)
+        .build();
+    let mut stream = engine
+        .docker
+        .download_from_container(container, Some(options));
+    let mut archive = Vec::new();
+    while archive.len() < KIND_PROBE_BYTES {
+        match stream.next().await {
+            None => break,
+            Some(Err(e)) => match from_bollard(&langs, &context, e) {
+                EngineError::NotFound(_) => return Ok(PathKind::Missing),
+                other => return Err(other.into()),
+            },
+            Some(Ok(bytes)) => archive.extend_from_slice(&bytes),
+        }
+    }
+    let unparseable = |error: std::io::Error| EngineError::Rejected {
+        context: context.clone(),
+        message: crate::l10n::text(
+            &langs,
+            "plugin-install-docker-archive-unparseable",
+            &[("error", error.to_string().into())],
+        ),
+    };
+    let mut parsed = tar::Archive::new(archive.as_slice());
+    let mut entries = parsed.entries().map_err(unparseable)?;
+    let Some(entry) = entries.next() else {
+        return Ok(PathKind::Missing);
+    };
+    let entry = entry.map_err(unparseable)?;
+    Ok(match entry.header().entry_type() {
+        tar::EntryType::Regular => PathKind::File,
+        _ => PathKind::Directory,
+    })
+}
+
+/// 把文件打成 tar，交给 Docker 解到容器的 `/` 下；属主和权限按归档里记录的写入。`dirs` 是要先补建的上级目录
+/// （见 [`missing_parents`]），按顺序写在文件前面。
+pub fn archive(files: &[ConfigFile], dirs: &[PathBuf]) -> std::io::Result<Vec<u8>> {
     let mut builder = tar::Builder::new(Vec::new());
+    for dir in dirs {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(tar::EntryType::Directory);
+        header.set_size(0);
+        header.set_uid(0);
+        header.set_gid(0);
+        header.set_mode(DIR_MODE);
+        header.set_mtime(super::manager::now_secs());
+        builder.append_data(
+            &mut header,
+            dir.strip_prefix("/").unwrap_or(dir),
+            std::io::empty(),
+        )?;
+    }
     for file in files {
         let mut header = tar::Header::new_gnu();
         header.set_entry_type(tar::EntryType::Regular);
@@ -245,14 +404,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn modes_are_octal_and_never_writable() {
+    fn modes_are_octal_and_keep_write_bits() {
         let float = |f: f64| Scalar::Float(f);
         for (value, expected) in [
             (float(440.0), 0o440),
             (Scalar::Int(0o440), 0o440),
-            (Scalar::Str("0440".into()), 0o440),
-            (Scalar::Str("0o755".into()), 0o555),
-            (float(644.0), 0o444),
+            (Scalar::Str("0640".into()), 0o640),
+            (Scalar::Str("0o755".into()), 0o755),
+            (float(644.0), 0o644),
         ] {
             assert_eq!(
                 mode(&value, &Languages::default()).unwrap(),
