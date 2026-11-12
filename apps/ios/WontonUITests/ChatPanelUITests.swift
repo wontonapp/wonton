@@ -88,10 +88,7 @@ final class ChatPanelUITests: XCTestCase {
 
     func testRoomPullFromBottom() throws {
         try launch()
-        let room = botRoom(timeout: 30)
-        XCTAssertNotNil(room, "列表里没有 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
-        room?.tap()
-        XCTAssertTrue(composer(timeout: 10)?.exists == true, "没进房间")
+        XCTAssertNotNil(enterBotRoom(), "没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
 
         let panel = app.otherElements["chatPanel"]
         pullUpInRoom()
@@ -102,6 +99,29 @@ final class ChatPanelUITests: XCTestCase {
         shot("12-room-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
+    }
+
+    /// 长消息的最后一段不被输入框盖住：大字号下输入框长到多行、键盘弹着，滚到底仍看得全最后一条。
+    func testLastMessageClearsComposer() throws {
+        try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        guard let field = enterBotRoom() else {
+            return XCTFail("没进 Bot 的房间（开发栈默认装 Hermes，或先装回声 Bot）")
+        }
+        let mark = "END\(Int.random(in: 1000...9999))"
+        field.tap()
+        field.typeText(String(repeating: "long reply text ", count: 30) + mark)
+        tapAnyButton(["Send", "发送"], timeout: 5, required: true)
+        // 消息正文是 UITextView（LinkedMessageText），文字在 value 里。
+        let last = app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@ OR value CONTAINS %@", mark, mark)
+        ).firstMatch
+        XCTAssertTrue(last.waitForExistence(timeout: 10), "发出的消息没出现在时间线里")
+
+        field.typeText(String(repeating: "draft ", count: 40))
+        _ = app.wait(for: .runningForeground, timeout: 1)
+        shot("31-composer-grown")
+        XCTAssertGreaterThan(last.frame.height, 0, "最后一条没在屏幕上")
+        XCTAssertLessThanOrEqual(last.frame.maxY, field.frame.minY, "最后一条的末尾被输入框盖住")
     }
 
     // MARK: - 摆台
@@ -172,6 +192,13 @@ final class ChatPanelUITests: XCTestCase {
         case .down: low.press(forDuration: 0.05, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0)
         case .up: high.press(forDuration: 0.05, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0)
         }
+    }
+
+    /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
+    private func enterBotRoom() -> XCUIElement? {
+        if let field = composer(timeout: 3) { return field }
+        botRoom(timeout: 30)?.tap()
+        return composer(timeout: 10)
     }
 
     /// 列表里 Bot 的房间行。按名字找：列表顶上还可能有整行宽的提示（如恢复聊天备份），按位置挑会点错。
