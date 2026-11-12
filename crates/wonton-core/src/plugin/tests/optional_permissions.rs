@@ -78,6 +78,7 @@ async fn installed(
         &package.manifest.permissions,
         enabled,
         false,
+        &[],
         Default::default(),
         super::langs(),
     )
@@ -313,6 +314,7 @@ async fn a_rejected_grant_missing_a_required_permission_is_refused() {
             &[],
             &[],
             false,
+            &[],
             Default::default(),
             super::langs(),
         )
@@ -334,6 +336,7 @@ async fn enabling_a_permission_that_is_not_optional_is_refused() {
             &granted(&compose),
             &opened("owner.identity"),
             false,
+            &[],
             Default::default(),
             super::langs(),
         )
@@ -460,7 +463,7 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         )
         .replace("version: 1.0.0", "version: 1.1.0"),
     );
-    m.upgrade_checked(next, &[], &[], false, Default::default())
+    m.upgrade_checked(next, &[], &[], false, &[], Default::default())
         .await
         .unwrap();
     assert!(!has_socket(&docker, "agent"));

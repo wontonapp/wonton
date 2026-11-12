@@ -239,6 +239,7 @@ fn permissions_round_trip_and_unknown_is_rejected() {
         "devices.gpu",
         "devices.serial",
         "devices.usb",
+        "devices.disk",
         "devices./dev/net/tun",
         "docker.socket",
     ] {

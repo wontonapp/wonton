@@ -25,6 +25,8 @@ pub(in crate::plugin) struct InstallDecision {
     pub enabled: Vec<EnabledPermission>,
     pub lan_webui: bool,
     pub targets: Option<BTreeMap<String, String>>,
+    /// 主人选的设备（ADR-0036）。
+    pub devices: Vec<String>,
 }
 
 impl PluginManager {
@@ -35,6 +37,7 @@ impl PluginManager {
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        devices: &[String],
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
@@ -84,6 +87,7 @@ impl PluginManager {
             enabled: enabled.to_vec(),
             lan_webui,
             targets: None,
+            devices: devices.to_vec(),
         };
         let manifest = decision.package.manifest.clone();
         // 保持 install 子树的 future 状态机在堆上：默认 2 MiB 测试线程栈装不下整条线性 await 链
@@ -141,6 +145,7 @@ impl PluginManager {
             enabled,
             lan_webui,
             targets,
+            devices: chosen_devices,
         } = decision;
         let manifest = &package.manifest;
         super::install_entry::check_runtime(manifest, langs)?;
@@ -159,6 +164,8 @@ impl PluginManager {
         self.check_egress(manifest, langs).await?;
         let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
         let gpu = self.gpu_grant(manifest, &effective, langs).await?;
+        let (devices, device_record) =
+            self.resolve_devices(manifest, &effective, chosen_devices, langs)?;
         let lan_webui = *lan_webui && switched(package).is_some();
         let lan = self.lan_grant(package, lan_webui, langs).await?;
         self.reserve(
@@ -183,7 +190,19 @@ impl PluginManager {
             return Err(error);
         }
         match self
-            .deploy_retained(package, granted, enabled, (gpu, lan), settings, langs)
+            .deploy_retained(
+                package,
+                granted,
+                enabled,
+                super::lifecycle::Grants {
+                    gpu,
+                    lan,
+                    devices,
+                    device_record,
+                },
+                settings,
+                langs,
+            )
             .await
         {
             Ok((deployed, undo)) => {

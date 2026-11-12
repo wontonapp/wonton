@@ -489,8 +489,15 @@ impl PluginManager {
         let filled = self.store.secrets().load(id).ok().flatten();
         self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
         let settings = upgrade_values(&package, &record, &request.settings, langs)?;
-        self.upgrade_detached(package, granted, requested, request.lan_webui, settings)
-            .await?;
+        self.upgrade_detached(
+            package,
+            granted,
+            requested,
+            request.lan_webui,
+            request.devices.clone(),
+            settings,
+        )
+        .await?;
         self.staged.remove(&digest);
         Ok(())
     }
@@ -504,6 +511,7 @@ impl PluginManager {
         granted: Vec<Permission>,
         enabled: Vec<EnabledPermission>,
         lan_webui: bool,
+        devices: &[String],
         given: &wonton_protocol::SettingValues,
         langs: &Languages,
     ) -> Result<(), InstallError> {
@@ -515,6 +523,7 @@ impl PluginManager {
             granted,
             enabled,
             lan_webui || record.lan_webui,
+            devices.to_vec(),
             settings,
         )
         .await
@@ -526,11 +535,12 @@ impl PluginManager {
         granted: Vec<Permission>,
         requested: Vec<EnabledPermission>,
         lan_webui: bool,
+        devices: Vec<String>,
         settings: super::settings::Values,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui, settings)
+            this.upgrade_checked(package, &granted, &requested, lan_webui, &devices, settings)
                 .await
         })
         .await

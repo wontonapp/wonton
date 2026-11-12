@@ -45,7 +45,16 @@ pub(super) async fn upgrade_ran(
     }
     match bus
         .plugins
-        .upgrade_upload(&id, package, granted, enabled, lan_webui, &settings, &langs)
+        .upgrade_upload(
+            &id,
+            package,
+            granted,
+            enabled,
+            lan_webui,
+            &[],
+            &settings,
+            &langs,
+        )
         .await
     {
         Ok(()) => {

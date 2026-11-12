@@ -454,6 +454,7 @@ async fn quiet_update(
             granted,
             record.enabled_permissions.clone(),
             record.lan_webui,
+            &[],
             &Default::default(),
             &bus.plugins.owner_languages(),
         )

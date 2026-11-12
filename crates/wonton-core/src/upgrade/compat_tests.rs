@@ -37,6 +37,7 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         limits: PluginLimits::default(),
         granted_permissions: Vec::new(),
         enabled_permissions: Vec::new(),
+        devices: Vec::new(),
         oidc_client_secret: None,
         installed_at: 1,
         entry_label: None,

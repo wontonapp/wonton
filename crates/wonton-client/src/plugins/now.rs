@@ -347,8 +347,8 @@ fn confirmation_preview(confirmation: &StoreConfirmation) -> &InstallPreview {
 #[cfg(test)]
 mod tests {
     use wonton_protocol::{
-        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice, PluginKind,
-        WidgetCapability, WidgetCapabilityLevel,
+        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice, PluginDeviceKind,
+        PluginKind, WidgetCapability, WidgetCapabilityLevel,
     };
 
     use super::*;
@@ -384,6 +384,9 @@ mod tests {
                     target: "/dev/video0".into(),
                     service: "camera".into(),
                     optional: false,
+                    kind: PluginDeviceKind::Serial,
+                    system: false,
+                    chosen: false,
                 }])
             }),
             false

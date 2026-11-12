@@ -68,6 +68,9 @@ pub enum InstallError {
     /// 插件要显卡（`requirements.gpu: required`），本机没有可用的：没有设备、没有驱动，或者没有运行时。
     #[error("{0}")]
     GpuUnavailable(String),
+    /// 插件必需的设备这台主机上没有，或者选的设备不在了（ADR-0036）。
+    #[error("{0}")]
+    DeviceUnavailable(String),
     /// 插件要在局域网上开放端口（`network.lan`），选不出地址：没有默认路由、默认路由走虚拟网卡、选的网卡或地址
     /// 不在了、检测不了网卡等。主人在局域网设置里选网卡或地址后再试。
     #[error("{0}")]
@@ -125,6 +128,7 @@ impl InstallError {
             Self::ModelsUnavailable(_) => "models_unavailable",
             Self::UpstreamUnavailable(_) => "upstream_unavailable",
             Self::GpuUnavailable(_) => "gpu_unavailable",
+            Self::DeviceUnavailable(_) => "device_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
             Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
@@ -186,6 +190,7 @@ impl InstallError {
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),
             Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
+            Self::DeviceUnavailable(m) => Self::DeviceUnavailable(add(m)),
             Self::LanUnavailable(m) => Self::LanUnavailable(add(m)),
             Self::EgressProxyUnavailable { reason, message } => Self::EgressProxyUnavailable {
                 reason,

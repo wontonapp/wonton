@@ -52,6 +52,7 @@ impl FakeHost {
     /// 核心直接跑在宿主上：看得到 `/dev`。
     pub fn paths(&self) -> HostPaths {
         HostPaths {
+            udev: Some(self.dir.path().join("run/udev")),
             dev: Some(self.dev()),
             sys: self.sys(),
             proc: self.sys().with_file_name("proc"),
@@ -61,6 +62,7 @@ impl FakeHost {
     /// 核心在容器里，compose 没有挂载宿主的 `/dev`。
     pub fn paths_without_dev(&self) -> HostPaths {
         HostPaths {
+            udev: None,
             dev: None,
             sys: self.sys(),
             proc: self.sys().with_file_name("proc"),
@@ -93,6 +95,78 @@ impl FakeHost {
         let proc = self.sys().with_file_name("proc");
         fs::create_dir_all(&proc).unwrap();
         fs::write(proc.join("meminfo"), format!("MemTotal: {kib} kB\n")).unwrap();
+    }
+
+    /// 一个串口：宿主 `/dev/serial/by-id/<by_id>` 指向 `tty/<node>`。
+    pub fn serial(&self, by_id: &str, node: &str) {
+        self.dev_node(&format!("tty/{node}"));
+        let link = self.dev().join("serial/by-id").join(by_id);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        let _ = fs::remove_file(&link);
+        std::os::unix::fs::symlink(format!("../../tty/{node}"), &link).unwrap();
+    }
+
+    /// USB 总线存在。
+    pub fn usb(&self) {
+        fs::create_dir_all(self.dev().join("bus/usb/001")).unwrap();
+        self.dev_node("bus/usb/001/002");
+    }
+
+    /// 一块整盘：`/dev/disk/by-id/<name>`（和 `wwn-<wwn>`）指向 `sd<node>`，sysfs 里有型号和序列号。
+    pub fn disk(&self, node: &str, by_id: &str, wwn: &str, model: &str, serial: &str, dev: &str) {
+        self.dev_node(node);
+        let link = self.dev().join("disk/by-id").join(by_id);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        std::os::unix::fs::symlink(format!("../../{node}"), &link).unwrap();
+        std::os::unix::fs::symlink(
+            format!("../../{node}"),
+            self.dev().join("disk/by-id").join(wwn),
+        )
+        .unwrap();
+        let dir = self.sys().join("block").join(node).join("device");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("model"), format!("{model}\n")).unwrap();
+        fs::write(dir.join("serial"), format!("{serial}\n")).unwrap();
+        fs::write(
+            self.sys().join("block").join(node).join("dev"),
+            format!("{dev}\n"),
+        )
+        .unwrap();
+    }
+
+    /// 盘上有一个分区（`/dev/disk/by-id/<name>-part1` 和 sysfs 的 `dev`）。
+    pub fn partition(&self, node: &str, by_id: &str, number: u32, dev: &str) {
+        let dir = self
+            .sys()
+            .join("block")
+            .join(node)
+            .join(format!("{node}{number}"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("dev"), format!("{dev}\n")).unwrap();
+        let link = self
+            .dev()
+            .join("disk/by-id")
+            .join(format!("{by_id}-part{number}"));
+        std::os::unix::fs::symlink(format!("../../{node}{number}"), link).unwrap();
+    }
+
+    /// 宿主的 `/run/udev` 存在。
+    pub fn udev(&self) {
+        fs::create_dir_all(self.dir.path().join("run/udev/data")).unwrap();
+    }
+
+    /// `/proc/self/mountinfo`：`挂载点 设备号` 的列表。
+    pub fn mounts(&self, entries: &[(&str, &str)]) {
+        let proc = self.sys().with_file_name("proc/self");
+        fs::create_dir_all(&proc).unwrap();
+        let mut table = String::new();
+        for (index, (point, device)) in entries.iter().enumerate() {
+            table.push_str(&format!(
+                "{} 0 {device} 0 / {point} rw - ext4 /dev/x rw\n",
+                index + 1
+            ));
+        }
+        fs::write(proc.join("mountinfo"), table).unwrap();
     }
 
     pub fn dev_node(&self, relative: &str) {
@@ -207,6 +281,7 @@ mod tests {
         // sysfs 里连 drm、pci 目录都没有（比如测试机）也是没有显卡，不是读错。
         let bare = tempfile::tempdir().unwrap();
         let paths = HostPaths {
+            udev: None,
             dev: Some(bare.path().join("dev")),
             sys: bare.path().join("sys"),
             proc: bare.path().join("proc"),

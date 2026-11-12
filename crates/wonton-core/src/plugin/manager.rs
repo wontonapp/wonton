@@ -121,6 +121,8 @@ pub struct PluginManager {
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
     /// 查到的新版本，见 [`super::upgrade`]。
     pub(super) upgrades: Upgrades,
+    /// 拔掉和插回的设备，见 [`super::device::watch`]。
+    pub(super) devices: super::device::watch::DeviceWatch,
     pub(super) oom: super::oom::OomRecords,
     pub(super) staged: StagedUploads,
     /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
@@ -185,7 +187,7 @@ impl PluginManager {
             matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
-            host: HostPaths::new(host_dev),
+            host: HostPaths::new(host_dev, None),
             nvidia_memory: NvidiaMemory::default(),
             cfg,
             sources: Sources::default(),
@@ -209,6 +211,7 @@ impl PluginManager {
             upgrade_frozen: None,
             oom: Default::default(),
             upgrades: Upgrades::default(),
+            devices: Default::default(),
             staged: StagedUploads::default(),
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),

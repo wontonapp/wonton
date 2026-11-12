@@ -5,7 +5,7 @@ use super::errors::{service_error, unknown_service_error};
 use super::{PackageError, PluginPackage};
 use crate::l10n::text;
 use crate::plugin::languages::Languages;
-use crate::plugin::manifest::SecretSpec;
+use crate::plugin::manifest::{DeviceClass, SecretSpec};
 
 impl PluginPackage {
     pub(super) fn check_manifest_references(&self, langs: &Languages) -> Result<(), PackageError> {
@@ -70,7 +70,24 @@ impl PluginPackage {
             .iter()
             .flat_map(|t| &t.ports)
             .map(|port| ("tunnel.ports", Some(&port.service)));
-        let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu);
+        let devices = self
+            .manifest
+            .devices
+            .iter()
+            .flat_map(|devices| devices.classes())
+            .flat_map(|(class, slots)| {
+                slots.iter().map(move |slot| {
+                    (
+                        match class {
+                            DeviceClass::Serial => "devices.serial.service",
+                            DeviceClass::Usb => "devices.usb.service",
+                            DeviceClass::Disk => "devices.disk.service",
+                        },
+                        Some(&slot.service),
+                    )
+                })
+            });
+        let all = refs.iter().cloned().chain(collects).chain(bots).chain(gpu).chain(devices);
         for (field, service) in all.chain(lan).chain(tunnel) {
             if let Some(service) = service
                 && !self.services.contains_key(service)

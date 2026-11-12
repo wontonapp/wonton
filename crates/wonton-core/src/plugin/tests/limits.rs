@@ -443,6 +443,7 @@ async fn a_bot_plugin_can_change_its_limits() {
             files: Default::default(),
             granted_permissions: vec![Permission::MatrixBot],
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             limits: Default::default(),
             lan_webui: false,
             relays: Vec::new(),

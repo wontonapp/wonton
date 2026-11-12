@@ -11,13 +11,11 @@ use wonton_protocol::InstallStage;
 
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
-use super::super::gpu::GpuGrant;
 use super::super::health_gate::Gate;
-use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
 use super::super::lifecycle::volumes::{VolumeAction, volume_action};
-use super::super::lifecycle::{Undo, client_spec};
+use super::super::lifecycle::{Grants, Undo, client_spec};
 use super::super::listed::Listed;
 use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
@@ -67,6 +65,7 @@ struct Progress {
 /// 新版本部署要用的，都在旧容器还在跑的时候备好。
 struct Prepared {
     ctx: InstallContext,
+    devices: Vec<super::super::store::InstalledDevice>,
     secrets: Secrets,
     proxy: Option<ProxyAuth>,
     oidc_secret: Option<String>,
@@ -106,6 +105,7 @@ impl PluginManager {
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        chosen_devices: &[String],
         settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
@@ -149,15 +149,18 @@ impl PluginManager {
         self.check_hosted_provider(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
-        let gpu = self
-            .gpu_grant(
-                manifest,
-                &manifest.effective_permissions(&super::super::store::permission_set(&enabled)),
-                &langs,
-            )
-            .await?;
+        let effective =
+            manifest.effective_permissions(&super::super::store::permission_set(&enabled));
+        let gpu = self.gpu_grant(manifest, &effective, &langs).await?;
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
+        let (devices, device_record) = self.upgrade_devices(
+            manifest,
+            &effective,
+            &record.devices,
+            chosen_devices,
+            &langs,
+        )?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
@@ -165,7 +168,12 @@ impl PluginManager {
             &package,
             granted,
             &enabled,
-            (gpu, lan),
+            Grants {
+                gpu,
+                lan,
+                devices,
+                device_record,
+            },
             settings.clone(),
             &langs,
         ))
@@ -276,7 +284,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
@@ -371,7 +379,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
@@ -382,6 +390,7 @@ impl PluginManager {
         let langs = self.owner_languages();
         let Prepared {
             mut ctx,
+            devices,
             mut secrets,
             proxy,
             oidc_secret,
@@ -428,6 +437,7 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             enabled_permissions: enabled.to_vec(),
+            devices,
             limits: old.record.limits,
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -473,7 +483,7 @@ impl PluginManager {
         old: &Old,
         package: &PluginPackage,
         enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
@@ -501,8 +511,9 @@ impl PluginManager {
             )
             .await?;
         ctx.limits = old.record.limits;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
+        ctx.gpu = grants.gpu;
+        ctx.lan = grants.lan;
+        ctx.devices = Some(grants.devices);
         ctx.settings = settings;
         // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
         let mut new_bot = None;
@@ -558,6 +569,7 @@ impl PluginManager {
         }
         Ok(Prepared {
             ctx,
+            devices: grants.device_record,
             secrets,
             proxy,
             oidc_secret,
@@ -820,6 +832,7 @@ impl PluginManager {
                 &granted,
                 &installed.enabled_permissions,
                 installed.lan_webui,
+                &[],
                 installed.settings.clone(),
             )
             .await

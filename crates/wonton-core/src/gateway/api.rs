@@ -107,6 +107,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
+        | InstallError::DeviceUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_)
         | InstallError::InUse { .. }
@@ -383,6 +384,9 @@ pub struct InstallQuery {
     /// 主人打开了的可选项，逗号分隔（ADR-0057）。
     #[serde(default)]
     pub(super) enabled_permissions: String,
+    /// 主人选的设备 ID，逗号分隔（ADR-0036）；上传插件包时用。
+    #[serde(default)]
+    pub(super) devices: String,
 }
 
 pub async fn install(
@@ -478,6 +482,16 @@ pub async fn install(
     }
 }
 
+/// 逗号分隔的设备 ID 列表。
+fn devices(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
 /// 上传的插件包，`?grant=` 是主人确认的权限。包已在门槛的预览里解析过，这里直接装。
 async fn install_upload_package(
     gateway: &Arc<Gateway>,
@@ -501,6 +515,7 @@ async fn install_upload_package(
             granted,
             enabled,
             query.lan_webui,
+            &devices(&query.devices),
             settings,
             langs.clone(),
         )
@@ -588,6 +603,7 @@ async fn perform_upgrade(
                         grant,
                         enabled,
                         query.lan_webui,
+                        &devices(&query.devices),
                         &given,
                         &langs,
                     )

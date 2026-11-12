@@ -175,7 +175,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        if !request.devices.is_empty() || !matches!(request.scope, None | Some(PluginScope::All)) {
+        if !matches!(request.scope, None | Some(PluginScope::All)) {
             return Err(InstallError::Unsupported(l10n::text(
                 langs,
                 "plugin-capability-choices-unsupported",
@@ -207,6 +207,7 @@ impl PluginManager {
             manifest.effective_permissions(&crate::plugin::store::permission_set(&enabled));
         self.gpu_grant(manifest, &effective, langs).await?;
         self.lan_grant(&package, request.lan_webui, langs).await?;
+        self.resolve_devices(manifest, &effective, &request.devices, langs)?;
         let store = self.store.secrets();
         let secrets_before = store.load(&manifest.id)?;
         let mut secrets = secrets_before.clone().unwrap_or_default();
@@ -230,6 +231,7 @@ impl PluginManager {
                 enabled,
                 lan_webui: request.lan_webui,
                 targets: Some(targets),
+                devices: request.devices.clone(),
             },
             inputs: request.secrets.clone(),
             settings,

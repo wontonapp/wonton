@@ -30,6 +30,9 @@ pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
             | Permission::HostIpc
             | Permission::SecurityOpt
             | Permission::Privileged
+            | Permission::DevicesSerial
+            | Permission::DevicesUsb
+            | Permission::DevicesDisk
             | Permission::Device { .. }
             | Permission::DockerSocket
     )

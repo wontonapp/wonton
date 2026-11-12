@@ -86,6 +86,8 @@ pub struct Config {
     /// compose 只读挂载进来；直接跑在宿主上时就是 `/dev`。在容器里却没设时为 `None`，申请显卡的插件装不上，
     /// 原因写明。
     pub host_dev: Option<PathBuf>,
+    /// 宿主的 `/run/udev` 在核心里的路径（`WONTON_HOST_UDEV`）：给设备插件挂上 udev 数据库用。宿主没有 udev 时为空。
+    pub host_udev: Option<PathBuf>,
     /// 局域网端口只开在这些地址上，不再自动选（`WONTON_LAN_ADDRESSES`，ADR-0019）。必须都是私有地址。
     pub lan_addresses: Option<Vec<IpAddr>>,
     /// 启动器声明的宣告地址（`WONTON_ANNOUNCE_ADDRESSES`，ADR-0019）：设了就不再自动选，端口绑通配地址、告诉手机用它。
@@ -241,6 +243,7 @@ impl Config {
             .unwrap_or_else(|| owner::DEFAULT_USERNAME.into());
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
+        let host_udev = host_udev(get("WONTON_HOST_UDEV"), core_container.is_none())?;
         let LanOverrides {
             fixed: lan_addresses,
             announce: announce_addresses,
@@ -256,6 +259,7 @@ impl Config {
             },
             core_container,
             host_dev,
+            host_udev,
             lan_addresses,
             announce_addresses,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
@@ -407,6 +411,15 @@ fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>
         Some(path) if !path.starts_with('/') => Err(invalid("WONTON_HOST_DEV", "必须是绝对路径")),
         Some(path) => Ok(Some(PathBuf::from(path))),
         None if on_host => Ok(Some(PathBuf::from("/dev"))),
+        None => Ok(None),
+    }
+}
+
+fn host_udev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {
+    match configured {
+        Some(path) if !path.starts_with('/') => Err(invalid("WONTON_HOST_UDEV", "必须是绝对路径")),
+        Some(path) => Ok(Some(PathBuf::from(path))),
+        None if on_host => Ok(Some(PathBuf::from("/run/udev"))),
         None => Ok(None),
     }
 }

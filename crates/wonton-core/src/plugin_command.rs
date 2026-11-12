@@ -103,7 +103,8 @@ async fn host(dir: Option<&Path>) -> ExitCode {
         }
     };
     let dev = std::env::var_os("WONTON_HOST_DEV").map_or_else(|| "/dev".into(), PathBuf::from);
-    let paths = HostPaths::new(Some(dev));
+    let udev = std::env::var_os("WONTON_HOST_UDEV").map(PathBuf::from);
+    let paths = HostPaths::new(Some(dev), udev);
     let engine = Engine::connect();
     let docker_info = match &engine {
         Ok(engine) => engine.host_info().await.map_err(|e| e.to_string()),

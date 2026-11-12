@@ -37,6 +37,17 @@ enum Outcome {
 }
 
 impl PluginsLink {
+    /// 主人在预览里选中的设备 ID（ADR-0036）；没选为空，升级时为空就沿用装着的。
+    fn chosen_devices(preview: &InstallPreview) -> Vec<String> {
+        preview
+            .devices
+            .iter()
+            .flatten()
+            .filter(|device| device.chosen)
+            .map(|device| device.id.clone())
+            .collect()
+    }
+
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
     pub(crate) fn install(
         self: &Arc<Self>,
@@ -53,6 +64,7 @@ impl PluginsLink {
             .audience
             .take()
             .and_then(crate::selected_plugin_audience);
+        let devices = Self::chosen_devices(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -74,7 +86,7 @@ impl PluginsLink {
             enabled_permissions,
             secrets,
             settings,
-            devices: Vec::new(),
+            devices,
             lan_webui,
             install_together: Vec::new(),
             connect_plugins: Vec::new(),
@@ -133,7 +145,7 @@ impl PluginsLink {
         )?;
         let enabled_permissions = enabled_permissions(&preview);
         let request = UpgradeRequest {
-            devices: Vec::new(),
+            devices: Self::chosen_devices(&preview),
             source: preview.source,
             digest: preview.digest,
             grant,

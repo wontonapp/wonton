@@ -36,6 +36,7 @@ permission-devices-gpu = 使用 GPU（高權限）
 permission-device = 存取主機裝置 { $path }（高權限）
 permission-devices-serial = 存取主機序列埠裝置（高權限）
 permission-devices-usb = 存取主機 USB 裝置（高權限）
+permission-devices-disk = 讀寫勾選的整塊硬碟（很高權限）
 permission-docker-socket = 控制 Docker（最高權限）
 
 # 高權限下面帶的長說明。
@@ -45,6 +46,8 @@ permission-notice-highest-risk = 這個應用程式能控制整台主機：讀�
 permission-notice-network-lan = 區域網路裡的裝置可以直接連接應用程式開放的連接埠，不經 Wonton 登入；身分驗證由應用程式自己負責。
 permission-notice-device = 這個應用程式可以存取主機裝置 { $path }。
 permission-notice-devices = 這個應用程式可以存取你交給它的主機裝置。
+permission-notice-devices-disk = 這個插件能讀寫你勾選的硬碟上的全部資料。
+permission-notice-devices-usb = 這個插件能存取這台主機上所有 USB 裝置，包括隨身碟和讀卡機。
 
 # 應用程式詳情裡的提示。
 plugin-firewall-notice = 本機防火牆可能擋住了外來連線，區域網路裝置可能連不進來

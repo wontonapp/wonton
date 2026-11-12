@@ -362,6 +362,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
                 grant(),
                 Vec::new(),
                 false,
+                &[],
                 &Default::default(),
                 &super::langs()
             )
@@ -385,6 +386,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
             grant(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -413,6 +415,7 @@ async fn upgrade_fills_missing_defaults_without_replacing_the_running_bot_device
             grant(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )

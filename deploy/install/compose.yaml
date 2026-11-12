@@ -46,6 +46,8 @@ services:
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
+      # 宿主的 udev 数据库挂在下面的 /host/udev：设备插件自动发现用（ADR-0036）。
+      WONTON_HOST_UDEV: /host/udev
       # 出网代理（ADR-0023）：前者是主人指定的，后者是安装脚本检测到的，只作初值。核心自己访问外网也用它们。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
@@ -116,6 +118,13 @@ services:
       - type: bind
         source: /dev
         target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
+      # 设备插件要读 udev 数据库（Zigbee2MQTT 列适配器、smartctl 认盘）：由核心只读转挂进它们的容器。
+      - type: bind
+        source: /run/udev
+        target: /host/udev
         read_only: true
         bind:
           recursive: disabled

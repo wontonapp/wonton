@@ -43,6 +43,14 @@ pub(super) mod rollback;
 pub(super) mod volumes;
 pub(super) use oidc_client::{client_spec, client_spec_at};
 
+/// 安装时按主机的探测结果算出来的东西：显卡、局域网端口和设备（ADR-0018、ADR-0019、ADR-0036）。
+pub(super) struct Grants {
+    pub gpu: Option<GpuGrant>,
+    pub lan: Option<LanGrant>,
+    pub devices: super::device::DeviceGrant,
+    pub device_record: Vec<super::store::InstalledDevice>,
+}
+
 /// 插件管理器需要的那部分核心配置。
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
@@ -129,7 +137,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<(Deployed, Undo), InstallError> {
@@ -168,15 +176,16 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         undo: &mut Undo,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let (mut ctx, secret, mut secrets, proxy) = self
-            .prepare_install(package, enabled, (gpu, lan), settings, undo, langs)
+            .prepare_install(package, enabled, (grants.gpu, grants.lan), settings, undo, langs)
             .await?;
+        ctx.devices = Some(grants.devices);
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
             .await?;
@@ -226,8 +235,17 @@ impl PluginManager {
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
             .await;
-        self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
-            .await?;
+        self.save_installed(
+            package,
+            granted,
+            enabled,
+            &ctx,
+            &plan,
+            secret,
+            firewalled,
+            grants.device_record,
+        )
+        .await?;
         undo.record = Some(manifest.id.clone());
         self.refresh_bot_web_routes(&package.manifest).await?;
         Ok(Deployed {
@@ -261,6 +279,7 @@ impl PluginManager {
         plan: &Deployment,
         oidc_secret: Option<String>,
         firewalled: bool,
+        devices: Vec<super::store::InstalledDevice>,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         self.store.save(&InstalledRecord {
@@ -271,6 +290,7 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             enabled_permissions: enabled.to_vec(),
+            devices,
             limits: Default::default(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -468,6 +488,7 @@ impl PluginManager {
                 )
             }),
             secrets: generated,
+            devices: None,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
             pgid: self.cfg.pgid,

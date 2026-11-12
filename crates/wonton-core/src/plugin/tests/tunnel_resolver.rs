@@ -116,6 +116,7 @@ impl Fixture {
                 files: Default::default(),
                 granted_permissions: Vec::new(),
                 enabled_permissions: Vec::new(),
+                devices: Vec::new(),
                 limits: Default::default(),
                 lan_webui: false,
                 relays: Vec::new(),

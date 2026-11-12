@@ -422,6 +422,7 @@ async fn a_quiet_consumer_upgrade_does_not_approve_a_previously_denied_high_priv
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )
@@ -471,6 +472,7 @@ async fn adding_provider_credentials_rebuilds_existing_consumers_but_same_key_re
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )
@@ -490,6 +492,7 @@ async fn adding_provider_credentials_rebuilds_existing_consumers_but_same_key_re
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )
