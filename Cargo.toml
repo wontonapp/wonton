@@ -26,6 +26,8 @@ getrandom = "0.4.3"
 iroh = "1.4.1"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 matrix-sdk = "0.19.1"
+# MIT OR Apache-2.0。
+percent-encoding = "2.3.2"
 # 客户端核心向核心要登录令牌、核心发 Web Push；各自按需加 TLS 等特性。
 reqwest = { version = "0.13.5", default-features = false }
 # MIT OR Apache-2.0。核心联邦和隧道测试签发证书；使用已有的 aws-lc-rs 后端。

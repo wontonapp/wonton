@@ -82,14 +82,15 @@ private fun avatarLabel(bot: BotView): String = when (val activity = bot.activit
 
 /** 状态的叫法（规格第 4 节）：待机 / 工作中 / 等你确认 / 离线。 */
 @Composable
-fun BotActivity.label(): String = stringResource(
-    when (this) {
-        BotActivity.IDLE -> R.string.bot_state_idle
-        BotActivity.WORKING -> R.string.bot_state_working
-        BotActivity.WAITING -> R.string.bot_state_waiting
-        BotActivity.OFFLINE -> R.string.bot_state_offline
-    },
-)
+fun BotActivity.label(): String = stringResource(labelRes())
+
+/** [label] 的资源；不在 Compose 里（桌面小组件）时用它取字。 */
+fun BotActivity.labelRes(): Int = when (this) {
+    BotActivity.IDLE -> R.string.bot_state_idle
+    BotActivity.WORKING -> R.string.bot_state_working
+    BotActivity.WAITING -> R.string.bot_state_waiting
+    BotActivity.OFFLINE -> R.string.bot_state_offline
+}
 
 private fun avatarFade() = tween<Float>(
     if (AvatarEnvironment.reduceMotion) WontonMotion.reduced else WontonMotion.state,

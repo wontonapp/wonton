@@ -13,6 +13,8 @@ uniffi = ["dep:uniffi"]
 
 [dependencies]
 base64 = { workspace = true }
+# MIT OR Apache-2.0。`wonton://room/<房间 ID>` 里房间 ID 的百分号编码。
+percent-encoding = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
