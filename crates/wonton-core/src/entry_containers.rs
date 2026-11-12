@@ -407,6 +407,15 @@ impl EntryContainers {
         settings: &EntrySettings,
     ) -> Result<Side, EntryError> {
         let (image, command, binds, ports) = self.spec(component, settings)?;
+        // 入口和连接器要解析的正是主人给的解析器认识的名字（中继、ACME）：compose 时代是核心和 lego 用这些解析器，
+        // 容器自己的解析器跟着来，不然只能靠宿主的。
+        let resolvers =
+            crate::entry_settings::resolver_ips(&settings.acme_resolvers).map_err(|error| {
+                EntryError::Docker(EngineError::Rejected {
+                    context: "解析入口的 DNS 解析器".to_owned(),
+                    message: error.to_string(),
+                })
+            })?;
         let port_bindings: HashMap<String, Option<Vec<PortBinding>>> = ports
             .iter()
             .map(|(key, host)| {
@@ -462,6 +471,7 @@ impl EntryContainers {
                 host_config: Some(HostConfig {
                     binds: Some(binds),
                     network_mode: Some(primary),
+                    dns: (!resolvers.is_empty()).then_some(resolvers),
                     restart_policy: Some(RestartPolicy {
                         name: Some(RestartPolicyNameEnum::UNLESS_STOPPED),
                         ..Default::default()
@@ -617,7 +627,8 @@ fn same_options(info: &ContainerInspectResponse, body: &ContainerCreateBody) -> 
     let (Some(config), Some(host)) = (config, host) else {
         return false;
     };
-    if config.user != body.user {
+    if config.user != body.user || host.dns != body.host_config.as_ref().and_then(|h| h.dns.clone())
+    {
         return false;
     }
     let wanted_host = body.host_config.as_ref();

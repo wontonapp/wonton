@@ -207,8 +207,13 @@ class Home:
         """
         connector = wait_for("connector container",
                              lambda: self.component_container("connector"), seconds=120)
-        run("docker", "network", "connect", self.cloud["network"], connector)
-        run("docker", "restart", connector)
+        # 连不上中继时 frpc 会退出并被重启策略拉起来，restart 中的容器没有网络沙箱（connect 报 "network sandbox
+        # ... not found"）：先停下、接网络、再启动，最后补解析器（启动会按 Daemon 的配置重写 resolv.conf）。
+        run("docker", "stop", connector)
+        wait_for("connector attached", lambda: run(
+            "docker", "network", "connect", self.cloud["network"], connector, check=False
+        ).returncode == 0, seconds=60)
+        run("docker", "start", connector)
         run("docker", "exec", "-u", "0", connector, "sh", "-c",
             f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf")
 
