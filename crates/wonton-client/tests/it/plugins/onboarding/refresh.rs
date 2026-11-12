@@ -299,4 +299,9 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
     assert_eq!(view.profile.display_name, "云吞");
+    assert_eq!(
+        view.primary_bot_user_id.as_deref(),
+        Some("@installed:home"),
+        "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
+    );
 }
