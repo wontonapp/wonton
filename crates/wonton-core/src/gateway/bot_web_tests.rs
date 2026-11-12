@@ -33,7 +33,7 @@ fn host(name: &str) -> String {
 fn source() -> String {
     WHOAMI.replace("  icon: icon.svg\n", "")
         .replace("  permissions: []", "  permissions: [matrix.bot]\n  bots: {services: [web]}")
-        .replace("    port: 8000", "    port: 8000\n    path: /panel?mode=bot\n    cross_origin_isolated: true\n    sso: oidc\n    oidc:\n      redirect_paths: [/cb]\n      owner_groups: [admin]")
+        .replace("    port: 8000", "    port: 8000\n    path: /panel?mode=bot\n    cross_origin_isolated: true\n    sso: oidc\n    oidc:\n      redirect_paths: [/cb]\n      admin_groups: [admin]")
 }
 
 fn record(h: &Harness, family: bool, compose: &str) {
