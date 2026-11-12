@@ -52,7 +52,7 @@ Agent 仍是不可信执行者：插件清单授权的共享目录才可挂载�
 
 Wonton MCP 入口按插件网络来源授权，C1–C3 不引入 bearer token；`mcpServers` 里没有凭据，URL 也不含凭据，所以不会进 ACP 日志、会话历史、命令行或 Matrix。Agent 自己的官方登录态留在 `${WONTON_BOT_DATA}/agent`，不作为 MCP headers 传递。以后若核心改成 token，先加只读 secret-file/FD 合同，禁止把 token 放 URL、命令行、环境变量或日志；本 ADR 不设计外部 MCP 凭据代理。MCP 的 `allow_window`、始终允许和只读策略仍由核心按 ADR-0024 判定，不通过 ACP 权限映射自动开启。工具结果是不可信输入，桥不解释结果、不据此自动批准权限。
 
-桥不声明 `fs`、`terminal`、`subagents` 等 ACP client capabilities，也不提供第二套工具面。每个 Agent 插件显式配置它的最严格可用模式；已实测的例子是 Codex `read-only`、Qwen `default`，其他 Agent 在自己的插件中填入经过验证的模式。桥在 `session/new` 后立即切模式：应答带 `modes` 时用 `session/set_mode`，只有类别为 `mode` 的 `configOptions` 时用 `session/set_config_option`，两样都没有（如 dsh 0.2.2）就不分模式、跳过；没有聊天入口切到 bypass/yolo/full-access。
+桥不声明 `fs`、`terminal`、`subagents` 等 ACP client capabilities，也不提供第二套工具面。每个 Agent 插件显式配置它的最严格可用模式；已实测的例子是 Codex `read-only`、Qwen `default`，其他 Agent 在自己的插件中填入经过验证的模式。桥在 `session/new` 后立即切模式：应答带 `modes` 时用 `session/set_mode`，只有类别为 `mode` 的 `configOptions` 时用 `session/set_config_option`，两样都没有（如 dsh 0.2.2）就不分模式、跳过；没有聊天入口切到 bypass/yolo/full-access。恢复（`session/load`/`session/resume`）后按建会话时记录的模式补切一次——适配器不都记得上次的模式，回到默认档就不问了。桥只发白名单里的模式（`default`、`plan`、`acceptEdits`、`read-only`、`auto`，负责人的定）：配置了白名单外的值启动即失败，Agent 在 `availableModes` 里报出的危险档位（`bypassPermissions`、`full-access`）不跟。
 
 ### 登录（C3）
 

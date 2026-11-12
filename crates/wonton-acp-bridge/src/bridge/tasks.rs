@@ -118,6 +118,7 @@ async fn open<R: Room>(
             crate::state::SessionRecord {
                 session_id: event.session_id.clone(),
                 cwd: context.bridge.config.workspace.clone(),
+                mode: context.bridge.config.mode.clone(),
             },
         )
         .await?;
