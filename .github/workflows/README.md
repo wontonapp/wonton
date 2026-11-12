@@ -185,3 +185,4 @@ PR 合并前只等快检查：格式、Clippy、detekt、SwiftLint、行数门�
 - 密钥扫描用 gitleaks 官方二进制（版本和 sha256 固定在工作流里），只扫 PR 带进来的提交（`HEAD^1..HEAD`）
   或 push 到 main 的这一个提交，不扫全部历史；误报白名单在 `.gitleaks.toml`，每条写明理由，真密钥不能
   进白名单。
+- 规则集只有 `gate 汇总` 一个必需检查：被调用的作业改名、加作业都不动规则集；改动范围只看 `gate.yml` 的 `changes`。
