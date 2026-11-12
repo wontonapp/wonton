@@ -141,6 +141,18 @@ impl FakeAgent {
         let _ = self.commands.send(commands);
     }
 
+    /// 让 Agent 向桥发任意一帧：契约测试用官方类型序列化出的报文从这条路进真实 `read_loop`。
+    pub(crate) async fn send_agent_frame(&self, frame: Value) {
+        let writer = self
+            .link
+            .writer
+            .lock()
+            .await
+            .clone()
+            .expect("还没有 ACP 连接");
+        send(&writer, frame).await;
+    }
+
     /// 还有几个挂起没答的轮次。
     pub(crate) fn pending_count(&self) -> usize {
         self.link
