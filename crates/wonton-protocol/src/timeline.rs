@@ -707,6 +707,7 @@ mod tests {
                     origin: None,
                     audience: crate::CardAudience::Keeper,
                     answered_by: None,
+                    category: None,
                     id: "abc".into(),
                     state: ConfirmationState::Pending,
                     title: "Hermes 想安装 Grafana".into(),
