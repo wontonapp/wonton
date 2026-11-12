@@ -40,6 +40,9 @@ impl Delivery {
                     self.attempt(&id).await;
                 }
             }
+            Err(error) if error.is_transport() => {
+                tracing::debug!(%error, "Mailpit 还没连上，稍后再扫待投递的信");
+            }
             Err(error) => tracing::error!(%error, "列出待投递信件失败"),
         }
     }
