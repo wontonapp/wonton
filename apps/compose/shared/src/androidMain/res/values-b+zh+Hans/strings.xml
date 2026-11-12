@@ -826,8 +826,8 @@
     <string name="message_image_saved">已保存到相册</string>
     <string name="message_image_share">分享</string>
     <string name="message_image_share_failed">没能分享这张图片</string>
-    <!-- Description of an agent row in setup when it has no account login. -->
-    <string name="onboarding_agent_connection_key">key</string>
+    <!-- Description of an agent row in setup when it has no account login: it needs a model provider key in the next step. -->
+    <string name="onboarding_agent_connection_key">在下一步填模型服务商的 key</string>
     <!-- Description of an agent row in setup: how it connects to a model. Argument: the account-login names, already formatted as a list. -->
     <string name="onboarding_agent_connection_logins">%1$s或 key</string>
     <!-- Problem title in setup when no agent can be chosen. -->
@@ -869,7 +869,7 @@
     <!-- Warning under a model provider row: testing couldn't reach the provider, but it's saved anyway when setup finishes. -->
     <string name="onboarding_model_unreachable">连不上服务商，完成时照样保存。</string>
     <!-- Row title: keep the models already configured in the model gateway. -->
-    <string name="onboarding_model_use_current">用现在的</string>
+    <string name="onboarding_model_use_current">用现在的模型</string>
     <!-- Row title: sign in to a model provider with an account. Argument: the login's name (like "ChatGPT account"). -->
     <string name="onboarding_model_use_login">用%1$s</string>
     <!-- Primary button that advances to the next setup step. -->
@@ -954,10 +954,20 @@
     <string name="onboarding_review_keep_current">用现在的</string>
     <!-- Label next to a spinner while an install task is being prepared. -->
     <string name="onboarding_review_preparing">正在准备</string>
+    <!-- Kind label above a review row: the profile that will be saved. -->
+    <string name="onboarding_review_section_profile">资料</string>
+    <!-- Kind label above a review row: the default agent. -->
+    <string name="onboarding_review_section_agent">Agent</string>
+    <!-- Kind label above a review row: the model. -->
+    <string name="onboarding_review_section_model">模型</string>
+    <!-- Kind label above a review row: the apps that will be installed. -->
+    <string name="onboarding_review_section_apps">应用</string>
     <!-- Row description in the review step: the item is set as the default agent. -->
     <string name="onboarding_review_set_default">设为默认</string>
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">装好后在聊天里登录</string>
+    <!-- Row description in the review step: finishing will not touch this. -->
+    <string name="onboarding_review_unchanged">不变</string>
     <!-- Problem title in the review step: it's unknown whether the app installed. The reason is in the collapsed details. -->
     <string name="onboarding_review_uncertain">不确定装好没有，请到应用页查看。</string>
     <!-- Row description in the review step: the model couldn't be reached during the test. -->

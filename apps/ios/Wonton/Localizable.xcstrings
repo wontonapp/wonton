@@ -7543,31 +7543,31 @@
       }
     },
     "onboarding.agent.connectionKey": {
-      "comment": "Description of an agent row in setup when it has no account login.",
+      "comment": "Connection note for an agent that has no account logins: it needs a model provider key in the next step.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "API key"
+            "value": "Set up a model provider key in the next step"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "key"
+            "value": "在下一步填模型服务商的 key"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "API 金鑰"
+            "value": "在下一步填模型服務商的 key"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "APIキー"
+            "value": "次のステップでモデルプロバイダーのキーを入力します"
           }
         }
       }
@@ -8059,25 +8059,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Use Current"
+            "value": "Use your current model"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "用现在的"
+            "value": "用现在的模型"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用目前的"
+            "value": "用現在的模型"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "現在のモデルを使用"
+            "value": "今のモデルを使う"
           }
         }
       }
@@ -28977,6 +28977,156 @@
           }
         }
       }
+    },
+    "onboarding.review.sectionProfile": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资料"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロフィール"
+          }
+        }
+      },
+      "comment": "Kind label of the profile row in the review step."
+    },
+    "onboarding.review.sectionAgent": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        }
+      },
+      "comment": "Kind label of the default agent row in the review step."
+    },
+    "onboarding.review.sectionModel": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Model"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデル"
+          }
+        }
+      },
+      "comment": "Kind label of the model row in the review step."
+    },
+    "onboarding.review.sectionApps": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apps"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "應用"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリ"
+          }
+        }
+      },
+      "comment": "Kind label of the app rows in the review step."
+    },
+    "onboarding.review.unchanged": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unchanged"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不变"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不變"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更なし"
+          }
+        }
+      },
+      "comment": "Second line of a review row the user did not change: finishing will not touch it."
     }
   }
 }
