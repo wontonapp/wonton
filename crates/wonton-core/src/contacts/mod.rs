@@ -2,7 +2,8 @@
 //!
 //! - 记录在 `core/contacts.json`（[`store`]），请求不过期，重启后还在。每个 Bot 一张表，对方的用户 ID 一行。
 //! - 同机的 Bot 之间直接改两张表。跨机的 Bot 经 [`PeerLink`] 和对方核心交换 [`ContactEvent`]；对方连不上时
-//!   请求失败、什么都不记（[`ContactError::PeerUnreachable`]）。
+//!   请求失败、什么都不记（[`ContactError::PeerUnreachable`]）。删除的通知和收到请求后回的结果不能这样丢，
+//!   排进 [`outbox`] 直到送到。
 //! - 对人：Bot 发带标记的私聊邀请（[`PersonInvites`]），他接受就成立。接受、拒绝都只能从房间里看出来，所以
 //!   列表时和后台定时查一遍还在等的邀请（[`Contacts::check_people`]）。
 //! - 名单变了调 [`Effects`]：重建 Bot 的服务（`WONTON_MATRIX_ALLOWED_USERS`），新请求推送给归属人。
@@ -12,6 +13,7 @@
 mod local;
 mod matrix_invites;
 mod matrix_link;
+mod outbox;
 mod person;
 pub mod ports;
 mod remote;

@@ -6,7 +6,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::{BotRef, ContactKind, ContactState};
+use wonton_protocol::{BotRef, ContactEvent, ContactKind, ContactState};
 
 /// 一行联系人。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +40,16 @@ pub struct Stored {
     /// 键是 `<插件 id>/<Bot 名>`。
     #[serde(default)]
     pub bots: BTreeMap<String, BotRows>,
+    /// 改了行、还没送到对方核心的事件，按产生的先后（[`super::outbox`]）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub outbox: Vec<Queued>,
+}
+
+/// 一条等着发给 `server` 的核心的事件。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Queued {
+    pub server: String,
+    pub event: ContactEvent,
 }
 
 pub fn key(bot: &BotRef) -> String {

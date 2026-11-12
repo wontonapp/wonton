@@ -3,13 +3,14 @@
 //!
 //! - 服务器名按字节序较小的一方在配对成立后建房、邀请对方的核心账号；邀请发不过去（对方离线）就每分钟再试。
 //! - 另一方只接受已配对服务器的核心账号发来、带这个类型、而且对方的名字更小的邀请，接受后记下房间。对方重装后
-//!   再邀请时换成新房间。
+//!   再邀请时换成新房间。邀请先落盘再加入：增量同步不会再带上已经收过的邀请，加入失败（联邦还没通）或者这边
+//!   还没记下配对（两边配对落表有先后）时，只能靠记下的这条重试。
 //! - 收：核心账号长轮询 `/sync`，只要联系人事件和邀请；`next_batch` 落盘，重启接着收。第一次同步（没有
 //!   `next_batch`）只收邀请，不处理房间里的旧事件。房间对得上、发送者是那台已配对服务器的核心账号的事件才交给
 //!   [`Contacts::receive`]。
 //! - 发：房间还没建好、对方的核心还没加入时报对方连不上，不发进一个对方收不到的房间。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock, Weak};
 use std::time::Duration;
@@ -17,8 +18,9 @@ use std::time::Duration;
 use futures_util::future::BoxFuture;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tokio::sync::watch;
 use wonton_protocol::{
-    CONTACT_EVENT, CONTACT_ROOM_TYPE, CORE_LOCALPART, ContactError, ContactEvent,
+    CONTACT_EVENT, CONTACT_ROOM_TYPE, CORE_LOCALPART, ContactError, ContactEvent, PeerStatus,
 };
 
 use super::store::StoreError;
@@ -47,14 +49,36 @@ struct LinkState {
     rooms: BTreeMap<String, RoomEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     since: Option<String>,
+    /// 收到了、还没加入的联系人房间邀请：对方的服务器名 → 房间。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    joins: BTreeMap<String, String>,
+}
+
+/// 配对表里联系人通道用到的部分，测试里换成内存里的名单。
+pub trait PairedServers: Send + Sync {
+    fn paired_names(&self) -> watch::Receiver<BTreeSet<String>>;
+    /// 已配对时是转发组件给的状态，没配对时为空。
+    fn contact_reach(&self, server_name: &str) -> Option<PeerStatus>;
+}
+
+impl PairedServers for Peers {
+    fn paired_names(&self) -> watch::Receiver<BTreeSet<String>> {
+        Peers::paired_names(self)
+    }
+
+    fn contact_reach(&self, server_name: &str) -> Option<PeerStatus> {
+        Peers::contact_reach(self, server_name)
+    }
 }
 
 pub struct MatrixLink {
     matrix: Arc<Matrix>,
-    peers: Arc<Peers>,
+    peers: Arc<dyn PairedServers>,
     path: PathBuf,
     state: Mutex<LinkState>,
     contacts: OnceLock<Weak<Contacts>>,
+    /// 最近一次没建成、没邀请到的原因，按对方的服务器名：发事件时房间还没好，照这个报，不一律说对方连不上。
+    room_failures: Mutex<BTreeMap<String, ContactFailure>>,
 }
 
 fn core_user(server: &str) -> String {
@@ -69,7 +93,7 @@ impl MatrixLink {
     pub fn open(
         path: PathBuf,
         matrix: Arc<Matrix>,
-        peers: Arc<Peers>,
+        peers: Arc<dyn PairedServers>,
     ) -> Result<Arc<Self>, StoreError> {
         let state = match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| StoreError::Corrupt {
@@ -85,6 +109,7 @@ impl MatrixLink {
             path,
             state: Mutex::new(state),
             contacts: OnceLock::new(),
+            room_failures: Mutex::default(),
         }))
     }
 
@@ -146,19 +171,69 @@ impl MatrixLink {
                     }
                     Err(e) => {
                         tracing::warn!(%server, error = %e, "建联系人房间失败，稍后再试");
+                        // 建房只碰本机的 Tuwunel：不是对方连不上。
+                        let failure = ContactFailure::new(
+                            ContactError::Upstream,
+                            format!("建和 {server} 的联系人房间失败：{e}"),
+                        );
+                        self.note_failure(&server, Some(failure));
                         done = false;
                         continue;
                     }
                 },
             };
+            self.note_failure(&server, None);
             match session.invite(&room, &core_user(&server)).await {
-                Ok(()) => self.update(|state| {
-                    if let Some(entry) = state.rooms.get_mut(&server) {
-                        entry.invited = true;
-                    }
-                }),
+                Ok(()) => {
+                    self.update(|state| {
+                        if let Some(entry) = state.rooms.get_mut(&server) {
+                            entry.invited = true;
+                        }
+                    });
+                }
                 Err(e) => {
                     tracing::info!(%server, error = %e, "联系人房间的邀请没发到对方，稍后再试");
+                    done = false;
+                }
+            }
+        }
+        done
+    }
+
+    fn note_failure(&self, server: &str, failure: Option<ContactFailure>) {
+        let mut failures = self.room_failures.lock().expect("联系人房间失败表锁中毒");
+        match failure {
+            Some(failure) => failures.insert(server.to_owned(), failure),
+            None => failures.remove(server),
+        };
+    }
+
+    /// 加入记下的邀请（[`LinkState::joins`]）。已配对的服务器有没加入成的返回 `false`。
+    async fn join_invited(&self) -> bool {
+        let joins = self.lock().joins.clone();
+        let mut done = true;
+        for (server, room) in joins {
+            if self.peers.contact_reach(&server).is_none() {
+                continue;
+            }
+            match self.matrix.core_session().join_via(&room, &server).await {
+                Ok(()) => {
+                    tracing::info!(%room, %server, "加入了联系人房间");
+                    self.update(|state| {
+                        if state.joins.get(&server) == Some(&room) {
+                            state.joins.remove(&server);
+                        }
+                        state.rooms.insert(
+                            server,
+                            RoomEntry {
+                                room_id: room,
+                                invited: true,
+                            },
+                        );
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(%room, %server, error = %e, "加入联系人房间失败，稍后再试");
                     done = false;
                 }
             }
@@ -186,8 +261,9 @@ impl MatrixLink {
             .await?;
         if let Some(invites) = value["rooms"]["invite"].as_object() {
             for (room, invite) in invites {
-                self.consider_invite(room, invite).await;
+                self.consider_invite(room, invite);
             }
+            self.join_invited().await;
         }
         if since.is_some()
             && let Some(joined) = value["rooms"]["join"].as_object()
@@ -202,7 +278,8 @@ impl MatrixLink {
         Ok(())
     }
 
-    async fn consider_invite(&self, room: &str, invite: &Value) {
+    /// 记下核心账号发来的联系人房间邀请，之后由 [`Self::join_invited`] 加入。是不是已配对到加入时才看。
+    fn consider_invite(&self, room: &str, invite: &Value) {
         let events = invite["invite_state"]["events"]
             .as_array()
             .cloned()
@@ -222,30 +299,13 @@ impl MatrixLink {
         }) else {
             return;
         };
-        if !is_contact_room
-            || self.peers.contact_reach(&server).is_none()
-            || server.as_str() >= self.own_server()
-        {
-            tracing::info!(%room, %server, "不是已配对服务器发来的联系人房间邀请，不接受");
+        if !is_contact_room || server.as_str() >= self.own_server() {
+            tracing::info!(%room, %server, "不是该由对方建的联系人房间，不接受");
             return;
         }
-        match self.matrix.core_session().join_via(room, &server).await {
-            Ok(()) => {
-                tracing::info!(%room, %server, "加入了联系人房间");
-                self.update(|state| {
-                    state.rooms.insert(
-                        server,
-                        RoomEntry {
-                            room_id: room.to_owned(),
-                            invited: true,
-                        },
-                    );
-                });
-            }
-            Err(e) => {
-                tracing::warn!(%room, %server, error = %e, "加入联系人房间失败，下次同步再试")
-            }
-        }
+        self.update(|state| {
+            state.joins.insert(server, room.to_owned());
+        });
     }
 
     async fn deliver(&self, room: &str, joined: &Value) {
@@ -290,8 +350,16 @@ impl MatrixLink {
             .lock()
             .rooms
             .get(server)
-            .map(|entry| entry.room_id.clone())
-            .ok_or_else(|| unreachable("还没建好"))?;
+            .map(|entry| entry.room_id.clone());
+        let Some(room) = room else {
+            let failure = self
+                .room_failures
+                .lock()
+                .expect("联系人房间失败表锁中毒")
+                .get(server)
+                .cloned();
+            return Err(failure.unwrap_or_else(|| unreachable("还没建好")));
+        };
         let session = self.matrix.core_session();
         let joined = session
             .membership(&room, &core_user(server))
@@ -336,13 +404,15 @@ async fn keep_rooms(link: Weak<MatrixLink>) {
     let Some(mut names) = link.upgrade().map(|link| link.peers.paired_names()) else {
         return;
     };
-    // 刚配对时对方的联邦常常还没通，第一次邀请会失败；没办成就几秒后再试，不让刚配对就加联系人的人等满一轮。
+    // 刚配对时对方的联邦常常还没通，第一次邀请、加入会失败；没办成就几秒后再试，不让刚配对就加联系人的人等满一轮。
     let mut retry = Duration::from_secs(2);
     loop {
         let Some(strong) = link.upgrade() else {
             return;
         };
-        let wait = if strong.ensure_rooms().await {
+        let rooms_done = strong.ensure_rooms().await;
+        let joins_done = strong.join_invited().await;
+        let wait = if rooms_done && joins_done {
             retry = Duration::from_secs(2);
             ROOMS_INTERVAL
         } else {
@@ -375,3 +445,7 @@ async fn sync_loop(link: Weak<MatrixLink>) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "matrix_link_tests.rs"]
+mod tests;

@@ -116,7 +116,7 @@ impl Contacts {
             from_display_name: local.display_name.clone(),
             keeper_display_name: local.keeper_display_name.clone(),
         };
-        self.ports.link.send(server, event).await?;
+        self.send_in_order(server, event).await?;
         let now = now_ms();
         self.commit(|stored| {
             stored.put(
@@ -180,7 +180,7 @@ impl Contacts {
                 outcome: ContactOutcome::Approved,
                 keeper_display_name: local.keeper_display_name.clone(),
             };
-            self.ports.link.send(server, event).await?;
+            self.send_in_order(server, event).await?;
             self.commit(|stored| stored.put(&local.bot, user, active(row, now)))?;
         }
         self.ports.effects.allowed_users_changed(&local.bot);
@@ -226,9 +226,7 @@ impl Contacts {
                 outcome: ContactOutcome::Rejected,
                 keeper_display_name: local.keeper_display_name.clone(),
             };
-            self.ports
-                .link
-                .send(server_of(user).unwrap_or_default(), event)
+            self.send_in_order(server_of(user).unwrap_or_default(), event)
                 .await?;
             self.commit(|stored| {
                 stored.take(&local.bot, user);
@@ -273,11 +271,20 @@ impl Contacts {
                 }
             }
             _ => {
+                // 删除和通知对方一起落盘：这边删了，对方也得删，不然对方的 Bot 还当这边是联系人。
+                let server = server_of(user).unwrap_or_default();
+                let event = ContactEvent::Remove {
+                    from: local.user_id.clone(),
+                    to: user.to_owned(),
+                };
                 self.commit(|stored| {
                     stored.take(&local.bot, user);
+                    if open {
+                        Self::enqueue(stored, server, event);
+                    }
                 })?;
                 if open {
-                    self.tell_removed(&local, user).await;
+                    self.flush_or_later(server).await;
                 }
             }
         }
@@ -285,22 +292,6 @@ impl Contacts {
             self.ports.effects.allowed_users_changed(&local.bot);
         }
         Ok(self.view(bot))
-    }
-
-    /// 告诉对方删了。发不出去只记日志：这边已经删了，对方的话 Bot 不再处理；对方那一行留着，直到对方自己删。
-    async fn tell_removed(&self, local: &LocalBot, user: &str) {
-        let event = ContactEvent::Remove {
-            from: local.user_id.clone(),
-            to: user.to_owned(),
-        };
-        if let Err(e) = self
-            .ports
-            .link
-            .send(server_of(user).unwrap_or_default(), event)
-            .await
-        {
-            tracing::warn!(bot = %local.user_id, contact = %user, error = %e, "删除联系人没能通知对方");
-        }
     }
 }
 

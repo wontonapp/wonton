@@ -189,3 +189,91 @@ async fn events_whose_user_ids_do_not_match_the_sender_are_ignored() {
     assert!(a.contacts.pending_for("alice").is_empty());
     assert!(a.contacts.view(&alice()).is_empty());
 }
+
+/// 两边已经互为联系人。
+async fn befriended() -> (Arc<Net>, Server, Server) {
+    let (net, a, b) = two();
+    ask(&a, &alice(), bot_request(BOB)).await.unwrap();
+    net.deliver_all().await;
+    b.contacts.approve(&bob(), "bob", ALICE).await.unwrap();
+    net.deliver_all().await;
+    assert_eq!(state(&a, &alice(), BOB), Some(ContactState::Active));
+    (net, a, b)
+}
+
+#[tokio::test]
+async fn a_removal_that_could_not_be_sent_reaches_the_peer_after_a_restart() {
+    let (net, a, b) = befriended().await;
+    a.fail_sends(Some(ContactError::PeerUnreachable));
+    a.contacts.remove(&alice(), "alice", BOB).await.unwrap();
+    assert_eq!(state(&a, &alice(), BOB), None);
+    net.deliver_all().await;
+    assert_eq!(state(&b, &bob(), ALICE), Some(ContactState::Active));
+
+    // 重启后通道通了：后台再发一遍，对方的 Bot 也不再把这边当联系人。
+    let a = a.restart(&net, "a.test");
+    a.contacts.flush_outbox().await;
+    net.deliver_all().await;
+    assert_eq!(state(&b, &bob(), ALICE), None);
+    assert!(b.contacts.allowed_users(BOB).is_empty());
+
+    // 送到了就不再发。
+    a.contacts.flush_outbox().await;
+    assert!(net.queued().is_empty());
+}
+
+#[tokio::test]
+async fn a_new_request_reaches_the_peer_after_the_removal_still_waiting_before_it() {
+    let (net, a, b) = befriended().await;
+    a.fail_sends(Some(ContactError::PeerUnreachable));
+    a.contacts.remove(&alice(), "alice", BOB).await.unwrap();
+    a.fail_sends(None);
+    ask(&a, &alice(), bot_request(BOB)).await.unwrap();
+    net.deliver_all().await;
+    // 对方先删掉旧的，再收到新请求：要 Bob 重新同意，不是直接接着当联系人。
+    assert_eq!(state(&b, &bob(), ALICE), Some(ContactState::Incoming));
+    assert_eq!(state(&a, &alice(), BOB), Some(ContactState::Pending));
+    assert!(b.contacts.allowed_users(BOB).is_empty());
+}
+
+#[tokio::test]
+async fn a_request_waits_behind_a_removal_that_still_cannot_be_sent() {
+    let (net, a, _b) = befriended().await;
+    a.fail_sends(Some(ContactError::PeerUnreachable));
+    a.contacts.remove(&alice(), "alice", BOB).await.unwrap();
+    let failed = ask(&a, &alice(), bot_request(BOB)).await.unwrap_err();
+    assert_eq!(failed.kind, ContactError::PeerUnreachable);
+    assert_eq!(state(&a, &alice(), BOB), None);
+    assert!(net.queued().is_empty());
+}
+
+#[tokio::test]
+async fn an_answer_that_could_not_be_sent_back_is_sent_again() {
+    let (net, a, b) = two();
+    const NOBODY: &str = "@hermes-nobody:b.test";
+    ask(&a, &alice(), bot_request(NOBODY)).await.unwrap();
+    b.fail_sends(Some(ContactError::PeerUnreachable));
+    net.deliver_all().await;
+    assert_eq!(state(&a, &alice(), NOBODY), Some(ContactState::Pending));
+
+    b.fail_sends(None);
+    b.contacts.flush_outbox().await;
+    net.deliver_all().await;
+    assert_eq!(state(&a, &alice(), NOBODY), Some(ContactState::NotFound));
+}
+
+#[tokio::test]
+async fn a_removal_waits_for_the_server_to_be_paired_again() {
+    let (net, a, b) = befriended().await;
+    a.fail_sends(Some(ContactError::PeerUnreachable));
+    a.contacts.remove(&alice(), "alice", BOB).await.unwrap();
+    a.fail_sends(None);
+    net.set_reach("b.test", PeerReach::NotPaired);
+    a.contacts.flush_outbox().await;
+    assert!(net.queued().is_empty());
+
+    net.set_reach("b.test", PeerReach::Paired(PeerStatus::Connected));
+    a.contacts.flush_outbox().await;
+    net.deliver_all().await;
+    assert_eq!(state(&b, &bob(), ALICE), None);
+}
