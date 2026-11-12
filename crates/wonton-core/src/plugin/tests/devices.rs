@@ -152,14 +152,20 @@ fn serial_slots_need_absolute_unique_targets_and_one_per_service() {
 
 #[test]
 fn unknown_services_and_unwanted_device_paths_are_rejected() {
-    let unknown = super::package(
-        "  zigbee: {image: example/zigbee2mqtt}",
-        "  permissions: [devices.serial]\n  devices:\n    serial:\n      - {service: nope, target: /dev/x}",
-    );
-    assert!(
-        parse(&unknown).unwrap_err().contains("nope"),
-        "服务名不存在"
-    );
+    for (class, slot) in [
+        ("serial", "{service: nope, target: /dev/x}"),
+        ("usb", "{service: nope}"),
+        ("disk", "{service: nope}"),
+    ] {
+        let unknown = super::package(
+            "  zigbee: {image: example/zigbee2mqtt}",
+            &format!("  permissions: [devices.{class}]\n  devices:\n    {class}:\n      - {slot}"),
+        );
+        assert!(
+            parse(&unknown).unwrap_err().contains("nope"),
+            "设备类 {class} 的服务名不存在"
+        );
+    }
     // 宿主路径仍然不能手写，哪怕有了 devices 一节。
     let path = super::package(
         "  web:\n    image: nginx\n    devices: [/dev/sda:/dev/sda]",

@@ -123,6 +123,7 @@ async fn a_static_page_lives_in_the_hosted_directory_for_its_whole_life() {
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
