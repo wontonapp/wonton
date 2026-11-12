@@ -73,8 +73,7 @@ fn unknown_remote_auth_is_other() {
     let decoded: InstallPreview = serde_json::from_value(wire).unwrap();
     assert_eq!(decoded.remote.unwrap().auth, RemoteAuth::Other);
 
-    let authorization: RemoteAuthorization =
-        serde_json::from_value(json!("expired")).unwrap();
+    let authorization: RemoteAuthorization = serde_json::from_value(json!("expired")).unwrap();
     assert_eq!(authorization, RemoteAuthorization::Other);
 }
 

@@ -39,10 +39,7 @@ fn runtime_determines_whether_services_are_allowed() {
     assert_eq!(parse(&skills).unwrap().manifest.runtime, Runtime::Skills);
     let mut remote = document(Some("remote_mcp"), None);
     remote["x-wonton"]["remote_mcp"] = json!({"url": "https://mcp.example.com/mcp"});
-    assert_eq!(
-        parse(&remote).unwrap().manifest.runtime,
-        Runtime::RemoteMcp
-    );
+    assert_eq!(parse(&remote).unwrap().manifest.runtime, Runtime::RemoteMcp);
     for parsed in [skills, remote] {
         for forbidden in [json!({}), services.clone(), Value::Null, json!([])] {
             let mut doc = parsed.clone();

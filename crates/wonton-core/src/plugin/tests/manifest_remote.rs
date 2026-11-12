@@ -51,9 +51,15 @@ fn remote_mcp_manifest_parses() {
     assert_eq!(parsed.runtime, Runtime::RemoteMcp);
     let remote = parsed.remote_mcp.unwrap();
     assert_eq!(remote.url, "https://mcp.example.com/mcp");
-    assert_eq!(remote.auth, super::super::manifest_remote::RemoteAuth::Oauth);
+    assert_eq!(
+        remote.auth,
+        super::super::manifest_remote::RemoteAuth::Oauth
+    );
     assert!(remote.headers.is_empty());
-    assert_eq!(remote.tools.as_deref(), Some(&["search".into(), "fetch".into()][..]));
+    assert_eq!(
+        remote.tools.as_deref(),
+        Some(&["search".into(), "fetch".into()][..])
+    );
     assert_eq!(remote.tool_idle_seconds, Some(600));
     assert_eq!(remote.tool_total_seconds, Some(1800));
 }
@@ -75,7 +81,10 @@ fn remote_mcp_needs_its_runtime_and_an_https_url() {
     assert!(rejected(&compose).contains("runtime: remote_mcp"));
 
     let mut missing = base();
-    missing["x-wonton"].as_object_mut().unwrap().remove("remote_mcp");
+    missing["x-wonton"]
+        .as_object_mut()
+        .unwrap()
+        .remove("remote_mcp");
     assert!(rejected(&missing).contains("remote_mcp.url"));
 
     assert!(rejected(&with(json!({"url": "http://mcp.example.com/mcp"}))).contains("https"));
@@ -88,9 +97,13 @@ fn remote_mcp_needs_its_runtime_and_an_https_url() {
 /// `headers` 只和 `auth: header` 一起写，值模板只能引用 `input` 密钥，`X-Wonton-*` 和协议头由核心写。
 #[test]
 fn remote_headers_belong_to_header_auth_and_use_input_secrets() {
-    let header = |headers: Value| json!({"url": "https://mcp.example.com/mcp",
-        "auth": "header", "headers": headers});
-    let parsed = manifest(&with(header(json!({"Authorization": "Bearer {secret:token}"}))));
+    let header = |headers: Value| {
+        json!({"url": "https://mcp.example.com/mcp",
+        "auth": "header", "headers": headers})
+    };
+    let parsed = manifest(&with(header(
+        json!({"Authorization": "Bearer {secret:token}"}),
+    )));
     assert_eq!(
         parsed.remote_mcp.unwrap().headers["Authorization"],
         "Bearer {secret:token}"
@@ -105,7 +118,9 @@ fn remote_headers_belong_to_header_auth_and_use_input_secrets() {
 
     let mut doc = base();
     doc["x-wonton"]["secrets"]["generated"] = json!({"generate": {"bytes": 32}});
-    let error = rejected(&with(header(json!({"Authorization": "Bearer {secret:generated}"}))));
+    let error = rejected(&with(header(
+        json!({"Authorization": "Bearer {secret:generated}"}),
+    )));
     assert!(error.contains("generated"), "{error}");
 
     for name in ["X-Wonton-Plugin", "Mcp-Session-Id", "Host"] {
@@ -119,7 +134,9 @@ fn remote_headers_belong_to_header_auth_and_use_input_secrets() {
 /// 工具名和期限沿用 `mcp.*` 的规则，报错写 `remote_mcp` 的字段名。
 #[test]
 fn remote_tool_limits_follow_the_mcp_rules() {
-    let error = rejected(&with(json!({"url": "https://mcp.example.com/mcp", "tools": []})));
+    let error = rejected(&with(
+        json!({"url": "https://mcp.example.com/mcp", "tools": []}),
+    ));
     assert!(error.contains("remote_mcp.tools"), "{error}");
     let error = rejected(&with(json!({"url": "https://mcp.example.com/mcp",
         "tool_idle_seconds": 0})));

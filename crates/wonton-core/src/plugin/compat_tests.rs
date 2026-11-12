@@ -37,14 +37,20 @@ fn a_readable_package_is_ok() {
 fn newer_spec() -> String {
     let current = SPEC_VERSION.to_string();
     let (major, minor) = current.split_once('.').expect("版本号是 主.次");
-    format!("{major}.{}", minor.parse::<u32>().expect("次版本号是数字") + 1)
+    format!(
+        "{major}.{}",
+        minor.parse::<u32>().expect("次版本号是数字") + 1
+    )
 }
 
 #[test]
 fn a_newer_spec_is_reported_before_any_field() {
     let newer = newer_spec();
-    let source = compose("  not_a_field: 1\n", "")
-        .replacen(&format!("spec: '{SPEC_VERSION}'"), &format!("spec: '{newer}'"), 1);
+    let source = compose("  not_a_field: 1\n", "").replacen(
+        &format!("spec: '{SPEC_VERSION}'"),
+        &format!("spec: '{newer}'"),
+        1,
+    );
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(

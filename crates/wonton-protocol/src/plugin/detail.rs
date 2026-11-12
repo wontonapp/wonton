@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use super::WidgetCapability;
 use super::{
-    ConsumerCapabilitySetting, InstalledPlugin, RemoteMcpDetail, LanWebuiOffer, MissingCapability, PermissionLine,
+    ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginProblem, PluginRuntime,
-    PluginScope, PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine, SecretInputState, SecurityTier, hint,
 };
 use crate::{CardLine, PluginShares};
 
