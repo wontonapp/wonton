@@ -41,4 +41,17 @@
     <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
     <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
     <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
+    <!-- App ロック（ADR-0102）：スイッチ、猶予、ロック画面。 -->
+    <string name="applock_title">App ロック</string>
+    <string name="applock_locked_title">Wonton はロックされています</string>
+    <string name="applock_unlock">ロック解除</string>
+    <string name="applock_verify_reason">Wonton を使い続けるには認証してください</string>
+    <string name="applock_need_device_lock">画面ロックが設定されていないため、App ロックをオンにできません。システム設定で設定してください。</string>
+    <string name="applock_no_device_lock">画面ロックが設定されていません。システム設定で設定するとロックを解除できます。</string>
+    <string name="applock_open_settings">システム設定を開く</string>
+    <string name="applock_timeout">離れてからロックするまで</string>
+    <string name="applock_timeout_immediate">すぐ</string>
+    <string name="applock_timeout_one_minute">1 分後</string>
+    <string name="applock_timeout_five_minutes">5 分後</string>
+    <string name="applock_timeout_fifteen_minutes">15 分後</string>
 </resources>

@@ -72,7 +72,7 @@ impl ChatLink {
         }
         // 契约（`PushNotification::server_id`）是本机槽位号（`ServerRow::id`），不是这台的 endpoint ID：
         // 壳点开通知按槽位号切服务器，端点 ID 在槽位列表里查不到，会被当成“已移除的服务器”误报。
-        let Some(notification) = push_notification(
+        let Some(mut notification) = push_notification(
             Some(self.slot.clone()),
             own,
             &event.room_id,
@@ -81,6 +81,8 @@ impl ChatLink {
         ) else {
             return;
         };
+        // 锁着就不在通知里写发送者和正文（ADR-0102）。
+        notification.hidden = self.app_lock.is_locked();
         self.view.send_modify(|view| {
             if let Some(shown) = view
                 .background_notifications

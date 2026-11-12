@@ -1,4 +1,3 @@
-import LocalAuthentication
 import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
@@ -197,16 +196,11 @@ private struct RecoveryKeySection: View {
     @State private var revealed: Bool
     @Environment(\.wontonColors) private var colors
 
-    /// 没设锁屏密码的设备不拦（canEvaluatePolicy 报 passcodeNotSet），密钥直接显示。
+    /// 没设设备密码的设备不拦（`passcodeNotSet`），密钥直接显示。
     init(recoveryKey: String, confirm: @escaping () -> Void) {
         self.recoveryKey = recoveryKey
         self.confirm = confirm
-        let context = LAContext()
-        var error: NSError?
-        _revealed = State(
-            initialValue: !context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
-                && (error as? LAError)?.code == .passcodeNotSet
-        )
+        _revealed = State(initialValue: SystemAuth.passcodeNotSet())
     }
 
     var body: some View {
@@ -258,20 +252,10 @@ private struct RecoveryKeySection: View {
         }
     }
 
-    @MainActor
     private func authenticate() {
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            // 生物识别坏了这类失败：留在本页，可再点一次；系统提示里会说明原因，这里不另弹提示。
-            return
-        }
         Task {
             // 成功才显示；取消和失败都不显示，也不另弹提示。
-            if (try? await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: String(localized: .chatBackupVerifyReason)
-            )) == true {
+            if await SystemAuth.authenticate(reason: String(localized: .chatBackupVerifyReason)) {
                 revealed = true
             }
         }

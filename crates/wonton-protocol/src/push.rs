@@ -80,6 +80,9 @@ pub struct PushNotification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub thread_root: Option<String>,
+    /// App 锁着（ADR-0102）：壳不显示发送者和正文，只写一句有新消息。
+    #[serde(default)]
+    pub hidden: bool,
 }
 
 /// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
@@ -199,6 +202,7 @@ mod tests {
             }),
             contact_request: None,
             thread_root: None,
+            hidden: false,
         };
         assert_eq!(round_trip(&notification), notification);
     }

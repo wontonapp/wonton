@@ -18,26 +18,30 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins, appearance, navigation):
+            case let .ready(chat, home, plugins, appearance, navigation, lock):
                 WontonThemeRoot(appearance: appearance.viewModel) {
-                    #if DEBUG
-                    if QualityPreviews.active {
-                        QualityPreviews.root
-                    } else {
+                    // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
+                    AppLockGate(lock: lock) {
+                        #if DEBUG
+                        if QualityPreviews.active {
+                            QualityPreviews.root
+                        } else {
+                            MainView(
+                                chat: chat, home: home, plugins: plugins, appearance: appearance,
+                                lock: lock, navigation: navigation, devWebURL: Launch.devWebURL
+                            )
+                        }
+                        #else
                         MainView(
                             chat: chat, home: home, plugins: plugins, appearance: appearance,
-                            navigation: navigation, devWebURL: Launch.devWebURL
+                            lock: lock, navigation: navigation, devWebURL: Launch.devWebURL
                         )
+                        #endif
                     }
-                    #else
-                    MainView(
-                        chat: chat, home: home, plugins: plugins, appearance: appearance,
-                        navigation: navigation, devWebURL: Launch.devWebURL
-                    )
-                    #endif
                 }
                 .environmentObject(orientation)
                 .task { await appearance.observe() }
+                .task { await lock.observe() }
                 .onChange(of: scenePhase) { old, phase in
                     // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
                     // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
@@ -59,7 +63,7 @@ struct WontonApp: App {
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation)
+    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation, AppLockModel)
     case failed(String)
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
@@ -114,7 +118,7 @@ private enum Launch {
         let home = HomeModel(core: core)
         let plugins = PluginsModel(core: core)
         let navigation = AppNavigation(chat: chat, home: home, plugins: plugins)
-        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation)
+        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation, AppLockModel(core: core))
     }
 
     /// App 私有的数据目录，存设备密钥和连接信息。

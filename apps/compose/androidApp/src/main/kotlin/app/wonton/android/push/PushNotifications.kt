@@ -50,10 +50,12 @@ object PushNotifications {
         }
         createChannels(context)
         val channel = notification.category.notificationChannelId
-        val (title, text) = notification.contactRequest?.let { contactTexts(context, it) } ?: messageTexts(
-            context,
-            notification,
-        )
+        val (title, text) = when {
+            // App 锁着（ADR-0102）：通知栏里也不写发送者和正文。
+            notification.hidden -> context.getString(R.string.app_name) to context.getString(R.string.push_hidden)
+            else -> notification.contactRequest?.let { contactTexts(context, it) }
+                ?: messageTexts(context, notification)
+        }
         val card = notification.confirmation
         val open = PendingIntent.getActivity(
             context,

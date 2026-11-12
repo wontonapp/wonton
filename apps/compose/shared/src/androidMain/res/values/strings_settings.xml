@@ -78,4 +78,17 @@
     <string name="push_status_failed_not_ready">Registration failed. Wait until the chat connection is ready</string>
     <!-- Push status line when registering failed because the push address is invalid. -->
     <string name="push_status_failed_invalid_input">Registration failed. The push address is invalid</string>
+    <!-- App 锁（ADR-0102）：开关、宽限和锁定页。 -->
+    <string name="applock_title">App lock</string>
+    <string name="applock_locked_title">Wonton is locked</string>
+    <string name="applock_unlock">Unlock</string>
+    <string name="applock_verify_reason">Verify your identity to keep using Wonton</string>
+    <string name="applock_need_device_lock">Set a screen lock on this device to turn the app lock on.</string>
+    <string name="applock_no_device_lock">This device has no screen lock. Set one up in the system settings to unlock.</string>
+    <string name="applock_open_settings">Open system settings</string>
+    <string name="applock_timeout">Lock after leaving the app</string>
+    <string name="applock_timeout_immediate">Right away</string>
+    <string name="applock_timeout_one_minute">After 1 minute</string>
+    <string name="applock_timeout_five_minutes">After 5 minutes</string>
+    <string name="applock_timeout_fifteen_minutes">After 15 minutes</string>
 </resources>

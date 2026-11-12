@@ -526,6 +526,7 @@ mod tests {
                 confirmation: None,
                 contact_request: None,
                 thread_root: None,
+                hidden: false,
             }],
             bots: Vec::new(),
         }

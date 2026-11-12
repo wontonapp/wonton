@@ -144,6 +144,8 @@ pub(crate) struct ChatLink {
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
     method: watch::Receiver<PushMethod>,
+    /// App 锁（ADR-0102）：锁着时弹出的通知不带内容。
+    app_lock: crate::app_lock::AppLockLink,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
     draft_writes: mpsc::UnboundedSender<DraftWrite>,
     /// 链接预览的按网址缓存和点掉的记录（ADR-0065），发送框和时间线共用。
@@ -201,6 +203,8 @@ pub(crate) struct ChatChannels {
     pub(crate) confirmations: Option<watch::Sender<ConfirmationsViewModel>>,
     /// 推送方式。
     pub(crate) method: watch::Receiver<PushMethod>,
+    /// App 锁，锁着时通知藏内容。
+    pub(crate) app_lock: crate::app_lock::AppLockLink,
     /// 登录着的会话。
     pub(crate) session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     /// 打开的房间的面板（房间账号数据）。
@@ -240,6 +244,7 @@ impl ChatLink {
             view,
             confirmations,
             method,
+            app_lock,
             session_out,
             room_panel_out,
             external,
@@ -307,6 +312,7 @@ impl ChatLink {
             plugins,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
+            app_lock,
             draft_writes,
             previews: previews::Previews::new(),
             background: AtomicBool::new(false),

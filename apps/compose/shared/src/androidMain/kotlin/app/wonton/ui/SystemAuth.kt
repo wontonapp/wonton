@@ -6,14 +6,13 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
 /**
- * 看恢复密钥前的系统验证（盲测 11-12：横幅一点开就是明文密钥）：指纹、面容或锁屏密码都算过。
- * 设备没设锁屏（canAuthenticate 给 NONE_ENROLLED）就不拦，密钥直接显示。
- * 验证只对这一次显示有效；取消和失败都不算过，系统界面自己说明了原因，这里不再另弹提示。
+ * 系统验证：指纹、面容或锁屏密码都算过（ADR-0102）。看恢复密钥和 App 锁共用这一处，两端同一套机制。
+ * 验证只对这一次有效；取消和失败都不算过，系统界面自己说明了原因，这里不再另弹提示。
  */
-internal class RecoveryKeyAuth(private val activity: FragmentActivity) {
+internal class SystemAuth(private val activity: FragmentActivity) {
 
-    /** 设了锁屏或录了指纹才需要验证。 */
-    fun needsAuth(): Boolean =
+    /** 设备有没有能用的验证手段：设了锁屏或录了指纹（`NONE_ENROLLED` 时没有）。 */
+    fun canAuthenticate(): Boolean =
         BiometricManager.from(activity).canAuthenticate(AUTHENTICATORS) !=
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
 

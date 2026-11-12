@@ -4,6 +4,7 @@ import WontonClient
 struct SettingsTab: View {
     @Bindable var model: SettingsModel
     let appearance: AppearanceModel
+    let appLock: AppLockModel
     let chat: ChatModel
     let home: HomeModel
     let plugins: PluginsModel
@@ -16,8 +17,9 @@ struct SettingsTab: View {
 
     var body: some View {
         NavigationStack(path: $model.path) {
-            SettingsView(model: model, editProfile: { isEditingProfile = true },
-                         chooseAgent: { isChoosingAgent = true })
+            SettingsView(
+                model: model, editProfile: { isEditingProfile = true },
+                chooseAgent: { isChoosingAgent = true })
                 .wontonRootScreen(TabText.settings, hasActions: isModal) {
                     if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
                 }
@@ -62,6 +64,7 @@ struct SettingsTab: View {
         case .chatBackup: ChatBackupView(model: chat)
         case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
         case .notifications: NotificationSettingsView()
+        case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .appLockTitle))
         case .about: AboutView()
         }
     }
@@ -131,6 +134,14 @@ struct SettingsView: View {
         case .notifications:
             NavigationLink(value: SettingsRoute.notifications) {
                 WontonRow(title: String(localized: .Settings.notificationTitle), showsForward: true)
+            }
+        case let .appLock(enabled, timeout):
+            NavigationLink(value: SettingsRoute.appLock) {
+                WontonRow(
+                    title: String(localized: .appLockTitle),
+                    value: enabled ? timeout.label : nil,
+                    showsForward: true
+                )
             }
         case .defaultAgent:
             Button(action: chooseAgent) {

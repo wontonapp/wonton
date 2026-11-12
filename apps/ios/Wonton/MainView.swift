@@ -7,6 +7,7 @@ struct MainView: View {
     let home: HomeModel
     let plugins: PluginsModel
     let appearance: AppearanceModel
+    let lock: AppLockModel
     let devWebURL: URL?
     let navigation: AppNavigation
     var tabs: TabsModel { navigation.tabs }
@@ -25,11 +26,12 @@ struct MainView: View {
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
-         navigation: AppNavigation, devWebURL: URL?) {
+         lock: AppLockModel, navigation: AppNavigation, devWebURL: URL?) {
         self.chat = chat
         self.home = home
         self.plugins = plugins
         self.appearance = appearance
+        self.lock = lock
         self.devWebURL = devWebURL
         self.navigation = navigation
         _settings = State(initialValue: SettingsModel(core: chat.core))
@@ -66,7 +68,7 @@ struct MainView: View {
             }
         )
         .fullScreenCover(isPresented: $showsSettings) {
-            SettingsTab(model: settings, appearance: appearance, chat: chat,
+            SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, isModal: true)
         }
         .fullScreenCover(isPresented: $showsTabSettings, onDismiss: presentPendingSettings) {
@@ -158,8 +160,8 @@ struct MainView: View {
                 path: $appsPath
             )
         case .settings:
-            SettingsTab(model: settings, appearance: appearance, chat: chat, home: home, plugins: plugins,
-                        isActive: tabs.viewModel.selected == .settings && !showsSettings)
+            SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat, home: home,
+                        plugins: plugins, isActive: tabs.viewModel.selected == .settings && !showsSettings)
         case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource:
             if visited.contains(tab), let page = tabs.viewModel.items.first(where: { $0.tab == tab })?.page {
                 pluginPage(tab, page: page, overlay: false)

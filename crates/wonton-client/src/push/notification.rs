@@ -83,6 +83,7 @@ impl Payload {
             confirmation: None,
             contact_request: Some(request),
             thread_root: None,
+            hidden: false,
         })
     }
 
@@ -103,6 +104,7 @@ impl Payload {
             confirmation: None,
             contact_request: None,
             thread_root: None,
+            hidden: false,
         }
     }
 }
@@ -277,6 +279,7 @@ impl PushLink {
             confirmation: None,
             contact_request: None,
             thread_root: None,
+            hidden: false,
         };
         let Some((core_url, proxy)) = self.wait_home().await else {
             tracing::info!("push: the home connection isn't ready for a confirmation");
@@ -312,6 +315,7 @@ impl PushLink {
                     }),
                     contact_request: None,
                     thread_root,
+                    hidden: false,
                 })
             }
             // 已经结束的：不弹。
@@ -380,6 +384,7 @@ pub(crate) fn push_notification(
         confirmation: None,
         contact_request: None,
         thread_root,
+        hidden: false,
     })
 }
 

@@ -65,14 +65,19 @@ impl ClientCore {
                 }
             }
             Route::Removed => {
-                return Ok(Some(payload.unavailable(
+                let mut notification = payload.unavailable(
                     ChatFailure::NotReady,
                     l10n!(CATALOG, language(), "servers-push-from-removed"),
-                )));
+                );
+                notification.hidden = self.app_lock.is_locked();
+                return Ok(Some(notification));
             }
         };
+        // 锁着就藏内容（ADR-0102）：壳只写一句有新消息。锁状态在这里现取，不靠壳缓存。
+        let hidden = self.app_lock.is_locked();
         Ok(notification.map(|notification| PushNotification {
             server_id: Some(slot),
+            hidden,
             ..notification
         }))
     }

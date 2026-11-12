@@ -139,3 +139,9 @@ browser-unknown-address = 这个地址已经失效。回到云吞，重新打开
 browser-not-connected = 云吞现在没连上家里的服务器。回到云吞，等连上后再刷新这个页面。
 
 browser-bad-request = 请从云吞里打开这个页面。
+
+# App 锁的设置（crates/wonton-client/src/app_lock.rs，ADR-0102）。
+# $path 是设置文件的路径，$reason 是原始的 IO 错误。
+app-lock-write-failed = 写不了 App 锁设置文件 { $path }：{ $reason }
+app-lock-read-failed = 读不了 App 锁设置文件 { $path }：{ $reason }
+app-lock-corrupt = App 锁设置文件 { $path } 坏了：{ $reason }

@@ -11,6 +11,7 @@ use tokio::sync::watch;
 use wonton_protocol::CoreError;
 
 use super::ScopeRuntime;
+use crate::app_lock::AppLockLink;
 use crate::chat::ChatLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::plugins::PluginsLink;
@@ -26,7 +27,13 @@ pub(crate) struct Visit {
 }
 
 impl Visit {
-    fn open(slot: &str, root: &Path, dir: &Path, network: Network) -> Result<Arc<Self>, CoreError> {
+    fn open(
+        slot: &str,
+        root: &Path,
+        dir: &Path,
+        network: Network,
+        app_lock: &AppLockLink,
+    ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
         let storage = Storage::open(root, dir)?;
@@ -61,6 +68,7 @@ impl Visit {
                 view: None,
                 confirmations: None,
                 method: push_method.subscribe(),
+                app_lock: app_lock.clone(),
                 session_out: watch::channel(None).0,
                 room_panel_out: watch::channel(None).0,
                 external: false,
@@ -85,6 +93,8 @@ pub(crate) struct Visits {
     network: Network,
     /// 和换服务器共用的锁：不会在切到那台的同时为它开临时作用域。
     switching: Arc<Mutex<()>>,
+    /// App 锁：临时作用域弹出的通知也要照着它藏内容。
+    app_lock: AppLockLink,
     entries: Mutex<HashMap<String, Entry>>,
 }
 
@@ -115,12 +125,14 @@ impl Visits {
         root: PathBuf,
         network: Network,
         switching: Arc<Mutex<()>>,
+        app_lock: AppLockLink,
     ) -> Arc<Self> {
         Arc::new(Self {
             servers,
             root,
             network,
             switching,
+            app_lock,
             entries: Mutex::default(),
         })
     }
@@ -145,7 +157,7 @@ impl Visits {
             join(stopping);
         }
         let dir = self.servers.slot_dir(slot);
-        let visit = Visit::open(slot, &self.root, &dir, self.network)?;
+        let visit = Visit::open(slot, &self.root, &dir, self.network, &self.app_lock)?;
         entries.insert(
             slot.to_owned(),
             Entry::Open {

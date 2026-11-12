@@ -63,5 +63,6 @@ enum SettingsRoute: Hashable {
     case chatBackup
     case bottomBar
     case notifications
+    case appLock
     case about
 }

@@ -277,9 +277,9 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val colors = WontonTheme.colors
     // 只在 FragmentActivity（MainActivity 是 AppCompatActivity）里渲染；预览数据不带密钥，截图测试走不到这里。
     val activity = LocalActivity.current as FragmentActivity
-    val auth = remember(activity) { RecoveryKeyAuth(activity) }
+    val auth = remember(activity) { SystemAuth(activity) }
     // 验证只对这一次显示有效：离开页面（组合销毁）再进要重新验证，不能进 rememberSaveable。
-    var revealed by remember { mutableStateOf(!auth.needsAuth()) }
+    var revealed by remember { mutableStateOf(!auth.canAuthenticate()) }
     // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {

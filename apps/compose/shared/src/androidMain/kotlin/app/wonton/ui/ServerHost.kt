@@ -58,15 +58,20 @@ fun WontonApp(
         if (ready == null) onRoomRequestHandled()
     }
     val serverId = servers.servers.firstOrNull { it.current }?.id
-    CompositionLocalProvider(LocalServers provides servers) {
-        key(serverId, servers.adding) {
-            ServerApp(
-                core, devWebUrl, ready?.takeIf { it.serverId == serverId }, onRoomRequestHandled,
-                onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
-                requestedLink = requestedLink,
-                requestedAgentText = requestedAgentText,
-            )
+    WontonTheme(appearance) {
+        // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
+        AppLockGate(core) {
+            CompositionLocalProvider(LocalServers provides servers) {
+                key(serverId, servers.adding) {
+                    ServerApp(
+                        core, devWebUrl, ready?.takeIf { it.serverId == serverId }, onRoomRequestHandled,
+                        onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
+                        requestedLink = requestedLink,
+                        requestedAgentText = requestedAgentText,
+                    )
+                }
+            }
         }
+        rejection?.let { ProblemDialog(it) { rejection = null } }
     }
-    WontonTheme(appearance) { rejection?.let { ProblemDialog(it) { rejection = null } } }
 }
