@@ -249,7 +249,10 @@ fn error_response(status: u16, headers: &reqwest::header::HeaderMap, body: &[u8]
         .and_then(|value| value.to_str().ok())
         .map(|value| {
             // 只给主人、或者要“能装插件”的接口，家人设备上就是权限不够（ADR-0045）。
-            if matches!(value, "owner_only" | "install_not_allowed" | "not_yours") {
+            if matches!(
+                value,
+                "permission_required" | "install_not_allowed" | "not_yours"
+            ) {
                 return PeerError::Unauthenticated;
             }
             serde_json::from_value::<PeerError>(serde_json::Value::String(value.into()))

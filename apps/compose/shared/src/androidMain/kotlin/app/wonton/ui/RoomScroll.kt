@@ -32,8 +32,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
+import app.wonton.protocol.TimelineAction
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineScroll
+import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.TimelineViewport
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -76,8 +78,8 @@ internal fun ScrollEffects(
                 // 非手势的插入和行变高不能被当成主人翻走；真正的滚动在交互观察里报告。
                 if (atBottom) {
                     following = true
-                    onAction(Action.SetTimelineScroll(roomId, TimelineScroll.BOTTOM))
-                    if (latest != null) onAction(Action.MarkRoomRead(roomId))
+                    onAction(scrollAction(roomId, TimelineScroll.BOTTOM))
+                    if (latest != null) onAction(markReadAction(roomId))
                 }
             }
         }
@@ -87,7 +89,7 @@ internal fun ScrollEffects(
             .distinctUntilChanged().collect { (scrolling, atBottom) ->
                 if (placed && scrolling && !atBottom) {
                     following = false
-                    onAction(Action.SetTimelineScroll(roomId, TimelineScroll.AWAY))
+                    onAction(scrollAction(roomId, TimelineScroll.AWAY))
                 }
             }
     }
@@ -120,11 +122,12 @@ private suspend fun placeAnchor(
             listState.scrollToItem(index, listState.layoutInfo.viewportSize.height - height)
         }
         if (anchor != newest) {
-            onAction(Action.SetTimelineScroll(roomId, TimelineScroll.AWAY))
+            onAction(scrollAction(roomId, TimelineScroll.AWAY))
         }
     }
     return atLatest || anchor == newest
 }
+
 /** 停在别处时的“回到底部”：数字是离开底部后到的消息数（ADR-0071），没有就不写数字。 */
 @Composable
 internal fun ScrollToBottomButton(
@@ -152,8 +155,8 @@ internal fun ScrollToBottomButton(
             onClick = {
                 scope.launch {
                     listState.animateScrollToItem(0)
-                    onAction(Action.SetTimelineScroll(roomId, TimelineScroll.BOTTOM))
-                    onAction(Action.MarkRoomRead(roomId))
+                    onAction(scrollAction(roomId, TimelineScroll.BOTTOM))
+                    onAction(markReadAction(roomId))
                 }
             },
             modifier = Modifier
@@ -196,3 +199,8 @@ internal fun LazyListState.reachedTop(timeline: TimelineState): Boolean {
     return timeline.loaded && last != null && last >= layoutInfo.totalItemsCount - 1 &&
         timeline.backPagination == BackPagination.IDLE
 }
+
+private fun scrollAction(roomId: String, scroll: TimelineScroll) =
+    Action.Timeline(TimelineAction.SetTimelineScroll(TimelineTarget(roomId, null), scroll))
+
+private fun markReadAction(roomId: String) = Action.Timeline(TimelineAction.MarkRead(TimelineTarget(roomId, null)))

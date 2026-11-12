@@ -172,6 +172,7 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
+composer-not-ready = This version of the client core doesn't support the attachment tray yet.
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.
@@ -183,6 +184,7 @@ chat-layout-change-failed = Couldn't change the chat layout: { $reason }
 chat-session-device-revoked = This device was revoked on Matrix. Pair it with your home server again.
 
 # Shown when the shell routes a chat action this core doesn't know.
+side-chat-not-ready = This version of the client core doesn't support side chats yet.
 chat-invalid-action = Not a chat action.
 # Shown when starting a direct chat with a user ID that isn't @name:server.
 chat-invalid-user-id = That user ID isn't valid. It should look like @name:server.

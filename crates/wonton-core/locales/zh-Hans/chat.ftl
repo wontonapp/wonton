@@ -62,6 +62,7 @@ chat-card-uninstall-keep = 保留它的数据，以后重装还在
 # 工具调用卡片的行。$args 是原始 JSON 参数，太长时截断。
 chat-card-tool-data = 这个工具会改动数据
 chat-card-tool-root = 这个操作以本机 root 身份执行
+chat-card-tool-deletes = 应用标明这个工具会删除或覆盖数据
 chat-card-args = 参数：{ $args }
 
 # Bot 存文件的卡片。$name 和 $size 描述一个文件；$total 是加在一起的大小。

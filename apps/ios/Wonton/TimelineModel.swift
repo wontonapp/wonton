@@ -39,7 +39,9 @@ final class TimelineModel {
         failure = nil
         let subscription: TimelineSubscription
         do {
-            subscription = try await core.subscribeTimeline(roomId: roomId)
+            subscription = try await core.subscribeTimeline(
+                target: TimelineTarget(roomId: roomId, threadRoot: nil)
+            )
         } catch {
             failure = error.problem
             return false

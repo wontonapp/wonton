@@ -178,7 +178,10 @@ struct ComposerView: View {
         guard !draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !isPreviewing.wrappedValue else { return }
         pin.pin()
-        model.send(.sendText(roomId: roomId, body: draft.wrappedValue, replyTo: model.replies[roomId]?.eventId))
+        model.send(.timeline(action: TimelineAction.sendText(
+            target: TimelineTarget(roomId: roomId, threadRoot: nil),
+            body: draft.wrappedValue, replyTo: model.replies[roomId]?.eventId
+        )))
         draft.wrappedValue = ""
         model.cancelReply(in: roomId)
     }
@@ -186,7 +189,10 @@ struct ComposerView: View {
     private func deliver(_ image: ImageUpload) {
         pendingImage = nil
         pin.pin()
-        model.send(.sendImage(roomId: roomId, image: image, replyTo: model.replies[roomId]?.eventId))
+        model.send(.timeline(action: TimelineAction.sendImage(
+            target: TimelineTarget(roomId: roomId, threadRoot: nil),
+            image: image, replyTo: model.replies[roomId]?.eventId
+        )))
         // 回复用掉了：图片不带输入框里的字，正文的草稿留着。
         model.cancelReply(in: roomId)
     }

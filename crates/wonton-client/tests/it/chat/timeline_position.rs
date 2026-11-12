@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use wonton_client::{Action, RoomMembership, TimelineContent, TimelineScroll, TimelineViewport};
 use wonton_matrix::{ChatRoom, MatrixSession, OwnedRoomId};
+use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use super::accept_the_bots_invite;
 use super::support::{Home, Phone, Timeline, WAIT};
@@ -85,18 +86,29 @@ impl Chat {
             .await;
     }
 
+    fn target(&self) -> TimelineTarget {
+        TimelineTarget {
+            room_id: self.room_id.to_string(),
+            thread_root: None,
+        }
+    }
+
     /// 每次调用前都有新消息：先等未读出现，再等回执把它清零，避免把同步前的初始 0 当成完成。
     async fn read(&self) {
         self.wait_unread(1).await;
         self.phone
-            .dispatch(Action::SetTimelineScroll {
-                room_id: self.room_id.to_string(),
-                scroll: TimelineScroll::Bottom,
+            .dispatch(Action::Timeline {
+                action: TimelineAction::SetTimelineScroll {
+                    target: self.target(),
+                    scroll: TimelineScroll::Bottom,
+                },
             })
             .unwrap();
         self.phone
-            .dispatch(Action::MarkRoomRead {
-                room_id: self.room_id.to_string(),
+            .dispatch(Action::Timeline {
+                action: TimelineAction::MarkRead {
+                    target: self.target(),
+                },
             })
             .unwrap();
         self.phone
@@ -144,7 +156,7 @@ impl Chat {
     }
 }
 
-/// 旧壳或排队中的回调仍发 MarkRoomRead 时，核心以最后报告的位置拒绝错误已读。
+/// 旧壳或排队中的回调仍发 MarkRead 时，核心以最后报告的位置拒绝错误已读。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn stale_read_requests_do_not_advance_a_scrolled_away_room() {
@@ -162,8 +174,10 @@ async fn stale_read_requests_do_not_advance_a_scrolled_away_room() {
     assert!(!update.scroll_to_bottom);
     chat.wait_unread(1).await;
     chat.phone
-        .dispatch(Action::MarkRoomRead {
-            room_id: chat.room_id.to_string(),
+        .dispatch(Action::Timeline {
+            action: TimelineAction::MarkRead {
+                target: chat.target(),
+            },
         })
         .unwrap();
     // 重开后服务器已读落点仍在新消息之前，不能只断言异步回执尚未到达时的旧数字。
@@ -193,10 +207,12 @@ async fn an_own_message_requests_the_bottom_while_reading_history() {
     timeline.until("历史到了", |item| text(item, "历史")).await;
     timeline.report_scroll(TimelineScroll::Away).await;
     chat.phone
-        .dispatch(Action::SendText {
-            room_id: chat.room_id.to_string(),
-            body: "回到底部看自己发的".into(),
-            reply_to: None,
+        .dispatch(Action::Timeline {
+            action: TimelineAction::SendText {
+                target: chat.target(),
+                body: "回到底部看自己发的".into(),
+                reply_to: None,
+            },
         })
         .unwrap();
     let update = chat.next_message(&mut timeline, "回到底部看自己发的").await;

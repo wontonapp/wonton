@@ -82,7 +82,7 @@ struct ChatRoomView: View {
             actions: [
                 WontonDialogAction(title: String(localized: .commonCancel)),
                 WontonDialogAction(title: String(localized: .messageRedact), kind: .danger) {
-                    if let item = redactItem { model.send(.redactMessage(roomId: roomId, itemId: item)) }
+                    if let item = redactItem { sendTimeline(.redactMessage(target: mainTimeline, itemId: item)) }
                 }
             ],
             afterDismiss: { redactItem = nil }
@@ -128,7 +128,7 @@ struct ChatRoomView: View {
                                 guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
                                 if timeline.isLoaded, timeline.backPagination == .idle {
                                     pageAnchor = oldestEvent
-                                    model.send(.paginateBackwards(roomId: roomId))
+                                    sendTimeline(.paginateBackwards(target: mainTimeline))
                                 }
                             }
                             .onDisappear { pageAnchor = nil }
@@ -148,8 +148,8 @@ struct ChatRoomView: View {
                     TimelineRow(
                         item: item, core: model.core, showsSender: !isDirect,
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { model.send(.retrySend(roomId: roomId, itemId: item.id)) },
-                        cancel: { model.send(.cancelSend(roomId: roomId, itemId: item.id)) },
+                        retry: { sendTimeline(.retrySend(target: mainTimeline, itemId: item.id)) },
+                        cancel: { sendTimeline(.cancelSend(target: mainTimeline, itemId: item.id)) },
                         cardAction: { model.send($0) },
                         reply: { model.startReply(.ready(message: $0), in: roomId) },
                         forward: {
@@ -245,8 +245,8 @@ struct ChatRoomView: View {
     }
 
     private func reportPosition(_ pinned: Bool) {
-        model.send(.setTimelineScroll(roomId: roomId, scroll: pinned ? .bottom : .away))
-        if pinned { model.send(.markRoomRead(roomId: roomId)) }
+        sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
+        if pinned { sendTimeline(.markRead(target: mainTimeline)) }
     }
 
     private var isDirect: Bool {
@@ -277,6 +277,13 @@ struct ChatRoomView: View {
     private var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
+}
+
+@MainActor
+private extension ChatRoomView {
+    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+
+    func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 }
 
 private extension TimelineItem {

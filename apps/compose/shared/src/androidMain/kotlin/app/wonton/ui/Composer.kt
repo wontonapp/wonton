@@ -53,7 +53,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ImageUpload
 import app.wonton.protocol.ReplyQuote
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonSheetAction
@@ -113,7 +116,7 @@ fun Composer(
             scope.launch {
                 PhotoUpload.make(context, uri).fold(
                     onSuccess = { upload ->
-                        onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                        onAction(sendImageAction(roomId, upload, reply))
                         if (reply != null) onReplySent()
                     },
                     onFailure = { failure -> onReject(Problem(photoUnreadable, photoTryAnother, failure.message)) },
@@ -138,7 +141,7 @@ fun Composer(
             onDraftChange,
             pasteListener,
             onHardwareSend = { text ->
-                onAction(Action.SendText(roomId, text, reply?.eventId))
+                onAction(sendTextAction(roomId, text, reply))
                 onSent()
             },
             modifier = Modifier.weight(1f)
@@ -153,7 +156,7 @@ fun Composer(
             exit = scaleOut(motion) + fadeOut(motion),
         ) {
             SendButton {
-                onAction(Action.SendText(roomId, draft, reply?.eventId))
+                onAction(sendTextAction(roomId, draft, reply))
                 onSent()
             }
         }
@@ -208,7 +211,7 @@ private fun ComposerAttachmentContent(
             PastePreviewSheet(
                 uri,
                 onSend = { upload ->
-                    onAction(Action.SendImage(roomId, upload, reply?.eventId))
+                    onAction(sendImageAction(roomId, upload, reply))
                     if (reply != null) onReplySent()
                 },
                 onDismiss = onDismissPaste,
@@ -224,8 +227,8 @@ private fun ComposerAttachmentContent(
             )
         }
     }
-
 }
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ComposerField(
@@ -307,3 +310,10 @@ private fun SendButton(onClick: () -> Unit) {
         }
     }
 }
+
+/** 发图片的一条时间线操作；两个调用点（选图、粘贴）共用，也把行收短。 */
+private fun sendTextAction(roomId: String, text: String, reply: ReplyQuote?): Action =
+    Action.Timeline(TimelineAction.SendText(TimelineTarget(roomId, null), text, reply?.eventId))
+
+private fun sendImageAction(roomId: String, upload: ImageUpload, reply: ReplyQuote?): Action =
+    Action.Timeline(TimelineAction.SendImage(TimelineTarget(roomId, null), upload, reply?.eventId))

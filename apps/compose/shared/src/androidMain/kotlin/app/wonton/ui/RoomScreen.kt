@@ -56,6 +56,8 @@ import app.wonton.protocol.TimelineDiff
 import app.wonton.protocol.TimelineItem
 import app.wonton.protocol.TimelineMessage
 import app.wonton.protocol.TimelineViewport
+import app.wonton.protocol.TimelineAction
+import app.wonton.protocol.TimelineTarget
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.LocalWontonTopInset
 import app.wonton.ui.design.WontonButton
@@ -289,7 +291,11 @@ private fun RoomScreen(
             ForwardSheet(
                 rooms = rooms.filter { it.forwardTarget(roomId) },
                 onPick = { row ->
-                    onAction(Action.ForwardMessage(roomId, itemId, row.roomId))
+                    onAction(
+                        Action.Timeline(
+                            TimelineAction.ForwardMessage(TimelineTarget(roomId, null), itemId, row.roomId),
+                        ),
+                    )
                     onOpenRoom(row.roomId)
                 },
                 onDismiss = { forwarding = null },
@@ -298,7 +304,7 @@ private fun RoomScreen(
         redacting?.let { itemId ->
             RedactConfirm(
                 onConfirm = {
-                    onAction(Action.RedactMessage(roomId, itemId))
+                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), itemId)))
                     redacting = null
                 },
                 onDismiss = { redacting = null },
@@ -427,7 +433,7 @@ private fun Messages(
         snapshotFlow { listState.reachedTop(timeline) }
             .distinctUntilChanged()
             .filter { it }
-            .collect { onAction(Action.PaginateBackwards(roomId)) }
+            .collect { onAction(Action.Timeline(TimelineAction.PaginateBackwards(TimelineTarget(roomId, null)))) }
     }
     Box(modifier) {
         LazyColumn(
@@ -457,8 +463,12 @@ private fun Messages(
                         showsSender,
                         joinsPrevious,
                         joinsNext,
-                        onRetry = { onAction(Action.RetrySend(roomId, item.id)) },
-                        onCancel = { onAction(Action.CancelSend(roomId, item.id)) },
+                        onRetry = {
+                            onAction(Action.Timeline(TimelineAction.RetrySend(TimelineTarget(roomId, null), item.id)))
+                        },
+                        onCancel = {
+                            onAction(Action.Timeline(TimelineAction.CancelSend(TimelineTarget(roomId, null), item.id)))
+                        },
                         onCardAction = onAction,
                         onOpenMenu = onOpenMenu,
                     onReply = onReply,
