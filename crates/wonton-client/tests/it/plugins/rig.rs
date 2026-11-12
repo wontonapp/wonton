@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::net::{Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -23,18 +23,11 @@ use wonton_client::{
 use wonton_tunnel::{Allowlist, TunnelServer};
 
 pub const WAIT: Duration = Duration::from_secs(20);
-/// 兜底预算，不是节奏：繁忙时建连实测 16s+（登录令牌两次超时重连），单次建连限时 12s，
-/// 失败后按退避重试；取 60s，超过就是真的连不上。
-pub const CONNECT_BACKSTOP: Duration = Duration::from_secs(60);
 pub const IMAGE: &str = "/_wonton/api/images/abc/icon-192.png";
 
 /// 核心对一个请求的预设回应，排在队列里，用完后回默认的。
 #[derive(Clone)]
 pub struct Canned(pub u16, pub String);
-
-/// 带响应头的预设回应：状态码、响应头（按顺序）、响应体。
-#[derive(Clone)]
-pub struct Headered(pub u16, pub Vec<(String, String)>, pub String);
 
 pub fn core_error(status: u16, kind: &str, message: &str) -> Canned {
     let body = serde_json::json!({"error": {"kind": kind, "message": message}});
@@ -62,13 +55,10 @@ pub struct CoreState {
     providers: Mutex<Option<serde_json::Value>>,
     /// 假核心保存的资料；为空时是还没填的。
     owner: Mutex<Option<serde_json::Value>>,
-    /// 某个方法和路径依次给出的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
-    canned: Mutex<HashMap<(Method, String), VecDeque<Canned>>>,
+    /// 某个方法和路径下一次的回应：App 还会向核心要 Matrix 登录令牌，预设的回应不能让别的请求用掉。
+    canned: Mutex<HashMap<(Method, String), Canned>>,
     /// 用完预设的回应后，某个方法和路径一直用的回应。
     standing: Mutex<HashMap<(Method, String), Canned>>,
-    /// 同上，但带响应头：有的接口把错误类别写在响应头里（如 `X-Wonton-Error`）。
-    canned_headered: Mutex<HashMap<(Method, String), Headered>>,
-    standing_headered: Mutex<HashMap<(Method, String), Headered>>,
     /// 按住不回应的路径：测试要卡住一次请求时（如保存 key 途中再存一次），放行后才回。
     holds: Holds,
     seen: Mutex<Vec<Seen>>,
@@ -88,9 +78,7 @@ impl CoreState {
         self.canned
             .lock()
             .unwrap()
-            .entry((method, path.to_owned()))
-            .or_default()
-            .push_back(canned);
+            .insert((method, path.to_owned()), canned);
     }
 
     pub fn answer_always(&self, method: Method, path: &str, canned: Canned) {
@@ -98,20 +86,6 @@ impl CoreState {
             .lock()
             .unwrap()
             .insert((method, path.to_owned()), canned);
-    }
-
-    pub fn answer_headered(&self, method: Method, path: &str, headered: Headered) {
-        self.canned_headered
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), headered);
-    }
-
-    pub fn answer_always_headered(&self, method: Method, path: &str, headered: Headered) {
-        self.standing_headered
-            .lock()
-            .unwrap()
-            .insert((method, path.to_owned()), headered);
     }
 
     pub fn stop_answering(&self, method: Method, path: &str) {
@@ -166,37 +140,6 @@ impl CoreState {
     }
 }
 
-/// 带响应头的预设回应（如 `X-Wonton-Error`）：排在前头，先于不带头的查。
-fn headered_response(core: &CoreState, method: &Method, path: &str) -> Option<Response> {
-    let headered = core
-        .canned_headered
-        .lock()
-        .unwrap()
-        .remove(&(method.clone(), path.to_owned()))
-        .or_else(|| {
-            core.standing_headered
-                .lock()
-                .unwrap()
-                .get(&(method.clone(), path.to_owned()))
-                .cloned()
-        })?;
-    let Headered(status, headers, body) = headered;
-    let mut builder = Response::builder().status(StatusCode::from_u16(status).unwrap());
-    for (name, value) in headers {
-        builder = builder.header(name, value);
-    }
-    Some(builder.body(Body::from(body)).unwrap())
-}
-
-/// 默认没有 Bot 钉页；单独要钉页的测试自己在前面拦。
-fn empty_pins() -> Response {
-    (
-        StatusCode::OK,
-        serde_json::json!({"pins": [], "consents": []}).to_string(),
-    )
-        .into_response()
-}
-
 pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let path = parts
@@ -228,15 +171,11 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
     if path == IMAGE {
         return (StatusCode::OK, vec![0x89, 0x50]).into_response();
     }
-    if let Some(response) = headered_response(&core, &parts.method, parts.uri.path()) {
-        return response;
-    }
     let canned = core
         .canned
         .lock()
         .unwrap()
-        .get_mut(&(parts.method.clone(), parts.uri.path().to_owned()))
-        .and_then(|queue| queue.pop_front())
+        .remove(&(parts.method.clone(), parts.uri.path().to_owned()))
         .or_else(|| {
             core.standing
                 .lock()
@@ -271,7 +210,6 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             )
         }
         (&Method::GET, "/_wonton/api/store") => json(serde_json::to_string(&listing()).unwrap()),
-        (&Method::GET, "/_wonton/api/panel/pins") => empty_pins(),
         (&Method::POST, "/_wonton/api/plugins/preview") => {
             // 来源 github:owner/<id> 预览出来就是 <id>。
             let id = serde_json::from_slice::<serde_json::Value>(&body)
@@ -342,7 +280,7 @@ async fn onboarding_routes(
             _ => core_error_response(405),
         });
     }
-    if path == wonton_protocol::ME_PATH {
+    if path == "/_wonton/api/owner-profile" {
         let mut owner = core.owner.lock().unwrap();
         let value = owner.get_or_insert_with(|| owner_json(None, None));
         if *method == Method::PUT
@@ -378,26 +316,17 @@ async fn onboarding_routes(
 }
 
 fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
-    serde_json::json!({
-        "user_id": "@owner:wonton.localhost",
-        "username": "owner",
-        "role": "owner",
-        "display_name": name,
-        "email": email,
-        "can_install_plugins": true,
-    })
+    serde_json::json!({"username": "owner", "display_name": name, "email": email})
 }
 
 pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
     InstalledPlugin {
-        chat: Default::default(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
         summary: String::new(),
         version: "1.0.0".to_owned(),
         revision: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
         icon: None,
         trust: PluginTrust::Official,
         source: None,
@@ -411,13 +340,9 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
-        enabled_root_permissions: Vec::new(),
-        install_progress: None,
-        tunnel_ports: Vec::new(),
     }
 }
 
@@ -435,16 +360,11 @@ pub fn preview(id: &str) -> InstallPreview {
         source: Some(format!("github:owner/{id}@v1.0.0")),
         commit: None,
         digest: "sha256:abc".to_owned(),
-        plan: "opaque-install-plan".to_owned(),
         id: id.to_owned(),
         title: format!("标题 {id}"),
         summary: String::new(),
         version: "1.0.0".to_owned(),
         kind: PluginKind::App,
-        runtime: Default::default(),
-        security_tier: None,
-        scope_choices: Vec::new(),
-        has_bot: false,
         icon: None,
         trust: PluginTrust::Official,
         provider: None,
@@ -458,22 +378,12 @@ pub fn preview(id: &str) -> InstallPreview {
             notice: None,
             supported: true,
             added: false,
-            optional: false,
-            enabled: false,
-            off_loss: None,
-            opened: None,
         }],
-        secret_inputs: Vec::new(),
-        settings: None,
         notices: Vec::new(),
-        missing_requires: Vec::new(),
-        missing_wants: Vec::new(),
-        wanting_plugins: Vec::new(),
         upgrade_from: None,
         release_notes: None,
         missing_profile: None,
         blocked: None,
-        blocked_category: None,
         devices: None,
         lan_webui: None,
         always_allowed: Vec::new(),
@@ -496,7 +406,6 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         author: None,
         stars: None,
         installed_version: None,
-        security_tier: None,
         high_permissions: false,
         blocked: None,
     }
@@ -589,22 +498,14 @@ impl Rig {
         }
     }
 
-    /// 关掉隧道的定时探测：繁忙时一次卡满时限的探测会断开健康连接、触发整轮重连，
-    /// 插件测试的对象不是隧道恢复。初始建连不受影响。
-    pub fn without_periodic_checks(self) -> Self {
-        self.app.stop_periodic_checks();
-        self
-    }
-
     /// 关掉 App 再打开。
     pub fn reopen(&mut self) {
         self.app =
             ClientCore::with_network(self._dir.path().to_str().unwrap(), Network::DirectOnly)
                 .unwrap();
     }
-    /// 第一台服务器的槽位目录（ADR-0042）。
-    pub fn data_dir(&self) -> PathBuf {
-        self._dir.path().join("servers/1")
+    pub fn data_dir(&self) -> &Path {
+        self._dir.path()
     }
 
     pub async fn wait_onboarding(
@@ -642,52 +543,28 @@ impl Rig {
         )
     }
 
-    /// 关掉服务端，模拟断网：客户端那边会看到连接断开。
-    pub async fn drop_home(&self) {
-        self._home.server.endpoint().close().await;
-    }
-
     pub async fn connected(&self) {
-        self.connected_within(WAIT).await;
-    }
-
-    /// 同 [`Self::connected`]，兜底预算由调用方按被测路径推导。
-    pub async fn connected_within(&self, budget: Duration) {
         self.connect();
-        let home = self.app.subscribe_home();
-        let waiting = async {
-            while let Some(view) = home.next().await {
-                if view.status == HomeStatus::Connected && view.proxy.is_some() {
-                    return;
-                }
-            }
-            panic!("连接订阅提前结束");
-        };
-        // 等事件，不每 20ms 轮询：忙起来轮询自己也抢 CPU；超时只兜底，报出当时的状态。
-        tokio::time::timeout(budget, waiting)
-            .await
-            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.home()));
+        let deadline = Instant::now() + WAIT;
+        while self.app.home().status != HomeStatus::Connected || self.app.home().proxy.is_none() {
+            assert!(Instant::now() < deadline, "{:?}", self.app.home());
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     pub async fn wait_for(
         &self,
         mut done: impl FnMut(&PluginsViewModel) -> bool,
     ) -> PluginsViewModel {
-        let plugins = self.app.subscribe_plugins();
-        let waiting = async {
-            while let Some(view) = plugins.next().await {
-                if done(&view) {
-                    return view;
-                }
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let view = self.app.plugins();
+            if done(&view) {
+                return view;
             }
-            panic!("订阅提前结束");
-        };
-        // 等事件，不每 20ms 轮询整份 ViewModel；超时只兜底，报出当时的状态。
-        // 闭包只许读这份 ViewModel：读外部状态的只有等 DELETE 落到核心那一条，
-        // 而 DELETE 一定先于随后的任务状态发布，事件等得到。
-        tokio::time::timeout(WAIT, waiting)
-            .await
-            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.plugins()))
+            assert!(Instant::now() < deadline, "{view:?}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 
     pub async fn task(
@@ -697,48 +574,6 @@ impl Rig {
     ) -> PluginTaskState {
         let view = self
             .wait_for(|view| {
-                view.tasks
-                    .iter()
-                    .any(|task| task.id == id && done(&task.state))
-            })
-            .await;
-        view.tasks
-            .into_iter()
-            .find(|task| task.id == id)
-            .unwrap()
-            .state
-    }
-
-    /// 同 [`Self::wait_for`]，兜底预算由调用方按被测路径推导：繁忙时一次请求实测会停滞数秒，
-    /// 固定的 20 秒会成为绑定约束而不是兜底。
-    pub async fn wait_for_within(
-        &self,
-        budget: Duration,
-        mut done: impl FnMut(&PluginsViewModel) -> bool,
-    ) -> PluginsViewModel {
-        let plugins = self.app.subscribe_plugins();
-        let waiting = async {
-            while let Some(view) = plugins.next().await {
-                if done(&view) {
-                    return view;
-                }
-            }
-            panic!("订阅提前结束");
-        };
-        tokio::time::timeout(budget, waiting)
-            .await
-            .unwrap_or_else(|_| panic!("等待超时，当前：{:?}", self.app.plugins()))
-    }
-
-    /// 同 [`Self::task`]，兜底预算见 [`Self::wait_for_within`]。
-    pub async fn task_within(
-        &self,
-        id: &str,
-        budget: Duration,
-        mut done: impl FnMut(&PluginTaskState) -> bool,
-    ) -> PluginTaskState {
-        let view = self
-            .wait_for_within(budget, |view| {
                 view.tasks
                     .iter()
                     .any(|task| task.id == id && done(&task.state))

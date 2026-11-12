@@ -1,7 +1,6 @@
 //! 管理接口 `GET`/`PUT /_wonton/api/lan`（ADR-0019 的“接口：App 和核心”）：当场检测，返回端口开在哪里、可以选的
 //! 网卡和开了局域网端口的插件；改选择时核对、存下，按新地址重建，做完再返回。
 
-use std::net::IpAddr;
 use std::sync::Arc;
 
 use wonton_protocol::{
@@ -11,7 +10,6 @@ use wonton_protocol::{
 use super::monitor::Detected;
 use super::select::{self, Bound, Kind};
 use super::webui::lan_port;
-use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
 
@@ -21,15 +19,6 @@ fn address(bound: &Bound) -> LanAddress {
         interface: bound.interface.clone(),
         // 插件网络只有 IPv4：IPv6 地址上的连接由 docker-proxy 转发，插件看到的客户端是网桥的网关。
         proxied: bound.ip.is_ipv6(),
-    }
-}
-
-/// 宣告地址：不在虚拟机的网卡上，连接经宿主转发，插件看到的客户端地址不准。
-fn announced(ip: &IpAddr) -> LanAddress {
-    LanAddress {
-        address: ip.to_string(),
-        interface: None,
-        proxied: true,
     }
 }
 
@@ -47,7 +36,7 @@ fn kind(kind: Kind) -> LanInterfaceKind {
 impl PluginManager {
     /// 当场检测一次（结果的处理同定期检测），返回局域网设置。
     pub async fn lan_settings(&self, langs: &Languages) -> Result<LanSettings, InstallError> {
-        let detected = self.lan_pass(langs).await?;
+        let detected = self.lan_pass().await?;
         self.lan_view(&detected, langs)
     }
 
@@ -60,43 +49,28 @@ impl PluginManager {
     ) -> Result<LanSettings, InstallError> {
         let this = Arc::clone(self);
         crate::plugin::manager::detached(async move {
-            this.check_lan_choice(&choice, &langs).await?;
+            this.check_lan_choice(&choice).await?;
             this.store.save_lan_choice(&choice)?;
             tracing::info!(?choice, "主人改了局域网设置");
-            let detected = this.lan_pass(&langs).await?;
+            let detected = this.lan_pass().await?;
             this.lan_view(&detected, &langs)
         })
         .await
     }
 
-    async fn check_lan_choice(
-        &self,
-        choice: &LanChoice,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        if self.lan.announce.is_some() {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-settings-lan-announce-by-env",
-                &[],
-            )));
-        }
+    async fn check_lan_choice(&self, choice: &LanChoice) -> Result<(), InstallError> {
         if self.lan.fixed.is_some() {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-settings-lan-fixed-by-env",
-                &[],
-            )));
+            return Err(InstallError::Conflict(
+                "局域网地址由核心的 WONTON_LAN_ADDRESSES 指定，不能在设置里改".to_owned(),
+            ));
         }
-        let detected = self.detect_lan(langs).await?;
+        let detected = self.detect_lan().await?;
         if let Some(failure) = detected.failure {
-            return Err(InstallError::LanUnavailable(l10n::text(
-                langs,
-                "plugin-settings-lan-detect-failed",
-                &[("failure", failure.into())],
+            return Err(InstallError::LanUnavailable(format!(
+                "检测宿主的网卡失败：{failure}"
             )));
         }
-        match select::check_choice(&detected.host, choice, langs) {
+        match select::check_choice(&detected.host, choice) {
             Ok(_) => Ok(()),
             Err(Ok(message)) => Err(InstallError::Invalid(message)),
             Err(Err(problem)) => Err(InstallError::LanUnavailable(problem.message)),
@@ -108,18 +82,9 @@ impl PluginManager {
         detected: &Detected,
         langs: &Languages,
     ) -> Result<LanSettings, InstallError> {
-        let (addresses, announce_addresses, problem) = match &detected.result {
-            Ok(plan) => (
-                plan.bind.iter().map(address).collect(),
-                if self.lan.announce.is_some() {
-                    plan.announce.iter().map(announced).collect()
-                } else {
-                    plan.bind.iter().map(address).collect()
-                },
-                None,
-            ),
+        let (addresses, problem) = match &detected.result {
+            Ok(bound) => (bound.iter().map(address).collect(), None),
             Err(problem) => (
-                Vec::new(),
                 Vec::new(),
                 Some(LanProblem {
                     reason: problem.reason,
@@ -149,9 +114,7 @@ impl PluginManager {
             .collect();
         Ok(LanSettings {
             choice: self.store.lan_choice()?.unwrap_or(LanChoice::Auto),
-            fixed_by_environment: self.lan.fixed.is_some() || self.lan.announce.is_some(),
-            announce_by_environment: self.lan.announce.is_some(),
-            announce_addresses,
+            fixed_by_environment: self.lan.fixed.is_some(),
             addresses,
             problem,
             interfaces,

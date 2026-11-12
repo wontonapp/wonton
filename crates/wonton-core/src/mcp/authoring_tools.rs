@@ -9,7 +9,6 @@ use std::os::fd::AsFd;
 
 use super::Bus;
 use super::Caller;
-use super::ToolFailure;
 use super::core_tools::tool;
 use crate::files::share_fs::saving;
 use crate::plugin::PluginId;
@@ -20,8 +19,8 @@ pub(super) const GUIDE: &str = "plugin_guide";
 pub(super) const CHECK: &str = "check_plugin";
 pub(super) const STATUS: &str = "plugin_status";
 
-/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用。这份是源，
-/// wonton-docs 的 `skills/wonton-plugin/` 与它保持一致，只保留指向那边文档的链接差异。
+/// 说明和例子随核心走：这台核心支持的规范版本对应这一份，机器没外网也能用（wonton-docs 的
+/// `skills/wonton-plugin/`，随规范一起改）。
 const GUIDE_TEXT: &str = include_str!("../../plugin-guide/SKILL.md");
 const EXAMPLES: &[(&str, &[(&str, &str)])] = &[
     (
@@ -68,27 +67,25 @@ pub(super) fn definitions() -> Vec<Tool> {
     vec![
         tool(
             GUIDE,
-            "The plugin-writing guide: the spec version this home server supports, the full guide, and every file of \
-             two minimal examples. Call this first when the owner wants a new page, app, or small tool, or when you \
-             need to change a plugin you wrote before.",
+            "读写插件用的说明：这台核心支持的规范版本、完整说明和两个最小例子的全部文件。主人想要新页面、\
+             新应用或小工具，或者要改你之前写的插件时，先调这个。",
             json!({"type": "object", "properties": {}}),
             true,
         ),
         tool(
             CHECK,
-            "Validate a plugin directory in your outbox and list all problems and warnings at once. Changes nothing, \
-             installs nothing. Iterate until there are no problems; this step doesn't need the owner's approval.",
+            "校验你 outbox 里的一个插件目录，一次列出全部问题和提醒。不改任何东西，不装。改到没有 problems \
+             为止，这一步不用问主人。",
             json!({"type": "object", "properties": {
-                "dir": {"type": "string", "description": "relative path in your outbox, e.g. myapp"},
+                "dir": {"type": "string", "description": "outbox 里的相对路径，如 myapp"},
             }, "required": ["dir"]}),
             true,
         ),
         tool(
             STATUS,
-            "Check an installed plugin: run state, health, and the status code of its web probe. You can't see what \
-             the page looks like; ask the owner to look after installing.",
+            "看一个已装插件的状态：运行状态、健康，和它网页探测的状态码。你看不到页面长什么样，装完请主人看。",
             json!({"type": "object", "properties": {
-                "id": {"type": "string", "description": "plugin ID, e.g. app.example.hello"},
+                "id": {"type": "string", "description": "插件 ID，如 app.example.hello"},
             }, "required": ["id"]}),
             true,
         ),
@@ -113,20 +110,15 @@ pub(super) fn guide() -> Value {
     })
 }
 
-pub(super) async fn check(
-    bus: &Bus,
-    caller: &Caller,
-    args: &JsonObject,
-) -> Result<Value, ToolFailure> {
+pub(super) async fn check(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Value, String> {
     let dir = args
         .get("dir")
         .and_then(Value::as_str)
         .filter(|dir| !dir.is_empty())
-        .ok_or_else(|| ToolFailure::new("invalid_input", "invalid_input: missing argument dir"))?;
+        .ok_or("invalid_input：缺少参数 dir")?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
     // 目录 fd 一路钉住，包里的文件都从它读，中途换成软链接也出不去。
-    let (opened, _) = saving::outbox_dir(&app_data, dir)
-        .map_err(|e| ToolFailure::new(e.kind.as_str(), e.to_string()))?;
+    let (opened, _) = saving::outbox_dir(&app_data, dir).map_err(|e| e.to_string())?;
     let report = match check::check_at(opened.as_fd(), false, bus.plugins.images()).await {
         Ok(report) => report_value(&report),
         // 清单解析不了也是校验结果，不是工具错误。
@@ -151,29 +143,19 @@ fn report_value(report: &Report) -> Value {
     })
 }
 
-pub(super) async fn status(
-    bus: &Bus,
-    caller: &Caller,
-    args: &JsonObject,
-) -> Result<Value, ToolFailure> {
+pub(super) async fn status(bus: &Bus, caller: &Caller, args: &JsonObject) -> Result<Value, String> {
     let id = args
         .get("id")
         .and_then(Value::as_str)
         .filter(|id| !id.is_empty())
-        .ok_or_else(|| ToolFailure::new("invalid_input", "invalid_input: missing argument id"))?;
-    let id = PluginId::parse(id)
-        .map_err(|e| ToolFailure::new("invalid_input", format!("invalid_input: {e}")))?;
+        .ok_or("invalid_input：缺少参数 id")?;
+    let id = PluginId::parse(id).map_err(|e| format!("invalid_input：{e}"))?;
     let view = bus
         .plugins
         .list()
         .into_iter()
         .find(|p| p.id == id)
-        .ok_or_else(|| {
-            ToolFailure::new(
-                "not_installed",
-                format!("invalid_input: {id} is not installed"),
-            )
-        })?;
+        .ok_or_else(|| format!("invalid_input：没有装 {id}"))?;
     let mut result = json!({
         "id": id.to_string(),
         "status": view.status,

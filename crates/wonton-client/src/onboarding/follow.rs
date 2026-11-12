@@ -57,6 +57,7 @@ async fn follow_chat(
         let Some(link) = link.upgrade() else { return };
         let _ = chat.borrow_and_update();
         link.publish();
+        link.maybe_mark_prompt_used();
     }
 }
 
@@ -64,16 +65,49 @@ async fn follow_sent(link: Weak<OnboardingLink>, mut sent: Receiver<Vec<String>>
     while sent.changed().await.is_ok() {
         let sent_rooms = sent.borrow_and_update().clone();
         let Some(link) = link.upgrade() else { return };
-        // 房间在持锁时记下：记房间、写 `prompts_used`（publish 里）和渲染用同一把锁、同一份快照，
-        // 这中间没有发布能看到“记下了房间、盘上还没有”的状态。
-        let mut state = lock(&link.state);
         lock(&link.sent_rooms).extend(sent_rooms.iter().cloned());
-        for room_id in &sent_rooms {
-            if let Err(error) = link.storage.record_prompt_room(room_id) {
-                state.problem = Some(storage_problem(error));
+        for room_id in sent_rooms {
+            if let Err(error) = link.storage.record_prompt_room(&room_id) {
+                lock(&link.state).problem = Some(storage_problem(error));
             }
         }
-        drop(state);
         link.publish();
+        link.maybe_mark_prompt_used();
+    }
+}
+
+impl OnboardingLink {
+    fn mark_prompt_used(&self) {
+        if let Err(error) = self.storage.mark_prompts_used() {
+            lock(&self.state).problem = Some(storage_problem(error));
+        }
+        self.publish();
+    }
+
+    pub(super) fn maybe_mark_prompt_used(&self) {
+        if !self.storage.snapshot().prompts_used && self.prompt_ready() {
+            self.mark_prompt_used();
+        }
+    }
+
+    fn prompt_ready(&self) -> bool {
+        let state = lock(&self.state);
+        let Some(onboarding) = state.onboarding.as_ref() else {
+            return false;
+        };
+        let Some(agent) = onboarding
+            .agents
+            .iter()
+            .find(|agent| Some(agent.id.as_str()) == onboarding.primary_agent.as_deref())
+        else {
+            return false;
+        };
+        let Some(bot) = agent.bot_user_id.as_deref() else {
+            return false;
+        };
+        let sent_rooms = lock(&self.sent_rooms);
+        self.chat.view().rooms.iter().any(|room| {
+            sent_rooms.contains(&room.room_id) && room.direct_user_id.as_deref() == Some(bot)
+        })
     }
 }

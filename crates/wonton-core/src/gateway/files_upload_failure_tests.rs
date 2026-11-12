@@ -12,7 +12,6 @@ use std::sync::{Arc, Mutex};
 
 use super::files_tests::Home;
 use super::files_upload_tests::{FakeTusd, home};
-use crate::files::test_support::any_langs;
 
 /// 第一次回 404 之后待完成记录没了，再问就不用去问 tusd 了。
 #[tokio::test]
@@ -41,11 +40,7 @@ async fn a_404_from_tusd_halfway_through_placing_waits_for_it() {
     assert!(waiting.is_err(), "放文件时不能下结论");
     assert_eq!(fake.calls(), Some(Method::HEAD), "tusd 已经回了 404");
 
-    home.f
-        .files
-        .place_for_test(&id, &any_langs())
-        .await
-        .unwrap();
+    home.f.files.place_for_test(&id).await.unwrap();
     drop(placing);
     let reply = asked.await;
     assert_eq!(reply.status, StatusCode::OK);
@@ -326,16 +321,13 @@ async fn a_hook_later_than_the_disconnect_leaves_nothing_behind() {
     let late = home
         .f
         .files
-        .create_upload(
-            crate::files::uploads::NewUpload {
-                id: &id,
-                name: Some("a.txt"),
-                mime_type: None,
-                size: Some(5),
-                device: "phone",
-            },
-            &any_langs(),
-        )
+        .create_upload(crate::files::uploads::NewUpload {
+            id: &id,
+            name: Some("a.txt"),
+            mime_type: None,
+            size: Some(5),
+            device: "phone",
+        })
         .await;
     assert_eq!(
         late.unwrap_err().kind,

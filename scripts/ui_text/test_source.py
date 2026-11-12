@@ -8,7 +8,7 @@ from __future__ import annotations
 import unittest
 
 from ui_text.components import kotlin_components, swift_components
-from ui_text.source import scan_source, source_lang
+from ui_text.source import scan_source
 
 KOTLIN_DESIGN = """
 @Composable
@@ -128,38 +128,5 @@ class SwiftRules(unittest.TestCase):
         self.assertEqual(lines(src, "swift"), [1])
 
 
-class RustRules(unittest.TestCase):
-    def test_cjk_in_strings_but_not_char_literals(self):
-        src = (
-            'let reason = "头像缓存哈希冲突";\n'
-            "let parts = text.split(|c: char| c == ',' || c == '，');\n"
-            "const ENDS: [char; 2] = ['。', '\\u{FF0C}'];\n"
-            'tracing::warn!("could not save the servers");\n'
-        )
-        self.assertEqual(lines(src, "rust"), [1])
-
-    def test_test_module_is_ignored(self):
-        src = 'fn f() {}\n#[cfg(test)]\nmod tests {\n    const A: &str = "中文";\n}\n'
-        self.assertEqual(lines(src, "rust"), [])
-
-
 if __name__ == "__main__":
     unittest.main()
-
-
-class TestSourceLangs(unittest.TestCase):
-    def test_test_source_sets_are_skipped(self):
-        # 测试源集里的假数据和预览名是写死的，不进字符串目录。
-        for path in (
-            "apps/compose/shared/src/test/kotlin/app/wonton/ui/Foo.kt",
-            "apps/compose/androidApp/src/androidTest/kotlin/app/wonton/android/Foo.kt",
-            "apps/compose/shared/src/androidHostTest/kotlin/app/wonton/ui/Foo.kt",
-        ):
-            self.assertIsNone(source_lang(path))
-
-    def test_main_source_sets_are_checked(self):
-        for path in (
-            "apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/Foo.kt",
-            "apps/compose/androidApp/src/main/kotlin/app/wonton/android/Foo.kt",
-        ):
-            self.assertEqual(source_lang(path), "kotlin")

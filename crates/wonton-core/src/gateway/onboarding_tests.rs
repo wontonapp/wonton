@@ -7,7 +7,6 @@ use serde_json::{Value, json};
 use wonton_protocol::ONBOARDING_PATH;
 
 use super::tests::{CORE, Harness};
-use crate::plugin::languages::Languages;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::storefront::index::IndexEntry;
 use crate::plugin::{PluginPackage, PluginStatus};
@@ -57,10 +56,8 @@ x-wonton:
 "#;
 
 fn write_catalog(dir: &Path) -> PluginPackage {
-    let agent =
-        PluginPackage::parse(AGENT_COMPOSE, &Languages::from_header(Some("zh-Hans"))).unwrap();
-    let photos =
-        PluginPackage::parse(PHOTOS_COMPOSE, &Languages::from_header(Some("zh-Hans"))).unwrap();
+    let agent = PluginPackage::parse(AGENT_COMPOSE).unwrap();
+    let photos = PluginPackage::parse(PHOTOS_COMPOSE).unwrap();
     IndexEntry::of(&agent, "github:example/agent", &"a".repeat(40))
         .unwrap()
         .write_to(dir, &agent)
@@ -106,11 +103,7 @@ async fn onboarding_get_put_persists_and_validates_requests() {
         },
     )
     .await;
-    let extra = PluginPackage::parse(
-        EXTRA_AGENT_COMPOSE,
-        &Languages::from_header(Some("zh-Hans")),
-    )
-    .unwrap();
+    let extra = PluginPackage::parse(EXTRA_AGENT_COMPOSE).unwrap();
     let agent_id = agent.manifest.id.clone();
     h.manager
         .register_for_test(agent.manifest.clone(), PluginStatus::Running, None);

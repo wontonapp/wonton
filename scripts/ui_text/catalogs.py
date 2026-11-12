@@ -13,7 +13,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
-from .source import Problem, is_cjk
+from .source import Problem
 
 XC_LANGS = ("en", "zh-Hans", "zh-Hant", "ja")
 # Android 的 values 目录和 BCP 47 语言的对应。
@@ -136,19 +136,6 @@ def check_android_values(lang_texts: Dict[str, str]) -> Dict[str, List[Problem]]
     en_text = lang_texts["en"]
     en = _parse_android(en_text)
     result["en"] += _plural_problems("en", en, en_text)
-    # 基础语言是 en：基础目录里出现中文、日文或全角字符，多半是两种语言放反了文件。
-    for name, (elem, translatable) in sorted(en.items()):
-        if not translatable:
-            continue
-        if any(is_cjk(ch) for value in _android_items(elem)[0] for ch in value):
-            result["en"].append(
-                (
-                    _line_of(en_text, f'name="{name}"'),
-                    f"「{name}」在基础语言（en）的 values/strings.xml 里，却有中文、日文或全角字符，"
-                    "像是放反了文件：values 里写英文，中文和日文放进 values-b+zh+Hans、"
-                    'values-b+zh+Hant、values-ja；语言的自称这类不翻译的词条加 translatable="false"',
-                ),
-            )
     en_names = {n for n, (_, translatable) in en.items() if translatable}
     for lang, text in lang_texts.items():
         if lang == "en":

@@ -17,7 +17,6 @@ use wonton_protocol::{
 };
 
 use super::{Gateway, TunnelPeer, api};
-use crate::l10n;
 use crate::plugin::InstallError;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::PluginId;
@@ -72,27 +71,22 @@ impl OnboardingState {
         &self,
         update: &OnboardingUpdate,
         agent_ids: &BTreeSet<String>,
-        langs: &Languages,
     ) -> Result<StoredState, InstallError> {
         let _guard = self.lock.lock().await;
         let mut state = self.load_locked()?;
         if let Some(step) = update.step {
             // 中间的步骤只在 App 上（ADR-0038），这里只记从头开始和走完了。
             if !matches!(step, OnboardingStep::Profile | OnboardingStep::Finished) {
-                return Err(InstallError::Invalid(l10n::text(
-                    langs,
-                    "gateway-onboarding-invalid-step",
-                    &[("step", format!("{step:?}").into())],
+                return Err(InstallError::Invalid(format!(
+                    "step 只能是 profile 或 finished，不是 {step:?}"
                 )));
             }
             state.step = step;
         }
         if let Some(primary) = &update.primary_agent {
             if !agent_ids.contains(primary) {
-                return Err(InstallError::Invalid(l10n::text(
-                    langs,
-                    "gateway-onboarding-invalid-agent",
-                    &[("agent", primary.as_str().into())],
+                return Err(InstallError::Invalid(format!(
+                    "primary_agent 不是可选 Agent：{primary}"
                 )));
             }
             state.primary_agent = Some(primary.clone());
@@ -116,7 +110,7 @@ pub(crate) async fn get(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = api::plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let langs = api::languages(&headers);
@@ -138,7 +132,7 @@ pub(crate) async fn put(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = api::plugin_denied(&gateway, peer, &headers) {
         return denied;
     }
     let update: OnboardingUpdate = match serde_json::from_slice(&body) {
@@ -154,7 +148,7 @@ pub(crate) async fn put(
     let langs = api::languages(&headers);
     let view = projection(&gateway, &langs).await;
     let agent_ids = view.agents.iter().map(|agent| agent.id.clone()).collect();
-    let state = match gateway.onboarding.update(&update, &agent_ids, &langs).await {
+    let state = match gateway.onboarding.update(&update, &agent_ids).await {
         Ok(state) => state,
         Err(error) => return api::install_error(&error),
     };
@@ -190,7 +184,7 @@ async fn projection(gateway: &Gateway, langs: &Languages) -> Onboarding {
     let catalog_problem = if catalog.is_none() && catalog_problem.is_none() {
         Some(StoreProblem {
             reason: StoreFailure::InvalidIndex,
-            details: l10n::text(langs, "gateway-onboarding-index-missing", &[]),
+            details: "官方索引没有 onboarding 清单".to_owned(),
         })
     } else {
         catalog_problem
@@ -376,7 +370,6 @@ mod tests {
             .update(
                 &update,
                 &["com.example.agent".to_owned()].into_iter().collect(),
-                &Languages::default(),
             )
             .await
             .unwrap();

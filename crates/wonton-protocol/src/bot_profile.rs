@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotChatSettings, BotRef, BotWebView, MediaHandle};
+use crate::MediaHandle;
 
 /// Bot 资料里状态头像那个字段的名字。
 pub const AVATARS_FIELD: &str = "app.wonton.avatars";
@@ -36,38 +36,6 @@ pub const MAX_BOT_NAME_CHARS: usize = 32;
 /// `PUT <base>/_wonton/api/bots/<插件 ID>/profile`：主人改这个插件的 Bot 的资料。
 pub fn bot_profile_path(plugin_id: &str) -> String {
     format!("/_wonton/api/bots/{plugin_id}/profile")
-}
-
-/// `PUT`：请求体 [`BotPluginAccessUpdate`]。只有主人能用。
-pub fn bot_plugin_access_path(plugin_id: &str, bot: &str, target_plugin_id: &str) -> String {
-    format!("/_wonton/api/bots/{plugin_id}/{bot}/plugin-access/{target_plugin_id}")
-}
-
-/// Bot 资料页里的一项工具插件或技能。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotPluginAccess {
-    pub plugin_id: String,
-    pub source: AccessSource,
-    pub enabled: bool,
-}
-
-/// 插件因全局范围还是指定范围对这个 Bot 生效。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum AccessSource {
-    Global,
-    Specified,
-    #[serde(other)]
-    Other,
-}
-
-/// [`bot_plugin_access_path`] 的请求体，单独关掉会覆盖插件范围。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotPluginAccessUpdate {
-    pub enabled: bool,
 }
 
 /// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`] 的键）。客户端核心合成（规则见 ADR-0044），
@@ -164,14 +132,11 @@ pub struct BotActivityReport {
     pub bots: Vec<BotActivityFacts>,
 }
 
-/// 一个 Bot 此刻的事实；不包含按请求者计算的网页访问权限。
+/// 一个 Bot 此刻的事实。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotActivityFacts {
     pub plugin_id: String,
-    /// 核心记录的 Bot 名；缺少时表示未提供，不从 Matrix 用户名反推，也不补成默认 Bot。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bot: Option<String>,
     /// Bot 的 Matrix 用户 ID。
     pub user_id: String,
     /// 插件在运行，健康检查过了。
@@ -256,10 +221,7 @@ pub fn check_bot_name(name: &str) -> Result<(), BotNameProblem> {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotView {
     pub user_id: String,
-    pub bot: BotRef,
-    /// 由当前请求者的身份决定；未核实、断线或切换账号时为空，不能借用插件的默认网页地址。
-    #[serde(default)]
-    pub web: Option<BotWebView>,
+    pub plugin_id: String,
     /// Matrix 显示名；还没取到资料时是插件名。
     pub name: String,
     /// 静态头像；没设时为空，壳用插件图标。
@@ -272,8 +234,6 @@ pub struct BotView {
     pub saving: bool,
     /// 最近一次改资料失败；壳显示后用 [`Action::DismissBotProfileProblem`](crate::Action::DismissBotProfileProblem) 清掉。
     pub problem: Option<BotProfileProblem>,
-    /// Bot 资料页“显示”一节（ADR-0060）。
-    pub chat: BotChatSettings,
 }
 
 impl BotView {
@@ -357,8 +317,6 @@ pub enum BotProfileFailure {
     MediaRejected { problem: AvatarMediaProblem },
     /// 家里的服务器或 Matrix 出错。
     Upstream,
-    /// 只有主人的接口，家人的设备改不了（ADR-0045）。
-    PermissionRequired,
     #[serde(other)]
     Other,
 }
@@ -423,29 +381,6 @@ mod tests {
     }
 
     #[test]
-    fn reports_keep_named_bots_without_inventing_missing_names() {
-        let report: BotActivityReport = serde_json::from_value(json!({
-            "rev": 4,
-            "bots": [
-                {"plugin_id": "a.b", "user_id": "@b:h", "running": true,
-                 "model_requests": 1, "tool_calls": 0, "waiting": 0, "profile_rev": 2},
-                {"plugin_id": "a.b", "bot": "alice", "user_id": "@b-alice:h", "running": true,
-                 "model_requests": 0, "tool_calls": 2, "waiting": 1, "profile_rev": 3, "future": true},
-            ],
-        }))
-        .unwrap();
-        assert_eq!(report.bots[0].plugin_id, "a.b");
-        assert_eq!(report.bots[0].bot, None);
-        assert_eq!(report.bots[1].plugin_id, "a.b");
-        assert_eq!(report.bots[1].bot.as_deref(), Some("alice"));
-        assert_eq!(report.bots[1].tool_calls, 2);
-        let encoded = serde_json::to_value(&report).unwrap();
-        assert_eq!(encoded["bots"][0]["plugin_id"], "a.b");
-        assert!(encoded["bots"][0].get("bot").is_none());
-        assert_eq!(encoded["bots"][1]["bot"], "alice");
-    }
-
-    #[test]
     fn an_update_names_only_what_changes() {
         let update = BotProfileUpdate {
             name: Some("小云".into()),
@@ -497,13 +432,8 @@ mod tests {
             poster: None,
         };
         let mut bot = BotView {
-            chat: Default::default(),
             user_id: "@b:h".into(),
-            bot: BotRef {
-                plugin_id: "a.b".into(),
-                bot: "default".into(),
-            },
-            web: None,
+            plugin_id: "a.b".into(),
             name: "B".into(),
             avatar: None,
             state_avatars: vec![StateAvatar {

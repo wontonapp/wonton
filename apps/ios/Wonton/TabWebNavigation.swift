@@ -11,7 +11,7 @@ extension TabWebSession: WKNavigationDelegate {
         components.host = origin.host
         if origin.port > 0 { components.port = origin.port }
         let result = core.tabHandleMessage(
-            page: placed, isMainFrame: message.frameInfo.isMainFrame,
+            tab: tab, isMainFrame: message.frameInfo.isMainFrame,
             origin: components.string ?? "", message: body, environment: input.environment
         )
         if result.initialized { ready = true }
@@ -32,13 +32,10 @@ extension TabWebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         ready = true
         hasContent = true
-        // 不透明时 WebKit 才在页面之外（底栏、Home 条后面）画页面自己的背景色；透明时露出的是 App 底色，
-        // 内容在容器里滚、只有一屏高的页面底下就是一条白（iOS 26.5 实测）。
-        webView.isOpaque = true
         recoveryURL = nil
         canGoBack = webView.canGoBack
         do {
-            try core.dispatch(action: .tabLoadSucceeded(page: placed))
+            try core.dispatch(action: .tabLoadSucceeded(tab: tab))
             try updateContext(webView, force: true)
         } catch { problem = error.problem }
         #if DEBUG
@@ -55,32 +52,14 @@ extension TabWebSession: WKNavigationDelegate {
             decisionHandler(.allow)
             return
         }
-        // 类别由代理给（x-wonton-error）。网关的响应也用这个头名，只认代理自己的取值：
-        // tunnel-unavailable 是没拿到响应，upstream-unavailable 拿到了响应（服务器在，上游没就绪），
-        // 照实交状态码给核心判断。
-        let category = http.value(forHTTPHeaderField: "x-wonton-error").map { $0.lowercased() }
-        let proxyCategories: Set = ["tunnel-unavailable", "upstream-unavailable", "unauthorized", "protocol"]
-        let proxyCategory = category.map { proxyCategories.contains($0) } == true
-        let tunnelFailed = proxyCategory
-            || http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
-        let sharedRefusal: Bool
-        if case .sharedApp = tab {
-            sharedRefusal = ["share_identity", "share_required", "share_revoked", "share_expired"]
-                .contains(http.value(forHTTPHeaderField: "x-wonton-error") ?? "")
-        } else { sharedRefusal = false }
-        guard tunnelFailed || sharedRefusal || http.statusCode >= 500 else {
+        let tunnelFailed = http.value(forHTTPHeaderField: "x-wonton-tunnel-error") != nil
+        guard tunnelFailed || http.statusCode >= 500 else {
             decisionHandler(.allow)
             return
         }
         decisionHandler(.cancel)
         recoveryURL = response.response.url
-        let status: UInt16?
-        switch category {
-        case "upstream-unavailable": status = UInt16(clamping: http.statusCode)
-        case "tunnel-unavailable", "unauthorized", "protocol": status = nil
-        default: status = tunnelFailed ? nil : UInt16(clamping: http.statusCode)
-        }
-        loadFailed(status: status)
+        loadFailed(status: tunnelFailed ? nil : UInt16(clamping: http.statusCode))
     }
 
     func webView(
@@ -89,22 +68,6 @@ extension TabWebSession: WKNavigationDelegate {
     ) {
         guard navigation.targetFrame?.isMainFrame != false, let url = navigation.request.url else {
             decisionHandler(.allow)
-            return
-        }
-        // 公网网页在同一个 WebView 里随便走 http/https，别的 scheme（mailto 等）交给系统。
-        if case .url = placed.tab {
-            let scheme = url.scheme?.lowercased()
-            if scheme == "http" || scheme == "https" {
-                if navigation.targetFrame == nil {
-                    decisionHandler(.cancel)
-                    webView.load(navigation.request)
-                } else {
-                    decisionHandler(.allow)
-                }
-            } else {
-                decisionHandler(.cancel)
-                action?(.openLink(url: url.absoluteString))
-            }
             return
         }
         let entry = input?.page.url.flatMap(URL.init(string:))
@@ -149,8 +112,6 @@ extension TabWebSession: WKNavigationDelegate {
     private func loadFailed(status: UInt16?) {
         ready = hasContent
         if recoveryURL == nil { recoveryURL = navigationURL }
-        do {
-            try core.dispatch(action: .tabLoadFailed(page: placed, status: status))
-        } catch { problem = error.problem }
+        do { try core.dispatch(action: .tabLoadFailed(tab: tab, status: status)) } catch { problem = error.problem }
     }
 }

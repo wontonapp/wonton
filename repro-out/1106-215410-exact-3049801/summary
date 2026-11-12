@@ -1,0 +1,14 @@
+run 1 rc=0 (21:54:25)
+run 2 rc=0 (21:54:34)
+run 3 rc=0 (21:54:44)
+run 4 rc=0 (21:54:53)
+run 5 rc=0 (21:55:03)
+run 6 rc=0 (21:55:16)
+run 7 rc=0 (21:55:26)
+run 8 rc=0 (21:55:36)
+run 9 rc=0 (21:55:50)
+run 10 rc=0 (21:56:09)
+run 11 rc=0 (21:56:27)
+run 12 rc=101 (21:56:48)
+FAILED at run 12, log: /home/npchy/wonton-dev/tt/stall-flaky/repro-out/1106-215410-exact-3049801/run-12.log
+done

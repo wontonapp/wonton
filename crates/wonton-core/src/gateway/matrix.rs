@@ -4,7 +4,6 @@
 //! | --- | --- | --- |
 //! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址 |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
-//! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
 //!
 //! 登录令牌能换出主人的 Matrix 账号，所以接口只认隧道身份（局域网浏览器的核心会话不行），用 `POST` 让核心
 //! 域名上的跨站修改拦截对它生效，也不发 CORS 头，插件网页读不到响应。核心没有接 Tuwunel 时两个入口都如实报
@@ -15,18 +14,15 @@ use std::sync::Arc;
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use hyper::header::{HeaderName, HeaderValue};
-use hyper::{Method, StatusCode};
+use hyper::StatusCode;
+use hyper::header::HeaderValue;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::api::error_response;
-use super::send_limits::hop_card;
 use super::{Gateway, TunnelPeer, client_addr, pages, proxy, pushers};
-use super::{room_rules, send_limits};
 use crate::matrix::{JWT_LOGIN_TYPE, LOGIN_TOKEN_TTL_SECS};
 use crate::plugin::Permission;
-use wonton_protocol::{GATEWAY_REFUSAL_HEADER, GatewayRefusal};
 
 /// 登录令牌接口的响应。客户端在 `expires_in` 秒内用它调一次 `POST {homeserver_url}/_matrix/client/v3/login`
 /// （`{"type": login_type, "token": token}`）；设备自己登录，设备 ID 和刷新令牌都归设备。
@@ -36,7 +32,7 @@ pub struct LoginToken {
     pub homeserver_url: String,
     /// Tuwunel 的 `server_name`，即 Matrix 用户 ID 冒号后的部分。
     pub server_name: String,
-    /// 设备所属用户的 Matrix 用户 ID，如 `@owner:wonton.localhost`。主人的设备是主人，家人的设备是这个家人（ADR-0045）。
+    /// 设备所属用户的 Matrix 用户 ID，如 `@owner:wonton.localhost`。M1 的已配对设备都属于主人。
     pub user_id: String,
     /// 登录请求的 `type`：`org.matrix.login.jwt`。
     pub login_type: String,
@@ -46,19 +42,21 @@ pub struct LoginToken {
     pub expires_in: u64,
 }
 
-/// `POST /_wonton/matrix/login-token`。设备属于谁，令牌就是谁的账号（ADR-0045）：主人的设备签主人的，
-/// 家人的设备签这个家人的；账号在第一次登录时由 JWT 建。
+/// `POST /_wonton/matrix/login-token`。
 pub async fn login_token(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
 ) -> Response {
-    let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
+    if gateway
+        .device_user(peer.map(|Extension(peer)| peer))
+        .is_none()
+    {
         return error_response(
             StatusCode::UNAUTHORIZED,
             "unauthenticated",
             "只给经隧道接入的已配对设备签发 Matrix 登录令牌",
         );
-    };
+    }
     let Some(matrix) = &gateway.matrix else {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -66,13 +64,14 @@ pub async fn login_token(
             UNAVAILABLE,
         );
     };
-    let localpart = person.username;
+    // M1 的已配对设备都属于主人。
+    let localpart = gateway.owner.username();
     Json(LoginToken {
         homeserver_url: gateway.public.origin(&gateway.public.matrix_host()),
         server_name: matrix.server_name().to_owned(),
-        user_id: matrix.user_id(&localpart),
+        user_id: matrix.user_id(localpart),
         login_type: JWT_LOGIN_TYPE.to_owned(),
-        token: matrix.login_token(&localpart),
+        token: matrix.login_token(localpart),
         expires_in: LOGIN_TOKEN_TTL_SECS,
     })
     .into_response()
@@ -92,125 +91,43 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
             "Matrix 只对经隧道接入的已配对设备开放",
         );
     }
-    if super::matrix_rtc::is_prefixed(req.uri().path()) {
-        return super::matrix_rtc::request(gateway, req).await;
-    }
-    let req = match room_rules::check(req).await {
-        Ok(req) => req,
-        Err(refused) => return *refused,
-    };
-    // 人在这个房间说了话：跳数清零（ADR-0045）。
-    if let Some(room) = send_limits::counted_room(req.method(), req.uri().path()) {
-        gateway.send_limits.device_sent(&room);
-    }
-    // 每人每分钟的发邀请、发消息上限（ADR-0051）：按设备认人，超了 SDK 按 retry_after_ms 自己等。
-    if let Some(person) = gateway.device_user(req.extensions().get().copied()) {
-        let req = match gateway.people_limits.check(req, &person).await {
-            Ok(req) => req,
-            Err(refused) => return *refused,
-        };
-        return forward_client_api(gateway, req).await;
-    }
     forward_client_api(gateway, req).await
 }
 
 /// `matrix.wonton.internal`：插件网络里的 Bot（`WONTON_MATRIX_HOMESERVER`）。只转发声明了 `matrix.bot` 的
-/// 插件的请求，按来源地址认出插件（见 [`crate::plugin::sources`]），再凭访问令牌认出是哪个 Bot（`whoami`，
-/// 按令牌的哈希缓存）：只放行这个插件自己的 Bot，插件拿别人的令牌来转发得到 403（ADR-0045）。其余规则同
-/// `matrix.<base>`。
+/// 插件的请求，按来源地址认出插件（见 [`crate::plugin::sources`]）；其余规则同 `matrix.<base>`。
 pub async fn bot_request(gateway: &Gateway, req: Request) -> Response {
     let source = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip()));
-    let source = match source {
-        Some(source) if source.permissions.contains(&Permission::MatrixBot) => source,
-        Some(source) => {
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "permission_denied",
-                &format!("插件 {} 没有申请 matrix.bot 权限", source.id),
-            );
+    match source {
+        Some(source) if source.permissions.contains(&Permission::MatrixBot) => {
+            // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
+            let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
+                match pushers::check(req).await {
+                    Ok(req) => req,
+                    Err(refused) => return *refused,
+                }
+            } else {
+                req
+            };
+            forward_client_api(gateway, req).await
         }
-        None => {
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "这个地址只给插件网络里的 Bot 用",
-            );
-        }
-    };
-    // matrix-sdk 建客户端时先取 `/_matrix/client/versions`，那时还没有恢复会话、没有令牌；Matrix 服务器本来也
-    // 公开这个接口。其余路径都要求令牌。
-    if req.method() == Method::GET && req.uri().path() == "/_matrix/client/versions" {
-        return forward_client_api(gateway, req).await;
-    }
-    // 令牌认 Bot：令牌是谁，必须且只是这个插件记录在案的 Bot。
-    let token = req
-        .headers()
-        .get(hyper::header::AUTHORIZATION)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "));
-    let Some(token) = token else {
-        return matrix_error(
+        Some(source) => matrix_error(
+            StatusCode::FORBIDDEN,
+            "M_FORBIDDEN",
+            "permission_denied",
+            &format!("插件 {} 没有申请 matrix.bot 权限", source.id),
+        ),
+        None => matrix_error(
             StatusCode::FORBIDDEN,
             "M_FORBIDDEN",
             "unauthenticated",
-            "Bot 的请求要带它的 Matrix 访问令牌",
-        );
-    };
-    match gateway.bot_user_of_token(token).await {
-        Some(user) if gateway.plugins.is_bot_user(&source.id, &user) => {}
-        Some(user) => {
-            tracing::warn!(plugin = %source.id, bot = %user, "插件拿别的 Bot 的令牌转发请求");
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "这个令牌不是这个插件自己的 Bot 的",
-            );
-        }
-        None => {
-            return matrix_error(
-                StatusCode::FORBIDDEN,
-                "M_FORBIDDEN",
-                "unauthenticated",
-                "认不出这个访问令牌是谁",
-            );
-        }
+            "这个地址只给插件网络里的 Bot 用",
+        ),
     }
-    // Bot 只能注册指向推送代理的 pusher，见 `pushers`。
-    let req = if pushers::is_pushers_set(req.method(), req.uri().path()) {
-        match pushers::check(req).await {
-            Ok(req) => req,
-            Err(refused) => return *refused,
-        }
-    } else {
-        req
-    };
-    let req = match room_rules::check(req).await {
-        Ok(req) => req,
-        Err(refused) => return *refused,
-    };
-    let req = match gateway
-        .send_limits
-        .check_bot_send(req, gateway.matrix.as_deref())
-        .await
-    {
-        Ok(req) => req,
-        Err(refused) => {
-            if let Some(stopped) = refused.stopped {
-                hop_card::ask_to_continue(gateway, stopped);
-            }
-            return refused.response;
-        }
-    };
-    forward_client_api(gateway, req).await
 }
 
 /// 只转发客户端接口，先挡住可能被上游读成别的路径的写法。
 async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
-    // 转发层只在路径不合法时出一页 HTML 错误页；Matrix 的文字不在本批范围，这里只给它请求的语言。
-    let langs = super::api::languages(req.headers());
     let path = req.uri().path();
     if is_ambiguous(path) {
         return matrix_error(
@@ -245,7 +162,7 @@ async fn forward_client_api(gateway: &Gateway, req: Request) -> Response {
         endpoint: &endpoint,
         name: "Tuwunel",
     };
-    match proxy::forward_or(&gateway.system_http, target, req, fwd, &langs).await {
+    match proxy::forward_or(&gateway.system_http, target, req, fwd).await {
         Ok(response) => response,
         Err(e) => matrix_forward_error(e),
     }
@@ -287,7 +204,7 @@ fn is_client_api(path: &str) -> bool {
 /// 合法请求：编码过的 `/`、`\`（`%2F`、`%5C`）放行。ruma 把路径参数里的 `/`、`\` 编成它们，而 Megolm 会话 ID
 /// 是标准 base64，大约一半带 `/`，按会话取密钥备份（`GET /_matrix/client/v3/room_keys/keys/{房间}/{会话}`）
 /// 要用到。
-pub(super) fn is_ambiguous(path: &str) -> bool {
+fn is_ambiguous(path: &str) -> bool {
     path.contains('\\')
         || path
             .split('/')
@@ -295,7 +212,7 @@ pub(super) fn is_ambiguous(path: &str) -> bool {
 }
 
 /// 百分号解码一段路径：`%XX` 换成字节，不成对的 `%` 原样保留。
-pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
+fn percent_decode(segment: &str) -> Vec<u8> {
     let hex = |b: u8| (b as char).to_digit(16).and_then(|d| u8::try_from(d).ok());
     let mut out = Vec::with_capacity(segment.len());
     let mut rest = segment.as_bytes();
@@ -314,7 +231,7 @@ pub(super) fn percent_decode(segment: &str) -> Vec<u8> {
     out
 }
 
-pub(crate) fn matrix_error(
+pub(super) fn matrix_error(
     status: StatusCode,
     errcode: &str,
     kind: &'static str,
@@ -325,21 +242,6 @@ pub(crate) fn matrix_error(
     response
         .headers_mut()
         .insert(pages::ERROR_HEADER, HeaderValue::from_static(kind));
-    response
-}
-
-/// 网关拒绝的响应（ADR-0045 的“网关管房间规则”）：403 `M_FORBIDDEN`，[`GATEWAY_REFUSAL_HEADER`] 写明原因，
-/// SDK 拿到 403 不会重试。
-pub(super) fn refusal(refusal: GatewayRefusal, message: &str) -> Response {
-    let mut response = (
-        StatusCode::FORBIDDEN,
-        Json(json!({"errcode": "M_FORBIDDEN", "error": message})),
-    )
-        .into_response();
-    response.headers_mut().insert(
-        HeaderName::from_static(GATEWAY_REFUSAL_HEADER),
-        HeaderValue::from_static(refusal.as_str()),
-    );
     response
 }
 
@@ -398,20 +300,6 @@ mod tests {
             ]
         );
         assert_eq!(serde_json::from_value::<LoginToken>(value).unwrap(), token);
-    }
-
-    /// 联邦接口不转发（ADR-0050）：联邦只经隧道进来，网关这边从来不该有。
-    #[test]
-    fn federation_paths_are_not_forwarded() {
-        for path in [
-            "/_matrix/federation/v1/send/1",
-            "/_matrix/federation/",
-            "/_matrix/key/v2/server",
-            "/_matrix/key/",
-            "/_synapse/admin/v1/users",
-        ] {
-            assert!(!is_client_api(path), "{path} 不该被转发");
-        }
     }
 
     #[test]

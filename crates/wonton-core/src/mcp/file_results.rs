@@ -18,7 +18,6 @@ use crate::files::record::FileRecord;
 use crate::files::share_fs::ShareRef;
 use crate::files::{BotRef, Failure, Files};
 use crate::plugin::PluginId;
-use crate::plugin::languages::Languages;
 
 /// 一个结果最多登记这么多个文件，每个占一行上下文。
 const MAX_FILES: usize = 100;
@@ -29,9 +28,6 @@ const REGISTER_BUDGET: Duration = Duration::from_secs(30);
 /// 只有核心读的 `_meta`，交给 Agent 前去掉。
 const CORE_META_PREFIX: &str = "app.wonton/";
 const INTERNAL_URL_META: &str = "app.wonton/internal_url";
-/// 单个二进制块（image、audio、嵌入资源的 blob）解码后最多这么多：超过的整块换成说明（插件规范的“工具结果里的文件”）。
-/// 整个响应的上限是另一回事，在 upstream.rs。
-const MAX_BLOCK_BYTES: usize = 1 << 20;
 
 /// 排好顺序的输出：普通的内容块，或者登记好的文件。
 enum Part {
@@ -47,7 +43,6 @@ pub(super) async fn rewrite(
     mut result: CallToolResult,
 ) -> (CallToolResult, Vec<AuditedFile>) {
     strip_meta(&mut result.meta);
-    let langs = bus.plugins.owner_languages();
     let target = bus
         .files()
         .and_then(|files| Ok((files.clone(), bus.bot_ref(caller, plugin)?)));
@@ -64,7 +59,7 @@ pub(super) async fn rewrite(
             }
             mut other => {
                 strip_block_meta(&mut other);
-                parts.push(Part::Block(checked_block(other)));
+                parts.push(Part::Block(other));
                 continue;
             }
         };
@@ -74,7 +69,7 @@ pub(super) async fn rewrite(
         }
         let registered = match &target {
             Ok((files, bot)) => {
-                tokio::time::timeout_at(deadline, register(files, bot, plugin, &link, &langs)).await
+                tokio::time::timeout_at(deadline, register(files, bot, plugin, &link)).await
             }
             Err(failure) => Ok(Err(failure.clone())),
         };
@@ -84,15 +79,12 @@ pub(super) async fn rewrite(
                 continue;
             }
             Ok(Err(failure)) => failure,
-            Err(_) => Failure::new(
-                FileFailure::ServiceUnavailable,
-                "registration timed out; try again",
-            ),
+            Err(_) => Failure::new(FileFailure::ServiceUnavailable, "登记超时，稍后再试"),
         };
         refusals.push(AuditedFile::refused(plugin, &link.uri, failure.kind));
         parts.push(Part::Block(ContentBlock::text(refused(&link, &failure))));
     }
-    let previews = previews(target.as_ref().ok().map(|(files, _)| files), &parts, &langs).await;
+    let previews = previews(target.as_ref().ok().map(|(files, _)| files), &parts).await;
     let mut audited = Vec::new();
     let (mut content, mut previewed) = (Vec::with_capacity(parts.len()), false);
     for (part, preview) in parts.into_iter().zip(previews) {
@@ -110,7 +102,7 @@ pub(super) async fn rewrite(
     }
     if seen > MAX_FILES {
         content.push(ContentBlock::text(format!(
-            "{} more files not listed: one result holds at most {MAX_FILES}; narrow the search.",
+            "还有 {} 个文件没有列出：一个结果最多 {MAX_FILES} 个，缩小范围再找。",
             seen - MAX_FILES
         )));
     }
@@ -127,16 +119,13 @@ async fn register(
     bot: &BotRef,
     plugin: &PluginId,
     link: &Resource,
-    langs: &Languages,
 ) -> Result<FileRecord, Failure> {
     let mime_type = link.mime_type.as_deref();
     if ShareRef::is_reference(&link.uri) {
         let reference = ShareRef::parse(&link.uri)
             .map_err(|why| Failure::new(FileFailure::PermissionDenied, why))?;
         let name = Some(link.name.as_str()).filter(|name| !name.is_empty());
-        return files
-            .register_share(bot, reference, name, mime_type, langs)
-            .await;
+        return files.register_share(bot, reference, name, mime_type).await;
     }
     let internal = link
         .meta
@@ -145,17 +134,13 @@ async fn register(
         .and_then(|url| url.as_str());
     files
         .register_resource(
-            bot, plugin, &link.uri, internal, &link.name, mime_type, link.size, langs,
+            bot, plugin, &link.uri, internal, &link.name, mime_type, link.size,
         )
         .await
 }
 
 /// 每张图片的预览，和 `parts` 一一对应，前 [`MAX_PREVIEWS`] 张之外都是空的。解不了的也占名额、不附，文字照常。
-async fn previews(
-    files: Option<&Arc<Files>>,
-    parts: &[Part],
-    langs: &Languages,
-) -> Vec<Option<String>> {
+async fn previews(files: Option<&Arc<Files>>, parts: &[Part]) -> Vec<Option<String>> {
     let mut left = MAX_PREVIEWS;
     let jobs = parts.iter().map(|part| {
         let wanted = match part {
@@ -172,21 +157,20 @@ async fn previews(
             // 同时读的就超过名额，串行的插件还会被误判超时。后台的这次仍受名额和读取期限的约束。
             let job = tokio::spawn({
                 let (files, record) = (files.clone(), record.clone());
-                let langs = langs.clone();
-                async move { files.preview(&record, &langs).await }
+                async move { files.preview(&record).await }
             });
             match tokio::time::timeout(files.preview_budget, job).await {
                 Ok(Ok(Ok(jpeg))) => Some(STANDARD.encode(jpeg)),
                 Ok(Ok(Err(e))) => {
-                    tracing::info!(file = %record.id, error = %e, "no preview attached for this file");
+                    tracing::info!(file = %record.id, error = %e, "这个文件不附预览");
                     None
                 }
                 Ok(Err(e)) => {
-                    tracing::error!(file = %record.id, error = %e, "preview task panicked");
+                    tracing::error!(file = %record.id, error = %e, "做预览的任务异常退出");
                     None
                 }
                 Err(_) => {
-                    tracing::info!(file = %record.id, "preview didn't finish in time; not attached");
+                    tracing::info!(file = %record.id, "预览没在期限内做完，不附");
                     None
                 }
             }
@@ -209,24 +193,24 @@ fn file_line(record: &FileRecord) -> String {
     let declared = record.mime_type.as_deref();
     let mime = served_type(&record.name, declared)
         .or_else(|| declared.and_then(declared_type))
-        .unwrap_or("unknown type");
+        .unwrap_or("类型未知");
     let size = record
         .registered
         .map(|snapshot| snapshot.size)
         .or(record.declared_size)
-        .map_or_else(|| "unknown size".to_owned(), human_size);
-    format!("file {} ({mime}, {size}), id {}", record.name, record.id)
+        .map_or_else(|| "大小未知".to_owned(), human_size);
+    format!("文件 {}（{mime}，{size}），编号 {}", record.name, record.id)
 }
 
 /// 只说一次能调的工具：搜索结果可能有很多行。
 fn hint(previewed: bool) -> String {
     let preview = if previewed {
-        "The attached image is a downscaled preview, not the original file. "
+        "附的图片只是缩小的预览，不是原文件。"
     } else {
         ""
     };
     format!(
-        "{preview}Use wonton__view_file to view images or read text file contents, and wonton__share_file to send a file to the owner (both take file_id); put the returned link into your reply as-is."
+        "{preview}看图片、读文本文件内容调 wonton__view_file，发给主人调 wonton__share_file（参数都是 file_id），把返回的链接原样放进回复。"
     )
 }
 
@@ -240,10 +224,10 @@ fn refused(link: &Resource, failure: &Failure) -> String {
             .filter(|c| !c.is_control())
             .collect()
     } else {
-        "the resource reference from the app can't be used".to_owned()
+        "插件给的资源引用用不了".to_owned()
     };
     format!(
-        "can't register file {} ({}): {why}",
+        "文件 {} 登记不了（{}）：{why}",
         crate::files::share_fs::sanitize_name(&link.name),
         failure.kind.as_str()
     )
@@ -261,47 +245,6 @@ pub(super) fn human_size(bytes: u64) -> String {
         unit += 1;
     }
     format!("{value:.1} {}", UNITS[unit])
-}
-
-/// 二进制块（image、audio、嵌入资源的 blob）超过单块上限或 base64 不合法时，整块换成说明；其余原样过（插件规范的
-/// “工具结果里的文件”）。不截断，同一结果里的别的块不受影响。
-fn checked_block(block: ContentBlock) -> ContentBlock {
-    let (kind, data) = match &block {
-        ContentBlock::Image(image) => ("image block", image.data.as_str()),
-        ContentBlock::Audio(audio) => ("audio block", audio.data.as_str()),
-        ContentBlock::Resource(embedded) => match &embedded.resource {
-            ResourceContents::BlobResourceContents { blob, .. } => {
-                ("blob in a resource block", blob.as_str())
-            }
-            _ => return block,
-        },
-        _ => return block,
-    };
-    let invalid = || {
-        ContentBlock::text(format!(
-            "the {kind} from the app is not valid base64; its content is not included."
-        ))
-    };
-    // STANDARD 的合法 base64 长度必是 4 的倍数，不用解码就能先排除一段。大小按 base64 长度估，不为判断大小把几十
-    // MiB 解码一遍再丢；上限以内的才解码核对，顺便查出长度对得上但内容不合规矩的。
-    if data.len() % 4 != 0 {
-        return invalid();
-    }
-    let estimated =
-        (data.len() / 4 * 3).saturating_sub(data.len() - data.trim_end_matches('=').len());
-    if estimated > MAX_BLOCK_BYTES {
-        return ContentBlock::text(format!(
-            "the {kind} from the app decodes to {}, over the single-block limit of {}; its content is not included. \
-             To hand over large files, the app must return a resource_link reference (plugin spec, \"Files in tool results\") \
-             so the agent can view and share them.",
-            human_size(estimated as u64),
-            human_size(MAX_BLOCK_BYTES as u64),
-        ));
-    }
-    if STANDARD.decode(data).is_err() {
-        return invalid();
-    }
-    block
 }
 
 fn strip_block_meta(block: &mut ContentBlock) {

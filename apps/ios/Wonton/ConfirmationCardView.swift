@@ -4,13 +4,12 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (CardChoice, [String: String]) -> Void
+    let answer: (CardChoice) -> Void
     let stopWindow: () -> Void
     @Environment(TabsModel.self) private var tabs
     @Environment(PluginsModel.self) private var plugins
     @State private var showsPages = false
     @State private var pinRequest: TabRef?
-    @State private var secrets: [String: String] = [:]
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -21,14 +20,6 @@ struct ConfirmationCardView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .fontWeight(line.emphasis ? .semibold : .regular)
                     .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
-            }
-            if !view.card.secretInputs.isEmpty {
-                SecretInputsSection(
-                    inputs: view.card.secretInputs, values: secrets,
-                    enabled: view.card.state == .pending
-                ) { name, value in
-                    secrets[name] = value
-                }
             }
             state
             if let window = view.window {
@@ -75,20 +66,20 @@ struct ConfirmationCardView: View {
         case .running:
             HStack(spacing: WontonTheme.spacing.s8) {
                 ProgressView()
-                Text(.confirmationCardRunning).wontonText(WontonTheme.typography.supporting)
+                Text("正在执行").wontonText(WontonTheme.typography.supporting)
             }
         case let .succeeded(message):
             note(message, icon: .checkCircleFill, color: colors.success)
         case let .failed(message):
-            note(String(localized: .confirmationCardFailedResult(message)), icon: .error, color: colors.danger)
+            note("没有成功：\(message)", icon: .error, color: colors.danger)
         case let .uncertain(message):
-            note(String(localized: .confirmationCardUncertainResult(message)), icon: .help, color: colors.warning)
+            note("结果不确定：\(message)", icon: .help, color: colors.warning)
         case .rejected:
-            Text(.confirmationCardRejected)
+            Text("已拒绝，没有执行")
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         case .expired:
-            Text(.confirmationCardExpired)
+            Text("已过期，没有执行")
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
         }
@@ -104,13 +95,13 @@ struct ConfirmationCardView: View {
             let until = Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)
                 .formatted(date: .omitted, time: .shortened)
             HStack(spacing: WontonTheme.spacing.s8) {
-                Text(.confirmationCardWindowUntil(until)).wontonText(WontonTheme.typography.supporting)
+                Text("放行到 \(until)").wontonText(WontonTheme.typography.supporting)
                 Button {
                     stopWindow()
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if stopping { ProgressView() }
-                        Text(.confirmationCardStopWindow)
+                        Text("停止")
                     }
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
@@ -146,7 +137,7 @@ struct ConfirmationCardView: View {
     private var buttons: some View {
         ForEach(view.card.choices, id: \.self) { choice in
             Button {
-                answer(choice, secretValues(view.card.secretInputs, secrets))
+                answer(choice)
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     if view.sending == choice.answer, view.sendingChoiceId == choice.choiceId { ProgressView() }
@@ -154,8 +145,7 @@ struct ConfirmationCardView: View {
                 }
             }
             .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
-            .disabled(view.sending != nil || (choice.answer == .approve
-                && missingRequiredSecret(view.card.secretInputs, secrets)))
+            .disabled(view.sending != nil)
         }
     }
 }

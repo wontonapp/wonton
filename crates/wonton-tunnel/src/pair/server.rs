@@ -47,11 +47,11 @@ impl<H: PairHandler> PairProtocol<H> {
     async fn respond(&self, conn: &Connection) -> Result<(), String> {
         let (mut send, mut recv) = tokio::time::timeout(REQUEST_TIMEOUT, conn.accept_bi())
             .await
-            .map_err(|_| "the device did not open a stream in time".to_owned())?
+            .map_err(|_| "设备没有及时开流".to_owned())?
             .map_err(|e| e.to_string())?;
         let request = tokio::time::timeout(REQUEST_TIMEOUT, recv.read_to_end(MAX_MESSAGE_LEN))
             .await
-            .map_err(|_| "the device did not finish writing its request in time".to_owned())?;
+            .map_err(|_| "设备没有及时写完请求".to_owned())?;
         let response = match request.map_err(|e| e.to_string()).and_then(|bytes| {
             serde_json::from_slice::<PairRequest>(&bytes).map_err(|e| e.to_string())
         }) {
@@ -63,10 +63,10 @@ impl<H: PairHandler> PairProtocol<H> {
                 .pair(conn.remote_id(), &secret, device_name.trim()),
             Err(reason) => PairResponse::Rejected {
                 reason: RejectReason::BadRequest,
-                message: format!("malformed pairing request: {reason}"),
+                message: format!("配对请求不合规：{reason}"),
             },
         };
-        let body = serde_json::to_vec(&response).expect("the response always serializes to JSON");
+        let body = serde_json::to_vec(&response).expect("回应总能编成 JSON");
         send.write_all(&body).await.map_err(|e| e.to_string())?;
         send.finish().map_err(|e| e.to_string())?;
         Ok(())
@@ -81,11 +81,9 @@ impl<H: PairHandler> ProtocolHandler for PairProtocol<H> {
                 // 等设备读完回应后自己关；超时就由服务端关。
                 tokio::time::timeout(LINGER, conn.closed()).await.ok();
             }
-            Err(reason) => {
-                debug!(remote = %remote.fmt_short(), "pairing request not completed: {reason}")
-            }
+            Err(reason) => debug!(remote = %remote.fmt_short(), "配对请求没有处理完：{reason}"),
         }
-        info!(remote = %remote.fmt_short(), "pairing connection ended");
+        info!(remote = %remote.fmt_short(), "配对连接结束");
         conn.close(CLOSE_DONE, b"done");
         Ok(())
     }

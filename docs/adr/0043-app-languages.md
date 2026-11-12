@@ -40,15 +40,15 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 
 **客户端核心：界面上的文字一律不出，只出“详情”。** ViewModel 给枚举、类别和原始值（数目、字节数、时间戳、名字），壳按它们挑文字和格式化。
 
-- 已经在核心里写好的文字改成枚举：外观选项的 `label`、引导的步骤标题和提示、核心升级的说明、文件操作和聊天操作的“某某失败”、推送通知的正文（图片和文件的占位、邀请、不知道发送者）。这些是接口改动，按 AGENTS.md 先单独提改 `wonton-protocol` 的 PR。
+- 已经在核心里写好的文字改成枚举：外观选项的 `label`、引导的步骤标题和提示、核心升级的说明、文件操作和聊天操作的“某某失败”。这些是接口改动，按 AGENTS.md 先单独提改 `wonton-protocol` 的 PR。
 - 默认收起的“详情”（`CoreError` 的原因、问题里的 `detail` 和 `message`）也按 App 的语言写。它们在核心深处的各条路径上生成，带着状态码、超时秒数这些参数，有几百种，一一变成枚举交给壳写不现实，所以由客户端核心用 Fluent 写：`crates/wonton-client/locales/<语言标签>.ftl`，语言取 `SetLanguages` 的第一项，也就是 App 实际在用的语言。
 - 数据原样嵌在句子里，不翻：错误码、HTTP 状态、仓库名、镜像名、上游返回的原文。翻的是包在它们外面的说明。
 - 日志写英文，不翻译：只有开发者看。
 - 别人写的内容照原样传：聊天消息、Bot 的回复、插件和家里服务器挑好语言的文字。
 
-**家里的服务器：只有它知道、旧 App 也要显示得出来的文字。** 插件清单里的文字、权限说明和提醒、引导的 Agent 名单和服务商、帮助文档，以及核心以自己的账号发的确认卡片和消息。这些按请求的 `Accept-Language`（在聊天里发的按主人的语言，按人取见下）挑语言。确认卡片发给谁就按谁最近一次请求的语言写（没有记录时按主人的）：家人的卡片推到他的设备、显示在他的 App 里，文字也该是他读得懂的。
+**家里的服务器：只有它知道、旧 App 也要显示得出来的文字。** 插件清单里的文字、权限说明和提醒、引导的 Agent 名单和服务商、帮助文档，以及核心以自己的账号发的确认卡片和消息。这些按请求的 `Accept-Language`（在聊天里发的按主人的语言，见下）挑语言。
 
-- 核心自己的文字用 Fluent：`crates/wonton-core/locales/<语言标签>/*.ftl`，每种语言按领域分几个文件，构建时拼成一份（几批迁移同时加文字时不在同一个文件里冲突）。复数和数字用 Fluent 的选择器和 `NUMBER()`。现在散在代码里的 `("zh", …), ("en", …)` 对照搬进这些文件。
+- 核心自己的文字用 Fluent：`crates/wonton-core/locales/<语言标签>.ftl`，一种语言一个文件。复数和数字用 Fluent 的选择器和 `NUMBER()`。现在散在代码里的 `("zh", …), ("en", …)` 对照搬进这些文件。
 - 挑语言用 `fluent-langneg` 的协商（打开 `cldr` 特性，取 `Lookup` 策略），插件文字也换成它：按 CLDR 的可能子标签补全文字系统，所以 `zh-TW`、`zh-HK` 在有 `zh-Hant` 时选它，而不是排在前面的 `zh`。不开 `cldr` 时它没有中文的子标签，所有中文都落到列表里排第一的那种。
 - 服务器给 App 的错误原因也按 `Accept-Language` 用这些文件写，同样只翻说明、不翻数据。
 - 主机终端（`wonton pair` 等）和局域网状态页不在本篇范围。
@@ -61,16 +61,16 @@ App 名字：中文是“云吞”和“雲吞”，英文和日文是“Wonton�
 
 ### 语言设置
 
-设置首页在“外观”“底栏”那一组加一行“语言”（`SettingsViewModel` 里的一项），右边显示当前的选择，名字和点了以后做什么由壳决定：iOS 是 App 在用的语言的自称；Android 是“跟随系统”或那种语言的自称。
+设置首页在“外观”“底栏”那一组加一行“语言”（`SettingsViewModel` 里的一项），右边显示 App 当前用的语言，名字和点了以后做什么由壳决定。
 
 - **iOS：** 点了打开 `UIApplication.openSettingsURLString`，也就是系统设置里本 App 的页面，系统在那里给“语言”。App 里不做选择器。系统改语言后会重启 App，这是系统的行为。
-- **Android：** 点了打开 App 里的选择器：第一项“跟随系统”，下面是支持的语言，各用它自己的语言写名字（English、简体中文、繁體中文、日本語），选中即生效。选择器调 `AppCompatDelegate.setApplicationLocales`：Android 13 起它交给系统的 `LocaleManager`，和系统设置里的“应用语言”是同一个值；更早的系统由 AppCompat 存下、启动时套用。Android 12 及以前要 `AppCompatActivity` 才套用得上，所以 `MainActivity` 改成 `AppCompatActivity`，主题的父主题换成 AppCompat 的，清单里加 `AppLocalesMetadataHolderService`（`autoStoreLocales`）。
-- 系统设置里的“应用语言”要 `locales_config`：AGP 的 `generateLocaleConfig` 只读 App 模块自己的资源，shared 库里的语言会漏掉，所以照 Mihon 的做法由 `androidApp/build.gradle.kts` 里的 `generateLocalesConfig` 任务生成，列出 App 和 shared 里每个带 `strings.xml` 的 `values-*` 目录（`values/` 是英文）。App 里的选择器也从它读语言列表。
+- **Android：** 点了打开 App 里的选择器：第一项“跟随系统”，下面四种语言各用自己的语言写名字（English、简体中文、繁體中文、日本語），选中即生效。选择器调 `AppCompatDelegate.setApplicationLocales`：Android 13 起它交给系统的 `LocaleManager`，和系统设置里的“应用语言”是同一个值；更早的系统由 AppCompat 存下、启动时套用。Android 12 及以前要 `AppCompatActivity` 才套用得上，所以 `MainActivity` 改成 `AppCompatActivity`，主题的父主题换成 AppCompat 的，清单里加 `AppLocalesMetadataHolderService`（`autoStoreLocales`）。
+- 系统设置里的“应用语言”要 `locales_config`：由 App 模块的 `generateLocaleConfig` 按资源目录生成，`res/resources.properties` 写明 `values/` 是英文。AGP 读不到 KMP 库模块的资源时，照 Mihon 的做法用一个 Gradle 任务生成。App 里的选择器也从它读语言列表。
 
 ### 语言怎么传给核心和插件页
 
 - 壳在启动和语言变了以后发 `SetLanguages`：第一项是 App 实际在用的语言，后面接系统的语言偏好。iOS 取 `Bundle.main.preferredLocalizations.first`，不取 `Locale.preferredLanguages`：后者是用户要的语言，系统是法语时它是 `fr-FR`，App 显示的却是英文；Android 取每种语言的资源里写着自己标签的一条字符串，这样拿到的是资源实际落到的语言，而不是用户要的语言。
-- 客户端核心把它写进每个请求的 `Accept-Language`。家里的服务器把**每个人**最近一次设备请求的语言记在这个人名下（`core/plugins/store/people-languages.json`，键是用户名），语言按人给，不只记主人的。插件按人取用走两个标准接口：OIDC 的 `locale` 声明（登录者本人，要 `profile` scope，原样的 BCP 47 标签）和核心 MCP 的 `wonton__user_locale` 工具（`locale` 和按偏好排的 `languages`；没有记录时是 `null` 和空数组，核心不替插件选默认语言）。Agent 经 MCP 调用、核心在聊天里发卡片时没有请求头，就用主人最近一次的语言；主人几台设备用不同语言时，以最近用的那台为准。
+- 客户端核心把它写进每个请求的 `Accept-Language`。家里的服务器记下主人最近一次请求的语言（`owner_languages`），Agent 经 MCP 调用、核心在聊天里发卡片时没有请求头，就用它。主人几台设备用不同语言时，以最近用的那台为准。
 - 插件网页：WebView 自己的 `Accept-Language` 和 `navigator.language` 是用户要的语言，单独设了本 App 的语言就是它，没设就是系统的语言列表，插件有这种语言时比 App 用得更贴切；ADR-0033 的桥在 `hostContext.locale` 里给 App 实际在用的语言。
 - 插件清单的多语言文字照旧至少写 `zh` 和 `en`，`zh` 是简体；可以加 `zh-Hant`、`ja`。没写的语言按上面的协商回退：繁中落到 `zh`，日文落到 `en`。插件规范在 wonton-docs 里同步改。
 

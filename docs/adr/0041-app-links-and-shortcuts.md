@@ -20,7 +20,6 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 | `wonton://tab/plugin/<插件>`、`/tab/plugin/<插件>/<页面>` | 插件页；没固定在底栏上的盖在主界面上打开 |
 | `wonton://new-chat` | 发起私聊 |
 | `wonton://agent-chat` | 和默认 Agent 的聊天 |
-| `wonton://settings/peers` | 设置里的“其他服务器”，滚到“请求”（ADR-0050 的配对提醒用） |
 
 认不出的链接（新版 App 写进系统、旧版读到的，或者被改过的）照常打开 App，不报错。插件和页面的 ID 只认清单里的
 短名写法，`..` 这类写法不认。配对码 `wonton://pair?…` 是另一种东西，不走这里。

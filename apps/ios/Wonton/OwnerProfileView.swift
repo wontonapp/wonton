@@ -17,14 +17,14 @@ struct OwnerProfileView: View {
             .scrollDismissesKeyboard(.interactively)
             if form.profile != nil {
                 Button(action: save) {
-                    Text(.commonSave).frame(maxWidth: .infinity)
+                    Text("保存").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!form.canSave)
                 .padding(WontonTheme.spacing.pageInset)
             }
         }
-        .wontonModalScreen(String(localized: .ownerProfileTitle))
+        .wontonModalScreen("你的资料")
         .task { await form.load(core: model.core) }
     }
 

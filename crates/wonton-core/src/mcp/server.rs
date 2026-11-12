@@ -13,7 +13,6 @@ use rmcp::service::{NotificationContext, RequestContext, RoleServer, Subscriptio
 use super::Bus;
 use crate::plugin::PluginId;
 use crate::plugin::manifest::LocalizedText;
-use wonton_protocol::{BotKeeper, ConfirmationOrigin, ORIGIN_META_KEY};
 
 /// 调用总线的插件：网关按来源地址认出它（同模型网关），放进请求扩展。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,20 +20,6 @@ pub struct Caller {
     pub id: PluginId,
     /// 卡片上显示的名字，如 Hermes。
     pub name: String,
-    /// 总线令牌认出的 Bot：私人 Bot 是归属人，共享 Bot 归全家（ADR-0045）。没有 Bot 记录的插件
-    /// （不进聊天的工具插件）按来源地址认，是 `None`。
-    pub bot: Option<BotIdentity>,
-    /// 这次调用报的来源会话（`_meta` 的 [`ORIGIN_META_KEY`] 或请求头），没核对过；卡片上用的是核对后的，见
-    /// [`super::audience`]。
-    pub origin: Option<ConfirmationOrigin>,
-}
-
-/// 令牌认出的 Bot。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BotIdentity {
-    /// 插件里的 Bot 名（插件规范的 `bots`）。
-    pub bot: String,
-    pub keeper: BotKeeper,
 }
 
 #[derive(Clone)]
@@ -46,24 +31,7 @@ impl Caller {
     pub fn new(id: PluginId, title: Option<&LocalizedText>) -> Self {
         let name = title.map(super::cards::text).filter(|n| !n.is_empty());
         let name = name.unwrap_or_else(|| id.to_string());
-        Self {
-            id,
-            name,
-            bot: None,
-            origin: None,
-        }
-    }
-
-    /// 令牌认出的 Bot 的调用方。
-    pub fn for_bot(
-        id: PluginId,
-        title: Option<&LocalizedText>,
-        bot: String,
-        keeper: BotKeeper,
-    ) -> Self {
-        let mut caller = Self::new(id, title);
-        caller.bot = Some(BotIdentity { bot, keeper });
-        caller
+        Self { id, name }
     }
 }
 
@@ -91,7 +59,7 @@ impl ServerHandler for Handler {
             .with_server_info(Implementation::new("wonton-core", env!("CARGO_PKG_VERSION")))
             .with_instructions(
                 "Wonton 家里服务器的工具：核心自己的（wonton__ 开头，管理插件）和已装插件的（<插件>__<工具>）。\
-                 安装、卸载等工具要主人在 Wonton App 里确认，调用会一直等到主人回答；wonton__set_profile 只改自己的资料，不用确认。\
+                 安装、卸载和会改数据的工具要主人在 Wonton App 里确认，调用会一直等到主人回答。\
                  工具结果里的文件写成编号：发给主人用 wonton__share_file，把返回的链接原样放进回复。",
             )
     }
@@ -112,13 +80,7 @@ impl ServerHandler for Handler {
         request: CallToolRequestParams,
         ctx: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let mut caller = caller(&ctx)?;
-        let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
-        let meta = request
-            .meta
-            .as_ref()
-            .and_then(|meta| meta.0.0.get(ORIGIN_META_KEY));
-        caller.origin = super::audience::reported_origin(meta, headers);
+        let caller = caller(&ctx)?;
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())
     }

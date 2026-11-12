@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use crate::plugin::languages::Languages;
 use axum::body::Body;
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderValue};
@@ -26,8 +25,8 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 
-use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
+use super::tunnel_tests::loopback_tunnel;
 use super::{ERROR_HEADER, Gateway, TunnelPeer, router};
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
@@ -38,10 +37,9 @@ use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
-use crate::plugin::{Permission, PluginId, PluginManager, PluginPackage, PluginStatus};
-use wonton_protocol::BotKeeper;
+use crate::plugin::{Permission, PluginManager, PluginPackage, PluginStatus};
 
-pub(super) const NOTES: &str = "name: notes
+const NOTES: &str = "name: notes
 services:
   mcp:
     image: example/notes
@@ -56,22 +54,18 @@ x-wonton:
   permissions: []
 ";
 
-pub(super) struct Home {
-    pub(super) addr: SocketAddr,
-    pub(super) gateway: Arc<Gateway>,
-    pub(super) manager: Arc<PluginManager>,
-    pub(super) cards: Arc<Cards>,
-    /// 确认表：状态变化只改它，测试从这里读卡片。
-    pub(super) confirmations: Arc<Confirmations>,
-    pub(super) members: Arc<crate::members::Members>,
-    pub(super) notes: Notes,
+struct Home {
+    addr: SocketAddr,
+    gateway: Arc<Gateway>,
+    cards: Arc<Cards>,
+    notes: Notes,
     _dir: tempfile::TempDir,
 }
 
-pub(super) const NOTES_ID: &str = "app.example.notes";
+const NOTES_ID: &str = "app.example.notes";
 
 /// 核心加上总线；`permissions` 是本机（127.0.0.0/8）冒充的插件网络得到的权限，`None` 时本机不是插件网络。
-pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
+async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let dir = tempfile::tempdir().unwrap();
     let owner_ids = fs::metadata(dir.path()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -108,9 +102,7 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
         lifecycle,
         ImageWorker::in_process(),
     ));
-    let manifest = PluginPackage::parse(NOTES, &Languages::from_header(Some("zh-Hans")))
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, None);
     let notes = Notes::default();
@@ -123,19 +115,17 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
     let audit = dir.path().join("audit.jsonl");
     let bus = Bus::new(
         manager.clone(),
-        confirmations.clone(),
+        confirmations,
         Arc::new(crate::mcp::audit::Audit::new(audit)),
     );
-    let (tunnel, members) = loopback_tunnel(dir.path()).await;
     let gateway = Gateway::new(
         public,
         profile,
         TOKEN.into(),
-        members.clone(),
-        manager.clone(),
+        manager,
         None,
         http,
-        tunnel,
+        loopback_tunnel(dir.path()).await,
     )
     .with_mcp(Some(bus.endpoint()));
     let gateway = Arc::new(gateway);
@@ -147,22 +137,19 @@ pub(super) async fn start(permissions: Option<Vec<Permission>>) -> Home {
     Home {
         addr,
         gateway,
-        manager,
         cards,
-        confirmations,
-        members,
         notes,
         _dir: dir,
     }
 }
 
 impl Home {
-    pub(super) fn mcp_url(&self) -> String {
+    fn mcp_url(&self) -> String {
         format!("http://{PLUGIN_MCP_HOST}:{}/mcp", self.addr.port())
     }
 
     /// 像 Agent 一样连上总线：`mcp.wonton.internal` 解析到网关。
-    pub(super) async fn agent(&self) -> RunningService<RoleClient, ClientConfig> {
+    async fn agent(&self) -> RunningService<RoleClient, ClientConfig> {
         self.agent_with(ClientLifecycleMode::Auto {
             preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
             legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
@@ -171,37 +158,12 @@ impl Home {
     }
 
     /// `initialize` 握手的旧协议：有状态的会话。
-    pub(super) async fn legacy_agent(&self) -> RunningService<RoleClient, ClientConfig> {
+    async fn legacy_agent(&self) -> RunningService<RoleClient, ClientConfig> {
         self.agent_with(ClientLifecycleMode::Initialize).await
     }
 
-    pub(super) async fn agent_with(
+    async fn agent_with(
         &self,
-        lifecycle: ClientLifecycleMode,
-    ) -> RunningService<RoleClient, ClientConfig> {
-        self.agent_at(self.mcp_url(), lifecycle).await
-    }
-
-    /// 对总线的地址发一个 GET（Streamable HTTP 的打开方式）：网关的拒绝在到 rmcp 之前就能看到。
-    pub(super) async fn raw_get(&self, url: &str) -> (hyper::StatusCode, String) {
-        let response = reqwest::Client::builder()
-            .no_proxy()
-            .resolve(PLUGIN_MCP_HOST, self.addr)
-            .build()
-            .unwrap()
-            .get(url)
-            .header("Accept", "text/event-stream")
-            .send()
-            .await
-            .unwrap();
-        let status = hyper::StatusCode::from_u16(response.status().as_u16()).unwrap();
-        (status, response.text().await.unwrap_or_default())
-    }
-
-    /// 连总线上的一个地址（带不带总线令牌都在调用方手里）。
-    pub(super) async fn agent_at(
-        &self,
-        url: String,
         lifecycle: ClientLifecycleMode,
     ) -> RunningService<RoleClient, ClientConfig> {
         let http = reqwest::Client::builder()
@@ -209,7 +171,7 @@ impl Home {
             .resolve(PLUGIN_MCP_HOST, self.addr)
             .build()
             .unwrap();
-        let config = StreamableHttpClientTransportConfig::with_uri(url);
+        let config = StreamableHttpClientTransportConfig::with_uri(self.mcp_url());
         let transport = StreamableHttpClientTransport::with_client(http, config);
         let info = ClientConfig::new(
             ClientCapabilities::default(),
@@ -221,7 +183,7 @@ impl Home {
     }
 
     /// 在网关进程内发一个请求；`peer` 是隧道认证过的设备。
-    pub(super) async fn send(
+    async fn send(
         &self,
         path: &str,
         body: &str,
@@ -254,7 +216,7 @@ impl Home {
         )
     }
 
-    pub(super) async fn pending(&self, headers: &[(&str, &str)]) -> (StatusCode, Value) {
+    async fn pending(&self, headers: &[(&str, &str)]) -> (StatusCode, Value) {
         let mut request = hyper::Request::builder()
             .uri("/_wonton/api/confirmations")
             .header(header::HOST, format!("{CORE}:{}", self.addr.port()));
@@ -269,12 +231,7 @@ impl Home {
     }
 
     /// 请求工具策略接口，主人令牌。
-    pub(super) async fn policy(
-        &self,
-        method: Method,
-        path: &str,
-        bearer: &str,
-    ) -> (StatusCode, Value) {
+    async fn policy(&self, method: Method, path: &str, bearer: &str) -> (StatusCode, Value) {
         let request = hyper::Request::builder()
             .method(method)
             .uri(format!("/_wonton/api/plugins/{NOTES_ID}/tool-policy{path}"))
@@ -289,7 +246,7 @@ impl Home {
     }
 
     /// 请求“我来操作”的接口。
-    pub(super) async fn takeover(
+    async fn takeover(
         &self,
         method: Method,
         peer: Option<TunnelPeer>,
@@ -314,21 +271,21 @@ impl Home {
         (response.status(), kind)
     }
 
-    pub(super) fn audit(&self) -> Vec<Value> {
+    fn audit(&self) -> Vec<Value> {
         let text = fs::read_to_string(self._dir.path().join("audit.jsonl")).unwrap_or_default();
         text.lines()
             .map(|line| serde_json::from_str(line).unwrap())
             .collect()
     }
 
-    pub(super) fn paired_device(&self) -> TunnelPeer {
+    fn paired_device(&self) -> TunnelPeer {
         let id = SecretKey::generate().public();
         self.gateway.tunnel.devices.add(id, None).unwrap();
         TunnelPeer(id)
     }
 }
 
-pub(super) fn text(result: &rmcp::model::CallToolResult) -> String {
+fn text(result: &rmcp::model::CallToolResult) -> String {
     result
         .content
         .iter()
@@ -401,7 +358,7 @@ async fn an_agent_closing_its_session_cancels_what_it_was_running() {
     drop(handle);
 }
 
-pub(super) async fn post_from_plugin_network(
+async fn post_from_plugin_network(
     home: &Home,
     path: &str,
 ) -> hyper::Response<hyper::body::Incoming> {
@@ -508,19 +465,19 @@ async fn hanging_up_withdraws_the_card() {
     let card = home.cards.wait_for(1).await;
 
     drop(stream);
-    let withdrawn = |home: &Home, id: &str| {
+    let withdrawn = |states: &[wonton_protocol::ConfirmationState]| {
         matches!(
-            home.confirmations.card(id).map(|card| card.state),
+            states.last(),
             Some(wonton_protocol::ConfirmationState::Failed { .. })
         )
     };
     for _ in 0..500 {
-        if withdrawn(&home, &card.id) {
+        if withdrawn(&home.cards.states(&card.id)) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
-    assert!(withdrawn(&home, &card.id));
+    assert!(withdrawn(&home.cards.states(&card.id)));
 }
 
 /// Agent 权限确认的入口和 MCP 总线同一道门（ADR-0035）。
@@ -561,120 +518,244 @@ async fn only_plugin_networks_with_the_tools_permission_get_in() {
     );
 }
 
-/// MCP 总线的文字按主人的语言写（ADR-0043）：Agent 的调用没有请求头，用 owner_languages；
-/// 期望值由目录格式化出来比，ja 和 en 要真的不同。
 #[tokio::test]
-async fn mcp_messages_follow_the_owner_languages() {
-    use crate::l10n::CATALOG;
+async fn only_paired_devices_answer_confirmations() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let agent = home.agent().await;
+    let peer = agent.peer().clone();
+    let call = tokio::spawn(async move {
+        let request = CallToolRequestParams::new("app-example-notes__delete")
+            .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
+        peer.call_tool(request).await.unwrap()
+    });
+    let card = home.cards.wait_for(1).await;
+    let path = wonton_protocol::answer_path(&card.id);
+    let approve = r#"{"answer": "approve"}"#;
+    let device = home.paired_device();
 
-    let home = start(Some(vec![Permission::Models])).await;
-    home.gateway
-        .plugins
-        .note_person_languages("owner", Some("ja"));
-    let response = post_from_plugin_network(&home, "/mcp").await;
-    assert_eq!(response.status(), StatusCode::FORBIDDEN);
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    let reply: Value = serde_json::from_slice(&body).unwrap();
-    // 权限检查报的是调用方（Agent 的插件）的编号，不是被调用的应用。
-    let args = &[("id", "com.example.agent".into())];
-    let expected =
-        |tag: &str| CATALOG.format(CATALOG.negotiate(&[tag]), "gateway-tools-permission", args);
-    assert_eq!(reply["error"]["message"], expected("ja"));
-    assert_ne!(expected("ja"), expected("en"));
+    // 局域网请求（没有隧道身份），以及插件网页借 WebView 发的跨站请求，都答不了。
+    let (status, kind, _) = home.send(&path, approve, None, &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::UNAUTHORIZED, Some("unauthenticated"))
+    );
+    let plugin_page = [("origin", "http://app-example-notes.wonton.localhost")];
+    let (status, kind, _) = home.send(&path, approve, Some(device), &plugin_page).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::FORBIDDEN, Some("cross_site"))
+    );
+    let (status, kind, _) = home.send(&path, "yes", Some(device), &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::BAD_REQUEST, Some("invalid_input"))
+    );
+    // 比核心新的 App 发来不认识的回答：不算同意，卡片还等着。
+    let newer = r#"{"answer": "allow_forever"}"#;
+    let (status, kind, _) = home.send(&path, newer, Some(device), &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::BAD_REQUEST, Some("invalid_input"))
+    );
+    assert!(home.cards.states(&card.id).is_empty(), "还没有人回答");
+
+    let (status, _, reply) = home.send(&path, approve, Some(device), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["state"]["type"], "running");
+    assert_eq!(text(&call.await.unwrap()), "删掉了 y.txt");
+    let (status, kind, _) = home.send(&path, approve, Some(device), &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::CONFLICT, Some("already_answered"))
+    );
+    let missing = wonton_protocol::answer_path("nope");
+    let (status, kind, _) = home.send(&missing, approve, Some(device), &[]).await;
+    assert_eq!(
+        (status, kind.as_deref()),
+        (StatusCode::NOT_FOUND, Some("not_found"))
+    );
+}
+
+/// 开发环境没有配对设备：主人令牌能看到等回答的卡片，也能回答（ADR-0024）。
+#[tokio::test]
+async fn the_owner_token_lists_and_answers_cards() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let owner = [("authorization", bearer.as_str())];
+    let (status, _) = home.pending(&[]).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, list) = home.pending(&owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(list["confirmations"], json!([]));
+
+    let agent = home.agent().await;
+    let peer = agent.peer().clone();
+    let call = tokio::spawn(async move {
+        let request = CallToolRequestParams::new("app-example-notes__delete")
+            .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
+        peer.call_tool(request).await.unwrap()
+    });
+    let card = home.cards.wait_for(1).await;
+    let (_, list) = home.pending(&owner).await;
+    assert_eq!(list["confirmations"][0]["id"], card.id.as_str());
+
+    let path = wonton_protocol::answer_path(&card.id);
+    let approve = r#"{"answer": "approve"}"#;
+    let wrong = [("authorization", "Bearer wrong")];
+    let (status, _, _) = home.send(&path, approve, None, &wrong).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, _, reply) = home.send(&path, approve, None, &owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["state"]["type"], "running");
+    assert_eq!(text(&call.await.unwrap()), "删掉了 y.txt");
+    let (_, list) = home.pending(&owner).await;
+    assert_eq!(list["confirmations"], json!([]));
+}
+
+/// 主人经接口放宽，下一次调用就不发卡片；没有身份的请求改不了（ADR-0024）。
+#[tokio::test]
+async fn the_owner_marks_a_tool_read_only_through_the_api() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let (status, _) = home.policy(Method::GET, "", "wrong").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    let (status, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(status, StatusCode::OK);
+    let access = |view: &Value, tool: &str| {
+        let tools = view["tools"].as_array().unwrap();
+        let tool = tools.iter().find(|t| t["name"] == tool).unwrap();
+        tool["access"].as_str().unwrap().to_owned()
+    };
+    assert_eq!(access(&view, "delete"), "sensitive");
+    assert_eq!(access(&view, "search"), "plugin_read_only");
+
+    let (status, _) = home.policy(Method::PUT, "/read-only/nope", TOKEN).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = home
+        .policy(Method::PUT, "/always/com.example.nobody", TOKEN)
+        .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, view) = home.policy(Method::PUT, "/read-only/delete", TOKEN).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(access(&view, "delete"), "owner_read_only");
+
+    let agent = home.agent().await;
+    let request = CallToolRequestParams::new("app-example-notes__delete")
+        .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
+    let result = agent.peer().call_tool(request).await.unwrap();
+    assert_eq!(text(&result), "删掉了 y.txt");
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 0);
+
+    let (_, view) = home
+        .policy(Method::DELETE, "/read-only/delete", TOKEN)
+        .await;
+    assert_eq!(access(&view, "delete"), "sensitive");
+}
+
+/// 卡片上点“都允许”，之后不发卡片，设置里看得到；停止后回到发卡片（ADR-0024）。
+#[tokio::test]
+async fn the_owner_opens_and_stops_a_window_through_the_api() {
+    let home = start(Some(vec![Permission::Tools])).await;
+    let bearer = format!("Bearer {TOKEN}");
+    let owner = [("authorization", bearer.as_str())];
+    let agent = home.agent().await;
+    let call = |name: &str| {
+        let peer = agent.peer().clone();
+        let request = CallToolRequestParams::new("app-example-notes__delete")
+            .with_arguments(json!({"name": name}).as_object().cloned().unwrap());
+        tokio::spawn(async move { peer.call_tool(request).await.unwrap() })
+    };
+
+    let first = call("first");
+    let card = home.cards.wait_for(1).await;
+    let path = wonton_protocol::answer_path(&card.id);
+    let allow = r#"{"answer": "allow_window"}"#;
+    let (status, _, reply) = home.send(&path, allow, None, &owner).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(reply["state"]["type"], "running");
+    assert_eq!(text(&first.await.unwrap()), "删掉了 first.txt");
+    assert_eq!(text(&call("second").await.unwrap()), "删掉了 second.txt");
+    assert_eq!(home.cards.posted.lock().unwrap().len(), 1);
+
+    let (_, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(view["windows"][0]["card"], card.id.as_str());
+    assert_eq!(view["windows"][0]["caller"], "com.example.agent");
+
+    let stop = |bearer: String| {
+        let request = hyper::Request::builder()
+            .method(Method::DELETE)
+            .uri(wonton_protocol::window_path(&card.id))
+            .header(header::HOST, format!("{CORE}:{}", home.addr.port()))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .body(Body::empty())
+            .unwrap();
+        router(home.gateway.clone()).oneshot(request)
+    };
+    let status = stop("wrong".to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let status = stop(TOKEN.to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let status = stop(TOKEN.to_owned()).await.unwrap().status();
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, view) = home.policy(Method::GET, "", TOKEN).await;
+    assert_eq!(view["windows"], json!([]));
+
+    let third = call("third");
+    let card = home.cards.wait_for(2).await;
+    let path = wonton_protocol::answer_path(&card.id);
+    home.send(&path, r#"{"answer": "reject"}"#, None, &owner)
+        .await;
+    third.await.unwrap();
 }
 
 #[tokio::test]
-async fn bus_tokens_identify_bots_and_reject_foreign_ones() {
-    let home = start(Some(vec![Permission::Tools])).await;
-    let agent_id = PluginId::parse("com.example.agent").unwrap();
-    let other_id = PluginId::parse("com.example.other").unwrap();
-    home.manager.bot_records_for_test(
-        &agent_id,
-        &[
-            (
-                "alice",
-                "@agent-alice:test",
-                BotKeeper::User {
-                    username: "alice".to_owned(),
-                },
-                "token-alice",
-            ),
-            (
-                "family",
-                "@agent-family:test",
-                BotKeeper::Household,
-                "token-family",
-            ),
-        ],
-    );
-    home.manager.bot_records_for_test(
-        &other_id,
-        &[(
-            "bob",
-            "@other-bob:test",
-            BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "token-bob",
-        )],
-    );
+async fn only_the_owner_can_take_over_and_a_revoked_device_stops_operating() {
+    let home = start(None).await;
+    let (status, _) = home.takeover(Method::PUT, None, &[]).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "没有身份");
+    let peer = home.paired_device();
+    let from_page = [("sec-fetch-site", "same-site")];
+    let (status, _) = home.takeover(Method::PUT, Some(peer), &from_page).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "插件网页经 WebView 发不了");
+    assert!(home.audit().is_empty());
 
-    // 私人 Bot：`_meta` 带上归属人的用户名。
-    let alice = home
-        .agent_at(
-            format!("{}/token-alice", home.mcp_url()),
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
-            },
-        )
-        .await;
-    let request = CallToolRequestParams::new("app-example-notes__search")
-        .with_arguments(json!({"name": "x"}).as_object().cloned().unwrap());
-    let result = alice.peer().call_tool(request).await.unwrap();
-    assert_eq!(text(&result), "找到 x.txt");
-    let metas = home.notes.received_meta.lock().unwrap().clone();
-    let last = metas.last().unwrap().as_ref().expect("调用带 _meta");
-    assert_eq!(
-        last.get(wonton_protocol::TOOL_CALL_USER_META)
-            .and_then(|v| v.as_str()),
-        Some("alice")
+    let (status, _) = home.takeover(Method::PUT, Some(peer), &[]).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let started = home.audit();
+    assert_eq!(started[0]["takeover"], "started");
+    assert_eq!(started[0]["by"], format!("device:{}", peer.0));
+
+    let bearer = format!("Bearer {TOKEN}");
+    let request = hyper::Request::builder()
+        .method(Method::DELETE)
+        .uri(format!("/_wonton/api/devices/{}", peer.0))
+        .header(header::HOST, format!("{CORE}:{}", home.addr.port()))
+        .header(header::AUTHORIZATION, &bearer)
+        .body(Body::empty())
+        .unwrap();
+    let response = router(home.gateway.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let ended = home.audit();
+    assert_eq!(ended[1]["takeover"], "ended");
+    assert_eq!(ended[1]["reason"], "device_revoked");
+}
+
+#[tokio::test]
+async fn a_plugin_that_is_not_running_cannot_be_taken_over() {
+    let home = start(None).await;
+    let manifest = PluginPackage::parse(NOTES).unwrap().manifest;
+    home.gateway.plugins.register_for_test(
+        manifest,
+        PluginStatus::Degraded {
+            reason: "停了".to_owned(),
+        },
+        None,
     );
-
-    // 共享 Bot：不带 `app.wonton/user`（核心不知道是谁让它办事的）。
-    let family = home
-        .agent_at(
-            format!("{}/token-family", home.mcp_url()),
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
-            },
-        )
-        .await;
-    let request = CallToolRequestParams::new("app-example-notes__search")
-        .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
-    let result = family.peer().call_tool(request).await.unwrap();
-    assert_eq!(text(&result), "找到 y.txt");
-    let metas = home.notes.received_meta.lock().unwrap().clone();
-    let last = metas.last().unwrap().as_ref().expect("调用带 _meta");
-    assert!(
-        !last.contains_key(wonton_protocol::TOOL_CALL_USER_META),
-        "共享 Bot 不带用户：{last:?}"
-    );
-
-    // 别的插件的总线令牌：403。
-    let (status, _) = home.raw_get(&format!("{}/token-bob", home.mcp_url())).await;
-    assert_eq!(status, StatusCode::FORBIDDEN, "别的插件的令牌不该被认");
-
-    // 有 Bot 记录的插件不带令牌：拒绝。
-    let (status, _) = home.raw_get(&home.mcp_url()).await;
-    assert_eq!(
-        status,
-        StatusCode::FORBIDDEN,
-        "Agent 的插件要用带令牌的地址"
-    );
-
-    // 不存在的令牌：403。
-    let (status, _) = home.raw_get(&format!("{}/nope", home.mcp_url())).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    let bearer = format!("Bearer {TOKEN}");
+    let auth = [("authorization", bearer.as_str())];
+    let (status, kind) = home.takeover(Method::PUT, None, &auth).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(kind.as_deref(), Some("not_ready"));
+    let (status, _) = home.takeover(Method::DELETE, None, &auth).await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "交还可以重复发");
 }

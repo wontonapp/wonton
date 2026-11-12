@@ -8,13 +8,7 @@ use super::super::docker::HostInfo;
 use super::super::fake_docker::FakeDocker;
 use super::super::gpu::HostPaths;
 use super::super::host_facts::{ContainerAccess, GpuVendor, HostFacts, Known, NvidiaMemory, read};
-use super::super::languages::Languages;
 use super::super::names::Instance;
-
-/// 读出的原因串（`Known::Unknown` 的 why）跟着目录走，测试用同一种语言对期望。
-fn zh() -> Languages {
-    Languages::from_header(Some("zh-Hans"))
-}
 
 struct Host {
     dir: tempfile::TempDir,
@@ -78,7 +72,6 @@ impl Host {
 
 fn docker(runtimes: &[&str]) -> Result<HostInfo, String> {
     Ok(HostInfo {
-        name: None,
         os_type: "linux".to_owned(),
         arch: "x86_64".to_owned(),
         runtimes: runtimes.iter().map(|&r| r.to_owned()).collect(),
@@ -105,14 +98,14 @@ fn only_gpu(facts: &HostFacts) -> &super::super::host_facts::Gpu {
 #[test]
 fn memory_comes_from_meminfo_and_a_missing_file_is_unknown_not_zero() {
     let host = Host::new();
-    let facts = read(&host.paths(), docker(&[]), &zh());
+    let facts = read(&host.paths(), docker(&[]));
     assert_eq!(facts.memory_total, Known::Known(65_457_028 * 1024));
     assert_eq!(facts.memory_available, Known::Known(42_827_492 * 1024));
     assert_eq!(facts.os, Known::Known("linux".to_owned()));
     assert_eq!(facts.arch, Known::Known("x86_64".to_owned()));
 
     fs::remove_file(host.path("proc/meminfo")).unwrap();
-    let facts = read(&host.paths(), docker(&[]), &zh());
+    let facts = read(&host.paths(), docker(&[]));
     assert!(matches!(facts.memory_total, Known::Unknown(_)));
     assert!(matches!(facts.memory_available, Known::Unknown(_)));
 }
@@ -131,7 +124,7 @@ fn an_amd_card_reports_its_vram_and_device_nodes() {
     write(&host.path("dev/dri/renderD128"), "");
     write(&host.path("dev/kfd"), "");
 
-    let facts = read(&host.paths(), docker(&[]), &zh());
+    let facts = read(&host.paths(), docker(&[]));
     let gpu = only_gpu(&facts);
     assert_eq!(gpu.vendor, GpuVendor::Amd);
     assert_eq!(gpu.vram, Known::Known(68_719_476_736));
@@ -161,7 +154,7 @@ fn a_render_card_without_the_host_dev_mounted_is_unknown() {
         dev: None,
         ..host.paths()
     };
-    let facts = read(&paths, docker(&[]), &zh());
+    let facts = read(&paths, docker(&[]));
     let gpu = only_gpu(&facts);
     assert!(
         matches!(gpu.in_containers, ContainerAccess::Unknown(_)),
@@ -192,7 +185,7 @@ fn nvidia_needs_its_driver_and_the_docker_runtime() {
         "Model: \t\t NVIDIA GeForce RTX 5090\nIRQ:   \t\t 1\n",
     );
 
-    let facts = read(&host.paths(), docker(&["nvidia", "runc"]), &zh());
+    let facts = read(&host.paths(), docker(&["nvidia", "runc"]));
     let gpu = only_gpu(&facts);
     assert_eq!(
         gpu.model,
@@ -204,14 +197,14 @@ fn nvidia_needs_its_driver_and_the_docker_runtime() {
         "{gpu:?}"
     );
 
-    let facts = read(&host.paths(), docker(&["runc"]), &zh());
+    let facts = read(&host.paths(), docker(&["runc"]));
     let access = &only_gpu(&facts).in_containers;
     assert!(
         matches!(access, ContainerAccess::Unusable(why) if why.contains("nvidia 运行时")),
         "{access:?}"
     );
 
-    let facts = read(&host.paths(), Err("连不上 Docker".to_owned()), &zh());
+    let facts = read(&host.paths(), Err("连不上 Docker".to_owned()));
     let access = &only_gpu(&facts).in_containers;
     assert!(
         matches!(access, ContainerAccess::Unknown(why) if why.contains("连不上 Docker")),
@@ -225,7 +218,7 @@ fn nvidia_hardware_without_its_driver_cannot_be_used() {
     for driver in [None, Some("nouveau")] {
         let host = Host::new();
         host.card("0000:01:00.0", "0x030000", "0x10de", driver, &[]);
-        let facts = read(&host.paths(), docker(&["nvidia"]), &zh());
+        let facts = read(&host.paths(), docker(&["nvidia"]));
         let gpu = only_gpu(&facts);
         assert!(
             matches!(gpu.in_containers, ContainerAccess::Unusable(_)),
@@ -246,7 +239,7 @@ fn a_management_display_is_listed_but_cannot_compute_and_other_devices_are_not_g
     );
     host.card("0000:03:00.0", "0x020000", "0x8086", Some("igb"), &[]);
 
-    let facts = read(&host.paths(), docker(&[]), &zh());
+    let facts = read(&host.paths(), docker(&[]));
     let gpu = only_gpu(&facts);
     assert_eq!(gpu.vendor, GpuVendor::Other("0x1a03".to_owned()));
     assert!(
@@ -259,12 +252,12 @@ fn a_management_display_is_listed_but_cannot_compute_and_other_devices_are_not_g
 fn unreadable_pci_devices_are_unknown_and_an_empty_bus_is_no_gpus() {
     let host = Host::new();
     assert_eq!(
-        read(&host.paths(), docker(&[]), &zh()).gpus,
+        read(&host.paths(), docker(&[])).gpus,
         Known::Known(Vec::new())
     );
     fs::remove_dir(host.path("sys/bus/pci/devices")).unwrap();
     assert!(matches!(
-        read(&host.paths(), docker(&[]), &zh()).gpus,
+        read(&host.paths(), docker(&[])).gpus,
         Known::Unknown(_)
     ));
 }
@@ -283,12 +276,12 @@ async fn nvidia_memory_comes_from_a_one_shot_container_with_the_cores_image() {
         Some("nvidia"),
         &["renderD128"],
     );
-    let usable = read(&host.paths(), docker(&["nvidia"]), &zh());
+    let usable = read(&host.paths(), docker(&["nvidia"]));
 
     fake.set_output(&probe, 0, "00000000:C7:00.0, 32607\n", "");
     let mut facts = usable.clone();
     NvidiaMemory::default()
-        .fill(&mut facts, &engine, Some("core"), &instance, &zh())
+        .fill(&mut facts, &engine, Some("core"), &instance)
         .await;
     assert_eq!(only_gpu(&facts).vram, Known::Known(32607 * 1024 * 1024));
     assert!(matches!(
@@ -300,7 +293,7 @@ async fn nvidia_memory_comes_from_a_one_shot_container_with_the_cores_image() {
     fake.set_output(&probe, 9, "", "Failed to initialize NVML");
     let mut facts = usable.clone();
     NvidiaMemory::default()
-        .fill(&mut facts, &engine, Some("core"), &instance, &zh())
+        .fill(&mut facts, &engine, Some("core"), &instance)
         .await;
     let gpu = only_gpu(&facts);
     assert!(
@@ -314,7 +307,7 @@ async fn nvidia_memory_comes_from_a_one_shot_container_with_the_cores_image() {
 
     let mut facts = usable;
     NvidiaMemory::default()
-        .fill(&mut facts, &engine, None, &instance, &zh())
+        .fill(&mut facts, &engine, None, &instance)
         .await;
     assert!(matches!(only_gpu(&facts).vram, Known::Unknown(_)));
     assert!(matches!(

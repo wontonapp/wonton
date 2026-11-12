@@ -10,17 +10,15 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
-use super::api::{error_response, languages, owner_denied};
+use super::api::{error_response, plugin_denied};
 use super::{Gateway, TunnelPeer};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 use crate::upgrade::service::{UpgradeError, Upgrades};
 
 fn failure(error: &UpgradeError) -> Response {
     let status = match error {
         UpgradeError::Changed(_)
         | UpgradeError::NotReady(_)
-        | UpgradeError::Busy(_)
+        | UpgradeError::Busy
         | UpgradeError::TooLate(_) => StatusCode::CONFLICT,
         UpgradeError::Upstream(_) => StatusCode::BAD_GATEWAY,
         UpgradeError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -34,25 +32,21 @@ fn upgrades(
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Result<Arc<Upgrades>, Box<Response>> {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }
     gateway.upgrades.clone().ok_or_else(|| {
         Box::new(error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "not_ready",
-            &l10n::text(&languages(headers), "gateway-upgrade-disabled", &[]),
+            "这个核心没有启用一键升级",
         ))
     })
 }
 
-fn parsed<T: DeserializeOwned>(body: &[u8], langs: &Languages) -> Result<T, Box<Response>> {
+fn parsed<T: DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
     serde_json::from_slice(body).map_err(|e| {
-        let message = l10n::text(
-            langs,
-            "gateway-invalid-body",
-            &[("error", e.to_string().into())],
-        );
+        let message = format!("请求体不对：{e}");
         Box::new(error_response(
             StatusCode::BAD_REQUEST,
             "invalid_input",
@@ -61,8 +55,8 @@ fn parsed<T: DeserializeOwned>(body: &[u8], langs: &Languages) -> Result<T, Box<
     })
 }
 
-async fn respond(upgrades: &Upgrades, langs: &Languages, status: StatusCode) -> Response {
-    match upgrades.status(langs).await {
+async fn respond(upgrades: &Upgrades, status: StatusCode) -> Response {
+    match upgrades.status().await {
         Ok(current) => (status, Json(current)).into_response(),
         Err(e) => failure(&e),
     }
@@ -74,7 +68,7 @@ pub async fn status(
     headers: HeaderMap,
 ) -> Response {
     match upgrades(&gateway, peer, &headers) {
-        Ok(upgrades) => respond(&upgrades, &languages(&headers), StatusCode::OK).await,
+        Ok(upgrades) => respond(&upgrades, StatusCode::OK).await,
         Err(response) => *response,
     }
 }
@@ -90,12 +84,12 @@ pub async fn check(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    let request: CoreUpgradeCheckRequest = match parsed(&body, &languages(&headers)) {
+    let request: CoreUpgradeCheckRequest = match parsed(&body) {
         Ok(request) => request,
         Err(response) => return *response,
     };
     upgrades.trigger_check(request.manual);
-    respond(&upgrades, &languages(&headers), StatusCode::OK).await
+    respond(&upgrades, StatusCode::OK).await
 }
 
 pub async fn start(
@@ -108,11 +102,11 @@ pub async fn start(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    let request: CoreUpgradeRequest = match parsed(&body, &languages(&headers)) {
+    let request: CoreUpgradeRequest = match parsed(&body) {
         Ok(request) => request,
         Err(response) => return *response,
     };
-    match upgrades.start(&request.digest, &languages(&headers)).await {
+    match upgrades.start(&request.digest).await {
         Ok(current) => (StatusCode::ACCEPTED, Json(current)).into_response(),
         Err(e) => failure(&e),
     }
@@ -127,7 +121,7 @@ pub async fn cancel(
         Ok(upgrades) => upgrades,
         Err(response) => return *response,
     };
-    match upgrades.cancel(&languages(&headers)).await {
+    match upgrades.cancel().await {
         Ok(current) => (StatusCode::ACCEPTED, Json(current)).into_response(),
         Err(e) => failure(&e),
     }

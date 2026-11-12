@@ -10,7 +10,6 @@ use super::host::{HostError, ImageInfo, Progress};
 use super::service::{Running, Upgrades};
 use super::state::problem;
 use super::{LABEL_MIGRATIONS, LABEL_VERSION, state};
-use crate::l10n;
 
 /// 后台自动下载至少要留这么多磁盘（已定 1）。
 const AUTO_DOWNLOAD_MIN_FREE: u64 = 5_000_000_000;
@@ -74,36 +73,24 @@ impl Upgrades {
     }
 
     async fn check_once(&self, manual: bool) -> CoreUpgradeCheck {
-        let langs = self.owner_languages();
         let Some(source) = self.config.source.as_deref() else {
             return CoreUpgradeCheck::NotInstalled;
         };
         let Some((repository, _)) = channel(source) else {
             return CoreUpgradeCheck::Pinned;
         };
-        let running = match self.running(&langs).await {
+        let running = match self.running().await {
             Ok(running) => running,
             Err(e) => {
                 return CoreUpgradeCheck::Failed {
-                    problem: problem(
-                        Failure::Upstream,
-                        l10n::text(
-                            &langs,
-                            "upgrade-check-core-failed",
-                            &[("error", e.to_string().into())],
-                        ),
-                    ),
+                    problem: problem(Failure::Upstream, format!("查核心自己的容器失败：{e}")),
                 };
             }
         };
         let digest = match self.host.registry_digest(source).await {
             Ok(digest) => digest,
             Err(e) => {
-                let message = l10n::text(
-                    &langs,
-                    "upgrade-latest-version-failed",
-                    &[("source", source.into()), ("error", e.to_string().into())],
-                );
+                let message = format!("查不到 {source} 的最新版本：{e}");
                 return CoreUpgradeCheck::Failed {
                     problem: problem(Failure::RegistryUnavailable, message),
                 };
@@ -123,14 +110,7 @@ impl Upgrades {
             Err(e) => {
                 return CoreUpgradeCheck::DownloadFailed {
                     digest,
-                    problem: problem(
-                        Failure::Upstream,
-                        l10n::text(
-                            &langs,
-                            "upgrade-image-lookup-failed",
-                            &[("error", e.to_string().into())],
-                        ),
-                    ),
+                    problem: problem(Failure::Upstream, format!("查镜像失败：{e}")),
                 };
             }
         };
@@ -153,23 +133,11 @@ impl Upgrades {
             return CoreUpgradeCheck::UpToDate;
         }
         self.forget_predownload(running, Some(&reference)).await;
-        let langs = self.owner_languages();
-        // ADR-0085：镜像下载好、版本号读出来之后，在目标镜像的一次性容器里裁决已装插件的
-        // 兼容性。查不成如实给"没查成"，不拦升级。
-        let compat = super::compat::check(
-            self.host.as_ref(),
-            &reference,
-            &digest,
-            &self.layout().data_dir,
-            &langs,
-        )
-        .await;
         CoreUpgradeCheck::Ready {
             offer: CoreUpgradeOffer {
                 digest,
                 version,
                 migrates: migrated_volumes(&info.labels, running.version.as_deref()),
-                compat,
             },
         }
     }
@@ -182,7 +150,6 @@ impl Upgrades {
         running: &Running,
         manual: bool,
     ) -> Result<ImageInfo, Box<CoreUpgradeCheck>> {
-        let langs = self.owner_languages();
         let failed = |reason, message: String| {
             Box::new(CoreUpgradeCheck::DownloadFailed {
                 digest: digest.to_owned(),
@@ -194,20 +161,13 @@ impl Upgrades {
             if !manual && free < AUTO_DOWNLOAD_MIN_FREE {
                 return Err(failed(
                     Failure::NoSpace,
-                    l10n::text(&langs, "upgrade-auto-download-skipped", &[]),
+                    "磁盘剩不到 5 GB，没有自动下载".to_owned(),
                 ));
             }
             // 分发接口不给镜像大小，按当前核心镜像的大小估算。
             let needed = running.size + running.size / 100 * SIZE_MARGIN_PERCENT;
             if manual && free < needed {
-                let message = l10n::text(
-                    &langs,
-                    "upgrade-download-no-space",
-                    &[
-                        ("needed", needed.to_string().into()),
-                        ("free", free.to_string().into()),
-                    ],
-                );
+                let message = format!("磁盘不够：下载大约要 {needed} 字节，只有 {free} 字节可用");
                 return Err(failed(Failure::NoSpace, message));
             }
         }
@@ -224,34 +184,17 @@ impl Upgrades {
                 }),
             });
         };
-        self.host.pull(reference, &report).await.map_err(|e| {
-            failed(
-                Failure::RegistryUnavailable,
-                l10n::text(
-                    &langs,
-                    "upgrade-download-failed",
-                    &[("error", e.to_string().into())],
-                ),
-            )
-        })?;
+        self.host
+            .pull(reference, &report)
+            .await
+            .map_err(|e| failed(Failure::RegistryUnavailable, format!("下载不了：{e}")))?;
         match self.host.image(reference).await {
             Ok(Some(info)) => Ok(info),
             Ok(None) => Err(failed(
                 Failure::Upstream,
-                l10n::text(
-                    &langs,
-                    "upgrade-image-missing-after-pull",
-                    &[("reference", reference.into())],
-                ),
+                format!("拉完本机还是没有 {reference}"),
             )),
-            Err(e) => Err(failed(
-                Failure::Upstream,
-                l10n::text(
-                    &langs,
-                    "upgrade-image-lookup-failed",
-                    &[("error", e.to_string().into())],
-                ),
-            )),
+            Err(e) => Err(failed(Failure::Upstream, format!("查镜像失败：{e}"))),
         }
     }
 
@@ -279,7 +222,7 @@ impl Upgrades {
         if running.config_image == image {
             return true;
         }
-        match state::load(&self.layout().state_path(), &self.owner_languages()) {
+        match state::load(&self.layout().state_path()) {
             Ok(Some(last)) => {
                 last.from.image == image
                     || last.to.image == image
@@ -301,8 +244,8 @@ mod tests {
     #[test]
     fn only_a_tag_follows_a_channel() {
         assert_eq!(
-            channel("ghcr.io/x/core:stable"),
-            Some(("ghcr.io/x/core", "stable"))
+            channel("ghcr.io/x/core:beta"),
+            Some(("ghcr.io/x/core", "beta"))
         );
         assert_eq!(
             channel("localhost:5000/core:stable"),
@@ -315,7 +258,7 @@ mod tests {
     #[test]
     fn a_channel_never_downgrades() {
         assert!(is_older(Some("0.2.0"), Some("0.3.0")));
-        assert!(is_older(Some("v0.3.0"), Some("0.4.0")));
+        assert!(is_older(Some("v0.3.0-beta.1"), Some("0.3.0-beta.2")));
         assert!(!is_older(Some("0.3.0"), Some("0.3.0")));
         assert!(!is_older(Some("0.4.0"), Some("0.3.0")));
         assert!(!is_older(None, Some("0.3.0")));

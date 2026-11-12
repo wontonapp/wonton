@@ -15,9 +15,7 @@ use super::{
     classify, from_io, is_private, is_same_file, numbered, open_absolute, open_regular, stat_entry,
     sync_dir,
 };
-use crate::l10n;
 use crate::plugin::hostdir::Owner;
-use crate::plugin::languages::Languages;
 
 /// 作废的上传放下的文件怎么样了（[`Shares::settle_abandoned`]）。
 #[derive(Debug, PartialEq, Eq)]
@@ -51,19 +49,14 @@ impl Shares {
         id: &str,
         size: u64,
         names: Names<'_>,
-        langs: &Languages,
         before_link: &mut BeforeLink<'_>,
     ) -> Result<(String, Snapshot), ShareError> {
         let uploads = open_absolute(uploads, "上传目录")?;
         let source = open_regular(uploads.as_fd(), id)?;
         if source.snapshot.size != size {
-            return Err(ShareError::Io(l10n::text(
-                langs,
-                "files-size-mismatch",
-                &[
-                    ("actual", wonton_l10n::Arg::from(source.snapshot.size)),
-                    ("size", wonton_l10n::Arg::from(size)),
-                ],
+            return Err(ShareError::Io(format!(
+                "传完的数据有 {} 字节，创建时声明的是 {size} 字节",
+                source.snapshot.size
             )));
         }
         let dir = self.open_dir(TRANSFERS, &[])?;
@@ -71,15 +64,9 @@ impl Shares {
             return placed(dir.as_fd(), name, &source.file, names.owner);
         }
         source.file.sync_all().map_err(|e| from_io(&e, id))?;
-        through_temp(
-            &source,
-            id,
-            dir.as_fd(),
-            names,
-            langs,
-            before_link,
-            |temp| link_to_temp(uploads.as_fd(), id, dir.as_fd(), temp, &source.file, langs),
-        )
+        through_temp(&source, id, dir.as_fd(), names, before_link, |temp| {
+            link_to_temp(uploads.as_fd(), id, dir.as_fd(), temp, &source.file)
+        })
     }
 
     /// 上传作废时，这个上传放下的文件怎么办。`placing` 是 `before_link` 最后一次记下的名字和样子。名字上还是放下时的样子，就按没放过算，
@@ -90,7 +77,6 @@ impl Shares {
         &self,
         id: &str,
         placing: Option<(&str, &Snapshot)>,
-        langs: &Languages,
     ) -> Result<Abandoned, ShareError> {
         let Some((name, at_placing)) = placing else {
             return Ok(Abandoned::NotPlaced);
@@ -107,7 +93,7 @@ impl Shares {
         };
         if unchanged {
             let _removing = self.removing.lock().expect("删除锁中毒");
-            match remove_if_same(dir.as_fd(), dir.as_fd(), name, at_placing, langs)? {
+            match remove_if_same(dir.as_fd(), dir.as_fd(), name, at_placing)? {
                 Deleted::Removed { durable } => {
                     return Ok(Abandoned::Deleted {
                         name: name.to_owned(),
@@ -167,11 +153,9 @@ impl Shares {
     }
 }
 
-fn no_hard_links(name: &str, langs: &Languages) -> ShareError {
-    ShareError::Io(l10n::text(
-        langs,
-        "files-no-hard-links",
-        &[("name", name.into()), ("folder", TRANSFERS.into())],
+fn no_hard_links(name: &str) -> ShareError {
+    ShareError::Io(format!(
+        "{name}：共享文件夹 {TRANSFERS} 所在的文件系统不支持硬链接"
     ))
 }
 
@@ -182,7 +166,6 @@ fn pick_name(
     from: &str,
     preferred: &str,
     file: &File,
-    langs: &Languages,
     before_link: &mut BeforeLink<'_>,
 ) -> Result<String, ShareError> {
     let source = stat_entry(dir, from)?;
@@ -200,33 +183,16 @@ fn pick_name(
             Err(e) => return Err(e),
         }
         before_link(&name, &snapshot)?;
-        #[cfg(test)]
-        if super::tests::LINK_FAILS
-            .lock()
-            .expect("链接替身锁中毒")
-            .as_deref()
-            == Some(from.strip_prefix(UPLOAD_TEMP_PREFIX).unwrap_or(from))
-        {
-            super::tests::LINK_FAILS.lock().unwrap().take();
-            return Err(ShareError::Io(format!("{name} 刚被换掉了")));
-        }
         match linkat(dir, from, dir, name.as_str(), AtFlags::empty()) {
             Ok(()) => return Ok(name),
             Err(Errno::EXIST) if same(&name) => return Ok(name),
             Err(Errno::EXIST) => {}
-            Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => {
-                return Err(no_hard_links(&name, langs));
-            }
+            Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => return Err(no_hard_links(&name)),
             Err(e) => return Err(classify(e, &name)),
         }
     }
-    Err(ShareError::Io(l10n::text(
-        langs,
-        "files-name-taken",
-        &[
-            ("preferred", preferred.into()),
-            ("count", wonton_l10n::Arg::from(MAX_NAME_TRIES as i64)),
-        ],
+    Err(ShareError::Io(format!(
+        "{preferred} 已经有 {MAX_NAME_TRIES} 个重名的文件"
     )))
 }
 
@@ -236,10 +202,9 @@ pub(super) fn link_checked(
     from: &str,
     preferred: &str,
     file: &File,
-    langs: &Languages,
     before_link: &mut BeforeLink<'_>,
 ) -> Result<String, ShareError> {
-    let name = pick_name(dir, from, preferred, file, langs, before_link)?;
+    let name = pick_name(dir, from, preferred, file, before_link)?;
     let meta = file.metadata().map_err(|e| from_io(&e, &name))?;
     if !is_same_file(&stat_entry(dir, &name)?, &meta) {
         return Err(ShareError::Refused(format!("{name} 刚被换掉了")));
@@ -254,21 +219,11 @@ pub(super) fn link_to_temp(
     dir: BorrowedFd<'_>,
     temp: &str,
     source: &File,
-    langs: &Languages,
 ) -> Result<Option<File>, ShareError> {
-    #[cfg(test)]
-    if super::tests::CROSS_VOLUME
-        .lock()
-        .expect("跨卷替身锁中毒")
-        .as_deref()
-        == Some(id)
-    {
-        return Ok(None);
-    }
     match linkat(data_dir, id, dir, temp, AtFlags::empty()) {
         Ok(()) => {}
         Err(Errno::XDEV) => return Ok(None),
-        Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => return Err(no_hard_links(temp, langs)),
+        Err(Errno::PERM | Errno::NOTSUP | Errno::MLINK) => return Err(no_hard_links(temp)),
         Err(e) => return Err(classify(e, temp)),
     }
     let meta = source.metadata().map_err(|e| from_io(&e, id))?;
@@ -298,7 +253,6 @@ pub(super) fn through_temp(
         owner,
         placing_inode,
     }: Names<'_>,
-    langs: &Languages,
     before_link: &mut BeforeLink<'_>,
     link: impl FnOnce(&str) -> Result<Option<File>, ShareError>,
 ) -> Result<(String, Snapshot), ShareError> {
@@ -308,9 +262,9 @@ pub(super) fn through_temp(
     }
     let file = match link(&temp)? {
         Some(file) => file,
-        None => copy_to_temp(source, dir, &temp, owner, langs)?,
+        None => copy_to_temp(source, dir, &temp, owner)?,
     };
-    match link_checked(dir, &temp, preferred, &file, langs, before_link) {
+    match link_checked(dir, &temp, preferred, &file, before_link) {
         Ok(name) => placed(dir, name, &file, owner),
         Err(e) => {
             remove_temp(dir, &temp, &file);
@@ -403,37 +357,27 @@ fn copy_to_temp(
     dir: BorrowedFd<'_>,
     temp: &str,
     owner: Owner,
-    langs: &Languages,
 ) -> Result<File, ShareError> {
     let flags = OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC;
     let fd = openat(dir, temp, flags, Mode::from_raw_mode(0o664)).map_err(|e| classify(e, temp))?;
     let mut target = File::from(fd);
     let size = source.snapshot.size;
-    let copied = (|| -> io::Result<u64> {
+    let copied = (|| {
         let mut from = (&source.file).take(size);
         let copied = io::copy(&mut from, &mut target)?;
+        if copied != size {
+            return Err(io::Error::other(format!(
+                "只读到 {copied} 字节，应该有 {size} 字节"
+            )));
+        }
         give_to(&target, owner)?;
-        target.sync_all()?;
-        Ok(copied)
+        target.sync_all()
     })();
-    match copied {
-        Ok(copied) if copied == size => Ok(target),
-        Ok(copied) => {
-            remove_temp(dir, temp, &target);
-            Err(ShareError::Io(l10n::text(
-                langs,
-                "files-short-read",
-                &[
-                    ("copied", wonton_l10n::Arg::from(copied)),
-                    ("size", wonton_l10n::Arg::from(size)),
-                ],
-            )))
-        }
-        Err(e) => {
-            remove_temp(dir, temp, &target);
-            Err(from_io(&e, temp))
-        }
+    if let Err(e) = copied {
+        remove_temp(dir, temp, &target);
+        return Err(from_io(&e, temp));
     }
+    Ok(target)
 }
 
 /// 属主已经对了就不改：核心不以 root 运行时也能工作。

@@ -1,22 +1,24 @@
-//! 网关行为测试：走真实 TCP 连接。插件上游和 Hydra 管理接口的替身在 [`super::fakes`] 里。
+//! 网关行为测试：走真实 TCP 连接。插件上游和 Hydra 管理接口的替身只存在于测试里。
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use axum::Router;
 use axum::body::Body;
+use axum::extract::{RawQuery, Request};
+use axum::response::Response;
+use axum::routing::get;
+use axum::{Json, Router};
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpListener, TcpStream};
 use tower::ServiceExt;
 
-use super::fakes::loopback_tunnel;
-use super::fakes::{bind, echo_upstream, fake_hydra, serve};
+use super::tunnel_tests::loopback_tunnel;
 use super::{CORE_COOKIE, ERROR_HEADER, Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
 use crate::http::HttpClient;
@@ -25,12 +27,10 @@ use crate::owner::{Owner, OwnerStore};
 use crate::plugin::egress::settings::Egress;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
-use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::{PluginManager, PluginPackage, PluginStatus};
-use crate::tunnel::{Tunnel, TunnelEntry};
 
 pub(super) const TOKEN: &str = "test-owner-token";
 pub(super) const CORE: &str = "wonton.localhost";
@@ -38,10 +38,122 @@ pub(super) const PLUGIN: &str = "app-whoami.wonton.localhost";
 pub(super) const WHOAMI: &str =
     include_str!("../../../../plugins/examples/whoami/docker-compose.yml");
 
+async fn serve(listener: TcpListener, router: Router) {
+    tokio::spawn(async move {
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .await
+        .unwrap();
+    });
+}
+
+async fn bind() -> (TcpListener, SocketAddr) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    (listener, addr)
+}
+
+/// 假插件：把收到的请求（路径和请求头）原样回显；`/ws` 支持协议升级后回显字节；
+/// `/set-cookie?c=..&c=..` 把每个 `c` 原样作为一条 `Set-Cookie` 返回。
+pub(super) async fn echo_upstream(hits: Arc<AtomicUsize>) -> SocketAddr {
+    let router = Router::new()
+        .route("/ws", get(upgrade_echo))
+        .route("/set-cookie", get(set_cookies))
+        .fallback(move |req: Request| {
+            let hits = hits.clone();
+            async move {
+                hits.fetch_add(1, Ordering::SeqCst);
+                let headers: serde_json::Map<String, Value> = req
+                    .headers()
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), json!(String::from_utf8_lossy(v.as_bytes()))))
+                    .collect();
+                Json(json!({"path": req.uri().to_string(), "headers": headers}))
+            }
+        });
+    let (listener, addr) = bind().await;
+    serve(listener, router).await;
+    addr
+}
+
+async fn set_cookies(RawQuery(query): RawQuery) -> Response {
+    let mut response = Response::new(Body::empty());
+    for (_, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        let value = value.parse().unwrap();
+        response.headers_mut().append(header::SET_COOKIE, value);
+    }
+    response
+}
+
+async fn upgrade_echo(mut req: Request) -> Response {
+    let on_upgrade = hyper::upgrade::on(&mut req);
+    tokio::spawn(async move {
+        if let Ok(upgraded) = on_upgrade.await {
+            let mut io = hyper_util::rt::TokioIo::new(upgraded);
+            let mut buf = [0u8; 64];
+            if let Ok(n) = io.read(&mut buf).await {
+                let _ = io.write_all(&buf[..n]).await;
+            }
+        }
+    });
+    Response::builder()
+        .status(StatusCode::SWITCHING_PROTOCOLS)
+        .header(header::CONNECTION, "upgrade")
+        .header(header::UPGRADE, "echo")
+        .body(Body::empty())
+        .unwrap()
+}
+
+/// 假 Hydra 管理接口：返回预设的登录、授权请求，记录核心提交的接受内容。
+pub(super) async fn fake_hydra(accepted: Arc<Mutex<Vec<Value>>>) -> SocketAddr {
+    let record = |accepted: Arc<Mutex<Vec<Value>>>, redirect: &'static str| {
+        move |Json(body): Json<Value>| async move {
+            accepted.lock().unwrap().push(body);
+            Json(json!({"redirect_to": redirect}))
+        }
+    };
+    let router = Router::new()
+        .route(
+            "/admin/oauth2/auth/requests/login",
+            get(|| async {
+                Json(json!({"skip": false, "subject": "", "client": {"client_id": "app.whoami"}}))
+            }),
+        )
+        .route(
+            "/admin/oauth2/auth/requests/login/accept",
+            axum::routing::put(record(
+                accepted.clone(),
+                "http://auth.wonton.localhost/after-login",
+            )),
+        )
+        .route(
+            "/admin/oauth2/auth/requests/consent",
+            get(|| async {
+                Json(json!({
+                    "subject": "owner",
+                    "client": {"client_id": "app.whoami"},
+                    "requested_scope": ["openid", "profile", "email", "groups", "admin"],
+                }))
+            }),
+        )
+        .route(
+            "/admin/oauth2/auth/requests/consent/accept",
+            axum::routing::put(record(
+                accepted,
+                "http://auth.wonton.localhost/after-consent",
+            )),
+        );
+    let (listener, addr) = bind().await;
+    serve(listener, router).await;
+    addr
+}
+
 pub(super) struct Reply {
     pub status: StatusCode,
     pub headers: HeaderMap,
-    pub(super) text: String,
+    text: String,
 }
 
 impl Reply {
@@ -51,13 +163,6 @@ impl Reply {
 
     pub fn error_kind(&self) -> Option<&str> {
         self.headers.get(ERROR_HEADER).map(|v| v.to_str().unwrap())
-    }
-
-    pub fn content_type(&self) -> &str {
-        self.headers
-            .get(header::CONTENT_TYPE)
-            .map(|v| v.to_str().unwrap())
-            .unwrap_or_default()
     }
 
     pub fn cookie(&self, name: &str) -> String {
@@ -77,39 +182,14 @@ impl Reply {
     pub fn text(&self) -> &str {
         &self.text
     }
-
-    /// 家人测试以设备的隧道身份发请求时构造：进程内 `oneshot` 的响应转成 [`Reply`]。
-    pub(super) async fn of(response: axum::response::Response) -> Self {
-        let status = response.status();
-        let headers = response.headers().clone();
-        let bytes = http_body_util::BodyExt::collect(response.into_body())
-            .await
-            .unwrap()
-            .to_bytes();
-        Reply {
-            status,
-            headers,
-            text: String::from_utf8_lossy(&bytes).into_owned(),
-        }
-    }
 }
 
 pub(super) struct Harness {
     pub addr: SocketAddr,
     pub http: HttpClient,
     pub hits: Arc<AtomicUsize>,
-    /// 假插件回显服务的地址。
-    pub upstream: SocketAddr,
     pub manager: Arc<PluginManager>,
     pub docker: FakeDocker,
-    /// 网关的路由：家人测试用它以设备的隧道身份发请求（进程内塞扩展，和隧道入口的做法一致）。
-    pub app: Router,
-    pub tunnel: Tunnel,
-    /// 家人记录：和网关里用的是同一份（隧道配对也用它）。
-    pub members: Arc<crate::members::Members>,
-    pub data_dir: std::path::PathBuf,
-    /// 隧道入口：配对协议（`wonton/pair/0`）在测试里也能用。
-    _entry: crate::tunnel::TunnelEntry,
     _dir: tempfile::TempDir,
 }
 
@@ -202,36 +282,25 @@ impl Harness {
             .with_lan(super::lan_api_tests::lan())
             .with_egress(egress),
         );
-        let manifest =
-            PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
+        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
-        let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
-            members.clone(),
             manager.clone(),
             hydra,
             http.clone(),
-            tunnel.clone(),
+            loopback_tunnel(dir.path()).await,
         )
         .with_upgrades(upgrades);
-        let app = router(Arc::new(gateway));
-        let entry = TunnelEntry::spawn(&tunnel, app.clone());
-        serve(listener, app.clone()).await;
+        serve(listener, router(Arc::new(gateway))).await;
         Self {
             addr,
             http,
             hits,
-            upstream,
             manager,
             docker,
-            app,
-            tunnel,
-            members,
-            data_dir: dir.path().to_owned(),
-            _entry: entry,
             _dir: dir,
         }
     }
@@ -258,11 +327,10 @@ impl Harness {
             public,
             OwnerStore::for_test(self._dir.path(), &owner()),
             TOKEN.into(),
-            self.members.clone(),
             self.manager.clone(),
             None,
             self.http.clone(),
-            self.tunnel.clone(),
+            loopback_tunnel(self._dir.path()).await,
         );
         let app = router(Arc::new(gateway));
         let mut request = hyper::Request::builder()
@@ -376,50 +444,14 @@ async fn unauthenticated_plugin_requests_never_reach_the_plugin() {
         page.location(),
         format!("{}/_wonton/sso?{expected}", h.origin(CORE))
     );
-    // fetch 默认的 `*/*` 和显式的 `application/json` 一样：直接 401，体是 JSON，不是登录页。
-    for accept in ["*/*", "application/json"] {
-        let api = h.get(PLUGIN, "/api/data", &[("accept", accept)]).await;
-        assert_eq!(api.status, StatusCode::UNAUTHORIZED, "{accept}");
-        assert_eq!(api.error_kind(), Some("unauthenticated"), "{accept}");
-        assert_eq!(api.content_type(), "application/json", "{accept}");
-        assert_eq!(
-            api.json()["error"]["category"],
-            "unauthenticated",
-            "{accept}"
-        );
-        assert!(
-            api.json()["error"]["message"]
-                .as_str()
-                .is_some_and(|m| !m.is_empty()),
-            "{accept}: {}",
-            api.text()
-        );
-    }
-    // 没有 `Accept`（curl、脚本）也不给网页。
-    let bare = h.get(PLUGIN, "/api/data", &[]).await;
-    assert_eq!(bare.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(bare.json()["error"]["category"], "unauthenticated");
-    // 不是导航的页面地址（不带 `Accept: text/html`）照样 401。
+    let api = h
+        .get(PLUGIN, "/api/data", &[("accept", "application/json")])
+        .await;
+    assert_eq!(api.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(api.error_kind(), Some("unauthenticated"));
     let forged = h.get(PLUGIN, "/", &[("cookie", "wonton_app=forged")]).await;
     assert_eq!(forged.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(forged.json()["error"]["category"], "unauthenticated");
     assert_eq!(h.hits.load(Ordering::SeqCst), 0, "未登录的请求不得到达插件");
-}
-
-#[tokio::test]
-async fn upstream_responses_pass_through_untouched() {
-    let h = Harness::start(None).await;
-    let app = h.app_session().await;
-    // 应用自己的 401：网关只转发，不改体，也不加 `x-wonton-error`，接口靠这个头区分是谁拦的。
-    let reply = h.get(PLUGIN, "/unauthorized", &[("cookie", &app)]).await;
-    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(reply.error_kind(), None);
-    assert_eq!(reply.json(), json!({"error": "app_login_required"}));
-
-    // 正常响应也一样：头里只有上游自己的内容。
-    let reply = h.get(PLUGIN, "/hello?x=1", &[("cookie", &app)]).await;
-    assert_eq!(reply.status, StatusCode::OK);
-    assert_eq!(reply.error_kind(), None);
 }
 
 #[tokio::test]
@@ -455,11 +487,7 @@ async fn logged_in_requests_reach_plugin_without_gateway_cookies() {
     assert_eq!(h.hits.load(Ordering::SeqCst), 1);
 
     // 插件会话只在签发它的子域名有效。
-    let other = PluginPackage::manifest_of(
-        &WHOAMI.replace("app.whoami", "app.other"),
-        &Languages::from_header(Some("zh-Hans")),
-    )
-    .unwrap();
+    let other = PluginPackage::manifest_of(&WHOAMI.replace("app.whoami", "app.other")).unwrap();
     h.manager
         .register_for_test(other, PluginStatus::Running, Some("127.0.0.1:9".into()));
     let cross = h
@@ -565,8 +593,7 @@ async fn unknown_hosts_and_unready_plugins_report_the_reason() {
     let missing = h.get("app-missing.wonton.localhost", "/", &[]).await;
     assert_eq!(missing.error_kind(), Some("not_installed"));
     let app = h.app_session().await;
-    let manifest =
-        PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
+    let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
     h.manager
         .register_for_test(manifest, PluginStatus::Installing, None);
     let busy = h.get(PLUGIN, "/", &[("cookie", &app)]).await;
@@ -586,63 +613,10 @@ async fn unknown_hosts_and_unready_plugins_report_the_reason() {
 async fn auth_host_is_forwarded_to_the_identity_provider() {
     let hydra = fake_hydra(Arc::new(Mutex::new(Vec::new()))).await;
     let h = Harness::start(Some(hydra)).await;
-    let path = "/oauth2/auth?x=1";
+    let path = "/.well-known/openid-configuration?x=1";
     let reply = h.get("auth.wonton.localhost", path, &[]).await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(reply.json()["path"], path);
-}
-
-#[tokio::test]
-async fn discovery_endpoints_are_rewritten_by_who_reaches_them_under_both_names() {
-    let hydra = fake_hydra(Arc::new(Mutex::new(Vec::new()))).await;
-    let h = Harness::start(Some(hydra)).await;
-    let port = h.addr.port();
-    for host in ["auth.wonton.localhost", "auth.wonton.internal"] {
-        let reply = h.get(host, "/.well-known/openid-configuration", &[]).await;
-        assert_eq!(reply.status, StatusCode::OK, "{host}");
-        let browser = format!("http://auth.wonton.localhost:{port}");
-        let backend = format!("http://auth.wonton.internal:{port}");
-        assert_eq!(
-            reply.json(),
-            json!({
-                "issuer": "http://auth.wonton.internal",
-                "authorization_endpoint": format!("{browser}/oauth2/auth"),
-                "token_endpoint": format!("{backend}/oauth2/token"),
-                "userinfo_endpoint": format!("{backend}/userinfo"),
-                "jwks_uri": format!("{backend}/.well-known/jwks.json"),
-                "revocation_endpoint": format!("{backend}/oauth2/revoke"),
-                "end_session_endpoint": format!("{browser}/oauth2/sessions/logout"),
-                "scopes_supported": ["openid"],
-            }),
-            "{host}"
-        );
-    }
-}
-
-#[tokio::test]
-async fn only_the_plugins_own_network_reaches_it_without_a_session() {
-    let unauthenticated = &[("accept", "application/json")];
-    // 别的插件网络里的容器访问它。
-    let h = Harness::start(None).await;
-    h.manager
-        .register_source_for_test("app.other", "127.0.0.1/32", vec![]);
-    let other = h.get(PLUGIN, "/", unauthenticated).await;
-    assert_eq!(other.error_kind(), Some("unauthenticated"));
-
-    // 它的容器访问别的插件。
-    let h = Harness::start(None).await;
-    super::proxy_sso_tests::register_vault(&h.manager).await;
-    h.manager
-        .register_source_for_test("app.whoami", "127.0.0.1/32", vec![]);
-    let elsewhere = h
-        .get(super::proxy_sso_tests::VAULT_HOST, "/", unauthenticated)
-        .await;
-    assert_eq!(elsewhere.error_kind(), Some("unauthenticated"));
-
-    // 不在任何插件网络里的来源。
-    let h = Harness::start(None).await;
-    let outside = h.get(PLUGIN, "/", unauthenticated).await;
-    assert_eq!(outside.error_kind(), Some("unauthenticated"));
 }
 
 #[tokio::test]
@@ -667,7 +641,7 @@ async fn plugin_api_requires_owner_token() {
     assert_eq!(listed.json()["plugins"][0]["id"], "app.whoami");
     let dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/examples/whoami");
-    let package = PluginPackage::load_dir(&dir, &Languages::from_header(Some("zh-Hans"))).unwrap();
+    let package = PluginPackage::load_dir(&dir).unwrap();
     let preview = h
         .send(
             Method::POST,
@@ -683,16 +657,7 @@ async fn plugin_api_requires_owner_token() {
     assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
     let preview = preview.json();
     let blocked = preview["blocked"].as_str().unwrap();
-    // 请求没带 Accept-Language，回退英文；期望值用目录本身格式化出来。
-    let expected = crate::l10n::text(
-        &crate::plugin::languages::Languages::default(),
-        "install-already-installed",
-        &[
-            ("id", "app.whoami".into()),
-            ("version", package.manifest.version.as_str().into()),
-        ],
-    );
-    assert_eq!(blocked, expected);
+    assert!(blocked.starts_with("已经装了 app.whoami"), "{blocked}");
     assert!(preview["digest"].as_str().unwrap().starts_with("sha256:"));
     let bad = h
         .send(
@@ -705,11 +670,11 @@ async fn plugin_api_requires_owner_token() {
         .await;
     assert_eq!(bad.error_kind(), Some("invalid_input"));
 
-    // 引用包内配置的上传必须带完整插件包，只有 compose 文本时应拒绝。
-    let compose = "services:\n  app:\n    image: nginx\n    configs: [settings]\nconfigs:\n  settings:\n    file: config.yaml\nx-wonton:\n  spec: '0.4'\n  id: app.config-upload\n  version: 1.0.0\n  kind: app\n  title: {zh: 配置, en: Config}\n  description: {zh: 配置上传, en: Config upload}\n  permissions: []\n";
-    let files = [("config.yaml".to_owned(), b"enabled: true\n".to_vec())].into();
-    let package = PluginPackage::with_files(compose, files, &Languages::default()).unwrap();
-    let archive = package.archive();
+    // 插件包目录的 tar 归档：compose 引用了包里的文件（Hermes 的 config.yaml）时这样传。
+    let hermes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/hermes");
+    let mut archive = tar::Builder::new(Vec::new());
+    archive.append_dir_all(".", &hermes).unwrap();
+    let archive = archive.into_inner().unwrap();
     let tar = [
         ("authorization", bearer.as_str()),
         ("content-type", "application/x-tar"),
@@ -724,8 +689,9 @@ async fn plugin_api_requires_owner_token() {
         )
         .await;
     assert_eq!(preview.status, StatusCode::OK, "{}", preview.text);
-    assert_eq!(preview.json()["id"], "app.config-upload");
+    assert_eq!(preview.json()["id"], "com.nousresearch.hermes");
     // 只有 compose 文本时，引用的 config.yaml 缺失。
+    let compose = std::fs::read_to_string(hermes.join("docker-compose.yml")).unwrap();
     let text = h
         .send(
             Method::POST,
@@ -782,4 +748,53 @@ async fn plugin_api_answers_in_the_requested_language() {
         assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{path}");
         assert_eq!(reply.error_kind(), Some("invalid_input"), "{path}");
     }
+}
+
+#[tokio::test]
+async fn oidc_login_and_consent_use_the_core_session() {
+    let accepted = Arc::new(Mutex::new(Vec::new()));
+    let hydra = fake_hydra(accepted.clone()).await;
+    let h = Harness::start(Some(hydra)).await;
+
+    let anonymous = h
+        .get(CORE, "/_wonton/oidc/login?login_challenge=abc", &[])
+        .await;
+    assert_eq!(anonymous.status, StatusCode::SEE_OTHER);
+    assert!(anonymous.location().starts_with("/_wonton/login?next="));
+    assert!(
+        accepted.lock().unwrap().is_empty(),
+        "未登录时不能接受 OIDC 登录"
+    );
+
+    let core = h.login(TOKEN).await.cookie(CORE_COOKIE);
+    let login = h
+        .get(
+            CORE,
+            "/_wonton/oidc/login?login_challenge=abc",
+            &[("cookie", &core)],
+        )
+        .await;
+    assert_eq!(login.location(), "http://auth.wonton.localhost/after-login");
+    let consent = h
+        .get(
+            CORE,
+            "/_wonton/oidc/consent?consent_challenge=def",
+            &[("cookie", &core)],
+        )
+        .await;
+    assert_eq!(
+        consent.location(),
+        "http://auth.wonton.localhost/after-consent"
+    );
+
+    let accepted = accepted.lock().unwrap();
+    assert_eq!(accepted[0]["subject"], "owner");
+    assert_eq!(
+        accepted[1]["grant_scope"],
+        json!(["openid", "profile", "email", "groups"])
+    );
+    let claims = &accepted[1]["session"]["id_token"];
+    assert_eq!(claims["email"], "owner@wonton.localhost");
+    assert_eq!(claims["preferred_username"], "owner");
+    assert_eq!(claims["groups"], json!(["owner"]));
 }

@@ -1,5 +1,4 @@
-//! 主人放宽确认的接口（ADR-0024）。只给主人（ADR-0045）：卡片都发给主人，放宽也是主人的设置。Agent 和插件都在
-//! 插件网络里，两样身份都没有，打开不了。
+//! 主人放宽确认的接口（ADR-0024）。和管理接口同一道门；Agent 和插件都在插件网络里，两样身份都没有，打开不了。
 
 use std::sync::Arc;
 
@@ -8,9 +7,8 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, Method, StatusCode};
 
-use super::api::{acted_by, error_response, install_error, owner_denied};
+use super::api::{acted_by, error_response, install_error, plugin_denied};
 use super::{Gateway, TunnelPeer};
-use crate::l10n;
 use crate::mcp::{Endpoint, PolicyChange};
 use crate::plugin::{InstallError, PluginId};
 
@@ -28,16 +26,14 @@ fn granted<'a>(
     id: &str,
 ) -> Result<Granted<'a>, Box<Response>> {
     let by = acted_by(gateway, peer.as_ref(), headers);
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = plugin_denied(gateway, peer, headers) {
         return Err(Box::new(denied));
     }
     let Some(mcp) = &gateway.mcp else {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(&langs, "gateway-mcp-disabled", &[]);
         return Err(Box::new(error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "mcp_unavailable",
-            &message,
+            "核心没有启用 MCP 总线",
         )));
     };
     let plugin = PluginId::parse(id).map_err(|e| {
@@ -48,9 +44,8 @@ fn granted<'a>(
         ))
     })?;
     if gateway.plugins.title(&plugin).is_none() {
-        let langs = super::api::languages(headers);
-        return Err(Box::new(install_error(&InstallError::not_installed(
-            &langs, &plugin,
+        return Err(Box::new(install_error(&InstallError::NotInstalled(
+            id.to_owned(),
         ))));
     }
     Ok(Granted { mcp, plugin, by })
@@ -111,13 +106,7 @@ pub async fn always(
         Err(response) => return *response,
     };
     if !is_bot(&gateway, &caller) {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(
-            &langs,
-            "gateway-bot-not-found",
-            &[("caller", caller.as_str().into())],
-        );
-        return not_found(&message);
+        return not_found(&format!("没有这个 Bot：{caller}"));
     }
     let change = PolicyChange::Always {
         plugin: &id,
@@ -139,16 +128,7 @@ pub async fn allow_all(
         Err(response) => return *response,
     };
     if caller != id || !is_bot(&gateway, &caller) {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(
-            &langs,
-            "gateway-bot-not-in-plugin",
-            &[
-                ("id", id.as_str().into()),
-                ("caller", caller.as_str().into()),
-            ],
-        );
-        return not_found(&message);
+        return not_found(&format!("插件 {id} 没有这个 Bot：{caller}"));
     }
     apply(granted, PolicyChange::AllowAll { caller: &caller }, &method).await
 }
@@ -166,22 +146,7 @@ pub async fn read_only(
         Err(response) => return *response,
     };
     if method == Method::PUT && granted.mcp.bus.lacks_tool(&granted.plugin, &tool).await {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(
-            &langs,
-            "gateway-tool-not-found",
-            &[("id", id.as_str().into()), ("tool", tool.as_str().into())],
-        );
-        return not_found(&message);
-    }
-    if method == Method::PUT && granted.mcp.bus.tool_deletes(&granted.plugin, &tool).await {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(
-            &langs,
-            "gateway-tool-deletes",
-            &[("tool", tool.as_str().into())],
-        );
-        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+        return not_found(&format!("插件 {id} 没有工具 {tool}"));
     }
     let change = PolicyChange::ReadOnly {
         plugin: &id,
@@ -208,9 +173,11 @@ pub async fn takeover(
     } else if bus.serves_tools(&granted.plugin) {
         bus.renew_takeover(&granted.plugin, &granted.by);
     } else {
-        let langs = gateway.plugins.owner_languages();
-        let message = l10n::text(&langs, "gateway-plugin-not-running", &[]);
-        return error_response(StatusCode::CONFLICT, "not_ready", &message);
+        return error_response(
+            StatusCode::CONFLICT,
+            "not_ready",
+            "这个插件没有在运行，或者没有声明工具",
+        );
     }
     StatusCode::NO_CONTENT.into_response()
 }

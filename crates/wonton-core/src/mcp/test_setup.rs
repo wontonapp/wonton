@@ -19,7 +19,6 @@ use crate::owner::{Owner, OwnerStore};
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
 use crate::plugin::image_worker::ImageWorker;
-use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::storefront::StoreConfig;
@@ -39,7 +38,6 @@ x-wonton:
   title: {zh: 笔记, en: Notes}
   description: {zh: 记笔记, en: Notes}
   mcp: {service: mcp, port: 8080, transport: streamable-http}
-  webui: {service: mcp, port: 8080}
   permissions: []
 ";
 
@@ -87,7 +85,6 @@ pub(super) struct Setup {
     pub(super) manager: Arc<PluginManager>,
     pub(super) caller: Caller,
     pub(super) dir: tempfile::TempDir,
-    pub(super) members: Arc<crate::members::Members>,
 }
 
 pub(super) fn manager(engine: Engine, dir: &tempfile::TempDir) -> Arc<PluginManager> {
@@ -156,8 +153,7 @@ fn write_index(dir: &tempfile::TempDir) {
                 + "  lan: {ports: [{service: web, port: 445}]}\n",
         ),
     ] {
-        let package =
-            PluginPackage::parse(&source, &Languages::from_header(Some("zh-Hans"))).unwrap();
+        let package = PluginPackage::parse(&source).unwrap();
         let source = format!("github:example/{repo}");
         let entry = IndexEntry::of(&package, &source, &"a".repeat(40)).unwrap();
         entry.write_to(&dir.path().join("index"), &package).unwrap();
@@ -204,68 +200,7 @@ pub(super) async fn setup_root() -> Setup {
     .await
 }
 
-/// 有一项可选、默认关的最高级权限（`docker.socket`）的插件。
-pub(super) const OPTIONAL: &str = "name: notes
-services:
-  web:
-    image: nginx
-    environment:
-      STATE: '${WONTON_PERMISSION_DOCKER_SOCKET:-off}'
-  agent:
-    image: example/agent
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-x-wonton:
-  spec: '0.5'
-  id: app.example.notes
-  version: 0.1.0
-  kind: app
-  title: {zh: 笔记, en: Notes}
-  description: {zh: 记笔记, en: Notes}
-  optional_permissions:
-    docker.socket:
-      off_loss: {zh: 看不到容器, en: No containers}
-  permissions: []
-";
-
-/// 装上 [`OPTIONAL`] 的管理器和总线：记录已经写好，可以直接开关。
-pub(super) async fn setup_optional() -> Setup {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager(engine, &dir);
-    let package = PluginPackage::parse(OPTIONAL, &Languages::from_header(Some("zh-Hans"))).unwrap();
-    manager
-        .install_package(package, &[], Languages::from_header(Some("zh-Hans")))
-        .await
-        .unwrap();
-    let cards = Arc::new(Cards::default());
-    let confirmations = Arc::new(Confirmations::new(cards.clone(), Duration::from_secs(5)));
-    let audit = dir.path().join("audit.jsonl");
-    write_index(&dir);
-    let bus = Bus::with_upstreams(
-        manager.clone(),
-        confirmations,
-        Arc::new(crate::mcp::audit::Audit::new(audit)),
-        Arc::new(Upstreams::new()),
-    );
-    let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
-    bus.attach_people("wonton.localhost".into(), members.clone());
-    let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
-    let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
-    manager.note_person_languages("owner", Some("zh"));
-    let _ = docker;
-    Setup {
-        bus,
-        cards,
-        notes: Notes::default(),
-        manager,
-        caller,
-        dir,
-        members,
-    }
-}
-
-pub(super) async fn setup_with(
+async fn setup_with(
     engine: Engine,
     ttl: Duration,
     window: Duration,
@@ -276,9 +211,7 @@ pub(super) async fn setup_with(
     let manager = manager(engine, &dir);
     let notes = Notes::default();
     let url = serve_notes(notes.clone()).await;
-    let manifest = PluginPackage::parse(manifest_source, &Languages::from_header(Some("zh-Hans")))
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(manifest_source).unwrap().manifest;
     let id = manifest.id.clone();
     manager.register_for_test(manifest, PluginStatus::Running, None);
     manager.mcp_for_test(&id, url);
@@ -292,12 +225,10 @@ pub(super) async fn setup_with(
         Arc::new(crate::mcp::audit::Audit::new(audit)),
         Arc::new(upstreams),
     );
-    let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
-    bus.attach_people("wonton.localhost".into(), members.clone());
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     // 主人的语言：生产里由 App 的请求写入，卡片文字按它出中文。
-    manager.note_person_languages("owner", Some("zh"));
+    manager.note_owner_languages(Some("zh"));
     Setup {
         bus,
         cards,
@@ -305,7 +236,6 @@ pub(super) async fn setup_with(
         manager,
         caller,
         dir,
-        members,
     }
 }
 
@@ -316,26 +246,6 @@ impl Setup {
         self.bus
             .call(&self.caller, request, std::future::pending())
             .await
-    }
-
-    /// 以另一个调用方（别的插件）调用。
-    pub(super) async fn call_as(&self, caller: &Caller, name: &str, args: Value) -> CallToolResult {
-        let request = CallToolRequestParams::new(name.to_owned())
-            .with_arguments(args.as_object().cloned().unwrap_or_default());
-        self.bus.call(caller, request, std::future::pending()).await
-    }
-
-    /// 以另一个调用方在后台调用，好在等确认时回答。
-    pub(super) fn spawn_as(
-        &self,
-        caller: &Caller,
-        name: &str,
-        args: Value,
-    ) -> tokio::task::JoinHandle<CallToolResult> {
-        let (bus, caller, name) = (self.bus.clone(), caller.clone(), name.to_owned());
-        let request = CallToolRequestParams::new(name)
-            .with_arguments(args.as_object().cloned().unwrap_or_default());
-        tokio::spawn(async move { bus.call(&caller, request, std::future::pending()).await })
     }
 
     /// 在后台调用，好在等确认时回答。
@@ -352,23 +262,6 @@ impl Setup {
         answer: Answer,
     ) -> Result<ConfirmationState, AnswerError> {
         self.bus.confirmations().answer(id, answer, None)
-    }
-
-    /// 带密钥的回答（ADR-0064）。
-    pub(super) fn answer_with_secrets(
-        &self,
-        id: &str,
-        answer: Answer,
-        secrets: wonton_protocol::SecretValues,
-    ) -> Result<ConfirmationState, AnswerError> {
-        self.bus.confirmations().answer_with_secrets(
-            id,
-            answer,
-            None,
-            secrets,
-            Default::default(),
-            &Languages::from_header(None),
-        )
     }
 
     pub(super) fn audit(&self) -> Vec<Value> {

@@ -5,7 +5,6 @@ use super::super::names::container_name;
 use super::super::storefront::StoreConfig;
 use super::super::{PluginManager, PluginPackage, PluginStatus};
 use super::manager::manager_with;
-use crate::plugin::languages::Languages;
 use std::sync::{Arc, Mutex};
 use wonton_protocol::{CustomModelProvider, SecretString};
 
@@ -62,9 +61,7 @@ async fn bed() -> Bed {
 }
 
 fn register_gateway(manager: &PluginManager) {
-    let manifest = PluginPackage::parse(PROVIDER, &super::langs())
-        .unwrap()
-        .manifest;
+    let manifest = PluginPackage::parse(PROVIDER).unwrap().manifest;
     let route = ModelsRoute {
         id: manifest.id.clone(),
         spec: manifest.provides.clone().unwrap().models.unwrap(),
@@ -79,12 +76,7 @@ fn register_gateway(manager: &PluginManager) {
 async fn save_passes_key_only_on_stdin() {
     let bed = bed().await;
     bed.manager
-        .model_provider_key(
-            "deepseek",
-            "secret-key",
-            ProviderAction::Save,
-            &Languages::default(),
-        )
+        .model_provider_key("deepseek", "secret-key", ProviderAction::Save)
         .await
         .unwrap();
     let exec = bed.docker.execs().into_iter().last().unwrap();
@@ -97,12 +89,7 @@ async fn save_rejects_unknown_provider_without_running_save() {
     let bed = bed().await;
     let error = bed
         .manager
-        .model_provider_key(
-            "unknown",
-            "secret-key",
-            ProviderAction::Save,
-            &Languages::default(),
-        )
+        .model_provider_key("unknown", "secret-key", ProviderAction::Save)
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "invalid_input");
@@ -132,12 +119,7 @@ async fn save_exit_codes_have_distinct_error_kinds_without_stderr_leak() {
         let manager = manager_with_index(engine, &dir);
         register_gateway(&manager);
         let error = manager
-            .model_provider_key(
-                "deepseek",
-                "secret-key",
-                ProviderAction::Save,
-                &Languages::default(),
-            )
+            .model_provider_key("deepseek", "secret-key", ProviderAction::Save)
             .await
             .unwrap_err();
         assert_eq!(error.kind(), kind);
@@ -159,10 +141,7 @@ fn provider_manifest_requires_commands_and_valid_placeholders() {
         ("save: [providers, custom-save]", "save: [custom, '{id}']"),
         ("test: [providers, custom-test]", "test: [custom, '{key}']"),
     ] {
-        assert!(
-            PluginPackage::parse(&PROVIDER.replace(original, replacement), &super::langs())
-                .is_err()
-        );
+        assert!(PluginPackage::parse(&PROVIDER.replace(original, replacement)).is_err());
     }
 }
 
@@ -172,7 +151,7 @@ async fn invalid_keys_are_rejected_before_save() {
         let bed = bed().await;
         let error = bed
             .manager
-            .model_provider_key("deepseek", key, ProviderAction::Save, &Languages::default())
+            .model_provider_key("deepseek", key, ProviderAction::Save)
             .await
             .unwrap_err();
         assert_eq!(error.kind(), "invalid_input");
@@ -182,12 +161,7 @@ async fn invalid_keys_are_rejected_before_save() {
     let key = "a".repeat(4097);
     let error = bed
         .manager
-        .model_provider_key(
-            "deepseek",
-            &key,
-            ProviderAction::Save,
-            &Languages::default(),
-        )
+        .model_provider_key("deepseek", &key, ProviderAction::Save)
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "invalid_input");
@@ -216,12 +190,7 @@ async fn test_passes_key_only_on_stdin_and_rejects_unknown_ids() {
         (0, String::new(), String::new())
     });
     bed.manager
-        .model_provider_key(
-            "deepseek",
-            "secret-key",
-            ProviderAction::Test,
-            &Languages::default(),
-        )
+        .model_provider_key("deepseek", "secret-key", ProviderAction::Test)
         .await
         .unwrap();
     let exec = bed.docker.execs().into_iter().last().unwrap();
@@ -229,12 +198,7 @@ async fn test_passes_key_only_on_stdin_and_rejects_unknown_ids() {
     assert_eq!(exec.stdin, b"secret-key\n");
     let error = bed
         .manager
-        .model_provider_key(
-            "unknown",
-            "secret-key",
-            ProviderAction::Test,
-            &Languages::default(),
-        )
+        .model_provider_key("unknown", "secret-key", ProviderAction::Test)
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "invalid_input");
@@ -257,7 +221,7 @@ async fn custom_commands_receive_one_json_line_only_on_stdin() {
             .on_exec_output(|_, _, _| (0, String::new(), String::new()));
         let provider = custom_provider();
         bed.manager
-            .custom_model_provider(&provider, action, &Languages::default())
+            .custom_model_provider(&provider, action)
             .await
             .unwrap();
         let execs = bed.docker.execs();
@@ -291,7 +255,7 @@ async fn invalid_custom_input_never_executes_any_command() {
         provider.base_url = url.into();
         assert_eq!(
             bed.manager
-                .custom_model_provider(&provider, ProviderAction::Save, &Languages::default())
+                .custom_model_provider(&provider, ProviderAction::Save)
                 .await
                 .unwrap_err()
                 .kind(),
@@ -314,7 +278,7 @@ async fn invalid_custom_input_never_executes_any_command() {
         provider.model = model.into();
         assert_eq!(
             bed.manager
-                .custom_model_provider(&provider, ProviderAction::Test, &Languages::default())
+                .custom_model_provider(&provider, ProviderAction::Test)
                 .await
                 .unwrap_err()
                 .kind(),
@@ -328,7 +292,7 @@ async fn invalid_custom_input_never_executes_any_command() {
         provider.key = SecretString::new(key);
         assert_eq!(
             bed.manager
-                .custom_model_provider(&provider, ProviderAction::Save, &Languages::default())
+                .custom_model_provider(&provider, ProviderAction::Save)
                 .await
                 .unwrap_err()
                 .kind(),
@@ -349,7 +313,7 @@ async fn custom_accepts_boundary_lengths_without_normalizing_input() {
     provider.model = "m".repeat(200);
     provider.key = SecretString::new("k".repeat(4096));
     bed.manager
-        .custom_model_provider(&provider, ProviderAction::Test, &Languages::default())
+        .custom_model_provider(&provider, ProviderAction::Test)
         .await
         .unwrap();
     let exec = bed.docker.execs().pop().unwrap();

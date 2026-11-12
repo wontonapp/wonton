@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,7 +26,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -36,10 +34,6 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceInvite
-import app.wonton.protocol.KeyHandoff
-import app.wonton.protocol.VerificationFlow
-import app.wonton.protocol.VerificationStage
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonNotice
@@ -56,52 +50,20 @@ import kotlinx.coroutines.delay
 
 /**
  * “添加设备”：向家里的服务器要一个一次性配对码，画成二维码给新设备上的云吞 App 扫。进展和码都来自核心的
- * [invite]（`HomeViewModel.invite`）。新设备发起的确认请求（ADR-0046）在配对码出示期间就在这一屏接着显示；
- * 这一页开着时核心替新设备交出聊天密钥（ADR-0087，[handoff]），离开时告诉核心不再交。
+ * [invite]（`HomeViewModel.invite`）。
  */
 @Composable
-fun InviteScreen(
-    core: ClientCore,
-    invite: DeviceInvite?,
-    verification: VerificationFlow?,
-    handoff: KeyHandoff?,
-    modifier: Modifier = Modifier,
-) {
+fun InviteScreen(core: ClientCore, invite: DeviceInvite?, modifier: Modifier = Modifier) {
     // 核心当场拒绝的原因，比如还没配对。
     var refusal by remember { mutableStateOf<Problem?>(null) }
     val request = { refusal = core.send(Action.InviteDevice) }
     LaunchedEffect(Unit) { request() }
-    DisposableEffect(core) { onDispose { core.send(Action.CloseDeviceInvite) } }
-    val giving = handoff is KeyHandoff.Giving
+    val colors = WontonTheme.colors
     Column(
-        modifier.verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+        modifier.verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
-        verification?.takeIf { !it.startedHere }?.let { flow ->
-            if (giving && flow.stage is VerificationStage.Done) {
-                Text(
-                    stringResource(R.string.invite_device_added),
-                    style = WontonTheme.typography.itemTitle,
-                    color = WontonTheme.colors.textPrimary.toColor(),
-                )
-            } else {
-                VerificationFlowContent(flow, onAction = { refusal = core.send(it) }, onUseRecoveryKey = null)
-            }
-        }
-        if (handoff is KeyHandoff.CannotGive) {
-            WontonNotice(WontonIcon.Warning, stringResource(R.string.invite_cannot_give))
-        }
         refusal?.let { ProblemNotice(it, WontonIcon.Error) }
-        // 码已经被新设备用掉、这一页在替它交出密钥：不再摆码。
-        if (!giving) InviteProgress(invite, request)
-    }
-}
-
-@Composable
-private fun InviteProgress(invite: DeviceInvite?, request: () -> Unit) {
-    val colors = WontonTheme.colors
-    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         when (invite) {
             null, is DeviceInvite.Requesting -> Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -113,18 +75,14 @@ private fun InviteProgress(invite: DeviceInvite?, request: () -> Unit) {
                     strokeWidth = 2.dp,
                 )
                 Text(
-                    stringResource(R.string.invite_requesting),
+                    "正在向家里的服务器要配对码…",
                     style = WontonTheme.typography.body,
                     color = colors.textPrimary.toColor(),
                 )
             }
             is DeviceInvite.Ready -> InviteCode(invite.code, invite.expiresAtMs.toLong(), onRenew = request)
-            is DeviceInvite.Failed -> WontonNotice(
-                WontonIcon.Warning,
-                stringResource(R.string.invite_failed_title),
-                lines = listOf(invite.message),
-            ) {
-                WontonButton(stringResource(R.string.invite_try_again), request, kind = WontonButtonKind.SECONDARY)
+            is DeviceInvite.Failed -> WontonNotice(WontonIcon.Warning, "没要到配对码", lines = listOf(invite.message)) {
+                WontonButton("再试一次", request, kind = WontonButtonKind.SECONDARY)
             }
         }
     }
@@ -151,33 +109,30 @@ private fun InviteCode(code: String, expiresAtMs: Long, onRenew: () -> Unit) {
             val qr = remember(code) { qrBitmap(code) }
             Image(
                 bitmap = qr,
-                contentDescription = stringResource(R.string.invite_qr_label),
+                contentDescription = "配对二维码",
                 modifier = Modifier.size(QR_SIZE).clip(RoundedCornerShape(WontonTheme.radii.control)),
                 filterQuality = FilterQuality.None,
             )
-            val expiresIn = "%d:%02d".format(remaining / SECONDS_PER_MINUTE, remaining % SECONDS_PER_MINUTE)
+            val minutes = remaining / SECONDS_PER_MINUTE
+            val seconds = "%02d".format(remaining % SECONDS_PER_MINUTE)
             Text(
-                stringResource(R.string.invite_expires_in, expiresIn),
+                "还有 $minutes:$seconds 过期",
                 style = WontonTheme.typography.supporting.copy(fontFeatureSettings = "tnum"),
                 color = secondary,
             )
         }
     } else {
-        WontonNotice(WontonIcon.Warning, stringResource(R.string.invite_expired)) {
-            WontonButton(stringResource(R.string.invite_renew), onRenew, kind = WontonButtonKind.SECONDARY)
+        WontonNotice(WontonIcon.Warning, "这个码过期了。") {
+            WontonButton("换一个码", onRenew, kind = WontonButtonKind.SECONDARY)
         }
     }
     Text(
-        stringResource(R.string.invite_instructions),
+        "在新设备上打开云吞 App 扫这个码，它就成为你的设备。码只能用一次。",
         style = WontonTheme.typography.supporting,
         color = secondary,
     )
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-        Text(
-            stringResource(R.string.invite_paste_fallback),
-            style = WontonTheme.typography.supporting,
-            color = secondary,
-        )
+        Text("不能扫码时粘贴这段文字", style = WontonTheme.typography.supporting, color = secondary)
         SelectionContainer {
             Text(
                 code,
@@ -196,7 +151,7 @@ private const val SECOND_MS = 1000L
 private const val SECONDS_PER_MINUTE = 60
 
 /** 每个模块一个像素，显示时不插值放大，二维码不会糊。 */
-internal fun qrBitmap(text: String): ImageBitmap {
+private fun qrBitmap(text: String): ImageBitmap {
     val hints = mapOf(EncodeHintType.MARGIN to 2, EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M)
     val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, 0, 0, hints)
     val pixels = IntArray(matrix.width * matrix.height) { index ->

@@ -34,15 +34,12 @@ use wonton_protocol::{
     FileId,
 };
 
-use super::api::languages;
 use super::{Gateway, TunnelPeer};
 use crate::files::content::{Selection, attachment, select, served_type};
 use crate::files::record::{Accessor, FileRecord};
 use crate::files::resource::RemoteRequest;
 use crate::files::share_fs::Opened;
 use crate::files::{Content, Failure, FileEvent, Files, device_label};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 pub(super) use uploads::hook_request;
 
@@ -128,8 +125,7 @@ fn respond(result: Result<Response, Failure>) -> Response {
     result.unwrap_or_else(|e| failure(&e))
 }
 
-/// 经隧道的已配对设备才能过，每个请求都查设备登记表，吊销立即生效。文件的访问范围还是只有主人
-/// （ADR-0045 的按人范围是后续任务）：家人的设备如实报 `not_shared`。
+/// 经隧道的已配对设备才能过，每个请求都查设备登记表，吊销立即生效。
 async fn require_device(
     State(gateway): State<Arc<Gateway>>,
     mut req: Request,
@@ -144,28 +140,15 @@ async fn require_device(
         .filter(|TunnelPeer(id)| gateway.tunnel.devices.contains(id))
         .map(|TunnelPeer(id)| id);
     let (true, Some(device)) = (asked, device) else {
-        let langs = languages(req.headers());
         return failure(&Failure::new(
             FileFailure::Unauthenticated,
-            l10n::text(
-                &langs,
-                "files-device-only",
-                &[("header", FILES_HEADER.into())],
-            ),
+            format!("文件接口只给经隧道的已配对设备，还要带 {FILES_HEADER}: 1"),
         ));
     };
-    let person = gateway.device_person(peer);
-    if person.is_none_or(|person| !person.is_owner()) {
-        return failure(&Failure::new(
-            FileFailure::NotShared,
-            "文件接口还没有开放给家人（访问范围按人是后续任务）",
-        ));
-    }
     let Some(files) = gateway.files.clone() else {
-        let langs = languages(req.headers());
         return failure(&Failure::new(
             FileFailure::ServiceUnavailable,
-            l10n::text(&langs, "files-service-disabled", &[]),
+            "核心没有启用文件服务",
         ));
     };
     req.extensions_mut().insert(Caller { device, files });
@@ -173,38 +156,24 @@ async fn require_device(
 }
 
 /// 编号写得不对，和没有这个编号是一回事。
-fn parse_id(id: &str, langs: &Languages) -> Result<FileId, Failure> {
-    id.parse().map_err(|_| {
-        Failure::new(
-            FileFailure::FileUnknown,
-            l10n::text(langs, "files-not-found", &[]),
-        )
-    })
+fn parse_id(id: &str) -> Result<FileId, Failure> {
+    id.parse()
+        .map_err(|_| Failure::new(FileFailure::FileUnknown, "没有这个文件"))
 }
 
-async fn info(
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let langs = languages(&headers);
+async fn info(Extension(caller): Extension<Caller>, Path(id): Path<String>) -> Response {
     let info = async {
-        let id = parse_id(&id, &langs)?;
-        caller.files.info(&id, &Accessor::Owner, &langs).await
+        let id = parse_id(&id)?;
+        caller.files.info(&id, &Accessor::Owner).await
     };
     respond(info.await.map(|info| axum::Json(info).into_response()))
 }
 
-async fn delete(
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let langs = languages(&headers);
-    let result = match parse_id(&id, &langs) {
+async fn delete(Extension(caller): Extension<Caller>, Path(id): Path<String>) -> Response {
+    let result = match parse_id(&id) {
         Ok(parsed) => {
             let device = device_label(&caller.device);
-            caller.files.delete(&parsed, device, &langs).await
+            caller.files.delete(&parsed, device).await
         }
         Err(e) => {
             let failed = Err(e);
@@ -218,26 +187,17 @@ async fn delete(
 async fn grant(
     Extension(caller): Extension<Caller>,
     Path(id): Path<String>,
-    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let langs = languages(&headers);
     let bots = async {
-        let parsed = parse_id(&id, &langs)?;
+        let parsed = parse_id(&id)?;
         let request: FileGrantRequest = serde_json::from_slice(&body).map_err(|e| {
             Failure::new(
                 FileFailure::InvalidInput,
-                l10n::text(
-                    &langs,
-                    "files-invalid-room-body",
-                    &[("error", e.to_string().into())],
-                ),
+                format!("请求体应为 {{\"room\": …}}：{e}"),
             )
         })?;
-        caller
-            .files
-            .grant_room(&parsed, &request.room, &langs)
-            .await
+        caller.files.grant_room(&parsed, &request.room).await
     }
     .await;
     caller.files.audit(&FileEvent {
@@ -254,12 +214,10 @@ async fn grant(
 async fn revoke(
     Extension(caller): Extension<Caller>,
     Path((id, bot)): Path<(String, String)>,
-    headers: HeaderMap,
 ) -> Response {
-    let langs = languages(&headers);
     let revoked = async {
-        let parsed = parse_id(&id, &langs)?;
-        caller.files.revoke_bot(&parsed, &bot, &langs).await
+        let parsed = parse_id(&id)?;
+        caller.files.revoke_bot(&parsed, &bot).await
     }
     .await;
     let bots = [bot];
@@ -274,31 +232,21 @@ async fn revoke(
     respond(revoked.map(|()| StatusCode::NO_CONTENT.into_response()))
 }
 
-async fn send_to_devices(
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let langs = languages(&headers);
+async fn send_to_devices(Extension(caller): Extension<Caller>, Path(id): Path<String>) -> Response {
     let sent = async {
-        let parsed = parse_id(&id, &langs)?;
-        caller.files.send_to_devices(&parsed, &langs).await
+        let parsed = parse_id(&id)?;
+        caller.files.send_to_devices(&parsed).await
     }
     .await;
     caller.audit("file_send_to_devices", &id, &sent);
     respond(sent.map(|()| StatusCode::NO_CONTENT.into_response()))
 }
 
-async fn thumbnail(
-    Extension(caller): Extension<Caller>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let langs = languages(&headers);
+async fn thumbnail(Extension(caller): Extension<Caller>, Path(id): Path<String>) -> Response {
     let jpeg = async {
-        let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &Accessor::Owner, &langs)?;
-        caller.files.thumbnail(&record, &langs).await
+        let parsed = parse_id(&id)?;
+        let record = caller.files.authorize(&parsed, &Accessor::Owner)?;
+        caller.files.thumbnail(&record).await
     };
     respond(jpeg.await.map(|jpeg| {
         let mut response = jpeg.into_response();
@@ -355,7 +303,6 @@ async fn content(
     method: Method,
     headers: HeaderMap,
 ) -> Response {
-    let langs = languages(&headers);
     let range = single_range(&headers);
     let if_range = range.as_ref().and(headers.get(header::IF_RANGE)).cloned();
     let request = RemoteRequest {
@@ -364,11 +311,11 @@ async fn content(
         if_range,
     };
     let served = async {
-        let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &Accessor::Owner, &langs)?;
-        let content = caller.files.content(&record, request, &langs).await?;
+        let parsed = parse_id(&id)?;
+        let record = caller.files.authorize(&parsed, &Accessor::Owner)?;
+        let content = caller.files.content(&record, request).await?;
         let (mut response, range) = match content {
-            Content::File(opened) => local_file(opened, &method, &headers, &langs).await,
+            Content::File(opened) => local_file(opened, &method, &headers).await,
             Content::Remote(upstream) => remote(upstream, &method),
             Content::Bytes(bytes) => in_memory(bytes, &method),
             Content::Unread { size } => (unread(size), None),
@@ -401,7 +348,6 @@ async fn local_file(
     opened: Opened,
     method: &Method,
     request: &HeaderMap,
-    langs: &Languages,
 ) -> (Response, Option<String>) {
     let Opened { file, snapshot } = opened;
     let etag = snapshot.etag();
@@ -429,7 +375,7 @@ async fn local_file(
     let body = if *method == Method::HEAD {
         Body::empty()
     } else {
-        file_stream(file, start, length, langs)
+        file_stream(file, start, length)
     };
     let mut response = Response::new(body);
     *response.status_mut() = status;
@@ -446,43 +392,39 @@ async fn local_file(
 }
 
 /// 流式读文件的一段。读出错或者文件中途变短时响应体提前结束，客户端按 `Content-Length` 看得出没传完，用 `Range` 接着下。
-fn file_stream(file: std::fs::File, start: u64, length: u64, langs: &Languages) -> Body {
-    let shortened = l10n::text(langs, "files-stream-shortened", &[]);
+fn file_stream(file: std::fs::File, start: u64, length: u64) -> Body {
     let state = (file, start, length, None::<tokio::fs::File>);
     Body::from_stream(stream::try_unfold(
         state,
-        move |(std_file, start, left, opened)| {
-            let shortened = shortened.clone();
-            async move {
-                let mut file = match opened {
-                    Some(file) => file,
-                    None => {
-                        let mut file = tokio::fs::File::from_std(std_file.try_clone()?);
-                        tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(start))
-                            .await?;
-                        file
-                    }
-                };
-                if left == 0 {
-                    return Ok::<_, std::io::Error>(None);
+        |(std_file, start, left, opened)| async move {
+            let mut file = match opened {
+                Some(file) => file,
+                None => {
+                    let mut file = tokio::fs::File::from_std(std_file.try_clone()?);
+                    tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(start))
+                        .await?;
+                    file
                 }
-                let want = usize::try_from(left)
-                    .unwrap_or(CHUNK_BYTES)
-                    .min(CHUNK_BYTES);
-                let mut chunk = vec![0u8; want];
-                let read = file.read(&mut chunk).await?;
-                if read == 0 {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::UnexpectedEof,
-                        shortened,
-                    ));
-                }
-                chunk.truncate(read);
-                Ok(Some((
-                    Bytes::from(chunk),
-                    (std_file, start, left - read as u64, Some(file)),
-                )))
+            };
+            if left == 0 {
+                return Ok::<_, std::io::Error>(None);
             }
+            let want = usize::try_from(left)
+                .unwrap_or(CHUNK_BYTES)
+                .min(CHUNK_BYTES);
+            let mut chunk = vec![0u8; want];
+            let read = file.read(&mut chunk).await?;
+            if read == 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "文件在下载途中变短了",
+                ));
+            }
+            chunk.truncate(read);
+            Ok(Some((
+                Bytes::from(chunk),
+                (std_file, start, left - read as u64, Some(file)),
+            )))
         },
     ))
 }

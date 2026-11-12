@@ -3,18 +3,13 @@
 
 use super::LABEL_COMPONENTS;
 use super::host::{Component, Host, HostError};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 处理 `image` 不支持的组件。这个镜像声明的以外都算不支持；没有这个标签等于一个都不支持。
-pub async fn prepare(host: &dyn Host, image: &str, langs: &Languages) -> Result<(), HostError> {
-    let info = host.image(image).await?.ok_or_else(|| {
-        HostError::NotFound(l10n::text(
-            langs,
-            "upgrade-no-image",
-            &[("image", image.into())],
-        ))
-    })?;
+pub async fn prepare(host: &dyn Host, image: &str) -> Result<(), HostError> {
+    let info = host
+        .image(image)
+        .await?
+        .ok_or_else(|| HostError::NotFound(format!("本机没有镜像 {image}")))?;
     let supported = info.labels.get(LABEL_COMPONENTS).map_or("", String::as_str);
     let supported: Vec<&str> = supported.split(',').map(str::trim).collect();
     for component in host.components().await? {

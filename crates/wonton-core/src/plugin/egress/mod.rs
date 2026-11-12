@@ -19,7 +19,7 @@ pub(in crate::plugin) mod provider;
 mod relay;
 pub mod settings;
 mod switch;
-pub(in crate::plugin) use switch::{PLACEHOLDER, cannot_read, token_uses};
+pub(in crate::plugin) use switch::cannot_read;
 
 use std::collections::BTreeSet;
 
@@ -39,9 +39,8 @@ const NO_PROXY_VARS: [&str; 2] = ["NO_PROXY", "no_proxy"];
 /// Node 22.21、24.5 起有这个开关，不设就不读代理变量。
 const NODE_SWITCH: (&str, &str) = ("NODE_USE_ENV_PROXY", "1");
 
-/// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的别名（`.wonton.internal`，含身份提供方）和本插件的服务名。
-/// `*.localhost` 是基础域名，出口容器不认，也没有 DNS 解它。
-const NO_PROXY_LOOPBACK: &str = "localhost,.localhost,127.0.0.1,::1,.wonton.internal";
+/// 不走代理的地址，放在 `NO_PROXY` 的两头：中间是核心的身份提供方和本插件的服务名。
+const NO_PROXY_LOOPBACK: &str = "localhost,127.0.0.1,::1,.wonton.internal";
 /// 私有网段只写 IPv4。IPv6 网段（`fc00::/7`、`fe80::/10`）带冒号，httpx 把 NO_PROXY 条目转成挂载键时给
 /// IPv6 加方括号，`fc00::/7` 变成 `all://[fc00::/7]`，建客户端解析这个键就报 `InvalidURL: Invalid port: ':'`
 /// 崩掉（Immich 机器学习下载模型就是这样 500 的，httpx 0.28.1 实测），也没有一种所有客户端都认的 IPv6
@@ -52,19 +51,21 @@ const NO_PROXY_PRIVATE: &str = ".local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,
 
 /// 主人配了代理时，注入给出网插件的内容。没配代理时没有它，插件和没有这个功能时一样直连。
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EgressVars;
+pub struct EgressVars {
+    /// 身份提供方在插件网络里的别名 `auth.<基础域名>`：插件经核心访问它，不能走代理。
+    pub auth_host: String,
+}
 
 impl EgressVars {
     fn no_proxy<'a>(&self, services: impl Iterator<Item = &'a str>) -> String {
-        let mut parts = vec![NO_PROXY_LOOPBACK];
+        let mut parts = vec![NO_PROXY_LOOPBACK, self.auth_host.as_str()];
         parts.extend(services.map(|service| -> &str { service }));
         parts.push(NO_PROXY_PRIVATE);
         parts.join(",")
     }
 
-    /// 给容器写上代理变量。`services` 是本插件所有的服务名。compose 里写了同名代理变量时以 compose 为准，写成空就是
-    /// 这个服务不走代理；`NO_PROXY`/`no_proxy` 不覆盖，把核心名单里缺的条目并进去——作者写的名单常常只有它自己的
-    /// 服务，内部请求会被送去上游代理，上游解析不了插件的服务名（#601）。
+    /// 给容器写上代理变量。`services` 是本插件所有的服务名。compose 里写了同名变量时以 compose 为准，写成空就是这个
+    /// 服务不走代理。
     pub fn inject<'a>(
         &self,
         body: &mut ContainerCreateBody,
@@ -83,43 +84,11 @@ impl EgressVars {
             .chain(NO_PROXY_VARS.iter().map(|name| (*name, no_proxy.as_str())))
             .chain([NODE_SWITCH]);
         for (name, value) in pairs {
-            if written.contains(name) {
-                if NO_PROXY_VARS.contains(&name) {
-                    merge_no_proxy(env, name, value);
-                }
-            } else {
+            if !written.contains(name) {
                 env.push(format!("{name}={value}"));
             }
         }
     }
-}
-
-/// 插件自己写了 `NO_PROXY`（或小写）：保留它的条目，把核心名单里没有的补到后面，不覆盖。
-fn merge_no_proxy(env: &mut [String], name: &str, core: &str) {
-    let Some(index) = env
-        .iter()
-        .position(|line| line.split_once('=').is_some_and(|(n, _)| n == name))
-    else {
-        return;
-    };
-    let merged = {
-        let existing = env[index]
-            .split_once('=')
-            .map(|(_, value)| value)
-            .unwrap_or_default();
-        let mut entries: Vec<&str> = existing
-            .split(',')
-            .map(|entry| entry.trim())
-            .filter(|entry| !entry.is_empty())
-            .collect();
-        for entry in core.split(',') {
-            if !entries.contains(&entry) {
-                entries.push(entry);
-            }
-        }
-        format!("{name}={}", entries.join(","))
-    };
-    env[index] = merged;
 }
 
 /// 这行环境变量是写了具体地址的代理变量：只要值不是空的，也不是经核心注入的 [`PROXY_URL`]，就是作者写死的代理。
@@ -134,7 +103,9 @@ mod tests {
     use super::*;
 
     fn vars() -> EgressVars {
-        EgressVars
+        EgressVars {
+            auth_host: "auth.wonton.example".to_owned(),
+        }
     }
 
     fn injected(env: &[&str]) -> Vec<String> {
@@ -160,7 +131,7 @@ mod tests {
             assert_eq!(value(&env, name), Some(PROXY_URL), "{name}");
         }
         assert_eq!(value(&env, "NODE_USE_ENV_PROXY"), Some("1"));
-        let expected = "localhost,.localhost,127.0.0.1,::1,.wonton.internal,web,db,\
+        let expected = "localhost,127.0.0.1,::1,.wonton.internal,auth.wonton.example,web,db,\
                         .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
                         172.16.0.0/12,192.168.0.0/16";
         assert_eq!(value(&env, "NO_PROXY"), Some(expected));
@@ -183,45 +154,16 @@ mod tests {
     }
 
     #[test]
-    fn what_compose_wrote_wins_for_proxy_vars() {
-        let env = injected(&["HTTP_PROXY=", "KEEP=1"]);
+    fn what_compose_wrote_wins() {
+        let env = injected(&["HTTP_PROXY=", "no_proxy=only-this", "KEEP=1"]);
         assert_eq!(value(&env, "HTTP_PROXY"), Some(""));
+        assert_eq!(value(&env, "no_proxy"), Some("only-this"));
         assert_eq!(value(&env, "HTTPS_PROXY"), Some(PROXY_URL));
         assert_eq!(value(&env, "KEEP"), Some("1"));
         assert_eq!(
             env.iter().filter(|l| l.starts_with("HTTP_PROXY=")).count(),
             1
         );
-    }
-
-    #[test]
-    fn compose_written_no_proxy_is_merged_not_replaced() {
-        // 作者写的名单常常只有它自己的服务：并上核心的条目，内部请求才不会被送去上游代理（#601）。
-        let expected = format!("only-this,{}", full_no_proxy());
-        let env = injected(&["no_proxy=only-this"]);
-        assert_eq!(value(&env, "no_proxy"), Some(expected.as_str()));
-        // 大小写两份独立合并，没写的照常完整注入。
-        assert_eq!(value(&env, "NO_PROXY"), Some(full_no_proxy().as_str()));
-    }
-
-    #[test]
-    fn merged_no_proxy_keeps_entries_and_deduplicates() {
-        let env = injected(&["NO_PROXY=web,localhost, 127.0.0.1 ,"]);
-        assert_eq!(
-            value(&env, "NO_PROXY"),
-            Some(
-                "web,localhost,127.0.0.1,.localhost,::1,.wonton.internal,db,\
-                 .local,.lan,.home.arpa,10.0.0.0/8,100.64.0.0/10,169.254.0.0/16,\
-                 172.16.0.0/12,192.168.0.0/16"
-            )
-        );
-        // 写成空就是这个服务没写名单：照常给全。
-        let env = injected(&["no_proxy="]);
-        assert_eq!(value(&env, "no_proxy"), Some(full_no_proxy().as_str()));
-    }
-
-    fn full_no_proxy() -> String {
-        vars().no_proxy(["web", "db"].into_iter())
     }
 
     #[test]

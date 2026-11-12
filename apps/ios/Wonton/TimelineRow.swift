@@ -14,10 +14,6 @@ struct TimelineRow: View {
     let cancel: () -> Void
     /// 回答这张确认卡片。
     let cardAction: (Action) -> Void
-    /// 进入回复状态，引用由核心随菜单给。
-    let reply: (QuotedMessage) -> Void
-    let forward: () -> Void
-    let redact: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -25,40 +21,28 @@ struct TimelineRow: View {
         case let .message(message):
             MessageBubble(
                 message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
-                cardAction: cardAction, reply: reply, forward: forward, redact: redact
+                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel, cardAction: cardAction
             )
         case let .notice(text):
             note(Text(text))
-        case let .agentRun(_, _, _, _, _, _, _, body, _, _):
-            // 一轮 Agent 任务的进度行（ADR-0082）：完整的样子在 App 壳那个 PR 里做，先按普通的
-            // Bot 提示消息显示 `body`——和其他不认识这个格式的客户端一样。
-            note(Text(body))
         case let .profileChange(_, name, previousName, _):
             if let previousName {
-                note(Text(.timelineRenamed(previousName, name)))
+                note(Text("\(previousName) 改名为 \(name)"))
             } else {
-                note(Text(.timelineAvatarChanged(name)))
+                note(Text("\(name) 换了头像"))
             }
         case let .dateDivider(timestampMs):
             note(Text(Self.date(timestampMs), format: .dateTime.year().month().day().weekday()))
         case .readMarker:
             HStack(spacing: WontonTheme.spacing.s8) {
                 edge
-                Text(.timelineReadMarker)
+                Text("以下是新消息")
                     .wontonText(WontonTheme.typography.caption)
                     .foregroundStyle(Color(colors.accentInk))
                 edge
             }
-        case let .sideChat(card):
-            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
-            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案，过 ui-text 检查。
-            note(Text(card.title))
-        case let .sideChatResult(_, title, _):
-            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
-            note(Text(title))
         case .timelineStart:
-            note(Text(.timelineStart))
+            note(Text("以上是聊天的开头"))
         }
     }
 
@@ -92,9 +76,6 @@ private struct MessageBubble: View {
     let retry: () -> Void
     let cancel: () -> Void
     let cardAction: (Action) -> Void
-    let reply: (QuotedMessage) -> Void
-    let forward: () -> Void
-    let redact: () -> Void
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
@@ -141,61 +122,19 @@ private struct MessageBubble: View {
             Button {
                 UIPasteboard.general.string = text
             } label: {
-                Label { Text(.messageCopy) } icon: { WontonIcon.copy.view(size: WontonTheme.size.iconSmall) }
+                Label { Text("复制") } icon: { WontonIcon.copy.image }
             }
-        case let .reply(quoted):
-            Button {
-                reply(quoted)
-            } label: {
-                Label { Text(.messageReply) } icon: { WontonIcon.reply.view(size: WontonTheme.size.iconSmall) }
-            }
-            .accessibilityIdentifier("messageReply")
-        case .forward:
-            Button {
-                forward()
-            } label: {
-                Label { Text(.messageForward) } icon: { WontonIcon.forward.view(size: WontonTheme.size.iconSmall) }
-            }
-            .accessibilityIdentifier("messageForward")
-        case .redact:
-            // 隔开前面的项，别和转发挨着误点。管理员也能撤别人的消息，写明是谁的，免得以为撤的是自己的。
-            Divider()
-            Button(role: .destructive) {
-                redact()
-            } label: {
-                Label {
-                    message.isOwn ? Text(.messageRedact) : Text(.messageRedactOthers(message.senderName))
-                } icon: {
-                    WontonIcon.trash.view(size: WontonTheme.size.iconSmall)
-                }
-            }
-            .accessibilityIdentifier("messageRedact")
-        // 核心和 App 分开升级时，不认识的菜单项不显示。
-        default:
-            EmptyView()
         }
     }
 
     @ViewBuilder private var bubble: some View {
-        let body = quoted
+        let body = laidOut
             .padding(.horizontal, WontonTheme.spacing.s12)
             .padding(.vertical, WontonTheme.spacing.s8)
         if message.isOwn {
             body.accentFill(shape)
         } else {
             body.background(shape.fill(Color(colors.surfaceSubtle)))
-        }
-    }
-
-    /// 回复别人时，正文上方先画被引用的原消息（ADR-0073）；点引用跳转还没做。
-    @ViewBuilder private var quoted: some View {
-        if let quote = message.reply {
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                ReplyQuoteView(quote: quote, core: core, ink: textColor)
-                laidOut
-            }
-        } else {
-            laidOut
         }
     }
 
@@ -232,11 +171,9 @@ private struct MessageBubble: View {
         }
         if case .failed = message.sendState { return nil }
         var parts = [TimelineRow.time(message.timestampMs)]
-        if message.edited { parts.insert(String(localized: .messageEdited), at: 0) }
-        if case .sending = message.sendState { parts.append(String(localized: .messageSending)) }
-        if case .sent = message.sendState, message.isOwn, !message.readBy.isEmpty {
-            parts.append(String(localized: .messageRead))
-        }
+        if message.edited { parts.insert("已编辑", at: 0) }
+        if case .sending = message.sendState { parts.append("发送中") }
+        if case .sent = message.sendState, message.isOwn, !message.readBy.isEmpty { parts.append("已读") }
         let glued = parts.joined(separator: "  ").replacingOccurrences(of: " ", with: "\u{00A0}")
         return " \u{00A0}\u{00A0}" + glued
     }
@@ -250,40 +187,26 @@ private struct MessageBubble: View {
         case let .text(_, blocks, files):
             TextMessageBody(blocks: blocks, ink: textColor, files: files, trailingReserve: reserve)
         case let .image(image):
-            // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                MediaImage(image: image, core: core, sendState: message.sendState)
-                if let caption = image.caption {
-                    TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
-                }
-            }
+            MediaImage(image: image, core: core, sendState: message.sendState)
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,
                 answer: {
-                    cardAction(
-                        .answerConfirmation(
-                            id: view.card.id,
-                            answer: $0.answer,
-                            choiceId: $0.choiceId,
-                            secrets: $1,
-                            settings: [:]
-                        )
-                    )
+                    cardAction(.answerConfirmation(id: view.card.id, answer: $0.answer, choiceId: $0.choiceId))
                 },
                 stopWindow: { cardAction(.stopConfirmationWindow(id: view.card.id)) }
             )
         case .undecryptable:
             Label {
-                Text(.messageUndecryptable)
+                Text("无法解密：本设备还没有这条消息的密钥")
             } icon: {
                 WontonIcon.lockKey.view(size: WontonTheme.size.iconSmall)
             }
             .wontonText(WontonTheme.typography.supporting)
         case .redacted:
-            Text(.messageRedacted).italic().opacity(WontonTheme.ratio.secondaryContent)
+            Text("消息已撤回").italic().opacity(WontonTheme.ratio.secondaryContent)
         case let .unsupported(kind):
-            Text(.messageUnsupported(kind))
+            Text("暂不支持显示的消息（\(kind)）")
                 .wontonText(WontonTheme.typography.supporting)
                 .opacity(WontonTheme.ratio.secondaryContent)
         }
@@ -291,34 +214,28 @@ private struct MessageBubble: View {
 
     private var footer: some View {
         HStack(spacing: WontonTheme.spacing.s4) {
-            if message.edited { Text(.messageEdited) }
+            if message.edited { Text("已编辑") }
             Text(TimelineRow.time(message.timestampMs))
             switch message.sendState {
             case .sending:
-                Text(.messageSending)
+                Text("发送中")
             case let .failed(reason, recoverable):
                 Button {
                     isChoosingFailed = true
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         WontonIcon.warningCircle.view(size: WontonTheme.size.iconTiny)
-                        if recoverable {
-                            Text(.messageSendFailedRetrying)
-                        } else {
-                            Text(.messageSendFailed(reason))
-                        }
+                        Text(recoverable ? "发送失败，会自动重试" : "发送失败：\(reason)")
                     }
                     .foregroundStyle(Color(colors.danger))
                 }
                 .buttonStyle(.plain)
                 .wontonActionSheet(isPresented: $isChoosingFailed, actions: [
-                    WontonSheetAction(title: String(localized: .messageResend), icon: .refresh, perform: retry),
-                    WontonSheetAction(
-                        title: String(localized: .commonDelete), icon: .trash, isDanger: true, perform: cancel
-                    )
+                    WontonSheetAction(title: "重发", icon: .refresh, perform: retry),
+                    WontonSheetAction(title: "删除", icon: .trash, isDanger: true, perform: cancel)
                 ])
             case .sent:
-                if message.isOwn, !message.readBy.isEmpty { Text(.messageRead) }
+                if message.isOwn, !message.readBy.isEmpty { Text("已读") }
             }
         }
         .wontonText(WontonTheme.typography.caption)
@@ -368,7 +285,6 @@ private struct MediaImage: View {
         .contentShape(Rectangle())
         .onTapGesture { presenter.showOriginal(image) }
         .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(Text(.messagePhoto))
         .task(id: image.thumbnail ?? image.media) {
             preview = await MediaFailure.load(image.thumbnail ?? image.media, from: core)
         }
@@ -393,10 +309,7 @@ struct OriginalImage: View {
                 case let .success(loaded):
                     Image(uiImage: loaded).resizable().scaledToFit()
                 case let .failure(failure):
-                    WontonNotice(
-                        icon: .imageBroken, title: String(localized: .messageOriginalUnavailable),
-                        lines: [failure.message]
-                    )
+                    WontonNotice(icon: .imageBroken, title: "取不到原图", lines: [failure.message])
                         .padding(WontonTheme.spacing.pageInset)
                 case nil:
                     ProgressView()
@@ -409,22 +322,19 @@ struct OriginalImage: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar { Button(.commonDone) { dismiss() } }
+            .toolbar { Button("完成") { dismiss() } }
         }
         .task { original = await MediaFailure.load(image.media, from: core) }
     }
 }
 
-/// 媒体取不到的原因，引用缩略图和原图共用。
-struct MediaFailure: Error {
+private struct MediaFailure: Error {
     let message: String
 
     static func load(_ media: MediaHandle, from core: ClientCore) async -> Result<UIImage, MediaFailure> {
         do {
             let data = try await core.loadMedia(media: media)
-            guard let image = UIImage(data: data) else {
-                return .failure(MediaFailure(message: String(localized: .messageImageFormatUnsupported)))
-            }
+            guard let image = UIImage(data: data) else { return .failure(MediaFailure(message: "图片格式不支持")) }
             return .success(image)
         } catch {
             return .failure(MediaFailure(message: error.problem.title))

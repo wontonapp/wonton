@@ -4,52 +4,30 @@
 //! 每个测试用 Docker 起一台一次性的 Tuwunel，所以标了 `#[ignore]`：
 //! `cargo test -p wonton-client --test it chat:: -- --include-ignored`（`scripts/check.sh` 有 Docker 时自动运行）。
 
-mod agent_run;
 mod ask_agent;
-mod bot_profile;
-pub mod bot_profile_support;
 mod card_plugin_refresh;
 mod confirmation;
-mod device_name;
-mod draft;
-mod file_link;
-mod key_handoff;
-mod key_upload_order;
-mod layout;
-mod link_preview;
-mod message_actions;
 mod onboarding;
 mod pending;
 mod push;
-mod push_method;
-mod rebuild_reason;
 mod recovery;
-mod refused;
-mod relogin;
-mod replies;
 mod resume;
 mod send;
 mod server_switch;
 mod stale_join;
-mod subscriptions;
-pub(crate) mod support;
-mod sync_order;
-mod timeline;
-mod timeline_position;
+mod support;
 mod upload_progress;
-mod verification;
 
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, ChatAccount, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,
+    Action, ImageContent, ImageThumbnail, ImageUpload, MessageContent, RecoveryStatus,
     RoomMembership, SecretString, TimelineContent, TimelineItem,
 };
 use wonton_matrix::testkit::eventually;
 use wonton_matrix::{ChatRoom, MatrixSession, Message, MessageBody, OwnedRoomId, OwnedUserId};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
-use support::{Home, OWNER, Phone, Timeline, WAIT};
+use support::{Home, OWNER, Phone, Timeline};
 
 /// 2×2 的 PNG。
 const PNG: &[u8] = include_bytes!("../../../../wonton-matrix/tests/tuwunel/fixtures/2x2.png");
@@ -70,7 +48,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     assert_eq!(home.login_tokens(), 1);
 
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_invite(&phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
     let recovery_key = read_and_wait_for_recovery(&phone, &room_id).await;
     drop(phone);
@@ -108,7 +86,7 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
 
     // 本机的聊天存储丢了（比如只恢复了一部分 App 数据）：登录状态单独留着也不能用，重新要令牌登录成一台新设备，
     // 不拿旧的设备 ID 配一套新的设备密钥。
-    std::fs::remove_dir_all(dir.path().join("servers/1/matrix/store")).expect("删掉聊天存储");
+    std::fs::remove_dir_all(dir.path().join("matrix/store")).expect("删掉聊天存储");
     let phone = Phone::open(dir.path());
     let (_, fresh) = phone.signed_in().await;
     assert_ne!(fresh, device_id, "存储丢了应登录成新设备");
@@ -127,13 +105,8 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
     let mut timeline = Timeline::open(&phone, room_id.as_str()).await;
     // 新设备上只同步到了最新一条，像界面那样向前翻一页。
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::PaginateBackwards {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
-            },
+        .dispatch(Action::PaginateBackwards {
+            room_id: room_id.to_string(),
         })
         .unwrap();
     timeline
@@ -152,41 +125,6 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
         .await;
 }
 
-/// 重启换了连接号就不排在死连接的长轮询后面；轮回到别人（自己在 30 秒内崩溃两次）时最多等一轮。
-#[tokio::test(flavor = "multi_thread")]
-#[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn a_restart_does_not_wait_for_the_dead_long_poll() {
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let home = Home::start(&[phone.device_id()]).await;
-    phone.connect(&home);
-    phone.signed_in().await;
-    drop(phone);
-
-    // 换了连接号：死掉那条连接的长轮询在另一个号上，不该等它。
-    let phone = Phone::open(dir.path());
-    phone.connect(&home);
-    let started = Instant::now();
-    phone.signed_in().await;
-    assert!(
-        started.elapsed() < Duration::from_secs(15),
-        "换个连接号还要等：{:?}",
-        started.elapsed()
-    );
-    drop(phone);
-
-    // 第三个实例轮回到第一个连接号，那边还挂着第一次启动的死长轮询：最多等它这一轮（30 秒），不能更久。
-    let phone = Phone::open(dir.path());
-    phone.connect(&home);
-    let started = Instant::now();
-    phone.signed_in().await;
-    assert!(
-        started.elapsed() < Duration::from_secs(45),
-        "轮回到第一个连接号时等了两轮以上：{:?}",
-        started.elapsed()
-    );
-}
-
 /// 新设备打开房间时取不到成员，隔一会儿再取，Bot 的名字最终补上。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -197,10 +135,10 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_invite(&phone, &bot).await;
     chat_with_the_bot(&phone, &bot, &room_id).await;
     drop(phone);
-    std::fs::remove_dir_all(dir.path().join("servers/1/matrix/store")).expect("删掉聊天存储");
+    std::fs::remove_dir_all(dir.path().join("matrix/store")).expect("删掉聊天存储");
 
     home.set_members_down(true);
     let phone = Phone::open(dir.path());
@@ -227,13 +165,8 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
 
     home.set_members_down(false);
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::PaginateBackwards {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
-            },
+        .dispatch(Action::PaginateBackwards {
+            room_id: room_id.to_string(),
         })
         .unwrap();
     timeline
@@ -251,43 +184,8 @@ async fn a_new_device_gets_the_bots_name_even_if_the_first_member_requests_fail(
         .await;
 }
 
-/// Bot 建私聊前等主人当前设备的密钥上服务器：Bot 发消息时的收信人设备表来自它本地 crypto store，
-/// 手机的密钥还没上服务器它就查不到这台设备，首条消息的房间密钥不会发给手机，消息永远解不开。
-/// 以服务器为准（`/keys/query`），没有就等下一次 keys/upload 成功应答后再查。
-async fn wait_for_owner_device_keys(home: &Home, phone: &Phone, bot: &MatrixSession) {
-    // 先订阅再允许放行；查询前或查询中完成的上传也必须触发下一次查询。
-    let mut completed = home.key_uploads_completed();
-    home.mark_device_keys_wait_started();
-    let device_id = match &phone.chat().account {
-        ChatAccount::SignedIn { device_id, .. } => device_id.clone(),
-        other => panic!("等设备密钥前应已登录：{other:?}"),
-    };
-    let owner: OwnedUserId = OWNER.parse().unwrap();
-    let waiting = async {
-        loop {
-            if bot
-                .server_device_ids_of(&owner)
-                .await
-                .expect("查主人的设备")
-                .iter()
-                .any(|id| id.as_str() == device_id)
-            {
-                return;
-            }
-            completed.changed().await.expect("假核心的上传完成通知");
-        }
-    };
-    if tokio::time::timeout(WAIT, waiting).await.is_err() {
-        panic!(
-            "等主人的设备密钥（{device_id}）上服务器超时：手机的 keys/upload 尚未成功或服务器仍查不到设备（完成计数 {}）",
-            *completed.borrow()
-        );
-    }
-}
-
 /// Bot 发来加密私聊的邀请，等房间名同步成 Bot 的名字、对方也认出来后主人再接受。
-async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
-    wait_for_owner_device_keys(home, phone, bot).await;
+async fn accept_the_bots_invite(phone: &Phone, bot: &MatrixSession) -> OwnedRoomId {
     let owner: OwnedUserId = OWNER.parse().unwrap();
     let room_id = bot
         .create_direct_chat(&owner, true)
@@ -351,15 +249,9 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
         .await;
 
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
-                body: "  你好，Hermes  ".to_owned(),
-                reply_to: None,
-            },
+        .dispatch(Action::SendText {
+            room_id: room_id.to_string(),
+            body: "  你好，Hermes  ".to_owned(),
         })
         .unwrap();
     bot_receives(&bot_room, "Bot 收到主人的文字", |message| {
@@ -367,7 +259,21 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     })
     .await;
 
-    bot_room.send_image(test_image()).await.expect("Bot 发图片");
+    // 加密房间里服务器做不了缩略图，图片都由发送端带上缩略图。
+    let upload = wonton_matrix::ImageUpload {
+        filename: "dot.png".to_owned(),
+        mime_type: "image/png".to_owned(),
+        data: PNG.to_vec(),
+        width: Some(2),
+        height: Some(2),
+        thumbnail: Some(wonton_matrix::ImageThumbnail {
+            mime_type: "image/png".to_owned(),
+            data: THUMBNAIL.to_vec(),
+            width: 1,
+            height: 1,
+        }),
+    };
+    bot_room.send_image(upload).await.expect("Bot 发图片");
     let image = timeline.until("收到 Bot 的图片", bots_image).await;
     let bytes = phone.load_media(image.media).await.expect("取图片");
     assert_eq!(bytes, PNG, "取到的图片和原图不一致");
@@ -377,26 +283,20 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
 
     // 主人发图片：核心上传原图和壳生成的缩略图，时间线里出现自己的图片，Bot 收到的也带缩略图。
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendImage {
-                target: TimelineTarget {
-                    room_id: room_id.to_string(),
-                    thread_root: None,
-                },
-                image: ImageUpload {
-                    filename: "reply.png".to_owned(),
+        .dispatch(Action::SendImage {
+            room_id: room_id.to_string(),
+            image: ImageUpload {
+                filename: "reply.png".to_owned(),
+                mime_type: "image/png".to_owned(),
+                data: PNG.to_vec(),
+                width: Some(2),
+                height: Some(2),
+                thumbnail: Some(ImageThumbnail {
                     mime_type: "image/png".to_owned(),
-                    data: PNG.to_vec(),
-                    width: Some(2),
-                    height: Some(2),
-                    thumbnail: Some(ImageThumbnail {
-                        mime_type: "image/png".to_owned(),
-                        data: THUMBNAIL.to_vec(),
-                        width: 1,
-                        height: 1,
-                    }),
-                },
-                reply_to: None,
+                    data: THUMBNAIL.to_vec(),
+                    width: 1,
+                    height: 1,
+                }),
             },
         })
         .unwrap();
@@ -423,23 +323,6 @@ async fn chat_with_the_bot(phone: &Phone, bot: &MatrixSession, room_id: &OwnedRo
     assert_eq!(bytes, THUMBNAIL, "Bot 取到的缩略图和主人发的不一致");
 }
 
-/// Bot 发的图片。加密房间里服务器做不了缩略图，图片都由发送端带上缩略图。
-fn test_image() -> wonton_matrix::ImageUpload {
-    wonton_matrix::ImageUpload {
-        filename: "dot.png".to_owned(),
-        mime_type: "image/png".to_owned(),
-        data: PNG.to_vec(),
-        width: Some(2),
-        height: Some(2),
-        thumbnail: Some(wonton_matrix::ImageThumbnail {
-            mime_type: "image/png".to_owned(),
-            data: THUMBNAIL.to_vec(),
-            width: 1,
-            height: 1,
-        }),
-    }
-}
-
 /// 等 Bot 的时间线里出现满足条件的消息。
 async fn bot_receives<R>(
     room: &ChatRoom,
@@ -454,22 +337,9 @@ async fn bot_receives<R>(
 
 /// 标为已读后未读清零；等待自动开启恢复并得到恢复密钥。
 async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> SecretString {
-    let target = TimelineTarget {
-        room_id: room_id.to_string(),
-        thread_root: None,
-    };
-    let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SetTimelineScroll {
-                target: target.clone(),
-                scroll: wonton_client::TimelineScroll::Bottom,
-            },
-        })
-        .unwrap();
-    phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::MarkRead { target },
+        .dispatch(Action::MarkRoomRead {
+            room_id: room_id.to_string(),
         })
         .unwrap();
     phone
@@ -480,7 +350,6 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
                 .then_some(())
         })
         .await;
-    drop(timeline);
     phone
         .wait_chat("恢复自动开启", |view| {
             (view.encryption.recovery == RecoveryStatus::Enabled)

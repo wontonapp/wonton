@@ -35,15 +35,13 @@ struct WontonButtonStyle: ButtonStyle {
 struct WontonIconButton: View {
     let icon: WontonIcon
     let label: String
-    /// 不给时用 `textPrimary`；放在带色的底（如自己的气泡）上时由调用方给。
-    var tint: Color?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
         Button(action: action) {
             icon.view()
-                .foregroundStyle(tint ?? Color(colors.textPrimary))
+                .foregroundStyle(Color(colors.textPrimary))
                 .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 .contentShape(Rectangle())
         }
@@ -89,8 +87,6 @@ struct WontonRow: View {
     var value: String?
     var valueTint: Rgb?
     var badge = false
-    /// 数字角标：等着处理的件事有多少（比如好友请求）。和只表示“有新的”的 `badge` 圆点分开。
-    var badgeText: String?
     var showsForward = false
     @Environment(\.wontonColors) private var colors
 
@@ -109,16 +105,7 @@ struct WontonRow: View {
             }
             if badge {
                 Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
-                    .accessibilityLabel(String(localized: .designUpdateBadge))
-            }
-            if let badgeText {
-                Text(badgeText)
-                    .wontonText(WontonTheme.typography.caption)
-                    .foregroundStyle(Color(colors.onPrimary))
-                    .padding(.horizontal, WontonTheme.spacing.s4)
-                    .frame(minWidth: 20, minHeight: 20)
-                    .background(Capsule().fill(Color(colors.primary)))
-                    .accessibilityLabel(String(localized: .friendsRequestsBadge(Int(badgeText) ?? 0)))
+                    .accessibilityLabel("有新版本")
             }
             if showsForward {
                 WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
@@ -257,31 +244,27 @@ struct WontonRootBar<Trailing: View>: View {
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
-    @Environment(\.wontonOpenSidebar) private var openSidebar
-
-    private var hasButtons: Bool { hasActions || openSidebar != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if hasButtons || status.title?.isEmpty == false {
+            if hasActions || status.title?.isEmpty == false {
                 ZStack {
                     if let title = status.title, !title.isEmpty {
                         Text(title)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textPrimary))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, hasButtons ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
+                            .padding(.horizontal, hasActions ? WontonTheme.size.target + WontonTheme.spacing.s8 : 0)
                             .padding(.vertical, WontonTheme.spacing.s8)
                     }
-                    if hasButtons {
+                    if hasActions {
                         HStack(spacing: 0) {
-                            if let openSidebar { SidebarButton(action: openSidebar) }
                             Spacer(minLength: 0)
-                            if hasActions { trailing }
+                            trailing
                         }
                     }
                 }
-                .frame(maxWidth: .infinity, minHeight: hasButtons ? WontonTheme.size.topBar : 0)
+                .frame(maxWidth: .infinity, minHeight: hasActions ? WontonTheme.size.topBar : 0)
             }
             if let line = status.line {
                 line.padding(.bottom, WontonTheme.spacing.s8)
@@ -289,23 +272,8 @@ struct WontonRootBar<Trailing: View>: View {
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// 根页面左上角的侧边栏按钮。
-private struct SidebarButton: View {
-    let action: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        Button(action: action) {
-            WontonIcon.list.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: .sidebarOpen))
+        // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -316,11 +284,9 @@ private struct SidebarButton: View {
 struct WontonPushedBar<Trailing: View>: View {
     let title: String
     var icon: WontonIcon = .back
-    var iconLabel = String(localized: .designBack)
+    var iconLabel = "返回"
     var showsStatus = false
     var showsStatusLine = false
-    /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
-    var avatar: AnyView?
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -332,14 +298,11 @@ struct WontonPushedBar<Trailing: View>: View {
         VStack(spacing: 0) {
             ZStack {
                 VStack(spacing: 0) {
-                    HStack(spacing: WontonTheme.spacing.s8) {
-                        if let avatar { avatar }
-                        Text(title)
-                            .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(colors.textPrimary))
-                            .lineLimit(1)
-                            .accessibilityAddTraits(.isHeader)
-                    }
+                    Text(title)
+                        .wontonText(WontonTheme.typography.itemTitle)
+                        .foregroundStyle(Color(colors.textPrimary))
+                        .lineLimit(1)
+                        .accessibilityAddTraits(.isHeader)
                     if showsStatus || showsStatusLine, line == nil, let subtitle = status.subtitle {
                         Text(subtitle)
                             .wontonText(WontonTheme.typography.caption)
@@ -362,6 +325,8 @@ struct WontonPushedBar<Trailing: View>: View {
                     .padding(.bottom, WontonTheme.spacing.s8)
             }
         }
+        // 滚动内容从栏下面穿过去，透出来（ADR-0029）。
+        .background(.ultraThinMaterial)
     }
 }
 
@@ -379,27 +344,22 @@ extension View {
 
     func wontonPushedScreen<Trailing: View>(
         _ title: String,
-        avatar: AnyView? = nil,
         showsStatus: Bool = false,
         showsStatusLine: Bool = false,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonPushedBar(
-            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
-            avatar: avatar, trailing: trailing
+            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine, trailing: trailing
         )
-        return wontonTopBar { bar }
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
     }
 
     /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
-    func wontonModalScreen(_ title: String, showsStatus: Bool = false) -> some View {
-        let bar = WontonPushedBar(
-            title: title, icon: .close, iconLabel: String(localized: .designClose),
-            showsStatus: showsStatus
-        ) { EmptyView() }
-        return wontonTopBar { bar }
+    func wontonModalScreen(_ title: String) -> some View {
+        let bar = WontonPushedBar(title: title, icon: .close, iconLabel: "关闭") { EmptyView() }
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
             .modifier(WontonCanvas())
     }
 
@@ -408,33 +368,21 @@ extension View {
         _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
-        return wontonTopBar { bar }
+        return safeAreaInset(edge: .top, spacing: 0) { bar }
             .modifier(WontonTabBarSlot())
+            .overlay(alignment: .top) {
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: geometry.safeAreaInsets.top)
+                        .offset(y: -geometry.safeAreaInsets.top)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
             .navigationTitle(bar.title)
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
-    }
-}
-
-extension View {
-    /// 顶栏、底栏没有实底，内容从后面滚过去（ADR-0029）。iOS 26 起交给系统的滚动边缘效果：栏后面的内容渐隐模糊，
-    /// 状态栏那一块也是；更早的系统没有这个效果，栏和状态栏垫一层系统材质，不然字压在内容上读不清。
-    @ViewBuilder func wontonTopBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
-        if #available(iOS 26, *) {
-            safeAreaBar(edge: .top, spacing: 0, content: bar)
-        } else {
-            safeAreaInset(edge: .top, spacing: 0) {
-                bar().background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
-            }
-        }
-    }
-
-    @ViewBuilder fileprivate func wontonBottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
-        if #available(iOS 26, *) {
-            safeAreaBar(edge: .bottom, spacing: 0, content: bar)
-        } else {
-            safeAreaInset(edge: .bottom, spacing: 0, content: bar)
-        }
     }
 }
 
@@ -442,7 +390,7 @@ private struct WontonTabBarSlot: ViewModifier {
     @Environment(\.wontonTabBar) private var tabBar
 
     func body(content: Content) -> some View {
-        content.wontonBottomBar { tabBar }
+        content.safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
     }
 }
 

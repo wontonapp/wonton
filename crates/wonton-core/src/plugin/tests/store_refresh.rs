@@ -52,8 +52,7 @@ async fn online() -> Online {
 /// 官方索引只收录 `acme/hello` 在 `commit` 上的 `version` 版。
 fn publish_index(github: &FakeGitHub, version: &str, commit: &str) {
     let files = [("icon.svg".to_owned(), ICON.as_bytes().to_vec())].into();
-    let package =
-        PluginPackage::with_files(&compose(version, "nginx"), files, &super::langs()).unwrap();
+    let package = PluginPackage::with_files(&compose(version, "nginx"), files).unwrap();
     let entry = IndexEntry::of(&package, "github:acme/hello", commit).unwrap();
     let dir = tempfile::tempdir().unwrap();
     entry.write_to(dir.path(), &package).unwrap();
@@ -68,18 +67,11 @@ async fn a_minute_later(m: &PluginManager) {
 async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
-        scope: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
-        plan: preview.plan,
         grant: Vec::new(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
-        install_together: Vec::new(),
-        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
 }

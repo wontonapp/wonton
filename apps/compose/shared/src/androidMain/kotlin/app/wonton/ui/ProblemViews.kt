@@ -72,52 +72,17 @@ private val SKELETON_TITLE = 120.dp
  * 给人看的问题：[title] 说发生了什么，[nextStep] 说能做什么，[detail] 是核心写的技术细节，默认收起。类别由核心给，
  * 文字按类别写在这里。
  */
-data class Problem(
-    /** 核心给的原文（如核心写的原因）。分类问题不用这个字段，用 [titleRes]。 */
-    val title: String = "",
-    val nextStep: String? = null,
-    val detail: String? = null,
-    /** 按类别写在壳里的文字的资源；映射发生在取不到 Composable 上下文的地方（send 的 catch、后台协程）。 */
-    val titleRes: Int? = null,
-    val nextStepRes: Int? = null,
-) {
-    /** 分类问题的标题；显示时才取资源。 */
-    val titleText: String
-        @Composable get() = titleRes?.let { stringResource(it) } ?: title
-
-    /** 分类问题的下一步。 */
-    val nextStepText: String?
-        @Composable get() = nextStepRes?.let { stringResource(it) } ?: nextStep
-}
+data class Problem(val title: String, val nextStep: String? = null, val detail: String? = null)
 
 val AppearanceProblem.problem: Problem
-    get() = Problem(
-        titleRes = R.string.problem_appearance_title,
-        nextStepRes = R.string.problem_storage_next_step,
-        detail = message,
-    )
+    get() = Problem("外观设置没有存上", "检查存储空间后再试。", message)
 
 fun ChatFailure.problem(detail: String): Problem = when (this) {
-    ChatFailure.TRANSPORT_UNAVAILABLE -> problem(
-        R.string.problem_transport_unavailable_title,
-        R.string.problem_transport_unavailable_next_step,
-        detail,
-    )
-    ChatFailure.UNAUTHORIZED -> problem(
-        R.string.problem_unauthorized_title,
-        R.string.problem_unauthorized_next_step,
-        detail,
-    )
-    ChatFailure.FORBIDDEN -> problem(
-        R.string.problem_forbidden_title,
-        R.string.problem_forbidden_next_step,
-        detail,
-    )
-    ChatFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-    ChatFailure.NOT_READY -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = detail)
-    ChatFailure.INVALID_INPUT -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = detail)
-    // 比这个壳新的类别：先按服务器出错说。
-    ChatFailure.OTHER -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+    ChatFailure.TRANSPORT_UNAVAILABLE -> Problem("连不上家里的服务器", "检查网络，连上后再试。", detail)
+    ChatFailure.UNAUTHORIZED -> Problem("家里的服务器不认这台设备", "请重新扫码配对。", detail)
+    ChatFailure.UPSTREAM -> Problem("家里的服务器出错了", "稍后再试。", detail)
+    ChatFailure.NOT_READY -> Problem("现在还做不了", detail)
+    ChatFailure.INVALID_INPUT -> Problem("这个操作做不了", detail)
 }
 
 val ChatProblem.problem: Problem
@@ -126,12 +91,8 @@ val ChatProblem.problem: Problem
 /** 保存出网代理没成功：连不上时不知道到底改了没有，填错了要照着核心说的改。 */
 val PluginProblem.saveProblem: Problem
     get() = when (reason) {
-        PluginFailure.TRANSPORT_UNAVAILABLE -> Problem(
-            titleRes = R.string.problem_plugin_save_uncertain_title,
-            nextStepRes = R.string.problem_plugin_save_uncertain_next_step,
-            detail = message,
-        )
-        PluginFailure.INVALID -> Problem(titleRes = R.string.problem_plugin_save_invalid_title, nextStep = message)
+        PluginFailure.TRANSPORT_UNAVAILABLE -> Problem("不确定改好了没有", "连上家里的服务器后再看一下。", message)
+        PluginFailure.INVALID -> Problem("这样填不对", message)
         else -> problem
     }
 
@@ -139,118 +100,35 @@ val PluginProblem.problem: Problem
     get() = reason.problem(message)
 
 fun PluginFailure.problem(detail: String?): Problem = when (this) {
-    PluginFailure.TRANSPORT_UNAVAILABLE -> problem(
-        R.string.problem_transport_unavailable_title,
-        R.string.problem_transport_unavailable_next_step,
-        detail,
-    )
-    PluginFailure.UNAUTHORIZED -> problem(
-        R.string.problem_unauthorized_title,
-        R.string.problem_unauthorized_next_step,
-        detail,
-    )
-    PluginFailure.SOURCE_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_source_unavailable_title,
-        nextStepRes = R.string.problem_plugin_source_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.NOT_FOUND -> Problem(
-        titleRes = R.string.problem_plugin_not_found_title,
-        nextStepRes = R.string.problem_plugin_not_found_next_step,
-        detail = detail,
-    )
-    PluginFailure.CHANGED -> Problem(
-        titleRes = R.string.problem_plugin_changed_title,
-        nextStepRes = R.string.problem_plugin_changed_next_step,
-        detail = detail,
-    )
-    PluginFailure.UNSUPPORTED -> Problem(
-        titleRes = R.string.problem_plugin_unsupported_title,
-        nextStepRes = R.string.problem_upgrade_server_next_step,
-        detail = detail,
-    )
-    PluginFailure.CONFLICT -> Problem(
-        titleRes = R.string.problem_plugin_conflict_title,
-        nextStepRes = R.string.problem_plugin_conflict_next_step,
-        detail = detail,
-    )
-    PluginFailure.INVALID -> Problem(
-        titleRes = R.string.problem_plugin_invalid_title,
-        nextStepRes = R.string.problem_plugin_invalid_next_step,
-        detail = detail,
-    )
-    PluginFailure.DEVICE_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_device_unavailable_title,
-        nextStepRes = R.string.problem_plugin_device_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.LAN_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_lan_unavailable_title,
-        nextStepRes = R.string.problem_plugin_lan_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.LAN_PORT_TAKEN -> Problem(
-        titleRes = R.string.problem_plugin_lan_port_taken_title,
-        nextStepRes = R.string.problem_plugin_lan_port_taken_next_step,
-        detail = detail,
-    )
-    PluginFailure.CORE_UPGRADING -> Problem(
-        titleRes = R.string.problem_plugin_core_upgrading_title,
-        nextStepRes = R.string.problem_plugin_core_upgrading_next_step,
-        detail = detail,
-    )
-    PluginFailure.EGRESS_PROXY_UNAVAILABLE -> Problem(
-        titleRes = R.string.problem_plugin_egress_proxy_unavailable_title,
-        nextStepRes = R.string.problem_plugin_egress_proxy_unavailable_next_step,
-        detail = detail,
-    )
-    PluginFailure.RECORD_UNUSABLE -> Problem(
-        titleRes = R.string.problem_plugin_record_unusable_title,
-        nextStepRes = R.string.problem_plugin_record_unusable_next_step,
-        detail = detail,
-    )
-    PluginFailure.UPSTREAM -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
-    PluginFailure.PROTOCOL -> Problem(
-        titleRes = R.string.problem_plugin_protocol_title,
-        nextStepRes = R.string.problem_plugin_protocol_next_step,
-        detail = detail,
-    )
-    PluginFailure.SERVER_TOO_OLD -> Problem(
-        titleRes = R.string.problem_plugin_server_too_old_title,
-        nextStepRes = R.string.problem_upgrade_server_next_step,
-        detail = detail,
-    )
-    // 比这个壳新的类别：先按服务器出错说。
-    else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+    PluginFailure.TRANSPORT_UNAVAILABLE -> Problem("连不上家里的服务器", "检查网络，连上后再试。", detail)
+    PluginFailure.UNAUTHORIZED -> Problem("家里的服务器不认这台设备", "请重新扫码配对。", detail)
+    PluginFailure.SOURCE_UNAVAILABLE -> Problem("暂时取不到应用的信息", "家里的服务器连不上应用的来源，稍后再试。", detail)
+    PluginFailure.NOT_FOUND -> Problem("没有找到这个应用", "刷新应用商店后再试。", detail)
+    PluginFailure.CHANGED -> Problem("应用在确认之后变了", "请重新查看、确认。", detail)
+    PluginFailure.UNSUPPORTED -> Problem("家里的服务器不支持这个应用", "先升级家里的服务器。", detail)
+    PluginFailure.CONFLICT -> Problem("这个应用正忙", "它已经装了，或者正在安装、升级、卸载，等那边做完。", detail)
+    PluginFailure.INVALID -> Problem("这个应用的安装包有问题", "请联系应用的作者。", detail)
+    PluginFailure.DEVICE_UNAVAILABLE -> Problem("选择的设备不可用", "重新查看设备后再试。", detail)
+    PluginFailure.LAN_UNAVAILABLE -> Problem("选不出局域网地址", "在局域网设置里选好网卡或地址后再试。", detail)
+    PluginFailure.CORE_UPGRADING -> Problem("家里的服务器正在升级", "升级结束后再试。", detail)
+    PluginFailure.EGRESS_PROXY_UNAVAILABLE ->
+        Problem("代理连不上", "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。", detail)
+    PluginFailure.OWNER_PROFILE_INCOMPLETE -> Problem("你的资料还没填好", "在设置里填好后再试。", detail)
+    PluginFailure.UPSTREAM -> Problem("家里的服务器出错了", "稍后再试。", detail)
+    PluginFailure.PROTOCOL -> Problem("App 和家里的服务器版本对不上", "请更新 App 或家里的服务器。", detail)
 }
 
 val StoreProblem.problem: Problem
     get() = when (reason) {
-        StoreFailure.UNREACHABLE -> Problem(titleRes = R.string.problem_store_unreachable_title, detail = details)
-        StoreFailure.TIMEOUT -> Problem(titleRes = R.string.problem_store_timeout_title, detail = details)
-        StoreFailure.RATE_LIMITED -> Problem(
-            titleRes = R.string.problem_store_rate_limited_title,
-            nextStepRes = R.string.problem_store_rate_limited_next_step,
-            detail = details,
-        )
-        StoreFailure.INVALID_INDEX -> Problem(
-            titleRes = R.string.problem_store_invalid_index_title,
-            nextStepRes = R.string.problem_upstream_next_step,
-            detail = details,
-        )
-        StoreFailure.INDEX_TOO_NEW -> Problem(
-            titleRes = R.string.problem_store_index_too_new_title,
-            nextStepRes = R.string.problem_upgrade_server_next_step,
-            detail = details,
-        )
-        StoreFailure.UPSTREAM -> Problem(
-            titleRes = R.string.problem_store_upstream_title,
-            nextStepRes = R.string.problem_upstream_next_step,
-            detail = details,
-        )
-        StoreFailure.INCOMPLETE -> Problem(titleRes = R.string.problem_store_incomplete_title, detail = details)
-        StoreFailure.DISABLED -> Problem(titleRes = R.string.problem_store_disabled_title, detail = details)
-        StoreFailure.OTHER -> Problem(titleRes = R.string.problem_store_other_title, detail = details)
+        StoreFailure.UNREACHABLE -> Problem("连不上应用的来源，列表可能不是最新的", detail = details)
+        StoreFailure.TIMEOUT -> Problem("应用的来源太慢了，列表可能不是最新的", detail = details)
+        StoreFailure.RATE_LIMITED -> Problem("请求太频繁了", "过几分钟再试。", details)
+        StoreFailure.INVALID_INDEX -> Problem("应用列表读不懂", "稍后再试。", details)
+        StoreFailure.INDEX_TOO_NEW -> Problem("应用列表比家里的服务器新", "先升级家里的服务器。", details)
+        StoreFailure.UPSTREAM -> Problem("应用的来源出了问题", "稍后再试。", details)
+        StoreFailure.INCOMPLETE -> Problem("有几个应用没加载出来", detail = details)
+        StoreFailure.DISABLED -> Problem("社区应用已关闭", detail = details)
+        StoreFailure.OTHER -> Problem("应用列表可能不完整", detail = details)
     }
 
 /** 主人自己关掉的，重试也不会变。 */
@@ -265,46 +143,14 @@ val CoreException.problem: Problem
     get() {
         val detail = toString()
         return when (this) {
-            is CoreException.TransportUnavailable -> problem(
-                R.string.problem_transport_unavailable_title,
-                R.string.problem_transport_unavailable_next_step,
-                detail,
-            )
-            is CoreException.Unauthorized -> problem(
-                R.string.problem_unauthorized_title,
-                R.string.problem_unauthorized_next_step,
-                detail,
-            )
-            is CoreException.Upstream -> problem(
-                R.string.problem_upstream_title,
-                R.string.problem_upstream_next_step,
-                detail,
-            )
-            is CoreException.NotReady -> Problem(titleRes = R.string.problem_not_ready_title, nextStep = reason)
-            is CoreException.Storage -> Problem(
-                titleRes = R.string.problem_storage_title,
-                nextStepRes = R.string.problem_storage_next_step,
-                detail = detail,
-            )
-            is CoreException.InvalidInput -> Problem(titleRes = R.string.problem_invalid_input_title, nextStep = reason)
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            is CoreException.SettingsInvalid -> Problem(
-                titleRes = R.string.problem_invalid_input_title,
-                nextStep = reason,
-            )
-            is CoreException.ServerTooOld -> Problem(
-                titleRes = R.string.problem_plugin_server_too_old_title,
-                nextStepRes = R.string.problem_upgrade_server_next_step,
-                detail = detail,
-            )
-            // 比这个壳新的类别：先按服务器出错说。
-            else -> problem(R.string.problem_upstream_title, R.string.problem_upstream_next_step, detail)
+            is CoreException.TransportUnavailable -> Problem("连不上家里的服务器", "检查网络，连上后再试。", detail)
+            is CoreException.Unauthorized -> Problem("家里的服务器不认这台设备", "请重新扫码配对。", detail)
+            is CoreException.Upstream -> Problem("家里的服务器出错了", "稍后再试。", detail)
+            is CoreException.NotReady -> Problem("现在还做不了", reason)
+            is CoreException.Storage -> Problem("这台设备读写数据出错了", "检查存储空间后再试。", detail)
+            is CoreException.InvalidInput -> Problem("这个操作做不了", reason)
         }
     }
-
-/** 连不上、不认设备、服务器出错这三句在插件、聊天和连接错误里共用。 */
-private fun problem(titleRes: Int, nextStepRes: Int, detail: String?) =
-    Problem(titleRes = titleRes, nextStepRes = nextStepRes, detail = detail)
 
 /** 收起的技术细节。排查时才看，能选中复制。 */
 @Composable
@@ -326,7 +172,6 @@ fun ProblemDetail(
             Text(label, style = style, color = tint)
             Icon(
                 WontonIcon.Forward,
-                // 装饰：标签文字在左边，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconTiny).rotate(if (expanded) EXPANDED_DEGREES else 0f),
                 tint = tint,
@@ -340,7 +185,7 @@ fun ProblemDetail(
 
 /** 什么都显示不出来，整页说明。 */
 @Composable
-fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
+fun ProblemView(problem: Problem, onRetry: () -> Unit) {
     val colors = WontonTheme.colors
     Column(
         Modifier.fillMaxSize().padding(WontonTheme.spacing.s32),
@@ -349,31 +194,28 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
     ) {
         Icon(
             WontonIcon.Warning,
-            // 装饰：下面就是标题。
             contentDescription = null,
             Modifier.size(WontonTheme.size.icon),
             tint = colors.textSecondary.toColor(),
         )
         Text(
-            problem.titleText,
+            problem.title,
             style = WontonTheme.typography.itemTitle.copy(textAlign = TextAlign.Center),
             color = colors.textPrimary.toColor(),
         )
-        problem.nextStepText?.let {
+        problem.nextStep?.let {
             Text(
                 it,
                 style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
                 color = colors.textSecondary.toColor(),
             )
         }
-        onRetry?.let {
-            WontonButton(
-                stringResource(R.string.common_retry),
-                it,
-                Modifier.padding(vertical = WontonTheme.spacing.s8),
-                kind = WontonButtonKind.SECONDARY,
-            )
-        }
+        WontonButton(
+            "重试",
+            onRetry,
+            Modifier.padding(vertical = WontonTheme.spacing.s8),
+            kind = WontonButtonKind.SECONDARY,
+        )
         problem.detail?.let { ProblemDetail(it) }
     }
 }
@@ -381,7 +223,7 @@ fun ProblemView(problem: Problem, onRetry: (() -> Unit)? = null) {
 /** 页面还能用，只是这件事没做成。 */
 @Composable
 fun ProblemNotice(problem: Problem, icon: ImageVector = WontonIcon.Warning) {
-    WontonNotice(icon, problem.titleText, lines = listOfNotNull(problem.nextStepText)) {
+    WontonNotice(icon, problem.title, lines = listOfNotNull(problem.nextStep)) {
         problem.detail?.let { ProblemDetail(it) }
     }
 }
@@ -389,10 +231,7 @@ fun ProblemNotice(problem: Problem, icon: ImageVector = WontonIcon.Warning) {
 /** 主人点了什么没做成：说清原因就好，点“好”关掉。 */
 @Composable
 fun ProblemDialog(problem: Problem, onDismiss: () -> Unit) {
-    WontonDialog(
-        problem.titleText, problem.nextStepText, onDismiss,
-        detail = problem.detail?.let { { ProblemDetail(it) } },
-    )
+    WontonDialog(problem.title, problem.nextStep, onDismiss, detail = problem.detail?.let { { ProblemDetail(it) } })
 }
 
 /** 列表还在，只是少了点什么或者不是最新的：一条轻提示，不抢列表的位置。 */
@@ -403,17 +242,16 @@ fun ProblemRow(problem: Problem, onRetry: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Icon(
             WontonIcon.Info,
-            // 装饰：提示文字在右边。
             contentDescription = null,
             Modifier.size(WontonTheme.size.iconSmall),
             tint = colors.textSecondary.toColor(),
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
-            Text(problem.titleText, style = style, color = colors.textPrimary.toColor())
-            problem.nextStepText?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
+            Text(problem.title, style = style, color = colors.textPrimary.toColor())
+            problem.nextStep?.let { Text(it, style = style, color = colors.textSecondary.toColor()) }
             problem.detail?.let { ProblemDetail(it) }
         }
-        onRetry?.let { WontonSmallButton(stringResource(R.string.common_retry), it) }
+        onRetry?.let { WontonSmallButton("重试", it) }
     }
 }
 
@@ -426,7 +264,7 @@ private fun SlowHint() {
         slow = true
     }
     Text(
-        stringResource(R.string.problem_slow_loading),
+        "还在加载，网络慢时要多等一会儿",
         Modifier.fillMaxWidth().alpha(if (slow) 1f else 0f),
         style = WontonTheme.typography.supporting.copy(textAlign = TextAlign.Center),
         color = WontonTheme.colors.textSecondary.toColor(),
@@ -449,7 +287,6 @@ fun LoadingView() {
 /** 取列表：骨架占住列表的位置，慢了说一句。 */
 @Composable
 fun ListSkeleton(iconSize: Dp) {
-    val loadingLabel = stringResource(R.string.problem_loading)
     val secondary = WontonTheme.ratio.secondaryContent
     val pulse by rememberInfiniteTransition(label = "skeleton").animateFloat(
         initialValue = 1f,
@@ -457,26 +294,28 @@ fun ListSkeleton(iconSize: Dp) {
         animationSpec = infiniteRepeatable(tween(PULSE_MS, easing = LinearEasing), RepeatMode.Reverse),
         label = "skeleton",
     )
-    val fill = WontonTheme.colors.surfaceSubtle.toColor()
     Column(
-        Modifier.fillMaxSize().padding(WontonTheme.spacing.pageInset)
-            .semantics { contentDescription = loadingLabel },
+        Modifier.fillMaxSize().padding(WontonTheme.spacing.pageInset).semantics { contentDescription = "正在加载" },
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16),
     ) {
-        repeat(SKELETON_ROWS) {
-            Row(
-                Modifier.alpha(pulse),
-                horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.size(iconSize).background(fill, pluginIconShape(iconSize)))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-                    val line = Modifier.height(WontonTheme.spacing.s12).background(fill, CircleShape)
-                    Box(line.widthIn(max = SKELETON_TITLE).fillMaxWidth())
-                    Box(line.fillMaxWidth())
-                }
-            }
-        }
+        repeat(SKELETON_ROWS) { SkeletonRow(iconSize, pulse) }
         SlowHint()
+    }
+}
+
+@Composable
+private fun SkeletonRow(iconSize: Dp, pulse: Float) {
+    val fill = WontonTheme.colors.surfaceSubtle.toColor()
+    Row(
+        Modifier.alpha(pulse),
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(iconSize).background(fill, pluginIconShape(iconSize)))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            val line = Modifier.height(WontonTheme.spacing.s12).background(fill, CircleShape)
+            Box(line.widthIn(max = SKELETON_TITLE).fillMaxWidth())
+            Box(line.fillMaxWidth())
+        }
     }
 }

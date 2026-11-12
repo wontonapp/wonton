@@ -4,12 +4,14 @@
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginChat,
-    PluginDetail, PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab,
-    PluginTrust, PluginWriter, RequirementLine, RequirementStatus,
+    CardLine, InstallPreview, InstalledPlugin, InstalledPlugins, PluginAuthor, PluginDetail,
+    PluginHealth, PluginKind as Kind, PluginLimits, PluginState, PluginTab, PluginTrust,
+    PluginWriter, RequirementLine, RequirementStatus,
 };
 
 use super::egress::probe::blocks;
+use super::gallery::{IconSource, Variant};
+use super::github_source::{Origin, Trust};
 use super::host_check::{self, Item};
 use super::host_facts::HostFacts;
 use super::image_worker::ImageError;
@@ -17,19 +19,11 @@ use super::lan::webui;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{Entry, Health, InstallError, PluginManager, PluginStatus, supported};
-use super::manifest::{Manifest, Permission, PluginId, PluginKind, Sso};
+use super::manifest::{AgentSpec, Manifest, Permission, PluginId, PluginKind, Sso};
 use super::manifest_tabs;
 use super::package::PluginPackage;
-use super::render::dry_run;
-use super::{
-    gallery::IconSource,
-    github_source::{Origin, Trust},
-};
-use super::{
-    store::{EnabledPermission, InstalledRecord},
-    views_source::source_notices,
-};
-use crate::l10n;
+use super::proxy_auth;
+use super::render::{dry_run, dry_run_with_email};
 
 impl PluginManager {
     /// 已安装的插件：系统插件在前，其余按安装的先后。
@@ -41,17 +35,14 @@ impl PluginManager {
                 let installed_at = entry.listed.as_ref().map_or(0, |l| l.installed_at);
                 (
                     (!entry.system, installed_at),
-                    self.listing(&plugins, id, entry, langs),
+                    self.listing(id, entry, langs),
                 )
             })
             .collect();
         drop(plugins);
         listed.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
         InstalledPlugins {
-            plugins: listed
-                .into_iter()
-                .map(|(_, plugin)| self.with_dependency_status(self.with_bot(plugin), langs))
-                .collect(),
+            plugins: listed.into_iter().map(|(_, p)| self.with_bot(p)).collect(),
             upgrade_check: self.upgrades.problem(),
         }
     }
@@ -59,9 +50,9 @@ impl PluginManager {
     /// 一个已安装的插件；没装时为空。
     pub fn installed_plugin(&self, id: &PluginId, langs: &Languages) -> Option<InstalledPlugin> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        let plugin = self.listing(&plugins, id, plugins.get(id)?, langs);
+        let plugin = self.listing(id, plugins.get(id)?, langs);
         drop(plugins);
-        Some(self.with_dependency_status(self.with_bot(plugin), langs))
+        Some(self.with_bot(plugin))
     }
 
     /// 给主人的详情，返回详情的接口都走这里：要求逐条判断过（要问 Docker），开关开着时带上第三方客户端的连接信息。
@@ -73,8 +64,7 @@ impl PluginManager {
             plugins.get(id)?.listed.clone()
         };
         if let Some(listed) = listed {
-            detail.requirements =
-                requirement_checks(&listed.manifest, &self.host_facts(langs).await, langs);
+            detail.requirements = requirement_checks(&listed.manifest, &self.host_facts().await);
         }
         Some(detail)
     }
@@ -91,11 +81,12 @@ impl PluginManager {
         };
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
-        let record = self.store.load(id).ok().flatten();
         // “每次都问”只有 Agent 写的插件才有（ADR-0033）。
         let ask_every_update = installed.written_by.is_some().then(|| {
-            record
-                .as_ref()
+            self.store
+                .load(id)
+                .ok()
+                .flatten()
                 .is_some_and(|record| record.ask_every_update)
         });
         Some(PluginDetail {
@@ -110,10 +101,6 @@ impl PluginManager {
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
             kind: installed.kind,
-            runtime: m.runtime.into(),
-            security_tier: Some(super::security_tier::security_tier(m)),
-            link_url: m.link.as_ref().map(|link| link.url.clone()),
-            scope: Some(wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: installed.trust,
             author: author(m),
@@ -122,54 +109,42 @@ impl PluginManager {
             license: m.license.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: super::views_permissions::permission_lines(
-                m,
-                record
-                    .as_ref()
-                    .map_or(&[][..], |record| &record.enabled_permissions),
-                langs,
-            ),
+            permissions: m
+                .permissions
+                .iter()
+                .map(|p| permission_line(p, langs))
+                .collect(),
             requirements: Vec::new(),
-            secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
-            has_settings: super::settings::enabled(m),
             installed: Some(installed),
             blocked: None,
-            notices: setup_notice(m, langs)
+            notices: listed
+                .firewalled
+                .then(|| line("本机防火墙可能挡住了外来连接，局域网设备可能连不进来".to_owned()))
+                .map(|mut notice| {
+                    notice.emphasis = true;
+                    notice
+                })
                 .into_iter()
-                .chain(
-                    listed
-                        .firewalled
-                        .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
-                        .map(|mut notice| {
-                            notice.emphasis = true;
-                            notice
-                        }),
-                )
                 .chain(cross_origin_isolation_notice(m, langs))
-                .chain(
-                    super::egress::provider::provides_proxy(m)
-                        .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
-                )
+                .chain(super::egress::provider::provides_proxy(m).then(|| {
+                    line(langs.pick_owned(&super::manifest::LocalizedText::from([
+                        ("zh".to_owned(), "在出网代理设置里选它".to_owned()),
+                        (
+                            "en".to_owned(),
+                            "Select it in egress proxy settings".to_owned(),
+                        ),
+                    ])))
+                }))
                 .collect(),
-            hints: self
-                .models_hint(id, m)
-                .into_iter()
-                .chain(self.dependency_hints(m, langs))
-                .chain(self.hosted_hint(m))
-                .collect(),
-            missing_requires: Vec::new(),
-            missing_wants: Vec::new(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
-                .map(|switched| switched.offer(listed.lan_webui, langs)),
+                .map(|switched| switched.offer(listed.lan_webui)),
             save_grants: self.save_grants(id),
             // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
             ask_every_update,
             limits: Some(listed.limits),
-            shares: None,
         })
     }
 
@@ -179,12 +154,9 @@ impl PluginManager {
         package: &PluginPackage,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
-        let _changing = self.dependencies.changing.lock().await;
-        let blocked = blocked_by(self.precheck(&package.manifest, langs).await)?;
-        let mut preview = self
-            .preview_with(package, langs, blocked, None, &[], None)
-            .await?;
-        if let Some(notice) = self.retained_data(&package.manifest.id, langs).await? {
+        let blocked = blocked_by(self.precheck(&package.manifest).await)?;
+        let mut preview = self.preview_with(package, langs, blocked, None).await?;
+        if let Some(notice) = self.retained_data(&package.manifest.id).await? {
             let after_review_notice = usize::from(preview.trust != PluginTrust::Official);
             preview.notices.insert(after_review_notice, notice);
         }
@@ -195,16 +167,13 @@ impl PluginManager {
     pub(crate) async fn retained_data(
         &self,
         id: &PluginId,
-        langs: &Languages,
     ) -> Result<Option<CardLine>, InstallError> {
         let volumes = !self.own_resources(id).await?.volumes.is_empty();
         let secrets = self.store.secrets().load(id)?.is_some();
         let dir = self.cfg.apps_dir.join(id.slug()).exists();
         Ok((volumes || secrets || dir).then(|| CardLine {
-            text: l10n::text(
-                langs,
-                "install-retained-data",
-                &[("id", id.to_string().into())],
+            text: format!(
+                "这台服务器上留着 {id} 以前的数据和密钥，这个应用装上后能读到它们；不想这样就先彻底删除"
             ),
             emphasis: true,
         }))
@@ -217,77 +186,64 @@ impl PluginManager {
         langs: &Languages,
         blocked: Option<String>,
         written_by: Option<PluginWriter>,
-        enabled: &[EnabledPermission],
-        installed: Option<&InstalledRecord>,
     ) -> Result<InstallPreview, InstallError> {
-        super::install_entry::check_runtime(&package.manifest, langs)?;
-        // 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
-        let schema = super::settings::load(package, langs)?;
-        let settings = match &schema {
-            None => None,
-            Some(schema) => {
-                let mut values: std::collections::BTreeMap<String, serde_json::Value> = installed
-                    .map(|record| record.settings.clone())
-                    .unwrap_or_default();
-                super::settings::value::defaults(schema, &mut values);
-                Some(super::settings::install_form(schema, &values, langs))
-            }
-        };
-        let plan = dry_run(package, langs)?;
-        let icon = self.check_icon(package, langs).await?;
+        let plan = dry_run(package)?;
+        let icon = self.check_icon(package).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
         let m = &package.manifest;
         // 显卡：本机会给什么、或者为什么给不了；required 而给不了也是这台主机上装不了的原因。
-        let granted = m.effective_permissions(&super::store::permission_set(enabled));
-        let gpu = self
-            .gpu_preview(m, granted.contains(&Permission::DevicesGpu), langs)
-            .await?;
-        let lan = self.lan_preview(package, langs).await?;
-        let egress = self.egress_problem_for(m, langs).await?;
-        let dependencies = self.dependency_preview(m, langs).await?;
+        let gpu = self.gpu_preview(m).await?;
+        let lan = self.lan_preview(package).await?;
+        let egress = self.egress_problem_for(m).await?;
         let egress_block = egress.as_ref().filter(|p| blocks(p));
         let blocked = blocked
-            .or(dependencies.blocked)
             .or(gpu.blocked)
             .or(lan.blocked)
-            .or_else(|| egress_block.map(|p| p.message.clone()))
-            .or_else(|| {
-                super::host_relay::path_too_long(
-                    &self.cfg.apps_dir.join(m.id.slug()),
-                    &plan.relays,
-                    langs,
-                )
+            .or_else(|| egress_block.map(|p| p.message.clone()));
+        let unpinned: Vec<String> = plan
+            .containers
+            .iter()
+            .filter(|c| !c.image.contains("@sha256:"))
+            .map(|c| format!("{}（{}）", c.service, c.image))
+            .collect();
+        let mut notices = Vec::new();
+        let reviewed = package
+            .origin
+            .as_ref()
+            .is_some_and(|o| o.trust == Trust::Official);
+        if !reviewed {
+            notices.push(CardLine {
+                text: unreviewed_notice(package),
+                emphasis: true,
             });
-        let mut notices = source_notices(package, &plan, langs);
-        // 作者写的“装好后要做的一步”排在最前面、醒目显示：主人得先看到它再决定装不装。
-        if let Some(setup) = setup_notice(m, langs) {
-            notices.insert(0, setup);
+            let images = image_repositories(plan.containers.iter().map(|c| c.image.as_str()));
+            notices.push(line(format!("镜像来自 {}", images.join("、"))));
+        }
+        if !unpinned.is_empty() {
+            notices.push(line(format!("镜像没有按摘要固定：{}", unpinned.join("、"))));
         }
         if m.webui.as_ref().is_some_and(|w| w.sso != Sso::None) {
-            notices.push(line(l10n::text(langs, "install-webui-sso", &[])));
+            notices.push(line("在 App 里打开它的网页时自动登录".to_owned()));
         }
         // 写了权限的，已经在权限列表里了。
         if super::views_permissions::reveals_owner_identity(m)
             && !m.permissions.contains(&Permission::OwnerIdentity)
         {
-            notices.push(line(permission_text(&Permission::OwnerIdentity, langs)));
+            notices.push(line(permission_text(&Permission::OwnerIdentity)));
         }
-        notices.extend(requirement_notices(m, &self.host_facts(langs).await, langs));
+        notices.extend(requirement_notices(m, &self.host_facts().await));
         if m.permissions.contains(&Permission::NetworkHost) {
-            notices.push(line(l10n::text(langs, "install-host-network-egress", &[])));
+            notices.push(line(
+                "宿主网络里的服务出网走宿主自己的路由，不经 Wonton 的出口代理".to_owned(),
+            ));
         }
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
         let uncertain = egress.filter(|p| !blocks(p));
         notices.extend(uncertain.map(|p| line(p.message)));
-        notices.extend(dependencies.notices);
-        // 缺默认模型的提醒不挡安装：先接模型，Bot 才能回话。只读模型列表，不发计费补全。
-        if let Some(notice) = self.model_route_notice(m, langs).await {
-            notices.push(notice);
-        }
         Ok(InstallPreview {
             source: package.origin.as_ref().map(Origin::source),
             provider: package.origin.as_ref().map(Origin::provider),
@@ -295,34 +251,26 @@ impl PluginManager {
             written_by,
             commit: package.origin.as_ref().map(|o| o.commit.clone()),
             digest: package.digest(),
-            plan: self.dependency_plan(package)?,
             id: m.id.to_string(),
             title: langs.pick_owned(&m.title),
             summary: langs.pick_owned(&m.description),
             version: m.version.clone(),
             kind: kind(m.kind),
-            has_bot: super::bots::is_bot(m),
-            runtime: m.runtime.into(),
-            security_tier: Some(super::security_tier::security_tier(m)),
-            scope_choices: self.scope_choices()?,
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
-            permissions: super::views_permissions::permission_lines(m, enabled, langs),
-            secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
-            settings,
+            permissions: m
+                .permissions
+                .iter()
+                .map(|p| permission_line(p, langs))
+                .collect(),
             notices,
-            missing_requires: dependencies.missing_requires,
-            missing_wants: dependencies.missing_wants,
-            wanting_plugins: dependencies.wanting_plugins,
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
-            blocked_category: None,
-            // 协议及客户端保留此字段，以便新客户端继续处理旧核心的资料门禁。
-            missing_profile: None,
+            missing_profile: self.missing_profile(package),
             devices: None,
-            lan_webui: webui::switched(package).map(|switched| switched.offer(false, langs)),
+            lan_webui: webui::switched(package).map(|switched| switched.offer(false)),
             always_allowed: Vec::new(),
         })
     }
@@ -331,14 +279,13 @@ impl PluginManager {
     pub(super) async fn check_icon(
         &self,
         package: &PluginPackage,
-        langs: &Languages,
     ) -> Result<Option<IconSource>, InstallError> {
         let icon = IconSource::of(package);
         if let Some(icon) = &icon {
             self.gallery
                 .render(icon)
                 .await
-                .map_err(|e| Self::image_error(&icon.path, e, langs))?;
+                .map_err(|e| Self::image_error(&icon.path, e))?;
         }
         for (index, tab) in package
             .manifest
@@ -350,51 +297,90 @@ impl PluginManager {
         {
             for (field, raw) in tab.icon_refs(index) {
                 let source = IconSource::of_path(package, raw).ok_or_else(|| {
-                    InstallError::Invalid(l10n::text(
-                        langs,
-                        "plugin-install-install-icon-file-missing",
-                        &[("field", field.as_str().into()), ("raw", raw.into())],
-                    ))
+                    InstallError::Invalid(format!("{field} {raw}：文件不存在或不是 PNG/SVG"))
                 })?;
                 self.gallery
                     .render_tab(&source)
                     .await
-                    .map_err(|e| Self::image_error(&format!("{field} {raw}"), e, langs))?;
+                    .map_err(|e| Self::image_error(&format!("{field} {raw}"), e))?;
             }
         }
         Ok(icon)
     }
 
-    fn image_error(path: &str, error: ImageError, langs: &Languages) -> InstallError {
+    fn image_error(path: &str, error: ImageError) -> InstallError {
         match error {
-            ImageError::Refused(reason) => InstallError::Invalid(l10n::text(
-                langs,
-                "plugin-install-install-icon-error",
-                &[("path", path.into()), ("reason", reason.into())],
-            )),
+            ImageError::Refused(reason) => InstallError::Invalid(format!("图标 {path}：{reason}")),
             ImageError::Unavailable(reason) => InstallError::ImagesUnavailable(reason),
         }
     }
 
+    /// 图标地址对应的 PNG：只有已安装的插件和最近预览过的插件包的图标。不认识的地址为 `Ok(None)`。
+    pub async fn icon_png(
+        &self,
+        sha256: &str,
+        variant: Variant,
+    ) -> Result<Option<Vec<u8>>, ImageError> {
+        let tab = matches!(variant, Variant::TabSmall | Variant::TabLarge);
+        let installed = {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            plugins
+                .values()
+                .filter_map(|entry| entry.listed.as_ref())
+                .flat_map(|listed| {
+                    listed
+                        .tab_icons
+                        .iter()
+                        .flat_map(|(icon, selected)| {
+                            [icon.as_ref(), selected.as_ref()]
+                                .into_iter()
+                                .flatten()
+                                .map(|icon| (icon.clone(), true))
+                        })
+                        .chain(listed.icon.as_ref().map(|icon| (icon.clone(), false)))
+                })
+                .find(|(icon, is_tab)| icon.sha256 == sha256 && *is_tab == tab)
+        };
+        let Some((source, is_tab)) = installed.or_else(|| {
+            (!tab)
+                .then(|| self.gallery.preview(sha256))
+                .flatten()
+                .map(|source| (source, false))
+        }) else {
+            return Ok(None);
+        };
+        let icon = if is_tab {
+            self.gallery.render_tab(&source).await?
+        } else {
+            self.gallery.render(&source).await?
+        };
+        Ok(Some(match variant {
+            Variant::Small | Variant::TabSmall => icon.small.clone(),
+            Variant::Large | Variant::TabLarge => icon.large.clone(),
+        }))
+    }
+
     /// 这台主机上装不了的原因，和安装时的检查一致，但什么也不改。
-    async fn precheck(&self, m: &Manifest, langs: &Languages) -> Result<(), InstallError> {
+    /// 主人还没填邮箱、插件又非要不可时的说明。
+    pub(crate) fn missing_profile(&self, package: &PluginPackage) -> Option<String> {
+        let needs_email =
+            proxy_auth::uses_email(&package.manifest) || dry_run_with_email(package, None).is_err();
+        (self.cfg.profile.email().is_none() && needs_email)
+            .then(|| crate::owner::EMAIL_NEEDED.to_owned())
+    }
+
+    async fn precheck(&self, m: &Manifest) -> Result<(), InstallError> {
         if m.kind == PluginKind::System {
-            return Err(InstallError::Unsupported(l10n::text(
-                langs,
-                "install-system-preinstalled",
-                &[],
-            )));
+            return Err(InstallError::Unsupported(
+                "系统应用只能随核心预装".to_owned(),
+            ));
         }
         {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             if let Some(entry) = plugins.get(&m.id) {
-                return Err(InstallError::Conflict(l10n::text(
-                    langs,
-                    "install-already-installed",
-                    &[
-                        ("id", m.id.to_string().into()),
-                        ("version", entry.version.as_str().into()),
-                    ],
+                return Err(InstallError::Conflict(format!(
+                    "已经装了 {}（版本 {}）",
+                    m.id, entry.version
                 )));
             }
             let slug = m.id.slug();
@@ -404,69 +390,27 @@ impl PluginManager {
                 )));
             }
         }
-        self.fits_host(m, langs).await
+        self.fits_host(m).await
     }
 
     /// 核心支持它要的权限，这台主机放得下它。
-    pub(crate) async fn fits_host(
-        &self,
-        m: &Manifest,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        super::install_entry::check_runtime(m, langs)?;
+    pub(crate) async fn fits_host(&self, m: &Manifest) -> Result<(), InstallError> {
         if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
-            return Err(InstallError::Unsupported(l10n::text(
-                langs,
-                "plugin-install-permission-unsupported",
-                &[("permission", p.to_string().into())],
-            )));
+            return Err(InstallError::Unsupported(format!("核心还不支持权限 {p}")));
         }
-        self.check_requirements(m, langs).await
+        self.check_requirements(m).await
     }
 
     /// 升级预览里这台主机上升不了的原因。
-    pub(super) async fn host_block(
-        &self,
-        m: &Manifest,
-        langs: &Languages,
-    ) -> Result<Option<String>, InstallError> {
+    pub(super) async fn host_block(&self, m: &Manifest) -> Result<Option<String>, InstallError> {
         if m.kind == PluginKind::System {
-            return Ok(Some(l10n::text(langs, "install-system-preinstalled", &[])));
+            return Ok(Some("系统插件只能随核心预装".to_owned()));
         }
-        blocked_by(self.fits_host(m, langs).await)
-    }
-
-    fn with_dependency_status(
-        &self,
-        mut plugin: InstalledPlugin,
-        langs: &Languages,
-    ) -> InstalledPlugin {
-        if !matches!(plugin.status, PluginState::Running { .. }) {
-            return plugin;
-        }
-        let listed = self
-            .plugins
-            .read()
-            .expect("插件表锁中毒")
-            .iter()
-            .find(|(id, _)| id.as_str() == plugin.id)
-            .and_then(|(_, entry)| entry.listed.clone());
-        if let Some(listed) = listed
-            && let Some(reason) = self.dependency_problem(&listed.manifest, langs)
-        {
-            plugin.status = PluginState::Degraded { reason };
-        }
-        plugin
+        blocked_by(self.fits_host(m).await)
     }
 
     /// 列表里的一项，还没填 Bot。
-    fn listing(
-        &self,
-        plugins: &std::collections::BTreeMap<PluginId, Entry>,
-        id: &PluginId,
-        entry: &Entry,
-        langs: &Languages,
-    ) -> InstalledPlugin {
+    fn listing(&self, id: &PluginId, entry: &Entry, langs: &Languages) -> InstalledPlugin {
         let manifest = entry.listed.as_ref().map(|l| &l.manifest);
         let origin = entry.listed.as_ref().and_then(|l| l.origin.as_ref());
         let (upgrade, mut notices) =
@@ -494,14 +438,9 @@ impl PluginManager {
             })
             .unwrap_or_default();
         if entry.status == PluginStatus::Running {
-            notices.extend(self.oom_notices(id, langs));
+            notices.extend(self.oom_notices(id));
         }
         InstalledPlugin {
-            chat: manifest
-                .filter(|m| super::bots::is_bot(m))
-                .map(|m| PluginChat {
-                    form: m.bot.as_ref().map_or_default(|bot| bot.chat_layout),
-                }),
             id: id.to_string(),
             title: langs.pick_owned(&entry.title),
             summary: manifest.map_or_else(String::new, |m| langs.pick_owned(&m.description)),
@@ -512,7 +451,6 @@ impl PluginManager {
                 .map_or(&entry.version, |listed| &listed.revision)
                 .clone(),
             kind: manifest.map_or(Kind::Other, |m| kind(m.kind)),
-            runtime: manifest.map_or(wonton_protocol::PluginRuntime::Other, |m| m.runtime.into()),
             icon: entry
                 .listed
                 .as_ref()
@@ -527,11 +465,13 @@ impl PluginManager {
             provider: origin.map(Origin::provider),
             via_index: origin.and_then(Origin::via_index),
             written_by: None,
-            status: state(
-                &super::install_hosted::effective_status(plugins, entry, langs),
-                entry.health,
-            ),
-            web_url: self.open_url(id, entry),
+            status: state(&entry.status, entry.health),
+            web_url: entry.has_webui.then(|| {
+                let path = manifest
+                    .and_then(|m| m.webui.as_ref())
+                    .map_or("/", |webui| webui.path.as_str());
+                format!("{}{path}", self.web_url(id))
+            }),
             web_display: manifest
                 .and_then(|m| m.webui.as_ref())
                 .and_then(|webui| manifest_tabs::display(&webui.display))
@@ -542,28 +482,27 @@ impl PluginManager {
             declares_tools: manifest.is_some_and(|m| m.mcp.is_some()),
             tabs,
             bot_user_id: None,
-            family: false,
             upgrade,
             removable: !entry.system,
             notices,
-            enabled_root_permissions: Vec::new(),
-            install_progress: entry.install_progress.clone(),
-            tunnel_ports: manifest.and_then(|m| m.tunnel.as_ref()).map_or_else(
-                Vec::new,
-                |tunnel| {
-                    tunnel
-                        .ports
-                        .iter()
-                        .map(|spec| wonton_protocol::MappedPort {
-                            port: spec.port,
-                            protocol: spec.protocol,
-                        })
-                        .collect()
-                },
-            ),
         }
     }
 
+    /// 填上插件的 Bot 和写它的人：读记录要读文件，不在插件表的锁里做。
+    fn with_bot(&self, mut plugin: InstalledPlugin) -> InstalledPlugin {
+        let Ok(id) = PluginId::parse(&plugin.id) else {
+            return plugin;
+        };
+        match self.store.bots().load(&id) {
+            Ok(record) => plugin.bot_user_id = record.map(|r| r.account.user_id),
+            Err(e) => tracing::warn!(plugin = %id, error = %e, "读 Bot 记录失败"),
+        }
+        match self.store.load(&id) {
+            Ok(record) => plugin.written_by = record.and_then(|record| record.written_by),
+            Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
+        }
+        plugin
+    }
     pub(super) fn set_listed_limits(&self, id: &PluginId, limits: PluginLimits) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(id)
@@ -577,6 +516,56 @@ impl PluginManager {
     }
 }
 
+impl PluginManager {
+    /// 已安装 Agent 的账号登录选项，文字按请求语言挑选。
+    pub fn agent_logins(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Vec<wonton_protocol::AgentLogin> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .and_then(|entry| entry.listed.as_ref())
+            .and_then(|listed| listed.manifest.agent.as_ref())
+            .map(|agent| agent_login_options(agent, langs))
+            .unwrap_or_default()
+    }
+}
+
+pub(crate) fn agent_login_options(
+    agent: &AgentSpec,
+    langs: &Languages,
+) -> Vec<wonton_protocol::AgentLogin> {
+    agent
+        .login
+        .iter()
+        .map(|login| wonton_protocol::AgentLogin {
+            id: login.id.clone(),
+            title: langs.pick_owned(&login.title),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+impl PluginManager {
+    pub(crate) fn bot_for_test(&self, id: &PluginId, user_id: &str) {
+        self.store
+            .bots()
+            .save(
+                id,
+                &super::bots::BotRecord {
+                    account: crate::matrix::BotAccount {
+                        user_id: user_id.to_owned(),
+                        home_room: "!test:example.com".to_owned(),
+                    },
+                    device_id: None,
+                },
+            )
+            .unwrap();
+    }
+}
+
 /// 检查的结果：这台主机上装不了时是原因，别的错误原样报。
 fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, InstallError> {
     match checked {
@@ -587,19 +576,67 @@ fn blocked_by(checked: Result<(), InstallError>) -> Result<Option<String>, Insta
     }
 }
 
-pub(crate) use super::views_agent_logins::agent_login_options;
+/// 未审核的插件的提示：写明谁提供。上传的插件只有清单里作者自己写的名字，核实不了。
+fn unreviewed_notice(package: &PluginPackage) -> String {
+    match &package.origin {
+        Some(origin) => {
+            let provider = origin.provider();
+            let via = origin
+                .via_index()
+                .map(|host| format!("，经 {host} 的索引"))
+                .unwrap_or_default();
+            format!("云吞没有审核过这个应用，代码和镜像由 {provider} 提供{via}")
+        }
+        None => match &package.manifest.author {
+            Some(author) => format!(
+                "云吞没有审核过这个应用，它来自你上传的文件，清单里写的作者是 {}，核实不了",
+                author.name
+            ),
+            None => "云吞没有审核过这个应用，它来自你上传的文件，清单里没写作者".to_owned(),
+        },
+    }
+}
+
+/// 镜像来自哪些仓库，去掉标签和摘要，去重，保持先后。没写主机的按 Docker 的规则算 `docker.io`。
+fn image_repositories<'a>(images: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut repositories = Vec::new();
+    for image in images {
+        let repository = image_repository(image);
+        if !repositories.contains(&repository) {
+            repositories.push(repository);
+        }
+    }
+    repositories
+}
+
+fn image_repository(image: &str) -> String {
+    let name = image.split('@').next().unwrap_or(image);
+    // 标签的冒号在最后一个 `/` 之后；主机的端口号在它之前。
+    let last_part = name.rfind('/').map_or(0, |slash| slash + 1);
+    let name = match name[last_part..].find(':') {
+        Some(colon) => &name[..last_part + colon],
+        None => name,
+    };
+    let first = name.split('/').next().unwrap_or(name);
+    let has_host =
+        name.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost");
+    if has_host {
+        name.to_owned()
+    } else if name.contains('/') {
+        format!("docker.io/{name}")
+    } else {
+        format!("docker.io/library/{name}")
+    }
+}
+
 pub(crate) use super::views_permissions::permission_line;
 pub use super::views_permissions::permission_text;
 
-pub(super) fn requirement_checks(
-    manifest: &Manifest,
-    facts: &HostFacts,
-    langs: &Languages,
-) -> Vec<RequirementLine> {
+pub(super) fn requirement_checks(manifest: &Manifest, facts: &HostFacts) -> Vec<RequirementLine> {
     manifest
         .requirements
         .as_ref()
-        .map(|r| host_check::judge(r, facts, langs))
+        .map(|r| host_check::judge(r, facts))
         .unwrap_or_default()
         .into_iter()
         .map(|check| check.line)
@@ -607,11 +644,11 @@ pub(super) fn requirement_checks(
 }
 
 /// 安装预览里的要求。显卡不满足时不写：预览里关于显卡的那行（[`super::gpu::GpuPreview`]）已经写了为什么。
-fn requirement_notices(manifest: &Manifest, facts: &HostFacts, langs: &Languages) -> Vec<CardLine> {
+fn requirement_notices(manifest: &Manifest, facts: &HostFacts) -> Vec<CardLine> {
     let Some(requirements) = &manifest.requirements else {
         return Vec::new();
     };
-    host_check::judge(requirements, facts, langs)
+    host_check::judge(requirements, facts)
         .into_iter()
         .filter(|check| {
             let bad = matches!(
@@ -653,21 +690,21 @@ pub(crate) fn cross_origin_isolation_notice(
     {
         return None;
     }
+    static TEXT: std::sync::LazyLock<super::manifest::LocalizedText> = std::sync::LazyLock::new(
+        || {
+            [
+            ("zh".to_owned(), "这个应用放宽了跨源隔离：在 Android 上，它的页面可能和别的网页共用进程。".to_owned()),
+            ("en".to_owned(), "This app relaxes cross-origin isolation: on Android, its pages may share a process with other web pages.".to_owned()),
+        ].into()
+        },
+    );
     Some(CardLine {
-        text: l10n::text(langs, "plugin-cross-origin-isolation", &[]),
+        text: langs.pick_owned(&TEXT),
         emphasis: true,
     })
 }
 
-/// 清单里的 `setup`：主人装之前就得看到的一步，醒目显示。
-fn setup_notice(m: &super::manifest::Manifest, langs: &Languages) -> Option<CardLine> {
-    m.setup.as_ref().map(|setup| CardLine {
-        text: langs.pick_owned(setup),
-        emphasis: true,
-    })
-}
-
-pub(super) fn line(text: String) -> CardLine {
+fn line(text: String) -> CardLine {
     CardLine {
         text,
         emphasis: false,
@@ -695,10 +732,6 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         screenshots: Vec::new(),
         tags: Vec::new(),
         kind: installed.kind,
-        runtime: installed.runtime,
-        security_tier: None,
-        link_url: None,
-        scope: None,
         version: installed.version.clone(),
         trust: installed.trust,
         author: None,
@@ -709,21 +742,14 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         release_notes: None,
         permissions: Vec::new(),
         requirements: Vec::new(),
-        secret_inputs: Vec::new(),
         has_web: false,
-        has_settings: false,
         installed: Some(installed),
         blocked: None,
         notices: Vec::new(),
-        missing_requires: Vec::new(),
-        missing_wants: Vec::new(),
-        hints: Vec::new(),
-        capability_providers: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),
         ask_every_update: None,
         limits: None,
-        shares: None,
     }
 }
 

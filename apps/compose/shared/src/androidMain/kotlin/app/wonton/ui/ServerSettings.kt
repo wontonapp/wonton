@@ -1,9 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
-import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
@@ -12,7 +10,6 @@ import app.wonton.ui.design.WontonScreen
 internal fun ServerSettingsPage(
     plugins: PluginsState,
     home: HomeViewModel,
-    chat: ChatViewModel,
     page: SettingsSubpage,
     onPage: (SettingsSubpage) -> Unit,
 ) {
@@ -26,12 +23,10 @@ internal fun ServerSettingsPage(
         SettingsSubpage.EGRESS -> EgressPage(plugins, back)
         SettingsSubpage.REGISTRY_MIRROR -> RegistryMirrorPage(plugins, back)
         SettingsSubpage.CORE_UPGRADE -> CoreUpgradePage(plugins, back)
-        SettingsSubpage.INVITE -> WontonScreen(bar = {
-            WontonPushedBar(stringResource(R.string.connection_add_device), back)
-        }) {
-            InviteScreen(core, home.invite, chat.encryption.verificationFlow, chat.encryption.keyHandoff)
+        SettingsSubpage.INVITE -> WontonScreen(bar = { WontonPushedBar("添加设备", back) }) {
+            InviteScreen(core, home.invite)
         }
-        SettingsSubpage.PAIRING -> PairingPage(stringResource(R.string.pairing_title_again), core, home.pairing, back)
+        SettingsSubpage.PAIRING -> PairingPage("重新配对", core, home.pairing, back)
         else -> error("Not a server settings page: $page")
     }
 }

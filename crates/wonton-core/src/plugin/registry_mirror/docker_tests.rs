@@ -1,20 +1,15 @@
+use futures_util::FutureExt;
 use wonton_protocol::RegistryMirrorUpdate;
 
 use super::docker_fixture::Fixture;
-use super::mirrors::Registry;
-use super::reference::accelerated;
 use crate::plugin::PluginStatus;
-use crate::plugin::languages::Languages;
 
 async fn enable(fixture: &Fixture, mirror: &str) {
     fixture
         .manager
-        .set_registry_mirror(
-            RegistryMirrorUpdate {
-                mirror: Some(mirror.to_owned()),
-            },
-            &Default::default(),
-        )
+        .set_registry_mirror(RegistryMirrorUpdate {
+            mirror: Some(mirror.to_owned()),
+        })
         .await
         .unwrap();
 }
@@ -35,11 +30,7 @@ async fn correct_digest(fixture: &mut Fixture) {
     enable(fixture, &fixture.mirror).await;
     let installed = fixture
         .manager
-        .install(
-            &fixture.compose(&digest),
-            &[],
-            Languages::from_header(Some("zh-Hans")),
-        )
+        .install(&fixture.compose(&digest), &[])
         .await
         .unwrap();
     assert_eq!(installed.status, PluginStatus::Running);
@@ -67,11 +58,7 @@ async fn correct_digest(fixture: &mut Fixture) {
         .ensure_image(
             &original,
             crate::plugin::compose::PullPolicy::Missing,
-            &accelerated(
-                &original,
-                std::slice::from_ref(&fixture.mirror),
-                Registry::DockerHub,
-            ),
+            Some(&fixture.mirror),
         )
         .await
         .unwrap();
@@ -98,11 +85,7 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
     enable(fixture, &fixture.mirror).await;
     let error = fixture
         .manager
-        .install(
-            &fixture.compose(&expected),
-            &[],
-            Languages::from_header(Some("zh-Hans")),
-        )
+        .install(&fixture.compose(&expected), &[])
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "image_pull_failed");
@@ -116,18 +99,13 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
             .is_none()
     );
     println!("registry mirror: 错摘要拒绝，不建容器：{error}");
-    // 绑住端口但不监听，到测试结束都不放：连过来一定被拒，别的进程也拿不走这个端口。
-    let offline_socket = tokio::net::TcpSocket::new_v4().unwrap();
-    offline_socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
-    let offline = offline_socket.local_addr().unwrap().to_string();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let offline = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
+    drop(listener);
     enable(fixture, &offline).await;
     let error = fixture
         .manager
-        .install(
-            &fixture.compose(&expected),
-            &[],
-            Languages::from_header(Some("zh-Hans")),
-        )
+        .install(&fixture.compose(&expected), &[])
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "image_pull_failed");
@@ -147,12 +125,24 @@ async fn wrong_digest_and_unreachable(fixture: &mut Fixture) {
 #[ignore = "需要 Docker，registry:2 验证摘要拉取与容器引用"]
 async fn registry_mirror_docker_installs_verified_digest_without_recreating() {
     let mut fixture = Fixture::new();
-    correct_digest(&mut fixture).await;
+    let result = std::panic::AssertUnwindSafe(correct_digest(&mut fixture))
+        .catch_unwind()
+        .await;
+    fixture.clean().await;
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }
 
 #[tokio::test]
 #[ignore = "需要 Docker，registry:2 验证错摘要和断网不回退直连"]
 async fn registry_mirror_docker_refuses_wrong_content_and_unreachable_mirror() {
     let mut fixture = Fixture::new();
-    wrong_digest_and_unreachable(&mut fixture).await;
+    let result = std::panic::AssertUnwindSafe(wrong_digest_and_unreachable(&mut fixture))
+        .catch_unwind()
+        .await;
+    fixture.clean().await;
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }

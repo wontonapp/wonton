@@ -90,8 +90,6 @@ pub struct Core {
     pub services_down: bool,
     /// 只有 PATCH 回 503：`HEAD` 走得通，才测得到 PATCH。
     pub patches_down: bool,
-    /// PATCH 不读请求体就回 503，还把连接关上：客户端多半先看到写失败。
-    pub patches_down_unread: bool,
     /// 回了几次这种 503。
     pub refused: usize,
     /// 授权一直不回答：字节传完了，停在发链接这一步。
@@ -229,15 +227,6 @@ async fn append(
     body: Body,
 ) -> Response {
     let offset: u64 = headers["upload-offset"].to_str().unwrap().parse().unwrap();
-    if core.lock().patches_down_unread {
-        // 不读就回，还把连接关上：客户端多半先看到写失败，这一次就说不出原因。
-        let mut response = core.lock().refuse();
-        response.headers_mut().insert(
-            header::CONNECTION,
-            header::HeaderValue::from_static("close"),
-        );
-        return response;
-    }
     let down = {
         let core = core.lock();
         core.services_down || core.patches_down
@@ -422,7 +411,6 @@ async fn content(
 
 async fn serve_core(core: SharedCore) -> SocketAddr {
     let router = Router::new()
-        .route("/_wonton/matrix/login-token", post(login_token_denied))
         .route("/_wonton/files/uploads/", post(create))
         .route(
             "/_wonton/files/uploads/{id}",
@@ -441,19 +429,6 @@ async fn serve_core(core: SharedCore) -> SocketAddr {
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, router).await });
     addr
-}
-
-/// 文件服务的测试里聊天不参与：登录一律回 403（被拒，不会自动重试），聊天停在失败上。传输的发链接等登录时
-/// 立即看到失败，不再随隧道建立的快慢变（隧道没就绪时那次登录会回 502，被当成暂时失败，重连退避能吃掉
-/// 测试的整个等待窗）。
-async fn login_token_denied() -> Response {
-    (
-        StatusCode::FORBIDDEN,
-        axum::Json(serde_json::json!({
-            "error": {"message": "文件服务的测试里没有聊天", "kind": "unauthorized"}
-        })),
-    )
-        .into_response()
 }
 
 async fn loopback_endpoint(key: SecretKey, port: u16) -> Endpoint {
@@ -544,11 +519,6 @@ impl World {
         self.wait_connected().await;
     }
 
-    /// 家里的服务器没了时打开手机：连不上，正好试离线的卡片。
-    pub async fn start_phone_without_home(&mut self) {
-        self.phone = Some(open_phone(self.dir.path()));
-    }
-
     pub async fn restart_phone(&mut self) {
         self.stop_phone();
         self.start_phone().await;
@@ -596,7 +566,7 @@ impl World {
     pub fn downloaded(&self, file: &FileId, name: &str) -> PathBuf {
         self.dir
             .path()
-            .join("phone/servers/1/downloads")
+            .join("phone/downloads")
             .join(file.as_str())
             .join(name)
     }

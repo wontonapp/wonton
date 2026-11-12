@@ -11,12 +11,10 @@ use tokio::time::Instant;
 use wonton_protocol::CardLine;
 
 use super::host_check;
-use super::languages::Languages;
 use super::manager::PluginManager;
 use super::manifest::PluginId;
 use super::names::LABEL_PLUGIN;
 use super::render::LABEL_SERVICE;
-use crate::l10n;
 
 const RECONNECT_AFTER: Duration = Duration::from_secs(5);
 const RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
@@ -76,46 +74,24 @@ impl OomRecords {
     }
 }
 
-fn limit_text(limit: OomLimit, langs: &Languages) -> String {
+fn limit_text(limit: OomLimit) -> String {
     let size = limit.memory.map(host_check::size);
     match (size, limit.shared_total) {
-        (Some(size), true) => l10n::text(
-            langs,
-            "plugin-install-oom-limit-both",
-            &[("size", size.into())],
-        ),
-        (Some(size), false) => l10n::text(
-            langs,
-            "plugin-install-oom-limit-service",
-            &[("size", size.into())],
-        ),
-        (None, true) => l10n::text(langs, "plugin-install-oom-limit-total", &[]),
+        (Some(size), true) => format!("（服务上限 {size}，也可能是所有插件加起来到了总上限）"),
+        (Some(size), false) => format!("（上限 {size}）"),
+        (None, true) => "（可能是所有插件加起来到了总上限）".to_owned(),
         (None, false) => String::new(),
     }
 }
 
 /// 插件还在运行时 `notices` 里的那一行。
-fn oom_notice(service: &str, limit: OomLimit, langs: &Languages) -> String {
-    l10n::text(
-        langs,
-        "plugin-install-oom-notice",
-        &[
-            ("service", service.into()),
-            ("limit", limit_text(limit, langs).into()),
-        ],
-    )
+fn oom_notice(service: &str, limit: OomLimit) -> String {
+    format!("服务 {service} 内存不够，被系统结束过{}", limit_text(limit))
 }
 
 /// 容器因此不在运行时插件异常的原因。
-pub(super) fn oom_reason(service: &str, limit: OomLimit, langs: &Languages) -> String {
-    l10n::text(
-        langs,
-        "plugin-install-oom-reason",
-        &[
-            ("service", service.into()),
-            ("limit", limit_text(limit, langs).into()),
-        ],
-    )
+pub(super) fn oom_reason(service: &str, limit: OomLimit) -> String {
+    format!("服务 {service} 内存不够，被系统结束{}", limit_text(limit))
 }
 
 impl PluginManager {
@@ -183,12 +159,12 @@ impl PluginManager {
         self.changed();
     }
 
-    pub(super) fn oom_notices(&self, plugin: &PluginId, langs: &Languages) -> Vec<CardLine> {
+    pub(super) fn oom_notices(&self, plugin: &PluginId) -> Vec<CardLine> {
         self.oom
             .notices(plugin)
             .into_iter()
             .map(|(service, limit)| CardLine {
-                text: oom_notice(&service, limit, langs),
+                text: oom_notice(&service, limit),
                 emphasis: false,
             })
             .collect()

@@ -4,14 +4,12 @@ use hyper::Method;
 use serde_json::{Map, Value, json};
 
 use super::api::{Api, MatrixError, encode};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 一个已登录用户的会话。令牌属于核心刚登录的设备，用完由调用方吊销或退出。
 pub struct Session<'a> {
-    pub(super) api: &'a Api,
+    api: &'a Api,
     user_id: String,
-    pub(super) token: String,
+    token: String,
 }
 
 impl<'a> Session<'a> {
@@ -27,7 +25,7 @@ impl<'a> Session<'a> {
         &self.user_id
     }
 
-    pub(super) async fn json(
+    async fn json(
         &self,
         method: Method,
         path: &str,
@@ -39,51 +37,18 @@ impl<'a> Session<'a> {
             .await
     }
 
-    pub(super) fn profile_path(&self, field: &str) -> String {
+    fn profile_path(&self, field: &str) -> String {
         format!(
             "/_matrix/client/v3/profile/{}/{field}",
             encode(&self.user_id)
         )
     }
 
-    /// 一个全局账号数据事件的内容；没设过时是 `None`。
-    pub async fn account_data(&self, event: &str) -> Result<Option<Value>, MatrixError> {
-        let path = format!(
-            "/_matrix/client/v3/user/{}/account_data/{}",
-            encode(&self.user_id),
-            encode(event)
-        );
-        match self.json(Method::GET, &path, None, "读账号数据").await {
-            Ok(value) => Ok(Some(value)),
-            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
-    /// 一个房间账号数据事件的内容；没设过时是 `None`。
-    pub async fn room_account_data(
-        &self,
-        room: &str,
-        event: &str,
-    ) -> Result<Option<Value>, MatrixError> {
-        let path = format!(
-            "/_matrix/client/v3/user/{}/rooms/{}/account_data/{}",
-            encode(&self.user_id),
-            encode(room),
-            encode(event)
-        );
-        match self.json(Method::GET, &path, None, "读房间账号数据").await {
-            Ok(value) => Ok(Some(value)),
-            Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
-            Err(e) => Err(e),
-        }
-    }
-
     /// 账号的显示名。Matrix 规定没设时回 `M_NOT_FOUND`。
     pub async fn display_name(&self) -> Result<Option<String>, MatrixError> {
         let path = self.profile_path("displayname");
         match self.json(Method::GET, &path, None, "读显示名").await {
-            Ok(profile) => super::bot_profile::profile_string(&profile, "displayname"),
+            Ok(profile) => Ok(profile["displayname"].as_str().map(str::to_owned)),
             Err(e) if e.errcode() == "M_NOT_FOUND" => Ok(None),
             Err(e) => Err(e),
         }
@@ -108,8 +73,19 @@ impl<'a> Session<'a> {
         filename: &str,
         data: Vec<u8>,
     ) -> Result<(), MatrixError> {
-        let uri = self.upload_media(content_type, filename, data).await?;
-        self.set_avatar_url(Some(&uri)).await
+        let uri = self
+            .api
+            .upload(&self.token, content_type, filename, data)
+            .await?;
+        let body = json!({"avatar_url": uri});
+        self.json(
+            Method::PUT,
+            &self.profile_path("avatar_url"),
+            Some(&body),
+            "设置头像",
+        )
+        .await
+        .map(|_| ())
     }
 
     /// 建一个给自己和 `peer` 用的加密房间，返回房间 ID。先不邀请对方：Bot 装好了才交给主人（[`Self::invite`]）。
@@ -170,21 +146,10 @@ impl<'a> Session<'a> {
 
     /// 发一条消息，返回事件 ID。
     pub async fn send_message(&self, room: &str, content: &Value) -> Result<String, MatrixError> {
-        self.send_message_with_txn(room, content, &crate::secret::random_token())
-            .await
-    }
-
-    /// 同一事务可在断线或重启后重发，Matrix 不会在同一房间里生成重复事件。
-    pub(crate) async fn send_message_with_txn(
-        &self,
-        room: &str,
-        content: &Value,
-        transaction: &str,
-    ) -> Result<String, MatrixError> {
         let path = format!(
             "/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
             encode(room),
-            encode(transaction)
+            crate::secret::random_token()
         );
         let value = self
             .json(Method::PUT, &path, Some(content), "发消息")
@@ -225,15 +190,9 @@ impl<'a> Session<'a> {
     }
 
     /// 撤回对 `user` 的邀请并退出房间：建好的私聊没能交到对方手里时用，免得对方收到一个没人应答的邀请。
-    pub async fn abandon(
-        &self,
-        room: &str,
-        user: &str,
-        langs: &Languages,
-    ) -> Result<(), MatrixError> {
+    pub async fn abandon(&self, room: &str, user: &str) -> Result<(), MatrixError> {
         let room = encode(room);
-        let reason = l10n::text(langs, "chat-kick-reason", &[]);
-        let kick = json!({"user_id": user, "reason": reason});
+        let kick = json!({"user_id": user, "reason": "Wonton 没能建好这个私聊"});
         let path = format!("/_matrix/client/v3/rooms/{room}/kick");
         self.json(Method::POST, &path, Some(&kick), "撤回邀请")
             .await?;

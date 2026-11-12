@@ -1,21 +1,15 @@
-//! 网关代登录（`sso: proxy`，插件规范的“网关代登录”）：清单声明的请求头和 Cookie 的值模板。网关认出请求的人后把它们
+//! 网关代登录（`sso: proxy`，插件规范的“网关代登录”）：清单声明的请求头和 Cookie 的值模板。网关认出主人后把它们
 //! 加在转发给插件网页的请求上（见 `gateway::proxy_sso`），浏览器拿不到其中的密钥。
 //!
-//! 网页模板可用 `{user}`、`{name}`、`{email}`（用户名、显示名和固定用户名派生的内部邮箱）和 `{role}`，以及插件
-//! 自己的 `{secret:<名字>}`（`secrets` 里由核心生成的一项），其余文字原样保留。
-//! LAN 账号模板没有请求者角色，拒绝 `{role}`；MCP 只接受插件密钥，不接受人的身份。
+//! 值模板里可以用 `{user}`、`{name}`、`{email}`（主人的用户名、显示名和邮箱），以及 `{secret:<名字>}`（插件自己的
+//! `secrets` 里由核心生成的一项），其余文字原样保留。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use hyper::header::{HeaderName, HeaderValue};
-use wonton_protocol::Role;
 
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
-use super::secrets::Secrets;
-use crate::owner::{Owner, internal_email};
-
-use super::languages::Languages;
-use crate::l10n::text;
+use crate::owner::Owner;
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -43,7 +37,6 @@ enum Part {
     User,
     Name,
     Email,
-    Role,
     Secret(String),
 }
 
@@ -70,7 +63,6 @@ impl ProxyAuth {
     pub fn resolve(
         manifest: &Manifest,
         generated: &BTreeMap<String, String>,
-        langs: &Languages,
     ) -> Result<Option<Self>, String> {
         let Some(proxy) = manifest
             .webui
@@ -81,13 +73,13 @@ impl ProxyAuth {
             return Ok(None);
         };
         let resolve = |template: &str| -> Result<Vec<Part>, String> {
-            parse(template, langs)?
+            parse(template)?
                 .into_iter()
                 .map(|part| match part {
                     Part::Secret(name) => generated
                         .get(&name)
                         .map(|value| Part::Secret(value.clone()))
-                        .ok_or_else(|| secret_missing(langs, &name)),
+                        .ok_or_else(|| format!("插件密钥 {name} 不在密钥库里")),
                     other => Ok(other),
                 })
                 .collect()
@@ -109,35 +101,24 @@ impl ProxyAuth {
     }
 
     /// 代加的请求头：名字和这次请求的值。
-    pub fn headers(
-        &self,
-        owner: &Owner,
-        role: Role,
-    ) -> Result<Vec<(HeaderName, String)>, RenderError> {
-        let role = role_name(role)?;
+    pub fn headers(&self, owner: &Owner) -> Result<Vec<(HeaderName, String)>, NoEmail> {
         self.headers
             .iter()
-            .map(|(name, parts)| Ok((name.clone(), render(parts, owner, Some(role))?)))
+            .map(|(name, parts)| Ok((name.clone(), render(parts, owner)?)))
             .collect()
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(&self, owner: &Owner, role: Role) -> Result<Vec<(&str, String)>, RenderError> {
-        let role = role_name(role)?;
+    pub fn cookies(&self, owner: &Owner) -> Result<Vec<(&str, String)>, NoEmail> {
         self.cookies
             .iter()
-            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner, Some(role))?)))
+            .map(|(name, parts)| Ok((name.as_str(), render(parts, owner)?)))
             .collect()
     }
 
     /// 代加的 Cookie 的名字。
     pub fn cookie_names(&self) -> impl Iterator<Item = &str> {
         self.cookies.iter().map(|(name, _)| name.as_str())
-    }
-
-    /// 代加的请求头的名字。
-    pub fn header_names(&self) -> impl Iterator<Item = &HeaderName> {
-        self.headers.iter().map(|(name, _)| name)
     }
 
     /// 模板里用到的密钥的值：不能出现在给浏览器的响应里。
@@ -155,82 +136,54 @@ impl ProxyAuth {
     }
 }
 
-/// 模板要了不认识请求者角色时，不生成代登录凭据；身份资料本身都已经能取到。
+/// 模板用了 `{email}`，主人却没填邮箱：不代加一个空值。
 #[derive(Debug, thiserror::Error)]
-pub enum RenderError {
-    #[error("unknown proxy identity role")]
-    UnknownRole,
+#[error("{}", crate::owner::NO_EMAIL)]
+pub struct NoEmail;
+
+fn render(parts: &[Part], owner: &Owner) -> Result<String, NoEmail> {
+    parts
+        .iter()
+        .map(|part| {
+            Ok(match part {
+                Part::Text(text) | Part::Secret(text) => text.as_str(),
+                Part::User => owner.username.as_str(),
+                Part::Name => owner.display_name.as_str(),
+                Part::Email => owner.email.as_deref().ok_or(NoEmail)?,
+            })
+        })
+        .collect()
 }
 
-fn role_name(role: Role) -> Result<&'static str, RenderError> {
-    match role {
-        Role::Owner => Ok("owner"),
-        Role::Member => Ok("member"),
-        Role::Friend => Ok("friend"),
-        Role::Other => Err(RenderError::UnknownRole),
-    }
-}
-
-fn render(parts: &[Part], owner: &Owner, role: Option<&str>) -> Result<String, RenderError> {
-    let mut value = String::new();
-    let mut email = None;
-    for part in parts {
-        value.push_str(match part {
-            Part::Text(text) | Part::Secret(text) => text,
-            Part::User => &owner.username,
-            Part::Name => &owner.display_name,
-            Part::Role => role.ok_or(RenderError::UnknownRole)?,
-            Part::Email => email.get_or_insert_with(|| internal_email(&owner.username)),
-        });
-    }
-    Ok(value)
-}
-
-/// LAN 账号模板：没有请求者角色，拒绝 `{role}`；密钥必须由核心生成且足够长。
-pub fn check_template(
-    manifest: &Manifest,
-    template: &str,
-    langs: &Languages,
-) -> Result<(), String> {
-    for part in parse(template, langs)? {
-        match part {
-            Part::Role => return Err(role_without_request(langs, template)),
-            Part::Secret(name) if !secret_ok(manifest, &name) => {
-                return Err(unknown_secret(langs, &name));
-            }
-            _ => {}
+/// 值模板的写法对，`{secret:…}` 只引用插件自己由核心生成、够长的密钥。局域网客户端的账号（`lan.client`）也用这套模板。
+pub fn check_template(manifest: &Manifest, template: &str) -> Result<(), String> {
+    for part in parse(template)? {
+        if let Part::Secret(name) = part
+            && !secret_ok(manifest, &name)
+        {
+            return Err(unknown_secret(&name));
         }
     }
     Ok(())
 }
 
-/// 按主人和插件密钥填好 LAN 账号模板；不把网页请求的角色上下文带进 LAN。
+/// 按主人和插件密钥填好一个值模板。
 pub fn fill_template(
     template: &str,
     owner: &Owner,
     generated: &BTreeMap<String, String>,
-    langs: &Languages,
 ) -> Result<String, String> {
-    let parts = parse(template, langs)?
+    let parts = parse(template)?
         .into_iter()
         .map(|part| match part {
-            Part::Role => Err(role_without_request(langs, template)),
             Part::Secret(name) => generated
                 .get(&name)
                 .map(|value| Part::Secret(value.clone()))
-                .ok_or_else(|| secret_missing(langs, &name)),
+                .ok_or_else(|| format!("插件密钥 {name} 不在密钥库里")),
             other => Ok(other),
         })
         .collect::<Result<Vec<_>, String>>()?;
-    render(&parts, owner, None).map_err(|e| e.to_string())
-}
-
-fn role_without_request(langs: &Languages, template: &str) -> String {
-    text(
-        langs,
-        "plugin-install-proxy-template-unknown-var",
-        &[("template", template.into()), ("var", "role".into())],
-    )
+    render(&parts, owner).map_err(|e| e.to_string())
 }
 
 fn secret_ok(manifest: &Manifest, name: &str) -> bool {
@@ -240,32 +193,25 @@ fn secret_ok(manifest: &Manifest, name: &str) -> bool {
     )
 }
 
-fn unknown_secret(langs: &Languages, name: &str) -> String {
-    text(
-        langs,
-        "plugin-install-proxy-secret-unknown",
-        &[("name", name.into()), ("min", MIN_SECRET_BYTES.into())],
+fn unknown_secret(name: &str) -> String {
+    format!(
+        "{{secret:{name}}} 要引用 secrets 里由核心生成（generate）、至少 {MIN_SECRET_BYTES} 字节的一项"
     )
 }
 
-fn secret_missing(langs: &Languages, name: &str) -> String {
-    text(
-        langs,
-        "plugin-install-proxy-secret-missing",
-        &[("name", name.into())],
-    )
+/// 清单的代登录模板用没用 `{email}`。
+pub fn uses_email(manifest: &Manifest) -> bool {
+    any_part(manifest, |part| matches!(part, Part::Email))
 }
 
 /// 清单的代登录模板会不会把主人的身份带给应用。
 pub fn uses_identity(manifest: &Manifest) -> bool {
     any_part(manifest, |part| {
-        matches!(part, Part::User | Part::Name | Part::Email | Part::Role)
+        matches!(part, Part::User | Part::Name | Part::Email)
     })
 }
 
 fn any_part(manifest: &Manifest, matches: impl Fn(&Part) -> bool) -> bool {
-    // 语言只影响报错文字，这里只看模板能不能解析。
-    let langs = Languages::default();
     let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
         return false;
     };
@@ -273,44 +219,33 @@ fn any_part(manifest: &Manifest, matches: impl Fn(&Part) -> bool) -> bool {
         .headers
         .values()
         .chain(proxy.cookies.values())
-        .any(|template| parse(template, &langs).is_ok_and(|parts| parts.iter().any(&matches)))
+        .any(|template| parse(template).is_ok_and(|parts| parts.iter().any(&matches)))
 }
 
 /// 拆开一个值模板。`{`、`}` 只能用来写占位符。
-fn parse(template: &str, langs: &Languages) -> Result<Vec<Part>, String> {
+fn parse(template: &str) -> Result<Vec<Part>, String> {
     let mut parts = Vec::new();
     let mut rest = template;
     while let Some(start) = rest.find(['{', '}']) {
         if rest[start..].starts_with('}') {
-            return Err(text(
-                langs,
-                "plugin-install-proxy-template-open",
-                &[("template", template.into())],
-            ));
+            return Err(format!("`{template}` 里的 }} 没有配对的 {{"));
         }
         if start > 0 {
             parts.push(Part::Text(rest[..start].to_owned()));
         }
         let after = &rest[start + 1..];
-        let end = after.find('}').ok_or_else(|| {
-            text(
-                langs,
-                "plugin-install-proxy-template-close",
-                &[("template", template.into())],
-            )
-        })?;
+        let end = after
+            .find('}')
+            .ok_or_else(|| format!("`{template}` 里的 {{ 没有配对的 }}"))?;
         parts.push(match &after[..end] {
             "user" => Part::User,
             "name" => Part::Name,
             "email" => Part::Email,
-            "role" => Part::Role,
             other => match other.strip_prefix("secret:") {
                 Some(name) if !name.is_empty() => Part::Secret(name.to_owned()),
                 _ => {
-                    return Err(text(
-                        langs,
-                        "plugin-install-proxy-template-unknown-var",
-                        &[("template", template.into()), ("var", other.into())],
+                    return Err(format!(
+                        "`{template}` 里的 {{{other}}} 不认识：只能用 {{user}}、{{name}}、{{email}} 和 {{secret:<名字>}}"
                     ));
                 }
             },
@@ -338,34 +273,34 @@ fn is_cookie_value(text: &str) -> bool {
 }
 
 fn invalid(message: String) -> ManifestError {
-    ManifestError::Invalid(message)
+    ManifestError::Invalid(format!("webui.proxy：{message}"))
 }
 
 /// 清单校验：请求头名和 Cookie 名合法；模板写法对，`{secret:…}` 只引用插件自己的 `secrets` 里由核心生成、
-/// 至少 16 字节的项；Cookie 的值只允许 `{secret:…}`、`{role}` 和 cookie-octet 固定文字
-/// （用户名、显示名和邮箱可能有 Cookie 里不能出现的字符）。
-pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
+/// 至少 16 字节的项；Cookie 的值只能用 `{secret:…}` 和 cookie-octet 组成的固定文字（用户名、显示名和邮箱可能有
+/// Cookie 里不能出现的字符）。
+pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
         return Ok(());
     };
     let check_template = |template: &str, in_cookie: bool| -> Result<(), ManifestError> {
-        for part in parse(template, langs).map_err(invalid)? {
+        for part in parse(template).map_err(invalid)? {
             match part {
                 Part::Secret(name) if !secret_ok(manifest, &name) => {
-                    return Err(invalid(unknown_secret(langs, &name)));
+                    return Err(invalid(unknown_secret(&name)));
                 }
                 Part::User | Part::Name | Part::Email if in_cookie => {
-                    return Err(invalid(text(
-                        langs,
-                        "plugin-install-proxy-cookie-template",
-                        &[("template", template.into())],
+                    return Err(invalid(format!(
+                        "Cookie 的值只能用 {{secret:…}} 和固定文字：`{template}`"
                     )));
                 }
                 Part::Text(text) if in_cookie && !is_cookie_value(&text) => {
-                    return Err(invalid(cookie_value_error(langs, template)));
+                    return Err(invalid(format!(
+                        "Cookie 的值里不能有空白、引号、逗号、分号和反斜杠：`{template}`"
+                    )));
                 }
                 Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
-                    return Err(invalid(control_chars_error(langs, template)));
+                    return Err(invalid(format!("请求头的值里不能有控制字符：`{template}`")));
                 }
                 _ => {}
             }
@@ -378,313 +313,15 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
             || FORBIDDEN_HEADERS.contains(&lower.as_str())
             || lower.starts_with("x-forwarded-")
         {
-            return Err(invalid(text(
-                langs,
-                "plugin-install-proxy-header-forbidden",
-                &[("name", name.into())],
-            )));
+            return Err(invalid(format!("不能代加请求头 {name}")));
         }
         check_template(template, false)?;
     }
     for (name, template) in &proxy.cookies {
         if !is_cookie_name(name) || name.to_ascii_lowercase().starts_with("wonton_") {
-            return Err(invalid(text(
-                langs,
-                "plugin-install-proxy-cookie-forbidden",
-                &[("name", name.into())],
-            )));
+            return Err(invalid(format!("不能代加 Cookie {name}")));
         }
         check_template(template, true)?;
     }
     Ok(())
-}
-
-fn cookie_value_error(langs: &Languages, template: &str) -> String {
-    text(
-        langs,
-        "plugin-install-proxy-cookie-chars",
-        &[("template", template.into())],
-    )
-}
-
-fn control_chars_error(langs: &Languages, template: &str) -> String {
-    text(
-        langs,
-        "plugin-install-proxy-header-control-chars",
-        &[("template", template.into())],
-    )
-}
-
-/// MCP 上游自己的协议头：rmcp 按会话和协商的版本设置它们，清单声明了也带不上去。
-const MCP_PROTOCOL_HEADERS: &[&str] = &["mcp-session-id", "mcp-protocol-version"];
-
-/// MCP 上游（`mcp.headers`）的请求头：名字和按插件密钥解析好的值。`Debug` 只打印名字，值不进日志。
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct McpHeaders(Vec<(HeaderName, HeaderValue)>);
-
-impl std::fmt::Debug for McpHeaders {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let names: Vec<&str> = self.0.iter().map(|(name, _)| name.as_str()).collect();
-        f.debug_tuple("McpHeaders").field(&names).finish()
-    }
-}
-
-impl McpHeaders {
-    /// rmcp 传输层的 `custom_headers`：发往上游的每个请求都带上。
-    pub fn custom_headers(&self) -> HashMap<HeaderName, HeaderValue> {
-        self.0.iter().cloned().collect()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn from_pairs(pairs: impl IntoIterator<Item = (&'static str, String)>) -> Self {
-        Self(
-            pairs
-                .into_iter()
-                .map(|(name, value)| {
-                    (
-                        HeaderName::from_static(name),
-                        HeaderValue::from_str(&value).expect("测试里的头值要合法"),
-                    )
-                })
-                .collect(),
-        )
-    }
-}
-
-fn mcp_invalid(message: String, langs: &Languages) -> ManifestError {
-    ManifestError::Invalid(text(
-        langs,
-        "plugin-install-proxy-mcp-prefix",
-        &[("error", message.into())],
-    ))
-}
-
-/// 清单校验：`mcp.headers` 的头名合法且不在禁止名单里（MCP 的协议头也算）；模板写法对，`{secret:…}` 引用
-/// 插件 `secrets` 里声明的项（generate 或 collect 都行，这里没有网关按值去密钥的需求，不限长度）；`{user}`
-/// 这类身份占位符不能用——MCP 调用不是主人的浏览器请求，上游认的是应用签发给核心的凭据。
-pub fn validate_mcp_headers(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
-    let Some(mcp) = &manifest.mcp else {
-        return Ok(());
-    };
-    for (name, template) in &mcp.headers {
-        let lower = name.to_ascii_lowercase();
-        if HeaderName::from_bytes(name.as_bytes()).is_err()
-            || FORBIDDEN_HEADERS.contains(&lower.as_str())
-            || lower.starts_with("x-forwarded-")
-            || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
-        {
-            return Err(mcp_invalid(
-                text(
-                    langs,
-                    "plugin-install-proxy-mcp-header-forbidden",
-                    &[("name", name.into())],
-                ),
-                langs,
-            ));
-        }
-        for part in parse(template, langs).map_err(|e| mcp_invalid(e, langs))? {
-            match part {
-                Part::Secret(secret) if !manifest.secrets.contains_key(&secret) => {
-                    return Err(mcp_invalid(
-                        text(
-                            langs,
-                            "plugin-install-proxy-mcp-secret-undeclared",
-                            &[("name", secret.into())],
-                        ),
-                        langs,
-                    ));
-                }
-                Part::User | Part::Name | Part::Email | Part::Role => {
-                    return Err(mcp_invalid(
-                        text(
-                            langs,
-                            "plugin-install-proxy-mcp-identity-placeholder",
-                            &[
-                                ("placeholder", part_name(&part).into()),
-                                ("template", template.into()),
-                            ],
-                        ),
-                        langs,
-                    ));
-                }
-                Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
-                    return Err(mcp_invalid(control_chars_error(langs, template), langs));
-                }
-                _ => {}
-            }
-        }
-    }
-    Ok(())
-}
-
-fn part_name(part: &Part) -> &'static str {
-    match part {
-        Part::User => "user",
-        Part::Name => "name",
-        Part::Email => "email",
-        Part::Role => "role",
-        Part::Text(_) | Part::Secret(_) => "",
-    }
-}
-
-/// 按插件密钥把 `mcp.headers` 的模板填好。`collect` 的值是文件原样：不是文本、含换行或控制字符（结尾的
-/// 换行也算，`echo` 写的文件就带）、或者密钥还没有值，都报出到头和密钥，不带值本身。
-pub fn resolve_mcp_headers(
-    manifest: &Manifest,
-    secrets: &Secrets,
-    langs: &Languages,
-) -> Result<McpHeaders, String> {
-    let Some(mcp) = &manifest.mcp else {
-        return Ok(McpHeaders::default());
-    };
-    let mut headers = Vec::new();
-    for (name, template) in &mcp.headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
-            text(
-                langs,
-                "plugin-install-proxy-mcp-bad-name",
-                &[("name", name.into()), ("error", e.to_string().into())],
-            )
-        })?;
-        let mut value = String::new();
-        for part in parse(template, langs)? {
-            match part {
-                Part::Text(text) => value.push_str(&text),
-                Part::Secret(secret) => match secrets.get(&secret) {
-                    Some(bytes) => {
-                        let value_text = String::from_utf8(bytes.clone()).map_err(|_| {
-                            text(
-                                langs,
-                                "plugin-install-proxy-secret-not-text",
-                                &[
-                                    ("name", name.as_str().into()),
-                                    ("secret", secret.as_str().into()),
-                                ],
-                            )
-                        })?;
-                        if HeaderValue::from_str(&value_text).is_err() {
-                            return Err(text(
-                                langs,
-                                "plugin-install-proxy-secret-newline",
-                                &[
-                                    ("name", name.as_str().into()),
-                                    ("secret", secret.as_str().into()),
-                                ],
-                            ));
-                        }
-                        value.push_str(&value_text);
-                    }
-                    None => {
-                        return Err(text(
-                            langs,
-                            "plugin-install-proxy-secret-no-value",
-                            &[
-                                ("secret", secret.as_str().into()),
-                                ("name", name.as_str().into()),
-                            ],
-                        ));
-                    }
-                },
-                // validate_mcp_headers 已经拒绝了身份占位符，到不了这里。
-                Part::User | Part::Name | Part::Email | Part::Role => {
-                    return Err(text(
-                        langs,
-                        "plugin-install-proxy-mcp-no-identity",
-                        &[("name", name.as_str().into())],
-                    ));
-                }
-            }
-        }
-        // 值不进错误消息：它可能是密钥。标记 sensitive，传输层的调试输出不打印它。
-        let mut value = HeaderValue::from_str(&value).map_err(|_| {
-            text(
-                langs,
-                "plugin-install-proxy-mcp-bad-value",
-                &[("name", name.as_str().into())],
-            )
-        })?;
-        value.set_sensitive(true);
-        headers.push((name, value));
-    }
-    Ok(McpHeaders(headers))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plugin::PluginPackage;
-
-    fn manifest(extra: &str) -> Manifest {
-        let source = format!(
-            "services:\n  web:\n    image: example/app\nx-wonton:\n  spec: '0.9'\n  \
-             id: app.test\n  version: 1.0.0\n  kind: app\n  title: {{en: Test}}\n  \
-             description: {{en: Test}}\n  permissions: []\n{extra}"
-        );
-        PluginPackage::parse(&source, &Languages::default())
-            .unwrap()
-            .manifest
-    }
-
-    #[test]
-    fn lan_templates_reject_roles_at_validation_and_rendering() {
-        let manifest = manifest("");
-        let owner = Owner {
-            username: "owner".into(),
-            display_name: "Owner".into(),
-            email: None,
-        };
-        let langs = Languages::default();
-        for template in ["{role}", "prefix-{role}-{user}"] {
-            assert!(check_template(&manifest, template, &langs).is_err());
-            assert!(fill_template(template, &owner, &BTreeMap::new(), &langs).is_err());
-        }
-        assert!(check_template(&manifest, "{user}", &langs).is_ok());
-        assert_eq!(
-            fill_template("{user}", &owner, &BTreeMap::new(), &langs).unwrap(),
-            "owner"
-        );
-    }
-
-    #[test]
-    fn unknown_roles_fail_even_for_secret_only_credentials() {
-        let manifest = manifest(
-            "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      \
-             headers: {X-Key: '{secret:key}'}\n      cookies: {key: '{secret:key}'}\n  \
-             secrets: {key: {generate: {bytes: 32}}}",
-        );
-        let langs = Languages::default();
-        let generated = BTreeMap::from([("key".into(), "0123456789abcdef0123456789abcdef".into())]);
-        let auth = ProxyAuth::resolve(&manifest, &generated, &langs)
-            .unwrap()
-            .unwrap();
-        let owner = Owner {
-            username: "future".into(),
-            display_name: "Future".into(),
-            email: None,
-        };
-        assert!(matches!(
-            auth.headers(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
-        assert!(matches!(
-            auth.cookies(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
-    }
-
-    #[test]
-    fn mcp_does_not_gain_a_request_role_context() {
-        let mut manifest = manifest(
-            "  mcp: {service: web, port: 80, transport: streamable-http, headers: {X-Key: value}}",
-        );
-        manifest
-            .mcp
-            .as_mut()
-            .unwrap()
-            .headers
-            .insert("X-Role".into(), "{role}".into());
-        let langs = Languages::default();
-        assert!(validate_mcp_headers(&manifest, &langs).is_err());
-        assert!(resolve_mcp_headers(&manifest, &Secrets::new(), &langs).is_err());
-    }
 }

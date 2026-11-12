@@ -49,19 +49,10 @@ fn expected_groups(host: &FakeHost) -> Value {
 
 /// 安装预览，和 App 的确认页看到的一样。
 async fn preview(m: &PluginManager, compose: &str) -> InstallPreview {
-    let package = PluginPackage::parse(compose, &super::langs()).unwrap();
-    m.preview_install(&package, &zh()).await.unwrap()
-}
-
-/// 测试里的语言和期望值都走同一个目录。
-fn zh() -> Languages {
-    Languages::from_header(Some("zh-Hans"))
-}
-
-fn say(id: &str, args: &[(&str, &str)]) -> String {
-    let lang = crate::l10n::lang(&zh());
-    let args: Vec<(&str, wonton_l10n::Arg)> = args.iter().map(|(k, v)| (*k, (*v).into())).collect();
-    crate::l10n::CATALOG.format(lang, id, &args)
+    let package = PluginPackage::parse(compose).unwrap();
+    m.preview_install(&package, &Languages::default())
+        .await
+        .unwrap()
 }
 
 /// 预览里关于显卡的那一行。
@@ -88,38 +79,15 @@ async fn amd_hosts_hand_kfd_dri_and_their_groups_to_the_declared_services_only()
     let preview = preview(&m, &compose).await;
     assert_eq!(preview.blocked, None);
     let notice = gpu_notice(&preview);
-    // 预览那行的 describe 参数和 gpu.rs 单元测试同一来源（目录格式化），这里按同样的数据拼出来。
-    let gid = std::fs::metadata(host.dev().join("kfd")).unwrap().gid();
-    let groups: Vec<String> = if gid == 0 {
-        Vec::new()
-    } else {
-        vec![gid.to_string()]
-    };
-    let group_refs: Vec<&str> = groups.iter().map(String::as_str).collect();
-    let describe = say(
-        "plugin-install-gpu-describe-vendors",
-        &[
-            ("vendors", "AMD"),
-            (
-                "devices",
-                &crate::l10n::list(&zh(), &["/dev/kfd", "/dev/dri"]),
-            ),
-            ("groups", &crate::l10n::list(&zh(), &group_refs)),
-        ],
+    assert!(
+        notice
+            .text
+            .starts_with("显卡交给服务 comfy：AMD 显卡：/dev/kfd、/dev/dri"),
+        "{notice:?}"
     );
-    let expected = say(
-        "plugin-install-gpu-preview-granted",
-        &[
-            ("services", &crate::l10n::list(&zh(), &["comfy"])),
-            ("describe", &describe),
-        ],
-    );
-    assert_eq!(notice.text, expected);
     assert!(notice.emphasis, "高权限的说明要醒目");
 
-    m.install(&compose, &granted(), super::langs())
-        .await
-        .unwrap();
+    m.install(&compose, &granted()).await.unwrap();
     let comfy = host_config(&docker, "comfy");
     let device = |path: &str| json!({"PathOnHost": path, "PathInContainer": path, "CgroupPermissions": "rwm"});
     assert_eq!(
@@ -144,9 +112,7 @@ async fn nvidia_hosts_get_all_gpus_through_the_container_toolkit() {
     let host = FakeHost::nvidia();
     let (docker, m, _dir) = on_host(&host).await;
     docker.set_runtimes(&["runc", "nvidia"]);
-    m.install(&gpu_plugin(""), &granted(), super::langs())
-        .await
-        .unwrap();
+    m.install(&gpu_plugin(""), &granted()).await.unwrap();
     let comfy = host_config(&docker, "comfy");
     assert_eq!(
         comfy["DeviceRequests"],
@@ -164,44 +130,16 @@ async fn required_plugins_do_not_install_without_a_usable_gpu_and_say_which_part
     let compose = gpu_plugin("");
     let preview = preview(&m, &compose).await;
     assert!(
-        preview.blocked.as_deref().is_some_and(|b| {
-            b.contains(&say(
-                "plugin-install-host-gpu-missing",
-                &[("card", &say("plugin-install-req-card-generic", &[]))],
-            ))
-        }),
+        preview
+            .blocked
+            .as_deref()
+            .is_some_and(|b| b.contains("这台主机没有显卡")),
         "没写 requirements.gpu 时按 required，这台主机上装不了：{preview:?}"
     );
-    // gpu_fit 的同一个原因既是 blocked 也拼进说明，用 blocked 的值按目录拼出整句对期望。
-    let reason = preview
-        .blocked
-        .as_deref()
-        .expect("required 且本机没有显卡要记 blocked");
-    assert_eq!(
-        gpu_notice(&preview).text,
-        say(
-            "plugin-install-gpu-preview-required",
-            &[
-                ("services", &crate::l10n::list(&zh(), &["comfy"])),
-                ("reason", reason),
-            ]
-        )
-    );
-    let err = m
-        .install(&compose, &granted(), super::langs())
-        .await
-        .unwrap_err();
+    assert!(gpu_notice(&preview).text.contains("需要显卡"));
+    let err = m.install(&compose, &granted()).await.unwrap_err();
     assert_eq!(err.kind(), "gpu_unavailable", "{err}");
-    assert!(
-        err.to_string().contains(&super::message(
-            "plugin-install-host-gpu-missing",
-            &[(
-                "card",
-                &super::message("plugin-install-req-card-generic", &[])
-            )]
-        )),
-        "{err}"
-    );
+    assert!(err.to_string().contains("这台主机没有显卡"), "{err}");
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
     assert!(docker.networks().is_empty(), "{:?}", docker.networks());
     assert!(m.list().is_empty(), "装不上的插件不能留在插件表里");
@@ -209,26 +147,16 @@ async fn required_plugins_do_not_install_without_a_usable_gpu_and_say_which_part
     // 有 NVIDIA 显卡和驱动，但 Docker 没有 nvidia 运行时（没装 NVIDIA Container Toolkit）。
     let host = FakeHost::nvidia();
     let (_docker, m, _dir) = on_host(&host).await;
-    let err = m
-        .install(&compose, &granted(), super::langs())
-        .await
-        .unwrap_err();
+    let err = m.install(&compose, &granted()).await.unwrap_err();
     assert_eq!(err.kind(), "gpu_unavailable", "{err}");
-    assert!(
-        err.to_string()
-            .contains(&super::message("plugin-install-facts-runtime-missing", &[])),
-        "{err}"
-    );
+    assert!(err.to_string().contains("nvidia 运行时"), "{err}");
 
     // 核心在容器里，compose 没有挂载宿主的 /dev：不拿容器自己的 /dev 当宿主的。
     let host = FakeHost::amd();
     let (_docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_container(engine, &dir).with_host(host.paths_without_dev());
-    let err = m
-        .install(&compose, &granted(), super::langs())
-        .await
-        .unwrap_err();
+    let err = m.install(&compose, &granted()).await.unwrap_err();
     assert_eq!(err.kind(), "gpu_unavailable", "{err}");
     assert!(err.to_string().contains("WONTON_HOST_DEV"), "{err}");
 }
@@ -240,21 +168,8 @@ async fn optional_plugins_install_without_devices_when_there_is_no_gpu() {
     let compose = gpu_plugin("  requirements: {gpu: {need: optional}}");
     let preview = preview(&m, &compose).await;
     assert_eq!(preview.blocked, None, "optional 的照常装");
-    assert!(
-        gpu_notice(&preview).text.contains(
-            say(
-                "plugin-install-gpu-preview-missing",
-                &[("problem", ""), ("services", "")],
-            )
-            .split('（')
-            .next()
-            .unwrap(),
-        ),
-        "optional 的说明里要点出本机没有符合的显卡"
-    );
-    m.install(&compose, &granted(), super::langs())
-        .await
-        .unwrap();
+    assert!(gpu_notice(&preview).text.contains("不带显卡运行"));
+    m.install(&compose, &granted()).await.unwrap();
     let comfy = host_config(&docker, "comfy");
     assert_eq!(comfy["Devices"], Value::Null);
     assert_eq!(comfy["GroupAdd"], Value::Null);
@@ -264,10 +179,10 @@ async fn optional_plugins_install_without_devices_when_there_is_no_gpu() {
 #[test]
 fn gpu_services_permission_and_requirement_are_declared_together() {
     let parse = |services: &str, manifest: &str| {
-        PluginPackage::parse(
-            &package(&format!("  web:\n    image: nginx\n{services}"), manifest),
-            &super::langs(),
-        )
+        PluginPackage::parse(&package(
+            &format!("  web:\n    image: nginx\n{services}"),
+            manifest,
+        ))
     };
     let cases = [
         ("  gpu: {services: [web]}\n  permissions: []", "devices.gpu"),
@@ -278,11 +193,11 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
         ),
         (
             "  gpu: {services: [web, web]}\n  permissions: [devices.gpu]",
-            "gpu.services needs at least one entry and no duplicates",
+            "重复",
         ),
         (
             "  gpu: {services: []}\n  permissions: [devices.gpu]",
-            "gpu.services needs at least one entry and no duplicates",
+            "至少一项",
         ),
         (
             "  gpu: {services: [nope]}\n  permissions: [devices.gpu]",
@@ -294,14 +209,8 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
         assert!(err.contains(needle), "{manifest}: {err}");
     }
     let package = parse("    devices: ['/dev/kfd:/dev/kfd']", "  permissions: []").unwrap();
-    let err = dry_run(&package, &super::langs()).unwrap_err().to_string();
-    assert!(
-        err.contains(&super::message(
-            "plugin-install-priv-device-not-allowed",
-            &[("source", "/dev/kfd")]
-        )),
-        "{err}"
-    );
+    let err = dry_run(&package).unwrap_err().to_string();
+    assert!(err.contains("设备") || err.contains("固定"), "{err}");
     let ok = parse("", "  gpu: {services: [web]}\n  permissions: [devices.gpu]").unwrap();
     assert_eq!(requirement(&ok.manifest), Some(GpuNeed::Required));
     let optional = parse(
@@ -316,12 +225,12 @@ fn gpu_services_permission_and_requirement_are_declared_together() {
 
 #[test]
 fn example_gpu_plugins_are_valid() {
-    let pkg = PluginPackage::parse(include_str!("examples/gpu.yaml"), &super::langs()).unwrap();
+    let pkg = PluginPackage::parse(include_str!("examples/gpu.yaml")).unwrap();
     assert_eq!(pkg.manifest.gpu.as_ref().unwrap().services, ["comfyui"]);
-    dry_run(&pkg, &super::langs()).unwrap();
+    dry_run(&pkg).unwrap();
 
     let check = example("gpu-check");
     assert_eq!(check.manifest.id.as_str(), "app.wonton.gpu-check");
     assert_eq!(requirement(&check.manifest), Some(GpuNeed::Required));
-    dry_run(&check, &super::langs()).unwrap();
+    dry_run(&check).unwrap();
 }

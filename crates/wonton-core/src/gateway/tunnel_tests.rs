@@ -2,12 +2,12 @@
 //! 网关。插件上游和 Hydra 管理接口的替身与 `tests.rs` 共用。
 
 use std::net::{Ipv4Addr, SocketAddr};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use crate::plugin::languages::Languages;
 use axum::Router;
 use axum::body::Body;
 use axum::extract::ConnectInfo;
@@ -16,20 +16,20 @@ use base64::engine::general_purpose::STANDARD;
 use http_body_util::BodyExt;
 use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
-use iroh::SecretKey;
+use iroh::endpoint::presets;
+use iroh::{Endpoint, SecretKey};
 use serde_json::Value;
 use tower::ServiceExt;
-
 use wonton_tunnel::{
     LocalProxy, ProxyAccess, ProxyCredential, TunnelClient, TunnelError, TunnelStatus,
 };
 
-use super::fakes::{echo_upstream, fake_hydra, loopback_endpoint, loopback_tunnel_with};
 use super::isolation_tests::{OTHER, browser_cases};
 use super::proxy_sso_tests::{KEY, VAULT_HOST, leaked, received, register_vault};
-use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, owner};
+use super::tests::{CORE, PLUGIN, TOKEN, WHOAMI, echo_upstream, fake_hydra, owner};
 use super::{Gateway, router};
 use crate::config::{OidcProviderConfig, PublicUrls};
+use crate::device::Devices;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::oidc::Hydra;
@@ -44,11 +44,31 @@ use crate::tunnel::{Tunnel, TunnelEntry};
 /// 浏览器看到的端口：经隧道时不监听，只用来拼地址。
 const PORT: u16 = 18480;
 
+/// 只走回环地址的 iroh endpoint：不连中继，不做地址发现。
+pub(super) async fn loopback_endpoint(key: SecretKey) -> Endpoint {
+    Endpoint::builder(presets::Minimal)
+        .secret_key(key)
+        .clear_ip_transports()
+        .bind_addr((Ipv4Addr::LOCALHOST, 0))
+        .unwrap()
+        .bind()
+        .await
+        .unwrap()
+}
+
+/// 测试用的隧道：空的设备登记表，加一个只走回环地址的 endpoint。
+pub(super) async fn loopback_tunnel(dir: &Path) -> Tunnel {
+    Tunnel::new(
+        Arc::new(Devices::open(dir.join("devices.json")).unwrap()),
+        loopback_endpoint(SecretKey::generate()).await,
+        0,
+    )
+}
+
 pub(super) struct Home {
     pub(super) app: Router,
-    pub(super) plugins: Arc<PluginManager>,
+    plugins: Arc<PluginManager>,
     pub(super) tunnel: Tunnel,
-    pub(super) members: Arc<crate::members::Members>,
     hits: Arc<AtomicUsize>,
     _entry: TunnelEntry,
     _dir: tempfile::TempDir,
@@ -58,60 +78,8 @@ impl Home {
     pub(super) async fn start(hydra_admin: Option<SocketAddr>) -> Self {
         Self::start_with(hydra_admin, None).await
     }
-    pub(super) async fn start_lan(addresses: &[&str]) -> Self {
-        let lan: std::collections::BTreeSet<std::net::IpAddr> =
-            addresses.iter().map(|a| a.parse().unwrap()).collect();
-        Self::start_full(None, None, lan, None, None).await
-    }
 
-    pub(super) async fn start_with(
-        hydra_admin: Option<SocketAddr>,
-        matrix: Option<Arc<Matrix>>,
-    ) -> Self {
-        Self::start_full(
-            hydra_admin,
-            matrix,
-            std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
-            None,
-            None,
-        )
-        .await
-    }
-    pub(super) async fn start_with_friends(
-        friends: Arc<crate::friends::Friends>,
-        blocks: Option<Arc<crate::matrix::FederationBlocks>>,
-    ) -> Self {
-        Self::start_full(
-            None,
-            None,
-            std::collections::BTreeSet::from(["192.168.1.2".parse().unwrap()]),
-            Some(friends),
-            blocks,
-        )
-        .await
-    }
-    pub(super) fn owner_device(&self) -> iroh::EndpointId {
-        let id = SecretKey::generate().public();
-        self.tunnel.devices.add(id, None).unwrap();
-        id
-    }
-
-    pub(super) fn member_device(&self, username: &str) -> iroh::EndpointId {
-        let id = SecretKey::generate().public();
-        self.tunnel
-            .devices
-            .add_if(id, None, Some(username.to_owned()), |_| true)
-            .unwrap();
-        id
-    }
-
-    async fn start_full(
-        hydra_admin: Option<SocketAddr>,
-        matrix: Option<Arc<Matrix>>,
-        lan: std::collections::BTreeSet<std::net::IpAddr>,
-        friends: Option<Arc<crate::friends::Friends>>,
-        blocks: Option<Arc<crate::matrix::FederationBlocks>>,
-    ) -> Self {
+    async fn start_with(hydra_admin: Option<SocketAddr>, matrix: Option<Arc<Matrix>>) -> Self {
         let hits = Arc::new(AtomicUsize::new(0));
         let upstream = echo_upstream(hits.clone()).await;
         let public = PublicUrls {
@@ -153,30 +121,25 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        let manifest =
-            PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
+        let manifest = PluginPackage::manifest_of(WHOAMI).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
-        let (tunnel, members) = loopback_tunnel_with(dir.path(), lan).await;
+        let tunnel = loopback_tunnel(dir.path()).await;
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
-            members.clone(),
             manager.clone(),
             hydra,
             http,
             tunnel.clone(),
         )
-        .with_matrix(matrix)
-        .with_friends(friends)
-        .with_federation_blocks(blocks);
+        .with_matrix(matrix);
         let app = router(Arc::new(gateway));
         let entry = TunnelEntry::spawn(&tunnel, app.clone());
         Self {
             app,
             plugins: manager,
             tunnel,
-            members,
             hits,
             _entry: entry,
             _dir: dir,
@@ -239,7 +202,7 @@ impl Phone {
     }
 
     /// 等到隧道客户端看到服务端以“未授权”断开连接。
-    pub(super) async fn wait_until_rejected(&self) {
+    async fn wait_until_rejected(&self) {
         let mut status = self.client.watch_status();
         let rejected = TunnelStatus::Disconnected(TunnelError::Unauthorized);
         tokio::time::timeout(
@@ -290,7 +253,7 @@ impl Phone {
     }
 
     /// 经本地代理发一个请求，`Host` 原样带到网关。每个请求一条新连接，测试之间不受连接池影响。
-    pub(super) async fn send(
+    async fn send(
         &self,
         method: Method,
         host: &str,
@@ -330,7 +293,7 @@ impl Phone {
     }
 }
 
-pub(super) fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).map(|v| v.to_str().unwrap())
 }
 
@@ -457,26 +420,15 @@ async fn device_identity_signs_in_to_oidc_without_a_core_session() {
     );
 }
 
-/// 设备管理按人（ADR-0045）：主人的设备能列所有设备，登记设备仍只认主人令牌；家人的设备只能看到自己的
-/// （家人一侧在 family_tests 里）。
 #[tokio::test]
-async fn the_owners_device_lists_devices_but_cannot_add_without_the_token() {
+async fn device_management_still_requires_the_owner_token() {
     let home = Home::start(None).await;
     let device = SecretKey::generate();
     home.register(&device).await;
     let phone = Phone::start(device, &home).await;
 
-    let (status, _, _) = phone.get(CORE, "/_wonton/api/devices").await;
-    assert_eq!(status, StatusCode::OK, "主人的设备看得到设备列表");
-    let (status, headers, _) = phone
-        .send(
-            Method::POST,
-            CORE,
-            "/_wonton/api/devices",
-            &[("content-type", "application/json")],
-        )
-        .await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED, "登记设备仍只认主人令牌");
+    let (status, headers, _) = phone.get(CORE, "/_wonton/api/devices").await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
 }
 
@@ -568,12 +520,10 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
         }
     }
 
-    // 设备列表认主人的设备（ADR-0045）；家人的设备会拿到 403 permission_required（family_tests）。
-    // 局域网设置在这里读不了：Home 的引擎连不上 Docker，LAN 探测如实报 503，鉴权在 family_tests 的表里。
-    let (status, _, _) = phone
-        .send(Method::GET, CORE, "/_wonton/api/devices", &[])
-        .await;
-    assert_eq!(status, StatusCode::OK, "主人的设备能读");
+    for route in ["/_wonton/api/devices", "/_wonton/api/lan"] {
+        let (status, _, _) = phone.send(Method::GET, CORE, route, &[]).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{route} 只给主人");
+    }
     // App 连上后跟着服务器的地址走，插件网页不能借设备身份探测。
     let route = "/_wonton/api/tunnel";
     let (status, _, text) = phone.send(Method::GET, CORE, route, &[]).await;
@@ -589,8 +539,6 @@ async fn paired_devices_manage_plugins_but_web_pages_on_them_cannot() {
 #[tokio::test]
 async fn tunnel_api_reports_the_server_address_to_the_owner() {
     let home = Home::start(None).await;
-    let announced = SocketAddr::new("192.168.1.2".parse().unwrap(), home.tunnel.port);
-    home.tunnel.endpoint.add_external_addr(announced).await;
     let request = hyper::Request::builder()
         .uri("/_wonton/api/tunnel")
         .header(header::HOST, format!("{CORE}:{PORT}"))
@@ -603,10 +551,9 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
     let info: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(info["endpoint_id"], home.tunnel.endpoint.id().to_string());
     assert_eq!(info["base_domain"], CORE);
-    assert_eq!(info["direct_addrs"][0], announced.to_string(), "{info}");
     let bound = home.tunnel.endpoint.bound_sockets()[0].to_string();
     assert!(
-        !info["direct_addrs"]
+        info["direct_addrs"]
             .as_array()
             .unwrap()
             .contains(&Value::String(bound)),
@@ -615,7 +562,7 @@ async fn tunnel_api_reports_the_server_address_to_the_owner() {
 }
 
 /// 局域网（没有隧道身份）的请求，在进程内直接交给网关。
-pub(super) async fn lan(
+async fn lan(
     home: &Home,
     method: Method,
     host: &str,
@@ -756,19 +703,13 @@ async fn paired_devices_get_a_login_token_and_reach_the_client_api() {
 }
 
 /// 插件网络里的容器发来的请求：网关看到的来源地址是 `from`。
-/// 和 [`from_plugin`] 一样，但不带 Authorization：matrix-sdk 恢复会话前取的 `versions` 就是这种请求。
-pub(super) async fn from_plugin_without_token(
-    home: &Home,
-    from: &str,
-    path: &str,
-) -> (StatusCode, HeaderMap, Value) {
-    let request = hyper::Request::builder()
+async fn from_plugin(home: &Home, from: &str, path: &str) -> (StatusCode, HeaderMap, Value) {
+    let mut request = hyper::Request::builder()
         .uri(path)
         .header(header::HOST, "matrix.wonton.internal:8080")
         .body(Body::empty())
         .unwrap();
     let addr: SocketAddr = from.parse().unwrap();
-    let mut request = request;
     request.extensions_mut().insert(ConnectInfo(addr));
     let response = home.app.clone().oneshot(request).await.unwrap();
     let status = response.status();
@@ -778,23 +719,55 @@ pub(super) async fn from_plugin_without_token(
     (status, headers, body)
 }
 
-pub(super) async fn from_plugin(
-    home: &Home,
-    from: &str,
-    path: &str,
-) -> (StatusCode, HeaderMap, Value) {
-    let mut request = hyper::Request::builder()
-        .uri(path)
-        .header(header::HOST, "matrix.wonton.internal:8080")
-        .header(header::AUTHORIZATION, "Bearer bot-token")
-        .body(Body::empty())
+#[tokio::test]
+async fn bots_reach_matrix_only_from_networks_of_plugins_with_matrix_bot() {
+    let (_fake, config) = crate::matrix::fake::start().await;
+    let state = tempfile::tempdir().unwrap();
+    let matrix = Matrix::connect(&config, state.path(), HttpClient::new())
+        .await
         .unwrap();
-    let addr: SocketAddr = from.parse().unwrap();
-    request.extensions_mut().insert(ConnectInfo(addr));
-    let response = home.app.clone().oneshot(request).await.unwrap();
-    let status = response.status();
-    let headers = response.headers().clone();
-    let bytes = response.into_body().collect().await.unwrap().to_bytes();
-    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    (status, headers, body)
+    let home = Home::start_with(None, Some(Arc::new(matrix))).await;
+    let bot = vec!["matrix.bot".parse().unwrap()];
+    home.plugins
+        .register_source_for_test("app.echo", "172.30.1.0/24", bot);
+    home.plugins
+        .register_source_for_test("app.web", "172.30.2.0/24", Vec::new());
+
+    let (status, _, body) =
+        from_plugin(&home, "172.30.1.5:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(body["versions"].is_array());
+    // 规则同 matrix.<base>：只有客户端接口，写法可疑的路径先挡住。
+    let admin = "/_synapse/admin/v1/register";
+    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", admin).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let sneaky = "/_matrix/client/../../_synapse/admin/v1/register";
+    let (status, _, _) = from_plugin(&home, "172.30.1.5:40000", sneaky).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // 没申请 matrix.bot 的插件、插件网络以外的来源都不行。
+    let (status, headers, body) =
+        from_plugin(&home, "172.30.2.5:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["errcode"], "M_FORBIDDEN");
+    assert_eq!(
+        header(&headers, "x-wonton-error"),
+        Some("permission_denied")
+    );
+    let (status, headers, _) =
+        from_plugin(&home, "192.168.1.20:40000", "/_matrix/client/versions").await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(header(&headers, "x-wonton-error"), Some("unauthenticated"));
+    let (status, _, _) = lan(
+        &home,
+        Method::GET,
+        "matrix.wonton.internal",
+        "/_matrix/client/versions",
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "没有来源地址（如经隧道）也不行"
+    );
 }

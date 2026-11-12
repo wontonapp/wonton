@@ -1,0 +1,22 @@
+
+running 1 test
+test stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet ... FAILED
+
+failures:
+
+---- stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet stdout ----
+
+thread 'stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet' (1805659) panicked at crates/wonton-tunnel/tests/tunnel/stall.rs:356:5:
+assertion `left == right` failed
+  left: 1.5s
+ right: 8s
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+2026-11-06T19:51:33.804959Z ERROR iroh::socket: Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+2026-11-06T19:51:33.806987Z ERROR iroh::socket: Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+
+
+failures:
+    stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 4.10s
+

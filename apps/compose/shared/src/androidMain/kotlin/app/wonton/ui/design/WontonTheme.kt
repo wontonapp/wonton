@@ -34,15 +34,14 @@ import app.wonton.ui.design.generated.WontonTypography
 
 fun Rgb.toColor(): Color = Color(red.toInt(), green.toInt(), blue.toInt())
 
-private val LocalWontonColors = compositionLocalOf<ThemeColors> {
-    error("No color tokens: WontonTheme provider is missing")
-}
-private val LocalWontonTypography = compositionLocalOf<WontonTypography> {
-    error("No typography tokens: WontonTheme provider is missing")
-}
+private val LocalWontonColors = compositionLocalOf<ThemeColors> { error("WontonTheme 之外没有颜色令牌") }
+private val LocalWontonTypography = compositionLocalOf<WontonTypography> { error("WontonTheme 之外没有字号令牌") }
 private val LocalWontonFontScale = compositionLocalOf<Float?> { null }
 private val LocalWontonDark = compositionLocalOf { false }
 
+/** `enableEdgeToEdge` 默认的导航栏底色：三键导航时要有底才看得清按钮。 */
+internal val LIGHT_NAVIGATION_SCRIM = AndroidColor.argb(0xE6, 0xFF, 0xFF, 0xFF)
+internal val DARK_NAVIGATION_SCRIM = AndroidColor.argb(0x80, 0x1B, 0x1B, 0x1B)
 /** ADR-0026 的令牌，和 SwiftUI 的 `WontonTheme` 同名。 */
 object WontonTheme {
     val spacing = WontonSpacing
@@ -112,7 +111,7 @@ private fun SystemBarsFollow(dark: Boolean) {
     DisposableEffect(activity, dark) {
         activity?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
-            navigationBarStyle = SystemBarStyle.auto(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT) { dark },
+            navigationBarStyle = SystemBarStyle.auto(LIGHT_NAVIGATION_SCRIM, DARK_NAVIGATION_SCRIM) { dark },
         )
         onDispose {}
     }

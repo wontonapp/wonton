@@ -3,18 +3,15 @@ import Foundation
 import WontonClient
 
 struct AskAgentIntent: AppIntent {
-    static let title: LocalizedStringResource = "Ask a Bot"
-    static let description = IntentDescription("Sends a sentence to your default agent and opens the direct chat.")
+    static let title: LocalizedStringResource = "问 Bot"
+    static let description = IntentDescription("把一句话发给默认 Agent，并打开私聊。")
     static let openAppWhenRun = true
 
-    @Parameter(
-        title: LocalizedStringResource("Message"),
-        requestValueDialog: IntentDialog("What do you want to ask the bot?")
-    )
+    @Parameter(title: "想问的话", requestValueDialog: "你想问 Bot 什么？")
     var text: String
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Ask a bot: \(\.$text)")
+        Summary("问 Bot：\(\.$text)")
     }
 
     @MainActor
@@ -26,21 +23,21 @@ struct AskAgentIntent: AppIntent {
 }
 
 struct OpenPageIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open Page"
-    static let description = IntentDescription("Opens a page in Wonton.")
+    static let title: LocalizedStringResource = "打开页面"
+    static let description = IntentDescription("打开云吞里的页面。")
     static let openAppWhenRun = true
 
-    @Parameter(title: LocalizedStringResource("Page"))
+    @Parameter(title: "页面")
     var page: WontonPageEntity
 
     static var parameterSummary: some ParameterSummary {
-        Summary("Open \(\.$page)")
+        Summary("打开 \(\.$page)")
     }
 
     @MainActor
     func perform() async throws -> some IntentResult {
         guard let link = parseAppLink(url: page.id), case .tab = link else {
-            throw IntentProblem(CoreError.InvalidInput(reason: String(localized: .shortcutsInvalidPageLink)))
+            throw IntentProblem(CoreError.InvalidInput(reason: "这个页面链接无效，请重新选择页面。"))
         }
         try shared().request { try await $0.open(link) }
         return .result()
@@ -48,8 +45,8 @@ struct OpenPageIntent: AppIntent {
 }
 
 struct NewChatIntent: AppIntent {
-    static let title: LocalizedStringResource = "New Chat"
-    static let description = IntentDescription("Opens Wonton's start-a-chat page.")
+    static let title: LocalizedStringResource = "新建会话"
+    static let description = IntentDescription("打开云吞的发起私聊页面。")
     static let openAppWhenRun = true
 
     @MainActor
@@ -75,13 +72,11 @@ struct IntentProblem: LocalizedError, CustomLocalizedStringResourceConvertible {
     init(_ error: any Error) {
         let problem = error.problem
         message = (error as? IntentProblem)?.message
-            ?? [problem.title, problem.nextStep].compactMap { $0 }
-            .joined(separator: String(localized: .commonSentenceSeparator))
+            ?? [problem.title, problem.nextStep].compactMap { $0 }.joined(separator: "。")
     }
 
     init(problem: Problem) {
-        message = [problem.title, problem.nextStep].compactMap { $0 }
-            .joined(separator: String(localized: .commonSentenceSeparator))
+        message = [problem.title, problem.nextStep].compactMap { $0 }.joined(separator: "。")
     }
 
     var errorDescription: String? { message }

@@ -42,7 +42,7 @@ final class FilesModel {
                 room: room
             ))
         } catch {
-            reject(String(localized: .fileOpenFailed(error.localizedDescription)))
+            reject("选的文件打不开：\(error.localizedDescription)")
         }
     }
 

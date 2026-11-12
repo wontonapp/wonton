@@ -3,10 +3,10 @@
 use std::path::Path;
 use std::time::Duration;
 
-use crate::files_support::{Served, World, id, source_bytes};
+use crate::files_support::{World, id, source_bytes};
 use wonton_client::{
     Action, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure, FileInfo,
-    FileProblem, FileSource, TransferAction, TransferState, UploadSource,
+    FileProblem, TransferAction, TransferState, UploadSource,
 };
 
 const MIB: usize = 1024 * 1024;
@@ -43,7 +43,7 @@ fn open_at(path: &Path) -> FileCardAction {
 /// 音视频默认边下边播，旁边能下载后用其他 App 打开。
 #[tokio::test]
 async fn audio_and_video_play_and_can_open_elsewhere() {
-    let mut world = World::start().await;
+    let world = World::start().await;
     let file = world
         .core
         .lock()
@@ -63,28 +63,8 @@ async fn audio_and_video_play_and_can_open_elsewhere() {
     assert_eq!(during.tap, FileCardAction::Play, "下载的时候也能放");
     assert_eq!(during.open_elsewhere, Some(FileCardAction::Wait));
     assert!(during.download.is_some());
-
-    // 下完了就用手上这份：不用走隧道，走中继也不用等。半截的接着下（假的核心停住不发了，重开手机走续传）。
-    let part = world.downloaded(&file, "a.mp4.part");
-    world
-        .wait_until(|| part.metadata().is_ok_and(|meta| meta.len() == MIB as u64))
-        .await;
-    world.restart_phone().await;
-    let done = world
-        .wait_transfer(|t| t.file.as_ref() == Some(&file) && t.state == TransferState::Done)
-        .await;
-    assert_eq!(
-        std::fs::read(world.downloaded(&file, "a.mp4")).unwrap(),
-        source_bytes(4 * MIB),
-        "接上的半截和先传的拼成完整的"
-    );
-    let after = actions_of(&world, &file).await;
-    assert_eq!(after.tap, open_at(&world.downloaded(&file, "a.mp4")));
-    assert_eq!(after.open_elsewhere, None, "点卡片就是打开，不用另给按钮");
-    assert_eq!(after.download, Some(done));
 }
 
-/// 不是音视频的文件：下载后交给系统打开。
 #[tokio::test]
 async fn other_files_download_and_then_open() {
     let world = World::start().await;
@@ -98,176 +78,12 @@ async fn other_files_download_and_then_open() {
     let after = actions_of(&world, &file).await;
     assert_eq!(after.tap, open_at(&world.downloaded(&file, "a.pdf")));
     assert_eq!(after.download, Some(done));
-}
 
-/// 文件被系统清掉了，就要重新下，不能打开一个不存在的路径。
-#[tokio::test]
-async fn a_downloaded_file_missing_from_disk_is_offered_again() {
-    let world = World::start().await;
-    let file = world.core.lock().serve("a.pdf", b"abc", "v1");
-    download(&world, &file).await;
-
+    // 文件被系统清掉了，就要重新下，不能打开一个不存在的路径。
     std::fs::remove_file(world.downloaded(&file, "a.pdf")).unwrap();
     assert_eq!(
         actions_of(&world, &file).await.tap,
         FileCardAction::Download
-    );
-}
-
-/// 没连上家里的服务器，手机上有这份文件就照常给卡片：打开、分享都用不上网。选过“只清记录”的也算。
-#[tokio::test]
-async fn a_downloaded_file_still_has_a_card_without_the_connection() {
-    let mut world = World::start().await;
-    let kept = world.core.lock().serve("kept.pdf", b"abcd", "v1");
-    download(&world, &kept).await;
-    let cleared = world.core.lock().serve("cleared.pdf", b"abc", "v1");
-    let record = download(&world, &cleared).await;
-    world
-        .phone()
-        .dispatch(Action::DismissTransfer {
-            id: record.id,
-            delete_local_file: false,
-        })
-        .unwrap();
-
-    // 家里的服务器没了，App 重开：连不上，手机上的文件还在。
-    world.stop_phone();
-    world.stop_server();
-    world.start_phone_without_home().await;
-    assert_eq!(world.phone().home().proxy, None);
-    for (file, name, source) in [
-        (&kept, "kept.pdf", FileSource::Device),
-        // 记录清掉了：名字和大小从下载目录里的文件来，来源问不到了。
-        (&cleared, "cleared.pdf", FileSource::Unknown),
-    ] {
-        let card = world.phone().file_card(file.clone()).await;
-        let FileCard::Ready { info } = card else {
-            panic!("连不上也该有卡片：{card:?}");
-        };
-        assert_eq!(info.name, name);
-        assert_eq!(info.source, source);
-        let actions = world.phone().file_card_actions(info);
-        assert_eq!(actions.tap, open_at(&world.downloaded(file, name)));
-        assert_eq!(actions.open_elsewhere, None);
-    }
-}
-
-/// 服务器上的文件改过后，手机上这份就是旧的：不再直接打开，给重新下载；重下完打开的就是新的。
-#[tokio::test]
-async fn a_downloaded_file_that_changed_at_home_is_downloaded_again() {
-    let mut world = World::start().await;
-    let file = world.core.lock().serve("a.txt", b"old-content", "v1");
-    download(&world, &file).await;
-    world
-        .core
-        .lock()
-        .files
-        .insert(file.to_string(), Served::new("a.txt", b"new-content", "v2"));
-
-    // 重启后卡片重新问一遍：没有缓存的旧答案。
-    world.restart_phone().await;
-    assert_eq!(
-        actions_of(&world, &file).await.tap,
-        FileCardAction::Download,
-        "打开是旧内容，改给重新下载"
-    );
-
-    world
-        .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
-        .unwrap();
-    world
-        .wait_transfer(|t| t.file.as_ref() == Some(&file) && t.state == TransferState::Done)
-        .await;
-    assert_eq!(
-        actions_of(&world, &file).await.tap,
-        open_at(&world.downloaded(&file, "a.txt"))
-    );
-    assert_eq!(
-        std::fs::read(world.downloaded(&file, "a.txt")).unwrap(),
-        b"new-content"
-    );
-}
-
-/// 清理、取消、改名后重下，`downloads/<编号>/` 里不留没人认领的东西。
-#[tokio::test]
-async fn cleaning_up_a_download_leaves_no_folder_behind() {
-    let world = World::start().await;
-    let folder = |file: &wonton_client::FileId| {
-        world
-            .downloaded(file, "a.mov")
-            .parent()
-            .unwrap()
-            .to_path_buf()
-    };
-
-    // 取消下载：半截的连目录一起删。
-    let file = world
-        .core
-        .lock()
-        .serve("a.mov", &source_bytes(4 * MIB), "v1");
-    world.core.lock().hold_download_after = Some(MIB);
-    world
-        .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
-        .unwrap();
-    let part = world.downloaded(&file, "a.mov.part");
-    world
-        .wait_until(|| part.metadata().is_ok_and(|meta| meta.len() == MIB as u64))
-        .await;
-    let id = world
-        .phone()
-        .transfers()
-        .active
-        .iter()
-        .find(|t| t.file.as_ref() == Some(&file))
-        .unwrap()
-        .id
-        .clone();
-    world
-        .phone()
-        .dispatch(Action::CancelTransfer { id })
-        .unwrap();
-    world.wait_until(|| !folder(&file).exists()).await;
-
-    // 带删除的清理：整个目录一起删。
-    world.core.lock().hold_download_after = None;
-    let file = world.core.lock().serve("a.mov", &source_bytes(MIB), "v1");
-    download(&world, &file).await;
-    assert!(folder(&file).exists());
-    let id = world.phone().transfers().downloaded[0].id.clone();
-    world
-        .phone()
-        .dispatch(Action::DismissTransfer {
-            id,
-            delete_local_file: true,
-        })
-        .unwrap();
-    world.wait_until(|| !folder(&file).exists()).await;
-
-    // 服务器上的文件改了名，重下一次：旧名字的文件没有入口，一起清掉。
-    let file = world.core.lock().serve("old.mov", b"abc", "v1");
-    download(&world, &file).await;
-    world
-        .core
-        .lock()
-        .files
-        .insert(file.to_string(), Served::new("new.mov", b"abcdef", "v2"));
-    world
-        .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
-        .unwrap();
-    world
-        .wait_transfer(|t| t.file.as_ref() == Some(&file) && t.state == TransferState::Done)
-        .await;
-    let left: Vec<_> = std::fs::read_dir(folder(&file))
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    assert_eq!(left, ["new.mov"], "旧名字的文件没有入口，不留着");
-    assert_eq!(
-        std::fs::read(world.downloaded(&file, "new.mov")).unwrap(),
-        b"abcdef"
     );
 }
 
@@ -435,19 +251,17 @@ async fn stopping_after_the_bytes_are_up_leaves_the_file_on_the_server() {
     assert_eq!(core.uploaded_bytes(), 1024);
 }
 
-/// 不欠链接的传输上点重发：不算错（壳不弹窗），什么都不做；再跑一遍会重复副作用（带房间的上传多发一条链接）。
 #[tokio::test]
 async fn only_a_link_that_was_not_sent_can_be_resent() {
     let world = World::start().await;
     let file = world.core.lock().serve("a.pdf", b"abc", "v1");
     let done = download(&world, &file).await;
-    world
-        .phone()
-        .dispatch(Action::ResendFileLink {
-            id: done.id.clone(),
-        })
-        .unwrap();
-    assert_eq!(world.phone().transfers().downloaded, [done], "什么都不做");
+    assert!(matches!(
+        world
+            .phone()
+            .dispatch(Action::ResendFileLink { id: done.id }),
+        Err(CoreError::InvalidInput { .. })
+    ));
 }
 
 #[tokio::test]
@@ -615,25 +429,6 @@ async fn a_connection_lost_while_playing_is_remembered() {
 
     let problem = playback_problem(&world, file).await;
     assert_eq!(problem.reason, FileFailure::TransportUnavailable);
-}
-
-/// 播放的这一趟核心报了错：壳问起来按当时说。等问的时候已经恢复了的话，再问一遍会把
-/// 核心报过的错说成“放不了这个格式”。
-#[tokio::test]
-async fn a_playback_failure_names_what_the_core_said_at_the_time() {
-    let world = World::start().await;
-    let file = world.core.lock().serve("a.mp4", b"abc", "v1");
-    let url = world.phone().file_stream_url(file.clone()).await.unwrap();
-
-    world.core.lock().services_down = true;
-    let client = reqwest::Client::builder().no_proxy().build().unwrap();
-    let answer = client.get(&url).send().await.unwrap();
-    assert_eq!(answer.status(), 503);
-    // 等壳问原因的时候家里已经恢复了。
-    world.core.lock().services_down = false;
-
-    let problem = playback_problem(&world, file).await;
-    assert_eq!(problem.reason, FileFailure::ServiceUnavailable);
 }
 
 #[tokio::test]

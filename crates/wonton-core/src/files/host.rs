@@ -10,10 +10,8 @@ use wonton_protocol::FileFailure;
 use super::resource::InternalUrl;
 use super::slots::{PluginSlots, SLOT_WAIT};
 use super::{Failure, MAX_RESOURCE_BYTES};
-use crate::l10n;
 use crate::matrix::{MatrixError, NoticeRoom};
 use crate::mcp::upstream::{ReadError, Upstreams};
-use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::ResourceUpstreamError;
 use crate::plugin::{McpServer, PluginId, PluginManager};
 
@@ -68,7 +66,6 @@ impl CoreHost {
 
     fn mcp_server(&self, plugin: &PluginId) -> Result<McpServer, Failure> {
         self.check_plugin(plugin)?;
-        let langs = self.plugins.owner_languages();
         self.plugins
             .mcp_servers()
             .into_iter()
@@ -76,24 +73,16 @@ impl CoreHost {
             .ok_or_else(|| {
                 Failure::new(
                     FileFailure::PluginUnavailable,
-                    l10n::text(
-                        &langs,
-                        "files-mcp-gone",
-                        &[("plugin", plugin.as_str().into())],
-                    ),
+                    format!("插件 {plugin} 在运行，但不再提供 MCP 服务，读不了这个资源"),
                 )
             })
     }
 }
 
-fn unavailable(plugin: &PluginId, langs: &Languages) -> Failure {
+fn unavailable(plugin: &PluginId) -> Failure {
     Failure::new(
         FileFailure::PluginUnavailable,
-        l10n::text(
-            langs,
-            "files-plugin-unavailable",
-            &[("plugin", plugin.as_str().into())],
-        ),
+        format!("来源插件 {plugin} 卸了或没在运行"),
     )
 }
 
@@ -102,7 +91,7 @@ impl FileHost for CoreHost {
         self.plugins
             .is_running(plugin)
             .then_some(())
-            .ok_or_else(|| unavailable(plugin, &self.plugins.owner_languages()))
+            .ok_or_else(|| unavailable(plugin))
     }
 
     fn check_mcp(&self, plugin: &PluginId) -> Result<(), Failure> {
@@ -115,11 +104,10 @@ impl FileHost for CoreHost {
         url: &'a InternalUrl,
     ) -> BoxFuture<'a, Result<String, Failure>> {
         async move {
-            let langs = self.plugins.owner_languages();
             self.plugins
                 .resource_upstream(plugin, &url.service, url.port)
                 .await
-                .map_err(|e| upstream_failure(plugin, &url.service, e, &langs))
+                .map_err(|e| upstream_failure(plugin, &url.service, e))
         }
         .boxed()
     }
@@ -131,8 +119,7 @@ impl FileHost for CoreHost {
     ) -> BoxFuture<'a, Result<Vec<u8>, Failure>> {
         async move {
             let server = self.mcp_server(plugin)?;
-            let langs = self.plugins.owner_languages();
-            let _slot = self.reads.acquire(plugin, SLOT_WAIT, &langs).await?;
+            let _slot = self.reads.acquire(plugin, SLOT_WAIT).await?;
             self.upstreams
                 .read_resource(&server, uri, MAX_RESOURCE_BYTES)
                 .await
@@ -155,11 +142,10 @@ impl FileHost for CoreHost {
 
     fn notify_owner<'a>(&'a self, text: &'a str) -> BoxFuture<'a, Result<(), Failure>> {
         async move {
-            let langs = self.plugins.owner_languages();
             let notices = self.notices.as_ref().ok_or_else(|| {
                 Failure::new(
                     FileFailure::ServiceUnavailable,
-                    l10n::text(&langs, "files-notify-no-matrix", &[]),
+                    "核心没有接入 Matrix（WONTON_MATRIX_URL），发不到“Wonton”私聊",
                 )
             })?;
             let content = json!({"msgtype": "m.text", "body": text});
@@ -167,30 +153,18 @@ impl FileHost for CoreHost {
                 .send(&content)
                 .await
                 .map(|_| ())
-                .map_err(|e| notice_failure(e, &langs))
+                .map_err(notice_failure)
         }
         .boxed()
     }
 }
 
-fn upstream_failure(
-    plugin: &PluginId,
-    service: &str,
-    error: ResourceUpstreamError,
-    langs: &Languages,
-) -> Failure {
+fn upstream_failure(plugin: &PluginId, service: &str, error: ResourceUpstreamError) -> Failure {
     match error {
-        ResourceUpstreamError::Unavailable => unavailable(plugin, langs),
+        ResourceUpstreamError::Unavailable => unavailable(plugin),
         ResourceUpstreamError::NotItsService => Failure::new(
             FileFailure::PermissionDenied,
-            l10n::text(
-                langs,
-                "files-upstream-not-own",
-                &[
-                    ("service", service.into()),
-                    ("plugin", plugin.as_str().into()),
-                ],
-            ),
+            format!("{service} 不是插件 {plugin} 自己的服务"),
         ),
         ResourceUpstreamError::Internal(why) => Failure::internal(why),
     }
@@ -207,17 +181,13 @@ fn read_failure(error: ReadError) -> Failure {
 
 /// Tuwunel 连不上、自己出了问题、让核心慢一点（`M_LIMIT_EXCEEDED`）才算服务不可用，等一等会好。它拒绝了请求（通知房间已经换过
 /// 一次，还是不行）等多久都不会好，是核心这边的问题。
-fn notice_failure(error: MatrixError, langs: &Languages) -> Failure {
+fn notice_failure(error: MatrixError) -> Failure {
     let unavailable = match &error {
         MatrixError::Unavailable { .. } => true,
         MatrixError::Rejected { status, .. } => *status >= 500 || *status == 429,
         MatrixError::Invalid(_) | MatrixError::Storage(_) => false,
     };
-    let why = l10n::text(
-        langs,
-        "files-matrix-send-failed",
-        &[("error", error.to_string().into())],
-    );
+    let why = format!("发不到“Wonton”私聊：{error}");
     if unavailable {
         Failure::new(FileFailure::ServiceUnavailable, why)
     } else {
@@ -231,14 +201,13 @@ mod tests {
 
     #[test]
     fn only_an_unreachable_or_broken_matrix_server_is_unavailable() {
-        let langs = Languages::from_header(None);
         let rejected = |status| MatrixError::Rejected {
             context: "发消息".into(),
             status,
             errcode: "M_FORBIDDEN".into(),
             message: "不在房间里".into(),
         };
-        let kind = |error| notice_failure(error, &langs).kind;
+        let kind = |error| notice_failure(error).kind;
         let unreachable = MatrixError::Unavailable {
             context: "发消息".into(),
             message: "连不上".into(),

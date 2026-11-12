@@ -11,7 +11,6 @@ use serde_json::{Value, json};
 use super::tests::{Setup, failed, setup, text};
 use crate::plugin::PluginId;
 use crate::plugin::docker::Engine as Docker;
-use crate::plugin::languages::Languages;
 use crate::plugin::manager::PluginStatus;
 
 const GUIDE: &str = "wonton__plugin_guide";
@@ -253,9 +252,8 @@ async fn status_reports_the_running_plugin_and_refuses_unknown_ones() {
 }
 
 fn manifest_of(id: &str) -> crate::plugin::manifest::Manifest {
-    crate::plugin::PluginPackage::parse(
-        &format!(
-            r#"name: app
+    crate::plugin::PluginPackage::parse(&format!(
+        r#"name: app
 services:
   web:
     image: nginx
@@ -269,9 +267,7 @@ x-wonton:
   webui: {{service: web, port: 80}}
   permissions: []
 "#
-        ),
-        &Languages::from_header(Some("zh-Hans")),
-    )
+    ))
     .unwrap()
     .manifest
 }

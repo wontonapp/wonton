@@ -5,10 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    BotView, ChatLayout, ChatLayoutChoice, InstallProgress, PluginFailure, PluginIcon,
-    PluginOperation, PushNotification, PushStatus, SecretString, VerificationFlow,
-};
+use crate::{BotView, PushStatus, SecretString};
 
 /// 聊天页的 ViewModel。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,10 +14,6 @@ pub struct ChatViewModel {
     pub account: ChatAccount,
     pub sync: ChatSync,
     pub encryption: EncryptionStatus,
-    /// 有 Bot 的插件在装、在升级、装失败时的占位行，显示在 `rooms` 上面。装好、Bot 的私聊出现在 `rooms` 里以后
-    /// 由那一行代替，这里不再有它。
-    #[serde(default)]
-    pub installing_bots: Vec<BotInstallRow>,
     /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
     pub rooms: Vec<RoomRow>,
     /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
@@ -32,54 +25,8 @@ pub struct ChatViewModel {
     pub pending_confirmations: Vec<PendingConfirmation>,
     /// 这台设备知道已经不用回答的卡片 ID：壳撤下它们的通知。
     pub settled_confirmations: Vec<String>,
-    /// 收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive) 且 App 在后台时，同步到的、按 Matrix
-    /// 推送规则该通知的消息，先到的在前。壳逐条弹出系统通知，同一个 `event_id` 用同一个通知标签，重复给不会重复弹；
-    /// 回到前台时核心清空。
-    pub background_notifications: Vec<PushNotification>,
     /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
     pub bots: Vec<BotView>,
-    /// 聊天显示方式的全局默认里用户改过的项（ADR-0060），设置页的“聊天显示”读它。
-    pub chat_layout_default: ChatLayoutChoice,
-}
-
-/// 聊天列表最上面的一行：有 Bot 的插件在装、在升级、装失败了。
-/// 装好、Bot 的私聊出现以后它由私聊那一行代替，不并排显示。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct BotInstallRow {
-    pub plugin_id: String,
-    /// 插件名。
-    pub title: String,
-    /// 插件图标；没有时为空，壳画占位图。
-    pub icon: Option<PluginIcon>,
-    /// 新装还是升级。卸载不会出现在这里，卸载时私聊还在。
-    pub operation: PluginOperation,
-    /// 重试时重新预览的来源，如 `github:owner/repo@v1.2.0`、`upload:sha256:…`：和
-    /// [`InstallPreview::source`](crate::InstallPreview::source) 一样交给预览接口，主人重新确认后再发
-    /// [`Action::InstallPlugin`](crate::Action::InstallPlugin)。不知道来源时为空，壳不给重试，引导回插件页。
-    pub source: Option<String>,
-    pub state: BotInstallState,
-}
-
-/// 安装行的情况。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub enum BotInstallState {
-    Running {
-        progress: InstallProgress,
-    },
-    /// 失败，插件已经回滚。`reason` 决定壳显示的类别和下一步，`message` 是默认收起的详情。
-    Failed {
-        reason: PluginFailure,
-        /// 家里的服务器写的说明，按 App 的语言。
-        message: String,
-    },
-    /// 说不清做到哪一步（连接断了、家里的服务器一直没回应）：可能还在装，看插件列表。
-    Uncertain {
-        /// 家里的服务器或客户端核心写的说明，按 App 的语言。
-        message: String,
-    },
 }
 
 /// 一张等主人回答的确认卡片。
@@ -88,19 +35,10 @@ pub enum BotInstallState {
 pub struct PendingConfirmation {
     /// 卡片 ID。
     pub id: String,
-    /// 卡片显示在哪个会话（[`ConfirmationCard::origin`](crate::ConfirmationCard::origin) 的房间）：点提示条进这个房间，
-    /// 主人正在这个房间时不提示。卡片没有会话时为 `None`，点了打开“等你确认”列表。
-    pub room_id: Option<String>,
+    /// 卡片所在的房间。
+    pub room_id: String,
     /// 卡片的标题，如“Hermes 想安装 文件搜索”。
     pub title: String,
-    /// 谁请主人确认，壳按它画头像。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub requester: Option<crate::ConfirmationRequester>,
-    /// 到期时间，Unix 毫秒。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
-    pub expires_at_ms: u64,
 }
 
 /// 发起私聊时能直接选的人。
@@ -109,10 +47,6 @@ pub struct PendingConfirmation {
 pub struct ChatContact {
     pub user_id: String,
     pub name: String,
-    /// 选这个人开新旁聊时在哪个房间开（ADR-0093 §4）：和这个人已有的、有支持声明的私聊。
-    /// 为空时壳走 `StartDirectChat` 先建私聊。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub side_chat_room_id: Option<String>,
 }
 
 /// 本设备的 Matrix 账号。
@@ -131,14 +65,7 @@ pub enum ChatAccount {
         /// 本设备在服务器上的设备 ID。
         device_id: String,
     },
-    /// 上一次登录因为暂时的原因没成功（连不上、Matrix 还没就绪），核心正按退避自动重试，不用用户操作。
-    /// `reason`、`message` 是上一次失败的原因。
-    Reconnecting {
-        reason: ChatFailure,
-        message: String,
-    },
-    /// 登录失败、不会自动重试（App 回到前台时再试一次），或者会话已失效。`Unauthorized` 表示这台设备被吊销了，
-    /// 要主人重新配对。
+    /// 登录失败，或者会话已失效。`Unauthorized` 表示这台设备被吊销了，要主人重新配对。
     Failed {
         reason: ChatFailure,
         message: String,
@@ -170,19 +97,14 @@ pub enum ChatSync {
 pub enum ChatFailure {
     /// 连不上 Matrix 服务器：隧道没连上、网络断开或请求超时。
     TransportUnavailable,
-    /// 登录失效：登录凭据无效或过期、设备已被吊销、账号已停用。要重新登录或配对。
+    /// 服务器拒绝了身份或权限：登录凭据无效或过期、设备已被吊销、无权操作。
     Unauthorized,
-    /// 登录有效，但服务器不让做这件事：没有权限、对方屏蔽了自己、对方的服务器不和这台互通。不是要重新登录。
-    Forbidden,
     /// 前置条件不满足：服务器缺少必需的能力，或者要操作的房间还没同步到本机。
     NotReady,
     /// 服务器或 Matrix SDK 出错。
     Upstream,
     /// 输入非法。
     InvalidInput,
-    /// 比这个壳新的类别。
-    #[serde(other)]
-    Other,
 }
 
 /// 后台操作失败的说明。
@@ -206,50 +128,6 @@ pub struct EncryptionStatus {
     pub recovery_key: Option<SecretString>,
     /// 聊天列表需要主人处理的备份提醒；文字和跳转由原生壳呈现。
     pub backup_reminder: Option<BackupReminder>,
-    /// 本设备没验证，账号里有别的已验证设备：可以请它确认（[`Action::StartDeviceVerification`]），和输入恢复密钥并列。
-    ///
-    /// [`Action::StartDeviceVerification`]: crate::Action::StartDeviceVerification
-    pub can_verify_with_other_device: bool,
-    /// 备份页显不显示“重置备份”（[`Action::ResetRecovery`]）：只在缺密钥、备份残缺时显示——恢复残缺，或者账号
-    /// 还没有备份而本设备又没验证。备份完好不显示，新密钥还没确认保存也不显示（还没抄下来就作废）。
-    ///
-    /// [`Action::ResetRecovery`]: crate::Action::ResetRecovery
-    #[serde(default)]
-    pub can_reset: bool,
-    /// 备份页的下一步给主人看什么。核心按恢复状态算好（ADR-0076），壳只按类别画，不再自己判断。
-    #[serde(default)]
-    pub recovery_next_step: RecoveryNextStep,
-    /// 正在进行或刚结束的设备确认（ADR-0046），本设备发起的和收到的都在这里。
-    pub verification_flow: Option<VerificationFlow>,
-    /// 加设备时的密钥交接（ADR-0087）：本设备是刚加进来、在等密钥的新设备，或者是开着“添加设备”页、替新设备交出
-    /// 密钥的旧设备。没在交接时为空。
-    #[serde(default)]
-    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-    pub key_handoff: Option<crate::KeyHandoff>,
-}
-
-/// 备份页的下一步给主人看什么（ADR-0076）。核心按恢复状态算好，壳只按类别画，不自己判断。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum RecoveryNextStep {
-    /// 输入恢复密钥：账号设过备份、本设备缺密钥，账号里也没有能确认本设备的其他已验证设备。
-    EnterKey,
-    /// 两条路并列：请账号里别的已验证设备确认本设备，或者输入恢复密钥，主人选一条。
-    ChooseDeviceOrKey,
-    /// 走设备确认这条路：流程已经在进行时这一屏就是流程，还没开始时壳画“请另一台设备确认”的入口按钮
-    /// （账号还没有备份，输恢复密钥没用，确认是拿到密钥的唯一路）。
-    ShowFlow,
-    /// 恢复正在进行，壳画进度。
-    Progress,
-    /// 刚加进来的设备在等另一台设备交出密钥（ADR-0087）：壳画交接页，不提恢复密钥。
-    WaitForOtherDevice,
-    /// 没有要主人做的：备份完好，或者状态还没同步到。
-    #[default]
-    None,
-    /// 更新的核心给出的类别：壳不画下一步。
-    #[serde(other)]
-    Other,
 }
 
 /// 聊天备份需要主人处理的事项。
@@ -259,8 +137,6 @@ pub enum RecoveryNextStep {
 pub enum BackupReminder {
     SaveRecoveryKey,
     EnterRecoveryKey,
-    /// 密钥交接还没完成，主人先进了聊天列表（ADR-0087）：提醒只说“在另一台设备上继续”，点了回到交接页。
-    ContinueOnOtherDevice,
     #[serde(other)]
     Other,
 }
@@ -316,13 +192,8 @@ pub struct RoomRow {
     pub membership: RoomMembership,
     /// 最新一条消息的预览；还没有消息或还没同步到时为空。
     pub preview: Option<RoomPreview>,
-    /// 房间里有旁聊支持声明（ADR-0093 §1）：可以开新旁聊，旁聊有结果行。声明还没同步到时是 false。
-    #[serde(default)]
-    pub side_chats: bool,
     /// 未读消息数。
     pub unread_count: u64,
-    /// 打开这个房间时怎么显示（ADR-0060）。
-    pub layout: ChatLayout,
 }
 
 /// 本账号在房间里的成员状态。
@@ -366,11 +237,6 @@ pub enum MessageSummary {
     /// 本机还没有房间密钥，解不开。
     Undecryptable,
     Redacted,
-    /// 旁聊（ADR-0093）：根消息和结果行在聊天列表里的预览。
-    SideChat {
-        title: String,
-        state: crate::SideChatState,
-    },
     /// 其他类型的事件，`kind` 是事件类型原文，如 `m.sticker`。
     Other {
         kind: String,
@@ -413,7 +279,7 @@ impl std::fmt::Debug for ImageUpload {
         f.debug_struct("ImageUpload")
             .field("filename", &self.filename)
             .field("mime_type", &self.mime_type)
-            .field("data", &format_args!("<{} bytes>", self.data.len()))
+            .field("data", &format_args!("<{} 字节>", self.data.len()))
             .field("width", &self.width)
             .field("height", &self.height)
             .field("thumbnail", &self.thumbnail)
@@ -425,7 +291,7 @@ impl std::fmt::Debug for ImageThumbnail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ImageThumbnail")
             .field("mime_type", &self.mime_type)
-            .field("data", &format_args!("<{} bytes>", self.data.len()))
+            .field("data", &format_args!("<{} 字节>", self.data.len()))
             .field("width", &self.width)
             .field("height", &self.height)
             .finish()
@@ -437,17 +303,15 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::{
-        Action, CoreError, InstallProgress, InstallStage, NotificationCategory, PluginOperation,
-        PushContent, PushStatus, SecretString,
-    };
+    use crate::{Action, CoreError, PushStatus, SecretString};
 
     /// 测试用的恢复密钥原文。
     const KEY: &str = "EsTc 1234 abcd";
 
-    fn sample_view_model() -> ChatViewModel {
-        ChatViewModel {
-            chat_layout_default: Default::default(),
+    /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
+    #[test]
+    fn chat_types_round_trip_through_json() {
+        let view_model = ChatViewModel {
             account: ChatAccount::SignedIn {
                 user_id: "@owner:home.example".into(),
                 device_id: "ABCDEFGH".into(),
@@ -461,27 +325,8 @@ mod tests {
                 recovery: RecoveryStatus::Incomplete,
                 recovery_key: Some(SecretString::new(KEY)),
                 backup_reminder: Some(BackupReminder::SaveRecoveryKey),
-                can_verify_with_other_device: true,
-                can_reset: true,
-                recovery_next_step: RecoveryNextStep::ChooseDeviceOrKey,
-                verification_flow: None,
-                key_handoff: None,
             },
-            installing_bots: vec![BotInstallRow {
-                plugin_id: "app.hermes".into(),
-                title: "Hermes".into(),
-                icon: None,
-                operation: PluginOperation::Install,
-                source: Some("github:example/hermes@v1.2.0".into()),
-                state: BotInstallState::Running {
-                    progress: InstallProgress {
-                        stage: InstallStage::PullingImages,
-                        percent: Some(40),
-                    },
-                },
-            }],
             rooms: vec![RoomRow {
-                layout: Default::default(),
                 room_id: "!bot:home.example".into(),
                 name: "Hermes".into(),
                 is_direct: true,
@@ -495,7 +340,6 @@ mod tests {
                     body: MessageSummary::Image,
                     timestamp_ms: 1_793_000_000_000,
                 }),
-                side_chats: false,
                 unread_count: 2,
             }],
             problem: Some(ChatProblem {
@@ -505,36 +349,12 @@ mod tests {
             push: PushStatus::Registering,
             pending_confirmations: vec![PendingConfirmation {
                 id: "card".into(),
-                room_id: Some("!bot:home.example".into()),
+                room_id: "!notices:home.example".into(),
                 title: "Hermes 想安装 文件搜索".into(),
-                requester: None,
-                expires_at_ms: 1_793_000_000_000,
             }],
             settled_confirmations: vec!["older-card".into()],
-            background_notifications: vec![PushNotification {
-                server_id: Some("a1".into()),
-                room_id: "!bot:home.example".into(),
-                event_id: "$reply".into(),
-                sender: Some("Hermes".into()),
-                room_name: None,
-                content: PushContent::Message {
-                    summary: MessageSummary::Text {
-                        text: "好了".into(),
-                    },
-                },
-                category: NotificationCategory::Message,
-                confirmation: None,
-                contact_request: None,
-                thread_root: None,
-            }],
             bots: Vec::new(),
-        }
-    }
-
-    /// 契约：聊天的 ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
-    #[test]
-    fn chat_types_round_trip_through_json() {
-        let view_model = sample_view_model();
+        };
         assert_eq!(round_trip(&view_model), view_model);
 
         let image = ImageUpload {
@@ -557,15 +377,9 @@ mod tests {
             Action::StartDirectChat {
                 user_id: "@hermes:home.example".into(),
             },
-            Action::Timeline {
-                action: crate::TimelineAction::SendImage {
-                    target: crate::TimelineTarget {
-                        room_id: "!a:home.example".into(),
-                        thread_root: None,
-                    },
-                    image: image.clone(),
-                    reply_to: None,
-                },
+            Action::SendImage {
+                room_id: "!a:home.example".into(),
+                image: image.clone(),
             },
             Action::RecoverEncryption {
                 recovery_key: SecretString::new(KEY),
@@ -603,65 +417,5 @@ mod tests {
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {
         serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
-    }
-
-    /// 旧核心没有安装行；新核心的阶段旧 App 不认识时落到 `Other`，行照样显示。
-    #[test]
-    fn install_rows_fall_back_on_old_cores_and_new_stages() {
-        let mut view = serde_json::to_value(sample_view_model()).unwrap();
-        view.as_object_mut().unwrap().remove("installing_bots");
-        let view: ChatViewModel = serde_json::from_value(view).unwrap();
-        assert!(view.installing_bots.is_empty());
-
-        let stage: InstallStage = serde_json::from_value(serde_json::json!("migrating")).unwrap();
-        assert_eq!(stage, InstallStage::Other);
-        let state: BotInstallState = serde_json::from_value(serde_json::json!({
-            "state": "running",
-            "progress": {"stage": "migrating", "percent": null},
-        }))
-        .unwrap();
-        assert_eq!(
-            state,
-            BotInstallState::Running {
-                progress: InstallProgress {
-                    stage: InstallStage::Other,
-                    percent: None,
-                }
-            }
-        );
-        assert_eq!(
-            serde_json::to_value(BotInstallState::Failed {
-                reason: PluginFailure::Upstream,
-                message: "Docker 报错".into(),
-            })
-            .unwrap(),
-            serde_json::json!({"state": "failed", "reason": "upstream", "message": "Docker 报错"})
-        );
-    }
-
-    /// 契约：备份页的下一步类别都能经 JSON 往返；新核心的新类别落 `Other`，旧核心没有这两个字段时
-    /// `can_reset` 落假、下一步落 `None`，壳不画重置也不画下一步。
-    #[test]
-    fn recovery_next_step_falls_back_on_old_cores_and_new_categories() {
-        for step in [
-            RecoveryNextStep::EnterKey,
-            RecoveryNextStep::ChooseDeviceOrKey,
-            RecoveryNextStep::ShowFlow,
-            RecoveryNextStep::Progress,
-            RecoveryNextStep::None,
-        ] {
-            assert_eq!(round_trip(&step), step);
-        }
-        assert_eq!(
-            serde_json::from_value::<RecoveryNextStep>(serde_json::json!("recalibrating")).unwrap(),
-            RecoveryNextStep::Other
-        );
-        let mut value = serde_json::to_value(sample_view_model().encryption).unwrap();
-        let object = value.as_object_mut().unwrap();
-        object.remove("can_reset");
-        object.remove("recovery_next_step");
-        let status: EncryptionStatus = serde_json::from_value(value).unwrap();
-        assert!(!status.can_reset);
-        assert_eq!(status.recovery_next_step, RecoveryNextStep::None);
     }
 }

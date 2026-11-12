@@ -1,11 +1,11 @@
-//! 引导的接口调用：状态经 `onboarding`，资料经 `me`（ME_PATH，每个人的资料），服务商经 `models/`，要装的插件经安装预览。这几个接口在
+//! 引导的接口调用：状态经 `onboarding`，资料经 `owner-profile`，服务商经 `models/`，要装的插件经安装预览。这几个接口在
 //! 核心里都可能去来源取官方索引和图标，超时按取来源算（[`SOURCE_TIMEOUT`]）；模型的错误统一映射成
 //! [`ModelProviderProblem`]。
 
 use wonton_protocol::{
-    CustomModelProvider, InstallPreview, InstallSource, Me, ModelProviderFailure,
-    ModelProviderInput, ModelProviderKey, ModelProviderProblem, ModelProviders, Onboarding,
-    OnboardingUpdate, OwnerProfileUpdate, PluginProblem,
+    CustomModelProvider, InstallPreview, InstallSource, ModelProviderFailure, ModelProviderInput,
+    ModelProviderKey, ModelProviderProblem, ModelProviders, Onboarding, OnboardingUpdate,
+    OwnerProfile, OwnerProfileUpdate, PluginProblem,
 };
 
 use crate::plugins::api::{CoreApi, CoreApiError, READ_TIMEOUT, SOURCE_TIMEOUT};
@@ -27,15 +27,15 @@ pub(crate) async fn providers(api: &CoreApi) -> Result<ModelProviders, ModelProv
         .map_err(map_error)
 }
 
-pub(crate) async fn me(api: &CoreApi) -> Result<Me, PluginProblem> {
-    api.get(&["me"], &[], READ_TIMEOUT).await
+pub(crate) async fn owner_profile(api: &CoreApi) -> Result<OwnerProfile, PluginProblem> {
+    api.get(&["owner-profile"], &[], READ_TIMEOUT).await
 }
 
-pub(crate) async fn save_me(
+pub(crate) async fn save_owner_profile(
     api: &CoreApi,
     update: &OwnerProfileUpdate,
-) -> Result<Me, PluginProblem> {
-    api.put(&["me"], update, READ_TIMEOUT).await
+) -> Result<OwnerProfile, PluginProblem> {
+    api.put(&["owner-profile"], update, READ_TIMEOUT).await
 }
 
 pub(crate) async fn preview(api: &CoreApi, source: &str) -> Result<InstallPreview, PluginProblem> {

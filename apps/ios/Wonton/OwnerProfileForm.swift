@@ -5,7 +5,7 @@ import WontonClient
 @MainActor
 @Observable
 final class OwnerProfileFormState {
-    private(set) var profile: Me?
+    private(set) var profile: OwnerProfile?
     private(set) var loadProblem: Problem?
     private(set) var saveProblem: Problem?
     private(set) var isSaving = false
@@ -21,7 +21,7 @@ final class OwnerProfileFormState {
         profile = nil
         loadProblem = nil
         do {
-            let profile = try await core.me()
+            let profile = try await core.ownerProfile()
             name = profile.displayName ?? ""
             email = profile.email ?? ""
             self.profile = profile
@@ -36,7 +36,7 @@ final class OwnerProfileFormState {
         isSaving = true
         defer { isSaving = false }
         do {
-            let saved = try await core.saveMe(update: OwnerProfileUpdate(displayName: name, email: email))
+            let saved = try await core.saveOwnerProfile(update: OwnerProfileUpdate(displayName: name, email: email))
             guard !Task.isCancelled else { return false }
             profile = saved
             return true
@@ -60,7 +60,7 @@ struct OwnerProfileForm: View {
                     ProblemNotice(problem: problem)
                 }
                 WontonGroup {
-                    WontonRow(title: String(localized: .ownerProfileUsername), value: profile.username)
+                    WontonRow(title: "用户名", value: profile.username)
                 }
             }
         } else if let problem = state.loadProblem {
@@ -79,17 +79,17 @@ struct OwnerProfileFields: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        DetailSection(title: String(localized: .ownerProfileName)) {
-            TextField("", text: $name)
-                .accessibilityLabel(String(localized: .ownerProfileName))
+        DetailSection(title: "名字") {
+            TextField("必填", text: $name)
+                .accessibilityLabel("名字")
                 .textContentType(.name)
                 .textFieldStyle(.plain)
                 .wontonField()
             if let nameProblem { fieldProblem(nameProblem) }
         }
-        DetailSection(title: String(localized: .ownerProfileEmail)) {
-            TextField(String(localized: .ownerProfileEmailOptional), text: $email)
-                .accessibilityLabel(String(localized: .ownerProfileEmail))
+        DetailSection(title: "邮箱") {
+            TextField("选填", text: $email)
+                .accessibilityLabel("邮箱")
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
                 .textInputAutocapitalization(.never)

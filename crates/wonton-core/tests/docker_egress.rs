@@ -8,22 +8,15 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use bollard::models::{ContainerCreateBody, HostConfig};
+use wonton_core::plugin::compose::PullPolicy;
 use wonton_core::plugin::core_address::Endpoint;
 use wonton_core::plugin::docker::Engine;
 use wonton_core::plugin::egress::address::ProxyAddress;
-use wonton_core::plugin::egress::gost;
-use wonton_core::plugin::egress::gost::{ALIAS, Relay, RelayFiles, config_yaml, runner};
+use wonton_core::plugin::egress::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use wonton_core::plugin::egress::lists::{self, Lists, Reach};
-use wonton_core::plugin::languages::Languages;
 
-// 共用的真实 Docker 测试辅助：每次运行唯一的实例名和资源回收。
-#[path = "../src/test_docker.rs"]
-mod test_docker;
-
-/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn busybox() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
-}
+/// npchy 和 CI 的 runner 连不上 Docker Hub，从 ECR Public 拉。
+const BUSYBOX: &str = "public.ecr.aws/docker/library/busybox:1.37";
 const USERNAME: &str = "u@x";
 /// YAML 里有意义的字符都带上：配置不是拼出来的。
 const PASSWORD: &str = "*p: #&\"w";
@@ -43,21 +36,43 @@ struct Names {
 }
 
 impl Names {
-    /// 全部一次性资源，名字带每次运行唯一的实例名，由 `test_docker::Names` 的守卫回收。
-    fn new(names: &mut test_docker::Names) -> Self {
-        // 出口容器的名字和它自己的网络名是同一个。
-        let relay = names.oneshot_network("gost-relay");
+    fn new() -> Self {
+        let prefix = format!("wonton-gosttest{}", std::process::id());
+        let name = |suffix: &str| format!("{prefix}-{suffix}");
         Self {
-            own: relay.clone(),
-            plugin: names.oneshot_network("gost-plugin"),
-            upstream_network: names.oneshot_network("gost-upnet"),
-            far_network: names.oneshot_network("gost-farnet"),
-            relay: names.register_container(relay),
-            upstream: names.oneshot_container("gost-upstream"),
-            far: names.oneshot_container("gost-far"),
-            near: names.oneshot_container("gost-near"),
-            client: names.oneshot_container("gost-client"),
-            neighbor: names.oneshot_container("gost-neighbor"),
+            own: prefix.clone(),
+            plugin: name("plugin"),
+            upstream_network: name("upnet"),
+            far_network: name("farnet"),
+            relay: prefix.clone(),
+            upstream: name("upstream"),
+            far: name("far"),
+            near: name("near"),
+            client: name("client"),
+            neighbor: name("neighbor"),
+        }
+    }
+
+    async fn remove(&self, engine: &Engine) {
+        let containers = [
+            &self.relay,
+            &self.upstream,
+            &self.far,
+            &self.near,
+            &self.client,
+            &self.neighbor,
+        ];
+        for container in containers {
+            engine.remove_container(container).await.unwrap();
+        }
+        let networks = [
+            &self.own,
+            &self.plugin,
+            &self.upstream_network,
+            &self.far_network,
+        ];
+        for network in networks {
+            engine.remove_network(network).await.unwrap();
         }
     }
 }
@@ -65,15 +80,7 @@ impl Names {
 /// 回 200 的小网站，`network` 上的别名是 `alias`。
 async fn website(engine: &Engine, name: &str, network: &str, alias: &str) {
     let script = "mkdir -p /www && echo ok > /www/index.html && exec httpd -f -p 80 -h /www";
-    start(
-        engine,
-        name,
-        &busybox(),
-        network,
-        &["sh", "-c", script],
-        None,
-    )
-    .await;
+    start(engine, name, BUSYBOX, network, &["sh", "-c", script], None).await;
     engine.disconnect_network(network, name).await.unwrap();
     let endpoint = Endpoint {
         address: None,
@@ -154,18 +161,13 @@ async fn connect_relay(engine: &Engine, network: &str, relay: &str, aliases: &[&
 }
 
 async fn start_relay(engine: &Engine, names: &Names, files: &RelayFiles, proxy: &ProxyAddress) {
-    files
-        .write_config(
-            &config_yaml(proxy, &Languages::default()).unwrap(),
-            &Languages::default(),
-        )
-        .unwrap();
+    files.write_config(&config_yaml(proxy).unwrap()).unwrap();
     let labels = HashMap::new();
     let relay = Relay {
         name: &names.relay,
         labels: &labels,
         files,
-        image: &gost::image(),
+        image: IMAGE,
     };
     engine.start_relay(&relay).await.unwrap();
     connect_relay(engine, &names.plugin, &names.relay, &[ALIAS]).await;
@@ -191,7 +193,7 @@ async fn set_up(engine: &Engine, names: &Names) -> (ProxyAddress, String) {
     start(
         engine,
         &names.upstream,
-        &gost::image(),
+        IMAGE,
         &names.upstream_network,
         &upstream_cmd,
         None,
@@ -210,11 +212,7 @@ async fn set_up(engine: &Engine, names: &Names) -> (ProxyAddress, String) {
         .await
         .unwrap()
         .unwrap();
-    let proxy = ProxyAddress::parse(
-        &format!("http://{ENCODED}@{upstream}:8080"),
-        &Default::default(),
-    )
-    .unwrap();
+    let proxy = ProxyAddress::parse(&format!("http://{ENCODED}@{upstream}:8080")).unwrap();
     assert_eq!(proxy.username.as_deref(), Some(USERNAME));
     assert_eq!(proxy.password.as_deref(), Some(PASSWORD));
     (proxy, upstream)
@@ -249,13 +247,13 @@ async fn check_denied(engine: &Engine, names: &Names) {
 async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
     let (proxy, upstream) = set_up(engine, names).await;
     let denied = lists::build("home.example", &Reach::default());
-    files.write_lists(&denied, &Languages::default()).unwrap();
+    files.write_lists(&denied).unwrap();
     start_relay(engine, names, files, &proxy).await;
     let via = format!("http_proxy=http://{ALIAS}:3128");
     start(
         engine,
         &names.client,
-        &busybox(),
+        BUSYBOX,
         &names.plugin,
         &["sleep", "3600"],
         Some(vec![via]),
@@ -284,7 +282,7 @@ async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
             ..Reach::default()
         },
     );
-    files.write_lists(&allowed, &Languages::default()).unwrap();
+    files.write_lists(&allowed).unwrap();
     wait_for(engine, &names.client, &url, "200").await;
     assert_eq!(relay_id(engine, &names.relay).await, before);
     wait_for(engine, &names.client, "http://far.example.test/", "200").await;
@@ -304,11 +302,7 @@ async fn exercise(engine: &Engine, names: &Names, files: &RelayFiles) {
     );
 
     // 密码错了回 503，立刻返回。
-    let wrong = ProxyAddress::parse(
-        &format!("http://u:wrong@{upstream}:8080"),
-        &Default::default(),
-    )
-    .unwrap();
+    let wrong = ProxyAddress::parse(&format!("http://u:wrong@{upstream}:8080")).unwrap();
     start_relay(engine, names, files, &wrong).await;
     wait_for(engine, &names.client, "http://far.example.test/", "503").await;
 }
@@ -322,12 +316,19 @@ async fn relay_id(engine: &Engine, relay: &str) -> Option<String> {
 async fn the_relay_goes_through_the_owners_proxy_and_follows_its_lists() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
-    for image in [gost::image(), busybox()] {
-        test_docker::ensure_image(&engine, &image).await;
+    for image in [IMAGE, BUSYBOX] {
+        engine
+            .ensure_image(image, PullPolicy::Missing, None)
+            .await
+            .unwrap();
     }
-    let mut names = test_docker::Names::new();
-    let names = Names::new(&mut names);
+    let names = Names::new();
     let dir = tempfile::tempdir().unwrap();
     let files = RelayFiles::new(dir.path().join("relay"), runner());
-    exercise(&engine, &names, &files).await;
+    let run = std::panic::AssertUnwindSafe(exercise(&engine, &names, &files));
+    let result = futures_util::FutureExt::catch_unwind(run).await;
+    names.remove(&engine).await;
+    if let Err(panic) = result {
+        std::panic::resume_unwind(panic);
+    }
 }

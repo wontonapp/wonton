@@ -15,11 +15,9 @@ use serde::{Deserialize, Serialize};
 use wonton_protocol::CardLine;
 
 use super::host_check;
-use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::{GpuNeed, Manifest, ManifestError, Permission};
 use super::requirements::{GpuVendor, card_name};
-use crate::l10n::{list, text};
 
 /// 清单的 `gpu`：拿到显卡的服务。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,49 +28,31 @@ pub struct GpuSpec {
 
 /// `gpu`、`devices.gpu` 和 `requirements.gpu` 三者要一起出现：只写其中一个说明清单写错了，而不是不要显卡。
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。
-pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
-    let invalid = |message: String| Err(ManifestError::Invalid(message));
-    let optional = manifest
-        .optional_permissions
-        .contains_key(&Permission::DevicesGpu);
-    let permitted = manifest.permissions.contains(&Permission::DevicesGpu) || optional;
+pub fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
+    let invalid = |message: &str| Err(ManifestError::Invalid(message.to_owned()));
+    let permitted = manifest.permissions.contains(&Permission::DevicesGpu);
     let wants = manifest.requirements.as_ref().and_then(|r| r.gpu.as_ref());
     match (&manifest.gpu, permitted) {
-        (Some(_), false) => {
-            return invalid(text(langs, "plugin-install-gpu-needs-permission", &[]));
-        }
+        (Some(_), false) => return invalid("声明了 gpu 就必须申请 devices.gpu 权限"),
         (None, true) => {
-            return invalid(text(langs, "plugin-install-gpu-needs-services", &[]));
+            return invalid("申请了 devices.gpu 就必须用 gpu.services 写明哪些服务用显卡");
         }
         (None, false) if wants.is_some() => {
-            return invalid(text(langs, "plugin-install-gpu-needs-all-three", &[]));
+            return invalid("requirements.gpu 要和 devices.gpu 权限、gpu.services 一起声明");
         }
         _ => {}
-    }
-    if optional && wants.is_some_and(|gpu| gpu.need == GpuNeed::Required) {
-        return invalid(text(
-            langs,
-            "plugin-install-optional-gpu-required",
-            &[("permission", "devices.gpu".into())],
-        ));
     }
     if let Some(gpu) = &manifest.gpu {
         let mut seen = BTreeSet::new();
         if gpu.services.is_empty() || !gpu.services.iter().all(|s| seen.insert(s)) {
-            return invalid(text(langs, "plugin-install-gpu-services-nonempty", &[]));
+            return invalid("gpu.services 至少一项，且不能重复");
         }
     }
     Ok(())
 }
 
-/// 插件要不要显卡：没申请 `devices.gpu` 的不要；可选的按 `optional`；必需的而没写 `requirements.gpu` 的按 `required`。
+/// 插件要不要显卡：没申请 `devices.gpu` 的不要；申请了而没写 `requirements.gpu` 的按 `required`。
 pub fn requirement(manifest: &Manifest) -> Option<GpuNeed> {
-    if manifest
-        .optional_permissions
-        .contains_key(&Permission::DevicesGpu)
-    {
-        return Some(GpuNeed::Optional);
-    }
     manifest
         .permissions
         .contains(&Permission::DevicesGpu)
@@ -124,7 +104,7 @@ pub struct GpuGrant {
 impl GpuGrant {
     /// 只留插件要的厂商；空表示哪家都行。`/dev/dri` 是整个目录交出去的（理由见 ADR-0018），AMD 和 Intel 混装的主机上
     /// 分不开，所以任一家要的卡在 DRM 上就给整个目录。
-    fn only(mut self, wanted: &[GpuVendor], langs: &Languages) -> Result<Self, GpuProblem> {
+    fn only(mut self, wanted: &[GpuVendor]) -> Result<Self, GpuProblem> {
         if wanted.is_empty() {
             return Ok(self);
         }
@@ -141,13 +121,13 @@ impl GpuGrant {
         self.vendors
             .retain(|vendor| names.contains(&vendor.as_str()));
         if !self.nvidia && self.devices.is_empty() {
-            return Err(GpuProblem::NoWantedVendor(card_name(wanted, langs)));
+            return Err(GpuProblem::NoWantedVendor(card_name(wanted)));
         }
         Ok(self)
     }
 
     /// 给主人看的一句话：给了什么。
-    pub fn describe(&self, langs: &Languages) -> String {
+    pub fn describe(&self) -> String {
         let mut parts = Vec::new();
         if !self.devices.is_empty() {
             let vendors: Vec<&str> = self
@@ -157,18 +137,15 @@ impl GpuGrant {
                 .map(String::as_str)
                 .collect();
             let groups: Vec<String> = self.groups.iter().map(ToString::to_string).collect();
-            parts.push(text(
-                langs,
-                "plugin-install-gpu-describe-vendors",
-                &[
-                    ("vendors", list(langs, &vendors).into()),
-                    ("devices", list(langs, &self.devices).into()),
-                    ("groups", list(langs, &groups).into()),
-                ],
+            parts.push(format!(
+                "{} 显卡：{}，容器加入组 {}",
+                vendors.join("、"),
+                self.devices.join("、"),
+                groups.join("、")
             ));
         }
         if self.nvidia {
-            parts.push(text(langs, "plugin-install-gpu-describe-nvidia", &[]));
+            parts.push("NVIDIA 显卡：全部，经 NVIDIA Container Toolkit".to_owned());
         }
         parts.join("；")
     }
@@ -200,48 +177,31 @@ impl GpuGrant {
     }
 }
 
-/// 没有可用的显卡的原因，给主人看。变体只带数据；给 App 的文字用 [`GpuProblem::message`] 按语言拼。
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// 没有可用的显卡的原因，给主人看。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GpuProblem {
+    #[error(
+        "核心在容器里，但没有挂载宿主的 /dev（WONTON_HOST_DEV），看不到显卡设备：按当前版本的 compose 重新启动核心"
+    )]
     HostDevUnavailable,
+    #[error("读不了 {path}：{error}")]
     Unreadable { path: String, error: String },
+    #[error("没有找到显卡（PCI 上没有显示设备）")]
     NoDevice,
+    #[error("有显卡但没有可用的驱动：{0}")]
     NoDriver(String),
+    #[error(
+        "有 NVIDIA 驱动，但 Docker 没有登记 nvidia 运行时：请安装 NVIDIA Container Toolkit 并执行 \
+         `nvidia-ctk runtime configure --runtime=docker`"
+    )]
     NoRuntime,
+    #[error("没有{0}")]
     NoWantedVendor(String),
-}
-
-impl GpuProblem {
-    pub fn message(&self, langs: &Languages) -> String {
-        match self {
-            Self::HostDevUnavailable => text(langs, "plugin-install-gpu-problem-host-dev", &[]),
-            Self::Unreadable { path, error } => text(
-                langs,
-                "plugin-install-gpu-problem-unreadable",
-                &[
-                    ("path", path.as_str().into()),
-                    ("error", error.as_str().into()),
-                ],
-            ),
-            Self::NoDevice => text(langs, "plugin-install-gpu-problem-no-device", &[]),
-            Self::NoDriver(detail) => text(
-                langs,
-                "plugin-install-gpu-problem-no-driver",
-                &[("detail", detail.as_str().into())],
-            ),
-            Self::NoRuntime => text(langs, "plugin-install-gpu-problem-no-runtime", &[]),
-            Self::NoWantedVendor(card) => text(
-                langs,
-                "plugin-install-gpu-problem-no-wanted-vendor",
-                &[("card", card.as_str().into())],
-            ),
-        }
-    }
 }
 
 /// 按 sysfs 和宿主的 `/dev` 探测显卡。NVIDIA 只确认驱动已加载（`nvidia` 内核模块），运行时由调用方对照 Docker
 /// 再查；`nvidia-smi` 之类的二进制装了不算，驱动没加载时它也在。
-pub fn probe(paths: &HostPaths, langs: &Languages) -> Result<GpuGrant, GpuProblem> {
+pub fn probe(paths: &HostPaths) -> Result<GpuGrant, GpuProblem> {
     let sys = &paths.sys;
     let nvidia = sys.join("module/nvidia").is_dir();
     let render_vendors: Vec<String> = render_nodes(sys)?
@@ -250,7 +210,7 @@ pub fn probe(paths: &HostPaths, langs: &Languages) -> Result<GpuGrant, GpuProble
         .filter(|vendor| vendor != NVIDIA_VENDOR)
         .collect();
     if render_vendors.is_empty() && !nvidia {
-        return Err(no_usable_driver(sys, langs)?);
+        return Err(no_usable_driver(sys)?);
     }
     let mut grant = GpuGrant {
         devices: Vec::new(),
@@ -265,13 +225,10 @@ pub fn probe(paths: &HostPaths, langs: &Languages) -> Result<GpuGrant, GpuProble
             nodes.push(dev.join("kfd"));
             grant.devices.push("/dev/kfd".to_owned());
         }
-        nodes.extend(device_nodes(&dev.join("dri"), langs)?);
+        nodes.extend(device_nodes(&dev.join("dri"))?);
         grant.devices.push("/dev/dri".to_owned());
         grant.groups = owning_groups(&nodes)?;
-        let vendors: BTreeSet<String> = render_vendors
-            .iter()
-            .map(|v| vendor_name(v, langs))
-            .collect();
+        let vendors: BTreeSet<String> = render_vendors.iter().map(|v| vendor_name(v)).collect();
         grant.vendors.extend(vendors);
     }
     if nvidia {
@@ -282,16 +239,12 @@ pub fn probe(paths: &HostPaths, langs: &Languages) -> Result<GpuGrant, GpuProble
 
 const NVIDIA_VENDOR: &str = "0x10de";
 
-fn vendor_name(id: &str, langs: &Languages) -> String {
+fn vendor_name(id: &str) -> String {
     match id {
         "0x1002" => "AMD".to_owned(),
         NVIDIA_VENDOR => "NVIDIA".to_owned(),
         "0x8086" => "Intel".to_owned(),
-        other => text(
-            langs,
-            "plugin-install-gpu-vendor-other",
-            &[("id", other.into())],
-        ),
+        other => format!("厂商 {other}"),
     }
 }
 
@@ -306,7 +259,7 @@ fn render_nodes(sys: &Path) -> Result<Vec<String>, GpuProblem> {
 }
 
 /// 没有渲染节点也没有 NVIDIA 驱动时，从 PCI 设备里找出显卡，说明为什么用不了。
-fn no_usable_driver(sys: &Path, langs: &Languages) -> Result<GpuProblem, GpuProblem> {
+fn no_usable_driver(sys: &Path) -> Result<GpuProblem, GpuProblem> {
     let pci = sys.join("bus/pci/devices");
     let mut cards = Vec::new();
     for address in entries(&pci)? {
@@ -314,38 +267,26 @@ fn no_usable_driver(sys: &Path, langs: &Languages) -> Result<GpuProblem, GpuProb
         if !read_trimmed(&device.join("class")).starts_with("0x03") {
             continue;
         }
-        let vendor = vendor_name(&read_trimmed(&device.join("vendor")), langs);
+        let vendor = vendor_name(&read_trimmed(&device.join("vendor")));
         let driver = fs::read_link(device.join("driver"))
             .ok()
             .and_then(|link| link.file_name().map(|n| n.to_string_lossy().into_owned()));
         let state = match driver.as_deref() {
-            None => text(langs, "plugin-install-gpu-no-driver-none", &[]),
-            Some("nouveau") => text(langs, "plugin-install-gpu-no-driver-nouveau", &[]),
-            Some(driver) => text(
-                langs,
-                "plugin-install-gpu-no-driver-no-render",
-                &[("driver", driver.into())],
-            ),
+            None => "没有加载驱动".to_owned(),
+            Some("nouveau") => "用的是 nouveau 驱动，不能用于计算，要 NVIDIA 官方驱动".to_owned(),
+            Some(driver) => format!("加载了 {driver} 驱动，但没有渲染节点"),
         };
-        cards.push(text(
-            langs,
-            "plugin-install-gpu-device-entry",
-            &[
-                ("address", address.as_str().into()),
-                ("vendor", vendor.as_str().into()),
-                ("state", state.as_str().into()),
-            ],
-        ));
+        cards.push(format!("{address}（{vendor}）{state}"));
     }
     if cards.is_empty() {
         Ok(GpuProblem::NoDevice)
     } else {
-        Ok(GpuProblem::NoDriver(list(langs, &cards)))
+        Ok(GpuProblem::NoDriver(cards.join("；")))
     }
 }
 
 /// 目录里的设备节点（不算子目录，如 `/dev/dri/by-path`）。目录不存在时报错：sysfs 说有设备，`/dev` 里却没有。
-fn device_nodes(dir: &Path, langs: &Languages) -> Result<Vec<PathBuf>, GpuProblem> {
+fn device_nodes(dir: &Path) -> Result<Vec<PathBuf>, GpuProblem> {
     let nodes: Vec<PathBuf> = entries(dir)?
         .into_iter()
         .map(|name| dir.join(name))
@@ -354,7 +295,7 @@ fn device_nodes(dir: &Path, langs: &Languages) -> Result<Vec<PathBuf>, GpuProble
     if nodes.is_empty() {
         return Err(GpuProblem::Unreadable {
             path: dir.display().to_string(),
-            error: text(langs, "plugin-install-gpu-no-device-nodes", &[]),
+            error: "里面没有设备节点".to_owned(),
         });
     }
     Ok(nodes)
@@ -414,13 +355,12 @@ impl PluginManager {
     async fn probe_gpu(
         &self,
         manifest: &Manifest,
-        langs: &Languages,
     ) -> Result<Result<GpuGrant, GpuProblem>, InstallError> {
         let requirements = manifest.requirements.as_ref();
         let wanted = requirements
             .and_then(|r| r.gpu.as_ref())
             .map_or(&[][..], |gpu| &gpu.vendors);
-        let grant = match probe(&self.host, langs).and_then(|grant| grant.only(wanted, langs)) {
+        let grant = match probe(&self.host).and_then(|grant| grant.only(wanted)) {
             Ok(grant) => grant,
             Err(problem) => return Ok(Err(problem)),
         };
@@ -431,20 +371,11 @@ impl PluginManager {
     }
 
     /// 给插件的显卡，或者给不了的原因：先按它的要求判断（厂商、显存），再看设备实际能不能交出去。
-    async fn gpu_fit(
-        &self,
-        manifest: &Manifest,
-        langs: &Languages,
-    ) -> Result<Result<GpuGrant, String>, InstallError> {
-        if let Some(problem) =
-            host_check::gpu_problem(manifest, &self.host_facts(langs).await, langs)
-        {
+    async fn gpu_fit(&self, manifest: &Manifest) -> Result<Result<GpuGrant, String>, InstallError> {
+        if let Some(problem) = host_check::gpu_problem(manifest, &self.host_facts().await) {
             return Ok(Err(problem));
         }
-        Ok(self
-            .probe_gpu(manifest, langs)
-            .await?
-            .map_err(|p| p.message(langs)))
+        Ok(self.probe_gpu(manifest).await?.map_err(|p| p.to_string()))
     }
 
     /// 申请了 `devices.gpu` 的插件在这台主机上拿到什么：没有符合的显卡时，`required` 的装不了（原因写清），
@@ -452,16 +383,11 @@ impl PluginManager {
     pub(super) async fn gpu_grant(
         &self,
         manifest: &Manifest,
-        granted: &[Permission],
-        langs: &Languages,
     ) -> Result<Option<GpuGrant>, InstallError> {
         let Some(requirement) = requirement(manifest) else {
             return Ok(None);
         };
-        if !granted.contains(&Permission::DevicesGpu) {
-            return Ok(None);
-        }
-        match self.gpu_fit(manifest, langs).await? {
+        match self.gpu_fit(manifest).await? {
             Ok(grant) => Ok(Some(grant)),
             Err(problem) if requirement == GpuNeed::Optional => {
                 tracing::info!(plugin = %manifest.id, %problem, "本机没有符合的显卡，插件不带显卡安装");
@@ -475,8 +401,6 @@ impl PluginManager {
     pub(super) async fn gpu_preview(
         &self,
         manifest: &Manifest,
-        enabled: bool,
-        langs: &Languages,
     ) -> Result<GpuPreview, InstallError> {
         let Some(requirement) = requirement(manifest) else {
             return Ok(GpuPreview {
@@ -484,58 +408,28 @@ impl PluginManager {
                 blocked: None,
             });
         };
-        if !enabled {
-            return Ok(GpuPreview {
-                notice: None,
-                blocked: None,
-            });
-        }
         let services = manifest
             .gpu
             .as_ref()
-            .map(|g| list(langs, &g.services))
+            .map(|g| g.services.join("、"))
             .unwrap_or_default();
-        let (line, blocked) = match self.gpu_fit(manifest, langs).await? {
+        let (text, blocked) = match self.gpu_fit(manifest).await? {
             Ok(grant) => (
-                text(
-                    langs,
-                    "plugin-install-gpu-preview-granted",
-                    &[
-                        ("services", services.as_str().into()),
-                        ("describe", grant.describe(langs).into()),
-                    ],
-                ),
+                format!("显卡交给服务 {services}：{}", grant.describe()),
                 None,
             ),
             Err(problem) if requirement == GpuNeed::Optional => (
-                text(
-                    langs,
-                    "plugin-install-gpu-preview-missing",
-                    &[
-                        ("problem", problem.as_str().into()),
-                        ("services", services.as_str().into()),
-                    ],
-                ),
+                format!("本机没有符合的显卡（{problem}），服务 {services} 装上后不带显卡运行"),
                 None,
             ),
             Err(problem) => {
                 let reason = InstallError::GpuUnavailable(problem).to_string();
-                (
-                    text(
-                        langs,
-                        "plugin-install-gpu-preview-required",
-                        &[
-                            ("services", services.as_str().into()),
-                            ("reason", reason.as_str().into()),
-                        ],
-                    ),
-                    Some(reason),
-                )
+                (format!("服务 {services} 需要显卡，{reason}"), Some(reason))
             }
         };
         Ok(GpuPreview {
             notice: Some(CardLine {
-                text: line,
+                text,
                 emphasis: true,
             }),
             blocked,
@@ -544,4 +438,233 @@ impl PluginManager {
 }
 
 #[cfg(test)]
-pub(crate) use super::gpu_fake_host as fake_host;
+pub(crate) mod fake_host {
+    //! 测试用的假宿主：在临时目录里摆出 sysfs 和 `/dev` 的相关部分。设备节点用普通文件代替（测试进程不能
+    //! mknod），所属的组就是测试进程的组。
+
+    use std::fs;
+    use std::path::Path;
+
+    use super::HostPaths;
+
+    pub struct FakeHost {
+        pub dir: tempfile::TempDir,
+    }
+
+    impl FakeHost {
+        pub fn empty() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            fs::create_dir_all(dir.path().join("sys/class/drm")).unwrap();
+            fs::create_dir_all(dir.path().join("sys/bus/pci/devices")).unwrap();
+            fs::create_dir_all(dir.path().join("dev")).unwrap();
+            Self { dir }
+        }
+
+        /// npchy 那样的 AMD 主机：amdgpu 驱动、KFD、一个渲染节点和一个显示节点。
+        pub fn amd() -> Self {
+            let host = Self::empty();
+            host.pci("0000:05:00.0", "0x1002", "0x038000", Some("amdgpu"));
+            host.render_node("renderD128", "0x1002", "0000:05:00.0");
+            fs::create_dir_all(host.sys().join("class/kfd/kfd")).unwrap();
+            host.dev_node("kfd");
+            host.dev_node("dri/card1");
+            host.dev_node("dri/renderD128");
+            fs::create_dir_all(host.dev().join("dri/by-path")).unwrap();
+            host
+        }
+
+        /// 加载了 NVIDIA 官方驱动的主机：有 `nvidia` 内核模块，渲染节点属于 NVIDIA。
+        pub fn nvidia() -> Self {
+            let host = Self::empty();
+            host.pci("0000:01:00.0", "0x10de", "0x030000", Some("nvidia"));
+            host.render_node("renderD128", "0x10de", "0000:01:00.0");
+            fs::create_dir_all(host.sys().join("module/nvidia")).unwrap();
+            host
+        }
+
+        pub fn sys(&self) -> std::path::PathBuf {
+            self.dir.path().join("sys")
+        }
+
+        pub fn dev(&self) -> std::path::PathBuf {
+            self.dir.path().join("dev")
+        }
+
+        /// 核心直接跑在宿主上：看得到 `/dev`。
+        pub fn paths(&self) -> HostPaths {
+            HostPaths {
+                dev: Some(self.dev()),
+                sys: self.sys(),
+                proc: self.sys().with_file_name("proc"),
+            }
+        }
+
+        /// 核心在容器里，compose 没有挂载宿主的 `/dev`。
+        pub fn paths_without_dev(&self) -> HostPaths {
+            HostPaths {
+                dev: None,
+                sys: self.sys(),
+                proc: self.sys().with_file_name("proc"),
+            }
+        }
+
+        pub fn pci(&self, address: &str, vendor: &str, class: &str, driver: Option<&str>) {
+            let device = self.sys().join("bus/pci/devices").join(address);
+            fs::create_dir_all(&device).unwrap();
+            fs::write(device.join("vendor"), format!("{vendor}\n")).unwrap();
+            fs::write(device.join("class"), format!("{class}\n")).unwrap();
+            if let Some(driver) = driver {
+                let drivers = self.sys().join("bus/pci/drivers").join(driver);
+                fs::create_dir_all(&drivers).unwrap();
+                std::os::unix::fs::symlink(&drivers, device.join("driver")).unwrap();
+            }
+        }
+
+        pub fn render_node(&self, name: &str, vendor: &str, address: &str) {
+            let node = self.sys().join("class/drm").join(name);
+            fs::create_dir_all(&node).unwrap();
+            let device = self.sys().join("bus/pci/devices").join(address);
+            std::os::unix::fs::symlink(&device, node.join("device")).unwrap();
+            fs::create_dir_all(device.join("drm").join(name)).unwrap();
+            fs::write(device.join("vendor"), format!("{vendor}\n")).unwrap();
+        }
+
+        /// `/proc/meminfo`，只有总内存。
+        pub fn memory_total_kib(&self, kib: u64) {
+            let proc = self.sys().with_file_name("proc");
+            fs::create_dir_all(&proc).unwrap();
+            fs::write(proc.join("meminfo"), format!("MemTotal: {kib} kB\n")).unwrap();
+        }
+
+        pub fn dev_node(&self, relative: &str) {
+            let path = self.dev().join(relative);
+            fs::create_dir_all(path.parent().unwrap_or(Path::new("/"))).unwrap();
+            fs::write(path, "").unwrap();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::MetadataExt;
+
+    use super::fake_host::FakeHost;
+    use super::*;
+
+    #[test]
+    fn amd_hosts_hand_over_kfd_dri_and_the_owning_groups() {
+        let host = FakeHost::amd();
+        let grant = probe(&host.paths()).unwrap();
+        assert_eq!(grant.devices, ["/dev/kfd", "/dev/dri"]);
+        assert!(!grant.nvidia);
+        assert_eq!(grant.vendors, ["AMD"]);
+        // 假设备节点是普通文件，属于测试进程的组；真机上是 video、render 的 GID。
+        let gid = std::fs::metadata(host.dev().join("kfd")).unwrap().gid();
+        let expected: Vec<u32> = if gid == 0 { Vec::new() } else { vec![gid] };
+        assert_eq!(grant.groups, expected);
+        let text = grant.describe();
+        assert!(text.starts_with("AMD 显卡：/dev/kfd、/dev/dri"), "{text}");
+    }
+
+    #[test]
+    fn render_nodes_without_kfd_still_get_dri() {
+        let host = FakeHost::empty();
+        host.pci("0000:00:02.0", "0x8086", "0x030000", Some("i915"));
+        host.render_node("renderD128", "0x8086", "0000:00:02.0");
+        host.dev_node("dri/renderD128");
+        let grant = probe(&host.paths()).unwrap();
+        assert_eq!(grant.devices, ["/dev/dri"]);
+        assert_eq!(grant.vendors, ["Intel"]);
+    }
+
+    #[test]
+    fn nvidia_needs_the_kernel_module_not_the_binary() {
+        let host = FakeHost::nvidia();
+        let grant = probe(&host.paths()).unwrap();
+        assert!(grant.nvidia);
+        assert!(grant.devices.is_empty(), "NVIDIA 的设备由运行时放进容器");
+        assert_eq!(grant.vendors, ["NVIDIA"]);
+        assert_eq!(
+            grant.describe(),
+            "NVIDIA 显卡：全部，经 NVIDIA Container Toolkit"
+        );
+
+        // 同样的显卡，驱动没加载（nvidia-smi 装了也没用）：如实说没有可用的驱动。
+        let host = FakeHost::empty();
+        host.pci("0000:01:00.0", "0x10de", "0x030000", None);
+        let err = probe(&host.paths()).unwrap_err();
+        assert!(
+            matches!(&err, GpuProblem::NoDriver(detail) if detail.contains("NVIDIA") && detail.contains("没有加载驱动")),
+            "{err}"
+        );
+        let host = FakeHost::empty();
+        host.pci("0000:01:00.0", "0x10de", "0x030000", Some("nouveau"));
+        host.render_node("renderD128", "0x10de", "0000:01:00.0");
+        let err = probe(&host.paths()).unwrap_err();
+        assert!(
+            matches!(&err, GpuProblem::NoDriver(detail) if detail.contains("nouveau")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn hosts_without_a_gpu_say_so() {
+        let host = FakeHost::empty();
+        host.pci("0000:00:1f.0", "0x8086", "0x060100", Some("lpc_ich"));
+        assert_eq!(probe(&host.paths()).unwrap_err(), GpuProblem::NoDevice);
+        // sysfs 里连 drm、pci 目录都没有（比如测试机）也是没有显卡，不是读错。
+        let bare = tempfile::tempdir().unwrap();
+        let paths = HostPaths {
+            dev: Some(bare.path().join("dev")),
+            sys: bare.path().join("sys"),
+            proc: bare.path().join("proc"),
+        };
+        assert_eq!(probe(&paths).unwrap_err(), GpuProblem::NoDevice);
+    }
+
+    #[test]
+    fn a_core_in_a_container_without_the_host_dev_mount_does_not_guess() {
+        let host = FakeHost::amd();
+        assert_eq!(
+            probe(&host.paths_without_dev()).unwrap_err(),
+            GpuProblem::HostDevUnavailable
+        );
+        // 有渲染节点、/dev/dri 里却没有设备节点：报读不了，不悄悄给一个空目录。
+        let host = FakeHost::empty();
+        host.pci("0000:05:00.0", "0x1002", "0x038000", Some("amdgpu"));
+        host.render_node("renderD128", "0x1002", "0000:05:00.0");
+        std::fs::create_dir_all(host.dev().join("dri")).unwrap();
+        assert!(matches!(
+            probe(&host.paths()).unwrap_err(),
+            GpuProblem::Unreadable { .. }
+        ));
+    }
+
+    #[test]
+    fn grants_become_devices_groups_and_device_requests() {
+        let grant = GpuGrant {
+            devices: vec!["/dev/kfd".into(), "/dev/dri".into()],
+            groups: vec![983, 987],
+            nvidia: true,
+            vendors: vec!["AMD".into(), "NVIDIA".into()],
+        };
+        let mut host = HostConfig::default();
+        grant.apply(&mut host);
+        let devices = host.devices.unwrap();
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].path_on_host.as_deref(), Some("/dev/kfd"));
+        assert_eq!(devices[0].path_in_container.as_deref(), Some("/dev/kfd"));
+        assert_eq!(devices[0].cgroup_permissions.as_deref(), Some("rwm"));
+        assert_eq!(host.group_add.unwrap(), ["983", "987"]);
+        let request = &host.device_requests.unwrap()[0];
+        assert_eq!(request.count, Some(-1));
+        assert_eq!(
+            request.capabilities.as_deref(),
+            Some(&[vec!["gpu".to_owned()]][..])
+        );
+        assert_eq!(
+            grant.describe(),
+            "AMD 显卡：/dev/kfd、/dev/dri，容器加入组 983、987；NVIDIA 显卡：全部，经 NVIDIA Container Toolkit"
+        );
+    }
+}

@@ -15,14 +15,13 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 use wonton_protocol::{FileId, FileInfo, FileSource};
 
-use super::fakes::loopback_tunnel;
 use super::files_plugin_tests::{plugin_origin, plugin_service};
 use super::tests::{CORE, TOKEN, owner};
+use super::tunnel_tests::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::files::record::{Accessor, Origin};
 use crate::files::test_support::Fixture;
-use crate::files::test_support::any_langs;
 use crate::http::HttpClient;
 use crate::owner::OwnerStore;
 use crate::plugin::PluginManager;
@@ -45,11 +44,7 @@ pub(super) async fn home() -> Home {
 
 /// `tusd` 是 tusd 的 `host:port`。
 pub(super) async fn home_with(tusd: Option<String>) -> Home {
-    home_at(Fixture::new(), tusd).await
-}
-
-/// 用调用方先建好的目录建 home：要先起 tusd（端口由它自己挑）、再把这个端口交给网关时用。
-pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
+    let f = Fixture::new();
     let public = PublicUrls {
         scheme: "http".into(),
         base_domain: CORE.into(),
@@ -82,14 +77,13 @@ pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
         lifecycle,
         ImageWorker::in_process(),
     ));
-    let (tunnel, members) = loopback_tunnel(dir).await;
+    let tunnel = loopback_tunnel(dir).await;
     let key = SecretKey::generate();
     tunnel.devices.add(key.public(), None).unwrap();
     let gateway = Gateway::new(
         public,
         profile,
         TOKEN.into(),
-        members,
         manager,
         None,
         http,
@@ -490,7 +484,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
+            .authorize(&id, &Accessor::Bot("hermes".into()))
             .is_ok()
     );
 
@@ -502,7 +496,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&id, &Accessor::Bot("hermes".into()), &any_langs())
+            .authorize(&id, &Accessor::Bot("hermes".into()))
             .is_err()
     );
     assert_eq!(
@@ -528,7 +522,7 @@ async fn grants_add_the_bots_of_a_room() {
     assert!(
         home.f
             .files
-            .authorize(&bots_only, &Accessor::Bot("hermes".into()), &any_langs())
+            .authorize(&bots_only, &Accessor::Bot("hermes".into()))
             .is_err()
     );
 }
@@ -658,46 +652,4 @@ async fn transfers_and_changes_are_audited() {
     );
     assert_eq!(lines[0]["range"], "2-5");
     assert_eq!(lines[2]["bots"], json!(["hermes"]));
-}
-
-/// 文件接口的错误按 `Accept-Language` 挑语言：ja 和 fr-FR 拿到不同的同一句话（期望值由目录格式化出来）。
-#[tokio::test]
-async fn file_errors_follow_the_requested_language() {
-    use crate::files::new_upload_id;
-
-    let home = home().await;
-    let path = info(&new_upload_id());
-    let message = {
-        let home = &home;
-        move |header: &'static str| {
-            let path = path.clone();
-            async move {
-                let reply = home
-                    .send(
-                        home.request(Method::GET, &path)
-                            .header(header::ACCEPT_LANGUAGE, header)
-                            .body(Body::empty())
-                            .unwrap(),
-                    )
-                    .await;
-                assert_eq!(reply.error_kind(), "file_unknown", "{header}");
-                reply.json()["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .to_owned()
-            }
-        }
-    };
-    let ja = message("ja").await;
-    let french = message("fr-FR").await;
-    let expected = |tag: &str| {
-        crate::l10n::CATALOG.format(
-            crate::l10n::CATALOG.negotiate(&[tag]),
-            "files-not-found",
-            &[],
-        )
-    };
-    assert_eq!(ja, expected("ja"));
-    assert_eq!(french, expected("en"));
-    assert_ne!(ja, french);
 }

@@ -10,7 +10,6 @@ use crate::plugin::storefront::index::{DocsSpec, Files};
 
 use super::page;
 use super::{CURRENT_FILE, Current, Source};
-use crate::plugin::languages::Languages;
 
 /// 一份文档最多这么多个文件：索引写错时不至于取个没完。
 const MAX_FILES: usize = 500;
@@ -21,9 +20,8 @@ pub(super) async fn fetch(
     files: &Files,
     cache: &Path,
     reuse: Option<&Path>,
-    langs: &Languages,
 ) -> Result<Current, String> {
-    let source = SourceRef::parse(&spec.source, langs).map_err(|e| e.to_string())?;
+    let source = SourceRef::parse(&spec.source).map_err(|e| e.to_string())?;
     if source.wanted != Wanted::Latest {
         return Err("docs.source 不能带版本".to_owned());
     }
@@ -47,14 +45,7 @@ pub(super) async fn fetch(
             let data = match reuse.and_then(|dir| unchanged(&dir.join(path), sha256)) {
                 Some(data) => data,
                 None => files
-                    .verified(
-                        &source.repo,
-                        source.subdir.as_deref(),
-                        &spec.commit,
-                        path,
-                        sha256,
-                        langs,
-                    )
+                    .verified(&source.repo, &spec.commit, path, sha256)
                     .await
                     .map_err(|e| e.to_string())?,
             };

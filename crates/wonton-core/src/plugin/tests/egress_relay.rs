@@ -13,7 +13,6 @@ use super::super::fake_docker::FakeDocker;
 use super::super::lan::Lan;
 use super::super::lan::detect::Detector;
 use super::super::lan::probe::HostNetwork;
-use super::super::languages::Languages;
 use super::super::manifest::Permission;
 use super::super::names::{Instance, container_name};
 use super::super::{PluginId, PluginManager, PluginPackage};
@@ -36,17 +35,11 @@ fn closed_app() -> String {
 }
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions
+    PluginPackage::parse(compose).unwrap().manifest.permissions
 }
 
 fn proxy(text: &str) -> Egress {
-    Egress::new(
-        Some(ProxyAddress::parse(text, &Default::default()).unwrap()),
-        None,
-    )
+    Egress::new(Some(ProxyAddress::parse(text).unwrap()), None)
 }
 
 struct Rig {
@@ -84,7 +77,6 @@ impl Rig {
     fn save(&self, url: Option<&str>, direct: &[&str]) {
         let settings = StoredEgress {
             url: url.map(str::to_owned),
-            doh_url: None,
             direct_cidrs: direct.iter().map(|c| c.parse().unwrap()).collect(),
             use_plugin: false,
         };
@@ -102,10 +94,7 @@ impl Rig {
     }
 
     async fn install(&self, compose: &str) {
-        self.m
-            .install(compose, &granted(compose), super::langs())
-            .await
-            .unwrap();
+        self.m.install(compose, &granted(compose)).await.unwrap();
     }
 }
 
@@ -116,8 +105,7 @@ async fn with_a_proxy_an_egress_plugin_is_sent_through_the_relay() {
 
     let env = env_of_container(&rig.docker, &container_name("app-test", "web"));
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
-    assert!(env["NO_PROXY"].contains(".wonton.internal"));
-    assert!(env["NO_PROXY"].contains(".localhost"));
+    assert!(env["NO_PROXY"].contains("auth.wonton.localhost"));
 
     let created = rig.relay_created();
     assert_eq!(created["Image"], IMAGE);
@@ -177,19 +165,9 @@ async fn the_lists_let_the_host_through_and_stop_everything_else_inside() {
     rig.save(None, &["100.64.0.0/10"]);
     rig.install(&egress_app()).await;
     let direct = rig.lines("direct.txt");
-    // 选出的地址 192.168.0.10 所在的网段，主人多放行的网段，假 Docker 里网桥的网关。
-    let mut expected = BTreeSet::from([
-        "100.64.0.0/10".to_owned(),
-        "172.17.0.1/32".to_owned(),
-        "192.168.0.0/24".to_owned(),
-    ]);
-    for name in [NETWORK, RELAY] {
-        expected.insert(format!(
-            "{}/32",
-            rig.m.engine.network_gateway(name).await.unwrap()
-        ));
-    }
-    assert_eq!(direct, expected);
+    // 选出的地址 192.168.0.193 所在的网段，主人多放行的网段，假 Docker 里网桥的网关。
+    let expected = ["100.64.0.0/10", "172.30.0.1/32", "192.168.0.0/24"];
+    assert_eq!(direct, expected.map(str::to_owned).into());
     let deny = rig.lines("deny.txt");
     assert!(deny.contains("127.0.0.0/8"), "{deny:?}");
     assert!(deny.contains("*.wonton.internal"), "{deny:?}");
@@ -203,25 +181,12 @@ async fn the_lists_let_the_host_through_and_stop_everything_else_inside() {
 #[tokio::test]
 async fn a_segment_overlapping_a_network_the_relay_is_on_stays_denied() {
     let rig = Rig::new(proxy("http://host.docker.internal:7899")).await;
-    rig.m.reconcile_relay().await.unwrap();
-    let body = rig.docker.network(RELAY).unwrap();
-    let subnet = body["IPAM"]["Config"][0]["Subnet"].as_str().unwrap();
-    let net: ipnet::Ipv4Net = subnet.parse().unwrap();
-    rig.save(None, &[subnet]);
+    rig.save(None, &["172.30.0.0/16"]);
     rig.install(&egress_app()).await;
     let direct = rig.lines("direct.txt");
-    assert!(!direct.contains(subnet), "{direct:?}");
-    for name in [NETWORK, RELAY] {
-        assert!(
-            direct.contains(&format!(
-                "{}/32",
-                rig.m.engine.network_gateway(name).await.unwrap()
-            )),
-            "{direct:?}"
-        );
-    }
-    let denied = std::net::Ipv4Addr::from(net.network().to_bits() + 2);
-    assert!(rig.lines("deny.txt").contains(&format!("{denied}/31")));
+    assert!(!direct.contains("172.30.0.0/16"), "{direct:?}");
+    assert!(direct.contains("172.30.0.1/32"), "{direct:?}");
+    assert!(rig.lines("deny.txt").contains("172.30.0.2/31"));
 }
 
 #[tokio::test]
@@ -236,7 +201,7 @@ async fn when_the_lan_address_moves_only_the_lists_change() {
         network
     };
     *rig.host.lock().unwrap() = Ok(moved);
-    rig.m.lan_pass(&Languages::default()).await.unwrap();
+    rig.m.lan_pass().await.unwrap();
     let direct = rig.lines("direct.txt");
     assert!(direct.contains("192.168.5.0/24"), "{direct:?}");
     assert!(!direct.contains("192.168.0.0/24"), "{direct:?}");
@@ -248,7 +213,7 @@ async fn uninstalling_detaches_the_relay_first_and_keeps_it_for_the_others() {
     let rig = Rig::new(proxy("http://host.docker.internal:7899")).await;
     rig.install(&egress_app()).await;
     let id = PluginId::parse("app.test").unwrap();
-    rig.m.uninstall(&id, false, &super::langs()).await.unwrap();
+    rig.m.uninstall(&id, false).await.unwrap();
     let writes = rig.docker.writes();
     let position = |needle: &str| {
         writes
@@ -270,7 +235,7 @@ async fn a_failed_install_takes_the_relay_off_the_network_it_removes() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose), super::langs())
+        .install(&compose, &granted(&compose))
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "storage", "{err}");
@@ -285,7 +250,7 @@ async fn an_image_that_cannot_be_pulled_stops_the_install_with_dockers_words() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose), super::langs())
+        .install(&compose, &granted(&compose))
         .await
         .unwrap_err();
     assert!(err.to_string().contains("toomanyrequests"), "{err}");
@@ -299,7 +264,7 @@ async fn a_container_or_network_that_is_not_ours_is_left_alone() {
     let compose = egress_app();
     let err = rig
         .m
-        .install(&compose, &granted(&compose), super::langs())
+        .install(&compose, &granted(&compose))
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -309,7 +274,7 @@ async fn a_container_or_network_that_is_not_ours_is_left_alone() {
     rig.docker.add_unlabeled_network(RELAY);
     let err = rig
         .m
-        .install(&compose, &granted(&compose), super::langs())
+        .install(&compose, &granted(&compose))
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
@@ -409,9 +374,7 @@ async fn each_core_on_a_shared_docker_has_its_own_relay() {
     let dir = tempfile::tempdir().unwrap();
     let m = manager_in_instance(engine, &dir, "alice2").with_egress(proxy("http://proxy:1"));
     let compose = egress_app();
-    m.install(&compose, &granted(&compose), super::langs())
-        .await
-        .unwrap();
+    m.install(&compose, &granted(&compose)).await.unwrap();
     let relay = "wonton-alice2--egress";
     let created = docker.created(relay).expect("这套核心的出口容器");
     assert_eq!(created["Labels"]["wonton.instance"], "alice2");

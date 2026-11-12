@@ -33,16 +33,13 @@ internal fun OnboardingAppsStep(
                 onSelect = { send(Action.ToggleOnboardingNeed(need.id)) },
                 multiple = true,
             )
-            // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
-            Column(
-                Modifier.padding(start = WontonTheme.spacing.s16),
-                verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-            ) {
-                need.plugins.forEach { item ->
-                    key(item.id) {
-                        OnboardingAppRow(item, need.selected, plugins) {
-                            send(Action.ToggleOnboardingNeed(need.id))
-                        }
+            if (need.selected) {
+                Column(
+                    Modifier.padding(start = WontonTheme.spacing.s16),
+                    verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+                ) {
+                    need.plugins.forEach { item ->
+                        key(item.id) { OnboardingAppRow(item, plugins) }
                     }
                 }
             }
@@ -51,11 +48,11 @@ internal fun OnboardingAppsStep(
 }
 
 @Composable
-private fun OnboardingAppRow(item: StoreItem, selected: Boolean, plugins: PluginsState, onToggle: () -> Unit) {
+private fun OnboardingAppRow(item: StoreItem, plugins: PluginsState) {
     StepOptionRow(
         title = item.title,
-        selected = selected,
-        onSelect = onToggle,
+        selected = false,
+        onSelect = null,
         blocked = item.blocked,
         leading = { PluginIconImage(item.icon, WontonTheme.size.taskIcon, plugins) },
         trailing = {

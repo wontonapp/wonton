@@ -1,8 +1,6 @@
 package app.wonton.ui
 
-import android.content.Context
 import android.graphics.BitmapFactory
-import android.text.format.Formatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,7 +34,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LocalPinnableContainer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
@@ -83,7 +80,6 @@ private fun FileCardView(id: FileId, core: ClientCore) {
             val danger = WontonTheme.colors.danger.toColor()
             Icon(
                 WontonIcon.Warning,
-                // 装饰：失败原因写在右边的文字里。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.iconSmall),
                 tint = danger,
@@ -136,14 +132,14 @@ private fun ReadyCard(info: FileInfo, core: ClientCore) {
             FileIcon(info, actions.tap == FileCardAction.Play, core)
             Column(Modifier.widthIn(max = 200.dp), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                 Text(info.name, style = WontonTheme.typography.supporting, maxLines = 2)
-                info.size?.let { SmallText(sizeText(context, it)) }
+                info.size?.let { SmallText(sizeText(it)) }
                 sourceText(info.source)?.let { SmallText(it) }
                 DownloadProgress(actions.download)
             }
         }
         actions.openElsewhere?.let { elsewhere ->
             Text(
-                stringResource(R.string.file_open_elsewhere),
+                "用其他 App 打开",
                 Modifier.clickable(enabled = elsewhere != FileCardAction.Wait, role = Role.Button) {
                     perform(elsewhere)
                 },
@@ -172,13 +168,11 @@ private fun FileIcon(info: FileInfo, playable: Boolean, core: ClientCore) {
     val shape = Modifier.size(WontonTheme.size.fileThumbnail).clip(RoundedCornerShape(WontonTheme.radii.control))
     val loaded = thumbnail
     if (loaded != null) {
-        // 装饰：缩略图旁边就是文件名。
         Image(loaded, contentDescription = null, shape, contentScale = ContentScale.Crop)
     } else {
         Box(shape, contentAlignment = Alignment.Center) {
             Icon(
                 if (playable) WontonIcon.Play else WontonIcon.File,
-                // 装饰：缩略图旁边就是文件名，播放还是文件由点下去的结果说。
                 contentDescription = null,
                 modifier = Modifier.size(WontonTheme.size.icon),
             )
@@ -206,9 +200,9 @@ private fun DownloadProgress(download: Transfer?) {
         TransferState.Paused -> {
             val because = download.pausedBecause
             if (because != null) {
-                Text(stringResource(R.string.file_paused, because), style = small, color = danger)
+                Text("暂停：$because", style = small, color = danger)
             } else {
-                SmallText(stringResource(R.string.file_paused_waiting))
+                SmallText("等连接恢复后接着下载")
             }
         }
         is TransferState.Failed -> Text(state.message, style = small, color = danger)
@@ -235,13 +229,23 @@ fun TransferBar(transfer: Transfer) {
     }
 }
 
-@Composable
 private fun sourceText(source: FileSource): String? =
     when (source) {
         FileSource.Device -> null
-        is FileSource.Bot -> stringResource(R.string.file_source_bot, source.name, source.plugin)
-        FileSource.Unknown -> stringResource(R.string.file_source_unknown)
+        is FileSource.Bot -> "来自 ${source.name}（${source.plugin}）"
+        FileSource.Unknown -> "来源不明"
     }
 
-/** minSdk 29 起按 SI（1000）进位，和 iOS 的 `ByteCountFormatter(.file)` 一致。 */
-fun sizeText(context: Context, bytes: ULong): String = Formatter.formatShortFileSize(context, bytes.toLong())
+/** 和 iOS 的 `ByteCountFormatter` 一样按 1000 进位。 */
+private const val BYTES_PER_UNIT = 1000.0
+
+fun sizeText(bytes: ULong): String {
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= BYTES_PER_UNIT && unit < units.lastIndex) {
+        value /= BYTES_PER_UNIT
+        unit++
+    }
+    return if (unit == 0) "$bytes B" else "%.1f %s".format(value, units[unit])
+}

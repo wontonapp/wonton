@@ -6,55 +6,30 @@
 //! - 服务端：[`TunnelServer`]（独立运行）或 [`TunnelProtocol`]（挂到已有的 iroh router 上），按
 //!   [`Allowlist`] 授权。每条流转发到本机的上游 HTTP 服务，或者交给嵌入方：核心从 [`TunnelListener`]
 //!   取出 [`PeerStream`]，在进程内服务，并知道流来自哪台已配对设备。
-//! - 联邦转发：[`federation`] 模块把本机 Tuwunel 的 Matrix 联邦流量经 iroh 转给配对过的服务器
-//!   （ADR-0050），ALPN 见 [`federation::FEDERATION_ALPN`]。
 //! - 客户端：[`TunnelClient`] 复用一条连接、断开后按需重连，并报告 [`TunnelStatus`]；
 //!   [`LocalProxy`] 在回环地址上监听，把本机 HTTP 客户端的连接经隧道转发过去。App 用带会话凭据
 //!   （[`ProxyCredential`]）的 HTTP 正向代理，同机的其他 App 借用不了本设备的配对身份。
-//! - 系统浏览器：[`browser_front::BrowserFront`] 在回环上给 Android 的 Custom Tabs 一个按秘密标签认人的入口，
-//!   要跨源隔离的插件网页在浏览器里打开（ADR-0033）。
 //! - 线协议见 `wire` 模块：一条 QUIC 连接上每条双向流对应一条 TCP 连接，做法参考 dumbpipe。
-//! - 插件端口：[`TunnelClient::open_port`] 开 TCP 端口流，[`TunnelClient::open_udp`] 开 UDP 流向，载荷走
-//!   同一连接上的 QUIC 数据报（ADR-0072）。
 //! - 扫码配对：二维码里的配对码和配对的 ALPN 见 [`pair`] 模块。
-//! - 服务器配对：两台服务器的主人互相配对服务器（ADR-0050），码和 ALPN 见 [`peer_pair`] 模块。
 
 mod allowlist;
-pub mod bind_address;
-mod blocking;
-pub mod browser_front;
 mod client;
 mod credential;
 mod embed;
 mod error;
-pub mod federation;
 mod forward;
 mod http_front;
 mod pacing;
 pub mod pair;
-pub mod peer_pair;
-mod ports;
 mod proxy;
-pub mod relays;
 mod server;
-pub mod sharing;
-#[cfg(feature = "test-hooks")]
-#[doc(hidden)]
-pub mod test_support;
-mod udp;
-pub mod wire;
+mod wire;
 
 pub use allowlist::Allowlist;
-pub use blocking::off_workers;
-pub use client::{
-    PathInfo, PathKind, SuspendClock, TunnelClient, TunnelStats, TunnelStatus, TunnelStreamStats,
-};
+pub use client::{PathInfo, PathKind, TunnelClient, TunnelStats, TunnelStatus};
 pub use credential::{ProxyAccess, ProxyCredential};
 pub use embed::{PeerStream, TunnelListener};
 pub use error::TunnelError;
-pub use ports::{PortResolveError, PortResolver, UnsupportedPortResolver};
-pub use proxy::{CATEGORY_HEADER, ERROR_HEADER, LocalProxy};
+pub use proxy::{ERROR_HEADER, LocalProxy};
 pub use server::{TunnelProtocol, TunnelServer};
-pub use udp::server::FlowTimeouts;
-pub use udp::{PortError, PortStream, UdpFlow, UdpReceiver, UdpSender};
 pub use wire::ALPN;

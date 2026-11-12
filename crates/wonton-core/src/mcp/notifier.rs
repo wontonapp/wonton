@@ -1,57 +1,70 @@
-//! 把新卡片通知给收件人的设备（ADR-0016 的“推送”）：核心直接发 Web Push，不进任何 Matrix 房间。
-//! 之后的状态变化只改确认表，设备从“等你确认”列表的长轮询里知道，这里只管开卡的那一条。
-
-use std::sync::Arc;
+//! 把确认卡片交给主人的两种方式：核心接了 Matrix 时发进和主人的通知房间；没接时如实报“没法请主人确认”。
 
 use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
-use wonton_protocol::{ConfirmationCard, DeviceConfirmationPush};
+use wonton_protocol::ConfirmationCard;
 
+use super::cards;
 use super::confirm::Notifier;
-use crate::push::Push;
+use crate::matrix::{Edited, NoticeRoom, Posted};
 
-/// 开卡时给收件人（主人或 Bot 的归属人）名下的每台已配对设备发确认推送。
-pub struct DevicePush {
-    push: Arc<Push>,
+/// 卡片在哪：房间和事件。编辑只能发在原房间里。
+fn encode(posted: &Posted) -> String {
+    serde_json::json!([posted.room, posted.event]).to_string()
 }
 
-impl DevicePush {
-    pub fn new(push: Arc<Push>) -> Self {
-        Self { push }
+fn decode(handle: &str) -> Result<Posted, String> {
+    let (room, event) = serde_json::from_str(handle)
+        .map_err(|e| format!("确认卡片的句柄读不懂（{handle}）：{e}"))?;
+    Ok(Posted { room, event })
+}
+
+impl Notifier for NoticeRoom {
+    fn post<'a>(&'a self, card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
+        async move {
+            self.send(&cards::content(card))
+                .await
+                .map(|posted| encode(&posted))
+                .map_err(|e| format!("确认卡片发不到 Wonton 房间：{e}"))
+        }
+        .boxed()
+    }
+
+    fn update<'a>(
+        &'a self,
+        handle: &'a str,
+        card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async move {
+            let edited = self
+                .edit(&decode(handle)?, &cards::content(card))
+                .await
+                .map_err(|e| format!("更新确认卡片失败：{e}"))?;
+            Ok(match edited {
+                Edited::InPlace => None,
+                Edited::Reposted(posted) => Some(encode(&posted)),
+            })
+        }
+        .boxed()
     }
 }
 
-impl Notifier for DevicePush {
-    fn post<'a>(
-        &'a self,
-        recipient: Option<&'a str>,
-        card: &'a ConfirmationCard,
-    ) -> BoxFuture<'a, Result<(), String>> {
-        async move {
-            // 名下没有任何已配对设备：没人能答，如实告诉调用方。
-            if !self.push.has_devices(recipient) {
-                return Err(match recipient {
-                    Some(person) => format!("{person} 名下没有已配对的设备，没人能回答确认"),
-                    None => "主人没有已配对的设备，没人能回答确认".to_owned(),
-                });
-            }
-            let confirmation = DeviceConfirmationPush {
-                id: card.id.clone(),
-                title: card.title.clone(),
-                expires_at_ms: card.expires_at_ms,
-                origin: card.origin.clone(),
-            };
-            // 推送没发出去不拦卡片：它已在确认表里，App 打开时从列表照样看得到。
-            if let Err(error) = self.push.send_confirmation(recipient, &confirmation).await {
-                tracing::warn!(
-                    confirmation = %card.id,
-                    person = recipient.unwrap_or("owner"),
-                    %error,
-                    "确认推送没发出去，App 靠列表取卡片"
-                );
-            }
-            Ok(())
+/// 核心没有接入 Matrix：卡片发不出去，敏感的调用一律不执行。
+pub struct NoMatrix;
+
+impl Notifier for NoMatrix {
+    fn post<'a>(&'a self, _card: &'a ConfirmationCard) -> BoxFuture<'a, Result<String, String>> {
+        async {
+            Err("核心没有接入 Matrix（WONTON_MATRIX_URL），没法给主人发确认卡片".to_owned())
         }
         .boxed()
+    }
+
+    fn update<'a>(
+        &'a self,
+        _handle: &'a str,
+        _card: &'a ConfirmationCard,
+    ) -> BoxFuture<'a, Result<Option<String>, String>> {
+        async { Ok(None) }.boxed()
     }
 }

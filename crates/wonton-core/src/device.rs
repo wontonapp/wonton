@@ -1,8 +1,8 @@
 //! 已配对设备的登记表。
 //!
-//! 设备扫码配对（`crate::pairing`）或由主人用令牌经管理 API 登记。设备归属人（ADR-0045）：主人的设备
-//! 不写 `user`，家人登记在家人名下。登记表存在 `core/devices.json`，启动时读回，增删时整份重写。
-//! 隧道入口和网关共用同一份白名单：吊销一台设备会立即断开它现有的隧道连接。
+//! 设备扫码配对（`crate::pairing`）或由主人用令牌经管理 API 登记，所有设备都属于主人。登记表存在
+//! `core/devices.json`，启动时读回，增删时整份重写。隧道入口和网关共用同一份白名单：吊销一台设备会立即
+//! 断开它现有的隧道连接。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -38,9 +38,6 @@ pub struct Device {
     /// 登记时间，Unix 秒。
     #[serde(default)]
     pub paired_at: u64,
-    /// 设备归属的人（ADR-0045）：空是主人，家人是这个用户名。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -85,7 +82,6 @@ impl Devices {
                                 id,
                                 name: None,
                                 paired_at: 0,
-                                user: None,
                             },
                         ),
                     })
@@ -110,11 +106,6 @@ impl Devices {
         self.allowlist.contains(id)
     }
 
-    /// 一台设备的记录；没有登记时为 `None`。
-    pub fn get(&self, id: &EndpointId) -> Option<Device> {
-        self.lock().get(id).cloned()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.lock().is_empty()
     }
@@ -123,28 +114,18 @@ impl Devices {
         self.lock().values().cloned().collect()
     }
 
-    /// 归这个人的设备（主人传它的用户名，家人的设备 `user` 是家人）。
-    pub fn of_user(&self, username: &str) -> Vec<Device> {
-        self.lock()
-            .values()
-            .filter(|device| device.user.as_deref() == Some(username))
-            .cloned()
-            .collect()
-    }
-
-    /// 登记一台主人的设备。返回它之前是否不在表里；已经在表里时不改原来的记录。
+    /// 登记一台设备。返回它之前是否不在表里；已经在表里时不改原来的记录。
     pub fn add(&self, id: EndpointId, name: Option<String>) -> Result<bool, DeviceError> {
-        self.add_if(id, name, None, |_| true)
+        self.add_if(id, name, |_| true)
             .map(|added| added == Some(true))
     }
 
     /// `allowed` 看着登记前的表决定这台设备能不能登记，和登记在同一把锁里，两台设备同时来也只按一张表判断。
-    /// 不允许时返回 `None`，否则同 [`add`](Self::add)；`user` 是归属人（空是主人）。
+    /// 不允许时返回 `None`，否则同 [`add`](Self::add)。
     pub fn add_if(
         &self,
         id: EndpointId,
         name: Option<String>,
-        user: Option<String>,
         allowed: impl FnOnce(&BTreeMap<EndpointId, Device>) -> bool,
     ) -> Result<Option<bool>, DeviceError> {
         let mut devices = self.lock();
@@ -163,7 +144,6 @@ impl Devices {
                 id,
                 name,
                 paired_at,
-                user,
             },
         );
         if let Err(e) = self.save(&devices) {

@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, PlacedTab, PluginImage, PluginTab, TabBridgeResult, TabDisplay, TabEnvironment,
-    TabLayout, TabPage, TabPlatform, TabRef, TabSafeArea,
+    Action, PluginImage, PluginTab, TabBridgeResult, TabDisplay, TabEnvironment, TabLayout,
+    TabPage, TabPlatform, TabRef, TabSafeArea,
 };
 
 use crate::plugins::rig::{Rig, running};
@@ -48,6 +48,9 @@ pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
         plugin_id: "app.feed".to_owned(),
         page: Some("feed".to_owned()),
     };
+    rig.app
+        .dispatch(Action::SelectTab { tab: TabRef::Apps })
+        .unwrap();
     if pinned {
         rig.app
             .dispatch(Action::PinTab {
@@ -62,14 +65,9 @@ pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
     (rig, tab)
 }
 
-/// 底栏上的那一份实例。
-pub fn bar(tab: &TabRef) -> PlacedTab {
-    PlacedTab::Bar { tab: tab.clone() }
-}
-
 pub fn request(rig: &Rig, tab: &TabRef, method: &str, params: Value) -> TabBridgeResult {
     rig.app.tab_handle_message(
-        bar(tab),
+        tab.clone(),
         true,
         PAGE_ORIGIN.to_owned(),
         json!({"jsonrpc":"2.0","id":"request-1","method":method,"params":params}).to_string(),

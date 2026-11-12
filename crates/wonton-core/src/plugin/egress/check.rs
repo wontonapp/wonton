@@ -16,8 +16,6 @@ use tokio::time::timeout;
 use wonton_protocol::{EgressFailure, EgressProblem};
 
 use super::address::{ProxyAddress, Scheme};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 pub const COMMAND: &str = "egress-proxy-check";
 pub const URL_VAR: &str = "WONTON_EGRESS_CHECK_PROXY";
@@ -54,25 +52,11 @@ fn rejected(message: String) -> Option<EgressProblem> {
     problem(EgressFailure::ProxyRejected, message)
 }
 
-fn no_response(address: &str, langs: &Languages) -> Option<EgressProblem> {
+fn no_response(address: &str) -> Option<EgressProblem> {
     let seconds = STEP_TIMEOUT.as_secs();
-    unreachable(l10n::text(
-        langs,
-        "plugin-settings-egress-no-response",
-        &[
-            ("address", address.into()),
-            ("seconds", seconds.to_string().into()),
-        ],
+    unreachable(format!(
+        "代理 {address} {seconds} 秒没响应：宿主防火墙要放行 Docker 网段到这个端口"
     ))
-}
-
-/// 「连不上代理」一句：TCP 连接阶段和 CONNECT 阶段共用。
-fn reach(langs: &Languages, address: &str, error: &str) -> String {
-    l10n::text(
-        langs,
-        "plugin-settings-egress-unreachable",
-        &[("address", address.into()), ("error", error.into())],
-    )
 }
 
 /// 错误和它的原因连成一行：reqwest 把有用的话放在 `source` 里。
@@ -99,27 +83,21 @@ pub async fn fetch(proxy: &str, url: &str, limit: Duration) -> Result<(), String
 }
 
 /// 问题；能用时为空。结果按这个顺序判断：连不上 → 代理拒绝 → 代理连不上外面。
-pub async fn check(
-    proxy: &ProxyAddress,
-    target: Target,
-    langs: &Languages,
-) -> Option<EgressProblem> {
+pub async fn check(proxy: &ProxyAddress, target: Target) -> Option<EgressProblem> {
     let address = proxy.authority();
     let mut stream = match timeout(STEP_TIMEOUT, TcpStream::connect(&address)).await {
-        Err(_) => return no_response(&address, langs),
+        Err(_) => return no_response(&address),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
-            return unreachable(l10n::text(
-                langs,
-                "plugin-settings-egress-refused",
-                &[("address", address.into())],
+            return unreachable(format!(
+                "代理 {address} 拒绝连接：端口没人听，或者只监听回环地址"
             ));
         }
-        Ok(Err(e)) => return unreachable(reach(langs, &address, &e.to_string())),
+        Ok(Err(e)) => return unreachable(format!("连不上代理 {address}：{e}")),
         Ok(Ok(stream)) => stream,
     };
     // https 的代理要先握手，socks5 不说 HTTP：这两种看 reqwest 的错误。
     if proxy.scheme == Scheme::Http
-        && let Some(problem) = connect_status(&mut stream, proxy, target, langs).await
+        && let Some(problem) = connect_status(&mut stream, proxy, target).await
     {
         return problem;
     }
@@ -129,17 +107,9 @@ pub async fn check(
         // mihomo 对 CONNECT 先回 200，连不上目标时才断开（实测），所以要做完 TLS 握手。
         Err(e) if proxy.scheme == Scheme::Http || !refused_by_proxy(&e) => problem(
             EgressFailure::UpstreamFailed,
-            l10n::text(
-                langs,
-                "plugin-settings-egress-upstream-failed",
-                &[("error", e.into())],
-            ),
+            format!("代理本身是通的，它连不上外面：{e}"),
         ),
-        Err(e) => rejected(l10n::text(
-            langs,
-            "plugin-settings-egress-rejected",
-            &[("error", e.into())],
-        )),
+        Err(e) => rejected(format!("代理这一步没通过：{e}")),
     }
 }
 
@@ -162,7 +132,6 @@ async fn connect_status(
     stream: &mut TcpStream,
     proxy: &ProxyAddress,
     target: Target,
-    langs: &Languages,
 ) -> Option<Option<EgressProblem>> {
     let address = proxy.authority();
     let auth = (proxy.username.is_some() || proxy.password.is_some()).then(|| {
@@ -176,17 +145,11 @@ async fn connect_status(
     let auth = auth.unwrap_or_default();
     let request = format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n{auth}\r\n");
     if let Err(e) = stream.write_all(request.as_bytes()).await {
-        return Some(unreachable(reach(langs, &address, &e.to_string())));
+        return Some(unreachable(format!("连不上代理 {address}：{e}")));
     }
     let head = match timeout(STEP_TIMEOUT, read_head(stream)).await {
-        Err(_) => return Some(no_response(&address, langs)),
-        Ok(Err(e)) => {
-            return Some(unreachable(l10n::text(
-                langs,
-                "plugin-settings-egress-disconnected",
-                &[("address", address.into()), ("error", e.to_string().into())],
-            )));
-        }
+        Err(_) => return Some(no_response(&address)),
+        Ok(Err(e)) => return Some(unreachable(format!("代理 {address} 断开了连接：{e}"))),
         Ok(Ok(head)) => head,
     };
     let status = head
@@ -194,25 +157,12 @@ async fn connect_status(
         .nth(1)
         .and_then(|code| code.parse::<u16>().ok());
     match status {
-        None => Some(rejected(l10n::text(
-            langs,
-            "plugin-settings-egress-not-http",
-            &[("address", address.into())],
-        ))),
+        None => Some(rejected(format!("代理 {address} 回的不是 HTTP"))),
         Some(code) if (200..300).contains(&code) => None,
-        Some(407) => Some(rejected(l10n::text(
-            langs,
-            "plugin-settings-egress-auth-407",
-            &[("address", address.into())],
+        Some(407) => Some(rejected(format!(
+            "代理 {address} 回 407：要用户名和密码，或者写错了"
         ))),
-        Some(code) => Some(rejected(l10n::text(
-            langs,
-            "plugin-settings-egress-status",
-            &[
-                ("address", address.into()),
-                ("code", code.to_string().into()),
-            ],
-        ))),
+        Some(code) => Some(rejected(format!("代理 {address} 回 {code}"))),
     }
 }
 
@@ -231,10 +181,8 @@ async fn read_head(stream: &mut TcpStream) -> std::io::Result<String> {
 
 /// 子命令的入口。
 pub fn command() -> ExitCode {
-    // 语言从环境来（诊断容器没有请求头），和图片子进程一样由核心注入（ADR-0043）。
-    let langs = Languages::from_header(std::env::var("WONTON_LANG").ok().as_deref());
     let text = std::env::var(URL_VAR).unwrap_or_default();
-    let proxy = match ProxyAddress::parse(&text, &langs) {
+    let proxy = match ProxyAddress::parse(&text) {
         Ok(proxy) => proxy,
         Err(e) => {
             eprintln!("{e}");
@@ -251,7 +199,7 @@ pub fn command() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let found = runtime.block_on(check(&proxy, TARGET, &langs));
+    let found = runtime.block_on(check(&proxy, TARGET));
     println!("{}", serde_json::to_string(&found).unwrap_or_default());
     match found {
         Some(EgressProblem { reason, .. }) if reason != EgressFailure::UpstreamFailed => {
@@ -263,26 +211,7 @@ pub fn command() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::super::super::languages::Languages;
-    use crate::l10n::CATALOG;
     use tokio::net::TcpListener;
-
-    /// 按默认语言（en）从目录拼出期望的话，测试不钉住某一种语言的写法。
-    fn message(id: &str, args: &[(&str, &str)]) -> String {
-        let lang = CATALOG.negotiate(&["en"]);
-        CATALOG.format(
-            lang,
-            id,
-            &args
-                .iter()
-                .map(|(k, v)| (*k, (*v).into()))
-                .collect::<Vec<_>>(),
-        )
-    }
-
-    fn langs() -> Languages {
-        Languages::default()
-    }
 
     use super::*;
 
@@ -299,7 +228,7 @@ mod tests {
             head
         });
         let address = format!("http://me:s3%3Acret@127.0.0.1:{port}");
-        (ProxyAddress::parse(&address, &langs()).unwrap(), task)
+        (ProxyAddress::parse(&address).unwrap(), task)
     }
 
     fn reason(found: Option<EgressProblem>) -> EgressFailure {
@@ -308,24 +237,19 @@ mod tests {
 
     #[tokio::test]
     async fn a_closed_port_is_unreachable() {
-        let port = wonton_tunnel::test_support::unused_port();
-        let proxy = ProxyAddress::parse(&format!("http://127.0.0.1:{port}"), &langs()).unwrap();
-        let found = check(&proxy, TARGET, &langs()).await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let proxy = ProxyAddress::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+        let found = check(&proxy, TARGET).await.unwrap();
         assert_eq!(found.reason, EgressFailure::ProxyUnreachable);
-        assert!(
-            found.message.contains(&message(
-                "plugin-settings-egress-refused",
-                &[("address", &format!("127.0.0.1:{port}"))],
-            )),
-            "{}",
-            found.message
-        );
+        assert!(found.message.contains("只监听回环"), "{}", found.message);
     }
 
     #[tokio::test]
     async fn the_proxy_saying_407_is_rejected_and_says_so() {
         let (proxy, seen) = proxy_replying("HTTP/1.1 407 Proxy Auth\r\n\r\n").await;
-        let found = check(&proxy, TARGET, &langs()).await.unwrap();
+        let found = check(&proxy, TARGET).await.unwrap();
         assert_eq!(found.reason, EgressFailure::ProxyRejected);
         assert!(found.message.contains("407"), "{}", found.message);
         let head = seen.await.unwrap();
@@ -340,7 +264,7 @@ mod tests {
     #[tokio::test]
     async fn other_refusals_carry_the_status_code() {
         let (proxy, _seen) = proxy_replying("HTTP/1.1 403 Forbidden\r\n\r\n").await;
-        let found = check(&proxy, TARGET, &langs()).await.unwrap();
+        let found = check(&proxy, TARGET).await.unwrap();
         assert_eq!(found.reason, EgressFailure::ProxyRejected);
         assert!(found.message.contains("403"), "{}", found.message);
     }
@@ -350,7 +274,7 @@ mod tests {
         // 第一次回 200，之后 reqwest 再连时没人听：对应 mihomo 先回 200、之后断开。
         let (proxy, _seen) = proxy_replying("HTTP/1.1 200 OK\r\n\r\n").await;
         assert_eq!(
-            reason(check(&proxy, TARGET, &langs()).await),
+            reason(check(&proxy, TARGET).await),
             EgressFailure::UpstreamFailed
         );
     }

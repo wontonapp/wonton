@@ -1,0 +1,10 @@
+== gates done, existing-test 500x ==
+Terminated                 TEST="stall::revalidating_a_proven_slow_path_keeps_the_connection" REPRO_CPUS=24-27 ./verify-500.sh existing 500 10
+== apply revert-405 for pre-fix side ==
+patched
+  Executable tests/tunnel/main.rs (target/debug/deps/tunnel-3f222bf86aca0ea3)
+PASS=0 FAIL=500 TOTAL=500
+== restored, final suite ==
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.31s
+
+FINALIZE-DONE

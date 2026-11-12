@@ -32,16 +32,11 @@ use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::{ClientLifecycleMode, ClientServiceExt};
-use serde_json::Value;
-use wonton_protocol::TOOL_CALL_USER_META;
 
 use tokio::time::Instant;
 
-use super::bounded_http::{
-    BoundedHttp, HttpError, MAX_TOOLS_BYTES, RESPONSE_TOO_LARGE, TooLargeDetail, too_large_detail,
-};
-use super::file_results::human_size;
-use crate::plugin::{McpHeaders, McpServer, PluginId};
+use super::bounded_http::{BoundedHttp, HttpError, MAX_TOOLS_BYTES, RESPONSE_TOO_LARGE};
+use crate::plugin::{McpServer, PluginId};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 /// 插件接受了连接却不回握手：不能一直等。
@@ -175,8 +170,6 @@ impl Drop for Calling<'_> {
 /// 一个插件的连接。
 struct Slot {
     url: String,
-    /// 建这条连接时用的请求头：密钥换了头就变，连接要跟着换。
-    headers: McpHeaders,
     /// 握手只持有这一个插件的锁：卡住的插件挡不住别的插件。
     handshake: Arc<tokio::sync::Mutex<()>>,
     current: Option<Arc<Connection>>,
@@ -189,10 +182,9 @@ struct Slot {
 }
 
 impl Slot {
-    fn new(url: String, headers: McpHeaders) -> Self {
+    fn new(url: String) -> Self {
         Self {
             url,
-            headers,
             handshake: Arc::default(),
             current: None,
             timeouts: 0,
@@ -204,8 +196,8 @@ impl Slot {
 
 /// 一次调用失败的原因。
 enum CallFailure {
-    /// 这个响应超过上限。连接本身没事，带上传输层知道的多少（bounded_http 写在错误 `data` 里）。
-    TooLarge(TooLargeDetail),
+    /// 这个响应超过上限。连接本身没事。
+    TooLarge,
     /// 这条会话不回应，已被换掉。
     Replaced,
     /// 连接出了问题，已经丢掉。
@@ -238,9 +230,6 @@ impl Upstreams {
             .tls_certs_only(std::iter::empty())
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(CONNECT_TIMEOUT)
-            // 不留空闲连接：插件停了以后，往池子里那条还开着的连接上发的请求分不清发没发出，
-            // 会把“没发出”报成“不确定”。不复用就一定是新建连接，停了就连不上（NotSent）。
-            .pool_max_idle_per_host(0)
             .build()
             .expect("构造 MCP 客户端的 HTTP 客户端");
         Self {
@@ -284,14 +273,14 @@ impl Upstreams {
         self.tools_timeout = tools_timeout;
     }
 
-    /// 还能用的连接；没有时给出握手要持有的锁。地址或者请求头（密钥换过了）和现在的不一样就换新槽。
+    /// 还能用的连接；没有时给出握手要持有的锁。
     fn live(&self, server: &McpServer) -> Result<Arc<Connection>, Arc<tokio::sync::Mutex<()>>> {
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
         let slot = clients
             .entry(server.id.clone())
-            .or_insert_with(|| Slot::new(server.url.clone(), server.headers.clone()));
-        if slot.url != server.url || slot.headers != server.headers {
-            *slot = Slot::new(server.url.clone(), server.headers.clone());
+            .or_insert_with(|| Slot::new(server.url.clone()));
+        if slot.url != server.url {
+            *slot = Slot::new(server.url.clone());
         }
         match &slot.current {
             Some(connection) if !connection.service.is_closed() => Ok(connection.clone()),
@@ -313,21 +302,16 @@ impl Upstreams {
             Some(path) => reqwest::Client::builder()
                 .unix_socket(path.clone())
                 .no_proxy()
-                // 同 `Upstreams::new()`：会话跨调用缓存，留着空闲连接，插件停了以后的调用会被报成“不确定”。
-                .pool_max_idle_per_host(0)
                 .build()
                 .map_err(|e| format!("连不上插件 {} 的 MCP 套接字：{e}", server.id))?,
             None => self.http.clone(),
         };
-        // 清单 `mcp.headers` 的头（密钥已解析）加在发往上游的每个请求上，包括 initialize 握手。
-        let mut config = StreamableHttpClientTransportConfig::with_uri(server.url.clone());
-        config.custom_headers = server.headers.custom_headers();
         let transport = StreamableHttpClientTransport::with_client(
             BoundedHttp {
                 http,
                 limit: self.message_limit,
             },
-            config,
+            StreamableHttpClientTransportConfig::with_uri(server.url.clone()),
         );
         // 用 initialize 握手（2025-11-25），不用 2026-07-28 的 server/discover：插件的 MCP 服务大多还不支持新协议，
         // supergateway 4.2.1 转 stdio 时收到 server/discover 就断开、不回应（实测），客户端会一直等下去。
@@ -418,7 +402,7 @@ impl Upstreams {
             }
             ServiceError::McpError(data) if data.code == RESPONSE_TOO_LARGE => {
                 self.answered(id, used);
-                CallFailure::TooLarge(too_large_detail(data.data.as_ref()))
+                CallFailure::TooLarge
             }
             other => {
                 self.answered(id, used);
@@ -429,10 +413,10 @@ impl Upstreams {
 
     /// 插件现在提供的工具。卡住的插件最多让调用方等 [`TOOLS_TIMEOUT`]（包括没连上时的握手）。
     pub async fn tools(&self, server: &McpServer) -> Result<Vec<Tool>, String> {
-        let (listed, problem) = allowlist(server, self.list_tools(server).await);
+        let listed = self.list_tools(server).await;
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
         if let Some(slot) = clients.get_mut(&server.id) {
-            slot.tools_problem = problem.or(listed.as_ref().err().cloned());
+            slot.tools_problem = listed.as_ref().err().cloned();
         }
         listed
     }
@@ -458,7 +442,7 @@ impl Upstreams {
                 Ok(tools)
             }
             Ok(Err(ListFailure::Service(e))) => Err(match self.failure(id, &connection, e) {
-                CallFailure::TooLarge(_) => format!("插件 {id} 的工具列表超过上限"),
+                CallFailure::TooLarge => format!("插件 {id} 的工具列表超过上限"),
                 CallFailure::Replaced => format!("插件 {id} 的会话不回应，已被换掉"),
                 CallFailure::Transport(e) | CallFailure::Plugin(e) => {
                     format!("插件 {id} 的 MCP 服务列不出工具：{e}")
@@ -481,21 +465,12 @@ impl Upstreams {
         server: &McpServer,
         tool: &str,
         arguments: Option<JsonObject>,
-        on_behalf_of: Option<String>,
         cancelled: impl Future<Output = ()>,
     ) -> Result<CallToolResult, CallError> {
         let connection = self.connection(server).await.map_err(CallError::NotSent)?;
         let mut params = CallToolRequestParams::new(tool.to_owned());
         if let Some(arguments) = arguments {
             params = params.with_arguments(arguments);
-        }
-        // 替谁办事（ADR-0045）：私人 Bot 是归属人的用户名，多用户的应用按它切数据。
-        if let Some(user) = on_behalf_of {
-            params.meta = Some(rmcp::model::RequestMetaObject(rmcp::model::MetaObject(
-                [(TOOL_CALL_USER_META.to_owned(), Value::from(user))]
-                    .into_iter()
-                    .collect(),
-            )));
         }
         let limits = server.tool_limits;
         let options = PeerRequestOptions::with_timeout(limits.idle)
@@ -574,22 +549,10 @@ impl Upstreams {
         }
         let uncertain = |kind, message| CallError::Uncertain { kind, message };
         match self.failure(id, used, error) {
-            // 上限以传输层执行到的为准（tools/list 的更小）；传输层不知道读到了多少时（插件自己回这个码）不编。
-            CallFailure::TooLarge(detail) => {
-                let limit = detail.limit.unwrap_or(self.message_limit as u64);
-                let how_much = match (detail.declared, detail.read) {
-                    (Some(declared), _) => format!("，插件声明有 {}", human_size(declared)),
-                    (_, Some(read)) => format!("，至少读了 {}", human_size(read)),
-                    (None, None) => String::new(),
-                };
-                uncertain(
-                    UncertainKind::ResultTooLarge,
-                    format!(
-                        "插件 {id} 的工具 {tool} 的结果超过上限 {}{how_much}，读不到它做了什么",
-                        human_size(limit)
-                    ),
-                )
-            }
+            CallFailure::TooLarge => uncertain(
+                UncertainKind::ResultTooLarge,
+                format!("插件 {id} 的工具 {tool} 的结果超过上限，读不到它做了什么"),
+            ),
             CallFailure::Replaced => uncertain(
                 UncertainKind::SessionReplaced,
                 format!("插件 {id} 的会话不回应，已被换掉，工具 {tool} 是否已执行不确定"),
@@ -612,7 +575,42 @@ impl Upstreams {
         uri: &str,
         limit: usize,
     ) -> Result<Vec<u8>, ReadError> {
-        let result = self.read_contents(server, uri).await?;
+        let connection = self
+            .connection(server)
+            .await
+            .map_err(ReadError::Unreachable)?;
+        let id = &server.id;
+        let params = ReadResourceRequestParams::new(uri.to_owned());
+        let started = Instant::now();
+        let _running = connection.calling(started);
+        let read = connection.peer().read_resource(params);
+        let result = match tokio::time::timeout(self.read_timeout, read).await {
+            Ok(Ok(result)) => {
+                self.answered(id, &connection);
+                result
+            }
+            Ok(Err(e)) => {
+                return Err(match self.failure(id, &connection, e) {
+                    CallFailure::TooLarge => ReadError::TooLarge,
+                    CallFailure::Replaced => {
+                        ReadError::Unreachable(format!("插件 {id} 的会话不回应，已被换掉"))
+                    }
+                    CallFailure::Transport(e) => {
+                        ReadError::Unreachable(format!("插件 {id} 读不了资源 {uri}：{e}"))
+                    }
+                    CallFailure::Plugin(e) => {
+                        ReadError::Upstream(format!("插件 {id} 读不了资源 {uri}：{e}"))
+                    }
+                });
+            }
+            Err(_) => {
+                self.timed_out(id, &connection, started);
+                return Err(ReadError::Unreachable(format!(
+                    "插件 {id} 的资源 {uri} 在 {:?} 内没有读完",
+                    self.read_timeout
+                )));
+            }
+        };
         let Some(contents) = result.contents.into_iter().next() else {
             return Err(ReadError::Upstream(format!(
                 "插件 {} 的资源 {uri} 是空的",
@@ -642,59 +640,10 @@ impl Upstreams {
         Ok(bytes)
     }
 
-    /// 读插件的资源，连同内容的 `_meta`（MCP Apps 界面要按它设 CSP）。大小上限同上。
-    pub async fn read_contents(
-        &self,
-        server: &McpServer,
-        uri: &str,
-    ) -> Result<rmcp::model::ReadResourceResult, ReadError> {
-        let connection = self
-            .connection(server)
-            .await
-            .map_err(ReadError::Unreachable)?;
-        let id = &server.id;
-        let params = ReadResourceRequestParams::new(uri.to_owned());
-        let started = Instant::now();
-        let _running = connection.calling(started);
-        let read = connection.peer().read_resource(params);
-        let result = match tokio::time::timeout(self.read_timeout, read).await {
-            Ok(Ok(result)) => {
-                self.answered(id, &connection);
-                result
-            }
-            Ok(Err(e)) => {
-                return Err(match self.failure(id, &connection, e) {
-                    CallFailure::TooLarge(_) => ReadError::TooLarge,
-                    CallFailure::Replaced => {
-                        ReadError::Unreachable(format!("插件 {id} 的会话不回应，已被换掉"))
-                    }
-                    CallFailure::Transport(e) => {
-                        ReadError::Unreachable(format!("插件 {id} 读不了资源 {uri}：{e}"))
-                    }
-                    CallFailure::Plugin(e) => {
-                        ReadError::Upstream(format!("插件 {id} 读不了资源 {uri}：{e}"))
-                    }
-                });
-            }
-            Err(_) => {
-                self.timed_out(id, &connection, started);
-                return Err(ReadError::Unreachable(format!(
-                    "插件 {id} 的资源 {uri} 在 {:?} 内没有读完",
-                    self.read_timeout
-                )));
-            }
-        };
-        Ok(result)
-    }
-
-    /// 只留下还在运行的插件、地址和请求头都没变的客户端：头变了（密钥换了）就丢掉，下次重连。
+    /// 只留下还在运行的插件的客户端。
     pub fn retain(&self, servers: &[McpServer]) {
         let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
-        clients.retain(|id, slot| {
-            servers
-                .iter()
-                .any(|s| &s.id == id && s.url == slot.url && s.headers == slot.headers)
-        });
+        clients.retain(|id, slot| servers.iter().any(|s| &s.id == id && s.url == slot.url));
     }
 }
 
@@ -707,41 +656,6 @@ fn never_connected(error: &ServiceError) -> bool {
         transport.error.downcast_ref::<HttpError>(),
         Some(StreamableHttpError::Client(e)) if e.is_connect()
     )
-}
-
-/// 清单写了 `mcp.tools`（允许列表）时只提供列表里的工具：调用不在列表里的和调用不存在的工具一样报错
-/// （`call_plugin` 和确认策略视图都经 [`Upstreams::tools`] 拿工具）。列表里写了但上游没有的名字不拦别的
-/// 工具，缺哪些写在问题里，由 `wonton__list_plugins` 的 `tools_error` 显示；上游整个列不出来时如实报
-/// 原来的错。
-fn allowlist(
-    server: &McpServer,
-    listed: Result<Vec<Tool>, String>,
-) -> (Result<Vec<Tool>, String>, Option<String>) {
-    let Some(declared) = &server.tools else {
-        let problem = listed.as_ref().err().cloned();
-        return (listed, problem);
-    };
-    match listed {
-        Ok(tools) => {
-            let names: std::collections::HashSet<&str> =
-                tools.iter().map(|tool| tool.name.as_ref()).collect();
-            let missing: Vec<&str> = declared
-                .iter()
-                .map(String::as_str)
-                .filter(|name| !names.contains(name))
-                .collect();
-            let problem = (!missing.is_empty())
-                .then(|| format!("清单声明的工具上游没有：{}", missing.join("、")));
-            let provided: std::collections::HashSet<&str> =
-                declared.iter().map(String::as_str).collect();
-            let kept = tools
-                .into_iter()
-                .filter(|tool| provided.contains(tool.name.as_ref()))
-                .collect();
-            (Ok(kept), problem)
-        }
-        Err(why) => (Err(why), None),
-    }
 }
 
 /// 列工具为什么失败。

@@ -28,13 +28,10 @@ use wonton_protocol::{
     FILE_ERROR_HEADER, FILES_HEADER, FileError, FileErrorBody, FileFailure, FileId,
 };
 
-use super::super::api::languages;
 use super::{Caller, failure, parse_id, respond};
 use crate::files::uploads::{NewUpload, UploadState};
 use crate::files::{Failure, Files, device_label, new_upload_id};
 use crate::gateway::{Gateway, TunnelPeer, client_addr, from_service, proxy};
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 const TUS_RESUMABLE: &str = "tus-resumable";
 const UPLOAD_OFFSET: &str = "upload-offset";
@@ -64,14 +61,14 @@ pub(super) fn routes() -> Router<Arc<Gateway>> {
 }
 
 /// tus 客户端必带的头。客户端核心在 Rust 里发请求，WebView 里的跨站请求带不上它（ADR-0020 的“鉴权”）。
-fn check_tus(req: &Request, langs: &Languages) -> Result<(), Failure> {
+fn check_tus(req: &Request) -> Result<(), Failure> {
     let version = req.headers().get(TUS_RESUMABLE);
     if version.is_some_and(|value| value.as_bytes() == b"1.0.0") {
         return Ok(());
     }
     Err(Failure::new(
         FileFailure::InvalidInput,
-        l10n::text(langs, "files-tusd-required", &[]),
+        "上传接口要带 Tus-Resumable: 1.0.0",
     ))
 }
 
@@ -81,12 +78,11 @@ async fn forward(
     caller: &Caller,
     mut req: Request,
     new: Option<&FileId>,
-    langs: &Languages,
 ) -> Result<Response, Failure> {
     let authority = gateway.tusd.as_deref().ok_or_else(|| {
         Failure::new(
             FileFailure::ServiceUnavailable,
-            l10n::text(langs, "files-tusd-unconfigured", &[]),
+            "核心没有配置 tusd（WONTON_TUSD_URL）",
         )
     })?;
     let method = req.method().clone();
@@ -121,7 +117,7 @@ async fn forward(
             e
         }))
     });
-    let forwarded = proxy::forward_or(&gateway.system_http, target, req, fwd, langs);
+    let forwarded = proxy::forward_or(&gateway.system_http, target, req, fwd);
     let forwarded = if matches!(method, Method::HEAD | Method::DELETE) {
         tokio::time::timeout(TUSD_CONTROL_TIMEOUT, forwarded)
             .await
@@ -129,10 +125,10 @@ async fn forward(
     } else {
         forwarded.await
     };
-    forwarded.map_err(|e| tusd_failure(broke.load(Ordering::Relaxed), e, langs))
+    forwarded.map_err(|e| tusd_failure(broke.load(Ordering::Relaxed), e))
 }
 
-fn tusd_failure(broke: bool, error: proxy::ForwardError, langs: &Languages) -> Failure {
+fn tusd_failure(broke: bool, error: proxy::ForwardError) -> Failure {
     if broke {
         return Failure::new(
             FileFailure::InvalidInput,
@@ -148,7 +144,7 @@ fn tusd_failure(broke: bool, error: proxy::ForwardError, langs: &Languages) -> F
         proxy::ForwardError::SystemResolution(e) => Failure::new(FileFailure::UpstreamError, e),
         proxy::ForwardError::HeaderTimeout => Failure::new(
             FileFailure::ServiceUnavailable,
-            l10n::text(langs, "files-tusd-timeout", &[]),
+            "tusd 迟迟没有回应，稍后再试",
         ),
     }
 }
@@ -159,7 +155,6 @@ mod tests {
 
     #[test]
     fn tusd_failures_stay_in_their_own_kinds() {
-        let langs = Languages::from_header(None);
         for (broke, error, kind) in [
             (
                 false,
@@ -177,7 +172,7 @@ mod tests {
                 FileFailure::InvalidInput,
             ),
         ] {
-            let failure = tusd_failure(broke, error, &langs);
+            let failure = tusd_failure(broke, error);
             assert_eq!(failure.kind, kind);
         }
     }
@@ -234,20 +229,18 @@ async fn create(
     Extension(caller): Extension<Caller>,
     req: Request,
 ) -> Response {
-    let langs = languages(req.headers());
-    respond(create_upload(&gateway, &caller, req, &langs).await)
+    respond(create_upload(&gateway, &caller, req).await)
 }
 
 async fn create_upload(
     gateway: &Gateway,
     caller: &Caller,
     req: Request,
-    langs: &Languages,
 ) -> Result<Response, Failure> {
-    check_tus(&req, langs)?;
+    check_tus(&req)?;
     let id = new_upload_id();
     let unclaimed = Unclaimed::new(&caller.files, &id);
-    let response = match forward(gateway, caller, req, Some(&id), langs).await {
+    let response = match forward(gateway, caller, req, Some(&id)).await {
         Ok(response) => response,
         Err(e) => {
             unclaimed.abandon().await;
@@ -262,7 +255,7 @@ async fn create_upload(
         .and_then(|id| id.parse::<FileId>().ok());
     // 创建时就带了字节，写的时候磁盘满了。按还差多少算，不是声明的长度：写了大半以后网络断了引起的 500 不是磁盘的事。
     let full = if response.status() == StatusCode::INTERNAL_SERVER_ERROR {
-        caller.files.upload_out_of_space(&id, langs).await
+        caller.files.upload_out_of_space(&id).await
     } else {
         None
     };
@@ -280,35 +273,26 @@ async fn create_upload(
         // 空文件，或者创建时就带上了全部字节：不会再有 PATCH。上传已经创建了，这里失败也照样回 tusd 的响应：客户端要靠
         // `Location` 问进度，问的时候会再放一次。
         let offset = header_u64(&response, UPLOAD_OFFSET).unwrap_or(0);
-        if let Err(e) = finish_if_complete(caller, &id, offset, langs).await {
+        if let Err(e) = finish_if_complete(caller, &id, offset).await {
             tracing::error!(file = %id, error = %e, "放创建时就传完的文件失败，客户端问进度时再试");
         }
     }
     Ok(response)
 }
 
-async fn finish_if_complete(
-    caller: &Caller,
-    id: &FileId,
-    offset: u64,
-    langs: &Languages,
-) -> Result<(), Failure> {
+async fn finish_if_complete(caller: &Caller, id: &FileId, offset: u64) -> Result<(), Failure> {
     if let UploadState::Pending { size, .. } = caller.files.upload_state(id).await?
         && offset == size
     {
-        caller.files.finish_upload(id, langs).await?;
+        caller.files.finish_upload(id).await?;
     }
     Ok(())
 }
 
-fn already_finished(langs: &Languages, id: &FileId) -> Failure {
+fn already_finished() -> Failure {
     Failure::new(
         FileFailure::InvalidInput,
-        l10n::text(
-            langs,
-            "files-upload-finished",
-            &[("id", id.as_str().into())],
-        ),
+        "这个上传已经传完了；要删文件用 DELETE /_wonton/files/{id}",
     )
 }
 
@@ -356,13 +340,10 @@ async fn resume(
     Path(id): Path<String>,
     req: Request,
 ) -> Response {
-    let langs = languages(req.headers());
     // 取消在单独的任务里：请求断了 handler 会被丢掉，这个上传的队也跟着放开，清理或者重试就会和还在跑的作废并发。
     if req.method() == Method::DELETE {
-        let langs = langs.clone();
-        let cancelling = tokio::spawn(async move {
-            respond(resume_upload(&gateway, &caller, &id, req, &langs).await)
-        });
+        let cancelling =
+            tokio::spawn(async move { respond(resume_upload(&gateway, &caller, &id, req).await) });
         return cancelling.await.unwrap_or_else(|e| {
             failure(&Failure::new(
                 FileFailure::Internal,
@@ -370,7 +351,7 @@ async fn resume(
             ))
         });
     }
-    respond(resume_upload(&gateway, &caller, &id, req, &langs).await)
+    respond(resume_upload(&gateway, &caller, &id, req).await)
 }
 
 async fn resume_upload(
@@ -378,10 +359,9 @@ async fn resume_upload(
     caller: &Caller,
     id: &str,
     req: Request,
-    langs: &Languages,
 ) -> Result<Response, Failure> {
-    check_tus(&req, langs)?;
-    let id = parse_id(id, langs)?;
+    check_tus(&req)?;
+    let id = parse_id(id)?;
     let method = req.method().clone();
     // 取消全程占着这个上传：tusd 删了数据之后，放文件不能再接着放。
     let cancelling = if method == Method::DELETE {
@@ -395,14 +375,14 @@ async fn resume_upload(
             if device != device_label(&caller.device) {
                 return Err(Failure::new(
                     FileFailure::NotShared,
-                    l10n::text(langs, "files-upload-other-device", &[]),
+                    "这个上传是另一台设备创建的",
                 ));
             }
             // 判定很久没有进度靠这个，见 `Uploads::seen`。放在核对设备之后：别的设备不能续这个上传的命。
             if method != Method::DELETE && !caller.files.upload_seen(&id).await {
                 return Err(Failure::new(
                     FileFailure::FileUnknown,
-                    l10n::text(langs, "files-upload-stale", &[]),
+                    "这个上传很久没有进度，已经清掉了，要重传",
                 ));
             }
             size
@@ -410,15 +390,12 @@ async fn resume_upload(
         UploadState::Finished { size } if method == Method::HEAD => {
             return Ok(finished_response(size));
         }
-        UploadState::Finished { .. } => return Err(already_finished(langs, &id)),
+        UploadState::Finished { .. } => return Err(already_finished()),
         UploadState::Unknown => {
-            return Err(Failure::new(
-                FileFailure::FileUnknown,
-                l10n::text(langs, "files-not-found", &[]),
-            ));
+            return Err(Failure::new(FileFailure::FileUnknown, "没有这个上传"));
         }
     };
-    let response = forward(gateway, caller, req, None, langs).await?;
+    let response = forward(gateway, caller, req, None).await?;
     let status = response.status();
     if status == StatusCode::NOT_FOUND {
         let waited;
@@ -431,18 +408,18 @@ async fn resume_upload(
         };
         return match caller.files.settle_lost_upload(turn).await? {
             UploadState::Finished { size } if method == Method::HEAD => Ok(finished_response(size)),
-            UploadState::Finished { .. } => Err(already_finished(langs, &id)),
+            UploadState::Finished { .. } => Err(already_finished()),
             // 客户端要取消，这个上传已经取消掉了。
             _ if method == Method::DELETE => Ok(cancelled_response()),
             _ => Err(Failure::new(
                 FileFailure::FileUnknown,
-                l10n::text(langs, "files-tusd-gone", &[]),
+                "tusd 已经没有这个上传的数据了，要重传",
             )),
         };
     }
     if method == Method::PATCH
         && status == StatusCode::INTERNAL_SERVER_ERROR
-        && let Some(full) = caller.files.upload_out_of_space(&id, langs).await
+        && let Some(full) = caller.files.upload_out_of_space(&id).await
     {
         return Err(full);
     }
@@ -455,7 +432,7 @@ async fn resume_upload(
     let answered = (method == Method::PATCH && status == StatusCode::NO_CONTENT)
         || (method == Method::HEAD && status == StatusCode::OK);
     if answered && header_u64(&response, UPLOAD_OFFSET) == Some(size) {
-        caller.files.finish_upload(&id, langs).await?;
+        caller.files.finish_upload(&id).await?;
     }
     Ok(response)
 }
@@ -498,25 +475,20 @@ struct HookRequest {
 
 impl HookRequest {
     /// tusd 用 Go 的规范写法，不靠它：请求头不分大小写。
-    fn header(&self, name: &str) -> Option<&str> {
+    fn device(&self) -> Option<&str> {
         let (_, values) = self
             .header
             .iter()
-            .find(|(key, _)| key.eq_ignore_ascii_case(name))?;
+            .find(|(name, _)| name.eq_ignore_ascii_case(DEVICE_HEADER))?;
         values.first().map(String::as_str)
     }
 
-    fn device(&self) -> Option<&str> {
-        self.header(DEVICE_HEADER)
-    }
-
     fn upload_id(&self) -> Option<FileId> {
-        self.header(UPLOAD_ID_HEADER)?.parse().ok()
-    }
-
-    /// 客户端请求的语言：网关把请求原样转给 tusd，钩子里的 `HTTPRequest` 带着原来的请求头。
-    fn languages(&self) -> Languages {
-        Languages::from_header(self.header(hyper::header::ACCEPT_LANGUAGE.as_str()))
+        let (_, values) = self
+            .header
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(UPLOAD_ID_HEADER))?;
+        values.first()?.parse().ok()
     }
 }
 
@@ -544,26 +516,21 @@ fn hook_rejection(failed: &Failure) -> serde_json::Value {
 
 async fn pre_create(files: &Arc<Files>, event: &HookEvent) -> serde_json::Value {
     let upload = &event.upload;
-    // 钩子本身没有 Accept-Language：tusd 把客户端的请求头原样带回来，按它挑语言。
-    let langs = event.request.languages();
     let created = match (event.request.device(), event.request.upload_id()) {
         (Some(device), Some(id)) => {
             files
-                .create_upload(
-                    NewUpload {
-                        id: &id,
-                        name: upload.metadata.get("filename").map(String::as_str),
-                        mime_type: upload.metadata.get("filetype").map(String::as_str),
-                        size: (!upload.deferred).then_some(upload.size),
-                        device,
-                    },
-                    &langs,
-                )
+                .create_upload(NewUpload {
+                    id: &id,
+                    name: upload.metadata.get("filename").map(String::as_str),
+                    mime_type: upload.metadata.get("filetype").map(String::as_str),
+                    size: (!upload.deferred).then_some(upload.size),
+                    device,
+                })
                 .await
         }
         _ => Err(Failure::new(
             FileFailure::Unauthenticated,
-            l10n::text(&langs, "files-hook-not-from-gateway", &[]),
+            "这个请求没有经过网关",
         )),
     };
     match created {
@@ -574,8 +541,6 @@ async fn pre_create(files: &Arc<Files>, event: &HookEvent) -> serde_json::Value 
 
 /// `files-hooks.wonton.internal`：tusd 的钩子。
 pub(in crate::gateway) async fn hook_request(gateway: &Gateway, req: Request) -> Response {
-    // 钩子级别的拒绝不针对哪个上传，客户端看不到：按英文说。
-    let langs = Languages::from_header(None);
     // 先取出来：请求体不是 Sync，拿着 `&req` 等地址查询，处理请求的 future 就不是 Send。
     let tunnel = req.extensions().get::<TunnelPeer>().is_some();
     let peer = client_addr(&req);
@@ -583,13 +548,13 @@ pub(in crate::gateway) async fn hook_request(gateway: &Gateway, req: Request) ->
     if tunnel || !from_service(authority, peer, "tusd").await {
         return failure(&Failure::new(
             FileFailure::PermissionDenied,
-            l10n::text(&langs, "files-hook-tusd-only", &[]),
+            "文件钩子只给 tusd 用",
         ));
     }
     let Some(files) = &gateway.files else {
         return failure(&Failure::new(
             FileFailure::ServiceUnavailable,
-            l10n::text(&langs, "files-service-disabled", &[]),
+            "核心没有启用文件服务",
         ));
     };
     let body = axum::body::to_bytes(req.into_body(), MAX_HOOK_BYTES).await;
@@ -613,10 +578,7 @@ pub(in crate::gateway) async fn hook_request(gateway: &Gateway, req: Request) ->
                 Ok(id) => {
                     let files = files.clone();
                     tokio::spawn(async move {
-                        if let Err(e) = files
-                            .finish_upload(&id, &Languages::from_header(None))
-                            .await
-                        {
+                        if let Err(e) = files.finish_upload(&id).await {
                             tracing::error!(file = %id, error = %e, "放传完的文件失败");
                         }
                     });

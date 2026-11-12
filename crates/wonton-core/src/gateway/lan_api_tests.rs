@@ -28,9 +28,6 @@ pub(super) fn lan() -> Lan {
             metric: 100,
         }],
         interfaces: vec![nic("eth0", "192.168.1.10"), nic("eth1", "fd00::1")],
-        subnets: vec![],
-        kernel: None,
-        dmi: None,
     };
     Lan::new(Detector::Fixed(Arc::new(Mutex::new(Ok(network)))), None)
 }
@@ -106,38 +103,6 @@ async fn lan_settings_need_the_owner_and_report_bad_choices_by_kind() {
     assert_eq!(chosen["choice"]["mode"], "manual");
     assert_eq!(chosen["addresses"][1]["address"], "fd00::1");
     assert_eq!(chosen["addresses"][1]["proxied"], true);
-}
-
-#[tokio::test]
-async fn the_optional_permission_switch_needs_the_owner_and_says_what_is_wrong() {
-    let h = Harness::start(None).await;
-    let path = "/_wonton/api/plugins/app.nothing/permissions/docker.socket";
-    let send = |auth: &'static [(&'static str, &'static str)], body: &'static str| {
-        h.send(Method::PUT, CORE, path, auth, Body::from(body))
-    };
-    assert_eq!(
-        send(&[], r#"{"enabled": true}"#).await.status,
-        StatusCode::UNAUTHORIZED
-    );
-    let bearer: &'static str = Box::leak(format!("Bearer {TOKEN}").into_boxed_str());
-    let auth: &'static [(&'static str, &'static str)] =
-        Box::leak(Box::new([("authorization", bearer)]));
-    let bad = send(auth, "{").await;
-    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
-    assert_eq!(bad.error_kind(), Some("invalid_input"));
-    let missing = send(auth, r#"{"enabled": true}"#).await;
-    assert_eq!(missing.status, StatusCode::NOT_FOUND, "{}", missing.text());
-    let unknown = h
-        .send(
-            Method::PUT,
-            CORE,
-            "/_wonton/api/plugins/app.nothing/permissions/nope",
-            auth,
-            Body::from(r#"{"enabled": true}"#),
-        )
-        .await;
-    assert_eq!(unknown.status, StatusCode::BAD_REQUEST);
-    assert_eq!(unknown.error_kind(), Some("invalid_input"));
 }
 
 #[tokio::test]

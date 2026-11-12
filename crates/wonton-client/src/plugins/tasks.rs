@@ -6,19 +6,13 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use tokio::sync::watch;
-
-use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, HomeStatus, HomeViewModel, InstallPreview, InstallRequest, PluginDetail,
-    PluginFailure, PluginIcon, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskNextStep, PluginTaskState, SecretString, SecretUpdate, SecretValues, SettingValues,
-    UpgradeRequest, UpgradeResult,
+    CoreError, InstallPreview, InstallRequest, PluginFailure, PluginIcon, PluginOperation,
+    PluginProblem, PluginState, PluginTask, PluginTaskState, UpgradeRequest, UpgradeResult,
 };
 
-use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
+use super::api::{CoreApi, INSTALL_TIMEOUT};
 use super::{POLL_INTERVAL, PluginsLink};
-use crate::l10n::{CATALOG, language};
 
 /// 连接断了以后，最多再等家里的服务器这么久：和安装请求自己的上限一样。
 const SETTLE_TIMEOUT: Duration = INSTALL_TIMEOUT;
@@ -26,6 +20,9 @@ const SETTLE_TIMEOUT: Duration = INSTALL_TIMEOUT;
 const UNREACHABLE_LIMIT: Duration = Duration::from_secs(120);
 /// 连续这么多次在已安装列表里看不到插件，才算请求没到家里的服务器。发起之后它可能还没出现在列表里。
 const MISSING_LIMIT: u32 = 3;
+/// 等不到结果的说明。
+const UNCERTAIN: &str = "连接断了，等不到家里服务器的结果，看一下已安装列表";
+const SERVER_CHANGED: &str = "换了家里的服务器，等不到原来那台的结果";
 
 /// 任务做完后已安装列表应该是什么样。
 enum Outcome {
@@ -38,20 +35,12 @@ enum Outcome {
 
 impl PluginsLink {
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
-    pub(crate) fn install(
-        self: &Arc<Self>,
-        preview: InstallPreview,
-        secrets: SecretValues,
-        settings: SettingValues,
-    ) -> Result<(), CoreError> {
+    pub(crate) fn install(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
-        self.resolve_confirmation(&preview);
-        self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
-        let enabled_permissions = enabled_permissions(&preview);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
-                reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
+                reason: "这份预览没有来源，装不了".to_owned(),
             });
         };
         self.begin_task(
@@ -63,16 +52,9 @@ impl PluginsLink {
         let request = InstallRequest {
             source,
             digest: preview.digest,
-            plan: preview.plan,
-            scope: None,
             grant,
-            enabled_permissions,
-            secrets,
-            settings,
             devices: Vec::new(),
             lan_webui,
-            install_together: Vec::new(),
-            connect_plugins: Vec::new(),
         };
         let link = self.clone();
         let id = preview.id;
@@ -87,37 +69,9 @@ impl PluginsLink {
         Ok(())
     }
 
-    /// 填一项密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应。
-    pub(crate) async fn set_secret_now(
-        self: &Arc<Self>,
-        id: String,
-        name: String,
-        value: Option<SecretString>,
-    ) -> Result<PluginDetail, CoreError> {
-        let api = self.api().map_err(to_core_error)?;
-        let update = SecretUpdate { value };
-        let result = api
-            .put(
-                &["plugins", &id, "secrets", &name],
-                &update,
-                INSTALL_TIMEOUT,
-            )
-            .await
-            .map_err(to_core_error);
-        self.refresh_installed();
-        result
-    }
-
     /// `UpgradePlugin`：升到预览给的版本。
-    pub(crate) fn upgrade(
-        self: &Arc<Self>,
-        preview: InstallPreview,
-        secrets: SecretValues,
-        settings: SettingValues,
-    ) -> Result<(), CoreError> {
+    pub(crate) fn upgrade(self: &Arc<Self>, preview: InstallPreview) -> Result<(), CoreError> {
         let grant = confirmed(&preview)?;
-        self.resolve_confirmation(&preview);
-        self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         self.begin_task(
             &preview.id,
@@ -125,15 +79,11 @@ impl PluginsLink {
             preview.icon.clone(),
             PluginOperation::Upgrade,
         )?;
-        let enabled_permissions = enabled_permissions(&preview);
         let request = UpgradeRequest {
             devices: Vec::new(),
             source: preview.source,
             digest: preview.digest,
             grant,
-            enabled_permissions,
-            secrets,
-            settings,
             lan_webui,
         };
         let link = self.clone();
@@ -201,34 +151,20 @@ impl PluginsLink {
         self.view.send_if_modified(|view| {
             let Some(index) = view.tasks.iter().position(|task| task.id == id) else {
                 outcome = Err(CoreError::InvalidInput {
-                    reason: l10n!(CATALOG, language(), "plugins-tasks-no-such-task", id = id),
+                    reason: format!("没有这个任务：{id}"),
                 });
                 return false;
             };
-            if view.tasks[index].state.in_progress() {
+            if view.tasks[index].state == PluginTaskState::Running {
                 outcome = Err(CoreError::NotReady {
-                    reason: l10n!(CATALOG, language(), "plugins-tasks-task-not-done"),
+                    reason: "任务还没做完".to_owned(),
                 });
                 return false;
             }
             view.tasks.remove(index);
             true
         });
-        if outcome.is_ok() {
-            self.previews
-                .lock()
-                .expect("the previews lock never panics")
-                .remove(id);
-        }
         outcome
-    }
-
-    /// 记下预览：失败后重试要来源，聊天列表的安装行要知道它是不是 Bot 插件。
-    fn remember_preview(&self, preview: &InstallPreview) {
-        self.previews
-            .lock()
-            .expect("the previews lock never panics")
-            .insert(preview.id.clone(), preview.clone());
     }
 
     fn begin_task(
@@ -243,15 +179,10 @@ impl PluginsLink {
             if view
                 .tasks
                 .iter()
-                .any(|task| task.id == id && task.state.in_progress())
+                .any(|task| task.id == id && task.state == PluginTaskState::Running)
             {
                 outcome = Err(CoreError::NotReady {
-                    reason: l10n!(
-                        CATALOG,
-                        language(),
-                        "plugins-tasks-task-running",
-                        title = title
-                    ),
+                    reason: format!("{title} 正在安装、升级或卸载"),
                 });
                 return false;
             }
@@ -262,14 +193,12 @@ impl PluginsLink {
                 icon,
                 operation,
                 state: PluginTaskState::Running,
-                waiting_for_connection: false,
                 added_tools: None,
             });
             true
         });
         if outcome.is_ok() {
             self.start_polling();
-            self.refresh_derived();
         }
         outcome
     }
@@ -295,45 +224,8 @@ impl PluginsLink {
         self.view.send_modify(|view| {
             if let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) {
                 task.state = state;
-                task.waiting_for_connection = false;
             }
         });
-        self.refresh_derived();
-    }
-
-    /// 连接状态变了：跟着改“在等连接”。`waiting` 是本地的上一份状态，只在变化时写一次。
-    fn refresh_waiting(
-        &self,
-        id: &str,
-        generation: u64,
-        waiting: &mut bool,
-        home: &watch::Receiver<HomeViewModel>,
-    ) {
-        let now_waiting = home.borrow().status != HomeStatus::Connected;
-        if now_waiting != *waiting {
-            self.set_waiting(id, now_waiting, generation);
-            *waiting = now_waiting;
-        }
-    }
-
-    /// 连接断了或者回来了：界面要能说出在等连接，而不是一直像在做。换了服务器以后不再动上一台的任务。
-    fn set_waiting(&self, id: &str, waiting: bool, generation: u64) {
-        let changed = self.view.send_if_modified(|view| {
-            if !self.is_current(generation) {
-                return false;
-            }
-            let Some(task) = view.tasks.iter_mut().find(|task| task.id == id) else {
-                return false;
-            };
-            if task.waiting_for_connection == waiting {
-                return false;
-            }
-            task.waiting_for_connection = waiting;
-            true
-        });
-        if changed {
-            self.refresh_derived();
-        }
     }
 
     /// 升级已经成功了，响应读不出来不算失败：核心比 App 新时形状可以变，这时不显示新增的工具。
@@ -341,7 +233,7 @@ impl PluginsLink {
         let added = match serde_json::from_slice::<UpgradeResult>(response) {
             Ok(result) => result.added_tools,
             Err(error) => {
-                tracing::warn!("could not read the upgrade response: {error}");
+                tracing::warn!("升级的响应读不出来：{error}");
                 return;
             }
         };
@@ -359,29 +251,9 @@ impl PluginsLink {
         sent: impl Future<Output = Result<(), PluginProblem>>,
     ) {
         let generation = self.generation.load(Ordering::SeqCst);
-        // 请求要等家里的服务器做完才返回，断网时可能吊很久：连接一离开、回来就先后改状态，不等请求报错。
-        let mut home = self.home.subscribe();
-        let mut waiting = false;
-        home.borrow_and_update();
-        self.refresh_waiting(id, generation, &mut waiting, &home);
-        let mut sent = std::pin::pin!(sent);
-        let mut home_live = true;
-        let sent = loop {
-            tokio::select! {
-                result = &mut sent => break result,
-                changed = home.changed(), if home_live => {
-                    if changed.is_err() {
-                        home_live = false;
-                        continue;
-                    }
-                    self.refresh_waiting(id, generation, &mut waiting, &home);
-                }
-            }
-        };
-        let state = match sent {
+        let state = match sent.await {
             Ok(()) => PluginTaskState::Succeeded,
             Err(problem) if problem.reason == PluginFailure::TransportUnavailable => {
-                self.set_waiting(id, true, generation);
                 self.settle(id, &outcome, generation).await
             }
             Err(problem) => PluginTaskState::Failed {
@@ -401,32 +273,13 @@ impl PluginsLink {
         }
     }
 
-    /// 连接断了：家里的服务器可能还在做，从已安装列表里等结果。等的时候不说成在做，也不重试请求。
+    /// 连接断了：家里的服务器可能还在做，从已安装列表里等结果。
     async fn settle(&self, id: &str, outcome: &Outcome, generation: u64) -> PluginTaskState {
         let deadline = Instant::now() + SETTLE_TIMEOUT;
         let mut answered = Instant::now();
         let mut missing = 0;
-        // 进来时刚标成在等连接；连上了先回到“在做”，又断了再标回去。
-        let mut waiting = true;
-        let mut home = self.home.subscribe();
-        let mut home_live = true;
-        // 连接状态可能比轮询还频繁：等下一次取列表的时间要跨迭代保留，否则一直重睡，取列表轮不到。
-        let mut next_poll = Instant::now() + POLL_INTERVAL;
         while Instant::now() < deadline {
-            let until = next_poll.saturating_duration_since(Instant::now());
-            tokio::select! {
-                () = tokio::time::sleep(until) => {
-                    next_poll = Instant::now() + POLL_INTERVAL;
-                }
-                changed = home.changed(), if home_live => {
-                    if changed.is_err() {
-                        home_live = false;
-                    } else {
-                        self.refresh_waiting(id, generation, &mut waiting, &home);
-                    }
-                    continue;
-                }
-            }
+            tokio::time::sleep(POLL_INTERVAL).await;
             let result = self.list_installed().await;
             // 新服务器的列表里没有这个插件，不能算卸载成功。
             if !self.is_current(generation) {
@@ -435,17 +288,9 @@ impl PluginsLink {
             let installed = match result {
                 Ok(installed) => {
                     answered = Instant::now();
-                    if waiting {
-                        self.set_waiting(id, false, generation);
-                        waiting = false;
-                    }
                     installed
                 }
                 Err(problem) if problem.reason == PluginFailure::TransportUnavailable => {
-                    if !waiting {
-                        self.set_waiting(id, true, generation);
-                        waiting = true;
-                    }
                     if answered.elapsed() >= UNREACHABLE_LIMIT {
                         return uncertain();
                     }
@@ -455,7 +300,6 @@ impl PluginsLink {
                 Err(problem) => {
                     return PluginTaskState::Uncertain {
                         message: problem.message,
-                        next_step: PluginTaskNextStep::CheckInstalled,
                     };
                 }
             };
@@ -509,15 +353,13 @@ impl PluginsLink {
 
 fn uncertain() -> PluginTaskState {
     PluginTaskState::Uncertain {
-        message: l10n!(CATALOG, language(), "plugins-tasks-uncertain"),
-        next_step: PluginTaskNextStep::CheckInstalled,
+        message: UNCERTAIN.to_owned(),
     }
 }
 
 pub(super) fn server_changed() -> PluginTaskState {
     PluginTaskState::Uncertain {
-        message: l10n!(CATALOG, language(), "plugins-tasks-server-changed"),
-        next_step: PluginTaskNextStep::CheckInstalled,
+        message: SERVER_CHANGED.to_owned(),
     }
 }
 
@@ -529,7 +371,7 @@ fn lan_webui_chosen(preview: &InstallPreview) -> bool {
         .is_some_and(|offer| offer.enabled)
 }
 
-/// 确认页上看到的就是授予的：预览里列出的必需权限，可选项不在这里（ADR-0057）。预览说装不了时不发请求。
+/// 确认页上看到的就是授予的：预览里列出的全部权限（ADR-0017）。预览说装不了时不发请求。
 fn confirmed(preview: &InstallPreview) -> Result<Vec<String>, CoreError> {
     if let Some(blocked) = preview
         .blocked
@@ -543,17 +385,6 @@ fn confirmed(preview: &InstallPreview) -> Result<Vec<String>, CoreError> {
     Ok(preview
         .permissions
         .iter()
-        .filter(|line| !line.optional)
         .map(|line| line.permission.clone())
         .collect())
-}
-
-/// 主人在确认页上打开了的可选项。
-fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
-    preview
-        .permissions
-        .iter()
-        .filter(|line| line.optional && line.enabled)
-        .map(|line| line.permission.clone())
-        .collect()
 }

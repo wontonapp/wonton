@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use tokio::sync::{Mutex, Notify, mpsc, oneshot};
 
 use super::{AcpClient, Inner, id_key, send_error, send_result};
-use crate::error::{Detail, Error, Result};
+use crate::error::{Error, Result};
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -123,12 +123,7 @@ impl AcpClient {
             .await;
         self.inner.auth.end().await;
         // 登录错误可能含上游回显的授权码；只暴露错误类别和数字码。
-        result.map_err(|error| {
-            Error::Upstream(Detail::msg_with(
-                "login-auth-failed",
-                [("code", error.code.to_string())],
-            ))
-        })?;
+        result.map_err(|error| Error::Upstream(format!("Agent 登录失败（ACP {}）", error.code)))?;
         Ok(())
     }
 }

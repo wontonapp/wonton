@@ -1,0 +1,28 @@
+
+running 1 test
+test stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet ... FAILED
+
+failures:
+
+---- stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet stdout ----
+[2m2026-11-06T15:15:47.554846Z[0m [32m INFO[0m [2mwonton_tunnel::client[0m[2m:[0m 隧道连接已建立 [3mserver[0m[2m=[0m1614a22195 [3mhandshake_ms[0m[2m=[0m37
+[2m2026-11-06T15:15:47.576443Z[0m [32m INFO[0m [1mrouter.accept[0m[1m{[0m[3mme[0m[2m=[0m1614a22195 [3malpn[0m[2m=[0m"wonton/tunnel/0" [3mremote[0m[2m=[0m151bc1c57a[1m}[0m[2m:[0m [2mwonton_tunnel::server[0m[2m:[0m 设备已连接 [3mremote[0m[2m=[0m151bc1c57a
+[2m2026-11-06T15:16:00.754132Z[0m [32m INFO[0m [2mwonton_tunnel::client[0m[2m:[0m 现有连接限时内没有回应，换新连接 [3mdeadline[0m[2m=[0m8s
+[2m2026-11-06T15:16:06.505615Z[0m [32m INFO[0m [1mrouter.accept[0m[1m{[0m[3mme[0m[2m=[0m1614a22195 [3malpn[0m[2m=[0m"wonton/tunnel/0" [3mremote[0m[2m=[0m151bc1c57a[1m}[0m[2m:[0m [2mwonton_tunnel::server[0m[2m:[0m 设备连接结束 [3mremote[0m[2m=[0m151bc1c57a [3mreason[0m[2m=[0mclosed by peer: no response (code 0)
+[2m2026-11-06T15:16:07.649782Z[0m [32m INFO[0m [2mwonton_tunnel::client[0m[2m:[0m 隧道连接已建立 [3mserver[0m[2m=[0m1614a22195 [3mhandshake_ms[0m[2m=[0m6895
+[2m2026-11-06T15:16:08.567192Z[0m [32m INFO[0m [1mrouter.accept[0m[1m{[0m[3mme[0m[2m=[0m1614a22195 [3malpn[0m[2m=[0m"wonton/tunnel/0" [3mremote[0m[2m=[0m151bc1c57a[1m}[0m[2m:[0m [2mwonton_tunnel::server[0m[2m:[0m 设备已连接 [3mremote[0m[2m=[0m151bc1c57a
+
+thread 'stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet' (4139212) panicked at crates/wonton-tunnel/tests/tunnel/stall.rs:354:5:
+assertion `left == right` failed
+  left: 2
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[2m2026-11-06T15:16:10.041472Z[0m [31mERROR[0m [2miroh::socket[0m[2m:[0m Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+[2m2026-11-06T15:16:10.054042Z[0m [31mERROR[0m [2miroh::socket[0m[2m:[0m Endpoint dropped without calling `Endpoint::close`. Aborting ungracefully.
+
+
+failures:
+    stall::requests_on_a_proven_slow_path_complete_after_a_lost_first_packet
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 33 filtered out; finished in 24.60s
+

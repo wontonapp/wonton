@@ -1,177 +1,78 @@
-//! 启动现存的常驻容器，不重建配置、不重跑已完成的一次性服务。例外：容器不在（被删了、Docker 数据
-//! 丢了）就按已安装记录照安装的路径重建再启动（issue #126）；网络不在也照安装的规格重建。
+//! 只启动现存的常驻容器，不重建配置、不重跑已完成的一次性服务。
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use tokio::time::Instant;
 
-use super::compose::DependCondition;
-use super::docker::NetworkReach;
 use super::health::{self, Target};
-use super::health_gate::Gate;
-use super::languages::Languages;
 use super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, detached,
-    now_secs,
 };
-use super::manifest::{Manifest, PluginId};
+use super::manifest::PluginId;
 use super::names::LABEL_PLUGIN;
 use super::package::PluginPackage;
 use super::reconcile::ContainersState;
 use super::render::start_order;
 use super::store::InstalledRecord;
-use crate::l10n;
 
 struct Started {
     health: Health,
-    serving: BTreeSet<String>,
     deployed: Option<Deployed>,
 }
 
 impl PluginManager {
     /// 请求断开也完成启动；成功前检查容器就绪、网页入口及插件身份配置。
-    /// 返回 `probe`:刚启动了模型使用方时由调用方补一轮一次性探测(见 model_health)。
     pub async fn start_detached(
         self: &Arc<Self>,
         id: PluginId,
     ) -> Result<PluginView, InstallError> {
         let this = Arc::clone(self);
-        let started_id = id.clone();
-        let closing = Arc::clone(&this);
-        let langs = this.owner_languages();
-        this.reject_busy_or_rebuilding(&id, &langs)?;
-        let (view, probe) = detached(async move {
-            let _changing = this.dependencies.changing.lock().await;
-            this.start(&started_id).await
-        })
-        .await?;
-        if probe {
-            closing.check_models_once(vec![id]).await;
-        }
-        Ok(view)
+        detached(async move { this.start(&id).await }).await
     }
 
-    /// 与 uninstall 的 `check_uninstall_state` 同形：先把忙/重建中的插件拒掉，再排队等
-    /// `dependencies.changing` 锁——不然并发的 start 会等前一个操作做完才被 `begin_start` 拦下，
-    /// 这期间它会在过期的状态上继续动手（并发卸载测试的第二个断言）。
-    fn reject_busy_or_rebuilding(
-        &self,
-        id: &PluginId,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        let plugins = self.plugins.read().expect("插件表锁中毒");
-        let entry = plugins
-            .get(id)
-            .ok_or_else(|| InstallError::not_installed(langs, id))?;
-        if let Some(error) = busy(id, &entry.status, langs) {
-            return Err(error);
-        }
-        if self.lan.is_rebuilding(id) {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-rebuilding",
-                &[("id", id.to_string().into())],
-            )));
-        }
-        Ok(())
-    }
-
-    pub(in crate::plugin) async fn start(
-        &self,
-        id: &PluginId,
-    ) -> Result<(PluginView, bool), InstallError> {
-        let langs = self.owner_languages();
-        self.check_not_upgrading(&langs)?;
-        let before = self.begin_start(id, &langs)?;
-        let result = self.start_existing(id, &before, &langs).await;
-        let (result, recovered) = self.finish_start(id, result, &langs);
-        self.lan.end(id);
-        self.changed();
-        let (mut view, probe) = result?;
-        if recovered {
-            let manifest = self
-                .plugins
-                .read()
-                .expect("插件表锁中毒")
-                .get(id)
-                .and_then(|entry| entry.listed.as_ref())
-                .map(|listed| listed.manifest.clone());
-            if let Some(manifest) = manifest {
-                self.capabilities_installed(&manifest, &[], true).await?;
-                if let Some(entry) = self.plugins.read().expect("插件表锁中毒").get(id) {
-                    view = self.view(id, entry);
-                }
-            }
-        }
-        Ok((view, probe))
-    }
-
-    fn finish_start(
-        &self,
-        id: &PluginId,
-        result: Result<Started, InstallError>,
-        langs: &Languages,
-    ) -> (Result<(PluginView, bool), InstallError>, bool) {
-        let recovered;
+    async fn start(&self, id: &PluginId) -> Result<PluginView, InstallError> {
+        self.check_not_upgrading()?;
+        let before = self.begin_start(id)?;
+        let result = self.start_existing(id, &before).await;
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins.get_mut(id).expect("启动期间其他操作不能删除插件");
         let result = match result {
-            Ok(Started {
-                health,
-                serving,
-                deployed,
-            }) => {
-                let started = deployed.is_some();
-                recovered = started;
+            Ok(Started { health, deployed }) => {
                 if let Some(deployed) = deployed {
                     let listed = entry.listed.clone().expect("启动前检查了插件记录");
                     *entry = Entry::running(listed, deployed);
                 } else {
                     entry.status = PluginStatus::Running;
                     entry.health = Some(health);
-                    entry.serving = serving;
-                    entry.checked_at = now_secs();
                 }
-                let probe = started
-                    && entry
-                        .listed
-                        .as_ref()
-                        .is_some_and(|l| super::model_health::needs_default_model(&l.manifest));
-                Ok((self.view(id, entry), probe))
+                Ok(self.view(id, entry))
             }
             Err(error) => {
-                recovered = false;
                 entry.status = PluginStatus::Degraded {
-                    reason: l10n::text(
-                        langs,
-                        "plugin-install-start-failed",
-                        &[("error", error.to_string().into())],
-                    ),
+                    reason: format!("启动失败：{error}"),
                 };
                 entry.health = None;
                 entry.follows_containers = true;
-                entry.checked_at = now_secs();
                 Err(error)
             }
         };
         drop(plugins);
-        (result, recovered)
+        self.lan.end(id);
+        self.changed();
+        result
     }
 
-    fn begin_start(&self, id: &PluginId, langs: &Languages) -> Result<PluginStatus, InstallError> {
+    fn begin_start(&self, id: &PluginId) -> Result<PluginStatus, InstallError> {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
             .get_mut(id)
-            .ok_or_else(|| InstallError::not_installed(langs, id))?;
-        if let Some(error) = busy(id, &entry.status, langs) {
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        if let Some(error) = busy(id, &entry.status) {
             return Err(error);
         }
         if self.lan.is_rebuilding(id) {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-rebuilding",
-                &[("id", id.to_string().into())],
+            return Err(InstallError::Conflict(format!(
+                "插件 {id} 正在重建，结束后再启动"
             )));
         }
         if let PluginStatus::Degraded { reason } = &entry.status
@@ -180,17 +81,13 @@ impl PluginManager {
             return Err(InstallError::Conflict(reason.clone()));
         }
         if entry.listed.is_none() {
-            return Err(InstallError::RecordUnusable(l10n::text(
-                langs,
-                "plugin-install-record-unusable",
-                &[],
-            )));
+            return Err(InstallError::Conflict(
+                "插件记录不可用，无法启动".to_owned(),
+            ));
         }
         if !self.lan.begin(id) {
-            return Err(InstallError::Conflict(l10n::text(
-                langs,
-                "plugin-install-conflict-rebuilding",
-                &[("id", id.to_string().into())],
+            return Err(InstallError::Conflict(format!(
+                "插件 {id} 正在重建，结束后再启动"
             )));
         }
         let before = entry.status.clone();
@@ -201,207 +98,71 @@ impl PluginManager {
         &self,
         id: &PluginId,
         before: &PluginStatus,
-        langs: &Languages,
     ) -> Result<Started, InstallError> {
         let record = self
             .store
-            .load(id)
-            .map_err(|error| {
-                InstallError::RecordUnusable(super::manager::unreadable_record(&error, langs))
-            })?
-            .ok_or_else(|| InstallError::not_installed(langs, id))?;
-        let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
+            .load(id)?
+            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        let mut package = PluginPackage::with_files(&record.source, record.files.clone())?;
         package.origin = record.origin.clone();
-        self.start_dependency_providers(&package.manifest, langs)
-            .await?;
-        let checked = self.check_containers(&package, langs).await?;
-        // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
-        let state = if checked.has_missing() {
-            ContainersState::Stopped
-        } else {
-            checked.ready(langs)?
-        };
-        if let ContainersState::Running(health) = &state
-            && *before == PluginStatus::Running
-        {
-            return Ok(Started {
-                health: *health,
-                serving: checked.serving().clone(),
-                deployed: None,
-            });
-        }
-        // 没有渲染计划：等待时限从生效的 healthcheck（在容器配置里）算，和安装、升级同一条规则。
-        let deadline = self.wait_deadline(&package).await?;
-        if let ContainersState::Stopped = state {
-            self.set(id, PluginStatus::Installing, None);
-            // 网络被删了（开发栈 down、Docker 数据丢了）就先按安装的规格重建，核对才能把核心接回去。
-            self.ensure_network(&package.manifest).await?;
-            // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
-            self.reconcile(&package, &record, Gate::StartPeriod).await?;
-            // 渲染变了就重建，免得主人启动的还是旧配置的容器。
-            if !self
-                .recreate_on_drift(&package, &record, langs, true, Gate::StartPeriod)
-                .await?
-            {
-                self.start_resident_containers(&package, &record, deadline, langs)
-                    .await?;
+        match self.check_containers(&package).await? {
+            ContainersState::Running(health) if *before == PluginStatus::Running => {
+                return Ok(Started {
+                    health,
+                    deployed: None,
+                });
+            }
+            ContainersState::Running(_) => {}
+            ContainersState::Stopped => {
+                self.set(id, PluginStatus::Installing, None);
+                // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
+                self.reconcile(&package, &record).await?;
+                self.start_resident_containers(&package, &record).await?;
             }
         }
         let deployed = self.reconcile_running(&package, &record).await?;
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui) {
-            health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+            health::wait_webui(
+                &self.http,
+                upstream,
+                &webui.path,
+                Instant::now() + self.cfg.install_timeout,
+            )
+            .await?;
         }
         Ok(Started {
             health: deployed.health,
-            serving: BTreeSet::new(),
             deployed: Some(deployed),
         })
-    }
-
-    /// 插件的网络不在（开发栈 down、Docker 数据丢了）就按安装的规格重建：核对只核对已存在的网络，
-    /// 少了它启动和核对都过不去。网络在但规格对不上时不动，由核对如实报冲突。出网插件的网络重建后
-    /// 要把出口容器接回去（安装时是这一步建的端点），不然插件起来了也出不了网。
-    async fn ensure_network(&self, manifest: &Manifest) -> Result<(), InstallError> {
-        let network = self.cfg.instance.network(&manifest.id.slug());
-        let reach = self.network_reach(manifest);
-        if self.engine.network_reach(&network).await?.is_none() {
-            self.engine
-                .create_network(&network, &self.cfg.instance.labels(&manifest.id), reach)
-                .await?;
-            tracing::info!(plugin = %manifest.id, %network, "插件的网络不在，按安装的规格重建");
-            if reach == NetworkReach::Egress {
-                self.attach_relay(&network).await?;
-            }
-        }
-        Ok(())
-    }
-
-    /// 启动不重渲染计划：生效的 healthcheck（安装时把镜像自带的并了进去）在容器配置里，等待时限据此算。
-    async fn wait_deadline(&self, package: &PluginPackage) -> Result<Instant, InstallError> {
-        let slug = package.manifest.id.slug();
-        let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots = self.bot_names(&package.manifest.id);
-        let mut configs = Vec::new();
-        for service in package.service_names() {
-            let instances: Vec<String> = if bot_services.contains(service) && !bots.is_empty() {
-                bots.iter()
-                    .map(|bot| self.cfg.instance.bot_container(&slug, service, bot))
-                    .collect()
-            } else {
-                vec![self.cfg.instance.container(&slug, service)]
-            };
-            for name in instances {
-                let config = self
-                    .engine
-                    .inspect_container(&name)
-                    .await?
-                    .and_then(|info| info.config);
-                configs.push(config.and_then(|config| config.healthcheck));
-            }
-        }
-        Ok(super::health_gate::deadline_from_configs(
-            configs.iter().map(Option::as_ref),
-            self.cfg.install_timeout,
-            Instant::now(),
-        ))
     }
 
     async fn start_resident_containers(
         &self,
         package: &PluginPackage,
         record: &InstalledRecord,
-        deadline: Instant,
-        langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = &package.manifest.id;
         let slug = id.slug();
-        let dependencies = package.service_dependencies(langs)?;
+        let dependencies = package.service_dependencies()?;
         let order = start_order(
             dependencies
                 .iter()
                 .map(|(name, deps)| (*name, deps.iter().map(|(name, _)| name.clone()).collect()))
                 .collect(),
-            langs,
         )?;
         let one_shot = package.one_shot_services();
-        let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots = self.bot_names(&package.manifest.id);
-        // 要启动的容器：Bot 服务的按 Bot 一组，其余全插件一份；启动顺序不变。
-        let name_of = |service: &str, bot: Option<&str>| match bot {
-            Some(bot) => self.cfg.instance.bot_container(&slug, service, bot),
-            None => self.cfg.instance.container(&slug, service),
-        };
-        let mut group: Vec<(&str, Option<&str>)> = Vec::new();
-        for service in &order {
-            if one_shot.contains(service.as_str()) {
-                continue;
-            }
-            if bot_services.contains(service.as_str()) && !bots.is_empty() {
-                group.extend(
-                    bots.iter()
-                        .map(|bot| (service.as_str(), Some(bot.as_str()))),
-                );
-            } else {
-                group.push((service.as_str(), None));
-            }
-        }
-        self.check_ownership(id, &group, &name_of, langs).await?;
-        self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
-            .await?;
-        for (service, bot) in &group {
-            // 一次性服务不重跑（见文件头）：它上次以 0 退出才算满足。
-            let deps: Vec<(String, DependCondition)> = dependencies[service]
-                .iter()
-                .map(|(dependency, condition)| {
-                    let condition = if one_shot.contains(dependency.as_str()) {
-                        DependCondition::ServiceCompletedSuccessfully
-                    } else {
-                        *condition
-                    };
-                    // 依赖的 Bot 服务是同一个 Bot 的那份；全插件一份的服务就它自己。
-                    let dep_bot = bot.filter(|_| bot_services.contains(dependency.as_str()));
-                    (name_of(dependency, dep_bot), condition)
-                })
-                .collect();
-            health::wait_for_all(&self.engine, &self.http, &deps, deadline, langs).await?;
-            let name = name_of(service, *bot);
-            self.engine.start_container(&name).await?;
-        }
-        for (service, bot) in &group {
-            let name = name_of(service, *bot);
-            let webui_health = self.webui_health(&package.manifest, service).await?;
-            health::wait_for(
-                &self.engine,
-                &self.http,
-                &name,
-                Target::Ready,
-                webui_health.as_ref(),
-                deadline,
-                langs,
-            )
-            .await?;
-        }
-        self.ensure_relays(&package.manifest, record).await?;
-        Ok(())
-    }
-
-    /// 启动前逐个确认归属：同名但被别的容器占用时不碰它。
-    async fn check_ownership(
-        &self,
-        id: &PluginId,
-        group: &[(&str, Option<&str>)],
-        name_of: &impl Fn(&str, Option<&str>) -> String,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        for (service, bot) in group {
-            let name = name_of(service, *bot);
-            let info = self.engine.inspect_container(&name).await?.ok_or_else(|| {
-                InstallError::Unhealthy(l10n::text(
-                    langs,
-                    "plugin-install-container-missing",
-                    &[("name", name.as_str().into())],
-                ))
-            })?;
+        let names: Vec<String> = order
+            .iter()
+            .filter(|name| !one_shot.contains(name.as_str()))
+            .map(|name| self.cfg.instance.container(&slug, name))
+            .collect();
+        // 启动前逐个确认归属：同名但被别的容器占用时不碰它。
+        for name in &names {
+            let info = self
+                .engine
+                .inspect_container(name)
+                .await?
+                .ok_or_else(|| InstallError::Unhealthy(format!("容器 {name} 不存在")))?;
             let labels = info
                 .config
                 .and_then(|config| config.labels)
@@ -409,16 +170,34 @@ impl PluginManager {
             if !self.cfg.instance.owns(&labels)
                 || labels.get(LABEL_PLUGIN).map(String::as_str) != Some(id.as_str())
             {
-                return Err(InstallError::Conflict(l10n::text(
-                    langs,
-                    "plugin-install-container-not-owned",
-                    &[
-                        ("name", name.as_str().into()),
-                        ("id", id.to_string().into()),
-                    ],
+                return Err(InstallError::Conflict(format!(
+                    "容器 {name} 不属于插件 {id}"
                 )));
             }
         }
+        self.register_source(&package.manifest, &self.cfg.instance.network(&slug))
+            .await?;
+        let deadline = Instant::now() + self.cfg.install_timeout;
+        for service in order
+            .iter()
+            .filter(|name| !one_shot.contains(name.as_str()))
+        {
+            for (dependency, condition) in &dependencies[service.as_str()] {
+                let name = self.cfg.instance.container(&slug, dependency);
+                let target = if one_shot.contains(dependency.as_str()) {
+                    Target::Depend(super::compose::DependCondition::ServiceCompletedSuccessfully)
+                } else {
+                    Target::Depend(*condition)
+                };
+                health::wait_for(&self.engine, &name, target, deadline).await?;
+            }
+            let name = self.cfg.instance.container(&slug, service);
+            self.engine.start_container(&name).await?;
+        }
+        for name in &names {
+            health::wait_for(&self.engine, name, Target::Ready, deadline).await?;
+        }
+        self.ensure_relays(&package.manifest, record).await?;
         Ok(())
     }
 }

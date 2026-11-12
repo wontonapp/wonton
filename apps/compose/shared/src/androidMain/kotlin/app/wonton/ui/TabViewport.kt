@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,7 +37,7 @@ internal fun tabEnvironment(top: Dp, bottom: Dp, edge: Boolean, safe: PaddingVal
     val direction = LocalLayoutDirection.current
     return TabEnvironment(
         appLanguageTag(), TimeZone.getDefault().id, TabPlatform.ANDROID,
-        WontonTheme.isDark, top.value.toDouble(), bottom.value.toDouble(),
+        WontonTheme.isDark, maxOf(top, safe.calculateTopPadding()).value.toDouble(), bottom.value.toDouble(),
         TabSafeArea(
             if (edge) safe.calculateTopPadding().value.toDouble() else 0.0,
             if (edge) safe.calculateRightPadding(direction).value.toDouble() else 0.0,
@@ -47,16 +48,16 @@ internal fun tabEnvironment(top: Dp, bottom: Dp, edge: Boolean, safe: PaddingVal
 }
 
 internal class TabViewport(
-    val safe: PaddingValues, val inset: PaddingValues, val chromeTop: Dp,
-    val bottom: Dp, val environment: TabEnvironment,
+    val safe: PaddingValues, val inset: PaddingValues, val gaps: PaddingValues,
+    val bottom: Dp, val keyboard: Boolean, val webBottom: Boolean, val environment: TabEnvironment,
 )
 
 @Composable
 internal fun tabViewport(page: TabPage, overlay: Boolean, active: Boolean, top: Dp, bottom: Dp): TabViewport {
     val safe = tabSafeInsets()
     val direction = LocalLayoutDirection.current
-    val edge = page.layout == TabLayout.EDGE_TO_EDGE && (!overlay || page.fullscreen)
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val edge = page.layout == TabLayout.EDGE_TO_EDGE && (!overlay || page.fullscreen)
     var retainedBottom by remember { mutableStateOf(bottom) }
     SideEffect {
         if (active) retainedBottom = when {
@@ -65,11 +66,24 @@ internal fun tabViewport(page: TabPage, overlay: Boolean, active: Boolean, top: 
             else -> bottom
         }
     }
-    // 全屏没有标题栏:网页顶边 = 状态栏下沿(横屏状态栏隐藏,就是 0)。带栏 = 标题栏下沿,胶囊不算在内。
-    val chromeTop = if (page.fullscreen) safe.calculateTopPadding() else maxOf(top, safe.calculateTopPadding())
     val inset = if (edge) PaddingValues(0.dp) else PaddingValues(
         start = safe.calculateStartPadding(direction), end = safe.calculateEndPadding(direction),
-        top = chromeTop, bottom = retainedBottom,
+        top = maxOf(top, safe.calculateTopPadding()), bottom = retainedBottom,
     )
-    return TabViewport(safe, inset, chromeTop, retainedBottom, tabEnvironment(chromeTop, retainedBottom, edge, safe))
+    val gaps = if (page.fullscreen) inset else PaddingValues(bottom = if (edge) 0.dp else retainedBottom)
+    return TabViewport(safe, inset, gaps, retainedBottom, keyboard, page.fullscreen || overlay,
+        tabEnvironment(top, retainedBottom, edge, safe))
+}
+
+@Composable
+internal fun tabNavigationEdge(): TabEdge {
+    val navigation = WindowInsets.navigationBars
+    val density = LocalDensity.current
+    val direction = LocalLayoutDirection.current
+    return when {
+        navigation.getBottom(density) > 0 -> TabEdge.BOTTOM
+        navigation.getRight(density, direction) > 0 -> TabEdge.RIGHT
+        navigation.getLeft(density, direction) > 0 -> TabEdge.LEFT
+        else -> TabEdge.BOTTOM
+    }
 }

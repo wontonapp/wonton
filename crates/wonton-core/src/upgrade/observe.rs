@@ -3,8 +3,6 @@
 use std::collections::HashMap;
 
 use super::host::ServiceContainer;
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 刚进入观察时各个长期服务的样子：之后换了容器或者重启次数变了，就是崩过。
 #[derive(Debug, Default)]
@@ -16,10 +14,8 @@ impl Baseline {
         Self(
             long_running
                 .map(|c| {
-                    (
-                        c.service.clone(),
-                        (c.id.clone(), c.restart_count, c.image.clone()),
-                    )
+                    let seen = (c.id.clone(), c.restart_count, c.image.clone());
+                    (c.service.clone(), seen)
                 })
                 .collect(),
         )
@@ -27,58 +23,31 @@ impl Baseline {
 
     /// 第一个有问题的服务和问题；都好时是 `None`。设了重启策略的长期服务退出、重启、变成不健康或者换了镜像都算；一次性
     /// 服务（如 `hydra-migrate`）只要求退出码为 0。
-    pub fn problem(&self, containers: &[ServiceContainer], langs: &Languages) -> Option<String> {
-        let text = |id: &str, args: &[(&str, &str)]| {
-            l10n::text(
-                langs,
-                id,
-                &args
-                    .iter()
-                    .map(|(name, value)| (*name, (*value).into()))
-                    .collect::<Vec<_>>(),
-            )
-        };
+    pub fn problem(&self, containers: &[ServiceContainer]) -> Option<String> {
         for (service, (id, restarts, image)) in &self.0 {
             let Some(now) = containers.iter().find(|c| &c.service == service) else {
-                return Some(text(
-                    "upgrade-service-container-gone",
-                    &[("service", service)],
-                ));
+                return Some(format!("服务 {service} 的容器不见了"));
             };
             if &now.id != id {
-                return Some(text(
-                    "upgrade-service-container-replaced",
-                    &[("service", service)],
-                ));
+                return Some(format!("服务 {service} 的容器被换掉了"));
             }
             if &now.image != image {
-                return Some(text(
-                    "upgrade-service-image-changed",
-                    &[("service", service), ("image", &now.image)],
-                ));
+                return Some(format!("服务 {service} 换了镜像：{}", now.image));
             }
             if now.restart_count != *restarts {
-                return Some(text("upgrade-service-restarted", &[("service", service)]));
+                return Some(format!("服务 {service} 重启了"));
             }
             if now.status != "running" {
-                return Some(text(
-                    "upgrade-service-status",
-                    &[("service", service), ("status", &now.status)],
-                ));
+                return Some(format!("服务 {service} 的状态是 {}", now.status));
             }
             if now.health.as_deref() == Some("unhealthy") {
-                return Some(text("upgrade-service-unhealthy", &[("service", service)]));
+                return Some(format!("服务 {service} 变成不健康"));
             }
         }
         containers
             .iter()
             .filter(|c| !c.long_running && c.status == "exited" && c.exit_code != 0)
-            .map(|c| {
-                text(
-                    "upgrade-one-shot-exit-code",
-                    &[("service", &c.service), ("code", &c.exit_code.to_string())],
-                )
-            })
+            .map(|c| format!("一次性服务 {} 的退出码是 {}", c.service, c.exit_code))
             .next()
     }
 }
@@ -86,10 +55,6 @@ impl Baseline {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn langs() -> Languages {
-        Languages::from_header(None)
-    }
 
     fn service(name: &str) -> ServiceContainer {
         ServiceContainer {
@@ -106,7 +71,7 @@ mod tests {
         let before = vec![service("core")];
         let mut after = before.clone();
         change(&mut after[0]);
-        Baseline::of(&before).problem(&after, &langs()).is_some()
+        Baseline::of(&before).problem(&after).is_some()
     }
 
     #[test]
@@ -128,14 +93,11 @@ mod tests {
             ..service("hydra-migrate")
         };
         let baseline = Baseline::of(std::slice::from_ref(&one_shot));
-        assert_eq!(
-            baseline.problem(std::slice::from_ref(&one_shot), &langs()),
-            None
-        );
+        assert_eq!(baseline.problem(std::slice::from_ref(&one_shot)), None);
         let failed = ServiceContainer {
             exit_code: 1,
             ..one_shot
         };
-        assert!(baseline.problem(&[failed], &langs()).is_some());
+        assert!(baseline.problem(&[failed]).is_some());
     }
 }

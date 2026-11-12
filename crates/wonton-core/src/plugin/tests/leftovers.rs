@@ -125,10 +125,10 @@ async fn resources_of_another_core_are_not_leftovers() {
     let (docker, engine) = FakeDocker::start().await;
     let (formal_dir, dev_dir) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let formal = manager_with(engine.clone(), &formal_dir);
-    formal.install(&app(), &[], super::langs()).await.unwrap();
+    formal.install(&app(), &[]).await.unwrap();
     let before = docker.writes().len();
     let dev = manager_in_instance(engine, &dev_dir, "alice");
-    dev.install(&app(), &[], super::langs()).await.unwrap();
+    dev.install(&app(), &[]).await.unwrap();
     let web = container_name("app-test", "web");
     assert!(docker.containers().contains(&web));
     let writes = docker.writes().split_off(before);
@@ -145,7 +145,7 @@ async fn containers_labeled_for_the_plugin_without_a_record_are_replaced() {
     docker.add_container(&web, "app.test");
     docker.add_network(NETWORK, "app.test", json!({"Internal": false}));
     let m = manager_with(engine, &dir);
-    m.install(&app(), &[], super::langs()).await.unwrap();
+    m.install(&app(), &[]).await.unwrap();
     assert_eq!(status(&m), Some(PluginStatus::Running));
     // 这个插件不出网，残留的网络能出网：重建后按这次的算。
     assert_eq!(docker.network(NETWORK).unwrap()["Internal"], json!(true));
@@ -159,7 +159,7 @@ async fn network_is_refused(prepare: impl Fn(&FakeDocker), owner: Option<&str>) 
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine.clone(), &dir);
 
-    let err = m.install(&app(), &[], super::langs()).await.unwrap_err();
+    let err = m.install(&app(), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
     let reason = err.to_string();
     assert!(reason.contains(NETWORK), "{reason}");
@@ -246,7 +246,7 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
         let (docker, engine) = FakeDocker::start().await;
         let dir = tempfile::tempdir().unwrap();
         manager_with(engine.clone(), &dir)
-            .install(&app(), &[], super::langs())
+            .install(&app(), &[])
             .await
             .unwrap();
         let web = container_name("app-test", "web");
@@ -261,7 +261,7 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
         assert_eq!(degraded(&status(&m)), failed);
 
         let before = docker.writes().len();
-        let err = m.install(&app(), &[], super::langs()).await.unwrap_err();
+        let err = m.install(&app(), &[]).await.unwrap_err();
         assert_eq!(err.kind(), "conflict", "{err}");
         let writes = docker.writes().split_off(before);
         assert!(
@@ -276,7 +276,7 @@ async fn a_stopped_plugin_is_never_taken_for_leftovers() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     manager_with(engine.clone(), &dir)
-        .install(&app(), &[], super::langs())
+        .install(&app(), &[])
         .await
         .unwrap();
     docker.set_state(
@@ -288,7 +288,7 @@ async fn a_stopped_plugin_is_never_taken_for_leftovers() {
     assert_eq!(status(&m), Some(PluginStatus::Stopped));
 
     let before = docker.writes().len();
-    let err = m.install(&app(), &[], super::langs()).await.unwrap_err();
+    let err = m.install(&app(), &[]).await.unwrap_err();
     assert_eq!(err.kind(), "conflict", "{err}");
     let writes = docker.writes().split_off(before);
     assert!(

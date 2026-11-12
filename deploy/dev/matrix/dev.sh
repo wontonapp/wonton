@@ -39,18 +39,6 @@ ensure_keys() {
   echo "已生成核心的 JWT 签发密钥：$private_key"
 }
 
-# 联邦用的自签证书（ADR-0050）：服务器名拿不到公共证书，TLS 只剩传输形式，对端认证靠 X-Matrix 签名。
-ensure_tls_cert() {
-  [[ -f "$secrets/tls.crt" && -f "$secrets/tls.key" ]] && return
-  require_openssl3
-  mkdir -p "$secrets"
-  chmod 700 "$secrets"
-  openssl req -x509 -newkey ed25519 -nodes -days 3650 \
-    -keyout "$secrets/tls.key" -out "$secrets/tls.crt" \
-    -subj "/CN=wonton.localhost" -addext "subjectAltName=DNS:wonton.localhost" >/dev/null 2>&1
-  echo "已生成联邦自签证书：$secrets/tls.crt"
-}
-
 compose() {
   [[ -f "$public_key" ]] || die "还没有签发密钥，先运行：$0 up"
   WONTON_DEV_JWT_PUBLIC_KEY="$(cat "$public_key")" docker compose -f "$here/compose.yaml" "$@"
@@ -82,8 +70,7 @@ mint_jwt() {
 login() {
   local token
   token="$(mint_jwt "$1")"
-  # 本机配了代理环境变量时，curl 会把 127.0.0.1 也送进代理。
-  curl -sS --noproxy '*' --fail-with-body --max-time 30 -X POST "$base_url/_matrix/client/v3/login" \
+  curl -sS --fail-with-body -X POST "$base_url/_matrix/client/v3/login" \
     -H 'content-type: application/json' \
     -d "{\"type\":\"org.matrix.login.jwt\",\"token\":\"$token\",\"initial_device_display_name\":\"wonton-dev\"}"
   echo
@@ -92,7 +79,6 @@ login() {
 case "${1:-}" in
   up)
     ensure_keys
-    ensure_tls_cert
     compose up -d --wait
     echo "Tuwunel 已就绪：$base_url"
     ;;

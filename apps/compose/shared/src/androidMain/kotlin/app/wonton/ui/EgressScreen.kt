@@ -46,7 +46,6 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonGroup
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonRow
@@ -98,8 +97,7 @@ fun EgressPage(plugins: PluginsState, onBack: () -> Unit) {
             val problem = egress.loadProblem
             when {
                 current != null -> Column(
-                    Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+                    Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
                     verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
                 ) {
                     egress.saveProblem?.let { ProblemNotice(it.saveProblem) }

@@ -18,13 +18,9 @@ extension PluginProblem {
     var saveProblem: Problem {
         switch reason {
         case .transportUnavailable:
-            return Problem(
-                title: String(localized: .problemPluginSaveUncertainTitle),
-                nextStep: String(localized: .problemPluginSaveUncertainNextStep),
-                detail: message
-            )
+            return Problem(title: "不确定改好了没有", nextStep: "连上家里的服务器后再看一下。", detail: message)
         case .invalid:
-            return Problem(title: String(localized: .problemPluginSaveInvalidTitle), nextStep: message)
+            return Problem(title: "这样填不对", nextStep: message)
         default:
             return problem
         }
@@ -35,55 +31,42 @@ extension PluginFailure {
     func problem(detail: String?) -> Problem {
         switch self {
         case .transportUnavailable:
-            categorizedProblem(.problemTransportUnavailableTitle, .problemTransportUnavailableNextStep, detail)
-        case .unauthorized: categorizedProblem(.problemUnauthorizedTitle, .problemUnauthorizedNextStep, detail)
-        case .upstream: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
+            return Problem(title: "连不上家里的服务器", nextStep: "检查网络，连上后再试。", detail: detail)
+        case .unauthorized:
+            return Problem(title: "家里的服务器不认这台设备", nextStep: "请重新扫码配对。", detail: detail)
         case .sourceUnavailable:
-            categorizedProblem(.problemPluginSourceUnavailableTitle, .problemPluginSourceUnavailableNextStep, detail)
-        case .notFound: categorizedProblem(.problemPluginNotFoundTitle, .problemPluginNotFoundNextStep, detail)
-        case .changed: categorizedProblem(.problemPluginChangedTitle, .problemPluginChangedNextStep, detail)
-        case .unsupported: categorizedProblem(.problemPluginUnsupportedTitle, .problemUpgradeServerNextStep, detail)
-        case .conflict: categorizedProblem(.problemPluginConflictTitle, .problemPluginConflictNextStep, detail)
-        case .invalid: categorizedProblem(.problemPluginInvalidTitle, .problemPluginInvalidNextStep, detail)
+            return Problem(title: "暂时取不到应用的信息", nextStep: "家里的服务器连不上应用的来源，稍后再试。", detail: detail)
+        case .notFound:
+            return Problem(title: "没有找到这个应用", nextStep: "刷新应用商店后再试。", detail: detail)
+        case .changed:
+            return Problem(title: "应用在确认之后变了", nextStep: "请重新查看、确认。", detail: detail)
+        case .unsupported:
+            return Problem(title: "家里的服务器不支持这个应用", nextStep: "先升级家里的服务器。", detail: detail)
+        case .conflict:
+            return Problem(title: "这个应用正忙", nextStep: "它已经装了，或者正在安装、升级、卸载，等那边做完。", detail: detail)
+        case .invalid:
+            return Problem(title: "这个应用的安装包有问题", nextStep: "请联系应用的作者。", detail: detail)
         case .deviceUnavailable:
-            categorizedProblem(.problemPluginDeviceUnavailableTitle, .problemPluginDeviceUnavailableNextStep, detail)
+            return Problem(title: "选择的设备不可用", nextStep: "重新查看设备后再试。", detail: detail)
         case .lanUnavailable:
-            categorizedProblem(.problemPluginLanUnavailableTitle, .problemPluginLanUnavailableNextStep, detail)
-        case .lanPortTaken:
-            categorizedProblem(.problemPluginLanPortTakenTitle, .problemPluginLanPortTakenNextStep, detail)
+            return Problem(title: "选不出局域网地址", nextStep: "在局域网设置里选好网卡或地址后再试。", detail: detail)
         case .coreUpgrading:
-            categorizedProblem(.problemPluginCoreUpgradingTitle, .problemPluginCoreUpgradingNextStep, detail)
+            return Problem(title: "家里的服务器正在升级", nextStep: "升级结束后再试。", detail: detail)
         case .egressProxyUnavailable:
-            categorizedProblem(
-                .problemPluginEgressProxyUnavailableTitle, .problemPluginEgressProxyUnavailableNextStep, detail
-            )
-        case .protocol: categorizedProblem(.problemPluginProtocolTitle, .problemPluginProtocolNextStep, detail)
-        case .recordUnusable:
-            categorizedProblem(.problemPluginRecordUnusableTitle, .problemPluginRecordUnusableNextStep, detail)
-        case .serverTooOld:
-            categorizedProblem(.problemPluginServerTooOldTitle, .problemUpgradeServerNextStep, detail)
-        // 比这个壳新的类别：先按服务器出错说。
-        default: categorizedProblem(.problemUpstreamTitle, .problemUpstreamNextStep, detail)
+            return Problem(title: "代理连不上", nextStep: "检查家里服务器上的代理，或者在出网代理设置里改地址后再试。", detail: detail)
+        case .ownerProfileIncomplete:
+            return Problem(title: "你的资料还没填好", nextStep: "在设置里填好后再试。", detail: detail)
+        case .upstream:
+            return Problem(title: "家里的服务器出错了", nextStep: "稍后再试。", detail: detail)
+        case .protocol:
+            return Problem(title: "App 和家里的服务器版本对不上", nextStep: "请更新 App 或家里的服务器。", detail: detail)
         }
     }
 }
 
-/// 连不上、不认设备、服务器出错这三句在插件、聊天和连接错误里共用。
-private func categorizedProblem(
-    _ title: LocalizedStringResource,
-    _ nextStep: LocalizedStringResource,
-    _ detail: String?
-) -> Problem {
-    Problem(title: String(localized: title), nextStep: String(localized: nextStep), detail: detail)
-}
-
 extension AppearanceProblem {
     var problem: Problem {
-        Problem(
-            title: String(localized: .problemAppearanceTitle),
-            nextStep: String(localized: .problemStorageNextStep),
-            detail: message
-        )
+        Problem(title: "外观设置没有存上", nextStep: "检查存储空间后再试。", detail: message)
     }
 }
 
@@ -91,39 +74,15 @@ extension ChatFailure {
     func problem(detail: String) -> Problem {
         switch self {
         case .transportUnavailable:
-            return Problem(
-                title: String(localized: .problemTransportUnavailableTitle),
-                nextStep: String(localized: .problemTransportUnavailableNextStep),
-                detail: detail
-            )
+            return Problem(title: "连不上家里的服务器", nextStep: "检查网络，连上后再试。", detail: detail)
         case .unauthorized:
-            return Problem(
-                title: String(localized: .problemUnauthorizedTitle),
-                nextStep: String(localized: .problemUnauthorizedNextStep),
-                detail: detail
-            )
-        case .forbidden:
-            return Problem(
-                title: String(localized: .problemForbiddenTitle),
-                nextStep: String(localized: .problemForbiddenNextStep),
-                detail: detail
-            )
+            return Problem(title: "家里的服务器不认这台设备", nextStep: "请重新扫码配对。", detail: detail)
         case .upstream:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
+            return Problem(title: "家里的服务器出错了", nextStep: "稍后再试。", detail: detail)
         case .notReady:
-            return Problem(title: String(localized: .problemNotReadyTitle), nextStep: detail)
+            return Problem(title: "现在还做不了", nextStep: detail)
         case .invalidInput:
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: detail)
-        case .other:
-            return Problem(
-                title: String(localized: .problemGenericTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
+            return Problem(title: "这个操作做不了", nextStep: detail)
         }
     }
 }
@@ -132,112 +91,27 @@ extension ChatProblem {
     var problem: Problem { reason.problem(detail: message) }
 }
 
-extension BotProfileFailure {
-    /// 改资料没成：类别由核心给，文字写在这里（ADR-0043）。名字和文件的细节是单独的键。
-    func problem(detail: String) -> Problem {
-        switch self {
-        case .transportUnavailable:
-            return Problem(
-                title: String(localized: .problemTransportTitle),
-                nextStep: String(localized: .problemTransportNext),
-                detail: detail
-            )
-        case .notReady:
-            return Problem(
-                title: String(localized: .botProfileProblemNotReadyTitle),
-                nextStep: String(localized: .botProfileProblemNotReadyNext),
-                detail: detail
-            )
-        case let .invalidName(reason):
-            return Problem(title: reason.problem)
-        case let .mediaRejected(reason):
-            return Problem(title: reason.problem)
-        case .upstream:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNext),
-                detail: detail
-            )
-        // 家人设备调只有主人的接口（ADR-0045）：不是出错，也不是还没准备好。
-        case .permissionRequired:
-            return Problem(
-                title: String(localized: .botProfileProblemOwnerOnlyTitle),
-                nextStep: String(localized: .botProfileProblemOwnerOnlyNext),
-                detail: detail
-            )
-        case .other:
-            return Problem(
-                title: String(localized: .botProfileProblemOtherTitle),
-                nextStep: String(localized: .problemUpstreamNext),
-                detail: detail
-            )
-        }
-    }
-}
-
-extension BotNameProblem {
-    var problem: String {
-        switch self {
-        case .empty: String(localized: .botProfileProblemNameEmpty)
-        case .tooLong: String(localized: .botProfileProblemNameTooLong)
-        case .controlCharacters: String(localized: .botProfileProblemNameControlCharacters)
-        case .reserved: String(localized: .botProfileProblemNameReserved)
-        case .other: String(localized: .botProfileProblemNameOther)
-        }
-    }
-}
-
-extension AvatarMediaProblem {
-    var problem: String {
-        switch self {
-        case .format: String(localized: .botProfileProblemMediaFormat)
-        case .tooLarge: String(localized: .botProfileProblemMediaTooLarge)
-        case .tooBig: String(localized: .botProfileProblemMediaTooBig)
-        case .notSquare: String(localized: .botProfileProblemMediaNotSquare)
-        case .tooLong: String(localized: .botProfileProblemMediaTooLong)
-        case .unreadable: String(localized: .botProfileProblemMediaUnreadable)
-        case .other: String(localized: .botProfileProblemMediaOther)
-        }
-    }
-}
-
 extension StoreProblem {
     var problem: Problem {
         switch reason {
         case .unreachable:
-            return Problem(title: String(localized: .problemStoreUnreachableTitle), detail: details)
+            return Problem(title: "连不上应用的来源，列表可能不是最新的", detail: details)
         case .timeout:
-            return Problem(title: String(localized: .problemStoreTimeoutTitle), detail: details)
+            return Problem(title: "应用的来源太慢了，列表可能不是最新的", detail: details)
         case .rateLimited:
-            return Problem(
-                title: String(localized: .problemStoreRateLimitedTitle),
-                nextStep: String(localized: .problemStoreRateLimitedNextStep),
-                detail: details
-            )
+            return Problem(title: "请求太频繁了", nextStep: "过几分钟再试。", detail: details)
         case .invalidIndex:
-            return Problem(
-                title: String(localized: .problemStoreInvalidIndexTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: details
-            )
+            return Problem(title: "应用列表读不懂", nextStep: "稍后再试。", detail: details)
         case .indexTooNew:
-            return Problem(
-                title: String(localized: .problemStoreIndexTooNewTitle),
-                nextStep: String(localized: .problemUpgradeServerNextStep),
-                detail: details
-            )
+            return Problem(title: "应用列表比家里的服务器新", nextStep: "先升级家里的服务器。", detail: details)
         case .upstream:
-            return Problem(
-                title: String(localized: .problemStoreUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: details
-            )
+            return Problem(title: "应用的来源出了问题", nextStep: "稍后再试。", detail: details)
         case .incomplete:
-            return Problem(title: String(localized: .problemStoreIncompleteTitle), detail: details)
+            return Problem(title: "有几个应用没加载出来", detail: details)
         case .disabled:
-            return Problem(title: String(localized: .problemStoreDisabledTitle), detail: details)
+            return Problem(title: "社区应用已关闭", detail: details)
         case .other:
-            return Problem(title: String(localized: .problemStoreOtherTitle), detail: details)
+            return Problem(title: "应用列表可能不完整", detail: details)
         }
     }
 
@@ -249,57 +123,21 @@ extension Error {
     var problem: Problem {
         let detail = String(describing: self)
         guard let error = self as? CoreError else {
-            return Problem(
-                title: String(localized: .problemGenericTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
+            return Problem(title: "出错了", nextStep: "稍后再试。", detail: detail)
         }
         switch error {
         case .TransportUnavailable:
-            return Problem(
-                title: String(localized: .problemTransportUnavailableTitle),
-                nextStep: String(localized: .problemTransportUnavailableNextStep),
-                detail: detail
-            )
+            return Problem(title: "连不上家里的服务器", nextStep: "检查网络，连上后再试。", detail: detail)
         case .Unauthorized:
-            return Problem(
-                title: String(localized: .problemUnauthorizedTitle),
-                nextStep: String(localized: .problemUnauthorizedNextStep),
-                detail: detail
-            )
+            return Problem(title: "家里的服务器不认这台设备", nextStep: "请重新扫码配对。", detail: detail)
         case .Upstream:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
+            return Problem(title: "家里的服务器出错了", nextStep: "稍后再试。", detail: detail)
         case let .NotReady(reason):
-            return Problem(title: String(localized: .problemNotReadyTitle), nextStep: reason)
+            return Problem(title: "现在还做不了", nextStep: reason)
         case .Storage:
-            return Problem(
-                title: String(localized: .problemStorageTitle),
-                nextStep: String(localized: .problemStorageNextStep),
-                detail: detail
-            )
+            return Problem(title: "这台设备读写数据出错了", nextStep: "检查存储空间后再试。", detail: detail)
         case let .InvalidInput(reason):
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
-        case let .SettingsInvalid(reason, _):
-            // 设置没过校验：逐字段的明细由设置页标到控件旁，这里只说发生了什么。
-            return Problem(title: String(localized: .problemInvalidInputTitle), nextStep: reason)
-        case .ServerTooOld:
-            return Problem(
-                title: String(localized: .problemPluginServerTooOldTitle),
-                nextStep: String(localized: .problemUpgradeServerNextStep),
-                detail: detail
-            )
-        // 比这个壳新的类别：先按服务器出错说。
-        default:
-            return Problem(
-                title: String(localized: .problemUpstreamTitle),
-                nextStep: String(localized: .problemUpstreamNextStep),
-                detail: detail
-            )
+            return Problem(title: "这个操作做不了", nextStep: reason)
         }
     }
 }
@@ -317,7 +155,7 @@ struct ProblemDetail: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: WontonTheme.spacing.s4) {
-                    Text(.commonDetails)
+                    Text("详情")
                     WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
                         .rotationEffect(isExpanded ? .degrees(90) : .zero)
                 }
@@ -353,7 +191,7 @@ struct ProblemView: View {
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
             }
-            Button(String(localized: .commonRetry), action: retry)
+            Button("重试", action: retry)
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 .padding(.vertical, WontonTheme.spacing.s8)
             if let detail = problem.detail { ProblemDetail(text: detail) }
@@ -367,24 +205,10 @@ struct ProblemView: View {
 struct ProblemNotice: View {
     let problem: Problem
     var icon: WontonIcon = .warning
-    /// 这件事只关这一处显示时给关闭按钮；核心里的状态由调用方清。
-    var onClose: (() -> Void)?
-    @Environment(\.wontonColors) private var colors
 
     var body: some View {
         WontonNotice(icon: icon, title: problem.title, lines: problem.nextStep.map { [$0] } ?? []) {
             if let detail = problem.detail { ProblemDetail(text: detail) }
-            if let onClose {
-                HStack {
-                    Spacer(minLength: 0)
-                    Button(action: onClose) {
-                        WontonIcon.close.view(size: WontonTheme.size.iconSmall)
-                            .foregroundStyle(Color(colors.textSecondary))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(String(localized: .commonClose))
-                }
-            }
         }
     }
 }
@@ -429,7 +253,7 @@ struct ProblemRow: View {
             }
             Spacer(minLength: 0)
             if let retry {
-                Button(String(localized: .commonRetry), action: retry).buttonStyle(WontonSmallButtonStyle())
+                Button("重试", action: retry).buttonStyle(WontonSmallButtonStyle())
             }
         }
     }
@@ -441,7 +265,7 @@ private struct SlowHint: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Text(.problemSlowLoading)
+        Text("还在加载，网络慢时要多等一会儿")
             .wontonText(WontonTheme.typography.supporting)
             .foregroundStyle(Color(colors.textSecondary))
             .multilineTextAlignment(.center)
@@ -482,7 +306,7 @@ struct ListSkeleton: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipped()
         .opacity(isDim ? WontonTheme.ratio.secondaryContent : 1)
-        .accessibilityLabel(Text(.problemLoading))
+        .accessibilityLabel("正在加载")
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 0.9).repeatForever()) { isDim = true }

@@ -84,20 +84,17 @@ Bot 资料里多一个 [MSC4133](https://github.com/matrix-org/matrix-spec-propo
 - 和 Muse 的对应：启动、连接中 → `offline`；工作中、做东西 → `working`；待机 → `idle`。`waiting` 是主人要做的事，Muse 没有确认卡片。
 - 状态是一个 Bot 的，不分房间：模型请求和工具调用核心分不出是为哪个房间。M1 的 Bot 只在自己的主房间里。
 - 顶栏和列表都不写状态文字，只看头像。
-- 这是 Bot 在不在线、忙不忙；一轮任务做到哪由 Agent 在时间线里发一条状态消息，见 [ADR-0082](0082-agent-run-status.md)，头像不读它。
 
 ### 状态怎么到 App：核心的长轮询接口
 
-`GET /_wonton/api/bots/activity?after=<rev>`，只给经隧道的已配对设备。核心立即返回比 `after` 新的快照，没有就挂住最多 25 秒：
+`GET /_wonton/api/bots/activity?after=<rev>`，只给经隧道的主人设备。核心立即返回比 `after` 新的快照，没有就挂住最多 25 秒：
 
 ```json
-{"rev": 42, "bots": [{"plugin_id": "com.nousresearch.hermes", "bot": "default", "user_id": "@hermes:…",
+{"rev": 42, "bots": [{"plugin_id": "com.nousresearch.hermes", "user_id": "@hermes:…",
   "running": true, "model_requests": 1, "tool_calls": 0, "waiting": 0, "profile_rev": 3}]}
 ```
 
-- 返回的是与请求者无关的事实（插件 ID、可选 Bot 名、计数和运行状态），合成在客户端核心。`plugin_id` 的线格式不变，
-  `bot` 是增量字段；没给时是不知道 Bot 名，不能从用户 ID 猜出或补成 `default`，也不能据此开网页。
-  网页访问权不放在运行事实里，按请求者判断的网页元数据见 [ADR-0045](0045-family-members.md#插件网页和工具)。
+- 返回的是事实（计数和运行状态），合成在客户端核心，规则改了不用改服务器。
 - `profile_rev` 在核心改过这个 Bot 的资料后加一，App 见到就重新取资料。Agent 直接经 Matrix 改的，App 在回到前台、
   打开聊天时重新取。Tuwunel 会经 Sliding Sync 的 MSC4262 扩展下发资料变化，但 matrix-sdk 0.19 的房间列表服务不带这个
   扩展；SDK 支持后改用它，`profile_rev` 随之删掉。
@@ -161,8 +158,7 @@ x-wonton:
 - 核心安装、升级时，Bot 资料里还没有 `app.wonton.avatars` 字段，就按清单传上去、写进去；字段已经在（主人或 Agent 设过，
   包括清空成空表）就不碰。所以已经装着的 Hermes 升级到带素材的版本也会拿到默认形象，主人换过的不会被冲掉。
 - 视频的首帧随文件放在旁边：`avatars/idle.jpg` 这样同名的 JPEG，有就一起传成 `poster`。
-- 素材的规格就是上面的“限制”，另见下面给做素材的人的说明。插件包里单个文件的上限因此和头像一样（2 MiB），整个包的上限
-  和上传的插件包压缩包一样（16 MiB），一套默认素材装得下；头像只传一次，App 按 `mxc` 缓存在本机，不用为省流量压小素材。素材到之前清单不写 `avatars`，App 显示静态头像。
+- 素材的规格就是上面的“限制”，另见下面给做素材的人的说明。素材到之前清单不写 `avatars`，App 显示静态头像。
 - 为什么不打包进 App：Element 和别的客户端读的是 Matrix 资料，App 里的素材它们看不到；换一个 Agent 插件就是换一套形象，
   App 不用为某个 Agent 发版（ADR-0015）。
 

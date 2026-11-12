@@ -1,39 +1,29 @@
 use std::os::unix::fs::MetadataExt;
 use std::time::Duration;
 
-use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig, PortBinding};
+use bollard::models::{ContainerConfig, ContainerCreateBody, HostConfig};
 use bollard::query_parameters::{
     CommitContainerOptionsBuilder, PushImageOptionsBuilder, RemoveImageOptionsBuilder,
 };
 use futures_util::StreamExt;
 
 use crate::plugin::PluginManager;
+use crate::plugin::compose::PullPolicy;
 use crate::plugin::docker::Engine;
 use crate::plugin::manifest::PluginId;
-use crate::test_docker::Names;
 
-/// busybox 和 registry：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn base() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/busybox:1.37")
-}
-
-fn registry() -> String {
-    wonton_test_images::image("public.ecr.aws/docker/library/registry:2")
-}
-const REGISTRY_PORT: &str = "5000/tcp";
+const BASE: &str = "public.ecr.aws/docker/library/busybox:1.37";
+const REGISTRY: &str = "public.ecr.aws/docker/library/registry:2";
 
 pub(super) struct Fixture {
     pub engine: Engine,
     pub dir: tempfile::TempDir,
     pub manager: PluginManager,
-    /// 仓库在宿主回环上的地址，[`Self::start`] 之后才有。
     pub mirror: String,
     pub repo: String,
     pub id: PluginId,
     registry: String,
     seed: String,
-    /// 守卫活到测试结束：一次性容器按登记回收，插件的容器、网络、卷带实例标签，守卫按标签统一清。
-    _names: Names,
     pub images: Vec<String>,
 }
 
@@ -41,48 +31,49 @@ impl Fixture {
     pub fn new() -> Self {
         let engine = Engine::connect().unwrap();
         let dir = tempfile::tempdir().unwrap();
-        let mut names = Names::new();
-        let manager = super::test_support::manager(engine.clone(), &dir, names.name());
+        let manager = super::test_support::manager(engine.clone(), &dir);
+        let unique = getrandom::u32().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let mirror = format!("127.0.0.1:{}", listener.local_addr().unwrap().port());
         Self {
             engine,
             dir,
             manager,
-            mirror: String::new(),
-            repo: format!("{}/fixture", names.name()),
-            id: PluginId::parse(&format!("app.{}", names.name())).unwrap(),
-            registry: names.oneshot_container("registry"),
-            seed: names.oneshot_container("fixture-seed"),
-            _names: names,
+            mirror,
+            repo: format!("wonton-emcm/fixture{unique:x}"),
+            id: PluginId::parse(&format!("app.registry{unique:x}")).unwrap(),
+            registry: format!("wonton-emcm-registry-{unique:x}"),
+            seed: format!("wonton-emcm-seed-{unique:x}"),
             images: Vec::new(),
         }
     }
 
-    /// 端口由 Docker 发布时分配，不先在测试里绑一个再放掉：放掉到仓库绑上之间，并行的测试或别的进程可能拿走同一个
-    /// 端口，仓库起不来，就绪检查却被占着端口的那个应答（CI 上实测过：另一个测试的仓库应答，它一拆，推镜像就被拒）。
-    pub async fn start(&mut self) {
-        for image in [&registry(), &base()] {
-            crate::test_docker::ensure_image(&self.engine, image).await;
+    pub async fn start(&self) {
+        for image in [REGISTRY, BASE] {
+            self.engine
+                .ensure_image(image, PullPolicy::Missing, None)
+                .await
+                .unwrap();
         }
         let storage = self.dir.path().join("registry");
         std::fs::create_dir(&storage).unwrap();
         let owner = std::fs::metadata(&storage).unwrap();
-        let loopback = PortBinding {
-            host_ip: Some("127.0.0.1".into()),
-            host_port: None,
-        };
         self.engine
             .create_container(
                 &self.registry,
                 ContainerCreateBody {
-                    image: Some(registry()),
+                    image: Some(REGISTRY.to_owned()),
                     user: Some(format!("{}:{}", owner.uid(), owner.gid())),
-                    env: Some(vec!["REGISTRY_STORAGE_DELETE_ENABLED=true".into()]),
-                    exposed_ports: Some(vec![REGISTRY_PORT.into()]),
+                    env: Some(vec![
+                        format!("REGISTRY_HTTP_ADDR={}", self.mirror),
+                        "REGISTRY_STORAGE_DELETE_ENABLED=true".into(),
+                    ]),
                     host_config: Some(HostConfig {
-                        port_bindings: Some(
-                            [(REGISTRY_PORT.to_owned(), Some(vec![loopback]))].into(),
-                        ),
-                        binds: Some(vec![format!("{}:/var/lib/registry", storage.display())]),
+                        network_mode: Some("host".into()),
+                        binds: Some(vec![format!(
+                            "{}:/var/lib/registry",
+                            self.dir.path().join("registry").display()
+                        )]),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -91,19 +82,6 @@ impl Fixture {
             .await
             .unwrap();
         self.engine.start_container(&self.registry).await.unwrap();
-        let port = self
-            .engine
-            .inspect_container(&self.registry)
-            .await
-            .unwrap()
-            .and_then(|info| info.network_settings?.ports?.remove(REGISTRY_PORT)?)
-            .and_then(|bindings| {
-                bindings
-                    .into_iter()
-                    .find_map(|b| b.host_port.filter(|p| !p.is_empty()))
-            })
-            .expect("Docker 给仓库发布了端口");
-        self.mirror = format!("127.0.0.1:{port}");
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         tokio::time::timeout(Duration::from_secs(30), async {
             loop {
@@ -127,7 +105,7 @@ impl Fixture {
             .create_container(
                 &self.seed,
                 ContainerCreateBody {
-                    image: Some(base()),
+                    image: Some(BASE.to_owned()),
                     ..Default::default()
                 },
             )
@@ -225,16 +203,18 @@ impl Fixture {
     pub fn container(&self) -> String {
         self.manager.cfg.instance.container(&self.id.slug(), "app")
     }
-}
 
-impl Drop for Fixture {
-    /// 镜像不在守卫的标签清理里（不是容器、网络、卷），按 ID 用 CLI 删；容器先删掉，
-    /// rmi 不被在用的镜像挡住。
-    fn drop(&mut self) {
-        for id in std::mem::take(&mut self.images) {
-            let _ = std::process::Command::new("docker")
-                .args(["rmi", "-f", &id])
-                .output();
-        }
+    pub async fn clean(&self) {
+        self.engine
+            .remove_container(&self.container())
+            .await
+            .unwrap();
+        self.engine
+            .remove_network(&self.manager.cfg.instance.network(&self.id.slug()))
+            .await
+            .unwrap();
+        self.engine.remove_container(&self.seed).await.unwrap();
+        self.engine.remove_container(&self.registry).await.unwrap();
+        self.evict_fixture_images().await;
     }
 }

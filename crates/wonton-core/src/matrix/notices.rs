@@ -12,7 +12,6 @@ use tokio::sync::Mutex;
 
 use super::api::MatrixError;
 use super::{Matrix, Session};
-use crate::plugin::languages::Languages;
 
 /// 通知房间的名字，也是核心账号的显示名：通知的标题用发送者的显示名，没设时主人看到的是 `wonton-core`。
 const ROOM_NAME: &str = "Wonton";
@@ -40,48 +39,26 @@ pub struct NoticeRoom {
     /// 记房间 ID 的文件。
     saved: PathBuf,
     room: Mutex<Option<String>>,
-    /// 主人的语言：卡片和踢出理由按它写。每次都读，主人换了语言下一条就是新的。
-    pub(crate) languages: Arc<dyn Fn() -> Languages + Send + Sync>,
 }
 
 impl NoticeRoom {
-    pub fn new(
-        matrix: Arc<Matrix>,
-        owner: &str,
-        saved: PathBuf,
-        languages: Arc<dyn Fn() -> Languages + Send + Sync>,
-    ) -> Self {
+    pub fn new(matrix: Arc<Matrix>, owner: &str, saved: PathBuf) -> Self {
         Self {
             matrix,
             owner: owner.to_owned(),
             saved,
             room: Mutex::new(None),
-            languages,
         }
     }
 
     /// 以核心账号发一条消息。核对之后才被踢出去的话再试一次，那时会换一个房间。
     pub async fn send(&self, content: &Value) -> Result<Posted, MatrixError> {
-        self.send_with_txn(content, &crate::secret::random_token())
-            .await
-    }
-
-    pub(crate) async fn send_with_txn(
-        &self,
-        content: &Value,
-        transaction: &str,
-    ) -> Result<Posted, MatrixError> {
         let room = self.room().await?;
         let core = self.matrix.core_session();
-        let (room, event) = match core
-            .send_message_with_txn(&room, content, transaction)
-            .await
-        {
+        let (room, event) = match core.send_message(&room, content).await {
             Err(e) if gone(&e) => {
                 let room = self.room().await?;
-                let event = core
-                    .send_message_with_txn(&room, content, transaction)
-                    .await?;
+                let event = core.send_message(&room, content).await?;
                 (room, event)
             }
             sent => (room, sent?),
@@ -154,7 +131,7 @@ impl NoticeRoom {
         }
         .await;
         if let Err(e) = handed_over {
-            if let Err(cleanup) = core.abandon(&id, owner, &(self.languages)()).await {
+            if let Err(cleanup) = core.abandon(&id, owner).await {
                 tracing::error!(room = %id, error = %cleanup, "撤回没建好的通知房间失败");
             }
             return Err(e);
@@ -211,11 +188,6 @@ async fn both_joined(core: &Session<'_>, room: &str, owner: &str) -> Result<bool
 mod tests {
     use super::super::fake::start;
     use super::*;
-
-    fn test_room(matrix: &Arc<Matrix>, saved: PathBuf) -> NoticeRoom {
-        NoticeRoom::new(matrix.clone(), "owner", saved, Arc::new(Languages::default))
-    }
-
     use crate::http::HttpClient;
 
     async fn notices(dir: &tempfile::TempDir) -> (super::super::fake::Fake, NoticeRoom) {
@@ -224,7 +196,7 @@ mod tests {
             .await
             .unwrap();
         let saved = dir.path().join("notice-room");
-        (fake, test_room(&Arc::new(matrix), saved))
+        (fake, NoticeRoom::new(Arc::new(matrix), "owner", saved))
     }
 
     fn text() -> Value {
@@ -286,7 +258,7 @@ mod tests {
         let core = notices.matrix.core_session().user_id().to_owned();
         fake.state().users.get_mut(&core).unwrap().display_name = None;
 
-        let restarted = test_room(&notices.matrix, notices.saved.clone());
+        let restarted = NoticeRoom::new(notices.matrix.clone(), "owner", notices.saved.clone());
         restarted.send(&text()).await.unwrap();
         assert_eq!(last_sent(&fake).0, room, "沿用原来的房间");
         assert_eq!(core_name(&fake, &restarted).as_deref(), Some(ROOM_NAME));
@@ -297,7 +269,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (fake, notices) = notices(&dir).await;
         notices.send(&text()).await.unwrap();
-        let restarted = test_room(&notices.matrix, notices.saved.clone());
+        let restarted = NoticeRoom::new(notices.matrix.clone(), "owner", notices.saved.clone());
         restarted.send(&text()).await.unwrap();
         assert_eq!(fake.state().display_name_writes, 1);
     }

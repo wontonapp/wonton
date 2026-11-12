@@ -42,15 +42,12 @@ fn closed_app() -> String {
 }
 
 fn granted(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions
+    PluginPackage::parse(compose).unwrap().manifest.permissions
 }
 
 fn scripted(env: Option<&str>) -> (Egress, Script) {
     let script = Script::default();
-    let env = env.map(|text| ProxyAddress::parse(text, &Default::default()).unwrap());
+    let env = env.map(|text| ProxyAddress::parse(text).unwrap());
     let egress = Egress::new(env, None).with_prober(Prober::Fixed(script.clone()));
     (egress, script)
 }
@@ -95,17 +92,14 @@ impl Rig {
     }
 
     async fn blocked(&self, compose: &str) -> Option<String> {
-        let package = PluginPackage::parse(compose, &super::langs()).unwrap();
+        let package = PluginPackage::parse(compose).unwrap();
         let langs = Languages::default();
         let preview = self.m.preview_install(&package, &langs).await;
         preview.unwrap().blocked
     }
 
     async fn install(&self, compose: &str) -> Result<(), InstallError> {
-        self.m
-            .install(compose, &granted(compose), super::langs())
-            .await
-            .map(drop)
+        self.m.install(compose, &granted(compose)).await.map(drop)
     }
 }
 
@@ -134,7 +128,7 @@ async fn a_proxy_that_only_cannot_reach_outside_warns_and_lets_the_install_throu
     let upstream = problem(EgressFailure::UpstreamFailed, "它连不上外面");
     rig.fail_relay(upstream);
     let app = out_app();
-    let package = PluginPackage::parse(&app, &super::langs()).unwrap();
+    let package = PluginPackage::parse(&app).unwrap();
     let langs = Languages::default();
     let preview = rig.m.preview_install(&package, &langs).await.unwrap();
     assert_eq!(preview.blocked, None);
@@ -146,7 +140,7 @@ async fn a_proxy_that_only_cannot_reach_outside_warns_and_lets_the_install_throu
 async fn the_relay_failing_while_the_proxy_answers_points_at_the_relay() {
     let rig = Rig::proxied().await;
     rig.fail_relay(None);
-    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    rig.m.probe_egress().await.unwrap();
     let found = rig.m.egress_problem().unwrap();
     assert_eq!(found.reason, EgressFailure::RelayFailed);
     assert!(found.message.contains("503"), "{}", found.message);
@@ -157,7 +151,7 @@ async fn the_relay_failing_while_the_proxy_answers_points_at_the_relay() {
 async fn a_relay_image_that_cannot_be_pulled_is_reported_with_dockers_words() {
     let rig = Rig::proxied().await;
     rig.docker.fail_pulls(Some("pull access denied"));
-    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    rig.m.probe_egress().await.unwrap();
     let found = rig.m.egress_problem().unwrap();
     assert_eq!(found.reason, EgressFailure::RelayFailed);
     assert!(
@@ -202,7 +196,7 @@ async fn in_a_container_the_reason_comes_from_a_locked_down_one_shot_on_the_rela
     rig.script.lock().unwrap().via_relay = Some("503".to_owned());
     let found = json!({"reason": "proxy_rejected", "message": "回 407"}).to_string();
     rig.docker.set_output(CHECK, 1, &found, "");
-    rig.m.probe_egress(&Languages::default()).await.unwrap();
+    rig.m.probe_egress().await.unwrap();
     let found = rig.m.egress_problem().unwrap();
     assert_eq!(found.reason, EgressFailure::ProxyRejected);
     assert_eq!(found.message, "回 407");
@@ -212,10 +206,7 @@ async fn in_a_container_the_reason_comes_from_a_locked_down_one_shot_on_the_rela
     assert_eq!(created["Cmd"], json!(["egress-proxy-check"]));
     assert_eq!(
         created["Env"],
-        json!([
-            "WONTON_EGRESS_CHECK_PROXY=http://me:s3cret@proxy.lan:7899",
-            "WONTON_LANG=en"
-        ])
+        json!(["WONTON_EGRESS_CHECK_PROXY=http://me:s3cret@proxy.lan:7899"])
     );
     assert_eq!(created["User"], "65534:65534");
     let host = &created["HostConfig"];
@@ -311,7 +302,7 @@ async fn editing_the_direct_list_under_an_env_address_leaves_what_was_detected_a
     add_default_bridge(&docker);
     let dir = tempfile::tempdir().unwrap();
     let host: Host = Arc::new(Mutex::new(Ok(office())));
-    let address = |text| Some(ProxyAddress::parse(text, &Default::default()).unwrap());
+    let address = |text| Some(ProxyAddress::parse(text).unwrap());
     let egress = Egress::new(
         address("http://env.lan:1"),
         address("http://detected.lan:1"),
@@ -338,10 +329,8 @@ async fn editing_the_direct_list_under_an_env_address_leaves_what_was_detected_a
 async fn a_direct_segment_on_a_docker_network_is_refused() {
     let rig = Rig::proxied().await;
     rig.m.reconcile_relay().await.unwrap();
-    let subnet = rig.docker.network("wonton-egress").unwrap()["IPAM"]["Config"][0]["Subnet"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    // 假 Docker 给没指定网段的网络分配的。
+    let subnet = "172.30.0.0/24".to_owned();
     let update = EgressProxyUpdate {
         url: Some("http://proxy.lan:7899".to_owned()),
         direct_cidrs: vec![subnet],

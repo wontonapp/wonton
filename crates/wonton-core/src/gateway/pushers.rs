@@ -9,14 +9,12 @@
 use axum::body::{Body, to_bytes};
 use axum::extract::Request;
 use axum::response::Response;
-use hyper::header::{ACCEPT_LANGUAGE, CONTENT_LENGTH, HeaderValue, TRANSFER_ENCODING};
+use hyper::header::{CONTENT_LENGTH, HeaderValue, TRANSFER_ENCODING};
 use hyper::{Method, StatusCode};
 use serde_json::Value;
 
 use super::matrix::matrix_error;
 use super::push::gateway_url;
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 注册 pusher 的请求体上限，正常的只有几百字节。
 const MAX_BODY: usize = 64 * 1024;
@@ -51,54 +49,23 @@ pub(super) async fn check(req: Request) -> Result<Request, Box<Response>> {
         ))
     };
     let (mut parts, body) = req.into_parts();
-    let langs = Languages::from_header(
-        parts
-            .headers
-            .get(ACCEPT_LANGUAGE)
-            .and_then(|v| v.to_str().ok()),
-    );
-    let bytes = to_bytes(body, MAX_BODY).await.map_err(|e| {
-        invalid(&l10n::text(
-            &langs,
-            "gateway-pushers-invalid-body",
-            &[("error", e.to_string().into())],
-        ))
-    })?;
-    let request: Value = serde_json::from_slice(&bytes).map_err(|e| {
-        invalid(&l10n::text(
-            &langs,
-            "gateway-pushers-invalid-json",
-            &[("error", e.to_string().into())],
-        ))
-    })?;
+    let bytes = to_bytes(body, MAX_BODY)
+        .await
+        .map_err(|e| invalid(&format!("注册 pusher 的请求体读不出来：{e}")))?;
+    let request: Value = serde_json::from_slice(&bytes)
+        .map_err(|e| invalid(&format!("注册 pusher 的请求体不是 JSON：{e}")))?;
     match request.get("kind") {
         // 规范要求 `kind` 必须给出，`null` 表示删除。
         Some(Value::Null) => {}
         Some(Value::String(kind)) if kind == "http" => {
             let url = request.pointer("/data/url").and_then(Value::as_str);
             if url != Some(gateway_url().as_str()) {
-                let message = l10n::text(
-                    &langs,
-                    "gateway-pushers-proxy-only",
-                    &[("url", gateway_url().as_str().into())],
-                );
+                let message = format!("pusher 只能指向家里的推送代理 {}", gateway_url());
                 return Err(refused(&message));
             }
         }
-        Some(kind) => {
-            return Err(refused(&l10n::text(
-                &langs,
-                "gateway-pushers-kind-refused",
-                &[("kind", kind.to_string().into())],
-            )));
-        }
-        None => {
-            return Err(invalid(&l10n::text(
-                &langs,
-                "gateway-pushers-missing-kind",
-                &[],
-            )));
-        }
+        Some(kind) => return Err(refused(&format!("不放行 {kind} 类的 pusher"))),
+        None => return Err(invalid("注册 pusher 的请求体缺少 kind")),
     }
     // 转发检查过的这一份，不转原文：原文里重复的键 `Value` 只留最后一个，Tuwunel 那边的解析未必一样，两边就会看到
     // 不同的 pusher 地址。

@@ -8,14 +8,13 @@ use ipnet::IpNet;
 
 use super::EgressVars;
 use super::address::ProxyAddress;
-use super::gost::{ALIAS, Relay, RelayFiles, config_yaml, runner};
+use super::gost::{ALIAS, IMAGE, Relay, RelayFiles, config_yaml, runner};
 use super::lists::{self, Reach};
 use super::provider::provides_proxy;
 use super::settings::EgressConfig;
 use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::{Endpoint, layout_of};
 use crate::plugin::lan::Detected;
-use crate::plugin::lan::announce::Announced;
 use crate::plugin::leftovers::name_taken;
 use crate::plugin::manager::{InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::{Manifest, Permission};
@@ -28,7 +27,7 @@ impl PluginManager {
             .resolve(stored.as_ref())
             .map_err(InstallError::Storage)?;
         if config.source == wonton_protocol::EgressProxySource::Plugin {
-            config.url = Some(self.egress_provider(&self.owner_languages())?.address);
+            config.url = Some(self.egress_provider()?.address);
         }
         Ok(config)
     }
@@ -36,10 +35,7 @@ impl PluginManager {
     /// 设置读不出来时不用代理：设置页和探测都会报这个错。
     pub(in crate::plugin) fn follow_core_proxy(&self) {
         match self.egress_config() {
-            Ok(config) => {
-                self.core_proxy.set(config.url.as_ref());
-                self.core_proxy.set_doh(config.doh_url);
-            }
+            Ok(config) => self.core_proxy.set(config.url.as_ref()),
             Err(e) => {
                 tracing::warn!(error = %e, "读不出代理的设置");
                 self.core_proxy.set(None);
@@ -58,7 +54,9 @@ impl PluginManager {
         {
             return Ok(None);
         }
-        Ok(Some(EgressVars))
+        Ok(Some(EgressVars {
+            auth_host: self.cfg.public.auth_host(),
+        }))
     }
 
     fn relay_files(&self) -> RelayFiles {
@@ -89,8 +87,7 @@ impl PluginManager {
         };
         self.ensure_host_cidrs().await?;
         let _pass = self.egress.pass.lock().await;
-        // 同 lifecycle.rs deploy_inner 的减帧：sync_relay 往下到 bollard 的反序列化很深。
-        Box::pin(self.sync_relay(proxy, &config, Some(network))).await
+        self.sync_relay(proxy, &config, Some(network)).await
     }
 
     /// 卸载或回滚时，删网络之前断开：Docker 不让删还有端点的网络。
@@ -123,14 +120,12 @@ impl PluginManager {
                 {
                     self.engine.disconnect_network(&name, core).await?;
                 }
-                self.relay_files()
-                    .remove(&self.owner_languages())
-                    .map_err(InstallError::Storage)
+                self.relay_files().remove().map_err(InstallError::Storage)
             }
         }
     }
 
-    pub(in crate::plugin) async fn sync_relay(
+    async fn sync_relay(
         &self,
         proxy: &ProxyAddress,
         config: &EgressConfig,
@@ -144,40 +139,30 @@ impl PluginManager {
         if found.is_some() {
             let labels = created.and_then(|c| c.labels.clone()).unwrap_or_default();
             if !self.cfg.instance.is_component(&labels) {
-                let langs = self.owner_languages();
-                let what = crate::l10n::text(&langs, "plugin-install-word-container", &[]);
-                return Err(name_taken(&what, &name, &labels, &langs));
+                return Err(name_taken("容器", &name, &labels));
             }
         }
         let current = created
             .and_then(|c| c.image.as_deref())
             .is_some_and(|image| {
-                crate::plugin::registry_mirror::reference::same_image(image, &super::gost::image())
+                crate::plugin::registry_mirror::reference::same_image(image, IMAGE)
             });
         let state = found.as_ref().and_then(|c| c.state.as_ref());
         let running = state.and_then(|s| s.running) == Some(true);
         // 镜像拉不到时什么都不动，正在跑的出口容器继续跑。
-        let owner_langs = self.owner_languages();
-        let mirrors = self.registry_mirrors(&owner_langs).await?;
-        let accelerated =
-            crate::plugin::registry_mirror::accelerated(&super::gost::image(), &mirrors);
+        let mirror = self.registry_mirror_address()?;
         let image = self
             .engine
-            .ensure_image(&super::gost::image(), PullPolicy::Missing, &accelerated)
+            .ensure_image(IMAGE, PullPolicy::Missing, mirror.as_deref())
             .await
-            .map_err(|error| {
-                self.registry_pull_error(error, mirrors.docker_hub.is_empty(), &owner_langs)
-            })?;
+            .map_err(|error| self.registry_pull_error(error, mirror.as_deref()))?;
         let files = self.relay_files();
-        let langs = self.owner_languages();
-        let yaml = config_yaml(proxy, &langs).map_err(InstallError::Storage)?;
+        let yaml = config_yaml(proxy).map_err(InstallError::Storage)?;
         let same = files.has_config(&yaml);
         if !same {
             // 先删容器再写配置：中途失败时下次还会重建，不会留下配置新、容器旧的状态。
             self.engine.remove_container(&name).await?;
-            files
-                .write_config(&yaml, &langs)
-                .map_err(InstallError::Storage)?;
+            files.write_config(&yaml).map_err(InstallError::Storage)?;
         }
         self.write_relay_lists(config).await?;
         if !same || !current || !running {
@@ -202,18 +187,14 @@ impl PluginManager {
         self.write_relay_lists(config).await
     }
 
-    /// 安装器的代理预检也经核心分配网络，启动后沿用已建的出口网络。
+    /// 出口容器自己的网络：安装脚本可能先建好了，沿用。
     pub(in crate::plugin) async fn ensure_relay_network(&self) -> Result<(), InstallError> {
         let name = self.cfg.instance.egress();
         let labels = self.cfg.instance.component_labels();
         match self.engine.network_labels(&name).await? {
             None => self.engine.create_relay_network(&name, &labels).await?,
             Some(found) if self.cfg.instance.is_component(&found) => {}
-            Some(found) => {
-                let langs = self.owner_languages();
-                let what = crate::l10n::text(&langs, "plugin-install-word-network", &[]);
-                return Err(name_taken(&what, &name, &found, &langs));
-            }
+            Some(found) => return Err(name_taken("网络", &name, &found)),
         }
         Ok(())
     }
@@ -274,16 +255,12 @@ impl PluginManager {
                 .not_allowed
                 .iter()
                 .map(|cidr| {
-                    crate::l10n::text(
-                        &self.owner_languages(),
-                        "plugin-settings-egress-relay-cidr-overlap",
-                        &[("cidr", cidr.to_string().into())],
-                    )
+                    format!("网段 {cidr} 和出口容器接入的 Docker 网络重叠，没有放行：放行的话它会直接拨到别的插件")
                 })
                 .collect(),
         );
         self.relay_files()
-            .write_lists(&lists, &self.owner_languages())
+            .write_lists(&lists)
             .map_err(InstallError::Storage)
     }
 
@@ -318,11 +295,9 @@ impl PluginManager {
     /// [`Egress::pass`]: super::settings::Egress
     async fn ensure_host_cidrs(&self) -> Result<(), InstallError> {
         if self.egress.host_cidrs().is_none() {
-            let langs = self.owner_languages();
-            let detected = self.detect_lan(&langs).await?;
+            let detected = self.detect_lan().await?;
             if detected.failure.is_none() {
-                self.egress
-                    .set_host_cidrs(host_cidrs(&detected, self.lan.announce.as_deref()));
+                self.egress.set_host_cidrs(host_cidrs(&detected));
             }
         }
         Ok(())
@@ -333,10 +308,7 @@ impl PluginManager {
         if detected.failure.is_some() {
             return;
         }
-        if !self
-            .egress
-            .set_host_cidrs(host_cidrs(detected, self.lan.announce.as_deref()))
-        {
+        if !self.egress.set_host_cidrs(host_cidrs(detected)) {
             return;
         }
         let _pass = self.egress.pass.lock().await;
@@ -356,9 +328,11 @@ impl PluginManager {
     }
 }
 
-/// 选出的局域网地址所在的网段（前缀来自检测容器读的 netlink），以及启动器声明的宣告网段。主人覆盖或者选的地址也这样查，
-/// 查不到时不放行。宣告地址不在虚拟机的网卡上，用它带来的前缀（ADR-0023）。
-fn host_cidrs(detected: &Detected, announce: Option<&[Announced]>) -> Vec<IpNet> {
+/// 选出的局域网地址所在的网段（前缀来自检测容器读的 netlink）。主人覆盖或者选的地址也这样查，查不到时不放行。
+fn host_cidrs(detected: &Detected) -> Vec<IpNet> {
+    let Ok(bound) = &detected.result else {
+        return Vec::new();
+    };
     let addresses = || {
         detected
             .host
@@ -366,19 +340,10 @@ fn host_cidrs(detected: &Detected, announce: Option<&[Announced]>) -> Vec<IpNet>
             .iter()
             .flat_map(|candidate| &candidate.addresses)
     };
-    let bound: Vec<&IpAddr> = detected
-        .result
-        .as_ref()
-        .map(|plan| plan.bind.iter().map(|bound| &bound.ip).collect())
-        .unwrap_or_default();
-    let mut nets: Vec<IpNet> = bound
-        .into_iter()
-        .filter_map(|ip| addresses().find(|address| address.ip == *ip))
+    bound
+        .iter()
+        .filter_map(|bound| addresses().find(|address| address.ip == bound.ip))
         .filter_map(|address| IpNet::new(address.ip, address.prefix).ok())
         .map(|net| net.trunc())
-        .collect();
-    nets.extend(announce.unwrap_or_default().iter().filter_map(|a| a.cidr()));
-    nets.sort();
-    nets.dedup();
-    nets
+        .collect()
 }

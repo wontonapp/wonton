@@ -10,8 +10,8 @@ use super::package::PluginPackage;
 /// 上传的插件包的来源写法的开头，后面是插件包摘要。
 pub const SCHEME: &str = "upload:";
 const KEEP: Duration = Duration::from_secs(3600);
-/// 一个包最多 16 MiB（`MAX_PACKAGE_BYTES`），暂存的总量因此最多 64 MiB。
-const MAX_STAGED: usize = 4;
+/// 一个包最多 2 MiB，暂存的总量因此有上限。
+const MAX_STAGED: usize = 8;
 
 struct Staged {
     digest: String,

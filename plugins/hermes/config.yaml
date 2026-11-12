@@ -1,0 +1,73 @@
+# Wonton 给 Hermes 的初始配置：首次启动时由 init 服务写成数据目录里的 config.yaml，之后不覆盖
+# （Hermes 自己也会改写它，比如 /model）。deploy/dev/agent 的开发环境用的也是这一份。
+#
+# 模型只走 magpie。地址、凭据和默认模型都来自核心注入的环境变量，Hermes 会展开 ${VAR}：
+#   WONTON_MODEL_BASE_URL  magpie 网关的 OpenAI 兼容地址
+#   WONTON_MODEL_API_KEY   magpie 发给本插件的网关凭据（Hermes 用 key_env 读取，不落盘）
+#   WONTON_MODEL_DEFAULT   默认模型，指向 magpie 的路由组；换 provider 或模型只在 magpie 里改
+model:
+  provider: custom:magpie
+  default: ${WONTON_MODEL_DEFAULT}
+
+providers:
+  magpie:
+    api: ${WONTON_MODEL_BASE_URL}
+    key_env: WONTON_MODEL_API_KEY
+    transport: chat_completions
+    # 网关凭据只允许用默认路由组，列模型没有意义。
+    discover_models: false
+    models:
+      - ${WONTON_MODEL_DEFAULT}
+    # 路由组里各成员窗口的下限；Hermes 要求至少 64K。
+    context_length: 128000
+
+# Matrix 的行为设置（身份和令牌由核心经环境变量注入）。只收发消息：不加处理中的表情回应、
+# 房间里不自动开线程，重启前后也不往聊天里发状态消息。
+# 注意：v0.22.5 的 Matrix 适配器没有实现 reply_to_mode，回答总是引用触发它的那条消息。
+platforms:
+  matrix:
+    reactions: false
+    auto_thread: false
+    gateway_restart_notification: false
+
+# 只收发消息：Matrix 里不展示工具调用和推理，只发回答。要主人确认的工具（装卸插件等）会一直等主人回答，所以
+# 打开中间消息：模型在调用前说的那句话（“请到 Wonton 私聊里确认”）先发出去，主人才知道要去确认。
+display:
+  # Bot 忙时收到的新消息排队，按顺序逐条回答；不打断当前回答，也不发“正在打断”之类的提示。
+  busy_input_mode: queue
+  busy_ack_enabled: false
+  # 后台的自我整理照常跑，只是不把“💾 Self-improvement review”这类提示发进聊天。
+  memory_notifications: "off"
+  platforms:
+    matrix:
+      tool_progress: "off"
+      show_reasoning: false
+      interim_assistant_messages: true
+      long_running_notifications: false
+      busy_ack_detail: false
+      streaming: false
+
+# 群聊里每个人各自一段会话，互不共享上下文。
+group_sessions_per_user: true
+
+# 主人还没有设备时发进加密房间的低磁盘提问，配对后也解不开；显式关闭只是不再询问，自动清理仍按上游默认关闭。
+sessions:
+  auto_prune: false
+
+# Wonton 的 Hermes 插件（包里的 wonton/，init 服务放进数据目录）：模型网关里还没有默认模型时，直接告诉主人去
+# 「模型设置」添加模型服务商，不把网关的报错发进聊天。
+plugins:
+  enabled: [wonton]
+
+# 工具经核心的 MCP 总线（插件规范的“工具与 MCP 总线”），地址由核心注入（WONTON_MCP_URL）。装卸插件和会改数据的
+# 工具要主人在 Wonton App 里确认，调用一直等到主人回答再加上执行的时间。主人正在操作这个插件时先停住最多 10 分钟，
+# 卡片再等最多 10 分钟，所以 MCP 调用和工具调用的超时都放宽到 30 分钟（默认 300 秒和 420 秒）。
+mcp_servers:
+  wonton:
+    url: ${WONTON_MCP_URL}
+    timeout: 1800
+
+timeouts:
+  tools:
+    sequential_call: 1800
+    concurrent_batch: 1800

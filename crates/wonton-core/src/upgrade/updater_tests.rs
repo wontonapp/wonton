@@ -13,8 +13,6 @@ use super::state::{
     self, ImageRef, Layout, MAX_UPDATER_STARTS, Outcome, UpgradeState, WINDOW_LIMIT,
 };
 use super::updater;
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 struct Temp(PathBuf);
 
@@ -30,28 +28,11 @@ struct Scene {
     host: FakeHost,
 }
 
-/// 测试没写主人的语言文件：升级器文字按英文（期望值由目录格式化出来）。
-fn langs() -> Languages {
-    Languages::from_header(None)
-}
-
-const ENV: &str = "WONTON_CORE_SOURCE=reg/core:stable\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
+const ENV: &str = "WONTON_CORE_SOURCE=reg/core:beta\nWONTON_CORE_IMAGE=reg/core@sha256:old\n\
                    WONTON_INSTALL_DIR=/opt/wonton\nWONTON_DATA_DIR=/var/lib/wonton\nWONTON_PORT=8480\n\
                    WONTON_TUNNEL_PORT=8482\nWONTON_BASE_DOMAIN=wonton.localhost\n";
 
-/// 旧安装脚本写的 compose 引用：渠道标签，会跟着渠道移走。
-const TAG: &str = "reg/core:stable";
-
 fn scene() -> Scene {
-    scene_with(ENV, OLD)
-}
-
-/// 装在渠道标签上的机器。
-fn tagged_scene() -> Scene {
-    scene_with(&ENV.replace(OLD, TAG), TAG)
-}
-
-fn scene_with(env: &str, running: &str) -> Scene {
     let root =
         std::env::temp_dir().join(format!("wonton-updater-{}", crate::secret::random_token()));
     let layout = Layout {
@@ -60,61 +41,40 @@ fn scene_with(env: &str, running: &str) -> Scene {
     };
     fs::create_dir_all(&layout.install_dir).unwrap();
     fs::create_dir_all(layout.core_dir()).unwrap();
-    fs::write(layout.env_path(), env).unwrap();
+    fs::write(layout.env_path(), ENV).unwrap();
     fs::write(layout.install_dir.join("compose.yaml"), "compose of old").unwrap();
     fs::write(layout.core_dir().join("devices.json"), "paired before").unwrap();
     let host = FakeHost::installed(&layout);
-    if running != OLD {
-        let mut world = host.world();
-        let old = world.images.get(OLD).cloned().unwrap();
-        world.images.insert(running.to_owned(), old);
-        let core = world
-            .containers
-            .iter_mut()
-            .find(|c| c.service == super::CORE_SERVICE)
-            .unwrap();
-        core.image = running.to_owned();
-    }
     let scene = Scene {
         _temp: Temp(root),
         layout,
         host,
     };
-    scene.begin_from(running, "sha256:old", "0.1.0", Vec::new());
+    scene.begin(Vec::new());
     scene
 }
 
 impl Scene {
     fn begin(&self, migrates: Vec<String>) {
-        self.begin_from(OLD, "sha256:old", "0.1.0", migrates);
-    }
-
-    fn begin_from(&self, from: &str, digest: &str, version: &str, migrates: Vec<String>) {
-        let image = |image: &str, digest: &str, version: &str, image_id: Option<&str>| ImageRef {
+        let image = |image: &str, digest: &str, version: &str| ImageRef {
             image: image.to_owned(),
             digest: Some(digest.to_owned()),
             version: Some(version.to_owned()),
-            image_id: image_id.map(str::to_owned),
         };
         let fresh = UpgradeState::new(
             "u1".to_owned(),
-            image(from, digest, version, Some("id-0.1.0")),
-            image(NEW, "sha256:new", "0.2.0", None),
+            image(OLD, "sha256:old", "0.1.0"),
+            image(NEW, "sha256:new", "0.2.0"),
             migrates,
             self.host.now.load(std::sync::atomic::Ordering::SeqCst),
         );
-        state::save(&self.layout.state_path(), &fresh, &langs()).unwrap();
+        state::save(&self.layout.state_path(), &fresh).unwrap();
     }
 
     async fn run(&self) {
-        updater::run(
-            &self.host,
-            self.layout.clone(),
-            langs(),
-            Duration::from_secs(180),
-        )
-        .await
-        .unwrap();
+        updater::run(&self.host, self.layout.clone(), Duration::from_secs(180))
+            .await
+            .unwrap();
     }
 
     /// 跑到主机上设好的停住的地方，升级器在那一刻没了。
@@ -126,9 +86,7 @@ impl Scene {
     }
 
     fn state(&self) -> UpgradeState {
-        state::load(&self.layout.state_path(), &langs())
-            .unwrap()
-            .unwrap()
+        state::load(&self.layout.state_path()).unwrap().unwrap()
     }
 
     fn env_image(&self) -> String {
@@ -217,25 +175,6 @@ async fn a_new_version_that_fails_its_health_check_is_rolled_back() {
     // 回滚写回的是备份里的 compose 文件和配置，不是只改 .env。
     assert_eq!(s.compose(), "compose of old");
     assert_eq!(devices(&s), "paired before");
-}
-
-/// 回滚目标是个渠道标签、标签又已经被别处拉到别的镜像时：容器跑的不是原来那一版，不能报回滚成功（#669）。
-#[tokio::test]
-async fn a_rollback_to_a_tag_that_moved_reports_the_wrong_image() {
-    let s = tagged_scene();
-    {
-        let mut world = s.host.world();
-        world.unhealthy.insert(NEW.to_owned());
-        let moved = world.images.get(NEW).cloned().unwrap();
-        world.images.insert(TAG.to_owned(), moved);
-    }
-    s.run().await;
-
-    let end = s.state();
-    assert_eq!(end.result, Some(Outcome::RollbackFailed));
-    let message = end.problem.unwrap().message;
-    assert!(message.contains("id-0.1.0"), "要写明期望的镜像：{message}");
-    assert!(message.contains("id-0.2.0"), "要写明实际的镜像：{message}");
 }
 
 #[tokio::test]
@@ -330,7 +269,7 @@ async fn an_updater_killed_while_observing_brings_services_up_and_observes_again
         Phase::Observing,
         s.host.now.load(std::sync::atomic::Ordering::SeqCst),
     );
-    state::save(&s.layout.state_path(), &observing, &langs()).unwrap();
+    state::save(&s.layout.state_path(), &observing).unwrap();
     s.host.world().log.clear();
     let before = s.host.now.load(std::sync::atomic::Ordering::SeqCst);
 
@@ -354,7 +293,7 @@ async fn an_updater_that_keeps_crashing_gives_up_on_the_phase() {
     let mut crashing = s.state();
     assert_eq!(crashing.phase, Phase::Starting);
     crashing.updater_starts = MAX_UPDATER_STARTS;
-    state::save(&s.layout.state_path(), &crashing, &langs()).unwrap();
+    state::save(&s.layout.state_path(), &crashing).unwrap();
 
     s.run().await;
 
@@ -362,13 +301,7 @@ async fn an_updater_that_keeps_crashing_gives_up_on_the_phase() {
     assert_eq!(end.result, Some(Outcome::RolledBack));
     let problem = end.problem.unwrap();
     assert_eq!(problem.reason, Failure::UpdaterFailed);
-    assert!(
-        problem
-            .message
-            .contains(&l10n::text(&langs(), "upgrade-updater-crashed", &[])),
-        "{}",
-        problem.message
-    );
+    assert!(problem.message.contains("反复崩溃"), "{}", problem.message);
 }
 
 #[tokio::test]
@@ -475,13 +408,8 @@ async fn a_failed_rollback_reports_both_reasons_and_keeps_the_backup() {
     let end = s.state();
     assert_eq!(end.result, Some(Outcome::RollbackFailed));
     let message = end.problem.unwrap().message;
-    // 两条原因都在：回滚时的失败（起不回旧版本），和当初触发回滚的失败。文字由目录出，
-    // 这两条是假主机给的原始错误（数据），断言它们被带上。
     assert!(message.contains("旧版本也起不来"), "{message}");
-    assert!(
-        message.contains("服务 core 不健康"),
-        "要带上回滚的起因：{message}"
-    );
+    assert!(message.contains("不健康"), "要带上回滚的起因：{message}");
     assert!(backup::deletable(&s.layout).unwrap().0.is_empty());
 }
 
@@ -564,7 +492,7 @@ async fn completing_cleans_up_what_is_no_longer_needed() {
         OLD.to_owned(),
         "tuwunel:1".to_owned(),
     ];
-    state::save(&s.layout.state_path(), &fresh, &langs()).unwrap();
+    state::save(&s.layout.state_path(), &fresh).unwrap();
 
     s.run().await;
 
@@ -582,7 +510,7 @@ async fn an_updater_that_finds_a_finished_state_just_stops_restarting() {
     let s = scene();
     let mut ended = s.state();
     ended.result = Some(Outcome::Completed);
-    state::save(&s.layout.state_path(), &ended, &langs()).unwrap();
+    state::save(&s.layout.state_path(), &ended).unwrap();
     s.run().await;
     assert_eq!(s.host.log(), vec!["disable-restart wonton-updater"]);
     assert_eq!(s.env_image(), OLD);

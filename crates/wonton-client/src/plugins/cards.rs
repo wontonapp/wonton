@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use tokio::sync::mpsc;
+
 use super::PluginsLink;
 
 impl PluginsLink {
@@ -27,5 +29,15 @@ impl PluginsLink {
             return;
         }
         self.refresh_installed();
+    }
+}
+
+/// 跟着聊天那头报来的成功卡片（插件 ID），逐个交给 [`PluginsLink::card_succeeded`]。
+pub(crate) async fn follow_card_success(
+    plugins: Arc<PluginsLink>,
+    mut plugin_ids: mpsc::UnboundedReceiver<String>,
+) {
+    while let Some(plugin_id) = plugin_ids.recv().await {
+        plugins.card_succeeded(&plugin_id);
     }
 }

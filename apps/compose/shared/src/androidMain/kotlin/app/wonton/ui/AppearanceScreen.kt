@@ -33,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -55,7 +54,6 @@ import app.wonton.protocol.Rgb
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeMode
 import app.wonton.ui.design.WontonGroup
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.accentFill
@@ -73,13 +71,12 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         (rejection ?: appearance.problem?.problem)?.let { ProblemNotice(it) }
         SettingsPreview()
-        Section(stringResource(R.string.appearance_theme)) {
+        Section("明暗") {
             WontonGroup {
                 appearance.themeModes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
@@ -89,8 +86,8 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
                 }
             }
         }
-        Section(stringResource(R.string.appearance_accent)) { AccentGroup(appearance, send) }
-        Section(stringResource(R.string.appearance_text_size)) {
+        Section("重点色") { AccentGroup(appearance, send) }
+        Section("字号") {
             WontonGroup {
                 appearance.textSizes.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
@@ -100,7 +97,7 @@ internal fun AppearanceScreen(core: ClientCore, appearance: AppearanceViewModel)
                 }
             }
         }
-        Section(stringResource(R.string.appearance_font)) {
+        Section("字体") {
             WontonGroup {
                 appearance.fonts.forEachIndexed { index, option ->
                     if (index > 0) SettingsSeparator()
@@ -138,33 +135,31 @@ private fun SettingsSeparator() {
 
 /** 设置里各个选项的名字，顺序由核心给。 */
 private val ThemeMode.label: String
-    @Composable get() = when (this) {
-        ThemeMode.SYSTEM -> stringResource(R.string.appearance_system)
-        ThemeMode.LIGHT -> stringResource(R.string.appearance_theme_light)
-        ThemeMode.DARK -> stringResource(R.string.appearance_theme_dark)
+    get() = when (this) {
+        ThemeMode.SYSTEM -> "跟随系统"
+        ThemeMode.LIGHT -> "浅色"
+        ThemeMode.DARK -> "深色"
     }
 
 private val TextSize.label: String
-    @Composable get() = when (this) {
-        TextSize.SYSTEM -> stringResource(R.string.appearance_system)
-        TextSize.SMALL -> stringResource(R.string.appearance_size_small)
-        TextSize.STANDARD -> stringResource(R.string.appearance_size_standard)
-        TextSize.LARGE -> stringResource(R.string.appearance_size_large)
-        TextSize.EXTRA_LARGE -> stringResource(R.string.appearance_size_extra_large)
+    get() = when (this) {
+        TextSize.SYSTEM -> "跟随系统"
+        TextSize.SMALL -> "小"
+        TextSize.STANDARD -> "标准"
+        TextSize.LARGE -> "大"
+        TextSize.EXTRA_LARGE -> "特大"
     }
 
 private val FontStyle.label: String
-    @Composable get() = when (this) {
-        FontStyle.DEFAULT -> stringResource(R.string.appearance_font_default)
-        FontStyle.ROUNDED -> stringResource(R.string.appearance_font_rounded)
-        FontStyle.SERIF -> stringResource(R.string.appearance_font_serif)
-        FontStyle.MONOSPACED -> stringResource(R.string.appearance_font_monospaced)
+    get() = when (this) {
+        FontStyle.DEFAULT -> "默认"
+        FontStyle.ROUNDED -> "圆体"
+        FontStyle.SERIF -> "衬线"
+        FontStyle.MONOSPACED -> "等宽"
     }
 
 /** 每一行用自己的字体写，选之前就看得出差别。系统字体的中文不一定跟着变，所以要有拉丁字母的样例。 */
 private class FontSample(val family: FontFamily?)
-
-private const val FONT_SAMPLE = "Aa"
 
 @Composable
 private fun ChoiceRow(title: String, isSelected: Boolean, sample: FontSample? = null, onClick: () -> Unit) {
@@ -182,7 +177,7 @@ private fun ChoiceRow(title: String, isSelected: Boolean, sample: FontSample? = 
         Text(title, style = style, color = colors.textPrimary.toColor())
         if (sample != null) {
             Text(
-                FONT_SAMPLE,
+                "Aa",
                 Modifier.semantics { hideFromAccessibility() },
                 style = style,
                 color = colors.textSecondary.toColor(),
@@ -190,7 +185,6 @@ private fun ChoiceRow(title: String, isSelected: Boolean, sample: FontSample? = 
         }
         Spacer(Modifier.weight(1f))
         if (isSelected) {
-            // 装饰：选中状态由选项本身朗读。
             Icon(WontonIcon.Check, null, Modifier.size(WontonTheme.size.iconSmall), tint = colors.accentInk.toColor())
         }
     }
@@ -202,18 +196,12 @@ private fun AccentGroup(appearance: AppearanceViewModel, send: (Action) -> Unit)
     var showsMore by rememberSaveable { mutableStateOf(isCustom) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         WontonGroup {
-            Swatches(
-                appearance.presets, appearance, R.string.appearance_accent, send,
-                Modifier.padding(WontonTheme.spacing.s8),
-            )
+            Swatches(appearance.presets, appearance, "重点色", send, Modifier.padding(WontonTheme.spacing.s8))
             SettingsSeparator()
             MoreColorsRow(if (isCustom) accentHex(appearance.accent) else null, showsMore) { showsMore = !showsMore }
             if (showsMore) {
                 SettingsSeparator()
-                Swatches(
-                    appearance.moreColors, appearance, R.string.appearance_more_colors, send,
-                    Modifier.padding(WontonTheme.spacing.s8),
-                )
+                Swatches(appearance.moreColors, appearance, "更多颜色", send, Modifier.padding(WontonTheme.spacing.s8))
             }
         }
         // 放在组外面：输入框的底和组的底同色，放进去就看不见了。
@@ -225,18 +213,17 @@ private fun AccentGroup(appearance: AppearanceViewModel, send: (Action) -> Unit)
 @Composable
 private fun MoreColorsRow(custom: String?, isExpanded: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
-    val expandedState = stringResource(if (isExpanded) R.string.appearance_expanded else R.string.appearance_collapsed)
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
             .clickable(role = Role.Button, onClick = onClick)
-            .semantics { stateDescription = expandedState }
+            .semantics { stateDescription = if (isExpanded) "已展开" else "已收起" }
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
     ) {
         Text(
-            stringResource(R.string.appearance_more),
+            "更多",
             Modifier.weight(1f),
             style = WontonTheme.typography.body,
             color = colors.textPrimary.toColor(),
@@ -257,11 +244,10 @@ private fun MoreColorsRow(custom: String?, isExpanded: Boolean, onClick: () -> U
 private fun Swatches(
     swatches: List<Rgb>,
     appearance: AppearanceViewModel,
-    labelRes: Int,
+    label: String,
     send: (Action) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val label = stringResource(labelRes)
     val columns = appearance.swatchColumns.toInt()
     Column(modifier) {
         swatches.chunked(columns).forEachIndexed { row, chunk ->
@@ -313,7 +299,7 @@ private fun HexInput(accent: Rgb, send: (Action) -> Unit) {
             isInvalid = false
         },
         modifier = Modifier.fillMaxWidth(),
-        label = stringResource(R.string.appearance_color_value),
+        label = "颜色值",
         keyboardOptions = KeyboardOptions(
             capitalization = KeyboardCapitalization.Characters,
             autoCorrectEnabled = false,
@@ -329,7 +315,7 @@ private fun HexInput(accent: Rgb, send: (Action) -> Unit) {
     )
     if (isInvalid) {
         Text(
-            stringResource(R.string.appearance_hex_invalid),
+            "颜色要写成 #RRGGBB",
             style = WontonTheme.typography.supporting,
             color = WontonTheme.colors.danger.toColor(),
         )
@@ -348,7 +334,7 @@ private fun SettingsPreview() {
     ) {
         Row(Modifier.fillMaxWidth().padding(end = WontonTheme.spacing.s48)) {
             Text(
-                stringResource(R.string.appearance_preview_message),
+                "今晚吃什么？",
                 Modifier.background(colors.surfaceSubtle.toColor(), bubble).then(inset),
                 style = WontonTheme.typography.body,
                 color = colors.textPrimary.toColor(),
@@ -361,7 +347,7 @@ private fun SettingsPreview() {
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
                 Text(
-                    stringResource(R.string.appearance_preview_name),
+                    "云吞",
                     Modifier.alignByBaseline(),
                     style = WontonTheme.typography.body,
                     color = colors.textOnAccentFill.toColor(),

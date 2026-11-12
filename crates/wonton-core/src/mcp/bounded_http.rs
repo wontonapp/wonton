@@ -7,7 +7,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures_util::stream::BoxStream;
@@ -23,7 +23,6 @@ use rmcp::transport::common::http_header::{
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClient, StreamableHttpError, StreamableHttpPostResponse,
 };
-use serde_json::Value;
 use sse_stream::{Error as SseError, Sse, SseStream};
 
 pub(super) type HttpError = StreamableHttpError<reqwest::Error>;
@@ -52,54 +51,9 @@ pub(super) struct BoundedHttp {
     pub limit: usize,
 }
 
-/// 超过上限时传输层知道多少：收到过的字节（`read`，收到即算，不一定读完）、插件声明的大小（`declared`，这时一个字节没读）。
-/// [`too_large_reply`] 把它写进错误 `data`，[`super::upstream`] 读出来给 Agent 说明“至少读到了多少”。
-#[derive(Debug, Default, Clone, Copy)]
-pub(super) struct TooLargeDetail {
-    pub limit: Option<u64>,
-    pub read: Option<u64>,
-    pub declared: Option<u64>,
-}
-
-/// 传输层写在错误 `data` 里的详情（[`too_large_reply`]）。插件自己回这个错误码时没有或者不合规矩，字段是 `None`，
-/// 调用方用自己知道的上限兜底。
-pub(super) fn too_large_detail(data: Option<&serde_json::Value>) -> TooLargeDetail {
-    let Some(Value::Object(fields)) = data else {
-        return TooLargeDetail::default();
-    };
-    let field = |key: &str| fields.get(key).and_then(Value::as_u64);
-    TooLargeDetail {
-        limit: field("limit"),
-        read: field("read"),
-        declared: field("declared"),
-    }
-}
-
-/// 响应体的读取结果：读完了，或者超过上限停下（带 [`TooLargeDetail`] 的字段）。
-enum Body {
-    Complete(Vec<u8>),
-    TooLarge { read: u64, declared: Option<u64> },
-}
-
-fn too_large_reply(
-    limit: usize,
-    request: RequestId,
-    read: Option<u64>,
-    declared: Option<u64>,
-) -> ServerJsonRpcMessage {
-    let why = format!("response exceeds {limit} bytes");
-    let mut detail = serde_json::Map::new();
-    detail.insert("limit".to_owned(), serde_json::json!(limit as u64));
-    if let Some(read) = read {
-        detail.insert("read".to_owned(), serde_json::json!(read));
-    }
-    if let Some(declared) = declared {
-        detail.insert("declared".to_owned(), serde_json::json!(declared));
-    }
-    ServerJsonRpcMessage::error(
-        ErrorData::new(RESPONSE_TOO_LARGE, why, Some(detail.into())),
-        Some(request),
-    )
+fn too_large_reply(limit: usize, request: RequestId) -> ServerJsonRpcMessage {
+    let why = format!("响应超过 {limit} 字节");
+    ServerJsonRpcMessage::error(ErrorData::new(RESPONSE_TOO_LARGE, why, None), Some(request))
 }
 
 /// 普通 JSON 响应超限：通知没有 id，也没人等回答，算传输错误。
@@ -107,16 +61,14 @@ fn too_large(
     limit: usize,
     message: &ClientJsonRpcMessage,
     session: Option<String>,
-    read: Option<u64>,
-    declared: Option<u64>,
 ) -> Result<StreamableHttpPostResponse, HttpError> {
     match request_id(message) {
         Some(id) => Ok(StreamableHttpPostResponse::Json(
-            too_large_reply(limit, id, read, declared),
+            too_large_reply(limit, id),
             session,
         )),
         None => Err(StreamableHttpError::UnexpectedServerResponse(Cow::Owned(
-            format!("response exceeds {limit} bytes"),
+            format!("响应超过 {limit} 字节"),
         ))),
     }
 }
@@ -133,32 +85,24 @@ impl BoundedHttp {
         }
     }
 
-    /// 读整个响应体，超过 `limit` 时停下，带收到过多少、声明了多少。
+    /// 读整个响应体，超过 `limit` 时为空。
     async fn read_body(
         &self,
         mut response: reqwest::Response,
         limit: usize,
-    ) -> Result<Body, HttpError> {
+    ) -> Result<Option<Vec<u8>>, HttpError> {
         let declared = response.content_length().unwrap_or(0);
         if usize::try_from(declared).map_or(true, |declared| declared > limit) {
-            return Ok(Body::TooLarge {
-                read: 0,
-                declared: usize::try_from(declared)
-                    .ok()
-                    .map(|declared| declared as u64),
-            });
+            return Ok(None);
         }
         let mut body = Vec::new();
         while let Some(chunk) = response.chunk().await? {
             if body.len() + chunk.len() > limit {
-                return Ok(Body::TooLarge {
-                    read: (body.len() + chunk.len()) as u64,
-                    declared: None,
-                });
+                return Ok(None);
             }
             body.extend_from_slice(&chunk);
         }
-        Ok(Body::Complete(body))
+        Ok(Some(body))
     }
 
     /// 非 2xx 的回答。带这个请求的 JSON-RPC 错误就是那个错误，否则是这个请求的 HTTP 错误；响应体太大或者等不到都不影响这个结论。
@@ -173,23 +117,15 @@ impl BoundedHttp {
         let limit = self.limit.min(MAX_ERROR_BODY_BYTES);
         let read = self.read_body(response, limit);
         let body = match tokio::time::timeout(ERROR_BODY_TIMEOUT, read).await {
-            Ok(Ok(Body::Complete(body))) => body,
-            Ok(Ok(Body::TooLarge { .. })) | Ok(Err(_)) | Err(_) => Vec::new(),
+            Ok(body) => body?.unwrap_or_default(),
+            Err(_) => Vec::new(),
         };
         if let Ok(error @ JsonRpcMessage::Error(_)) = serde_json::from_slice(&body)
             && request_id(message).is_some_and(|id| answers(&error, &id))
         {
             return Ok(StreamableHttpPostResponse::Json(error, session));
         }
-        let mut why = format!("HTTP {status}: {}", words(&body));
-        if matches!(
-            status,
-            reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
-        ) {
-            // 不自动重试、也不重新取密钥：凭据不对是清单和插件的事，如实报出来。
-            why.push_str("; the app's MCP server rejected the credentials");
-        }
-        not_mcp(message, session, why)
+        not_mcp(message, session, format!("HTTP {status}：{}", words(&body)))
     }
 
     /// SSE 响应超限：不再读下去，流的最后是一条超限的回答。没读完的事件解析器不会交出来。
@@ -200,35 +136,22 @@ impl BoundedHttp {
         limit: usize,
     ) -> BoxStream<'static, Result<Sse, SseError>> {
         let exceeded = Arc::new(AtomicBool::new(false));
-        // 超限停下时，回答里要写收到过多少：scan 的状态跟着流结束就没了，用共享的计数器留给最后的回答。
-        let received = Arc::new(AtomicU64::new(0));
-        let counted = received.clone();
         let over = exceeded.clone();
-        let bytes = response.bytes_stream().scan((), move |_, chunk| {
+        let bytes = response.bytes_stream().scan(0usize, move |seen, chunk| {
             if let Ok(chunk) = &chunk {
-                let seen =
-                    counted.fetch_add(chunk.len() as u64, Ordering::Relaxed) + chunk.len() as u64;
-                if seen > limit as u64 {
+                *seen = seen.saturating_add(chunk.len());
+                if *seen > limit {
                     over.store(true, Ordering::Relaxed);
                     return future::ready(None);
                 }
             }
             future::ready(Some(chunk.map_err(io::Error::other)))
         });
+        let reply = request.map(|id| too_large_reply(limit, id));
         let last = stream::once(future::ready(())).filter_map(move |()| {
-            let reply = exceeded
-                .load(Ordering::Relaxed)
-                .then(|| {
-                    request.as_ref().map(|id| {
-                        too_large_reply(
-                            limit,
-                            id.clone(),
-                            Some(received.load(Ordering::Relaxed)),
-                            None,
-                        )
-                    })
-                })
-                .flatten()
+            let reply = reply
+                .clone()
+                .filter(|_| exceeded.load(Ordering::Relaxed))
                 .map(|reply| Ok(event_of(&reply)));
             future::ready(reply)
         });
@@ -355,33 +278,25 @@ impl StreamableHttpClient for BoundedHttp {
                 Ok(StreamableHttpPostResponse::Sse(events, session))
             }
             Some(kind) if kind.starts_with(JSON_MIME_TYPE) => {
-                match self.read_body(response, limit).await? {
-                    Body::Complete(body) => {
-                        match serde_json::from_slice::<ServerJsonRpcMessage>(&body) {
-                            Ok(parsed)
-                                if request_id(&message)
-                                    .is_some_and(|id| !answers(&parsed, &id)) =>
-                            {
-                                let why =
-                                    format!("reply does not answer this request: {}", words(&body));
-                                not_mcp(&message, session, why)
-                            }
-                            Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session)),
-                            Err(_) if !expects_reply => Ok(StreamableHttpPostResponse::Accepted),
-                            Err(e) => not_mcp(
-                                &message,
-                                session,
-                                format!("can't parse the response: {e}: {}", words(&body)),
-                            ),
-                        }
+                let Some(body) = self.read_body(response, limit).await? else {
+                    return too_large(limit, &message, session);
+                };
+                match serde_json::from_slice::<ServerJsonRpcMessage>(&body) {
+                    Ok(parsed) if request_id(&message).is_some_and(|id| !answers(&parsed, &id)) => {
+                        let why = format!("回答对不上这个请求：{}", words(&body));
+                        not_mcp(&message, session, why)
                     }
-                    Body::TooLarge { read, declared } => {
-                        too_large(limit, &message, session, Some(read), declared)
-                    }
+                    Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session)),
+                    Err(_) if !expects_reply => Ok(StreamableHttpPostResponse::Accepted),
+                    Err(e) => not_mcp(
+                        &message,
+                        session,
+                        format!("读不懂响应：{e}：{}", words(&body)),
+                    ),
                 }
             }
             other => {
-                let why = format!("unexpected Content-Type: {other:?}");
+                let why = format!("响应的 Content-Type 不对：{other:?}");
                 not_mcp(&message, session, why)
             }
         }

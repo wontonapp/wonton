@@ -4,7 +4,6 @@ use axum::body::Body;
 use hyper::{Method, StatusCode};
 
 use super::tests::{CORE, Harness, TOKEN, WHOAMI};
-use crate::plugin::languages::Languages;
 
 #[tokio::test]
 async fn plugin_limits_api_requires_owner_token() {
@@ -29,10 +28,7 @@ async fn plugin_limits_api_returns_updated_detail() {
         .replace("app.whoami", "app.limits")
         .replace("  icon: icon.svg\n", "")
         .replace("  webui:\n    service: web\n    port: 8000\n", "");
-    h.manager
-        .install(&compose, &[], Languages::from_header(Some("zh-Hans")))
-        .await
-        .unwrap();
+    h.manager.install(&compose, &[]).await.unwrap();
     let bearer = format!("Bearer {TOKEN}");
     let reply = h
         .send(

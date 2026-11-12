@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use matrix_sdk::ruma::{
-    OwnedUserId,
     events::{
         AnySyncStateEvent, AnySyncTimelineEvent, StateEventContentChange,
         room::{member::MembershipState, name::RoomNameEventContent},
@@ -18,7 +17,7 @@ use matrix_sdk_ui::timeline::{
 use crate::message::{MemberNames, Message, message, sender_name};
 
 /// 时间线里的一条。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TimelineEntry {
     /// 在这条时间线里稳定的标识：本地回显发出后、内容被编辑后都不变。
     pub id: String,
@@ -26,19 +25,12 @@ pub struct TimelineEntry {
 }
 
 /// 条目的种类。
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EntryKind {
     /// 消息比其他种类大得多，装箱放着。
     Message(Box<Message>),
     /// 一行说明：成员离开、房间改名、通话等。
     Notice(String),
-    /// 成员保持加入状态时修改名字或头像；名字变化才有旧名。
-    ProfileChange {
-        user_id: OwnedUserId,
-        name: String,
-        previous_name: Option<String>,
-        avatar_changed: bool,
-    },
     /// 日期分隔线，值是这一天里第一条消息的时间（Unix 毫秒）。
     DateDivider(u64),
     /// 本账号的已读位置。
@@ -62,20 +54,18 @@ pub(crate) fn entry(item: &Arc<TimelineItem>, names: &MemberNames) -> TimelineEn
     }
 }
 
-/// 状态事件只显示房间改名、成员离开或被封禁，以及加入期间的名字和头像变化。
+/// 时间线里显示哪些事件：SDK 的默认规则之外，房间状态事件只留聊天的人要知道的两种：房间改名，和成员离开或被
+/// 封禁（对方走了，再发消息就没人收了）。其余的（建房、加密、权限、谁加入、改昵称）新房间一打开就是一串，对聊天
+/// 没有意义。
 pub(crate) fn shown(event: &AnySyncTimelineEvent, rules: &RoomVersionRules) -> bool {
     default_event_filter(event, rules)
         && match event {
             AnySyncTimelineEvent::MessageLike(_) => true,
             AnySyncTimelineEvent::State(AnySyncStateEvent::RoomName(_)) => true,
-            AnySyncTimelineEvent::State(AnySyncStateEvent::RoomMember(member)) => {
-                matches!(
-                    member.membership(),
-                    MembershipState::Leave | MembershipState::Ban
-                ) || member
-                    .as_original()
-                    .is_some_and(crate::profile::member_profile_changed)
-            }
+            AnySyncTimelineEvent::State(AnySyncStateEvent::RoomMember(member)) => matches!(
+                member.membership(),
+                MembershipState::Leave | MembershipState::Ban
+            ),
             AnySyncTimelineEvent::State(_) => false,
         }
 }
@@ -83,22 +73,6 @@ pub(crate) fn shown(event: &AnySyncTimelineEvent, rules: &RoomVersionRules) -> b
 fn event_kind(event: &EventTimelineItem, names: &MemberNames) -> EntryKind {
     if let Some(message) = message(event, names) {
         return EntryKind::Message(Box::new(message));
-    }
-    if let TimelineItemContent::ProfileChange(change) = event.content() {
-        let user_id = change.user_id().to_owned();
-        let name_change = change.displayname_change();
-        let name = name_change.map_or_else(
-            || names.name(&user_id),
-            |change| change.new.clone().unwrap_or_else(|| user_id.to_string()),
-        );
-        let previous_name =
-            name_change.map(|change| change.old.clone().unwrap_or_else(|| user_id.to_string()));
-        return EntryKind::ProfileChange {
-            user_id,
-            name,
-            previous_name,
-            avatar_changed: change.avatar_url_change().is_some(),
-        };
     }
     EntryKind::Notice(notice(event, names))
 }
@@ -114,8 +88,8 @@ fn notice(event: &EventTimelineItem, names: &MemberNames) -> String {
                 .unwrap_or_else(|| names.name(change.user_id()));
             membership_notice(&user, change.change())
         }
-        // `event_kind` 已经处理资料变化。
-        TimelineItemContent::ProfileChange(_) => unreachable!("资料变化有独立的条目种类"),
+        // `shown` 不放行资料变化，这一行只为穷尽。
+        TimelineItemContent::ProfileChange(_) => format!("{who} 更新了资料"),
         TimelineItemContent::OtherState(state) => match state.content() {
             AnyOtherStateEventContentChange::RoomName(StateEventContentChange::Original {
                 content: RoomNameEventContent { name, .. },
@@ -149,68 +123,4 @@ fn membership_notice(user: &str, change: Option<MembershipChange>) -> String {
         _ => "的成员状态有变化",
     };
     format!("{user} {action}")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::{Value, json};
-
-    fn member_event(previous: Option<Value>, content: Value) -> AnySyncTimelineEvent {
-        let mut event = json!({
-            "type": "m.room.member",
-            "event_id": "$member:example.org",
-            "sender": "@bot:example.org",
-            "state_key": "@bot:example.org",
-            "origin_server_ts": 1,
-            "content": content,
-        });
-        if let Some(previous) = previous {
-            event["unsigned"] = json!({ "prev_content": previous });
-        }
-        serde_json::from_value(event).expect("有效成员事件")
-    }
-
-    #[test]
-    fn joined_members_name_and_avatar_changes_are_shown() {
-        let previous = json!({"membership": "join", "displayname": "Bot"});
-        for content in [
-            json!({"membership": "join", "displayname": "Renamed"}),
-            json!({"membership": "join"}),
-            json!({"membership": "join", "displayname": "Bot", "avatar_url": "mxc://example.org/a"}),
-        ] {
-            let event = member_event(Some(previous.clone()), content);
-            assert!(shown(&event, &RoomVersionRules::V11));
-        }
-        let previous = json!({"membership": "join", "avatar_url": "mxc://example.org/a"});
-        let event = member_event(Some(previous), json!({"membership": "join"}));
-        assert!(shown(&event, &RoomVersionRules::V11));
-    }
-
-    #[test]
-    fn reason_only_and_non_join_profile_updates_are_hidden() {
-        let joined = json!({"membership": "join", "displayname": "Bot"});
-        let reason_only = json!({"membership": "join", "displayname": "Bot", "reason": "updated"});
-        assert!(!shown(
-            &member_event(Some(joined.clone()), reason_only),
-            &RoomVersionRules::V11,
-        ));
-        assert!(!shown(&member_event(None, joined), &RoomVersionRules::V11));
-        for membership in ["leave", "invite", "knock"] {
-            let previous = json!({"membership": membership, "displayname": "Bot"});
-            let content = json!({"membership": "join", "displayname": "Renamed"});
-            assert!(!shown(
-                &member_event(Some(previous), content),
-                &RoomVersionRules::V11,
-            ));
-        }
-    }
-
-    #[test]
-    fn leaving_and_banned_members_remain_visible() {
-        for membership in ["leave", "ban"] {
-            let event = member_event(None, json!({"membership": membership}));
-            assert!(shown(&event, &RoomVersionRules::V11));
-        }
-    }
 }

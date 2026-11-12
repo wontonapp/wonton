@@ -8,13 +8,11 @@ use iroh::SecretKey;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use super::fakes::loopback_tunnel_with_members;
 use super::tests::{CORE, Harness, Reply, TOKEN, WHOAMI, owner};
-use super::tunnel_tests::Phone;
+use super::tunnel_tests::{Phone, loopback_tunnel};
 use super::{CORE_COOKIE, Gateway, router};
 use crate::config::PublicUrls;
 use crate::owner::OwnerStore;
-use crate::plugin::languages::Languages;
 use crate::tunnel::TunnelEntry;
 
 const ID: &str = "app.start-test";
@@ -26,10 +24,7 @@ async fn installed() -> (Harness, String) {
         .replace("app.whoami", ID)
         .replace("  icon: icon.svg\n", "")
         .replace("  webui:\n    service: web\n    port: 8000\n", "");
-    h.manager
-        .install(&compose, &[], Languages::from_header(Some("zh-Hans")))
-        .await
-        .unwrap();
+    h.manager.install(&compose, &[]).await.unwrap();
     let containers = h.docker.containers();
     assert_eq!(containers.len(), 1);
     (h, containers[0].clone())
@@ -178,12 +173,7 @@ async fn paired_device_can_start_but_its_web_page_cannot() {
         &container,
         json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
     );
-    let tunnel = loopback_tunnel_with_members(
-        h.data_dir(),
-        h.members.clone(),
-        ["192.0.2.10".parse().unwrap()].into(),
-    )
-    .await;
+    let tunnel = loopback_tunnel(h.data_dir()).await;
     let gateway = Gateway::new(
         PublicUrls {
             scheme: "http".into(),
@@ -192,7 +182,6 @@ async fn paired_device_can_start_but_its_web_page_cannot() {
         },
         OwnerStore::for_test(h.data_dir(), &owner()),
         TOKEN.into(),
-        h.members.clone(),
         h.manager.clone(),
         None,
         h.http.clone(),

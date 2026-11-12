@@ -1,0 +1,2 @@
+bin=/home/npchy/wonton-dev/tt/stall-flaky/target/debug/deps/tunnel-3f222bf86aca0ea3 out=/home/npchy/wonton-dev/tt/stall-flaky/repro-out/1106-215823-exact-3464593 mode=exact
+FAILED at run 37, log: /home/npchy/wonton-dev/tt/stall-flaky/repro-out/1106-215823-exact-3464593/run-37.log

@@ -1,32 +1,15 @@
-use std::collections::HashSet;
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Mutex, mpsc};
-use std::task::{Context, Poll, Wake, Waker};
-use std::thread::{self, ThreadId};
+use std::task::{Context, Wake};
 
 use axum::http::Method;
 use tokio::sync::oneshot;
-use wonton_client::{
-    Action, ChatAccount, ChatSubscription, ChatViewModel, OnboardingSubscription,
-    OnboardingViewModel,
-};
+use wonton_client::{Action, ChatAccount, OnboardingSubscription, OnboardingViewModel};
 
 use super::super::rig::{Rig, WAIT, running};
-use super::{ONBOARDING, PROVIDERS, onboarding, providers, wait_requests};
+use super::{ONBOARDING, PROVIDERS, onboarding, providers};
 
-/// `onboarding()` 里 agent.one 的 Bot：选它当默认 Agent 后，引导发布把它交给聊天，聊天视图随之通知一次。
-const BOT: &str = "@agent:home";
-
-type NextChat = Pin<Box<dyn Future<Output = Option<ChatViewModel>> + Send>>;
-
-/// 只暂停引导发布交出默认 Bot 的那次聊天通知。聊天视图还有别的发送方：插件列表每变一次，安装占位行和
-/// Bot 列表都会无条件推一次，安装占位行推的时候还持着自己的锁。暂停到它们身上时，等这把锁的引导发布会占住
-/// 客户端运行时仅有的两个工作线程，刷新引导的 GET 被拖到测试再次扣住之后，测试就等不到下一个 GET。
-/// 所以别的线程叫醒时只重新登记，只有引导发布所在的线程才暂停。
 struct PausedWake {
-    chat: Arc<ChatSubscription>,
-    next: Mutex<Option<NextChat>>,
-    publisher: Arc<Mutex<Option<ThreadId>>>,
     entered: Mutex<Option<oneshot::Sender<()>>>,
     release: Mutex<mpsc::Receiver<()>>,
 }
@@ -37,80 +20,15 @@ impl Wake for PausedWake {
     }
 
     fn wake_by_ref(self: &Arc<Self>) {
-        if *self.publisher.lock().unwrap() == Some(thread::current().id()) {
-            let entered = self.entered.lock().unwrap().take();
-            if let Some(entered) = entered {
-                entered.send(()).unwrap();
-                // Hand the worker's queued network tasks to Tokio while the notification is paused.
-                tokio::task::block_in_place(|| {
-                    let _ = self.release.lock().unwrap().recv_timeout(WAIT);
-                });
-                return;
-            }
-        }
-        self.listen();
-    }
-}
-
-impl PausedWake {
-    /// 取走已经到了的聊天视图，直到再次挂起：waker 一直登记在聊天视图上。
-    fn listen(self: &Arc<Self>) {
-        let waker = Waker::from(self.clone());
-        let mut context = Context::from_waker(&waker);
-        let mut next = self.next.lock().unwrap();
-        loop {
-            let future = next.get_or_insert_with(|| {
-                let chat = self.chat.clone();
-                Box::pin(async move { chat.next().await })
+        let entered = self.entered.lock().unwrap().take();
+        if let Some(entered) = entered {
+            entered.send(()).unwrap();
+            // Hand the worker's queued network tasks to Tokio while the notification is paused.
+            tokio::task::block_in_place(|| {
+                let _ = self.release.lock().unwrap().recv_timeout(WAIT);
             });
-            match future.as_mut().poll(&mut context) {
-                Poll::Ready(Some(_)) => *next = None,
-                _ => return,
-            }
         }
     }
-}
-
-/// 刷新插件列表，引导跟着取到选了 agent.one 的状态，在它的发布交出默认 Bot 时暂停。取状态先扣住，
-/// 插件列表这一轮引起的聊天通知都在引导发布之前发完。返回放行用的发送端和这之前取过几次状态。
-async fn pause_selecting_publish(
-    rig: &Rig,
-    chat: Arc<ChatSubscription>,
-) -> (mpsc::Sender<()>, usize) {
-    let publisher = Arc::new(Mutex::new(None));
-    let marker = publisher.clone();
-    rig.app.test_set_onboarding_publish_hook(Some(Arc::new(
-        move |view: &OnboardingViewModel, _: &HashSet<String>| {
-            if view.primary_bot_user_id.as_deref() == Some(BOT) {
-                marker
-                    .lock()
-                    .unwrap()
-                    .get_or_insert_with(|| thread::current().id());
-            }
-        },
-    )));
-    let (entered, paused) = oneshot::channel();
-    let (release, resume) = mpsc::channel();
-    let pause = Arc::new(PausedWake {
-        chat,
-        next: Mutex::new(None),
-        publisher,
-        entered: Mutex::new(Some(entered)),
-        release: Mutex::new(resume),
-    });
-
-    let mut selected = onboarding("model");
-    selected["primary_agent"] = serde_json::json!("agent.one");
-    rig.core.set_onboarding(selected);
-    let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
-    rig.core.hold(Method::GET, ONBOARDING);
-    rig.core.set_lists(vec![vec![running("agent.one")]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
-    wait_requests(rig, Method::GET, ONBOARDING, gets + 1).await;
-    pause.listen();
-    rig.core.release(Method::GET, ONBOARDING);
-    tokio::time::timeout(WAIT, paused).await.unwrap().unwrap();
-    (release, gets)
 }
 
 type NextView = Pin<Box<dyn Future<Output = Option<OnboardingViewModel>> + Send>>;
@@ -136,7 +54,7 @@ impl Wake for RecordWake {
                 Box::pin(async move { subscription.next().await })
             });
             match future.as_mut().poll(&mut context) {
-                Poll::Ready(Some(view)) => {
+                std::task::Poll::Ready(Some(view)) => {
                     self.views.lock().unwrap().push(view);
                     *next = None;
                 }
@@ -144,6 +62,16 @@ impl Wake for RecordWake {
             }
         }
     }
+}
+
+async fn wait_requests(rig: &Rig, method: Method, path: &str, count: usize) {
+    tokio::time::timeout(WAIT, async {
+        while rig.core.seen(&method, path).len() < count {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -169,7 +97,29 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     })
     .await
     .unwrap();
-    let (release, gets) = pause_selecting_publish(&rig, chat).await;
+
+    let (entered, paused) = oneshot::channel();
+    let (release, resume) = mpsc::channel();
+    let waker = Arc::new(PausedWake {
+        entered: Mutex::new(Some(entered)),
+        release: Mutex::new(resume),
+    })
+    .into();
+    let mut next_chat = pin!(chat.next());
+    assert!(
+        next_chat
+            .as_mut()
+            .poll(&mut Context::from_waker(&waker))
+            .is_pending()
+    );
+
+    let mut selected = onboarding("model");
+    selected["primary_agent"] = serde_json::json!("agent.one");
+    rig.core.set_onboarding(selected);
+    let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
+    rig.core.set_lists(vec![vec![running("agent.one")]]);
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    tokio::time::timeout(WAIT, paused).await.unwrap().unwrap();
 
     rig.core.release(Method::GET, PROVIDERS);
     let ready = rig
@@ -192,7 +142,6 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 2).await;
     let finished = rig.app.onboarding();
     rig.core.release(Method::GET, ONBOARDING);
-    rig.app.test_set_onboarding_publish_hook(None);
     drop(recorded.next.lock().unwrap().take());
     assert!(
         recorded

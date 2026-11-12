@@ -1,0 +1,4 @@
+run 1 rc=0 (22:26:45)
+run 2 rc=101 (22:27:33)
+FAILED at run 2, log: /home/npchy/wonton-dev/tt/stall-flaky/repro-out/1106-222628-exact-1036901/run-2.log
+done

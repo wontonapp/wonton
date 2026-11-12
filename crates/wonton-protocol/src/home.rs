@@ -21,15 +21,10 @@ pub struct HomeViewModel {
     pub proxy: Option<ProxySettings>,
     /// 插件网页的入口地址（M0 由连接信息给出）。
     pub web_url: Option<String>,
-    /// 扫码配对的进展；没在配对时为空，配上后停在 [`PairingStatus::Paired`] 直到下一次配对或重置连接信息。
+    /// 扫码配对的进展；没在配对时为空，配对成功后也回到空。
     pub pairing: Option<PairingStatus>,
     /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
-    /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
-    pub keep_connection: bool,
-    /// 断过又连上了：短暂为真，期间壳把短状态换成“已连接”；什么时候清由核心掌握，壳不计时。
-    #[serde(default)]
-    pub just_recovered: bool,
 }
 
 /// 给新设备扫的配对码。
@@ -51,36 +46,15 @@ pub enum DeviceInvite {
     },
 }
 
-/// 配对进行到哪一步：类别由核心给，壳据此写“还在连接”一行的话。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum PairingStage {
-    /// 正在建立到服务器的连接（连中继、握手、交出配对码），服务器还没有收到码。
-    Connecting,
-    /// 配对码已经交出，正在等服务器登记并回应。
-    Confirming,
-}
-
 /// 扫码配对的进展。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PairingStatus {
-    /// 正在连服务器、出示配对码。`elapsed_ms` 是这一次已经进行的时间，核心按秒推进；壳按它决定何时补
-    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`crate::Action::CancelPairing`]，
-    /// 进行中的每一步都能取消：本机只是放弃这一次尝试，服务端按设备幂等登记，同一个码再配对仍能配上。
-    InProgress {
-        elapsed_ms: u64,
-        stage: PairingStage,
-    },
-    /// 配上了：服务器登记了这台设备，连接信息存下了，连接正在建立。壳看到它就离开配对页；
-    /// 取消不会到这一步。下一次开始配对、或者连接信息被重置时清掉。
-    Paired,
+    /// 正在连服务器、出示配对码。
+    InProgress,
     Failed {
         reason: PairingFailure,
-        /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言
-        /// 写的，和类别说的是一件事，壳不显示，按类别自己写标题和下一步。
         message: String,
     },
 }
@@ -94,11 +68,11 @@ pub enum PairingFailure {
     Rejected,
     /// 码过期了，要拿一个新码。
     Expired,
-    /// 服务器不再接受这种码，例如已经有配对的设备时的首次配对码。要在已配对的设备上添加，或在服务器上另发一个码。
+    /// 服务器不再接受这种码，例如已经有配对的设备时的首次配对码。要用别的办法加这台设备，`message` 里有说明。
     Closed,
     /// 连不上服务器：手机和服务器之间不通，或者服务器没在运行。
     TransportUnavailable,
-    /// 服务器出错了，稍后再试；原因在 `message` 里。
+    /// 服务器出错了，稍后再试；`message` 里有原因。
     Upstream,
     /// 两端协议版本不匹配：App 或服务器要更新。
     Protocol,
@@ -172,23 +146,6 @@ pub enum ConnectionNotice {
     VersionMismatch,
 }
 
-/// 连接质量（ADR-0032）：核心按最近窗口的丢包率和往返时间判定，壳只在连接着且为 [`Self::Poor`] 时提示。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(rename_all = "snake_case")]
-pub enum ConnectionQuality {
-    /// 正常。
-    Good,
-    /// 连着但很差：丢包多或往返慢。
-    Poor,
-    /// 样本不够，或者还没连上。
-    #[default]
-    Unknown,
-    /// 比这个 App 新的取值，按 `Unknown` 显示。
-    #[serde(other)]
-    Other,
-}
-
 /// 连接页的一行诊断。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -217,32 +174,12 @@ pub struct ConnectionDetails {
     pub handshake_ms: Option<u32>,
     /// 这次启动以来断开的次数。
     pub disconnects: u32,
-    /// 距上次连上，这一轮的建连已经失败过几次；连上就清零。判断“这次断开是本轮新失败”用。
-    #[serde(default)]
-    pub failed_dials: u32,
     /// 当前连接发出的包数。
     pub sent_packets: u64,
     /// 当前连接判定丢失的包数。
     pub lost_packets: u64,
-    /// 最近判定窗口的连接质量。
-    #[serde(default)]
-    pub quality: ConnectionQuality,
-    /// 判定窗口内的丢包率，千分比（`50` 是 5%）；样本不够时为空。
-    #[serde(default)]
-    pub loss_per_mille: Option<u16>,
-    /// 判定窗口内的往返时间，毫秒；样本不够时为空。
-    #[serde(default)]
-    pub rtt_ms: Option<u32>,
     /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<String>,
-    /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
-    pub addresses_stale: bool,
-    /// 当前隧道连接的 UDP 流向；只统计完整应用包，不能与上面的 QUIC 包计数相加。
-    #[serde(default)]
-    pub udp_flows: Vec<crate::UdpFlowStats>,
-    /// 连接级被发送缓冲推出的数据报帧数估计；无法测得时为空，分片可能让一包占两帧。
-    #[serde(default)]
-    pub udp_buffer_evicted_datagrams: Option<u64>,
 }
 
 /// 连接当前走的路径。
@@ -251,8 +188,6 @@ pub struct ConnectionDetails {
 pub struct HomePath {
     /// 经中继转发；否则是局域网或打洞成功的直连。
     pub relay: bool,
-    /// 中继是 n0 公共中继（带宽不够传画面）；直连或自建中继为假。
-    pub public_relay: bool,
     /// 直连的对端是局域网地址。
     pub lan: bool,
     /// 往返时间估计，毫秒。
@@ -282,47 +217,5 @@ impl std::fmt::Debug for ProxySettings {
             .field("password", &"<redacted>")
             .field("domain", &self.domain)
             .finish()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 上一版的 JSON 里没有质量字段和窗口数字，新核心要读得懂，缺的按不知道处理。
-    #[test]
-    fn details_without_quality_fields_read_as_unknown() {
-        let details: ConnectionDetails = serde_json::from_str(
-            r#"{"network":"wifi","relay":"ok","server":"ok","last_connected_at_ms":1793778000000,
-                "handshake_ms":120,"disconnects":2,"sent_packets":900,"lost_packets":3,
-                "last_failure":null,"addresses_stale":false}"#,
-        )
-        .unwrap();
-        assert_eq!(details.quality, ConnectionQuality::Unknown);
-        assert_eq!(details.loss_per_mille, None);
-        assert_eq!(details.rtt_ms, None);
-    }
-
-    #[test]
-    fn unknown_quality_falls_back_to_other() {
-        assert_eq!(
-            serde_json::from_str::<ConnectionQuality>(r#""hologram""#).unwrap(),
-            ConnectionQuality::Other
-        );
-    }
-
-    #[test]
-    fn quality_round_trips_through_json() {
-        let details = ConnectionDetails {
-            quality: ConnectionQuality::Poor,
-            loss_per_mille: Some(73),
-            rtt_ms: Some(1_240),
-            ..ConnectionDetails::default()
-        };
-        let json = serde_json::to_string(&details).unwrap();
-        let read: ConnectionDetails = serde_json::from_str(&json).unwrap();
-        assert_eq!(read.quality, ConnectionQuality::Poor);
-        assert_eq!(read.loss_per_mille, Some(73));
-        assert_eq!(read.rtt_ms, Some(1_240));
     }
 }

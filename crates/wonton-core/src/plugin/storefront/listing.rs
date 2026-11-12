@@ -35,12 +35,12 @@ struct Shown<'a> {
 impl PluginManager {
     /// 商店：官方插件按索引里的顺序，社区插件按星数。`refresh` 时不等缓存过期，直接去来源取。
     pub async fn store_listing(&self, langs: &Languages, refresh: bool) -> StoreListing {
-        let (index, official_at, official_problem) = self.storefront.official(refresh, langs).await;
+        let (index, official_at, official_problem) = self.storefront.official(refresh).await;
         let (community, community_at, community_problem) =
-            self.storefront.community(&index, refresh, langs).await;
-        self.storefront.added.refresh(refresh, langs).await;
+            self.storefront.community(&index, refresh).await;
+        self.storefront.added.refresh(refresh).await;
         let added = self.storefront.added.views();
-        let facts = self.host_facts(langs).await;
+        let facts = self.host_facts().await;
         let (official, mut icons) = self.official_items(&index, &facts, langs).await;
         // 主人添加过的只在“我添加的”里列一次。
         let added_repos: Vec<&Repo> = added.iter().filter_map(|a| a.repo.as_ref()).collect();
@@ -91,7 +91,7 @@ impl PluginManager {
         source: &AddedView,
         langs: &Languages,
     ) -> AddedSource {
-        let facts = self.host_facts(langs).await;
+        let facts = self.host_facts().await;
         let plugins = source
             .plugins
             .iter()
@@ -131,8 +131,8 @@ impl PluginManager {
         Option<wonton_protocol::StoreProblem>,
         Vec<StoreItem>,
     ) {
-        let (index, _, problem) = self.storefront.official(false, langs).await;
-        let facts = self.host_facts(langs).await;
+        let (index, _, problem) = self.storefront.official(false).await;
+        let facts = self.host_facts().await;
         let (items, icons) = self.official_items(&index, &facts, langs).await;
         self.gallery.remember_store(icons);
         (index, problem, items)
@@ -147,15 +147,15 @@ impl PluginManager {
         let (package, stars) = if source.starts_with(INDEX_SCHEME) {
             (self.fetch_source(source).await?, None)
         } else {
-            let wanted = SourceRef::parse(source, langs)?;
-            let (index, _, _) = self.storefront.official(false, langs).await;
+            let wanted = SourceRef::parse(source)?;
+            let (index, _, _) = self.storefront.official(false).await;
             let package = match index.find(&wanted).filter(|l| l.matches(&wanted)) {
-                Some(listed) => self.storefront.files().package(listed, langs).await?,
+                Some(listed) => self.storefront.files().package(listed).await?,
                 None => self.fetch_source(source).await?,
             };
             (package, self.storefront.stars(&wanted.repo).await)
         };
-        let icon = self.check_icon(&package, langs).await?;
+        let icon = self.check_icon(&package).await?;
         if let Some(icon) = &icon {
             self.gallery.remember_preview(icon);
         }
@@ -174,9 +174,8 @@ impl PluginManager {
     ) -> PluginDetail {
         let m = &package.manifest;
         let origin = package.origin.as_ref();
-        let facts = self.host_facts(langs).await;
+        let facts = self.host_facts().await;
         let installed = self.installed_plugin(&m.id, langs);
-        let dependencies = self.dependency_preview(m, langs).await;
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
             provider: origin.map(Origin::provider),
@@ -189,12 +188,6 @@ impl PluginManager {
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
             kind: kind(m.kind),
-            runtime: m.runtime.into(),
-            security_tier: Some(crate::plugin::security_tier::security_tier(m)),
-            link_url: m.link.as_ref().map(|link| link.url.clone()),
-            scope: installed
-                .as_ref()
-                .map(|_| wonton_protocol::PluginScope::All),
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
                 Some(Trust::Official) => PluginTrust::Official,
@@ -211,39 +204,14 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
-            requirements: requirement_checks(m, &facts, langs),
-            secret_inputs: Vec::new(),
+            requirements: requirement_checks(m, &facts),
             has_web: m.webui.is_some(),
-            has_settings: false,
             installed,
-            blocked: blocked(m, &facts, langs).or_else(|| match &dependencies {
-                Ok(dependencies) => dependencies.blocked.clone(),
-                Err(error) => Some(error.to_string()),
-            }),
+            blocked: blocked(m, &facts),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
-                .chain(
-                    dependencies
-                        .as_ref()
-                        .ok()
-                        .into_iter()
-                        .flat_map(|d| d.notices.iter().cloned()),
-                )
                 .collect(),
-            // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
-            hints: self
-                .installed_detail(&m.id, langs)
-                .map(|detail| detail.hints)
-                .unwrap_or_default(),
-            missing_requires: dependencies
-                .as_ref()
-                .map(|d| d.missing_requires.clone())
-                .unwrap_or_default(),
-            missing_wants: dependencies
-                .as_ref()
-                .map(|d| d.missing_wants.clone())
-                .unwrap_or_default(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
+            // 从商店点进已装的插件也是同一个详情页，开关跟着装着的版本走。
             lan_webui: self
                 .with_lan_client(
                     &m.id,
@@ -256,7 +224,6 @@ impl PluginManager {
             limits: self
                 .installed_detail(&m.id, langs)
                 .and_then(|detail| detail.limits),
-            shares: None,
         }
     }
 
@@ -266,7 +233,6 @@ impl PluginManager {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(&m.id).map(|e| e.version.clone())
         };
-        let tier = crate::plugin::security_tier::security_tier(m);
         StoreItem {
             source: shown.source.clone(),
             provider: Some(shown.provider.clone()),
@@ -282,9 +248,8 @@ impl PluginManager {
             author: author(m),
             stars: shown.stars,
             installed_version,
-            security_tier: Some(tier),
-            high_permissions: crate::plugin::security_tier::prominent(tier),
-            blocked: blocked(m, facts, langs),
+            high_permissions: m.permissions.iter().any(|p| p.is_high()),
+            blocked: blocked(m, facts),
         }
     }
 
@@ -295,12 +260,7 @@ impl PluginManager {
         if let Some(icon) = self.gallery.preview(sha256) {
             return Some(icon);
         }
-        match self
-            .storefront
-            .files()
-            .file(listed, &path, &self.owner_languages())
-            .await
-        {
+        match self.storefront.files().file(listed, &path).await {
             Ok(data) => IconSource::from_file(&path, data),
             Err(e) => {
                 tracing::warn!(source = %listed.entry.source, error = %e, "官方插件的图标取不到");
@@ -323,7 +283,7 @@ impl PluginManager {
             }
             let shown = Shown {
                 source: listed.entry.source.clone(),
-                provider: listed.provider(),
+                provider: listed.entry.source.replacen("github:", "github.com/", 1),
                 via_index: None,
                 manifest: &listed.manifest,
                 icon,
@@ -337,20 +297,12 @@ impl PluginManager {
 }
 
 /// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。
-fn blocked(m: &Manifest, facts: &HostFacts, langs: &Languages) -> Option<String> {
+fn blocked(m: &Manifest, facts: &HostFacts) -> Option<String> {
     if m.kind == PluginKind::System {
-        return Some(crate::l10n::text(
-            langs,
-            "plugin-settings-store-system-app",
-            &[],
-        ));
+        return Some("系统应用只能随核心预装".to_owned());
     }
     if let Some(p) = m.permissions.iter().find(|p| !supported(p)) {
-        return Some(crate::l10n::text(
-            langs,
-            "plugin-settings-store-permission-unsupported",
-            &[("permission", p.to_string().into())],
-        ));
+        return Some(format!("核心还不支持权限 {p}"));
     }
-    host_check::refusal(m, facts, langs).map(|refusal| refusal.to_string())
+    host_check::refusal(m, facts).map(|refusal| refusal.to_string())
 }

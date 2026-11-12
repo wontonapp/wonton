@@ -7,18 +7,22 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 use wonton_protocol::{InstallRequest, PluginState, PluginTrust, UpgradeRequest};
 
+use super::super::egress::settings::StoredEgress;
 use super::super::fake_docker::FakeDocker;
+use super::super::github::GitHub;
+use super::super::manifest::Permission;
 use super::super::names::container_name;
 use super::super::preinstall::Backoff;
-use super::super::storefront::{StoreConfig, index::IndexEntry};
+use super::super::storefront::StoreConfig;
+use super::super::storefront::index::IndexEntry;
 use super::super::{InstallError, PluginId, PluginManager, PluginPackage, PluginStatus, UpgradeTo};
-use super::super::{github::GitHub, manifest::Permission};
+use super::env_of_container;
+use super::github::{FakeGitHub, zh};
 use super::lan::{office, on};
 use super::manager::{manager_in_container, manager_with};
-use super::{
-    env_of_container,
-    github::{FakeGitHub, zh},
-};
+use crate::http::HttpClient;
+use crate::matrix::Matrix;
+use crate::matrix::fake::start;
 
 const REPO: &str = "acme/hello";
 const SOURCE: &str = "github:acme/hello";
@@ -34,7 +38,7 @@ fn hello(version: &str, services: &str, manifest: &str) -> String {
 }
 
 fn release(github: &FakeGitHub, compose: &str) -> String {
-    let package = PluginPackage::parse(compose, &super::langs()).unwrap();
+    let package = PluginPackage::parse(compose).unwrap();
     let tag = format!("v{}", package.manifest.version);
     github.publish(REPO, &tag, &[("docker-compose.yml", compose)])
 }
@@ -47,11 +51,8 @@ fn web() -> String {
     container_name("app-hello", "web")
 }
 
-pub(super) fn permissions(compose: &str) -> Vec<Permission> {
-    PluginPackage::parse(compose, &super::langs())
-        .unwrap()
-        .manifest
-        .permissions
+fn permissions(compose: &str) -> Vec<Permission> {
+    PluginPackage::parse(compose).unwrap().manifest.permissions
 }
 
 async fn with_github(
@@ -76,23 +77,15 @@ async fn with_github(
 async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
-        scope: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
-        plan: preview.plan.clone(),
         grant: preview
             .permissions
             .iter()
-            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         devices: Vec::new(),
         lan_webui: false,
-        install_together: Vec::new(),
-        connect_plugins: Vec::new(),
     };
     m.install_source(&request).await.unwrap();
 }
@@ -107,22 +100,18 @@ async fn upgrade(m: &Arc<PluginManager>) -> Result<(), InstallError> {
         grant: preview
             .permissions
             .iter()
-            .filter(|p| !p.optional)
             .map(|p| p.permission.clone())
             .collect(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     };
-    m.upgrade_source(&id(), &request, &super::langs()).await
+    m.upgrade_source(&id(), &request).await
 }
 
 fn version(m: &PluginManager) -> String {
     m.installed_plugin(&id(), &zh()).unwrap().version
 }
 
-pub(super) fn image(docker: &FakeDocker, container: &str) -> String {
+fn image(docker: &FakeDocker, container: &str) -> String {
     docker.created(container).unwrap()["Image"]
         .as_str()
         .unwrap()
@@ -151,8 +140,6 @@ async fn owner_limits_survive_the_upgrade() {
     let detail = m.installed_detail(&id(), &zh()).unwrap();
     assert_eq!(detail.limits, Some(memory_only(6 * GIB)));
 }
-
-mod capability_deps;
 
 fn memory_only(memory: u64) -> wonton_protocol::PluginLimits {
     wonton_protocol::PluginLimits {
@@ -269,13 +256,7 @@ async fn a_new_version_that_will_not_start_rolls_back_to_the_old_containers() {
     );
 
     let err = upgrade(&m).await.unwrap_err();
-    assert!(
-        err.to_string().contains(&super::message(
-            "plugin-settings-upgrade-rolled-back",
-            &[("new", "1.1.0"), ("version", "1.0.0")],
-        )),
-        "{err}"
-    );
+    assert!(err.to_string().contains("已退回 1.0.0"), "{err}");
     assert_eq!(version(&m), "1.0.0");
     assert_eq!(m.status_of(&id()), Some(PluginStatus::Running));
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().revision, revision);
@@ -330,15 +311,9 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         source: None,
         digest: preview.digest.clone(),
         grant: Vec::new(),
-        enabled_permissions: Vec::new(),
-        secrets: Default::default(),
-        settings: Default::default(),
         lan_webui: false,
     };
-    let err = m
-        .upgrade_source(&id(), &not_confirmed, &super::langs())
-        .await
-        .unwrap_err();
+    let err = m.upgrade_source(&id(), &not_confirmed).await.unwrap_err();
     assert_eq!(err.kind(), "permission_denied", "{err}");
 
     // 确认页开着的时候，作者把 tag 挪到了别的内容上。
@@ -350,10 +325,7 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
         &github,
         &hello("1.1.0", "", "  permissions: [network.egress, models]\n"),
     );
-    let err = m
-        .upgrade_source(&id(), &confirmed, &super::langs())
-        .await
-        .unwrap_err();
+    let err = m.upgrade_source(&id(), &confirmed).await.unwrap_err();
     assert_eq!(err.kind(), "changed", "{err}");
     assert_eq!(version(&m), "1.0.0");
 
@@ -402,19 +374,11 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
     m.check_upgrades_now().await;
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().upgrade, None);
 
-    let parse = |compose: &str| PluginPackage::parse(compose, &super::langs()).unwrap();
+    let parse = |compose: &str| PluginPackage::parse(compose).unwrap();
     let newer = hello("1.2.0", "", "  permissions: []\n");
-    m.upgrade_upload(
-        &id(),
-        parse(&newer),
-        Vec::new(),
-        Vec::new(),
-        false,
-        &Default::default(),
-        &super::langs(),
-    )
-    .await
-    .unwrap();
+    m.upgrade_upload(&id(), parse(&newer), Vec::new(), false)
+        .await
+        .unwrap();
     assert_eq!(image(&docker, &web()), "web:1.2.0");
     assert_eq!(
         m.installed_plugin(&id(), &zh()).unwrap().trust,
@@ -424,22 +388,14 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
 
     let other = hello("1.3.0", "", "  permissions: []\n").replace("id: app.hello", "id: app.other");
     let err = m
-        .upgrade_upload(
-            &id(),
-            parse(&other),
-            Vec::new(),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id(), parse(&other), Vec::new(), false)
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "invalid_input", "{err}");
 }
 
 /// Bot 插件，出网。
-pub(super) fn echo(version: &str, services: &str) -> String {
+fn echo(version: &str, services: &str) -> String {
     format!(
         "services:\n  bot:\n    image: echo:{version}\n    environment:\n      \
          TOKEN: ${{WONTON_MATRIX_ACCESS_TOKEN}}\n      AUTH: Bearer ${{WONTON_MATRIX_ACCESS_TOKEN}}\n{services}\
@@ -449,14 +405,31 @@ pub(super) fn echo(version: &str, services: &str) -> String {
     )
 }
 
-/// 新版本多了一个起不来的服务：升级被整体退回，报 rolled-back，bot 的设备和代理环境都不变。
-pub(super) async fn upgrade_expect_rollback(
-    m: &Arc<PluginManager>,
-    docker: &FakeDocker,
-    id: &PluginId,
-    bot: &str,
-    token: &str,
-) {
+#[tokio::test]
+async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
+    let (docker, engine) = FakeDocker::start().await;
+    let (tuwunel, config) = start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let matrix = Matrix::connect(&config, &dir.path().join("core"), HttpClient::new())
+        .await
+        .unwrap();
+    let m = Arc::new(manager_in_container(engine, &dir).with_matrix(Some(Arc::new(matrix))));
+    let settings = StoredEgress {
+        url: Some("http://proxy:1".to_owned()),
+        direct_cidrs: Vec::new(),
+        use_plugin: false,
+    };
+    m.store.save_egress_settings(&settings).unwrap();
+    let id = PluginId::parse("app.echo").unwrap();
+    let bot = container_name("app-echo", "bot");
+    let v1 = echo("1.0.0", "");
+    m.install(&v1, &permissions(&v1)).await.unwrap();
+    let env = env_of_container(&docker, &bot);
+    let token = env["TOKEN"].clone();
+    let devices = tuwunel.state().tokens.len();
+    let device = m.store.bots().load(&id).unwrap().unwrap().device_id;
+
+    let parse = |compose: &str| PluginPackage::parse(compose).unwrap();
     let helper = container_name("app-echo", "helper");
     docker.set_state(
         &helper,
@@ -464,27 +437,38 @@ pub(super) async fn upgrade_expect_rollback(
     );
     let broken = echo("1.1.0", "  helper:\n    image: helper:1\n");
     let err = m
-        .upgrade_upload(
-            id,
-            PluginPackage::parse(&broken, &super::langs()).unwrap(),
-            permissions(&broken),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id, parse(&broken), permissions(&broken), false)
         .await
         .unwrap_err();
-    assert!(
-        err.to_string().contains(&super::message(
-            "plugin-settings-upgrade-rolled-back",
-            &[("new", "1.1.0"), ("version", "1.0.0")],
-        )),
-        "{err}"
-    );
-    let env = env_of_container(docker, bot);
+    assert!(err.to_string().contains("已退回 1.0.0"), "{err}");
+    let env = env_of_container(&docker, &bot);
     assert_eq!(env["TOKEN"], token, "退回旧版本也沿用同一台设备");
     assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
+
+    let v2 = echo("1.2.0", "");
+    m.upgrade_upload(&id, parse(&v2), permissions(&v2), false)
+        .await
+        .unwrap();
+    let env = env_of_container(&docker, &bot);
+    assert_eq!(env["TOKEN"], token);
+    assert_eq!(env["AUTH"], format!("Bearer {token}"));
+    assert_eq!(env["HTTP_PROXY"], "http://egress.wonton.internal:3128");
+    assert_eq!(image(&docker, &bot), "echo:1.2.0");
+    assert_eq!(tuwunel.state().tokens.len(), devices, "没有签新设备");
+    assert_eq!(m.store.bots().load(&id).unwrap().unwrap().device_id, device);
+    assert!(m.store.load(&id).unwrap().unwrap().proxied);
+    assert_eq!(m.status_of(&id), Some(PluginStatus::Running));
+
+    // 令牌读不回来时报错，不悄悄签新设备。
+    m.engine.remove_container(&bot).await.unwrap();
+    let v3 = echo("1.3.0", "");
+    let err = m
+        .upgrade_upload(&id, parse(&v3), permissions(&v3), false)
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("令牌读不回来"), "{err}");
+    assert_eq!(tuwunel.state().tokens.len(), devices);
+    assert_eq!(m.status_of(&id), Some(PluginStatus::Running));
 }
 
 /// 没有来源的默认插件（Hermes 这样随核心预装的）：看官方索引。
@@ -507,8 +491,7 @@ async fn a_bundled_default_plugin_is_offered_from_the_official_index() {
     m.check_upgrades_now().await;
     assert_eq!(m.installed_plugin(&id(), &zh()).unwrap().upgrade, None);
 
-    let v2 =
-        PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
+    let v2 = PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n")).unwrap();
     let commit = "a".repeat(40);
     let entry = IndexEntry::of(&v2, SOURCE, &commit).unwrap();
     entry.write_to(&index, &v2).unwrap();
@@ -555,18 +538,7 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     assert_eq!(plugin.version, "1.0.0");
     assert!(matches!(plugin.status, PluginState::Running { .. }));
     assert!(
-        {
-            // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
-            let prefix = super::message(
-                "plugin-settings-upgrade-bundled-failed",
-                &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
-            );
-            let prefix = prefix
-                .strip_suffix(": ")
-                .or_else(|| prefix.strip_suffix("："))
-                .unwrap_or(&prefix);
-            plugin.notices[0].text.contains(prefix)
-        },
+        plugin.notices[0].text.contains("没升成"),
         "{:?}",
         plugin.notices
     );
@@ -579,45 +551,6 @@ async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
     assert_eq!(image(&docker, &web()), "web:1.2.0");
 }
 
-/// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。
-/// 启动时保留数据，用随核心带来的包重装。
-#[tokio::test]
-async fn a_system_plugin_whose_record_the_core_cannot_read_is_reinstalled_from_the_image() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let system = dir.path().join("system");
-    fs::create_dir_all(system.join("hello")).unwrap();
-    let compose = hello("1.0.0", "", "  permissions: []\n").replace("kind: app", "kind: system");
-    fs::write(system.join("hello/docker-compose.yml"), &compose).unwrap();
-    let m = manager_with(engine.clone(), &dir);
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    let kept = dir.path().join("apps").join(id().slug()).join("kept");
-    fs::create_dir_all(kept.parent().unwrap()).unwrap();
-    fs::write(&kept, "主人的数据").unwrap();
-
-    let old = compose.replace("  title: {zh: 你好, en: Hello}\n", "");
-    assert!(
-        PluginPackage::parse(&old, &super::langs()).is_err(),
-        "旧记录这份核心读不懂"
-    );
-    let mut record = m.store.load(&id()).unwrap().unwrap();
-    record.source = old;
-    m.store.save(&record).unwrap();
-
-    let m = manager_with(engine, &dir);
-    m.restore().await.unwrap();
-    assert!(
-        matches!(m.list()[0].status, PluginStatus::Degraded { .. }),
-        "重启后记录读不懂"
-    );
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    assert!(matches!(m.list()[0].status, PluginStatus::Running));
-    assert_eq!(version(&m), "1.0.0");
-    assert_eq!(m.store.load(&id()).unwrap().unwrap().source, compose);
-    assert_eq!(fs::read_to_string(&kept).unwrap(), "主人的数据");
-    assert_eq!(image(&docker, &web()), "web:1.0.0");
-}
-
 #[tokio::test]
 async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let (docker, engine) = FakeDocker::start().await;
@@ -625,20 +558,11 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
     let (frozen, watching) = watch::channel(false);
     let m = Arc::new(manager_with(engine, &dir).with_upgrade_freeze(watching));
     let v1 = hello("1.0.0", "", "  permissions: []\n");
-    m.install(&v1, &[], super::langs()).await.unwrap();
+    m.install(&v1, &[]).await.unwrap();
     frozen.send(true).unwrap();
-    let v2 =
-        PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n"), &super::langs()).unwrap();
+    let v2 = PluginPackage::parse(&hello("1.1.0", "", "  permissions: []\n")).unwrap();
     let err = m
-        .upgrade_upload(
-            &id(),
-            v2,
-            Vec::new(),
-            Vec::new(),
-            false,
-            &Default::default(),
-            &super::langs(),
-        )
+        .upgrade_upload(&id(), v2, Vec::new(), false)
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "core_upgrading", "{err}");
@@ -661,26 +585,22 @@ async fn ports_that_become_switched_close_and_the_preview_says_so() {
     let v1 = compose("1.0.0", "sso: proxy, proxy: {headers: {X-Host: 'static'}}")
         .replace("port: 1", &format!("port: {port}"));
     let granted = permissions(&v1);
-    m.install(&v1, &granted, super::langs()).await.unwrap();
+    m.install(&v1, &granted).await.unwrap();
 
     let v2 = compose("1.1.0", "sso: none").replace("port: 1", &format!("port: {port}"));
     let preview = m
         .preview_upgrade(
             &id(),
-            UpgradeTo::Upload(Box::new(
-                PluginPackage::parse(&v2, &super::langs()).unwrap(),
-            )),
+            UpgradeTo::Upload(Box::new(PluginPackage::parse(&v2).unwrap())),
             &zh(),
         )
         .await
         .unwrap();
     assert!(!preview.lan_webui.unwrap().enabled);
-    let closing = crate::l10n::text(
-        &zh(),
-        "plugin-settings-upgrade-lan-ports-closing",
-        &[("ports", format!("{port}/tcp").into())],
-    );
-    let notice = preview.notices.iter().find(|n| n.text == closing);
+    let notice = preview
+        .notices
+        .iter()
+        .find(|n| n.text.contains("升级后会关掉"));
     assert!(notice.is_some_and(|n| n.emphasis), "{:?}", preview.notices);
 }
 

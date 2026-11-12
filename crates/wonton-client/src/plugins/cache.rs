@@ -14,7 +14,7 @@ struct Cached {
 pub(super) fn load(path: &Path, server_id: &str) -> Option<InstalledPlugins> {
     let bytes = std::fs::read(path).ok()?;
     let cached: Cached = serde_json::from_slice(&bytes)
-        .inspect_err(|error| tracing::warn!("could not read the cached app list: {error}"))
+        .inspect_err(|error| tracing::warn!("本机存的插件列表读不出来：{error}"))
         .ok()?;
     (cached.server_id == server_id).then_some(cached.installed)
 }
@@ -31,7 +31,7 @@ pub(super) async fn save(path: &Path, server_id: String, installed: InstalledPlu
         tokio::fs::rename(&partial, path).await
     };
     if let Err(error) = saved.await {
-        tracing::warn!("could not save the app list: {error}");
+        tracing::warn!("存不下插件列表：{error}");
     }
 }
 
@@ -39,6 +39,6 @@ pub(super) fn forget(path: &Path) {
     if let Err(error) = std::fs::remove_file(path)
         && error.kind() != std::io::ErrorKind::NotFound
     {
-        tracing::warn!("could not remove the previous server's app list: {error}");
+        tracing::warn!("删不掉上一台服务器的插件列表：{error}");
     }
 }

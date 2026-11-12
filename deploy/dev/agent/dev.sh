@@ -75,23 +75,6 @@ ensure_secrets() {
   chmod 600 "$secrets"/*.env
 }
 
-# 和核心镜像构建共用取包、提交与摘要校验；失败不替换已取到的包。
-fetch_packages() {
-  local stage
-  stage="$(mktemp -d "$secrets/.packages.XXXXXX")"
-  if ! docker run --rm --user "$(id -u):$(id -g)" \
-    --mount "type=bind,src=$here/../../../plugins/system.lock,dst=/system.lock,readonly" \
-    --mount "type=bind,src=$stage,dst=/output" \
-    "${WONTON_AGENT_CORE_IMAGE:-wonton-core:dev}" \
-    plugin fetch-locked /system.lock /output/packages; then
-    rm -rf "$stage"
-    die "预装插件取包失败；确认核心镜像包含 plugin fetch-locked，并能访问锁文件里的来源"
-  fi
-  rm -rf "$secrets/packages"
-  mv "$stage/packages" "$secrets/packages"
-  rmdir "$stage"
-}
-
 # 总是带上 local-model 这个 profile，这样 down/reset 也会清掉它；启动时都点名服务，不会顺带启动它。
 compose() {
   docker compose -f "$here/compose.yaml" --project-directory "$here" --profile local-model "$@"
@@ -120,7 +103,7 @@ magpie_with_secret() {
 matrix() {
   local method="$1" path="$2"
   shift 2
-  curl -sS --max-time 60 -X "$method" "$base_url/_matrix/client/v3$path" -H 'content-type: application/json' "$@"
+  curl -sS -X "$method" "$base_url/_matrix/client/v3$path" -H 'content-type: application/json' "$@"
 }
 
 # 服务器里是否已经有这个用户名。
@@ -289,7 +272,6 @@ configure_providers() {
 
 up() {
   ensure_secrets
-  fetch_packages
   compose up -d --wait tuwunel magpie
   ensure_accounts
   ensure_home_room

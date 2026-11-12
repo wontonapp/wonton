@@ -8,8 +8,8 @@ use std::sync::{Arc, RwLock};
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name, check_email,
-    check_email_change, normalized_email,
+    OwnerProfile, OwnerProfileUpdate, check_display_name, check_email, check_email_change,
+    normalized_email,
 };
 
 /// 没配 `WONTON_OWNER_NAME`、数据目录里也没有记录时的用户名。
@@ -57,25 +57,21 @@ const SYSTEM_NAMES: &[&str] = &[
     "xfs",
 ];
 
-/// 主人或家人的身份；真实邮箱只用于资料读写，插件身份统一派生内部邮箱。
+/// 主人的身份，单点登录和插件从这里取。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
     pub username: String,
     /// 还没填时是用户名：应用要显示点什么，用户名是真的，不另外编一个。
     pub display_name: String,
-    /// 资料页保存的真实邮箱，不向插件公开（ADR-0056）。
+    /// 还没填时没有：核心不拼一个收不到信的地址（ADR-0022）。
     pub email: Option<String>,
 }
 
-/// 用户名固定且不复用，内部地址因此不受真实邮箱修改影响（ADR-0056）。
-pub fn internal_email(username: &str) -> String {
-    format!("{username}@wonton.internal")
-}
+/// 还没填邮箱、插件又要用时的错误，写明怎么修。
+pub const NO_EMAIL: &str = "你还没填邮箱：在 App 的设置里填好再试";
 
-/// 好友的内部邮箱：只认人不收信，按固定的本机用户名派生，删好友再加回也不变、不给人重复用。
-pub fn friend_email(username: &str) -> String {
-    internal_email(username)
-}
+/// 安装页上的说明，旁边就是去填的按钮。
+pub const EMAIL_NEEDED: &str = "这个应用要用你的邮箱，填好才能装";
 
 /// 可移植的 POSIX 用户名（`^[a-z][a-z0-9_-]{0,31}$`），同时是合法的 Matrix localpart。
 pub fn check_username(name: &str) -> Result<(), String> {
@@ -150,17 +146,13 @@ impl Record {
     fn check(&self) -> Result<(), String> {
         check_username(&self.username)?;
         if let Some(name) = &self.display_name {
-            check_display_name(name).map_err(|problem| problem.to_string())?;
+            check_display_name(name)?;
         }
         if let Some(email) = &self.email {
-            check_email(email).map_err(|problem| problem.to_string())?;
+            check_email(email)?;
         }
         Ok(())
     }
-}
-
-fn invalid(problem: ProfileProblem) -> ProfileError {
-    ProfileError::Invalid(problem.to_string())
 }
 
 /// 保存资料失败。
@@ -227,9 +219,9 @@ impl OwnerStore {
     pub fn update(&self, update: &OwnerProfileUpdate) -> Result<OwnerProfile, ProfileError> {
         let display_name = update.display_name.trim();
         let email = normalized_email(update.email.as_deref());
-        check_display_name(display_name).map_err(invalid)?;
+        check_display_name(display_name).map_err(ProfileError::Invalid)?;
         let mut profile = self.profile.write().expect("身份记录锁中毒");
-        check_email_change(profile.1.as_deref(), email).map_err(invalid)?;
+        check_email_change(profile.1.as_deref(), email).map_err(ProfileError::Invalid)?;
         let record = Record {
             username: self.username.clone(),
             display_name: Some(display_name.to_owned()),
@@ -303,18 +295,6 @@ fn recorded_username(
             path: state_dir.join(RECORD),
         }),
         _ => Ok(Some(record.username)),
-    }
-}
-
-/// 记下的主人用户名；没有记录或读不了时为空。只读，不检查 `WONTON_OWNER_NAME`，给后端没有身份的路径用
-/// （比如按数据目录找主人的语言）。
-pub fn recorded_name(state_dir: &Path) -> Option<String> {
-    match read_record(state_dir) {
-        Ok(record) => record.map(|r| r.username),
-        Err(error) => {
-            tracing::warn!(%error, "读不出主人记录，按没有用户名的路径处理");
-            None
-        }
     }
 }
 

@@ -9,11 +9,9 @@ use wonton_protocol::{Answer, ConfirmationState, FileFailure};
 use super::audit::{Basis, Decision, Record};
 use super::core_tools::tool;
 use super::file_tools::decision;
-use super::{Bus, Caller, Outcome, ToolFailure, cards, naming, with_failure};
-use crate::bot_activity::Guard;
+use super::{Bus, Caller, Outcome, cards, error, naming};
 use crate::files::Failure;
 use crate::files::share_fs::saving::{SaveTarget, Staged};
-use crate::l10n;
 use crate::plugin::save_grants::covers;
 
 pub(super) const LIST: &str = "list_shares";
@@ -33,7 +31,7 @@ pub(super) fn definitions() -> Vec<Tool> {
             SAVE,
             "把文件存进主人的共享文件夹。先把文件放进你的 outbox 目录，再调用。只能新增：同名时自动加序号，不覆盖。存好后 outbox 里的原文件会被删掉。\
              第一次存进一个文件夹要主人确认：调用前先用一句话告诉主人，确认卡片会发到 Wonton App 里的“Wonton”私聊。调用会一直等到主人回答或者确认过期\
-             （10 分钟）。主人允许后，这个文件夹以后不用再问。存没存上以返回的结果为准，照实转告；返回每个文件最后的路径。",
+             （10 分钟）。主人允许后，这个文件夹以后不用再问。返回每个文件最后的路径。",
             json!({"type": "object", "properties": {
                 "files": {
                     "type": "array",
@@ -50,31 +48,24 @@ pub(super) fn definitions() -> Vec<Tool> {
     ]
 }
 
-pub(super) async fn list(bus: &Bus) -> Result<Value, ToolFailure> {
-    let files = bus
-        .files()
-        .map_err(|failure| ToolFailure::new(failure.kind.as_str(), failure.to_string()))?;
+pub(super) async fn list(bus: &Bus) -> Result<Value, String> {
+    let files = bus.files().map_err(|failure| failure.to_string())?;
     let shares = files
         .share_names()
         .await
-        .map_err(|failure| ToolFailure::new(failure.kind.as_str(), failure.to_string()))?;
+        .map_err(|failure| failure.to_string())?;
     Ok(json!({ "shares": shares }))
 }
 
 /// 放在后台任务里：暂存要有人收拾，确认过的调用不跟着 Agent 走（ADR-0016）。
-pub(super) async fn save(
-    bus: &Arc<Bus>,
-    caller: &Caller,
-    args: JsonObject,
-    activity: Guard,
-) -> CallToolResult {
+pub(super) async fn save(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResult {
     let (bus, caller) = (bus.clone(), caller.clone());
-    tokio::spawn(async move { run(&bus, &caller, args, activity).await })
+    tokio::spawn(async move { run(&bus, &caller, args).await })
         .await
-        .unwrap_or_else(|e| with_failure(&format!("存文件的流程意外中止：{e}"), "internal_error"))
+        .unwrap_or_else(|e| error(&format!("存文件的流程意外中止：{e}")))
 }
 
-async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard) -> CallToolResult {
+async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject) -> CallToolResult {
     let name = naming::join(naming::CORE, SAVE);
     let value = Value::Object(args.clone());
     let (target, staged) = match stage(bus, caller, &args).await {
@@ -89,7 +80,7 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
                 outcome: Some(failure.kind.as_str()),
                 files: &[],
             });
-            return with_failure(&failure.to_string(), failure.kind.as_str());
+            return error(&failure.to_string());
         }
     };
     let folder = target.folder();
@@ -100,14 +91,11 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
         bus.record(caller, &name, &audited, Decision::Allowed, None, &outcome);
         return outcome.result;
     }
-    let langs = bus.plugins.owner_languages();
-    let draft = cards::save_file(&caller.name, &staged.files, &target, &langs);
-    drop(activity);
+    let draft = cards::save_file(&caller.name, &staged.files, &target);
     let ticket = match bus.confirmations.ask(&caller.id, draft).await {
         Ok(ticket) => ticket,
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };
-    let activity = bus.plugins.activity.start_tool(&caller.id);
     let granted = match ticket.answer {
         Answer::ApproveWider => target.share.clone(),
         _ => folder,
@@ -118,15 +106,10 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
         .err()
         .map(|e| {
             tracing::error!(plugin = %caller.id, error = %e, "记存文件的授权失败");
-            l10n::text(
-                &langs,
-                "chat-save-note-grant",
-                &[("error", e.to_string().into())],
-            )
+            format!("授权没记下来（{e}），下次存还要问主人")
         });
     let summary = summary(&target, &staged, "granted", &granted);
     let (outcome, audited) = place(bus, staged, target, summary, note).await;
-    drop(activity);
     bus.record(
         caller,
         &name,
@@ -168,12 +151,7 @@ async fn stage(
     let dir = args.get("dir").and_then(Value::as_str);
     let target = SaveTarget::parse(share, dir)?;
     let app_data = bus.plugins.app_data_dir(&caller.id);
-    // Agent 替主人存文件：按主人最近一次的语言。
-    let langs = bus.plugins.owner_languages();
-    let staged = bus
-        .files()?
-        .stage_save(app_data, paths, &target, &langs)
-        .await?;
+    let staged = bus.files()?.stage_save(app_data, paths, &target).await?;
     Ok((target, staged))
 }
 
@@ -195,22 +173,13 @@ async fn place(
     note: Option<String>,
 ) -> (Outcome, Value) {
     let folder = target.folder();
-    let langs = bus.plugins.owner_languages();
     let placed = match bus.files() {
-        Ok(files) => {
-            let langs = bus.plugins.owner_languages();
-            files.place_saved(staged, target, &langs).await
-        }
+        Ok(files) => files.place_saved(staged, target).await,
         Err(failure) => Err(failure),
     };
     let placed = match placed {
         Ok(placed) => placed,
-        Err(failure) => {
-            return (
-                Outcome::failed(failure.kind.as_str(), failure.to_string()),
-                summary,
-            );
-        }
+        Err(failure) => return (Outcome::failed(failure.to_string()), summary),
     };
     summary["saved"] = json!(placed.saved);
     if let Some(failed) = placed.failed {
@@ -218,32 +187,20 @@ async fn place(
         let message = if placed.saved.is_empty() {
             failure.to_string()
         } else {
-            l10n::text(
-                &langs,
-                "chat-save-partial",
-                &[
-                    ("saved", l10n::list(&langs, &placed.saved).into()),
-                    ("failure", failure.to_string().into()),
-                ],
+            format!(
+                "存好了 {}，后面的没存成：{failure}",
+                placed.saved.join("、")
             )
         };
-        return (Outcome::failed(failure.kind.as_str(), message), summary);
+        return (Outcome::failed(message), summary);
     }
     let mut result = json!({"saved": placed.saved});
     if let Some(note) = &note {
         result["note"] = json!(note);
     }
     let message = match note {
-        Some(note) => l10n::text(
-            &langs,
-            "chat-save-done-note",
-            &[("folder", folder.as_str().into()), ("note", note.into())],
-        ),
-        None => l10n::text(
-            &langs,
-            "chat-save-done",
-            &[("folder", folder.as_str().into())],
-        ),
+        Some(note) => format!("已存进 {folder}。{note}"),
+        None => format!("已存进 {folder}"),
     };
     let outcome = Outcome {
         result: CallToolResult::success(vec![ContentBlock::text(result.to_string())]),

@@ -16,13 +16,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
-import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
@@ -45,9 +43,6 @@ import java.util.Date
 fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     val card = view.card
     val colors = WontonTheme.colors
-    var secrets by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var shown by remember(card.id) { mutableStateOf(false) }
-    CardSecureScreen(card, secrets, shown)
     val tabs = LocalTabs.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
@@ -58,14 +53,6 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 fontWeight = if (line.emphasis) FontWeight.SemiBold else FontWeight.Normal,
                 color = (if (line.emphasis) colors.danger else colors.textPrimary).toColor(),
             )
-        }
-        if (card.secretInputs.isNotEmpty()) {
-            SecretInputsSection(
-                card.secretInputs,
-                secrets,
-                card.state == ConfirmationState.Pending,
-                onShownChange = { shown = it },
-            ) { name, value -> secrets = secrets + (name to value) }
         }
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
@@ -84,20 +71,8 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
                 card.choices.forEach { choice ->
-                    ChoiceButton(
-                        choice,
-                        view,
-                        secretsReady = !missingRequiredSecret(card.secretInputs, secrets),
-                    ) {
-                        onAction(
-                            Action.AnswerConfirmation(
-                                card.id,
-                                choice.answer,
-                                choice.choiceId,
-                                secretValues(card.secretInputs, secrets),
-                                emptyMap(),
-                            ),
-                        )
+                    ChoiceButton(choice, view) {
+                        onAction(Action.AnswerConfirmation(card.id, choice.answer, choice.choiceId))
                     }
                 }
             }
@@ -116,9 +91,9 @@ private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, on
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonButton(stringResource(R.string.tab_open), { onAction(Action.SelectTab(choices[0].tab)) })
+        WontonButton(tabText("打开", "Open"), { onAction(Action.SelectTab(choices[0].tab)) })
         if (!pinned) {
-            WontonButton(stringResource(R.string.tab_pin_to_bar), {
+            WontonButton(tabText("放到底栏", "Pin to tab bar"), {
                 if (choices.size > 1) {
                     showsPages = true
                 } else {
@@ -141,29 +116,14 @@ private fun CardState(state: ConfirmationState) {
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
-            Text(stringResource(R.string.confirmation_card_running), style = style)
+            Text("正在执行", style = style)
         }
         is ConfirmationState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, state.message, colors.success)
-        is ConfirmationState.Failed -> StateLine(
-            WontonIcon.Error,
-            stringResource(R.string.confirmation_card_failed_result, state.message),
-            colors.danger,
-        )
-        is ConfirmationState.Uncertain -> StateLine(
-            WontonIcon.Help,
-            stringResource(R.string.confirmation_card_uncertain_result, state.message),
-            colors.warning,
-        )
-        ConfirmationState.Rejected -> Text(
-            stringResource(R.string.confirmation_card_rejected),
-            style = style,
-            color = colors.textSecondary.toColor(),
-        )
-        ConfirmationState.Expired -> Text(
-            stringResource(R.string.confirmation_card_expired),
-            style = style,
-            color = colors.textSecondary.toColor(),
-        )
+        is ConfirmationState.Failed -> StateLine(WontonIcon.Error, "没有成功：${state.message}", colors.danger)
+        is ConfirmationState.Uncertain ->
+            StateLine(WontonIcon.Help, "结果不确定：${state.message}", colors.warning)
+        ConfirmationState.Rejected -> Text("已拒绝，没有执行", style = style, color = colors.textSecondary.toColor())
+        ConfirmationState.Expired -> Text("已过期，没有执行", style = style, color = colors.textSecondary.toColor())
     }
 }
 
@@ -179,38 +139,19 @@ private fun CardWindow(window: WindowView, onStop: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             ) {
-                Text(stringResource(R.string.confirmation_card_window_until, until), style = style)
+                Text("放行到 $until", style = style)
                 if (window.stopping) {
                     CircularProgressIndicator(Modifier.size(WontonTheme.size.iconTiny), strokeWidth = 2.dp)
                 }
-                WontonButton(
-                    stringResource(R.string.confirmation_card_stop_window),
-                    onStop,
-                    kind = WontonButtonKind.SECONDARY,
-                    enabled = !window.stopping,
-                )
+                WontonButton("停止", onStop, kind = WontonButtonKind.SECONDARY, enabled = !window.stopping)
             }
             window.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
         }
     }
 }
 
-/** 框里有值或点过“显示”、卡片还没答完时，这一屏不能截。 */
-private fun cardHidesValues(card: ConfirmationCard, secrets: Map<String, String>, shown: Boolean): Boolean =
-    card.secretInputs.isNotEmpty() && (shown || card.secretInputs.any { secrets[it.name]?.isNotEmpty() == true })
-
 @Composable
-private fun CardSecureScreen(card: ConfirmationCard, secrets: Map<String, String>, shown: Boolean) {
-    if (card.state == ConfirmationState.Pending && cardHidesValues(card, secrets, shown)) SecureScreen()
-}
-
-@Composable
-private fun ChoiceButton(
-    choice: CardChoice,
-    view: ConfirmationView,
-    secretsReady: Boolean,
-    onClick: () -> Unit,
-) {
+private fun ChoiceButton(choice: CardChoice, view: ConfirmationView, onClick: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -222,8 +163,7 @@ private fun ChoiceButton(
             choice.label,
             onClick,
             kind = if (choice.answer == Answer.APPROVE) WontonButtonKind.PRIMARY else WontonButtonKind.SECONDARY,
-            enabled = view.sending == null &&
-                (choice.answer == Answer.REJECT || secretsReady),
+            enabled = view.sending == null,
         )
     }
 }

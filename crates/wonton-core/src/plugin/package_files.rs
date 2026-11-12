@@ -18,31 +18,20 @@ pub type PackageFiles = BTreeMap<String, Vec<u8>>;
 /// 插件包目录里的 compose 文件名。
 pub const COMPOSE_FILE: &str = "docker-compose.yml";
 
-/// 单个文件（包括 compose 文件本身）的大小上限。和 Bot 头像的上限一样，清单里的默认状态头像才装得进包（ADR-0044）。
-pub const MAX_FILE_BYTES: u64 = wonton_protocol::MAX_AVATAR_BYTES;
+/// 单个文件（包括 compose 文件本身）的大小上限。
+pub const MAX_FILE_BYTES: u64 = 1 << 20;
 
-/// 整个插件包（compose 文件和它引用的文件）的大小上限，和上传的插件包压缩包一样：一套默认状态头像（4 段视频、
-/// 4 张首帧和静态头像）连同 compose 装得下。
-pub const MAX_PACKAGE_BYTES: u64 = wonton_protocol::MAX_PLUGIN_ARCHIVE_BYTES;
+/// 整个插件包（compose 文件和它引用的文件）的大小上限。
+pub const MAX_PACKAGE_BYTES: u64 = 2 << 20;
 
 /// 插件包摘要（插件规范的“插件包摘要”）：每个文件一行 `<sha256>  <路径>`，按路径的字节序排列，即 `sha256sum`
 /// 的输出；这段文字的 sha256 写成 `sha256:<十六进制>`。只取决于文件的内容，和文件从哪里取、怎么打包无关。
 pub fn digest(compose: &[u8], files: &PackageFiles) -> String {
-    digest_with(compose, files, std::iter::empty())
-}
-
-/// 同 [`digest`]，另外加上只知道 sha256 的文件（静态网页装好后只留摘要，见 [`super::package::static_files`]）。
-pub fn digest_with(
-    compose: &[u8],
-    files: &PackageFiles,
-    known: impl Iterator<Item = (String, String)>,
-) -> String {
-    let mut hashes: BTreeMap<String, String> = files
+    let mut hashes: BTreeMap<&str, String> = files
         .iter()
-        .map(|(path, data)| (path.clone(), sha256_hex(data)))
-        .chain(known)
+        .map(|(path, data)| (path.as_str(), sha256_hex(data)))
         .collect();
-    hashes.insert(COMPOSE_FILE.to_owned(), sha256_hex(compose));
+    hashes.insert(COMPOSE_FILE, sha256_hex(compose));
     let listing: String = hashes
         .iter()
         .map(|(path, hash)| format!("{hash}  {path}\n"))
@@ -57,19 +46,19 @@ pub fn sha256_hex(data: &[u8]) -> String {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum FileError {
-    #[error("does not exist")]
+    #[error("不存在")]
     Missing,
-    #[error("`{0}` is a symlink; files in a plugin package must not go through symlinks")]
+    #[error("`{0}` 是软链接，插件包里的文件不能经过软链接")]
     Symlink(String),
-    #[error("`{0}` is not a directory")]
+    #[error("`{0}` 不是目录")]
     NotDir(String),
-    #[error("not a regular file")]
+    #[error("不是普通文件")]
     NotFile,
-    #[error("not UTF-8 text")]
+    #[error("不是 UTF-8 文本")]
     NotText,
-    #[error("over {} KiB", MAX_FILE_BYTES >> 10)]
+    #[error("超过 {} KiB", MAX_FILE_BYTES >> 10)]
     TooBig,
-    #[error("can't read: {0}")]
+    #[error("读取失败：{0}")]
     Io(String),
 }
 
@@ -77,26 +66,24 @@ pub enum FileError {
 /// 就要确定，不随安装环境变化。
 pub fn normalize(raw: &str) -> Result<String, String> {
     if raw.contains('$') {
-        return Err(format!("path `{raw}` must not use variables"));
+        return Err(format!("路径 `{raw}` 不能用变量"));
     }
     let mut parts = Vec::new();
     for component in Path::new(raw).components() {
         match component {
             Component::Normal(part) => parts.push(
                 part.to_str()
-                    .ok_or_else(|| format!("path `{raw}` is not valid UTF-8"))?,
+                    .ok_or_else(|| format!("路径 `{raw}` 不是合法的 UTF-8"))?,
             ),
             Component::CurDir => {}
             Component::RootDir | Component::Prefix(_) => {
-                return Err(format!(
-                    "path `{raw}` must be relative to the directory of docker-compose.yml"
-                ));
+                return Err(format!("路径 `{raw}` 必须相对 compose 文件所在的目录"));
             }
-            Component::ParentDir => return Err(format!("path `{raw}` must not contain ..")),
+            Component::ParentDir => return Err(format!("路径 `{raw}` 不能包含 ..")),
         }
     }
     if parts.is_empty() {
-        return Err(format!("path `{raw}` is empty"));
+        return Err(format!("路径 `{raw}` 为空"));
     }
     Ok(parts.join("/"))
 }
@@ -154,7 +141,7 @@ fn open_component(
 fn dir_error(e: Errno, shown: impl Fn() -> String) -> FileError {
     match e {
         Errno::NOENT => FileError::Missing,
-        _ => FileError::Io(format!("{}: {e}", shown())),
+        _ => FileError::Io(format!("{}：{e}", shown())),
     }
 }
 
@@ -188,7 +175,7 @@ pub fn read_at(dir: BorrowedFd<'_>, rel: &str) -> Result<Vec<u8>, FileError> {
 }
 
 fn io_error(e: &std::io::Error, what: &str) -> FileError {
-    FileError::Io(format!("{what}: {e}"))
+    FileError::Io(format!("{what}：{e}"))
 }
 
 /// 从插件包目录的路径读出 `rel`：先按同一套规则打开目录，再 [`read_at`]。
@@ -213,9 +200,9 @@ pub fn write_archive(compose: &[u8], files: &PackageFiles) -> Vec<u8> {
         header.set_mtime(0);
         builder
             .append_data(&mut header, path, data)
-            .expect("paths are normalized; writing to memory can't fail");
+            .expect("路径都经过 normalize，写进内存不会失败");
     }
-    builder.into_inner().expect("writing to memory can't fail")
+    builder.into_inner().expect("写进内存不会失败")
 }
 
 #[cfg(test)]
@@ -246,7 +233,7 @@ mod tests {
             assert_eq!(normalize(raw).unwrap(), normalized, "{raw}");
         }
         for bad in ["/etc/passwd", "../x", "a/../b", "", ".", "${X}/a"] {
-            assert!(normalize(bad).is_err(), "{bad} should be rejected");
+            assert!(normalize(bad).is_err(), "{bad} 应被拒绝");
         }
     }
 

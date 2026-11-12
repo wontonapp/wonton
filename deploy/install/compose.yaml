@@ -39,8 +39,6 @@ services:
       WONTON_OWNER_NAME: ${WONTON_OWNER_NAME:-}
       WONTON_PUBLIC_PORT: ${WONTON_PORT:?}
       WONTON_TUNNEL_PORT: ${WONTON_TUNNEL_PORT:?}
-      # 中继表（ADR-0048）：不设时用 n0 的公共中继。
-      WONTON_RELAYS: ${WONTON_RELAYS:-}
       WONTON_CORE_CONTAINER: ${WONTON_CORE_CONTAINER:-wonton-core}
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
@@ -48,23 +46,9 @@ services:
       # 出网代理（ADR-0023）：前者是主人指定的，后者是安装脚本检测到的，只作初值。核心自己访问外网也用它们。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
-      # 配了代理时链接预览经代理解析域名的 DoH 服务器（ADR-0065），空时用默认的。
-      WONTON_DOH_URL: ${WONTON_DOH_URL:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
-      # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。每项可以带前缀。
-      WONTON_ANNOUNCE_ADDRESSES: ${WONTON_ANNOUNCE_ADDRESSES:-}
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
-      # 装插件时等容器就绪的下限秒数：空值时用核心自己的默认值，不在这里写。
-      WONTON_INSTALL_TIMEOUT_SECS: ${WONTON_INSTALL_TIMEOUT_SECS:-}
-      WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
-      # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
-      # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
-      WONTON_FEDERATION_LISTEN: federation-proxy.wonton.internal:8448
-      # 推送直连核心在 core 网络上的 80 端口，不经联邦 CONNECT 代理，也不发布到宿主。
-      WONTON_PUSH_LISTEN: push.wonton.internal:80
-      # 通话插件（matrix_rtc 的提供方）验 OpenID 令牌时连服务器名的 443，核心在它的网络里以这个名字答（ADR-0096）。
-      WONTON_MATRIX_RTC_LISTEN: 0.0.0.0:443
       WONTON_SYSTEM_PLUGINS: /usr/share/wonton/system-plugins
       WONTON_DEFAULT_PLUGINS: /usr/share/wonton/default-plugins
       # 系统服务都用带点的别名：核心也接在每个插件网络上，插件的服务名会成为那里的别名。服务名不能带点，这些名字抢不走；
@@ -73,11 +57,8 @@ services:
       WONTON_OIDC_PUBLIC_URL: http://hydra.wonton.internal:4444
       WONTON_MATRIX_URL: http://tuwunel.wonton.internal:8008
       WONTON_TUSD_URL: http://tusd.wonton.internal:8080
-      WONTON_MAILPIT_URL: http://mailpit.wonton.internal:8025
       WONTON_MATRIX_JWT_KEY_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-jwt.pem
       WONTON_MATRIX_REGISTRATION_SECRET_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-registration-secret
-      # 第一次安装时由 init 定下，之后不变（ADR-0009 的“Matrix 的服务器名”）。
-      WONTON_MATRIX_SERVER_NAME_FILE: ${WONTON_INSTALL_DIR:?}/secrets/matrix-server-name
       WONTON_PUID: ${WONTON_PUID:-1000}
       WONTON_PGID: ${WONTON_PGID:-1000}
       TZ: ${TZ:-UTC}
@@ -93,9 +74,6 @@ services:
       # 容器内外路径相同：插件的绑定挂载由宿主上的 Docker 解析。
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
       - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
-      # 联邦名单（ADR-0050）：核心原地重写（不能换 inode，单文件绑定挂载钉住 inode），Tuwunel 只读挂载里面的
-      # config.toml。
-      - ${WONTON_INSTALL_DIR}/fed:${WONTON_INSTALL_DIR}/fed
       # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
       # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
       - type: bind
@@ -106,8 +84,8 @@ services:
           recursive: disabled
     networks:
       core:
-        # 文件钩子、联邦出站代理和推送监听只在这个网络上。
-        aliases: [files-hooks.wonton.internal, federation-proxy.wonton.internal, push.wonton.internal]
+        # tusd 经这个别名调文件钩子。
+        aliases: [files-hooks.wonton.internal]
     depends_on:
       hydra:
         condition: service_healthy
@@ -157,49 +135,6 @@ services:
       start_period: 30s
       start_interval: 1s
 
-  mailpit:
-    image: axllent/mailpit:v1.33.0@sha256:9b3a463be15354c0f0eba91697d80e3e0d8a5623ef0e627cacc836bc17fd5231
-    restart: unless-stopped
-    user: "${WONTON_PUID:-1000}:${WONTON_PGID:-1000}"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
-    sysctls:
-      - net.ipv4.ip_unprivileged_port_start=0
-      - net.ipv4.ip_forward=0
-    entrypoint: ["/bin/sh", "-ec", ". /wonton-config/runtime.env; exec /mailpit"]
-    environment:
-      <<: *no-proxy
-      MP_DATABASE: /data/mailpit.db
-      MP_SMTP_BIND_ADDR: 0.0.0.0:25
-      MP_UI_BIND_ADDR: 0.0.0.0:8025
-      MP_UI_AUTH_FILE: /wonton-config/auth.htpasswd
-      MP_MAX_MESSAGE_SIZE: "25"
-      MP_MAX_MESSAGES: "0"
-      MP_MAX_AGE: 7d
-      MP_DISABLE_VERSION_CHECK: "true"
-      # 宣告 AUTH 并接受任何凭据，给服务器不宣告 AUTH 就发不出信的应用；认插件只按来源网段。
-      MP_SMTP_AUTH_ACCEPT_ANY: "true"
-      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
-      # 核心生成的自签证书，配了才宣告 STARTTLS（不强制，明文照收）。
-      MP_SMTP_TLS_CERT: /wonton-config/smtp-tls.crt
-      MP_SMTP_TLS_KEY: /wonton-config/smtp-tls.key
-    volumes:
-      - ${WONTON_DATA_DIR}/core/mailpit/data:/data
-      - ${WONTON_DATA_DIR}/core/mailpit/config:/wonton-config:ro
-    networks:
-      core:
-        aliases: [mailpit.wonton.internal]
-    depends_on:
-      core:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 10s
-      timeout: 5s
-      start_period: 30s
-      start_interval: 1s
-
   hydra-migrate:
     image: oryd/hydra:v26.2.0@sha256:ff67c7fb5f95074fa53374d41151713554960504b340cd3f95b09e65deaea2a9
     command: migrate sql up -e --yes
@@ -221,15 +156,11 @@ services:
     environment:
       <<: *no-proxy
       DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
-      # 签发方用插件网络里的内部名字（ADR-0063）：插件后端经核心的这个别名访问它，有的库把 *.localhost 直接当回环，
-      # auth.<基础域名> 的别名对它们不起作用。签发方本身浏览器不访问，只走授权和登出端点。
-      URLS_SELF_ISSUER: http://auth.wonton.internal:${WONTON_PORT}
-      # 浏览器看到的地址：登录、授权确认后 Hydra 把浏览器送回这里，浏览器只认这个地址。
-      URLS_SELF_PUBLIC: http://auth.${WONTON_BASE_DOMAIN}:${WONTON_PORT}
+      # 浏览器和插件看到的签发方地址，经核心网关的 auth.<base> 转发到这里。
+      URLS_SELF_ISSUER: http://auth.${WONTON_BASE_DOMAIN}:${WONTON_PORT}
       # 登录和授权确认交给核心：核心按自己的会话直接接受，用户不会看到第二个登录页。
       URLS_LOGIN: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/login
       URLS_CONSENT: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/oidc/consent
-      URLS_POST_LOGOUT_REDIRECT: http://${WONTON_BASE_DOMAIN}:${WONTON_PORT}/
     volumes:
       - hydra:/home/nonroot
     # 只在核心的私有网络里：插件访问不到管理端口（4445），公开端口也只经核心网关访问。
@@ -247,24 +178,18 @@ services:
       start_interval: 1s
 
   tuwunel:
-    image: ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730
+    image: ghcr.io/matrix-construct/tuwunel:v1.9.4@sha256:0e86c6164d6c9f5b60291938eb61ad8395021c37fe58d47a963ea7edddbedaec
     restart: unless-stopped
     # 升级后首次启动可能在迁移数据库，不能被 10 秒后强杀（见 Tuwunel 的 docker.md）。
     stop_grace_period: 5m
-    # 配对代理范围与黑名单在第二份配置一起热加载（ADR-0051）；私用名另有允许名单。
-    command: ["-c", "/etc/tuwunel/tuwunel.toml", "-c", "/etc/tuwunel/wonton-fed.toml"]
     environment:
       <<: *no-proxy
       # 配置和 JWT 公钥都在文件里：轮换签发密钥时核心改写它、发 SIGUSR1 热加载（ADR-0009）。
       TUWUNEL_CONFIG: /etc/tuwunel/tuwunel.toml
-      # MatrixRTC 的授权服务固定在 Matrix 对外地址的这个前缀下，网关转给通话插件（ADR-0096）：装卸插件不改这里。
-      TUWUNEL_WELL_KNOWN__LIVEKIT_URL: http://matrix.${WONTON_BASE_DOMAIN}:${WONTON_PORT}/_wonton/matrix-rtc
     volumes:
       - tuwunel:/var/lib/tuwunel
-      # 只挂 Tuwunel 自己的文件：`secrets/` 根上还有核心的 `matrix-jwt.pem`、`hydra-secret`/`hydra.env`，
-      # 联邦容器读不到才对（ADR-0051）。整目录一次挂完，不用在只读目录里再建挂载点。
-      - ${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro
-    # 不发布任何端口；公网联邦经过隔离入口容器和核心的专用监听。
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel.toml:/etc/tuwunel/tuwunel.toml:ro
+    # 只在核心的私有网络里，App 和 Bot 都经核心网关访问它（ADR-0009）。
     networks:
       core:
         aliases: [tuwunel.wonton.internal]

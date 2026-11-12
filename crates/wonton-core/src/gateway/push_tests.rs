@@ -15,16 +15,14 @@ use iroh::{EndpointId, SecretKey};
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
+use super::tunnel_tests::loopback_tunnel;
 use super::{Gateway, TunnelPeer, router};
 use crate::config::PublicUrls;
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 use crate::owner::OwnerStore;
-use crate::plugin::{PluginId, PluginManager};
-use wonton_protocol::BotKeeper;
-
+use crate::plugin::PluginManager;
 use crate::plugin::docker::Engine;
 use crate::plugin::image_worker::ImageWorker;
 use crate::plugin::lifecycle::LifecycleConfig;
@@ -37,12 +35,11 @@ const P256DH: &str =
     "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
 const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
 const PUSH_HOST: &str = "push.wonton.internal";
-/// 假的 Tuwunel 在 127.0.0.1 上，它发来的请求的 TCP 来源。
+/// 假的 Tuwunel 在 127.0.0.1 上，它经出站代理发来的请求的 TCP 来源。
 const TUWUNEL: &str = "127.0.0.1:41000";
 
 struct Home {
     app: Router,
-    push_app: Router,
     tunnel: Tunnel,
     plugins: Arc<PluginManager>,
     push: Arc<Push>,
@@ -55,11 +52,7 @@ impl Home {
     /// 核心接着假的 Tuwunel（`crate::matrix::fake`），它在 127.0.0.1 上：从 127.0.0.1 来的请求就是 Tuwunel 发的。
     async fn start() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let (fake, config) = crate::matrix::fake::start().await;
-        fake.state().tokens.insert(
-            "bot-token".to_owned(),
-            ("@hermes:test".to_owned(), "bot-device".to_owned()),
-        );
+        let (_, config) = crate::matrix::fake::start().await;
         let matrix = Matrix::connect(&config, dir.path(), HttpClient::new())
             .await
             .unwrap();
@@ -94,22 +87,15 @@ impl Home {
             lifecycle,
             ImageWorker::in_process(),
         ));
-        let (tunnel, members) = loopback_tunnel(dir.path()).await;
+        let tunnel = loopback_tunnel(dir.path()).await;
         let phone = SecretKey::generate().public();
         tunnel.devices.add(phone, None).unwrap();
-        let push = Arc::new(
-            Push::open(
-                dir.path().join("push.json"),
-                tunnel.devices.clone(),
-                tunnel.endpoint.id(),
-            )
-            .unwrap(),
-        );
+        let push =
+            Arc::new(Push::open(dir.path().join("push.json"), tunnel.devices.clone()).unwrap());
         let gateway = Gateway::new(
             public,
             profile,
             TOKEN.into(),
-            members,
             plugins.clone(),
             None,
             http,
@@ -117,10 +103,8 @@ impl Home {
         )
         .with_matrix(Some(Arc::new(matrix)))
         .with_push(Some(push.clone()));
-        let gateway = Arc::new(gateway);
         Self {
-            push_app: super::push_router(gateway.clone()),
-            app: router(gateway),
+            app: router(Arc::new(gateway)),
             tunnel,
             plugins,
             push,
@@ -159,7 +143,6 @@ impl Home {
             .header(header::HOST, host)
             .header(header::CONTENT_TYPE, "application/json")
             .header(header::CONTENT_LENGTH, body.len())
-            .header(header::AUTHORIZATION, "Bearer bot-token")
             .body(Body::from(body))
             .unwrap();
         let from: SocketAddr = from.parse().unwrap();
@@ -191,7 +174,7 @@ impl Home {
         .await
     }
 
-    /// Tuwunel 发来的通知：TCP 来源是它在核心网络里的地址。
+    /// Tuwunel 经出站代理发来的通知：TCP 来源是它在核心网络里的地址。
     async fn notify(
         &self,
         from: &str,
@@ -280,10 +263,9 @@ async fn only_paired_devices_through_the_tunnel_can_register_for_push() {
 
 #[tokio::test]
 async fn the_push_gateway_answers_only_the_matrix_server() {
-    let mut home = Home::start().await;
+    let home = Home::start().await;
     let (_, _, body) = home.register(Some(home.phone)).await;
     let pushkey = body["pushkey"].as_str().unwrap().to_owned();
-    home.app = home.push_app.clone();
     home.plugins
         .register_source_for_test("app.echo", "172.30.1.0/24", Vec::new());
 
@@ -332,31 +314,6 @@ async fn the_push_gateway_answers_only_the_matrix_server() {
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["errcode"], "M_BAD_JSON");
-}
-
-#[tokio::test]
-async fn the_push_listener_does_not_expose_other_gateway_hosts() {
-    let mut home = Home::start().await;
-    home.app = home.push_app.clone();
-    for host in [
-        CORE,
-        "matrix.wonton.localhost",
-        "auth.wonton.localhost",
-        "127.0.0.1",
-        "other.example",
-    ] {
-        let (status, _, _) = home
-            .send(
-                Method::GET,
-                host,
-                "/_wonton/health",
-                None,
-                TUWUNEL,
-                Value::Null,
-            )
-            .await;
-        assert_eq!(status, StatusCode::NOT_FOUND, "{host}");
-    }
 }
 
 #[tokio::test]
@@ -417,17 +374,6 @@ async fn bots_may_only_register_pushers_that_point_at_the_push_proxy() {
     let bot = vec!["matrix.bot".parse().unwrap()];
     home.plugins
         .register_source_for_test("agent.echo", "172.30.1.0/24", bot);
-    home.plugins.bot_records_for_test(
-        &PluginId::parse("agent.echo").unwrap(),
-        &[(
-            "default",
-            "@hermes:test",
-            BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "bot-token",
-        )],
-    );
     let set = |host: &'static str, peer, from: &'static str, body: Value| {
         home.send(
             Method::POST,
@@ -495,17 +441,6 @@ async fn a_bot_pusher_reaches_tuwunel_exactly_as_checked() {
     let bot = vec!["matrix.bot".parse().unwrap()];
     home.plugins
         .register_source_for_test("agent.echo", "172.30.1.0/24", bot);
-    home.plugins.bot_records_for_test(
-        &PluginId::parse("agent.echo").unwrap(),
-        &[(
-            "default",
-            "@hermes:test",
-            BotKeeper::User {
-                username: "owner".to_owned(),
-            },
-            "bot-token",
-        )],
-    );
     let proxy = "http://push.wonton.internal/_matrix/push/v1/notify";
     let outside = "https://attacker.example/_matrix/push/v1/notify";
     let body = |first: &str, last: &str| {

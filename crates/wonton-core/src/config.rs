@@ -4,27 +4,10 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::gateway::people_limits::PeopleLimits;
-use crate::gateway::send_limits::SendLimits;
 use crate::owner;
 use crate::plugin::egress::address::ProxyAddress;
-use crate::plugin::lan::announce::Announced;
 use crate::plugin::names::Instance;
-use crate::plugin::network_pool::{self, NetworkPool};
 use crate::plugin::storefront::StoreConfig;
-use url::Url;
-use wonton_tunnel::relays::RelayTable;
-
-mod hosts;
-
-pub use hosts::{
-    FILE_HOOKS_HOST, HostKind, PLUGIN_AUTH_HOST, PLUGIN_HEALTH_HOST, PLUGIN_MATRIX_HOST,
-    PLUGIN_MCP_HOST, PLUGIN_MODELS_HOST, PLUGIN_NOTIFY_HOST, PLUGIN_SMTP_HOST, PUSH_GATEWAY_HOST,
-    PublicUrls,
-};
-
-/// 插件安装等待容器就绪的默认期限。
-pub const DEFAULT_INSTALL_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
@@ -32,6 +15,121 @@ pub enum ConfigError {
     Missing(&'static str),
     #[error("环境变量 {name} 不合法：{message}")]
     Invalid { name: &'static str, message: String },
+}
+
+/// 浏览器看到的地址：核心在 `<base>`，身份提供方在 `auth.<base>`，Matrix 客户端接口在 `matrix.<base>`，
+/// 插件在 `<slug>.<base>`。插件的 slug 至少两段（含 `-`），不会和 `auth`、`matrix` 重名。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PublicUrls {
+    pub scheme: String,
+    pub base_domain: String,
+    pub port: u16,
+}
+
+/// 插件经核心在插件网络里的这个别名访问 Matrix 客户端接口（`WONTON_MATRIX_HOMESERVER`）。`.internal` 是留给
+/// 私有网络的顶级域名，基础域名不能落在它下面。
+pub const PLUGIN_MATRIX_HOST: &str = "matrix.wonton.internal";
+
+/// 插件经核心在插件网络里的这个别名访问模型网关（`WONTON_MODEL_BASE_URL` 等）。
+pub const PLUGIN_MODELS_HOST: &str = "models.wonton.internal";
+
+/// Tuwunel 经这个地址调核心的推送代理（ADR-0003 的“接口：推送”）。不用解析它：Tuwunel 经出站代理发请求，代理
+/// 只代理这一个域名，代理地址就是核心网关。
+pub const PUSH_GATEWAY_HOST: &str = "push.wonton.internal";
+/// 插件经核心在插件网络里的这个别名访问 MCP 总线（`WONTON_MCP_URL`）。
+pub const PLUGIN_MCP_HOST: &str = "mcp.wonton.internal";
+/// tusd 经核心在私有网络里的这个别名调文件钩子（ADR-0020）。
+pub const FILE_HOOKS_HOST: &str = "files-hooks.wonton.internal";
+
+/// 网关按 Host 头区分的目标。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum HostKind {
+    Core,
+    Auth,
+    Matrix,
+    Plugin(String),
+    /// 插件网络里的 Bot 访问 Matrix（[`PLUGIN_MATRIX_HOST`]）。
+    PluginMatrix,
+    /// 插件网络里的插件访问模型网关（[`PLUGIN_MODELS_HOST`]）。
+    PluginModels,
+    /// Tuwunel 调推送代理（[`PUSH_GATEWAY_HOST`]）。
+    Push,
+    /// 局域网浏览器用服务器的 IP 地址访问：状态页。
+    Lan(std::net::IpAddr),
+    /// 插件网络里的 Agent 访问 MCP 总线（[`PLUGIN_MCP_HOST`]）。
+    PluginMcp,
+    /// tusd 调文件钩子（[`FILE_HOOKS_HOST`]）。
+    FileHooks,
+    Unknown,
+}
+
+impl PublicUrls {
+    pub fn core_host(&self) -> &str {
+        &self.base_domain
+    }
+
+    pub fn auth_host(&self) -> String {
+        format!("auth.{}", self.base_domain)
+    }
+
+    pub fn matrix_host(&self) -> String {
+        format!("matrix.{}", self.base_domain)
+    }
+
+    pub fn plugin_host(&self, slug: &str) -> String {
+        format!("{slug}.{}", self.base_domain)
+    }
+
+    /// `scheme://host[:port]`，默认端口省略。
+    pub fn origin(&self, host: &str) -> String {
+        let default_port = matches!(
+            (self.scheme.as_str(), self.port),
+            ("http", 80) | ("https", 443)
+        );
+        if default_port {
+            format!("{}://{host}", self.scheme)
+        } else {
+            format!("{}://{host}:{}", self.scheme, self.port)
+        }
+    }
+
+    pub fn classify(&self, host_header: &str) -> HostKind {
+        let host = host_header
+            .rsplit_once(':')
+            .filter(|(_, port)| port.bytes().all(|b| b.is_ascii_digit()))
+            .map_or(host_header, |(host, _)| host)
+            .trim_end_matches('.')
+            .to_ascii_lowercase();
+        if host == self.base_domain {
+            return HostKind::Core;
+        }
+        if let Ok(ip) = host.trim_start_matches('[').trim_end_matches(']').parse() {
+            return HostKind::Lan(ip);
+        }
+        if host == PLUGIN_MATRIX_HOST {
+            return HostKind::PluginMatrix;
+        }
+        if host == PLUGIN_MODELS_HOST {
+            return HostKind::PluginModels;
+        }
+        if host == PUSH_GATEWAY_HOST {
+            return HostKind::Push;
+        }
+        if host == PLUGIN_MCP_HOST {
+            return HostKind::PluginMcp;
+        }
+        if host == FILE_HOOKS_HOST {
+            return HostKind::FileHooks;
+        }
+        match host.strip_suffix(&format!(".{}", self.base_domain)) {
+            Some("auth") => HostKind::Auth,
+            Some("matrix") => HostKind::Matrix,
+            Some(slug) if !slug.is_empty() && !slug.contains('.') => {
+                HostKind::Plugin(slug.to_owned())
+            }
+            _ => HostKind::Unknown,
+        }
+    }
 }
 
 /// 身份提供方（Ory Hydra）的内部地址：只有核心能访问，插件和浏览器都经网关。两个地址都已规范化成
@@ -48,8 +146,7 @@ pub struct OidcProviderConfig {
 pub struct MatrixConfig {
     /// 客户端接口的内部地址，已规范化成 `http://主机:端口`。
     pub url: String,
-    /// Tuwunel 的 `server_name`。正式安装从 `wonton-core init` 记下的文件读（`WONTON_MATRIX_SERVER_NAME_FILE`）；
-    /// 都没设时是基础域名，只给开发环境用。
+    /// Tuwunel 的 `server_name`，默认是基础域名。
     pub server_name: String,
     /// 签发登录 JWT 的 Ed25519 私钥（PEM）。Tuwunel 只配对应的公钥。
     pub jwt_key: String,
@@ -73,8 +170,8 @@ pub struct Config {
     pub data_dir: PathBuf,
     pub listen: SocketAddr,
     pub public: PublicUrls,
-    /// 核心自己的容器名。设置后核心会加入每个插件网络，用服务的稳定域名（`服务名.<slug>.wonton.internal`）
-    /// 访问插件；未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
+    /// 核心自己的容器名。设置后核心会加入每个插件网络，用容器名访问插件；
+    /// 未设置时（核心直接跑在宿主上）按容器 IP 访问插件。
     pub core_container: Option<String>,
     /// 宿主的 `/dev` 在核心里的路径（`WONTON_HOST_DEV`），用来检测显卡设备和它们所属的组：核心在容器里时由
     /// compose 只读挂载进来；直接跑在宿主上时就是 `/dev`。在容器里却没设时为 `None`，申请显卡的插件装不上，
@@ -82,26 +179,18 @@ pub struct Config {
     pub host_dev: Option<PathBuf>,
     /// 局域网端口只开在这些地址上，不再自动选（`WONTON_LAN_ADDRESSES`，ADR-0019）。必须都是私有地址。
     pub lan_addresses: Option<Vec<IpAddr>>,
-    /// 启动器声明的宣告地址（`WONTON_ANNOUNCE_ADDRESSES`，ADR-0019）：设了就不再自动选，端口绑通配地址、告诉手机用它。
-    /// 每项是私有地址，可以带前缀（直连网段用）。
-    pub announce_addresses: Option<Vec<Announced>>,
     /// 出网插件走的代理（`WONTON_EGRESS_PROXY`，ADR-0023）。设了就只用它，App 里不能改。
     pub egress_proxy: Option<ProxyAddress>,
     /// 安装脚本检测到的代理（`WONTON_EGRESS_PROXY_DETECTED`）：只作初值，App 里能改。
     pub egress_proxy_detected: Option<ProxyAddress>,
-    /// 配了出网代理时，链接预览经代理用 DoH 解析域名问的服务器（`WONTON_DOH_URL`，ADR-0065）。不设时用默认的。
-    pub doh_url: Option<Url>,
     /// 插件容器的 Docker `CgroupParent`（`WONTON_PLUGIN_SLICE`）；空值不设置。
     pub plugin_slice: Option<String>,
-    pub plugin_network_pool: NetworkPool,
     /// 几套核心共用一台 Docker 时（插件开发环境）各自的实例名（`WONTON_INSTANCE`），正式安装不设。
     pub instance: Instance,
     pub oidc: Option<OidcProviderConfig>,
     pub matrix: Option<MatrixConfig>,
     /// tusd 的 `host:port`（`WONTON_TUSD_URL`）：设备上传转发到这里，文件钩子只接受这个地址（ADR-0020）。
     pub tusd: Option<String>,
-    /// Mailpit 的内部 API 地址（`WONTON_MAILPIT_URL`），认证密码由核心私有密钥库生成。
-    pub mailpit: Option<String>,
     /// 安装器预装的系统插件包所在的目录，每个子目录一个插件包（`WONTON_SYSTEM_PLUGINS`）。
     pub system_plugins: Option<PathBuf>,
     /// 随核心附带的默认插件（如默认 Agent）所在的目录，格式同系统插件的目录，只自动装一次
@@ -115,10 +204,6 @@ pub struct Config {
     pub confirmation_ttl: Duration,
     /// 卡片上放行时段的长度（`WONTON_CONFIRMATION_WINDOW_SECS`，ADR-0024）。
     pub confirmation_window: Duration,
-    /// 网关管 Bot 发消息的数字（ADR-0045），由 `WONTON_BOT_MSG_*` 环境变量改，见 [`SendLimits`] 的字段。
-    pub send_limits: SendLimits,
-    /// 本机每个人发邀请、发消息的每分钟上限（ADR-0051），由 `WONTON_PEOPLE_*` 环境变量改。
-    pub people_limits: PeopleLimits,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -129,18 +214,6 @@ pub struct Config {
     pub install_timeout: Duration,
     /// 隧道入口（iroh）的 UDP 端口，IPv4 和 IPv6 同端口；0 表示由系统分配。
     pub tunnel_port: u16,
-    /// 中继表（`WONTON_RELAYS`，ADR-0048）。不设时用 n0 的公共中继。
-    pub relays: RelayTable,
-    /// 推送代理的专用监听（`WONTON_PUSH_LISTEN`），不设就不开；主机名在启动时解析。
-    pub push_listen: Option<String>,
-    /// `matrix_rtc` 提供方网络里服务器名别名的 TLS 监听（`WONTON_MATRIX_RTC_LISTEN`，ADR-0096），不设就不开。
-    /// 授权服务按 Matrix 的服务器发现连 443，正式安装写 `0.0.0.0:443`：核心在容器里，只经插件网络到达。
-    pub matrix_rtc_listen: Option<String>,
-    /// 联邦出站代理监听的 `主机:端口`（`WONTON_FEDERATION_LISTEN`，ADR-0050），主机名在启动时解析。
-    /// 正式安装写的是核心在内部网络上的别名：只绑在那个网络的地址上，插件网络里连不到。
-    pub federation_listen: String,
-    /// Tuwunel 的联邦端口（`WONTON_MATRIX_FEDERATION_ADDR`，ADR-0050），主机名用时解析。
-    pub matrix_federation_addr: String,
     /// 升级时看的渠道（`WONTON_CORE_SOURCE`）：`仓库:tag`。正式安装才有（ADR-0025）。
     pub core_source: Option<String>,
     /// compose 文件和 `.env` 所在的目录（`WONTON_INSTALL_DIR`）。正式安装才有。
@@ -152,40 +225,9 @@ fn proxy_address(
     name: &'static str,
 ) -> Result<Option<ProxyAddress>, ConfigError> {
     get(name)
-        .map(|text| {
-            // 启动配置不在任何请求里，按默认语言报错（ADR-0043 的回退）。
-            ProxyAddress::parse(&text, &crate::plugin::languages::Languages::default())
-        })
+        .map(|text| ProxyAddress::parse(&text))
         .transpose()
         .map_err(|e| invalid(name, &e))
-}
-
-/// `WONTON_DOH_URL`：链接预览经代理解析域名用的 DoH 服务器（ADR-0065）。
-fn doh_url(get: &impl Fn(&str) -> Option<String>) -> Result<Option<Url>, ConfigError> {
-    get("WONTON_DOH_URL")
-        .map(|text| {
-            crate::plugin::egress::settings::parse_doh(&text)
-                .map_err(|e| invalid("WONTON_DOH_URL", &e))
-        })
-        .transpose()
-}
-
-/// 局域网地址的两个覆盖变量（ADR-0019）：`WONTON_LAN_ADDRESSES` 和 `WONTON_ANNOUNCE_ADDRESSES`。
-struct LanOverrides {
-    fixed: Option<Vec<IpAddr>>,
-    announce: Option<Vec<Announced>>,
-}
-
-fn lan_addresses(get: &impl Fn(&str) -> Option<String>) -> Result<LanOverrides, ConfigError> {
-    let fixed = get(crate::plugin::lan::ADDRESSES_VAR)
-        .map(|text| crate::plugin::lan::parse_addresses(&text))
-        .transpose()
-        .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?;
-    let announce = get(crate::plugin::lan::ANNOUNCE_VAR)
-        .map(|text| crate::plugin::lan::announce::parse(&text))
-        .transpose()
-        .map_err(|e| invalid("WONTON_ANNOUNCE_ADDRESSES", &e))?;
-    Ok(LanOverrides { fixed, announce })
 }
 
 impl Config {
@@ -193,16 +235,25 @@ impl Config {
         Self::from_lookup(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
     }
 
-    /// 启动配置：每项一行，和环境变量一一对应。
-    #[allow(clippy::too_many_lines, reason = "每项一行，拆开会更难对照环境变量")]
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
         let data_dir =
             PathBuf::from(get("WONTON_DATA_DIR").ok_or(ConfigError::Missing("WONTON_DATA_DIR"))?);
         if !data_dir.is_absolute() {
             return Err(invalid("WONTON_DATA_DIR", "必须是绝对路径"));
         }
-        let base_domain =
-            base_domain(get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into()))?;
+        let base_domain = get("WONTON_BASE_DOMAIN").unwrap_or_else(|| "wonton.localhost".into());
+        if !is_domain(&base_domain) {
+            return Err(invalid(
+                "WONTON_BASE_DOMAIN",
+                "必须是小写域名，如 wonton.localhost",
+            ));
+        }
+        if base_domain == "wonton.internal" || base_domain.ends_with(".wonton.internal") {
+            return Err(invalid(
+                "WONTON_BASE_DOMAIN",
+                "不能用 wonton.internal：它留给插件网络里的内部别名",
+            ));
+        }
         let port = parse(&get, "WONTON_PUBLIC_PORT", 8080u16)?;
         let listen = parse(
             &get,
@@ -230,10 +281,6 @@ impl Config {
             .unwrap_or_else(|| owner::DEFAULT_USERNAME.into());
         let core_container = get("WONTON_CORE_CONTAINER");
         let host_dev = host_dev(get("WONTON_HOST_DEV"), core_container.is_none())?;
-        let LanOverrides {
-            fixed: lan_addresses,
-            announce: announce_addresses,
-        } = lan_addresses(&get)?;
         Ok(Self {
             data_dir,
             listen,
@@ -244,13 +291,13 @@ impl Config {
             },
             core_container,
             host_dev,
-            lan_addresses,
-            announce_addresses,
+            lan_addresses: get(crate::plugin::lan::ADDRESSES_VAR)
+                .map(|text| crate::plugin::lan::parse_addresses(&text))
+                .transpose()
+                .map_err(|e| invalid("WONTON_LAN_ADDRESSES", &e))?,
             egress_proxy: proxy_address(&get, "WONTON_EGRESS_PROXY")?,
             egress_proxy_detected: proxy_address(&get, "WONTON_EGRESS_PROXY_DETECTED")?,
-            doh_url: doh_url(&get)?,
             plugin_slice: get("WONTON_PLUGIN_SLICE").filter(|value| !value.is_empty()),
-            plugin_network_pool: parse(&get, network_pool::VAR, NetworkPool::default())?,
             instance: Instance::parse(get("WONTON_INSTANCE").as_deref())
                 .map_err(|e| invalid("WONTON_INSTANCE", &e))?,
             system_plugins: get("WONTON_SYSTEM_PLUGINS").map(PathBuf::from),
@@ -259,30 +306,19 @@ impl Config {
             store: store_config(&get)?,
             confirmation_ttl: secs(&get, "WONTON_CONFIRMATION_TTL_SECS", 600)?,
             confirmation_window: secs(&get, "WONTON_CONFIRMATION_WINDOW_SECS", 1800)?,
-            send_limits: send_limits(&get)?,
-            people_limits: people_limits(&get)?,
             oidc,
             matrix,
-            tusd: optional_authority(&get, "WONTON_TUSD_URL")?,
-            mailpit: optional_authority(&get, "WONTON_MAILPIT_URL")?,
+            tusd: get("WONTON_TUSD_URL")
+                .map(|url| http_authority(&url))
+                .transpose()
+                .map_err(|e| invalid("WONTON_TUSD_URL", &e))?,
             tz: get("TZ").unwrap_or_else(|| "UTC".into()),
             puid: parse(&get, "WONTON_PUID", 1000)?,
             pgid: parse(&get, "WONTON_PGID", 1000)?,
             username,
             owner_name,
-            install_timeout: secs(
-                &get,
-                "WONTON_INSTALL_TIMEOUT_SECS",
-                DEFAULT_INSTALL_TIMEOUT.as_secs(),
-            )?,
+            install_timeout: Duration::from_secs(parse(&get, "WONTON_INSTALL_TIMEOUT_SECS", 300)?),
             tunnel_port: parse(&get, "WONTON_TUNNEL_PORT", 0)?,
-            relays: parse_relays(&get)?,
-            push_listen: get("WONTON_PUSH_LISTEN").filter(|value| !value.is_empty()),
-            matrix_rtc_listen: get("WONTON_MATRIX_RTC_LISTEN").filter(|value| !value.is_empty()),
-            federation_listen: get("WONTON_FEDERATION_LISTEN")
-                .unwrap_or_else(|| "0.0.0.0:8448".into()),
-            matrix_federation_addr: get("WONTON_MATRIX_FEDERATION_ADDR")
-                .unwrap_or_else(|| "tuwunel.wonton.internal:8448".into()),
             core_source: get("WONTON_CORE_SOURCE"),
             install_dir: get("WONTON_INSTALL_DIR").map(PathBuf::from),
         })
@@ -314,80 +350,12 @@ fn invalid(name: &'static str, message: &str) -> ConfigError {
     }
 }
 
-/// `WONTON_RELAYS`：不设时用 n0 的公共中继，写不合法当场报错（ADR-0048）。
-fn parse_relays(get: &impl Fn(&str) -> Option<String>) -> Result<RelayTable, ConfigError> {
-    match get(wonton_tunnel::relays::RELAYS_VAR) {
-        Some(text) => RelayTable::parse(&text).map_err(|reason| invalid("WONTON_RELAYS", &reason)),
-        None => Ok(RelayTable::builtin_n0()),
-    }
-}
-
 fn secs(
     get: &impl Fn(&str) -> Option<String>,
     name: &'static str,
     default: u64,
 ) -> Result<Duration, ConfigError> {
     Ok(Duration::from_secs(parse(get, name, default)?))
-}
-
-/// 网关管 Bot 发消息的数字（ADR-0045）。0 没有意义：要么限要么不限，要不限就把数字放大，不设开关。
-fn send_limits(get: &impl Fn(&str) -> Option<String>) -> Result<SendLimits, ConfigError> {
-    let limits = SendLimits {
-        per_minute: parse(get, "WONTON_BOT_MSG_PER_MINUTE", 20)?,
-        burst: parse(get, "WONTON_BOT_MSG_BURST", 10)?,
-        hop_limit: parse(get, "WONTON_BOT_MSG_HOP_LIMIT", 20)?,
-        idle_reset: secs(get, "WONTON_BOT_MSG_IDLE_RESET_SECS", 60 * 60)?,
-    };
-    for (name, value) in [
-        ("WONTON_BOT_MSG_PER_MINUTE", limits.per_minute),
-        ("WONTON_BOT_MSG_BURST", limits.burst),
-        ("WONTON_BOT_MSG_HOP_LIMIT", limits.hop_limit),
-    ] {
-        (value > 0)
-            .then_some(())
-            .ok_or_else(|| invalid(name, "必须是正整数"))?;
-    }
-    Ok(limits)
-}
-
-/// 本机每个人发邀请、发消息的上限（ADR-0051）。0 没有意义：要不限就把数字放大。
-fn people_limits(get: &impl Fn(&str) -> Option<String>) -> Result<PeopleLimits, ConfigError> {
-    let limits = PeopleLimits {
-        invites_per_minute: parse(get, "WONTON_PEOPLE_INVITES_PER_MINUTE", 20)?,
-        messages_per_minute: parse(get, "WONTON_PEOPLE_MESSAGES_PER_MINUTE", 60)?,
-    };
-    for (name, value) in [
-        (
-            "WONTON_PEOPLE_INVITES_PER_MINUTE",
-            limits.invites_per_minute,
-        ),
-        (
-            "WONTON_PEOPLE_MESSAGES_PER_MINUTE",
-            limits.messages_per_minute,
-        ),
-    ] {
-        (value > 0)
-            .then_some(())
-            .ok_or_else(|| invalid(name, "必须是正整数"))?;
-    }
-    Ok(limits)
-}
-
-/// 基础域名：小写、不能是留给插件内部网络的 `.wonton.internal`。
-fn base_domain(value: String) -> Result<String, ConfigError> {
-    if !is_domain(&value) {
-        return Err(invalid(
-            "WONTON_BASE_DOMAIN",
-            "必须是小写域名，如 wonton.localhost",
-        ));
-    }
-    if value == "wonton.internal" || value.ends_with(".wonton.internal") {
-        return Err(invalid(
-            "WONTON_BASE_DOMAIN",
-            "不能用 wonton.internal：它留给插件网络里的内部别名",
-        ));
-    }
-    Ok(value)
 }
 
 fn host_dev(configured: Option<String>, on_host: bool) -> Result<Option<PathBuf>, ConfigError> {
@@ -431,16 +399,6 @@ pub fn check_owner_settings(get: &impl Fn(&str) -> Option<String>) -> Result<(),
     check("TZ", owner::check_time_zone)
 }
 
-fn optional_authority(
-    get: &impl Fn(&str) -> Option<String>,
-    name: &'static str,
-) -> Result<Option<String>, ConfigError> {
-    get(name)
-        .map(|url| http_authority(&url))
-        .transpose()
-        .map_err(|error| invalid(name, &error))
-}
-
 /// `WONTON_MATRIX_URL` 设了就要同时给出签发私钥和注册共享密钥；都没设表示核心不接 Matrix。
 fn matrix_config(
     get: &impl Fn(&str) -> Option<String>,
@@ -452,7 +410,6 @@ fn matrix_config(
             "WONTON_MATRIX_JWT_KEY_FILE",
             "WONTON_MATRIX_REGISTRATION_SECRET",
             "WONTON_MATRIX_REGISTRATION_SECRET_FILE",
-            "WONTON_MATRIX_SERVER_NAME_FILE",
         ]
         .into_iter()
         .find(|name| get(name).is_some());
@@ -466,12 +423,7 @@ fn matrix_config(
     };
     Ok(Some(MatrixConfig {
         url: provider_url("WONTON_MATRIX_URL", &url)?,
-        server_name: secret_value(
-            get,
-            "WONTON_MATRIX_SERVER_NAME",
-            "WONTON_MATRIX_SERVER_NAME_FILE",
-        )?
-        .unwrap_or_else(|| base_domain.to_owned()),
+        server_name: get("WONTON_MATRIX_SERVER_NAME").unwrap_or_else(|| base_domain.to_owned()),
         jwt_key: required("WONTON_MATRIX_JWT_KEY", "WONTON_MATRIX_JWT_KEY_FILE")?,
         registration_secret: required(
             "WONTON_MATRIX_REGISTRATION_SECRET",
@@ -553,6 +505,239 @@ fn is_domain(text: &str) -> bool {
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         })
 }
+
 #[cfg(test)]
-#[path = "config_tests.rs"]
-mod tests;
+mod tests {
+    use super::*;
+
+    fn config(pairs: &[(&str, &str)]) -> Result<Config, ConfigError> {
+        let owned: Vec<(String, String)> = pairs
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect();
+        Config::from_lookup(|name| {
+            owned
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+        })
+    }
+
+    #[test]
+    fn hosts_are_classified_by_subdomain() {
+        let cfg = config(&[("WONTON_DATA_DIR", "/srv/wonton")]).unwrap();
+        let urls = &cfg.public;
+        assert_eq!(urls.classify("wonton.localhost:8080"), HostKind::Core);
+        assert_eq!(urls.classify("AUTH.wonton.localhost"), HostKind::Auth);
+        assert_eq!(
+            urls.classify("matrix.wonton.localhost:8080"),
+            HostKind::Matrix
+        );
+        assert_eq!(
+            urls.classify("app-grafana.wonton.localhost:8080"),
+            HostKind::Plugin("app-grafana".into())
+        );
+        assert_eq!(
+            urls.classify("matrix.wonton.internal:8080"),
+            HostKind::PluginMatrix
+        );
+        assert_eq!(
+            urls.classify("models.wonton.internal"),
+            HostKind::PluginModels
+        );
+        assert_eq!(urls.classify("push.wonton.internal"), HostKind::Push);
+        assert_eq!(
+            urls.classify("files-hooks.wonton.internal:8080"),
+            HostKind::FileHooks
+        );
+        for other in [
+            "a.b.wonton.localhost",
+            "evil.example",
+            "wonton.localhost.evil",
+            "mail.wonton.internal",
+            "",
+        ] {
+            assert_eq!(urls.classify(other), HostKind::Unknown, "{other}");
+        }
+        assert_eq!(
+            urls.origin("auth.wonton.localhost"),
+            "http://auth.wonton.localhost:8080"
+        );
+    }
+
+    #[test]
+    fn a_proxy_that_is_not_an_address_stops_the_core_from_starting() {
+        for name in ["WONTON_EGRESS_PROXY", "WONTON_EGRESS_PROXY_DETECTED"] {
+            let with = |value| config(&[("WONTON_DATA_DIR", "/d"), (name, value)]);
+            assert!(with("ftp://proxy:21").is_err(), "{name}");
+            assert!(with("http://proxy:7899").is_ok(), "{name}");
+        }
+    }
+
+    #[test]
+    fn invalid_settings_fail_fast() {
+        assert!(matches!(config(&[]), Err(ConfigError::Missing(_))));
+        assert!(config(&[("WONTON_DATA_DIR", "relative")]).is_err());
+        for domain in ["192.168.1.2", "wonton.internal", "home.wonton.internal"] {
+            let settings = [("WONTON_DATA_DIR", "/d"), ("WONTON_BASE_DOMAIN", domain)];
+            assert!(config(&settings).is_err(), "{domain}");
+        }
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_PUBLIC_PORT", "x")]).is_err());
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_TUNNEL_PORT", "70000")]).is_err());
+        assert!(config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_INSTANCE", "dev-1")]).is_err());
+        // 局域网端口不能开在公网地址上：核心启动时就报错退出。
+        let lan = |value| config(&[("WONTON_DATA_DIR", "/d"), ("WONTON_LAN_ADDRESSES", value)]);
+        assert!(lan("192.168.0.193,203.0.113.5").is_err());
+        let addresses = lan("192.168.0.193, fd00::10")
+            .unwrap()
+            .lan_addresses
+            .unwrap();
+        assert_eq!(addresses.len(), 2);
+        assert!(
+            config(&[
+                ("WONTON_DATA_DIR", "/d"),
+                ("WONTON_OIDC_ADMIN_URL", "http://h:4445")
+            ])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn oidc_provider_urls_must_be_plain_http_origins() {
+        let with_public = |public_url: &str| {
+            config(&[
+                ("WONTON_DATA_DIR", "/d"),
+                ("WONTON_OIDC_ADMIN_URL", "http://hydra:4445/"),
+                ("WONTON_OIDC_PUBLIC_URL", public_url),
+            ])
+        };
+        let oidc = with_public("HTTP://Hydra:4444/").unwrap().oidc.unwrap();
+        assert_eq!(oidc.admin_url, "http://hydra:4445");
+        assert_eq!(oidc.public_url, "http://hydra:4444");
+        let oidc = with_public("http://[::1]").unwrap().oidc.unwrap();
+        assert_eq!(oidc.public_url, "http://[::1]:80");
+        for bad in [
+            "https://hydra:4444",
+            "http://hydra:4444/oidc",
+            "http://hydra:4444/?x=1",
+            "http://hydra:4444#top",
+            "http://user:secret@hydra:4444",
+            "hydra:4444",
+            "http://",
+        ] {
+            let error = with_public(bad).unwrap_err();
+            assert!(
+                matches!(
+                    &error,
+                    ConfigError::Invalid {
+                        name: "WONTON_OIDC_PUBLIC_URL",
+                        ..
+                    }
+                ),
+                "{bad}：{error}"
+            );
+            assert!(!error.to_string().contains("secret"), "{error}");
+        }
+    }
+
+    #[test]
+    fn the_owner_name_is_checked_with_or_without_matrix() {
+        let matrix = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008"),
+            ("WONTON_MATRIX_JWT_KEY", "-----BEGIN PRIVATE KEY-----"),
+            ("WONTON_MATRIX_REGISTRATION_SECRET", "s3cret"),
+        ];
+        for base in [&matrix[..], &matrix[..1]] {
+            let with_owner = |name: &'static str| {
+                let mut settings = base.to_vec();
+                settings.push(("WONTON_OWNER_NAME", name));
+                config(&settings)
+            };
+            assert_eq!(with_owner("alice-1").unwrap().username, "alice-1");
+            for bad in ["Alice", "a/b", "a+b", "a=b", "_foo"] {
+                let error = with_owner(bad).unwrap_err().to_string();
+                assert!(error.contains("WONTON_OWNER_NAME"), "{bad}：{error}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_owner_name_is_locked_against_the_record_in_the_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().to_str().unwrap();
+        let start = |name: Option<&'static str>| {
+            let mut settings = vec![("WONTON_DATA_DIR", data)];
+            settings.extend(name.map(|name| ("WONTON_OWNER_NAME", name)));
+            config(&settings).unwrap().lock_owner()
+        };
+        assert_eq!(start(Some("alice")).unwrap().username, "alice");
+        assert_eq!(start(None).unwrap().username, "alice");
+        assert!(start(Some("bob")).is_err());
+    }
+
+    #[test]
+    fn the_time_zone_must_be_an_iana_name() {
+        let base = ("WONTON_DATA_DIR", "/d");
+        assert_eq!(config(&[base]).unwrap().tz, "UTC");
+        assert_eq!(
+            config(&[base, ("TZ", "Asia/Shanghai")]).unwrap().tz,
+            "Asia/Shanghai"
+        );
+        for bad in ["CST-8", ":/etc/localtime"] {
+            let error = config(&[base, ("TZ", bad)]).unwrap_err().to_string();
+            assert!(error.contains("TZ"), "{bad}：{error}");
+        }
+    }
+
+    #[test]
+    fn matrix_secrets_can_come_from_files_but_not_from_both_places() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = dir.path().join("matrix-jwt.pem");
+        let secret = dir.path().join("matrix-registration-secret");
+        std::fs::write(&key, "-----BEGIN PRIVATE KEY-----\n").unwrap();
+        std::fs::write(&secret, "s3cret\n").unwrap();
+        let (key, secret) = (key.to_str().unwrap(), secret.to_str().unwrap());
+        let files = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008"),
+            ("WONTON_MATRIX_JWT_KEY_FILE", key),
+            ("WONTON_MATRIX_REGISTRATION_SECRET_FILE", secret),
+        ];
+        let matrix = config(&files).unwrap().matrix.unwrap();
+        assert_eq!(matrix.registration_secret, "s3cret");
+        assert!(matrix.jwt_key.starts_with("-----BEGIN PRIVATE KEY-----"));
+
+        let mut both = files.to_vec();
+        both.push(("WONTON_MATRIX_REGISTRATION_SECRET", "other"));
+        assert!(config(&both).is_err(), "值和文件只能给一个");
+        let mut missing = files.to_vec();
+        missing[2] = ("WONTON_MATRIX_JWT_KEY_FILE", "/no/such/file");
+        assert!(config(&missing).is_err(), "文件读不了时启动失败");
+    }
+
+    #[test]
+    fn matrix_needs_its_url_key_and_secret_together() {
+        let base = [("WONTON_DATA_DIR", "/d")];
+        assert!(config(&base).unwrap().matrix.is_none());
+        let full = [
+            ("WONTON_DATA_DIR", "/d"),
+            ("WONTON_MATRIX_URL", "http://tuwunel:8008/"),
+            ("WONTON_MATRIX_JWT_KEY", "-----BEGIN PRIVATE KEY-----"),
+            ("WONTON_MATRIX_REGISTRATION_SECRET", "s3cret"),
+        ];
+        let matrix = config(&full).unwrap().matrix.unwrap();
+        assert_eq!(matrix.url, "http://tuwunel:8008");
+        assert_eq!(matrix.server_name, "wonton.localhost");
+        assert!(!format!("{matrix:?}").contains("s3cret"), "密钥不进日志");
+        for missing in [1, 2, 3] {
+            let partial: Vec<(&str, &str)> = full
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != missing)
+                .map(|(_, pair)| *pair)
+                .collect();
+            assert!(config(&partial).is_err(), "少了 {}", full[missing].0);
+        }
+    }
+}

@@ -14,9 +14,8 @@ use super::host::{ContainerInfo, ImageInfo};
 use super::service::{UpgradeConfig, UpgradeError, Upgrades};
 use super::state::{self, ImageRef, Layout, Outcome, UpgradeState, WATCHDOG_MARGIN};
 use super::{LABEL_MIGRATIONS, LABEL_VERSION, UPDATER_CONTAINER, backup};
-use crate::plugin::languages::Languages;
 
-const SOURCE: &str = "reg/core:stable";
+const SOURCE: &str = "reg/core:beta";
 
 struct Scene {
     root: PathBuf,
@@ -39,11 +38,6 @@ fn config(layout: &Layout) -> UpgradeConfig {
         core_container: Some("wonton-core".to_owned()),
         has_instance: false,
     }
-}
-
-/// 测试没写主人的语言文件：后台文字按英文（期望值都由目录格式化出来）。
-fn langs() -> Languages {
-    Languages::from_header(None)
 }
 
 fn scene() -> Scene {
@@ -72,7 +66,6 @@ fn in_progress(phase: Phase, now: u64) -> UpgradeState {
         image: image.to_owned(),
         digest: Some(digest.to_owned()),
         version: None,
-        image_id: None,
     };
     let mut state = UpgradeState::new(
         "u1".to_owned(),
@@ -91,13 +84,11 @@ impl Scene {
     }
 
     fn write_state(&self, state: &UpgradeState) {
-        state::save(&self.layout.state_path(), state, &langs()).unwrap();
+        state::save(&self.layout.state_path(), state).unwrap();
     }
 
     fn state(&self) -> UpgradeState {
-        state::load(&self.layout.state_path(), &langs())
-            .unwrap()
-            .unwrap()
+        state::load(&self.layout.state_path()).unwrap().unwrap()
     }
 
     fn updater(&self, running: bool, restart_disabled: bool) {
@@ -112,7 +103,7 @@ impl Scene {
     /// 查新版本，把 [`NEW`] 预下载好。
     async fn ready(&self) {
         self.upgrades.check_now(false).await;
-        let status = self.upgrades.status(&langs()).await.unwrap();
+        let status = self.upgrades.status().await.unwrap();
         assert!(
             matches!(status.check, CoreUpgradeCheck::Ready { .. }),
             "{:?}",
@@ -131,8 +122,8 @@ async fn a_new_digest_on_the_channel_is_offered_with_what_the_image_says() {
     label(&s.host, NEW, LABEL_MIGRATIONS, "tuwunel@0.5.0");
     s.upgrades.check_now(false).await;
 
-    let status = s.upgrades.status(&langs()).await.unwrap();
-    assert_eq!(status.channel.as_deref(), Some("stable"));
+    let status = s.upgrades.status().await.unwrap();
+    assert_eq!(status.channel.as_deref(), Some("beta"));
     assert_eq!(status.current.version.as_deref(), Some("0.1.0"));
     assert_eq!(status.current.digest.as_deref(), Some("sha256:old"));
     let CoreUpgradeCheck::Ready { offer } = status.check else {
@@ -152,7 +143,7 @@ async fn the_running_digest_is_up_to_date() {
         .insert(SOURCE.to_owned(), "sha256:old".to_owned());
     s.upgrades.check_now(false).await;
     assert_eq!(
-        s.upgrades.status(&langs()).await.unwrap().check,
+        s.upgrades.status().await.unwrap().check,
         CoreUpgradeCheck::UpToDate
     );
 }
@@ -163,7 +154,7 @@ async fn an_older_version_on_the_channel_is_not_an_upgrade() {
     label(&s.host, NEW, LABEL_VERSION, "0.0.9");
     s.upgrades.check_now(false).await;
     assert_eq!(
-        s.upgrades.status(&langs()).await.unwrap().check,
+        s.upgrades.status().await.unwrap().check,
         CoreUpgradeCheck::UpToDate
     );
     assert!(s.host.did(&format!("remove-image {NEW}")));
@@ -174,49 +165,10 @@ async fn a_registry_that_cannot_be_reached_is_reported_as_such() {
     let s = scene();
     s.host.world().registry_error = Some("连不上".to_owned());
     s.upgrades.check_now(false).await;
-    let CoreUpgradeCheck::Failed { problem } = s.upgrades.status(&langs()).await.unwrap().check
-    else {
+    let CoreUpgradeCheck::Failed { problem } = s.upgrades.status().await.unwrap().check else {
         panic!();
     };
     assert_eq!(problem.reason, Failure::RegistryUnavailable);
-}
-
-/// 后台文字按主人的语言写（ADR-0043）：主人最近用 ja 就是日文，没见过的语言回退英文。
-/// 期望值由目录本身格式化出来，再断言两种请求真的给出两种语言。
-#[tokio::test]
-async fn background_problems_follow_the_owner_language() {
-    let mut messages = Vec::new();
-    for (header, tag) in [("ja", "ja"), ("fr-FR", "en")] {
-        let s = scene();
-        let core = s.layout.data_dir.join("core");
-        std::fs::create_dir_all(&core).unwrap();
-        std::fs::write(core.join("owner.json"), r#"{"username": "owner"}"#).unwrap();
-        let dir = crate::plugin::store::people_languages_dir(&s.layout.data_dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        crate::plugin::store::write_json(
-            &dir.join("people-languages.json"),
-            &std::collections::BTreeMap::from([("owner".to_owned(), header.to_owned())]),
-        )
-        .unwrap();
-        s.host.world().registry_error = Some("连不上".to_owned());
-        s.upgrades.check_now(false).await;
-        let CoreUpgradeCheck::Failed { problem } = s.upgrades.status(&langs()).await.unwrap().check
-        else {
-            panic!();
-        };
-        let expected = crate::l10n::CATALOG.negotiate(&[tag]);
-        assert_eq!(
-            problem.message,
-            crate::l10n::CATALOG.format(
-                expected,
-                "upgrade-latest-version-failed",
-                &[("source", SOURCE.into()), ("error", "连不上".into())],
-            ),
-            "{header}"
-        );
-        messages.push(problem.message);
-    }
-    assert_ne!(messages[0], messages[1], "ja 和 en 要不同");
 }
 
 /// 后台自动下载：剩不到 5 GB 就不下载；主人手动下载按镜像大小加余量看。
@@ -231,7 +183,7 @@ async fn automatic_downloads_keep_5_gb_free_but_manual_ones_only_need_room_for_t
     }
     s.upgrades.check_now(false).await;
     let CoreUpgradeCheck::DownloadFailed { digest, problem } =
-        s.upgrades.status(&langs()).await.unwrap().check
+        s.upgrades.status().await.unwrap().check
     else {
         panic!();
     };
@@ -242,7 +194,7 @@ async fn automatic_downloads_keep_5_gb_free_but_manual_ones_only_need_room_for_t
     s.upgrades.check_now(true).await;
     assert!(s.host.did(&format!("pull {NEW}")));
     assert!(matches!(
-        s.upgrades.status(&langs()).await.unwrap().check,
+        s.upgrades.status().await.unwrap().check,
         CoreUpgradeCheck::Ready { .. }
     ));
 
@@ -253,8 +205,7 @@ async fn automatic_downloads_keep_5_gb_free_but_manual_ones_only_need_room_for_t
         world.free = 100; // 当前镜像 100 字节，加余量放不下。
     }
     s.upgrades.check_now(true).await;
-    let CoreUpgradeCheck::DownloadFailed { problem, .. } =
-        s.upgrades.status(&langs()).await.unwrap().check
+    let CoreUpgradeCheck::DownloadFailed { problem, .. } = s.upgrades.status().await.unwrap().check
     else {
         panic!();
     };
@@ -272,8 +223,7 @@ async fn a_download_failure_is_shown_with_its_reason() {
             .insert(NEW.to_owned(), "连不上仓库".to_owned());
     }
     s.upgrades.check_now(false).await;
-    let CoreUpgradeCheck::DownloadFailed { problem, .. } =
-        s.upgrades.status(&langs()).await.unwrap().check
+    let CoreUpgradeCheck::DownloadFailed { problem, .. } = s.upgrades.status().await.unwrap().check
     else {
         panic!();
     };
@@ -315,7 +265,7 @@ async fn a_pinned_or_informal_install_says_so_and_cannot_upgrade() {
     };
     let pinned = Upgrades::new(pinned, s.host.clone());
     assert_eq!(
-        pinned.status(&langs()).await.unwrap().check,
+        pinned.status().await.unwrap().check,
         CoreUpgradeCheck::Pinned
     );
 
@@ -335,11 +285,11 @@ async fn a_pinned_or_informal_install_says_so_and_cannot_upgrade() {
     ] {
         let informal = Upgrades::new(informal, s.host.clone());
         assert_eq!(
-            informal.status(&langs()).await.unwrap().check,
+            informal.status().await.unwrap().check,
             CoreUpgradeCheck::NotInstalled
         );
         assert!(matches!(
-            informal.start("sha256:new", &langs()).await,
+            informal.start("sha256:new").await,
             Err(UpgradeError::NotReady(_))
         ));
     }
@@ -349,16 +299,11 @@ async fn a_pinned_or_informal_install_says_so_and_cannot_upgrade() {
 async fn starting_launches_the_updater_from_the_running_image() {
     let s = scene();
     s.ready().await;
-    let status = s.upgrades.start("sha256:new", &langs()).await.unwrap();
+    let status = s.upgrades.start("sha256:new").await.unwrap();
 
     let run = status.run.unwrap();
     assert_eq!(run.to.digest, "sha256:new");
     assert_eq!(run.from.digest.as_deref(), Some("sha256:old"));
-    assert_eq!(
-        s.state().from.image_id.as_deref(),
-        Some("id-core"),
-        "回滚要认得出升级前跑的是哪个镜像"
-    );
     assert!(matches!(
         run.state,
         CoreUpgradeRunState::InProgress {
@@ -378,19 +323,15 @@ async fn starting_launches_the_updater_from_the_running_image() {
 #[tokio::test]
 async fn starting_refuses_anything_but_what_was_confirmed() {
     let s = scene();
-    let refused = s.upgrades.start("sha256:new", &langs()).await.unwrap_err();
+    let refused = s.upgrades.start("sha256:new").await.unwrap_err();
     assert_eq!(refused.kind(), "not_ready");
 
     s.ready().await;
-    let refused = s
-        .upgrades
-        .start("sha256:other", &langs())
-        .await
-        .unwrap_err();
+    let refused = s.upgrades.start("sha256:other").await.unwrap_err();
     assert_eq!(refused.kind(), "changed");
 
-    s.upgrades.start("sha256:new", &langs()).await.unwrap();
-    let refused = s.upgrades.start("sha256:new", &langs()).await.unwrap_err();
+    s.upgrades.start("sha256:new").await.unwrap();
+    let refused = s.upgrades.start("sha256:new").await.unwrap_err();
     assert_eq!(refused.kind(), "busy");
 }
 
@@ -399,31 +340,31 @@ async fn an_updater_that_cannot_start_ends_as_failed_with_nothing_touched() {
     let s = scene();
     s.ready().await;
     s.host.world().updater_start_error = Some("Docker 拒绝".to_owned());
-    let status = s.upgrades.start("sha256:new", &langs()).await.unwrap();
+    let status = s.upgrades.start("sha256:new").await.unwrap();
     assert!(matches!(
         status.run.unwrap().state,
         CoreUpgradeRunState::Failed { .. }
     ));
     // 可以再发起一次。
     s.host.world().updater_start_error = None;
-    s.upgrades.start("sha256:new", &langs()).await.unwrap();
+    s.upgrades.start("sha256:new").await.unwrap();
 }
 
 #[tokio::test]
 async fn canceling_only_works_while_pulling() {
     let s = scene();
-    let refused = s.upgrades.cancel(&langs()).await.unwrap_err();
+    let refused = s.upgrades.cancel().await.unwrap_err();
     assert_eq!(refused.kind(), "too_late");
 
     s.ready().await;
-    s.upgrades.start("sha256:new", &langs()).await.unwrap();
-    s.upgrades.cancel(&langs()).await.unwrap();
+    s.upgrades.start("sha256:new").await.unwrap();
+    s.upgrades.cancel().await.unwrap();
     assert!(s.layout.cancel_path(&s.state().id).exists());
 
     let mut moved_on = s.state();
     moved_on.enter(Phase::BackingUp, s.now());
     s.write_state(&moved_on);
-    let refused = s.upgrades.cancel(&langs()).await.unwrap_err();
+    let refused = s.upgrades.cancel().await.unwrap_err();
     assert_eq!(refused.kind(), "too_late");
 }
 
@@ -437,7 +378,7 @@ async fn a_core_restarted_during_an_upgrade_stays_frozen_until_there_is_a_result
     let frozen = restarted.frozen();
     assert!(*frozen.borrow());
 
-    let status = restarted.status(&langs()).await.unwrap();
+    let status = restarted.status().await.unwrap();
     assert!(matches!(
         status.run.unwrap().state,
         CoreUpgradeRunState::InProgress {
@@ -467,7 +408,7 @@ async fn no_background_check_while_an_upgrade_is_running() {
     s.upgrades.trigger_check(false);
     tokio::task::yield_now().await;
     assert_eq!(
-        s.upgrades.status(&langs()).await.unwrap().check,
+        s.upgrades.status().await.unwrap().check,
         CoreUpgradeCheck::NotChecked
     );
 
@@ -476,7 +417,7 @@ async fn no_background_check_while_an_upgrade_is_running() {
     s.write_state(&ended);
     s.upgrades.trigger_check(false);
     assert_eq!(
-        s.upgrades.status(&langs()).await.unwrap().check,
+        s.upgrades.status().await.unwrap().check,
         CoreUpgradeCheck::Checking
     );
 }

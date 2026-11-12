@@ -1,12 +1,13 @@
-# 核心镜像只需要 Cargo 工作区、预装插件锁文件、编进核心的正式安装用 compose 文件和开发索引。
+# 核心镜像只需要 Cargo 工作区、随核心附带的系统插件和默认插件、编进核心的正式安装用 compose 文件，和开发镜像带的开发
+# 索引。
 *
 !Cargo.toml
 !Cargo.lock
 !rust-toolchain.toml
 !crates/
 crates/**/target
-!vendor/
-!plugins/system.lock
+!plugins/magpie/
+!plugins/hermes/
 !deploy/install/compose.yaml
 !deploy/install/wonton
 !deploy/dev/core/store/index.json

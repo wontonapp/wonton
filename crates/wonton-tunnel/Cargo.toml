@@ -8,19 +8,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-# MIT OR Apache-2.0。错误链带上原因（探针绑定失败等）。
-anyhow = { workspace = true }
 # MIT OR Apache-2.0。解析本地代理收到的 Proxy-Authorization（Basic）。
 base64 = { workspace = true }
-# MIT。iroh 收发数据报用的缓冲类型（`Connection::send_datagram`）。
-bytes = "1.12.1"
 # MIT OR Apache-2.0。生成本地代理的会话凭据。
 getrandom = { workspace = true }
-# MIT OR Apache-2.0。解析本地代理和联邦出站代理收到的第一个请求头（hyper 用的同一个解析器）。
+# MIT OR Apache-2.0。解析本地代理收到的第一个请求头（hyper 用的同一个解析器）。
 httparse = "1.10.1"
 iroh = { workspace = true }
-# MIT OR Apache-2.0。中继令牌写在地址的 userinfo 里，按百分号编码解码。
-percent-encoding = "2.3.2"
 # MIT OR Apache-2.0。配对请求和回应的 JSON。
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -29,32 +23,13 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-
 tracing = { workspace = true }
 # MIT OR Apache-2.0。二维码里的配对码是一个 wonton:// 地址。
 url = { workspace = true }
-wonton-protocol = { path = "../wonton-protocol" }
-
-[features]
-# 仅供客户端集成测试记录请求进入本地代理的顺序；App 不启用。
-test-hooks = []
 
 [dev-dependencies]
-# 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
-iroh = { workspace = true, features = ["test-utils"] }
-# MIT OR Apache-2.0。持有测试中继的 `Server`：它一掉服务器就停。
-iroh-relay = { version = "1.4.1", features = ["server"] }
-# MIT OR Apache-2.0。#200 的行为测试给中继签自建 CA 的证书链（后端用核心已有的 aws-lc-rs）。
-rcgen = { workspace = true }
-# ISC AND (Apache-2.0 OR ISC)。测试中继的 TLS 服务端配置，客户端校验在 iroh 里。
-rustls = { workspace = true }
+anyhow = { workspace = true }
 # 示例的命令行解析。MIT OR Apache-2.0。
 clap = { version = "4.6.7", features = ["derive"] }
-tokio = { workspace = true, features = ["signal", "test-util"] }
+tokio = { workspace = true, features = ["signal"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-# MIT OR Apache-2.0。隔离分享冒烟中继使用测试 CA 签发的 TLS 证书。
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
-
-# 对自己的 dev 依赖：集成测试要用 test-hooks，App 不经 dev-dependencies。
-[dev-dependencies.wonton-tunnel]
-path = "."
-features = ["test-hooks"]
 
 [lints]
 workspace = true

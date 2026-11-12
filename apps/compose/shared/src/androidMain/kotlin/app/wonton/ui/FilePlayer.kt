@@ -23,7 +23,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -68,7 +67,7 @@ fun FilePlayer(info: FileInfo, core: ClientCore, onClose: () -> Unit, onOpenElse
                     else -> PlayerSurface(address, onFailed = { failed = true })
                 }
                 TextButton(onClick = onClose, Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                    Text(stringResource(R.string.common_done), color = Color.White)
+                    Text("完成", color = Color.White)
                 }
             }
         }
@@ -83,7 +82,7 @@ private fun PlayerProblem(problem: FileProblem, onOpenElsewhere: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(problem.message, color = Color.White, textAlign = TextAlign.Center)
-        TextButton(onClick = onOpenElsewhere) { Text(stringResource(R.string.file_download_and_open)) }
+        TextButton(onClick = onOpenElsewhere) { Text("下载后用其他 App 打开") }
     }
 }
 

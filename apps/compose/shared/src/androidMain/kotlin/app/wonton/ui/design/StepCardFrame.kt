@@ -1,4 +1,5 @@
 package app.wonton.ui.design
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -11,15 +12,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.StepNav
-import app.wonton.ui.R
-import app.wonton.ui.icons.Close
-import app.wonton.ui.icons.WontonIcon
+
 @Composable
 fun StepCardFrame(
     nav: StepNav,
@@ -30,7 +28,6 @@ fun StepCardFrame(
     onSkip: () -> Unit,
     onPrimary: () -> Unit,
     modifier: Modifier = Modifier,
-    onClose: (() -> Unit)? = null,
     reject: WontonDialogAction? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -38,7 +35,7 @@ fun StepCardFrame(
         modifier.fillMaxWidth().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16),
     ) {
-        StepCardHeader(nav, onClose, onBack, onSkip)
+        StepCardHeader(nav, onBack, onSkip)
         Text(
             title,
             modifier = Modifier.semantics { heading() },
@@ -49,40 +46,30 @@ fun StepCardFrame(
         StepCardFooter(nav, primaryText, primaryBusy, onPrimary, reject)
     }
 }
+
 @Composable
-private fun StepCardHeader(
-    nav: StepNav,
-    onClose: (() -> Unit)?,
-    onBack: () -> Unit,
-    onSkip: () -> Unit,
-) {
-    val stepDescription = stringResource(R.string.design_step_progress, nav.position.toInt(), nav.total.toInt())
+private fun StepCardHeader(nav: StepNav, onBack: () -> Unit, onSkip: () -> Unit) {
+    val stepDescription = "第 ${nav.position} 步，共 ${nav.total} 步"
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // 重看引导：左上关闭；第一步没有可用的返回就不画灰按钮。
-        if (nav.canClose && onClose != null) {
-            WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), onClose)
-        }
         Text(
             "${nav.position}/${nav.total}",
             modifier = Modifier.weight(1f).clearAndSetSemantics { contentDescription = stepDescription },
             style = WontonTheme.typography.supporting,
             color = WontonTheme.colors.textSecondary.toColor(),
         )
-        if (!nav.canClose || nav.canBack) {
-            WontonButton(
-                stringResource(R.string.design_step_back),
-                onBack,
-                modifier = Modifier.weight(1f),
-                kind = WontonButtonKind.SECONDARY,
-                enabled = nav.canBack,
-            )
-        }
         WontonButton(
-            stringResource(R.string.design_skip),
+            "上一步",
+            onBack,
+            modifier = Modifier.weight(1f),
+            kind = WontonButtonKind.SECONDARY,
+            enabled = nav.canBack,
+        )
+        WontonButton(
+            "跳过",
             onSkip,
             modifier = Modifier.weight(1f),
             kind = WontonButtonKind.SECONDARY,
@@ -90,6 +77,7 @@ private fun StepCardHeader(
         )
     }
 }
+
 @Composable
 private fun StepCardFooter(
     nav: StepNav,
@@ -105,7 +93,7 @@ private fun StepCardFooter(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (primaryBusy) {
-                val busyDescription = stringResource(R.string.design_busy)
+                val busyDescription = "正在处理"
                 CircularProgressIndicator(
                     modifier = Modifier.size(WontonTheme.size.iconSmall)
                         .semantics { contentDescription = busyDescription },

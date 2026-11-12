@@ -1,6 +1,6 @@
 # ADR-0008 模型网关：magpie
 
-- 状态：已接受（2026-10-28）；“声明 `models` 的插件必须先有网关”的部分已被 [ADR-0055](0055-model-gateway-optional.md) 修订：网关可选，没接上照样装
+- 状态：已接受（2026-10-28）
 
 ## 背景
 
@@ -14,8 +14,8 @@ Web UI；支持列表里有 Hermes Agent。
 
 - magpie 作为系统插件预装，锁定版本。主人换不掉；可替换只表示我们换实现时 Agent 不用改（主人 2026-11-04 定）。
 - 用户在 App 的“模型设置”小程序（magpie 自带的 Web UI）里配置 provider 和 key。
-- 核心不自写模型网关，只做两件事：给声明了 `models` 权限的插件注入网关地址和只属于该插件的凭据（网关就绪才
-  注入；没接上时变量为空、照样安装，见 [ADR-0055](0055-model-gateway-optional.md)）；在网络层只允许这些插件访问 magpie。
+- 核心不自写模型网关，只做两件事：给声明了 `models` 权限的插件注入网关地址和只属于该插件的凭据；
+  在网络层只允许这些插件访问 magpie。
 - 本地模型插件（如 Ollama）装好后在 magpie 里注册为 provider。
 
 ## 理由
@@ -36,12 +36,12 @@ Web UI；支持列表里有 Hermes Agent。
 ## 验证结果（M0-4，2026-10-28）
 
 环境：magpie 0.1.1327（stable 渠道）、Hermes Agent v0.22.5、Tuwunel v1.9.4，macOS + OrbStack。
-内网的开发机拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
+内网的 npchy 拉不到 Docker Hub、也连不上海外 provider，所以没在它上面跑。复现：`deploy/dev/agent`
 的 `dev.sh up` 再 `dev.sh smoke`。
 
 **上游说明**：验证时容器里的 magpie 没有直接配 provider，而是加了一个 OpenAI 兼容的自定义 provider，
-指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用网关里的一个对话模型跑日常测试；
-海外只发了一次 Anthropic Messages 格式的短请求（网关里的 Claude 模型，经两层 magpie 转换，2 秒返回）。
+指向主人本机已在运行的 magpie（`host.docker.internal:3425`）。国内模型用 `rm/glm-5.3-flash` 跑日常测试；
+海外只发了一次 Anthropic Messages 格式的短请求（`auto/claude-haiku-5-5`，经两层 magpie 转换，2 秒返回）。
 生产环境没有这一层，用户在容器 magpie 的网页（“模型设置”）里直接配置 provider 和 key。
 
 ### 每插件独立凭据：用 magpie 的网关凭据（gateway key）
@@ -69,7 +69,7 @@ Web UI；支持列表里有 Hermes Agent。
   `key_env: WONTON_MODEL_API_KEY`、`transport: chat_completions`、`discover_models: false`、`context_length`），
   再设 `model.provider: custom:magpie`、`model.default: ${WONTON_MODEL_DEFAULT}`。Hermes 会展开配置里的
   `${VAR}`，凭据只在环境变量里。Hermes 自己也会改写 `config.yaml`，所以由插件的 init 服务在首次启动前写入，
-  之后不覆盖（见 [Hermes 的 config.yaml](https://github.com/geraldpeng6/wonton-plugin-hermes/blob/main/config.yaml)）。
+  之后不覆盖（见 `plugins/hermes/config.yaml`）。
 - 默认模型指向 magpie 的路由组 `group/wonton-default`：换 provider 或模型只在 magpie 里改，
   Hermes 和其他插件不用动；路由组按顺序回退。
 - 网关地址必须用带点的主机名（开发环境用网络别名 `magpie.wonton.internal`）。Hermes 把不带点的主机名
@@ -124,7 +124,7 @@ Web UI；支持列表里有 Hermes Agent。
 
 M0-4 的检查改由核心完成，复跑：`deploy/dev/core/smoke.sh` 的“Hermes”一步。环境同上，Hermes Agent v0.22.5。
 
-- 安装：`dev.sh install <Hermes 插件仓库目录>` 把插件包目录打成 tar 上传（带 `config.yaml`），核心代 Bot 登录、建主房间、
+- 安装：`dev.sh install plugins/hermes` 把插件包目录打成 tar 上传（带 `config.yaml`），核心代 Bot 登录、建主房间、
   签发凭据 `com.nousresearch.hermes/default`（Bot 服务用 Bot 的凭据，见插件规范“模型网关”），8 秒装好并通过健康
   检查（Matrix 已连上）。Hermes 只凭注入的变量工作，`config.yaml` 没为 Wonton 改过。
 - 对话：主人的一台新设备经隧道在加密私聊里问两轮，两轮都收到加密回复，第二轮记得第一轮的问题，两轮共约 8.6 秒
@@ -147,35 +147,11 @@ magpie 的网页经网关代登录（ADR-0009 的“网关代登录”）打开�
 - 网页的修改是同源的 `fetch`（`POST /api/…`，JSON），经网关照常转发：在网页上关掉、再打开上游，`magpie providers`
   里随即可见。别的插件网页发来的同样请求得到 401，到不了 magpie。
 
-## 补充：默认路由的轻提示（2026-11-07）
-
-默认模型（`default_model`，组 `wonton-default`）可能还没有模型：先装 Agent、后在“模型设置”里接 provider 是常态。
-接上与否只影响详情页的轻提示（`PluginHintCategory`，ADR-0055 的分工），不是错误，不标红，插件状态照常由容器健康决定：
-
-- **探测**：核心对运行中的使用方每 30 秒读一次网关的 `GET <openai>/models`（不计费）；默认模型不在列表就给
-  `models_no_default_model`。凭据用核心自己的 `<网关插件 id>/health`，与使用方的限额和用量分开。
-- **最小补全**：列表证明不了服务商的 key 有效；核心在核心启动首轮、使用方刚安装、刚启动时各发一次
-  一条用户消息、`max_tokens: 1`、非流式的补全来验证，服务商出错（如 key 被拒）后每 5 分钟复查，恢复即停。
-  30 秒一轮补全是每天约 2880 次请求，会把健康检查混进用量，不做。缺模型时不发补全；健康稳态不发补全，
-  巡检只读列表，不宣称持续验证服务商 key。补全可能计费，出错给 `models_provider_error`，原因由核心按
-  App 的语言写进 detail。网关连不上或模型列表拿不到归 `models_not_connected`（事实上没接上，与 ADR-0055 的类别一致）。
-- **安装预览**：`kind: agent` 或申请了 `models` 的插件在默认模型不在列表时，预览里按请求语言提一句先接模型，
-  不阻断安装，不发补全。
-
-行为测试（`cargo test -p wonton-core models`，假网关上）：列表缺默认组时补全得 404、不写提示前不发补全；
-key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`；65 个假时钟秒内健康巡检零补全；
-服务商错误恰好在五分钟边界复查、恢复后停发；安装和启动各只补全一次。真实栈复跑见 PR 描述。
-
-没选的做法：
-
-- 巡检每轮发补全：计费与用量污染（见上）。
-- 把路由问题写成 `Degraded` 状态：与 ADR-0055 冲突，模型问题不是插件坏了。
-
 ## 补充：默认模型（2026-10-30）
 
 主人在“模型设置”里加任意一家 provider 的 key，默认 Bot 就能回答，不用再做别的（GOAL 的 M1 第 3 项）。
 
-- **谁管**：magpie 插件自己。插件里的常驻服务 default-model（[default-model.sh](https://github.com/geraldpeng6/wonton-plugin-magpie/blob/main/default-model.sh)）维护 `wonton-default`
+- **谁管**：magpie 插件自己。插件里的常驻服务 default-model（`plugins/magpie/default-model.sh`）维护 `wonton-default`
   这个组，维护失败时它的健康检查不过，插件显示异常。`default_model` 是网关插件声明的，由它保证存在、选得合理；核心只
   把它注入给使用方，不认识 magpie 的组（ADR-0015）。
 - **规则**：用 magpie 自己的“Cheap first”模板挑出的两个模型，便宜的在前、最强的在后：请求先发给便宜的，它出错才换
@@ -197,7 +173,7 @@ key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`�
   行都是），两边的保存相隔不到约 0.1 秒时，后写的一方会盖掉先写的一方，这要 magpie 加锁才能消除。default-model 只在
   provider、模型列表或模型目录变了之后写，平时不写。
 - **没有模型时**：组是空的，magpie 的模型列表里没有它，请求它得到 404，报错很长，绕过了 Hermes 对模型报错的改写，
-  原样进了聊天。所以 Hermes 的插件包带一个 Hermes 插件（[wonton/](https://github.com/geraldpeng6/wonton-plugin-hermes/tree/main/wonton)，`post_gateway_admission` 钩子）：
+  原样进了聊天。所以 Hermes 的插件包带一个 Hermes 插件（`plugins/hermes/wonton`，`post_gateway_admission` 钩子）：
   每条消息先查一次网关的模型列表，默认模型不在里面时直接回提示，不调模型，这条消息也不进会话历史：
   - 一个模型都没有：请在“模型设置”里添加模型服务商和它的 API key；
   - 有模型、默认模型却不可用（组被改空了）：请检查 wonton-default 路由组。
@@ -206,7 +182,8 @@ key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`�
 
 没选的做法：
 
-- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613，组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
+- 全部模型（`*`）按顺序：顺序是服务商列出的顺序，不看价格。OpenAI 预设下第一个是 2023 年的 gpt-4-0613（每百万
+  token 输入 30、输出 60 美元），组里还有 tts-1、davinci-002 这类不能对话的模型；OpenRouter 下第一个是
   openrouter/auto（由 OpenRouter 按请求另挑模型，价格不定），通义千问下是旗舰 qwen-max（实测见下）。
 - 自己按模型名挑（如名字里带 mini、flash 的排前面）：命名没有规律可循，会过时；magpie 的模板用的是价格。通配也排不了
   序：通配匹配到的模型一律按 magpie 列出模型的顺序排，写在前面的通配不会排在前面。

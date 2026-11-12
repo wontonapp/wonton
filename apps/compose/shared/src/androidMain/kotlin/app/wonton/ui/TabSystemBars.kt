@@ -1,26 +1,26 @@
 package app.wonton.ui
 
-import android.content.res.Configuration
 import android.os.Build
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.wonton.ui.design.WontonTheme
+import app.wonton.ui.design.LIGHT_NAVIGATION_SCRIM
+import app.wonton.ui.design.DARK_NAVIGATION_SCRIM
 
 
 @Suppress("DEPRECATION")
 @Composable
-internal fun FullscreenSystemBars(fullscreen: Boolean) {
+internal fun FullscreenSystemBars(fullscreen: Boolean, web: Boolean) {
     val window = LocalActivity.current?.window ?: return
     val dark = WontonTheme.isDark
-    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    DisposableEffect(window, fullscreen, landscape, dark) {
+    DisposableEffect(window, fullscreen, dark) {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
         val previousBehavior = controller.systemBarsBehavior
         val previousCutout = window.attributes.layoutInDisplayCutoutMode
@@ -33,8 +33,6 @@ internal fun FullscreenSystemBars(fullscreen: Boolean) {
                 }
             }
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
-        if (fullscreen && landscape) {
             controller.hide(WindowInsetsCompat.Type.statusBars())
         } else {
             controller.show(WindowInsetsCompat.Type.statusBars())
@@ -48,11 +46,34 @@ internal fun FullscreenSystemBars(fullscreen: Boolean) {
     }
     SideEffect {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
-        window.isNavigationBarContrastEnforced = false
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        controller.isAppearanceLightStatusBars = !dark
-        controller.isAppearanceLightNavigationBars = !dark
+        window.navigationBarColor = if (web) android.graphics.Color.TRANSPARENT
+            else if (dark) DARK_NAVIGATION_SCRIM else LIGHT_NAVIGATION_SCRIM
+        window.isNavigationBarContrastEnforced = !web
+        if (!web) {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !dark
+            controller.isAppearanceLightNavigationBars = !dark
+        }
     }
 }
 
+@Composable
+internal fun PageSystemBarIcons(edges: TabPageEdges, fullscreen: Boolean, webBottom: Boolean) {
+    val window = LocalActivity.current?.window ?: return
+    val dark = WontonTheme.isDark
+    val currentDark = rememberUpdatedState(dark)
+    DisposableEffect(window) {
+        onDispose {
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !currentDark.value
+            controller.isAppearanceLightNavigationBars = !currentDark.value
+        }
+    }
+    val top = edges.pixels[TabEdge.TOP]?.lightBackground ?: !dark
+    val navigation = edges.pixels[tabNavigationEdge()]?.lightBackground ?: !dark
+    SideEffect {
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.isAppearanceLightStatusBars = if (fullscreen) top else !dark
+        controller.isAppearanceLightNavigationBars = if (webBottom) navigation else !dark
+    }
+}

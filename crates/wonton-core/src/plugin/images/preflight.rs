@@ -8,8 +8,6 @@ use std::collections::{HashMap, HashSet};
 use resvg::usvg::roxmltree::{Document, Node, NodeId};
 use simplecss::{AttributeOperator, Element, PseudoClass, Selector, StyleSheet};
 
-use super::Languages;
-
 /// SVG 展开 `<use>` 后最多这么多元素。图标用不到这么多；层层引用的 `<use>` 能用几 KB 的文件展开出上亿个
 /// 元素，resvg 自己的上限（一百万）要占几百 MB 内存。
 const MAX_ELEMENTS: u64 = 20_000;
@@ -21,24 +19,20 @@ const MAX_GRADIENT_STOPS: usize = 64;
 const MAX_STYLE_RULES: usize = 256;
 const SVG_NS: &str = "http://www.w3.org/2000/svg";
 
-pub(super) fn check(doc: &Document, langs: &Languages) -> Result<(), String> {
+pub(super) fn check(doc: &Document) -> Result<(), String> {
     let root = doc.root_element();
     if root.tag_name().name() != "svg" || root.tag_name().namespace() != Some(SVG_NS) {
-        return Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-svg-root",
-            &[("ns", SVG_NS.into())],
-        ));
+        return Err(format!("根元素要是 <svg xmlns=\"{SVG_NS}\">"));
     }
-    style_sheets(doc, langs)?;
-    Preflight::new(doc).count(root, 0, langs)?;
+    style_sheets(doc)?;
+    Preflight::new(doc).count(root, 0)?;
     Ok(())
 }
 
 /// 样式表只收不带组合符的选择器（`.cls-1`、`rect.a`、`#a`）：simplecss 匹配后代选择器时逐层回溯，几百字节的样式表
 /// 配上几十层嵌套就能算上几分钟。按 usvg 的找法找样式表（本地名是 `style` 的元素，`type` 不写或是 `text/css`，取第一段
 /// 文字），用同一个 simplecss 解析，检查的就是 usvg 要匹配的那些规则。
-fn style_sheets(doc: &Document, langs: &Languages) -> Result<(), String> {
+fn style_sheets(doc: &Document) -> Result<(), String> {
     let mut sheet = StyleSheet::new();
     for node in doc.descendants().filter(|n| n.has_tag_name("style")) {
         if matches!(node.attribute("type"), None | Some("text/css"))
@@ -48,20 +42,15 @@ fn style_sheets(doc: &Document, langs: &Languages) -> Result<(), String> {
         }
     }
     if sheet.rules.len() > MAX_STYLE_RULES {
-        return Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-style-rules",
-            &[
-                ("max", MAX_STYLE_RULES.into()),
-                ("count", sheet.rules.len().into()),
-            ],
+        return Err(format!(
+            "样式表最多 {MAX_STYLE_RULES} 条规则，这里有 {} 条",
+            sheet.rules.len()
         ));
     }
     match sheet.rules.iter().find(|r| has_combinator(&r.selector)) {
-        Some(rule) => Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-style-combinator",
-            &[("selector", rule.selector.to_string().into())],
+        Some(rule) => Err(format!(
+            "样式表的选择器 “{}” 带了组合符：只能用 .cls-1 这样不带组合符的选择器",
+            rule.selector
         )),
         None => Ok(()),
     }
@@ -131,47 +120,25 @@ impl<'a, 'input> Preflight<'a, 'input> {
         }
     }
 
-    fn count(
-        &mut self,
-        node: Node<'a, 'input>,
-        depth: u32,
-        langs: &Languages,
-    ) -> Result<Expanded, String> {
+    fn count(&mut self, node: Node<'a, 'input>, depth: u32) -> Result<Expanded, String> {
         let expanded = match self.counted.get(&node.id()) {
             Some(&expanded) => expanded,
-            None => self.expand(node, depth, langs)?,
+            None => self.expand(node, depth)?,
         };
         if depth + expanded.height > MAX_DEPTH {
-            return Err(crate::l10n::text(
-                langs,
-                "plugin-install-img-nesting-depth",
-                &[("max", MAX_DEPTH.into())],
-            ));
+            return Err(format!("SVG 嵌套超过 {MAX_DEPTH} 层"));
         }
         Ok(expanded)
     }
 
-    fn expand(
-        &mut self,
-        node: Node<'a, 'input>,
-        depth: u32,
-        langs: &Languages,
-    ) -> Result<Expanded, String> {
+    fn expand(&mut self, node: Node<'a, 'input>, depth: u32) -> Result<Expanded, String> {
         if depth > MAX_DEPTH {
-            return Err(crate::l10n::text(
-                langs,
-                "plugin-install-img-nesting-depth",
-                &[("max", MAX_DEPTH.into())],
-            ));
+            return Err(format!("SVG 嵌套超过 {MAX_DEPTH} 层"));
         }
         if !self.visiting.insert(node.id()) {
-            return Err(crate::l10n::text(
-                langs,
-                "plugin-install-img-use-cycle",
-                &[],
-            ));
+            return Err("SVG 里的 <use> 循环引用".to_owned());
         }
-        allowed(node, langs)?;
+        allowed(node)?;
         let mut expanded = Expanded {
             elements: 1,
             height: 1,
@@ -180,29 +147,21 @@ impl<'a, 'input> Preflight<'a, 'input> {
             expanded.elements = expanded.elements.saturating_add(part.elements);
             expanded.height = expanded.height.max(part.height + 1);
             if expanded.elements > MAX_ELEMENTS {
-                return Err(crate::l10n::text(
-                    langs,
-                    "plugin-install-img-use-expanded",
-                    &[("max", MAX_ELEMENTS.into())],
-                ));
+                return Err(format!("SVG 展开 <use> 后超过 {MAX_ELEMENTS} 个元素"));
             }
             Ok(())
         };
         for child in node.children().filter(Node::is_element) {
-            add(self.count(child, depth + 1, langs)?)?;
+            add(self.count(child, depth + 1)?)?;
         }
         if is_svg(node, "use") {
-            let targets = self
-                .ids
-                .get(use_target(node, langs)?)
-                .cloned()
-                .unwrap_or_default();
+            let targets = self.ids.get(use_target(node)?).cloned().unwrap_or_default();
             let mut largest = Expanded {
                 elements: 0,
                 height: 0,
             };
             for target in targets {
-                let part = self.count(target, depth + 1, langs)?;
+                let part = self.count(target, depth + 1)?;
                 largest.elements = largest.elements.max(part.elements);
                 largest.height = largest.height.max(part.height);
             }
@@ -223,21 +182,16 @@ fn is_svg(node: Node, name: &str) -> bool {
 
 /// `<use>` 引用的 id。只认一种写法：只有一个 href（`href` 或 `xlink:href`，别的命名空间里的也算），值是 `#` 加不含空白的
 /// id。几个 href 时 usvg 和这里可能各取一个；空白是 usvg 和这里断开 id 的地方可能不同。
-fn use_target<'a>(node: Node<'a, '_>, langs: &Languages) -> Result<&'a str, String> {
+fn use_target<'a>(node: Node<'a, '_>) -> Result<&'a str, String> {
     let mut hrefs = node.attributes().filter(|a| a.name() == "href");
     let (Some(href), None) = (hrefs.next(), hrefs.next()) else {
-        return Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-use-href-count",
-            &[],
-        ));
+        return Err("<use> 要有且只有一个 href（href 或 xlink:href）".to_owned());
     };
     match href.value().strip_prefix('#') {
         Some(id) if !id.is_empty() && !id.contains(char::is_whitespace) => Ok(id),
-        _ => Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-use-href-format",
-            &[("href", format!("{:?}", href.value()).into())],
+        _ => Err(format!(
+            "<use> 的 href 只能写成 #id，id 里不能有空白：{:?}",
+            href.value()
         )),
     }
 }
@@ -245,39 +199,28 @@ fn use_target<'a>(node: Node<'a, '_>, langs: &Languages) -> Result<&'a str, Stri
 /// 拒绝 usvg 会按引用次数复制内容的功能，图标都用不到：usvg 给每个用到它们的元素各转换一份按 objectBoundingBox
 /// 换算的剪切路径、蒙版、图案和滤镜，给路径的每个顶点各放一份标记，给每条路径各复制一份按 objectBoundingBox
 /// 换算的渐变。不拒绝的话，几 KB 的 SVG 就能让 usvg 用掉几 GB 内存，`<use>` 的计数也拦不住。
-fn allowed(node: Node, langs: &Languages) -> Result<(), String> {
+fn allowed(node: Node) -> Result<(), String> {
     for name in ["marker", "pattern", "filter"] {
         if is_svg(node, name) {
-            return Err(crate::l10n::text(
-                langs,
-                "plugin-install-img-element-forbidden",
-                &[("name", name.into())],
-            ));
+            return Err(format!("图标不能用 <{name}>"));
         }
     }
     if is_svg(node, "clipPath") && !user_space(node, "clipPathUnits", true) {
-        return Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-clip-path-units",
-            &[],
-        ));
+        return Err("<clipPath> 的 clipPathUnits 只能是 userSpaceOnUse".to_owned());
     }
     if is_svg(node, "mask")
         && !(user_space(node, "maskUnits", false) && user_space(node, "maskContentUnits", true))
     {
-        return Err(crate::l10n::text(
-            langs,
-            "plugin-install-img-mask-units",
-            &[],
-        ));
+        return Err(
+            "<mask> 要写 maskUnits=\"userSpaceOnUse\"，maskContentUnits 只能是 userSpaceOnUse"
+                .to_owned(),
+        );
     }
     if is_svg(node, "linearGradient") || is_svg(node, "radialGradient") {
         let stops = node.children().filter(|c| is_svg(*c, "stop")).count();
         if stops > MAX_GRADIENT_STOPS {
-            return Err(crate::l10n::text(
-                langs,
-                "plugin-install-img-gradient-stops",
-                &[("max", MAX_GRADIENT_STOPS.into()), ("count", stops.into())],
+            return Err(format!(
+                "渐变最多 {MAX_GRADIENT_STOPS} 个 <stop>，这个有 {stops} 个"
             ));
         }
     }

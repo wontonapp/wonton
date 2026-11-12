@@ -22,8 +22,8 @@ async fn cores_sharing_a_docker_host_only_touch_their_own_plugins() {
     let formal = manager_with(engine.clone(), &formal_dir);
     let dev = manager_in_instance(engine, &dev_dir, "alice");
     let id = PluginId::parse("app.test").unwrap();
-    formal.install(&app(), &[], super::langs()).await.unwrap();
-    dev.install(&app(), &[], super::langs()).await.unwrap();
+    formal.install(&app(), &[]).await.unwrap();
+    dev.install(&app(), &[]).await.unwrap();
     assert_eq!(
         docker.containers(),
         ["wonton-alice--app-test--web", "wonton-app-test--web"]
@@ -48,15 +48,15 @@ async fn cores_sharing_a_docker_host_only_touch_their_own_plugins() {
     );
 
     // 都带着 wonton.plugin=app.test，删数据卸载也只删自己那份。
-    let report = dev.uninstall(&id, true, &super::langs()).await.unwrap();
+    let report = dev.uninstall(&id, true).await.unwrap();
     assert_eq!(report.containers, ["wonton-alice--app-test--web"]);
     assert_eq!(report.volumes, ["wonton-alice--app-test--data"]);
     assert_eq!(docker.containers(), ["wonton-app-test--web"]);
     assert_eq!(docker.networks(), ["wonton-app-test"]);
     assert_eq!(docker.volumes(), ["wonton-app-test--data"]);
 
-    dev.install(&app(), &[], super::langs()).await.unwrap();
-    let report = formal.uninstall(&id, true, &super::langs()).await.unwrap();
+    dev.install(&app(), &[]).await.unwrap();
+    let report = formal.uninstall(&id, true).await.unwrap();
     assert_eq!(report.containers, ["wonton-app-test--web"]);
     assert_eq!(report.volumes, ["wonton-app-test--data"]);
     assert_eq!(docker.containers(), ["wonton-alice--app-test--web"]);

@@ -1,9 +1,7 @@
 # 本地 Matrix 服务器（Tuwunel）
 
-本地开发用的 Tuwunel。基础配置 `tuwunel.toml` 和 `crates/wonton-matrix` 的集成测试共用，保持最小：
-不开放注册，不接受密码登录，账号只能用核心签发的 JWT 登录（ADR-0009 的验证结果）。联邦选项单独放在
-`federation.toml`（第二份 `-c` 配置，ADR-0050），只有这个栈的 compose 挂载——测试在 127.0.0.1 上起
-Tuwunel，联邦开着会被 Tuwunel 的配置检查拒绝。`dev.sh up` 还会生成联邦用的自签证书（ADR-0050）。
+本地开发用的 Tuwunel，配置 `tuwunel.toml` 和 `crates/wonton-matrix` 的集成测试共用。和产品一致：
+关闭联邦，不开放注册，不接受密码登录，账号只能用核心签发的 JWT 登录（ADR-0009 的验证结果）。
 
 ```bash
 deploy/dev/matrix/dev.sh up            # 首次生成核心的 Ed25519 签发密钥，启动并等到健康

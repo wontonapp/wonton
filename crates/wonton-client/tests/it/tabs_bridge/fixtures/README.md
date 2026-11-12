@@ -48,12 +48,7 @@ echo "d24b6ae50dbc989539db8287e217f41f0833f2b0a81ac4c6dbde444715ef5cd0  $fixture
 SDK 使用真实 App 类，`autoResize: false`。
 
 Rust 驱动默认使用 `node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd`，
-容器禁用网络、只读挂载夹具。容器内的标准 shell 等 `node` 真正退出后，输出
-`{"sdkExitCode":<退出码>}`，再以相同状态退出。收到 `closed` 后，驱动在原 10 秒内
-检查这条状态为 0；本地 Node 路径直接检查子进程退出。
-`docker run` 的返回还要等 Docker 处理容器退出，因此单独等待并检查 CLI 成功，
-随后同步执行不带 `-f` 的 `docker rm` 并检查清理成功，不把 Docker 收尾算作 SDK 退出。
-测试失败时驱动只清理自己的容器。
+容器禁用网络、只读挂载夹具，退出或测试失败时清掉自己的容器。
 开发机不启动容器时可显式设 `WONTON_TABS_NODE=/绝对路径/node`，同一条测试改用该二进制；
 这不是 Docker 不可用时的自动降级，CI 不设置它。
 

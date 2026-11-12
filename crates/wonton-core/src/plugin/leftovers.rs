@@ -7,37 +7,17 @@
 use std::collections::HashMap;
 
 use super::docker::LabeledResources;
-use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::PluginId;
 use super::names::LABEL_PLUGIN;
 use super::render::InstallContext;
-use crate::l10n;
 
-/// 叫这个名字的网络或卷不是本插件的。`what` 是资源种类的本地化说法（`word-*` 消息），调用方传入。
-pub(super) fn name_taken(
-    what: &str,
-    name: &str,
-    labels: &HashMap<String, String>,
-    langs: &Languages,
-) -> InstallError {
-    let message = match labels.get(LABEL_PLUGIN) {
-        Some(owner) => l10n::text(
-            langs,
-            "plugin-install-name-taken-owned",
-            &[
-                ("what", what.into()),
-                ("name", name.into()),
-                ("owner", owner.as_str().into()),
-            ],
-        ),
-        None => l10n::text(
-            langs,
-            "plugin-install-name-taken-unknown",
-            &[("what", what.into()), ("name", name.into())],
-        ),
-    };
-    InstallError::NameTaken(message)
+/// 叫这个名字的网络或卷不是本插件的。
+pub(super) fn name_taken(what: &str, name: &str, labels: &HashMap<String, String>) -> InstallError {
+    InstallError::NameTaken(match labels.get(LABEL_PLUGIN) {
+        Some(owner) => format!("{what} {name} 属于插件 {owner}，和本插件的{what}重名"),
+        None => format!("{what} {name} 已存在，且不是核心为插件创建的"),
+    })
 }
 
 impl PluginManager {
@@ -55,9 +35,9 @@ impl PluginManager {
             self.engine.remove_container(container).await?;
         }
         // 正常卸载和回滚都会清掉设备记录，还记着就是上次没装完。容器都停了再吊销。
-        let bots = self.store.bots().load(id)?;
-        if bots.bots.values().any(|entry| entry.device_id.is_some()) {
-            self.deactivate_bots(id, false).await?;
+        let bot = self.store.bots().load(id)?;
+        if bot.is_some_and(|record| record.device_id.is_some()) {
+            self.remove_bot(id, false).await?;
         }
         self.remove_networks(&found.networks).await
     }
@@ -65,13 +45,6 @@ impl PluginManager {
     /// 残留的网络上接着不是这次要清的容器，也不是本核心：可能是没设实例名、和本核心共用一台 Docker 的另一套核心，它的
     /// 插件在运行，标签和残留一模一样。这时什么都不删。
     async fn check_no_strangers(&self, found: &LabeledResources) -> Result<(), InstallError> {
-        let langs = self.owner_languages();
-        let mailpit = match &self.mailpit {
-            Some(component) => component.optional_container().await.map_err(|error| {
-                InstallError::Conflict(format!("Mailpit 组件查询失败：{error:#}"))
-            })?,
-            None => None,
-        };
         for network in &found.networks {
             let endpoints = self.engine.network_endpoints(network).await?;
             let strangers: Vec<String> = endpoints
@@ -80,17 +53,12 @@ impl PluginManager {
                     !found.containers.contains(name)
                         && self.cfg.core_container.as_ref() != Some(name)
                         && *name != self.cfg.instance.egress()
-                        && mailpit.as_ref() != Some(name)
                 })
                 .collect();
             if !strangers.is_empty() {
-                return Err(InstallError::NameTaken(l10n::text(
-                    &langs,
-                    "plugin-install-stranger-attached",
-                    &[
-                        ("network", network.as_str().into()),
-                        ("names", l10n::list(&langs, &strangers).into()),
-                    ],
+                return Err(InstallError::NameTaken(format!(
+                    "网络 {network} 上还接着 {}，可能是另一套核心或你自己的容器。一台 Docker 上跑几套核心时，每套都要设自己的实例名（WONTON_INSTANCE）",
+                    strangers.join("、")
                 )));
             }
         }
@@ -104,7 +72,6 @@ impl PluginManager {
                 self.engine.disconnect_network(network, core).await?;
             }
             self.detach_relay(network).await?;
-            self.detach_mailpit(network).await?;
             self.engine.remove_network(network).await?;
         }
         Ok(())
@@ -116,13 +83,11 @@ impl PluginManager {
         &self,
         ctx: &InstallContext,
     ) -> Result<(), InstallError> {
-        let langs = self.owner_languages();
-        let what = l10n::text(&langs, "plugin-install-word-network", &[]);
         let plugin = self.cfg.instance.network(&ctx.slug);
         let lan = ctx.lan.as_ref().and_then(|l| l.network.clone());
         for name in std::iter::once(plugin).chain(lan) {
             if let Some(labels) = self.engine.network_labels(&name).await? {
-                return Err(name_taken(&what, &name, &labels, &langs));
+                return Err(name_taken("网络", &name, &labels));
             }
         }
         Ok(())

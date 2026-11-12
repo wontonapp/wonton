@@ -28,9 +28,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import app.wonton.client.coreUpgradeFailureSummary
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreUpgradeCheck
 import app.wonton.protocol.CoreUpgradeOffer
@@ -39,9 +39,6 @@ import app.wonton.protocol.CoreUpgradeProgress
 import app.wonton.protocol.CoreUpgradeStage
 import app.wonton.protocol.CoreUpgradeStatus
 import app.wonton.protocol.CoreUpgradeTarget
-import app.wonton.protocol.CoreUpgradeViewModel
-import app.wonton.protocol.InstalledPlugins
-import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonPushedBar
@@ -59,13 +56,13 @@ private val SPINNER_STROKE = 2.dp
 fun CoreUpgradePage(plugins: PluginsState, onBack: () -> Unit) {
     val upgrade = plugins.viewModel.coreUpgrade
     LaunchedEffect(Unit) { plugins.refresh(Action.RefreshCoreUpgrade(false)) }
-    WontonScreen(bar = { WontonPushedBar(stringResource(R.string.core_upgrade_title), onBack) }) {
+    WontonScreen(bar = { WontonPushedBar("升级服务器", onBack) }) {
         val status = upgrade.status
         val problem = upgrade.problem
         when {
             status != null -> CoreUpgradeContent(plugins, status)
             problem != null -> ProblemView(
-                Problem(titleRes = failureTitle(problem.reason), detail = problem.message),
+                Problem(coreUpgradeFailureSummary(problem.reason), detail = problem.message),
             ) { plugins.send(Action.RefreshCoreUpgrade(true)) }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
@@ -77,8 +74,7 @@ private fun CoreUpgradeContent(plugins: PluginsState, status: CoreUpgradeStatus)
     val upgrade = plugins.viewModel.coreUpgrade
     val colors = WontonTheme.colors
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-            .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         upgrade.problem?.let {
@@ -89,16 +85,12 @@ private fun CoreUpgradeContent(plugins: PluginsState, status: CoreUpgradeStatus)
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                stringResource(R.string.core_upgrade_current_version),
-                style = WontonTheme.typography.body,
-                color = colors.textSecondary.toColor(),
-            )
-            Text(status.current.label, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+            Text("当前版本", style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
+            Text(status.current.label(), style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         }
         StageCard(plugins, upgrade.stage, status.run?.to)
         if (upgrade.stage.isSettled()) CheckSection(plugins, status.check)
-        Details(upgrade, plugins.viewModel.installed, status)
+        Details(status, upgrade.offer, upgrade.stage)
     }
 }
 
@@ -110,8 +102,7 @@ private fun CheckSection(plugins: PluginsState, check: CoreUpgradeCheck) {
         if (offer != null) OfferCard(plugins, offer, upgrade.offerSkipped) else CheckRow(check)
         if (check.canCheck()) {
             WontonButton(
-                if (upgrade.refreshing) stringResource(R.string.core_upgrade_checking)
-                else stringResource(R.string.core_upgrade_check_for_update),
+                if (upgrade.refreshing) "正在检查" else "检查更新",
                 onClick = { plugins.send(Action.RefreshCoreUpgrade(true)) },
                 modifier = Modifier.fillMaxWidth(),
                 kind = WontonButtonKind.SECONDARY,
@@ -127,43 +118,23 @@ private fun OfferCard(plugins: PluginsState, offer: CoreUpgradeOffer, skipped: B
     var confirming by remember(offer.digest) { mutableStateOf(false) }
     Section {
         Text(
-            if (confirming) stringResource(R.string.core_upgrade_confirm_version, offer.label)
-            else stringResource(R.string.core_upgrade_new_version, offer.label),
+            if (confirming) "升级到 ${offer.label()}？" else "新版本 ${offer.label()}",
             style = WontonTheme.typography.itemTitle,
             color = colors.textPrimary.toColor(),
         )
         if (confirming && offer.migrates.isNotEmpty()) {
-            Text(
-                stringResource(R.string.core_upgrade_migrates_warning),
-                style = WontonTheme.typography.body,
-                color = colors.danger.toColor(),
-            )
+            Text("这个版本会迁移数据，升级后退不回去。", style = WontonTheme.typography.body, color = colors.danger.toColor())
         }
         if (!confirming && skipped) {
-            Text(
-                stringResource(R.string.core_upgrade_skipped),
-                style = WontonTheme.typography.supporting,
-                color = colors.textSecondary.toColor(),
-            )
+            Text("已跳过", style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
         }
-        CompatSection(
-            compat = offer.compat,
-            apps = offer.compat.breakingApps(plugins.viewModel.installed),
-            refreshing = plugins.viewModel.coreUpgrade.refreshing,
-            onRetry = { plugins.send(Action.RefreshCoreUpgrade(true)) },
-            icon = { PluginIconImage(it, WontonTheme.size.taskIcon, plugins) },
-        )
         if (confirming) {
-            FullWidthButton(stringResource(R.string.core_upgrade_confirm_upgrade)) {
-                plugins.send(Action.StartCoreUpgrade(offer.digest))
-            }
-            FullWidthButton(stringResource(R.string.core_upgrade_decline_upgrade), WontonButtonKind.SECONDARY) {
-                confirming = false
-            }
+            FullWidthButton("确认升级") { plugins.send(Action.StartCoreUpgrade(offer.digest)) }
+            FullWidthButton("不升级", WontonButtonKind.SECONDARY) { confirming = false }
         } else {
-            FullWidthButton(stringResource(R.string.core_upgrade_upgrade)) { confirming = true }
+            FullWidthButton("升级") { confirming = true }
             if (!skipped) {
-                FullWidthButton(stringResource(R.string.core_upgrade_skip_version), WontonButtonKind.SECONDARY) {
+                FullWidthButton("跳过这个版本", WontonButtonKind.SECONDARY) {
                     plugins.send(Action.SkipCoreUpgrade(offer.digest))
                 }
             }
@@ -201,7 +172,6 @@ private fun StageCard(plugins: PluginsState, stage: CoreUpgradeStage, target: Co
             if (line.icon != null) {
                 Icon(
                     line.icon,
-                    // 装饰：状态由右边的文字说。
                     contentDescription = null,
                     Modifier.size(WontonTheme.size.icon),
                     tint = line.tint(colors).toColor(),
@@ -217,14 +187,10 @@ private fun StageCard(plugins: PluginsState, stage: CoreUpgradeStage, target: Co
             }
         }
         if (stage is CoreUpgradeStage.InProgress && stage.canCancel) {
-            FullWidthButton(stringResource(R.string.core_upgrade_cancel_upgrade), WontonButtonKind.DANGER) {
-                plugins.send(Action.CancelCoreUpgrade)
-            }
+            FullWidthButton("取消升级", WontonButtonKind.DANGER) { plugins.send(Action.CancelCoreUpgrade) }
         }
         if (stage is CoreUpgradeStage.Uncertain) {
-            FullWidthButton(stringResource(R.string.core_upgrade_check_again), WontonButtonKind.SECONDARY) {
-                plugins.send(Action.RefreshCoreUpgrade(false))
-            }
+            FullWidthButton("再查一次", WontonButtonKind.SECONDARY) { plugins.send(Action.RefreshCoreUpgrade(false)) }
         }
     }
 }
@@ -237,26 +203,25 @@ private fun CheckRow(check: CoreUpgradeCheck) {
         Text(it, style = WontonTheme.typography.body, color = colors.textSecondary.toColor())
     }
     when (check) {
-        is CoreUpgradeCheck.NotInstalled -> secondary(stringResource(R.string.core_upgrade_check_not_installed))
-        is CoreUpgradeCheck.Pinned -> secondary(stringResource(R.string.core_upgrade_check_pinned))
-        is CoreUpgradeCheck.NotChecked, is CoreUpgradeCheck.Checking ->
-            secondary(stringResource(R.string.core_upgrade_check_checking))
-        is CoreUpgradeCheck.UpToDate -> secondary(stringResource(R.string.core_upgrade_check_up_to_date))
+        is CoreUpgradeCheck.NotInstalled -> secondary("这台服务器不是用安装脚本装的，不能一键升级")
+        is CoreUpgradeCheck.Pinned -> secondary("这次安装固定在一个版本上，不跟渠道")
+        is CoreUpgradeCheck.NotChecked, is CoreUpgradeCheck.Checking -> secondary("正在检查新版本")
+        is CoreUpgradeCheck.UpToDate -> secondary("已经是最新版")
         is CoreUpgradeCheck.Downloading -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            secondary(stringResource(R.string.core_upgrade_check_downloading))
+            secondary("正在下载新版本")
             check.progress?.takeIf { it.totalBytes > 0u }?.let { DownloadProgress(it) }
         }
         is CoreUpgradeCheck.DownloadFailed -> FailureRow(check.problem)
         is CoreUpgradeCheck.Failed -> FailureRow(check.problem)
         is CoreUpgradeCheck.Ready -> Unit
-        is CoreUpgradeCheck.Other -> secondary(stringResource(R.string.core_upgrade_check_other))
+        is CoreUpgradeCheck.Other -> secondary("家里的服务器给了这个 App 不认识的状态，更新 App 后再看")
     }
 }
 
 @Composable
 private fun FailureRow(problem: CoreUpgradeProblem) {
     Text(
-        stringResource(failureTitle(problem.reason)),
+        coreUpgradeFailureSummary(problem.reason),
         style = WontonTheme.typography.body,
         color = WontonTheme.colors.danger.toColor(),
     )
@@ -278,7 +243,7 @@ private fun DownloadProgress(progress: CoreUpgradeProgress) {
 }
 
 @Composable
-private fun Details(upgrade: CoreUpgradeViewModel, installed: InstalledPlugins?, status: CoreUpgradeStatus) {
+private fun Details(status: CoreUpgradeStatus, offer: CoreUpgradeOffer?, stage: CoreUpgradeStage) {
     val colors = WontonTheme.colors
     var open by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -289,22 +254,20 @@ private fun Details(upgrade: CoreUpgradeViewModel, installed: InstalledPlugins?,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                stringResource(R.string.common_details),
+                "详情",
                 Modifier.weight(1f),
                 style = WontonTheme.typography.body,
                 color = colors.textSecondary.toColor(),
             )
             Icon(
                 WontonIcon.Forward,
-                // 装饰：整行可点，箭头只表示能展开。
                 contentDescription = null,
                 Modifier.size(WontonTheme.size.iconSmall).rotate(if (open) DETAILS_OPEN_DEGREES else 0f),
                 tint = colors.textSecondary.toColor(),
             )
         }
         if (open) {
-            val rows = status.detailRows(upgrade.offer, upgrade.stage, upgrade.compatDetails, installed)
-            rows.forEach { (title, value) ->
+            status.detailRows(offer, stage).forEach { (title, value) ->
                 Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
                     Text(title, style = WontonTheme.typography.caption, color = colors.textSecondary.toColor())
                     SelectionContainer {

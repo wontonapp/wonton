@@ -27,11 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import app.wonton.ui.R
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Search
 import app.wonton.ui.icons.WontonIcon
@@ -60,7 +58,6 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
             ) {
                 Icon(
                     WontonIcon.Search,
-                    // 装饰：输入框自己有提示文字。
                     contentDescription = null,
                     modifier = Modifier.size(WontonTheme.size.iconSmall),
                     tint = colors.textSecondary.toColor(),
@@ -72,10 +69,7 @@ fun WontonSearchField(value: String, onValueChange: (String) -> Unit, prompt: St
                     field()
                 }
                 if (value.isNotEmpty()) {
-                    WontonIconButton(
-                        WontonIcon.Close, stringResource(R.string.design_clear), { onValueChange("") },
-                        colors.textSecondary.toColor(),
-                    )
+                    WontonIconButton(WontonIcon.Close, "清除", { onValueChange("") }, colors.textSecondary.toColor())
                 }
             }
         },
@@ -115,7 +109,7 @@ fun WontonChip(title: String, isSelected: Boolean, onClick: () -> Unit) {
 
 /** 列表行尾的小按钮。图形比按钮矮，命中区还是 48。 */
 @Composable
-fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true, danger: Boolean = false) {
+fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true) {
     val colors = WontonTheme.colors
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -131,11 +125,7 @@ fun WontonSmallButton(text: String, onClick: () -> Unit, enabled: Boolean = true
                 .padding(horizontal = WontonTheme.spacing.s12),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text,
-                style = WontonTheme.typography.supporting,
-                color = (if (danger) colors.danger else colors.textPrimary).toColor(),
-            )
+            Text(text, style = WontonTheme.typography.supporting, color = colors.textPrimary.toColor())
         }
     }
 }

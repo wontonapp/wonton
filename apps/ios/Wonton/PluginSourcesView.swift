@@ -20,13 +20,13 @@ struct AddSourceView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                WontonNotice(icon: .warning, title: String(localized: .pluginSourcesUnreviewedWarning))
+                WontonNotice(icon: .warning, title: "这里添加的应用和文件都没有经过审核，只装你信任的。")
                 if let problem { ProblemNotice(problem: problem) }
                 VStack(spacing: WontonTheme.spacing.s8) {
                     SourceAddressField(address: $address)
                         .focused($isEditingAddress)
                     Button(action: add) {
-                        Text(String(localized: .pluginSourcesAdd)).frame(maxWidth: .infinity)
+                        Text("添加").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
                     .disabled(isAdding || address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -34,11 +34,11 @@ struct AddSourceView: View {
                 Button {
                     isPickingFile = true
                 } label: {
-                    Text(String(localized: .pluginSourcesInstallFromFile)).frame(maxWidth: .infinity)
+                    Text("从文件安装").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 if !added.isEmpty {
-                    DetailSection(title: String(localized: .pluginSourcesMine)) {
+                    DetailSection(title: "我添加的") {
                         WontonGroup {
                             ForEach(Array(added.enumerated()), id: \.element.address) { index, source in
                                 if index > 0 { WontonSeparator() }
@@ -51,7 +51,7 @@ struct AddSourceView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.immediately)
-        .wontonModalScreen(String(localized: .pluginSourcesTitle))
+        .wontonModalScreen("添加来源")
         .pluginArchiveImporter(isPresented: $isPickingFile, model: model) { result in
             switch result {
             case let .success(archive):
@@ -77,7 +77,7 @@ struct AddSourceView: View {
                 }
             }
             Spacer(minLength: 0)
-            WontonIconButton(icon: .trash, label: String(localized: .commonDelete)) { remove(source) }
+            WontonIconButton(icon: .trash, label: "删除") { remove(source) }
         }
         .padding(.horizontal, WontonTheme.spacing.s12)
         .padding(.vertical, WontonTheme.spacing.s8)
@@ -130,7 +130,7 @@ struct ChangeVersionView: View {
                         chosen(.upgradeFrom(id: id, source: address))
                         dismiss()
                     } label: {
-                        Text(String(localized: .pluginSourcesContinue)).frame(maxWidth: .infinity)
+                        Text("继续").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle())
                     .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -138,14 +138,14 @@ struct ChangeVersionView: View {
                 Button {
                     isPickingFile = true
                 } label: {
-                    Text(String(localized: .pluginSourcesInstallFromFile)).frame(maxWidth: .infinity)
+                    Text("从文件安装").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.immediately)
-        .wontonModalScreen(String(localized: .installChangeVersion))
+        .wontonModalScreen("换版本")
         .pluginArchiveImporter(isPresented: $isPickingFile, model: model) { result in
             switch result {
             case let .success(archive):
@@ -189,11 +189,7 @@ private struct SourceAddressField: View {
 
     var body: some View {
         // verbatim：字符串字面量会按 Markdown 认成链接，占位符显示成蓝色，像是已经填好了。
-        TextField(
-            String(localized: .pluginSourcesAddress),
-            text: $address,
-            prompt: Text(verbatim: "https://github.com/owner/repo")
-        )
+        TextField("地址", text: $address, prompt: Text(verbatim: "https://github.com/owner/repo"))
             .keyboardType(.URL)
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
@@ -240,7 +236,7 @@ private func readPluginArchive(_ url: URL, limit: UInt64) -> Result<Data, Plugin
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard UInt64(size) <= limit else {
             let most = ByteCountFormatter.string(fromByteCount: Int64(limit), countStyle: .binary)
-            return .failure(PluginArchiveProblem(message: String(localized: .pluginSourcesFileTooLarge(most))))
+            return .failure(PluginArchiveProblem(message: "文件太大了，最多 \(most)"))
         }
         return .success(try Data(contentsOf: url))
     } catch {

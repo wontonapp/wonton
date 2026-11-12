@@ -21,11 +21,8 @@ use rustix::process::geteuid;
 
 use super::{
     Deleted, MAX_NAME_TRIES, PRIVATE_PREFIX, ShareError, Snapshot, TRANSFERS, check_segment,
-    classify, from_io, is_private, is_same_file, numbered, open_regular, open_subdir, stat_entry,
-    sync_dir,
+    classify, is_private, numbered, open_regular, open_subdir, stat_entry, sync_dir,
 };
-use crate::l10n;
-use crate::plugin::languages::Languages;
 
 /// 回收槽的上级目录，在 `transfers` 里：改名不能跨文件系统。
 pub(super) const TRASH: &str = ".wonton-trash";
@@ -35,22 +32,19 @@ const TRASH_SLOTS: usize = 8;
 /// 建好全部回收槽：要在磁盘满之前建好。`.wonton-` 开头的名字由核心保留，上面放的不是核心的回收槽就清掉，否则一个插件就能让核心
 /// 起不来；里面的文件先放回去（[`recover_foreign`]），还有东西的目录改名交还给主人（[`remove_entry`]）。建好了还对不上，是文件系统不
 /// 保留属主和权限，保证不了只有核心碰得到，启动失败。
-pub(super) fn prepare_trash(
-    transfers: BorrowedFd<'_>,
-    langs: &Languages,
-) -> Result<(), ShareError> {
+pub(super) fn prepare_trash(transfers: BorrowedFd<'_>) -> Result<(), ShareError> {
     if foreign_trash(transfers)? {
         tracing::warn!("{TRASH} 不是核心建的回收槽，挪开重建");
-        recover_foreign(transfers, langs);
+        recover_foreign(transfers);
         remove_entry(transfers, TRASH)?;
     }
     make_dir(transfers, TRASH)?;
-    let trash = just_made(transfers, TRASH, langs)?;
+    let trash = just_made(transfers, TRASH)?;
     let keep = keep_name();
     for slot in 0..TRASH_SLOTS {
         let slot = slot.to_string();
         make_dir(trash.as_fd(), &slot)?;
-        let slot = just_made(trash.as_fd(), &slot, langs)?;
+        let slot = just_made(trash.as_fd(), &slot)?;
         let flags = OFlags::CREATE | OFlags::EXCL | OFlags::WRONLY | OFlags::CLOEXEC;
         match openat(slot.as_fd(), &keep, flags, Mode::from_raw_mode(0o600)) {
             // 名字这么长都建不了的文件系统（eCryptfs），主人的文件名也到不了这么长。
@@ -65,7 +59,7 @@ pub(super) fn prepare_trash(
 
 /// 看着不像核心建的回收槽里，也可能有删除到一半的文件：NAS 的“重置权限”会把真的回收槽改成这样。这里先放回去，否则交还之后就回不到
 /// 原名了。能打开多少算多少，别的跟着目录交还。名字可能是插件放的，[`recover_one`] 照样核对。
-fn recover_foreign(transfers: BorrowedFd<'_>, langs: &Languages) {
+fn recover_foreign(transfers: BorrowedFd<'_>) {
     let Ok(trash) = open_subdir(transfers, TRASH) else {
         return;
     };
@@ -79,7 +73,7 @@ fn recover_foreign(transfers: BorrowedFd<'_>, langs: &Languages) {
             continue;
         };
         for entry in entries {
-            match recover_one(slot.as_fd(), &entry, transfers, langs) {
+            match recover_one(slot.as_fd(), &entry, transfers) {
                 Ok(restored) => tracing::warn!(name = restored, "找回了删除到一半的文件"),
                 Err(error) => tracing::error!(name = entry, %error, "找回删除到一半的文件失败"),
             }
@@ -93,8 +87,8 @@ fn recover_foreign(transfers: BorrowedFd<'_>, langs: &Languages) {
     }
 }
 
-fn just_made(parent: BorrowedFd<'_>, name: &str, langs: &Languages) -> Result<OwnedFd, ShareError> {
-    open_private(parent, name, langs).map_err(|e| {
+fn just_made(parent: BorrowedFd<'_>, name: &str) -> Result<OwnedFd, ShareError> {
+    open_private(parent, name).map_err(|e| {
         ShareError::Io(format!(
             "{e}。{TRANSFERS} 所在的文件系统可能不保留属主和权限（CIFS、root_squash 的 NFS）"
         ))
@@ -136,20 +130,16 @@ pub(super) fn keep_name() -> String {
     )
 }
 
-fn open_trash(transfers: BorrowedFd<'_>, langs: &Languages) -> Result<OwnedFd, ShareError> {
-    open_private(transfers, TRASH, langs)
+fn open_trash(transfers: BorrowedFd<'_>) -> Result<OwnedFd, ShareError> {
+    open_private(transfers, TRASH)
 }
 
-fn open_slot(trash: BorrowedFd<'_>, slot: usize, langs: &Languages) -> Result<OwnedFd, ShareError> {
-    open_private(trash, &slot.to_string(), langs)
+fn open_slot(trash: BorrowedFd<'_>, slot: usize) -> Result<OwnedFd, ShareError> {
+    open_private(trash, &slot.to_string())
 }
 
 /// 打开回收槽或者它的上级，核对打开的目录，这之后名字再被换也和它无关。
-fn open_private(
-    parent: BorrowedFd<'_>,
-    name: &str,
-    langs: &Languages,
-) -> Result<OwnedFd, ShareError> {
+fn open_private(parent: BorrowedFd<'_>, name: &str) -> Result<OwnedFd, ShareError> {
     let dir = open_subdir(parent, name).map_err(|e| match e {
         ShareError::Gone | ShareError::Refused(_) => {
             ShareError::Io(format!("回收槽 {name} 不见了，要重启核心才能再删"))
@@ -159,32 +149,21 @@ fn open_private(
     let stat = fstat(&dir).map_err(|e| classify(e, name))?;
     let euid = geteuid().as_raw();
     if !is_ours(&stat, euid) {
-        return Err(ShareError::Io(l10n::text(
-            langs,
-            "files-trash-foreign-slot",
-            &[
-                ("name", name.into()),
-                ("owner", stat.st_uid.to_string().into()),
-                ("mode", format!("{:o}", stat.st_mode & 0o777).into()),
-                ("euid", euid.to_string().into()),
-            ],
+        return Err(ShareError::Io(format!(
+            "回收槽 {name} 不是核心建的（属主 {}、权限 {:o}，应该是 {euid}、700），要重启核心才能再删",
+            stat.st_uid,
+            stat.st_mode & 0o777,
         )));
     }
     Ok(dir)
 }
 
 /// 没有占位文件的槽，磁盘写满时可能改不进长名字。名字这么长都放不下的文件系统本来就没有它。
-fn check_placeholder(
-    slot: BorrowedFd<'_>,
-    index: usize,
-    langs: &Languages,
-) -> Result<(), ShareError> {
+fn check_placeholder(slot: BorrowedFd<'_>, index: usize) -> Result<(), ShareError> {
     match statat(slot, keep_name(), AtFlags::SYMLINK_NOFOLLOW) {
         Ok(_) | Err(Errno::NAMETOOLONG) => Ok(()),
-        Err(Errno::NOENT) => Err(ShareError::Io(l10n::text(
-            langs,
-            "files-trash-placeholder-missing",
-            &[("index", wonton_l10n::Arg::from(index as i64))],
+        Err(Errno::NOENT) => Err(ShareError::Io(format!(
+            "回收槽 {index} 的占位文件不见了，要重启核心才能再删"
         ))),
         Err(e) => Err(classify(e, TRASH)),
     }
@@ -217,19 +196,17 @@ fn entries_of(dir: BorrowedFd<'_>, what: &str) -> Result<Vec<String>, ShareError
 }
 
 /// 一个空的回收槽。调用方持有 [`super::Shares`] 的删除锁。
-fn empty_slot(transfers: BorrowedFd<'_>, langs: &Languages) -> Result<OwnedFd, ShareError> {
-    let trash = open_trash(transfers, langs)?;
+fn empty_slot(transfers: BorrowedFd<'_>) -> Result<OwnedFd, ShareError> {
+    let trash = open_trash(transfers)?;
     for index in 0..TRASH_SLOTS {
-        let slot = open_slot(trash.as_fd(), index, langs)?;
-        check_placeholder(slot.as_fd(), index, langs)?;
+        let slot = open_slot(trash.as_fd(), index)?;
+        check_placeholder(slot.as_fd(), index)?;
         if entries_of(slot.as_fd(), TRASH)?.is_empty() {
             return Ok(slot);
         }
     }
-    Err(ShareError::Io(l10n::text(
-        langs,
-        "files-trash-full",
-        &[("folder", TRASH.into())],
+    Err(ShareError::Io(format!(
+        "{TRASH} 里的回收槽都被占着，重启核心找回里面的文件后才能再删"
     )))
 }
 
@@ -239,14 +216,11 @@ pub(super) fn remove_if_same(
     dir: BorrowedFd<'_>,
     name: &str,
     expected: &Snapshot,
-    langs: &Languages,
 ) -> Result<Deleted, ShareError> {
-    let slot = empty_slot(transfers, langs)?;
+    let slot = empty_slot(transfers)?;
     let slot = slot.as_fd();
     match rename_no_replace(dir, name, slot, name) {
         Ok(()) => {}
-        // 跨分支的改名（mergerfs 的 epmfs）回 EXDEV：槽在别的分支上，改不过去。只能在原目录里核对后删。
-        Err(Errno::XDEV) => return remove_in_place(dir, name, expected),
         // 目标所在的槽也可能不在了：名字还在就不是“已经没了”。
         Err(Errno::NOENT) if matches!(stat_entry(dir, name), Err(ShareError::Gone)) => {
             return Ok(Deleted::AlreadyGone);
@@ -257,16 +231,16 @@ pub(super) fn remove_if_same(
         Ok(opened) => opened.snapshot == *expected,
         Err(ShareError::Refused(_)) => false,
         Err(e) => {
-            put_back(slot, name, dir, name, langs)?;
+            put_back(slot, name, dir, name)?;
             return Err(e);
         }
     };
     if !same {
-        put_back(slot, name, dir, name, langs)?;
+        put_back(slot, name, dir, name)?;
         return Ok(Deleted::Changed);
     }
     if let Err(e) = unlinkat(slot, name, AtFlags::empty()) {
-        put_back(slot, name, dir, name, langs)?;
+        put_back(slot, name, dir, name)?;
         return Err(classify(e, name));
     }
     // 文件已经删了：这里报错的话，调用方会当成没删，审计和记录都错。
@@ -280,56 +254,14 @@ pub(super) fn remove_if_same(
     Ok(Deleted::Removed { durable })
 }
 
-/// 文件系统不支持跨目录改名时（mergerfs 按分支放，`RENAME_NOREPLACE` 回 `EINVAL`，退回的普通改名回 `EXDEV`）：没有回收槽这一步，
-/// 在原目录里打开、核对之后再 `unlinkat`。核对和删除之间名字可能被换掉，比先搬走再核对宽一点：换掉以后删的就是别人的文件。
-/// 最后再 `statat` 一次只能把窗口缩到一次调用。ADR-0020 的“代价与风险”写明了这个取舍。
-fn remove_in_place(
-    dir: BorrowedFd<'_>,
-    name: &str,
-    expected: &Snapshot,
-) -> Result<Deleted, ShareError> {
-    let opened = match open_regular(dir, name) {
-        Ok(opened) => opened,
-        Err(ShareError::Gone) => return Ok(Deleted::AlreadyGone),
-        Err(ShareError::Refused(_)) => return Ok(Deleted::Changed),
-        Err(e) => return Err(e),
-    };
-    if opened.snapshot != *expected {
-        return Ok(Deleted::Changed);
-    }
-    let meta = opened.file.metadata().map_err(|e| from_io(&e, name))?;
-    match stat_entry(dir, name) {
-        Ok(stat) if is_same_file(&stat, &meta) => {}
-        Ok(_) | Err(ShareError::Refused(_)) => return Ok(Deleted::Changed),
-        Err(ShareError::Gone) => return Ok(Deleted::AlreadyGone),
-        Err(e) => return Err(e),
-    }
-    match unlinkat(dir, name, AtFlags::empty()) {
-        Ok(()) => {}
-        Err(Errno::NOENT) => return Ok(Deleted::AlreadyGone),
-        Err(e) => return Err(classify(e, name)),
-    }
-    let durable = match sync_dir(dir, name) {
-        Ok(()) => true,
-        Err(error) => {
-            tracing::warn!(name, %error, "删除没能确认落盘，断电后文件可能回来");
-            false
-        }
-    };
-    Ok(Deleted::Removed { durable })
-}
-
 /// 启动时：改名到回收槽之后崩溃了的文件放回去，它们不放回去就一直藏着。一项失败只记日志，下次启动再试：插件也可能往这里放东西，
 /// 不能挡住别的文件。
-pub(super) fn recover_trash(
-    transfers: BorrowedFd<'_>,
-    langs: &Languages,
-) -> Result<(), ShareError> {
-    let trash = open_trash(transfers, langs)?;
+pub(super) fn recover_trash(transfers: BorrowedFd<'_>) -> Result<(), ShareError> {
+    let trash = open_trash(transfers)?;
     for index in 0..TRASH_SLOTS {
-        let slot = open_slot(trash.as_fd(), index, langs)?;
+        let slot = open_slot(trash.as_fd(), index)?;
         for name in entries_of(slot.as_fd(), TRASH)? {
-            match recover_one(slot.as_fd(), &name, transfers, langs) {
+            match recover_one(slot.as_fd(), &name, transfers) {
                 Ok(restored) => tracing::warn!(name = restored, "找回了删除到一半的文件"),
                 Err(error) => {
                     tracing::error!(name, %error, "找回删除到一半的文件失败，下次启动再试");
@@ -345,11 +277,10 @@ fn recover_one(
     slot: BorrowedFd<'_>,
     name: &str,
     transfers: BorrowedFd<'_>,
-    langs: &Languages,
 ) -> Result<String, ShareError> {
     check_segment(name).map_err(ShareError::Refused)?;
     let target = if is_private(name) { &name[1..] } else { name };
-    put_back(slot, name, transfers, target, langs)
+    put_back(slot, name, transfers, target)
 }
 
 /// 放回 `to_dir` 的 `preferred`，返回最后的名字。这期间那个名字可能又有了别的东西：加序号，谁都不盖。
@@ -358,7 +289,6 @@ pub(super) fn put_back(
     from: &str,
     to_dir: BorrowedFd<'_>,
     preferred: &str,
-    langs: &Languages,
 ) -> Result<String, ShareError> {
     for attempt in 0..MAX_NAME_TRIES {
         let target = numbered(preferred, attempt);
@@ -368,13 +298,8 @@ pub(super) fn put_back(
             Err(e) => return Err(classify(e, &target)),
         }
     }
-    Err(ShareError::Io(l10n::text(
-        langs,
-        "files-name-taken",
-        &[
-            ("preferred", preferred.into()),
-            ("count", wonton_l10n::Arg::from(MAX_NAME_TRIES as i64)),
-        ],
+    Err(ShareError::Io(format!(
+        "{preferred} 已经有 {MAX_NAME_TRIES} 个重名的文件"
     )))
 }
 
@@ -388,9 +313,7 @@ fn rename_no_replace(
 ) -> Result<(), Errno> {
     let renamed = {
         #[cfg(test)]
-        if super::tests::EXDEV.get() {
-            Err(Errno::XDEV)
-        } else if super::tests::NO_NOREPLACE.get() {
+        if super::tests::NO_NOREPLACE.get() {
             Err(Errno::INVAL)
         } else {
             renameat_with(from_dir, from, to_dir, to, RenameFlags::NOREPLACE)
@@ -423,8 +346,6 @@ fn rename_if_free(
 /// 清掉核心私有名字上的东西。核心自己不在这些名字上建目录，那里的目录只可能是插件放的，可能是它把别人的目录改名过来的，而核心可能
 /// 以 root 运行，所以不递归：空目录直接删，非空的改名成看得见的名字交还给主人。
 pub(super) fn remove_entry(dir: BorrowedFd<'_>, name: &str) -> Result<(), ShareError> {
-    // 这里的失败都包进“清不掉”再报，只进日志和内部错误，不按请求的语言写。
-    let langs = Languages::from_header(None);
     let stat = match stat_entry(dir, name) {
         Ok(stat) => stat,
         Err(ShareError::Gone) => return Ok(()),
@@ -441,7 +362,7 @@ pub(super) fn remove_entry(dir: BorrowedFd<'_>, name: &str) -> Result<(), ShareE
         Ok(()) | Err(Errno::NOENT) => Ok(()),
         Err(Errno::NOTEMPTY | Errno::EXIST) => {
             let visible = name.trim_start_matches('.');
-            let returned = put_back(dir, name, dir, visible, &langs).map_err(stuck)?;
+            let returned = put_back(dir, name, dir, visible).map_err(stuck)?;
             tracing::warn!(
                 name,
                 returned,

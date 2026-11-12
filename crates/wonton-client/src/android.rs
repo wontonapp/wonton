@@ -23,6 +23,6 @@ pub extern "system" fn Java_app_wonton_android_WontonApplication_installSystemDn
         Ok(())
     });
     if let Err(e) = installed {
-        tracing::warn!("could not install the system DNS; iroh falls back to the default DNS: {e}");
+        tracing::warn!("安装系统 DNS 失败，iroh 用默认 DNS：{e}");
     }
 }

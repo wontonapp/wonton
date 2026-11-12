@@ -18,15 +18,10 @@ use tokio::{
     net::{TcpListener, TcpStream},
     task::JoinHandle,
 };
-use wonton_tunnel::{
-    Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServer, TunnelStatus, off_workers,
-};
+use wonton_tunnel::{Allowlist, LocalProxy, ProxyAccess, TunnelClient, TunnelServer, TunnelStatus};
 
 /// 等待异步事件的上限。正常情况下都在几百毫秒内完成，超过即视为失败。
 pub const WAIT: Duration = Duration::from_secs(15);
-/// 同一端口重建时等端口空出来的总预算：iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的
-/// 测试的 `bind(0)` 也可能临时拿走这个端口。
-pub const RESTART: Duration = Duration::from_secs(60);
 
 /// 测试里的“家里服务器”：隧道服务端，可以停止、模拟崩溃，再用同样的身份和端口重启。
 pub struct Home {
@@ -69,6 +64,7 @@ impl Home {
 
     pub async fn restart(&mut self) {
         assert!(self.server.is_none(), "服务端还在运行");
+        wait_until_port_is_free(self.port).await;
         let endpoint = loopback_endpoint(self.key.clone(), self.port, Timeouts::Default).await;
         self.server = Some(TunnelServer::spawn(
             endpoint,
@@ -121,13 +117,18 @@ impl Phone {
     }
 }
 
-/// 端口还被别的套接字占着；别的错（配置、加密后端）再怎么等也不会好。
-pub fn port_in_use(error: &iroh::endpoint::BindError) -> bool {
-    matches!(
-        error,
-        iroh::endpoint::BindError::Sockets { source, .. }
-            if source.kind() == std::io::ErrorKind::AddrInUse
-    )
+/// 等旧服务端的 UDP 端口空出来。iroh 的 `Endpoint::close` 返回后，后台任务还要再过一小会儿才释放
+/// 套接字（Linux 单核上实测约 1 ms），丢弃不关闭时也一样。真实的重启是新进程，旧进程退出后端口一定已经
+/// 空了；进程内模拟重启时要等到这一点，否则会偶发 `Address already in use`。
+async fn wait_until_port_is_free(port: u16) {
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while std::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, port)).is_err() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "旧服务端的 UDP 端口 {port} 一直没有释放"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -138,27 +139,6 @@ pub enum Timeouts {
     Short,
 }
 
-/// 收包数静止多久算“对端不再发包”：盖住最后一个延迟转发落地到手机的那一段。
-const QUIET: Duration = Duration::from_millis(300);
-
-/// 开始丢包之后先等切换前的在途包全落地：排在延迟转发里的按计数排空，再要一个静默窗口排掉内核里最后几毫秒。
-/// 不排干净，它们会晚一步到达，在确认窗口里冒充“连接还活着”。
-pub async fn wait_until_quiet(flaky: &crate::stall::Flaky, phone: &Phone) {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while flaky.pending() > 0 {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        assert!(tokio::time::Instant::now() < deadline, "延迟转发一直没排空");
-    }
-    loop {
-        let before = phone.client.stats().received_packets;
-        tokio::time::sleep(QUIET).await;
-        if phone.client.stats().received_packets == before {
-            return;
-        }
-        assert!(tokio::time::Instant::now() < deadline, "对端一直没停下来");
-    }
-}
-
 /// 只走回环地址的 endpoint：不连中继，不做地址发现。
 pub async fn loopback_endpoint(key: SecretKey, port: u16, timeouts: Timeouts) -> Endpoint {
     endpoint_on((Ipv4Addr::LOCALHOST, port).into(), key, timeouts).await
@@ -166,44 +146,25 @@ pub async fn loopback_endpoint(key: SecretKey, port: u16, timeouts: Timeouts) ->
 
 pub async fn endpoint_on(addr: SocketAddr, key: SecretKey, timeouts: Timeouts) -> Endpoint {
     init_tracing();
-    let deadline = tokio::time::Instant::now() + RESTART;
-    loop {
-        let mut builder = Endpoint::builder(presets::Minimal)
-            .secret_key(key.clone())
-            .clear_ip_transports()
-            .bind_addr(addr)
-            .unwrap();
-        if let Timeouts::Short = timeouts {
-            let config = QuicTransportConfig::builder()
-                .max_idle_timeout(Some(Duration::from_secs(3).try_into().unwrap()))
-                .keep_alive_interval(Duration::from_secs(1))
-                .build();
-            builder = builder.transport_config(config);
-        }
-        // iroh 的 `bind` 在 await 里同步跑整段网卡枚举（见 `off_workers`），别占住调用方的 worker。
-        match off_workers(move || builder.bind()).await.unwrap() {
-            Ok(endpoint) => return endpoint,
-            // 同一端口重建：旧 endpoint 的套接字可能还没释放，或者刚空出来就被并行的测试 bind(0) 拿走。
-            Err(error) if port_in_use(&error) => {
-                assert!(
-                    tokio::time::Instant::now() < deadline,
-                    "旧服务端的 UDP 端口 {} 一直没有释放",
-                    addr.port()
-                );
-                tokio::time::sleep(Duration::from_millis(1)).await;
-            }
-            Err(error) => panic!("{addr} 起不来：{error}"),
-        }
+    let mut builder = Endpoint::builder(presets::Minimal)
+        .secret_key(key)
+        .clear_ip_transports()
+        .bind_addr(addr)
+        .unwrap();
+    if let Timeouts::Short = timeouts {
+        let config = QuicTransportConfig::builder()
+            .max_idle_timeout(Some(Duration::from_secs(3).try_into().unwrap()))
+            .keep_alive_interval(Duration::from_secs(1))
+            .build();
+        builder = builder.transport_config(config);
     }
+    builder.bind().await.unwrap()
 }
 
 /// 用 `RUST_LOG=wonton_tunnel=debug` 查看测试里的隧道日志。
-pub fn init_tracing() {
+fn init_tracing() {
     tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_test_writer()
         .try_init()
         .ok();
@@ -217,32 +178,16 @@ pub struct Upstream {
 }
 
 impl Upstream {
-    /// 慢慢回正文的上游：请求路径以 `/slow` 开头时，正文分成 60 块、每块隔 100ms，共约 6 秒。
-    pub async fn spawn_slow() -> Self {
-        Self::start(Some((60, Duration::from_millis(100)))).await
-    }
-
     pub async fn spawn() -> Self {
-        Self::start(None).await
-    }
-
-    async fn start(slow: Option<(usize, Duration)>) -> Self {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let addr = listener.local_addr().unwrap();
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = hits.clone();
         let task = tokio::spawn(async move {
             loop {
-                let (mut tcp, _) = listener.accept().await.unwrap();
+                let (tcp, _) = listener.accept().await.unwrap();
                 let counter = counter.clone();
-                let slow = slow.filter(|_| true);
-                tokio::spawn(async move {
-                    if let Some((chunks, gap)) = slow {
-                        serve_slow(&mut tcp, &counter, chunks, gap).await;
-                    } else {
-                        serve_one(&mut tcp, &counter).await;
-                    }
-                });
+                tokio::spawn(async move { serve_one(tcp, &counter).await });
             }
         });
         Self { addr, hits, task }
@@ -259,38 +204,16 @@ impl Drop for Upstream {
     }
 }
 
-async fn serve_one(tcp: &mut TcpStream, hits: &AtomicUsize) {
-    let path = answer_head(tcp, hits).await;
+async fn serve_one(mut tcp: TcpStream, hits: &AtomicUsize) {
+    let head = read_head(&mut tcp).await;
+    let path = head.split_whitespace().nth(1).unwrap_or("/").to_owned();
+    hits.fetch_add(1, Ordering::SeqCst);
     let response = format!(
         "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{path}",
         path.len()
     );
     tcp.write_all(response.as_bytes()).await.unwrap();
     tcp.shutdown().await.unwrap();
-}
-
-/// 慢慢回：正文是路径重复 `chunks` 遍，每块隔 `gap`。
-async fn serve_slow(tcp: &mut TcpStream, hits: &AtomicUsize, chunks: usize, gap: Duration) {
-    let path = answer_head(tcp, hits).await;
-    let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-        path.len() * chunks
-    );
-    tcp.write_all(head.as_bytes()).await.unwrap();
-    for i in 0..chunks {
-        if i > 0 {
-            tokio::time::sleep(gap).await;
-        }
-        tcp.write_all(path.as_bytes()).await.unwrap();
-    }
-    tcp.shutdown().await.unwrap();
-}
-
-/// 读掉请求头、计一次命中，返回请求路径。
-async fn answer_head(tcp: &mut TcpStream, hits: &AtomicUsize) -> String {
-    let head = read_head(tcp).await;
-    hits.fetch_add(1, Ordering::SeqCst);
-    head.split_whitespace().nth(1).unwrap_or("/").to_owned()
 }
 
 /// 逐字节读到请求头结束（空行），返回请求头文本。

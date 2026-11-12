@@ -8,7 +8,6 @@ use wonton_matrix::MessageBody;
 
 use super::support::{Home, Phone, Timeline};
 use super::{accept_the_bots_invite, bot_receives};
-use wonton_protocol::{TimelineAction, TimelineTarget};
 
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
@@ -19,22 +18,16 @@ async fn the_owner_cancels_a_rejected_message_and_the_next_one_goes_out() {
     phone.connect(&home);
     phone.signed_in().await;
     let bot = home.bot("hermes", "Hermes").await;
-    let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
+    let room_id = accept_the_bots_invite(&phone, &bot).await;
     let room = room_id.to_string();
     let mut timeline = Timeline::open(&phone, &room).await;
 
     // 加密后的事件远超 65535 字节，Tuwunel 拒收（413 M_TOO_LARGE）。
     let too_long = "字".repeat(30_000);
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                body: too_long.clone(),
-                reply_to: None,
-            },
+        .dispatch(Action::SendText {
+            room_id: room.clone(),
+            body: too_long.clone(),
         })
         .unwrap();
     let rejected = timeline
@@ -53,27 +46,16 @@ async fn the_owner_cancels_a_rejected_message_and_the_next_one_goes_out() {
         })
         .await;
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SendText {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                body: "排在后面的".to_owned(),
-                reply_to: None,
-            },
+        .dispatch(Action::SendText {
+            room_id: room.clone(),
+            body: "排在后面的".to_owned(),
         })
         .unwrap();
 
     phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::CancelSend {
-                target: TimelineTarget {
-                    room_id: room.clone(),
-                    thread_root: None,
-                },
-                item_id: rejected,
-            },
+        .dispatch(Action::CancelSend {
+            room_id: room.clone(),
+            item_id: rejected,
         })
         .unwrap();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
