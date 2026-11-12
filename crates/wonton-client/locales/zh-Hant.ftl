@@ -108,6 +108,7 @@ onboarding-review-no-failure = 這一項沒有失敗
 
 # 登入相關。$reason 是 Matrix SDK 的原始錯誤詳細資訊。
 chat-sign-in-restore-failed = 無法恢復 Matrix 工作階段：{ $reason }
+chat-sign-in-external-missing = 這支手機上已經沒有這個 Matrix 帳號的登入狀態，請重新登入。
 chat-sign-in-no-connection-info = 還沒有家用伺服器的連線資訊
 chat-sign-in-login-failed = 無法登入 Matrix：{ $reason }
 chat-sign-in-no-saved-session = 登入後取不到登入狀態
@@ -445,6 +446,13 @@ servers-name-required = 名稱不能為空
 servers-storage-failed = 無法讀寫 { $path }：{ $reason }
 # 殼把不認得的操作交給伺服器清單時顯示。
 servers-invalid-action = 不是伺服器清單操作
+matrix-login-not-current = 這次登入已經結束，或者已經換成了新的一次。
+matrix-login-wrong-step = 這次登入不在這一步。
+matrix-login-method-not-offered = 這台伺服器不提供這種登入方式。
+matrix-login-device-name-required = 請填這台裝置的名稱。
+matrix-login-invalid-user-id = 請填完整的 Matrix ID，例如 @name:matrix.org。
+matrix-login-password-required = 請填密碼。
+matrix-login-redirect-not-allowed = App 收不到發往這個位址的登入回呼。
 
 # 工作階段清單（crates/wonton-client/src/session_store.rs）。
 sessions-title-required = 工作階段標題不能為空

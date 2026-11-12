@@ -31,6 +31,7 @@ const RECOVERY_KEY: &str = "recovery-key";
 pub(crate) struct StoredSession {
     /// 登录到哪台服务器：隧道的 endpoint ID，换 IP、换中继都不变。homeserver 地址和用户认不出服务器：每台默认都是
     /// `matrix.wonton.localhost` 上的 `@owner`。没有这个字段的文件读出来是空串，对不上任何服务器，重新登录一次。
+    /// 外部 Matrix 账号的槽位（ADR-0051）没有 endpoint，为空：那里只用这份状态恢复，不和服务器比对。
     #[serde(default)]
     pub(crate) server_id: String,
     pub(crate) homeserver_url: String,

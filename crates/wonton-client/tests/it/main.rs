@@ -13,6 +13,7 @@ mod files_services;
 mod files_support;
 mod friends;
 mod home;
+mod matrix_login;
 mod pairing;
 mod peers;
 mod plugins;
