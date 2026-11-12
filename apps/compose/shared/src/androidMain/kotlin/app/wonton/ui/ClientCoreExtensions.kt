@@ -4,6 +4,7 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
+import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.HomeViewModel
@@ -56,6 +57,15 @@ fun ClientCore.send(action: Action): Problem? =
 /** 把和家里服务器连接的订阅包装成 [Flow]，取消和释放方式同 [chatUpdates]。 */
 fun ClientCore.homeUpdates(): Flow<HomeViewModel> = flow {
     subscribeHome().use { subscription ->
+        while (true) {
+            emit(subscription.next() ?: break)
+        }
+    }
+}
+
+/** 房间输入框的附件区和待发消息（ADR-0094）。订阅不了时流以 [CoreException] 结束；取消和释放同 [chatUpdates]。 */
+fun ClientCore.composerUpdates(roomId: String): Flow<ComposerViewModel> = flow {
+    subscribeComposer(TimelineTarget(roomId, null)).use { subscription ->
         while (true) {
             emit(subscription.next() ?: break)
         }

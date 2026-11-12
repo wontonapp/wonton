@@ -2139,4 +2139,30 @@
     <string name="handoff_no_other_device">I don\'t have my other device</string>
     <string name="invite_device_added">Device added</string>
     <string name="invite_cannot_give">This device doesn\'t have all the chat keys either, so the new device can\'t read earlier messages.</string>
+    <!-- Shown when the attachment tray is full. Argument: the most attachments one message can carry. -->
+    <string name="composer_tray_full">You can send up to %1$d attachments at a time.</string>
+    <!-- Accessibility label of the button that takes an attachment out of the tray. Argument: file name. -->
+    <string name="composer_attachment_remove">Remove %1$s</string>
+    <!-- Accessibility label of an attachment whose upload waits for the connection to the home server. -->
+    <string name="composer_attachment_paused">Waiting to reach your home server</string>
+    <!-- An attachment could not be uploaded; also the fallback when the core gives an unknown reason. -->
+    <string name="composer_attachment_failed">Couldn\'t upload</string>
+    <!-- Button: upload a failed attachment again. -->
+    <string name="composer_attachment_retry">Upload Again</string>
+    <!-- Upload failure: the photo is over the home server's limit. -->
+    <string name="composer_attachment_too_large">This photo is over your home server\'s size limit. Send it as a file instead.</string>
+    <!-- Upload failure: the original file on the phone can no longer be read. -->
+    <string name="composer_attachment_source_unavailable">The original file can\'t be read anymore. Choose it again.</string>
+    <!-- Upload failure: the home server's disk is full. -->
+    <string name="composer_attachment_storage_full">Your home server is out of space.</string>
+    <!-- Upload failure: the home server refused the upload. -->
+    <string name="composer_attachment_rejected">Your home server refused this upload.</string>
+    <!-- Upload failure: the home server ran into an error. -->
+    <string name="composer_attachment_upstream">Your home server ran into a problem.</string>
+    <!-- Upload failure: the phone has no room to keep the attachment. -->
+    <string name="composer_attachment_local_storage">There isn\'t enough space on this phone.</string>
+    <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
+    <string name="timeline_sending_progress">Sending %1$s</string>
+    <!-- Menu item on a message that is still uploading: drop it and stop the upload. -->
+    <string name="timeline_cancel_send">Cancel Sending</string>
 </resources>
