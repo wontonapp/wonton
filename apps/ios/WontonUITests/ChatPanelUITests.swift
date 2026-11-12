@@ -211,25 +211,30 @@ final class ChatPanelUITests: XCTestCase {
         return field
     }
 
-    /// 房间落在已读位置（开发栈账号常攒着未读），不是最新一条；要“到底”的测试先按“回到底部”，等按钮消失。
+    /// 房间落在已读位置（开发栈账号常攒着未读），不是最新一条。落点是首批时间线到了才摆的，比输入框出现晚，
+    /// 摆的时候还会把列表拉回已读位置，所以要等按钮出现（最多 10 秒），按下去、等它消失，再确认没有回来。
     private func goToBottom() {
-        guard let button = bottomButton(timeout: 2) else { return }
-        button.tap()
-        _ = waitGone(button, timeout: 10)
+        var tapped = false
+        for _ in 0..<3 {
+            guard let button = bottomButton(timeout: tapped ? 2 : 10) else { break }
+            tapped = true
+            button.tap()
+            _ = waitGone(button, timeout: 5)
+        }
     }
 
     /// 停在别处时才有的“回到底部”，数字悬在图标上方，标签会带新消息条数。
     private func bottomButton(timeout: TimeInterval) -> XCUIElement? {
         let labels = ["Back to bottom", "回到底部", "回到底部", "一番下へ戻る"]
         let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        while true {
             for label in labels {
                 let button = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
                 if button.exists { return button }
             }
+            if Date() >= deadline { return nil }
             _ = app.wait(for: .runningForeground, timeout: 0.3)
         }
-        return nil
     }
 
     /// 量一次列表：内容的底边是不是还在列表可见区里。
@@ -238,14 +243,17 @@ final class ChatPanelUITests: XCTestCase {
         let listBottom: CGFloat
         let fieldTop: CGFloat
 
+        /// 停在别处时才有“回到底部”按钮：它出现说明 App 自己也知道没到底。
+        let back: Bool
+
         var stuckToBottom: Bool { contentBottom <= listBottom + 2 }
-        var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop)" }
+        var description: String { "content=\(contentBottom) list=\(listBottom) field=\(fieldTop) back=\(back)" }
     }
 
     private func frames(list: XCUIElement, field: XCUIElement) -> Layout {
         // 列表的第一个子元素是整片内容（含屏幕外的部分）。
         Layout(contentBottom: list.children(matching: .other).firstMatch.frame.maxY,
-               listBottom: list.frame.maxY, fieldTop: field.frame.minY)
+               listBottom: list.frame.maxY, fieldTop: field.frame.minY, back: bottomButton(timeout: 0) != nil)
     }
 
     private func attach(_ text: String) {
