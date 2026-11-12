@@ -26,5 +26,6 @@ mod reset_order;
 mod restore_beside_old;
 mod send_queue;
 mod state;
+mod store_loss;
 mod support;
 mod thread;
