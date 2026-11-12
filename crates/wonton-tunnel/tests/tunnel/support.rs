@@ -26,7 +26,7 @@ use wonton_tunnel::{
 pub const WAIT: Duration = Duration::from_secs(15);
 /// 同一端口重建时等端口空出来的总预算：iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的
 /// 测试的 `bind(0)` 也可能临时拿走这个端口。
-const RESTART: Duration = Duration::from_secs(60);
+pub const RESTART: Duration = Duration::from_secs(60);
 
 /// 测试里的“家里服务器”：隧道服务端，可以停止、模拟崩溃，再用同样的身份和端口重启。
 pub struct Home {

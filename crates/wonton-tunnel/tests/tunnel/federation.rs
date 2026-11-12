@@ -32,7 +32,7 @@ use wonton_tunnel::{
     pair::{PairHandler, PairProtocol, PairResponse, PairingSecret, RejectReason},
 };
 
-use crate::support::{Timeouts, WAIT, loopback_endpoint};
+use crate::support::{RESTART, Timeouts, WAIT, loopback_endpoint};
 
 use wonton_tunnel::ALPN as TUNNEL_ALPN;
 
@@ -214,16 +214,32 @@ impl TestPeer {
             loopback_endpoint(self.key.clone(), self.endpoint_port, Timeouts::Short).await;
         assert_eq!(endpoint.addr().id, self.id, "重启后 endpoint ID 变了");
         let federation = FederationProtocol::new(self.server_allowlist.clone(), self.upstream.addr);
-        let forwarder = FederationForwarder::bind(
-            endpoint.clone(),
-            self.listen,
-            self.lookup.clone(),
-            self.paired.subscribe(),
-            PING_INTERVAL,
-            PING_TIMEOUT,
-        )
-        .await
-        .unwrap();
+        // 旧转发器的监听套接字挂在刚被 abort 的 accept 任务里，运行时回收那个任务时才真正关闭；并行的
+        // 测试的 bind(0) 也可能把这口临时拿走。和上面 endpoint 端口的重绑一样，等口空出来再起。
+        let deadline = tokio::time::Instant::now() + RESTART;
+        let forwarder = loop {
+            match FederationForwarder::bind(
+                endpoint.clone(),
+                self.listen,
+                self.lookup.clone(),
+                self.paired.subscribe(),
+                PING_INTERVAL,
+                PING_TIMEOUT,
+            )
+            .await
+            {
+                Ok(forwarder) => break forwarder,
+                Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+                    assert!(
+                        tokio::time::Instant::now() < deadline,
+                        "旧转发器的 TCP 端口 {} 一直没有释放",
+                        self.listen
+                    );
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => panic!("{} 起不来：{error}", self.listen),
+            }
+        };
         let (server, listener) = TunnelServer::spawn_embedded_with_pairing_and(
             endpoint,
             self.device_allowlist.clone(),
