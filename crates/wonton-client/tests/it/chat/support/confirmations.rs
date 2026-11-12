@@ -17,6 +17,14 @@ impl Home {
         self.core.confirmations_revision.send_replace(list.revision);
     }
 
+    /// 换掉列表里的联系人请求（`PendingContactRequest` 的 JSON），revision 跟着变。
+    pub fn set_contact_requests(&self, requests: Vec<Value>) {
+        let mut list = self.core.confirmations.lock().unwrap();
+        list.contact_requests = requests;
+        list.revision += 1;
+        self.core.confirmations_revision.send_replace(list.revision);
+    }
+
     /// 接下来这么多次取列表的请求回 502，像隧道那一次没连上。
     pub fn fail_confirmations(&self, count: usize) {
         self.core
