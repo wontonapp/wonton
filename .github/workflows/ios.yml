@@ -7,7 +7,8 @@ name: ios
 #
 # 改动范围分两半（模拟器构建要十几分钟，2026-11-12 实测 PR 上中位 13 分钟，PR 只等十分钟内出结果的快检查）：
 # - PR 上：改到 Swift 这边或导出给 Swift 的接口（apps/ios、设计生成、wonton-protocol、wonton-client）才跑，汇总是必需检查。
-#   iOS 在 PR 上红的多半是这几处改了接口、Swift 没跟上（2026-11-12 前一天约十次），挪到合后会让 main 一天红好几次。
+#   iOS 在 PR 上红的几乎都落在这几处（Swift 这边改了，或接口改了 Swift 没跟上；2026-11-12 前一天约十次），
+#   挪到合后会让 main 一天红好几次。
 # - 合进 main 之后：wonton-client 依赖的其余 crate、依赖版本、工具链（不改导出接口，很少弄坏 Swift）按 push 的路径触发，
 #   不挡合并；每次合并单独跑、不互相取消，红了按那次提交标题里的 (#N) 找到弄红的 PR。
 # 两半合起来是 wonton-client 在工作区里的全部依赖（cargo tree -p wonton-client --features bindgen --target all），
