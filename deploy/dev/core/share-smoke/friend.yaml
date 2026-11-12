@@ -1,0 +1,45 @@
+# dev.sh friend 叠在分享冒烟夹具上的部分：给主人的核心配上身份提供方（Hydra），驱动挂上要试的插件包。
+# Hydra 的地址和开发栈（deploy/dev/core/compose.yaml）同一套：签发方是插件网络里的内部名字，浏览器（这里是经分享隧道
+# 的 Bob）看到的是 auth.owner.test，登录和授权确认交给 owner.test 上的核心。
+services:
+  hydra:
+    image: oryd/hydra:v26.2.0
+    restart: "no"
+    # 内存库：每次都是新栈，不用迁移服务和卷；--dev 允许 http 签发方。
+    command: serve all --dev
+    # 宿主 Docker 客户端配置的代理会以小写变量注入容器，健康检查的 wget 认的是小写的。
+    environment:
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: "*"
+      no_proxy: "*"
+      DSN: memory
+      URLS_SELF_ISSUER: http://auth.wonton.internal:8080
+      URLS_SELF_PUBLIC: http://auth.owner.test:8080
+      URLS_LOGIN: http://owner.test:8080/_wonton/oidc/login
+      URLS_CONSENT: http://owner.test:8080/_wonton/oidc/consent
+      URLS_POST_LOGOUT_REDIRECT: http://owner.test:8080/
+      SECRETS_SYSTEM: isolated-friend-probe-hydra-secret
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:4445/health/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    networks:
+      core:
+        ipv4_address: "${SHARE_SMOKE_PREFIX}.40"
+        aliases: [hydra.wonton.internal]
+  core-owner:
+    environment:
+      WONTON_OIDC_ADMIN_URL: http://hydra.wonton.internal:4445
+      WONTON_OIDC_PUBLIC_URL: http://hydra.wonton.internal:4444
+      # 真插件的镜像比夹具的大，起来也慢。
+      WONTON_INSTALL_TIMEOUT_SECS: "300"
+    depends_on:
+      hydra:
+        condition: service_healthy
+  driver:
+    volumes:
+      - ${FRIEND_PROBE_PACKAGE:?}:/package:ro
