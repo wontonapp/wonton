@@ -227,6 +227,7 @@ plugin-install-priv-fixed-device = 固定设备权限只支持 /dev/net/tun 和 
 plugin-install-priv-host-network-ports = 宿主网络服务不能同时声明 lan.ports；端口由应用直接监听宿主网络
 plugin-install-priv-host-network-sso = 宿主网络里的 webui 不能使用 sso: proxy，改用 oidc 或 none
 plugin-install-priv-host-network-healthcheck = 宿主网络里的 webui 服务必须写有效的 healthcheck
+plugin-install-priv-host-network-mail = 用宿主网络的应用不能发信：发信按来源网段识别，宿主网络发来的信认不出来源会被丢弃。改用应用网络，或去掉发信
 plugin-install-priv-cap-invalid = cap_add 里的能力 `{ $cap }` 不合法
 plugin-install-priv-cap-drop-invalid = cap_drop 里的能力 `{ $cap }` 不合法
 plugin-install-priv-security-opt-invalid = security_opt 里的 `{ $opt }` 不合法（no-new-privileges 的值只接受 true 或 false）

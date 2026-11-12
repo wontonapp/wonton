@@ -228,6 +228,7 @@ plugin-install-priv-fixed-device = Fixed device permissions only support /dev/ne
 plugin-install-priv-host-network-ports = A host network service can't also declare lan.ports; the app listens on host network ports directly
 plugin-install-priv-host-network-sso = webui on the host network can't use sso: proxy; use oidc or none
 plugin-install-priv-host-network-healthcheck = A webui service on the host network must have a valid healthcheck
+plugin-install-priv-host-network-mail = An app on the host network can't send mail: senders are recognized by network segment, and host network mail has no identifiable source. Use the app network, or drop mail sending
 plugin-install-priv-cap-invalid = Capability `{ $cap }` in cap_add isn't valid
 plugin-install-priv-cap-drop-invalid = Capability `{ $cap }` in cap_drop isn't valid
 plugin-install-priv-security-opt-invalid = Security option `{ $opt }` isn't valid (no-new-privileges takes only true or false)
