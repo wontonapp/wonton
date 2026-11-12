@@ -90,6 +90,8 @@ internal class AppNavigation(val tabs: TabsState, val chat: ChatNavigation, val 
                     else chat.openDirectChat(tabs.core, peer, acceptInvite = true),
                 )
             }
+            // 桌面小组件、桌面搜索点进来的会话（ADR-0100）。
+            is AppLink.Room -> openRoom(link.roomId)
             // 核心在“Wonton”私聊里的配对提醒带这个链接，直接到“请求”（ADR-0050）。
             AppLink.Peers -> {
                 settings(SettingsSubpage.PEERS)
