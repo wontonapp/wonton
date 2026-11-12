@@ -60,7 +60,17 @@ pub(super) fn render(
             None,
         );
     };
-    let selected = state.draft.agent(onboarding);
+    // 引导流程里显示这次记下的选择；流程外（设置里的“默认 Agent”）显示服务器上的现值，
+    // 不让上次没走完的草稿冒充当前设置。
+    let in_flow = matches!(
+        state.step,
+        Some(step) if !matches!(step, OnboardingStep::Finished | OnboardingStep::Other)
+    );
+    let selected = if in_flow {
+        state.draft.agent(onboarding)
+    } else {
+        onboarding.primary_agent.clone()
+    };
     let agents = agent_rows(onboarding, selected.as_deref());
     let selected_agent = selected
         .as_deref()
@@ -93,14 +103,14 @@ pub(super) fn render(
     let needs = need_rows(state, onboarding);
     // 服务器太旧的步跳过：正在显示的那步刚变不可用时换到下一个，一步都不剩时整段不显示。
     // 整段都打不开（服务器比引导接口还旧）时一步都不显示，只留升级提示。
+    // `step` 为空就是“不在引导里”（关掉重看、还没取到），不再兜底回第一步，壳好回到设置。
     let step = state
         .too_old
         .is_none()
-        .then(|| {
-            state
-                .step
-                .filter(|step| !state.unavailable.contains(step))
-                .or_else(|| first_visible(&state.unavailable))
+        .then(|| match state.step {
+            Some(step) if !state.unavailable.contains(&step) => Some(step),
+            Some(_) => first_visible(&state.unavailable),
+            None => None,
         })
         .flatten();
     let view = OnboardingViewModel {
@@ -195,6 +205,7 @@ fn navigation(
         can_back: ready && not_started && position > 1,
         can_skip: ready && not_started && step != OnboardingStep::Review,
         can_next: ready && can_next,
+        can_close: ready && not_started && state.revisit,
     })
 }
 

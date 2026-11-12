@@ -41,6 +41,8 @@ struct LocalState {
     revision: u64,
     /// 正在显示的一步。中间的步骤只在这台设备上（ADR-0038）；还没取到时为空。
     step: Option<OnboardingStep>,
+    /// 从设置重看已经走完的引导：每一步都能不提交就离开，完成时只存动过的项。
+    revisit: bool,
     owner: Option<Me>,
     providers: Option<ModelProviders>,
     draft: Draft,
@@ -258,6 +260,7 @@ impl OnboardingLink {
             let mut state = lock(&self.state);
             if state.step.is_none() {
                 // 中间的步骤不存在家里服务器上：没走完的从第一个能显示的步开始，每一步显示现在的设置。
+                state.revisit = onboarding.step == OnboardingStep::Finished;
                 state.step = Some(match onboarding.step {
                     OnboardingStep::Finished => OnboardingStep::Finished,
                     OnboardingStep::Other => OnboardingStep::Other,

@@ -305,6 +305,12 @@ impl ClientCore {
         self.views().onboarding.borrow().clone()
     }
 
+    /// 关掉从设置进去的重看引导：这次记下的选择全部丢弃，什么都不保存，壳回到设置。
+    /// 没在重看时调用没有效果。
+    pub fn close_onboarding(&self) {
+        self.scope().onboarding.close();
+    }
+
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
     pub fn subscribe_onboarding(&self) -> Arc<OnboardingSubscription> {
         Arc::new(OnboardingSubscription::new(
