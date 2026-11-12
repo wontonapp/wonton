@@ -294,6 +294,18 @@ pub struct BotContactsViewModel {
     pub state: BotContactsState,
     /// 先是等这个 Bot 的归属人处理的请求，再是其他的；各自按时间排。
     pub contacts: Vec<BotContact>,
+    /// 壳上一次对这个 Bot 的联系人做的事（发起、同意、拒绝、删除）没成的原因；列表照旧显示，`state` 只管取列表。
+    /// 壳的下一个动作清掉它。
+    pub action_failure: Option<BotContactFailure>,
+}
+
+/// 联系人接口一次失败的原因。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct BotContactFailure {
+    pub error: ContactError,
+    /// 核心按 App 的语言写的说明，壳收进“详情”。
+    pub message: String,
 }
 
 /// 联系人页的状态。
@@ -305,7 +317,7 @@ pub enum BotContactsState {
     Loading,
     /// 列表是最新的。
     Ready,
-    /// 取列表或上一次操作失败；`message` 是核心按 App 的语言写的说明。
+    /// 取列表失败，手上没有能显示的列表；`message` 是核心按 App 的语言写的说明。
     Failed {
         error: ContactError,
         message: String,
