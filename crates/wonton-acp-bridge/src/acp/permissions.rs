@@ -29,7 +29,8 @@ pub(super) async fn handle_request(inner: Arc<Inner>, id: Value, message: Value)
     let mut params = message["params"].clone();
     merge_tool_call(&inner, &session_id, &mut params).await;
     let lang = lang_for(&inner, &session_id).await;
-    let pending = match parse_pending(&params, lang) {
+    let origin = inner.origins.lock().await.get(&session_id).cloned();
+    let pending = match parse_pending(&params, lang, origin) {
         Ok(pending) => pending,
         Err(error) => {
             send_result(&inner, &id, json!({"outcome": {"outcome": "cancelled"}})).await;

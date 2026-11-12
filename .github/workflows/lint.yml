@@ -85,6 +85,12 @@ jobs:
       - name: dev.sh 的 logs 和 diag（假 docker，不用真的 Docker）
         if: steps.changes.outputs.source == 'true'
         run: python3 deploy/dev/core/dev_test.py
+      - name: dev.sh up 构建前的端口检查（假 docker、假 ss）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/port-preflight_test.py
+      - name: smoke.sh 分段运行（步骤名、SMOKE_UNTIL、SMOKE_ONLY）
+        if: steps.changes.outputs.source == 'true'
+        run: python3 deploy/dev/core/smoke-lib_test.py
       - name: 开发栈端口只绑 127.0.0.1
         if: steps.changes.outputs.source == 'true'
         run: python3 scripts/check-dev-compose-ports.py
