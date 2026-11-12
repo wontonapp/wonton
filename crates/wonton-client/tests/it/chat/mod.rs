@@ -23,6 +23,7 @@ mod push;
 mod push_method;
 mod rebuild_reason;
 mod recovery;
+mod refused;
 mod relogin;
 mod replies;
 mod resume;

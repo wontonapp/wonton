@@ -1316,6 +1316,10 @@
     <string name="problem_apps_not_ready">The app list isn\'t ready yet. Try again shortly.</string>
     <!-- Problem reason when an agent chat link opens but no default agent is set. -->
     <string name="problem_no_default_agent">There\'s no default agent yet. Pick and install one in setup.</string>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">The request was refused</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">You\'re still signed in. You may not have permission for this, they may have blocked you, or their server can\'t reach yours yet.</string>
     <!-- Problem title when the core rejected the input; the core's own reason is shown as the next step. -->
     <string name="problem_invalid_input_title">This can\'t be done</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
@@ -1842,6 +1846,8 @@
     <string name="push_status_failed_transport">Registration failed. Try again once the home server is reachable</string>
     <!-- Push status line when registering failed because this device isn't recognized. -->
     <string name="push_status_failed_unauthorized">Registration failed. Pair again</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">Registration failed. Your home server refused it</string>
     <!-- Push status line when registering failed because the home server hit an error. -->
     <string name="push_status_failed_upstream">Registration failed. Your home server hit an error</string>
     <!-- Push status line when registering failed because the chat connection isn't ready. -->

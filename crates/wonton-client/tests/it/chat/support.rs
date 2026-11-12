@@ -158,6 +158,8 @@ struct Core {
     /// 为真时取聊天显示方式账号数据的请求一接上就断开，别的请求不受影响。
     layout_down: AtomicBool,
     reject_backup_creation: AtomicBool,
+    /// 请求行（小写）含其中一段的 Matrix 请求由假核心直接回这个状态码和错误码，不转给 Tuwunel。
+    refusals: Mutex<Vec<matrix::Refusal>>,
     /// 同步应答保持错标直到测试显式清除，避免其他同步连接提前把状态覆盖回来。
     stale_join: watch::Sender<Option<StaleJoin>>,
     join_reported_as_invited: AtomicUsize,
@@ -232,6 +234,7 @@ impl Home {
             members_requests_dropped: AtomicUsize::new(0),
             layout_down: AtomicBool::new(false),
             reject_backup_creation: AtomicBool::new(false),
+            refusals: Mutex::default(),
             stale_join: watch::Sender::new(None),
             join_reported_as_invited: AtomicUsize::new(0),
             expire_room_list: AtomicBool::new(false),
@@ -294,6 +297,16 @@ impl Home {
     /// 发消息的请求回 502：核心连不上 Tuwunel。matrix-sdk 会自己重试很久，客户端这边不设期限就一直挂着。
     pub fn fail_sends(&self, fail: bool) {
         self.core.fail_sends.send_replace(fail);
+    }
+
+    /// 请求行（小写，如 `post /_matrix/client/v3/createroom`）含 `request` 的 Matrix 请求回 `status` 和 Matrix 错误码
+    /// `errcode`，像 Tuwunel 拒绝了它。
+    pub fn refuse_matrix(&self, request: &str, status: u16, errcode: &str) {
+        self.core.refusals.lock().unwrap().push(matrix::Refusal {
+            request: request.to_owned(),
+            status,
+            errcode: errcode.to_owned(),
+        });
     }
 
     /// 服务器丢了房间列表那条 Sliding Sync 连接的位置：下一个请求回 `M_UNKNOWN_POS`，SDK 从头同步。

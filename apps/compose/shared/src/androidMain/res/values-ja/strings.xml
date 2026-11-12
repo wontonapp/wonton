@@ -1209,6 +1209,10 @@
     <string name="problem_appearance_title">外観設定を保存できませんでした</string>
     <string name="problem_apps_not_ready">アプリのリストの準備ができていません。しばらくしてからもう一度お試しください。</string>
     <string name="problem_no_default_agent">デフォルトのエージェントがありません。セットアップで選択してインストールしてください。</string>
+    <!-- Problem title: the server refused an action although this device is still signed in. -->
+    <string name="problem_forbidden_title">リクエストが拒否されました</string>
+    <!-- Next step under the refused problem: the sign-in is fine; the server refused this one action. -->
+    <string name="problem_forbidden_next_step">ログインは有効です。権限がないか、相手にブロックされているか、相手のサーバーがまだ自宅サーバーとつながっていない可能性があります。</string>
     <string name="problem_invalid_input_title">この操作は実行できません</string>
     <!-- Accessibility label of the skeleton list placeholder while content loads. -->
     <string name="problem_loading">読み込み中</string>
@@ -1644,6 +1648,8 @@
     <string name="push_status_unavailable">プッシュを受信できません。システムの通知とディストリビューターを確認してください</string>
     <string name="push_status_failed_transport">登録に失敗しました。自宅サーバーに接続できたらもう一度お試しください</string>
     <string name="push_status_failed_unauthorized">登録に失敗しました。ペアリングをやり直してください</string>
+    <!-- Push status line when registering failed because the home server refused it although this device is signed in. -->
+    <string name="push_status_failed_forbidden">登録に失敗しました。自宅サーバーに拒否されました</string>
     <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
     <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
     <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
