@@ -128,7 +128,7 @@ fn configs_become_files_with_owner_and_mode() {
         plan.containers[0].files,
         [
             // 短语法放到 /<名字>；默认属主是服务的 user，默认所有人可读；content 按注入的变量插值。
-            file("/motd", 1000, 1001, 0o444, b"id=app.test\n"),
+            file("/motd", 1000, 1001, 0o644, b"id=app.test\n"),
             file("/etc/app/app.yaml", 0, 1001, 0o440, b"level: info\n"),
         ]
     );
@@ -307,4 +307,71 @@ fn services_without_network_join_no_network() {
         matches!(&err, RenderError::Service { service, .. } if service == "init"),
         "{err}"
     );
+}
+
+/// 写进容器根的文件：不存在的上级目录补建出来，已有的目录不动（不会改它的权限），路径上的文件挡住时报清楚。
+#[tokio::test]
+async fn missing_parent_directories_are_created_without_touching_existing_ones() {
+    use super::super::configs::{archive, missing_parents};
+    use super::super::fake_docker::{FakeDocker, FakeFile};
+
+    let (docker, engine) = FakeDocker::start().await;
+    let container = "app-test--web";
+    docker.add_container(container, "app.test");
+    // `/etc` 在，`/opt` 不在；`/data` 是普通文件，往它下面写要先建目录。
+    docker.set_file(container, "/etc", Some(FakeFile::Directory));
+    docker.set_file(container, "/data", Some(FakeFile::Regular(Vec::new())));
+    let file = |target: &str, data: &[u8]| ConfigFile {
+        target: PathBuf::from(target),
+        uid: 0,
+        gid: 0,
+        mode: 0o644,
+        data: data.to_vec(),
+    };
+    let files = [
+        file("/etc/app/conf.yaml", b"a"),
+        file("/opt/app/deep/conf.yaml", b"b"),
+    ];
+    let dirs = missing_parents(&engine, container, &files).await.unwrap();
+    // 已有的 `/etc` 不在里面；由浅到深，父目录排在子目录前面。
+    assert_eq!(
+        dirs,
+        [
+            PathBuf::from("/etc/app"),
+            PathBuf::from("/opt"),
+            PathBuf::from("/opt/app"),
+            PathBuf::from("/opt/app/deep"),
+        ]
+    );
+    let entries: Vec<(String, tar::EntryType)> =
+        tar::Archive::new(archive(&files, &dirs).unwrap().as_slice())
+            .entries()
+            .unwrap()
+            .map(|entry| {
+                let entry = entry.unwrap();
+                (
+                    entry.path().unwrap().display().to_string(),
+                    entry.header().entry_type(),
+                )
+            })
+            .collect();
+    let directory = tar::EntryType::Directory;
+    let regular = tar::EntryType::Regular;
+    assert_eq!(
+        entries,
+        [
+            ("etc/app".to_owned(), directory),
+            ("opt".to_owned(), directory),
+            ("opt/app".to_owned(), directory),
+            ("opt/app/deep".to_owned(), directory),
+            ("etc/app/conf.yaml".to_owned(), regular),
+            ("opt/app/deep/conf.yaml".to_owned(), regular),
+        ]
+    );
+
+    let error = missing_parents(&engine, container, &[file("/data/app.conf", b"c")])
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("/data"), "{error}");
 }

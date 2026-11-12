@@ -39,10 +39,12 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 - `init: true`。否则程序作为 1 号进程不响应停止信号，每次更新都多等 10 秒，这段时间页面打不开。
 - `healthcheck`，带 `start_period` 和 `start_interval`。检查真正可用的地址，只用镜像里有的命令。
 - `user: "${PUID}:${PGID}"`，写数据时用。这样数据目录里的文件归主人，不归 root。
+- 装的时候要下载大文件（模型、词表）就写 `x-wonton.install_timeout_secs`（60 到 1800），默认只等 300 秒。
 
 ## 容易猜错的
 
 - **`configs` 的属主：** `user` 写 `${PUID}:${PGID}` 时按插值后的数字算，默认模式 `0444`，所有用户都能读。不用另写 `uid`、`gid`。
+- **环境变量里的 `on`/`off`：** `environment` 里裸写会被 YAML 当成布尔（容器拿到 `true`），要的就是这两个字就加引号。
 - **健康检查和代理：** 只有 `wget` 和 shell 的写法由核心改写成不走代理。`python3 -c` 不改写，用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))` 自己绕开，见 `assets/backend`。
 - **没有登录的页面：** `sso: none` 又不做登录是可以的，所有请求先经网关校验主人的会话，别人打不开。不要自己加默认密码。
 - **出网：** 要访问外部地址就申请 `network.egress`，这个权限同时能访问主人的局域网，主人确认时看得到。用户填的地址不用替他拦，但不要把抓回来的内容不转义就放进页面。

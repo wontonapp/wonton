@@ -17,6 +17,7 @@ use super::docker::{LabeledResources, NetworkReach};
 use super::gpu::GpuGrant;
 use super::health::{self, Readiness, Target};
 use super::hostdir::{self, Owner};
+use super::install_notes::note_dropped_capabilities;
 use super::lan::LanGrant;
 use super::languages::Languages;
 use super::leftovers::name_taken;
@@ -253,19 +254,17 @@ impl PluginManager {
             undo.oidc_client = Some(manifest.id.to_string());
         }
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
-        let deadline =
-            super::health_gate::deadline(&plan, self.cfg.install_timeout, Instant::now());
+        let deadline = super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
         self.stage(&manifest.id, InstallStage::Starting);
-        let health = self
-            .start_containers(
-                Some(manifest),
-                &plan,
-                Some(&manifest.id),
-                undo,
-                deadline,
-                langs,
-            )
-            .await?;
+        let health = Box::pin(self.start_containers(
+            Some(manifest),
+            &plan,
+            Some(&manifest.id),
+            undo,
+            deadline,
+            langs,
+        ))
+        .await?;
         let (upstream, models, mcp) = self
             .started_upstreams(manifest, &plan, &mut secrets, undo, deadline, langs)
             .await?;
@@ -519,6 +518,7 @@ impl PluginManager {
             cgroup_parent: self.cfg.plugin_slice.clone(),
             granted: granted.to_vec(),
             settings: Default::default(),
+            install_limit: self.install_limit(manifest),
         })
     }
 
@@ -610,48 +610,26 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Health, InstallError> {
         for container in &plan.containers {
-            let pack_failed = |e: &dyn std::fmt::Display| {
-                InstallError::Invalid(l10n::text(
-                    langs,
-                    "plugin-install-configs-pack-failed",
-                    &[
-                        ("service", container.name.as_str().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ))
-            };
-            health::wait_for_all(
+            // 容器起不来时，失败可能来自核心默认去掉的能力（宿主网络的 NET_RAW），错误里点名。
+            Box::pin(health::wait_for_all(
                 &self.engine,
                 &self.http,
                 &container.depends_on,
                 deadline,
                 langs,
-            )
-            .await?;
-            // 只读根的服务先经一次性容器把配置文件写进核心数据目录：单文件绑定挂载的源在创建容器
-            // 时就必须存在，归档接口写不进只读根（见 configs_store 的模块注释）。
-            if let Some(dir) = &container.store_dir {
-                let archive =
-                    configs_store::archive(&container.files).map_err(|e| pack_failed(&e))?;
-                configs_store::seed(
-                    &self.engine,
-                    &container.name,
-                    &container.image,
-                    dir,
-                    archive,
-                    &plan.labels,
-                )
-                .await?;
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
+            // 只读根的服务在创建容器之前就要把文件写进核心数据目录（单文件绑定挂载的源必须存在）。
+            if container.store_dir.is_some() {
+                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
             }
             self.engine
                 .create_container(&container.name, container.body.clone())
                 .await?;
             undo.containers.push(container.name.clone());
-            if !container.files.is_empty() && container.store_dir.is_none() {
-                let archive = configs::archive(&container.files).map_err(|e| pack_failed(&e))?;
-                self.engine
-                    .upload_archive(&container.name, "/", archive)
-                    .await?;
+            if container.store_dir.is_none() {
+                Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
             }
             self.engine.start_container(&container.name).await?;
         }
@@ -661,7 +639,7 @@ impl PluginManager {
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {
             let finished = Target::Depend(DependCondition::ServiceCompletedSuccessfully);
-            health::wait_for(
+            Box::pin(health::wait_for(
                 &self.engine,
                 &self.http,
                 &container.name,
@@ -669,8 +647,9 @@ impl PluginManager {
                 None,
                 deadline,
                 langs,
-            )
-            .await?;
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
         }
         self.wait_ready_containers(manifest, plan, deadline, langs)
             .await
@@ -690,7 +669,7 @@ impl PluginManager {
                 Some(manifest) => self.webui_health(manifest, &container.service).await?,
                 None => None,
             };
-            let readiness = health::wait_for(
+            let readiness = Box::pin(health::wait_for(
                 &self.engine,
                 &self.http,
                 &container.name,
@@ -698,8 +677,9 @@ impl PluginManager {
                 webui_health.as_ref(),
                 deadline,
                 langs,
-            )
-            .await?;
+            ))
+            .await
+            .map_err(|e| note_dropped_capabilities(e, container, langs))?;
             healthy.push(readiness == Readiness::Healthy);
         }
         Ok(Health::of(healthy))
@@ -728,7 +708,7 @@ impl PluginManager {
             }))
     }
 
-    /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
+      /// 这套核心给插件建的容器、网络和卷：按标签找，别的核心（实例名不同）建的不算。
     pub(super) async fn own_resources(
         &self,
         id: &PluginId,
