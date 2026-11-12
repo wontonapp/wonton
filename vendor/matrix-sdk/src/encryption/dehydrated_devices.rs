@@ -236,10 +236,7 @@ pub(crate) struct DehydratedDevicesState {
 impl Default for DehydratedDevicesState {
     fn default() -> Self {
         let (event_sender, _) = broadcast::channel(100);
-        Self {
-            event_sender,
-            rotation_task: StdMutex::new(None),
-        }
+        Self { event_sender, rotation_task: StdMutex::new(None) }
     }
 }
 
@@ -370,25 +367,17 @@ impl DehydratedDevices {
         let dehydrated_device = machine.dehydrated_devices().create().await?;
 
         let display_name = display_name.unwrap_or(DEFAULT_DEVICE_DISPLAY_NAME);
-        let request = dehydrated_device
-            .keys_for_upload(display_name.to_owned(), pickle_key)
-            .await?;
+        let request =
+            dehydrated_device.keys_for_upload(display_name.to_owned(), pickle_key).await?;
         let device_id = request.device_id.clone();
-        self.emit(DehydratedDeviceEvent::Created {
-            device_id: device_id.clone(),
-        });
+        self.emit(DehydratedDeviceEvent::Created { device_id: device_id.clone() });
 
         debug!(?device_id, "Uploading dehydrated device to the homeserver");
         self.client.send(request).await?;
         info!(?device_id, "Successfully uploaded dehydrated device");
 
-        machine
-            .store()
-            .set_value(LAST_UPLOADED_DEVICE_ID_KEY, &device_id)
-            .await?;
-        self.emit(DehydratedDeviceEvent::Uploaded {
-            device_id: device_id.clone(),
-        });
+        machine.store().set_value(LAST_UPLOADED_DEVICE_ID_KEY, &device_id).await?;
+        self.emit(DehydratedDeviceEvent::Uploaded { device_id: device_id.clone() });
         Ok(device_id)
     }
 
@@ -428,9 +417,7 @@ impl DehydratedDevices {
         &self,
         pickle_key: &DehydratedDeviceKey,
     ) -> Result<bool, DehydratedDeviceError> {
-        let Some(downloaded) = self.download_device().await? else {
-            return Ok(false);
-        };
+        let Some(downloaded) = self.download_device().await? else { return Ok(false) };
         info!(device_id = ?downloaded.device_id, "Dehydrated device found");
 
         // The server should serve back whichever id we last uploaded. A
@@ -453,9 +440,7 @@ impl DehydratedDevices {
         });
 
         let rehydrated = self.rehydrate_device(&downloaded, pickle_key).await?;
-        let drained = self
-            .absorb_events(&downloaded.device_id, &rehydrated)
-            .await?;
+        let drained = self.absorb_events(&downloaded.device_id, &rehydrated).await?;
 
         // The server keeps undelivered events queued until the device is
         // deleted, so a truncated drain must leave the device in place for a
@@ -494,10 +479,7 @@ impl DehydratedDevices {
         let olm = self.client.olm_machine().await;
         let machine = olm.as_ref().ok_or(DehydratedDeviceError::NotLoggedIn)?;
 
-        machine
-            .dehydrated_devices()
-            .save_dehydrated_device_pickle_key(pickle_key)
-            .await?;
+        machine.dehydrated_devices().save_dehydrated_device_pickle_key(pickle_key).await?;
         self.emit(DehydratedDeviceEvent::KeyCached);
         Ok(())
     }
@@ -514,10 +496,7 @@ impl DehydratedDevices {
         let olm = self.client.olm_machine().await;
         let machine = olm.as_ref().ok_or(DehydratedDeviceError::NotLoggedIn)?;
 
-        Ok(machine
-            .dehydrated_devices()
-            .get_dehydrated_device_pickle_key()
-            .await?)
+        Ok(machine.dehydrated_devices().get_dehydrated_device_pickle_key().await?)
     }
 
     /// Return the ID of the dehydrated device this client most recently
@@ -529,10 +508,7 @@ impl DehydratedDevices {
         let olm = self.client.olm_machine().await;
         let machine = olm.as_ref().ok_or(DehydratedDeviceError::NotLoggedIn)?;
 
-        Ok(machine
-            .store()
-            .get_value(LAST_UPLOADED_DEVICE_ID_KEY)
-            .await?)
+        Ok(machine.store().get_value(LAST_UPLOADED_DEVICE_ID_KEY).await?)
     }
 
     /// Return whether the pickle key is stored in the given Secret Storage.
@@ -555,10 +531,7 @@ impl DehydratedDevices {
         &self,
         secret_store: &SecretStore,
     ) -> Result<bool, DehydratedDeviceError> {
-        Ok(secret_store
-            .get_secret(pickle_key_secret_name())
-            .await?
-            .is_some())
+        Ok(secret_store.get_secret(pickle_key_secret_name()).await?.is_some())
     }
 
     /// Generate a new random pickle key, persist it in Secret Storage, and
@@ -585,9 +558,7 @@ impl DehydratedDevices {
         secret_store: &SecretStore,
     ) -> Result<DehydratedDeviceKey, DehydratedDeviceError> {
         let key = DehydratedDeviceKey::new();
-        secret_store
-            .put_secret(pickle_key_secret_name(), &key.to_base64())
-            .await?;
+        secret_store.put_secret(pickle_key_secret_name(), &key.to_base64()).await?;
         self.cache_key(&key).await?;
         Ok(key)
     }
@@ -813,11 +784,7 @@ impl DehydratedDevices {
 
         Ok(machine
             .dehydrated_devices()
-            .rehydrate(
-                pickle_key,
-                &downloaded.device_id,
-                downloaded.device_data.clone(),
-            )
+            .rehydrate(pickle_key, &downloaded.device_id, downloaded.device_data.clone())
             .await?)
     }
 
@@ -851,10 +818,7 @@ impl DehydratedDevices {
             to_device_count = to_device_count.saturating_add(response.events.len());
             let imported = rehydrated.receive_events(response.events, settings).await?;
             room_key_count = room_key_count.saturating_add(imported.len());
-            trace!(
-                to_device_count,
-                room_key_count, "Absorbed a batch of to-device events"
-            );
+            trace!(to_device_count, room_key_count, "Absorbed a batch of to-device events");
             self.emit(DehydratedDeviceEvent::RehydrationProgress {
                 room_keys_imported: room_key_count,
                 to_device_events: to_device_count,

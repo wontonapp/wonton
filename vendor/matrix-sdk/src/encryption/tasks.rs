@@ -71,10 +71,7 @@ impl BackupUploadingTask {
             Self::listen(client, receiver).await;
         });
 
-        Self {
-            sender,
-            join_handle,
-        }
+        Self { sender, join_handle }
     }
 
     pub(crate) fn trigger_upload(&self) {
@@ -157,10 +154,7 @@ impl BackupDownloadTask {
             Self::listen(client, receiver).await;
         });
 
-        Self {
-            sender,
-            join_handle,
-        }
+        Self { sender, join_handle }
     }
 
     /// Trigger a backup download for the keys for the given event.
@@ -237,10 +231,8 @@ impl BackupDownloadTask {
             let event_id = &room_key_download_request.event_id;
             if !state_guard.active_tasks.contains_key(event_id) {
                 let event_id = event_id.to_owned();
-                let task = spawn(Self::handle_download_request(
-                    state.clone(),
-                    room_key_download_request,
-                ));
+                let task =
+                    spawn(Self::handle_download_request(state.clone(), room_key_download_request));
                 state_guard.active_tasks.insert(event_id, task);
             }
         }
@@ -279,9 +271,7 @@ impl BackupDownloadTask {
 
             // Before we drop the lock, indicate to other tasks that may be considering this
             // room key, that we're going to go ahead and do a download.
-            state
-                .downloaded_room_keys
-                .insert(download_request.to_room_key_info());
+            state.downloaded_room_keys.insert(download_request.to_room_key_info());
 
             client
         };
@@ -290,10 +280,7 @@ impl BackupDownloadTask {
         let result = client
             .encryption()
             .backups()
-            .download_room_key(
-                &download_request.room_id,
-                &download_request.megolm_session_id,
-            )
+            .download_room_key(&download_request.room_id, &download_request.megolm_session_id)
             .await;
 
         // Then take the lock again to update the state.
@@ -310,17 +297,13 @@ impl BackupDownloadTask {
                 Ok(false) => {
                     // We did not find a valid backup decryption key or backup version, we did not
                     // even attempt to download the room key.
-                    state
-                        .downloaded_room_keys
-                        .remove(std::iter::once(&room_key_info));
+                    state.downloaded_room_keys.remove(std::iter::once(&room_key_info));
                 }
                 Err(_) => {
                     // We were unable to download the room key. Update the failure cache so that we
                     // back off from more requests, and also remove the entry from the list of
                     // room keys that we are downloading.
-                    state
-                        .downloaded_room_keys
-                        .remove(std::iter::once(&room_key_info));
+                    state.downloaded_room_keys.remove(std::iter::once(&room_key_info));
                     state.failures_cache.insert(room_key_info);
                 }
             }
@@ -508,11 +491,7 @@ impl BundleReceiverTask {
             return;
         };
 
-        let room_details = match olm_machine
-            .store()
-            .get_all_rooms_pending_key_bundles()
-            .await
-        {
+        let room_details = match olm_machine.store().get_all_rooms_pending_key_bundles().await {
             Ok(room_details) => room_details,
             Err(e) => {
                 tracing::warn!("Error while fetching rooms pending key bundles: {e:?}");
@@ -535,35 +514,30 @@ impl BundleReceiverTask {
         // Iterate over the details that are valid for processing. For each valid
         // details, check if we have the corresponding key bundle data in the
         // store. If the data exists, attempt to re-import the bundle.
-        for RoomPendingKeyBundleDetails {
-            room_id, inviter, ..
-        } in valid
-        {
+        for RoomPendingKeyBundleDetails { room_id, inviter, .. } in valid {
             let Some(room) = client.get_room(room_id) else {
                 // Skip processing if the room is not cached in the state store.
                 tracing::trace!(?room_id, "Room not available in state store, skipping...");
                 continue;
             };
-            let bundle = match olm_machine
-                .store()
-                .get_received_room_key_bundle_data(room_id, inviter)
-                .await
-            {
-                Ok(Some(bundle)) => bundle,
-                Ok(None) => {
-                    // If the bundle data is not available, skip processing. The listener task
-                    // will handle this case when the bundle arrives.
-                    tracing::trace!(?room_id, "No bundle available, skipping...");
-                    continue;
-                }
-                Err(err) => {
-                    tracing::warn!(
-                        ?room_id,
-                        "Failed to fetch received room key bundle data: {err:?}"
-                    );
-                    continue;
-                }
-            };
+            let bundle =
+                match olm_machine.store().get_received_room_key_bundle_data(room_id, inviter).await
+                {
+                    Ok(Some(bundle)) => bundle,
+                    Ok(None) => {
+                        // If the bundle data is not available, skip processing. The listener task
+                        // will handle this case when the bundle arrives.
+                        tracing::trace!(?room_id, "No bundle available, skipping...");
+                        continue;
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            ?room_id,
+                            "Failed to fetch received room key bundle data: {err:?}"
+                        );
+                        continue;
+                    }
+                };
             Self::handle_bundle(&room, &(&bundle).into()).await;
         }
 
@@ -571,11 +545,7 @@ impl BundleReceiverTask {
         // respective room to avoid re-checking it in the future.
         for RoomPendingKeyBundleDetails { room_id, .. } in &invalid {
             tracing::trace!(?room_id, "Clearing pending flag for room");
-            if let Err(e) = olm_machine
-                .store()
-                .clear_room_pending_key_bundle(room_id)
-                .await
-            {
+            if let Err(e) = olm_machine.store().clear_room_pending_key_bundle(room_id).await {
                 tracing::warn!("Error clearing room pending key bundle: {e:?}");
             }
         }
@@ -669,9 +639,7 @@ mod test {
         #[cfg(feature = "experimental-encrypted-state-events")]
         let event: Raw<EncryptedEvent> = serde_json::from_value(event_content).expect("");
 
-        let state = Arc::new(Mutex::new(BackupDownloadTaskListenerState::new(
-            weak_client,
-        )));
+        let state = Arc::new(Mutex::new(BackupDownloadTaskListenerState::new(weak_client)));
         let download_request = RoomKeyDownloadRequest {
             room_id: room_id.into(),
             megolm_session_id: session_id.to_owned(),
@@ -689,9 +657,7 @@ mod test {
         {
             let state = state.lock().await;
             assert!(
-                !state
-                    .downloaded_room_keys
-                    .contains(&(room_id.to_owned(), session_id.to_owned())),
+                !state.downloaded_room_keys.contains(&(room_id.to_owned(), session_id.to_owned())),
                 "Backups are not enabled, we should not mark any room keys as downloaded."
             )
         }

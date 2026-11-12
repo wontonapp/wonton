@@ -81,9 +81,7 @@ impl GuardedStoreAccess {
     async fn save_catchup_tokens(&self, tokens: Vec<ThreadSubscriptionCatchupToken>) -> Result<()> {
         let store = self.client.state_store();
         if tokens.is_empty() {
-            store
-                .remove_kv_data(StateStoreDataKey::ThreadSubscriptionsCatchupTokens)
-                .await?;
+            store.remove_kv_data(StateStoreDataKey::ThreadSubscriptionsCatchupTokens).await?;
 
             trace!("Marking thread subscriptions as not outdated \\o/");
             self.is_outdated.store(false, atomic::Ordering::SeqCst);
@@ -192,20 +190,10 @@ impl ThreadSubscriptionCatchup {
         if !updates.is_empty() {
             trace!(
                 "saving {} new subscriptions and {} unsubscriptions",
-                subscribed
-                    .values()
-                    .map(|by_room| by_room.len())
-                    .sum::<usize>(),
-                unsubscribed
-                    .values()
-                    .map(|by_room| by_room.len())
-                    .sum::<usize>(),
+                subscribed.values().map(|by_room| by_room.len()).sum::<usize>(),
+                unsubscribed.values().map(|by_room| by_room.len()).sum::<usize>(),
             );
-            guard
-                .client
-                .state_store()
-                .upsert_thread_subscriptions(updates)
-                .await?;
+            guard.client.state_store().upsert_thread_subscriptions(updates).await?;
         }
         Ok(())
     }
@@ -297,9 +285,7 @@ impl ThreadSubscriptionCatchup {
             };
 
             // We do have a tokens. Pop the last value, and use it to catch up!
-            let last = tokens
-                .pop()
-                .expect("must be set per `load_catchup_tokens` contract");
+            let last = tokens.pop().expect("must be set per `load_catchup_tokens` contract");
 
             // Release the mutex before running the network request.
             let client = guard.client.clone();
@@ -324,21 +310,12 @@ impl ThreadSubscriptionCatchup {
                     if !updates.is_empty() {
                         trace!(
                             "saving {} new subscriptions and {} unsubscriptions",
-                            resp.subscribed
-                                .values()
-                                .map(|by_room| by_room.len())
-                                .sum::<usize>(),
-                            resp.unsubscribed
-                                .values()
-                                .map(|by_room| by_room.len())
-                                .sum::<usize>(),
+                            resp.subscribed.values().map(|by_room| by_room.len()).sum::<usize>(),
+                            resp.unsubscribed.values().map(|by_room| by_room.len()).sum::<usize>(),
                         );
 
-                        if let Err(err) = guard
-                            .client
-                            .state_store()
-                            .upsert_thread_subscriptions(updates)
-                            .await
+                        if let Err(err) =
+                            guard.client.state_store().upsert_thread_subscriptions(updates).await
                         {
                             warn!("Failed to store caught up thread subscriptions: {err}");
                             continue;
@@ -363,10 +340,8 @@ impl ThreadSubscriptionCatchup {
                     if let Some(next_batch) = resp.end {
                         // If the response contained a next batch token, reuse the same catchup
                         // token entry, so the `to` value remains the same.
-                        tokens[index] = ThreadSubscriptionCatchupToken {
-                            from: next_batch,
-                            to: last.to,
-                        };
+                        tokens[index] =
+                            ThreadSubscriptionCatchupToken { from: next_batch, to: last.to };
                     } else {
                         // No next batch, we can remove this token from the list.
                         tokens.remove(index);
@@ -447,14 +422,9 @@ mod tests {
         assert!(tsc.is_outdated());
 
         // When I save a token,
-        let token = ThreadSubscriptionCatchupToken {
-            from: "from".to_owned(),
-            to: Some("to".to_owned()),
-        };
-        guard
-            .save_catchup_tokens(vec![token.clone()])
-            .await
-            .unwrap();
+        let token =
+            ThreadSubscriptionCatchupToken { from: "from".to_owned(), to: Some("to".to_owned()) };
+        guard.save_catchup_tokens(vec![token.clone()]).await.unwrap();
 
         // Well, it is saved,
         let tokens = guard.load_catchup_tokens().await.unwrap();
@@ -480,18 +450,12 @@ mod tests {
         let tsc = client.thread_subscription_catchup();
         let guard = tsc.lock().await.unwrap();
 
-        let token = ThreadSubscriptionCatchupToken {
-            from: "from".to_owned(),
-            to: Some("to".to_owned()),
-        };
+        let token =
+            ThreadSubscriptionCatchupToken { from: "from".to_owned(), to: Some("to".to_owned()) };
 
         // When the same catchup token is saved twice,
-        tsc.save_catchup_token(&guard, Some(token.clone()))
-            .await
-            .unwrap();
-        tsc.save_catchup_token(&guard, Some(token.clone()))
-            .await
-            .unwrap();
+        tsc.save_catchup_token(&guard, Some(token.clone())).await.unwrap();
+        tsc.save_catchup_token(&guard, Some(token.clone())).await.unwrap();
 
         // Then it must only appear once in the stored list.
         let tokens = guard.load_catchup_tokens().await.unwrap();
@@ -512,20 +476,14 @@ mod timed_tests {
     #[async_test]
     async fn test_issue_6573_client_can_drop_thread_subscriptions_task() {
         let server = MatrixMockServer::new().await;
-        server
-            .mock_versions()
-            .with_thread_subscriptions()
-            .ok()
-            .mount()
-            .await;
+        server.mock_versions().with_thread_subscriptions().ok().mount().await;
 
         let client = server
             .client_builder()
             .no_server_versions()
             .on_builder(|builder| {
-                builder.with_threading_support(ThreadingSupport::Enabled {
-                    with_subscriptions: true,
-                })
+                builder
+                    .with_threading_support(ThreadingSupport::Enabled { with_subscriptions: true })
             })
             .build()
             .await;

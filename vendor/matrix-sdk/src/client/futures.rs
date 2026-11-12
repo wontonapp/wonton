@@ -162,12 +162,7 @@ where
             }
         }
 
-        let Self {
-            client,
-            request,
-            config,
-            send_progress,
-        } = self;
+        let Self { client, request, config, send_progress } = self;
 
         Box::pin(async move {
             let res =
@@ -194,9 +189,7 @@ pub struct SendMediaUploadRequest {
 
 impl SendMediaUploadRequest {
     pub fn new(request: SendRequest<media::create_content::v3::Request>) -> Self {
-        Self {
-            send_request: request,
-        }
+        Self { send_request: request }
     }
 
     /// Replace the default `SharedObservable` used for tracking upload
@@ -209,9 +202,7 @@ impl SendMediaUploadRequest {
         mut self,
         send_progress: SharedObservable<TransmissionProgress>,
     ) -> Self {
-        self.send_request = self
-            .send_request
-            .with_send_progress_observable(send_progress);
+        self.send_request = self.send_request.with_send_progress_observable(send_progress);
         self
     }
 
