@@ -14,14 +14,18 @@ enum CoreUpgradeCompatPreviews {
             CoreUpgradeBreakingPlugin(
                 id: "app.copyparty.files",
                 reasons: [CoreUpgradeBreakingReason(category: .unknownFeature, raw: "x-wonton.tabs")]
-            ),
+            )
         ])
     }
 
     static var apps: [CoreUpgradeCompatApp] {
         [
             CoreUpgradeCompatApp(id: "app.immich.photos", title: String(localized: .previewAppName1), icon: nil),
-            CoreUpgradeCompatApp(id: "app.copyparty.files", title: String(localized: .previewAppName2), icon: nil),
+            CoreUpgradeCompatApp(
+                id: "app.copyparty.files",
+                title: String(localized: .previewAppName2),
+                icon: nil
+            )
         ]
     }
 }
@@ -30,7 +34,10 @@ private struct PreviewAppIcon: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: WontonTheme.size.taskIcon * WontonTheme.ratio.pluginIconRadius, style: .continuous)
+        let shape = RoundedRectangle(
+            cornerRadius: WontonTheme.size.taskIcon * WontonTheme.ratio.pluginIconRadius,
+            style: .continuous
+        )
         WontonIcon.appsFill.view(size: WontonTheme.size.taskIcon * 0.54)
             .foregroundStyle(Color(colors.accentInkOnFill))
             .frame(width: WontonTheme.size.taskIcon, height: WontonTheme.size.taskIcon)

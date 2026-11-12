@@ -99,8 +99,9 @@ struct CoreUpgradeView: View {
                 compat: offer.compat,
                 apps: compatApps(offer),
                 refreshing: upgrade.refreshing,
-                onRetry: { model.send(.refreshCoreUpgrade(manual: true)) }
-            ) { PluginIconView(icon: $0, size: WontonTheme.size.taskIcon, model: model) }
+                onRetry: { model.send(.refreshCoreUpgrade(manual: true)) },
+                icon: { PluginIconView(icon: $0, size: WontonTheme.size.taskIcon, model: model) }
+            )
             offerButtons(offer)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
