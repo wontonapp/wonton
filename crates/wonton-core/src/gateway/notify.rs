@@ -1,13 +1,19 @@
 //! `notify.wonton.internal`：插件把通知交给核心，核心以核心账号发进主人的"Wonton"私聊（ADR-0047）。按来源地址认出
 //! 插件（同 `mcp.wonton.internal`），只放行申请了 `notify` 的插件；频率超了的丢弃，并在第一次超限时告诉主人。
+//!
+//! 除了自己那套 `{title, body, level, path}`，还收上游常见的写法：ntfy 的纯文本正文配 `Title`、`Priority`、`Tags`
+//! 头，Gotify 的 `{title, message, priority}`。其余 JSON 拍平成可读文本；没有标题时从载荷里取，不再要求必填。
+//! 插件把上游应用的通知地址直接填成 `WONTON_NOTIFY_URL` 就能用，路径不看（ntfy 的主题、Gotify 的 `/message`）。
 
 use std::time::Duration;
 
+use axum::Json;
 use axum::body::to_bytes;
 use axum::extract::Request;
+use axum::http::{HeaderMap, header};
 use axum::response::{IntoResponse, Response};
 use hyper::{Method, StatusCode};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use wonton_protocol::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 
 use super::api::error_response;
@@ -20,7 +26,14 @@ const MAX_BYTES: usize = 16 * 1024;
 /// `title` 是一句话，`body` 是一段话。
 const MAX_TITLE: usize = 120;
 const MAX_BODY: usize = 2000;
-const NOTICE_PATH: &str = "/notices";
+/// 上游的字段名里能当标题的，按这个顺序找。
+const TITLE_KEYS: [&str; 4] = ["title", "subject", "name", "summary"];
+/// 已经在上面取过值的键：拍平的正文里不再重复。
+const USED_KEYS: [&str; 9] = [
+    "title", "subject", "body", "message", "text", "level", "priority", "path", "tags",
+];
+/// 头部带来的标签最多留几个。
+const MAX_TAGS: usize = 10;
 
 pub async fn request(gateway: &Gateway, req: Request) -> Response {
     let Some(notices) = &gateway.notices else {
@@ -48,7 +61,7 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
             );
         }
     };
-    if let Some(reject) = method_or_path(&req) {
+    if let Some(reject) = method(&req) {
         return reject;
     }
     let mut notice = match read_request(gateway, &source.id, req).await {
@@ -78,7 +91,8 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
         NOTICE_FIELD: notice,
     });
     match notices.send(&content).await {
-        Ok(_) => StatusCode::CREATED.into_response(),
+        // 上游的通用 Webhook 只认 200（青龙把 201 记成失败）；正文给 `{}`，ntfy、Gotify 的客户端会解 JSON。
+        Ok(_) => (StatusCode::OK, Json(json!({}))).into_response(),
         Err(e) => error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "matrix_unavailable",
@@ -87,34 +101,34 @@ pub async fn request(gateway: &Gateway, req: Request) -> Response {
     }
 }
 
-/// 只有 `POST /notices` 收通知。
-fn method_or_path(req: &Request) -> Option<Response> {
-    if req.uri().path() != NOTICE_PATH {
-        return Some(error_response(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            &format!("只有 {NOTICE_PATH} 收通知"),
-        ));
+/// ntfy 默认用 `PUT` 发、Gotify 用 `POST`；路径当主题用，不看。
+fn method(req: &Request) -> Option<Response> {
+    if req.method() == Method::POST || req.method() == Method::PUT {
+        return None;
     }
-    if req.method() != Method::POST {
-        return Some(error_response(
-            StatusCode::METHOD_NOT_ALLOWED,
-            "invalid_input",
-            "这个接口只收 POST",
-        ));
-    }
-    None
+    Some(error_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        "invalid_input",
+        "这个接口只收 POST 和 PUT",
+    ))
 }
 
-/// 读请求体的结果：要么是一条通知，要么是字段不合法的原因。
+/// 读请求体的结果：要么是一条通知，要么是载荷不合法的原因。
 enum Read {
     Notice(PluginNotice),
     Invalid(String),
 }
 
-/// 读请求体、校验字段。
+/// 读请求体：`application/json` 按 JSON 读，其余整段当纯文本；带 JSON 内容类型但解析不了的也当纯文本。
 async fn read_request(gateway: &Gateway, id: &PluginId, req: Request) -> Read {
-    let bytes = match to_bytes(req.into_body(), MAX_BYTES).await {
+    let (parts, body) = req.into_parts();
+    let headers = Headers::read(&parts.headers);
+    let json = parts
+        .headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.to_ascii_lowercase().starts_with("application/json"));
+    let bytes = match to_bytes(body, MAX_BYTES).await {
         Ok(bytes) => bytes,
         Err(e) => {
             return Read::Invalid(format!(
@@ -123,47 +137,148 @@ async fn read_request(gateway: &Gateway, id: &PluginId, req: Request) -> Read {
             ));
         }
     };
-    let input: Value = match serde_json::from_slice(&bytes) {
-        Ok(input) => input,
-        Err(e) => return Read::Invalid(format!("请求体不是合法的 JSON：{e}")),
+    let draft = match json.then(|| serde_json::from_slice::<Value>(&bytes).ok()) {
+        Some(Some(value)) => read_json(&value, headers),
+        Some(None) => read_text(&bytes, headers),
+        None => read_text(&bytes, headers),
     };
-    if !input.is_object() {
-        return Read::Invalid("请求体要是一个 JSON 对象".to_owned());
-    }
-    match read_notice(gateway, id, &input) {
+    match draft.and_then(|draft| notice(gateway, id, draft)) {
         Ok(notice) => Read::Notice(notice),
         Err(message) => Read::Invalid(message),
     }
 }
 
-/// 从请求体里读出一条通知；字段不合法的原因原样返回。插件名由调用方补上。
-fn read_notice(gateway: &Gateway, id: &PluginId, input: &Value) -> Result<PluginNotice, String> {
-    let string = |name: &str| -> Result<Option<String>, String> {
-        match input.get(name) {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(text)) => Ok(Some(text.clone())),
-            Some(_) => Err(format!("{name} 要是字符串")),
+/// 上报的载荷里能对上 ntfy、Gotify 的同义字段。
+#[derive(Default)]
+struct Headers {
+    title: Option<String>,
+    /// ntfy 的优先级：1 最低，5 最高。
+    priority: Option<u64>,
+    tags: Vec<String>,
+}
+
+impl Headers {
+    /// 值读不出来就当没有：这些头是上游客户端写的，不该让整条通知失败。
+    fn read(headers: &HeaderMap) -> Self {
+        // `to_str` 只收可见 ASCII；中文标题按 UTF-8 解。
+        let first = |names: &[&str]| {
+            names.iter().find_map(|name| {
+                let text = String::from_utf8_lossy(headers.get(*name)?.as_bytes());
+                let text = text.trim().to_owned();
+                (!text.is_empty()).then_some(text)
+            })
+        };
+        Self {
+            title: first(&["title", "x-title"]),
+            priority: first(&["priority", "x-priority"]).and_then(|value| value.parse().ok()),
+            tags: first(&["tags", "x-tags"])
+                .map(|tags| split_tags(&tags))
+                .unwrap_or_default(),
         }
-    };
-    let title = string("title")?
-        .filter(|t| !t.trim().is_empty())
-        .ok_or("title 必填，一句话")?;
-    if title.chars().count() > MAX_TITLE {
-        return Err(format!("title 最多 {MAX_TITLE} 个字符"));
     }
-    let body = string("body")?.filter(|b| !b.trim().is_empty());
-    if let Some(text) = &body
-        && text.chars().count() > MAX_BODY
-    {
-        return Err(format!("body 最多 {MAX_BODY} 个字符"));
-    }
-    let level = match string("level")?.as_deref() {
-        None | Some("info") => NoticeLevel::Info,
-        Some("warning") => NoticeLevel::Warning,
-        Some("critical") => NoticeLevel::Critical,
-        Some(_) => return Err("level 只能是 info、warning 或 critical".to_owned()),
+}
+
+/// 载荷里读出来的内容，还没检查必填和长度。
+#[derive(Default)]
+struct Draft {
+    title: Option<String>,
+    body: Option<String>,
+    level: Option<NoticeLevel>,
+    path: Option<String>,
+    tags: Vec<String>,
+}
+
+/// 从 JSON 里读：自己的字段优先，其余从上游的写法里取；一个能读的字段都没有时把整段 JSON 拍平成正文。
+fn read_json(value: &Value, headers: Headers) -> Result<Draft, String> {
+    let ntfy_scale = headers.priority.is_some();
+    let mut draft = Draft {
+        level: headers
+            .priority
+            .map(|priority| priority_level(priority, true)),
+        tags: headers.tags,
+        ..Default::default()
     };
-    let path = match string("path")? {
+    if let Value::Object(map) = value {
+        draft.title = explicit_title(map)?;
+        draft.body = explicit_body(map)?;
+        draft.level = level(map, ntfy_scale)?.or(draft.level);
+        draft.path = field(map, &["path"])?;
+        if let Some(tags) = map.get("tags") {
+            draft.tags.extend(tags_of(tags));
+        }
+    }
+    let mut lines = Vec::new();
+    render(value, "", &mut lines);
+    if draft.title.is_none() {
+        draft.title = find_title(value);
+    }
+    match &draft.body {
+        None => {
+            // 正文要自己拍平：第一行当标题，剩下的才是正文。
+            if draft.title.is_none() && !lines.is_empty() {
+                draft.title = Some(lines.remove(0));
+            }
+            if !lines.is_empty() {
+                draft.body = Some(lines.join("\n"));
+            }
+        }
+        Some(body) if draft.title.is_none() => {
+            let (first, rest) = body.split_once('\n').unwrap_or((body, ""));
+            draft.title = Some(one_line(first)).filter(|title| !title.is_empty());
+            draft.body = Some(rest.trim().to_owned()).filter(|rest| !rest.is_empty());
+        }
+        Some(_) => {}
+    }
+    Ok(draft)
+}
+
+/// 纯文本载荷（ntfy 的写法）：`Title` 头是标题，没有时第一行当标题、剩下的当正文。
+fn read_text(bytes: &[u8], headers: Headers) -> Result<Draft, String> {
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim();
+    let mut draft = Draft {
+        level: headers
+            .priority
+            .map(|priority| priority_level(priority, true)),
+        tags: headers.tags,
+        ..Default::default()
+    };
+    match headers.title {
+        Some(title) => {
+            draft.title = Some(one_line(&title)).filter(|title| !title.is_empty());
+            draft.body = Some(text.to_owned()).filter(|text| !text.is_empty());
+        }
+        None => {
+            let (title, body) = text.split_once('\n').unwrap_or((text, ""));
+            draft.title = Some(one_line(title)).filter(|title| !title.is_empty());
+            draft.body = Some(body.trim().to_owned()).filter(|body| !body.is_empty());
+        }
+    }
+    Ok(draft)
+}
+
+/// 合成一条通知：补标题、查网页；自己填的字段已经查过长度，从载荷里取来的截断。
+fn notice(gateway: &Gateway, id: &PluginId, draft: Draft) -> Result<PluginNotice, String> {
+    let title = draft
+        .title
+        .map(|title| fit(&title, MAX_TITLE))
+        .unwrap_or_else(|| "通知".to_owned());
+    let mut body = draft.body.map(|body| fit(&body, MAX_BODY));
+    if !draft.tags.is_empty() {
+        let tags = draft
+            .tags
+            .iter()
+            .map(|tag| fit(tag, 40))
+            .collect::<Vec<_>>()
+            .join("、");
+        let text = body.get_or_insert_default();
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&format!("标签：{tags}"));
+        body = body.map(|body| fit(&body, MAX_BODY));
+    }
+    let path = match draft.path {
         None => None,
         Some(p) if p.trim().is_empty() => None,
         Some(p) => {
@@ -179,11 +294,198 @@ fn read_notice(gateway: &Gateway, id: &PluginId, input: &Value) -> Result<Plugin
     Ok(PluginNotice {
         plugin_id: id.to_string(),
         plugin_name: String::new(),
-        level,
-        title: title.trim().to_owned(),
+        level: draft.level.unwrap_or(NoticeLevel::Info),
+        title,
         body,
         path,
     })
+}
+
+/// 自己格式的标题：压成一行，超长算错。
+fn explicit_title(map: &Map<String, Value>) -> Result<Option<String>, String> {
+    let title = field(map, &["title", "subject"])?;
+    let title = title
+        .map(|title| one_line(&title))
+        .filter(|title| !title.is_empty());
+    check_len(title, MAX_TITLE, "title")
+}
+
+/// 自己格式的正文：超长算错。
+fn explicit_body(map: &Map<String, Value>) -> Result<Option<String>, String> {
+    let body = field(map, &["body", "message", "text"])?;
+    let body = body.filter(|body| !body.trim().is_empty());
+    check_len(body, MAX_BODY, "body")
+}
+
+/// 取一个字符串字段：没有或空串是 `None`，不是字符串是错误。
+fn field(map: &Map<String, Value>, names: &[&str]) -> Result<Option<String>, String> {
+    for name in names {
+        match map.get(*name) {
+            None | Some(Value::Null) => {}
+            Some(Value::String(text)) if text.trim().is_empty() => {}
+            Some(Value::String(text)) => return Ok(Some(text.clone())),
+            Some(_) => return Err(format!("{name} 要是字符串")),
+        }
+    }
+    Ok(None)
+}
+
+/// 级别：自己格式的 `level`，或上游的 `priority`（ntfy 是 1–5，Gotify 是 0–10）。
+fn level(map: &Map<String, Value>, ntfy_scale: bool) -> Result<Option<NoticeLevel>, String> {
+    if let Some(name) = field(map, &["level"])? {
+        return named_level(&name).map(Some);
+    }
+    match map.get("priority") {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(name)) => named_level(name).map(Some),
+        Some(Value::Number(number)) => Ok(number
+            .as_u64()
+            .map(|priority| priority_level(priority, ntfy_scale))),
+        Some(_) => Err("priority 要是数字或级别名".to_owned()),
+    }
+}
+
+fn named_level(name: &str) -> Result<NoticeLevel, String> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "info" | "low" | "min" | "default" | "normal" => Ok(NoticeLevel::Info),
+        "warning" | "high" => Ok(NoticeLevel::Warning),
+        "critical" | "max" | "urgent" => Ok(NoticeLevel::Critical),
+        _ => Err("level 只能是 info、warning、critical（上游的 low、high、max 也行）".to_owned()),
+    }
+}
+
+fn priority_level(priority: u64, ntfy_scale: bool) -> NoticeLevel {
+    if ntfy_scale {
+        match priority {
+            0..=3 => NoticeLevel::Info,
+            4 => NoticeLevel::Warning,
+            _ => NoticeLevel::Critical,
+        }
+    } else {
+        match priority {
+            0..=7 => NoticeLevel::Info,
+            8..=9 => NoticeLevel::Warning,
+            _ => NoticeLevel::Critical,
+        }
+    }
+}
+
+/// 把任意 JSON 拍成“键: 值”行；数组里的标量并成一行，对象和混合数组按层展开。
+fn render(value: &Value, prefix: &str, lines: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            for (key, value) in map {
+                if prefix.is_empty() && USED_KEYS.contains(&key.as_str()) {
+                    continue;
+                }
+                let key = if prefix.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{prefix}.{key}")
+                };
+                render(value, &key, lines);
+            }
+        }
+        Value::Array(items)
+            if items
+                .iter()
+                .all(|item| !item.is_object() && !item.is_array()) =>
+        {
+            let joined = items
+                .iter()
+                .filter_map(scalar)
+                .collect::<Vec<_>>()
+                .join("、");
+            if !joined.is_empty() {
+                lines.push(line(prefix, &joined));
+            }
+        }
+        Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                render(item, &format!("{prefix}[{index}]"), lines);
+            }
+        }
+        other => {
+            if let Some(text) = scalar(other) {
+                lines.push(line(prefix, &text));
+            }
+        }
+    }
+}
+
+fn line(prefix: &str, value: &str) -> String {
+    if prefix.is_empty() {
+        value.to_owned()
+    } else {
+        format!("{prefix}: {value}")
+    }
+}
+
+/// 标量的可读形式；空串和 null 没有。
+fn scalar(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.trim().to_owned()),
+        Value::String(_) | Value::Null => None,
+        other => Some(other.to_string()),
+    }
+}
+
+/// 从任意层找一个能当标题的字段，先找到先用。
+fn find_title(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(map) => TITLE_KEYS
+            .iter()
+            .find_map(|key| match map.get(*key) {
+                Some(Value::String(text)) if !text.trim().is_empty() => Some(one_line(text)),
+                _ => None,
+            })
+            .or_else(|| map.values().find_map(find_title)),
+        Value::Array(items) => items.iter().find_map(find_title),
+        _ => None,
+    }
+}
+
+fn tags_of(value: &Value) -> Vec<String> {
+    match value {
+        Value::Array(items) => items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .flat_map(split_tags)
+            .collect(),
+        Value::String(text) => split_tags(text),
+        _ => Vec::new(),
+    }
+}
+
+fn split_tags(text: &str) -> Vec<String> {
+    text.split(',')
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .take(MAX_TAGS)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// 标题是一行：换行和连续的空白并成一个空格。
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn check_len(text: Option<String>, max: usize, name: &str) -> Result<Option<String>, String> {
+    match text {
+        Some(text) if text.chars().count() > max => Err(format!("{name} 最多 {max} 个字符")),
+        text => Ok(text),
+    }
+}
+
+/// 超长的上游内容截断到上限，末尾留省略号。
+fn fit(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 /// 超了频率：这条丢弃并返回 429；第一次超限还在私聊里告诉主人，到什么时候恢复。

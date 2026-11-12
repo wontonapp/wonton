@@ -11,6 +11,7 @@ use anyhow::Context;
 use tokio::sync::{Mutex, broadcast};
 use wonton_protocol::MemberStatus;
 
+use crate::config::PLUGIN_SMTP_HOST;
 use crate::matrix::NoticeRoom;
 use crate::members::Members;
 use crate::plugin::docker::{Engine, LabeledResources};
@@ -53,6 +54,7 @@ impl Component {
         let config_dir = dir.join("config");
         ensure_owned_dir(&config_dir, files_owner)?;
         fs::set_permissions(&config_dir, fs::Permissions::from_mode(0o700))?;
+        tls_cert(&config_dir, files_owner)?;
         ensure_owned_dir(&dir.join("data"), files_owner)?;
         let password = crate::secret::load_or_create(&dir.join("api-password"))?;
         atomic_write(
@@ -204,6 +206,20 @@ fn runtime_env(owner: &str, members: &Members) -> String {
         "export MP_SMTP_ALLOWED_RECIPIENTS='^({})@wonton\\.internal$'\n",
         escaped.join("|")
     )
+}
+
+/// 内部 SMTP 的 STARTTLS 证书：自签，只服务插件网络里的别名，成对的留着不换（同 Tuwunel 那份）。
+fn tls_cert(config_dir: &Path, owner: Owner) -> anyhow::Result<()> {
+    let cert = config_dir.join("smtp-tls.crt");
+    let key = config_dir.join("smtp-tls.key");
+    if cert.exists() && key.exists() {
+        return Ok(());
+    }
+    let pair = rcgen::generate_simple_self_signed(vec![PLUGIN_SMTP_HOST.to_owned()])
+        .map_err(|e| anyhow::anyhow!("生成 {PLUGIN_SMTP_HOST} 的自签证书失败：{e}"))?;
+    atomic_write(&cert, &pair.cert.pem(), owner)?;
+    atomic_write(&key, &pair.signing_key.serialize_pem(), owner)?;
+    Ok(())
 }
 
 fn atomic_write(path: &Path, content: &str, owner: Owner) -> anyhow::Result<()> {

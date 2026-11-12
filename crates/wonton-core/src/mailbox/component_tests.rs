@@ -178,3 +178,33 @@ async fn lookup_never_uses_another_compose_project_and_rejects_duplicates() {
     compose(&engine, "duplicate-mail", "home", "mailpit").await;
     assert!(component.container().await.is_err());
 }
+
+#[tokio::test]
+async fn a_self_signed_starttls_certificate_is_kept() {
+    let dir = tempfile::tempdir().unwrap();
+    let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
+    let (_, engine) = FakeDocker::start().await;
+    let component = open(engine.clone(), dir.path(), members.clone());
+    let cert = component.config_dir.join("smtp-tls.crt");
+    let key = component.config_dir.join("smtp-tls.key");
+    for path in [&cert, &key] {
+        assert_eq!(
+            fs::metadata(path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    // 证书的 SAN 是插件网络里的别名，客户端按它校验证书。
+    let mut reader = std::io::BufReader::new(fs::File::open(&cert).unwrap());
+    let certificate = rustls_pemfile::certs(&mut reader).next().unwrap().unwrap();
+    assert!(
+        certificate
+            .windows("smtp.wonton.internal".len())
+            .any(|window| window == b"smtp.wonton.internal")
+    );
+
+    // 重建（升级、重装）不换证书，插件应用里存的信任不用跟着改。
+    let before = fs::read_to_string(&cert).unwrap();
+    drop(component);
+    open(engine, dir.path(), members);
+    assert_eq!(fs::read_to_string(&cert).unwrap(), before);
+}

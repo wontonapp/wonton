@@ -1,12 +1,16 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_rustls::TlsConnector;
+use tokio_rustls::rustls;
+use tokio_rustls::rustls::pki_types::{CertificateDer, ServerName};
 use wonton_protocol::MAIL_FIELD;
 
 use super::api::Api;
-use super::test_support::{PASSWORD, PLUGIN, home};
+use super::test_support::{Home, PASSWORD, PLUGIN, home};
 use crate::http::HttpClient;
 use crate::plugin::Permission;
 use crate::plugin::docker::Engine;
@@ -27,6 +31,7 @@ async fn smtp_mail_reaches_each_persons_private_room() {
     // 报 `No such image`，即使镜像其实已经在本地。
     let image = crate::test_docker::ensure_image(&engine, &image()).await;
     let name = names.oneshot_container("mailpit");
+    let pair = certificate(home.dir.path());
     create_mailpit(&engine, &name, &image, home.dir.path()).await;
     engine.start_container(&name).await.unwrap();
     let settings = engine
@@ -76,36 +81,66 @@ async fn smtp_mail_reaches_each_persons_private_room() {
     )
     .unwrap();
     smtp(port("1025/tcp")).await;
-    tokio::time::timeout(Duration::from_secs(20), async {
+    smtp_over_starttls(port("1025/tcp"), pair.cert.der().to_vec()).await;
+    assert_delivered(&home, &api).await;
+    drop(worker);
+    engine.remove_container(&name).await.unwrap();
+}
+
+/// 写一张给 `smtp.wonton.internal` 的自签证书，返回它好让客户端信任。
+fn certificate(dir: &std::path::Path) -> rcgen::CertifiedKey<rcgen::KeyPair> {
+    let pair = rcgen::generate_simple_self_signed(vec!["smtp.wonton.internal".into()]).unwrap();
+    std::fs::write(dir.join("tls.crt"), pair.cert.pem()).unwrap();
+    std::fs::write(dir.join("tls.key"), pair.signing_key.serialize_pem()).unwrap();
+    pair
+}
+
+/// 等到两封信都投进各自的私聊并从 Mailpit 删掉，再核对收件人和主题。
+async fn assert_delivered(home: &Home, api: &Api) {
+    let delivered = tokio::time::timeout(Duration::from_secs(45), async {
         loop {
-            if home.matrix.state().sent.len() == 2 && api.list().await.unwrap().is_empty() {
+            if home.matrix.state().sent.len() == 3 && api.list().await.unwrap().is_empty() {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
-    .await
-    .unwrap();
-    {
-        let state = home.matrix.state();
-        let mut recipients = Vec::new();
-        for (room, content) in &state.sent {
-            assert_eq!(content["msgtype"], "m.text");
-            assert_eq!(content[MAIL_FIELD]["plugin_id"], PLUGIN);
-            assert_eq!(content[MAIL_FIELD]["subject"], "SMTP integration");
-            recipients.extend(
-                state.rooms[room]
-                    .members
-                    .iter()
-                    .filter(|user| user.as_str() != "@wonton-core:test")
-                    .cloned(),
-            );
-        }
-        recipients.sort();
-        assert_eq!(recipients, ["@alice:test", "@owner:test"]);
+    .await;
+    if delivered.is_err() {
+        let left = api.list().await.unwrap();
+        panic!(
+            "45 秒没投完：已发 {} 条，Mailpit 还剩 {}",
+            home.matrix.state().sent.len(),
+            left.len()
+        );
     }
-    drop(worker);
-    engine.remove_container(&name).await.unwrap();
+    let state = home.matrix.state();
+    let mut recipients = Vec::new();
+    let mut subjects = Vec::new();
+    for (room, content) in &state.sent {
+        assert_eq!(content["msgtype"], "m.text");
+        assert_eq!(content[MAIL_FIELD]["plugin_id"], PLUGIN);
+        subjects.push(content[MAIL_FIELD]["subject"].as_str().unwrap().to_owned());
+        recipients.extend(
+            state.rooms[room]
+                .members
+                .iter()
+                .filter(|user| user.as_str() != "@wonton-core:test")
+                .cloned(),
+        );
+    }
+    // 明文那封发给 alice 和 owner，STARTTLS 那封发给 owner。
+    recipients.sort();
+    assert_eq!(recipients, ["@alice:test", "@owner:test", "@owner:test"]);
+    subjects.sort();
+    assert_eq!(
+        subjects,
+        [
+            "SMTP integration",
+            "SMTP integration",
+            "STARTTLS integration"
+        ]
+    );
 }
 
 async fn create_mailpit(engine: &Engine, name: &str, image: &str, dir: &std::path::Path) {
@@ -127,10 +162,17 @@ async fn create_mailpit(engine: &Engine, name: &str, image: &str, dir: &std::pat
                     "MP_DISABLE_VERSION_CHECK=true".into(),
                     "MP_SMTP_AUTH_ACCEPT_ANY=true".into(),
                     "MP_SMTP_AUTH_ALLOW_INSECURE=true".into(),
+                    "MP_SMTP_TLS_CERT=/tls.crt".into(),
+                    "MP_SMTP_TLS_KEY=/tls.key".into(),
+                    "MP_VERBOSE=true".into(),
                 ]),
                 exposed_ports: Some(ports.map(str::to_owned).into()),
                 host_config: Some(HostConfig {
-                    binds: Some(vec![format!("{}:/auth.htpasswd:ro", auth.display())]),
+                    binds: Some(vec![
+                        format!("{}:/auth.htpasswd:ro", auth.display()),
+                        format!("{}:/tls.crt:ro", dir.join("tls.crt").display()),
+                        format!("{}:/tls.key:ro", dir.join("tls.key").display()),
+                    ]),
                     port_bindings: Some(
                         ports
                             .into_iter()
@@ -157,7 +199,7 @@ async fn smtp(port: u16) {
     let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut stream = BufReader::new(stream);
     response(&mut stream, 220).await;
-    ehlo(&mut stream).await;
+    ehlo(&mut stream, true).await;
     // Apps that insist on credentials get AUTH on the plaintext connection; any pair is accepted.
     for (command, code) in [
         ("AUTH LOGIN\r\n", 334),
@@ -192,15 +234,62 @@ async fn smtp(port: u16) {
     }
 }
 
-async fn ehlo(stream: &mut BufReader<TcpStream>) {
+/// 要求加密发信的应用（如用 Nodemailer 的）：STARTTLS 升级后照常投递，证书是核心自签的那张。
+async fn smtp_over_starttls(port: u16, certificate: Vec<u8>) {
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    // 容量 1：升级 TLS 前不能有没读完的缓冲。
+    let mut stream = BufReader::with_capacity(1, stream);
+    response(&mut stream, 220).await;
+    ehlo(&mut stream, true).await;
+    stream.get_mut().write_all(b"STARTTLS\r\n").await.unwrap();
+    response(&mut stream, 220).await;
+
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(CertificateDer::from(certificate)).unwrap();
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(provider))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let name = ServerName::try_from("smtp.wonton.internal".to_owned()).unwrap();
+    let tls = TlsConnector::from(Arc::new(config))
+        .connect(name, stream.into_inner())
+        .await
+        .unwrap();
+    let mut tls = BufReader::with_capacity(1, tls);
+    ehlo(&mut tls, false).await;
+
+    for (command, code) in [
+        (
+            "MAIL FROM:<app.example.monitor@plugins.wonton.internal>\r\n",
+            250,
+        ),
+        ("RCPT TO:<owner@wonton.internal>\r\n", 250),
+        ("DATA\r\n", 354),
+        (
+            "Subject: STARTTLS integration\r\n\r\nA reset link\r\n.\r\n",
+            250,
+        ),
+        ("QUIT\r\n", 221),
+    ] {
+        tls.get_mut().write_all(command.as_bytes()).await.unwrap();
+        response(&mut tls, code).await;
+    }
+}
+
+async fn ehlo<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut BufReader<S>, plaintext: bool) {
     stream.get_mut().write_all(b"EHLO app\r\n").await.unwrap();
     let mut capabilities = String::new();
+    let mut raw = Vec::new();
     loop {
-        let mut line = String::new();
-        tokio::time::timeout(Duration::from_secs(10), stream.read_line(&mut line))
+        let mut line = Vec::new();
+        tokio::time::timeout(Duration::from_secs(10), stream.read_until(b'\n', &mut line))
             .await
             .unwrap()
             .unwrap();
+        raw.extend_from_slice(&line);
+        let line = String::from_utf8_lossy(&line);
         let continued = line.starts_with("250-");
         capabilities.push_str(&line);
         if !continued {
@@ -209,10 +298,15 @@ async fn ehlo(stream: &mut BufReader<TcpStream>) {
     }
     let capabilities = capabilities.to_ascii_lowercase();
     assert!(capabilities.contains("auth"), "{capabilities}");
-    assert!(!capabilities.contains("starttls"), "{capabilities}");
+    // 配了自签证书：明文连接宣告 STARTTLS，升级过的连接不再宣告。
+    assert_eq!(
+        capabilities.contains("starttls"),
+        plaintext,
+        "{capabilities} | raw={raw:?}"
+    );
 }
 
-async fn response(stream: &mut BufReader<TcpStream>, expected: u16) {
+async fn response<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut BufReader<S>, expected: u16) {
     let mut line = String::new();
     tokio::time::timeout(Duration::from_secs(10), stream.read_line(&mut line))
         .await
