@@ -28,6 +28,7 @@ mod configs_docker;
 mod device_host;
 mod device_recovery;
 mod devices;
+mod devices_docker;
 mod docker_timeouts;
 mod egress;
 mod egress_manifest;
