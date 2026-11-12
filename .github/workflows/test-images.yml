@@ -1,33 +1,73 @@
 name: test-images
 
-# 冒烟的验收工具镜像（tunnel-client、echo-bot）：插件仓库的 Agent 冒烟和 e2e 要按摘要拉它们，
-# 不发布就得每台机器现编。合进 main 就构建，推 ghcr 的 :main 和 :sha-<完整提交号>；
-# 打 tag（手动触发）推 :<tag>，用 tag 里的摘要固定。跟 main-image.yml 一样不是发版。
+# 把 Docker 集成测试要拉的上游镜像每周复制到 ghcr.io/<owner>/test-images（crane copy，digest 原样
+# 保留，测试里按 digest 固定的引用照样校验得过）：托管 runner 的出口 IP 拉不动 Docker Hub 和 ECR Public，
+# 测试作业经 WONTON_TEST_IMAGES 指到副本（wonton-test-images 改写引用），镜像构建经 `*_IMAGE` build-arg 指过去。
+# 仓库主人取 GITHUB_REPOSITORY_OWNER。
+# 每次合进 main 也跑一遍：main-image 的构建要用副本，合并时就把它补上（同一 push 里两边并发，第一次可能
+# 谁先谁后；main-image 先到就等这边绿了重跑一次）。PR 在改到工作流或镜像发现脚本时跑。
+# 测试拉取失败说缺镜像时，把引用补进 scripts/mirror-test-images.sh 的来源。
+#
+# 同一份工作流还发布冒烟的验收工具镜像（tunnel-client、echo-bot）：插件仓库的 Agent 冒烟要按摘要拉，
+# 不发布就得每台机器现编。合进 main 构建并推 :main、:sha-<提交>，手动触发可传 tag 推 :<tag>。
 on:
+  schedule:
+    # 周一 02:00 UTC，赶在每天的全量测试（03:00 起）前面。
+    - cron: "0 2 * * 1"
   push:
     branches: [main]
+  pull_request:
     paths:
-      - deploy/dev/core/Dockerfile
-      - deploy/dev/core/Cargo.lock
-      - .github/workflows/test-images.yml
+      - ".github/workflows/test-images.yml"
+      - "scripts/mirror-test-images.sh"
   workflow_dispatch:
     inputs:
       tag:
-        description: 这次的镜像 tag（不带冒号）
-        required: true
-        default: main
+        description: 验收工具镜像的 tag（不带冒号；留空只跑镜像复制）
+        required: false
+        default: ''
 
+# PR 上又推了一个提交就取消上一次；定时、main 上的复制和手动触发都跑完（main-image 等 main 上这一次的结果）。
 concurrency:
-  group: test-images-${{ github.ref }}-${{ matrix.target }}
-  cancel-in-progress: false
+  # 按提交分组：main 上合并很密，挂在 ref 上的排队会被下一次合并顶掉（实测连取消两个 push 运行）。
+  group: test-images-${{ github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
   packages: write
 
 jobs:
-  image:
-    name: ${{ matrix.target }}
+  mirror:
+    name: 镜像复制
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 装 crane（版本和 sha256 固定）
+        run: |
+          curl -fsSL --retry 3 -o crane.tar.gz \
+            https://github.com/google/go-containerregistry/releases/download/v0.22.1/go-containerregistry_Linux_x86_64.tar.gz
+          echo "0ab7a1d6932a213aed964ce97666c3077fe691c8606413674a8b3e0b9ec4cda0  crane.tar.gz" | sha256sum -c -
+          tar -xzf crane.tar.gz crane
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: 复制到 ghcr.io/<owner>/test-images
+        run: scripts/mirror-test-images.sh "$PWD/crane"
+
+  # 冒烟的验收工具镜像。PR 上不构建：要机器现编的地方都还在，等发布后再切过去。
+  tools:
+    name: 验收工具镜像 ${{ matrix.target }}
+    # 每个目标一条并发组：同一目标的新构建等旧的跑完，别的目标不受影响。
+    concurrency:
+      group: test-images-tools-${{ matrix.target }}
+      cancel-in-progress: false
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
@@ -42,8 +82,9 @@ jobs:
         id: meta
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-${{ matrix.target }}"
-          if [[ "${{ github.event_name }}" == workflow_dispatch ]]; then
-            echo "tags=$image:${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          tag="${{ inputs.tag }}"
+          if [[ -n "$tag" ]]; then
+            echo "tags=$image:$tag" >> "$GITHUB_OUTPUT"
           else
             echo "tags=$image:main,$image:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
           fi
@@ -53,7 +94,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64
           file: deploy/dev/core/Dockerfile
-          version: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'main' }}
+          target: ${{ matrix.target }}
+          version: ${{ inputs.tag || 'main' }}
           extra-build-args: |-
             WONTON_BUILD_COMMIT=${{ github.sha }}
           cache-ref: ${{ steps.meta.outputs.cache }}

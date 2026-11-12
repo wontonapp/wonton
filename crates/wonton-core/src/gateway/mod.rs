@@ -44,6 +44,8 @@ mod isolation;
 mod lan;
 mod link_preview;
 pub mod matrix;
+mod matrix_rtc;
+pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
@@ -739,6 +741,10 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
+#[cfg(test)]
+mod matrix_rtc_docker_tests;
+#[cfg(test)]
+mod matrix_rtc_tests;
 #[cfg(test)]
 mod mcp_takeover_tests;
 #[cfg(test)]
