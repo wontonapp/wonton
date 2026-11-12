@@ -342,6 +342,8 @@ mod tests {
             id: id.into(),
             title: format!("标题 {id}"),
             summary: String::new(),
+            license: None,
+            license_url: None,
             version: "1.0.0".into(),
             kind: wonton_protocol::PluginKind::Agent,
             runtime: Default::default(),
