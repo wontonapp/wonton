@@ -78,10 +78,22 @@ impl TimelineSubscription {
                 room_view.clone(),
                 chat.clone(),
                 room_id,
-                confirmations,
+                // 只读快照用的克隆。等变化必须用下面交给 `forward` 的那个接收者：克隆带着克隆那一刻的
+                // 已读位置，每轮新克隆一个去等 `changed()` 会立刻返回，订阅就空转着一批接一批往外发。
+                confirmations.clone(),
             );
             tokio::select! {
-                () = forward(&room, &plugins, previews, &outbox, &mut scrolled, room_view, chat, &support) => {}
+                () = forward(
+                    &room,
+                    &plugins,
+                    previews,
+                    &outbox,
+                    &mut scrolled,
+                    room_view,
+                    chat,
+                    confirmations,
+                    &support,
+                ) => {}
                 () = outbox.closed() => {}
                 _ = stop.wait_for(|cancelled| *cancelled) => {}
             }
@@ -157,7 +169,8 @@ enum Batch {
     Sent(Result<(), ()>, bool),
 }
 
-#[allow(clippy::too_many_lines, clippy::too_many_arguments)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
+#[allow(clippy::too_many_lines)] // 一个循环里就是这些分支，拆出去只是把 select 用到的状态搬来搬去。
+#[allow(clippy::too_many_arguments)] // 要等的变化就是这几路，再包一层结构体只是把参数搬个家。
 async fn forward(
     room: &Arc<ChatRoom>,
     plugins: &crate::plugins::PluginsLink,
@@ -166,6 +179,7 @@ async fn forward(
     scrolled: &mut watch::Receiver<TimelineScroll>,
     mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
+    mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,
 ) {
     let mut rebuilt_for: Option<wonton_matrix::OwnedEventId> = None;
@@ -298,7 +312,7 @@ async fn forward(
                     bots = new_bots;
                     Batch::Sent(send(sender, &entries, diffs, &mut view, None), false)
                 }
-                changed = sender.confirmations_changed() => {
+                changed = confirmations.changed() => {
                     if changed.is_err() {
                         return;
                     }

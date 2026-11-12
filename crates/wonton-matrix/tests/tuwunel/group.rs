@@ -3,8 +3,8 @@
 use wonton_matrix::{GroupPart, ImageThumbnail, ImageUpload, MessageBody};
 
 use crate::{
-    chat::{direct_chat, wait_for_room},
-    support::{TestServer, eventually, random_bytes, unique},
+    chat::direct_chat,
+    support::{TestServer, eventually, random_bytes, unique, wait_for_room},
 };
 
 const GROUP: &str = "0123456789abcdef0123456789abcdef";

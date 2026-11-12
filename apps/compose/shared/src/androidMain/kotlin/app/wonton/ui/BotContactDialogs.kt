@@ -77,3 +77,17 @@ internal fun RemoveContactDialog(contact: BotContact, onDismiss: () -> Unit, onC
         ),
     )
 }
+
+/** 同意别的服务器发来的请求前确认：同意后这个 Bot 对谁都只聊天（归属人也一样），不再用其他工具（ADR-0050）。 */
+@Composable
+internal fun ApproveRemoteContactDialog(contact: BotContact, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    WontonDialog(
+        stringResource(R.string.contacts_approve_remote_title, contact.name()),
+        stringResource(R.string.contacts_approve_remote_message),
+        onDismiss,
+        listOf(
+            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
+            WontonDialogAction(stringResource(R.string.contacts_approve), WontonButtonKind.PRIMARY, onConfirm),
+        ),
+    )
+}

@@ -51,7 +51,6 @@ async fn a_stuck_undecryptable_message_triggers_one_notice() {
     harness.room.push(vec![message_from(OWNER, "$u2", true)]);
     tokio::time::sleep(Duration::from_millis(800)).await;
     assert_eq!(harness.room.main_texts().len(), 1);
-    crate::health::clear_state_for_test();
     harness.finish().await;
 }
 
@@ -81,7 +80,6 @@ async fn the_notice_repeats_only_after_the_interval() {
     wait_until(|| harness.room.main_texts().len() == 1).await;
     // 事件一直没解开：过了间隔再提醒一次，而不是永远沉默或每轮都说。
     wait_until(|| harness.room.main_texts().len() == 2).await;
-    crate::health::clear_state_for_test();
     harness.finish().await;
 }
 

@@ -235,12 +235,6 @@ impl Outbox {
             .collect()
     }
 
-    /// 等这个房间能显示的确认卡片变化；发给壳的每一批都现取当前的列表，所以等到了就发一批空的。
-    pub(super) async fn confirmations_changed(&self) -> Result<(), watch::error::RecvError> {
-        let mut confirmations = self.confirmations.clone();
-        confirmations.changed().await
-    }
-
     pub(super) fn send(
         &self,
         entries: &Vector<TimelineEntry>,
