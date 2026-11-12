@@ -9,6 +9,9 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod agent_chain;
+mod agent_handoff;
+mod agent_outbox;
 mod agent_permission;
 mod agent_run;
 mod appearance;
@@ -60,6 +63,19 @@ mod timeline_action;
 mod verification;
 
 pub use action::Action;
+pub use agent_chain::{
+    AGENT_CHAINS_PATH, AGENT_OUTBOX_PATH, AgentChainAction, AgentChainBot, AgentChainRow,
+    AgentChainStatus, AgentChainsViewModel, AgentSettingsViewModel, ChainError, ChainLimitKind,
+    ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
+    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
+    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER,
+};
+pub use agent_handoff::{
+    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
+    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+};
+pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
@@ -107,8 +123,8 @@ pub use composer::{
 };
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
-    ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView,
-    ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
+    ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
+    ConfirmationView, ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,

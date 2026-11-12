@@ -317,6 +317,7 @@ impl Confirmations {
             origin: audience.origin,
             audience: wonton_protocol::CardAudience::Keeper,
             answered_by: None,
+            category: None,
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();
