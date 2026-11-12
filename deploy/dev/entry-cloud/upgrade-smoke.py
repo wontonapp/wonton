@@ -108,7 +108,10 @@ def check_entry(home):
                  == {"m.homeserver": {"base_url": "https://" + home.name}}, seconds=200)
         keys = wait_for("federation keys", lambda: fetched(home, "/_matrix/key/v2/server"), seconds=200)
     except RuntimeError:
-        print(run("docker", "logs", "--tail", "30", home.project + "-entry", check=False).stdout, flush=True)
+        for component in ("entry", "connector"):
+            container = home.component_container(component)
+            if container:
+                print(run("docker", "logs", "--tail", "30", container, check=False).stdout, flush=True)
         print(run("docker", "logs", "--tail", "30", home.core, check=False).stdout, flush=True)
         raise
     assert keys["server_name"] == home.name
@@ -224,10 +227,12 @@ def install(home, acquire, entry=True):
     home.started = True
     up = home.compose("up", "--detach", "--wait", "--wait-timeout", "420", check=False)
     if up.returncode:
-        for service in ("tuwunel", "core", "connector"):
+        for service in ("tuwunel", "core"):
             logs = run("docker", "logs", "--tail", "40", home.project + "-" + service, check=False)
             print(f"--- {service}\n" + logs.stdout + logs.stderr, flush=True)
         raise RuntimeError(f"{home.label} 起不来：" + up.stdout + up.stderr)
+    if entry:
+        home.attach_connector()
     home.token = (home.data / "core/owner-token").read_text().strip()
     print(f"Installed {home.label}: {home.name}", flush=True)
 
