@@ -40,6 +40,7 @@ mod onboarding;
 mod owner;
 mod panel;
 mod peers;
+mod personal_data;
 mod plugin;
 mod plugin_mail;
 mod plugin_notice;
@@ -89,11 +90,11 @@ pub use bot_commands::{
     MAX_COMMAND_DESCRIPTION_CHARS, MAX_COMMAND_HINT_CHARS, MAX_COMMAND_NAME_CHARS,
 };
 pub use bot_contacts::{
-    BOT_CONTACT_CREATE_KEY, BotContact, BotContacts, BotContactsState, BotContactsViewModel,
-    CONTACT_ERROR_HEADER, CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactError, ContactErrorBody,
-    ContactEvent, ContactKind, ContactOutcome, ContactProblem, ContactRequest, ContactRequestPush,
-    ContactState, PendingContactRequest, RemoteContact, bot_contact_approve_path, bot_contact_path,
-    bot_contact_reject_path, bot_contacts_path,
+    BOT_CONTACT_CREATE_KEY, BotContact, BotContactFailure, BotContacts, BotContactsState,
+    BotContactsViewModel, CONTACT_ERROR_HEADER, CONTACT_EVENT, CONTACT_ROOM_TYPE, ContactError,
+    ContactErrorBody, ContactEvent, ContactKind, ContactOutcome, ContactProblem, ContactRequest,
+    ContactRequestPush, ContactState, PendingContactRequest, RemoteContact,
+    bot_contact_approve_path, bot_contact_path, bot_contact_reject_path, bot_contacts_path,
 };
 pub use bot_profile::{
     AVATARS_FIELD, AccessSource, AvatarChange, AvatarImage, AvatarKind, AvatarMedia,
@@ -209,6 +210,17 @@ pub use peers::{
     PeerRow, PeerScan, PeerStatus, PeersState, PeersView, PeersViewModel, RejectedPeerRow,
     peer_code_path, peer_code_reset_path, peer_path, peer_rejected_path, peer_request_approve_path,
     peer_request_reject_path,
+};
+pub use personal_data::{
+    CACHED_LOCATION_MAX_AGE_MS, CLEANUP_PATH, CleanupRequest, CleanupResult, DATA_PATH,
+    DEFAULT_HEALTH_RETENTION_DAYS, DEFAULT_LOCATION_RETENTION_DAYS, DataQueryResult, EXPORT_PATH,
+    ExportBundle, FAILURE_META, HEALTH_PATH, HEALTH_QUERY_TOOL, HEALTH_REFRESH_TOOL, HealthSample,
+    HealthSamples, HealthValue, LOCATION_HISTORY_TOOL, LOCATION_NOW_TOOL, LOCATION_PATH,
+    LOCATION_REQUEST_TIMEOUT_MS, LOCATION_REQUESTS_PER_HOUR, LocationPoint, LocationPointKind,
+    LocationScope, OsPermissionState, PERSONAL_DATA_CAPABILITY, PERSONAL_DATA_STATUS_TOOL,
+    PersonalDataBotGrant, PersonalDataCategory, PersonalDataFailure, PersonalDataProblem,
+    PersonalDataRead, PersonalDataType, PersonalDataTypeRow, PersonalDataViewModel, QUERY_PATH,
+    RetentionPolicy, RetentionSetting, SleepStage, WriteAccepted, data_path, query_path,
 };
 pub use plugin::LanClient;
 pub use plugin::StoreUnreadable;
