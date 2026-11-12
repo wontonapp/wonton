@@ -24,6 +24,13 @@ const BIND_DEADLINE: Duration = Duration::from_secs(10);
 /// 建不起来之后第一次再试的间隔，之后每次翻倍。和隧道客户端建连的退避同一个量级。
 const RETRY_FIRST: Duration = Duration::from_secs(1);
 const RETRY_MAX: Duration = Duration::from_secs(30);
+/// 冷启动的头 [`COLD_DIALS`] 次拨号用这个时限。设备刚重装、进程刚起来时，翻译层和冷缓存让一次握手要
+/// 十几二十秒，12 秒的差额每次都把它掐在快成功的时候，客户端一轮一轮重来。名额用完照样按
+/// [`wonton_tunnel::DIAL_DEADLINE`] 放弃，服务器真没了不多等。
+const COLD_DIAL_DEADLINE: Duration = Duration::from_secs(30);
+/// 冷启动的头几次拨号可以用 [`COLD_DIAL_DEADLINE`]。两次：第一轮被什么拖慢了都还够一次重拨；
+/// 用完之后回到 [`wonton_tunnel::DIAL_DEADLINE`]。
+const COLD_DIALS: u32 = 2;
 
 impl HomeLink {
     pub(super) fn start(self: &Arc<Self>, text: String, ticket: Ticket) {
@@ -34,6 +41,7 @@ impl HomeLink {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(ticket.core_url());
         self.lock_tracker().new_server();
         self.carried_disconnects.store(0, Ordering::SeqCst);
+        self.cold_dials.store(COLD_DIALS, Ordering::SeqCst);
         *self.lock_unlinked() = None;
         self.view.send_modify(|view| {
             view.server_id = Some(ticket.server_id().to_string());
@@ -123,6 +131,20 @@ impl HomeLink {
         (BIND_DEADLINE, RETRY_FIRST)
     }
 
+    /// 冷启动的建连时限和之后的建连时限。
+    pub(crate) fn cold_allowance(&self) -> (Duration, Duration) {
+        #[cfg(feature = "test-hooks")]
+        if let Some(allowance) = *self
+            .test_hooks
+            .cold_allowance
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            return allowance;
+        }
+        (COLD_DIAL_DEADLINE, wonton_tunnel::DIAL_DEADLINE)
+    }
+
     fn lock_unlinked(&self) -> std::sync::MutexGuard<'_, Option<(String, u32)>> {
         self.unlinked
             .lock()
@@ -170,6 +192,7 @@ impl HomeLink {
     async fn open(self: &Arc<Self>, ticket: &Ticket) -> Result<Link, String> {
         let started = Instant::now();
         let lang = language();
+        let (cold_dial, warm_dial) = self.cold_allowance();
         let deadline = self.establish_timing().0;
         let endpoint = match self.bind_endpoint(ticket.relays(), 1, lang, deadline).await {
             Ok(endpoint) => endpoint,
@@ -195,6 +218,7 @@ impl HomeLink {
             );
         }
         let client = TunnelClient::new(endpoint.clone(), ticket.server_addr());
+        client.set_dial_deadline(self.cold_dials.clone(), cold_dial, warm_dial);
         let credential = ProxyCredential::generate();
         let domain = ticket.base_domain().to_owned();
         let access = ProxyAccess::Credential {

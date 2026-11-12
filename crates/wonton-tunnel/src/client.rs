@@ -21,7 +21,7 @@ use std::{
     fmt,
     sync::{
         Arc, Mutex, MutexGuard, PoisonError, Weak,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -108,7 +108,10 @@ const RELAY_REVALIDATE_DEADLINE: Duration = Duration::from_secs(3);
 const SLOW_REVALIDATE_DEADLINE: Duration = Duration::from_secs(8);
 /// 一次建连最长这么久。n0 中继冷启动的 P90 约 5.5 秒（ADR-0004）；不设时要等 QUIC 的 30 秒超时，网络恢复时
 /// 还卡在这次注定失败的握手上（ADR-0032 的改前实测：恢复后 32 秒才连上）。
-const DIAL_DEADLINE: Duration = Duration::from_secs(12);
+///
+/// 冷启动的慢设备上一次握手要更久（翻译层、冷缓存），首批建连由调用方用
+/// [`TunnelClient::set_dial_deadline`] 放宽；之后的建连还是这个值，服务器真没了照样 12 秒就放弃。
+pub const DIAL_DEADLINE: Duration = Duration::from_secs(12);
 /// 请求等连接最长这么久，然后失败。比 [`DIAL_DEADLINE`] 长：刚发起的建连能等到真实结果。
 const HOLD_DEADLINE: Duration = Duration::from_secs(15);
 
@@ -144,6 +147,55 @@ struct Inner {
     /// 请求在隧道流上迟迟等不到服务端回执时催一下定时检查：立即确认一次，不等下一个检查周期
     /// 存一个许可，催多次合成一次。
     check_nudge: Notify,
+    /// 建连时等多久：前几次（冷启动）用 `cold`，之后用 `warm`。
+    dial: Mutex<DialTiming>,
+}
+
+/// 建连时限。默认宽窄都是 [`DIAL_DEADLINE`]，冷启动由调用方另设。
+#[derive(Debug)]
+struct DialTiming {
+    /// 调用方手里还剩几次冷启动的建连，每次建连用掉一次。同一次建连可以拨好几次（断了重拨），
+    /// 名额跨客户端共享，客户端换掉也不作废。
+    allowance: Arc<AtomicU32>,
+    cold: Duration,
+    warm: Duration,
+}
+
+impl Default for DialTiming {
+    fn default() -> Self {
+        Self {
+            allowance: Arc::new(AtomicU32::new(0)),
+            cold: DIAL_DEADLINE,
+            warm: DIAL_DEADLINE,
+        }
+    }
+}
+
+impl DialTiming {
+    /// 这一次建连等多久。冷启动的名额由 [`take`] 扣，扣完用 `warm`。
+    fn next(&self) -> Duration {
+        if take(&self.allowance) {
+            return self.cold;
+        }
+        self.warm
+    }
+}
+
+/// 名额还有就扣掉一个并返回真。
+fn take(allowance: &AtomicU32) -> bool {
+    let mut remaining = allowance.load(Ordering::SeqCst);
+    while remaining > 0 {
+        match allowance.compare_exchange_weak(
+            remaining,
+            remaining - 1,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            Ok(_) => return true,
+            Err(actual) => remaining = actual,
+        }
+    }
+    false
 }
 
 /// 隧道上的一条流，已写入请求类型。
@@ -222,6 +274,7 @@ impl TunnelClient {
                 suspension: Mutex::default(),
                 datagrams: Mutex::default(),
                 check_nudge: Notify::new(),
+                dial: Mutex::default(),
             }),
         }
     }
@@ -234,6 +287,18 @@ impl TunnelClient {
     /// 换服务端的地址，下一次建连时生效。服务器换了 IP 时，新地址由核心告诉 App（ADR-0032）。
     pub fn set_server_addr(&self, server: EndpointAddr) {
         *lock(&self.inner.server) = server;
+    }
+
+    /// 建连的时限：`allowance` 里还有名额时等 `cold`，用完之后等 `warm`。名额每次建连扣一个，是调用方
+    /// 手里的计数——同一条连接断了重拨也不重新给。冷启动的慢设备（首次启动、冷缓存、x86 模拟器上跑翻译后的
+    /// arm64 包）上一次握手比 [`DIAL_DEADLINE`] 久得多，首批建连要放宽；用完这批还是按 `warm` 放弃，
+    /// 服务器真没了不会变慢。不设时全部用 [`DIAL_DEADLINE`]。
+    pub fn set_dial_deadline(&self, allowance: Arc<AtomicU32>, cold: Duration, warm: Duration) {
+        *lock(&self.inner.dial) = DialTiming {
+            allowance,
+            cold,
+            warm,
+        };
     }
 
     /// 退避期间的新请求立即失败（transport 错误），不共用正在退避的那次建连的结果。默认关闭：
@@ -490,15 +555,18 @@ impl Inner {
         let server_addr = lock(&self.server).clone();
         let server = server_addr.id.fmt_short();
         let started = Instant::now();
+        let deadline = lock(&self.dial).next();
         let dialed =
-            tokio::time::timeout(DIAL_DEADLINE, self.endpoint.connect(server_addr, self.alpn))
-                .await;
+            tokio::time::timeout(deadline, self.endpoint.connect(server_addr, self.alpn)).await;
         let conn = match dialed {
             Ok(Ok(conn)) => conn,
-            Ok(Err(err)) => return Err(self.dial_failed(from_connect_error(&err), &server)),
+            Ok(Err(err)) => {
+                let err = from_connect_error(&err);
+                return Err(self.dial_failed(err, &server, deadline));
+            }
             Err(_) => {
                 let err = TunnelError::transport("建连限时内没有回应");
-                return Err(self.dial_failed(err, &server));
+                return Err(self.dial_failed(err, &server, deadline));
             }
         };
         if self.closed.load(Ordering::SeqCst) {
@@ -513,8 +581,14 @@ impl Inner {
         Ok(conn)
     }
 
-    fn dial_failed(&self, err: TunnelError, server: &impl fmt::Display) -> TunnelError {
-        info!(%server, "隧道建连失败：{err}");
+    /// 记下这次失败。`deadline` 也记日志：查日志时看得出是哪个时限掐的（冷启动和正常的不一样）。
+    fn dial_failed(
+        &self,
+        err: TunnelError,
+        server: &impl fmt::Display,
+        deadline: Duration,
+    ) -> TunnelError {
+        info!(%server, ?deadline, "隧道建连失败：{err}");
         lock(&self.pacing).failed();
         let mut stats = lock(&self.stats);
         stats.failed_dials = stats.failed_dials.saturating_add(1);

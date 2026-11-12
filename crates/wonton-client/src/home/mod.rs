@@ -123,6 +123,9 @@ pub(crate) struct HomeLink {
     carried_disconnects: AtomicU32,
     /// 连接没建起来时最近一次的原因和第几次失败；建起来就清掉。
     unlinked: std::sync::Mutex<Option<(String, u32)>>,
+    /// 冷启动还剩几次拨号可以慢慢等（见 [`establish::COLD_DIALS`]）：连接信息一换就在这里重新发，绑定和隧道
+    /// 客户端共用这一个计数。
+    cold_dials: Arc<AtomicU32>,
     #[cfg(feature = "test-hooks")]
     pub(crate) test_hooks: bind::TestHooks,
 }
@@ -190,6 +193,7 @@ impl HomeLink {
             establish_wake: tokio::sync::Notify::new(),
             carried_disconnects: AtomicU32::new(0),
             unlinked: std::sync::Mutex::new(None),
+            cold_dials: Arc::new(AtomicU32::new(0)),
             #[cfg(feature = "test-hooks")]
             test_hooks: bind::TestHooks::default(),
         });
