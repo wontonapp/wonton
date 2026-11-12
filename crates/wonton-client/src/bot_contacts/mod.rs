@@ -8,7 +8,7 @@
 mod api;
 
 use std::sync::{Arc, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tokio::runtime::Handle;
 use tokio::sync::watch::Sender as WatchSender;
@@ -27,6 +27,11 @@ use api::{Failure, Op};
 /// 有一行在等对方时隔这么久取一次列表：对方是人手点的同意或接受，几秒内跟上就够。核心查人的邀请结果是
 /// 取列表时顺带查的，所以这里也决定了“对方接受了”多快显示出来。
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// 壳刚做过动作（进页面、发请求）的这段时间里，等对方的行改成隔 [`QUICK_POLL_INTERVAL`] 取一次。对方常常就在这时
+/// 处理（两个人当面加联系人），隔 5 秒取时，对方点了拒绝要再等最多一轮才显示，加上结果经 Matrix 送过来，
+/// 看起来要 6–10 秒。核心没有能挂住等变化的联系人接口，只能取得勤一些；过了这段时间退回 [`POLL_INTERVAL`]。
+const QUICK_POLL_WINDOW: Duration = Duration::from_secs(30);
+const QUICK_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 pub(crate) struct BotContactsLink {
     handle: Handle,
@@ -36,6 +41,8 @@ pub(crate) struct BotContactsLink {
     client: std::sync::Mutex<Option<(wonton_protocol::ProxySettings, reqwest::Client)>>,
     /// 请求按动作的先后一个一个发：连着点了拒绝和删除，后点的结果最后落地，ViewModel 不会停在先点的那份上。
     jobs: mpsc::UnboundedSender<Job>,
+    /// 壳最近一次发来动作的时刻，决定等对方时取得多勤。
+    last_action: std::sync::Mutex<Instant>,
 }
 
 struct Job {
@@ -65,6 +72,7 @@ impl BotContactsLink {
             languages: std::sync::Mutex::new(Vec::new()),
             client: std::sync::Mutex::new(None),
             jobs,
+            last_action: std::sync::Mutex::new(Instant::now()),
         });
         link.handle.spawn(work(Arc::downgrade(&link), queued));
         link.handle.spawn(follow_home(Arc::downgrade(&link)));
@@ -92,6 +100,7 @@ impl BotContactsLink {
                 });
             }
         };
+        *lock(&self.last_action) = Instant::now();
         self.select(&bot, &op);
         self.enqueue(bot, op, true);
         Ok(())
@@ -240,7 +249,14 @@ async fn follow_waiting(link: Weak<BotContactsLink>) {
             }
             continue;
         }
-        tokio::time::sleep(POLL_INTERVAL).await;
+        let interval = match link.upgrade() {
+            Some(link) if lock(&link.last_action).elapsed() < QUICK_POLL_WINDOW => {
+                QUICK_POLL_INTERVAL
+            }
+            Some(_) => POLL_INTERVAL,
+            None => return,
+        };
+        tokio::time::sleep(interval).await;
         let Some(link) = link.upgrade() else { return };
         if !waiting(&link.view.borrow()) {
             continue;

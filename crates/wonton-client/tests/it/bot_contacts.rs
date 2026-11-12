@@ -1,7 +1,7 @@
 //! Bot 资料页的“联系人”（ADR-0045、ADR-0050）的行为测试：动作各打各的接口，结果和失败类别落进 ViewModel，
 //! 有一行在等对方时自己跟上对方的处理。对面是本机假扮的核心管理接口。
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::http::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -140,6 +140,66 @@ async fn a_pending_person_turns_active_without_another_refresh() {
     let polled = rig.core.seen(&Method::GET, &path).len();
     tokio::time::sleep(Duration::from_secs(7)).await;
     assert_eq!(rig.core.seen(&Method::GET, &path).len(), polled);
+}
+
+/// 对方拒绝了：刚发出请求的这段时间里取得勤，不用等满一轮慢的轮询（5 秒）就显示“对方拒绝了”。
+#[tokio::test]
+async fn a_rejection_by_the_other_side_shows_without_waiting_out_the_slow_poll() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let path = bot_contacts_path(&alice());
+    rig.core
+        .answer(Method::POST, &path, list(&[contact(BOT, "bot", "pending")]));
+    rig.core
+        .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "pending")]));
+    rig.app
+        .dispatch(Action::RequestBotContact {
+            bot: alice(),
+            user_id: BOT.into(),
+        })
+        .unwrap();
+    wait_contacts(&rig, |view| {
+        view.contacts.first().map(|c| c.state) == Some(ContactState::Pending)
+    })
+    .await;
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+
+    rig.core
+        .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "declined")]));
+    let rejected = Instant::now();
+    wait_contacts(&rig, |view| {
+        view.contacts.first().map(|c| c.state) == Some(ContactState::Declined)
+    })
+    .await;
+    assert!(
+        rejected.elapsed() < Duration::from_secs(3),
+        "对方拒绝后 {:?} 才显示",
+        rejected.elapsed()
+    );
+}
+
+/// 自己拒绝：拒绝接口回的列表当场落进 ViewModel，不等下一次取列表。
+#[tokio::test]
+async fn rejecting_shows_at_once_from_the_rejections_own_answer() {
+    let rig = Rig::new().await;
+    rig.connected().await;
+    let path = bot_contacts_path(&alice());
+    let reject = bot_contact_reject_path(&alice(), BOT);
+    rig.core
+        .answer(Method::GET, &path, list(&[contact(BOT, "bot", "incoming")]));
+    rig.app
+        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .unwrap();
+    wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
+    rig.core.answer(Method::POST, &reject, list(&[]));
+    rig.app
+        .dispatch(Action::RejectBotContact {
+            bot: alice(),
+            user_id: BOT.into(),
+        })
+        .unwrap();
+    wait_contacts(&rig, |view| ready(view) && view.contacts.is_empty()).await;
+    assert_eq!(rig.core.seen(&Method::GET, &path).len(), 1);
 }
 
 #[tokio::test]
