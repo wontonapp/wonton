@@ -111,6 +111,8 @@
     <string name="chat_backup_save_key_title">保存恢复密钥</string>
     <!-- Button that confirms the recovery key was saved somewhere safe; the app then forgets it. -->
     <string name="chat_backup_saved">已保存</string>
+    <string name="chat_backup_saved_confirm_title">已经存好了吗？</string>
+    <string name="chat_backup_saved_confirm_message">确认后这台设备不再显示这把密钥。先复制或抄下来，再点确认。</string>
     <!-- Page heading when chat backup hasn't been set up. -->
     <string name="chat_backup_status_disabled">还没有备份聊天记录</string>
     <!-- Page heading when chat backup is on and verified. -->
@@ -1023,6 +1025,8 @@
     <string name="plugin_settings_open">打开设置</string>
     <string name="plugin_settings_update_app">要更新 App 才能改</string>
     <string name="plugin_settings_required">必填</string>
+    <!-- Note after saving when the app will restart to apply the new values. No arguments. -->
+    <string name="plugin_settings_restart_hint">应用会重新启动一下</string>
     <string name="plugin_updates_section">更新</string>
     <string name="plugin_ask_every_update">每次都问</string>
     <string name="plugin_written_by_agent">你的 Agent · %1$s</string>
@@ -1564,6 +1568,7 @@
     <string name="notification_push">推送</string>
     <string name="notification_channel_message">聊天消息</string>
     <string name="notification_channel_confirmation">等你确认</string>
+    <string name="notification_value_system_blocked">系统里没允许</string>
     <string name="notification_channel_plugin">应用通知</string>
     <string name="notification_value_on">已开启</string>
     <string name="notification_value_off">已关闭</string>
@@ -1692,7 +1697,7 @@
     <string name="secret_edit">修改</string>
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填写</string>
-    <string name="secret_unfilled">未填写</string>
+    <string name="secret_unfilled">未就绪：要先填令牌</string>
     <string name="pin_to_bar">固定到底栏</string>
     <!-- 长按侧边栏里的一行，把应用的页面从底栏拿掉。 -->
     <string name="unpin_from_bar">从底栏拿掉</string>
@@ -1789,4 +1794,13 @@
     <string name="contacts_error_unauthenticated">这台设备不能做这件事</string>
     <string name="contacts_error_upstream">家里的服务器没能记下这件事</string>
     <string name="friends_request_bot_contact">Bot 联系人请求</string>
+    <string name="handoff_title">在另一台设备上继续</string>
+    <string name="handoff_waiting">保持另一台设备上的“添加设备”页开着。</string>
+    <string name="handoff_unanswered_title">另一台设备没有回应</string>
+    <string name="handoff_unanswered_message">在另一台设备上打开云吞，回到“添加设备”。</string>
+    <string name="handoff_try_again">再试一次</string>
+    <string name="handoff_later">稍后</string>
+    <string name="handoff_no_other_device">手边没有别的设备</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
 </resources>

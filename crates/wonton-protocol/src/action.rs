@@ -46,10 +46,11 @@ pub enum Action {
     /// 取消正在进行的配对，回到扫码或粘贴；没有正在进行的配对时返回 `InvalidInput`。本机放弃这一次尝试，
     /// 服务器可能已经按交出的码登记了这台设备：同一个码再配对，服务端幂等地回成功，不会卡在“码已用过”。
     CancelPairing,
-    /// “添加设备”：经隧道向家里的服务器要一个一次性配对码，显示给新设备扫（ADR-0009 的“接口：扫码配对”）。还没配对
-    /// 时返回 `NotReady`；进展和码在 [`HomeViewModel::invite`](crate::HomeViewModel::invite) 里。再发一次换一个新码，
-    /// 旧码到期前仍然能用。
+    /// “添加设备”：经隧道要一个一次性配对码给新设备扫（ADR-0009），页面开着时自动接上新设备的确认请求（ADR-0087）。
+    /// 没配对时返回 `NotReady`；进展和码在 `HomeViewModel::invite`。再发一次换新码，旧码到期前仍能用。
     InviteDevice,
+    // 离开“添加设备”页。这个和 SkipKeyHandoff 的说明在 ADR-0087：Action 的 uniffi 元数据已到 32 KB 上限，不加文档注释。
+    CloseDeviceInvite,
     /// 添加一台服务器：在一个新位置上走配对，当前那台的连接先断开、数据留着。配对成功后新的那台成为当前这台；
     /// 配对前可以 [`Action::CancelAddServer`] 回去（ADR-0042）。
     AddServer,
@@ -222,6 +223,8 @@ pub enum Action {
     CancelDeviceVerification {
         flow_id: String,
     },
+    // 交接页上的“手边没有别的设备”（见 CloseDeviceInvite 上的说明）。
+    SkipKeyHandoff,
     /// 清掉 `ChatViewModel::problem`。
     DismissChatProblem,
     /// 主人点了确认卡片上的按钮：`id` 是 [`ConfirmationCard::id`](crate::ConfirmationCard::id)，`answer` 原样用

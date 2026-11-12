@@ -2,10 +2,7 @@
 
 name-main = メイン会話
 
-topic-interrupt-pending = ビジー: 割り込み要求がすでに待っています。
 topic-no-active-session = 有効な ACP セッションがありません
-topic-steer-rejected = エージェントは割り込み要求を受け付けませんでした。
-topic-queue-full = ACP キューが満杯です。しばらくしてから再試行してください。
 topic-input-too-long = 入力が { $size } バイトの上限を超えています
 topic-input-empty = 入力は空にできません
 topic-control-no-text = 制御コマンドにテキストがありません

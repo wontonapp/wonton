@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceInvite
+import app.wonton.protocol.KeyHandoff
 import app.wonton.protocol.VerificationFlow
+import app.wonton.protocol.VerificationStage
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -53,29 +56,52 @@ import kotlinx.coroutines.delay
 
 /**
  * “添加设备”：向家里的服务器要一个一次性配对码，画成二维码给新设备上的云吞 App 扫。进展和码都来自核心的
- * [invite]（`HomeViewModel.invite`）。新设备发起的确认请求（ADR-0046）在配对码出示期间就在这一屏接着显示。
+ * [invite]（`HomeViewModel.invite`）。新设备发起的确认请求（ADR-0046）在配对码出示期间就在这一屏接着显示；
+ * 这一页开着时核心替新设备交出聊天密钥（ADR-0087，[handoff]），离开时告诉核心不再交。
  */
 @Composable
 fun InviteScreen(
     core: ClientCore,
     invite: DeviceInvite?,
-    verification: VerificationFlow? = null,
+    verification: VerificationFlow?,
+    handoff: KeyHandoff?,
     modifier: Modifier = Modifier,
 ) {
     // 核心当场拒绝的原因，比如还没配对。
     var refusal by remember { mutableStateOf<Problem?>(null) }
     val request = { refusal = core.send(Action.InviteDevice) }
     LaunchedEffect(Unit) { request() }
-    val colors = WontonTheme.colors
+    DisposableEffect(core) { onDispose { core.send(Action.CloseDeviceInvite) } }
+    val giving = handoff is KeyHandoff.Giving
     Column(
         modifier.verticalScroll(rememberScrollState())
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         verification?.takeIf { !it.startedHere }?.let { flow ->
-            VerificationFlowContent(flow, onAction = { action -> refusal = core.send(action) }, onUseRecoveryKey = null)
+            if (giving && flow.stage is VerificationStage.Done) {
+                Text(
+                    stringResource(R.string.invite_device_added),
+                    style = WontonTheme.typography.itemTitle,
+                    color = WontonTheme.colors.textPrimary.toColor(),
+                )
+            } else {
+                VerificationFlowContent(flow, onAction = { refusal = core.send(it) }, onUseRecoveryKey = null)
+            }
+        }
+        if (handoff is KeyHandoff.CannotGive) {
+            WontonNotice(WontonIcon.Warning, stringResource(R.string.invite_cannot_give))
         }
         refusal?.let { ProblemNotice(it, WontonIcon.Error) }
+        // 码已经被新设备用掉、这一页在替它交出密钥：不再摆码。
+        if (!giving) InviteProgress(invite, request)
+    }
+}
+
+@Composable
+private fun InviteProgress(invite: DeviceInvite?, request: () -> Unit) {
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         when (invite) {
             null, is DeviceInvite.Requesting -> Row(
                 verticalAlignment = Alignment.CenterVertically,

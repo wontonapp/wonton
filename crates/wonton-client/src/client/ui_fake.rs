@@ -103,6 +103,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         can_reset: false,
         recovery_next_step: RecoveryNextStep::None,
         verification_flow: None,
+        key_handoff: None,
     };
     // 和真核心同一份推导，备份页在假核心下也按真值表显示。
     crate::chat::recovery::refresh(&mut chat.encryption);

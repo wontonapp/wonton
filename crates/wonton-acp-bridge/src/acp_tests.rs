@@ -41,10 +41,16 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
     .unwrap();
     assert_eq!(result.text, "hello");
     assert_eq!(
-        bounded(client.steer("session-1", "continue"), "steering")
-            .await
-            .unwrap(),
-        "injected"
+        bounded(
+            client.steer(
+                "session-1",
+                vec![json!({"type": "text", "text": "continue"})]
+            ),
+            "steering"
+        )
+        .await
+        .unwrap(),
+        SteerOutcome::Injected
     );
     bounded(client.close("session-1"), "close").await.unwrap();
     let requests = agent.requests().await;

@@ -10,9 +10,15 @@ pre-commit:
       glob: "*.rs"
       # cargo 是 rustup 的转发，按 rust-toolchain.toml 选版本；交给 cargo 是为了拿到各 crate 的 edition。
       run: |
+        # vendor 里是上游原样代码，保持它自己的格式；只在脚本里滤（exclude 对这份列表不生效）。
+        # 空表（比如只 stage 了 vendor）时也别让 cargo fmt --all 全量跑，会把 vendor 的子模块也重排。
+        files=$(printf '%s\n' {staged_files} | grep -v '^vendor/' || true)
+        if [ -z "$files" ]; then
+          exit 0
+        fi
         echo "rustfmt 格式化："
-        printf '  %s\n' {staged_files}
-        cargo fmt --all -- {staged_files}
+        printf '  %s\n' $files
+        cargo fmt --all -- $files
       stage_fixed: true
     swiftlint-fix:
       glob: "apps/ios/**/*.swift"

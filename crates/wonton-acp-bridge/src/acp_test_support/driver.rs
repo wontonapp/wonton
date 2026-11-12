@@ -6,6 +6,23 @@ use serde_json::{Value, json};
 use super::{FakeAgent, notify, reply, send};
 
 impl FakeAgent {
+    /// 下一次 `_session/steering` 回这个结果（按调用顺序排）。
+    pub(crate) async fn steer_reply(&self, outcome: Value) {
+        self.link.steer_outcomes.lock().await.push_back(outcome);
+    }
+
+    /// 收到过的 `_session/steering` 请求的内容块，按顺序。
+    pub(crate) async fn steers(&self) -> Vec<Value> {
+        self.link
+            .requests
+            .lock()
+            .await
+            .iter()
+            .filter(|request| request["method"] == "_session/steering")
+            .map(|request| request["params"]["prompt"].clone())
+            .collect()
+    }
+
     /// 发一条原始的 `session/update` 通知：状态消息测试用它发工具类别、思考块、计划。
     pub(crate) async fn raw_update(&self, session: &str, update: Value) {
         let writer = self
