@@ -26,6 +26,7 @@ pub(super) fn detail() -> PluginDetail {
         runtime: Default::default(),
         security_tier: None,
         link_url: None,
+        remote: None,
         scope: None,
         version: "1.0.0".to_owned(),
         trust: PluginTrust::Official,
