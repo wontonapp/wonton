@@ -92,7 +92,9 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
-                    if let installed = detail.installed { PluginTabPins(plugin: installed) }
+                    if let installed = detail.installed, !installed.tabChoices.isEmpty {
+                        MyAppsSection(plugin: installed)
+                    }
                     if detail.installed != nil, detail.hasSettings {
                         WontonGroup {
                             Button {
@@ -102,6 +104,7 @@ struct PluginDetailView: View {
                             }
                             .buttonStyle(.plain)
                         }
+
                     }
                     if !detail.screenshots.isEmpty {
                         Screenshots(model: model, images: detail.screenshots)

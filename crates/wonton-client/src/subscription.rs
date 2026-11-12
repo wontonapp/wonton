@@ -1,8 +1,8 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
-    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel,
-    PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel, TabsViewModel,
+    ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel,
+    PeersViewModel, PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel,
     TransfersViewModel, WidgetSnapshot,
 };
 
@@ -185,12 +185,12 @@ impl PluginsSubscription {
 
 /// 底栏和插件页面的订阅，用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
-pub struct TabsSubscription {
-    updates: Updates<TabsViewModel>,
+pub struct PagesSubscription {
+    updates: Updates<PagesViewModel>,
 }
 
-impl TabsSubscription {
-    pub(crate) fn new(receiver: watch::Receiver<TabsViewModel>) -> Self {
+impl PagesSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<PagesViewModel>) -> Self {
         Self {
             updates: Updates::new(receiver),
         }
@@ -198,10 +198,10 @@ impl TabsSubscription {
 }
 
 #[uniffi::export]
-impl TabsSubscription {
+impl PagesSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
-    pub async fn next(&self) -> Option<TabsViewModel> {
-        self.updates.next(TabsViewModel::clone).await
+    pub async fn next(&self) -> Option<PagesViewModel> {
+        self.updates.next(PagesViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

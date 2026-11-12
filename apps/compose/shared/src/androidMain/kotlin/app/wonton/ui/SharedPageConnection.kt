@@ -20,9 +20,9 @@ internal data class SharedPageConnection(
 )
 
 @Composable
-internal fun sharedPageConnection(tab: TabRef, tabs: TabsState, home: HomeViewModel): SharedPageConnection {
+internal fun sharedPageConnection(tab: TabRef, pages: PagesState, home: HomeViewModel): SharedPageConnection {
     val shared = tab as? TabRef.SharedApp
-    val source = shared?.let { selected -> tabs.plugins.viewModel.sharedApps?.sources
+    val source = shared?.let { selected -> pages.plugins.viewModel.sharedApps?.sources
         ?.firstOrNull { it.ownerUserId == selected.ownerUserId } }
     val proxy = if (shared == null) home.proxy else (source?.state as? SharedAppsState.Ready)?.proxy
     val account = LocalPluginAccount.current
@@ -31,10 +31,13 @@ internal fun sharedPageConnection(tab: TabRef, tabs: TabsState, home: HomeViewMo
     val available = row != null && row.problem == null
     val authorized = if (shared == null) true else available && proxy != null && profile != null
     val connected = if (shared == null) home.status is HomeStatus.Connected else proxy != null
-    return SharedPageConnection(shared, source, proxy, profile, authorized, connected, supportsWebView(shared != null))
+    return SharedPageConnection(
+        shared, source, proxy, profile, authorized, connected, pageFeaturesSupported(shared != null),
+    )
 }
 
-private fun supportsWebView(shared: Boolean): Boolean {
+/** 插件页要的 WebView 能力；别人分享的页还要多 Profile（各来源一套凭据）。 */
+internal fun pageFeaturesSupported(shared: Boolean = false): Boolean {
     val supported = listOf(WebViewFeature.WEB_MESSAGE_LISTENER, WebViewFeature.DOCUMENT_START_SCRIPT,
         WebViewFeature.PROXY_OVERRIDE, WebViewFeature.PROXY_OVERRIDE_REVERSE_BYPASS)
         .all(WebViewFeature::isFeatureSupported)

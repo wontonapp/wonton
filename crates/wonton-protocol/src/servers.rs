@@ -4,7 +4,7 @@
 //! 槽位 ID 只在本机引用它。Matrix 账号没有 Wonton endpoint，不得用 homeserver 或用户 ID 伪造。
 //! 登录成功前保留原槽位；取消或失败不覆盖它的数据，成功后才持久化新槽位并切换。
 //!
-//! 导航能力由客户端核心通过 `TabsViewModel.items`、`SettingsViewModel.sections` 和插件列表给出，
+//! 导航能力由客户端核心通过 `PagesViewModel.items`、`SettingsViewModel.sections` 和插件列表给出，
 //! 壳不根据 `ServerKind` 隐藏入口。外部槽位底栏只给聊天、应用，应用只列朋友分享的；设置只给
 //! 账号、设备、通知、语言和添加 Wonton 的入口，不发服务器管理、家人、Bot、Agent 或商店入口。
 
