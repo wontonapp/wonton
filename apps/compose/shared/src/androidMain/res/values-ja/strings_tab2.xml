@@ -8,6 +8,9 @@
     <string name="tab_view_details">詳細を表示</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
     <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_media_prompt_camera">%1$sにカメラの使用を許可しますか？</string>
+    <string name="tab_media_deny">許可しない</string>
+    <string name="tab_media_system_denied_title">カメラまたはマイクが使えません</string>
     <string name="tab_menu_open_fullscreen">全画面で開く</string>
     <string name="tab_choose_page">ページを選択</string>
     <string name="tab_bar_full">ナビゲーションバーがいっぱいです：%1$sを追加</string>

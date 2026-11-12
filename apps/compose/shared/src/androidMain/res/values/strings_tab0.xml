@@ -6,6 +6,9 @@
     <string name="tab_starting">Starting…</string>
     <!-- Next step when no browser can open the app page. No arguments. -->
     <string name="tab_no_browser_next_step">Install or turn on a browser such as Chrome, then try again.</string>
+    <string name="tab_media_prompt_both">Allow %1$s to use your camera and microphone?</string>
+    <string name="tab_media_allow">Allow</string>
+    <string name="tab_media_system_denied">Wonton doesn\'t have camera or microphone permission in system settings. The page was denied.</string>
     <!-- Problem title when the tab bar settings can't be read. No arguments. -->
     <string name="tab_settings_unreadable">Can\'t read the navigation bar settings</string>
     <!-- Button that opens the navigation bar settings from that problem. No arguments. -->

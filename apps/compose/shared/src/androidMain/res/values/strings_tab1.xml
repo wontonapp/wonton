@@ -12,6 +12,8 @@
     <string name="tab_unpin_from_bar">Remove from navigation bar</string>
     <!-- Problem title when the app isn't ready to show its page. No arguments. -->
     <string name="tab_load_not_ready">The app isn\'t ready</string>
+    <string name="tab_media_prompt_microphone">Allow %1$s to use your microphone?</string>
+    <string name="tab_media_system_settings">Open settings</string>
     <!-- Accessibility label of the fullscreen button in the page bar. No arguments. -->
     <string name="tab_fullscreen">Full screen</string>
     <!-- Navigation title of the page that lists tabs to add. No arguments. -->

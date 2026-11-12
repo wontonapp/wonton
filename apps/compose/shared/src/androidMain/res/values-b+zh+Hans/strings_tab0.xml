@@ -3,6 +3,9 @@
     <string name="tab_webview_too_old">请更新 Android System WebView 后重试</string>
     <string name="tab_starting">正在启动…</string>
     <string name="tab_no_browser_next_step">装上或启用一个浏览器（如 Chrome）后再试。</string>
+    <string name="tab_media_prompt_both">允许 %1$s 使用摄像头和麦克风吗？</string>
+    <string name="tab_media_allow">允许</string>
+    <string name="tab_media_system_denied">系统设置里没有允许 Wonton 使用摄像头或麦克风，这次不给网页。可以到系统设置里打开。</string>
     <string name="tab_settings_unreadable">底栏设置读不了</string>
     <string name="tab_open_settings">查看底栏设置</string>
     <string name="tab_edit_bar">编辑底栏</string>

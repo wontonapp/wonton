@@ -6,6 +6,8 @@
     <string name="tab_open_in_browser">打开</string>
     <string name="tab_unpin_from_bar">从底栏移除</string>
     <string name="tab_load_not_ready">应用还没有准备好</string>
+    <string name="tab_media_prompt_microphone">允许 %1$s 使用麦克风吗？</string>
+    <string name="tab_media_system_settings">去设置</string>
     <string name="tab_fullscreen">全屏</string>
     <string name="tab_add_to_bar">添加到底栏</string>
     <string name="tab_chat">聊天</string>

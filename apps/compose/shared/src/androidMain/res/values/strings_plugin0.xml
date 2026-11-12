@@ -3,6 +3,8 @@
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>
+    <!-- Detail-page switch for the remembered camera/microphone decision of its web page. -->
+    <string name="plugin_media_title">Camera and microphone for its web page</string>
     <!-- Section title and row for opening an app\'s settings page. No arguments. -->
     <string name="plugin_settings_section">Settings</string>
     <!-- Note under a required setting that has no value and no default. No arguments. -->

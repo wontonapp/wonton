@@ -8,6 +8,9 @@
     <string name="tab_view_details">查看详情</string>
     <string name="tab_load_upstream">应用的网页打不开</string>
     <string name="tab_uninstalled_notice">%1$s 已卸载，已从底栏移除</string>
+    <string name="tab_media_prompt_camera">允许 %1$s 使用摄像头吗？</string>
+    <string name="tab_media_deny">不允许</string>
+    <string name="tab_media_system_denied_title">摄像头或麦克风用不了</string>
     <string name="tab_menu_open_fullscreen">全屏打开</string>
     <string name="tab_choose_page">选择页面</string>
     <string name="tab_bar_full">底栏已满：固定 %1$s</string>

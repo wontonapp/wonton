@@ -2,6 +2,7 @@
 <resources>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">可儲存檔案的資料夾</string>
+    <string name="plugin_media_title">網頁的相機和麥克風</string>
     <string name="plugin_settings_section">設定</string>
     <string name="plugin_settings_required">必填</string>
     <string name="plugin_ask_every_update">每次都詢問</string>

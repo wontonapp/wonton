@@ -6,6 +6,8 @@
     <string name="tab_open_in_browser">開啟</string>
     <string name="tab_unpin_from_bar">從底部導覽列移除</string>
     <string name="tab_load_not_ready">應用程式還沒準備好</string>
+    <string name="tab_media_prompt_microphone">允許 %1$s 使用麥克風嗎？</string>
+    <string name="tab_media_system_settings">去設定</string>
     <string name="tab_fullscreen">全螢幕</string>
     <string name="tab_add_to_bar">新增至底部導覽列</string>
     <string name="tab_chat">聊天</string>

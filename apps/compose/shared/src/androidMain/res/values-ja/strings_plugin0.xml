@@ -2,6 +2,7 @@
 <resources>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">保存できるフォルダ</string>
+    <string name="plugin_media_title">ウェブページのカメラとマイク</string>
     <string name="plugin_settings_section">設定</string>
     <string name="plugin_settings_required">必須</string>
     <string name="plugin_ask_every_update">毎回確認</string>
