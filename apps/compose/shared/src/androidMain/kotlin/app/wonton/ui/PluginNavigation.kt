@@ -56,6 +56,9 @@ class PluginNavigation(val open: (PluginEntry) -> Unit) {
 
     /** 正在给哪个插件换版本。 */
     var changingVersion by mutableStateOf<String?>(null)
+
+    /** 详情页上打开的设置页（ADR-0077）。 */
+    var settings by mutableStateOf<PluginSettingsTarget?>(null)
 }
 
 /** [list] 上叠着打开的详情页和确认页，返回键逐层关掉。 */
@@ -74,7 +77,12 @@ fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Comp
         }
     }
     val changingVersion = navigation.changingVersion
+    val settings = navigation.settings
     when {
+        settings != null -> {
+            BackHandler { navigation.settings = null }
+            PluginSettingsScreen(plugins, settings, onClose = { navigation.settings = null })
+        }
         confirmation != null -> {
             BackHandler { navigation.confirmation = null }
             InstallConfirmScreen(plugins, confirmation, onClose = { navigation.confirmation = null })

@@ -91,6 +91,12 @@ pub struct InstalledRecord {
     /// 主人开放给家人了（ADR-0045）：家人的设备能打开它的网页，家人的插件列表里有它。默认关。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub family: bool,
+    /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub settings: std::collections::BTreeMap<String, serde_json::Value>,
+    /// 设置最后保存的时间，Unix 毫秒；没改过时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_changed_ms: Option<u64>,
 }
 
 impl InstalledRecord {
@@ -579,6 +585,8 @@ mod tests {
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: Default::default(),
+            settings_changed_ms: None,
         }
     }
 

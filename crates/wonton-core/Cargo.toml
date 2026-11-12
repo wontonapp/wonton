@@ -81,6 +81,9 @@ rustix = { version = "1.1.6", default-features = false, features = ["fs", "proce
 libc = "0.2.189"
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
 sha2 = { workspace = true }
+jsonschema = { workspace = true }
+# MIT OR Apache-2.0。设置项 `pattern` 的校验（ADR-0077）。
+regex = "1.13.1"
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
 sse-stream = "0.2.6"
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。
@@ -132,8 +135,6 @@ wonton-client = { path = "../wonton-client" }
 wonton-tunnel = { path = "../wonton-tunnel", features = ["test-hooks"] }
 # 测试中继：iroh 的 run_relay_server 和跳过 TLS 校验（只用于本机测试）。
 iroh = { workspace = true, features = ["test-utils"] }
-# Apache-2.0 OR MIT。名单测试按 Tuwunel 的语义（RegexSet）编译生成的正则。
-regex = "1.13.1"
 tempfile = { workspace = true }
 # MIT OR Apache-2.0。按 TOML 语义验证 Tuwunel 的联邦配置。
 toml = "1.1"

@@ -37,6 +37,7 @@ mod dispatch;
 mod limits;
 mod media;
 mod push_route;
+mod settings;
 mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]

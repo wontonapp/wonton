@@ -52,6 +52,7 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
         permissions(&v2),
         Vec::new(),
         false,
+        &Default::default(),
         &super::langs(),
     )
     .await
@@ -79,6 +80,7 @@ async fn a_bot_keeps_its_device_and_proxy_when_upgraded_and_when_rolled_back() {
             permissions(&v3),
             Vec::new(),
             false,
+            &Default::default(),
             &super::langs(),
         )
         .await

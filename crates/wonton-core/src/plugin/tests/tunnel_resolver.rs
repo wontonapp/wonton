@@ -126,6 +126,8 @@ impl Fixture {
                 written_by: None,
                 ask_every_update: false,
                 family: false,
+                settings: Default::default(),
+                settings_changed_ms: None,
             })
             .unwrap();
         self.manager

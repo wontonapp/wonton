@@ -111,6 +111,7 @@ async fn an_agent_adopts_an_owner_installed_plugin_through_the_card() {
             granted,
             Vec::new(),
             false,
+            Default::default(),
             Languages::from_header(Some("zh")),
         )
         .await
@@ -177,6 +178,7 @@ async fn a_refused_adoption_cools_down() {
             granted,
             Vec::new(),
             false,
+            Default::default(),
             Languages::from_header(Some("zh")),
         )
         .await
@@ -225,6 +227,7 @@ async fn an_owner_upgrade_takes_the_plugin_back_from_the_agent() {
             granted,
             Vec::new(),
             false,
+            &Default::default(),
             &Languages::from_header(Some("zh")),
         )
         .await

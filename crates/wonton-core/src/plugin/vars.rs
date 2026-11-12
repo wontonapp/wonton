@@ -117,6 +117,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     for (name, value) in &ctx.secrets {
         set(&secret_var(name), value.clone());
     }
+    for (name, value) in super::settings::value::vars(&ctx.settings) {
+        set(&name, value);
+    }
     if let Some(oidc) = &ctx.oidc {
         set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
         set("WONTON_OIDC_CLIENT_ID", oidc.client_id.clone());

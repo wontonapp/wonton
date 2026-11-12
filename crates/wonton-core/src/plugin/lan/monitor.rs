@@ -422,6 +422,7 @@ impl PluginManager {
             )
             .await?;
         ctx.limits = record.limits;
+        ctx.settings = record.settings.clone();
         ctx.gpu = self
             .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
             .await?;

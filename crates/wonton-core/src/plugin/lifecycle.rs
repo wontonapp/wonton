@@ -129,8 +129,8 @@ impl PluginManager {
     }
 
     /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
-    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan`
-    /// 是局域网端口开在哪里。
+    /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan` 是局域网端口开在哪里。
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     pub(super) async fn deploy(
         &self,
         package: &PluginPackage,
@@ -138,11 +138,20 @@ impl PluginManager {
         enabled: &[EnabledPermission],
         gpu: Option<GpuGrant>,
         lan: Option<LanGrant>,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let mut undo = Undo::default();
         match self
-            .deploy_inner(package, granted, enabled, (gpu, lan), &mut undo, langs)
+            .deploy_inner(
+                package,
+                granted,
+                enabled,
+                (gpu, lan),
+                settings,
+                &mut undo,
+                langs,
+            )
             .await
         {
             Ok(deployed) => Ok(deployed),
@@ -184,12 +193,14 @@ impl PluginManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
     async fn deploy_inner(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
         (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
         undo: &mut Undo,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
@@ -208,6 +219,7 @@ impl PluginManager {
             .await?;
         ctx.gpu = gpu;
         ctx.lan = lan;
+        ctx.settings = settings;
         self.check_network_names(&ctx).await?;
         let default_bot = self.provision_default_bot(package, undo).await?;
         if let Some(models) = self.provision_models(package, langs).await? {
@@ -274,6 +286,8 @@ impl PluginManager {
             written_by: None,
             ask_every_update: false,
             family: false,
+            settings: ctx.settings.clone().into_iter().collect(),
+            settings_changed_ms: None,
         })?;
         Ok(Deployed {
             upstream,
@@ -469,6 +483,7 @@ impl PluginManager {
             host_name: self.host_name().await,
             cgroup_parent: self.cfg.plugin_slice.clone(),
             granted: granted.to_vec(),
+            settings: Default::default(),
         })
     }
 

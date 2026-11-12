@@ -99,6 +99,14 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             put(super::plugin_scope::scope),
         )
         .route(
+            &wonton_protocol::plugin_settings_path("{id}"),
+            get(super::plugin_settings::get).put(super::plugin_settings::set),
+        )
+        .route(
+            &wonton_protocol::plugin_settings_preview_path("{id}"),
+            post(super::plugin_settings::preview),
+        )
+        .route(
             "/_wonton/api/plugins/{id}/secrets",
             get(super::owner_secrets::list),
         )

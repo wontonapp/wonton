@@ -2,6 +2,7 @@
 //! 插件声明的工具。调用方由网关按来源地址认出（[`Caller`]）；没标只读、主人也没放宽（ADR-0024）的工具先请主人确认
 //! （[`confirm`]）；每次调用写一行审计（[`audit`]）。
 
+mod agent_cards;
 mod agent_install;
 mod agent_permission;
 mod apps;
@@ -487,7 +488,9 @@ impl Bus {
         }
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
-        let run = move |bus: Arc<Bus>, _secrets: SecretValues| async move {
+        let run = move |bus: Arc<Bus>,
+                        _secrets: SecretValues,
+                        _settings: wonton_protocol::SettingValues| async move {
             forward(
                 &bus,
                 &agent,
@@ -513,7 +516,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         self.confirmed_after_hold(caller, name, args, (draft, activity), run, None)
@@ -531,7 +534,7 @@ impl Bus {
         held_ms: Option<u64>,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         drop(activity);
@@ -543,7 +546,8 @@ impl Bus {
             match decision {
                 Ok(ticket) => {
                     let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome = run(bus.clone(), ticket.secrets.clone()).await;
+                    let outcome =
+                        run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
                     drop(activity);
                     // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
                     let confirmation = if ticket.window.is_some() {
@@ -584,7 +588,7 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         let Some(second) = second else {
@@ -618,7 +622,7 @@ impl Bus {
                 }
             };
             let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone(), ticket.secrets.clone()).await;
+            let outcome = run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
             drop(activity);
             let confirmation = if ticket.window.is_some() {
                 "window"

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
 
-use super::Outcome;
+use super::agent_cards::{install_ran, upgrade_ran};
 use super::audit::{Decision, Record};
 use super::cards;
 use super::{Bus, Caller, ToolFailure, with_failure};
@@ -21,7 +21,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::{EnabledPermission, InstalledRecord};
-use crate::plugin::{PluginId, PluginPackage, PluginView, package_files};
+use crate::plugin::{PluginPackage, package_files};
 use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
 fn result(value: &Value) -> CallToolResult {
@@ -87,6 +87,17 @@ async fn official(
         }
     };
     let mut draft = cards::install(&caller.name, &package.manifest, inputs, &langs);
+    draft.settings = match bus.plugins.card_settings(&package, None, &langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     match bus
         .plugins
         .retained_data(&package.manifest.id, &langs)
@@ -109,35 +120,14 @@ async fn official(
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
     let granted = package.manifest.permissions.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
-        if let Err(e) = bus
-            .plugins
-            .store_input_values(&package.manifest, &secrets, None, &langs)
-        {
-            return Outcome::failed(
-                e.kind(),
-                crate::l10n::text(
-                    &langs,
-                    "chat-install-failed",
-                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
-                ),
-            );
-        }
-        match bus
-            .plugins
-            .install_detached(package, granted, false, langs.clone())
-            .await
-        {
-            Ok(view) => installed_outcome(&view, None, &langs),
-            Err(e) => Outcome::failed(
-                e.kind(),
-                crate::l10n::text(
-                    &langs,
-                    "chat-install-failed",
-                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
-                ),
-            ),
-        }
+    let id_for_run = package.manifest.id.clone();
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues| async move {
+        install_ran(
+            bus, id_for_run, package, granted, false, secrets, settings, None, langs,
+        )
+        .await
     };
     bus.confirmed_twice(
         caller,
@@ -149,42 +139,50 @@ async fn official(
     .await
 }
 
-fn installed_outcome(view: &PluginView, note: Option<String>, langs: &Languages) -> Outcome {
-    let title = cards::text(&view.title);
-    let mut result = json!({
-        "installed": view.id,
-        "title": title,
-        "version": view.version,
-        "status": view.status,
-        "url": view.url,
-    });
-    let message = match &view.url {
-        Some(url) => crate::l10n::text(
-            langs,
-            "chat-install-done-url",
-            &[
-                ("title", title.as_str().into()),
-                ("url", url.as_str().into()),
-            ],
-        ),
-        None => crate::l10n::text(
-            langs,
-            "chat-install-done",
-            &[("title", title.as_str().into())],
-        ),
-    };
-    let message = match note {
-        Some(note) => {
-            result["note"] = json!(note);
-            crate::l10n::text(
+/// 更新卡片顶上的一句话和要列的行：接手（#817）、权限变宽、有风险、每次都问，各说各的。
+fn update_header(
+    adopt: bool,
+    widened: &[CardLine],
+    risky: bool,
+    requester: &str,
+    package: &PluginPackage,
+    langs: &Languages,
+) -> (String, Vec<CardLine>) {
+    if adopt {
+        // 三件事要说清（#817）：换成 Bot 的版本、数据保留、以后没变宽不再问。权限变化照常列。
+        let mut lines = vec![
+            cards::line(l10n::text(langs, "chat-card-update-adopt-replace", &[])),
+            cards::line(l10n::text(
                 langs,
-                "chat-outcome-with-note",
-                &[("message", message.into()), ("note", note.into())],
-            )
-        }
-        None => message,
-    };
-    Outcome::ok(result.to_string(), message)
+                "chat-card-agent-ask-again",
+                &[("requester", requester.into())],
+            )),
+        ];
+        lines.extend(widened.iter().cloned());
+        (
+            l10n::text(
+                langs,
+                "chat-card-update-header-adopt",
+                &[("requester", requester.into())],
+            ),
+            lines,
+        )
+    } else if !widened.is_empty() {
+        (
+            l10n::text(langs, "chat-card-update-header-added", &[]),
+            widened.to_vec(),
+        )
+    } else if risky {
+        (
+            l10n::text(langs, "chat-card-update-header-risky", &[]),
+            cards::risky_lines(package, langs),
+        )
+    } else {
+        (
+            l10n::text(langs, "chat-card-update-header-ask-every", &[]),
+            Vec::new(),
+        )
+    }
 }
 
 /// `dir` 路径：outbox 里的插件目录，校验、判定（安装还是更新、归谁写），然后卡片或直接更新。
@@ -286,6 +284,17 @@ async fn first_install(
         }
     };
     let mut draft = cards::agent_install(&caller.name, &package, inputs, langs);
+    draft.settings = match bus.plugins.card_settings(&package, None, langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     match bus.plugins.retained_data(&id, langs).await {
         Ok(Some(notice)) => draft.lines.insert(1, notice),
         Ok(None) => {}
@@ -309,53 +318,21 @@ async fn first_install(
     };
     let id_for_run = id.clone();
     let langs = langs.clone();
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| async move {
-        if let Err(e) = bus
-            .plugins
-            .store_input_values(&package.manifest, &secrets, None, &langs)
-        {
-            return Outcome::failed(
-                e.kind(),
-                crate::l10n::text(
-                    &langs,
-                    "chat-install-failed",
-                    &[("kind", e.kind().into()), ("error", e.to_string().into())],
-                ),
-            );
-        }
-        match bus
-            .plugins
-            .install_detached(package, granted, false, langs.clone())
-            .await
-        {
-            Ok(view) => {
-                // 归属没记下来时更新就装不上，如实告诉 Agent。
-                let note = match bus.plugins.set_writer(&id_for_run, Some(writer)) {
-                    Ok(()) => None,
-                    Err(e) => {
-                        tracing::error!(plugin = %id_for_run, error = %e, "记插件的归属失败");
-                        Some(l10n::text(
-                            &langs,
-                            "chat-install-note-writer",
-                            &[("error", e.to_string().into())],
-                        ))
-                    }
-                };
-                installed_outcome(&view, note, &langs)
-            }
-            Err(e) => Outcome::failed(
-                e.kind(),
-                l10n::text(
-                    &langs,
-                    "chat-install-failed-id",
-                    &[
-                        ("id", id_for_run.as_str().into()),
-                        ("kind", e.kind().into()),
-                        ("error", e.to_string().into()),
-                    ],
-                ),
-            ),
-        }
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues| async move {
+        install_ran(
+            bus,
+            id_for_run,
+            package,
+            granted,
+            false,
+            secrets,
+            settings,
+            Some(writer),
+            langs,
+        )
+        .await
     };
     bus.confirmed_twice(
         caller,
@@ -388,6 +365,7 @@ async fn quiet_update(
             granted,
             record.enabled_permissions.clone(),
             record.lan_webui,
+            &Default::default(),
             &bus.plugins.owner_languages(),
         )
         .await;
@@ -558,41 +536,7 @@ async fn card_update(
     bus.confirmations
         .supersede_pending(&caller.id, &id, langs)
         .await;
-    let (header, lines) = if adopt {
-        // 三件事要说清（#817）：换成 Bot 的版本、数据保留、以后没变宽不再问。权限变化照常列。
-        let mut lines = vec![
-            cards::line(l10n::text(langs, "chat-card-update-adopt-replace", &[])),
-            cards::line(l10n::text(
-                langs,
-                "chat-card-agent-ask-again",
-                &[("requester", caller.name.as_str().into())],
-            )),
-        ];
-        lines.extend(widened);
-        (
-            l10n::text(
-                langs,
-                "chat-card-update-header-adopt",
-                &[("requester", caller.name.as_str().into())],
-            ),
-            lines,
-        )
-    } else if !widened.is_empty() {
-        (
-            l10n::text(langs, "chat-card-update-header-added", &[]),
-            widened,
-        )
-    } else if risky {
-        (
-            l10n::text(langs, "chat-card-update-header-risky", &[]),
-            cards::risky_lines(&package, langs),
-        )
-    } else {
-        (
-            l10n::text(langs, "chat-card-update-header-ask-every", &[]),
-            Vec::new(),
-        )
-    };
+    let (header, lines) = update_header(adopt, &widened, risky, &caller.name, &package, langs);
     let inputs = match bus
         .plugins
         .secret_inputs(&package.manifest, filled.as_ref(), langs)
@@ -607,7 +551,7 @@ async fn card_update(
             );
         }
     };
-    let draft = cards::agent_update(
+    let mut draft = cards::agent_update(
         &caller.name,
         &package,
         &header,
@@ -616,17 +560,30 @@ async fn card_update(
         inputs,
         langs,
     );
+    draft.settings = match bus.plugins.card_settings(&package, Some(&record), langs) {
+        Ok(settings) => settings,
+        Err(e) => {
+            return bus.deny(
+                caller,
+                name,
+                value,
+                &ToolFailure::new(e.kind(), e.to_string()),
+            );
+        }
+    };
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
     let writer = adopt.then(|| PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
     });
-    let run = move |bus: Arc<Bus>, secrets: SecretValues| {
-        upgrade_ran(
-            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, writer,
-        )
-    };
+    let run =
+        move |bus: Arc<Bus>, secrets: SecretValues, settings: wonton_protocol::SettingValues| {
+            upgrade_ran(
+                bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
+                writer,
+            )
+        };
     bus.confirmed_twice(
         caller,
         name,
@@ -635,99 +592,4 @@ async fn card_update(
         run,
     )
     .await
-}
-
-/// 更新执行完的结果：卡片上的话按主人的语言写，给 Agent 的还是结构化的 JSON。
-/// `writer` 是接手时记下的归属（#817）；没记下来时下次更新还会再问一次主人，两边都要如实说。
-#[allow(clippy::too_many_arguments)] // 卡片执行要用的几个值，再包一层也是逐个填。
-async fn upgrade_ran(
-    bus: Arc<Bus>,
-    id: PluginId,
-    version: String,
-    package: PluginPackage,
-    granted: Vec<Permission>,
-    enabled: Vec<EnabledPermission>,
-    lan_webui: bool,
-    secrets: SecretValues,
-    writer: Option<PluginWriter>,
-) -> Outcome {
-    let langs = bus.plugins.owner_languages();
-    let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
-    if let Err(e) =
-        bus.plugins
-            .store_input_values(&package.manifest, &secrets, filled.as_ref(), &langs)
-    {
-        return Outcome::failed(
-            e.kind(),
-            l10n::text(
-                &langs,
-                "chat-install-failed",
-                &[("kind", e.kind().into()), ("error", e.to_string().into())],
-            ),
-        );
-    }
-    match bus
-        .plugins
-        .upgrade_upload(&id, package, granted, enabled, lan_webui, &langs)
-        .await
-    {
-        Ok(()) => {
-            let note = match writer.map(|writer| bus.plugins.set_writer(&id, Some(writer))) {
-                None | Some(Ok(())) => None,
-                Some(Err(e)) => {
-                    tracing::error!(plugin = %id, error = %e, "记插件的归属失败");
-                    Some(l10n::text(
-                        &langs,
-                        "chat-install-note-writer",
-                        &[("error", e.to_string().into())],
-                    ))
-                }
-            };
-            let url = bus
-                .plugins
-                .list()
-                .into_iter()
-                .find(|p| p.id == id)
-                .and_then(|p| p.url);
-            let message = match &url {
-                Some(url) => l10n::text(
-                    &langs,
-                    "chat-update-done-url",
-                    &[
-                        ("version", version.as_str().into()),
-                        ("url", url.as_str().into()),
-                    ],
-                ),
-                None => l10n::text(
-                    &langs,
-                    "chat-update-done",
-                    &[("version", version.as_str().into())],
-                ),
-            };
-            let message = match note {
-                Some(note) => l10n::text(
-                    &langs,
-                    "chat-outcome-with-note",
-                    &[("message", message.into()), ("note", note.into())],
-                ),
-                None => message,
-            };
-            Outcome::ok(
-                json!({"updated": id.to_string(), "version": version, "url": url}).to_string(),
-                message,
-            )
-        }
-        Err(e) => Outcome::failed(
-            e.kind(),
-            l10n::text(
-                &langs,
-                "chat-update-failed",
-                &[
-                    ("id", id.as_str().into()),
-                    ("kind", e.kind().into()),
-                    ("error", e.to_string().into()),
-                ],
-            ),
-        ),
-    }
 }

@@ -58,6 +58,7 @@ mod oidc;
 mod optional_permissions;
 mod owner;
 mod people_languages;
+mod plugin_settings;
 mod preinstall;
 mod privileges;
 mod render_drift;

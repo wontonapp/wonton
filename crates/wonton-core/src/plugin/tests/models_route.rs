@@ -164,7 +164,14 @@ async fn bed_with_route(state: RouteState) -> Bed {
     let dir = tempfile::tempdir().unwrap();
     let manager = manager_with(engine.clone(), &dir);
     manager
-        .install_checked(provider(port), &[], &[], false, &langs())
+        .install_checked(
+            provider(port),
+            &[],
+            &[],
+            false,
+            Default::default(),
+            &langs(),
+        )
         .await
         .unwrap();
     Bed {

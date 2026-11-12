@@ -115,6 +115,8 @@ pub struct InstallContext {
     pub notify_url: Option<String>,
     /// 核心生成的插件密钥（`secrets` 里的 `generate` 项）：名字 → 值。
     pub secrets: BTreeMap<String, String>,
+    /// 主人设置的普通值（ADR-0077）：属性名 → JSON 值。
+    pub settings: BTreeMap<String, serde_json::Value>,
     pub tz: String,
     pub puid: u32,
     pub pgid: u32,
@@ -285,6 +287,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
             .contains(&Permission::Notify)
             .then(|| "http://notify.wonton.internal/notices".into()),
         secrets,
+        settings: super::settings::defaults(package),
         instance: Instance::default(),
         tz: "UTC".into(),
         puid: 1000,
