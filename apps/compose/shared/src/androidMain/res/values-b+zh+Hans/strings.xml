@@ -862,6 +862,10 @@
     <string name="message_delete_everyone_message">这个房间里所有人都会看到它被撤回。</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">对所有人生效，撤回这条消息？</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">删除 %1$s 的消息</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">删除 %1$s 的这条消息？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">转发</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->

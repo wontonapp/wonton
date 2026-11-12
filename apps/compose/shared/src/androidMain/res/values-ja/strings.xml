@@ -862,6 +862,10 @@
     <string name="message_delete_everyone_message">このルームの全員の画面から消えます。</string>
     <!-- Title of the dialog that removes a message for everyone. Android only. -->
     <string name="message_delete_everyone_title">全員のメッセージを削除しますか？</string>
+    <!-- Item in the message menu on someone else's message: remove it for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others">%1$s のメッセージを削除</string>
+    <!-- Title of the dialog that removes someone else's message for everyone. Argument: the sender's name. Android only. -->
+    <string name="message_delete_others_title">%1$s のメッセージを全員から削除しますか？</string>
     <!-- Item in the message menu: send the message to another room. Android only. -->
     <string name="message_forward">転送</string>
     <!-- Empty state of the room list that picks where a message is forwarded to. Android only. -->

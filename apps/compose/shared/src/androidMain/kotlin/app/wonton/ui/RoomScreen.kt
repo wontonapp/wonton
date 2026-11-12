@@ -248,7 +248,7 @@ private fun RoomScreen(
     }
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
-    var redacting by remember { mutableStateOf<String?>(null) }
+    var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
     // 和 Bot 的私聊：顶栏显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字。
     val barTitle = if (isDirect) bot?.name ?: title else title
     val barAvatar: (@Composable () -> Unit)? = if (isDirect && bot != null) {
@@ -283,7 +283,7 @@ private fun RoomScreen(
                 core = core,
                 onReply = draft::replyTo,
                 onForward = { forwarding = target.itemId },
-                onRedact = { redacting = target.itemId },
+                onRedact = { redacting = target },
                 onDismiss = { menu = null },
             )
         }
@@ -301,10 +301,11 @@ private fun RoomScreen(
                 onDismiss = { forwarding = null },
             )
         }
-        redacting?.let { itemId ->
+        redacting?.let { target ->
             RedactConfirm(
+                target.message,
                 onConfirm = {
-                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), itemId)))
+                    onAction(Action.Timeline(TimelineAction.RedactMessage(TimelineTarget(roomId, null), target.itemId)))
                     redacting = null
                 },
                 onDismiss = { redacting = null },
@@ -396,9 +397,13 @@ private fun RoomRow.forwardTarget(roomId: String): Boolean =
 
 /** 撤回对所有人生效，发出去之前先确认。 */
 @Composable
-private fun RedactConfirm(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+private fun RedactConfirm(message: TimelineMessage, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     WontonDialog(
-        title = stringResource(R.string.message_delete_everyone_title),
+        title = if (message.isOwn) {
+            stringResource(R.string.message_delete_everyone_title)
+        } else {
+            stringResource(R.string.message_delete_others_title, message.senderName)
+        },
         message = stringResource(R.string.message_delete_everyone_message),
         onDismiss = onDismiss,
         actions = listOf(

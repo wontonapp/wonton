@@ -39,6 +39,15 @@ struct ChatRoomView: View {
         }
     }
 
+    /// 撤回别人的消息时标题写明是谁的。
+    private var redactTitle: String {
+        let target = timeline.items.first { $0.id == redactItem }
+        guard case let .message(message)? = target?.content, !message.isOwn else {
+            return String(localized: .messageRedactTitle)
+        }
+        return String(localized: .messageRedactOthersTitle(message.senderName))
+    }
+
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
     private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
 
@@ -76,7 +85,7 @@ struct ChatRoomView: View {
             }
         }
         .wontonDialog(
-            String(localized: .messageRedactTitle),
+            redactTitle,
             message: String(localized: .messageRedactMessage),
             isPresented: $showingRedact,
             actions: [
