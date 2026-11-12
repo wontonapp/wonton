@@ -133,7 +133,6 @@ plugin-install-pkg-top-level = 最上層欄位 `{ $key }` 不支援：{ $reason 
 plugin-install-pkg-service = 服務 `{ $service }`：{ $error }
 plugin-install-pkg-interpolate = 服務 `{ $service }` 插值失敗：{ $error }
 plugin-install-pkg-unknown-service = { $field } 引用的服務 `{ $service }` 不存在
-plugin-install-pkg-gpu-images-service = gpu.images 裡的服務 `{ $service }` 不存在
 plugin-install-pkg-gpu-image-same = gpu.images.{ $service }.{ $vendor } 和服務的通用映像一樣；用通用映像時不用寫
 plugin-install-pkg-volume = 具名磁碟區 `{ $name }` 不合法：只支援不帶參數的本地磁碟區
 plugin-install-pkg-config = 組態 `{ $name }`：{ $error }

@@ -133,7 +133,6 @@ plugin-install-pkg-top-level = 顶层字段 `{ $key }` 不受支持：{ $reason 
 plugin-install-pkg-service = 服务 `{ $service }`：{ $error }
 plugin-install-pkg-interpolate = 服务 `{ $service }` 插值失败：{ $error }
 plugin-install-pkg-unknown-service = { $field } 引用的服务 `{ $service }` 不存在
-plugin-install-pkg-gpu-images-service = gpu.images 里的服务 `{ $service }` 不存在
 plugin-install-pkg-gpu-image-same = gpu.images.{ $service }.{ $vendor } 和服务的通用镜像一样；用通用镜像时不用写
 plugin-install-pkg-volume = 命名卷 `{ $name }` 不合法：只支持不带参数的本地卷
 plugin-install-pkg-config = 配置 `{ $name }`：{ $error }

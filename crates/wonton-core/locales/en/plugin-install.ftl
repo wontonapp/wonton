@@ -134,7 +134,6 @@ plugin-install-pkg-top-level = Top-level field `{ $key }` isn't supported: { $re
 plugin-install-pkg-service = Service `{ $service }`: { $error }
 plugin-install-pkg-interpolate = Can't interpolate service `{ $service }`: { $error }
 plugin-install-pkg-unknown-service = { $field } refers to service `{ $service }`, which doesn't exist
-plugin-install-pkg-gpu-images-service = gpu.images has service `{ $service }`, which doesn't exist
 plugin-install-pkg-gpu-image-same = gpu.images.{ $service }.{ $vendor } is the same as the service's image; leave it out if the vendor uses the generic image
 plugin-install-pkg-volume = Named volume `{ $name }` isn't valid: only local volumes without options are supported
 plugin-install-pkg-config = Config `{ $name }`: { $error }

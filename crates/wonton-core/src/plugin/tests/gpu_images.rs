@@ -136,7 +136,7 @@ fn vendors_cannot_repeat() {
     assert!(error.contains("amd"), "{error}");
 }
 
-/// 厂商版镜像只能换 `image`：服务得在 `gpu.services` 里，那它也必须在 compose 里。
+/// 厂商版镜像只换 `image`：服务得在 `gpu.services` 里，那它也必须在 compose 里（由 `gpu.services` 那一步报）。
 #[test]
 fn a_vendor_image_service_must_be_in_compose() {
     let source = compose(
@@ -145,6 +145,7 @@ fn a_vendor_image_service_must_be_in_compose() {
          permissions: [devices.gpu]\n  requirements:\n    gpu: {need: required, vendors: [amd]}\n",
     );
     let error = parse_error(&source);
+    assert!(error.contains("gpu.services"), "{error}");
     assert!(error.contains("`web`"), "{error}");
 }
 

@@ -133,7 +133,6 @@ plugin-install-pkg-top-level = 最上位のフィールド`{ $key }`は対応し
 plugin-install-pkg-service = サービス`{ $service }`：{ $error }
 plugin-install-pkg-interpolate = サービス`{ $service }`の補間に失敗しました：{ $error }
 plugin-install-pkg-unknown-service = { $field }が参照するサービス`{ $service }`は存在しません
-plugin-install-pkg-gpu-images-service = gpu.imagesのサービス`{ $service }`は存在しません
 plugin-install-pkg-gpu-image-same = gpu.images.{ $service }.{ $vendor }がサービスの共通イメージと同じです。共通イメージを使うなら書く必要はありません
 plugin-install-pkg-volume = 名前付きボリューム`{ $name }`が不正です。オプションなしのローカルボリュームだけに対応しています
 plugin-install-pkg-config = 構成`{ $name }`：{ $error }
