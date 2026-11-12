@@ -1,8 +1,10 @@
 package app.wonton.android
 
 import android.app.Application
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -17,6 +19,8 @@ import app.wonton.protocol.BotRef
 import app.wonton.protocol.ContactError
 import app.wonton.protocol.ContactKind
 import app.wonton.protocol.ContactState
+import app.wonton.protocol.PeerStatus
+import app.wonton.protocol.RemoteContact
 import app.wonton.ui.BotContactsContent
 import app.wonton.ui.R
 import app.wonton.ui.design.WontonTheme
@@ -43,6 +47,7 @@ class BotContactsContentTest {
     private val bot = BotRef(pluginId = "hermes", bot = "default")
     private val sent = mutableListOf<Action>()
     private val removed = mutableListOf<BotContact>()
+    private val remoteApproved = mutableListOf<BotContact>()
 
     // 显示名不给时行的名字回退成用户 ID，同一行出现两个相同文本，按文本找节点会数到 2 个。
     private fun contact(
@@ -50,19 +55,21 @@ class BotContactsContentTest {
         state: ContactState,
         kind: ContactKind = ContactKind.BOT,
         displayName: String? = null,
+        remote: RemoteContact? = null,
     ) = BotContact(
         userId = userId,
         displayName = displayName,
         keeperDisplayName = null,
         kind = kind,
         state = state,
-        remote = null,
+        remote = remote,
     )
 
     private fun show(view: BotContactsViewModel) {
         compose.setContent {
             WontonTheme(testAppearance()) {
-                BotContactsContent(view, bot, { sent += it }, onAdd = {}, onRemove = { removed += it })
+                BotContactsContent(view, bot, { sent += it }, onAdd = {}, onRemove = { removed += it },
+                    onApproveRemote = { remoteApproved += it })
             }
         }
     }
@@ -81,6 +88,8 @@ class BotContactsContentTest {
         compose.onNodeWithText(context.getString(R.string.contacts_approve)).performClick()
         compose.onNodeWithText(context.getString(R.string.contacts_reject)).performClick()
 
+        // 本服务器的请求不弹确认，同意直接发给核心（ADR-0050）。
+        assertEquals(emptyList<BotContact>(), remoteApproved)
         assertEquals(
             listOf(
                 Action.ApproveBotContact(bot, "@a:b.example"),
@@ -88,6 +97,34 @@ class BotContactsContentTest {
             ),
             sent,
         )
+    }
+
+    @Test
+    fun aRemoteContactShowsWhichServerItIsFrom() {
+        show(
+            ready(
+                contact("@r:example.org", ContactState.INCOMING, remote = RemoteContact("example.org", null)),
+                contact(
+                    "@r2:example.org",
+                    ContactState.ACTIVE,
+                    remote = RemoteContact("example.org", PeerStatus.CONNECTED),
+                ),
+            ),
+        )
+
+        compose.onAllNodesWithText(context.getString(R.string.contacts_remote_from, "example.org"))
+            .onFirst().assertIsDisplayed()
+    }
+
+    @Test
+    fun approvingARemoteRequestAsksTheScreenBeforeSending() {
+        val remote = contact("@r:example.org", ContactState.INCOMING, remote = RemoteContact("example.org", null))
+        show(ready(remote))
+
+        compose.onNodeWithText(context.getString(R.string.contacts_approve)).performClick()
+
+        assertEquals(listOf(remote), remoteApproved)
+        assertEquals(emptyList<Action>(), sent)
     }
 
     @Test

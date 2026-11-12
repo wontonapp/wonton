@@ -12,6 +12,8 @@
     <string name="contacts_status_waiting_bot">等对方同意</string>
     <string name="contacts_status_declined">对方拒绝了</string>
     <string name="contacts_keeper">%1$s 的 Bot</string>
+    <string name="contacts_remote_from">来自 %1$s</string>
+    <string name="contacts_approve_remote_message">同意后，这个 Bot 只和对方聊天，不再使用家里的其他工具。</string>
     <string name="contacts_empty">还没有联系人</string>
     <string name="contacts_error_invalid_user_id">不是有效的 Matrix ID</string>
     <string name="contacts_error_not_paired_next">先在“其他服务器”里配对。</string>

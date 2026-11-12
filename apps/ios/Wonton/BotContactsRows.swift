@@ -87,7 +87,7 @@ struct SentContactRowView: View {
     }
 }
 
-/// 一行的骨架：名字、谁的 Bot、用户 ID、跨机时的连接情况，下面是各状态自己的内容，行尾是操作。
+/// 一行的骨架：名字、谁的 Bot、用户 ID、跨机时来自哪台服务器和连接情况，下面是各状态自己的内容，行尾是操作。
 private struct ContactRowFrame<Content: View, Trailing: View>: View {
     let contact: BotContact
     @ViewBuilder let content: Content
@@ -109,6 +109,11 @@ private struct ContactRowFrame<Content: View, Trailing: View>: View {
                     .wontonText(WontonTheme.typography.caption)
                     .monospaced()
                     .foregroundStyle(Color(colors.textSecondary))
+                if let remote = contact.remote {
+                    Text(.Contacts1.contactsRemoteFrom(remote.serverName))
+                        .wontonText(WontonTheme.typography.supporting)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
                 if let problem = contactRemoteProblem(contact) {
                     Text(problem)
                         .wontonText(WontonTheme.typography.supporting)

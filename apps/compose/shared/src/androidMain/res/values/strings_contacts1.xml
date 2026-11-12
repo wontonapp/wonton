@@ -24,6 +24,10 @@
     <string name="contacts_status_declined">They declined</string>
     <!-- Under a bot contact's name: whose bot it is. Argument: the keeper's name. -->
     <string name="contacts_keeper">%1$s\'s bot</string>
+    <!-- On a contact from another server: which server they\'re on. Argument: the server name. -->
+    <string name="contacts_remote_from">From %1$s</string>
+    <!-- Confirmation body: what approving a remote request means (ADR-0050). -->
+    <string name="contacts_approve_remote_message">After approving, this bot can only chat with them. It won\'t use your other tools.</string>
     <!-- Empty contacts page: the one sentence above the add button. -->
     <string name="contacts_empty">No contacts yet</string>
     <!-- Failure title: not a full Matrix ID, or the bot itself. -->

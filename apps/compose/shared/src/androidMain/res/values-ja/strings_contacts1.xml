@@ -12,6 +12,8 @@
     <string name="contacts_status_waiting_bot">相手の承認待ち</string>
     <string name="contacts_status_declined">相手が拒否しました</string>
     <string name="contacts_keeper">%1$s のボット</string>
+    <string name="contacts_remote_from">%1$s から</string>
+    <string name="contacts_approve_remote_message">承認すると、このボットは相手とのチャットだけを行い、ほかのツールは使わなくなります。</string>
     <string name="contacts_empty">連絡先はまだありません</string>
     <string name="contacts_error_invalid_user_id">有効な Matrix ID ではありません</string>
     <string name="contacts_error_not_paired_next">先に「他のサーバー」で接続してください。</string>
