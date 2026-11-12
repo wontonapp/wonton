@@ -28,7 +28,11 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates crates
 COPY vendor vendor
-RUN cargo chef prepare --recipe-path recipe.json
+# recipe 里记着每个工作区 crate 的全部 target，自动发现的测试、示例、基准也在内：哪个 crate 加一个测试文件
+# recipe 就变，依赖层（4 核约 330 s）跟着重编（11-12 实测 main 上 80 次合并里 7 次，去掉后 3 次）。
+# 桥的 release 构建不编这三类 target，依赖解析也不看它们，删了再生成 recipe 不影响 cook 的内容。
+RUN rm -rf crates/*/tests crates/*/examples crates/*/benches \
+    && cargo chef prepare --recipe-path recipe.json
 
 # 依赖层：只拿 recipe.json 和 vendor（[patch] 的源码，cook 解析要用），清单不变就命中缓存。cook 按桩工程
 # 改它自己的 Cargo.lock（带 --locked 时 cargo 拒绝，实测），下面的正式构建把上下文里原始的 Cargo.lock
