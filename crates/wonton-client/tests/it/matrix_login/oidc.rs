@@ -206,10 +206,11 @@ async fn an_oidc_login_builds_the_authorization_url_and_finishes_into_a_slot() {
     let core = open(dir.path());
     let (login_id, query) = awaiting(&core, &server).await;
 
+    // iOS 从 App 外面交回来的写法是 `scheme:///path`，和注册的 `scheme:/path` 是同一个地址。
     let state = &query["state"];
     core.dispatch(callback(
         &login_id,
-        format!("{REDIRECT}?code=fake-code&state={state}"),
+        format!("io.github.wontonapp:///matrix-login?code=fake-code&state={state}"),
     ))
     .unwrap();
     let done = settled(&core).await;
@@ -339,4 +340,39 @@ async fn foreign_and_denied_callbacks_fail_with_their_category() {
             reason: MatrixLoginFailure::OidcRejected
         }
     );
+}
+
+/// 壳在自己的主线程上取消、交回对不上的回调，那里没有 tokio 运行时：登录用的客户端在那时被丢掉，不能让核心崩溃。
+#[tokio::test]
+async fn cancelling_or_failing_from_a_thread_without_a_runtime_does_not_crash() {
+    let server = FakeHomeserver::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let core = open(dir.path());
+
+    let (login_id, _) = awaiting(&core, &server).await;
+    on_plain_thread(&core, Action::CancelMatrixLogin { login_id });
+    assert_eq!(
+        core.servers().matrix_login.unwrap().state,
+        MatrixLoginState::Cancelled
+    );
+
+    let (login_id, _) = awaiting(&core, &server).await;
+    on_plain_thread(
+        &core,
+        callback(&login_id, format!("{REDIRECT}?code=x&state=y")),
+    );
+    assert_eq!(
+        core.servers().matrix_login.unwrap().state,
+        MatrixLoginState::Failed {
+            reason: MatrixLoginFailure::InvalidCallback
+        }
+    );
+}
+
+fn on_plain_thread(core: &Arc<ClientCore>, action: Action) {
+    let core = core.clone();
+    std::thread::spawn(move || core.dispatch(action))
+        .join()
+        .expect("核心在没有运行时的线程上崩溃")
+        .unwrap();
 }
