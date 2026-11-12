@@ -163,6 +163,7 @@ async fn agent_plugin(
         data_dir: dir.to_owned(),
         apps_dir: dir.join("apps"),
         shares_dir: dir.join("shares"),
+        relay_dir: dir.join("relay"),
         core_container: None,
         tz: "UTC".into(),
         puid: ids.uid(),
