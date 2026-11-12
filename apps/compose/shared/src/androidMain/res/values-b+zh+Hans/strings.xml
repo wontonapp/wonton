@@ -1780,4 +1780,13 @@
     <string name="contacts_error_unauthenticated">这台设备不能做这件事</string>
     <string name="contacts_error_upstream">家里的服务器没能记下这件事</string>
     <string name="friends_request_bot_contact">Bot 联系人请求</string>
+    <string name="handoff_title">在另一台设备上继续</string>
+    <string name="handoff_waiting">保持另一台设备上的“添加设备”页开着。</string>
+    <string name="handoff_unanswered_title">另一台设备没有回应</string>
+    <string name="handoff_unanswered_message">在另一台设备上打开云吞，回到“添加设备”。</string>
+    <string name="handoff_try_again">再试一次</string>
+    <string name="handoff_later">稍后</string>
+    <string name="handoff_no_other_device">手边没有别的设备</string>
+    <string name="invite_device_added">已加好</string>
+    <string name="invite_cannot_give">这台设备也没有完整的密钥，新设备看不到以前的消息。</string>
 </resources>

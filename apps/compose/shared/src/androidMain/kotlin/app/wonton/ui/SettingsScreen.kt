@@ -42,6 +42,7 @@ fun SettingsPage(
     onClose: (() -> Unit)? = null,
     peersOpenRequests: Boolean = false,
     onPeersOpenRequestsHandled: () -> Unit = {},
+    onContinueHandoff: () -> Unit,
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
@@ -56,6 +57,7 @@ fun SettingsPage(
         SettingsSubpage.BACKUP -> ChatBackupScreen(
             chat.encryption,
             onAction = { action -> rejection = core.send(action) },
+            onContinueHandoff = onContinueHandoff,
             onClose = back,
         )
         SettingsSubpage.PROFILE -> OwnerProfilePage(plugins, back)

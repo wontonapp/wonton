@@ -6272,6 +6272,216 @@
         }
       }
     },
+    "handoff.later": {
+      "comment": "Leave the handoff screen for now and go to the chat list.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Later"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍後"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "後で"
+          }
+        }
+      }
+    },
+    "handoff.noOtherDevice": {
+      "comment": "Secondary text button: the owner has no other device at hand and will use the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "I don't have my other device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手边没有别的设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手邊沒有別的裝置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "他のデバイスが手元にない"
+          }
+        }
+      }
+    },
+    "handoff.title": {
+      "comment": "Title of the key handoff screen and the chat-list reminder: finish adding this device on the other one.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue on your other device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在另一台设备上继续"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在另一部裝置上繼續"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一方のデバイスで続けてください"
+          }
+        }
+      }
+    },
+    "handoff.tryAgain": {
+      "comment": "Send the request to the other device again.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再试一次"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再試一次"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度試す"
+          }
+        }
+      }
+    },
+    "handoff.unansweredMessage": {
+      "comment": "What to do when the other device hasn't answered.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Wonton on your other device and go back to “Add device”."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在另一台设备上打开云吞，回到“添加设备”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在另一部裝置上打開雲吞，回到「新增裝置」。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一方のデバイスでWontonを開き、「デバイスを追加」に戻ってください。"
+          }
+        }
+      }
+    },
+    "handoff.unansweredTitle": {
+      "comment": "No device picked up the request within a minute.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your other device hasn't answered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一台设备没有回应"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另一部裝置沒有回應"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一方のデバイスから応答がありません"
+          }
+        }
+      }
+    },
+    "handoff.waiting": {
+      "comment": "Hint while the new device waits for the other device to pick up the request.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep “Add device” open on your other device."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持另一台设备上的“添加设备”页开着。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保持另一部裝置上的「新增裝置」頁面開著。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一方のデバイスで「デバイスを追加」を開いたままにしてください。"
+          }
+        }
+      }
+    },
     "install.actionInstall": {
       "comment": "Confirm button and title of the page that installs an app from the Store or a file.",
       "extractionState": "manual",
@@ -6478,6 +6688,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "更新内容"
+          }
+        }
+      }
+    },
+    "invite.cannotGive": {
+      "comment": "This device can't hand over keys because it doesn't have them all itself.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This device doesn't have all the chat keys either, so the new device can't read earlier messages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台设备也没有完整的密钥，新设备看不到以前的消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這部裝置也沒有完整的金鑰，新裝置看不到以前的訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスにもすべての鍵がないため、新しいデバイスでは以前のメッセージを読めません。"
+          }
+        }
+      }
+    },
+    "invite.deviceAdded": {
+      "comment": "Shown on Add device once the new device has the keys.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Device added"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已加好"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已加好"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加しました"
           }
         }
       }

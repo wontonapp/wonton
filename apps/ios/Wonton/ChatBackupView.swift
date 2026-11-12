@@ -97,6 +97,12 @@ struct ChatBackupView: View {
             }
         case .progress:
             ProgressView().frame(maxWidth: .infinity)
+        case .waitForOtherDevice:
+            // 新设备在等另一台设备交出密钥（ADR-0087）：这里不给恢复密钥，回到交接页。
+            Button { model.keyHandoffDeferred = false } label: {
+                Text(.handoffTitle).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WontonButtonStyle(kind: .primary))
         case .none, .other:
             EmptyView()
         }
@@ -177,6 +183,7 @@ extension BackupReminder {
         switch self {
         case .saveRecoveryKey: return String(localized: .chatBackupReminderSaveKey)
         case .enterRecoveryKey: return String(localized: .chatBackupReminderEnterKey)
+        case .continueOnOtherDevice: return String(localized: .handoffTitle)
         case .other: return nil
         }
     }
