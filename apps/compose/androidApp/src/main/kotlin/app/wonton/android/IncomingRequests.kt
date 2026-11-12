@@ -5,11 +5,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.wonton.client.parseAppLink
+import app.wonton.protocol.BotRef
 import app.wonton.ui.AgentTextRequest
 import app.wonton.ui.AppLinkRequest
 import app.wonton.ui.RoomRequest
 
-/** 外部进来的跳转：点通知的房间、wonton:// 链接、分享的一句话。发给界面后由界面取走。 */
+/** 外部进来的跳转：点通知的房间或联系人页、wonton:// 链接、分享的一句话。发给界面后由界面取走。 */
 internal class IncomingRequests {
     var room by mutableStateOf<RoomRequest?>(null)
         private set
@@ -20,6 +21,7 @@ internal class IncomingRequests {
 
     /** extras 取走就删：屏幕旋转重建 Activity 时拿到的还是这个 Intent，不能再跳一次。 */
     fun take(intent: Intent) {
+        takeContacts(intent)
         intent.getStringExtra(EXTRA_ROOM)?.let { room ->
             val server = intent.getStringExtra(EXTRA_SERVER)
             intent.removeExtra(EXTRA_ROOM)
@@ -49,6 +51,21 @@ internal class IncomingRequests {
         }
     }
 
+    /** 联系人请求的通知：去被请求的 Bot 的联系人页（ADR-0050），和点房间同一条路。 */
+    private fun takeContacts(intent: Intent) {
+        val plugin = intent.getStringExtra(EXTRA_CONTACTS_PLUGIN) ?: return
+        val bot = intent.getStringExtra(EXTRA_CONTACTS_BOT)
+        val server = intent.getStringExtra(EXTRA_SERVER)
+        intent.removeExtra(EXTRA_CONTACTS_PLUGIN)
+        intent.removeExtra(EXTRA_CONTACTS_BOT)
+        intent.removeExtra(EXTRA_SERVER)
+        if (server != null && bot != null) {
+            link = null
+            agentText = null
+            room = RoomRequest(server, "", BotRef(pluginId = plugin, bot = bot))
+        }
+    }
+
     fun roomHandled() {
         room = null
     }
@@ -56,5 +73,7 @@ internal class IncomingRequests {
     companion object {
         const val EXTRA_ROOM = "wonton_open_room"
         const val EXTRA_SERVER = "wonton_open_server"
+        const val EXTRA_CONTACTS_PLUGIN = "wonton_open_contacts_plugin"
+        const val EXTRA_CONTACTS_BOT = "wonton_open_contacts_bot"
     }
 }

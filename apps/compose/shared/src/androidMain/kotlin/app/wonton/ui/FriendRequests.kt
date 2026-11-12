@@ -24,7 +24,8 @@ import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
 
 /**
- * 一条收到的私聊邀请：带 `app.wonton.friend` 的标成好友请求，普通邀请不加标签（ADR-0051）。
+ * 一条收到的私聊邀请：带 `app.wonton.friend` 的标成好友请求，带 `app.wonton.bot_contact` 的标成 Bot 的联系人请求
+ * （ADR-0050，接受就是同意），普通邀请不加标签（ADR-0051）。
  * 请求认房间，不认显示名。
  */
 @Composable
@@ -44,9 +45,9 @@ internal fun IncomingFriendRequestRow(row: FriendRequest, onApprove: () -> Unit,
                 Modifier.weight(1f),
                 style = WontonTheme.typography.body,
             )
-            if (row.kind == FriendRequestKind.FRIEND) {
+            row.kind.label()?.let {
                 Text(
-                    stringResource(R.string.friends_request_label),
+                    stringResource(it),
                     style = WontonTheme.typography.supporting,
                     color = colors.primary.toColor(),
                 )
@@ -72,6 +73,13 @@ internal fun IncomingFriendRequestRow(row: FriendRequest, onApprove: () -> Unit,
             WontonIconButton(WontonIcon.Check, stringResource(R.string.friends_request_approve), onApprove)
         }
     }
+}
+
+/** 邀请上的标签；普通私聊邀请和不认识的种类不加。 */
+internal fun FriendRequestKind.label(): Int? = when (this) {
+    FriendRequestKind.FRIEND -> R.string.friends_request_label
+    FriendRequestKind.BOT_CONTACT -> R.string.friends_request_bot_contact
+    FriendRequestKind.DIRECT_CHAT, FriendRequestKind.OTHER -> null
 }
 
 /** 一条自己发出、对方还没处理的请求：说清在等，能取消。 */

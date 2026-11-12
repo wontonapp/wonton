@@ -1975,4 +1975,76 @@
     <string name="panel_public_unsupported">This device\'s WebView cannot keep public web pages apart from plugin pages, so they cannot be opened here</string>
     <string name="panel_remove">Remove</string>
     <string name="panel_url">Enter a URL</string>
+    <!-- Title of a bot's contacts page and the entry row on the bot's detail page. -->
+    <string name="contacts_title">Contacts</string>
+    <!-- Toolbar button and sheet title for adding a contact to this bot. -->
+    <string name="contacts_add">Add contact</string>
+    <!-- Choice in the add-contact sheet: the other side is a bot. -->
+    <string name="contacts_add_kind_bot">A bot</string>
+    <!-- Choice in the add-contact sheet: the other side is a person. -->
+    <string name="contacts_add_kind_person">A person</string>
+    <!-- Placeholder of the Matrix ID field in the add-contact sheet. -->
+    <string name="contacts_add_placeholder">@someone:example.org</string>
+    <!-- Button that sends the contact request. -->
+    <string name="contacts_add_submit">Send request</string>
+    <!-- Section heading for contact requests waiting for me. -->
+    <string name="contacts_requests_title">Requests</string>
+    <!-- Section heading for contacts both sides approved. -->
+    <string name="contacts_active_title">Added</string>
+    <!-- Section heading for requests I sent that aren't in effect. -->
+    <string name="contacts_sent_title">Sent</string>
+    <!-- Shown on an incoming contact request: what approving means. -->
+    <string name="contacts_incoming_warning">Its messages will be handled like messages to your bot, and sensitive tools will ask you every time.</string>
+    <!-- Approve button on an incoming contact request. -->
+    <string name="contacts_approve">Approve</string>
+    <!-- Reject button on an incoming contact request. -->
+    <string name="contacts_reject">Reject</string>
+    <!-- Button that withdraws a request I sent and they haven't answered. -->
+    <string name="contacts_withdraw">Withdraw</string>
+    <!-- Button that clears a declined or failed request row. -->
+    <string name="contacts_clear">Remove</string>
+    <!-- Content description of the button that removes an added contact. -->
+    <string name="contacts_remove">Remove contact</string>
+    <!-- Confirmation title for removing a contact. Argument: the contact's name. -->
+    <string name="contacts_remove_title">Remove “%1$s”?</string>
+    <!-- Confirmation body: what removing a contact does. -->
+    <string name="contacts_remove_message">Your bot stops handling their messages. Existing chats stay.</string>
+    <!-- Row status: waiting for the other bot's keeper to approve. -->
+    <string name="contacts_status_waiting_bot">Waiting for them to approve</string>
+    <!-- Row status: waiting for the person to accept the chat invite. -->
+    <string name="contacts_status_waiting_person">Waiting for them to accept</string>
+    <!-- Row status: they declined. -->
+    <string name="contacts_status_declined">They declined</string>
+    <!-- Row status: no such user on that server. -->
+    <string name="contacts_status_not_found">No such user</string>
+    <!-- Row status this version doesn't know. -->
+    <string name="contacts_status_unknown">Status unknown</string>
+    <!-- Under a bot contact's name: whose bot it is. Argument: the keeper's name. -->
+    <string name="contacts_keeper">%1$s\'s bot</string>
+    <!-- On a contact from another server whose pairing was removed. -->
+    <string name="contacts_remote_unpaired">That server isn\'t connected anymore, so messages won\'t get through</string>
+    <!-- Empty contacts page: the one sentence above the add button. -->
+    <string name="contacts_empty">No contacts yet</string>
+    <!-- Failure title: not a full Matrix ID, or the bot itself. -->
+    <string name="contacts_error_invalid_user_id">Not a valid Matrix ID</string>
+    <!-- Failure title: their server isn't paired with mine. -->
+    <string name="contacts_error_not_paired">Their server isn\'t connected to yours</string>
+    <!-- Next step under that failure. -->
+    <string name="contacts_error_not_paired_next">Connect it in Other servers first.</string>
+    <!-- Failure title: already a contact or already requested. -->
+    <string name="contacts_error_already_contact">Already a contact, or the request was already sent</string>
+    <!-- Failure title: the bot was uninstalled. -->
+    <string name="contacts_error_bot_not_found">This bot is no longer installed</string>
+    <!-- Failure title: that row was already handled elsewhere. -->
+    <string name="contacts_error_contact_not_found">That was already handled</string>
+    <!-- Failure title: only the bot's keeper can manage contacts. -->
+    <string name="contacts_error_not_keeper">Only this bot\'s keeper can manage its contacts</string>
+    <!-- Failure title: their server can't be reached; nothing was sent. -->
+    <string name="contacts_error_peer_unreachable">Can\'t reach their server. Nothing was sent.</string>
+    <!-- Failure title: this device isn't a paired device. -->
+    <string name="contacts_error_unauthenticated">This device isn\'t allowed to do this</string>
+    <!-- Failure title: the home server failed to save it. -->
+    <string name="contacts_error_upstream">Your home server couldn\'t save this</string>
+    <!-- Label on an incoming chat invite from a bot that asks you to be its contact. -->
+    <string name="friends_request_bot_contact">Bot contact request</string>
 </resources>

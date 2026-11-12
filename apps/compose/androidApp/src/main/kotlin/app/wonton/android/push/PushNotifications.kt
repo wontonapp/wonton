@@ -13,6 +13,7 @@ import android.util.Log
 import app.wonton.android.IncomingRequests
 import app.wonton.android.MainActivity
 import app.wonton.android.R
+import app.wonton.protocol.ContactRequestPush
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
@@ -40,7 +41,7 @@ object PushNotifications {
     fun show(
         context: Context,
         notification: PushNotification,
-        tag: String = tag(notification.serverId, notification.roomId, notification.confirmation?.id),
+        tag: String = tag(notification.serverId, notification.roomId, notification.targetId()),
         onlyAlertOnce: Boolean = false,
     ) {
         if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -49,29 +50,16 @@ object PushNotifications {
         }
         createChannels(context)
         val channel = notification.category.notificationChannelId
-        val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
-        val title = notification.roomName ?: sender
-        val text = when (val content = notification.content) {
-            is PushContent.Message -> inRoom(context, notification, content.summary.line(context.resources))
-            is PushContent.Invite -> inRoom(context, notification, context.getString(R.string.push_invite))
-            is PushContent.Unavailable -> {
-                Log.i(TAG, "push content unavailable (${content.reason}): ${content.message}")
-                context.getString(R.string.push_unavailable)
-            }
-        }
+        val (title, text) = notification.contactRequest?.let { contactTexts(context, it) } ?: messageTexts(
+            context,
+            notification,
+        )
         val card = notification.confirmation
         val open = PendingIntent.getActivity(
             context,
             // Intent data 包含完整目标，哈希碰撞也不会把两台服务器的通知合并。
             tag.hashCode(),
-            Intent(context, MainActivity::class.java)
-                .setData(Uri.parse("wonton://notification$tag"))
-                .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
-                .putExtra(IncomingRequests.EXTRA_ROOM, notification.roomId)
-                .addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP,
-                ),
+            openIntent(context, notification).setData(Uri.parse("wonton://notification$tag")),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         // 锁屏上隐藏敏感内容时显示这一版：不带发送者和正文。
@@ -115,6 +103,53 @@ object PushNotifications {
             notification.notification.extras.getString(IncomingRequests.EXTRA_SERVER) == serverId &&
                 notification.notification.extras.getString("wonton_card") in settled
         }.forEach { manager.cancel(it.tag, NOTIFICATION_ID) }
+    }
+
+    /** 消息和邀请：标题是房间名（私聊是发送者），正文是消息摘要。 */
+    private fun messageTexts(context: Context, notification: PushNotification): Pair<String, String> {
+        val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
+        val text = when (val content = notification.content) {
+            is PushContent.Message -> inRoom(context, notification, content.summary.line(context.resources))
+            is PushContent.Invite -> inRoom(context, notification, context.getString(R.string.push_invite))
+            is PushContent.Unavailable -> {
+                Log.i(TAG, "push content unavailable (${content.reason}): ${content.message}")
+                context.getString(R.string.push_unavailable)
+            }
+        }
+        return (notification.roomName ?: sender) to text
+    }
+
+    /** 联系人请求（ADR-0050）：核心只给原值，标题是发请求的一方，正文按有没有归属人写。 */
+    private fun contactTexts(context: Context, request: ContactRequestPush): Pair<String, String> {
+        val title = request.displayName?.takeIf { it.isNotBlank() } ?: request.userId
+        val keeper = request.keeperDisplayName?.takeIf { it.isNotBlank() }
+        val text = if (keeper != null) {
+            context.getString(R.string.push_contact_request_keeper, keeper)
+        } else {
+            context.getString(R.string.push_contact_request)
+        }
+        return title to text
+    }
+
+    /** 点开去哪：联系人请求去被请求的 Bot 的联系人页，其余去房间。 */
+    private fun openIntent(context: Context, notification: PushNotification): Intent {
+        val intent = Intent(context, MainActivity::class.java)
+            .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
+        val contact = notification.contactRequest
+        return if (contact != null) {
+            intent.putExtra(IncomingRequests.EXTRA_CONTACTS_PLUGIN, contact.bot.pluginId)
+                .putExtra(IncomingRequests.EXTRA_CONTACTS_BOT, contact.bot.bot)
+        } else {
+            intent.putExtra(IncomingRequests.EXTRA_ROOM, notification.roomId)
+        }
+    }
+
+    /** 通知按什么区分：确认卡片按卡片，联系人请求按 Bot 和对方（核心给的房间为空），消息只按房间。 */
+    private fun PushNotification.targetId(): String? = confirmation?.id ?: contactRequest?.let {
+        "contact:${it.bot.pluginId}:${it.bot.bot}:${it.userId}"
     }
 
     /** 群里的消息前面带上发送者；私聊的标题已经是发送者。 */

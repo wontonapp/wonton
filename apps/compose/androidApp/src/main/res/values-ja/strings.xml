@@ -23,4 +23,6 @@
     <string name="push_no_public_key">ディストリビューターがWeb Pushの公開鍵を返さないため、プッシュを暗号化できません</string>
     <string name="push_registration_rejected">ディストリビューターが登録を拒否しました：%1$s</string>
     <string name="push_unregistered">ディストリビューターがWontonの登録を解除しました</string>
+    <string name="push_contact_request">あなたのボットの連絡先になりたがっています</string>
+    <string name="push_contact_request_keeper">%1$s のボットが、あなたのボットの連絡先になりたがっています</string>
 </resources>
