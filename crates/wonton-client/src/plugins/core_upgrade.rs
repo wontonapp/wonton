@@ -310,9 +310,8 @@ impl PluginsLink {
         self.view.send_if_modified(|plugins| {
             let changed = plugins.core_upgrade != view;
             plugins.core_upgrade = view;
-            changed
+            Self::derive(plugins) | changed
         });
-        self.refresh_derived();
     }
 
     /// 写不进去只影响 App 被杀后接不接得上，这次的显示不受影响。

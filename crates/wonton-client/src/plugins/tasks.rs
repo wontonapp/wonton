@@ -265,11 +265,11 @@ impl PluginsLink {
                 waiting_for_connection: false,
                 added_tools: None,
             });
+            Self::derive(view);
             true
         });
         if outcome.is_ok() {
             self.start_polling();
-            self.refresh_derived();
         }
         outcome
     }
@@ -297,8 +297,8 @@ impl PluginsLink {
                 task.state = state;
                 task.waiting_for_connection = false;
             }
+            Self::derive(view);
         });
-        self.refresh_derived();
     }
 
     /// 连接状态变了：跟着改“在等连接”。`waiting` 是本地的上一份状态，只在变化时写一次。
@@ -318,7 +318,7 @@ impl PluginsLink {
 
     /// 连接断了或者回来了：界面要能说出在等连接，而不是一直像在做。换了服务器以后不再动上一台的任务。
     fn set_waiting(&self, id: &str, waiting: bool, generation: u64) {
-        let changed = self.view.send_if_modified(|view| {
+        self.view.send_if_modified(|view| {
             if !self.is_current(generation) {
                 return false;
             }
@@ -329,11 +329,9 @@ impl PluginsLink {
                 return false;
             }
             task.waiting_for_connection = waiting;
+            Self::derive(view);
             true
         });
-        if changed {
-            self.refresh_derived();
-        }
     }
 
     /// 升级已经成功了，响应读不出来不算失败：核心比 App 新时形状可以变，这时不显示新增的工具。

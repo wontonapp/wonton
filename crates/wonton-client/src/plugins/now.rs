@@ -325,6 +325,7 @@ impl PluginsLink {
                 added_tools: None,
                 id,
             });
+            Self::derive(view);
         });
     }
 
