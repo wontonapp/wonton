@@ -11,6 +11,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::entry_containers::EntryContainers;
 use crate::entry_settings::EntrySettings;
 use crate::gateway::Gateway;
 use crate::matrix::NoticeRoom;
@@ -106,24 +107,28 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
-/// 每小时的家里状态检查，和每 24 小时一次的续期检查。续期只发布证书；入口容器在不在由
-/// [`crate::clients::domain::Domain`] 自己判断。
+/// 初始对账一次；之后每小时查家里状态、每 24 小时让 [`crate::clients::domain::Domain`] 续期
+/// （续期只发布证书，入口容器在不在由对账判断）。
 pub fn spawn(
+    containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
-    install_dir: &Path,
-    data_dir: &Path,
     notices: Option<Arc<NoticeRoom>>,
 ) {
-    let saved = EntrySettings::load(install_dir).ok().flatten();
-    let data_dir = data_dir.to_owned();
+    // 读不了设置是"不确定"：不按"无设置"删掉在跑的入口容器，先按没有设置对账，交给运行循环重读。
+    let settings = EntrySettings::load(containers.install_dir()).ok().flatten();
     tokio::spawn(async move {
+        match containers.reconcile(settings.as_ref()).await {
+            Ok(()) => {}
+            // 宿主上跑的核心没有入口网络：开发时正常，如实记下类别。
+            Err(error) => tracing::warn!(category = error.category(), %error, "入口容器没对上"),
+        }
         let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         let mut previous = None;
         let mut hours = 0;
         loop {
             hourly.tick().await;
-            if let Some(settings) = &saved {
-                check_home(settings, &data_dir, &notices, &mut previous).await;
+            if let Some(settings) = &settings {
+                check_home(settings, containers.data_dir(), &notices, &mut previous).await;
             }
             if hours % 24 == 0 {
                 domain.renew_if_configured();

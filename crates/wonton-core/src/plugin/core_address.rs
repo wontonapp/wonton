@@ -388,10 +388,7 @@ impl Engine {
     }
 
     /// 查询网络；不存在时返回 `None`。
-    pub(super) async fn inspect_network(
-        &self,
-        name: &str,
-    ) -> Result<Option<NetworkInspect>, EngineError> {
+    pub async fn inspect_network(&self, name: &str) -> Result<Option<NetworkInspect>, EngineError> {
         let langs = self.owner_languages();
         let context = l10n::text(
             &langs,
@@ -430,7 +427,7 @@ impl Engine {
     }
 
     /// 容器在网络里的端点，容器停着也有；容器不在或者没接这个网络时为空。
-    pub(super) async fn endpoint(
+    pub async fn endpoint(
         &self,
         container: &str,
         network: &str,

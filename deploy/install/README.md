@@ -67,7 +67,7 @@ curl -fsSL <安装地址>/install.sh | sudo WONTON_MATRIX_SERVER_NAME=chat.examp
 
 - **自己的域名**：设 `WONTON_MATRIX_SERVER_NAME` 为自己的小写 DNS 名（可同时设 `WONTON_MATRIX_NAME_MODE=own`），不注册送的名字。
   主人负责 DNS、对外入口和服务发现；证书用上表的自定义 DNS provider，或显式选择外部证书。自己的入口连接器默认发布在 `127.0.0.1:8443`，
-  由主人的公网转发接入；生成的 Compose 可用 `WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 配置绑定地址和端口。
+  由主人的公网转发接入；`.env` 里的 `WONTON_ENTRY_BIND`、`WONTON_ENTRY_PORT` 改绑定地址和端口。
 - **不要名字**：设 `WONTON_MATRIX_NAME_MODE=none`，不能同时设 `WONTON_MATRIX_SERVER_NAME`。生成随机的 `<24 位>.wonton.internal`，
   只与同类已配对云吞通信。安装时会警告：以后不能改名，要接入 Matrix 生态必须清空聊天数据、所有人换新账号。
 
@@ -88,7 +88,11 @@ ACME 为服务器名本身、`*.<服务器名>` 和 `*.lan.<服务器名>` 签�
 
 外部证书的 `site.pem` 必须包含证书链和对应的 PEM 私钥，覆盖入口所用的服务器名；Wonton 不替它续期。
 主人负责在到期前更新此文件，保持入口容器可读的所有者和权限，并执行
-`docker compose --project-directory /opt/wonton kill -s SIGUSR2 entry` 热加载（自定义安装目录时替换路径）。
+`docker kill -s SIGUSR2 wonton-entry` 热加载。
+
+入口容器（`wonton-entry`）和连接器（`wonton-connector`）不在 Compose 里：核心按 `entry/settings.json` 在启动时和设置变化时
+经 Docker API 建、删它们，跟着开关和地址走。升级到带这个行为的核心后第一次启动会自动按已有设置建出来，不用手动做什么；
+回退到旧核心时升级器会按标签删掉它们。
 
 ## 装在哪
 

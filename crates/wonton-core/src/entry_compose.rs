@@ -14,17 +14,17 @@ pub const HAPROXY_IMAGE: &str =
 pub fn render(
     base: &str,
     settings: Option<&EntrySettings>,
-    install_dir: &Path,
+    _install_dir: &Path,
 ) -> anyhow::Result<String> {
     let mut compose: Value = serde_saphyr::from_str(base)?;
     compose["services"]["tuwunel"]["volumes"] = json!([
         "tuwunel:/var/lib/tuwunel",
         "${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro"
     ]);
-    // “不要名字”的安装现在没有入口容器（C5 才有），但运行时签发已经在：核心经 PUT 收设置后写
-    // `entry/`（CSR、ACME 账号、dns.env），lego 容器按宿主路径绑挂 `entry/acme` 和 `entry/requests/`。
-    // 核心容器里必须看得到同一个宿主目录，不然签发的产物只落进容器可写层，lego 拿不到 CSR；CA 文件
-    // 在 `entry-input/` 里，核心也要读。挂载本身不依赖 settings，提前返回会把这一步整个跳掉。
+    // 运行时签发：核心经 PUT 收设置后写 `entry/`（CSR、ACME 账号、dns.env），lego 容器按宿主路径绑挂
+    // `entry/acme` 和 `entry/requests/`。核心容器里必须看得到同一个宿主目录，不然签发的产物只落进容器
+    // 可写层，lego 拿不到 CSR；CA 文件在 `entry-input/` 里，核心也要读。挂载本身不依赖 settings，
+    // 提前返回会把这一步整个跳掉。
     compose["services"]["core"]["volumes"]
         .as_array_mut()
         .context("core volumes 不是列表")?
@@ -37,28 +37,12 @@ pub fn render(
         .push(json!(
             "${WONTON_INSTALL_DIR}/entry-input:${WONTON_INSTALL_DIR}/entry-input:ro"
         ));
-    let Some(settings) = settings else {
-        return Ok(serde_json::to_string_pretty(&compose)?);
-    };
-    let meta = std::fs::metadata(install_dir.join("entry/certs/site.pem"))?;
-    let uid = meta.uid();
-    let gid = meta.gid();
-    let user = format!("{uid}:{gid}");
+    // 网络和核心在这几张网络上的绑定不管有没有入口设置都渲染：启动时就能定下 8484 绑在哪、主网关排除哪个地址；
+    // 容器本身由核心按设置建（`entry_containers`）。
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
-    // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
-    let resolvers = crate::entry_settings::resolver_ips(&settings.acme_resolvers)?;
-    if !resolvers.is_empty() {
-        // Docker 的 127.0.0.11 在前：容器名、插件别名只有它认识；它认不出的名字转发给配置的解析器。
-        // 反过来先问真实解析器时，它们在区外名字上回 NXDOMAIN，glibc 不再回退，内部名就解析不到。
-        let mut servers = vec!["127.0.0.11".to_owned()];
-        servers.extend(resolvers);
-        compose["services"]["core"]["dns"] = json!(servers);
-    }
     compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"] =
         json!("entry-gateway.wonton.internal:8484");
-    compose["services"]["core"]["environment"]["WONTON_MATRIX_FEDERATION_ADDR"] =
-        json!("entry.wonton.internal:8449");
     // 隧道只绑核心在 core 网络上的地址（ADR-0021）：被攻破的入口容器在 clients 网络上发到隧道端口的包
     // 落不到套接字。绑的是别名，由 Docker 的内嵌 DNS 在启动时解析；发布的 UDP 端口经 Docker DNAT 落在
     // core 网络的端点上（tests/docker_tunnel_bind.rs 断言），局域网和公网来的包照样到得了。
@@ -82,46 +66,22 @@ pub fn render(
         "com.docker.network.bridge.gateway_mode_ipv4":"isolated",
         "com.docker.network.bridge.gateway_mode_ipv6":"isolated"
     }});
+    // 连接器只经这张普通桥接出网。
     compose["networks"]["relay"] = json!({});
-    let entry = json!({
-        "image":HAPROXY_IMAGE,"user":user,"read_only":true,"cap_drop":["ALL"],
-        "security_opt":["no-new-privileges:true"],"restart":"unless-stopped",
-        "command":["haproxy","-W","-db","-f","/config/haproxy.cfg"],
-        "volumes":["${WONTON_INSTALL_DIR}/entry/haproxy.cfg:/config/haproxy.cfg:ro","${WONTON_INSTALL_DIR}/entry/certs:/certs:ro"],
-        "networks":{
-            "edge":{"aliases":["entry-edge.wonton.internal"],"ipv4_address":crate::entry_haproxy::ENTRY_EDGE_ADDRESS},
-            "clients":{"aliases":["entry.wonton.internal"]}
-        },
-        "environment":{"HTTP_PROXY":"","HTTPS_PROXY":"","http_proxy":"","https_proxy":""},
-        "logging":{"driver":"json-file","options":{"max-size":"10m","max-file":"3"}}
-    });
-    compose["services"]["entry"] = entry;
-    if settings.registration.is_some() {
-        compose["services"]["connector"] = json!({
-            "image":crate::entry_runtime::FRPC_IMAGE,"user":user,"read_only":true,"cap_drop":["ALL"],
-            "security_opt":["no-new-privileges:true"],"restart":"unless-stopped",
-            "command":["-c","/config/frpc.json"],
-            "volumes":["${WONTON_INSTALL_DIR}/entry/frpc.json:/config/frpc.json:ro","${WONTON_INSTALL_DIR}/entry/relay-ca.pem:/config/relay-ca.pem:ro"],
-            "environment":{"HTTP_PROXY":"","HTTPS_PROXY":"","http_proxy":"","https_proxy":""},
-            "networks":{
-                "edge":{"aliases":["connector.wonton.internal"],"ipv4_address":crate::entry_haproxy::CONNECTOR_ADDRESS},
-                "relay":null
-            },
-            "logging":{"driver":"json-file","options":{"max-size":"10m","max-file":"3"}}
-        });
-    } else {
-        compose["services"]["connector"] = json!({
-            "image":HAPROXY_IMAGE,"user":user,"read_only":true,"cap_drop":["ALL"],
-            "security_opt":["no-new-privileges:true"],"restart":"unless-stopped",
-            "command":["haproxy","-W","-db","-f","/config/connector.cfg"],
-            "volumes":["${WONTON_INSTALL_DIR}/entry/connector.cfg:/config/connector.cfg:ro"],
-            "ports":["${WONTON_ENTRY_BIND:-127.0.0.1}:${WONTON_ENTRY_PORT:-8443}:8443"],
-            "networks":{
-                "edge":{"aliases":["connector.wonton.internal"],"ipv4_address":crate::entry_haproxy::CONNECTOR_ADDRESS},
-                "relay":null
-            }
-        });
+    let Some(settings) = settings else {
+        return Ok(serde_json::to_string_pretty(&compose)?);
+    };
+    // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
+    let resolvers = crate::entry_settings::resolver_ips(&settings.acme_resolvers)?;
+    if !resolvers.is_empty() {
+        // Docker 的 127.0.0.11 在前：容器名、插件别名只有它认识；它认不出的名字转发给配置的解析器。
+        // 反过来先问真实解析器时，它们在区外名字上回 NXDOMAIN，glibc 不再回退，内部名就解析不到。
+        let mut servers = vec!["127.0.0.11".to_owned()];
+        servers.extend(resolvers);
+        compose["services"]["core"]["dns"] = json!(servers);
     }
+    compose["services"]["core"]["environment"]["WONTON_MATRIX_FEDERATION_ADDR"] =
+        json!("entry.wonton.internal:8449");
     Ok(serde_json::to_string_pretty(&compose)?)
 }
 
@@ -383,9 +343,9 @@ mod tests {
         }
     }
 
-    /// 连接器要固定地址：入口核对端在连接层，那里只认 IP。入口也固定，局域网前端单独网段。
+    /// 入口和连接器由核心按设置建，compose 里只剩网络；edge 的子网和 isolated 照旧。
     #[test]
-    fn edge_network_pins_the_connector_address() {
+    fn networks_render_without_the_entry_services() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
         std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
@@ -393,17 +353,56 @@ mod tests {
             &render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
         )
         .unwrap();
+        for service in ["entry", "connector"] {
+            assert!(compose["services"].get(service).is_none(), "{service}");
+        }
         assert_eq!(
             compose["networks"]["edge"]["ipam"]["config"][0]["subnet"],
             "10.90.0.0/24"
         );
+        for network in ["clients", "edge"] {
+            assert_eq!(compose["networks"][network]["internal"], true, "{network}");
+            assert_eq!(
+                compose["networks"][network]["driver_opts"]["com.docker.network.bridge.gateway_mode_ipv4"],
+                "isolated",
+                "{network}"
+            );
+            assert_eq!(
+                compose["networks"][network]["driver_opts"]["com.docker.network.bridge.gateway_mode_ipv6"],
+                "isolated",
+                "{network}"
+            );
+        }
+    }
+
+    /// 没有入口设置也要接入 clients：8484 的绑定和主网关的排除地址在启动时就要定下来（ADR-0021）。
+    #[test]
+    fn compose_always_attaches_core_to_clients_network() {
+        let dir = tempfile::tempdir().unwrap();
+        let compose: Value =
+            serde_json::from_str(&render(crate::install::COMPOSE, None, dir.path()).unwrap())
+                .unwrap();
+        assert!(compose["networks"]["clients"].is_object());
         assert_eq!(
-            compose["services"]["connector"]["networks"]["edge"]["ipv4_address"],
-            "10.90.0.2"
+            compose["services"]["core"]["networks"]["clients"],
+            json!({"aliases": ["entry-gateway.wonton.internal"]})
         );
         assert_eq!(
-            compose["services"]["entry"]["networks"]["edge"]["ipv4_address"],
-            "10.90.0.3"
+            compose["services"]["core"]["environment"]["WONTON_ENTRY_LISTEN"],
+            "entry-gateway.wonton.internal:8484"
+        );
+    }
+
+    /// 主网关从一开始就不在入口地址上接连接：已攻破的入口读不到首次配对码。
+    #[test]
+    fn main_listener_excludes_clients_address_from_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let compose: Value =
+            serde_json::from_str(&render(crate::install::COMPOSE, None, dir.path()).unwrap())
+                .unwrap();
+        assert_eq!(
+            compose["services"]["core"]["environment"]["WONTON_EXCLUDE_LISTEN"],
+            "entry-gateway.wonton.internal"
         );
     }
 

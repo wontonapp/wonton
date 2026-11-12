@@ -552,6 +552,29 @@ async fn components_the_target_does_not_support_are_removed() {
     );
 }
 
+/// 旧核心回退时两个入口容器一起删：目标镜像没声明 `entry`、`connector`，而现有版本的容器还在。
+#[tokio::test]
+async fn entry_and_connector_containers_go_away_before_an_older_core() {
+    let s = scene();
+    supports(&s.host, NEW, "wonton-egress");
+    s.host.world().components = vec![
+        Component::Container {
+            component: "entry".to_owned(),
+            container: "id-entry".to_owned(),
+        },
+        Component::Container {
+            component: "connector".to_owned(),
+            container: "id-connector".to_owned(),
+        },
+    ];
+    s.run().await;
+    assert_eq!(s.state().result, Some(Outcome::Completed));
+    assert!(s.host.did("remove-container id-entry"));
+    assert!(s.host.did("remove-container id-connector"));
+    // 目标版本还支持的组件留着。
+    assert!(!s.host.did("remove-container id-egress"));
+}
+
 /// `completed` 后只留这一次的备份，之前留着的也不用了；上一次的回滚镜像可以删了。
 #[tokio::test]
 async fn completing_cleans_up_what_is_no_longer_needed() {

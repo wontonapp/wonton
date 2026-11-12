@@ -373,7 +373,7 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let clients = open_clients(&cfg, &engine, &notices)?;
-    spawn_entry_runtime(&cfg, &clients, &notices);
+    spawn_entry_runtime(&cfg, &engine, &clients, &notices);
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -760,19 +760,29 @@ fn open_clients(
         cfg.data_dir.clone(),
         engine.clone(),
         container.clone(),
+        cfg.instance.clone(),
         notices.clone(),
     )))
 }
 
-/// 用安装脚本装的核心才管入口。
+/// 用安装脚本装的核心（有安装目录）才管入口；核心不在容器里时由入口自己报 `core_not_in_container`。
 fn spawn_entry_runtime(
     cfg: &Config,
+    engine: &Engine,
     clients: &Option<Arc<wonton_core::clients::domain::Domain>>,
     notices: &Option<Arc<NoticeRoom>>,
 ) {
-    if let (Some(dir), Some(clients)) = (&cfg.install_dir, clients) {
-        wonton_core::entry_runtime::spawn(clients.clone(), dir, &cfg.data_dir, notices.clone());
-    }
+    let (Some(dir), Some(clients)) = (&cfg.install_dir, clients) else {
+        return;
+    };
+    let containers = wonton_core::entry_containers::EntryContainers::new(
+        engine.clone(),
+        dir.clone(),
+        cfg.data_dir.clone(),
+        cfg.instance.clone(),
+        cfg.core_container.clone(),
+    );
+    wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {

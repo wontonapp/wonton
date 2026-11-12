@@ -32,6 +32,7 @@ pub(super) fn containers(
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
+        (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name])
             if docker

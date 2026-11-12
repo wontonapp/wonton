@@ -23,6 +23,7 @@ use crate::entry_certificate::{CertificateConfig, CertificateManager, validate_d
 use crate::entry_settings::{EntrySettings, parse_resolvers};
 use crate::matrix::NoticeRoom;
 use crate::plugin::docker::Engine;
+use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
 
 const DOMAIN_FILE: &str = "entry/domain.json";
 const DNS_ENV_FILE: &str = "entry/secrets/dns.env";
@@ -85,6 +86,8 @@ pub struct Domain {
     data_dir: PathBuf,
     engine: Engine,
     core_container: String,
+    /// 核心的实例名：入口容器按组件标签找时用它限定自己这套，别热加载别家的入口。
+    instance: Instance,
     notices: Option<Arc<NoticeRoom>>,
     /// 串行化签发；同时来两次就排队，后一次用最新的设置。
     issuance: Mutex<()>,
@@ -111,6 +114,7 @@ impl Domain {
         data_dir: PathBuf,
         engine: Engine,
         core_container: String,
+        instance: Instance,
         notices: Option<Arc<NoticeRoom>>,
     ) -> Arc<Self> {
         Arc::new(Self {
@@ -118,6 +122,7 @@ impl Domain {
             data_dir,
             engine,
             core_container,
+            instance,
             notices,
             issuance: Mutex::new(()),
             pending: AtomicUsize::new(0),
@@ -539,30 +544,16 @@ impl Domain {
 
     /// 入口容器在就让它重读证书，不在就只发布。
     async fn reload_entry(&self) -> Result<()> {
-        let Some(info) = self
+        // 入口容器由核心按组件标签建（C5）：`wonton.core.component=entry` + 本实例，不再是 compose 服务。
+        let found = self
             .engine
-            .inspect_container(&self.core_container)
-            .await
-            .context("查核心容器")?
-        else {
-            return Ok(());
-        };
-        let Some(project) = info
-            .config
-            .and_then(|config| config.labels)
-            .and_then(|labels| labels.get("com.docker.compose.project").cloned())
-        else {
-            return Ok(());
-        };
-        let resources = self
-            .engine
-            .labeled("com.docker.compose.project", &project, |labels| {
-                labels
-                    .get("com.docker.compose.service")
-                    .is_some_and(|service| service == "entry")
+            .labeled(LABEL_MANAGED_BY, "core", |labels| {
+                self.instance.owns(labels)
+                    && labels.get(LABEL_COMPONENT).map(String::as_str) == Some("entry")
             })
-            .await?;
-        let Some(container) = resources.containers.first() else {
+            .await
+            .context("找入口容器")?;
+        let Some(container) = found.containers.first() else {
             return Ok(());
         };
         self.engine

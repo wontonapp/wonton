@@ -23,6 +23,7 @@ pub mod contacts;
 pub mod device;
 pub mod entry_certificate;
 pub mod entry_compose;
+pub mod entry_containers;
 pub mod entry_dns;
 pub mod entry_haproxy;
 pub mod entry_runtime;
