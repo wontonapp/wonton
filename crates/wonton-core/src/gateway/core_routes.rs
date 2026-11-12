@@ -81,6 +81,22 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
 fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
+            "/_wonton/api/capabilities",
+            get(super::capability_settings::list),
+        )
+        .route(
+            "/_wonton/api/capabilities/{capability}",
+            put(super::capability_settings::set_default),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/capabilities",
+            put(super::capability_settings::set_consumer),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/uninstall/preview",
+            get(super::capability_settings::uninstall_preview),
+        )
+        .route(
             "/_wonton/api/plugins",
             get(api::list)
                 .post(api::install)

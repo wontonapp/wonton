@@ -181,33 +181,23 @@ impl PluginManager {
         self: &Arc<Self>,
         request: &InstallRequest,
     ) -> Result<PluginView, InstallError> {
-        let granted = super::store::parse_permissions(&request.grant)
-            .map_err(|e| InstallError::Invalid(e.to_string()))?;
-        let enabled = super::store::parse_enabled(
-            &request.enabled_permissions,
-            super::store::OpenedBy::Owner,
-            super::manager::now_secs(),
-        )
-        .map_err(|e| InstallError::Invalid(e.to_string()))?;
+        let langs = self.owner_languages();
         let package = self.fetch_source(&request.source).await?;
         let digest = package.digest();
         if digest != request.digest {
-            return Err(InstallError::Changed(format!(
-                "{} 在预览之后变了（插件包摘要现在是 {digest}），要重新预览、重新确认",
-                request.source
+            return Err(InstallError::Changed(crate::l10n::text(
+                &langs,
+                "plugin-capability-plan-changed",
+                &[],
             )));
         }
-        let langs = self.owner_languages();
-        self.store_input_values(&package.manifest, &request.secrets, None, &langs)?;
-        let settings = super::settings::install_values(&package, &request.settings, &langs)?;
         let installed = self
-            .install_detached_enabled(
+            .install_with_dependencies(
                 package,
-                granted,
-                enabled,
-                request.lan_webui,
-                settings,
-                langs,
+                super::dependencies::DependencyInstall {
+                    request: request.clone(),
+                    langs,
+                },
             )
             .await?;
         self.staged.remove(&digest);

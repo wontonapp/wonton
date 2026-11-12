@@ -112,6 +112,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Conflict(_)
         | InstallError::SettingsInvalid(..)
         | InstallError::SettingsSchemaInvalid(..)
+        | InstallError::InUse { .. }
         | InstallError::NotInstalled(_)
         | InstallError::RecordUnusable(_)
         | InstallError::NotFound(_)

@@ -29,6 +29,11 @@ pub enum InstallError {
     UnsupportedRuntime(String),
     #[error("{0}")]
     Conflict(String),
+    #[error("{message}")]
+    InUse {
+        message: String,
+        plugins: Vec<wonton_protocol::CapabilityProviderRef>,
+    },
     /// 插件要用的网络或卷的名字被别的插件或主人占了（见 [`super::leftovers`]）。对外也是 `conflict`；预装时和
     /// [`Self::Conflict`] 不同，不是“别人已经在装它”，要标成异常让主人看到。
     #[error("{0}")]
@@ -105,6 +110,7 @@ impl InstallError {
             Self::PermissionNotGranted(_) => "permission_denied",
             Self::Unsupported(_) | Self::UnsupportedRuntime(_) => "unsupported",
             Self::Conflict(_) | Self::NameTaken(_) => "conflict",
+            Self::InUse { .. } => "in_use",
             Self::NotInstalled(_) => "not_installed",
             Self::RecordUnusable(_) => "record_unusable",
             Self::DockerUnavailable(_) => "docker_unavailable",
@@ -156,6 +162,10 @@ impl InstallError {
             Self::Unsupported(m) => Self::Unsupported(add(m)),
             Self::UnsupportedRuntime(m) => Self::UnsupportedRuntime(add(m)),
             Self::Conflict(m) => Self::Conflict(add(m)),
+            Self::InUse { message, plugins } => Self::InUse {
+                message: add(message),
+                plugins,
+            },
             Self::NameTaken(m) => Self::NameTaken(add(m)),
             Self::NotInstalled(m) => Self::NotInstalled(m),
             Self::RecordUnusable(m) => Self::RecordUnusable(m),

@@ -19,6 +19,8 @@ enum Added {
     Field(&'static [&'static str]),
     /// `x-wonton` 下一个字符串字段的新取值，如 `runtime: static_web`。
     Value(&'static str, &'static str),
+    /// `provides` 中除保留的专用字段外，每个按能力名声明的提供方。
+    GenericProvides,
     /// `x-wonton.permissions` 里的一项。
     Permission(&'static str),
     /// 某个服务里的一个 compose 字段。
@@ -69,6 +71,9 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
     (V0_11, Added::Field(&["setup"])),
+    (V0_11, Added::Field(&["requires"])),
+    (V0_11, Added::Field(&["wants"])),
+    (V0_11, Added::GenericProvides),
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),
@@ -152,6 +157,15 @@ fn places(
         Added::Value(field, value) => (manifest[*field].as_str() == Some(*value))
             .then(|| format!("x-wonton.{field}: {value}"))
             .into_iter()
+            .collect(),
+        Added::GenericProvides => manifest["provides"]
+            .as_object()
+            .into_iter()
+            .flat_map(|provides| provides.iter())
+            .filter(|(name, value)| {
+                !matches!(name.as_str(), "models" | "egress_proxy") && !value.is_null()
+            })
+            .map(|(name, _)| format!("x-wonton.provides.{name}"))
             .collect(),
         Added::Permission(name) => permissions
             .contains(name)

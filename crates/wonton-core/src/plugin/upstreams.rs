@@ -175,6 +175,19 @@ pub(super) fn core_aliases(public: &PublicUrls, manifest: &Manifest) -> Vec<Stri
     if granted(Permission::Notify) {
         aliases.push(PLUGIN_NOTIFY_HOST.to_owned());
     }
+    for capability in manifest.requires.iter().chain(&manifest.wants) {
+        if capability == super::capabilities::MODELS.name
+            || capability == super::capabilities::EGRESS_PROXY.name
+            || (super::capabilities::lookup(capability).is_none()
+                && !super::capabilities::is_third_party(capability))
+        {
+            continue;
+        }
+        let alias = super::capabilities::alias(capability);
+        if !aliases.contains(&alias) {
+            aliases.push(alias);
+        }
+    }
     aliases
 }
 
@@ -203,7 +216,7 @@ impl PluginManager {
         let slug = manifest.id.slug();
         let name = self.cfg.instance.container(&slug, &webui.service);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service)
+            .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
             .await?
         {
             return Ok(Some(endpoint));
@@ -292,7 +305,7 @@ impl PluginManager {
             })?;
         let path = mcp.path.as_deref().unwrap_or(DEFAULT_MCP_PATH);
         if let Some(endpoint) = self
-            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service)
+            .host_relay_endpoint(manifest, Purpose::Mcp, &mcp.service, mcp.port)
             .await?
         {
             return Ok(Some(McpTarget {
@@ -322,11 +335,12 @@ impl PluginManager {
     }
 
     /// 服务是宿主网络、又该有中继时套接字地址；普通网络为空。
-    async fn host_relay_endpoint(
+    pub(in crate::plugin) async fn host_relay_endpoint(
         &self,
         manifest: &Manifest,
         purpose: Purpose,
         service: &str,
+        port: u16,
     ) -> Result<Option<Endpoint>, InstallError> {
         let name = self.cfg.instance.container(&manifest.id.slug(), service);
         let host = self
@@ -342,7 +356,7 @@ impl PluginManager {
         let relay = HostRelay {
             purpose,
             service: service.to_owned(),
-            port: 0,
+            port,
         };
         let app_data = self.cfg.apps_dir.join(manifest.id.slug());
         Ok(Some(Endpoint::unix(super::host_relay::socket_path(
@@ -438,7 +452,7 @@ impl PluginManager {
     }
 
     /// 容器不在或者在这个网络里没有地址时为空。
-    async fn service_address(
+    pub(in crate::plugin) async fn service_address(
         &self,
         container: &str,
         host: &str,
@@ -660,6 +674,31 @@ x-wonton:
         assert!(
             !core_aliases(&public(), &manifest)
                 .contains(&"app-example-t.wonton.example".to_owned())
+        );
+    }
+
+    #[test]
+    fn dependency_aliases_only_include_known_or_valid_third_party_capabilities() {
+        let mut manifest = PluginPackage::parse(MANIFEST, &Languages::from_header(None))
+            .unwrap()
+            .manifest;
+        manifest.permissions.clear();
+        manifest.requires = vec!["torrent_client".into(), "x-acme.ledger".into()];
+        manifest.wants = vec![
+            "jellyfin".into(),
+            "torrent_client".into(),
+            "models".into(),
+            "egress_proxy".into(),
+            "unknown".into(),
+            "x-acme.invalid_name".into(),
+        ];
+        assert_eq!(
+            core_aliases(&public(), &manifest),
+            vec![
+                "torrent_client.wonton.internal",
+                "x-acme.ledger.wonton.internal",
+                "jellyfin.wonton.internal",
+            ],
         );
     }
 }

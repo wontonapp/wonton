@@ -1,70 +1,432 @@
-//! 第 2 步接上行为之前的拦截（ADR-0053）：清单写了 `requires`/`wants`，或提供了能力表里的新能力
-//! （`models`、`egress_proxy` 专用字段不算）时，安装按 `unsupported` 拒绝——行为没做，不能装上后
-//! 伪装成功。`models` 权限照旧能装。升级路径的拦截在 `tests/upgrade.rs`。
+//! 能力依赖的安装与卸载：按真实管理器操作断言容器变量、路由和资源副作用。
 
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
+
+use wonton_protocol::{PluginHintCategory, PluginState};
+
+use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
+use super::super::{InstallError, PluginId, PluginStatus};
 use super::lan::{granted, office, on};
-use super::package;
+use super::manager::manager_with;
+use super::{env_of_container, langs, package};
 
-fn compose(extra: &str) -> String {
-    package(
-        "  web:\n    image: nginx",
-        &format!("  permissions: [models]\n{extra}"),
-    )
+pub(super) fn id(value: &str) -> PluginId {
+    PluginId::parse(value).unwrap()
 }
 
-async fn refused(extra: &str) {
-    let (docker, m, _detected, _dir) = on(office()).await;
-    let compose = compose(extra);
-    let error = m
-        .install(&compose, &granted(&compose), super::langs())
+pub(super) fn consumer(declaration: &str, capability: &str) -> String {
+    let variable = super::super::capabilities::var_url(capability);
+    package(
+        &format!("  web:\n    image: nginx\n    environment:\n      URL: ${{{variable}}}"),
+        &format!("  permissions: []\n  {declaration}: [{capability}]"),
+    )
+    .replace("spec: '0.5'", "spec: '0.11'")
+}
+
+pub(super) fn provider(plugin: &str, capability: &str, credentials: &str) -> String {
+    package(
+        "  api:\n    image: nginx",
+        &format!(
+            "  permissions: []\n  provides:\n    {capability}:\n      service: api\n      port: 8080\n{credentials}"
+        ),
+    )
+    .replace("spec: '0.5'", "spec: '0.11'")
+    .replace("id: app.test", &format!("id: {plugin}"))
+}
+
+fn high_privilege_provider(plugin: &str) -> String {
+    provider(plugin, "x-acme.agent", "")
+        .replace("  permissions: []", "  permissions: [docker.socket]")
+        .replace(
+            "    image: nginx",
+            "    image: nginx\n    volumes: ['/var/run/docker.sock:/var/run/docker.sock']",
+        )
+}
+
+#[tokio::test]
+async fn a_missing_required_capability_refuses_installation_without_resources() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let error = manager
+        .install(&consumer("requires", "x-acme.search"), &[], langs())
         .await
         .unwrap_err();
-    assert_eq!(
-        error.kind(),
-        "unsupported",
-        "实际错误：{error}（{compose}）"
-    );
-    assert!(m.installed(&super::langs()).plugins.is_empty());
+    assert_eq!(error.kind(), "conflict");
+    assert!(manager.installed(&langs()).plugins.is_empty());
     assert!(docker.writes().is_empty());
+    assert!(docker.execs().is_empty());
+    assert!(!dir.path().join("apps").join("app-test").exists());
 }
 
 #[tokio::test]
-async fn requires_are_refused_until_step_two() {
-    refused("  requires: [torrent_client]").await;
+async fn an_installed_provider_issues_the_consumers_key_and_cannot_be_removed_while_required() {
+    let (docker, engine) = FakeDocker::start().await;
+    let keys = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
+    let issued = keys.clone();
+    docker.on_exec(move |_, argv, stdin| match argv {
+        [command, action, name] if command == "credentials" && action == "issue" => {
+            issued.lock().unwrap().insert(
+                name.clone(),
+                String::from_utf8_lossy(stdin).trim().to_owned(),
+            );
+            (0, String::new())
+        }
+        _ => (2, String::new()),
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let source = provider(
+        "app.search",
+        "x-acme.search",
+        "      credentials:\n        issue: [credentials, issue, '{name}']\n        revoke: [credentials, revoke, '{name}']",
+    );
+    manager.install(&source, &[], langs()).await.unwrap();
+    let source = consumer("requires", "x-acme.search").replace(
+        "    environment:\n",
+        "    environment:\n      KEY: ${WONTON_X_ACME_SEARCH_KEY}\n",
+    );
+    manager.install(&source, &[], langs()).await.unwrap();
+    let env = env_of_container(&docker, &container_name("app-test", "web"));
+    assert_eq!(env["URL"], "http://x-acme.search.wonton.internal:8080");
+    assert!(!env["KEY"].is_empty());
+    assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
+    let route = manager
+        .capability_route(&id("app.test"), "x-acme.search", &langs())
+        .await
+        .unwrap();
+    assert_eq!(route.provider, id("app.search"));
+
+    let writes = docker.writes();
+    let execs = docker.execs().len();
+    let error = manager
+        .uninstall(&id("app.search"), true, &langs())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "in_use");
+    let InstallError::InUse { plugins, .. } = error else {
+        panic!("expected dependent plugin ids");
+    };
+    assert_eq!(plugins.len(), 1);
+    assert_eq!(plugins[0].id, "app.test");
+    assert_eq!(docker.writes(), writes);
+    assert_eq!(docker.execs().len(), execs);
+    assert!(matches!(
+        manager
+            .installed_plugin(&id("app.search"), &langs())
+            .unwrap()
+            .status,
+        PluginState::Running { .. }
+    ));
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.search")
+    );
 }
 
 #[tokio::test]
-async fn wants_are_refused_until_step_two() {
-    refused("  wants: [jellyfin]").await;
+async fn removing_the_default_provider_reroutes_a_required_consumer_to_the_alternative() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    for plugin in ["app.search-one", "app.search-two"] {
+        manager
+            .install(&provider(plugin, "x-acme.search", ""), &[], langs())
+            .await
+            .unwrap();
+    }
+    manager
+        .install(&consumer("requires", "x-acme.search"), &[], langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.search-one")
+    );
+    manager
+        .uninstall(&id("app.search-one"), false, &langs())
+        .await
+        .unwrap();
+    assert!(!manager.is_installed(&id("app.search-one")));
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.search-two")
+    );
+    let settings = manager.capability_settings(&langs()).unwrap();
+    assert_eq!(settings.capabilities.len(), 1);
+    assert_eq!(settings.capabilities[0].default_provider, "app.search-two");
+    assert_eq!(
+        env_of_container(&docker, &container_name("app-test", "web"))["URL"],
+        "http://x-acme.search.wonton.internal:8080"
+    );
+    let detail = manager
+        .judged_detail(&id("app.test"), &langs())
+        .await
+        .unwrap();
+    assert!(matches!(
+        detail.installed.unwrap().status,
+        PluginState::Running { .. }
+    ));
+    assert!(!detail.hints.iter().any(|hint| {
+        matches!(
+            hint.category,
+            PluginHintCategory::DependencyStopped | PluginHintCategory::ProviderNotConnected
+        )
+    }));
 }
 
 #[tokio::test]
-async fn third_party_capabilities_are_refused_until_step_two() {
-    refused("  requires: [x-acme.ledger]").await;
+async fn owner_default_change_connects_followers_but_preserves_explicit_consumer_choice() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    for plugin in ["app.first", "app.second"] {
+        let source = high_privilege_provider(plugin);
+        manager
+            .install(&source, &granted(&source), langs())
+            .await
+            .unwrap();
+    }
+    manager
+        .install(&consumer("wants", "x-acme.agent"), &[], langs())
+        .await
+        .unwrap();
+    let pinned = consumer("wants", "x-acme.agent").replace("id: app.test", "id: app.pinned");
+    manager.install(&pinned, &[], langs()).await.unwrap();
+    manager
+        .set_consumer_capability(
+            &id("app.pinned"),
+            wonton_protocol::ConsumerCapabilityChoice {
+                capability: "x-acme.agent".into(),
+                provider: Some("app.first".into()),
+            },
+            &langs(),
+        )
+        .await
+        .unwrap();
+    manager
+        .set_capability_default("x-acme.agent", &id("app.second"), &langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.second")
+    );
+    assert_eq!(
+        manager
+            .capability_route(&id("app.pinned"), "x-acme.agent", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.first")
+    );
+    manager
+        .set_consumer_capability(
+            &id("app.pinned"),
+            wonton_protocol::ConsumerCapabilityChoice {
+                capability: "x-acme.agent".into(),
+                provider: None,
+            },
+            &langs(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .capability_route(&id("app.pinned"), "x-acme.agent", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.second")
+    );
 }
 
 #[tokio::test]
-async fn providing_new_capabilities_is_refused_until_step_two() {
-    refused("  provides:\n    torrent_client:\n      service: web\n      port: 8080").await;
+async fn unrelated_removal_cannot_grant_a_late_high_privilege_connection() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    manager
+        .install(&consumer("wants", "x-acme.agent"), &[], langs())
+        .await
+        .unwrap();
+    let source = high_privilege_provider("app.agent");
+    manager
+        .install(&source, &granted(&source), langs())
+        .await
+        .unwrap();
+    let unrelated = package("  app:\n    image: nginx\n", "  permissions: []\n")
+        .replace("id: app.test", "id: app.unrelated");
+    manager.install(&unrelated, &[], langs()).await.unwrap();
+    manager
+        .uninstall(&id("app.unrelated"), false, &langs())
+        .await
+        .unwrap();
+    assert!(matches!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .await,
+        Err(super::super::dependencies::CapabilityAccessError::Denied)
+    ));
+    manager
+        .set_capability_default("x-acme.agent", &id("app.agent"), &langs())
+        .await
+        .unwrap();
+    assert!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .await
+            .is_ok()
+    );
 }
 
-/// `models` 权限不在拦截范围：网关不在时也装上（轻提示说明没接上，见 models 的测试）。
+#[tokio::test]
+async fn owner_provider_removal_confirms_high_privilege_replacement_but_reinstall_does_not_inherit_it()
+ {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let first = high_privilege_provider("app.first");
+    manager
+        .install(&first, &granted(&first), langs())
+        .await
+        .unwrap();
+    manager
+        .install(&consumer("requires", "x-acme.agent"), &[], langs())
+        .await
+        .unwrap();
+    let second = high_privilege_provider("app.second");
+    manager
+        .install(&second, &granted(&second), langs())
+        .await
+        .unwrap();
+    manager
+        .uninstall(&id("app.first"), false, &langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.second")
+    );
+    manager
+        .uninstall(&id("app.test"), false, &langs())
+        .await
+        .unwrap();
+    manager
+        .install(&consumer("wants", "x-acme.agent"), &[], langs())
+        .await
+        .unwrap();
+    manager
+        .uninstall(&id("app.second"), false, &langs())
+        .await
+        .unwrap();
+    manager
+        .install(&first, &granted(&first), langs())
+        .await
+        .unwrap();
+    assert!(matches!(
+        manager
+            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .await,
+        Err(super::super::dependencies::CapabilityAccessError::Denied)
+    ));
+}
+
+/// `models` 权限继续走专用链路，能力使用方迁移不在本次范围内。
 #[tokio::test]
 async fn models_permission_still_installs() {
     let (docker, m, _detected, _dir) = on(office()).await;
-    let compose = compose("");
+    let compose = package("  web:\n    image: nginx", "  permissions: [models]");
     let installed = m
-        .install(&compose, &granted(&compose), super::langs())
+        .install(&compose, &granted(&compose), langs())
         .await
         .unwrap();
     assert_eq!(installed.id.as_str(), "app.test");
-    assert!(matches!(
-        installed.status,
-        super::super::PluginStatus::Running
-    ));
+    assert!(matches!(installed.status, PluginStatus::Running));
     assert_eq!(
         docker.created(&container_name("app-test", "web")).unwrap()["Image"],
         "nginx"
     );
+}
+
+#[tokio::test]
+async fn refused_uninstall_keeps_the_consumers_working_credential() {
+    let (docker, engine) = FakeDocker::start().await;
+    let keys = Arc::new(Mutex::new(BTreeMap::<String, String>::new()));
+    let issued = keys.clone();
+    docker.on_exec(move |_, argv, stdin| {
+        let mut keys = issued.lock().unwrap();
+        match argv {
+            [_, action, name] if action == "issue" => {
+                keys.insert(
+                    name.clone(),
+                    String::from_utf8_lossy(stdin).trim().to_owned(),
+                );
+            }
+            [_, action, name] if action == "revoke" => {
+                keys.remove(name);
+            }
+            _ => return (2, String::new()),
+        }
+        (0, String::new())
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let capability = "x-acme.search";
+    manager.install(
+        &provider("app.search", capability, "      credentials:\n        issue: [credentials, issue, '{name}']\n        revoke: [credentials, revoke, '{name}']"),
+        &[], langs(),
+    ).await.unwrap();
+    manager
+        .install(&consumer("requires", capability), &[], langs())
+        .await
+        .unwrap();
+    let key = keys.lock().unwrap()["app.test"].clone();
+    let writes = docker.writes();
+    let execs = docker.execs();
+    assert!(manager.lan.begin(&id("app.test")));
+    let error = manager
+        .uninstall(&id("app.test"), false, &langs())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "conflict");
+    manager.lan.end(&id("app.test"));
+    assert_eq!(docker.writes(), writes);
+    assert_eq!(docker.execs(), execs);
+    assert_eq!(keys.lock().unwrap()["app.test"], key);
+    assert_eq!(
+        manager
+            .capability_route(&id("app.test"), capability, &langs())
+            .await
+            .unwrap()
+            .provider,
+        id("app.search")
+    );
+    manager
+        .uninstall(&id("app.test"), false, &langs())
+        .await
+        .unwrap();
+    assert!(!keys.lock().unwrap().contains_key("app.test"));
 }

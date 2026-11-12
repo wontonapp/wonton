@@ -34,9 +34,9 @@ paths = ['''^deploy/dev/agent/smoke\.sh$''']
 regexes = ['''temp_key_issuing=0''']
 
 [[allowlists]]
-description = "分享冒烟的 WebSocket 握手用 RFC 6455 文中的示例 nonce（\"the sample nonce\" 的 base64），不是凭据"
+description = "WebSocket 握手用 RFC 6455 文中的示例 nonce（\"the sample nonce\" 的 base64），不是凭据（分享冒烟与网关能力测试）"
 condition = "AND"
-paths = ['''^crates/wonton-core/examples/fr_share_smoke/wire\.rs$''']
+paths = ['''^crates/wonton-core/examples/fr_share_smoke/wire\.rs$''', '''^crates/wonton-core/src/gateway/capabilities_tests\.rs$''']
 regexes = ['''dGhlIHNhbXBsZSBub25jZQ==''']
 
 [[allowlists]]

@@ -254,6 +254,12 @@ impl Store {
         self.dir.join("store").join(PEOPLE_LANGUAGES)
     }
 
+    pub(in crate::plugin) fn capabilities_path(&self) -> Result<PathBuf, StoreError> {
+        let dir = self.dir.join("capabilities");
+        create_private_dir(&dir)?;
+        Ok(dir.join("connections.json"))
+    }
+
     /// 读出全部记录，按 ID 排序。单个记录读不出、已损坏或与文件名不符只体现在它自己的结果里；
     /// 只有记录目录本身读不了才返回错误。文件名不是插件 ID 的文件不是核心写的，记日志后跳过。
     pub fn load_all(&self) -> Result<Vec<RecordFile>, StoreError> {

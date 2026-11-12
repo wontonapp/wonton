@@ -209,6 +209,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
             bot_keys: Default::default(),
             default_model: "group/default".into(),
         }),
+        capabilities: Default::default(),
         mcp_url: None,
         notify_url: None,
         secrets: [("web_key".to_owned(), "generated-secret-value".to_owned())].into(),

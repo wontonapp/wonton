@@ -132,30 +132,23 @@ impl PluginManager {
     /// 部署插件并写下安装记录，返回核心访问插件网页的地址。任一步失败（包括写记录）都回滚本次创建的
     /// 资源：没有记录的容器、网络和 OIDC 客户端，核心重启后就没人管了。`gpu` 是交给 `gpu.services` 的显卡，`lan` 是局域网端口开在哪里。
     #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
-    pub(super) async fn deploy(
+    pub(in crate::plugin) async fn deploy_retained(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        gpu: Option<GpuGrant>,
-        lan: Option<LanGrant>,
+        grants: (Option<GpuGrant>, Option<LanGrant>),
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
-    ) -> Result<Deployed, InstallError> {
+    ) -> Result<(Deployed, Undo), InstallError> {
         let mut undo = Undo::default();
-        match self
-            .deploy_inner(
-                package,
-                granted,
-                enabled,
-                (gpu, lan),
-                settings,
-                &mut undo,
-                langs,
-            )
-            .await
+        // 同 installation.rs 的 install_checked：deploy 子树的状态机搬上堆，install 链默认栈才够深。
+        match Box::pin(self.deploy_inner(
+            package, granted, enabled, grants, settings, &mut undo, langs,
+        ))
+        .await
         {
-            Ok(deployed) => Ok(deployed),
+            Ok(deployed) => Ok((deployed, undo)),
             Err(error) => {
                 undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
@@ -236,7 +229,9 @@ impl PluginManager {
             .await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         self.prepare_dirs(&ctx, &plan.dirs, undo, langs)?;
-        self.create_networks(manifest, &plan, &ctx, undo).await?;
+        // create_networks 里经 attach_relay→sync_relay 到 bollard 的 inspect 反序列化是整条
+        // install 链的栈顶；box 上堆后默认 2 MiB 测试线程栈才装得下（egress_plugin_docker 的栈溢出）。
+        Box::pin(self.create_networks(manifest, &plan, &ctx, undo)).await?;
         // 容器启动前登记：安装过程中 Bot 就要经核心连 Matrix，健康检查才过得了。
         self.register_source(manifest, &plan.network).await?;
         undo.source = Some(manifest.id.clone());
@@ -459,6 +454,7 @@ impl PluginManager {
             matrix: None,
             bots: Default::default(),
             models: None,
+            capabilities: self.dependency_vars(manifest)?,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {
                 let port = self.cfg.gateway_port;
                 format!("http://{}:{port}/mcp", crate::config::PLUGIN_MCP_HOST)

@@ -9,11 +9,11 @@ use std::sync::Arc;
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject};
 use serde_json::{Value, json};
 
-use super::agent_cards::{install_ran, upgrade_ran};
+use super::agent_cards::{installed_outcome, upgrade_ran};
 use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::cards;
-use super::{Bus, Caller, ToolFailure, with_failure};
+use super::{Bus, Caller, Outcome, ToolFailure, with_failure};
 use crate::bot_activity::Guard;
 use crate::files::share_fs::saving;
 use crate::l10n;
@@ -22,7 +22,7 @@ use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{Manifest, Permission};
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::{EnabledPermission, InstalledRecord};
-use crate::plugin::{PluginPackage, package_files};
+use crate::plugin::{InstallError, PluginId, PluginPackage, PluginView, package_files};
 use wonton_protocol::{CardLine, PluginWriter, SecretValues};
 
 fn result(value: &Value) -> CallToolResult {
@@ -119,16 +119,37 @@ async fn official(
         }
     }
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, &langs));
-    let granted = package.manifest.permissions.clone();
+    let mut proposed = match super::dependencies::propose(
+        &bus.plugins,
+        &package,
+        &mut draft,
+        second,
+        &langs,
+    )
+    .await
+    {
+        Ok(proposed) => proposed,
+        Err(failure) => return bus.deny(caller, name, value, &failure),
+    };
+    let second = proposed.second.take();
     let langs = langs.clone();
     let id_for_run = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
                     settings: wonton_protocol::SettingValues| async move {
-        install_ran(
-            bus, id_for_run, package, granted, false, secrets, settings, None, langs,
-        )
-        .await
+        let mut request = proposed.with_secrets(secrets);
+        request.settings = settings;
+        let installed = bus
+            .plugins
+            .install_with_dependencies(
+                package,
+                crate::plugin::dependencies::DependencyInstall {
+                    request,
+                    langs: langs.clone(),
+                },
+            )
+            .await;
+        install_result_outcome(&bus, &id_for_run, installed, None, &langs)
     };
     bus.confirmed_twice(
         caller,
@@ -258,6 +279,45 @@ async fn from_dir(
     }
 }
 
+/// 依赖安装结果换 Agent 能读的输出：成功记下归属（给了 `writer` 时），失败按类别写原因。
+fn install_result_outcome(
+    bus: &Bus,
+    id: &PluginId,
+    installed: Result<PluginView, InstallError>,
+    writer: Option<PluginWriter>,
+    langs: &Languages,
+) -> Outcome {
+    match installed {
+        Ok(view) => {
+            // 归属没记下来时更新就装不上，如实告诉 Agent。
+            let note = match writer.map(|writer| bus.plugins.set_writer(id, Some(writer))) {
+                None | Some(Ok(())) => None,
+                Some(Err(e)) => {
+                    tracing::error!(plugin = %id, error = %e, "记插件的归属失败");
+                    Some(l10n::text(
+                        langs,
+                        "chat-install-note-writer",
+                        &[("error", e.to_string().into())],
+                    ))
+                }
+            };
+            installed_outcome(&view, note, langs)
+        }
+        Err(e) => Outcome::failed(
+            e.kind(),
+            l10n::text(
+                langs,
+                "chat-install-failed-id",
+                &[
+                    ("id", id.as_str().into()),
+                    ("kind", e.kind().into()),
+                    ("error", e.to_string().into()),
+                ],
+            ),
+        ),
+    }
+}
+
 /// 没装过：安装。卡片写明未审核、全部权限、镜像和以前留下的数据；最高级再多点一张。
 async fn first_install(
     bus: &Arc<Bus>,
@@ -312,7 +372,13 @@ async fn first_install(
         }
     }
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
-    let granted = package.manifest.permissions.clone();
+    let mut proposed =
+        match super::dependencies::propose(&bus.plugins, &package, &mut draft, second, langs).await
+        {
+            Ok(proposed) => proposed,
+            Err(failure) => return bus.deny(caller, name, value, &failure),
+        };
+    let second = proposed.second.take();
     let writer = PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
@@ -322,18 +388,19 @@ async fn first_install(
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
                     settings: wonton_protocol::SettingValues| async move {
-        install_ran(
-            bus,
-            id_for_run,
-            package,
-            granted,
-            false,
-            secrets,
-            settings,
-            Some(writer),
-            langs,
-        )
-        .await
+        let mut request = proposed.with_secrets(secrets);
+        request.settings = settings;
+        let installed = bus
+            .plugins
+            .install_with_dependencies(
+                package,
+                crate::plugin::dependencies::DependencyInstall {
+                    request,
+                    langs: langs.clone(),
+                },
+            )
+            .await;
+        install_result_outcome(&bus, &id_for_run, installed, Some(writer), &langs)
     };
     bus.confirmed_twice(
         caller,

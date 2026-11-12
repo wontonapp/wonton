@@ -92,6 +92,17 @@ pub(super) fn containers(
 
 /// 创建容器。镜像记录被清掉时 Docker 对创建回 404（#666），容器不会留下来。
 fn create(docker: &mut Resources, name: &str, body: Value) -> Response {
+    if docker
+        .create_error
+        .as_ref()
+        .is_some_and(|(target, _)| target == name)
+        && let Some((_, message)) = docker.create_error.take()
+    {
+        return json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": message}),
+        );
+    }
     if let Some(image) = body["Image"].as_str()
         && docker.missing_images.contains(image)
     {

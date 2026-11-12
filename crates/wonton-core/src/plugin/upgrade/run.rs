@@ -99,7 +99,7 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 
 impl PluginManager {
     /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
-    pub(in crate::plugin) async fn upgrade_checked(
+    pub(super) async fn upgrade_declared(
         &self,
         package: PluginPackage,
         granted: &[Permission],
@@ -132,7 +132,6 @@ impl PluginManager {
             })
             .collect();
         check_permissions(manifest, granted, &enabled, &langs)?;
-        super::super::capabilities::unsupported_dependencies(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
         let gpu = self
@@ -452,6 +451,8 @@ impl PluginManager {
             .then(|| old.record.oidc_client_secret.clone())
             .map(|kept| kept.unwrap_or_else(random_token));
         let langs = self.owner_languages();
+        self.prepare_dependencies(manifest, &langs).await?;
+        self.revoke_removed_provider_keys(manifest, &langs).await?;
         let secrets = self.prepare_secrets(manifest, &mut progress.undo)?;
         let generated =
             secrets::generated_values(manifest, &secrets, &langs).map_err(InstallError::Storage)?;

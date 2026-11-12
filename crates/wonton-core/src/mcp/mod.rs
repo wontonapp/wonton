@@ -14,6 +14,7 @@ mod cards;
 mod confirm;
 mod confirmed;
 mod core_tools;
+mod dependencies;
 mod file_results;
 mod file_tools;
 mod naming;
@@ -610,6 +611,8 @@ mod agent_install_tests;
 mod agent_permission_tests;
 #[cfg(test)]
 mod authoring_tests;
+#[cfg(test)]
+mod capability_install_tests;
 #[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]

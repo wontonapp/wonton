@@ -176,6 +176,7 @@ impl PluginManager {
         let origin = package.origin.as_ref();
         let facts = self.host_facts(langs).await;
         let installed = self.installed_plugin(&m.id, langs);
+        let dependencies = self.dependency_preview(m, langs).await;
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
             provider: origin.map(Origin::provider),
@@ -215,18 +216,34 @@ impl PluginManager {
             has_web: m.webui.is_some(),
             has_settings: false,
             installed,
-            blocked: blocked(m, &facts, langs),
+            blocked: blocked(m, &facts, langs).or_else(|| match &dependencies {
+                Ok(dependencies) => dependencies.blocked.clone(),
+                Err(error) => Some(error.to_string()),
+            }),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
+                .chain(
+                    dependencies
+                        .as_ref()
+                        .ok()
+                        .into_iter()
+                        .flat_map(|d| d.notices.iter().cloned()),
+                )
                 .collect(),
             // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
             hints: self
                 .installed_detail(&m.id, langs)
                 .map(|detail| detail.hints)
                 .unwrap_or_default(),
-            missing_requires: Vec::new(),
-            missing_wants: Vec::new(),
-            capability_providers: Vec::new(),
+            missing_requires: dependencies
+                .as_ref()
+                .map(|d| d.missing_requires.clone())
+                .unwrap_or_default(),
+            missing_wants: dependencies
+                .as_ref()
+                .map(|d| d.missing_wants.clone())
+                .unwrap_or_default(),
+            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,

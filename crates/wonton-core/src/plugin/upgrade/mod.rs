@@ -2,6 +2,7 @@
 //! 按预览给的摘要升级：主人确认的就是装上的，来源在这之间变了就要重新预览、重新确认。
 
 mod adopt;
+mod dependencies;
 mod offers;
 mod run;
 
@@ -298,6 +299,7 @@ impl PluginManager {
         to: UpgradeTo,
         langs: &Languages,
     ) -> Result<InstallPreview, InstallError> {
+        let _changing = self.dependencies.changing.lock().await;
         let record = self.upgradable_record(id, langs)?;
         let chosen = !matches!(to, UpgradeTo::Offered);
         let upload = matches!(to, UpgradeTo::Upload(_));
@@ -329,6 +331,10 @@ impl PluginManager {
                 Some(&record),
             )
             .await?;
+        if let Some(reason) = self.upgrade_capability_block(&package, langs)? {
+            preview.blocked = Some(reason);
+            preview.blocked_category = Some(wonton_protocol::BlockedCategory::CapabilityDropped);
+        }
         preview.upgrade_from = Some(record.version.clone());
         preview.secret_inputs = self.missing_secret_inputs(id, &package.manifest, langs);
         if upload {
@@ -441,6 +447,7 @@ impl PluginManager {
                 &[("id", id.as_str().into()), ("digest", digest.into())],
             )));
         }
+        self.check_capability_removal(id, Some(&package.manifest), langs)?;
         let filled = self.store.secrets().load(id).ok().flatten();
         self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
         let settings = upgrade_values(&package, &record, &request.settings, langs)?;
