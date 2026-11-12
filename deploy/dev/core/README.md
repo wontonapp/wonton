@@ -63,6 +63,8 @@ Cookie 罐路径，curl 加 `-b` 复用。
   核心经 Engine API 安装的插件不继承它。核心自己的 Compose 用 `x-no-proxy` 清空代理；插件的出网代理规则见
   [ADR-0023](../../../docs/adr/0023-egress-proxy.md#给插件什么)。`dev.sh`、`smoke.sh`、`smoke-onboarding.sh` 的 CLI curl
   探针用 `--noproxy '*'` 直连内部地址；隧道探针用 `--noproxy ''`，确保经过显式指定的本地代理，不必替换 `DOCKER_CONFIG`。
+- 这些 CLI curl 探针都带超时（接口 600 秒、网页 120 秒、连接 10 秒），网页或接口不回时不至于把开发栈和它占的验证栈名额一直占着；
+  `SMOKE_API_MAX_TIME`、`SMOKE_WEB_MAX_TIME`、`SMOKE_CONNECT_TIMEOUT` 可以覆盖，脚本里更慢的调用在自己的参数里给更长的 `--max-time`。
 - 所有 worktree 共用一份 cargo 编译缓存，而 cargo 按修改时间判断要不要重编：源码比别的 worktree 上次编译时
   还旧，就会直接用别人的产物。所以 Dockerfile 每次编译前把工作区的源码 touch 一遍，依赖仍命中缓存，只重编
   工作区的 crate；源码没变时整层命中 Docker 的构建缓存，不重编。
