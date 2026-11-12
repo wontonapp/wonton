@@ -306,6 +306,7 @@ mod tests {
                     read_by: Vec::new(),
                     reply: None,
                     actions,
+                    group: None,
                 },
             },
         };

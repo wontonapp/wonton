@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chat::RoomRow;
 
-pub use link::{FileId, FileLinks, InvalidFileId, extract_file_links};
+pub use link::{FileId, FileLinks, InvalidFileId, extract_file_links, files_message_body};
 
 /// 所有文件接口都要带的请求头，值是 `1`。隧道身份随 WebView 的每个请求自动带上，跨站带自定义请求头却要先过预检，
 /// 插件网页因此碰不到文件接口（ADR-0020 的“鉴权”）。

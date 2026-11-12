@@ -19,6 +19,7 @@ mod bot_web;
 mod bot_web_registration;
 mod chat;
 mod chat_layout;
+mod composer;
 mod confirmation;
 mod confirmation_origin;
 mod core_upgrade;
@@ -98,6 +99,10 @@ pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
     ChatLayoutTarget, ChatTextScale, CodeOverflow, PluginChat,
 };
+pub use composer::{
+    AttachmentFailure, AttachmentKind, AttachmentState, ComposerAttachment, ComposerViewModel,
+    MessageGroup, OutgoingMessage,
+};
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
     ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState, ConfirmationView,
@@ -134,7 +139,7 @@ pub use file::{
     FileErrorBody, FileFailure, FileGrantRequest, FileId, FileInfo, FileLinks, FileOperation,
     FileProblem, FileSource, InvalidFileId, RoomTransfers, Transfer, TransferAction,
     TransferDirection, TransferElsewhere, TransferState, TransfersViewModel, UploadSource,
-    extract_file_links,
+    extract_file_links, files_message_body,
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
@@ -256,10 +261,10 @@ pub use tabs::{
     TabLayout, TabLoadFailure, TabPage, TabRef, TabState, TabsProblem, TabsViewModel,
 };
 pub use timeline::{
-    BackPagination, ImageContent, KeyNotice, MatrixTarget, MediaHandle, MessageAction,
-    MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan, SendState,
-    TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll, TimelineUpdate,
-    TimelineViewport,
+    BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
+    MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,
+    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
+    TimelineUpdate, TimelineViewport,
 };
 pub use verification::{
     KeyHandoff, VerificationCancel, VerificationEmoji, VerificationFlow, VerificationStage,
