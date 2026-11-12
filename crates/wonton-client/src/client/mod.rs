@@ -34,6 +34,7 @@ use switch::Replay;
 
 mod bot_contacts;
 mod browser;
+mod composer;
 mod dispatch;
 mod limits;
 mod media;

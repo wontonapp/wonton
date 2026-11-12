@@ -172,6 +172,7 @@ chat-contacts-invalid-user-id = That user ID isn't valid: { $reason }
 
 # Shown when sending a message through Siri, Shortcuts or the chat screen with empty text.
 chat-empty-message = Type a message first.
+composer-not-ready = This version of the client core doesn't support the attachment tray yet.
 # Shown when the bot ID handed in from Siri or Shortcuts doesn't parse.
 chat-ask-invalid-bot-id = The default agent's ID isn't formatted correctly.
 # Shown when a saved direct chat's room ID doesn't parse.

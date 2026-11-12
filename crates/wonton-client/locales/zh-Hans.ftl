@@ -158,6 +158,7 @@ chat-contacts-invalid-user-id = 用户 ID 不合法：{ $reason }
 
 # 通过 Siri、快捷指令或聊天页发消息、内容为空时显示。
 chat-empty-message = 消息不能为空。
+composer-not-ready = 这个版本的客户端核心还不支持附件区。
 # Siri 或快捷指令传进来的 Bot ID 解析不了时显示。
 chat-ask-invalid-bot-id = 默认 Agent 的 ID 格式不对。
 # 已有私聊的房间 ID 解析不了时显示。

@@ -237,6 +237,10 @@ pub struct TimelineMessage {
     pub reply: Option<ReplyQuote>,
     /// 长按这条消息能做的事，按菜单顺序排好。空的就没有菜单。
     pub actions: Vec<MessageAction>,
+    /// 一次发送里的几条之一（ADR-0094）：壳把同一发送者、同一 `id`、挨着的几条画在一起。不是一组时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub group: Option<crate::MessageGroup>,
 }
 
 /// 长按消息的菜单里的一项。
@@ -416,6 +420,20 @@ pub struct ImageContent {
     /// 像素宽度，壳据此预留版面。
     pub width: Option<u64>,
     pub height: Option<u64>,
+    /// 说明文字（Matrix v1.10 的媒体说明：`filename` 和 `body` 不同时 `body` 是说明），壳画在图片下面。没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub caption: Option<ImageCaption>,
+}
+
+/// 图片的说明文字。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ImageCaption {
+    /// 原文，复制时用。
+    pub body: String,
+    /// 排好版的样子，壳画这个，同 [`MessageContent::Text`] 的 `blocks`。
+    pub blocks: Vec<RichBlock>,
 }
 
 /// 取媒体用的句柄。对壳是不透明的，原样交回核心即可；里面可能有加密附件的密钥，不要写进日志。
@@ -477,6 +495,10 @@ mod tests {
                             size: Some(4096),
                             width: Some(640),
                             height: Some(480),
+                            caption: Some(ImageCaption {
+                                body: "哪张好看".into(),
+                                blocks: Vec::new(),
+                            }),
                         },
                     },
                     SendState::Sending {
@@ -768,6 +790,11 @@ mod tests {
                 actions: vec![MessageAction::Copy {
                     text: "好的".into(),
                 }],
+                group: Some(crate::MessageGroup {
+                    id: "3f0c9a1e5b7d42c6a8e1f0b2c4d6e8a0".into(),
+                    index: 0,
+                    count: 2,
+                }),
             },
         }
     }
