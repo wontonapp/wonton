@@ -19,7 +19,7 @@ struct AppLockSettingsView: View {
                         get: { viewModel.enabled },
                         set: { model.set(enabled: $0, timeout: viewModel.timeout) }
                     )) {
-                        Text(.appLockTitle)
+                        Text(.Settings.appLockTitle)
                             .wontonText(WontonTheme.typography.body)
                             .foregroundStyle(Color(colors.textPrimary))
                     }
@@ -31,11 +31,11 @@ struct AppLockSettingsView: View {
                     timeoutChoices
                 } else if needsDeviceLock {
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
-                        Text(.appLockNeedDeviceLock)
+                        Text(.Settings.appLockNeedDeviceLock)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                         Button(action: openPasscodeSettings) {
-                            Text(.appLockOpenSettings).frame(maxWidth: .infinity)
+                            Text(.Settings.appLockOpenSettings).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                     }
@@ -56,7 +56,7 @@ struct AppLockSettingsView: View {
 
     private var timeoutChoices: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            Text(.appLockTimeout)
+            Text(.Settings.appLockTimeout)
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
                 .padding(.horizontal, WontonTheme.spacing.s16)
@@ -107,11 +107,11 @@ extension AppLockTimeout {
     /// 档位文字，默认档兜住新核心多给的取值。
     var label: String {
         switch self {
-        case .immediate: String(localized: .appLockTimeoutImmediate)
-        case .oneMinute: String(localized: .appLockTimeoutOneMinute)
-        case .fiveMinutes: String(localized: .appLockTimeoutFiveMinutes)
-        case .fifteenMinutes: String(localized: .appLockTimeoutFifteenMinutes)
-        default: String(localized: .appLockTimeoutImmediate)
+        case .immediate: String(localized: .Settings.appLockTimeoutImmediate)
+        case .oneMinute: String(localized: .Settings.appLockTimeoutOneMinute)
+        case .fiveMinutes: String(localized: .Settings.appLockTimeoutFiveMinutes)
+        case .fifteenMinutes: String(localized: .Settings.appLockTimeoutFifteenMinutes)
+        default: String(localized: .Settings.appLockTimeoutImmediate)
         }
     }
 }

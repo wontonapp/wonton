@@ -214,7 +214,7 @@ private struct RecoveryKeySection: View {
                 Button {
                     authenticate()
                 } label: {
-                    Text(.chatBackupRevealKey).frame(maxWidth: .infinity)
+                    Text(.ChatBackup1.chatBackupRevealKey).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }
@@ -255,7 +255,7 @@ private struct RecoveryKeySection: View {
     private func authenticate() {
         Task {
             // 成功才显示；取消和失败都不显示，也不另弹提示。
-            if await SystemAuth.authenticate(reason: String(localized: .chatBackupVerifyReason)) {
+            if await SystemAuth.authenticate(reason: String(localized: .ChatBackup1.chatBackupVerifyReason)) {
                 revealed = true
             }
         }

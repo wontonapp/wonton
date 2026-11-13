@@ -60,7 +60,7 @@ struct AppLockGate<Content: View>: View {
         }
         .task(id: Attempt(scenePhase: scenePhase, locked: lock.viewModel.locked)) {
             guard scenePhase == .active, lock.viewModel.locked else { return }
-            if await SystemAuth.authenticate(reason: String(localized: .appLockVerifyReason)) {
+            if await SystemAuth.authenticate(reason: String(localized: .Settings.appLockVerifyReason)) {
                 lock.unlock()
             }
         }
@@ -88,22 +88,22 @@ private struct AppLockScreen: View {
                     Image(systemName: "lock.fill")
                         .font(.system(size: 44))
                         .foregroundStyle(Color(colors.accentInk))
-                    Text(.appLockLockedTitle)
+                    Text(.Settings.appLockLockedTitle)
                         .wontonText(WontonTheme.typography.screenTitle)
                         .foregroundStyle(Color(colors.textPrimary))
                     if needsDeviceLock {
-                        Text(.appLockNoDeviceLock)
+                        Text(.Settings.appLockNoDeviceLock)
                             .wontonText(WontonTheme.typography.supporting)
                             .foregroundStyle(Color(colors.textSecondary))
                             .multilineTextAlignment(.center)
                         Button(action: openPasscodeSettings) {
-                            Text(.appLockOpenSettings).frame(maxWidth: .infinity)
+                            Text(.Settings.appLockOpenSettings).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .primary))
                         .frame(maxWidth: 240)
                     } else {
                         Button(action: authenticate) {
-                            Text(.appLockUnlock).frame(maxWidth: .infinity)
+                            Text(.Settings.appLockUnlock).frame(maxWidth: .infinity)
                         }
                         .buttonStyle(WontonButtonStyle(kind: .primary))
                         .frame(maxWidth: 240)
@@ -117,7 +117,7 @@ private struct AppLockScreen: View {
 
     private func authenticate() {
         Task {
-            if await SystemAuth.authenticate(reason: String(localized: .appLockVerifyReason)) {
+            if await SystemAuth.authenticate(reason: String(localized: .Settings.appLockVerifyReason)) {
                 lock.unlock()
             }
         }

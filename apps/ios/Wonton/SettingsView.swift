@@ -64,7 +64,7 @@ struct SettingsTab: View {
         case .chatBackup: ChatBackupView(model: chat)
         case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
         case .notifications: NotificationSettingsView()
-        case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .appLockTitle))
+        case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
         }
     }
@@ -138,7 +138,7 @@ struct SettingsView: View {
         case let .appLock(enabled, timeout):
             NavigationLink(value: SettingsRoute.appLock) {
                 WontonRow(
-                    title: String(localized: .appLockTitle),
+                    title: String(localized: .Settings.appLockTitle),
                     value: enabled ? timeout.label : nil,
                     showsForward: true
                 )
