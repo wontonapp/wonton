@@ -422,6 +422,116 @@
         }
       }
     },
+    "botProfile.web.title": {
+      "comment": "Section title for the webpage belonging to a Bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Bot webpage"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "Bot 网页"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "Bot 網頁"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "Bot のウェブページ"}}
+      }
+    },
+    "botProfile.web.open": {
+      "comment": "Button that opens the webpage belonging to a Bot.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Open Bot webpage"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "打开 Bot 网页"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟 Bot 網頁"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "Bot のウェブページを開く"}}
+      }
+    },
+    "botProfile.web.unauthenticated": {
+      "comment": "The server session is missing when opening a Bot webpage.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Sign in to the server to open this Bot’s webpage."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "请先登录服务器，再打开此 Bot 的网页。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "請先登入伺服器，再開啟此 Bot 的網頁。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot のウェブページを開くには、サーバーにログインしてください。"}}
+      }
+    },
+    "botProfile.web.notShared": {
+      "comment": "The Bot webpage belongs to an app that is not shared with the family member.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The server owner has not shared this Bot’s webpage with family."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "服务器主人尚未向家人开放此 Bot 的网页。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "伺服器主人尚未向家人開放此 Bot 的網頁。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サーバーの所有者は、この Bot のウェブページを家族に公開していません。"}}
+      }
+    },
+    "botProfile.web.permissionDenied": {
+      "comment": "The current identity is not allowed to open a Bot webpage.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This identity is not allowed to open Bot webpages."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此身份无权打开 Bot 网页。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此身分無權開啟 Bot 網頁。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "このユーザーは Bot のウェブページを開くことができません。"}}
+      }
+    },
+    "botProfile.web.notFound": {
+      "comment": "The Bot webpage or Bot no longer exists.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This Bot no longer exists."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此 Bot 已不存在。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此 Bot 已不存在。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot は存在しません。"}}
+      }
+    },
+    "botProfile.web.noWebui": {
+      "comment": "The Bot does not have an independent webpage.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This Bot does not have its own webpage."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此 Bot 没有独立网页。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此 Bot 沒有獨立網頁。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot には専用のウェブページがありません。"}}
+      }
+    },
+    "botProfile.web.notReady": {
+      "comment": "The Bot webpage service is not ready yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This Bot’s webpage is not ready. Try again after it starts."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "此 Bot 的网页尚未就绪，请启动后再试。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "此 Bot 的網頁尚未就緒，請啟動後再試。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot のウェブページは準備ができていません。起動後に再試行してください。"}}
+      }
+    },
+    "botProfile.web.unknown": {
+      "comment": "The Bot webpage availability is not known, so it cannot be opened.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "This Bot’s webpage availability is unknown. No webpage can be opened."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法确定此 Bot 的网页是否可用，不能打开网页。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法確定此 Bot 的網頁是否可用，不能開啟網頁。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot のウェブページが利用可能か不明なため、開くことはできません。"}}
+      }
+    },
+    "botProfile.web.disclosure.title": {
+      "comment": "Title shown before the first Bot webpage is opened.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "Before opening this Bot webpage"}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "打开此 Bot 网页前"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟此 Bot 網頁前"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "この Bot のウェブページを開く前に"}}
+      }
+    },
+    "botProfile.web.disclosure.message": {
+      "comment": "Disclosure that the server owner can manage the webpage login state.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {"stringUnit": {"state": "translated", "value": "The server owner can view and manage the login state here."}},
+        "zh-Hans": {"stringUnit": {"state": "translated", "value": "服务器主人可以查看、管理这里的登录状态。"}},
+        "zh-Hant": {"stringUnit": {"state": "translated", "value": "伺服器主人可以查看、管理這裡的登入狀態。"}},
+        "ja": {"stringUnit": {"state": "translated", "value": "サーバーの所有者は、ここでのログイン状態を確認・管理できます。"}}
+      }
+    },
     "botProfile.readOnly": {
       "comment": "Nondefault Bot profile editing is not supported by the existing default-only actions.",
       "extractionState": "manual",

@@ -195,7 +195,12 @@ struct TabPageView: View {
         }
         return WontonBarStatus(subtitle: title)
     }
-    private var pluginId: String? { tab.localPluginId }
+    private var pluginId: String? {
+        switch tab {
+        case let .plugin(id, _), let .pluginPath(id, _): id
+        default: nil
+        }
+    }
 
 }
 
@@ -214,7 +219,7 @@ private extension TabPageView {
                 $0.id == id && ($0.botUserId != nil || $0.chat != nil)
             }) == true else { return nil }
             return BotRef(pluginId: id, bot: "default")
-        case .chat, .apps, .settings, .url, .sharedApp, .uiResource: return nil
+        case .chat, .apps, .url, .sharedApp, .uiResource: return nil
         }
     }
 
@@ -266,7 +271,7 @@ private extension TabPageView {
             guard pageBotRef != nil else { return false }
             if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
             return true
-        case .chat, .apps, .settings, .url, .sharedApp, .uiResource: return false
+        case .chat, .apps, .url, .sharedApp, .uiResource: return false
         }
     }
 
