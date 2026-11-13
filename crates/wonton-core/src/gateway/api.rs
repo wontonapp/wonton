@@ -571,6 +571,10 @@ pub async fn upgrade(
         Ok(person) => person,
         Err(response) => return *response,
     };
+    // 不能升级的人在读请求体之前就被挡下（ADR-0088 的权限项按人判断，与请求内容无关）。
+    if let Some(denied) = install_gates::deny_check(&gateway, &person) {
+        return denied;
+    }
     let finish = {
         let headers = headers.clone();
         let query = query.clone();
