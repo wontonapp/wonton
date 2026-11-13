@@ -220,6 +220,25 @@ impl Bed {
 }
 
 #[tokio::test]
+async fn model_settings_uses_stored_consumer_state_without_probing() {
+    let state = Arc::new(Mutex::new(RouteReply {
+        listed: true,
+        ..RouteReply::default()
+    }));
+    let bed = bed_with_route(state.clone()).await;
+    let before = state.lock().unwrap().catalogs;
+    let settings = bed.manager.model_settings(&langs()).await.unwrap();
+    assert!(!settings.has_configured_models);
+    assert_eq!(state.lock().unwrap().catalogs, before);
+
+    bed.install_consumer().await;
+    let before = state.lock().unwrap().catalogs;
+    let settings = bed.manager.model_settings(&langs()).await.unwrap();
+    assert!(settings.has_configured_models);
+    assert_eq!(state.lock().unwrap().catalogs, before);
+}
+
+#[tokio::test]
 async fn missing_default_model_hints_and_the_plugin_stays_running() {
     let state = Arc::new(Mutex::new(RouteReply::default()));
     let bed = bed_with_route(state.clone()).await;

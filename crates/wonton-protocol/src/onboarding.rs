@@ -106,7 +106,7 @@ pub struct ModelSettings {
     pub plugin_id: String,
     /// 模型网关的网页；网关没有网页时为空。
     pub web_url: Option<String>,
-    /// 网关模型目录里至少有一个模型；不表示默认模型可用或请求一定成功。
+    /// 核心曾成功为至少一个使用方签发并验证过模型网关凭据；不表示默认模型可用或请求一定成功。
     pub has_configured_models: bool,
 }
 

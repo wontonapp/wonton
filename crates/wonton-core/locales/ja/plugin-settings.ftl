@@ -293,25 +293,6 @@ plugin-settings-models-list-malformed = モデルゲートウェイ{ $provider }
 plugin-settings-models-connect-first = Bot が返信できるように、「モデル設定」でモデルを接続してください。
 plugin-settings-models-not-ready = モデルゲートウェイ{ $provider }の準備ができていません：{ $error }
 plugin-settings-models-command-rejected = モデルゲートウェイ{ $provider }が資格情報のコマンドを拒否しました（{ $command }、終了コード{ $code }）：{ $stderr }
-plugin-settings-model-action-save = 保存
-plugin-settings-model-action-test = テスト
-plugin-settings-model-disconnected-saved = プロバイダーに接続できませんでしたが、keyは保存しました
-plugin-settings-model-disconnected-unsaved = プロバイダーに接続できず、何も保存していません
-plugin-settings-model-no-provider-commands = モデルゲートウェイ{ $provider }はプロバイダーのコマンドを宣言していません
-plugin-settings-model-provider-unsupported = モデルゲートウェイはプロバイダー{ $id }に対応していません
-plugin-settings-model-custom-unsupported = モデルゲートウェイはカスタムプロバイダーに対応していません
-plugin-settings-model-custom-encode-failed = カスタムプロバイダーのリクエストのエンコードに失敗しました
-plugin-settings-model-command-timeout = モデルゲートウェイ{ $provider }のコマンドが失敗したか、タイムアウトしました
-plugin-settings-model-invalid-endpoint = プロバイダーのアドレスかモデル名が不正です
-plugin-settings-model-key-rejected = プロバイダーがkeyを拒否したため、keyは保存していません
-plugin-settings-model-provider-command-failed = モデルゲートウェイ{ $provider }でプロバイダーの{ $action }に失敗しました。終了コード{ $code }
-plugin-settings-model-list-failed = モデルゲートウェイ{ $provider }がプロバイダー一覧の取得に失敗しました：{ $error }
-plugin-settings-model-list-exit = モデルゲートウェイ{ $provider }がプロバイダー一覧の取得に失敗しました。終了コード{ $code }
-plugin-settings-model-list-not-json = モデルゲートウェイ{ $provider }のプロバイダー一覧は有効なJSONではありません
-plugin-settings-model-key-invalid = keyは空でなく、改行を含まず、4 KiB以下である必要があります
-plugin-settings-model-url-invalid = プロバイダーのアドレスはhttpかhttpsのURLで、空白を含まず、2 KiB以下である必要があります
-plugin-settings-model-name-invalid = モデル名は空でなく、空白や制御文字を含まず、200バイト以下である必要があります
-plugin-settings-model-request-format = モデルプロバイダーのリクエスト形式が正しくありません
 
 # ── ストアのインデックス（storefront）────────────────────────────────────
 

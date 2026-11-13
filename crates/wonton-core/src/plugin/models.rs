@@ -134,6 +134,11 @@ impl ModelKeyStore {
         Ok(all)
     }
 
+    /// 曾为至少一个使用方成功签发并验证过网关凭据。
+    fn has_connected_consumer(&self) -> Result<bool, StoreError> {
+        Ok(self.all()?.into_iter().any(|(_, file)| file.connected()))
+    }
+
     /// 详情页轻提示的依据：使用方的凭据是否就绪、记下的签发问题和路由探测结论。
     /// 组装在 `model_health`；KeyFile 的字段不外泄。
     pub(super) fn hint_basis(
@@ -249,17 +254,13 @@ impl PluginManager {
         }
     }
 
-    /// 模型设置页需要的网关网页和模型目录状态；目录由通用模型网关接口探测，不依赖插件私有命令。
+    /// 模型设置页需要的网关网页和已知配置状态；配置状态来自核心曾成功接上的使用方。
     pub(crate) async fn model_settings(
         &self,
         langs: &Languages,
     ) -> Result<ModelSettings, InstallError> {
         let route = self.provider(langs)?;
-        let (_, catalog) = self.model_probe_catalog(&route, langs).await?;
-        let has_configured_models = catalog
-            .get("data")
-            .and_then(serde_json::Value::as_array)
-            .is_some_and(|models| !models.is_empty());
+        let has_configured_models = self.store.model_keys().has_connected_consumer()?;
         Ok(ModelSettings {
             plugin_id: route.id.to_string(),
             web_url: self.model_web_url(&route.id),
