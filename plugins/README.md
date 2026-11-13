@@ -12,7 +12,7 @@
 ## 预装插件
 
 模型网关 [magpie](https://github.com/geraldpeng6/wonton-plugin-magpie) 是系统插件；默认 Agent
-[Hermes](https://github.com/geraldpeng6/wonton-plugin-hermes) 只在首次启动时安装，主人卸载后不再装回。
+[Hermes](https://github.com/wontonapp/wonton-plugin-hermes) 只在首次启动时安装，主人卸载后不再装回。
 核心镜像构建时运行 `wonton-core plugin fetch-locked plugins/system.lock <目标目录>`，只取插件包文件，核对提交与
 ADR-0017 定义的包摘要；包随镜像发布，首次启动不从 GitHub 取包。
 

@@ -242,7 +242,7 @@
         "wonton/plugin.yaml": "e95f077405441cf3f1ee4fb8f4788b9518b48343b0d993ca9980880cfd3b6175",
         "wonton/texts.py": "00425c0091f6e9d764e12a9030868e792e79b04bb5d38d6782467cb9215f9426"
       },
-      "source": "github:geraldpeng6/wonton-plugin-hermes",
+      "source": "github:wontonapp/wonton-plugin-hermes",
       "version": "0.6.6"
     },
     {
@@ -254,7 +254,7 @@
         "icon.svg": "56c63d7aee25e45e9c430463c21d8aae150bd7301227b6bda2893358b2f0fd72",
         "wonton-help/SKILL.md": "7565df7913b566c33a687406d80ec8534a0ba286829e1a7f6ae6db52167c0f99"
       },
-      "source": "github:geraldpeng6/wonton-plugin-openclaw",
+      "source": "github:wontonapp/wonton-plugin-openclaw",
       "version": "0.1.4"
     },
     {
