@@ -28,9 +28,15 @@ refs=$(
     grep -rhA1 -E 'wonton_test_images::image\(' crates --include='*.rs' |
       grep -oE '"[^"]+"' | tr -d '"'
     # 引用放在常量里、调用处只传常量名（`wonton_test_images::image(IMAGE)`）时，调用行和下一行都没有
-    # 字面量：回到同一文件的常量定义里取。
+    # 字面量：回到同一文件的常量定义里取；同一文件里没有（从别的模块 use 进来的，如 LEGO_IMAGE）
+    # 就到 crates 里找公开的同名常量。
     while IFS=: read -r file name; do
-      grep -hA1 -E "^((pub )?const ${name}: &str =)" "$file" | grep -oE '"[^"]+"' | tr -d '"'
+      found=$(grep -hA1 -E "^((pub )?const ${name}: &str =)" "$file" | grep -oE '"[^"]+"' | tr -d '"' || true)
+      if [ -z "$found" ]; then
+        found=$(grep -rhA1 -E "^pub const ${name}: &str =" crates --include='*.rs' | grep -oE '"[^"]+"' | tr -d '"' || true)
+      fi
+      [ -n "$found" ] || { echo "找不到常量 ${name} 的镜像引用（${file}）" >&2; exit 1; }
+      echo "$found"
     done < <(grep -rHoE 'wonton_test_images::image\([A-Z][A-Z0-9_]*' crates --include='*.rs' |
       sed 's/wonton_test_images::image(//')
     # gost 和 socat 的镜像常量跨两行，常量名后面的第一行带引用。
