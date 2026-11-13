@@ -37,6 +37,7 @@ PREFIXES: Dict[str, str] = {
     # onboarding
     "onboarding": "onboarding",
     "pairing": "pairing",
+    "pairing.scan": "scan",
     "joining": "joining",
     "install": "install",
     "home": "onboarding",
@@ -145,6 +146,7 @@ GROUP_OF: Dict[str, str] = {
     for prefix in prefixes.split()
 }
 GROUP_OF["verification.emoji"] = "peers"
+GROUP_OF["pairing.scan"] = "onboarding"
 GROUP_OF["share"] = "peers"
 GROUP_OF["contacts"] = "peers"
 GROUP_OF["handoff"] = "peers"

@@ -331,7 +331,6 @@ async fn serve() -> anyhow::Result<()> {
     .await?;
     let (friends, federation_blocks) = serve::open_friends(&cfg)?;
     let audit = Arc::new(Audit::new(cfg.core_state_dir().join("audit.jsonl")));
-    gateway::family::spawn_member_event_logger(members.clone());
     let notices = notice_room(&cfg, matrix.as_ref(), owner_languages(&manager));
     // 隧道先起：确认卡片的开卡推送要用推送登记表和 endpoint ID（ADR-0016）。
     let tunnel = bind_tunnel(&cfg, &manager, members.clone()).await?;
@@ -406,6 +405,9 @@ async fn serve() -> anyhow::Result<()> {
         contacts,
         agent_chains,
     );
+    if let Err(error) = gateway.sync_family_room().await {
+        tracing::error!(%error, retry_path = wonton_protocol::FAMILY_ROOM_SYNC_PATH, "Family room startup synchronization failed");
+    }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,

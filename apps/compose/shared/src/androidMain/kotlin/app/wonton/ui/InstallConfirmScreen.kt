@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -26,6 +27,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PluginFailure
+import app.wonton.protocol.PluginOperation
 import app.wonton.protocol.PluginTask
 import app.wonton.protocol.PluginTaskNextStep
 import app.wonton.protocol.PluginTaskState
@@ -194,6 +196,15 @@ private fun InstallCompletion(
                         style = WontonTheme.typography.body,
                         color = WontonTheme.colors.textPrimary.toColor(),
                     )
+                    task?.installProgress?.let { progress ->
+                        Text(
+                            stageText(progress.stage, PluginOperation.INSTALL),
+                            style = WontonTheme.typography.supporting,
+                            color = WontonTheme.colors.textSecondary.toColor(),
+                        )
+                        // 家里的服务器算得出比例的只有拉镜像这一步，其余阶段照实说，不造百分比。
+                        progress.percent?.let { LinearProgressIndicator(progress = { it.toFloat() / 100f }) }
+                    }
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())

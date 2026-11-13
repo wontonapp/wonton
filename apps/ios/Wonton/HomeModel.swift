@@ -52,6 +52,16 @@ final class HomeModel {
         }
     }
 
+    func dismissPairingFailure() {
+        send(.dismissPairingFailure)
+        viewModel = core.home()
+    }
+
+    func cancelPairing() {
+        send(.cancelPairing)
+        viewModel = core.home()
+    }
+
     func prefillPairing(from url: URL) -> Bool {
         guard url.scheme == "wonton", url.host == "pair" else { return false }
         let current = core.home()
@@ -89,11 +99,12 @@ final class HomeModel {
 
     /// 扫到的不是配对码时核心当场拒绝，原因返回给配对页就地显示，不弹窗；之后的进展在 `viewModel.pairing` 里。
     func pair(code: String, deviceName: String) -> Problem? {
+        defer { viewModel = core.home() }
         do {
             try core.dispatch(action: .pairHome(code: code, deviceName: deviceName))
             return nil
         } catch {
-            return error.problem
+            return Problem(title: error.problem.title, detail: String(describing: error))
         }
     }
 }

@@ -64,6 +64,17 @@ direct_addr=192.0.2.10:18482 # 换成模拟器可达的核心直连地址
 adb shell "am start -n app.wonton.android/.MainActivity --es wonton_pairing_code '$(deploy/dev/core/dev.sh pair "$direct_addr" | tail -n 1)'"
 ```
 
+验证扫码后的界面反馈时，Debug 构建另支持显式传入扫描结果（不要同时传 `wonton_pairing_code`）：
+
+```bash
+adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<配对码>'
+```
+
+进入配对页并授予相机权限后，此参数只消费一次，进入相机解码结果使用的同一个交付函数，先停扫描，
+再经真实扫码回调请求系统触感并调用真实核心。它不模拟网络或配对结果；进度、成功和失败仍需真实服务器和码。
+重新注入需重新启动 Activity 并带上参数。此入口可用于模拟器截图，不能验证相机识别能力或真实触感，
+震感及系统触感设置的影响需在真机检查。Release 构建忽略此参数。
+
 - 配上以后连接信息存在 App 的数据目录里，之后直接启动也会自动重连，不用再传码；配对码只能用一次。
 - `--es wonton_open_web <插件网页地址>`（比如装好 Grafana 示例插件后的 `http://app-grafana.wonton.localhost:18480/`）
   选择已安装插件中地址匹配的页面，不把任意 URL 当成插件。加载结果在 logcat 的 `WontonWeb` 标签下。

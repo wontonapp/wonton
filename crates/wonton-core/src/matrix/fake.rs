@@ -2,6 +2,9 @@
 //! （见 ADR-0009 的验证结果）：JWT 登录首次即建号，停用的账号登录得到 403 `M_USER_DEACTIVATED`；吊销设备或
 //! 停用账号后令牌立即失效；停用的账号退出所有房间；不是房间成员时查成员得到 403 `M_FORBIDDEN`。
 
+#[path = "fake_rooms.rs"]
+mod rooms;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -53,6 +56,7 @@ pub struct Tuwunel {
     /// 访问令牌 → （用户，设备）。
     pub tokens: BTreeMap<String, (String, String)>,
     pub rooms: BTreeMap<String, Room>,
+    pub room_state: BTreeMap<String, rooms::RoomState>,
     /// 上传的文件：（类型，内容）。
     pub media: Vec<(String, Vec<u8>)>,
     pub media_ids: BTreeMap<String, usize>,
@@ -61,6 +65,9 @@ pub struct Tuwunel {
     pub registrations: usize,
     /// 为真时建房失败，测试中途失败的处理。
     pub refuse_rooms: bool,
+    pub refuse_power_levels: bool,
+    pub refuse_room_reads: bool,
+    pub refuse_kicks: bool,
     /// 发出的消息：（房间，内容）。
     pub sent: Vec<(String, Value)>,
     /// 为真时拒绝下一条消息（`M_FORBIDDEN`）：核对之后才被踢出去。
@@ -439,47 +446,6 @@ async fn download(
     ([("content-type", content_type.clone())], data.clone()).into_response()
 }
 
-async fn create_room(
-    State(fake): State<Fake>,
-    headers: HeaderMap,
-    Json(body): Json<Value>,
-) -> Reply {
-    let mut state = fake.state();
-    reply(auth(&state, &headers).and_then(|(user, _)| {
-        if state.refuse_rooms {
-            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
-        }
-        // 房间版本 12：建房的人不能写进 power_levels 的 users。
-        if body["power_level_content_override"]["users"]
-            .get(user.as_str())
-            .is_some()
-        {
-            return Err(error(StatusCode::BAD_REQUEST, "M_INVALID_PARAM"));
-        }
-        let encrypted = body["initial_state"].as_array().is_some_and(|events| {
-            events.iter().any(|e| {
-                e["type"] == "m.room.encryption"
-                    && e["content"]["algorithm"] == "m.megolm.v1.aes-sha2"
-            })
-        });
-        let invited = body["invite"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|u| u.as_str().map(str::to_owned))
-            .collect();
-        let id = format!("!{}:{SERVER}", state.next("room"));
-        let room = Room {
-            members: BTreeSet::from([user]),
-            invited,
-            encrypted,
-            ..Room::default()
-        };
-        state.rooms.insert(id.clone(), room);
-        Ok(ok(json!({"room_id": id})))
-    }))
-}
-
 /// 加入、退出、邀请和撤回邀请（`kick`）。
 async fn membership(
     State(fake): State<Fake>,
@@ -489,6 +455,9 @@ async fn membership(
 ) -> Reply {
     let mut state = fake.state();
     reply(auth(&state, &headers).and_then(|(user, _)| {
+        if action == "kick" && state.refuse_kicks {
+            return Err(error(StatusCode::INTERNAL_SERVER_ERROR, "M_UNKNOWN"));
+        }
         let room_state = state
             .rooms
             .get_mut(&room)
@@ -747,7 +716,7 @@ pub async fn start() -> (Fake, MatrixConfig) {
             "/_matrix/client/v1/media/download/{server}/{id}",
             get(download),
         )
-        .route(&format!("{client}/createRoom"), post(create_room))
+        .merge(rooms::routes())
         .route(&format!("{client}/join/{{room}}"), post(join))
         .route(
             &format!("{client}/rooms/{{room}}/joined_members"),

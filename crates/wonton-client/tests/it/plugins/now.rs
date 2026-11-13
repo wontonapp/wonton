@@ -2,11 +2,11 @@
 
 use axum::http::Method;
 use wonton_client::{
-    Action, InstallPreview, InstalledPlugin, PluginFailure, PluginTaskState, PluginsViewModel,
-    StoreConfirmation, UpgradeOffer,
+    Action, InstallPreview, InstallProgress, InstallStage, InstalledPlugin, PluginFailure,
+    PluginState, PluginTaskState, PluginsViewModel, StoreConfirmation, UpgradeOffer,
 };
 
-use super::rig::{Canned, Rig, core_error, listing, preview, running};
+use super::rig::{Canned, Rig, core_error, installed, listing, preview, running};
 
 const PHOTOS: &str = "app.photos";
 
@@ -366,5 +366,71 @@ async fn one_tap_on_a_running_task_is_ignored() {
         view.pending.is_empty() && view.tasks.iter().filter(|task| task.id == PHOTOS).count() == 1,
         "同一个插件只有一条任务：{:?}",
         view.tasks
+    );
+}
+
+/// 家里的服务器在做的升级：任务里看得到它报到的阶段，做完清掉。
+#[tokio::test]
+async fn upgrade_task_shows_the_stages_the_server_reports() {
+    let rig = Rig::new().await;
+    let upgrading = |stage: InstallStage, percent: Option<u8>| {
+        let mut plugin = installed(PHOTOS, PluginState::Upgrading);
+        plugin.install_progress = Some(InstallProgress { stage, percent });
+        plugin
+    };
+    rig.core.set_lists(vec![
+        vec![upgradable(PHOTOS)],
+        vec![upgrading(InstallStage::PullingImages, Some(40))],
+        vec![upgrading(InstallStage::WaitingForBot, None)],
+        vec![running(PHOTOS)],
+    ]);
+    answer_json(
+        &rig,
+        Method::POST,
+        upgrade_preview_path(PHOTOS),
+        &preview(PHOTOS),
+    );
+    answer_json(&rig, Method::POST, upgrade_path(PHOTOS), &{});
+    // 升级请求按住不回：家里的服务器还在拉镜像、重建。
+    rig.core.hold(Method::POST, &upgrade_path(PHOTOS));
+    connected_with_store(&rig).await;
+    rig.wait_for(|view| view.updatable.len() == 1).await;
+
+    rig.app
+        .dispatch(Action::UpgradeNow {
+            plugin_id: PHOTOS.to_owned(),
+        })
+        .unwrap();
+    rig.wait_for(|view| {
+        view.tasks.iter().any(|task| {
+            task.id == PHOTOS
+                && task.install_progress.as_ref().is_some_and(|progress| {
+                    progress.stage == InstallStage::PullingImages && progress.percent == Some(40)
+                })
+        })
+    })
+    .await;
+    // 阶段推进到等 Bot 上线，百分比没有了也照实说。
+    rig.wait_for(|view| {
+        view.tasks.iter().any(|task| {
+            task.install_progress
+                .as_ref()
+                .is_some_and(|progress| progress.stage == InstallStage::WaitingForBot)
+        })
+    })
+    .await;
+
+    // 放行升级请求：做完，阶段清掉。
+    rig.core.release(Method::POST, &upgrade_path(PHOTOS));
+    let state = rig
+        .task(PHOTOS, |state| !matches!(state, PluginTaskState::Running))
+        .await;
+    assert!(matches!(state, PluginTaskState::Succeeded), "{state:?}");
+    let view = rig.app.plugins();
+    let task = view.tasks.iter().find(|task| task.id == PHOTOS).unwrap();
+    assert!(
+        task.install_progress.is_none(),
+        "做完了不该还挂着阶段：{:?}",
+        task.install_progress
     );
 }

@@ -506,6 +506,17 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
         })
         .unwrap();
     rig.wait_for(|view| !view.tasks.is_empty()).await;
+    // 请求真的出了门（假核心先记 seen）再换服务器：出门前就换，新连接还没建起来时发送任务
+    // 会按“没发出去”判失败，测不到“上一台的卸载没有结果”这一条。
+    let deadline = Instant::now() + WAIT;
+    while rig
+        .core
+        .seen(&Method::DELETE, "/_wonton/api/plugins/app.photos")
+        .is_empty()
+    {
+        assert!(Instant::now() < deadline, "卸载请求没有出门");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
 
     let next = FakeHome::start(vec![rig.device()]).await;
     next.core.set_lists(vec![vec![running("app.notes")]]);
