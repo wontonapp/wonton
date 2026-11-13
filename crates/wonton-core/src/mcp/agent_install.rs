@@ -525,7 +525,7 @@ async fn update(
     let widened = cards::added_lines(&record, &package, langs);
     // 授予的就是新清单里写的：减权限时旧授予不作数，没变宽时它是子集。
     let granted = package.manifest.permissions.clone();
-    // 新增的必填密钥没填过：静默更新会让启动失败，得发给主人填。
+    // 新增的必填密钥没填过：发给主人填，没填也能升，升完是“待配置”。
     let filled = bus.plugins.store().secrets().load(&id).ok().flatten();
     let needs_secrets = package.manifest.secrets.iter().any(|(name, spec)| {
         matches!(spec, crate::plugin::manifest::SecretSpec::Input(input) if input.required)

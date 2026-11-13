@@ -28,7 +28,7 @@ pub struct SecretInput {
     /// 去哪里拿这个密钥，`https://` 链接，App 显示成链接；作者没写时为空。
     #[serde(default)]
     pub url: Option<String>,
-    /// 必填项：缺了装不上、升不了级。
+    /// 必填项：缺了装着也是“待配置”，MCP 工具报未就绪。
     pub required: bool,
 }
 
@@ -51,8 +51,8 @@ pub struct SecretInputState {
 
 /// 主人填的密钥值：密钥名到值的表。
 ///
-/// 安装、升级和确认卡片的回答都带这张表。必填项缺了返回 400 `invalid_input` 并列出缺的名字；
-/// 带上卡片或预览里没有的项也返回 400 `invalid_input`。
+/// 安装、升级和确认卡片的回答都带这张表。带上卡片或预览里没有的项返回 400 `invalid_input`；必填项缺了
+/// 照样装，插件状态是“待配置”，填齐后由核心重建容器（ADR-0064）。
 pub type SecretValues = HashMap<String, SecretString>;
 
 /// [`secret_input_path`] 的请求体：新值；`value` 为空是清空可选项，必填项清空返回 400 `invalid_input`。

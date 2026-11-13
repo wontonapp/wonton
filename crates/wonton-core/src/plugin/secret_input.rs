@@ -62,12 +62,19 @@ pub fn states(
         .collect()
 }
 
-/// 校验请求里带的密钥表：不认识的项、以及缺了的必填项都算输入不合法，报错列出名字。
-/// `already` 是已经填着的名字（升级时沿用，不再要求）。
+/// 清单里必填、还没填的项名（按名字排）。插件照样装上，状态是“待配置”：MCP 工具报未就绪并点名，网页照常。
+pub fn missing_required(manifest: &Manifest, secrets: &Secrets) -> Vec<String> {
+    specs(manifest)
+        .filter(|(name, input)| input.required && !secrets.contains_key(*name))
+        .map(|(name, _)| name.to_owned())
+        .collect()
+}
+
+/// 校验请求里带的密钥表：不认识的项算输入不合法，报错列出名字。缺了的必填项不再拦安装：主人可以装好再填，
+/// 在那之前插件是“待配置”。
 pub fn check(
     manifest: &Manifest,
     values: &SecretValues,
-    already: &dyn Fn(&str) -> bool,
     langs: &Languages,
 ) -> Result<(), InstallError> {
     let known: BTreeMap<&str, &InputSecret> = specs(manifest).collect();
@@ -81,18 +88,6 @@ pub fn check(
             langs,
             "plugin-secret-unknown",
             &[("names", l10n::list(langs, &unknown).into())],
-        )));
-    }
-    let missing: Vec<&str> = known
-        .iter()
-        .filter(|(name, input)| input.required && !already(name) && !values.contains_key(**name))
-        .map(|(name, _)| *name)
-        .collect();
-    if !missing.is_empty() {
-        return Err(InstallError::Invalid(l10n::text(
-            langs,
-            "plugin-secret-required-missing",
-            &[("names", l10n::list(langs, &missing).into())],
         )));
     }
     Ok(())
@@ -139,6 +134,25 @@ pub fn store(
 }
 
 impl PluginManager {
+    /// 这个插件必填、还没填的密钥名；`manifest` 是调用方手上已经有的清单，没有就按记录读。读不出来按没填算。
+    pub fn unfilled_secrets(&self, id: &PluginId, manifest: Option<&Manifest>) -> Vec<String> {
+        let manifest = match manifest {
+            Some(manifest) => manifest.clone(),
+            None => match self.listed(id) {
+                Ok(listed) => listed.manifest.clone(),
+                Err(_) => return Vec::new(),
+            },
+        };
+        let filled = self
+            .store
+            .secrets()
+            .load(id)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        missing_required(&manifest, &filled)
+    }
+
     /// 装好的插件每项要填的密钥：填没填、什么时候改的，不带值。
     pub(super) fn installed_input_states(
         &self,
@@ -167,8 +181,7 @@ impl PluginManager {
             Some(secrets) => secrets.clone(),
             None => store.load(&manifest.id)?.unwrap_or_else(Secrets::new),
         };
-        let is_filled = |name: &str| secrets.contains_key(name);
-        super::secret_input::check(manifest, values, &is_filled, langs)?;
+        super::secret_input::check(manifest, values, langs)?;
         let mut changed = store.changed(&manifest.id)?;
         let mut written = Vec::new();
         let now = now_secs() * 1000;
@@ -274,19 +287,26 @@ mod tests {
     }
 
     #[test]
-    fn check_nails_missing_required_and_unknown() {
+    fn check_takes_unknown_names_and_empty_required_ones() {
         let manifest = manifest(BOTH);
         let quiet = langs();
         let empty = SecretValues::new();
-        let missing = check(&manifest, &empty, &|_| false, &quiet).unwrap_err();
-        assert!(missing.to_string().contains("brave_key"), "{missing}");
         assert!(
-            check(&manifest, &empty, &|n| n == "brave_key", &quiet).is_ok(),
-            "填过的不再要"
+            check(&manifest, &empty, &quiet).is_ok(),
+            "必填项缺了不再拦安装"
         );
         let unknown =
             SecretValues::from([("nope".to_owned(), wonton_protocol::SecretString::new("x"))]);
-        assert!(check(&manifest, &unknown, &|_| true, &quiet).is_err());
+        assert!(check(&manifest, &unknown, &quiet).is_err());
+    }
+
+    #[test]
+    fn missing_required_lists_unfilled_required_names() {
+        let manifest = manifest(BOTH);
+        let mut secrets = Secrets::new();
+        assert_eq!(missing_required(&manifest, &secrets), ["brave_key"]);
+        secrets.insert("brave_key".into(), b"s3cret".to_vec());
+        assert!(missing_required(&manifest, &secrets).is_empty());
     }
 
     #[test]

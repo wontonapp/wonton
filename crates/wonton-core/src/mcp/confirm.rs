@@ -119,7 +119,7 @@ pub enum AnswerError {
     Expired,
     #[error("不认识这个回答")]
     UnknownAnswer,
-    /// 卡片要填的密钥不对：缺必填项、多出不认识的项，或者这张卡片不收密钥。卡片照常等回答。
+    /// 卡片要填的密钥不对：多出不认识的项，或者这张卡片不收密钥。卡片照常等回答；必填项没填不算错。
     #[error("{0}")]
     Secrets(String),
 }
@@ -518,19 +518,7 @@ impl Confirmations {
                     &[("names", crate::l10n::list(langs, &[name.as_str()]).into())],
                 )));
             }
-            let missing: Vec<&str> = slot
-                .secret_inputs
-                .iter()
-                .filter(|i| i.required && !secrets.contains_key(&i.name))
-                .map(|i| i.name.as_str())
-                .collect();
-            if !missing.is_empty() {
-                return Err(AnswerError::Secrets(crate::l10n::text(
-                    langs,
-                    "plugin-secret-required-missing",
-                    &[("names", crate::l10n::list(langs, &missing).into())],
-                )));
-            }
+            // 必填项没填也能回答：插件照样装，状态是“待配置”（ADR-0064）。
             secrets
         };
         let Some(waiter) = slot.waiter.take() else {

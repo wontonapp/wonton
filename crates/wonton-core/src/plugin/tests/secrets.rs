@@ -185,17 +185,56 @@ async fn input_values_are_injected_and_optional_ones_are_empty() {
     );
 }
 
+/// 必填的密钥没填：照样装上，状态是“待配置”，MCP 请求头先空着；填上后状态恢复，头和环境变量都换成新值。
 #[tokio::test]
-async fn a_required_input_without_a_value_does_not_start() {
-    let (_docker, engine) = FakeDocker::start().await;
+async fn an_unfilled_required_input_waits_for_configuration_instead_of_blocking() {
+    let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let m = manager_with(engine, &dir);
-    let err = m
-        .install(&with_input(true), &[], super::langs())
+    let m = std::sync::Arc::new(manager_with(engine, &dir));
+    let id = PluginId::parse("app.test").unwrap();
+    let source = package(
+        "  web:\n    image: nginx\n    environment:\n      TOKEN: ${WONTON_SECRET_TOKEN}",
+        "  permissions: []\n  \
+         mcp: {service: web, port: 8080, transport: streamable-http, headers: {Authorization: 'Bearer {secret:token}'}}\n  \
+         secrets:\n    token:\n      input:\n        title: {en: Token}\n",
+    );
+    m.install(&source, &[], super::langs()).await.unwrap();
+    let web = container_name("app-test", "web");
+    assert_eq!(
+        env_value(&docker.env(&web), "TOKEN").as_deref(),
+        Some(""),
+        "没填的必填项注入空串"
+    );
+    let authorization = || {
+        m.mcp_servers()
+            .into_iter()
+            .find(|server| server.id == id)
+            .expect("装上了就有 MCP 目标")
+            .headers
+            .custom_headers()
+            .get(&hyper::header::HeaderName::from_static("authorization"))
+            .map(|value| value.to_str().unwrap().to_owned())
+    };
+    assert_eq!(authorization(), None, "没填时头先空着");
+    let installed = m.installed_plugin(&id, &super::langs()).unwrap();
+    assert_eq!(
+        installed.status,
+        wonton_protocol::PluginState::NeedsConfiguration
+    );
+
+    m.set_secret_input(&id, "token", Some("s3cret"), &super::langs())
         .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "storage", "{err}");
-    assert!(err.to_string().contains("token"), "{err}");
+        .unwrap();
+    assert_eq!(authorization().as_deref(), Some("Bearer s3cret"));
+    assert_eq!(
+        env_value(&docker.env(&web), "TOKEN").as_deref(),
+        Some("s3cret")
+    );
+    let installed = m.installed_plugin(&id, &super::langs()).unwrap();
+    assert!(matches!(
+        installed.status,
+        wonton_protocol::PluginState::Running { .. }
+    ));
 }
 
 #[tokio::test]

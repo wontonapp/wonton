@@ -451,6 +451,41 @@ impl McpHeaders {
     }
 }
 
+/// 同上，但头里引用了还没填的用户填写密钥时不算错：头先空着，插件照样装，必填的由总线按未就绪拒绝并点名
+/// （ADR-0064）；填齐后重建容器，这时再解析。其余的解析错误照旧上报。
+pub fn resolve_mcp_headers_or_pending(
+    manifest: &Manifest,
+    secrets: &Secrets,
+    langs: &Languages,
+) -> Result<McpHeaders, String> {
+    let resolved = resolve_mcp_headers(manifest, secrets, langs);
+    if resolved.is_err() && !pending_input_refs(manifest, secrets, langs).is_empty() {
+        return Ok(McpHeaders::default());
+    }
+    resolved
+}
+
+/// `mcp.headers` 里引用到、还没有值的 `input` 项。模板写法已经在清单校验里查过，这里解析不出来就跳过。
+fn pending_input_refs(manifest: &Manifest, secrets: &Secrets, langs: &Languages) -> Vec<String> {
+    let Some(mcp) = &manifest.mcp else {
+        return Vec::new();
+    };
+    mcp.headers
+        .values()
+        .filter_map(|template| parse(template, langs).ok())
+        .flatten()
+        .filter_map(|part| match part {
+            Part::Secret(name)
+                if matches!(manifest.secrets.get(&name), Some(SecretSpec::Input(_)))
+                    && !secrets.contains_key(&name) =>
+            {
+                Some(name)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn mcp_invalid(message: String, langs: &Languages) -> ManifestError {
     ManifestError::Invalid(text(
         langs,
@@ -529,6 +564,8 @@ fn part_name(part: &Part) -> &'static str {
 
 /// 按插件密钥把 `mcp.headers` 的模板填好。`collect` 的值是文件原样：不是文本、含换行或控制字符（结尾的
 /// 换行也算，`echo` 写的文件就带）、或者密钥还没有值，都报出到头和密钥，不带值本身。
+///
+/// 必填的用户填写密钥还没填时另算：见 [`resolve_mcp_headers_or_pending`]。
 pub fn resolve_mcp_headers(
     manifest: &Manifest,
     secrets: &Secrets,
@@ -686,5 +723,42 @@ mod tests {
         let langs = Languages::default();
         assert!(validate_mcp_headers(&manifest, &langs).is_err());
         assert!(resolve_mcp_headers(&manifest, &Secrets::new(), &langs).is_err());
+    }
+
+    /// 用户填写的密钥可以出现在 `mcp.headers` 里：没填时头先空着，填了照常注入。
+    #[test]
+    fn mcp_headers_take_a_user_filled_key_and_tolerate_it_being_missing() {
+        let manifest = manifest(
+            "  mcp: {service: web, port: 80, transport: streamable-http, headers: {Authorization: 'Bearer {secret:token}'}}\n  \
+             secrets: {token: {input: {title: {en: Token}}}}",
+        );
+        let langs = Languages::default();
+        assert!(validate_mcp_headers(&manifest, &langs).is_ok());
+        let pending = resolve_mcp_headers_or_pending(&manifest, &Secrets::new(), &langs).unwrap();
+        assert!(pending.custom_headers().is_empty(), "没填时先空着");
+        let filled: Secrets = [("token".to_owned(), b"abc".to_vec())].into();
+        let resolved = resolve_mcp_headers_or_pending(&manifest, &filled, &langs).unwrap();
+        let value = resolved
+            .custom_headers()
+            .get(&HeaderName::from_static("authorization"))
+            .cloned()
+            .expect("填了就有头");
+        assert_eq!(value, "Bearer abc");
+    }
+
+    /// 契约：`mcp.headers` 引用没声明的密钥是清单错误。清单解析时就校验头，所以在解析完的清单上改出来再验。
+    #[test]
+    fn an_mcp_header_naming_an_undeclared_key_is_invalid() {
+        let mut manifest = manifest(
+            "  mcp: {service: web, port: 80, transport: streamable-http, headers: {X-Key: value}}",
+        );
+        manifest
+            .mcp
+            .as_mut()
+            .unwrap()
+            .headers
+            .insert("X-Key".into(), "{secret:nope}".into());
+        let err = validate_mcp_headers(&manifest, &Languages::default()).unwrap_err();
+        assert!(err.to_string().contains("nope"), "{err}");
     }
 }

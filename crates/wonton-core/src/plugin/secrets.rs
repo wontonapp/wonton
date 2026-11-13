@@ -107,7 +107,7 @@ pub fn generate_missing(manifest: &Manifest, secrets: &mut Secrets) -> bool {
 }
 
 /// 要注入的 `generate` 和 `input` 项：名字 → 文本值。`generate` 缺了（密钥文件被删或损坏后重建）就报出它的
-/// 名字；可选的 `input` 没填时注入空串，必填的没填也报错。
+/// 名字；`input` 没填时一律注入空串，必填项没填插件照常装，状态是“待配置”（ADR-0064）。
 pub fn generated_values(
     manifest: &Manifest,
     secrets: &Secrets,
@@ -136,31 +136,21 @@ pub fn generated_values(
         })
         .collect::<Result<_, String>>()?;
     for (name, spec) in &manifest.secrets {
-        let SecretSpec::Input(input) = spec else {
+        let SecretSpec::Input(_) = spec else {
             continue;
         };
-        match secrets.get(name) {
-            Some(value) => {
-                let text = String::from_utf8(value.clone()).map_err(|_| {
-                    crate::l10n::text(
-                        langs,
-                        "plugin-settings-secret-not-text",
-                        &[("name", name.clone().into())],
-                    )
-                })?;
-                values.insert(name.clone(), text);
-            }
-            None if input.required => {
-                return Err(crate::l10n::text(
-                    langs,
-                    "plugin-settings-secret-missing",
-                    &[("name", name.clone().into())],
-                ));
-            }
-            None => {
-                values.insert(name.clone(), String::new());
-            }
-        }
+        let Some(value) = secrets.get(name) else {
+            values.insert(name.clone(), String::new());
+            continue;
+        };
+        let text = String::from_utf8(value.clone()).map_err(|_| {
+            crate::l10n::text(
+                langs,
+                "plugin-settings-secret-not-text",
+                &[("name", name.clone().into())],
+            )
+        })?;
+        values.insert(name.clone(), text);
     }
     Ok(values)
 }

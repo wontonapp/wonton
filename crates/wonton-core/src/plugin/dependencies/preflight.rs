@@ -210,12 +210,7 @@ impl PluginManager {
         let store = self.store.secrets();
         let secrets_before = store.load(&manifest.id)?;
         let mut secrets = secrets_before.clone().unwrap_or_default();
-        crate::plugin::secret_input::check(
-            manifest,
-            &request.secrets,
-            &|name| secrets.contains_key(name),
-            langs,
-        )?;
+        crate::plugin::secret_input::check(manifest, &request.secrets, langs)?;
         for (name, value) in &request.secrets {
             crate::plugin::secret_input::store(
                 manifest,
