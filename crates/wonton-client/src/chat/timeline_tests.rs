@@ -82,3 +82,52 @@ fn an_arriving_plugin_reclassifies_links() {
         }
     );
 }
+
+fn own_entry(id: &str) -> TimelineEntry {
+    let mut entry = text_entry(id, id);
+    if let wonton_matrix::EntryKind::Message(message) = &mut entry.kind {
+        message.is_own = true;
+    }
+    entry
+}
+
+fn receipt_sets(diffs: &[TimelineDiff]) -> Vec<(u32, Option<wonton_protocol::MessageReceipt>)> {
+    diffs
+        .iter()
+        .map(|diff| {
+            let TimelineDiff::Set { index, item } = diff else {
+                panic!("{diff:?}");
+            };
+            let TimelineContent::Message { message } = &item.content else {
+                panic!("还是消息");
+            };
+            (*index, message.receipt)
+        })
+        .collect()
+}
+
+/// 行为：又发出一条以后，“已送达”从上一条挪到新的这条，两条各重发一次，别的不动。
+#[test]
+fn sending_another_message_moves_delivered_to_it() {
+    let mut entries: Vector<TimelineEntry> = vec![text_entry("0", "hi"), own_entry("1")]
+        .into_iter()
+        .collect();
+    let mut read = ReadMark::of(&entries);
+    entries.push_back(own_entry("2"));
+
+    let diffs = move_read_mark(
+        &entries,
+        &mut read,
+        &LinkTargets::default(),
+        &BotsView::default(),
+        &Previews::new(),
+    );
+
+    assert_eq!(
+        receipt_sets(&diffs),
+        vec![
+            (1, None),
+            (2, Some(wonton_protocol::MessageReceipt::Delivered)),
+        ]
+    );
+}

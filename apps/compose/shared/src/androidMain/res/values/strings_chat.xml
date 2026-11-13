@@ -70,8 +70,10 @@
     <string name="timeline_edited">Edited</string>
     <!-- Footer label while a message is sending. No arguments. -->
     <string name="timeline_sending">Sending</string>
-    <!-- Footer label of a message the others have read. No arguments. -->
+    <!-- Small line under your own message that the others have read. No arguments. -->
     <string name="timeline_read">Read</string>
+    <!-- Small line under your own latest message: the server has it, nobody has read it yet. No arguments. -->
+    <string name="timeline_delivered">Delivered</string>
     <!-- Footer label of a message that failed but retries by itself. No arguments. -->
     <string name="timeline_send_failed_retrying">Not sent, retrying</string>
     <!-- Footer label of a message that failed for good. Argument: the core's reason. -->

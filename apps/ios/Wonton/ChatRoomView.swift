@@ -12,6 +12,8 @@ struct ChatRoomView: View {
     @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
+    /// 左滑整列露出每条消息的时间。
+    @State private var reveal = TimeReveal()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
     /// 正在选转发目标的条目、正在确认撤回的条目。
@@ -234,40 +236,44 @@ private extension ChatRoomView {
                 .background(EnclosingScrollView { scrollView in
                     pin.attach(scrollView)
                     roomPull.attach(to: scrollView)
+                    reveal.attach(scrollView)
                 })
                 .timelineListRow()
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
-                    let joinsNext = index + 1 < timeline.items.count && item.joins(timeline.items[index + 1])
-                    TimelineRow(
-                        item: item, core: model.core, showsSender: !isDirect,
-                        joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
-                        cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
-                        cardAction: { model.send($0) },
-                        reply: { model.startReply(.ready(message: $0), in: target) },
-                        forward: {
-                            forwarding = item.id
-                            pickingForwardRoom = true
-                        },
-                        redact: {
-                            redactItem = item.id
-                            showingRedact = true
-                        },
-                        openCard: { cardId in
-                            selectedConfirmation = cardId
-                            showingConfirmations = true
-                        },
-                        answerChoice: { key in
-                            model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
-                        },
-                        onOpenSideChat: { model.openSideChat($0, in: roomId) }
-                    )
-                    .id(item.id)
-                    .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
-                    .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
-                        model.startReply(.ready(message: quote), in: target)
-                    })
+                    let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
+                    // 做完了又没什么可写的 Agent 状态行不占一行。
+                    if !item.isBlankAgentRun {
+                        TimelineRow(
+                            item: item, core: model.core, showsSender: !isDirect,
+                            joinsPrevious: joinsPrevious, joinsNext: joinsNext,
+                            retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
+                            cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
+                            cardAction: { model.send($0) },
+                            reply: { model.startReply(.ready(message: $0), in: target) },
+                            forward: {
+                                forwarding = item.id
+                                pickingForwardRoom = true
+                            },
+                            redact: {
+                                redactItem = item.id
+                                showingRedact = true
+                            },
+                            openCard: { cardId in
+                                selectedConfirmation = cardId
+                                showingConfirmations = true
+                            },
+                            answerChoice: { key in
+                                model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
+                            },
+                            onOpenSideChat: { model.openSideChat($0, in: roomId) }
+                        )
+                        .id(item.id)
+                        .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
+                        .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
+                            model.startReply(.ready(message: quote), in: target)
+                        })
+                    }
                 }
                 // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
                 ForEach(composer.outgoing, id: \.id) { message in
@@ -277,6 +283,7 @@ private extension ChatRoomView {
                 }
             }
             .listStyle(.plain)
+            .environment(reveal)
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 1)
             // 键盘收着时也开交互式收起，屏幕靠底一段里行内的按钮点不动，也没有报错（iOS 26.5 模拟器实测，屏高 912：y≈745 能点，y≈805 不能）。
@@ -390,10 +397,16 @@ private extension ChatRoomView {
 }
 
 private extension TimelineItem {
-    /// 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。
-    func joins(_ other: TimelineItem) -> Bool {
-        guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
-        return mine.senderId == theirs.senderId
+    /// 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
+    /// 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
+    func joins(_ earlier: TimelineItem) -> Bool {
+        guard case let .message(mine) = content, case let .message(theirs) = earlier.content else { return false }
+        return mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == nil
+    }
+
+    var isBlankAgentRun: Bool {
+        guard case let .agentRun(_, state, _, steps, _, result, _, _, _, choices, _) = content else { return false }
+        return choices.isEmpty && AgentRunRow.isBlank(state: state, steps: steps, result: result)
     }
 
     /// 这条消息带的回复引用：核心把引用作为消息动作下发。

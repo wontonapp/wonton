@@ -25,16 +25,27 @@ struct TimelineRow: View {
     /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
     var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
+    @Environment(TimeReveal.self) private var reveal: TimeReveal?
 
     var body: some View {
         switch item.content {
         case let .message(message):
-            MessageBubble(
-                message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
-                cardAction: cardAction, reply: reply, forward: forward, redact: redact,
-                openSideChat: onOpenSideChat
-            )
+            // 时间不贴在气泡上（学 iMessage）：隔得久的那条上方写一行，其余的左滑整列才露出来。
+            VStack(spacing: WontonTheme.spacing.s8) {
+                if message.startsTimeGroup {
+                    note(Text(Self.time(message.timestampMs)))
+                }
+                VStack(alignment: .trailing, spacing: WontonTheme.spacing.s4) {
+                    MessageBubble(
+                        message: message, core: core, showsSender: showsSender && !joinsPrevious,
+                        joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
+                        cardAction: cardAction, reply: reply, forward: forward, redact: redact,
+                        openSideChat: onOpenSideChat
+                    )
+                    receipt(message.receipt)
+                }
+                .modifier(RevealedTime(timestampMs: message.timestampMs, isOwn: message.isOwn, reveal: reveal))
+            }
         case let .notice(text):
             note(Text(text))
         case let .agentRun(_, state, step, steps, progress, result, end, body, cardId, choices, senderName):
@@ -59,7 +70,8 @@ struct TimelineRow: View {
                 note(Text(.Chat.timelineAvatarChanged(name)))
             }
         case let .dateDivider(timestampMs):
-            note(Text(Self.date(timestampMs), format: .dateTime.year().month().day().weekday()))
+            // 分隔线带着这一天第一条消息的时间：日期和时间写在一行，那条消息上方不再另写。
+            note(Text(Self.date(timestampMs), format: .dateTime.year().month().day().weekday().hour().minute()))
         case .readMarker:
             HStack(spacing: WontonTheme.spacing.s8) {
                 edge
@@ -76,6 +88,24 @@ struct TimelineRow: View {
         case .timelineStart:
             note(Text(.Chat.timelineStart))
         }
+    }
+
+    /// 自己发的最后一条下面那行小字：已送达、已读。别的消息没有；不认识的取值不写。
+    @ViewBuilder private func receipt(_ receipt: MessageReceipt?) -> some View {
+        switch receipt {
+        case .delivered:
+            receiptLine(Text(.Message2.messageDelivered)).accessibilityIdentifier("messageDelivered")
+        case .read:
+            receiptLine(Text(.Message2.messageRead)).accessibilityIdentifier("messageRead")
+        case .other, nil:
+            EmptyView()
+        }
+    }
+
+    private func receiptLine(_ text: Text) -> some View {
+        text
+            .wontonText(WontonTheme.typography.caption)
+            .foregroundStyle(Color(colors.textSecondary))
     }
 
     private var edge: some View {
@@ -141,7 +171,8 @@ private struct MessageBubble: View {
                         .foregroundStyle(Color(colors.textSecondary))
                 }
                 bubble
-                    // 系统的菜单自带预览、背景模糊和材质（ADR-0029）。
+                    // 系统的菜单自带预览、背景模糊和材质（ADR-0029）。菜单项的图标也用系统的 SF Symbols：
+                    // 大小、粗细由系统跟着菜单的字排。
                     .contentShape(.contextMenuPreview, shape)
                     .contextMenu {
                         ForEach(Array(message.actions.enumerated()), id: \.offset) { _, action in
@@ -163,21 +194,20 @@ private struct MessageBubble: View {
             Button {
                 UIPasteboard.general.string = text
             } label: {
-                Label { Text(.Message2.messageCopy) } icon: { WontonIcon.copy.view(size: WontonTheme.size.iconSmall) }
+                Label { Text(.Message2.messageCopy) } icon: { Image(systemName: "doc.on.doc") }
             }
         case let .reply(quoted):
             Button {
                 reply(quoted)
             } label: {
-                Label { Text(.Message0.messageReply) } icon: { WontonIcon.reply.view(size: WontonTheme.size.iconSmall) }
+                Label { Text(.Message0.messageReply) } icon: { Image(systemName: "arrowshape.turn.up.left") }
             }
             .accessibilityIdentifier("messageReply")
         case .forward:
             Button {
                 forward()
             } label: {
-                Label { Text(.Message1.messageForward) }
-                    icon: { WontonIcon.forward.view(size: WontonTheme.size.iconSmall) }
+                Label { Text(.Message1.messageForward) } icon: { Image(systemName: "arrowshape.turn.up.right") }
             }
             .accessibilityIdentifier("messageForward")
         case .redact:
@@ -191,7 +221,7 @@ private struct MessageBubble: View {
                         ? Text(.Message1.messageRedact)
                         : Text(.Message2.messageRedactOthers(message.senderName))
                 } icon: {
-                    WontonIcon.trash.view(size: WontonTheme.size.iconSmall)
+                    Image(systemName: "trash")
                 }
             }
             .accessibilityIdentifier("messageRedact")
@@ -225,15 +255,17 @@ private struct MessageBubble: View {
     }
 
     @ViewBuilder private var laidOut: some View {
-        if let reserve = footerReserve {
-            // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
+        if !hasFooter {
+            styled(reserve: nil)
+        } else if let reserve = footerReserve {
+            // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
             ZStack(alignment: Alignment(horizontal: .trailing, vertical: .lastTextBaseline)) {
                 styled(reserve: reserve)
-                // 占位文字已经念过一遍时间了。
+                // 占位文字已经念过一遍了。
                 footer.accessibilityHidden(true)
             }
         } else {
-            // Grid：气泡和最宽的一行一样宽，正文靠左、时间靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
+            // Grid：气泡和最宽的一行一样宽，正文靠左、脚注靠右。VStack 做不到，撑满又会把短消息的气泡也撑满。
             Grid(alignment: .leading, verticalSpacing: WontonTheme.spacing.s4) {
                 styled(reserve: nil)
                 footer.gridCellAnchor(.trailing)
@@ -247,7 +279,14 @@ private struct MessageBubble: View {
             .foregroundStyle(textColor)
     }
 
-    /// 时间能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
+    /// 气泡里只在有话要说时才有脚注：编辑过、还在发、没发出去。时间和已读不在气泡里。
+    private var hasFooter: Bool {
+        if message.edited { return true }
+        if case .sent = message.sendState { return false }
+        return true
+    }
+
+    /// 脚注能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
     /// 开头是普通空格：不能和前一个词连着折行。
     private var footerReserve: String? {
         guard case let .text(_, blocks, files) = message.body, files.isEmpty, let last = blocks.last else { return nil }
@@ -256,12 +295,9 @@ private struct MessageBubble: View {
         case .code, .table, .rule: return nil
         }
         if case .failed = message.sendState { return nil }
-        var parts = [TimelineRow.time(message.timestampMs)]
-        if message.edited { parts.insert(String(localized: .Message2.messageEdited), at: 0) }
+        var parts: [String] = []
+        if message.edited { parts.append(String(localized: .Message2.messageEdited)) }
         if case .sending = message.sendState { parts.append(String(localized: .Message2.messageSending)) }
-        if case .sent = message.sendState, message.isOwn, !message.readBy.isEmpty {
-            parts.append(String(localized: .Message2.messageRead))
-        }
         let glued = parts.joined(separator: "  ").replacingOccurrences(of: " ", with: "\u{00A0}")
         return " \u{00A0}\u{00A0}" + glued
     }
@@ -317,7 +353,6 @@ private struct MessageBubble: View {
     private var footer: some View {
         HStack(spacing: WontonTheme.spacing.s4) {
             if message.edited { Text(.Message2.messageEdited) }
-            Text(TimelineRow.time(message.timestampMs))
             switch message.sendState {
             case .sending:
                 Text(.Message2.messageSending)
@@ -345,7 +380,7 @@ private struct MessageBubble: View {
                     )
                 ])
             case .sent:
-                if message.isOwn, !message.readBy.isEmpty { Text(.Message2.messageRead) }
+                EmptyView()
             }
         }
         .wontonText(WontonTheme.typography.caption)

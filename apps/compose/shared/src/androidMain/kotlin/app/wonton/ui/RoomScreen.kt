@@ -591,8 +591,10 @@ private fun Messages(
             }
             itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
                 // 倒着排：下标大的是更早的一条。
+                // 做完了又没什么可写的 Agent 状态行不占地方。
+                if (item.isBlankAgentRun) return@itemsIndexed
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
-                val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
+                val joinsNext = newestFirst.getOrNull(index - 1)?.joins(item) == true
                 Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
                     TimelineItemView(
                         item,
@@ -634,14 +636,22 @@ private fun Messages(
 
 private val JOINED_GAP = 2.dp
 
-/** 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。 */
-private fun TimelineItem.joins(other: TimelineItem?): Boolean {
-    val sender = senderId
-    return sender != null && sender == other?.senderId
+/**
+ * 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
+ * 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
+ */
+private fun TimelineItem.joins(earlier: TimelineItem?): Boolean {
+    val mine = message
+    val theirs = earlier?.message
+    return mine != null && theirs != null &&
+        mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == null
 }
 
-private val TimelineItem.senderId
-    get() = (content as? TimelineContent.Message)?.message?.senderId
+private val TimelineItem.message
+    get() = (content as? TimelineContent.Message)?.message
+
+private val TimelineItem.isBlankAgentRun
+    get() = (content as? TimelineContent.AgentRun)?.isBlank == true
 
 /// 这条消息带着的确认卡片 ID：Agent 的等待行靠它滚到卡片。
 private val TimelineItem.cardId

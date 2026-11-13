@@ -2,17 +2,15 @@
 <resources>
     <!-- Status line while the bot waits for the owner to answer its confirmation card. No arguments. -->
     <string name="agent_run_waiting">Waiting for you</string>
-    <!-- Status line when a run finished; only when the bot gave no step count. No arguments. -->
-    <string name="agent_run_done">Done</string>
     <!-- Status line when the owner interrupted the run. No arguments. -->
     <string name="agent_run_cancelled">Stopped</string>
     <!-- Status line when the core cannot tell how the run ended, or the bot is offline mid-run. No arguments. -->
     <string name="agent_run_uncertain">Result uncertain</string>
     <!-- Source line above the bot's own choices. Argument: the bot's name. -->
     <string name="agent_run_asking">%1$s is asking</string>
-    <!-- Status line when a run finished. Argument: how many steps it took. -->
-    <plurals name="agent_run_done_steps">
-        <item quantity="one">Done · %1$d step</item>
-        <item quantity="other">Done · %1$d steps</item>
+    <!-- Small summary line under a finished run; tapping it shows the bot's own summary. Argument: how many steps it took. -->
+    <plurals name="agent_run_steps">
+        <item quantity="one">%1$d step</item>
+        <item quantity="other">%1$d steps</item>
     </plurals>
 </resources>
