@@ -47,14 +47,12 @@ pub async fn open_page(pinned: bool) -> (Rig, TabRef) {
         plugin_id: "app.feed".to_owned(),
         page: Some("feed".to_owned()),
     };
-    if pinned {
+    if !pinned {
         rig.app
-            .dispatch(Action::AddMyApp {
+            .dispatch(Action::RemoveMyApp {
                 app: wonton_protocol::MyAppRef::Plugin {
                     plugin_id: "app.feed".to_owned(),
                 },
-                title: None,
-                index: None,
             })
             .unwrap();
     }

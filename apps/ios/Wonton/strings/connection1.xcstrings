@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "connection.udp.flow.dropped": {
+      "comment": "Connection-level datagrams evicted by a full send buffer. Argument is the localized unsigned 64-bit count; shown only when known and greater than zero.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send-buffer drops: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送缓冲满时丢弃 %@ 个数据报"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "傳送緩衝區滿時丟棄 %@ 個資料報"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "送信バッファが満杯で%@件のデータグラムを破棄"
+          }
+        }
+      }
+    },
     "connection.addressesStale": {
       "comment": "Connection details row: the stored server address may be out of date; the app keeps fetching it.",
       "extractionState": "manual",

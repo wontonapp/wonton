@@ -317,16 +317,22 @@ impl Pairing {
     }
 }
 
-/// 终端里显示的二维码：每个字符画上下两个模块，深色终端上也能扫。
-pub fn terminal_qr(text: &str) -> String {
+/// 半高字符二维码；终端放不下时返回包含四模块静区的最小列数，`None` 表示输出不受终端宽度限制。
+pub fn terminal_qr(text: &str, columns: Option<u16>) -> Result<String, usize> {
     use qrcode::render::unicode::Dense1x2;
-    qrcode::QrCode::new(text.as_bytes())
-        .expect("配对码放得进二维码")
+    // 终端显示不叠图、不磨损，用最低的 L 级纠错缩小码面，但不能裁掉四模块静区。
+    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::L)
+        .expect("配对码放得进二维码");
+    let required = code.width() + 2 * 4;
+    if columns.is_some_and(|columns| usize::from(columns) < required) {
+        return Err(required);
+    }
+    Ok(code
         .render::<Dense1x2>()
         .dark_color(Dense1x2::Light)
         .light_color(Dense1x2::Dark)
         .quiet_zone(true)
-        .build()
+        .build())
 }
 
 fn rejected(reason: RejectReason, message: &str) -> PairResponse {

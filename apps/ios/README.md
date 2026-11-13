@@ -1,7 +1,7 @@
 # iOS 客户端
 
-SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑都在 `crates/wonton-client`，本目录只负责
-渲染 ViewModel、把用户操作发回核心，以及调用平台能力。
+SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR-0100）。状态和业务逻辑都在 `crates/wonton-client`，
+本目录只负责渲染 ViewModel、把用户操作发回核心，以及调用平台能力。
 
 ## 结构
 
@@ -20,6 +20,11 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 - `ShareExtension/`：系统分享面板里的“云吞”（ADR-0097）。只把分享的东西复制进收件目录、打开 App，不链接 Rust 核心；
   App 收到 `wonton://share/<令牌>` 后认领，分享页在 `ShareInSheet`。`Shared/` 是 App 和扩展共用的 App Group 位置：
   核心的数据目录在组容器的 `wonton/` 里，扩展才放得进去。
+- `WidgetExtension/` 和 `SystemEntry/`：系统入口（ADR-0100）。扩展不链接 Rust 核心，`SystemEntry/EntrySnapshot`
+  按快照的字段名解 App Group 里的 `widget/snapshot.json` 渲染，控制按钮和小组件都把人送进 App（`wonton://` 链接）；
+  控制按钮的 OpenIntent 同时编进 App 和扩展（App 侧 `WONTON_APP` 编译条件），由 App 进程执行。`Wonton/SystemEntryModel`
+  在 App 进程里订阅核心的快照：每写一份刷新 WidgetKit 时间线，并把系统搜索条目同步进 Core Spotlight——只放名字，
+  不放消息和未读数（ADR-0100 决策 4）。
 - `WontonClient/`：Rust 核心的 Swift 包。`build/WontonClientFFI.xcframework` 和
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
@@ -38,6 +43,10 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
 WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。
 全屏仍使用同一个 WebView；关闭目标由核心决定。网页框、安全区和胶囊见 ADR-0033 的“带栏”“全屏”：留白处是 App 底色，
 不取网页的像素；`edge-to-edge` 页读取栏高变量；不注入 `viewport-fit=cover`。
+
+插件端口映射由核心按页面栈顶和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
+壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，
+不把端口声明当作已绑定成功。iOS 不提供第三方 App 用的手动映射开关。
 
 新用户引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：`OnboardingGate` 在配对后按核心步骤接管页面；首次获取失败时显示重试和本次运行的跳过入口。
 `Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。资料和选择只发草稿操作，模型测试不保存；key 只留在密文输入框，发出操作后清空。
@@ -89,8 +98,9 @@ xcodegen generate --spec apps/ios/project.yml
 xcodebuild -project apps/ios/Wonton.xcodeproj -scheme Wonton -destination "id=<设备 UDID>" -allowProvisioningUpdates DEVELOPMENT_TEAM=<团队 ID> WONTON_BUNDLE_ID=<自己的 bundle ID> build
 ```
 
-`WONTON_BUNDLE_ID` 一个设置管三个标识：App 是它本身，分享扩展是 `<它>.share`，App Group 是 `group.<它>`，自动签名
-（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也行。不要直接改 `PRODUCT_BUNDLE_IDENTIFIER`：
+`WONTON_BUNDLE_ID` 一个设置管四个标识：App 是它本身，分享扩展是 `<它>.share`，小组件扩展是 `<它>.widget`，App Group 是
+`group.<它>`，自动签名（`-allowProvisioningUpdates`）时 Xcode 自己注册，免费的个人团队也行。不要直接改
+`PRODUCT_BUNDLE_IDENTIFIER`：
 那会把扩展的也改成同一个，签不过。换了 bundle ID 就是换了 App Group，数据目录跟着换，要重新配对。
 
 用 `xcrun devicectl device install app --device <设备 UDID> <Wonton.app 路径>` 安装。第一次装要在手机的
@@ -134,6 +144,10 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
 界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
 
+连接详情的 UDP 流向默认收起，没有流向时不显示。展开后列出插件、端口、收发包数和超长丢弃；
+发送缓冲丢弃只在核心给出大于零的连接级计数时显示，未知不伪装成零（ADR-0072）。
+`UdpFlowsUITests` 使用 Debug 固定 ViewModel 检查收放、空列表和完整无符号计数；不需要配对栈，也不代表 UDP 传输实测。
+
 ```bash
 xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -destination 'platform=iOS Simulator,name=<模拟器名称>' \
@@ -166,6 +180,10 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   -only-testing:WontonUITests/BotProfileUITests
 ```
+
+端口映射走查 `PortMappingUITests` 要在开发栈安装 `whoami` 示例并声明一个同号 TCP 隧道端口，
+以 `TEST_RUNNER_PORT_MAPPING_TEST_PORT=<端口>` 和新的配对码运行；栈先完成引导。
+用例实际请求回环端口，检查开页、进后台、回前台和关页的可达性，并附上详情页截图；不把状态文案当作网络验证。
 
 界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
 `WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、
