@@ -123,6 +123,10 @@ pub(crate) struct HomeLink {
     carried_disconnects: AtomicU32,
     /// 连接没建起来时最近一次的原因和第几次失败；建起来就清掉。
     unlinked: std::sync::Mutex<Option<(String, u32)>>,
+    /// 这台进程连上过没有：只有还没连上过时才发冷启动的握手名额。
+    ever_connected: AtomicBool,
+    /// 冷启动还剩几次拨号可以慢慢等（见 [`establish::COLD_DIALS`]），连同拨号时限一起交给隧道客户端。
+    cold_dials: Arc<AtomicU32>,
     #[cfg(feature = "test-hooks")]
     pub(crate) test_hooks: bind::TestHooks,
 }
@@ -190,6 +194,8 @@ impl HomeLink {
             establish_wake: tokio::sync::Notify::new(),
             carried_disconnects: AtomicU32::new(0),
             unlinked: std::sync::Mutex::new(None),
+            ever_connected: AtomicBool::new(false),
+            cold_dials: Arc::new(AtomicU32::new(0)),
             #[cfg(feature = "test-hooks")]
             test_hooks: bind::TestHooks::default(),
         });
@@ -223,6 +229,7 @@ impl HomeLink {
 
     /// `ConnectHome`：校验并保存连接信息，然后在后台建连。和当前用的连接信息相同时什么都不做：
     /// 连接断了会自动重连，重建反而会让正在用本地代理的 WebView 断开。
+    ///
     pub(crate) fn connect(self: &Arc<Self>, text: &str) -> Result<(), CoreError> {
         let ticket = Ticket::parse(text).map_err(|reason| CoreError::InvalidInput { reason })?;
         if self.lock_ticket().as_deref() == Some(text) {
