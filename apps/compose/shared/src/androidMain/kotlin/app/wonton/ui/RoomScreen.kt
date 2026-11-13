@@ -324,7 +324,7 @@ private fun RoomScreen(
     val messageOverlay = menu != null || forwarding != null || redacting != null
     val covers = messageOverlay || timeline.openedConfirmation != null
     if (target.threadRoot == null) {
-        LaunchedEffect(covers, roomId) { onAction(Action.SetRoomEntryBlocked(roomId, covers)) }
+        LaunchedEffect(covers, target.roomId) { onAction(Action.SetRoomEntryBlocked(target.roomId, covers)) }
     }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
@@ -358,7 +358,7 @@ private fun RoomScreen(
         }
         forwarding?.let { itemId ->
             ForwardSheet(
-                rooms = rooms.filter { it.forwardTarget(roomId) },
+                rooms = rooms.filter { it.forwardTarget(target.roomId) },
                 onPick = { row ->
                     onAction(
                         Action.Timeline(
@@ -389,7 +389,7 @@ private fun RoomScreen(
         if (sideChats.composing) {
             NewSideChatSheet(
                 core,
-                roomId,
+                target.roomId,
                 onStarted = { root ->
                     sideChats.onComposingChange(false)
                     sideChats.onOpen(root)
