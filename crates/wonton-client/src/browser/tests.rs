@@ -32,6 +32,7 @@ fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: Some(format!("{origin}/")),
+        link_url: None,
         cross_origin_isolated: isolated,
         declares_tools: false,
         tabs: Vec::new(),

@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
+import app.wonton.android.R
 import app.wonton.android.IncomingRequests
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushNotification
@@ -55,8 +56,13 @@ object PushNotifications {
         }
         createChannels(context)
         val channel = notification.category.notificationChannelId
-        val (title, text) = notification.contactRequest?.let { PushTexts.contact(context, it) }
-            ?: PushTexts.message(context, notification)
+        val (title, text) = if (notification.hidden) {
+            // App 锁着（ADR-0102）：通知栏里也不写发送者和正文。
+            context.getString(R.string.app_name) to context.getString(R.string.push_hidden)
+        } else {
+            notification.contactRequest?.let { PushTexts.contact(context, it) }
+                ?: PushTexts.message(context, notification)
+        }
         val card = notification.confirmation
         val shown = Notification.Builder(context, channel)
             .setExtras(PushBuilder.extras(notification))

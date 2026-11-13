@@ -74,6 +74,16 @@ object WontonRatio {
     val codeFill = 0.1f
 }
 
+object WontonGesture {
+    val pullDistance = 96f
+    val pushDistance = 64f
+    val swipeDistance = 64f
+    val flickDistance = 32f
+    val flickVelocity = 900f
+    val dragSlop = 8f
+    val edgeWidth = 24f
+}
+
 object WontonMotion {
     val feedback = 120
     val state = 180

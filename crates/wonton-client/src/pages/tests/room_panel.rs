@@ -151,3 +151,41 @@ async fn widget_entries_are_only_available_for_home_accounts() {
         }
     }
 }
+
+#[tokio::test]
+async fn room_page_bridge_rejects_departed_rooms_with_the_same_page() {
+    let rig = Rig::new();
+    let first: OwnedRoomId = "!first:home.example".parse().unwrap();
+    let second: OwnedRoomId = "!second:home.example".parse().unwrap();
+    let placed = |room: &OwnedRoomId| PlacedTab::Panel {
+        scope: PanelScope::Room {
+            room_id: room.to_string(),
+        },
+        tab: page_tab(),
+    };
+    let panel = RoomPanel {
+        pages: vec![PanelEntry {
+            tab: page_tab(),
+            title: None,
+        }],
+    };
+    rig.room_panel
+        .send_replace(Some((first.clone(), panel.clone())));
+    rig.tabs.recompute();
+    assert!(bridge::page_of(&rig.tabs, &placed(&first)).is_ok());
+
+    rig.room_panel.send_replace(Some((second.clone(), panel)));
+    rig.tabs.recompute();
+    assert!(matches!(
+        bridge::page_of(&rig.tabs, &placed(&first)),
+        Err(CoreError::InvalidInput { .. })
+    ));
+    assert!(bridge::page_of(&rig.tabs, &placed(&second)).is_ok());
+
+    rig.room_panel.send_replace(None);
+    rig.tabs.recompute();
+    assert!(matches!(
+        bridge::page_of(&rig.tabs, &placed(&second)),
+        Err(CoreError::InvalidInput { .. })
+    ));
+}

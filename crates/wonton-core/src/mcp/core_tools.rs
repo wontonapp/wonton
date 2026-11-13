@@ -12,8 +12,8 @@ use wonton_protocol::SecretValues;
 use super::audience::Subject;
 use super::audit::{Decision, Record};
 use super::{
-    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools, naming,
-    panel_tools, people_tools, profile_tools, save_tools, send_message_tool,
+    Bus, Caller, Outcome, ToolFailure, agent_install, authoring_tools, cards, file_tools,
+    handoff_tools, naming, panel_tools, people_tools, profile_tools, save_tools, send_message_tool,
 };
 use crate::bot_activity::Guard;
 use crate::l10n;
@@ -120,6 +120,7 @@ pub fn definitions() -> Vec<Tool> {
     tools.extend(people_tools::definitions());
     tools.extend(panel_tools::definitions());
     tools.push(send_message_tool::definition());
+    tools.extend(handoff_tools::definitions());
     tools
 }
 
@@ -157,6 +158,9 @@ pub async fn call(
         people_tools::USER_LOCALE => people_tools::call(bus, caller, &args),
         SEND_MESSAGE => {
             return send_message_tool::call(bus, caller, &name, args, activity).await;
+        }
+        handoff_tools::HAND_OFF | handoff_tools::STATUS => {
+            return handoff_tools::call(bus, caller, tool, args, activity).await;
         }
         panel_tools::PIN | panel_tools::UNPIN | panel_tools::LIST => {
             return panel_tools::call(bus, caller, tool, args, activity).await;
@@ -465,6 +469,7 @@ async fn uninstall(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let checked = required(&args, "id").and_then(|id| {
         let id =
             PluginId::parse(id).map_err(|e| ToolFailure::new("invalid_input", e.to_string()))?;
@@ -483,7 +488,7 @@ async fn uninstall(
                 format!("{id} 是系统插件，不能卸载"),
             ));
         }
-        Ok((id, cards::text(&view.title)))
+        Ok((id, langs.pick_owned(&view.title)))
     });
     let (id, title) = match checked {
         Ok(found) => found,
@@ -493,8 +498,7 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
-    let draft = cards::uninstall(&caller.name, &title, purge, &langs);
+    let draft = cards::uninstall(&caller.name, &title, purge, &value, &langs);
     let run = move |bus: Arc<Bus>,
                     _secrets: SecretValues,
                     _settings: wonton_protocol::SettingValues| async move {

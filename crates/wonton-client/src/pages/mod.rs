@@ -138,6 +138,7 @@ pub(crate) type RoomPanelChannel = (
 /// 打开的房间的面板，合成给壳的：时间线订阅的每一批都带上（ADR-0052）。
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct RoomPanelView {
+    pub(crate) room_id: OwnedRoomId,
     pub(crate) panel: Vec<PanelItem>,
     pub(crate) selected: Option<TabRef>,
     pub(crate) blocked: bool,
@@ -533,6 +534,7 @@ impl PagesLink {
                 room_id: room_id.to_string(),
             };
             RoomPanelView {
+                room_id: room_id.clone(),
                 panel: room_panel_items(&state, panel, &scope, plugins),
                 selected: state.room_panel_selected.clone(),
                 blocked: state.entry_blocked,

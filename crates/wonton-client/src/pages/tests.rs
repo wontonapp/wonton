@@ -196,6 +196,7 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: Some(format!("http://{id}.wonton.localhost/")),
+        link_url: None,
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),

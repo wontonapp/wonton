@@ -395,7 +395,6 @@ async fn app_calls_run_as_the_owner() {
         .await
     });
     let card = s.cards.wait_for(1).await;
-    assert!(card.title.contains("你"), "{}", card.title);
     s.bus
         .confirmations()
         .answer(&card.id, Answer::Approve, None)

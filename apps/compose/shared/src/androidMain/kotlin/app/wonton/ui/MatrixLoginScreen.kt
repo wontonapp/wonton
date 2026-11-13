@@ -158,7 +158,8 @@ private fun MatrixLoginReady(login: MatrixLoginViewModel, core: ClientCore, refu
                             Action.StartMatrixOidc(
                                 MatrixOidcLogin(
                                     login.loginId,
-                                    MATRIX_LOGIN_REDIRECT_URI,
+                                    // 核心接受的回调地址，壳不另写一份；MainActivity 按它认深链。
+                                    login.oidcRedirectUri,
                                     defaultDeviceName(context),
                                 ),
                             ),
@@ -217,7 +218,7 @@ private fun MatrixPasswordForm(login: MatrixLoginViewModel, core: ClientCore, re
     }
 }
 
-/** 登录跳去了系统浏览器；回来靠 `MATRIX_LOGIN_REDIRECT_URI` 的深链，按钮补一次手动打开。 */
+/** 登录跳去了系统浏览器；回来靠核心 `oidcRedirectUri` 的深链，按钮补一次手动打开。 */
 @Composable
 private fun MatrixLoginAwaitingOidc(authorizationUrl: String) {
     val context = LocalContext.current

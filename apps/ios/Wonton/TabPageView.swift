@@ -120,7 +120,7 @@ struct TabPageView: View {
                 if let panel {
                     PanelPagePull(
                         enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
-                        changed: panel.pageChanged, ended: panel.pageEnded
+                        changed: panel.pageChanged, ended: panel.pageEnded, cancelled: panel.pageCancelled
                     )
                 }
             }

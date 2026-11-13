@@ -268,6 +268,12 @@ impl PluginManager {
             state
                 .connections
                 .retain(|c| c.consumer != id.as_str() && c.provider != id.as_str());
+            state.handoff_consents.retain(|consent| {
+                !removing.iter().any(|removed| {
+                    consent.from.plugin_id == removed.as_str()
+                        || consent.target.plugin_id == removed.as_str()
+                })
+            });
             state.selected.remove(id.as_str());
             for selected in state.selected.values_mut() {
                 selected.retain(|_, p| !removing.iter().any(|removed| removed.as_str() == p));

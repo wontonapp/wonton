@@ -9,7 +9,6 @@ use std::time::Duration;
 use super::langs;
 use super::manager::manager_in_instance;
 use super::package;
-use crate::agent_outbox::Outbox;
 use crate::config::PublicUrls;
 use crate::gateway::Gateway;
 use crate::gateway::agent_acp::Registry;
@@ -29,11 +28,11 @@ use crate::plugin::docker::Engine;
 use crate::plugin::manifest::Manifest;
 use crate::plugin::manifest::Permission;
 use crate::plugin::upstreams::Endpoint;
-use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, ChainLimits, MemberStatus};
+use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, MemberStatus};
 
 mod carrier;
 mod consumer;
-mod minimal_provider;
+pub(crate) mod minimal_provider;
 
 use consumer::Ws;
 
@@ -234,24 +233,10 @@ fn chain_service(
             dir.path().join("audit.jsonl"),
         )),
     );
-    let ledger = Arc::new(
-        crate::agent_chain::Chains::open(
-            dir.path().join("agent-chains.json"),
-            ChainLimits::default(),
-        )
-        .unwrap(),
-    );
-    ledger.on_limit_event(agent_chains::limit_handler(&bus));
-    let chains = Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(Outbox::default()),
-        Arc::new(
-            crate::agent_chain::settings::AgentSettings::open(
-                dir.path().join("agent-settings.json"),
-            )
-            .unwrap(),
-        ),
-    ));
+    let chains = AgentChains::for_test(dir.path()).unwrap();
+    chains
+        .ledger()
+        .on_limit_event(agent_chains::limit_handler(&bus));
     let registry = Registry::new();
     chains.attach_acp_cancel(registry.clone());
     bus.attach_agent_chains(chains.clone());

@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ fun SettingsPage(
     onSubpage: (SettingsSubpage) -> Unit,
 ) {
     val core = plugins.core
+    val appLock by remember(core) { core.appLockUpdates() }.collectAsState(remember(core) { core.appLock() })
     // 好友项只在列表取到过以后出现；进设置先取一次。
     LaunchedEffect(core) { core.send(Action.RefreshFriends) }
     val back = { onSubpage(subpage.parent()) }
@@ -67,6 +69,7 @@ fun SettingsPage(
             AppearanceScreen(core, appearance)
         }
         SettingsSubpage.NOTIFICATIONS -> NotificationSettingsScreen(core, settings, back)
+        SettingsSubpage.APP_LOCK -> AppLockSettingsScreen(core, appLock, back)
         SettingsSubpage.ABOUT -> AboutPage(version, back)
         SettingsSubpage.PEERS -> PeersPage(core, back, peersOpenRequests, onPeersOpenRequestsHandled)
         SettingsSubpage.FRIENDS -> FriendsPage(core, back)
@@ -141,6 +144,12 @@ private fun SettingsEntryRow(
         SettingsEntry.MyApps -> WontonRow(stringResource(R.string.settings_my_apps), showsForward = true) {
             onSubpage(SettingsSubpage.MY_APPS)
         }
+        is SettingsEntry.AppLock -> WontonRow(
+            stringResource(R.string.applock_title),
+            if (entry.enabled) stringResource(appLockTimeoutLabel(entry.timeout)) else null,
+            showsForward = true,
+            onClick = { onSubpage(SettingsSubpage.APP_LOCK) },
+        )
         is SettingsEntry.Notifications -> WontonRow(
             stringResource(R.string.notification_title),
             // 摘要和通知页的“系统通知”一行同源：收不收得到提醒只看系统有没有允许，推送注册状态在通知页里说。

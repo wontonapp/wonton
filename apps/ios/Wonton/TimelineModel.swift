@@ -5,6 +5,7 @@ import WontonClient
 @Observable
 final class TimelineModel {
     private(set) var items: [TimelineItem] = []
+    private(set) var confirmations: [ConfirmationView] = []
     private(set) var backPagination: BackPagination = .idle
     /// 收到第一批（全部条目）之后才能翻页：核心要先打开这个房间的时间线。
     private(set) var isLoaded = false
@@ -51,7 +52,10 @@ final class TimelineModel {
             failure = error.problem
             return false
         }
+        defer { subscription.cancel() }
+        guard !Task.isCancelled else { return false }
         for await update in subscription.updates() {
+            guard !Task.isCancelled else { break }
             // 翻页由房间的锚点恢复处理；仅保留不改变开头的实时追加和编辑。
             let prepends = update.diffs.contains { diff in
                 switch diff {
@@ -66,6 +70,7 @@ final class TimelineModel {
                 apply(diff)
             }
             backPagination = update.backPagination
+            confirmations = update.confirmations
             viewport = update.viewport
             panel = update.panel
             panelSelected = update.panelSelected

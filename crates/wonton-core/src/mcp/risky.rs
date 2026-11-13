@@ -8,7 +8,6 @@ use serde_json::Value;
 use super::audience::Subject;
 use super::cards::{self, Draft};
 use super::{Bus, Caller};
-use crate::l10n;
 use crate::plugin::{McpServer, PluginId};
 
 /// 插件明确标了 `destructiveHint: true`，又没标只读。MCP 规范里不标时默认算真，但那样不标注解的社区工具全算进来，
@@ -30,22 +29,15 @@ impl Bus {
         args: &Value,
         highest: bool,
     ) -> Draft {
-        let plugin = cards::text(&server.title);
         let langs = self.card_languages(caller, Subject::Tool);
-        let mut draft = cards::tool_call(
-            &caller.name,
-            &plugin,
-            &definition.name,
-            args,
-            highest,
-            &langs,
-        );
+        let draft = cards::tool_call(langs.pick(&server.title), definition, args, highest, &langs);
         let deletes = deletes(definition);
-        if deletes && let Some(first) = draft.lines.first_mut() {
-            *first = cards::emphasized(l10n::text(&langs, "chat-card-tool-deletes", &[]));
-        }
         // 放行时段按插件记，不分 Bot：家人打开的时段会连主人的 Bot 一起放行，所以发给家人的卡片不给这个选项。
-        if highest || deletes || self.recipient(caller, Subject::Tool).is_some() {
+        if highest
+            || deletes
+            || self.recipient(caller, Subject::Tool).is_some()
+            || !super::handoff::allows_relaxation(self, caller)
+        {
             return draft;
         }
         draft.with_window(

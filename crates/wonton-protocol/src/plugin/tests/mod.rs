@@ -58,6 +58,7 @@ fn installed() -> InstalledPlugin {
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
         cross_origin_isolated: false,
+        link_url: None,
         declares_tools: true,
         tabs: vec![PluginTab {
             id: "photos".into(),

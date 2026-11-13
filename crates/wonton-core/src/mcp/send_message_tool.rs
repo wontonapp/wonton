@@ -176,11 +176,7 @@ async fn ask_and_enqueue(
 ) -> CallToolResult {
     let langs = bus.card_languages(&caller, Subject::Tool);
     let draft = draft(&bus, &caller, &request, &display_name, &langs);
-    let mut audience = bus.audience(&caller, Subject::Tool).await;
-    audience.category = Some(ConfirmationCategory::SendMessage {
-        recipient: request.recipient.clone(),
-        body: request.body.clone(),
-    });
+    let audience = bus.audience(&caller, Subject::Tool).await;
     let (card, answered) = match bus.confirmations().open_as(&caller.id, draft, audience) {
         Ok(opened) => opened,
         Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
@@ -318,6 +314,10 @@ fn draft(
         plugin_id: Some(caller.id.to_string()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: Some(ConfirmationCategory::SendMessage {
+            recipient: request.recipient.clone(),
+            body: request.body.clone(),
+        }),
     }
 }
 

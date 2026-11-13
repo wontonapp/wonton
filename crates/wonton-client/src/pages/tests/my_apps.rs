@@ -212,3 +212,93 @@ async fn account_data_without_my_apps_keeps_first_sync_defaults() {
     rig.tabs.recompute();
     assert_eq!(rig.my_app_titles(), ["old-content"]);
 }
+
+#[tokio::test]
+async fn link_plugins_open_in_the_system_browser_from_my_apps() {
+    let rig = Rig::new();
+    let mut link = plugin("app.link", "天气", "link-rev");
+    link.web_url = None;
+    link.link_url = Some("https://example.com/dashboard".to_owned());
+    let mut next = plugins("old-content");
+    next.installed.as_mut().unwrap().plugins.push(link);
+    rig.plugins.send_replace(next);
+    rig.tabs.recompute();
+
+    // 新装自动加入：条目带着网址，打开动作是系统的 App 内浏览器（ADR-0080 第 5 节）。
+    let app = rig
+        .tabs
+        .plugins
+        .view()
+        .sidebar
+        .apps
+        .iter()
+        .find(|app| app.plugin_id.as_deref() == Some("app.link"))
+        .expect("link plugin auto-added to my apps")
+        .clone();
+    assert_eq!(
+        app.open,
+        SidebarOpen::ExternalBrowser {
+            url: "https://example.com/dashboard".to_owned()
+        }
+    );
+
+    // 面板候选里没有它：外部网页没有页面可嵌进面板。
+    let link_tab = TabRef::Plugin {
+        plugin_id: "app.link".to_owned(),
+        page: None,
+    };
+    assert!(
+        rig.view()
+            .panel_candidates
+            .iter()
+            .all(|candidate| candidate.tab != link_tab)
+    );
+
+    // 移除后能从候选再加回来，加出来的行还是外部浏览器。
+    rig.tabs
+        .dispatch(Action::RemoveMyApp {
+            app: plugin_app("app.link"),
+        })
+        .unwrap();
+    assert!(
+        rig.view()
+            .my_app_candidates
+            .iter()
+            .any(|candidate| candidate.tab == link_tab)
+    );
+    rig.tabs
+        .dispatch(Action::AddMyApp {
+            app: MyAppRef::Page { tab: link_tab },
+            title: None,
+            index: None,
+        })
+        .unwrap();
+    let app = rig
+        .tabs
+        .plugins
+        .view()
+        .sidebar
+        .apps
+        .iter()
+        .find(|app| app.plugin_id.as_deref() == Some("app.link"))
+        .expect("link plugin re-added from candidates")
+        .clone();
+    assert!(matches!(app.open, SidebarOpen::ExternalBrowser { .. }));
+
+    // 没有网页也没有网址的插件没有行可加。
+    let mut offline = plugin("app.offline", "离线", "offline-rev");
+    offline.web_url = None;
+    let mut third = plugins("old-content");
+    third.installed.as_mut().unwrap().plugins.push(offline);
+    rig.plugins.send_replace(third);
+    rig.tabs.recompute();
+    assert!(
+        rig.tabs
+            .dispatch(Action::AddMyApp {
+                app: plugin_app("app.offline"),
+                title: None,
+                index: None,
+            })
+            .is_err()
+    );
+}

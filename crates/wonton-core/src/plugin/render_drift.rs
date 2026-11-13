@@ -36,13 +36,14 @@ pub(super) fn digest(container: &ContainerPlan) -> String {
             })
         })
         .collect();
-    // `HashMap` 的字段（标签、端口）由 `serde_json::Value` 按名字排序，同一个渲染两次算出来一样。
-    let value = serde_json::json!({
+    // ACP SDK 开启 preserve_order，摘要必须显式排序，不能依赖 serde_json 的编译特性。
+    let mut value = serde_json::json!({
         "name": container.name,
         "body": body,
         "files": files,
         "store_dir": container.store_dir,
     });
+    value.sort_all_objects();
     let json = serde_json::to_string(&value).unwrap_or_default();
     format!("sha256:{:x}", Sha256::digest(json.as_bytes()))
 }

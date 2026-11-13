@@ -245,7 +245,11 @@ impl Outbox {
         call_active: bool,
     ) -> Result<(), ()> {
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
-        let room_view = self.room_view.borrow().clone();
+        let room_view = self
+            .room_view
+            .borrow()
+            .clone()
+            .filter(|view| view.room_id == self.room_id);
         let (panel, panel_selected, entry_blocked, widgets) = match room_view {
             Some(view) => (
                 view.panel.clone(),
