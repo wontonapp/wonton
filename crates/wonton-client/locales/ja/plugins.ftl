@@ -109,7 +109,7 @@ tabs-view-plugin-list-not-ready = アプリの一覧をまだ読み込んでい�
 tabs-view-unknown-plugin = このアプリが見つかりません。
 
 # $error はローカル保存の元のエラー。
-tabs-storage-problem = タブバーの設定を保存できません。次回の起動では古い状態に戻ることがあります: { $error }
+tabs-storage-problem = マイアプリを保存できません。次回の起動では古い状態に戻ることがあります: { $error }
 
 tabs-view-plugin-no-page = このアプリには開けるウェブページがありません。
 
@@ -117,21 +117,21 @@ tabs-page-not-placed = このページはパネルにありません。
 
 # ナビゲーションバーの設定ファイル（tabs.json）のエラー。CoreError の理由として出ます。
 # $path は設定ファイルのパス、$reason は元のパースまたは入出力エラーです。
-tabs-config-read-failed = ナビゲーションバーの設定ファイル { $path } を読み込めません：{ $reason }
+tabs-config-read-failed = マイアプリの設定ファイル { $path } を読み込めません：{ $reason }
 
-tabs-config-corrupt = ナビゲーションバーの設定ファイル { $path } が破損しています：{ $reason }
+tabs-config-corrupt = マイアプリの設定ファイル { $path } が破損しています：{ $reason }
 
 # $count はナビゲーションバーに置ける項目の上限（MAX_ITEMS）です。
 tabs-config-too-many-items = ナビゲーションバーには最大 { $count } 個までしか項目を追加できません。
 
-tabs-config-duplicate-page = ナビゲーションバーに重複したページがあります。
+tabs-config-duplicate-page = マイアプリに重複したページがあります。
 
 tabs-config-plugin-page-incomplete = アプリのページにタイトルとアイコンがありません。
 
 tabs-config-missing-fixed = ナビゲーションバーにチャットがありません。
 
 # $path は設定ファイルのパス、$reason は元の書き込みエラーです。
-tabs-config-write-failed = ナビゲーションバーの設定ファイル { $path } に書き込めません：{ $reason }
+tabs-config-write-failed = マイアプリの設定ファイル { $path } に書き込めません：{ $reason }
 
 scope-task-crashed = バックグラウンドのタスクが異常終了しました：{ $error }
 
@@ -181,7 +181,7 @@ sessions-not-found = そのセッションはありません：{ $id }
 sessions-invalid-action = セッション操作ではありません
 
 # アプリページのブリッジ（crates/wonton-client/src/tabs/bridge/）。
-tabs-bridge-page-not-open = このアプリのページは開かれていないか、固定されていません
+tabs-bridge-page-not-open = このアプリのページは開かれていません
 
 tabs-bridge-invalid-environment = ページのインセットとセーフエリアは有限の非負の数である必要があります
 
@@ -191,7 +191,7 @@ tabs-page-cannot-reload = このページは再読み込みできません。
 
 tabs-bar-not-pinned = このページはナビゲーションバーに固定されていません。
 
-tabs-bar-already-pinned = このページはすでにナビゲーションバーに固定されています。
+tabs-bar-already-pinned = このページはすでにマイアプリにあります。
 
 tabs-bar-replace-required = ナビゲーションバーがいっぱいです。置き換えるページを指定してください。
 
@@ -203,9 +203,9 @@ tabs-bar-not-full = ナビゲーションバーがいっぱいではないので
 
 tabs-bar-remove-fixed = チャットとアプリは外せません。
 
-tabs-bar-page-missing = このページはナビゲーションバーにありません。
+tabs-bar-page-missing = このページはマイアプリにありません。
 
-tabs-bar-index-out-of-range = その位置はナビゲーションバーの範囲外です。
+tabs-bar-index-out-of-range = その位置はマイアプリの範囲外です。
 
 tabs-open-only-plugins = 開き方を設定できるのはアプリのページだけです。
 
@@ -214,3 +214,5 @@ tabs-fullscreen-only-plugins = 全画面にできるのはアプリのページ�
 tabs-fullscreen-none = 全画面のページはありません。
 
 tabs-fullscreen-not-current = そのページは全画面のページではありません。
+tabs-view-not-a-page = ここで開けるのはアプリのページだけです。
+tabs-view-no-page-open = 開いているアプリのページはありません。

@@ -7,10 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -29,7 +25,7 @@ import app.wonton.ui.design.toColor
 
 @Composable
 internal fun PluginTabStatus(
-    page: TabPage, tab: TabRef, tabs: TabsState, problem: Problem?, supported: Boolean,
+    page: TabPage, tab: TabRef, tabs: PagesState, problem: Problem?, supported: Boolean,
     crossOriginBlocked: Boolean, onDetails: (String) -> Unit, place: PlacedTab? = null,
 ) {
     val state = page.state
@@ -76,23 +72,19 @@ internal fun PluginTabStatus(
 
 @Composable
 private fun TabStatusActions(
-    state: TabState, tab: TabRef, tabs: TabsState, onDetails: (String) -> Unit, place: PlacedTab?,
+    state: TabState, tab: TabRef, tabs: PagesState, onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
     if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
         WontonButton(stringResource(R.string.panel_remove), {
             tabs.send(Action.RemovePanelPage(place.scope, tab))
         })
     } else if (state is TabState.PageRemoved) {
-        val pinned = tabs.viewModel.items.any { it.tab == tab }
-        val label = if (pinned) stringResource(R.string.tab_unpin_from_bar) else stringResource(R.string.common_close)
-        WontonButton(label, {
-            tabs.send(if (pinned) Action.UnpinTab(tab) else Action.CloseTabOverlay)
-        })
+        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.ClosePage) })
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
         WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
     } else {
         WontonButton(stringResource(R.string.common_retry), {
-            tabs.send(Action.ReloadTab(place ?: PlacedTab.Bar(tab)))
+            tabs.send(Action.ReloadTab(place ?: PlacedTab.Page(tab)))
         })
         if (state is TabState.Failed && tab is TabRef.Plugin) {
             WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
@@ -107,10 +99,10 @@ private fun loadFailureTitle(failure: TabLoadFailure): String = when (failure) {
     TabLoadFailure.UPSTREAM -> stringResource(R.string.tab_load_upstream)
 }
 
+/** 已卸载的应用从我的应用里拿掉了：说一次。我的应用读写的问题不弹窗，在侧边栏的“我的应用”下面轻提示。 */
 @Composable
-fun TabNotices(tabs: TabsState, onSettings: () -> Unit) {
+fun TabNotices(tabs: PagesState) {
     val view = tabs.viewModel
-    var dismissed by remember { mutableStateOf<String?>(null) }
     if (view.uninstalled.isNotEmpty()) {
         val names = ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(view.uninstalled)
         val dismiss = { tabs.send(Action.DismissUninstalledTabs) }
@@ -118,16 +110,6 @@ fun TabNotices(tabs: TabsState, onSettings: () -> Unit) {
             stringResource(R.string.tab_uninstalled_notice, names),
             onDismiss = dismiss,
             actions = listOf(WontonDialogAction(stringResource(R.string.design_ok), onClick = dismiss)),
-        )
-    } else view.problem?.takeUnless { it.message == dismissed }?.let { problem ->
-        WontonDialog(
-            stringResource(R.string.tab_settings_unreadable),
-            onDismiss = { dismissed = problem.message },
-            actions = listOf(WontonDialogAction(stringResource(R.string.tab_open_settings)) {
-                dismissed = problem.message
-                onSettings()
-            }),
-            detail = { ProblemDetail(problem.message, stringResource(R.string.common_details)) }
         )
     }
 }

@@ -5,7 +5,8 @@ struct ChatListView: View {
     @Bindable var model: ChatModel
     let plugins: PluginsModel
     @Environment(\.wontonColors) private var colors
-    @Environment(TabsModel.self) private var tabs
+    @Environment(PagesModel.self) private var pages
+    @Environment(\.wontonOpenApps) private var openApps
     @Environment(\.chatPull) private var pull
     @State private var confirmation: PluginConfirmation?
 
@@ -26,7 +27,7 @@ struct ChatListView: View {
                             row: row,
                             plugins: plugins,
                             retry: { retry(row) },
-                            openPage: { tabs.select(.apps) }
+                            openPage: { openApps?() }
                         )
                     }
                     ForEach(Array(model.viewModel.rooms.enumerated()), id: \.element.roomId) { index, row in
@@ -53,7 +54,7 @@ struct ChatListView: View {
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
-            .environment(\.goToInstalledApps, { tabs.select(.apps) })
+            .environment(\.goToInstalledApps, { pages.open(.apps) })
             .navigationDestination(for: ChatRoute.self) { route in
                 switch route {
                 case let .room(roomId):

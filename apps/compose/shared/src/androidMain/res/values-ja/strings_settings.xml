@@ -41,4 +41,5 @@
     <string name="push_status_failed_upstream">登録に失敗しました。自宅サーバーでエラーが発生しました</string>
     <string name="push_status_failed_not_ready">登録に失敗しました。チャットの接続が整うまでお待ちください</string>
     <string name="push_status_failed_invalid_input">登録に失敗しました。プッシュアドレスが正しくありません</string>
+    <string name="settings_my_apps">マイアプリ</string>
 </resources>

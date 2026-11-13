@@ -22,7 +22,7 @@ import app.wonton.ui.design.toColor
 
 @Composable
 internal fun SharedPageStatus(
-    page: TabPage, tab: TabRef.SharedApp, source: SharedAppsSource?, tabs: TabsState,
+    page: TabPage, tab: TabRef.SharedApp, source: SharedAppsSource?, tabs: PagesState,
     problem: Problem?, supported: Boolean, cover: Boolean, inset: PaddingValues,
 ) {
     val sourceFailure = (source?.state as? SharedAppsState.Failed)?.problem
@@ -38,7 +38,7 @@ internal fun SharedPageStatus(
         else -> sharedPluginProblem(page.state, page.title)
     }
     if (!cover && failure == null && source?.state is SharedAppsState.Ready) return
-    Column(Modifier.padding(inset).fillMaxSize().background(WontonTheme.colors.canvas.toColor())
+    Column(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()).padding(inset)
         .padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
         if (failure != null) {
@@ -47,15 +47,13 @@ internal fun SharedPageStatus(
                 if (source?.state !is SharedAppsState.Ready || row == null || row.problem != null) {
                     tabs.send(Action.RefreshSharedApps(tab.ownerUserId))
                 }
-                tabs.send(Action.ReloadTab(PlacedTab.Bar(tab)))
+                tabs.send(Action.ReloadTab(PlacedTab.Page(tab)))
             }, kind = WontonButtonKind.SECONDARY)
         } else LoadingView()
         WontonButton(stringResource(R.string.share_refresh), {
             tabs.send(Action.RefreshSharedApps(tab.ownerUserId))
         }, kind = WontonButtonKind.SECONDARY)
-        WontonButton(stringResource(R.string.common_close), {
-            if (tabs.viewModel.items.any { it.tab == tab }) tabs.send(Action.UnpinTab(tab))
-            else tabs.send(Action.CloseTabOverlay)
-        }, kind = WontonButtonKind.SECONDARY)
+        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.ClosePage) },
+            kind = WontonButtonKind.SECONDARY)
     }
 }

@@ -38,7 +38,7 @@ enum SnapshotFixtures {
 
     static func chatList(core: ClientCore) -> some View {
         ChatListView(model: chatModel(core: core), plugins: PluginsModel(core: core))
-            .environment(TabsModel(core: core))
+            .environment(PagesModel(core: core))
     }
 
     static func chatRoom(core: ClientCore) -> some View {
@@ -176,7 +176,6 @@ enum SnapshotFixtures {
             SettingsSection(entries: [.appearance, .language]),
             SettingsSection(entries: [.peers(count: 2), .friends(count: 3, requests: 1)]),
             SettingsSection(entries: [
-                .bottomBar,
                 .notifications(method: .keepalive, push: .registered, categories: []),
                 .chatBackup(recovery: .enabled)
             ]),

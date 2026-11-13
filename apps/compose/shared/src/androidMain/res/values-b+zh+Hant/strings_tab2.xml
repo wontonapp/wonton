@@ -7,7 +7,7 @@
     <string name="tab_start">啟動</string>
     <string name="tab_view_details">查看詳細資訊</string>
     <string name="tab_load_upstream">應用程式的網頁打不開</string>
-    <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從底部導覽列移除</string>
+    <string name="tab_uninstalled_notice">%1$s 已解除安裝，已從「我的應用程式」移除</string>
     <string name="tab_media_prompt_camera">允許 %1$s 使用相機嗎？</string>
     <string name="tab_media_deny">不允許</string>
     <string name="tab_media_system_denied_title">相機或麥克風用不了</string>
@@ -24,4 +24,5 @@
     <string name="tab_menu_back">返回</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">放到標籤列</string>
+    <string name="tab_page_close">關閉頁面</string>
 </resources>

@@ -31,5 +31,5 @@
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">装好后在聊天里登录</string>
     <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
-    <string name="onboarding_tip_app_installed">应用装好后，可以把它放到底栏。</string>
+    <string name="onboarding_tip_app_installed">装好的应用在侧边栏的“我的应用”里。</string>
 </resources>

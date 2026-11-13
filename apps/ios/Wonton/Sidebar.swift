@@ -4,6 +4,8 @@ import WontonClient
 extension EnvironmentValues {
     /// 根页面左上角打开侧边栏的按钮；没有时不显示。
     @Entry var wontonOpenSidebar: (() -> Void)?
+    /// 聊天列表里的“看看应用”：打开全部应用这一层；没有时不显示。
+    @Entry var wontonOpenApps: (() -> Void)?
     /// 侧边栏的收起拖动刚被认出来：这次触点抬手时不再算点按（左滑收起不误进应用）。
     @Entry var wontonSidebarTapCancelled: Bool = false
 }
@@ -111,10 +113,9 @@ struct SidebarPanel: View {
     let plugins: PluginsModel
     let current: TabRef
     let navigate: (SidebarDestination) -> Void
-    @Environment(TabsModel.self) private var tabs
+    @Environment(PagesModel.self) private var pages
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonSidebarTapCancelled) private var tapCancelled
-    @State private var pin: TabRef?
 
     /// 收起拖动认出来之后的抬手不算点按：左滑收起侧边栏时不误进应用；轻点和竖滑照常。
     private func openDestination(_ destination: SidebarDestination) {
@@ -149,7 +150,6 @@ struct SidebarPanel: View {
                 .padding(.horizontal, WontonTheme.spacing.s16)
                 .padding(.vertical, WontonTheme.spacing.s12)
         }
-        .tabPinRequests($pin)
         .task {
             plugins.refresh(.refreshPlugins)
             plugins.refresh(.refreshStore(force: false))
@@ -189,19 +189,27 @@ struct SidebarPanel: View {
         .padding(.horizontal, WontonTheme.spacing.s12)
         .padding(.top, WontonTheme.spacing.s24)
         .padding(.bottom, WontonTheme.spacing.s4)
-        ForEach(sidebar.apps, id: \.pluginId) { app in
+        ForEach(sidebar.apps, id: \.self) { app in
             SidebarRow(
                 title: app.title,
-                badge: app.update ? 1 : 0,
-                dotOnly: true,
                 selected: selected(app),
-                pinned: isPinned(app)
+                badgeMark: SidebarBadgeMark(update: app.badge.update, problem: app.badge.problem)
             ) {
                 PluginIconView(icon: app.icon, size: 28, model: plugins)
             } action: {
                 openDestination(.app(app))
             }
-            .contextMenu { pinMenu(app) }
+            .contextMenu { myAppMenu(app) }
+        }
+        if pages.viewModel.syncStale {
+            HStack(spacing: WontonTheme.spacing.s8) {
+                Text(TabText.syncStale)
+                    .wontonText(WontonTheme.typography.supporting)
+                Spacer(minLength: 0)
+                Button(TabText.syncStaleRetry) { pages.send(.retryMyAppSync) }
+                    .buttonStyle(WontonSmallButtonStyle())
+            }
+            .padding(.horizontal, WontonTheme.spacing.s12)
         }
         if sidebar.moreApps {
             SidebarRow(title: String(localized: .Sidebar.sidebarAllApps), selected: current == .apps) {
@@ -215,19 +223,23 @@ struct SidebarPanel: View {
         return tab == current
     }
 
-    private func isPinned(_ app: SidebarApp) -> Bool {
-        guard case let .page(tab) = app.open else { return false }
-        return tabs.isPinned(tab)
-    }
-
-    @ViewBuilder private func pinMenu(_ app: SidebarApp) -> some View {
+    /// 长按：这一插件的每一页，加进或移出“我的应用”。
+    @ViewBuilder private func myAppMenu(_ app: SidebarApp) -> some View {
         let plugin = plugins.viewModel.installed?.plugins.first { $0.id == app.pluginId }
-        ForEach(plugin?.tabChoices ?? [], id: \.tab) { choice in
-            let pinned = tabs.isPinned(choice.tab)
+        let mine = sidebar.apps.compactMap(\.tab)
+        ForEach(plugin?.tabChoices ?? []) { choice in
+            let added = mine.contains(choice.tab)
             Button {
-                if pinned { tabs.send(.unpinTab(tab: choice.tab)) } else { pin = choice.tab }
+                if added {
+                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                } else {
+                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                }
             } label: {
-                Label(pinned ? TabText.unpin : TabText.pin, systemImage: pinned ? "pin.slash" : "pin")
+                Label(
+                    added ? TabText.removeFromMyApps : TabText.addToMyApps,
+                    systemImage: added ? "minus.circle" : "plus.circle"
+                )
             }
         }
     }
@@ -294,12 +306,18 @@ enum SidebarDestination {
     case app(SidebarApp)
 }
 
+/// 行尾两个红点的来源，分开画。
+struct SidebarBadgeMark {
+    var update = false
+    var problem = false
+}
+
 private struct SidebarRow<Icon: View>: View {
     let title: String
     var badge = 0
     var dotOnly = false
     let selected: Bool
-    var pinned = false
+    var badgeMark: SidebarBadgeMark?
     @ViewBuilder let icon: Icon
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
@@ -313,10 +331,15 @@ private struct SidebarRow<Icon: View>: View {
                     .fontWeight(selected ? .semibold : .regular)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                if pinned {
-                    WontonIcon.pinFill.view(size: 11)
-                        .foregroundStyle(Color(colors.textSecondary))
-                        .accessibilityLabel(String(localized: .Sidebar.sidebarPinned))
+                if let badgeMark {
+                    if badgeMark.update {
+                        Circle().fill(Color(colors.danger)).frame(width: 8, height: 8)
+                            .accessibilityLabel(String(localized: .Sidebar.sidebarUpdatable))
+                    }
+                    if badgeMark.problem {
+                        Circle().fill(Color(colors.warning)).frame(width: 8, height: 8)
+                            .accessibilityLabel(String(localized: .Sidebar.sidebarProblem))
+                    }
                 }
                 if badge > 0 {
                     if dotOnly {

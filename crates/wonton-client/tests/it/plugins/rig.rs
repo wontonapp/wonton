@@ -451,7 +451,6 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         written_by: None,
         status,
         web_url: None,
-        web_display: wonton_protocol::TabDisplay::default(),
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),

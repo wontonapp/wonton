@@ -109,7 +109,7 @@ tabs-view-plugin-list-not-ready = 插件列表还没读到，暂时不能操作�
 tabs-view-unknown-plugin = 没有这个插件。
 
 # $error 是本地存储的原始错误。
-tabs-storage-problem = 底栏设置存不下，下次启动可能恢复旧状态：{ $error }
+tabs-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
 
 tabs-view-plugin-no-page = 插件没有可打开的网页。
 
@@ -117,21 +117,21 @@ tabs-page-not-placed = 这个页面不在面板里。
 
 # 底栏设置文件（tabs.json）的错误，作为 CoreError 的 reason 显示。
 # $path 是设置文件的路径，$reason 是原始的解析或读写错误。
-tabs-config-read-failed = 读不了底栏设置文件 { $path }：{ $reason }
+tabs-config-read-failed = 读不了我的应用设置文件 { $path }：{ $reason }
 
-tabs-config-corrupt = 底栏设置文件 { $path } 已损坏：{ $reason }
+tabs-config-corrupt = 我的应用设置文件 { $path } 已损坏：{ $reason }
 
 # $count 是底栏最多能放的项数（MAX_ITEMS）。
 tabs-config-too-many-items = 底栏最多只能有 { $count } 项。
 
-tabs-config-duplicate-page = 底栏里有重复页面。
+tabs-config-duplicate-page = 我的应用里有重复页面。
 
 tabs-config-plugin-page-incomplete = 插件页面缺少标题和图标。
 
 tabs-config-missing-fixed = 底栏缺少聊天。
 
 # $path 是设置文件的路径，$reason 是原始的写入错误。
-tabs-config-write-failed = 写不了底栏设置文件 { $path }：{ $reason }
+tabs-config-write-failed = 写不了我的应用设置文件 { $path }：{ $reason }
 
 scope-task-crashed = 核心的后台任务异常结束：{ $error }
 
@@ -181,7 +181,7 @@ sessions-not-found = 会话不存在：{ $id }
 sessions-invalid-action = 不是会话操作
 
 # 应用页面的桥（crates/wonton-client/src/tabs/bridge/）。
-tabs-bridge-page-not-open = 这个插件页面没有打开或固定
+tabs-bridge-page-not-open = 这个插件页面没有打开
 
 tabs-bridge-invalid-environment = 页面栏高和安全区必须是有限的非负数
 
@@ -191,7 +191,7 @@ tabs-page-cannot-reload = 这个页面不能重新加载。
 
 tabs-bar-not-pinned = 这个页面没有固定到底栏。
 
-tabs-bar-already-pinned = 这个页面已经固定到底栏。
+tabs-bar-already-pinned = 这个页面已经在我的应用里。
 
 tabs-bar-replace-required = 底栏已满，必须指定要替换的页面。
 
@@ -203,9 +203,9 @@ tabs-bar-not-full = 底栏未满时不能指定替换页面。
 
 tabs-bar-remove-fixed = 聊天和应用不能拿掉。
 
-tabs-bar-page-missing = 这个页面不在底栏。
+tabs-bar-page-missing = 这个页面不在我的应用。
 
-tabs-bar-index-out-of-range = 底栏下标越界。
+tabs-bar-index-out-of-range = 位置超出我的应用的范围。
 
 tabs-open-only-plugins = 只有插件页面可以设置打开方式。
 
@@ -214,3 +214,5 @@ tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
+tabs-view-not-a-page = 只有插件页面能在这里打开。
+tabs-view-no-page-open = 现在没有打开着的插件页面。

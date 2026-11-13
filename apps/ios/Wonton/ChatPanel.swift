@@ -5,7 +5,7 @@ import WontonClient
 
 /// 打开房间面板要的一整套模型和回调：房间在导航栈里，从环境取，不再一层层传。
 struct PanelDependencies {
-    let tabs: TabsModel
+    let pages: PagesModel
     let home: HomeModel
     let plugins: PluginsModel
     let chat: ChatModel
@@ -41,14 +41,14 @@ enum PanelLevel { case closed, peek, full }
 /// 聊天页的下拉面板（ADR-0052）：第 0 级收起，第 1 级露出一条聊天页，第 2 级整页。
 /// 主聊天页从上方下来，房间从下方出来，两处上下对调。
 struct ChatPanelHost<Content: View>: View {
-    let tabs: TabsModel
+    let pages: PagesModel
     let home: HomeModel
     let plugins: PluginsModel
     let chat: ChatModel
     let appearance: AppearanceModel
     let scope: PanelScope
     let edge: PanelEdge
-    /// 面板里的页面（主面板来自 `TabsViewModel.panel`，房间来自每一批时间线）。
+    /// 面板里的页面（主面板来自 `PagesViewModel.panel`，房间来自每一批时间线）。
     let items: [PanelItem]
     /// 核心记住的上次看的那一页。
     let selected: TabRef?
@@ -350,11 +350,11 @@ extension ChatPanelHost {
             edit: { editing = true }
         )
         return TabPageView(
-            tabs: tabs, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            tab: item.tab, placed: placed, store: webViews, page: item.page, isOverlay: false,
-            keepAlive: window().contains(placed),
+            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
+            tab: item.tab, placed: placed, store: webViews, page: item.page,
             draft: draft, open: open, pendingCards: pendingCards, openCardRoom: openCardRoom,
-            panel: mode, remove: { remove(item.tab) }
+            panel: mode, remove: { remove(item.tab) },
+            keepAlive: window().contains(placed)
         )
         .id(item.tab)
     }
@@ -391,10 +391,10 @@ extension ChatPanelHost {
 
     private var editorCandidates: [PanelCandidate] {
         let inPanel = Set(items.map(\.tab))
-        let pluginPages = tabs.viewModel.panelCandidates.compactMap(\.panelCandidate)
+        let pluginPages = pages.viewModel.panelCandidates.compactMap(\.panelCandidate)
         var all = pluginPages
         if case .room = scope {
-            all += tabs.viewModel.panel.map { PanelCandidate(tab: $0.tab, title: $0.page.title, icon: nil) }
+            all += pages.viewModel.panel.map { PanelCandidate(tab: $0.tab, title: $0.page.title, icon: nil) }
         }
         return all.filter { !inPanel.contains($0.tab) }
     }
@@ -404,10 +404,10 @@ extension ChatPanelHost {
             items: items,
             candidates: editorCandidates,
             plugins: plugins,
-            add: { tabs.send(.addPanelPage(scope: scope, tab: $0)) },
+            add: { pages.send(.addPanelPage(scope: scope, tab: $0)) },
             remove: { remove($0) },
-            move: { tab, index in tabs.send(.movePanelPage(scope: scope, tab: tab, index: UInt32(index))) },
-            addURL: { tabs.send(.addPanelPage(scope: scope, tab: .url(url: $0))) }
+            move: { tab, index in pages.send(.movePanelPage(scope: scope, tab: tab, index: UInt32(index))) },
+            addURL: { pages.send(.addPanelPage(scope: scope, tab: .url(url: $0))) }
         )
     }
 }
@@ -543,13 +543,13 @@ struct RoomPanelHost<Content: View>: View {
         if let deps {
             let scope = PanelScope.room(roomId: roomId)
             ChatPanelHost(
-                tabs: deps.tabs, home: deps.home, plugins: deps.plugins, chat: deps.chat,
+                pages: deps.pages, home: deps.home, plugins: deps.plugins, chat: deps.chat,
                 appearance: deps.appearance, scope: scope, edge: .bottom, items: panel, selected: selected,
                 blocked: blocked, draft: deps.draft, open: deps.open, pendingCards: deps.pendingCards,
                 openCardRoom: deps.openCardRoom,
-                select: { deps.tabs.send(.selectPanelPage(scope: scope, tab: $0)) },
-                remove: { deps.tabs.send(.removePanelPage(scope: scope, tab: $0)) },
-                move: { deps.tabs.send(.movePanelPage(scope: scope, tab: $0, index: UInt32($1))) },
+                select: { deps.pages.send(.selectPanelPage(scope: scope, tab: $0)) },
+                remove: { deps.pages.send(.removePanelPage(scope: scope, tab: $0)) },
+                move: { deps.pages.send(.movePanelPage(scope: scope, tab: $0, index: UInt32($1))) },
                 pullAnchor: pullAnchor,
                 content: { content() }
             )

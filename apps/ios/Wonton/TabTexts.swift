@@ -5,24 +5,19 @@ enum TabText {
     static var chat: String { String(localized: .Tab2.tabChat) }
     static var apps: String { String(localized: .Launcher.launcherTitle) }
     static var settings: String { String(localized: .Tab2.tabSettings) }
-    static var bottomBar: String { String(localized: .Tab0.tabBottomBar) }
-    static var bottomPanel: String { String(localized: .Tab2.tabBottomPanel) }
-    static var showLabels: String { String(localized: .Tab2.tabShowLabels) }
     static var addMore: String { String(localized: .Tab1.tabAddMore) }
-    static var addToBar: String { String(localized: .Tab1.tabAddToBar) }
-    static var pin: String { String(localized: .Launcher.launcherPinToBar) }
-    static var unpin: String { String(localized: .Tab1.tabRemoveFromBar) }
-    static var replace: String { String(localized: .Tab2.tabReplace) }
     static var back: String { String(localized: .Design.designBack) }
     static var close: String { String(localized: .Common.commonClose) }
     static var retry: String { String(localized: .Common.commonRetry) }
     static var details: String { String(localized: .Tab0.tabViewDetails) }
     static var open: String { String(localized: .Tab1.tabOpen) }
-    static var pinToBar: String { String(localized: .Tab2.tabPinToBar) }
-    static var fullscreen: String { String(localized: .Tab2.tabFullscreen) }
-    static var alwaysFullscreen: String { String(localized: .Tab0.tabMenuAlwaysFullscreen) }
     static var reload: String { String(localized: .Tab0.tabMenuReload) }
     static var more: String { String(localized: .Tab2.tabMore) }
+    static var myApps: String { String(localized: .Settings.settingsMyApps) }
+    static var syncStale: String { String(localized: .myappSyncStale) }
+    static var syncStaleRetry: String { String(localized: .myappSyncStaleRetry) }
+    static var addToMyApps: String { String(localized: .myappAdd) }
+    static var removeFromMyApps: String { String(localized: .myappRemove) }
     static var starting: String { String(localized: .Tab1.tabStarting) }
     static var loading: String { String(localized: .Tab1.tabLoading) }
     static var upgrading: String { String(localized: .Tab2.tabUpgrading) }

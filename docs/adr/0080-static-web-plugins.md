@@ -92,11 +92,10 @@ x-wonton:
       - https://*.tile.openstreetmap.org
   webui:
     path: /
-    display: standard
   tabs: [...]                         # 照 ADR-0033
 ```
 
-- **允许的字段：** `static_web`、`webui` 的展示字段（`path`、`display`、`cross_origin_isolated`）、`tabs`、`requires`/`wants`
+- **允许的字段：** `static_web`、`webui` 的展示字段（`path`、`cross_origin_isolated`；`display` 已由 [ADR-0095](0095-no-tab-bar.md) 删掉）、`tabs`、`requires`/`wants`
   （只能是第 6 节的 `web_storage`）、`permissions`（只能是 `network.egress`，第 4 节），以及标题、说明、图标这些商店字段。
 - **装时报错的字段：** `services`、`webui.service`、`webui.port`、`webui.sso`、`webui.oidc`、`webui.proxy`、`webui.friends`、
   `secrets`、`settings`、`mcp`、`bot`、`bots`、`provides`、`lan`、`tunnel`、`setup`，以及 `network.egress` 以外的权限。

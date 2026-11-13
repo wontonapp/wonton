@@ -38,7 +38,7 @@ class AndroidLinkOpener(
         when (val kind = link.kind) {
             is RichLinkKind.External, RichLinkKind.Other -> customTab(link.url)
             is RichLinkKind.Plugin ->
-                core.send(Action.SelectTab(TabRef.Plugin(kind.pluginId, null)))?.let(onReject)
+                core.send(Action.OpenPage(TabRef.Plugin(kind.pluginId, null)))?.let(onReject)
             is RichLinkKind.Matrix -> when (val target = kind.target) {
                 is MatrixTarget.User -> navigation.openDirectChat(core, target.userId)?.let(onReject)
                 is MatrixTarget.Room -> scope.launch {

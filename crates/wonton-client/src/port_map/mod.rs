@@ -1,5 +1,5 @@
 //! 插件端口在本机同号映射（ADR-0072）：只监听 `127.0.0.1`，TCP 一条本机连接一条 `Port` 流，UDP 每个来源地址
-//! 一个流向。屏幕上显示着插件的页面时自动映射（`SetVisiblePlugin`），页面看不见、App 进后台就停，回前台恢复，
+//! 一个流向。屏幕上显示着插件的页面时自动映射（页面栈的栈顶，ADR-0095），页面看不见、App 进后台就停，回前台恢复，
 //! 手动开关不受影响；主人的开关按服务器存在槽位目录里。绑定和解绑都在一个后台任务里按顺序做，ViewModel 只在做完
 //! 之后发出：看到“关”时端口已经空出来了。映射状态每次变化打一行 INFO 日志：端口、结果、触发原因，只在变化时打。
 
@@ -38,7 +38,7 @@ enum Outcome {
 #[derive(Debug, Default)]
 struct Shared {
     enabled: BTreeSet<String>,
-    /// 屏幕上正显示着页面的插件（`SetVisiblePlugin`），进后台留着，页面换走才清。
+    /// 屏幕上正显示着页面的插件（页面栈的栈顶，ADR-0095），进后台留着，页面换走才清。
     visible: Option<String>,
     /// App 在前台。进后台自动映射失效，回前台恢复，壳不用重报。
     foreground: bool,
@@ -119,7 +119,7 @@ impl PortMapper {
         Ok(())
     }
 
-    /// `SetVisiblePlugin`：屏幕上换了页面。看不见的插件只要手动开关还开着就继续映射。
+    /// 屏幕上换了页面（由页面栈推导）。看不见的插件只要手动开关还开着就继续映射。
     pub(crate) fn set_visible(&self, plugin_id: Option<String>) {
         let mut shared = lock(&self.shared);
         if shared.visible == plugin_id {

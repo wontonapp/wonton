@@ -96,4 +96,11 @@
     <string name="widget_agent_status_unknown">状態不明</string>
     <string name="widget_updated_at">%1$s に更新</string>
     <string name="widget_status_at">%1$s · %2$s</string>
+    <string name="myapp_add">マイアプリに追加</string>
+    <string name="myapp_add_more">アプリを追加</string>
+    <string name="myapp_auto_add">新しく入れたアプリを自動で追加</string>
+    <string name="myapp_problem">マイアプリを読み書きできませんでした</string>
+    <string name="myapp_remove">マイアプリから外す</string>
+    <string name="myapp_sync_stale">同期がまだ完了していません</string>
+    <string name="myapp_sync_stale_detail">この端末には保存済み。接続後に自動で同期します。</string>
 </resources>

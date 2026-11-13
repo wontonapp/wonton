@@ -2,8 +2,8 @@ use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
     AgentChainsViewModel, AppearanceViewModel, BotContactsViewModel, ChatViewModel,
     ComposerViewModel, ConfirmationsViewModel, FriendsViewModel, HomeViewModel,
-    OnboardingViewModel, PeersViewModel, PluginsViewModel, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, TabsViewModel, TransfersViewModel, WidgetSnapshot,
+    OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, TransfersViewModel, WidgetSnapshot,
 };
 
 use crate::session_store::SessionStore;
@@ -75,6 +75,33 @@ impl SessionListSubscription {
     }
 }
 
+/// Agent 链列表的订阅（ADR-0061 第 10 节），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct AgentChainsSubscription {
+    updates: Updates<AgentChainsViewModel>,
+}
+
+impl AgentChainsSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<AgentChainsViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl AgentChainsSubscription {
+    /// 等待下一份链列表，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<AgentChainsViewModel> {
+        self.updates.next(AgentChainsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
 /// 家里服务器连接的订阅，用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
 pub struct HomeSubscription {
@@ -121,33 +148,6 @@ impl ChatSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
     pub async fn next(&self) -> Option<ChatViewModel> {
         self.updates.next(ChatViewModel::clone).await
-    }
-
-    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
-    pub fn cancel(&self) {
-        self.updates.cancel();
-    }
-}
-
-/// Agent 链列表的订阅（ADR-0061 第 10 节），用法同 [`SessionListSubscription`]。
-#[derive(uniffi::Object)]
-pub struct AgentChainsSubscription {
-    updates: Updates<AgentChainsViewModel>,
-}
-
-impl AgentChainsSubscription {
-    pub(crate) fn new(receiver: watch::Receiver<AgentChainsViewModel>) -> Self {
-        Self {
-            updates: Updates::new(receiver),
-        }
-    }
-}
-
-#[uniffi::export]
-impl AgentChainsSubscription {
-    /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
-    pub async fn next(&self) -> Option<AgentChainsViewModel> {
-        self.updates.next(AgentChainsViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
@@ -212,12 +212,12 @@ impl PluginsSubscription {
 
 /// 底栏和插件页面的订阅，用法同 [`SessionListSubscription`]。
 #[derive(uniffi::Object)]
-pub struct TabsSubscription {
-    updates: Updates<TabsViewModel>,
+pub struct PagesSubscription {
+    updates: Updates<PagesViewModel>,
 }
 
-impl TabsSubscription {
-    pub(crate) fn new(receiver: watch::Receiver<TabsViewModel>) -> Self {
+impl PagesSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<PagesViewModel>) -> Self {
         Self {
             updates: Updates::new(receiver),
         }
@@ -225,10 +225,10 @@ impl TabsSubscription {
 }
 
 #[uniffi::export]
-impl TabsSubscription {
+impl PagesSubscription {
     /// 等待下一份 ViewModel，语义同 [`SessionListSubscription::next`]。
-    pub async fn next(&self) -> Option<TabsViewModel> {
-        self.updates.next(TabsViewModel::clone).await
+    pub async fn next(&self) -> Option<PagesViewModel> {
+        self.updates.next(PagesViewModel::clone).await
     }
 
     /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。

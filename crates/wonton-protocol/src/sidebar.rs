@@ -1,18 +1,20 @@
 //! 侧边栏（聊天页左上角按钮或左边缘右滑打开）：核心算好交给壳渲染的内容。打开和收起的手势、推开动画、
 //! 服务器和连接状态在壳里（[`crate::HomeViewModel`]）。
+//!
+//! "我的应用"由用户选和排序（ADR-0077），存在账号数据里；聊天、商店、设置、新聊天是固定行，不在这份里面。
 
 use serde::{Deserialize, Serialize};
 
 use crate::{PluginIcon, TabRef};
 
-/// 侧边栏的内容，在 [`crate::PluginsViewModel::sidebar`] 里：装好的应用和角标数字都由核心算，壳不自己数。
+/// 侧边栏的内容，在 [`crate::PluginsViewModel::sidebar`] 里：我的应用和角标数字都由核心算，壳不自己数。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SidebarViewModel {
-    /// "我的应用"：装好、点了能打开的插件，按已安装列表的顺序，最多 8 个；没列出的只见"全部应用"。
+    /// "我的应用"：用户选出来的行，按用户排的顺序。
     #[serde(default)]
     pub apps: Vec<SidebarApp>,
-    /// 装的应用比 [`SidebarViewModel::apps`] 列出的多：小标题旁的"全部"和最后一行都进应用网格页。
+    /// 装了还没加进"我的应用"的应用：小标题旁的"全部"和最后一行都进"全部应用"。
     #[serde(default)]
     pub more_apps: bool,
     /// 可更新的应用数：应用商店那一行的角标，和 [`crate::PluginsViewModel::updatable`] 是同一批。
@@ -27,17 +29,34 @@ pub struct SidebarViewModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct SidebarApp {
-    pub plugin_id: String,
+    /// 插件行和插件里的某一页行有它；公网网页行没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
+    /// 页面行有它（插件页、插件里的某一页、公网网页）；Bot 私聊行没有。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tab: Option<TabRef>,
     pub title: String,
     /// 点了这一行打开什么。
     pub open: SidebarOpen,
     /// 没有时壳画占位。
+    #[serde(default)]
     pub icon: Option<PluginIcon>,
-    /// 有可升级的版本：行尾一个红点（[`crate::PluginsViewModel::updatable`] 里有它）。
-    pub update: bool,
+    pub badge: SidebarBadge,
 }
 
-/// 点了一行"我的应用"打开什么。长按固定到底栏用的页面清单不在这里：壳从已安装列表的 `tabs` 里拿。
+/// 行尾的红点，两种来源分开画。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct SidebarBadge {
+    /// 有可升级的版本（[`crate::PluginsViewModel::updatable`] 里有它）。
+    #[serde(default)]
+    pub update: bool,
+    /// 页面出了问题或插件已停：点了能看原因。
+    #[serde(default)]
+    pub problem: bool,
+}
+
+/// 点了一行"我的应用"打开什么。编辑态的候选不在这里：壳从 [`crate::PagesViewModel`] 的候选里拿。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -68,7 +87,11 @@ mod tests {
         round_trip(SidebarViewModel {
             apps: vec![
                 SidebarApp {
-                    plugin_id: "app.example.rss".into(),
+                    plugin_id: Some("app.example.rss".into()),
+                    tab: Some(TabRef::Plugin {
+                        plugin_id: "app.example.rss".into(),
+                        page: Some("feed".into()),
+                    }),
                     title: "订阅".into(),
                     open: SidebarOpen::Page {
                         tab: TabRef::Plugin {
@@ -77,16 +100,34 @@ mod tests {
                         },
                     },
                     icon: None,
-                    update: true,
+                    badge: SidebarBadge {
+                        update: true,
+                        problem: false,
+                    },
                 },
                 SidebarApp {
-                    plugin_id: "bot.hermes".into(),
+                    plugin_id: Some("bot.hermes".into()),
+                    tab: None,
                     title: "Hermes".into(),
                     open: SidebarOpen::BotChat {
                         bot_user_id: "@hermes:home".into(),
                     },
                     icon: None,
-                    update: false,
+                    badge: SidebarBadge::default(),
+                },
+                SidebarApp {
+                    plugin_id: None,
+                    tab: Some(TabRef::Url {
+                        url: "https://example.com/weather".into(),
+                    }),
+                    title: "天气".into(),
+                    open: SidebarOpen::Page {
+                        tab: TabRef::Url {
+                            url: "https://example.com/weather".into(),
+                        },
+                    },
+                    icon: None,
+                    badge: SidebarBadge::default(),
                 },
             ],
             more_apps: true,

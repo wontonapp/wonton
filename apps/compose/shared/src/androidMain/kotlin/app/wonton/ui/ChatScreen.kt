@@ -89,6 +89,7 @@ fun ChatRoute(
     navigation: ChatNavigation,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
+    onOpenApps: () -> Unit,
 ) {
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
@@ -155,6 +156,7 @@ fun ChatRoute(
                     } else navigation.showingBackup = true
                 },
                 onStartChat = { navigation.startingChat = true },
+                onOpenApps = onOpenApps,
             )
         }
     }
@@ -172,6 +174,7 @@ private fun ChatListScreen(
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
+    onOpenApps: () -> Unit,
 ) {
     val installing = viewModel.installingBots
     val panel = LocalChatPanel.current
@@ -207,7 +210,7 @@ private fun ChatListScreen(
                                 else -> row.source?.let { PluginConfirmation.Install(it) }
                             }
                         },
-                        onOpenPage = { onAction(Action.SelectTab(TabRef.Apps)) },
+                        onOpenPage = onOpenApps,
                     )
                 }
                 itemsIndexed(viewModel.rooms, key = { _, row -> row.roomId }) { index, row ->

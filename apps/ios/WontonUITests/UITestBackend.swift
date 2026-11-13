@@ -40,6 +40,32 @@ enum UITestBackend {
         }
     }
 
+    /// 配对后可能先盖一层“在另一台设备上继续”（ADR-0087 的密钥交接）：开发栈上没有旧设备开着“添加设备”，
+    /// 不收起它，引导和侧边栏都被盖住。点“手边没有别的设备”收起；App 接着推出聊天备份页，下一次调用按返回退回去。
+    /// 不等待，只看当下：放进各用例过引导的循环里每轮调一次，过完引导再调到它返回 `false`。动过界面返回 `true`。
+    @discardableResult
+    static func skipKeyHandoff(_ app: XCUIApplication) -> Bool {
+        let skip = app.buttons["key-handoff-skip"]
+        if skip.exists && skip.isHittable {
+            skip.tap()
+            return true
+        }
+        guard app.scrollViews["chat-backup"].exists else { return false }
+        let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "返回", "戻る"])).firstMatch
+        guard back.exists && back.isHittable else { return false }
+        back.tap()
+        return true
+    }
+
+    /// 过完引导后收尾：交接页可能晚几秒才盖上来，备份页推出来也要一会儿。`timeout` 秒内没动静就算干净。
+    static func settleKeyHandoff(_ app: XCUIApplication, timeout: TimeInterval = 6) {
+        var deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if skipKeyHandoff(app) { deadline = Date().addingTimeInterval(timeout) }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+    }
+
     /// 和核心 `PairingCode::parse` 的第一道检查一致：`wonton://pair?` 开头的一整行，中间没有空白。
     private static func looksLikePairingCode(_ code: String) -> Bool {
         code.hasPrefix("wonton://pair?") && code.count > 14

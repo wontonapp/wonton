@@ -65,8 +65,8 @@ pub enum SettingsEntry {
         /// 已配对的台数。
         count: u32,
     },
-    /// 底栏的项、顺序和是否显示文字。
-    BottomBar,
+    /// 我的应用：放哪些、顺序、新装应用自动加入。
+    MyApps,
     /// 通知：推送收不收得到，以及按类别的开关（开关在系统设置里，Android 是每个类别的通知渠道）。
     Notifications {
         method: PushMethod,

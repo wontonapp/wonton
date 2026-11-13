@@ -36,4 +36,5 @@
     <string name="sidebar_pinned">已固定到底栏</string>
     <!-- 一行提示：这个应用的更新要先确认才能开始。 -->
     <string name="sidebar_needs_attention">需要你处理</string>
+    <string name="sidebar_problem">页面出了问题</string>
 </resources>

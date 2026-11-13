@@ -7,8 +7,7 @@ use iroh::{
 use std::{net::Ipv4Addr, sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use wonton_protocol::{
-    MatrixOpenIdToken, ProxySettings, SecretString, SharedPlugin, SharedPlugins, TabDisplay,
-    TabState,
+    MatrixOpenIdToken, ProxySettings, SecretString, SharedPlugin, SharedPlugins, TabState,
 };
 use wonton_tunnel::sharing::{
     AuthenticatedShares, BoxFuture, ProxyHub, SHARE_ALPN, ShareClient, ShareHandler, ShareLimits,
@@ -24,7 +23,6 @@ fn shares() -> SharedPlugins {
             plugin_id: "app.same".into(),
             title: "Shared".into(),
             web_url: "http://app-same.source.test/".into(),
-            display: TabDisplay::Standard,
             state: TabState::Ready,
         }],
     }

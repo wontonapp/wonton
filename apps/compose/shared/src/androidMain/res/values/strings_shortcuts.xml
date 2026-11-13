@@ -17,5 +17,5 @@
     <!-- Shortcut problem detail when the launcher allows fewer shortcuts than the two fixed ones. Argument: the maximum count. -->
     <string name="shortcuts_too_few">The system allows only %1$d shortcuts, so “New chat” and “Ask a Bot” can\'t both show.</string>
     <!-- Shortcut problem detail when more app pages exist than the launcher allows. Argument: the maximum count. -->
-    <string name="shortcuts_too_many">The system allows at most %1$d shortcuts. “New chat” and “Ask a Bot” come first, then app pages in navigation bar order.</string>
+    <string name="shortcuts_too_many">The system allows at most %1$d shortcuts. “New chat” and “Ask a Bot” come first, then app pages in My Apps order.</string>
 </resources>

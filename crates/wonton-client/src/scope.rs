@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
-    FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
-    RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
+    FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
+    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -22,12 +22,12 @@ use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
 use crate::onboarding::OnboardingLink;
+use crate::pages::PagesLink;
 use crate::peers::PeersLink;
 use crate::plugins::PluginsLink;
 use crate::push::PushLink;
 use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
-use crate::tabs::TabsLink;
 pub(crate) use runtime::ScopeRuntime;
 pub(crate) use visit::{Entered, Visits};
 use wonton_matrix::{MatrixSession, OwnedRoomId};
@@ -40,7 +40,7 @@ pub(crate) struct Scope {
     pub(crate) push_method: PushMethodLink,
     pub(crate) plugins: Arc<PluginsLink>,
     pub(crate) agent_chains: Arc<AgentChainsLink>,
-    pub(crate) tabs: Arc<TabsLink>,
+    pub(crate) pages: Arc<PagesLink>,
     pub(crate) files: Arc<FilesLink>,
     pub(crate) composer: Arc<ComposerLink>,
     pub(crate) onboarding: Arc<OnboardingLink>,
@@ -67,7 +67,7 @@ pub(crate) struct Views {
     pub(crate) confirmations: watch::Sender<ConfirmationsViewModel>,
     pub(crate) plugins: watch::Sender<PluginsViewModel>,
     pub(crate) agent_chains: watch::Sender<AgentChainsViewModel>,
-    pub(crate) tabs: watch::Sender<TabsViewModel>,
+    pub(crate) pages: watch::Sender<PagesViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
     pub(crate) peers: watch::Sender<PeersViewModel>,
@@ -84,7 +84,7 @@ impl Views {
             confirmations: scope.chat.confirmations_sender(),
             plugins: scope.plugins.sender(),
             agent_chains: scope.agent_chains.sender(),
-            tabs: scope.tabs.sender(),
+            pages: scope.pages.sender(),
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
             peers: scope.peers.sender(),
@@ -121,7 +121,7 @@ struct Shared<'a> {
 struct ChatLinks {
     chat: Arc<ChatLink>,
     push: Arc<PushLink>,
-    tabs: Arc<TabsLink>,
+    pages: Arc<PagesLink>,
     files: Arc<FilesLink>,
     onboarding: Arc<OnboardingLink>,
 }
@@ -133,7 +133,6 @@ fn chat_links(
     session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
     room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
-    external: bool,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
         slot,
@@ -160,15 +159,14 @@ fn chat_links(
         dir,
         push_method.subscribe(),
     );
-    let tabs = TabsLink::new(
+    let tabs = PagesLink::new(
         handle.clone(),
         home.clone(),
         plugins.clone(),
         dir,
-        views.map(|v| v.tabs.clone()),
+        views.map(|v| v.pages.clone()),
         session_in,
         (room_sender, room_receiver),
-        external,
     );
     let files = FilesLink::new(
         handle.clone(),
@@ -188,7 +186,7 @@ fn chat_links(
     Ok(ChatLinks {
         chat,
         push,
-        tabs,
+        pages: tabs,
         files,
         onboarding,
     })
@@ -312,7 +310,6 @@ impl Scope {
             session_out.1,
             room_panel.0,
             room_panel.1,
-            external,
         )?;
         let composer = ComposerLink::new(
             handle.clone(),
@@ -345,7 +342,7 @@ impl Scope {
             push_method,
             plugins,
             agent_chains,
-            tabs: links.tabs,
+            pages: links.pages,
             files: links.files,
             composer,
             onboarding: links.onboarding,

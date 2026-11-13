@@ -26,6 +26,7 @@ import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.WindowView
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -48,7 +49,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     var secrets by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
     CardSecureScreen(card, secrets, shown)
-    val tabs = LocalTabs.current
+    val tabs = LocalPages.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
         card.lines.forEach { line ->
@@ -107,27 +108,27 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
 
 /** 卡片上已装插件的按钮：“打开”到第一项 tab；“放到底栏”走现有固定流程，已固定时不显示。 */
 @Composable
-private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, onAction: (Action) -> Unit) {
+private fun CardInstalledActions(installed: InstalledPlugin, tabs: PagesState, onAction: (Action) -> Unit) {
     var showsPages by remember(installed.id) { mutableStateOf(false) }
     val choices = installed.tabChoices
-    val pinned = choices.any { choice -> tabs.viewModel.items.any { it.tab == choice.tab } }
+    val added = choices.any { choice -> tabs.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab } }
     if (choices.isEmpty()) return
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonButton(stringResource(R.string.tab_open), { onAction(Action.SelectTab(choices[0].tab)) })
-        if (!pinned) {
-            WontonButton(stringResource(R.string.tab_pin_to_bar), {
+        WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
+        if (!added) {
+            WontonButton(stringResource(R.string.myapp_add), {
                 if (choices.size > 1) {
                     showsPages = true
                 } else {
-                    tabs.pin(choices.single().tab, choices.single().title)
+                    tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
                 }
             })
         }
     }
-    if (showsPages) TabPageChoiceSheet(installed) { showsPages = false }
+    if (showsPages) MyAppChoiceSheet(installed) { showsPages = false }
 }
 
 @Composable

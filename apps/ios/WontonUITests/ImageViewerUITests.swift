@@ -42,20 +42,15 @@ final class ImageViewerUITests: XCTestCase {
 
     /// 等底部标签栏（三个标签任意一个）。
     private func tabButton(_ labels: [String]) -> XCUIElement? {
-        let height = app.windows.firstMatch.frame.height
-        for label in labels {
-            for element in app.buttons.matching(identifier: label).allElementsBoundByIndex
-            where element.frame.minY > height * 0.7 {
-                return element
-            }
-        }
-        return nil
+
+        // 底栏没了：入口在侧边栏，开抽屉找那一行（ADR-0095）。
+        UITestSidebar.row(app, labels: labels)
     }
 
     private func waitForTabs(timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            if tabButton(["Apps", "应用", "Chats", "聊天", "Settings", "设置"]) != nil { return true }
+            if UITestSidebar.waitForMain(app, timeout: 1) { return true }
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
         return false
@@ -63,6 +58,7 @@ final class ImageViewerUITests: XCTestCase {
 
     private func passOnboarding() {
         for _ in 0..<12 {
+            if UITestBackend.skipKeyHandoff(app) { continue }
             if waitForTabs(timeout: 1) { return }
             if let enter = waitAnyButton(["Enter Chat", "进入聊天"], timeout: 2), enter.isEnabled {
                 enter.tap()
@@ -108,14 +104,16 @@ final class ImageViewerUITests: XCTestCase {
     }
 
     func testImageViewerFlow() throws {
+        continueAfterFailure = false
         // 冷启动可能是三种界面：主界面、引导页、或上次运行留下的聊天。
         if app.buttons["返回"].waitForExistence(timeout: 3) {
             app.buttons["返回"].firstMatch.tap()
         }
-        let start = waitAnyButton(["Apps", "应用"], timeout: 25)
+        let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成", "Enter Chat", "进入聊天"], timeout: 90)
         XCTAssertNotNil(start, "既没到主界面也没到引导页")
         passOnboarding()
+        UITestBackend.settleKeyHandoff(app)
         // 引导最后一步"进入聊天"直达聊天页，退回主界面。
         if !waitForTabs(timeout: 3), app.buttons["返回"].firstMatch.exists {
             app.buttons["返回"].firstMatch.tap()
@@ -123,7 +121,7 @@ final class ImageViewerUITests: XCTestCase {
         XCTAssertTrue(waitForTabs(timeout: 240), "没回到主界面")
 
         // 去应用页，点开和 Echo 的私聊。
-        tabButton(["Apps", "应用"])?.tap()
+        tabButton(["All Apps", "全部应用", "全部應用程式", "すべてのアプリ"])?.tap()
         let tile = echoTile()
         XCTAssertNotNil(tile, "应用页没有 Echo 卡片")
         tile?.tap()
@@ -205,17 +203,19 @@ final class ImageViewerUITests: XCTestCase {
 
     /// 没权限时的如实提示：拒掉 photos-add 再点保存，看提示和“打开设置”。
     func testSaveDeniedNotice() throws {
+        continueAfterFailure = false
         // 冷启动可能是三种界面：主界面、引导页、或上次运行留下的聊天。
         if app.buttons["返回"].waitForExistence(timeout: 3) {
             app.buttons["返回"].firstMatch.tap()
         }
         // 冷启动直接到主界面（已配对、已过引导）。
-        let start = waitAnyButton(["Apps", "应用"], timeout: 25)
+        let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成", "Enter Chat", "进入聊天"], timeout: 90)
         XCTAssertNotNil(start)
         passOnboarding()
+        UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(waitForTabs(timeout: 240), "没回到主界面")
-        tabButton(["Apps", "应用"])?.tap()
+        tabButton(["All Apps", "全部应用", "全部應用程式", "すべてのアプリ"])?.tap()
         echoTile()?.tap()
 
         let deadline = Date().addingTimeInterval(60)

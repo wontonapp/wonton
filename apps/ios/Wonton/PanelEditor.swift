@@ -28,7 +28,7 @@ struct PanelEditor: View {
     let move: (TabRef, Int) -> Void
     let addURL: (String) -> Void
     @Environment(\.dismiss) private var dismiss
-    @Environment(TabsModel.self) private var tabs
+    @Environment(PagesModel.self) private var pages
     @Environment(\.wontonColors) private var colors
     @State private var url = ""
     @State private var badURL = false
@@ -36,9 +36,9 @@ struct PanelEditor: View {
     var body: some View {
         NavigationStack {
             List {
-                if let problem = tabs.rejection {
+                if let problem = pages.rejection {
                     Section {
-                        ProblemNotice(problem: problem) { tabs.rejection = nil }
+                        ProblemNotice(problem: problem) { pages.rejection = nil }
                             .listRowBackground(Color(colors.canvas))
                     }
                 }

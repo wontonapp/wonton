@@ -37,4 +37,5 @@
     <!-- Row note for an app whose update needs confirmation before it can start. -->
     <!-- Content description of the red dot on the settings button in the sidebar. -->
     <string name="sidebar_needs_attention">Needs your attention</string>
+    <string name="sidebar_problem">Has a problem</string>
 </resources>

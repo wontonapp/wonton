@@ -33,15 +33,13 @@ final class TabWebViewStore {
         return session
     }
 
-    /// 底栏和面板里的同一个页面各一份（ADR-0052）：不在这一份里的释放掉。
+    /// 整页和面板里的同一个页面各一份（ADR-0052）：不在这一份里的释放掉。
     func retain(_ placed: Set<PlacedTab>) {
         for key in Array(sessions.keys) where !placed.contains(key) {
             sessions.removeValue(forKey: key)?.dispose()
         }
         generation += 1
     }
-
-    func reselect(_ placed: PlacedTab) { sessions[placed]?.reselect() }
 
     func releaseAll() {
         for session in sessions.values { session.dispose() }
@@ -53,7 +51,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .bar(tab), let .panel(_, tab): tab
+        case let .page(tab), let .panel(_, tab): tab
         }
     }
 }
@@ -147,7 +145,8 @@ final class TabWebSession: NSObject {
         // 加载出来之前透明，露出 App 底色，不闪白；加载完改成不透明（见 didFinish）。
         view.isOpaque = false
         view.scrollView.contentInsetAdjustmentBehavior = .never
-        view.allowsBackForwardNavigationGestures = true
+        // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
+        view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
         #if DEBUG
         view.isInspectable = true
@@ -265,15 +264,9 @@ final class TabWebSession: NSObject {
         """
     }
 
-    /// 面板拉开、翻到这一页：经桥告诉页面它被看到了，同底栏的“再点一次”。
+    /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。
     func seen() {
         guard let webView else { return }
-        evaluate(core.tabReselectedScript(), in: webView)
-    }
-
-    func reselect() {
-        guard let webView else { return }
-        webView.scrollView.setContentOffset(.zero, animated: !UIAccessibility.isReduceMotionEnabled)
         evaluate(core.tabReselectedScript(), in: webView)
     }
 
@@ -320,7 +313,7 @@ final class TabWebSession: NSObject {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 被底栏、Home 条挡住的底边：页面照样画在后面，但固定定位的元素和滚动的终点让开这块。顶边不用它，见 TabPageView.webFrame。
+    /// 面板挡住的上下两条（ADR-0052）：页面照样画在后面，但固定定位的元素和滚动的终点让开。整页是 0（ADR-0095）。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {

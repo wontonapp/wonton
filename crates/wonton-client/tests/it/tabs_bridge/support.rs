@@ -1,7 +1,7 @@
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, PlacedTab, PluginImage, PluginTab, TabBridgeResult, TabDisplay, TabEnvironment,
-    TabLayout, TabPage, TabPlatform, TabRef, TabSafeArea,
+    Action, PlacedTab, PluginImage, PluginTab, TabBridgeResult, TabEnvironment, TabLayout, TabPage,
+    TabPlatform, TabRef, TabSafeArea,
 };
 
 use crate::plugins::rig::{Rig, running};
@@ -25,7 +25,7 @@ pub fn environment() -> TabEnvironment {
     }
 }
 
-pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
+pub async fn open_page(pinned: bool) -> (Rig, TabRef) {
     let rig = Rig::new().await;
     let mut plugin = running("app.feed");
     plugin.web_url = Some("http://app.feed.wonton.localhost/".to_owned());
@@ -38,7 +38,6 @@ pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
         icon_selected: None,
         path: "/feed".to_owned(),
         layout: TabLayout::EdgeToEdge,
-        display,
     });
     rig.core.set_lists(vec![vec![plugin]]);
     rig.connected().await;
@@ -50,21 +49,24 @@ pub async fn open_page(display: TabDisplay, pinned: bool) -> (Rig, TabRef) {
     };
     if pinned {
         rig.app
-            .dispatch(Action::PinTab {
-                tab: tab.clone(),
-                replacing: None,
+            .dispatch(Action::AddMyApp {
+                app: wonton_protocol::MyAppRef::Plugin {
+                    plugin_id: "app.feed".to_owned(),
+                },
+                title: None,
+                index: None,
             })
             .unwrap();
     }
     rig.app
-        .dispatch(Action::SelectTab { tab: tab.clone() })
+        .dispatch(Action::OpenPage { tab: tab.clone() })
         .unwrap();
     (rig, tab)
 }
 
 /// 底栏上的那一份实例。
 pub fn bar(tab: &TabRef) -> PlacedTab {
-    PlacedTab::Bar { tab: tab.clone() }
+    PlacedTab::Page { tab: tab.clone() }
 }
 
 pub fn request(rig: &Rig, tab: &TabRef, method: &str, params: Value) -> TabBridgeResult {
@@ -101,15 +103,14 @@ pub fn response(result: &TabBridgeResult) -> Value {
     serde_json::from_str(json).unwrap()
 }
 
+/// 栈里那页现在的渲染数据。
 pub fn selected_page(rig: &Rig, tab: &TabRef) -> TabPage {
-    let view = rig.app.tabs();
-    view.items
+    let view = rig.app.pages();
+    view.stack
         .into_iter()
-        .chain(view.overlay)
-        .find(|item| item.tab == *tab)
+        .find(|open| open.tab == *tab)
         .unwrap()
         .page
-        .unwrap()
 }
 
 pub async fn wait_quiet(rig: &Rig) {

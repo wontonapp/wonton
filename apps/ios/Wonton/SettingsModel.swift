@@ -61,7 +61,7 @@ enum SettingsRoute: Hashable {
     case coreUpgrade
     case appearance
     case chatBackup
-    case bottomBar
+    case myApps
     case notifications
     case about
 }

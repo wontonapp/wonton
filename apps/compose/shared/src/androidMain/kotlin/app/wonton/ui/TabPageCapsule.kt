@@ -1,7 +1,5 @@
 package app.wonton.ui
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,16 +16,15 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.semantics.Role
@@ -37,31 +34,32 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
-import app.wonton.protocol.TabPage
+import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.TabRef
-import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Leave
 import app.wonton.ui.icons.More
 import app.wonton.ui.icons.WontonIcon
 
-private const val CAPSULE_FADE_MS = 200
-private const val CAPSULE_SHADOW_ALPHA = 0.4f
 private const val CAPSULE_FILL_ALPHA = 0.2f
+private const val CAPSULE_SHADOW_ALPHA = 0.4f
 private const val CAPSULE_DIVIDER_ALPHA = 0.2f
 private val capsuleShadowRadius = 1.dp
 
-/** 全屏页右上角的胶囊:左键开菜单,右键退出全屏;透明底,3 秒空闲淡出。 */
+/** 胶囊上的菜单开没开；胶囊本身一直显示，不随滚动或空闲隐藏。 */
+internal class PageCapsuleState {
+    var menuOpen by mutableStateOf(false)
+}
+
+/** 页面右上角的胶囊:左键开菜单,右键关掉页面;透明底,一直在。 */
 @Composable
 internal fun PluginPageCapsule(
-    tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
+    tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
     onEditPanel: (() -> Unit)? = null,
 ) {
-    val opacity by animateFloatAsState(if (state.visible) 1f else 0f, tween(CAPSULE_FADE_MS), label = "capsule")
-    val trailingLabel = stringResource(R.string.tab_exit_fullscreen)
     val configuration = LocalViewConfiguration.current
     // Compose expands small click targets by default; the page owns every pixel outside the visible capsule.
     val exactTargets = remember(configuration) {
@@ -71,30 +69,16 @@ internal fun PluginPageCapsule(
     }
     CompositionLocalProvider(LocalViewConfiguration provides exactTargets) {
         Box(Modifier.size(WontonTheme.size.target * 2 + WontonTheme.size.hairline, WontonTheme.size.smallButton)) {
-            if (opacity > 0f) Box(Modifier.alpha(opacity)) {
-                Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = CAPSULE_FILL_ALPHA),
-                    RoundedCornerShape(WontonTheme.radii.pill)))
-                CapsuleArtwork(WontonIcon.Leave)
-            }
-            if (state.visible) Row(Modifier.height(WontonTheme.size.smallButton).pointerInput(state) {
-                try {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Initial)
-                            state.held = event.changes.any { it.pressed }
-                            state.show()
-                        }
-                    }
-                } finally {
-                    state.held = false
-                }
-            }) {
-                CapsuleHitTarget(stringResource(R.string.tab_page_menu)) { state.show(); state.menuOpen = true }
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = CAPSULE_FILL_ALPHA),
+                RoundedCornerShape(WontonTheme.radii.pill)))
+            CapsuleArtwork(WontonIcon.Leave)
+            Row(Modifier.height(WontonTheme.size.smallButton)) {
+                CapsuleHitTarget(stringResource(R.string.tab_page_menu)) { state.menuOpen = true }
                 Spacer(Modifier.width(WontonTheme.size.hairline))
-                CapsuleHitTarget(trailingLabel) { state.show(); onClose() }
+                CapsuleHitTarget(stringResource(R.string.tab_page_close), onClose)
             }
             Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                CapsuleMenu(tab, page, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
+                CapsuleMenu(tab, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
             }
         }
     }
@@ -130,30 +114,28 @@ private fun CapsuleHitTarget(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun CapsuleMenu(
-    tab: TabRef, page: TabPage, tabs: TabsState, state: TabCapsuleVisibility,
+    tab: TabRef, tabs: PagesState, state: PageCapsuleState,
     controller: PluginWebViewController, takeover: PageTakeover?,
     onReload: () -> Unit, onDetails: (String) -> Unit, onEditPanel: (() -> Unit)?,
 ) {
-    val close = { state.menuOpen = false; state.show() }
+    val close = { state.menuOpen = false }
     DropdownMenu(state.menuOpen, close, containerColor = WontonTheme.colors.surface.toColor()) {
         if (controller.canGoBack) DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_back)) },
             onClick = { close(); controller.goBack() })
         takeover?.let { TakeoverButton(it) }
         DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_reload)) }, onClick = { close(); onReload() })
+        if (tab is TabRef.Plugin) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.myapp_add)) },
+                onClick = {
+                    close()
+                    tabs.send(Action.AddMyApp(MyAppRef.Page(tab), null, null))
+                })
+            DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
+                onClick = { close(); onDetails(tab.pluginId) })
+        }
         if (onEditPanel != null) {
             DropdownMenuItem(text = { Text(stringResource(R.string.panel_edit)) },
                 onClick = { close(); onEditPanel() })
-        } else {
-            DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_always_fullscreen)) },
-                trailingIcon = { WontonSwitch(page.opensFullscreen, { enabled ->
-                    close()
-                    tabs.send(Action.SetTabDisplay(tab, displayChoice(enabled)))
-                }) }, onClick = {
-                    close()
-                    tabs.send(Action.SetTabDisplay(tab, displayChoice(!page.opensFullscreen)))
-                })
         }
-        if (tab is TabRef.Plugin) DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
-            onClick = { close(); onDetails(tab.pluginId) })
     }
 }

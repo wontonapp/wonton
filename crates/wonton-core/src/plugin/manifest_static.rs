@@ -108,7 +108,6 @@ impl Manifest {
                 service: String::new(),
                 port: 0,
                 path: super::manifest::default_web_path(),
-                display: super::manifest::default_web_display(),
                 sso: super::manifest::Sso::None,
                 oidc: None,
                 proxy: None,
@@ -121,7 +120,7 @@ impl Manifest {
     }
 }
 
-/// 静态网页的 `webui` 只收展示字段（`path`、`display`、`cross_origin_isolated`）。
+/// 静态网页的 `webui` 只收展示字段（`path`、`cross_origin_isolated`）。
 fn static_webui_fields(manifest: &Manifest) -> Vec<&'static str> {
     let Some(webui) = &manifest.webui else {
         return Vec::new();

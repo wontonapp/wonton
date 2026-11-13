@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use wonton_protocol::{PluginState, SharedPlugin, TabDisplay, TabState};
+use wonton_protocol::{PluginState, SharedPlugin, TabState};
 
 use super::languages::Languages;
 use super::{PluginId, PluginManager};
@@ -143,18 +143,6 @@ impl PluginManager {
 
     pub fn shared_plugin(&self, id: &PluginId, langs: &Languages) -> Option<SharedPlugin> {
         let plugin = self.installed_plugin(id, langs)?;
-        let display = {
-            let plugins = self.plugins.read().expect("plugin registry lock poisoned");
-            let entry = plugins.get(id)?;
-            entry
-                .listed
-                .as_ref()?
-                .manifest
-                .webui
-                .as_ref()?
-                .display
-                .clone()
-        };
         let state = match plugin.status {
             PluginState::Installing => TabState::Starting,
             PluginState::Running { .. } => TabState::Ready,
@@ -179,11 +167,6 @@ impl PluginManager {
             plugin_id: plugin.id,
             title: plugin.title,
             web_url: plugin.web_url?,
-            display: if display == "fullscreen" {
-                TabDisplay::Fullscreen
-            } else {
-                TabDisplay::Standard
-            },
             state,
         })
     }

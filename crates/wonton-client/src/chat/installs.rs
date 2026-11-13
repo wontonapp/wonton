@@ -306,7 +306,6 @@ mod tests {
             written_by: None,
             status: state,
             web_url: None,
-            web_display: Default::default(),
             cross_origin_isolated: false,
             declares_tools: false,
             tabs: Vec::new(),

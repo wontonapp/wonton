@@ -1,6 +1,6 @@
 # ADR-0033 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇
 
-- 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）
+- 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）。**底栏、`display`/全屏、页面标题栏已被 [ADR-0095](0095-no-tab-bar.md) 取代**（2026-11-11）：清单的 `tabs`、桥、主题、状态页、Agent 写插件这些部分仍然有效
 - 取代：[ADR-0014](0014-reserved-capabilities.md) 的“小程序 JS SDK”；[ADR-0028](0028-settings-page.md) 的“入口是底栏最后一项”（设置默认在栏上，可以拿掉）；[ADR-0016](0016-mcp-bus-and-confirmations.md) 的规则 4 和 [ADR-0017](0017-plugin-ecosystem-and-store.md) 的“谁能装”：Bot 能装官方插件和自己写的插件，高权限都经卡片；[ADR-0024](0024-confirmation-scope.md) 的判定：Bot 更新自己写的插件，权限没变宽时不发卡片
 
 ## 背景

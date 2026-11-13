@@ -9,7 +9,7 @@ const ICON: &str = "tabs/feed.svg";
 
 fn tab(extra: &str) -> String {
     format!(
-        "{WEBUI}\n  tabs:\n    - id: feed\n      title: {{zh: 动态, en: Feed}}\n      icon: {ICON}\n      path: /feed\n      layout: inset\n      display: standard\n{extra}  permissions: []"
+        "{WEBUI}\n  tabs:\n    - id: feed\n      title: {{zh: 动态, en: Feed}}\n      icon: {ICON}\n      path: /feed\n      layout: inset\n{extra}  permissions: []"
     )
 }
 
@@ -24,8 +24,7 @@ fn error(extra: &str) -> String {
 #[test]
 fn valid_tabs_keep_all_declared_fields_and_defaults() {
     let source = tab("      icon_selected: tabs/feed-fill.svg\n")
-        .replace("layout: inset", "layout: edge-to-edge")
-        .replace("display: standard", "display: fullscreen");
+        .replace("layout: inset", "layout: edge-to-edge");
     let files = PackageFiles::from([
         (ICON.to_owned(), b"svg".to_vec()),
         ("tabs/feed-fill.svg".to_owned(), b"svg".to_vec()),
@@ -42,7 +41,6 @@ fn valid_tabs_keep_all_declared_fields_and_defaults() {
     assert_eq!(tab.icon_selected.as_deref(), Some("tabs/feed-fill.svg"));
     assert_eq!(tab.path, "/feed");
     assert_eq!(tab.layout, "edge-to-edge");
-    assert_eq!(tab.display, "fullscreen");
 }
 
 #[test]
@@ -64,11 +62,6 @@ fn tab_validation_reports_each_field_rule() {
             "      layout: inset",
             "      layout: sidebar",
             "tabs[0].layout",
-        ),
-        (
-            "      display: standard",
-            "      display: picture-in-picture",
-            "tabs[0].display",
         ),
     ];
     for (original, replacement, field) in cases {
@@ -125,15 +118,16 @@ fn tab_validation_reports_each_field_rule() {
             .contains("tabs is declared but webui is not")
     );
 
+    // 带栏时代的 `display` 已经不在清单类型里（`deny_unknown_fields`），写了就报错。
     let bad_display = package(
         SERVICES,
-        "  webui: {service: web, port: 8080, display: picture-in-picture}\n  permissions: []",
+        "  webui: {service: web, port: 8080, display: fullscreen}\n  permissions: []",
     );
     assert!(
         PluginPackage::parse(&bad_display, &super::langs())
             .unwrap_err()
             .to_string()
-            .contains("webui.display")
+            .contains("display")
     );
 }
 
@@ -231,5 +225,4 @@ fn manifest_tab_type_is_usable_by_the_core() {
     });
     let tab: ManifestTab = serde_json::from_value(value).unwrap();
     assert_eq!(tab.layout, "inset");
-    assert_eq!(tab.display, "standard");
 }

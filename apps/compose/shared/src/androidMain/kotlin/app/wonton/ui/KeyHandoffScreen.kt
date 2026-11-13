@@ -65,7 +65,7 @@ internal fun KeyHandoffHost(chat: ChatViewModel, navigation: AppNavigation, core
             core,
             onLater = { navigation.chat.keyHandoffDeferred = true },
             onNoOtherDevice = {
-                navigation.tabs.send(Action.SelectTab(TabRef.Chat))
+                navigation.pages.send(Action.OpenPage(TabRef.Chat))
                 navigation.chat.showingBackup = true
             },
         )

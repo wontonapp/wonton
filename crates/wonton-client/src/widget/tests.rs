@@ -201,7 +201,6 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         declares_tools: false,
         status: PluginState::Stopped,
         web_url: web.then(|| format!("http://{id}.home.example")),
-        web_display: wonton_protocol::TabDisplay::default(),
         cross_origin_isolated: false,
         tabs: Vec::new(),
         bot_user_id: None,

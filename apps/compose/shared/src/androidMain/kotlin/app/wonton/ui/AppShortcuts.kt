@@ -37,7 +37,7 @@ private const val ROOM_SHORTCUT_PREFIX = "room:"
 private const val FIXED_SHORTCUT_COUNT = 2
 
 @Composable
-internal fun AppShortcutsEffect(tabs: TabsState) {
+internal fun AppShortcutsEffect(tabs: PagesState) {
     val context = LocalContext.current.applicationContext
     val publisher = remember(context) { AppShortcuts(context) }
     val compose = rememberShortcutIcon(WontonIcon.Compose)
@@ -53,10 +53,10 @@ internal fun AppShortcutsEffect(tabs: TabsState) {
     }
     val installed = tabs.plugins.viewModel.installed?.plugins
     val installedIds = installed?.mapTo(mutableSetOf()) { it.id }
-    val pages = tabs.viewModel.items.mapNotNull { item ->
-        val tab = item.tab as? TabRef.Plugin ?: return@mapNotNull null
+    val pages = tabs.viewModel.stack.mapNotNull { open ->
+        val tab = open.tab as? TabRef.Plugin ?: return@mapNotNull null
         val plugin = installed?.firstOrNull { it.id == tab.pluginId }
-        ShortcutPage(tab, item.page?.title ?: plugin?.title.orEmpty(), plugin?.icon?.small)
+        ShortcutPage(tab, open.page?.title ?: plugin?.title.orEmpty(), plugin?.icon?.small)
     }
     var resume by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(publisher) {

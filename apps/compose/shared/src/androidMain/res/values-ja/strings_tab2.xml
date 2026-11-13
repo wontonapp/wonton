@@ -7,7 +7,7 @@
     <string name="tab_start">起動</string>
     <string name="tab_view_details">詳細を表示</string>
     <string name="tab_load_upstream">アプリのページを開けません</string>
-    <string name="tab_uninstalled_notice">%1$sはアンインストールされ、ナビゲーションバーから外されました</string>
+    <string name="tab_uninstalled_notice">%1$sはアンインストールされ、マイアプリから外されました</string>
     <string name="tab_media_prompt_camera">%1$sにカメラの使用を許可しますか？</string>
     <string name="tab_media_deny">許可しない</string>
     <string name="tab_media_system_denied_title">カメラまたはマイクが使えません</string>
@@ -24,4 +24,5 @@
     <string name="tab_menu_back">戻る</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">タブバーに追加</string>
+    <string name="tab_page_close">ページを閉じる</string>
 </resources>

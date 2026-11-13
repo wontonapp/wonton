@@ -18,8 +18,18 @@ impl PluginsLink {
         drop(active);
         self.poll_changed.notify_one();
         if page.is_some() && self.can_poll() {
-            self.spawn_installed();
-            self.start_polling();
+            // 页面刚开就关掉时，这次补取别再发出请求（安静时不应有列表请求）：
+            // 查了 active 再发请求放在同一个任务里，中间没有跨任务的空档。
+            let link = self.clone();
+            self.runtime.spawn(async move {
+                if lock(&link.active_page).is_some() {
+                    let generation = link.generation.load(Ordering::SeqCst);
+                    link.begin_refresh();
+                    let result = link.fetch_installed().await;
+                    link.end_refresh(Listing::Installed, generation, result);
+                }
+                link.start_polling();
+            });
         }
     }
 

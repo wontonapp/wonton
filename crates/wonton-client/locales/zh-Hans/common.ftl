@@ -139,3 +139,5 @@ browser-unknown-address = 这个地址已经失效。回到云吞，重新打开
 browser-not-connected = 云吞现在没连上家里的服务器。回到云吞，等连上后再刷新这个页面。
 
 browser-bad-request = 请从云吞里打开这个页面。
+pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
+pages-file-unreadable = 这台设备上的我的应用读不了，先用默认值：{ $reason }

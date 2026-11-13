@@ -29,11 +29,9 @@ fn a_core_without_tabs_lists_plugins_without_pages() {
     let mut plugin = serde_json::to_value(installed()).unwrap();
     let fields = plugin.as_object_mut().unwrap();
     fields.remove("tabs");
-    fields.remove("web_display");
     fields.remove("cross_origin_isolated");
     let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
     assert!(plugin.tabs.is_empty());
-    assert_eq!(plugin.web_display, TabDisplay::Standard);
     assert!(!plugin.cross_origin_isolated);
 }
 

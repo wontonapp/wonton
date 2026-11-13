@@ -16,8 +16,7 @@ struct HomeView: View {
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
-    @Environment(TabsModel.self) private var tabs
-    @State private var pin: TabRef?
+    @Environment(PagesModel.self) private var pages
     @State private var openedDevPage = false
     @Binding var path: NavigationPath
     @State private var confirmation: PluginConfirmation?
@@ -30,19 +29,13 @@ struct HomeView: View {
                 if case .notConfigured = model.viewModel.status,
                    model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
                     PairingView(model: model)
-                        .wontonRootScreen(String(localized: .Pairing.pairingTitle),
-                            hasActions: !tabs.isPinned(.settings)) {
-                            if !tabs.isPinned(.settings) {
-                                settingsLink
-                            }
+                        .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
+                            settingsLink
                         }
                 } else {
                     launcher
-                        .wontonRootScreen(String(localized: .Launcher.launcherTitle),
-                            hasActions: !tabs.isPinned(.settings)) {
-                            if !tabs.isPinned(.settings) {
-                                settingsLink
-                            }
+                        .wontonRootScreen(String(localized: .Launcher.launcherTitle), hasActions: true) {
+                            settingsLink
                         }
                 }
             }
@@ -60,15 +53,13 @@ struct HomeView: View {
                       let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
                       let choice = plugin.tabChoices.first else { return }
                 openedDevPage = true
-                tabs.select(choice.tab)
+                pages.open(choice.tab)
             }
             .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
         .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
-        .tabPinRequests($pin)
         .environment(\.goToInstalledApps, {
-            path = NavigationPath()
-            tabs.select(.apps)
+            pages.open(.apps)
         })
     }
 
@@ -191,12 +182,18 @@ struct HomeView: View {
             actions.append(WontonSheetAction(title: String(localized: .Launcher.launcherOpenWeb),
                 icon: .web) { open(web) })
         }
+        // 已加进“我的应用”的页给移出，没加的给加进。
+        let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
         for choice in plugin.tabChoices {
-            let pinned = tabs.isPinned(choice.tab)
-            let title = (pinned ? TabText.unpin : TabText.pin)
+            let added = mine.contains(choice.tab)
+            let title = (added ? TabText.removeFromMyApps : TabText.addToMyApps)
                 + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
             actions.append(WontonSheetAction(title: title, icon: .apps) {
-                if pinned { tabs.send(.unpinTab(tab: choice.tab)) } else { pin = choice.tab }
+                if added {
+                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                } else {
+                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                }
             })
         }
         if let upgrade = plugin.upgrade {
@@ -237,18 +234,18 @@ struct HomeView: View {
 
     private var isShowingRejection: Binding<Bool> {
         Binding(
-            get: { tabs.viewModel.selected == .apps && !settingsPresented && model.rejection != nil },
+            get: { !settingsPresented && model.rejection != nil },
             set: { isShowing in
-                if !isShowing && tabs.viewModel.selected == .apps && !settingsPresented { model.rejection = nil }
+                if !isShowing && !settingsPresented { model.rejection = nil }
             }
         )
     }
 
     private var isShowingPluginRejection: Binding<Bool> {
         Binding(
-            get: { tabs.viewModel.selected == .apps && !settingsPresented && plugins.rejection != nil },
+            get: { !settingsPresented && plugins.rejection != nil },
             set: { isShowing in
-                if !isShowing && tabs.viewModel.selected == .apps && !settingsPresented { plugins.rejection = nil }
+                if !isShowing && !settingsPresented { plugins.rejection = nil }
             }
         )
     }

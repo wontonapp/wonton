@@ -139,3 +139,5 @@ browser-unknown-address = 這個位址已經失效。回到雲吞，重新開啟
 browser-not-connected = 雲吞目前沒有連上家裡的伺服器。回到雲吞，等連上後再重新整理這個頁面。
 
 browser-bad-request = 請從雲吞裡開啟這個頁面。
+pages-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
+pages-file-unreadable = 這台裝置上的我的應用讀不了，先用預設值：{ $reason }

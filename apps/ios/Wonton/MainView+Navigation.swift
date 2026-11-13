@@ -6,9 +6,7 @@ extension MainView {
         if home.completeMatrixLogin(from: url) { return }
         if home.prefillPairing(from: url) {
             showsSettings = false
-            showsTabSettings = false
-            tabs.send(.closeTabOverlay)
-            tabs.select(.apps)
+            showsApps = false
             return
         }
         navigation.receive(url)
@@ -16,14 +14,13 @@ extension MainView {
 
     func applyAppNavigation() {
         guard navigation.presentationRevision > 0, navigation.allowsNavigation else { return }
-        let dismissingCover = overlayPresented.wrappedValue || onboardingGateway != nil || showsTabSettings
+        let dismissingCover = pages.showsPluginPage || onboardingGateway != nil || showsApps
         showsSettings = false
-        showsTabSettings = false
+        showsApps = false
         onboardingGateway = nil
         pendingSettingsPresentation = navigation.opensSettings && dismissingCover
         if navigation.opensSettings {
             settings.path = []
-            tabs.send(.closeTabOverlay)
             if !dismissingCover { showsSettings = true }
         }
         if navigation.takeOpensPeers() {
@@ -33,19 +30,12 @@ extension MainView {
     }
 
     func showServerRoute(_ route: SettingsRoute) {
-        let dismissingCover = overlayPresented.wrappedValue || onboardingGateway != nil || showsTabSettings
-        showsTabSettings = false
+        let dismissingCover = pages.showsPluginPage || onboardingGateway != nil || showsApps
+        showsApps = false
         onboardingGateway = nil
         settings.openServer(route)
-        if tabs.isPinned(.settings) {
-            pendingSettingsPresentation = false
-            showsSettings = false
-            tabs.select(.settings)
-        } else {
-            pendingSettingsPresentation = dismissingCover
-            tabs.send(.closeTabOverlay)
-            if !dismissingCover { showsSettings = true }
-        }
+        pendingSettingsPresentation = dismissingCover
+        if !dismissingCover { showsSettings = true }
     }
 
     func presentPendingSettings() {
@@ -56,15 +46,15 @@ extension MainView {
 
     func openCardRoom(_ roomId: String) {
         showsSettings = false
-        showsTabSettings = false
+        showsApps = false
         onboardingGateway = nil
-        tabs.select(.chat)
+        pages.open(.chat)
         chat.visiting = nil
         chat.path = [.room(roomId)]
     }
 
     func finishOnboarding(_ bot: String?) {
-        tabs.select(.chat)
+        pages.open(.chat)
         chat.path = []
         chat.visiting = nil
         if let bot { chat.openDirectChat(with: bot) }
@@ -84,24 +74,25 @@ extension MainView {
             return
         }
         onboardingGateway = choice
-        tabs.select(choice.tab)
+        pages.open(choice.tab)
     }
 
     func receiveDraft(_ text: String) {
         chat.receiveDraft(text)
-        tabs.select(.chat)
+        pages.open(.chat)
     }
 
+    /// 页面层在“全部应用”的全屏盖子下面：从网格打开先收起盖子，不然页面开在看不见的地方。
     func open(_ entry: PluginEntry) {
         switch entry {
         case let .chat(botUserId):
-            let origin: AppTab = if tabs.viewModel.overlay != nil {
-                .chat
-            } else if tabs.viewModel.selected.isWebPage {
-                .chat
-            } else { nativeTab }
-            if chat.openDirectChat(with: botUserId, from: origin) { tabs.select(.chat) }
-        case let .web(tab): tabs.select(tab)
+            if chat.openDirectChat(with: botUserId, from: .chat) {
+                showsApps = false
+                pages.open(.chat)
+            }
+        case let .web(tab):
+            showsApps = false
+            pages.open(tab)
         }
     }
 }

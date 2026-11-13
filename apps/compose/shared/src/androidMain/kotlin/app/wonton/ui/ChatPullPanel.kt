@@ -81,7 +81,7 @@ private const val PAGE_WINDOW = 1.01f
 @Composable
 internal fun ChatPanelHost(
     panel: ChatPanelState,
-    tabs: TabsState,
+    tabs: PagesState,
     home: HomeViewModel,
     appearance: AppearanceViewModel,
     onDraft: (String) -> Unit,
@@ -152,7 +152,7 @@ internal fun ChatPanelHost(
 @Composable
 private fun PanelPager(
     panel: ChatPanelState,
-    tabs: TabsState,
+    tabs: PagesState,
     home: HomeViewModel,
     appearance: AppearanceViewModel,
     onDraft: (String) -> Unit,

@@ -1,5 +1,5 @@
 use super::*;
-use wonton_protocol::{ProxySettings, SharedAppRow, SharedPlugin, TabDisplay, TabState};
+use wonton_protocol::{ProxySettings, SharedAppRow, SharedPlugin, TabState};
 use wonton_tunnel::sharing::{ShareError, ShareRefusal};
 
 fn friend(id: &str) -> wonton_matrix::FriendSource {
@@ -16,7 +16,6 @@ fn ready_source(id: &str) -> Source {
             plugin_id: "app.same".into(),
             title: id.into(),
             web_url: "http://app-same.wonton.localhost/".into(),
-            display: TabDisplay::Standard,
             state: TabState::Ready,
         },
         problem: None,

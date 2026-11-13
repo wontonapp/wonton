@@ -148,7 +148,6 @@ mod tests {
             declares_tools: false,
             status: PluginState::Installing,
             web_url: None,
-            web_display: wonton_protocol::TabDisplay::default(),
             cross_origin_isolated: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),

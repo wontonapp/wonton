@@ -29,7 +29,7 @@ struct InstallCompletionView: View {
                         }
                     }
                     if let plugin = model.viewModel.installed?.plugins.first(where: { $0.id == pluginId }) {
-                        PluginPinButton(plugin: plugin)
+                        MyAppAddButton(plugin: plugin)
                     }
                     Button(TabText.done, action: close).buttonStyle(WontonButtonStyle())
                 }

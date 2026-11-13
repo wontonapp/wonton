@@ -18,7 +18,7 @@ DESIGN = ROOT / "design"
 IOS = ROOT / "apps/ios/Wonton"
 COMPOSE = ROOT / "apps/compose/shared/src/androidMain"
 KOTLIN = COMPOSE / "kotlin/app/wonton/ui"
-WEB_GENERATED = ROOT / "crates/wonton-client/src/tabs/bridge/generated"
+WEB_GENERATED = ROOT / "crates/wonton-client/src/pages/bridge/generated"
 GENERATED_DIRS = [
     IOS / "Design/Generated",
     IOS / "Assets.xcassets/Icons",

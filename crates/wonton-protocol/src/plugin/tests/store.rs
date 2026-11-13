@@ -170,7 +170,11 @@ fn sidebar_view_model_round_trip() {
         media_grants: Vec::new(),
         sidebar: crate::SidebarViewModel {
             apps: vec![crate::SidebarApp {
-                plugin_id: "app.memos".into(),
+                plugin_id: Some("app.memos".into()),
+                tab: Some(TabRef::Plugin {
+                    plugin_id: "app.memos".into(),
+                    page: None,
+                }),
                 title: "Memos".into(),
                 open: crate::SidebarOpen::Page {
                     tab: TabRef::Plugin {
@@ -179,7 +183,10 @@ fn sidebar_view_model_round_trip() {
                     },
                 },
                 icon: None,
-                update: true,
+                badge: crate::SidebarBadge {
+                    update: true,
+                    problem: false,
+                },
             }],
             more_apps: false,
             updates: 1,

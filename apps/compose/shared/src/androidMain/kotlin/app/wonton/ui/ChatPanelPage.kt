@@ -38,7 +38,7 @@ internal fun PanelPage(
     item: PanelItem,
     scope: PanelScope,
     panel: ChatPanelState,
-    tabs: TabsState,
+    tabs: PagesState,
     home: HomeViewModel,
     appearance: AppearanceViewModel,
     active: Boolean,
@@ -48,7 +48,7 @@ internal fun PanelPage(
     onDraft: (String) -> Unit,
     onDetails: (String) -> Unit,
 ) {
-    val page = remember(item.page) { item.page.copy(fullscreen = true) }
+    val page = item.page
     val tab = item.tab
     val public = tab is TabRef.Url
     val place = remember(scope, tab) { PlacedTab.Panel(scope, tab) }
@@ -59,7 +59,7 @@ internal fun PanelPage(
     val edge = page.layout == TabLayout.EDGE_TO_EDGE
     val cover = if (panel.level == PanelLevel.FULL) panel.safeBottom else panel.strip
     val environment = tabEnvironment(
-        safe.calculateTopPadding(), with(density) { cover.toDp() }, edge, safe,
+        safe.calculateTopPadding(), with(density) { cover.toDp() }, safe, edge,
     )
     val inset = if (edge) {
         PaddingValues(0.dp)
@@ -71,21 +71,20 @@ internal fun PanelPage(
     LaunchedEffect(active, canConnect, page.state) {
         if (active && canConnect && page.state is TabState.Ready) state.started = true
     }
-    val script = remember(page.url, page.fullscreen, page.display, appearance, environmentKey, public) {
+    val script = remember(page.url, appearance, environmentKey, public) {
         if (public) null else state.script(environmentKey, document = true)
     }
-    LaunchedEffect(appearance, environmentKey, page.fullscreen, page.display, public) {
+    LaunchedEffect(appearance, environmentKey, public) {
         if (!public && state.started) state.script(environmentKey)?.let { state.controller.evaluateJavascript(it) }
     }
     LaunchedEffect(home.status) {
-        if (!public) state.controller.evaluateJavascript(state.tabs.core.tabConnectionScript(state.tab))
+        if (!public) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
     }
     val capsule = state.capsule
-    TabCapsuleEffects(capsule, current && panel.level == PanelLevel.FULL, true)
-    val capsuleObserver = rememberCapsuleTouchObserver(capsule, current && panel.level == PanelLevel.FULL)
-    DisposableEffect(state.controller, capsuleObserver) {
+    DisposableEffect(state.controller, current, touch) {
+        // 拉满时网页自己滚动，不再旁听拉面板的手势。
         state.controller.touchObserver = { event ->
-            if (panel.level == PanelLevel.FULL) capsuleObserver?.invoke(event) else touch.observe(event)
+            if (panel.level != PanelLevel.FULL) touch.observe(event)
         }
         if (current) panel.controller = state.controller
         onDispose {
@@ -98,7 +97,7 @@ internal fun PanelPage(
         if (public) {
             publicProfilesSupported() && WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
         } else {
-            tabFeaturesSupported()
+            pageFeaturesSupported()
         }
     }
     val crossOriginBlocked = !public && page.opensInBrowser
@@ -116,7 +115,7 @@ internal fun PanelPage(
             unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
         )
         if (panel.level == PanelLevel.FULL && current) {
-            PluginPageChrome(tab, page, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
+            PluginPageChrome(tab, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
                 onClose = { panel.move(PanelLevel.CLOSED) },
                 onReload = { tabs.send(Action.ReloadTab(place)) },
                 onDetails = onDetails,
@@ -157,7 +156,7 @@ private fun PageWebView(
         documentStartScript = script,
         onBridgeMessage = { origin, main, message ->
             if (!publicPage) {
-                val reply = state.tabs.core.tabHandleMessage(
+                val reply = state.pages.core.tabHandleMessage(
                     state.place, main, origin.toString(), message, environment,
                 )
                 reply.replyScript?.let { state.controller.evaluateJavascript(it) }

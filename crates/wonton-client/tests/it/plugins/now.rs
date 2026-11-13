@@ -107,12 +107,13 @@ async fn one_tap_upgrade_asks_when_permissions_grow_and_clears_on_confirm() {
     connected_with_store(&rig).await;
 
     // 可更新和角标是核心算的：权限没变的升级在这里直接开始，变的才请主人拿主意。
+    // 应用行要用户自己加：这里还没加，行是空的，“全部应用”亮着。
     let view = rig
         .wait_for(|view| view.updatable.len() == 1 && view.sidebar.updates == 1)
         .await;
     assert_eq!(view.updatable[0].version, "2.0.0");
-    assert!(view.sidebar.apps[0].update);
-    assert!(!view.sidebar.more_apps);
+    let view = rig.wait_for(|view| view.sidebar.more_apps).await;
+    assert!(view.sidebar.apps.is_empty());
 
     rig.app
         .dispatch(Action::UpgradeNow {
@@ -262,7 +263,7 @@ async fn a_failed_preview_leaves_a_failed_task_instead_of_a_page() {
 }
 
 #[tokio::test]
-async fn the_sidebar_lists_at_most_eight_apps_and_flags_updates() {
+async fn updates_flag_added_app_rows_and_the_store_row() {
     let rig = Rig::new().await;
     let mut plugins = Vec::new();
     for index in 0..10 {
@@ -279,20 +280,28 @@ async fn the_sidebar_lists_at_most_eight_apps_and_flags_updates() {
     rig.core.set_lists(vec![plugins]);
     connected_with_store(&rig).await;
 
+    // 首次配对不自动加入：侧边栏还没有行，商店行的角标数着这 1 个可更新。
+    // “全部应用”那一行由页面那边算好发过来，等它跟上。
     let view = rig
-        .wait_for(|view| view.updatable.len() == 1 && view.sidebar.apps.len() == 8)
+        .wait_for(|view| view.updatable.len() == 1 && view.sidebar.more_apps)
         .await;
-    assert!(view.sidebar.more_apps);
+    assert!(view.sidebar.apps.is_empty());
     assert_eq!(view.sidebar.updates, 1);
-    assert!(view.sidebar.apps[0].update);
-    assert!(!view.sidebar.apps[1].update);
     assert!(!view.sidebar.settings_badge);
-    assert!(
-        view.sidebar
-            .apps
-            .iter()
-            .all(|app| matches!(app.open, wonton_client::SidebarOpen::Page { .. }))
-    );
+
+    // 用户把有新版本的那个加进“我的应用”：行亮升级点。
+    rig.app
+        .dispatch(Action::AddMyApp {
+            app: wonton_client::MyAppRef::Plugin {
+                plugin_id: "app.plugin-0".to_owned(),
+            },
+            title: None,
+            index: None,
+        })
+        .unwrap();
+    let view = rig.wait_for(|view| view.sidebar.apps.len() == 1).await;
+    assert!(view.sidebar.apps[0].badge.update);
+    assert_eq!(view.sidebar.updates, 1);
 }
 
 #[tokio::test]

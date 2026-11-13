@@ -13,6 +13,7 @@ final class FirstScreenUITests: XCTestCase {
     }
 
     func testFreshInstallShowsPairingScreen() throws {
+        continueAfterFailure = false
         app.launch()
         XCTAssertTrue(
             app.descendants(matching: .any)["pairing-code"].firstMatch.waitForExistence(timeout: 20),
@@ -26,13 +27,14 @@ final class FirstScreenUITests: XCTestCase {
     }
 
     func testFakeDataShowsChatList() throws {
+        continueAfterFailure = false
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
         app.launch()
         XCTAssertTrue(
             app.staticTexts["Echo"].waitForExistence(timeout: 20),
             "假数据没进聊天列表\n\(app.debugDescription)"
         )
-        XCTAssertTrue(app.buttons["Apps"].exists, "主界面没有底栏")
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "主界面没有侧边栏入口\n\(app.debugDescription)")
         let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         shot.name = "fake-chat-list"
         shot.lifetime = .keepAlways

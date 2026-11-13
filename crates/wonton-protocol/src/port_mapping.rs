@@ -9,7 +9,7 @@ use crate::PortProtocol;
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PluginPortMapping {
     pub plugin_id: String,
-    /// 主人打开的手动开关；自动映射（[`Action::SetVisiblePlugin`](crate::Action::SetVisiblePlugin)）不改变它，
+    /// 主人打开的手动开关；页面可见性的自动映射不改变它，
     /// `true` 也不表示端口已绑定成功。
     pub enabled: bool,
     pub state: PortMappingState,
@@ -124,26 +124,6 @@ mod tests {
             }
         );
         assert_eq!(serde_json::to_value(action).unwrap(), value);
-    }
-
-    #[test]
-    fn the_visible_plugin_action_round_trips() {
-        for (value, expected) in [
-            (
-                json!({"type": "set_visible_plugin", "plugin_id": "app.remote"}),
-                Action::SetVisiblePlugin {
-                    plugin_id: Some("app.remote".into()),
-                },
-            ),
-            (
-                json!({"type": "set_visible_plugin", "plugin_id": null}),
-                Action::SetVisiblePlugin { plugin_id: None },
-            ),
-        ] {
-            let action: Action = serde_json::from_value(value.clone()).unwrap();
-            assert_eq!(action, expected);
-            assert_eq!(serde_json::to_value(&action).unwrap(), value);
-        }
     }
 
     #[test]

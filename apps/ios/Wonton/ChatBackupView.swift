@@ -50,6 +50,7 @@ struct ChatBackupView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
+        .accessibilityIdentifier("chat-backup")
         .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle))
         .wontonDialog(
             String(localized: .ChatBackup1.chatBackupResetTitle),

@@ -15,7 +15,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.LocalWontonBarStatus
 import app.wonton.ui.design.WontonTheme
@@ -24,11 +23,11 @@ import app.wonton.ui.design.toColor
 /** 短状态条最长占一行的比例,右边留给胶囊。 */
 private const val PILL_MAX_FRACTION = 0.72f
 
-/** 全屏插件页的浮层:短状态、接管提示和连接提示排在页面上面,右侧是自动隐藏的胶囊。 */
+/** 插件页的浮层:短状态、接管提示和连接提示排在页面上面,右侧是一直在的胶囊。 */
 @Composable
 internal fun PluginPageChrome(
-    tab: TabRef, page: TabPage, tabs: TabsState, safe: PaddingValues, bannerTop: Dp, shortStatus: String?,
-    capsule: TabCapsuleVisibility, controller: PluginWebViewController, takeover: PageTakeover?,
+    tab: TabRef, tabs: PagesState, safe: PaddingValues, bannerTop: Dp, shortStatus: String?,
+    capsule: PageCapsuleState, controller: PluginWebViewController, takeover: PageTakeover?,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
     onEditPanel: (() -> Unit)? = null,
 ) {
@@ -57,8 +56,7 @@ internal fun PluginPageChrome(
             takeover?.let { TakeoverNotice(it) }
         }
         Box(Modifier.align(Alignment.TopEnd)) {
-            PluginPageCapsule(tab, page, tabs, capsule, controller, takeover, onClose, onReload, onDetails,
-                onEditPanel)
+            PluginPageCapsule(tab, tabs, capsule, controller, takeover, onClose, onReload, onDetails, onEditPanel)
         }
     }
 }

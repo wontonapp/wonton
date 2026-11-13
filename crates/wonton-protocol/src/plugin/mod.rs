@@ -24,7 +24,7 @@ mod takeover;
 #[path = "task.rs"]
 mod task;
 mod tool_policy;
-use crate::{CardLine, LanPort, PluginChat, PluginTab, TabDisplay};
+use crate::{CardLine, LanPort, PluginChat, PluginTab};
 pub use capability_deps::{
     BlockedCategory, CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef,
     CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilityChoice,
@@ -148,18 +148,15 @@ pub struct InstalledPlugin {
     #[serde(default)]
     pub written_by: Option<PluginWriter>,
     pub status: PluginState,
-    /// 插件网页的地址，点开就是小程序；没有网页时为空。
+    /// 插件网页的地址，点开就是整页的应用；没有网页时为空。
     pub web_url: Option<String>,
-    /// 清单 `webui` 的打开方式，没声明 `tabs` 的插件固定后用它。
-    #[serde(default)]
-    pub web_display: TabDisplay,
     /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,
-    /// 清单声明了 `mcp`：Bot 能调它的工具，网页标题栏上才有“我来操作”。
+    /// 清单声明了 `mcp`：Bot 能调它的工具，胶囊菜单里才有“我来操作”。
     #[serde(default)]
     pub declares_tools: bool,
-    /// 插件声明的底栏页面。
+    /// 插件声明的页面（清单 `tabs`）。
     #[serde(default)]
     pub tabs: Vec<PluginTab>,
     /// 插件的 Bot 在聊天页上的声明（ADR-0060）；没有 Bot 的插件为空。

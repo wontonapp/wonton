@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use axum::{Router, routing::get};
 use tokio::net::TcpListener;
-use wonton_protocol::{PluginKind, PluginState, PluginTrust, TabDisplay, TabLayout};
+use wonton_protocol::{PluginKind, PluginState, PluginTrust, TabLayout};
 
 use super::super::egress::address::ProxyAddress;
 use super::super::egress::settings::Egress;
@@ -230,7 +230,7 @@ async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() 
     let yaml = package(
         "  web:\n    image: nginx:1.27",
         &format!(
-            "  webui: {{service: web, port: {port}, path: /home, display: fullscreen, cross_origin_isolated: true}}\n  tabs:\n    - id: feed\n      title: {{zh: 动态, en: Feed}}\n      icon: tabs/feed.svg\n      icon_selected: tabs/feed-selected.svg\n      path: /feed\n      layout: edge-to-edge\n      display: fullscreen\n  permissions: []"
+            "  webui: {{service: web, port: {port}, path: /home, cross_origin_isolated: true}}\n  tabs:\n    - id: feed\n      title: {{zh: 动态, en: Feed}}\n      icon: tabs/feed.svg\n      icon_selected: tabs/feed-selected.svg\n      path: /feed\n      layout: edge-to-edge\n  permissions: []"
         ),
     )
     .replace("id: app.test", "id: app.tabs")
@@ -280,8 +280,6 @@ async fn installed_plugins_carry_tabs_and_choose_the_requested_title_language() 
     assert_eq!(tab.title, "Feed");
     assert_eq!(tab.path, "/feed");
     assert_eq!(tab.layout, TabLayout::EdgeToEdge);
-    assert_eq!(tab.display, TabDisplay::Fullscreen);
-    assert_eq!(plugin.web_display, TabDisplay::Fullscreen);
     assert!(plugin.cross_origin_isolated);
     assert!(
         plugin

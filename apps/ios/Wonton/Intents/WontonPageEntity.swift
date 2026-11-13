@@ -51,9 +51,10 @@ struct WontonPageQuery: EntityStringQuery {
         guard try await navigation.navigationReady(deadline: .seconds(15)) else { return [] }
         try await navigation.waitForInitialPlugins(deadline: .seconds(15))
         guard navigation.allowsNavigation else { return [] }
-        let view = navigation.chat.core.tabs()
-        var choices = view.items.map(PageChoice.init)
-        choices += view.candidates.map(PageChoice.init)
+        let core = navigation.chat.core
+        let view = core.pages()
+        var choices = view.stack.map(PageChoice.init)
+        choices += view.myAppCandidates.map(PageChoice.init)
         var seen = Set<String>()
         var pages: [WontonPageEntity] = []
         for choice in choices {
@@ -78,13 +79,12 @@ private struct PageChoice {
     var icon: PluginImage?
     var isTemplate = false
 
-    init(_ item: TabItem) {
-        tab = item.tab
-        title = item.title
-        switch item.page?.icon {
+    init(_ open: OpenPage) {
+        tab = open.tab
+        title = open.title
+        switch open.page.icon {
         case let .plugin(plugin): icon = plugin?.small
         case let .monochrome(source, _): icon = source; isTemplate = true
-        case nil: break
         }
     }
 

@@ -65,7 +65,7 @@ private const val DRAG_HANDLE_INSET = 1f / 6f
  * 主面板和房间面板用同一个表单，只改 [app.wonton.protocol.PanelScope]。
  */
 @Composable
-internal fun ChatPanelEditor(panel: ChatPanelState, tabs: TabsState, onDismiss: () -> Unit) {
+internal fun ChatPanelEditor(panel: ChatPanelState, tabs: PagesState, onDismiss: () -> Unit) {
     var filling by remember { mutableStateOf(false) }
     WontonSheet(onDismiss, stringResource(R.string.panel_edit)) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
@@ -107,7 +107,7 @@ private fun Section(title: String) {
  * 还能放进这个面板的页。主面板直接取核心的候选；房间面板的候选核心只给了主面板那份
  * （不含已经在主面板里的页），这里按核心同样的规则（已装插件、有网页、声明了的页）补全，再去掉房间面板里已有的。
  */
-private fun candidates(panel: ChatPanelState, tabs: TabsState): List<TabCandidate> {
+private fun candidates(panel: ChatPanelState, tabs: PagesState): List<TabCandidate> {
     val offered = if (panel.scope is PanelScope.Room) {
         val known = tabs.viewModel.panelCandidates.map { it.tab }.toSet()
         tabs.viewModel.panelCandidates + tabs.plugins.viewModel.installed?.plugins.orEmpty()
@@ -132,7 +132,7 @@ private fun candidates(panel: ChatPanelState, tabs: TabsState): List<TabCandidat
 }
 
 @Composable
-private fun PanelEntries(panel: ChatPanelState, tabs: TabsState) {
+private fun PanelEntries(panel: ChatPanelState, tabs: PagesState) {
     val colors = WontonTheme.colors
     val heights = remember { mutableMapOf<TabRef, Int>() }
     var dragging by remember(panel.pages) { mutableStateOf<TabRef?>(null) }
@@ -211,7 +211,7 @@ private fun PanelEntries(panel: ChatPanelState, tabs: TabsState) {
 
 /** 行首的来源图标：公网网页是地球，插件页是插件自己的图标。 */
 @Composable
-private fun EntryIcon(tab: TabRef, tabs: TabsState) {
+private fun EntryIcon(tab: TabRef, tabs: PagesState) {
     when (tab) {
         is TabRef.Url -> Icon(
             WontonIcon.Globe, null, Modifier.size(WontonTheme.size.icon),
@@ -240,7 +240,7 @@ private fun DragHandle() {
 }
 
 @Composable
-private fun CandidateRow(candidate: TabCandidate, tabs: TabsState, panel: ChatPanelState) {
+private fun CandidateRow(candidate: TabCandidate, tabs: PagesState, panel: ChatPanelState) {
     val plugin = candidate.plugin ?: return
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
@@ -263,7 +263,7 @@ private fun CandidateRow(candidate: TabCandidate, tabs: TabsState, panel: ChatPa
 
 /** 填写网址：只收 https，核心再校验一次。填完直接加，失败的原因由核心弹窗说。 */
 @Composable
-private fun UrlDialog(tabs: TabsState, panel: ChatPanelState, onDismiss: () -> Unit) {
+private fun UrlDialog(tabs: PagesState, panel: ChatPanelState, onDismiss: () -> Unit) {
     var url by remember { mutableStateOf("") }
     WontonDialog(
         title = stringResource(R.string.panel_url),

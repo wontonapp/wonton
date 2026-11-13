@@ -54,7 +54,7 @@ impl ClientCore {
                 owner_user_id,
                 plugin_id,
             } => {
-                scope.tabs.select(TabRef::SharedApp {
+                scope.pages.open_page(TabRef::SharedApp {
                     owner_user_id: owner_user_id.clone(),
                     plugin_id: plugin_id.clone(),
                 })?;
@@ -85,10 +85,10 @@ impl ClientCore {
         page: PlacedTab,
         status: Option<u16>,
     ) -> Result<(), CoreError> {
-        if let PlacedTab::Bar { tab } = &page {
+        if let PlacedTab::Page { tab } = &page {
             self.probe_shared_page(scope, tab);
         }
-        scope.tabs.load_failed(page, status)
+        scope.pages.load_failed(page, status)
     }
 
     /// 分享页加载成功：同样重探来源，失败/成功分开记。
@@ -97,10 +97,10 @@ impl ClientCore {
         scope: &crate::scope::Scope,
         page: PlacedTab,
     ) -> Result<(), CoreError> {
-        if let PlacedTab::Bar { tab } = &page {
+        if let PlacedTab::Page { tab } = &page {
             self.probe_shared_page(scope, tab);
         }
-        scope.tabs.load_succeeded(page)
+        scope.pages.load_succeeded(page)
     }
 
     fn probe_shared_page(&self, scope: &crate::scope::Scope, tab: &TabRef) {

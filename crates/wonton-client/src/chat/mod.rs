@@ -493,7 +493,7 @@ impl ChatLink {
     pub(crate) async fn open_timeline(
         self: &Arc<Self>,
         target: &TimelineTarget,
-        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+        room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let key = TimelineKey::parse(target)?;
         let session = self.current()?;
