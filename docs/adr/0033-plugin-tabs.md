@@ -401,7 +401,7 @@ x-wonton:
 | 说明 | wonton-docs 的 `skills/wonton-plugin/`，Agent Skills 格式；`llms.txt` 指向它和规范。核心镜像带一份，经 `wonton__plugin_guide` 给 | 从需求到装好的步骤、Compose 子集的禁区、常见报错怎么改。还要回答实测里 Agent 靠猜的几处（见“验证”）。随核心走，版本对得上，机器没外网也能用 |
 | 最小例子 | 说明的 `assets/`，模板仓库同一份 | 静态页（nginx 加 configs）；带后端的页面（python 加 configs）。都带 `tabs` 和令牌样式表 |
 | 校验 | `wonton__check_plugin`；`wonton-core plugin check`；模板的 `scripts/check.sh` | 同一份代码 |
-| 引导语 | Hermes 插件仓库的 [wonton/__init__.py](https://github.com/geraldpeng6/wonton-plugin-hermes/blob/main/wonton/__init__.py) | 一句话：主人想要新页面或应用时，先调 `wonton__plugin_guide`。别的 Agent 插件同样写一句 |
+| 引导语 | Hermes 插件仓库的 [wonton/__init__.py](https://github.com/wontonapp/wonton-plugin-hermes/blob/main/wonton/__init__.py) | 一句话：主人想要新页面或应用时，先调 `wonton__plugin_guide`。别的 Agent 插件同样写一句 |
 
 Skills over MCP 等宿主支持了再加，内容是同一个目录。
 

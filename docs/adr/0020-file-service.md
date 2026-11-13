@@ -213,7 +213,7 @@ Bot 的工具返回 `isError: true`，文字开头是类别；HTTP 接口用 `{"
 - **两者互不相干。** Hermes 自己产出的文件（生图、语音）继续用 `MEDIA:`，核心不管。插件和共享文件夹里的文件用 `wonton__share_file`。
 - **要防的地方。** Hermes 把 MCP 的 `image` 块存成缓存文件，在工具结果里写上 `MEDIA:<缓存路径>`，它的 Matrix 提示又教模型用 `MEDIA:` 发文件。模型可能把预览的路径抄进回复，主人就收到一张缩小的预览。自动发送
   只认 `text_to_speech`、`image_generate` 这些工具，所以不是必然发生，但没有引导时很可能这样。
-- **引导。** 通用的一层是工具说明和编号文字（“发给主人用 `wonton__share_file`，把返回的链接原样放进回复”），所有 Agent 都看得到。Hermes 的一层放在它自己的插件包里：[wonton/](https://github.com/geraldpeng6/wonton-plugin-hermes/tree/main/wonton)
+- **引导。** 通用的一层是工具说明和编号文字（“发给主人用 `wonton__share_file`，把返回的链接原样放进回复”），所有 Agent 都看得到。Hermes 的一层放在它自己的插件包里：[wonton/](https://github.com/wontonapp/wonton-plugin-hermes/tree/main/wonton)
   注册 `pre_llm_call` 钩子，每轮带上同样一句话。核心不为 Hermes 做特例（ADR-0015）。
 - **顺带收紧。** Hermes 默认允许 `MEDIA:` 发黑名单以外的任何文件，交叉签名的恢复密钥（`platforms/matrix/recovery-key.txt`）不在黑名单里。插件包设 `HERMES_MEDIA_DELIVERY_STRICT=1`，只放行缓存目录和刚产生的文件。
 

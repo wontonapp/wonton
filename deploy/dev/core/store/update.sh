@@ -11,8 +11,8 @@ repo="$(cd "$here/../../../.." && pwd)"
 store_commit=ee59c022fab39fbf1415945c53cd556b82321429
 plugins=(
   geraldpeng6/wonton-plugin-files@v0.2.2
-  geraldpeng6/wonton-plugin-hermes@v0.6.6
-  geraldpeng6/wonton-plugin-openclaw@v0.1.4
+  wontonapp/wonton-plugin-hermes@v0.6.6
+  wontonapp/wonton-plugin-openclaw@v0.1.4
   geraldpeng6/wonton-plugin-omp@v0.1.3
   geraldpeng6/wonton-plugin-codex@v0.1.4
   geraldpeng6/wonton-plugin-claude-code@v0.1.2
