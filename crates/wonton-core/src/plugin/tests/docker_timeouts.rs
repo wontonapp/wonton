@@ -61,5 +61,8 @@ async fn a_request_docker_does_not_answer_in_time_is_not_reported_as_docker_bein
         .await
         .unwrap_err();
     assert!(matches!(error, EngineError::TimedOut(_)), "{error}");
-    assert!(matches!(InstallError::from(error), InstallError::Docker(_)));
+    assert!(matches!(
+        InstallError::from(error),
+        InstallError::DockerTimedOut(_)
+    ));
 }

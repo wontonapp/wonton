@@ -33,11 +33,21 @@ pub(super) fn containers(
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
         (&Method::POST, [name, "stop"]) if exists(name) => {
+            if let Some(message) = &docker.stop_error {
+                return Some(json_reply(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"message": message}),
+                ));
+            }
             // 和 Docker 一样：停掉的容器交回网络端点（固定地址让出来），inspect 显示 exited。
-            docker.states.insert(
+            let previous = docker.states.insert(
                 name.to_string(),
                 json!({"Status": "exited", "Running": false, "ExitCode": 0}),
             );
+            docker
+                .restartable
+                .entry(name.to_string())
+                .or_insert(previous);
             StatusCode::OK.into_response()
         }
         (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
@@ -55,6 +65,9 @@ pub(super) fn containers(
             )
         }
         (&Method::DELETE, [name]) => {
+            if docker.restartable.remove(*name).is_some() {
+                docker.states.remove(*name);
+            }
             for endpoints in docker.endpoints.values_mut() {
                 endpoints.remove(*name);
             }
@@ -158,6 +171,7 @@ fn create(docker: &mut Resources, name: &str, body: Value) -> Response {
             json!({"message": format!("No such image: {image}")}),
         );
     }
+    docker.archives.remove(name);
     docker.containers.insert(name.to_owned(), labels_of(&body));
     let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
     for (network, endpoint) in networks.into_iter().flatten() {
@@ -208,6 +222,12 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
     }
     if let Some(state) = docker.start_states.get(name).cloned() {
         docker.states.insert(name.to_owned(), state);
+    } else if let Some(previous) = docker.restartable.remove(name) {
+        if let Some(state) = previous {
+            docker.states.insert(name.to_owned(), state);
+        } else {
+            docker.states.remove(name);
+        }
     } else if docker
         .states
         .get(name)

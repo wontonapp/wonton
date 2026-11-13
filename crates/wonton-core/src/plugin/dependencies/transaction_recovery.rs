@@ -128,7 +128,7 @@ impl PluginManager {
         if let Some(problem) = &deployed.problem {
             return Err(InstallError::UpstreamUnavailable(problem.clone()));
         }
-        self.store.save(&before.record)?;
+        self.store.save_metadata(&before.record)?;
         self.plugins
             .write()
             .expect("插件表锁中毒")

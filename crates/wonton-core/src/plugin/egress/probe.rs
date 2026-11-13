@@ -147,7 +147,11 @@ impl PluginManager {
         let name = self.cfg.instance.egress();
         // 每次都核对：出口容器可能被删了，核心换了容器后也要重新接上它的网络。
         match self.reconcile_relay().await {
-            Err(e @ (InstallError::ImagePull(_) | InstallError::Docker(_))) => {
+            Err(
+                e @ (InstallError::ImagePull(_)
+                | InstallError::Docker(_)
+                | InstallError::DockerTimedOut(_)),
+            ) => {
                 return Ok(Some(relay_failed(e.to_string())));
             }
             result => result?,

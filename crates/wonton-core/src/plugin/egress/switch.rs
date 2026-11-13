@@ -135,6 +135,9 @@ impl PluginManager {
     }
 
     async fn switch_egress(&self, id: &PluginId) {
+        if self.explicitly_stopped(id).unwrap_or(true) || self.recovery_pending(id) {
+            return;
+        }
         // 正在安装、卸载或者按新地址重建的不碰：下次核对时再做。
         if !self.begin_rebuild(id) {
             return;
@@ -206,7 +209,7 @@ impl PluginManager {
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
         record.proxied = ctx.egress.is_some();
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         self.reconcile_running(&package, &record).await
     }
 }

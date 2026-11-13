@@ -25,6 +25,7 @@ fn package(id: &str, kind: &str) -> String {
 
 fn record(id: &str, source: &str) -> InstalledRecord {
     InstalledRecord {
+        lifecycle: Default::default(),
         lan_webui: false,
         relays: Vec::new(),
         firewalled: false,
@@ -45,6 +46,8 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         written_by: None,
         ask_every_update: false,
         family: false,
+        settings: Default::default(),
+        settings_changed_ms: None,
         static_files: Default::default(),
         hosted: Vec::new(),
         gpu_vendor: None,

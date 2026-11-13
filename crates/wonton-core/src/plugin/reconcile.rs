@@ -127,6 +127,9 @@ impl PluginManager {
         record: &InstalledRecord,
         gate: Gate,
     ) -> Result<Option<Deployed>, InstallError> {
+        if self.explicitly_stopped(&record.id)? {
+            return Ok(None);
+        }
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
         let langs = self.owner_languages();
@@ -151,8 +154,10 @@ impl PluginManager {
         }
         // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
         // 插件不在这里动，留给启动流程（见 start.rs）。
-        self.recreate_on_drift(package, record, &langs, false, gate)
-            .await?;
+        if !self.recovery_pending(&record.id) {
+            self.recreate_on_drift(package, record, &langs, false, gate)
+                .await?;
+        }
         let checked = self.check_containers(package, &langs).await?;
         self.refresh_bot_web_routes(manifest).await?;
         let health = match checked.state {
@@ -227,7 +232,16 @@ impl PluginManager {
         record: &InstalledRecord,
     ) -> Result<Deployed, InstallError> {
         match self.reconcile(package, record, Gate::StartPeriod).await? {
-            Some(deployed) => Ok(deployed),
+            Some(deployed) => {
+                if let Some(reason) = &deployed.problem {
+                    if self.recovery_pending(&record.id) {
+                        self.recovery_failed(&record.id, &InstallError::Unhealthy(reason.clone()))?;
+                    }
+                } else {
+                    self.recovery_complete(&record.id)?;
+                }
+                Ok(deployed)
+            }
             None => Err(InstallError::Unhealthy(l10n::text(
                 &self.owner_languages(),
                 "plugin-install-resident-stopped",

@@ -284,10 +284,12 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
 async fn a_stopped_plugin_is_never_taken_for_leftovers() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    manager_with(engine.clone(), &dir)
+    let installed = std::sync::Arc::new(manager_with(engine.clone(), &dir));
+    let plugin = installed
         .install(&app(), &[], super::langs())
         .await
         .unwrap();
+    installed.stop_detached(plugin.id).await.unwrap();
     docker.set_state(
         &container_name("app-test", "web"),
         json!({"Status": "exited", "Running": false, "ExitCode": 1}),

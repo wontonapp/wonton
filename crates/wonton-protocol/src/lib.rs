@@ -279,6 +279,7 @@ pub use plugin::{
     UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel, plugin_scope_path,
     plugin_settings_path, plugin_settings_preview_path, secret_input_path,
 };
+pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use port_mapping::{

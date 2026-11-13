@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use tokio::time::Instant;
+use wonton_protocol::PluginRecoveryStage;
 
 use super::compose::DependCondition;
 use super::docker::NetworkReach;
@@ -55,7 +56,7 @@ impl PluginManager {
     /// 与 uninstall 的 `check_uninstall_state` 同形：先把忙/重建中的插件拒掉，再排队等
     /// `dependencies.changing` 锁——不然并发的 start 会等前一个操作做完才被 `begin_start` 拦下，
     /// 这期间它会在过期的状态上继续动手（并发卸载测试的第二个断言）。
-    fn reject_busy_or_rebuilding(
+    pub(super) fn reject_busy_or_rebuilding(
         &self,
         id: &PluginId,
         langs: &Languages,
@@ -81,10 +82,43 @@ impl PluginManager {
         &self,
         id: &PluginId,
     ) -> Result<(PluginView, bool), InstallError> {
+        self.start_with_gate(id, Gate::StartPeriod, true).await
+    }
+
+    pub(super) async fn start_with_gate(
+        &self,
+        id: &PluginId,
+        gate: Gate,
+        manual: bool,
+    ) -> Result<(PluginView, bool), InstallError> {
         let langs = self.owner_languages();
         self.check_not_upgrading(&langs)?;
         let before = self.begin_start(id, &langs)?;
-        let result = self.start_existing(id, &before, &langs).await;
+        let result = async {
+            let replacement = self.prepare_start(id, manual)?;
+            self.start_existing(id, &before, &langs, gate, replacement)
+                .await
+        }
+        .await;
+        let result = match result {
+            Ok(started) => {
+                let journal = match started
+                    .deployed
+                    .as_ref()
+                    .and_then(|deployed| deployed.problem.as_ref())
+                {
+                    Some(reason) => {
+                        self.recovery_failed(id, &InstallError::Unhealthy(reason.clone()))
+                    }
+                    None => self.recovery_complete(id),
+                };
+                journal.map(|()| started)
+            }
+            Err(error) => match self.recovery_failed(id, &error) {
+                Ok(()) => Err(error),
+                Err(journal) => Err(error.with_note(&langs, &journal.to_string())),
+            },
+        };
         let (result, recovered) = self.finish_start(id, result, &langs);
         self.lan.end(id);
         self.changed();
@@ -176,6 +210,7 @@ impl PluginManager {
         }
         if let PluginStatus::Degraded { reason } = &entry.status
             && !entry.follows_containers
+            && !self.recovery_pending(id)
         {
             return Err(InstallError::Conflict(reason.clone()));
         }
@@ -202,6 +237,8 @@ impl PluginManager {
         id: &PluginId,
         before: &PluginStatus,
         langs: &Languages,
+        gate: Gate,
+        replacement: bool,
     ) -> Result<Started, InstallError> {
         let record = self
             .store
@@ -212,11 +249,22 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        self.start_dependency_providers(&package.manifest, langs)
+        self.start_dependency_providers(&package.manifest, langs, gate == Gate::StartPeriod)
             .await?;
+        if super::install_hosted::is_containerless(&package.manifest) {
+            let entry = self.restore_containerless(&package, &record, langs);
+            if let PluginStatus::Degraded { reason } = &entry.status {
+                return Err(InstallError::Unhealthy(reason.clone()));
+            }
+            return Ok(Started {
+                health: entry.health.unwrap_or(Health::Unknown),
+                serving: BTreeSet::new(),
+                deployed: None,
+            });
+        }
         let checked = self.check_containers(&package, langs).await?;
         // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
-        let state = if checked.has_missing() {
+        let state = if replacement || checked.has_missing() {
             ContainersState::Stopped
         } else {
             checked.ready(langs)?
@@ -231,23 +279,41 @@ impl PluginManager {
             });
         }
         // 没有渲染计划：等待时限从生效的 healthcheck（在容器配置里）算，和安装、升级同一条规则。
-        let deadline = self.wait_deadline(&package).await?;
+        let deadline = match gate {
+            Gate::StartPeriod => self.wait_deadline(&package).await?,
+            Gate::InstallTimeout => Instant::now() + self.cfg.install_timeout,
+        };
         if let ContainersState::Stopped = state {
             self.set(id, PluginStatus::Installing, None);
             // 网络被删了（开发栈 down、Docker 数据丢了）就先按安装的规格重建，核对才能把核心接回去。
             self.ensure_network(&package.manifest).await?;
             // 复用恢复核对，先把核心接回网络；依赖核心内部别名的服务才能启动。
-            self.reconcile(&package, &record, Gate::StartPeriod).await?;
+            self.reconcile(&package, &record, gate).await?;
             // 渲染变了就重建，免得主人启动的还是旧配置的容器。
-            if !self
-                .recreate_on_drift(&package, &record, langs, true, Gate::StartPeriod)
-                .await?
-            {
+            let replaced = if replacement {
+                self.recreate_interrupted(&package, &record, langs, gate)
+                    .await?;
+                true
+            } else {
+                self.recreate_on_drift(&package, &record, langs, true, gate)
+                    .await?
+            };
+            if !replaced {
+                self.recovery_stage(id, PluginRecoveryStage::Starting)?;
                 self.start_resident_containers(&package, &record, deadline, langs)
                     .await?;
             }
+        } else if self.recovery_pending(id) {
+            self.recreate_on_drift(&package, &record, langs, true, gate)
+                .await?;
         }
-        let deployed = self.reconcile_running(&package, &record).await?;
+        self.recovery_stage(id, PluginRecoveryStage::Reconciling)?;
+        let deployed = self
+            .reconcile(&package, &record, gate)
+            .await?
+            .ok_or_else(|| {
+                InstallError::Unhealthy(l10n::text(langs, "plugin-install-resident-stopped", &[]))
+            })?;
         if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui) {
             health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
         }
