@@ -25,6 +25,8 @@ pub fn render(
     // `entry/acme` 和 `entry/requests/`。核心容器里必须看得到同一个宿主目录，不然签发的产物只落进容器
     // 可写层，lego 拿不到 CSR；CA 文件在 `entry-input/` 里，核心也要读。挂载本身不依赖 settings，
     // 提前返回会把这一步整个跳掉。
+    // 联邦名单（`secrets/tuwunel/wonton-fed.toml`）由核心原地重写，整份 `secrets` 却是只读挂的：
+    // 单独把 Tuwunel 那一层按读写再挂一次，别的机密（Matrix 签发私钥、Hydra 主密钥）继续只读。
     compose["services"]["core"]["volumes"]
         .as_array_mut()
         .context("core volumes 不是列表")?
@@ -36,6 +38,12 @@ pub fn render(
         .context("core volumes 不是列表")?
         .push(json!(
             "${WONTON_INSTALL_DIR}/entry-input:${WONTON_INSTALL_DIR}/entry-input:ro"
+        ));
+    compose["services"]["core"]["volumes"]
+        .as_array_mut()
+        .context("core volumes 不是列表")?
+        .push(json!(
+            "${WONTON_INSTALL_DIR}/secrets/tuwunel:${WONTON_INSTALL_DIR}/secrets/tuwunel"
         ));
     // 网络和核心在这几张网络上的绑定不管有没有入口设置都渲染：启动时就能定下 8484 绑在哪、主网关排除哪个地址；
     // 容器本身由核心按设置建（`entry_containers`）。
