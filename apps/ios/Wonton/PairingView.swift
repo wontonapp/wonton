@@ -344,6 +344,8 @@ private struct PairingProgress: View {
         case .expired: String(localized: .Pairing.pairingFailureExpired)
         case .closed: String(localized: .Pairing.pairingFailureClosed)
         case .pendingApproval: String(localized: .Pairing.pairingFailurePending)
+        case .joinRejected: String(localized: .Joining.joiningFailureRejected)
+        case .codeUsed: String(localized: .Joining.joiningFailureCodeUsed)
         case .transportUnavailable: String(localized: .Pairing.pairingFailureTransport)
         case .upstream: String(localized: .Pairing.pairingFailureUpstream)
         case .protocol: String(localized: .Pairing.pairingFailureProtocol)
@@ -356,6 +358,7 @@ private struct PairingProgress: View {
         case .rejected, .expired: String(localized: .Pairing.pairingNextStepNewCode)
         case .closed: String(localized: .Pairing.pairingNextStepClosed)
         case .pendingApproval: String(localized: .Pairing.pairingNextStepPending)
+        case .joinRejected, .codeUsed: String(localized: .Joining.joiningNextStepInvite)
         case .transportUnavailable: String(localized: .Pairing.pairingHintTransport)
         case .protocol: String(localized: .Pairing.pairingHintProtocol)
         case .upstream: nil
@@ -365,7 +368,7 @@ private struct PairingProgress: View {
     /// 核心按 App 语言写的诊断收进详情；码无效的几类已说明下一步，不再重复。等批的详情里写着加入后的角色。
     private static func detail(_ reason: PairingFailure, _ message: String) -> String? {
         switch reason {
-        case .rejected, .expired, .closed: nil
+        case .rejected, .expired, .closed, .joinRejected, .codeUsed: nil
         case .pendingApproval, .transportUnavailable, .upstream, .protocol: message
         }
     }

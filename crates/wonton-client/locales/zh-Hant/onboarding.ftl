@@ -61,5 +61,3 @@ home-pairing-failed-detail = 直連位址：{ $addresses }。中繼：[{ $relays
 
 home-pairing-joining-pending = 這是加入用的碼，正在等管理員同意。
 home-pairing-joining-pending-role = 這是加入用的碼，正在等管理員同意。同意後加入的角色是「{ $role }」。
-home-pairing-joining-rejected = 管理員拒絕了這個加入請求。
-home-pairing-joining-code-used = 這個加入用的碼已經被別的裝置用過了。

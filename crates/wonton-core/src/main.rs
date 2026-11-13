@@ -858,6 +858,7 @@ async fn bind_tunnel(
     members: Arc<Members>,
 ) -> anyhow::Result<Tunnel> {
     let devices = Devices::open(cfg.core_state_dir().join("devices.json"))?;
+    members.recover_pending_devices(&devices)?;
     let key = tunnel::load_or_create_key(&cfg.core_state_dir().join("tunnel-key"))?;
     let endpoint = tunnel::bind(key, cfg.tunnel_port, &cfg.relays).await?;
     tracing::info!(

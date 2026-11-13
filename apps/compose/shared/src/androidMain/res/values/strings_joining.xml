@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="joining_failure_rejected">An admin declined your request to join</string>
+    <string name="joining_failure_code_used">This invitation code has already been used</string>
+    <string name="joining_next_invite">Ask an admin for a new invitation code.</string>
+</resources>

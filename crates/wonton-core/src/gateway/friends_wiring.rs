@@ -13,6 +13,7 @@ impl Gateway {
 
     #[must_use]
     pub fn with_friends(mut self, friends: Option<Arc<Friends>>) -> Self {
+        self.tunnel.pairing.attach_friends(friends.clone());
         self.friends = friends;
         self
     }

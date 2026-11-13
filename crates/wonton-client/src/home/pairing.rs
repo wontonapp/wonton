@@ -261,14 +261,8 @@ impl HomeLink {
                 tracing::info!(?outcome, "the home server answered the join request");
                 Some(match outcome {
                     JoinOutcome::Pending | JoinOutcome::Other => pending(lang, role.as_ref()),
-                    JoinOutcome::Rejected => failed(
-                        PairingFailure::Rejected,
-                        l10n!(CATALOG, lang, "home-pairing-joining-rejected"),
-                    ),
-                    JoinOutcome::CodeUsed => failed(
-                        rejected(RejectReason::Used),
-                        l10n!(CATALOG, lang, "home-pairing-joining-code-used"),
-                    ),
+                    JoinOutcome::Rejected => failed(PairingFailure::JoinRejected, String::new()),
+                    JoinOutcome::CodeUsed => failed(PairingFailure::CodeUsed, String::new()),
                     // 上面那个分支接掉了。
                     JoinOutcome::Approved => unreachable!("approved is handled above"),
                 })

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="joining_failure_rejected">管理员拒绝了加入请求</string>
+    <string name="joining_failure_code_used">这个邀请码已经用过了</string>
+    <string name="joining_next_invite">请管理员重新发一个邀请码。</string>
+</resources>

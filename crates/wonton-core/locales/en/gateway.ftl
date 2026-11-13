@@ -120,6 +120,7 @@ gateway-pair-code-used = This pairing code was already used; get a new one
 gateway-pair-code-expired = The pairing code has expired; get a new one
 gateway-pair-first-used = This server already has paired devices and the first-pairing code can't be reused; run sudo wonton pair on the server to issue a new code
 gateway-pair-register-failed = The server couldn't register the device: { $error }
+gateway-pair-role-unavailable = The role for this invitation is unavailable. Ask an admin for a new invitation.
 
 # Owner viewing plugin secrets in the App.
 gateway-owner-secrets-plugin-not-installed = The app { $id } isn't installed

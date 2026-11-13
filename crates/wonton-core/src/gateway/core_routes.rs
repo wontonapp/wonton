@@ -410,6 +410,18 @@ fn member_routes() -> Router<Arc<Gateway>> {
             get(family::list).post(family::invite),
         )
         .route(
+            wonton_protocol::JOIN_REQUESTS_PATH,
+            get(super::join_requests::list),
+        )
+        .route(
+            &wonton_protocol::join_request_approve_path("{id}"),
+            post(super::join_requests::approve),
+        )
+        .route(
+            &wonton_protocol::join_request_reject_path("{id}"),
+            post(super::join_requests::reject),
+        )
+        .route(
             "/_wonton/api/members/{username}/pairing-code",
             post(family::pairing_code).delete(family::void_pairing_code),
         )
