@@ -44,7 +44,7 @@ impl Files {
         langs: &Languages,
     ) -> Result<HeadRead, Failure> {
         if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
-            let shares = self.shares.clone();
+            let shares = self.origin_shares(&record.origin)?;
             let reference = reference.clone();
             let langs = langs.clone();
             let bytes = tokio::task::spawn_blocking(move || {
@@ -194,7 +194,13 @@ impl Files {
     ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
         if let Origin::Share { reference } | Origin::Upload { reference, .. } = &record.origin {
             return self
-                .read_local_whole(reference.clone(), reading, langs, too_big)
+                .read_local_whole(
+                    self.origin_shares(&record.origin)?,
+                    reference.clone(),
+                    reading,
+                    langs,
+                    too_big,
+                )
                 .await;
         }
         let content = self
@@ -224,12 +230,12 @@ impl Files {
     /// 阻塞的读放不下来：调用方超时之后它还在跑（存储卡住时可能一直不回来），所以名额跟着它走，真读完才还。打开也在里面，一样会卡。
     async fn read_local_whole(
         &self,
+        shares: super::share_fs::Shares,
         reference: ShareRef,
         reading: ThumbnailSlot,
         langs: &Languages,
         too_big: fn(&Languages) -> Failure,
     ) -> Result<(Vec<u8>, ThumbnailSlot), Failure> {
-        let shares = self.shares.clone();
         let langs = langs.clone();
         #[cfg(test)]
         let stalled = self.local_reads_stalled.clone();

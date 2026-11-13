@@ -2,6 +2,7 @@
 
 mod bot_activity;
 mod bot_avatars;
+mod bot_intents;
 pub mod bot_profile;
 pub mod bot_services;
 pub mod bots;
@@ -77,6 +78,7 @@ pub(crate) mod manifest_widget;
 pub mod matrix_rtc;
 pub mod matrix_rtc_ca;
 mod mcp_server;
+mod member_bots;
 pub(crate) mod model_health;
 pub(crate) mod model_providers;
 pub mod models;
@@ -96,6 +98,7 @@ pub mod package;
 pub mod package_archive;
 pub mod package_files;
 pub mod pdf;
+mod private_homes;
 // 第 3 步的 MCP 工具接上之前没有非测试调用点。
 mod permissions_switch;
 #[cfg_attr(not(test), allow(dead_code))]

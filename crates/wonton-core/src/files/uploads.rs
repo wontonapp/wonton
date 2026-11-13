@@ -6,6 +6,8 @@
 //! tusd 的 pre-finish 钩子有 15 秒的硬超时，放不下跨卷复制，所以放文件走 post-finish；它不等钩子就回客户端，
 //! 网关要在最后一个 PATCH 的响应之前等 [`Files::finish_upload`]，204 才等于文件可用（实测见 ADR-0020 的“验证结果”）。
 
+#[cfg(test)]
+mod private_tests;
 mod room;
 mod sweep;
 
@@ -49,6 +51,8 @@ struct Pending {
     mime_type: Option<String>,
     size: u64,
     device: String,
+    username: String,
+    accessor: Accessor,
     created_at: u64,
     /// 要放到哪个名字上、文件这时的样子，链接之前写好。作废时靠它分清名字上的文件是放下时的样子，还是主人后来改过的。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,8 +84,9 @@ impl Pending {
                     path: vec![name],
                 },
                 placed,
+                username: self.username.clone(),
             },
-            access: [Accessor::Owner].into(),
+            access: [self.accessor.clone()].into(),
             owner_granted: Default::default(),
             registered: None,
             created_at: now_secs(),
@@ -311,21 +316,30 @@ impl Files {
         let name = upload
             .name
             .ok_or_else(|| invalid(&l10n::text(langs, "files-upload-filename-required", &[])))?;
+        let (username, accessor) = self.host.upload_person(upload.device)?;
         let pending = Pending {
             id: upload.id.clone(),
             name: sanitize_name(name),
             mime_type: upload.mime_type.map(str::to_owned),
             size,
             device: upload.device.to_owned(),
+            username,
+            accessor,
             created_at: now_secs(),
             placing: None,
             abandoned: false,
         };
         let langs = langs.clone();
         self.blocking(move |files| {
+            let _home = files
+                .home_changes
+                .read()
+                .expect("home changes lock poisoned");
+            files.host.check_person(&pending.accessor)?;
+            let shares = files.home_shares(&pending.username, true)?;
             for dir in [
                 files.uploads.dir.as_path(),
-                files.shares.root().join(TRANSFERS).as_path(),
+                shares.root().join(TRANSFERS).as_path(),
             ] {
                 if !has_room(dir, size, files.uploads.owner.uid)? {
                     return Err(Failure::new(
@@ -499,6 +513,11 @@ impl Files {
     /// 放文件、写记录、清理，这个顺序：数据一直留到记录写好。任何一步失败或者崩溃，文件都还认得出来（`place_upload` 按 inode 认），
     /// 再来一次会收敛到同一个文件和同一条记录。
     fn place_pending(&self, pending: Pending, langs: &Languages) -> Result<FileRecord, Failure> {
+        let _home = self
+            .home_changes
+            .read()
+            .expect("home changes lock poisoned");
+        self.host.check_person(&pending.accessor)?;
         let (name, placed) = self.place_marked(&pending, langs)?;
         let record = pending.record(name, placed);
         // 记录的目录项没落盘时不清理：断电后记录没了，数据还在才放得回来。下次清理再来。
@@ -516,7 +535,10 @@ impl Files {
         langs: &Languages,
     ) -> Result<(String, Snapshot), ShareError> {
         let mut marked = pending.clone();
-        let placed = self.shares.place_upload(
+        let shares = self
+            .home_shares(&pending.username, false)
+            .map_err(|e| ShareError::Io(e.to_string()))?;
+        let placed = shares.place_upload(
             &self.uploads.dir,
             pending.id.as_str(),
             pending.size,
@@ -563,7 +585,10 @@ impl Files {
         if current.placing.is_none() {
             return;
         }
-        let temps = match self.shares.upload_temps() {
+        let temps = match self
+            .home_shares(&current.username, false)
+            .and_then(|shares| shares.upload_temps().map_err(Failure::from))
+        {
             Ok(temps) => temps,
             Err(e) => {
                 tracing::warn!(file = %id, error = %e, "读不了临时文件，放置记录留着");
@@ -648,6 +673,10 @@ impl Files {
     /// 没有记录的文件不能留在公开的名字上：App 删不掉，清理也再找不到它。还是放下时的样子就按没放过算，删掉，不补记录：客户端取消了就是
     /// 不要了，其余两种情况客户端已经被告知要重传，留着或者补上都会多一份。主人改过的是主人的文件：补一条记录，留着。
     fn settle_placed(&self, id: &FileId) -> Result<(), Failure> {
+        let _home = self
+            .home_changes
+            .read()
+            .expect("home changes lock poisoned");
         let Some(pending) = self.uploads.load_pending(id)? else {
             return Ok(());
         };
@@ -655,7 +684,14 @@ impl Files {
         let placing = placing.map(|p| (p.name.as_str(), &p.snapshot));
         // 作废是后台清理，没有请求头：里面的错误按英文说。
         let langs = Languages::from_header(None);
-        match self.shares.settle_abandoned(id.as_str(), placing, &langs)? {
+        let settled = self
+            .home_shares(&pending.username, false)?
+            .settle_abandoned(id.as_str(), placing, &langs);
+        let settled = match settled {
+            Err(ShareError::Gone) => Abandoned::NotPlaced,
+            result => result?,
+        };
+        match settled {
             Abandoned::NotPlaced => {}
             Abandoned::Deleted { name, durable } => {
                 tracing::warn!(file = %id, name, "上传作废了，删掉了已经放好但没有记录的文件");
@@ -685,7 +721,19 @@ impl Files {
     /// 待完成记录最后删，前面都删掉了才删：它是唯一指向临时文件和数据的东西，留着下次清理还看得到这个上传。临时文件删不掉就成了
     /// 主人文件的第二个硬链接，删掉可见的文件也不释放空间。都删掉了才为真。
     pub(super) fn forget_now(&self, id: &FileId, with_lock: bool) -> bool {
-        let temp = self.shares.remove_upload_temp(id.as_str());
+        let temp = self
+            .uploads
+            .load_pending(id)
+            .and_then(|pending| match pending {
+                Some(pending) => match self
+                    .home_shares(&pending.username, false)?
+                    .remove_upload_temp(id.as_str())
+                {
+                    Ok(()) | Err(ShareError::Gone) => Ok(()),
+                    Err(error) => Err(Failure::from(error)),
+                },
+                None => Ok(()),
+            });
         if let Err(e) = &temp {
             tracing::warn!(file = %id, error = %e, "删除上传的临时文件失败");
         }
@@ -707,12 +755,16 @@ impl Files {
 impl Files {
     /// 钩子问过核心之后的样子：只有待完成记录。磁盘放不放得下不查。
     pub(crate) fn pending_for_test(&self, id: &FileId, size: u64, device: &str) {
+        let (username, accessor) = self.host.upload_person(device).unwrap();
+        self.home_shares(&username, true).unwrap();
         let pending = Pending {
             id: id.clone(),
             name: "a.txt".to_owned(),
             mime_type: None,
             size,
             device: device.to_owned(),
+            username,
+            accessor,
             created_at: now_secs(),
             placing: None,
             abandoned: false,

@@ -13,6 +13,8 @@
 //! 隧道身份随 WebView 的每个请求自动带上，跨站带自定义请求头却要先过预检，这里不回 CORS 头，插件网页因此碰不到这些接口。
 //! 上传在 [`uploads`]。文件内容不可信：响应一律 `nosniff`、`CSP: sandbox`，只有媒体写真实类型。
 
+#[cfg(test)]
+mod private_tests;
 mod uploads;
 
 use std::sync::Arc;
@@ -62,6 +64,7 @@ const SANDBOX: (HeaderName, HeaderValue) = (
 struct Caller {
     device: EndpointId,
     files: Arc<Files>,
+    who: Accessor,
 }
 
 impl Caller {
@@ -128,8 +131,7 @@ fn respond(result: Result<Response, Failure>) -> Response {
     result.unwrap_or_else(|e| failure(&e))
 }
 
-/// 经隧道的已配对设备才能过，每个请求都查设备登记表，吊销立即生效。文件的访问范围还是只有主人
-/// （ADR-0045 的按人范围是后续任务）：家人的设备如实报 `not_shared`。
+/// Every request checks the live device, membership and private-home permission.
 async fn require_device(
     State(gateway): State<Arc<Gateway>>,
     mut req: Request,
@@ -154,13 +156,23 @@ async fn require_device(
             ),
         ));
     };
-    let person = gateway.device_person(peer);
-    if person.is_none_or(|person| !person.is_owner()) {
+    let Some(person) = gateway.device_person(peer) else {
+        return failure(&Failure::new(
+            FileFailure::FileUnknown,
+            l10n::text(&languages(req.headers()), "files-not-found", &[]),
+        ));
+    };
+    if !gateway.permissions(&person).private_bot {
         return failure(&Failure::new(
             FileFailure::NotShared,
-            "文件接口还没有开放给家人（访问范围按人是后续任务）",
+            l10n::text(&languages(req.headers()), "files-not-shared", &[]),
         ));
     }
+    let who = if person.is_owner() {
+        Accessor::Owner
+    } else {
+        Accessor::User(person.username)
+    };
     let Some(files) = gateway.files.clone() else {
         let langs = languages(req.headers());
         return failure(&Failure::new(
@@ -168,7 +180,7 @@ async fn require_device(
             l10n::text(&langs, "files-service-disabled", &[]),
         ));
     };
-    req.extensions_mut().insert(Caller { device, files });
+    req.extensions_mut().insert(Caller { device, files, who });
     next.run(req).await
 }
 
@@ -190,7 +202,7 @@ async fn info(
     let langs = languages(&headers);
     let info = async {
         let id = parse_id(&id, &langs)?;
-        caller.files.info(&id, &Accessor::Owner, &langs).await
+        caller.files.info(&id, &caller.who, &langs).await
     };
     respond(info.await.map(|info| axum::Json(info).into_response()))
 }
@@ -204,7 +216,10 @@ async fn delete(
     let result = match parse_id(&id, &langs) {
         Ok(parsed) => {
             let device = device_label(&caller.device);
-            caller.files.delete(&parsed, device, &langs).await
+            caller
+                .files
+                .delete_for(caller.who.clone(), &parsed, device, &langs)
+                .await
         }
         Err(e) => {
             let failed = Err(e);
@@ -236,7 +251,7 @@ async fn grant(
         })?;
         caller
             .files
-            .grant_room(&parsed, &request.room, &langs)
+            .grant_room_for(caller.who.clone(), &parsed, &request.room, &langs)
             .await
     }
     .await;
@@ -259,7 +274,10 @@ async fn revoke(
     let langs = languages(&headers);
     let revoked = async {
         let parsed = parse_id(&id, &langs)?;
-        caller.files.revoke_bot(&parsed, &bot, &langs).await
+        caller
+            .files
+            .revoke_bot_for(caller.who.clone(), &parsed, &bot, &langs)
+            .await
     }
     .await;
     let bots = [bot];
@@ -282,7 +300,10 @@ async fn send_to_devices(
     let langs = languages(&headers);
     let sent = async {
         let parsed = parse_id(&id, &langs)?;
-        caller.files.send_to_devices(&parsed, &langs).await
+        caller
+            .files
+            .send_to_devices_for(caller.who.clone(), &parsed, &langs)
+            .await
     }
     .await;
     caller.audit("file_send_to_devices", &id, &sent);
@@ -297,7 +318,7 @@ async fn thumbnail(
     let langs = languages(&headers);
     let jpeg = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &Accessor::Owner, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
         caller.files.thumbnail(&record, &langs).await
     };
     respond(jpeg.await.map(|jpeg| {
@@ -365,7 +386,7 @@ async fn content(
     };
     let served = async {
         let parsed = parse_id(&id, &langs)?;
-        let record = caller.files.authorize(&parsed, &Accessor::Owner, &langs)?;
+        let record = caller.files.authorize(&parsed, &caller.who, &langs)?;
         let content = caller.files.content(&record, request, &langs).await?;
         let (mut response, range) = match content {
             Content::File(opened) => local_file(opened, &method, &headers, &langs).await,

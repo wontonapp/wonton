@@ -45,6 +45,9 @@ pub const FAMILY_ROOM_EVENT: &str = "app.wonton.family";
 /// `POST`：按成员和角色记录重同步家庭群，成功回 204；失败回 503，记录已保存的操作不回滚。要管理成员权限。
 pub const FAMILY_ROOM_SYNC_PATH: &str = "/_wonton/api/members/family-room/sync";
 
+/// `POST`：按已保存的成员记录补齐家庭群、私人 Bot、私人空间和移除收尾；成功 204，失败 503。要管理成员权限。
+pub const MEMBER_SYNC_PATH: &str = "/_wonton/api/members/sync";
+
 /// 总线转给插件的 `tools/call` 在 `_meta` 里带这一项：私人 Bot 调用时是归属人的用户名，共享 Bot 不带。
 pub const TOOL_CALL_USER_META: &str = "app.wonton/user";
 
@@ -168,7 +171,7 @@ pub struct MemberRemoval {
     pub keep_bot_data: bool,
 }
 
-/// 一个 Bot：插件 ID 加插件里的 Bot 名（插件规范的 `bots`）。私人 Bot 的名字是归属人的用户名。
+/// 一个 Bot：插件 ID 加插件里的 Bot 名（插件规范的 `bots`）。私人 Bot 的标识以 [`Member::private_bot`] 为准。
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct BotRef {

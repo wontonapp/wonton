@@ -113,6 +113,7 @@ pub struct InstallContext {
     pub matrix: Option<MatrixVars>,
     /// 声明了 `bots` 时每个 Bot 的 Matrix 身份、模型凭据和总线地址（`bots.services` 里的服务用）。
     pub bots: BTreeMap<String, BotVars>,
+    pub(crate) homes: BTreeMap<String, super::private_homes::HomeMount>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
     /// 通用能力的地址和凭据，仅用于清单插值；Debug 不打印值。
@@ -258,6 +259,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .collect();
     InstallContext {
         app_data: root.join("apps").join(&slug),
+        homes: super::private_homes::dry_run_homes(manifest),
         hosted_root: root.join("hosted"),
         relay_dir: PathBuf::from(crate::config::DEFAULT_RELAY_DIR),
         config_store: root.join("core").join("configs"),
@@ -477,6 +479,13 @@ fn render_service_containers(
             })?,
             None => vars.get(name),
         };
+        let resolved;
+        let service = if bot.is_some() {
+            resolved = package.service(name, service_vars, variables, langs)?;
+            &resolved
+        } else {
+            service
+        };
         let mut mounts = Mounts {
             ctx,
             read_only_shares,
@@ -491,6 +500,7 @@ fn render_service_containers(
         }
         .build(&service.volumes, binds)?;
         mounts.extend(hosted_mounts(manifest, ctx, name));
+        super::private_homes::mount_home(manifest, ctx, bot, &mut mounts, service, name, langs)?;
         let (files, store_dir) = configs::resolve_service(
             package,
             service,
@@ -518,19 +528,7 @@ fn render_service_containers(
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }
-        // 宿主网络里解析不了别名 `egress.wonton.internal`：只用出口容器在这个网络里的地址，地址还没定下来
-        // 时先不写（能出网，只是不经代理），别写出一个连不上的代理。
-        if let Some(egress) = ctx.egress.as_ref() {
-            let url = match &service.network_mode {
-                None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
-                Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
-                Some(NetworkMode::None) => None,
-            };
-            if let Some(url) = url {
-                egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
-                egress::healthcheck::apply(&mut plan.body);
-            }
-        }
+        inject_service_egress(ctx, service, service_keys, &mut plan);
         plan.files = files;
         plan.store_dir = store_dir;
         plan.one_shot = one_shot;
@@ -538,6 +536,26 @@ fn render_service_containers(
         containers.push(plan);
     }
     Ok(())
+}
+
+fn inject_service_egress(
+    ctx: &InstallContext,
+    service: &Service,
+    service_keys: &[String],
+    plan: &mut ContainerPlan,
+) {
+    // Host-network services cannot resolve the plugin network's proxy alias.
+    if let Some(egress) = ctx.egress.as_ref() {
+        let url = match &service.network_mode {
+            None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
+            Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
+            Some(NetworkMode::None) => None,
+        };
+        if let Some(url) = url {
+            egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
+            egress::healthcheck::apply(&mut plan.body);
+        }
+    }
 }
 
 fn render_plan(

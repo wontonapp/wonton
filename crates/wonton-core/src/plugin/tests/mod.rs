@@ -71,6 +71,8 @@ mod people_languages;
 mod personal_data_contract;
 mod plugin_settings;
 mod preinstall;
+mod private_home;
+mod private_home_docker;
 mod privileges;
 mod render_drift;
 mod resources;
@@ -269,6 +271,21 @@ fn full_example_is_a_valid_plugin() {
         .unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.immich.photos");
     dry_run(&pkg, &langs()).unwrap();
+}
+#[test]
+fn orchestrator_example_declares_agent_acp_provider_and_dependency() {
+    let pkg = PluginPackage::parse(include_str!("examples/orchestrator.yaml"), &langs()).unwrap();
+    assert_eq!(pkg.manifest.id.as_str(), "app.example.orchestrator");
+    assert_eq!(pkg.manifest.requires, ["agent_acp"]);
+    let provider = &pkg.manifest.provides.as_ref().unwrap().capabilities["agent_acp"];
+    assert_eq!(provider.service, "orchestrator");
+    assert_eq!(provider.port, 8080);
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    let env = env_of(&plan.containers[0]);
+    assert!(
+        env.iter()
+            .any(|item| item == "WONTON_AGENT_ACP_URL=http://agent_acp.wonton.internal")
+    );
 }
 
 #[test]

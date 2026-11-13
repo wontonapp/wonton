@@ -1,6 +1,26 @@
 //! 启动接线的另一半：外部客户、好友记录、分享登记、监听与隧道入口、插件核对。
 use super::*;
 
+pub(super) fn open_files(
+    cfg: &Config,
+    host: Arc<CoreHost>,
+    http: HttpClient,
+    audit: Arc<Audit>,
+    images: Arc<ImageWorker>,
+) -> anyhow::Result<Arc<Files>> {
+    let config = FilesConfig {
+        data_dir: cfg.data_dir.clone(),
+        dir: cfg.core_state_dir().join("files"),
+        shares_dir: cfg.shares_dir(),
+        owner: Owner {
+            uid: cfg.puid,
+            gid: cfg.pgid,
+        },
+    };
+    let files = Files::open(&config, host, http, audit, images).context("打开文件服务")?;
+    Ok(Arc::new(files))
+}
+
 pub(super) async fn open_clients(
     cfg: &Config,
     engine: &Engine,
@@ -102,6 +122,9 @@ pub(super) async fn run_gateway(
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
     start_restored_plugins(cfg, &manager, gateway.notices.clone(), upgrades_after_serve).await?;
+    if let Err(error) = gateway.sync_members().await {
+        tracing::error!(%error, retry_path = wonton_protocol::MEMBER_SYNC_PATH, "Member startup synchronization failed");
+    }
     // 隧道跟网关同生命周期：网关结束（收到退出信号）后才关。放在核对之后、网关结束之前关，
     // 核心一启动完隧道就没了，手机配不上也连不回家。
     let served = served.await.context("网关任务退出");

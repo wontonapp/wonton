@@ -37,6 +37,7 @@ pub(super) struct Home {
     pub(super) tunnel: Tunnel,
     pub(super) device: TunnelPeer,
     pub(super) f: Fixture,
+    pub(super) members: Arc<crate::members::Members>,
 }
 
 pub(super) async fn home() -> Home {
@@ -90,7 +91,7 @@ pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
         public,
         profile,
         TOKEN.into(),
-        members,
+        members.clone(),
         manager,
         None,
         http,
@@ -103,6 +104,7 @@ pub(super) async fn home_at(f: Fixture, tusd: Option<String>) -> Home {
         tunnel,
         device: TunnelPeer(key.public()),
         f,
+        members,
     }
 }
 
@@ -559,7 +561,7 @@ async fn sending_to_devices_posts_only_the_link() {
 async fn delete_verifies_the_upload_is_still_the_same_file() {
     let home = home().await;
     let id = home.f.uploaded("a.txt", b"mine");
-    let path = home.f.shares_dir.join("transfers/a.txt");
+    let path = home.f.home_dir().join("transfers/a.txt");
     assert_eq!(
         home.call(Method::DELETE, &info(&id)).await.status,
         StatusCode::NO_CONTENT
