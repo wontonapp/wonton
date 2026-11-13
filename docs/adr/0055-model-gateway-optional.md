@@ -63,7 +63,7 @@ open-webui、n8n、SillyTavern 等非 Agent 应用安装后默认指向 magpie�
 
 | 范围 | 涉及的插件或模块 |
 | --- | --- |
-| Agent 插件 | [Hermes 配置与初始化](https://github.com/geraldpeng6/wonton-plugin-hermes/blob/da601989c34600bc36262275ccba42f3e76468c8/config.yaml)、[OpenClaw 配置](https://github.com/geraldpeng6/wonton-plugin-openclaw/blob/e3801634e9c5d36e51da926ffaf2ac02be65351b/docker-compose.yml)；主、辅助模型及 provider 切换入口 |
+| Agent 插件 | [Hermes 配置与初始化](https://github.com/wontonapp/wonton-plugin-hermes/blob/da601989c34600bc36262275ccba42f3e76468c8/config.yaml)、[OpenClaw 配置](https://github.com/wontonapp/wonton-plugin-openclaw/blob/e3801634e9c5d36e51da926ffaf2ac02be65351b/docker-compose.yml)；主、辅助模型及 provider 切换入口 |
 | ACP Agent 插件 | `wonton-agents` 的 omp、Codex、Claude Code、OpenCode、Qwen Code、Kimi Code、DSH 及[共用网关适配](https://github.com/wontonapp/wonton-agents/blob/base/v0.1.1/base/wonton_agent/gateway.py)；其中 [Codex 认证选路](https://github.com/wontonapp/wonton-agents/blob/523a241f4a1b3f2b0b85f6c34d61bdbeed3dd27d/agents/codex/image/gateway)、[DSH 缺网关分支](https://github.com/wontonapp/wonton-agents/blob/4492982e5910d1458641cbdafb76b503821f94ef/agents/dsh/image/gateway)属于来源边界；不请求模型的 Echo 不受影响 |
 | 其他 Agent 适配 | [agent-orchestrator 的工人模型配置](https://github.com/geraldpeng6/wonton-plugin-agent-orchestrator/blob/cf6c1afed994d88c1828908371522c72b34c96ed/images/wonton-plugin-agent-orchestrator/gateway)、[ZCode 网关与认证选路](https://github.com/geraldpeng6/wonton-plugin-zcode/blob/24307445ca37f5b875fc84cf9785e5bfea04f9de/images/wonton-plugin-zcode/gateway) |
 | 核心与协议 | `wonton-core` 的插件模型凭据、变量注入、清单及能力校验、模型转发；`wonton-protocol` 的引导模型配置契约 |
