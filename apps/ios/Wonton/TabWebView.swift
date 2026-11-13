@@ -395,12 +395,12 @@ final class TabWebSession: NSObject, WKUIDelegate {
 
     /// 网页要摄像头/麦克风（getUserMedia）：先问核心（按插件记决定），按回答放行或拒绝；
     /// 放行还要系统运行时权限。其他 UI 代理方法走 WebKit 的默认。
-    /// 实现放在类主体；签名按 iOS 26 SDK 的 requestMediaCapturePermissionForOrigin:
-    /// （旧请求方法的 WKFrameInfo 版本已从协议里删掉，签名对不上时可选协议不报错，
-    /// WebKit 直接走自己的兜底权限弹窗，绕过核心的逐插件确认）。
+    /// 实现放在类主体；iOS 26 SDK 把回调的源参数换成了 WKSecurityOrigin（Swift 名还是
+    /// requestMediaCapturePermissionFor:）。类型写错（如旧的 WKFrameInfo）时可选协议不报错，
+    /// WebKit 直接走自己的兜底权限弹窗，绕过核心的逐插件确认。
     func webView(
         _ webView: WKWebView,
-        requestMediaCapturePermissionForOrigin origin: WKSecurityOrigin,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
         initiatedByFrame frame: WKFrameInfo,
         type: WKMediaCaptureType,
         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
