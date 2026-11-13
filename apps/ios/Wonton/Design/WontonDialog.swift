@@ -7,7 +7,7 @@ struct WontonDialogAction {
     var kind: WontonButtonStyle.Kind = .secondary
     var perform: () -> Void = {}
     /// 可达性树的稳定标识：界面测试按它找按钮，不按会变的文案找。
-    var identifier: String? = nil
+    var identifier: String?
 }
 
 extension View {

@@ -168,3 +168,82 @@ struct TabMediaDialogs: ViewModifier {
         TabMediaRequests.shared.answered(decision)
     }
 }
+
+extension TabWebSession {
+    /// 原生回调里的来源拼成 URL 字符串（桥的来源同款），核心按它和页面自己的源核对。
+    static func originString(_ origin: WKSecurityOrigin) -> String {
+        var components = URLComponents()
+        components.scheme = origin.protocol
+        components.host = origin.host
+        if origin.port > 0 { components.port = origin.port }
+        return components.string ?? ""
+    }
+
+    /// 同一个源：scheme、主机和有效端口（缺省按方案的默认口）。桥的来源判定是同一条规矩，
+    /// 媒体通道核心不核对，壳在收消息时照它核对。
+    static func sameOrigin(_ origin: WKSecurityOrigin, of view: WKWebView) -> Bool {
+        guard let url = view.url else { return false }
+        let scheme = url.scheme?.lowercased()
+        guard origin.protocol.lowercased() == scheme,
+              origin.host.lowercased() == url.host?.lowercased() else { return false }
+        let port = origin.port > 0 ? origin.port : defaultPort(scheme)
+        return port == (url.port ?? defaultPort(scheme))
+    }
+
+    private static func defaultPort(_ scheme: String?) -> Int {
+        switch scheme {
+        case "http": 80
+        case "https": 443
+        default: 0
+        }
+    }
+}
+
+extension TabWebSession: WKUIDelegate {
+    /// 网页要摄像头/麦克风（getUserMedia）：先问核心（按插件记决定），按回答放行或拒绝；
+    /// 放行还要系统运行时权限。其他 UI 代理方法走 WebKit 的默认。
+    /// iOS 26 SDK 把回调的源参数换成了 WKSecurityOrigin（Swift 名还是
+    /// requestMediaCapturePermissionFor:）。类型写错（如旧的 WKFrameInfo）时可选协议不报错，
+    /// WebKit 直接走自己的兜底权限弹窗，绕过核心的逐插件确认。
+    func webView(
+        _ webView: WKWebView,
+        requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
+        type: WKMediaCaptureType,
+        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
+    ) {
+        NSLog("[media] capture entry type=%d", type == .camera ? 0 : type == .microphone ? 1 : 2)
+        let camera = type == .camera || type == .cameraAndMicrophone
+        let microphone = type == .microphone || type == .cameraAndMicrophone
+        // 源从 WebView 的原生回调取，核心按页面自己的源核对；页面里嵌的其他源核心直接拒。
+        // 核心问不出来（页面关了、源不符、查记录失败）就是拒：如实拒网页并留日志，不静默。
+        let decision: TabMediaPermission?
+        do {
+            decision = try core.tabMediaPermissionRequest(
+                page: placed, origin: Self.originString(origin),
+                camera: camera, microphone: microphone
+            )
+            let what = if decision == .allow {
+                "allow"
+            } else if decision == .prompt {
+                "prompt"
+            } else {
+                "deny"
+            }
+            NSLog("[media] request ok %@ microphone=%d", what, microphone ? 1 : 0)
+        } catch {
+            decision = nil
+            NSLog("[media] request failed origin=%@ error=%@",
+                  Self.originString(origin), String(describing: error))
+        }
+        let answer = { (allow: Bool) in decisionHandler(allow ? .grant : .deny) }
+        switch decision {
+        case .allow:
+            TabMediaRequests.shared.systemStep(for: type, answer: answer)
+        case .prompt:
+            TabMediaRequests.shared.asked(for: type, answer: answer)
+        default:
+            answer(false)
+        }
+    }
+}

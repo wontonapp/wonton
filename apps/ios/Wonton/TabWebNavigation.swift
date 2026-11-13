@@ -57,7 +57,9 @@ extension TabWebSession: WKNavigationDelegate {
         if ProcessInfo.processInfo.arguments.contains("wonton-media-capture-test") {
             // 首句实锤插件页的安全上下文（*.wonton.localhost 按安全上下文算）；结果看走查日志里的 "Wonton media probe"。
             webView.evaluateJavaScript(
-                "typeof navigator.mediaDevices + ':' + (navigator.mediaDevices ? navigator.mediaDevices.getUserMedia({audio: true}).then(() => 'granted', (e) => 'denied:' + e.name).catch(() => 'error') : 'none')"
+                "typeof navigator.mediaDevices + ':' + (navigator.mediaDevices ? "
+            + "navigator.mediaDevices.getUserMedia({audio: true})"
+            + ".then(() => 'granted', (e) => 'denied:' + e.name).catch(() => 'error') : 'none')"
             ) { result, error in
                 NSLog("Wonton media probe: %@%@", result as? String ?? "?", error.map { " error:\($0)" } ?? "")
             }
