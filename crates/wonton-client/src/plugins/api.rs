@@ -361,57 +361,6 @@ impl CoreApi {
             .await?;
         parse(&bytes)
     }
-    pub(crate) async fn put_unit_detailed(
-        &self,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        self.unit_detailed(Method::PUT, segments, body, timeout)
-            .await
-    }
-
-    /// 发 JSON 请求体，不要响应体，错误带类别和消息：测试模型服务商要分得清 key 被拒和连不上。
-    pub(crate) async fn post_unit_detailed(
-        &self,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        self.unit_detailed(Method::POST, segments, body, timeout)
-            .await
-    }
-
-    async fn unit_detailed(
-        &self,
-        method: Method,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        let body = serde_json::to_vec(body).map_err(|error| {
-            CoreApiError::Protocol(l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-invalid-request",
-                reason = error.to_string()
-            ))
-        })?;
-        let (status, bytes) = self
-            .exchange(
-                method,
-                self.url(segments, &[]),
-                Some(body),
-                "application/json",
-                timeout,
-            )
-            .await
-            .map_err(CoreApiError::Transport)?;
-        if status < 400 {
-            return Ok(());
-        }
-        Err(http_error(status, &bytes))
-    }
 
     pub(crate) async fn put_detailed<T: DeserializeOwned>(
         &self,

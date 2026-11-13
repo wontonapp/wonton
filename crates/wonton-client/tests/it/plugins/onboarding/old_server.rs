@@ -8,7 +8,7 @@ use wonton_client::{
 };
 
 use super::super::rig::{Canned, Rig, core_error};
-use super::{PROFILE, act, at, onboarding, providers, test_key};
+use super::{PROFILE, act, at, configure_gateway, onboarding, providers};
 
 const UPGRADE: &str = "/_wonton/api/core/upgrade";
 
@@ -76,7 +76,7 @@ async fn a_current_server_keeps_the_404_category() {
     // 服务器不比接口旧：404 还是“没有这个”，资料这一步照常显示。
     let view = rig
         .wait_onboarding(|view| {
-            !view.loading && view.model.providers.is_some() && view.step.is_some()
+            !view.loading && view.model.settings.is_some() && view.step.is_some()
         })
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
@@ -96,7 +96,7 @@ async fn a_server_without_a_version_is_not_judged_old() {
     let rig = rig_with(None).await;
     let view = rig
         .wait_onboarding(|view| {
-            !view.loading && view.model.providers.is_some() && view.step.is_some()
+            !view.loading && view.model.settings.is_some() && view.step.is_some()
         })
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
@@ -110,7 +110,8 @@ async fn a_server_without_a_version_is_not_judged_old() {
 async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
     act(rig, Action::ContinueOnboarding);
     at(rig, OnboardingStep::Model).await;
-    test_key(rig, true);
+    configure_gateway(rig).await;
+    act(rig, Action::ContinueOnboarding);
     at(rig, OnboardingStep::Apps).await;
     act(rig, Action::ContinueOnboarding);
     rig.wait_onboarding(|view| {

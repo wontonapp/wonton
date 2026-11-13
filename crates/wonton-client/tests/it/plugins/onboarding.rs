@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{
-    Action, CoreError, ModelProviderFailure, ModelProviderInput, OnboardingModelChoice,
-    OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep, OnboardingViewModel,
-    SecretString, StepNav,
+    Action, CoreError, ModelSettingsFailure, OnboardingModelChoice, OnboardingReviewDetail,
+    OnboardingReviewKind, OnboardingStep, OnboardingViewModel, StepNav,
 };
 
 use super::rig::{FakeHome, Rig, WAIT, core_error, item};
@@ -19,9 +18,6 @@ const ONBOARDING: &str = "/_wonton/api/onboarding";
 const PROFILE: &str = wonton_protocol::ME_PATH;
 const PROVIDERS: &str = "/_wonton/api/models/providers";
 const KEY: &str = "/_wonton/api/models/providers/openai";
-const KEY_TEST: &str = "/_wonton/api/models/providers/openai/test";
-const CUSTOM: &str = "/_wonton/api/models/custom-provider";
-const CUSTOM_TEST: &str = "/_wonton/api/models/custom-provider/test";
 const PREVIEW: &str = "/_wonton/api/plugins/preview";
 const INSTALL: &str = "/_wonton/api/plugins";
 
@@ -54,6 +50,7 @@ fn with_photos(mut state: serde_json::Value) -> serde_json::Value {
 
 fn providers(configured: bool) -> serde_json::Value {
     serde_json::json!({
+        "plugin_id": "system.models",
         "any_configured": configured,
         "providers": [{
             "id": "openai",
@@ -84,20 +81,18 @@ fn invalid(rig: &Rig, action: Action) {
 }
 
 async fn at(rig: &Rig, step: OnboardingStep) -> OnboardingViewModel {
-    rig.wait_onboarding(|view| view.step == Some(step) && !view.loading && !view.model.testing)
+    rig.wait_onboarding(|view| view.step == Some(step) && !view.loading)
         .await
 }
 
-/// 进到第一步，资料和服务商都取到了。
+/// 进到第一步，资料和模型设置入口都取到了。
 async fn flow_rig(state: serde_json::Value) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(state);
     rig.core.set_providers(providers(false));
     rig.connected().await;
     rig.wait_onboarding(|view| {
-        view.step == Some(OnboardingStep::Profile)
-            && !view.loading
-            && view.model.providers.is_some()
+        view.step == Some(OnboardingStep::Profile) && !view.loading && view.model.settings.is_some()
     })
     .await;
     rig
@@ -113,38 +108,33 @@ fn edit(rig: &Rig, name: &str, email: &str) {
     );
 }
 
-fn test_key(rig: &Rig, then_continue: bool) {
-    act(
-        rig,
-        Action::TestModelProvider {
-            input: ModelProviderInput::Preset {
-                id: "openai".to_owned(),
-                key: SecretString::new(" secret\n"),
-            },
-            then_continue,
-        },
-    );
+async fn configure_gateway(rig: &Rig) {
+    rig.core.set_providers(providers(true));
+    act(rig, Action::RefreshOnboarding);
+    rig.wait_onboarding(|view| !view.loading && view.model.has_configured_models)
+        .await;
 }
 
-/// 点完成之前，引导只取状态、测 key、取安装预览，不发任何保存请求（ADR-0038）。
+/// 点完成之前，引导只取状态和安装预览，不发任何保存模型的请求。
 fn assert_nothing_saved(rig: &Rig) {
     for seen in rig.core.all_seen() {
         let path = seen.path.as_str();
         let watched = [ONBOARDING, PROFILE, INSTALL].contains(&path)
             || path.starts_with("/_wonton/api/models/");
-        let allowed = seen.method == Method::GET || path.ends_with("/test") || path == PREVIEW;
+        let allowed = seen.method == Method::GET || path == PREVIEW;
         assert!(!watched || allowed, "{} {path}：{}", seen.method, seen.body);
     }
 }
 
-/// 名字、默认的 Agent、测过的 key、选上照片，走到最后一页且预览都取到。
+/// 名字、默认 Agent、网页已保存的模型配置、选上照片，走到最后一页且预览都取到。
 async fn walk_to_review(rig: &Rig) -> OnboardingViewModel {
     edit(rig, " 云吞 ", "");
     act(rig, Action::ContinueOnboarding);
     at(rig, OnboardingStep::Agent).await;
     act(rig, Action::ContinueOnboarding);
     at(rig, OnboardingStep::Model).await;
-    test_key(rig, true);
+    configure_gateway(rig).await;
+    act(rig, Action::ContinueOnboarding);
     at(rig, OnboardingStep::Apps).await;
     act(
         rig,
@@ -192,7 +182,10 @@ async fn every_step_only_records_its_choice_until_finish() {
         ]
     );
     assert_eq!(review.review.items[0].titles, ["云吞"]);
-    assert_eq!(review.review.items[2].titles, ["OpenAI"]);
+    assert_eq!(
+        review.review.items[2].detail,
+        Some(OnboardingReviewDetail::KeepCurrent)
+    );
     assert!(!review.review.items[3].permissions.is_empty());
     assert_eq!(
         review.nav,
@@ -205,9 +198,6 @@ async fn every_step_only_records_its_choice_until_finish() {
             can_close: false,
         })
     );
-    let tested = rig.core.seen(&Method::POST, KEY_TEST);
-    assert_eq!(tested.len(), 1);
-    assert!(tested[0].body.contains("\"secret\""), "{}", tested[0].body);
     assert_nothing_saved(&rig);
 }
 
@@ -273,7 +263,7 @@ async fn reopening_shows_the_current_settings_on_every_step() {
         .wait_onboarding(|view| {
             view.step == Some(OnboardingStep::Profile)
                 && !view.loading
-                && view.model.providers.is_some()
+                && view.model.settings.is_some()
         })
         .await;
     assert_eq!(view.profile.display_name, "云吞");
@@ -362,109 +352,27 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
 }
 
 #[tokio::test]
-async fn testing_a_key_keeps_each_failure_reason_and_saves_nothing() {
-    for (error, expected) in [
-        (
-            core_error(422, "invalid_input", "key 错"),
-            ModelProviderFailure::KeyRejected,
-        ),
-        (
-            core_error(503, "models_unavailable", "网关没好"),
-            ModelProviderFailure::GatewayNotReady,
-        ),
-        (
-            super::rig::Canned(502, String::new()),
-            ModelProviderFailure::TransportUnavailable,
-        ),
-    ] {
-        let rig = flow_rig(onboarding("profile")).await;
-        act(&rig, Action::SkipOnboardingStep);
-        act(&rig, Action::ContinueOnboarding);
-        at(&rig, OnboardingStep::Model).await;
-        rig.core.answer(Method::POST, KEY_TEST, error);
-        test_key(&rig, true);
-        let view = rig
-            .wait_onboarding(|view| view.model.problem.is_some() && !view.model.testing)
-            .await;
-        assert_eq!(view.step, Some(OnboardingStep::Model));
-        assert_eq!(view.model.problem.unwrap().reason, expected);
-        assert_eq!(view.model.choice, None);
-        assert!(!view.nav.unwrap().can_next);
-        assert_nothing_saved(&rig);
-    }
-}
-
-#[tokio::test]
-async fn an_unreachable_provider_is_recorded_and_can_continue() {
+async fn model_settings_page_does_not_claim_models_are_configured() {
     let rig = flow_rig(onboarding("profile")).await;
     act(&rig, Action::SkipOnboardingStep);
     act(&rig, Action::ContinueOnboarding);
-    at(&rig, OnboardingStep::Model).await;
-    rig.core.answer(
-        Method::POST,
-        KEY_TEST,
-        core_error(503, "upstream_unavailable", "服务商不通"),
-    );
-    test_key(&rig, true);
-    let view = at(&rig, OnboardingStep::Apps).await;
-    assert_eq!(
-        view.model.choice,
-        Some(OnboardingModelChoice::Provider {
-            id: "openai".to_owned(),
-            title: "OpenAI".to_owned(),
-            reachable: false,
-        })
-    );
+    let before = at(&rig, OnboardingStep::Model).await;
+    let page = before.model.settings.unwrap();
+    assert_eq!(page.plugin_id, "system.models");
+    assert_eq!(page.web_url, "https://example.invalid/models");
+    assert!(!before.model.has_configured_models);
+    assert_eq!(before.model.choice, None);
+    assert!(!before.nav.unwrap().can_next);
+    invalid(&rig, Action::UseCurrentModel);
+    invalid(&rig, Action::ContinueOnboarding);
+
+    configure_gateway(&rig).await;
+    let after = at(&rig, OnboardingStep::Model).await;
+    assert_eq!(after.model.settings, Some(page));
+    assert_eq!(after.model.choice, Some(OnboardingModelChoice::Current));
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Apps).await;
     assert_nothing_saved(&rig);
-}
-
-#[tokio::test]
-async fn a_custom_provider_is_tested_and_recorded() {
-    let rig = flow_rig(onboarding("profile")).await;
-    act(&rig, Action::SkipOnboardingStep);
-    act(&rig, Action::ContinueOnboarding);
-    at(&rig, OnboardingStep::Model).await;
-    let custom = |base_url: &str| Action::TestModelProvider {
-        input: ModelProviderInput::Custom {
-            base_url: base_url.to_owned(),
-            model: " m1 ".to_owned(),
-            key: SecretString::new("secret"),
-        },
-        then_continue: false,
-    };
-    invalid(&rig, custom("不是地址"));
-    act(&rig, custom("https://llm.example.invalid/v1"));
-    let view = rig
-        .wait_onboarding(|view| view.model.choice.is_some() && !view.model.testing)
-        .await;
-    assert_eq!(
-        view.model.choice,
-        Some(OnboardingModelChoice::Custom {
-            base_url: "https://llm.example.invalid/v1".to_owned(),
-            model: "m1".to_owned(),
-            reachable: true,
-        })
-    );
-    assert_eq!(view.step, Some(OnboardingStep::Model));
-    let tested = rig.core.seen(&Method::POST, CUSTOM_TEST);
-    assert!(
-        tested[0].body.contains("\"model\":\"m1\""),
-        "{}",
-        tested[0].body
-    );
-    assert!(rig.core.seen(&Method::PUT, CUSTOM).is_empty());
-
-    let mut plain = providers(false);
-    plain["custom"] = serde_json::json!(false);
-    let other = Rig::new().await;
-    other.core.set_onboarding(onboarding("profile"));
-    other.core.set_providers(plain);
-    other.connected().await;
-    at(&other, OnboardingStep::Profile).await;
-    act(&other, Action::SkipOnboardingStep);
-    act(&other, Action::ContinueOnboarding);
-    at(&other, OnboardingStep::Model).await;
-    invalid(&other, custom("https://llm.example.invalid/v1"));
 }
 
 #[tokio::test]
@@ -546,27 +454,46 @@ async fn earlier_server_steps_start_from_the_first_and_finished_does_not_enter()
 }
 
 #[tokio::test]
-async fn a_failed_providers_get_is_a_model_problem_and_can_be_skipped() {
-    let rig = Rig::new().await;
-    rig.core.set_onboarding(onboarding("profile"));
-    rig.core.answer(
-        Method::GET,
-        PROVIDERS,
-        core_error(503, "models_unavailable", "网关还在下载模型"),
-    );
-    rig.connected().await;
-    let view = rig
-        .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)
-        .await;
-    assert_eq!(view.step, Some(OnboardingStep::Profile));
-    assert_eq!(
-        view.model.problem.unwrap().reason,
-        ModelProviderFailure::GatewayNotReady
-    );
+async fn unavailable_model_settings_can_be_retried_or_skipped() {
+    let rig = flow_rig(onboarding("profile")).await;
     act(&rig, Action::SkipOnboardingStep);
     act(&rig, Action::SkipOnboardingStep);
+    for (error, expected) in [
+        (
+            core_error(503, "models_unavailable", "gateway not ready"),
+            ModelSettingsFailure::GatewayNotReady,
+        ),
+        (
+            super::rig::Canned(502, String::new()),
+            ModelSettingsFailure::TransportUnavailable,
+        ),
+        (
+            core_error(403, "unauthenticated", "not authorized"),
+            ModelSettingsFailure::Unauthorized,
+        ),
+    ] {
+        rig.core.answer(Method::GET, PROVIDERS, error);
+        act(&rig, Action::RefreshOnboarding);
+        let view = rig
+            .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)
+            .await;
+        assert_eq!(view.step, Some(OnboardingStep::Model));
+        assert_eq!(view.model.problem.unwrap().reason, expected);
+        assert!(view.model.settings.is_none());
+        assert!(!view.model.has_configured_models);
+        assert!(!view.nav.unwrap().can_next);
+        invalid(&rig, Action::ContinueOnboarding);
+    }
     act(&rig, Action::SkipOnboardingStep);
     at(&rig, OnboardingStep::Apps).await;
+    act(&rig, Action::BackOnboardingStep);
+    act(&rig, Action::RefreshOnboarding);
+    let recovered = rig
+        .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
+        .await;
+    assert!(recovered.model.problem.is_none());
+    assert_eq!(recovered.model.choice, None);
+    assert_nothing_saved(&rig);
 }
 
 #[tokio::test]

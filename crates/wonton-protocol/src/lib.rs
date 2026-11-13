@@ -210,8 +210,8 @@ pub use matrix_login::{
 pub use onboarding::{
     AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
     ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
-    ModelProviderFailure, ModelProviderInput, ModelProviderKey, ModelProviderProblem,
-    ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
+    ModelProviderKey, ModelProviders, ModelSettingsFailure, ModelSettingsPage,
+    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
     OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
     OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
     OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,

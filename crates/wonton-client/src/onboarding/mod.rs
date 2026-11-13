@@ -19,8 +19,8 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, Me, ModelProviderFailure, ModelProviderProblem, ModelProviders,
-    ONBOARDING_PATH, Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
+    Action, CoreError, HomeStatus, Me, ModelProviders, ModelSettingsProblem, ONBOARDING_PATH,
+    Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
     OnboardingUpdate, OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
 };
 
@@ -47,13 +47,12 @@ struct LocalState {
     owner: Option<Me>,
     providers: Option<ModelProviders>,
     draft: Draft,
-    testing: bool,
     review: Vec<ReviewEntry>,
     /// 每次进出最后一页加一，旧的预览结果不落到新列出的项上。
     review_generation: u64,
     commit: OnboardingCommit,
     problem: Option<PluginProblem>,
-    model_problem: Option<ModelProviderProblem>,
+    model_problem: Option<ModelSettingsProblem>,
     loading: bool,
     /// 这一趟里因为服务器太旧整步显不出来的步骤：这些步直接跳过。
     unavailable: HashSet<OnboardingStep>,
@@ -166,18 +165,9 @@ impl OnboardingLink {
                 display_name,
                 email,
             } => self.edit_profile(display_name, email),
-            Action::TestModelProvider {
-                input,
-                then_continue,
-            } => self.test_provider(input, then_continue),
             Action::UseCurrentModel => self.use_current_model(),
             Action::ChooseModelLogin { id } => self.choose_login(&id),
             Action::RetryOnboardingItem { id } => self.retry_item(&id),
-            Action::DismissModelProviderProblem => {
-                lock(&self.state).model_problem = None;
-                self.publish();
-                Ok(())
-            }
             Action::SetPrimaryAgent { id } => self.set_primary(&id),
             Action::DismissReplacedAgentOffer => self.dismiss_replaced(),
             Action::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
@@ -274,7 +264,7 @@ impl OnboardingLink {
         onboarding: Onboarding,
         details: Option<(
             Result<Me, PluginProblem>,
-            Result<ModelProviders, ModelProviderProblem>,
+            Result<ModelProviders, ModelSettingsProblem>,
         )>,
         revision: u64,
         after_reset: bool,
@@ -306,7 +296,12 @@ impl OnboardingLink {
                     Err(problem) => {
                         if problem.reason == PluginFailure::ServerTooOld {
                             state.unavailable.insert(OnboardingStep::Profile);
-                            state.step = view::first_visible(&state.unavailable);
+                            if state
+                                .step
+                                .is_some_and(|step| state.unavailable.contains(&step))
+                            {
+                                state.step = view::first_visible(&state.unavailable);
+                            }
                         } else {
                             state.problem = Some(problem);
                         }
@@ -314,7 +309,10 @@ impl OnboardingLink {
                 }
                 match providers {
                     Ok(providers) => state.providers = Some(providers),
-                    Err(problem) => state.model_problem = Some(problem),
+                    Err(problem) => {
+                        state.providers = None;
+                        state.model_problem = Some(problem);
+                    }
                 }
             }
             state.loading = false;
@@ -482,18 +480,6 @@ impl OnboardingLink {
         self.view.send_replace(view);
         drop(state);
         self.chat.set_primary_bot(primary_bot);
-    }
-}
-
-fn provider_problem(problem: PluginProblem) -> ModelProviderProblem {
-    ModelProviderProblem {
-        reason: match problem.reason {
-            PluginFailure::TransportUnavailable => ModelProviderFailure::TransportUnavailable,
-            PluginFailure::Unauthorized => ModelProviderFailure::Unauthorized,
-            PluginFailure::Protocol => ModelProviderFailure::Protocol,
-            _ => ModelProviderFailure::Upstream,
-        },
-        message: problem.message,
     }
 }
 

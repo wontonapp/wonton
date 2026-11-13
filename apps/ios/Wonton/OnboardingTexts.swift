@@ -1,16 +1,10 @@
 import WontonClient
 
-extension ModelProviderProblem {
+extension ModelSettingsProblem {
     var onboardingProblem: Problem {
         let title: String
         let nextStep: String
         switch reason {
-        case .keyRejected:
-            title = String(localized: .Onboarding4.onboardingProblemModelKeyRejected)
-            nextStep = String(localized: .Onboarding5.onboardingProblemModelKeyRejectedNext)
-        case .providerUnreachable:
-            title = String(localized: .Onboarding0.onboardingProblemModelProviderUnreachable)
-            nextStep = String(localized: .Onboarding3.onboardingProblemModelProviderUnreachableNext)
         case .gatewayNotReady:
             title = String(localized: .Onboarding0.onboardingProblemModelGatewayNotReady)
             nextStep = String(localized: .Onboarding0.onboardingProblemModelGatewayNotReadyNext)

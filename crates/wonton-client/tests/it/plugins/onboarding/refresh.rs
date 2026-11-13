@@ -7,7 +7,7 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, item, preview, running};
 use super::{
-    KEY_TEST, ONBOARDING, PROVIDERS, act, at, edit, flow_rig, onboarding, providers, test_key,
+    ONBOARDING, PROVIDERS, act, at, configure_gateway, edit, flow_rig, onboarding, providers,
     wait_requests,
 };
 
@@ -124,12 +124,10 @@ async fn an_installed_list_change_refreshes_onboarding_without_a_task() {
 }
 
 #[tokio::test]
-async fn silent_refresh_keeps_a_running_test_and_the_recorded_choices() {
+async fn silent_refresh_keeps_the_model_choice_and_recorded_profile() {
     let rig = install_rig("model").await;
     at_model(&rig).await;
-    rig.core.hold(Method::POST, KEY_TEST);
-    test_key(&rig, false);
-    wait_requests(&rig, Method::POST, KEY_TEST, 1).await;
+    configure_gateway(&rig).await;
     let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
     rig.core.set_onboarding(install_state("model", true));
     change_installed(&rig, "app.photos");
@@ -138,13 +136,11 @@ async fn silent_refresh_keeps_a_running_test_and_the_recorded_choices() {
         .wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
     assert_eq!(refreshed.step, Some(OnboardingStep::Model));
-    assert!(refreshed.model.testing);
+    assert_eq!(
+        refreshed.model.choice,
+        Some(wonton_client::OnboardingModelChoice::Current)
+    );
     assert_eq!(refreshed.profile.display_name, "云吞");
-    rig.core.release(Method::POST, KEY_TEST);
-    let tested = rig
-        .wait_onboarding(|view| view.model.choice.is_some() && !view.model.testing)
-        .await;
-    assert_eq!(tested.step, Some(OnboardingStep::Model));
 }
 
 #[tokio::test]
@@ -152,13 +148,13 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
     let rig = install_rig("model").await;
     at_model(&rig).await;
     rig.core.answer(
-        Method::POST,
-        KEY_TEST,
-        core_error(422, "invalid_input", "bad key"),
+        Method::GET,
+        PROVIDERS,
+        core_error(503, "models_unavailable", "gateway stopped"),
     );
-    test_key(&rig, false);
+    act(&rig, Action::RefreshOnboarding);
     let before = rig
-        .wait_onboarding(|view| view.model.problem.is_some() && !view.model.testing)
+        .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)
         .await;
     let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
     rig.core.answer(
@@ -295,7 +291,7 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
 
     rig.core.release(Method::GET, PROVIDERS);
     let view = rig
-        .wait_onboarding(|view| !view.loading && view.model.providers.is_some())
+        .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
         .await;
     assert_eq!(view.step, Some(OnboardingStep::Profile));
     assert_eq!(view.profile.display_name, "云吞");

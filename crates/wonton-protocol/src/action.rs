@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
     FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
-    MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip, PushEndpoint,
-    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode, UploadSource,
+    MatrixOidcLogin, MatrixPasswordLogin, OnboardingTip, PushEndpoint, PushMethod, Rgb,
+    SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -346,9 +346,9 @@ pub enum Action {
     TestRegistryMirrors,
 
     // 新用户引导（ADR-0034）。网络操作都在后台执行，进展和结果在 `OnboardingViewModel` 里。
-    /// 取引导的状态、推荐清单和服务商列表。
+    /// 取引导的状态、推荐清单和模型设置网页。
     RefreshOnboarding,
-    /// 主人在设置里选了重看：从头走一遍，每一步显示现在的设置，点完成之前什么都不改。
+    /// 主人在设置里选了重看：从头走一遍。网页已保存的模型修改不属于引导草稿。
     RestartOnboarding,
     /// 选中一个 Agent（[`OnboardingAgentRow::id`](crate::OnboardingAgentRow::id)）。没装的点完成时安装。
     ChooseOnboardingAgent {
@@ -369,11 +369,6 @@ pub enum Action {
         display_name: String,
         email: String,
     },
-    /// 测试填的服务商，什么都不保存。测过了（包括连不上服务商）就记成这一步的选择；`then_continue` 为真时接着到下一步。
-    TestModelProvider {
-        input: ModelProviderInput,
-        then_continue: bool,
-    },
     /// 选用模型网关里已经接好的模型（[`OnboardingModelChoice::Current`](crate::OnboardingModelChoice::Current)）。
     UseCurrentModel,
     /// 选用 Agent 官方程序的账号登录（[`AgentLogin::id`](crate::AgentLogin::id)）。
@@ -384,8 +379,6 @@ pub enum Action {
     RetryOnboardingItem {
         id: String,
     },
-    /// 清掉 [`OnboardingModelStep::problem`](crate::OnboardingModelStep::problem)。
-    DismissModelProviderProblem,
     /// 在设置里改默认 Agent。
     SetPrimaryAgent {
         id: String,

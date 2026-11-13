@@ -17,7 +17,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
@@ -54,27 +53,18 @@ internal fun OnboardingScreen(
         return
     }
     val scroll = rememberScrollState()
-    val modelForm = remember(view.step) { OnboardingModelForm(view.model.choice) }
     LaunchedEffect(view.step) { scroll.scrollTo(0) }
     LaunchedEffect(view.problem, view.model.problem) {
         if (view.problem != null || view.model.problem != null) scroll.scrollTo(0)
     }
     StepCardFrame(
-        nav = if (view.step == OnboardingStep.MODEL) {
-            nav.copy(canNext = nav.canNext || (!view.model.testing && modelForm.canTest))
-        } else nav,
+        nav = nav,
         title = view.title(),
         primaryText = view.primaryText(),
-        primaryBusy = view.loading || view.model.testing || view.review.commit == OnboardingCommit.RUNNING,
+        primaryBusy = view.loading || view.review.commit == OnboardingCommit.RUNNING,
         onBack = { send(Action.BackOnboardingStep) },
         onSkip = { send(Action.SkipOnboardingStep) },
-        onPrimary = {
-            if (view.step == OnboardingStep.MODEL) {
-                modelForm.submit(send, thenContinue = true)
-            } else {
-                send(Action.ContinueOnboarding)
-            }
-        },
+        onPrimary = { send(Action.ContinueOnboarding) },
         onClose = onboarding.close,
         modifier = modifier,
     ) {
@@ -89,7 +79,7 @@ internal fun OnboardingScreen(
                 } else {
                     when (view.step) {
                         OnboardingStep.AGENT -> OnboardingAgentStep(view.agents, send)
-                        OnboardingStep.MODEL -> OnboardingModelStep(view.model, modelForm, send, openGateway)
+                        OnboardingStep.MODEL -> OnboardingModelStep(view.model, send, openGateway)
                         OnboardingStep.APPS -> OnboardingAppsStep(view, plugins, send)
                         OnboardingStep.REVIEW -> OnboardingReviewStep(view.review, plugins, send)
                         else -> Unit

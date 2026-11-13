@@ -1,4 +1,4 @@
-//! 新用户引导和模型服务商（ADR-0034）。
+//! 新用户引导（ADR-0034）。
 //!
 //! 核心的管理接口收发前半部分的类型，文字由核心按请求的 `Accept-Language` 挑好语言；客户端核心算出
 //! [`OnboardingViewModel`] 交给壳。
@@ -123,8 +123,8 @@ pub struct OnboardingNeed {
 
 /// `GET /_wonton/api/models/providers` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ModelProviders {
+    pub plugin_id: String,
     /// 官方索引列出的主流服务商，主人语言推荐的在前，其余的壳收进“更多服务商”。模型网关没有声明 `providers` 时为空；取不到
     /// 索引时是空列表。这两种都打开 `web_url`。
     pub providers: Option<Vec<ModelProvider>>,
@@ -143,7 +143,6 @@ pub struct ModelProviders {
 
 /// 模型网关里已经接好的一个服务商。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ConfiguredModelProvider {
     pub id: String,
     /// 网关给的名字；取不到时是 `id`。
@@ -152,7 +151,6 @@ pub struct ConfiguredModelProvider {
 
 /// 模型网关能接的一个服务商。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ModelProvider {
     pub id: String,
     /// 厂商的名字，不分语言。
@@ -178,20 +176,6 @@ pub struct CustomModelProvider {
     pub base_url: String,
     pub model: String,
     pub key: SecretString,
-}
-
-/// 接模型这一步填的东西，交给 [`Action::TestModelProvider`](crate::Action::TestModelProvider)。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum ModelProviderInput {
-    /// 列表里的服务商（[`ModelProvider::id`]）。
-    Preset { id: String, key: SecretString },
-    Custom {
-        base_url: String,
-        model: String,
-        key: SecretString,
-    },
 }
 
 /// 引导的 ViewModel。步骤的判断都在客户端核心，壳只渲染，操作发回核心。
@@ -268,7 +252,7 @@ pub struct OnboardingProfileStep {
 pub struct OnboardingAgentRow {
     pub id: String,
     pub title: String,
-    /// 能用来接模型的账号登录的名字，如“ChatGPT 账号”，服务器给的、已按语言挑好。空表表示只能用 key。
+    /// 能用来接模型的账号登录的名字，如“ChatGPT 账号”，服务器给的、已按语言挑好。空表表示只能用模型网关。
     pub logins: Vec<String>,
     pub selected: bool,
     /// 要装时的安装来源，走现有的确认页；已经装着时为空。
@@ -281,16 +265,24 @@ pub struct OnboardingAgentRow {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingModelStep {
-    /// 还没取到时为空。
-    pub providers: Option<ModelProviders>,
+    /// 模型设置的插件网页；没有可打开的页面时为空，原因在 `problem`。
+    pub settings: Option<ModelSettingsPage>,
+    /// 网关已有模型配置，不表示上游可达或凭据有效，也不因打开网页变为真。
+    pub has_configured_models: bool,
     /// 选中的 Agent 的账号登录。选了发 [`Action::ChooseModelLogin`](crate::Action::ChooseModelLogin)，登录链接由 Agent
     /// 发进聊天。
     pub logins: Vec<AgentLogin>,
-    /// 这一步记下的选择，点完成时才保存；为空时不动模型。
+    /// 沿用网关配置或选择官方登录；网页自己的保存动作不属于引导草稿。
     pub choice: Option<OnboardingModelChoice>,
-    /// 正在测试填的 key，什么都不保存。
-    pub testing: bool,
-    pub problem: Option<ModelProviderProblem>,
+    pub problem: Option<ModelSettingsProblem>,
+}
+
+/// 与侧栏共用的模型设置网页，壳复用插件网页容器，不另开原生配置表单。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ModelSettingsPage {
+    pub plugin_id: String,
+    pub web_url: String,
 }
 
 /// 接模型这一步记下的选择。
@@ -298,29 +290,17 @@ pub struct OnboardingModelStep {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum OnboardingModelChoice {
-    /// 用模型网关里已经接好的（[`ModelProviders::configured`]），点完成时不动。
+    /// 沿用模型网关里的配置，点完成时不保存模型；不代表上游存活测试通过。
     Current,
-    /// 列表里的服务商，key 测过了。`reachable` 为假是连不上服务商：key 没被拒，点完成时照样保存。
-    Provider {
-        id: String,
-        title: String,
-        reachable: bool,
-    },
-    /// 自定义服务商，测过了。`reachable` 同上。
-    Custom {
-        base_url: String,
-        model: String,
-        reachable: bool,
-    },
     /// 用 Agent 官方程序的账号登录（[`AgentLogin`]），登录链接由 Agent 发进聊天。
     Login { id: String, title: String },
 }
 
-/// 保存 key 或者取服务商列表失败了。
+/// 取模型设置网页失败了；可以重试或跳过，不改连其他模型来源。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct ModelProviderProblem {
-    pub reason: ModelProviderFailure,
+pub struct ModelSettingsProblem {
+    pub reason: ModelSettingsFailure,
     /// 核心写的说明，壳原样显示。
     pub message: String,
 }
@@ -329,11 +309,7 @@ pub struct ModelProviderProblem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
-pub enum ModelProviderFailure {
-    /// 服务商拒绝了 key，没有保留。
-    KeyRejected,
-    /// 连不上服务商，key 已保存。
-    ProviderUnreachable,
+pub enum ModelSettingsFailure {
     /// 模型网关没就绪。
     GatewayNotReady,
     /// 连不上家里的服务器。
@@ -357,7 +333,7 @@ pub struct OnboardingNeedRow {
 }
 
 /// 最后一页：列出所有选择和应用要的权限。点完成（[`Action::ContinueOnboarding`](crate::Action::ContinueOnboarding)）
-/// 算主人确认了这些权限，资料、模型和默认 Agent 依次保存，Agent 和应用在后台安装，每一项的进展都在这里。
+/// 算主人确认了这些权限，资料和默认 Agent 依次保存，Agent 和应用在后台安装，每一项的进展都在这里。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingReview {
@@ -373,7 +349,7 @@ pub enum OnboardingCommit {
     /// 还没点完成，什么都没有执行。
     #[default]
     NotStarted,
-    /// 在保存资料、模型和引导状态。
+    /// 在保存资料和引导状态；模型网页已保存的修改不在此处重做。
     Running,
     /// 都保存好了，安装在后台接着做；可以离开引导（再发一次 `ContinueOnboarding`）。
     Done,
@@ -386,7 +362,7 @@ pub struct OnboardingReviewItem {
     /// 重试时带回（[`Action::RetryOnboardingItem`](crate::Action::RetryOnboardingItem)）。Agent 和应用是插件 ID。
     pub id: String,
     pub kind: OnboardingReviewKind,
-    /// 资料是填的名字，Agent 和应用是插件名，模型是服务商名（“用现在的”可能有几个）。壳用列表格式连起来。
+    /// 资料是填的名字，Agent 和应用是插件名，模型是官方登录名；沿用配置时不复制网关里的服务商列表。
     pub titles: Vec<String>,
     /// 第二行的内容，壳按类别写文字；没有时为空。
     pub detail: Option<OnboardingReviewDetail>,
@@ -408,12 +384,8 @@ pub enum OnboardingReviewDetail {
     Email { email: String },
     /// 已经装着的 Agent，完成后设成默认。
     SetAsDefault,
-    /// 模型用模型网关里已经接好的。
+    /// 沿用模型网关的配置，不代表上游可达。
     KeepCurrent,
-    /// 自定义服务商测试通过时的模型名。
-    Model { model: String },
-    /// 测试时没连上服务商，照样保存。`model` 是自定义服务商的模型名，列表里的服务商为空。
-    Unreachable { model: Option<String> },
     /// 选了 Agent 的账号登录，装好后在聊天里登录。
     SignInAfterSetup,
     /// 这一类这次不动：完成时不发请求，服务器上的现值保持原样。
@@ -466,8 +438,6 @@ pub enum OnboardingItemState {
 pub enum OnboardingItemProblem {
     /// 资料、引导状态、安装预览和安装。
     Plugin { problem: PluginProblem },
-    /// 保存模型。
-    Model { problem: ModelProviderProblem },
 }
 
 /// 可以卸掉的 Agent。
@@ -528,10 +498,14 @@ mod tests {
 
     #[test]
     fn a_gateway_without_providers_is_not_an_empty_list() {
-        let none: ModelProviders =
-            serde_json::from_value(json!({ "providers": null, "web_url": null })).unwrap();
-        let empty: ModelProviders =
-            serde_json::from_value(json!({ "providers": [], "web_url": null })).unwrap();
+        let none: ModelProviders = serde_json::from_value(
+            json!({ "plugin_id": "system.models", "providers": null, "web_url": null }),
+        )
+        .unwrap();
+        let empty: ModelProviders = serde_json::from_value(
+            json!({ "plugin_id": "system.models", "providers": [], "web_url": null }),
+        )
+        .unwrap();
         assert_ne!(none, empty);
     }
 

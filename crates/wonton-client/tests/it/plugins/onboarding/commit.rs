@@ -1,16 +1,16 @@
-//! 最后一页点完成：依次保存资料、模型和“走完了”，再在后台装 Agent 和应用（ADR-0038）。
+//! 最后一页点完成：保存资料和“走完了”，再在后台装 Agent 和应用；模型由网页自己保存。
 
 use axum::http::Method;
 use wonton_client::{
-    Action, InstallPreview, ModelProviderFailure, OnboardingCommit, OnboardingItemProblem,
-    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep,
-    OnboardingViewModel, PluginFailure,
+    Action, InstallPreview, OnboardingCommit, OnboardingItemProblem, OnboardingItemState,
+    OnboardingReviewDetail, OnboardingReviewKind, OnboardingStep, OnboardingViewModel,
+    PluginFailure,
 };
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
     INSTALL, KEY, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, installed_onboarding,
-    invalid, onboarding, providers, test_key, walk_to_review, with_photos,
+    invalid, onboarding, providers, walk_to_review, with_photos,
 };
 
 fn body(rig: &Rig, method: &Method, path: &str) -> Vec<serde_json::Value> {
@@ -70,7 +70,7 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
     assert_eq!(profile.len(), 1);
     assert_eq!(profile[0]["display_name"], "云吞");
     assert!(profile[0]["email"].is_null());
-    assert_eq!(body(&rig, &Method::PUT, KEY)[0]["key"], "secret");
+    assert!(body(&rig, &Method::PUT, KEY).is_empty());
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0]["step"], "finished");
@@ -290,58 +290,6 @@ async fn a_refused_profile_stops_finish_before_anything_else_and_can_be_retried(
     settled(&rig).await;
     assert_eq!(rig.core.seen(&Method::PUT, PROFILE).len(), 2);
     assert_eq!(rig.core.seen(&Method::PUT, ONBOARDING).len(), 1);
-}
-
-#[tokio::test]
-async fn an_unreachable_provider_still_saves_its_key_on_finish() {
-    let rig = flow_rig(onboarding("profile")).await;
-    act(&rig, Action::SkipOnboardingStep);
-    act(&rig, Action::SkipOnboardingStep);
-    at(&rig, OnboardingStep::Model).await;
-    test_key(&rig, false);
-    rig.wait_onboarding(|view| view.model.choice.is_some() && !view.model.testing)
-        .await;
-    act(&rig, Action::ContinueOnboarding);
-    act(&rig, Action::SkipOnboardingStep);
-    at(&rig, OnboardingStep::Review).await;
-    rig.core.answer(
-        Method::PUT,
-        KEY,
-        core_error(503, "upstream_unavailable", "服务商不通"),
-    );
-    act(&rig, Action::ContinueOnboarding);
-    let view = settled(&rig).await;
-    assert_eq!(state(&view, "model"), OnboardingItemState::Done);
-    assert_eq!(rig.core.seen(&Method::PUT, ONBOARDING).len(), 1);
-}
-
-#[tokio::test]
-async fn a_rejected_key_on_finish_is_a_model_failure() {
-    let rig = flow_rig(onboarding("profile")).await;
-    act(&rig, Action::SkipOnboardingStep);
-    act(&rig, Action::SkipOnboardingStep);
-    at(&rig, OnboardingStep::Model).await;
-    test_key(&rig, true);
-    at(&rig, OnboardingStep::Apps).await;
-    act(&rig, Action::SkipOnboardingStep);
-    at(&rig, OnboardingStep::Review).await;
-    rig.core.answer(
-        Method::PUT,
-        KEY,
-        core_error(422, "invalid_input", "key 过期了"),
-    );
-    act(&rig, Action::ContinueOnboarding);
-    let view = rig
-        .wait_onboarding(|view| matches!(state(view, "model"), OnboardingItemState::Failed { .. }))
-        .await;
-    let OnboardingItemState::Failed {
-        problem: OnboardingItemProblem::Model { problem },
-    } = state(&view, "model")
-    else {
-        panic!("{view:?}");
-    };
-    assert_eq!(problem.reason, ModelProviderFailure::KeyRejected);
-    assert!(rig.core.seen(&Method::PUT, ONBOARDING).is_empty());
 }
 
 fn needs_email() -> Canned {
