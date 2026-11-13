@@ -77,11 +77,7 @@ impl PluginManager {
         when_stopped: bool,
         gate: Gate,
     ) -> Result<bool, InstallError> {
-        // 局域网端口照检测出来的地址渲染，和局域网巡检、按代理/模型重建走同一条路。
-        let lan = self.lan_grant(package, record.lan_webui, langs).await?;
-        let mut ctx = self.rebuild_context(package, record, lan, None).await?;
-        self.fill_bot_vars(package, &mut ctx, langs).await?;
-        let plan = render(package, &ctx, langs)?;
+        let (ctx, plan) = self.rebuild_plan(package, record, langs).await?;
         let drift = self.drift_of(&plan).await?;
         if !drift.drifted || (drift.running == 0 && !when_stopped) {
             return Ok(false);
@@ -89,6 +85,30 @@ impl PluginManager {
         tracing::info!(plugin = %package.manifest.id, "插件容器的渲染变了，按安装的路径重建");
         self.replace_containers(&ctx, plan, gate).await?;
         Ok(true)
+    }
+
+    pub(super) async fn recreate_interrupted(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        langs: &Languages,
+        gate: Gate,
+    ) -> Result<(), InstallError> {
+        let (ctx, plan) = self.rebuild_plan(package, record, langs).await?;
+        self.replace_containers(&ctx, plan, gate).await
+    }
+
+    async fn rebuild_plan(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        langs: &Languages,
+    ) -> Result<(super::render::InstallContext, Deployment), InstallError> {
+        let lan = self.lan_grant(package, record.lan_webui, langs).await?;
+        let mut ctx = self.rebuild_context(package, record, lan, None).await?;
+        self.fill_bot_vars(package, &mut ctx, langs).await?;
+        let plan = render(package, &ctx, langs)?;
+        Ok((ctx, plan))
     }
 
     async fn drift_of(&self, plan: &Deployment) -> Result<Drift, InstallError> {

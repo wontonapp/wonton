@@ -264,6 +264,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         self.store.save(&InstalledRecord {
+            lifecycle: super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
             source: package.source.clone(),
@@ -661,7 +662,8 @@ impl PluginManager {
             }
             self.engine
                 .create_container(&container.name, container.body.clone())
-                .await?;
+                .await
+                .map_err(InstallError::from_create_engine_error)?;
             undo.containers.push(container.name.clone());
             if container.store_dir.is_none() {
                 Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
@@ -670,6 +672,13 @@ impl PluginManager {
         }
         if let Some(id) = id {
             self.stage(id, InstallStage::WaitingForBot);
+        }
+        if id.is_none()
+            && let Some(plugin) = plan.labels.get(LABEL_PLUGIN)
+            && let Ok(plugin) = PluginId::parse(plugin)
+            && self.recovery_pending(&plugin)
+        {
+            self.recovery_stage(&plugin, wonton_protocol::PluginRecoveryStage::Reconciling)?;
         }
         // 没人依赖的一次性服务通常是装好之后的收尾（比如建账号），跑完才算装好。被依赖的这时已经退出，马上返回。
         for container in plan.containers.iter().filter(|c| c.one_shot) {

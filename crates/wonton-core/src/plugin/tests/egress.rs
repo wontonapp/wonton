@@ -83,6 +83,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,

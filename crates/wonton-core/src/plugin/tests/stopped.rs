@@ -1,4 +1,4 @@
-//! 常驻容器全部停止才算 Stopped；启动保留容器、数据与已完成的一次性服务。
+//! 未请求停止却全部停止的插件保留恢复意图；启动保留数据与已完成的一次性服务。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +8,6 @@ use serde_json::{Value, json};
 use crate::l10n::CATALOG;
 
 use super::super::fake_docker::FakeDocker;
-use super::super::languages::Languages;
 use super::super::names::container_name;
 use super::super::{Health, PluginManager, PluginStatus};
 use super::manager::manager_with;
@@ -35,7 +34,7 @@ fn seen(manager: &PluginManager) -> (PluginStatus, Option<Health>) {
 }
 
 #[tokio::test]
-async fn resident_states_drive_stopped_and_degraded_without_counting_completed_init() {
+async fn resident_states_preserve_running_intent_without_counting_completed_init() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let init = container_name("app-test", "init");
@@ -60,15 +59,15 @@ async fn resident_states_drive_stopped_and_degraded_without_counting_completed_i
     assert!(reason.contains(&app));
     docker.set_state(&db, stopped("created"));
     manager.watch_containers().await;
-    assert_eq!(seen(&manager), (PluginStatus::Stopped, None));
-    assert_eq!(
-        manager.installed(&Languages::default()).plugins[0].status,
-        wonton_protocol::PluginState::Stopped
-    );
+    assert!(matches!(seen(&manager).0, PluginStatus::Degraded { .. }));
+    assert!(matches!(
+        manager.installed(&super::langs()).plugins[0].status,
+        wonton_protocol::PluginState::Degraded { .. }
+    ));
 
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
-    assert_eq!(seen(&restarted), (PluginStatus::Stopped, None));
+    assert!(matches!(seen(&restarted).0, PluginStatus::Degraded { .. }));
     docker.set_state(&app, json!({"Status": "restarting", "Running": true}));
     restarted.watch_containers().await;
     assert!(matches!(seen(&restarted).0, PluginStatus::Degraded { .. }));
@@ -80,6 +79,10 @@ async fn resident_states_drive_stopped_and_degraded_without_counting_completed_i
     assert!(matches!(seen(&restarted).0, PluginStatus::Degraded { .. }));
     docker.set_state(&app, healthy());
     docker.set_state(&db, healthy());
+    let id = super::super::PluginId::parse("app.test").unwrap();
+    let mut record = restarted.store.load(&id).unwrap().unwrap();
+    record.lifecycle.recovery.as_mut().unwrap().next_retry_at = Some(0);
+    restarted.store.save(&record).unwrap();
     restarted.watch_containers().await;
     assert_eq!(
         seen(&restarted),
@@ -115,11 +118,11 @@ async fn dead_unhealthy_and_oom_containers_are_not_stopped() {
         json!({"Status": "exited", "Running": false, "Health": {"Status": "unhealthy"}}),
     );
     manager.watch_containers().await;
-    assert_eq!(seen(&manager), (PluginStatus::Stopped, None));
-    // 容器不在（被删了）也算停着：启动按已安装记录照安装的路径重建（issue #126）。
+    assert!(matches!(seen(&manager).0, PluginStatus::Degraded { .. }));
+    // 容器被删也不等于主人主动停；后台仍保留运行意图。
     engine.remove_container(&app).await.unwrap();
     manager.watch_containers().await;
-    assert_eq!(seen(&manager), (PluginStatus::Stopped, None));
+    assert!(matches!(seen(&manager).0, PluginStatus::Degraded { .. }));
 }
 
 #[tokio::test]

@@ -152,7 +152,7 @@ impl PluginManager {
         let after = self.render_for_settings(listed, package, to, langs).await?;
         let changed = changed_services(&before, &after);
         if changed.is_empty() {
-            self.store.save(to)?;
+            self.store.save_metadata(to)?;
             return Ok(());
         }
         let mut plan = after;
@@ -160,7 +160,8 @@ impl PluginManager {
         let ctx = self.settings_context(listed, package, to, langs).await?;
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
-        self.store.save(to)?;
+        self.store.save_metadata(to)?;
+        self.recovery_complete(&to.id)?;
         Ok(())
     }
 

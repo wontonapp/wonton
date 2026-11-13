@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::Duration;
+use wonton_protocol::PluginDesiredState;
 
 use super::health_gate::Gate;
 use super::manager::{Deployed, Entry, Health, InstallError, PluginManager, PluginStatus};
@@ -36,6 +37,9 @@ impl PluginManager {
         let Ok(_changing) = self.dependencies.changing.try_lock() else {
             return;
         };
+        if self.check_not_upgrading(&self.owner_languages()).is_err() {
+            return;
+        }
         let watched: Vec<PluginId> = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins
@@ -79,20 +83,33 @@ impl PluginManager {
         }
         let ours = match entry.status {
             PluginStatus::Running | PluginStatus::Stopped => true,
-            PluginStatus::Degraded { .. } => entry.follows_containers,
+            PluginStatus::Degraded { .. } => entry.follows_containers || self.recovery_pending(id),
             _ => false,
         };
-        ours && !self.lan.is_rebuilding(id) && !self.lan.is_degraded(id)
+        ours && !self.lan.is_rebuilding(id)
+            && (!self.lan.is_degraded(id) || self.recovery_pending(id))
     }
 
     async fn watch_one(&self, id: &PluginId) -> Result<(), InstallError> {
         let Some(record) = self.store.load(id)? else {
             return Ok(());
         };
+        if record.lifecycle.desired == PluginDesiredState::Stopped {
+            return Ok(());
+        }
         let langs = self.owner_languages();
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, &langs).await?;
+        if let Some(recovery) = &record.lifecycle.recovery {
+            let observable = recovery.stage == wonton_protocol::PluginRecoveryStage::Reconciling
+                && recovery.category == "unhealthy"
+                && !checked.has_missing()
+                && matches!(checked.ready(&langs), Ok(ContainersState::Running(_)));
+            if !observable {
+                return self.retry_interrupted(id, &record).await;
+            }
+        }
         let capability_recovered = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
             plugins.get(id).is_some_and(|entry| {
@@ -123,7 +140,16 @@ impl PluginManager {
                 // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
                 self.check_models_once(vec![id.clone()]).await;
             }
-            Ok(ContainersState::Stopped) => self.saw_unavailable(id, PluginStatus::Stopped),
+            Ok(ContainersState::Stopped) => {
+                let status = if record.lifecycle.desired == PluginDesiredState::Running {
+                    PluginStatus::Degraded {
+                        reason: self.queue_stopped(id)?,
+                    }
+                } else {
+                    PluginStatus::Stopped
+                };
+                self.saw_unavailable(id, status);
+            }
             Err(InstallError::Unhealthy(reason)) => {
                 self.saw_unavailable(id, PluginStatus::Degraded { reason });
                 if capability_recovered {
@@ -211,6 +237,9 @@ impl PluginManager {
                 return Ok(());
             }
             Err(e) => {
+                if self.recovery_pending(id) {
+                    self.recovery_failed(id, &e)?;
+                }
                 self.saw_unavailable(
                     id,
                     PluginStatus::Degraded {
@@ -220,6 +249,7 @@ impl PluginManager {
                 return Err(e);
             }
         };
+        self.recovery_complete(id)?;
         // 核心启动时模型网关不在，使用方的凭据没对上账。
         if self.recovered(id, deployed) {
             for (plugin, error) in self.reconcile_models().await {

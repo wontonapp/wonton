@@ -436,6 +436,7 @@ async fn a_bot_plugin_can_change_its_limits() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             id: id.clone(),
             version: "1.0.0".into(),
             source,

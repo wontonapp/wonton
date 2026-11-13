@@ -387,6 +387,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,
@@ -790,6 +791,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,

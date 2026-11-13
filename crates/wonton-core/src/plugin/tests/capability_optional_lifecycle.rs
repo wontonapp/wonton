@@ -241,7 +241,7 @@ async fn failed_rebuild_after_optional_provider_removal_reports_a_degraded_consu
     let (docker, engine) = FakeDocker::start().await;
     credentials(&docker);
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine, &dir);
+    let manager = Arc::new(manager_with(engine, &dir));
     manager
         .install(&provider("jellyfin"), &[], langs())
         .await
@@ -372,6 +372,10 @@ async fn a_failed_pending_connection_rebuild_retries_with_the_same_key() {
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
+    let consumer = id("app.a-consumer");
+    let mut record = manager.store.load(&consumer).unwrap().unwrap();
+    record.lifecycle.recovery.as_mut().unwrap().next_retry_at = Some(0);
+    manager.store.save(&record).unwrap();
     manager.watch_containers().await;
     assert_eq!(keys.lock().unwrap()["app.a-consumer"], key);
     assert_eq!(env_of_container(&docker, &container)["KEY"], key);

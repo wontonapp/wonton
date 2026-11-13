@@ -207,6 +207,9 @@ impl PluginManager {
         before: &super::State,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        if let Some(recovery) = self.lifecycle_status(&manifest.id)?.recovery {
+            return Err(InstallError::UpstreamUnavailable(recovery.reason));
+        }
         self.dependencies.change(|state| {
             for c in state
                 .connections
@@ -245,6 +248,23 @@ impl PluginManager {
         id: &PluginId,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        if !self.begin_rebuild(id) {
+            return Err(InstallError::Conflict(crate::l10n::text(
+                langs,
+                "plugin-install-conflict-rebuilding",
+                &[("id", id.to_string().into())],
+            )));
+        }
+        let result = self.rebuild_capability_consumer_inner(id, langs).await;
+        self.lan.end(id);
+        result
+    }
+
+    async fn rebuild_capability_consumer_inner(
+        &self,
+        id: &PluginId,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let pending_rebuild = self
             .dependencies
             .load()?
@@ -263,6 +283,9 @@ impl PluginManager {
             .store
             .load(id)?
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
+            return Ok(());
+        }
         let package = super::super::upgrade::installed_package(&record, langs)?;
         let lan = self.lan_grant(&package, record.lan_webui, langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
@@ -391,6 +414,7 @@ impl PluginManager {
         &self,
         manifest: &Manifest,
         langs: &Languages,
+        manual: bool,
     ) -> Result<(), InstallError> {
         let providers = self.capability_providers();
         let state = self.dependencies.load()?;
@@ -406,10 +430,12 @@ impl PluginManager {
                     self.capability_missing(capability, langs),
                 ));
             }
-            if provider.status == PluginStatus::Stopped
-                || (matches!(provider.status, PluginStatus::Degraded { .. })
-                    && !service(&provider.listed.manifest, capability)
-                        .is_some_and(|s| provider.serving.contains(&s.service)))
+            if !self.explicitly_stopped(&provider.id)?
+                && (manual || !self.recovery_pending(&provider.id))
+                && (provider.status == PluginStatus::Stopped
+                    || (matches!(provider.status, PluginStatus::Degraded { .. })
+                        && !service(&provider.listed.manifest, capability)
+                            .is_some_and(|s| provider.serving.contains(&s.service))))
             {
                 Box::pin(self.start(&provider.id)).await?;
             }

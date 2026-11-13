@@ -125,6 +125,7 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::PortTaken(_) => false,
         InstallError::DockerUnavailable(_)
         | InstallError::Docker(_)
+        | InstallError::DockerTimedOut(_)
         | InstallError::ImagePull(_)
         | InstallError::OidcUnavailable(_)
         | InstallError::MatrixUnavailable(_)

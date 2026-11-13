@@ -411,7 +411,7 @@ async fn starting_a_consumer_probes_once_but_an_idempotent_start_does_not() {
     manager.watch_containers().await;
     assert!(matches!(
         manager.status_of(&id),
-        Some(PluginStatus::Stopped)
+        Some(PluginStatus::Degraded { .. })
     ));
     bed.docker.set_start_state(
         &container,

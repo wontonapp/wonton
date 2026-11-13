@@ -563,3 +563,8 @@ plugin-hosted-provider-in-use = 次のアプリはこのアプリがホストし
 plugin-hosted-dir-missing = このアプリの { $capability } のファイルが見つかりません。再インストールしてください
 plugin-hosted-storage-failed = ホストするファイルを書き込めません：{ $error }
 plugin-hosted-data-missing = このアプリの { $capability } に保存したデータが見つかりません。再インストールすると空の状態から始まります
+
+plugin-recovery-interrupted = アプリの起動または再構築が完了しませんでした。コアは既存のコンテナーを確認してから再試行します
+plugin-recovery-owner-stopped = このアプリは明示的に停止されています。続けるには起動してください
+plugin-recovery-not-due = このアプリは次の復旧時刻に達していないか、自動再試行の上限に達しています
+plugin-recovery-stop-interrupted = アプリの停止が完了しませんでした。自動起動は無効になっています

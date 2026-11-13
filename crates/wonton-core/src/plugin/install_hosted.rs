@@ -408,6 +408,7 @@ impl PluginManager {
             hosted.push(WEB_STORAGE.name.to_owned());
         }
         let record = InstalledRecord {
+            lifecycle: old.map_or_else(super::recovery::running, |old| old.lifecycle.clone()),
             settings: Default::default(),
             settings_changed_ms: None,
             id: manifest.id.clone(),
@@ -450,6 +451,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Entry {
         let listed = Listed::of_record(package, record);
+        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
+            return Entry::stopped(listed);
+        }
         let missing = record
             .hosted
             .iter()

@@ -16,7 +16,6 @@ use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
-use super::health_gate::Gate;
 use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
@@ -540,7 +539,7 @@ impl PluginManager {
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     ///
     /// 这里是一个插件接一个插件串行的：漂移重建只等 `install_timeout`，不让一个起不来的慢插件把排在后面
-    /// 的所有插件拖住几十分钟（见 [`Gate`]）。超时的插件容器留着，健康以后由容器监视捡回来。
+    /// 的所有插件拖住几十分钟（见 [`super::health_gate::Gate`]）。超时保留续建账本，后台按间隔重试。
     pub async fn restore(&self) -> Result<(), InstallError> {
         let langs = self.owner_languages();
         self.prune_orphaned_bot_web().await?;
@@ -622,23 +621,9 @@ impl PluginManager {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
                 let listed = Listed::of_record(&package, record);
-                let lan_ports = listed.open_ports(record.lan_webui);
-                match self.reconcile(&package, record, Gate::InstallTimeout).await {
-                    // 有的服务没就绪时路由照样回来了：照常让局域网检测核一遍地址（见下面）。
-                    Ok(Some(deployed)) => {
-                        if deployed.problem.is_some() && !lan_ports.is_empty() {
-                            self.lan.mark_degraded(&manifest.id);
-                        }
-                        Entry::running(listed, deployed)
-                    }
-                    Ok(None) => Entry::stopped(listed),
-                    Err(e) => {
-                        // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
-                        if !lan_ports.is_empty() {
-                            self.lan.mark_degraded(&manifest.id);
-                        }
-                        Entry::containers_failed(listed, e.to_string())
-                    }
+                match self.restore_runtime(&package, record).await {
+                    Ok(entry) => entry,
+                    Err(error) => Entry::containers_failed(listed, error.to_string()),
                 }
             }
             Err(e) => Entry::broken(

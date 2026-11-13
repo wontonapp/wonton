@@ -563,3 +563,8 @@ plugin-hosted-provider-in-use = 這些應用程式由它託管，解除安裝後
 plugin-hosted-dir-missing = 這個應用程式在 { $capability } 下的檔案不見了，請重新安裝
 plugin-hosted-storage-failed = 託管檔案無法寫入：{ $error }
 plugin-hosted-data-missing = 這個應用程式在 { $capability } 下儲存的資料不見了，重新安裝會從空的開始
+
+plugin-recovery-interrupted = 應用程式的啟動或重建未完成，核心會先檢查已有容器再重試
+plugin-recovery-owner-stopped = 這個應用程式已主動停止，請啟動後再繼續
+plugin-recovery-not-due = 這個應用程式還沒到下一次恢復的時間，或自動重試次數已用完
+plugin-recovery-stop-interrupted = 應用程式停止未完成，核心不會自動啟動它

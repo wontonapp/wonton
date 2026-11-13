@@ -29,7 +29,7 @@ impl PluginManager {
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
         record.family = enabled;
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         self.installed_plugin(id, langs)
             .ok_or_else(|| InstallError::Storage(format!("插件 {id} 的详情构造不出来")))
     }

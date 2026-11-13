@@ -230,11 +230,7 @@ async fn stopped_plugins_are_offered_new_versions() {
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, SOURCE).await;
     let revision = m.installed_plugin(&id(), &zh()).unwrap().revision;
-    docker.set_state(
-        &web(),
-        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
-    );
-    m.watch_containers().await;
+    m.stop_detached(id()).await.unwrap();
     assert_eq!(
         m.installed_plugin(&id(), &zh()).unwrap().status,
         PluginState::Stopped
@@ -246,6 +242,14 @@ async fn stopped_plugins_are_offered_new_versions() {
     assert_eq!(plugin.status, PluginState::Stopped);
     assert_eq!(plugin.upgrade.unwrap().version, "1.1.0");
     assert_eq!(plugin.revision, revision);
+    let before = docker.writes();
+    assert!(matches!(upgrade(&m).await, Err(InstallError::Conflict(_))));
+    assert_eq!(docker.writes(), before);
+    assert_eq!(version(&m), "1.0.0");
+    assert_eq!(
+        m.lifecycle_status(&id()).unwrap().desired,
+        wonton_protocol::PluginDesiredState::Stopped
+    );
 }
 
 #[tokio::test]

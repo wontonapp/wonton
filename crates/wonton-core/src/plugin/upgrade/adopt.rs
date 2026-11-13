@@ -50,7 +50,7 @@ impl PluginManager {
             return Ok(false);
         }
         record.origin = Some(to.clone());
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         if let Some(listed) = entry.listed.clone() {
             entry.listed = Some(Arc::new(Listed {
                 origin: Some(to.clone()),

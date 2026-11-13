@@ -16,6 +16,9 @@ pub(super) fn containers(
     query: &str,
     raw: &Bytes,
 ) -> Option<Response> {
+    if let Some(reply) = container_details(docker, method, parts, query, raw) {
+        return Some(reply);
+    }
     let exists = |name: &str| docker.containers.contains_key(name);
     let reply = match (method, parts) {
         (&Method::POST, ["create"])
@@ -33,11 +36,21 @@ pub(super) fn containers(
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
         (&Method::POST, [name, "stop"]) if exists(name) => {
+            if let Some(message) = &docker.stop_error {
+                return Some(json_reply(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    json!({"message": message}),
+                ));
+            }
             // 和 Docker 一样：停掉的容器交回网络端点（固定地址让出来），inspect 显示 exited。
-            docker.states.insert(
+            let previous = docker.states.insert(
                 name.to_string(),
                 json!({"Status": "exited", "Running": false, "ExitCode": 0}),
             );
+            docker
+                .restartable
+                .entry(name.to_string())
+                .or_insert(previous);
             StatusCode::OK.into_response()
         }
         (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
@@ -55,6 +68,9 @@ pub(super) fn containers(
             )
         }
         (&Method::DELETE, [name]) => {
+            if docker.restartable.remove(*name).is_some() {
+                docker.states.remove(*name);
+            }
             for endpoints in docker.endpoints.values_mut() {
                 endpoints.remove(*name);
             }
@@ -68,6 +84,21 @@ pub(super) fn containers(
             let code = docker.outputs.get(*name).map_or(0, |o| o.0);
             json_reply(StatusCode::OK, json!({"StatusCode": code}))
         }
+        (&Method::GET, ["json"]) => list_containers(docker, query),
+        _ => return None,
+    };
+    Some(reply)
+}
+
+fn container_details(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let exists = |name: &str| docker.containers.contains_key(name);
+    let reply = match (method, parts) {
         (&Method::GET, [name, "logs"]) if exists(name) => {
             let (_, stdout, stderr) = docker.outputs.get(*name).cloned().unwrap_or_default();
             let mut frames = Vec::new();
@@ -108,7 +139,6 @@ pub(super) fn containers(
                 ),
             }
         }
-        (&Method::GET, ["json"]) => list_containers(docker, query),
         _ => return None,
     };
     Some(reply)
@@ -158,6 +188,7 @@ fn create(docker: &mut Resources, name: &str, body: Value) -> Response {
             json!({"message": format!("No such image: {image}")}),
         );
     }
+    docker.archives.remove(name);
     docker.containers.insert(name.to_owned(), labels_of(&body));
     let networks = body["NetworkingConfig"]["EndpointsConfig"].as_object();
     for (network, endpoint) in networks.into_iter().flatten() {
@@ -208,6 +239,12 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
     }
     if let Some(state) = docker.start_states.get(name).cloned() {
         docker.states.insert(name.to_owned(), state);
+    } else if let Some(previous) = docker.restartable.remove(name) {
+        if let Some(state) = previous {
+            docker.states.insert(name.to_owned(), state);
+        } else {
+            docker.states.remove(name);
+        }
     } else if docker
         .states
         .get(name)

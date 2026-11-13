@@ -177,6 +177,7 @@ impl PluginManager {
 #[cfg(test)]
 fn minimal_record(id: &PluginId) -> InstalledRecord {
     InstalledRecord {
+        lifecycle: Default::default(),
         lan_webui: false,
         relays: Vec::new(),
         firewalled: false,
