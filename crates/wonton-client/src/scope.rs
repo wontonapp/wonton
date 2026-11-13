@@ -317,7 +317,7 @@ impl Scope {
             home: &home,
             plugins: &plugins,
             push_method: &push_method,
-            app_lock: &app_lock,
+            app_lock,
             lock_screen: &lock_screen,
             dir,
             views,
