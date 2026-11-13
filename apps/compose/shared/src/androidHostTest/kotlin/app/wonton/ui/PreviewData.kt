@@ -377,7 +377,7 @@ internal fun ConnectionDetailsFlowsPreview() {
 }
 
 /** 列表里的邀请行，预览用；只填看得见的字段。 */
-private fun previewInviteRow() = RoomRow(
+internal fun previewInviteRow() = RoomRow(
     roomId = "!design:home.example",
     name = "Design review",
     isDirect = false,

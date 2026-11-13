@@ -426,7 +426,7 @@ private fun SidebarHeader(home: HomeViewModel) {
 
 /** “我的应用”：用户选出来的行，核心排好序；装了还没加进的收进最后一行“全部应用”。 */
 @Composable
-private fun SidebarApps(
+internal fun SidebarApps(
     plugins: PluginsState,
     tabs: PagesState,
     current: TabRef,
@@ -447,7 +447,7 @@ private fun SidebarApps(
         Spacer(Modifier.weight(1f))
         Text(
             stringResource(R.string.sidebar_all),
-            Modifier.clickable(
+            Modifier.heightIn(min = WontonTheme.size.target).clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = interactive,
