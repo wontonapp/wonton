@@ -632,7 +632,7 @@ fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEven
     }
 }
 
-/// “已读”换了地方时，换下来和换上去的两条各发一个 `Set`。
+/// “已读”“已送达”换了地方、上方该不该写时间变了的条目，各发一个 `Set`。
 fn move_read_mark(
     entries: &Vector<TimelineEntry>,
     read: &mut ReadMark,
@@ -647,7 +647,7 @@ fn move_read_mark(
     let diffs = entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| read.marks(&entry.id) || now.marks(&entry.id))
+        .filter(|(_, entry)| read.of_entry(&entry.id) != now.of_entry(&entry.id))
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
             item: timeline_item(entry.clone(), &now, links, bots, previews),

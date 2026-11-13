@@ -74,6 +74,7 @@ enum WontonGesture {
     static let flickVelocity: CGFloat = 900
     static let dragSlop: CGFloat = 8
     static let edgeWidth: CGFloat = 24
+    static let timeReveal: CGFloat = 64
 }
 
 enum WontonMotion {

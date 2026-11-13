@@ -16,7 +16,7 @@ final class AgentRunUITests: XCTestCase {
         app.buttons["fixture-advance"].tap()
         let done = app.descendants(matching: .any)["agentRun-done"]
         XCTAssertTrue(done.waitForExistence(timeout: 5), "同一轮没有收成完成")
-        XCTAssertTrue(app.staticTexts["5 steps · done"].waitForExistence(timeout: 5), "完成没有步数")
+        XCTAssertTrue(app.staticTexts["5 steps"].waitForExistence(timeout: 5), "完成没有步数")
 
         let waiting = app.descendants(matching: .any)["agentRun-waiting"]
         XCTAssertTrue(waiting.waitForExistence(timeout: 5), "夹具屏没有等确认的状态行")

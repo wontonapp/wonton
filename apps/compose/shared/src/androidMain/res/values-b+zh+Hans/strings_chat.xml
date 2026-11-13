@@ -65,6 +65,7 @@
     <string name="timeline_edited">已编辑</string>
     <string name="timeline_sending">发送中</string>
     <string name="timeline_read">已读</string>
+    <string name="timeline_delivered">已送达</string>
     <string name="timeline_send_failed_retrying">发送失败，会自动重试</string>
     <string name="timeline_send_failed">发送失败：%1$s</string>
     <string name="timeline_resend">重发</string>
