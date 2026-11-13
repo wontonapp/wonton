@@ -24,6 +24,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）。状态和业务逻辑
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
+- iPad regular 宽度用 `NavigationSplitView` 展示会话列表和当前内容，插件页只铺右栏；compact 宽度保留单列和抽屉。
+  当前房间沿用 `ChatModel.path`，旋转和系统分屏不改选中项；iPad 不套用 iPhone 的竖屏限制。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
 
 插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。

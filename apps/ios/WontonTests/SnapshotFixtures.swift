@@ -41,6 +41,19 @@ enum SnapshotFixtures {
             .environment(PagesModel(core: core))
     }
 
+    static func wideChat(core: ClientCore) -> some View {
+        let model = chatModel(core: core)
+        let plugins = PluginsModel(core: core)
+        return NavigationSplitView(columnVisibility: .constant(.all)) {
+            ChatListView(model: model, plugins: plugins, listOnly: true)
+                .navigationSplitViewColumnWidth(320)
+        } detail: {
+            ChatDetailView(model: model, plugins: plugins)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .environment(PagesModel(core: core))
+    }
+
     static func chatRoom(core: ClientCore) -> some View {
         ScrollView {
             VStack(spacing: WontonTheme.spacing.s4) {
@@ -217,6 +230,15 @@ enum SnapshotFixtures {
             ]),
             SettingsSection(entries: [.about])
         ]))
+    }
+}
+
+#Preview("Wide chat") {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wide-chat-preview")
+    if let core = try? ClientCore(dataDir: directory.path) {
+        SnapshotFixtures.wrapped(SnapshotFixtures.wideChat(core: core))
+            .environment(\.horizontalSizeClass, .regular)
+            .frame(width: 1194, height: 834)
     }
 }
 #endif
