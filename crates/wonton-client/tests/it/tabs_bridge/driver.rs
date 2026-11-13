@@ -11,7 +11,7 @@ use super::support::PAGE_ORIGIN;
 use crate::plugins::rig::Rig;
 
 /// node：本地从 Docker Hub 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn node_image() -> String {
+pub(crate) fn node_image() -> String {
     wonton_test_images::image(
         "node:22@sha256:18a6d90fd60542269850c80ca03b29b1d9b14d6b221ac7ee8e35b0d33ef904bd",
     )

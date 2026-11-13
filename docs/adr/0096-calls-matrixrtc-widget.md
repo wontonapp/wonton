@@ -113,6 +113,8 @@ matrix_widget:
 - 读、发房间事件和状态事件：按事件类型列，不收通配。
 - 发状态事件时 `state_key` 只能是自己的用户 ID，或以 `<自己的用户 ID>_`、`_<自己的用户 ID>_` 开头（MSC3779 的“自己的状态”，
   Element Call 的 `m.call.member` 就这样写）。核心批准时按当前登录的账号收窄，页面改不了别人的状态。写成测试。
+  SDK 的过滤只认确切的 `state_key`、表达不了前缀，所以页面点名的 `state_key` 按上面的规则核，页面要“任意 `state_key`”时
+  只批 `#<自己的用户 ID>` 这一条；要别的自己的 `state_key`，页面得点名请求（Element Call 就是点名的）。
 - to-device：按事件类型列。加密房间里驱动自动加密发送、只转交加密收到的（0.19.1 `widget/matrix.rs`）。
 - `send.delayed_event`、`update_delayed_event`、`rtc_transports`、`requires_client`、`download_file`。
 - 不给：别的房间（`timeline:` 能力）。页面只拿到打开它的那个房间。
@@ -132,9 +134,14 @@ widget 能力：核心给原始能力串和级别（普通、高），确认页�
 **桥：** 同一个插件页桥，加第二种报文。注入脚本按 `api` 字段接住页面发给自己的 widget 消息（`fromWidget` 请求、`toWidget`
 应答）转给核心，核心交给 `WidgetDriverHandle::send`；`recv` 出来的消息由核心包成合成 `MessageEvent` 的脚本注入回同一个页面。
 来源判定、主框架判定、壳不解析报文，都同 ADR-0033。不是以 widget 身份打开的插件页收到 widget 消息照旧忽略。
+驱动发给页面的消息走一个订阅（`ClientCore::subscribe_tab_widget`）：壳在页面开始加载后订阅，每一项是一段脚本，原样注入；
+驱动结束时订阅返回空。页面的报文没有直接的应答，应答都从订阅回来。
 
 **会话：** 打开方式是一种新的标签身份“某插件的 widget、某房间”（`TabRef` 加一种）。核心为它建一个驱动、每次打开新生成
 widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间、退出登录时驱动结束；同一时间只有一个 widget 会话。
+- 手动重新加载页面就是重开：驱动重起、换新的 widget ID。插件升级后的自动重新加载不碰 widget 页，免得通话中途断掉。
+- widget 页只能从房间里打开，不能加入“我的应用”或面板；页面栈里的退出行为遵循下面“第一版离开通话页就挂断”的约定。
+- 明暗由壳合成，起驱动时核心不知道：`$org.matrix.msc2873.client_theme` 由 SDK 填 `light`，页面的明暗看桥注入的 `color-scheme`。
 
 ### 3. 入口
 

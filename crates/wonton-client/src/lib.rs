@@ -69,6 +69,7 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use pages::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
+    TabWidgetSubscription,
 };
 pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;

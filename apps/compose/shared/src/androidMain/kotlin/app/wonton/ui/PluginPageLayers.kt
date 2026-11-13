@@ -14,12 +14,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.TabPage
+import app.wonton.protocol.TabRef
 
 /**
  * 一页的层：网页铺满整屏（状态栏、导航条、刘海底下都是网页，安全区经环境交给页面自己让），
@@ -36,7 +38,9 @@ internal fun PageLayers(
     val environment = viewport.environment
     val script = remember(page.url, appearance, environment) { state.script(environment, document = true) }
     Box(Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding()) {
-        val loadable = connection.supported && connection.authorized && admitted
+        // Widget 的驱动订阅尚未接入，不能加载为普通网页；Bot 页面还需先通过 admission。
+        val loadable = connection.supported && connection.authorized && admitted &&
+            state.tab !is TabRef.Widget
         if (state.started && loadable && script != null) {
             // 状态栏区域的点击被系统吃掉（#379），网页从状态栏下沿排；胶囊和状态浮层不受影响，
             // 仍按系统安全区排在网页上面。视频全屏（customView）铺满整屏，不吃这条内边距。
@@ -68,7 +72,11 @@ private fun PageOverlays(
         SharedPageStatus(page, shared, connection.source, pages, state.problem, connection.supported,
             state.covers(page), inset)
     } else {
-        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset, onDetails)
+        val widget = state.tab is TabRef.Widget
+        PageStatusOverlay(
+            state, page, state.tab, connection.supported && !widget, page.opensInBrowser, inset, onDetails,
+            unsupported = if (widget) stringResource(R.string.tab_widget_unsupported) else null,
+        )
     }
     PluginPageChrome(state.tab, pages, viewport.safe, bannerTop, shortStatus(page), state.capsule, state.controller,
         takeover,

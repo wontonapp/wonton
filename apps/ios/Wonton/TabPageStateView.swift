@@ -15,7 +15,12 @@ struct TabPageStateView: View {
 
     var body: some View {
         Group {
-            if let problem = shareProblem ?? session.problem {
+            // widget 页（ADR-0096）要壳接上驱动的订阅才说得上话，这一版的壳没有：如实说打不开。
+            if case .widget = session.tab {
+                failure(String(localized: .Tab0.tabWidgetUnsupported)) {
+                    Button(TabText.close, action: remove)
+                }
+            } else if let problem = shareProblem ?? session.problem {
                 VStack {
                     ProblemView(problem: problem, retry: session.retry)
                     if case .sharedApp = session.tab {

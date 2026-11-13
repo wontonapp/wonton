@@ -78,7 +78,7 @@ extension OpenPage {
         switch tab {
         case .chat: TabText.chat
         case .apps: TabText.apps
-        case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource: page.title
+        case .plugin, .pluginPath, .bot, .url, .sharedApp, .uiResource, .widget: page.title
         }
     }
 }

@@ -28,4 +28,6 @@
     <string name="tab_exit_fullscreen">Exit fullscreen</string>
     <!-- Fullscreen capsule menu item that opens the app's detail page. -->
     <string name="tab_menu_details">App details</string>
+    <!-- Shown in place of a room's plugin page (a Matrix widget) that this app version can't open yet. -->
+    <string name="tab_widget_unsupported">This version of the app can\'t open this page yet. Update the app and try again.</string>
 </resources>

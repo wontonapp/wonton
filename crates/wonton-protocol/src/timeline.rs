@@ -65,6 +65,12 @@ pub struct TimelineUpdate {
     /// 旁聊订阅的头部（ADR-0093）：这条时间线是旁聊时给标题和状态，主时间线为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat: Option<crate::SideChatCard>,
+    /// 房间顶栏的 widget 入口（ADR-0096）：声明了 `matrix_widget`、在运行的插件，按安装顺序。空的时候不画按钮。
+    #[serde(default)]
+    pub widgets: Vec<crate::RoomWidget>,
+    /// 房间里有人在通话（`m.call.member` 里有没过期的通话成员）：入口显示“通话中”，点了就是加入。
+    #[serde(default)]
+    pub call_active: bool,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -651,6 +657,16 @@ mod tests {
             key_notice: Some(KeyNotice::EnterRecoveryKey),
             confirmations: Vec::new(),
             side_chat: None,
+            widgets: vec![crate::RoomWidget {
+                tab: crate::TabRef::Widget {
+                    plugin_id: "app.call".into(),
+                    room_id: "!room:home.example".into(),
+                },
+                title: "通话".into(),
+                icon: None,
+                entry: crate::WidgetEntry::VideoCall,
+            }],
+            call_active: true,
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -703,6 +719,8 @@ mod tests {
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
             confirmations: Vec::new(),
             side_chat: None,
+            widgets: Vec::new(),
+            call_active: false,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");

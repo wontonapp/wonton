@@ -32,6 +32,13 @@ pub(crate) fn handle_message(
         Ok(value) => value,
         Err(_) => return failure(Value::Null, -32700, "Parse error"),
     };
+    if let tab @ TabRef::Widget { .. } = placed_tab_ref(page)
+        && super::widget::is_widget_message(&value)
+    {
+        // widget API 的报文原样交给驱动，应答由驱动经订阅发回（ADR-0096）。别的页面照旧当 JSON-RPC 核。
+        tabs.send_to_widget(tab, message);
+        return TabBridgeResult::default();
+    }
     let id = value.get("id");
     if !value.is_object()
         || value["jsonrpc"] != "2.0"

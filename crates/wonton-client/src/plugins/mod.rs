@@ -180,6 +180,10 @@ impl PluginsLink {
         self.view.borrow().clone()
     }
 
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
+    }
+
     pub(crate) fn view_for_server(&self, server: Option<&str>) -> PluginsViewModel {
         let installed_server = lock(&self.installed_server);
         let mut view = self.view.borrow().clone();

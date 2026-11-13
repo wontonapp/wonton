@@ -15,6 +15,7 @@
 #![recursion_limit = "256"]
 
 mod agent_run;
+mod call;
 mod chat_room;
 mod encryption;
 mod error;
@@ -42,6 +43,7 @@ mod sync;
 pub mod testkit;
 mod timeline;
 mod verification;
+mod widget;
 
 pub use agent_run::AgentRunStatus;
 pub use chat_room::{
@@ -75,3 +77,4 @@ pub use side_chat::{
 pub use sync::{SyncStatus, last_sync_diagnostic};
 pub use timeline::{EntryKind, TimelineEntry};
 pub use verification::SelfVerification;
+pub use widget::{OpenedWidget, WidgetDriverHandle, WidgetRequest};

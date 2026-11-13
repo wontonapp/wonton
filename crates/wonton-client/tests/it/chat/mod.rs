@@ -41,6 +41,7 @@ mod timeline;
 mod timeline_position;
 mod upload_progress;
 mod verification;
+mod widget;
 
 use std::time::{Duration, Instant};
 

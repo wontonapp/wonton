@@ -140,6 +140,7 @@ pub fn remote(tcp: u16, udp: u16) -> wonton_client::InstalledPlugin {
     let spec = |port, protocol| MappedPort { port, protocol };
     let mut plugin = wonton_client::InstalledPlugin {
         tunnel_ports: vec![spec(tcp, PortProtocol::Tcp), spec(udp, PortProtocol::Udp)],
+        matrix_widget: None,
         ..running(PLUGIN)
     };
     // 可见性由页面栈的栈顶推导（ADR-0095）：装置给插件一个网页，测试打开它。
