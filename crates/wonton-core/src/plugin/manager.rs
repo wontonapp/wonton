@@ -102,6 +102,7 @@ pub struct PluginManager {
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
@@ -193,6 +194,7 @@ impl PluginManager {
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
+            failed_installs: RwLock::new(BTreeMap::new()),
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             clients,
@@ -305,9 +307,15 @@ impl PluginManager {
 
     pub fn list(&self) -> Vec<PluginView> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
+        let failed = self.failed_installs.read().expect("安装结果锁中毒");
         plugins
             .iter()
             .map(|(id, entry)| self.view(id, entry))
+            .chain(failed.iter().map(|(id, entry)| {
+                let mut view = self.view(id, &entry.entry);
+                view.url = None;
+                view
+            }))
             .collect()
     }
 
@@ -327,7 +335,16 @@ impl PluginManager {
 
     pub(super) fn status_of(&self, id: &PluginId) -> Option<PluginStatus> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins.get(id).map(|entry| entry.status.clone())
+        plugins
+            .get(id)
+            .map(|entry| entry.status.clone())
+            .or_else(|| {
+                self.failed_installs
+                    .read()
+                    .expect("安装结果锁中毒")
+                    .get(id)
+                    .map(|failed| failed.entry.status.clone())
+            })
     }
 
     /// 插件的名字（多语言）。
@@ -389,6 +406,10 @@ impl PluginManager {
             title: manifest.title.clone(),
             ..Entry::broken(&manifest.id, manifest.version.clone(), reason)
         };
+        self.failed_installs
+            .write()
+            .expect("安装结果锁中毒")
+            .remove(&manifest.id);
         self.plugins
             .write()
             .expect("插件表锁中毒")

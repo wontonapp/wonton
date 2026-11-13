@@ -881,6 +881,8 @@ mod peers_api_tests;
 #[cfg(test)]
 mod plugin_forms_tests;
 #[cfg(test)]
+mod plugin_install_failure_tests;
+#[cfg(test)]
 mod plugin_start_tests;
 #[cfg(test)]
 mod proxy_sso_tests;

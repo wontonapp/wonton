@@ -47,6 +47,7 @@ pub mod images;
 pub mod index_location;
 mod install_entry;
 mod install_error;
+mod install_failure;
 pub(crate) mod install_hosted;
 mod install_notes;
 pub(crate) mod install_storage;

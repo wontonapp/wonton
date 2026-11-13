@@ -6,9 +6,10 @@ use std::collections::BTreeMap;
 use wonton_protocol::{CapabilityProviderRef, PluginHint, PluginHintCategory};
 
 use super::capabilities::{self, STATIC_WEB, WEB_STORAGE};
-use super::hosted::HostedDirs;
+use super::hosted::{HostedDirs, Swapped};
 use super::install_storage::{StorageNeed, required_hosted, storage_error, storage_need};
 use super::languages::Languages;
+use super::lifecycle::Undo;
 use super::listed::Listed;
 use super::manager::{
     Entry, Health, InstallError, PluginManager, PluginStatus, PluginView, busy, now_secs,
@@ -19,6 +20,17 @@ use super::package::static_files::Problem;
 use super::store::InstalledRecord;
 use super::upstreams::Endpoint;
 use crate::l10n;
+
+#[derive(Default)]
+struct Publication {
+    swapped: Option<Swapped>,
+    storage_created: bool,
+}
+
+struct PublishFailure {
+    error: InstallError,
+    cleanup_errors: Vec<String>,
+}
 
 /// 托管插件的提供方现在的样子。
 pub(crate) struct Provider {
@@ -217,7 +229,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         langs: &Languages,
-    ) -> Result<PluginView, InstallError> {
+    ) -> Result<(PluginView, Undo), InstallError> {
         let manifest = package.manifest.clone();
         if let Some(capability) = required_hosted(&manifest)
             .into_iter()
@@ -228,22 +240,31 @@ impl PluginManager {
         let listed = Listed::new(package, now_secs(), false, false, Default::default());
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, runtime = manifest.runtime.as_str(), "开始安装插件");
-        let installed = self.publish(package, granted, None, langs).await;
+        let undo = match self.publish(package, granted, None, langs).await {
+            Ok(undo) => undo,
+            Err(failed) => {
+                self.installation_failed(
+                    &manifest.id,
+                    &failed.error,
+                    wonton_protocol::InstallStage::Preparing,
+                    failed.cleanup_errors.clone(),
+                    langs,
+                );
+                return Err(self.install_rollback_error(
+                    failed.error,
+                    failed.cleanup_errors,
+                    langs,
+                ));
+            }
+        };
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
-        if let Err(e) = installed {
-            plugins.remove(&manifest.id);
-            drop(plugins);
-            self.changed();
-            tracing::warn!(plugin = %manifest.id, error = %e, "插件安装失败，已回滚");
-            return Err(e);
-        }
         let entry = running(listed);
         let view = self.view(&manifest.id, &entry);
         plugins.insert(manifest.id.clone(), entry);
         drop(plugins);
         self.changed();
         tracing::info!(plugin = %manifest.id, "插件安装完成");
-        Ok(view)
+        Ok((view, undo))
     }
 
     /// 升级不起容器的插件：新文件对换进去、记录存上才算数，失败时旧版本原样留着。
@@ -269,7 +290,13 @@ impl PluginManager {
             std::mem::replace(&mut entry.status, PluginStatus::Upgrading)
         };
         self.changed();
-        let result = self.publish(&package, granted, Some(&old), langs).await;
+        let result = self
+            .publish(&package, granted, Some(&old), langs)
+            .await
+            .map(|_| ())
+            .map_err(|failed| {
+                self.install_rollback_error(failed.error, failed.cleanup_errors, langs)
+            });
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         if let Some(entry) = plugins.get_mut(&id) {
             match &result {
@@ -294,17 +321,61 @@ impl PluginManager {
         result
     }
 
-    /// 文件换进托管目录、写记录；记录写不进去就换回去（账本写不进去时安装失败，ADR-0066 第 7 节）。
     async fn publish(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
         old: Option<&InstalledRecord>,
         langs: &Languages,
+    ) -> Result<Undo, PublishFailure> {
+        let mut publication = Publication::default();
+        let id = &package.manifest.id;
+        if let Err(error) = self
+            .publish_inner(package, granted, old, &mut publication, langs)
+            .await
+        {
+            let mut cleanup_errors = Vec::new();
+            if publication.storage_created
+                && let Err(cleanup) = self.hosted_dirs().remove(WEB_STORAGE.name, id)
+            {
+                cleanup_errors.push(cleanup.to_string());
+            }
+            if let Some(swapped) = publication.swapped
+                && let Err(cleanup) = swapped.undo()
+            {
+                cleanup_errors.push(cleanup.to_string());
+            }
+            return Err(PublishFailure {
+                error,
+                cleanup_errors,
+            });
+        }
+        if let Some(swapped) = publication.swapped {
+            swapped.finish();
+        }
+        let mut undo = Undo::default();
+        undo.record = Some(id.clone());
+        undo.final_stage = Some(wonton_protocol::InstallStage::Preparing);
+        if let Some(capability) = hosted_capability(&package.manifest) {
+            undo.hosted.push((capability.to_owned(), id.clone()));
+        }
+        if publication.storage_created {
+            undo.hosted.push((WEB_STORAGE.name.to_owned(), id.clone()));
+        }
+        Ok(undo)
+    }
+
+    async fn publish_inner(
+        &self,
+        package: &PluginPackage,
+        granted: &[Permission],
+        old: Option<&InstalledRecord>,
+        publication: &mut Publication,
+        langs: &Languages,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
         let mut hosted = Vec::new();
-        let swapped = match hosted_capability(manifest) {
+        publication.swapped = match hosted_capability(manifest) {
             Some(capability) => {
                 let root = package.static_root().unwrap_or_default();
                 let files = package
@@ -325,7 +396,7 @@ impl PluginManager {
             }
             None => None,
         };
-        let created = match storage_need(manifest) {
+        publication.storage_created = match storage_need(manifest) {
             Some(StorageNeed::Required | StorageNeed::Wanted) => {
                 self.prepare_storage(&manifest.id, langs)?
             }
@@ -366,28 +437,8 @@ impl PluginManager {
             hosted,
             gpu_vendor: old.and_then(|old| old.gpu_vendor),
         };
-        let saved = self.store.save(&record);
-        if saved.is_err()
-            && created
-            && let Err(e) = self.hosted_dirs().remove(WEB_STORAGE.name, &manifest.id)
-        {
-            tracing::warn!(plugin = %manifest.id, error = %e, "记录没存上，删不掉刚建的数据目录");
-        }
-        match (saved, swapped) {
-            (Ok(()), swapped) => {
-                if let Some(swapped) = swapped {
-                    swapped.finish();
-                }
-                Ok(())
-            }
-            (Err(e), Some(swapped)) => {
-                if let Err(undo) = swapped.undo() {
-                    tracing::error!(plugin = %manifest.id, error = %undo, "记录没存上，换回旧的静态文件也失败");
-                }
-                Err(e.into())
-            }
-            (Err(e), None) => Err(e.into()),
-        }
+        self.store.save(&record)?;
+        Ok(())
     }
 
     /// 核心启动时恢复不起容器的插件：静态网页的子目录不在就如实标异常（重装能修好），提供方的状态由

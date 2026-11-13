@@ -175,7 +175,9 @@ impl PluginManager {
         let m = &package.manifest;
         let origin = package.origin.as_ref();
         let facts = self.host_facts(langs).await;
-        let installed = self.installed_plugin(&m.id, langs);
+        let installed = self
+            .installed_plugin(&m.id, langs)
+            .filter(|plugin| plugin.install_failure.is_none());
         let dependencies = self.dependency_preview(m, langs).await;
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
