@@ -838,7 +838,6 @@ fn settings_form(
 }
 
 
-
 fn state(status: &PluginStatus, health: Option<Health>) -> PluginState {
     match status {
         PluginStatus::Installing => PluginState::Installing,

@@ -109,7 +109,10 @@ impl PluginManager {
                 &[],
             )));
         }
-        Box::pin(self.install_checked(package, granted, enabled, lan_webui, devices, settings, &langs)).await
+        Box::pin(self.install_checked(
+            package, granted, enabled, lan_webui, devices, settings, &langs,
+        ))
+        .await
     }
 
     /// 同 [`Self::install_user`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。
