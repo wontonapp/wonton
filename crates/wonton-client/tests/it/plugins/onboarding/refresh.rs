@@ -147,7 +147,7 @@ async fn silent_refresh_keeps_the_model_choice_and_recorded_profile() {
 async fn a_failed_silent_get_keeps_the_visible_errors() {
     let rig = install_rig("model").await;
     at_model(&rig).await;
-    rig.core.answer(
+    rig.core.answer_always(
         Method::GET,
         PROVIDERS,
         core_error(503, "models_unavailable", "gateway stopped"),
