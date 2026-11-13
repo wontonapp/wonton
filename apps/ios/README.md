@@ -39,6 +39,10 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 全屏仍使用同一个 WebView；关闭目标由核心决定。网页框、安全区和胶囊见 ADR-0033 的“带栏”“全屏”：留白处是 App 底色，
 不取网页的像素；`edge-to-edge` 页读取栏高变量；不注入 `viewport-fit=cover`。
 
+插件端口映射由核心按页面栈顶和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
+壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，
+不把端口声明当作已绑定成功。iOS 不提供第三方 App 用的手动映射开关。
+
 新用户引导遵循 [ADR-0034](../../docs/adr/0034-onboarding-and-help.md)：`OnboardingGate` 在配对后按核心步骤接管页面；首次获取失败时显示重试和本次运行的跳过入口。
 `Design/StepCardFrame` 和 `StepOptionRow` 只渲染导航与选项，不推算步骤。资料和选择只发草稿操作，模型测试不保存；key 只留在密文输入框，发出操作后清空。
 模型页的 key 测试前不交给核心，因此完整待测输入也能启用“下一步”，发出只测试并继续的操作；其他按钮只看核心导航。
@@ -148,6 +152,10 @@ xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   -only-testing:WontonUITests/BotProfileUITests
 ```
+
+端口映射走查 `PortMappingUITests` 要在开发栈安装 `whoami` 示例并声明一个同号 TCP 隧道端口，
+以 `TEST_RUNNER_PORT_MAPPING_TEST_PORT=<端口>` 和新的配对码运行；栈先完成引导。
+用例实际请求回环端口，检查开页、进后台、回前台和关页的可达性，并附上详情页截图；不把状态文案当作网络验证。
 
 界面截图回归在 `WontonTests/SnapshotTests`：真实界面配固定假数据（同目录的 `SnapshotFixtures`，Debug 专用），逐像素比较
 `WontonTests/__Snapshots__/` 下的参考图。参考图绑定模拟器型号和系统版本，语言、地区和时区由 scheme 钉住；怎么重录、

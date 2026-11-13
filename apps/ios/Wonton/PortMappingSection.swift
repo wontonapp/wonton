@@ -1,19 +1,59 @@
 import SwiftUI
 import WontonClient
 
-/// 插件声明的映射端口（ADR-0072）：iOS 不走系统通道，App 在前台时自己用；这里如实列出，没有开关。
+/// iOS 只在前台自动映射，不提供给第三方 App 用的手动开关（ADR-0072）。
 struct PortMappingSection: View {
-    let installed: InstalledPlugin
+    let declaredPorts: [MappedPort]
+    let mapping: PluginPortMapping?
 
     var body: some View {
         DetailSection(title: String(localized: .Plugins.portMappingTitle)) {
             WontonGroup {
-                ForEach(Array(installed.tunnelPorts.enumerated()), id: \.offset) { index, port in
-                    if index > 0 { WontonSeparator() }
+                if let status {
+                    WontonRow(title: status)
+                        .accessibilityIdentifier("portMappingState")
+                }
+                ForEach(Array((mapping?.ports ?? declaredPorts).enumerated()), id: \.offset) { index, port in
+                    if index > 0 || status != nil { WontonSeparator() }
                     WontonRow(title: String(localized: .Plugins.portMappingPortLine(
                         Int(port.port), protocolName(port.protocol))))
                 }
             }
+            if let reason {
+                WontonNotice(icon: .warning, title: reason)
+                    .accessibilityIdentifier("portMappingReason")
+            }
+            if mapping?.warning == .publicRelayBandwidth {
+                WontonNotice(
+                    icon: .warning,
+                    title: String(localized: .Plugins.portMappingWarningPublicRelayBandwidth),
+                    isError: false
+                )
+            }
+        }
+    }
+
+    private var status: String? {
+        switch mapping?.state {
+        case .on: String(localized: .Design.designSwitchOn)
+        case .off: String(localized: .Design.designSwitchOff)
+        case nil: String(localized: .Common.commonUnknown)
+        case .portInUse, .serverTooOld, .tunnelDisconnected, .pluginNotInstalled,
+             .portNotDeclared, .pluginNotRunning, .pluginUnreachable, .other: nil
+        }
+    }
+
+    private var reason: String? {
+        switch mapping?.state {
+        case nil, .on, .off: nil
+        case .portInUse: String(localized: .Plugins.portMappingReasonPortInUse)
+        case .serverTooOld: String(localized: .Plugins.portMappingReasonServerTooOld)
+        case .tunnelDisconnected: String(localized: .Plugins.portMappingReasonTunnelDisconnected)
+        case .pluginNotInstalled: String(localized: .Plugins.portMappingReasonPluginNotInstalled)
+        case .portNotDeclared: String(localized: .Plugins.portMappingReasonPortNotDeclared)
+        case .pluginNotRunning: String(localized: .Plugins.portMappingReasonPluginNotRunning)
+        case .pluginUnreachable: String(localized: .Plugins.portMappingReasonPluginUnreachable)
+        case .other: String(localized: .Plugins.portMappingReasonOther)
         }
     }
 
