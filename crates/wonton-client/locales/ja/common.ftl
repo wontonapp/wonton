@@ -146,3 +146,5 @@ browser-bad-request = このページはWontonから開いてください。
 app-lock-write-failed = App ロックの設定ファイル{ $path }に書き込めません：{ $reason }
 app-lock-read-failed = App ロックの設定ファイル{ $path }を読めません：{ $reason }
 app-lock-corrupt = App ロックの設定ファイル{ $path }が壊れています：{ $reason }
+pages-storage-problem = マイアプリを保存できませんでした。次回起動時に前の状態に戻るかもしれません：{ $error }
+pages-file-unreadable = この端末のマイアプリを読み込めないため、デフォルト値を使用しています：{ $reason }

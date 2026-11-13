@@ -75,10 +75,11 @@ final class PasteUITests: XCTestCase {
         app = XCUIApplication()
         try UITestBackend.passPairingCode(to: app)
         app.launch()
-        let start = waitAnyButton(["Apps", "应用"], timeout: 10)
-            ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 10)
+        let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
+            ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
         XCTAssertNotNil(start, "既没到标签栏也没到引导页")
         passOnboarding()
+        UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(waitForTabs(timeout: 90), "没回到主界面")
     }
 
@@ -87,7 +88,7 @@ final class PasteUITests: XCTestCase {
     private func openRoom() {
         tabButton(["Chats", "聊天"])?.tap()
         if !waitRoomOpen(seconds: 20) {
-            tabButton(["Apps", "应用"])?.tap()
+            tabButton(["All Apps", "全部应用", "全部應用程式", "すべてのアプリ"])?.tap()
             for name in ["Hermes", "回声", "Echo"] {
                 if let row = roomRow(name) { tapWhenHittable(row); break }
             }
@@ -95,7 +96,8 @@ final class PasteUITests: XCTestCase {
         }
         if composerField() == nil {
             passOnboarding()
-            tabButton(["Apps", "应用"])?.tap()
+            UITestBackend.settleKeyHandoff(app)
+            tabButton(["All Apps", "全部应用", "全部應用程式", "すべてのアプリ"])?.tap()
             for name in ["Hermes", "回声", "Echo"] {
                 if let row = roomRow(name) { tapWhenHittable(row); break }
             }
@@ -321,6 +323,10 @@ final class PasteUITests: XCTestCase {
         var calm = 0
         var seenOnboarding = false
         while Date() < deadline {
+            if UITestBackend.skipKeyHandoff(app) {
+                calm = 0
+                continue
+            }
             if onboardingVisible() {
                 seenOnboarding = true
                 calm = 0

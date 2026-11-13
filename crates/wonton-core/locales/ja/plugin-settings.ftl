@@ -420,3 +420,26 @@ plugin-settings-value-array-too-big = { $max } 件を超えています
 plugin-settings-value-too-big = 設定の合計が { $max } バイトを超えています
 plugin-settings-value-unknown-type = この App の版では送れない値です。App を更新してください
 plugin-settings-value-problems = { $count } 件の設定が検証を通りません
+
+# ── マニフェストのclients（manifest_clients.rs）──────────────────────────────
+plugin-settings-clients-need-permission = clientsにはnetwork.clients権限が必要です。両方書いてください
+plugin-settings-clients-need-clients = network.clients権限には何を開くかを書くclientsが必要です。両方書いてください
+plugin-settings-clients-empty = clientsにはhttpかtcpのどちらかが必要です
+plugin-settings-clients-port-zero = clients.{ $field }のポートは0にできません
+plugin-settings-clients-port-mcp = clients.{ $field }にmcpのポートは使えません（{ $service }の{ $port }）
+plugin-settings-clients-tcp-webui = clients.tcpにWebページのポートは使えません（{ $service }の{ $port }）。TCPではゲートウェイが付けるヘッダーを偽装できるためです
+plugin-settings-clients-tcp-name = clients.tcpのnameはa-z、0-9と間のハイフンだけ、32バイトまでです：{ $name }
+plugin-settings-clients-tcp-duplicate = clients.tcpのname { $name }が重複しています
+plugin-settings-clients-public = clients.http.publicのallowとdenyはどちらか一方だけです
+plugin-settings-clients-paths = { $field }は64件までです
+plugin-settings-clients-path = { $field }のパス{ $path }（{ $bytes }バイト）が不正です：/で始まり、使えるのはA-Z a-z 0-9 - . _ ~ ! $ & ' ( ) * + , = : @ /だけで、% \ ; ? #と「.」「..」のセグメントは使えず、256バイトまでです
+plugin-settings-clients-status = clients.http.auth_failuresのstatusは400から599です：{ $status }
+plugin-settings-clients-auth = clients.http.authにはgateway、credentials、appのどれか1つだけを書きます
+plugin-settings-clients-issue = clients.http.auth.credentialsにはissueが必要です
+plugin-settings-clients-per-client = clients.http.auth.credentialsは既定でクライアントごとに1つのパスワードなのでrevokeが必要です。プラグイン全体で1つにするときはper_client: falseと書きます
+plugin-settings-clients-shared = clients.http.auth.credentialsでper_clientがfalseならrotateが必要で、revokeは書けません
+plugin-settings-clients-generates = clients.http.auth.credentialsでgeneratesがtrueならverifyが必要です。再生成した値を検証できる必要があるためです
+plugin-settings-clients-setup-done = clients.http.auth.appにはsetup_doneが必要です。初回登録が終わるまで入口は開きません
+plugin-settings-clients-gateway = gatewayではauth_failuresを見ないので削除してください
+plugin-settings-clients-guests = webui.guestsはゲストリンクを作れる宣言なので、network.clients権限が必要です
+plugin-settings-clients-external-url = マニフェストがWONTON_EXTERNAL_URLを参照しているので、clients.httpかwebui.guests: trueが必要です

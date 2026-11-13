@@ -54,4 +54,5 @@
     <string name="applock_timeout_one_minute">1 分後</string>
     <string name="applock_timeout_five_minutes">5 分後</string>
     <string name="applock_timeout_fifteen_minutes">15 分後</string>
+    <string name="settings_my_apps">マイアプリ</string>
 </resources>

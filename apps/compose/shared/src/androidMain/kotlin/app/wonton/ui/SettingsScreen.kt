@@ -55,7 +55,7 @@ fun SettingsPage(
     var rejection by remember { mutableStateOf<Problem?>(null) }
     BackHandler(enabled = subpage != SettingsSubpage.MAIN, onBack = back)
     when (subpage) {
-        SettingsSubpage.TABS -> TabsSettingsScreen(LocalTabs.current.viewModel, back)
+        SettingsSubpage.MY_APPS -> MyAppsSettingsScreen(back)
         SettingsSubpage.BACKUP -> ChatBackupScreen(
             chat.encryption,
             onAction = { action -> rejection = core.send(action) },
@@ -141,8 +141,8 @@ private fun SettingsEntryRow(
             badgeCount = entry.requests.toInt(),
             onClick = { onSubpage(SettingsSubpage.FRIENDS) },
         )
-        SettingsEntry.BottomBar -> WontonRow(stringResource(R.string.settings_nav_bar), showsForward = true) {
-            onSubpage(SettingsSubpage.TABS)
+        SettingsEntry.MyApps -> WontonRow(stringResource(R.string.settings_my_apps), showsForward = true) {
+            onSubpage(SettingsSubpage.MY_APPS)
         }
         is SettingsEntry.AppLock -> WontonRow(
             stringResource(R.string.applock_title),

@@ -31,6 +31,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.biometric.BiometricManager
 import androidx.fragment.app.FragmentActivity
 import app.wonton.client.ClientCore
 import app.wonton.protocol.AppLockTimeout
@@ -56,7 +57,9 @@ import app.wonton.ui.icons.WontonIcon
 fun AppLockSettingsScreen(core: ClientCore, view: AppLockViewModel, back: () -> Unit) {
     val context = LocalContext.current
     val activity = LocalActivity.current as? FragmentActivity
-    val canAuthenticate = remember(activity) { activity?.let { SystemAuth(it).canAuthenticate() } ?: false }
+    val canAuthenticate = remember(activity) {
+        activity?.let { SystemAuth(it).canAuthenticate() } != BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
+    }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val change = { enabled: Boolean, timeout: AppLockTimeout ->
         try {

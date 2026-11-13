@@ -50,6 +50,7 @@ struct ChatBackupView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
+        .accessibilityIdentifier("chat-backup")
         .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle))
         .wontonDialog(
             String(localized: .ChatBackup1.chatBackupResetTitle),
@@ -194,13 +195,19 @@ private struct RecoveryKeySection: View {
     let confirm: () -> Void
     // 验证只对这一次显示有效：收起页面再进会重建这个视图，要重新验证。
     @State private var revealed: Bool
+    // 验证用不了（canEvaluatePolicy 失败且不是没设密码）按失败即停给提示，不让按钮静默无反应。
+    @State private var unavailable: Bool
+    @State private var failureDetail: String?
+    @State private var showsDetails = false
     @Environment(\.wontonColors) private var colors
 
-    /// 没设设备密码的设备不拦（`passcodeNotSet`），密钥直接显示。
+    /// 没设锁屏密码的设备不拦（canEvaluatePolicy 报 passcodeNotSet），密钥直接显示。
     init(recoveryKey: String, confirm: @escaping () -> Void) {
         self.recoveryKey = recoveryKey
         self.confirm = confirm
         _revealed = State(initialValue: SystemAuth.passcodeNotSet())
+        _unavailable = State(initialValue: !SystemAuth.canAuthenticate())
+        _failureDetail = State(initialValue: SystemAuth.failureDetail())
     }
 
     var body: some View {
@@ -210,6 +217,8 @@ private struct RecoveryKeySection: View {
                 .foregroundStyle(Color(colors.textPrimary))
             if revealed {
                 revealedKey
+            } else if unavailable {
+                authUnavailable
             } else {
                 Button {
                     authenticate()
@@ -217,6 +226,36 @@ private struct RecoveryKeySection: View {
                     Text(.ChatBackup1.chatBackupRevealKey).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+    }
+
+    /// 验证用不了：一句人话说明，系统给的原因收进默认收起的“详情”（失败即停，不让按钮静默无反应）。
+    private var authUnavailable: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text(.ChatBackup1.chatBackupAuthUnavailable)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+            Button {
+                showsDetails.toggle()
+            } label: {
+                HStack {
+                    Text(.Common.commonDetails)
+                    Spacer(minLength: 0)
+                    WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
+                        .rotationEffect(.degrees(showsDetails ? 90 : 0))
+                }
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+                .frame(minHeight: WontonTheme.size.target)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showsDetails, let failureDetail {
+                Text(failureDetail)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .textSelection(.enabled)
             }
         }
     }
@@ -252,11 +291,17 @@ private struct RecoveryKeySection: View {
         }
     }
 
+    @MainActor
     private func authenticate() {
         Task {
-            // 成功才显示；取消和失败都不显示，也不另弹提示。
-            if await SystemAuth.authenticate(reason: String(localized: .ChatBackup1.chatBackupVerifyReason)) {
+            switch await SystemAuth.authenticate(reason: String(localized: .ChatBackup1.chatBackupVerifyReason)) {
+            case .passed:
                 revealed = true
+            case .cancelled:
+                break
+            case .unavailable(let detail):
+                unavailable = true
+                failureDetail = detail
             }
         }
     }

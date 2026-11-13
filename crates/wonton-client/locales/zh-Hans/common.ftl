@@ -145,3 +145,5 @@ browser-bad-request = 请从云吞里打开这个页面。
 app-lock-write-failed = 写不了 App 锁设置文件 { $path }：{ $reason }
 app-lock-read-failed = 读不了 App 锁设置文件 { $path }：{ $reason }
 app-lock-corrupt = App 锁设置文件 { $path } 坏了：{ $reason }
+pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
+pages-file-unreadable = 这台设备上的我的应用读不了，先用默认值：{ $reason }

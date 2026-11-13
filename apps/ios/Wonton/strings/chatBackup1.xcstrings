@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "chatBackup.authUnavailable": {
+      "comment": "Error under the reveal button when the system identity verification can't run; the user's own cancel shows nothing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identity verification isn't available right now. Try again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统验证暂时用不了，稍后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統驗證暫時用不了，稍後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いま本人確認を利用できません。のちほどお試しください。"
+          }
+        }
+      }
+    },
     "chatBackup.copy": {
       "comment": "Button that copies the recovery key to the local clipboard only.",
       "extractionState": "manual",

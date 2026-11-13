@@ -155,3 +155,5 @@ browser-bad-request = Open this page from Wonton.
 app-lock-write-failed = Can't write the app lock settings file { $path }: { $reason }
 app-lock-read-failed = Can't read the app lock settings file { $path }: { $reason }
 app-lock-corrupt = The app lock settings file { $path } is damaged: { $reason }
+pages-storage-problem = Could not save My Apps; they may fall back to an older state on next launch: { $error }
+pages-file-unreadable = Can't read My Apps on this device, so the defaults are in use for now: { $reason }

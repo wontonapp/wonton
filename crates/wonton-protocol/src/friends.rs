@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 /// 好友请求的标记键，放在 `m.room.create` 内容里，取值 `true`。
 pub const FRIEND_EVENT: &str = "app.wonton.friend";
 
+/// MSC4155 邀请过滤的账号数据类型。Tuwunel 只在这个不稳定名称上读名单；核心写默认值、客户端写个人屏蔽，共用这一份。
+pub const INVITE_FILTER_EVENT: &str = "org.matrix.msc4155.invite_permission_config";
+
 /// 标记好友请求，不携带凭据、授权或身份；身份取 Matrix 事件的发送者。只用于文档和类型说明。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendEvent {}

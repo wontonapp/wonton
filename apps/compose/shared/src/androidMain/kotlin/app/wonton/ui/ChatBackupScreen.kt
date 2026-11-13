@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.activity.compose.LocalActivity
+import androidx.biometric.BiometricManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -279,7 +281,16 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
     val activity = LocalActivity.current as FragmentActivity
     val auth = remember(activity) { SystemAuth(activity) }
     // 验证只对这一次显示有效：离开页面（组合销毁）再进要重新验证，不能进 rememberSaveable。
-    var revealed by remember { mutableStateOf(!auth.canAuthenticate()) }
+    // 没设锁屏（NONE_ENROLLED）直接显示；验证用不了（NO_HARDWARE 这类）按失败即停给提示，不再让按钮静默无反应。
+    var revealed by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(activity) {
+        when (val status = auth.canAuthenticate()) {
+            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> revealed = true
+            BiometricManager.BIOMETRIC_SUCCESS -> Unit
+            else -> authError = status
+        }
+    }
     // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
     var confirming by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -288,16 +299,58 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
             style = WontonTheme.typography.itemTitle,
             color = colors.textPrimary.toColor(),
         )
-        if (!revealed) {
-            val promptTitle = stringResource(R.string.chat_backup_recovery_key)
-            val promptReason = stringResource(R.string.chat_backup_verify_reason)
-            WontonButton(
-                stringResource(R.string.chat_backup_reveal_key),
-                { auth.prompt(promptTitle, promptReason) { shown -> if (shown) revealed = true } },
-                Modifier.fillMaxWidth(),
-            )
-            return
+        when {
+            revealed -> RevealedKey(context, key, { confirming = true })
+            authError != null -> AuthUnavailable(SystemAuth.codeName(authError!!))
+            else -> {
+                val promptTitle = stringResource(R.string.chat_backup_recovery_key)
+                val promptReason = stringResource(R.string.chat_backup_verify_reason)
+                WontonButton(
+                    stringResource(R.string.chat_backup_reveal_key),
+                    {
+                        auth.prompt(promptTitle, promptReason) { result ->
+                            // 只有通过才显示；取消什么都不做（也不提示），其余失败按失败即停给提示。
+                            when (result) {
+                                AuthResult.Passed -> {
+                                    revealed = true
+                                    authError = null
+                                }
+                                AuthResult.Cancelled -> Unit
+                                is AuthResult.Failed -> authError = result.code
+                            }
+                        }
+                    },
+                    Modifier.fillMaxWidth(),
+                )
+            }
         }
+    }
+    if (confirming) {
+        val dismiss = { confirming = false }
+        WontonDialog(
+            stringResource(R.string.chat_backup_saved_confirm_title),
+            stringResource(R.string.chat_backup_saved_confirm_message),
+            dismiss,
+            listOf(
+                WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
+                WontonDialogAction(stringResource(R.string.chat_backup_saved)) {
+                    dismiss()
+                    onConfirm()
+                },
+            ),
+        )
+    }
+}
+
+/** 验证通过后的明文密钥和复制/已保存按钮，从 RecoveryKey 拆出来保持函数短小；确认对话框留在调用方。 */
+@Composable
+private fun RevealedKey(
+    context: Context,
+    key: String,
+    onConfirming: () -> Unit,
+) {
+    val colors = WontonTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         // 不能长按选中：系统的拷贝不会标为敏感内容，复制只走“复制”按钮。
         Text(
             key,
@@ -317,23 +370,38 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
                 stringResource(R.string.chat_backup_copy), { copySensitive(context, key) },
                 Modifier.weight(1f), WontonButtonKind.SECONDARY,
             )
-            WontonButton(stringResource(R.string.chat_backup_saved), { confirming = true }, Modifier.weight(1f))
+            WontonButton(stringResource(R.string.chat_backup_saved), onConfirming, Modifier.weight(1f))
         }
     }
-    if (confirming) {
-        val dismiss = { confirming = false }
-        WontonDialog(
-            stringResource(R.string.chat_backup_saved_confirm_title),
-            stringResource(R.string.chat_backup_saved_confirm_message),
-            dismiss,
-            listOf(
-                WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
-                WontonDialogAction(stringResource(R.string.chat_backup_saved)) {
-                    dismiss()
-                    onConfirm()
-                },
-            ),
+}
+
+/** 验证用不了：一句人话说明，错误码收进默认收起的“详情”（失败即停，不让按钮静默无反应）。 */
+@Composable
+private fun AuthUnavailable(codeName: String) {
+    val colors = WontonTheme.colors
+    var detailShown by rememberSaveable { mutableStateOf(false) }
+    val interaction = remember { MutableInteractionSource() }
+    Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+        Text(
+            stringResource(R.string.chat_backup_auth_unavailable),
+            style = WontonTheme.typography.supporting,
+            color = colors.textSecondary.toColor(),
         )
+        Text(
+            stringResource(R.string.common_details),
+            Modifier
+                .clickable(interaction, indication = null, role = Role.Button) { detailShown = !detailShown }
+                .heightIn(min = WontonTheme.size.target),
+            style = WontonTheme.typography.supporting,
+            color = colors.textSecondary.toColor(),
+        )
+        if (detailShown) {
+            Text(
+                codeName,
+                style = WontonTheme.typography.supporting,
+                color = colors.textSecondary.toColor(),
+            )
+        }
     }
 }
 

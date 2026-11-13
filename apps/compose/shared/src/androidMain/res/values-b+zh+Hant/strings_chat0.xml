@@ -44,6 +44,8 @@
     <string name="chat_backup_value_incomplete">需要復原金鑰</string>
     <!-- Value on the Settings row: the status can't be determined. -->
     <string name="chat_backup_value_unknown">不確定</string>
+    <!-- Explains the system verification prompt shown before the recovery key. -->
+    <string name="chat_backup_verify_reason">驗證身分後查看復原金鑰</string>
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">正在重新連線…</string>
     <!-- 系統驗證彈窗裡的一句說明：驗證身分後查看復原金鑰（ADR-0102、盲測 11-12）。 -->

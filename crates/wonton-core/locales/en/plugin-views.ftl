@@ -26,6 +26,7 @@ permission-owner-identity = Know your username and email, and which language you
 permission-network-egress = Reach the internet and your local network
 permission-egress-proxy = Provide an Internet proxy (high permission)
 permission-network-lan = Open ports on your local network (high permission)
+permission-network-clients = Let other apps connect from your local network or the internet once you open the switch
 permission-network-host = Use the host's network (very high permission)
 permission-capability = Add the kernel capability { $name }
 permission-host-pid = Share the host process namespace (highest permission)

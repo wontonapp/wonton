@@ -7,15 +7,15 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::{TabDisplayChoice, TabRef};
+use crate::{MyAppEntry, TabRef};
 
-/// 全局账号数据事件类型，内容是 [`LayoutSettings`]：底栏和主面板。
+/// 全局账号数据事件类型，内容是 [`LayoutSettings`]：我的应用和主面板。
 pub const LAYOUT_EVENT: &str = "app.wonton.layout";
 
 /// 房间账号数据事件类型，内容是 [`RoomPanel`]：这个房间的面板。
 pub const ROOM_PANEL_EVENT: &str = "app.wonton.room_panel";
 
-/// 面板最多放几页。每多一页多一份 WebView 的内存，和底栏的上限同一个考虑。
+/// 面板最多放几页。每多一页多一份 WebView 的内存，和 [`crate::KEEP_ALIVE_PAGES`] 同一个考虑。
 pub const MAX_PANEL_PAGES: usize = 5;
 
 /// Bot 钉的页面的列表，以及收回同意。
@@ -69,7 +69,7 @@ pub enum PanelScope {
 
 /// 面板里用户放的一项：指向哪个页面，和用户起的名字。
 ///
-/// 同一个页面可以同时放在底栏和面板里，两处是两个实例，各自加载。
+/// 同一个页面可以同时在栈里和面板里，两处是两个实例，各自加载。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PanelEntry {
@@ -79,29 +79,18 @@ pub struct PanelEntry {
     pub title: Option<String>,
 }
 
-/// 一个页面在底栏和面板里各一份时的用户选择（账号数据里的一项）。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct TabDisplaySetting {
-    pub tab: TabRef,
-    pub display: TabDisplayChoice,
-}
-
-/// 账号数据 [`LAYOUT_EVENT`] 的内容：底栏和主面板。
+/// 账号数据 [`LAYOUT_EVENT`] 的内容：我的应用和主面板。
 ///
 /// 客户端改一项时按原始 JSON 只改那一处，其余原样写回：旧 App 读到不认识的取值会丢掉那一项，
 /// 整份重写会把别的设备存的配置冲掉（写法同 [`crate::ChatLayoutSettings`]）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LayoutSettings {
-    /// 底栏上的页面，按显示顺序。聊天和应用固定在列；其余是插件页、插件里的某一页或公网网页。
+    /// 我的应用里的行，按用户排的顺序。
     #[serde(default, deserialize_with = "drop_unknown")]
-    pub items: Vec<TabRef>,
-    /// 每个页面用户选的打开方式，没有的跟清单。
-    #[serde(default, deserialize_with = "drop_unknown")]
-    pub displays: Vec<TabDisplaySetting>,
-    /// 底栏上显示文字；关掉时只显示图标。缺这一项时按显示算。
-    #[serde(default = "labels_default")]
-    pub labels: bool,
+    pub my_apps: Vec<MyAppEntry>,
+    /// 新装的应用自动加到我的应用末尾。缺这一项时按开算。
+    #[serde(default = "auto_add_default")]
+    pub auto_add: bool,
     /// 主面板里的页面，按显示顺序。
     #[serde(default, deserialize_with = "drop_unknown")]
     pub panel: Vec<PanelEntry>,
@@ -110,15 +99,14 @@ pub struct LayoutSettings {
 impl Default for LayoutSettings {
     fn default() -> Self {
         Self {
-            items: Vec::new(),
-            displays: Vec::new(),
-            labels: labels_default(),
+            my_apps: Vec::new(),
+            auto_add: auto_add_default(),
             panel: Vec::new(),
         }
     }
 }
 
-fn labels_default() -> bool {
+fn auto_add_default() -> bool {
     true
 }
 
@@ -130,14 +118,14 @@ pub struct RoomPanel {
     pub pages: Vec<PanelEntry>,
 }
 
-/// 一处放着的页面实例。同一个页面可以同时放在底栏和面板里，两边互不影响：
+/// 一处放着的页面实例。同一个页面可以同时在栈里和面板里，两边互不影响：
 /// 加载、失败、重新加载都按实例记（ADR-0052），壳发页面自己的操作时用它指是哪一份。
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "place", rename_all = "snake_case")]
 pub enum PlacedTab {
-    /// 底栏上的那一份（含盖在主界面上的页面覆盖层）。
-    Bar { tab: TabRef },
+    /// 栈里的那一份。
+    Page { tab: TabRef },
     /// 面板里的那一份。
     Panel { scope: PanelScope, tab: TabRef },
 }
@@ -149,8 +137,8 @@ pub enum PlacedTab {
 pub enum PinTarget {
     /// 面板：主面板或某个房间的面板。
     Panel { scope: PanelScope },
-    /// 底栏。
-    Bar,
+    /// 我的应用。
+    MyApps,
 }
 
 /// 面板里一项的来源。用户随时可以拿掉任何来源的页面。
@@ -253,6 +241,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MyAppRef;
 
     fn plugin_page() -> TabRef {
         TabRef::Plugin {
@@ -264,28 +253,36 @@ mod tests {
     #[test]
     fn layout_settings_round_trips_through_json() {
         let settings = LayoutSettings {
-            items: vec![
-                TabRef::Chat,
-                plugin_page(),
-                TabRef::Url {
-                    url: "https://example.com/weather".into(),
+            my_apps: vec![
+                MyAppEntry {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.feed".into(),
+                    },
+                    title: None,
+                },
+                MyAppEntry {
+                    app: MyAppRef::Page {
+                        tab: TabRef::Url {
+                            url: "https://example.com/weather".into(),
+                        },
+                    },
+                    title: Some("天气".into()),
                 },
             ],
-            displays: vec![TabDisplaySetting {
-                tab: plugin_page(),
-                display: TabDisplayChoice::Fullscreen,
-            }],
-            labels: false,
+            auto_add: false,
             panel: vec![PanelEntry {
                 tab: plugin_page(),
                 title: Some("动态".into()),
             }],
         };
         let json = serde_json::to_value(&settings).unwrap();
-        assert_eq!(json["labels"], serde_json::json!(false));
+        assert_eq!(json["auto_add"], serde_json::json!(false));
         assert_eq!(
-            json["items"][2],
-            serde_json::json!({"type": "url", "url": "https://example.com/weather"})
+            json["my_apps"][1],
+            serde_json::json!({
+                "app": {"type": "page", "tab": {"type": "url", "url": "https://example.com/weather"}},
+                "title": "天气",
+            })
         );
         assert_eq!(
             json["panel"][0],
@@ -304,7 +301,8 @@ mod tests {
     fn missing_fields_fall_back_to_defaults() {
         let settings: LayoutSettings = serde_json::from_value(serde_json::json!({})).unwrap();
         assert_eq!(settings, LayoutSettings::default());
-        assert!(settings.labels);
+        assert!(settings.auto_add);
+        assert!(settings.my_apps.is_empty());
         assert!(settings.panel.is_empty());
 
         let panel: RoomPanel = serde_json::from_value(serde_json::json!({})).unwrap();
@@ -314,18 +312,25 @@ mod tests {
     #[test]
     fn unknown_entries_are_dropped_not_fatal() {
         let settings: LayoutSettings = serde_json::from_value(serde_json::json!({
-            "items": [
-                {"type": "chat"},
-                {"type": "hologram", "deck": 3},
+            "my_apps": [
+                {"app": {"type": "plugin", "plugin_id": "app.example.feed"}},
+                {"app": {"type": "hologram", "deck": 3}},
             ],
             "panel": [
                 {"tab": {"type": "url", "url": "https://example.com/"}},
                 {"tab": {"type": "plugin", "plugin_id": "app.example.feed"}, "title": 7},
             ],
-            "displays": [{"tab": {"type": "settings"}, "display": "infinite"}],
         }))
         .unwrap();
-        assert_eq!(settings.items, vec![TabRef::Chat]);
+        assert_eq!(
+            settings.my_apps,
+            vec![MyAppEntry {
+                app: MyAppRef::Plugin {
+                    plugin_id: "app.example.feed".into(),
+                },
+                title: None,
+            }]
+        );
         // 网址页是认识的取值，留下；标题类型不对的那条丢掉。
         assert_eq!(
             settings.panel,
@@ -336,7 +341,7 @@ mod tests {
                 title: None,
             }]
         );
-        assert!(settings.displays.is_empty());
+        assert!(settings.auto_add);
     }
 
     #[test]

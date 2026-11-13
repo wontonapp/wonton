@@ -139,7 +139,7 @@ fn settings_view(
     let phone = vec![
         SettingsEntry::Appearance,
         SettingsEntry::Language,
-        SettingsEntry::BottomBar,
+        SettingsEntry::MyApps,
         SettingsEntry::Notifications {
             method,
             push: push.clone(),
@@ -243,7 +243,7 @@ mod tests {
             [
                 SettingsEntry::Appearance,
                 SettingsEntry::Language,
-                SettingsEntry::BottomBar,
+                SettingsEntry::MyApps,
                 SettingsEntry::Notifications {
                     method: PushMethod::Keepalive,
                     push: PushStatus::NoEndpoint,

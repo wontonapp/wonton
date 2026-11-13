@@ -62,7 +62,7 @@ struct SettingsTab: View {
             AppearanceView(model: appearance)
                 .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle))
         case .chatBackup: ChatBackupView(model: chat)
-        case .bottomBar: TabSettingsView(plugins: plugins).wontonPushedScreen(TabText.bottomBar)
+        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
@@ -129,8 +129,8 @@ struct SettingsView: View {
                     showsForward: true
                 )
             }
-        case .bottomBar:
-            NavigationLink(value: SettingsRoute.bottomBar) { WontonRow(title: TabText.bottomBar, showsForward: true) }
+        case .myApps:
+            NavigationLink(value: SettingsRoute.myApps) { WontonRow(title: TabText.myApps, showsForward: true) }
         case .notifications:
             NavigationLink(value: SettingsRoute.notifications) {
                 WontonRow(title: String(localized: .Settings.notificationTitle), showsForward: true)

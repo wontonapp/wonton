@@ -403,13 +403,12 @@ extension View {
             .modifier(WontonCanvas())
     }
 
-    /// 根页面：连接状态和操作，底栏保留在根导航层。
+    /// 根页面：连接状态和操作。
     func wontonRootScreen<Trailing: View>(
         _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
         return wontonTopBar { bar }
-            .modifier(WontonTabBarSlot())
             .navigationTitle(bar.title)
             .toolbar(.hidden, for: .navigationBar)
             .modifier(WontonCanvas())
@@ -429,21 +428,6 @@ extension View {
         }
     }
 
-    @ViewBuilder fileprivate func wontonBottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
-        if #available(iOS 26, *) {
-            safeAreaBar(edge: .bottom, spacing: 0, content: bar)
-        } else {
-            safeAreaInset(edge: .bottom, spacing: 0, content: bar)
-        }
-    }
-}
-
-private struct WontonTabBarSlot: ViewModifier {
-    @Environment(\.wontonTabBar) private var tabBar
-
-    func body(content: Content) -> some View {
-        content.wontonBottomBar { tabBar }
-    }
 }
 
 private struct WontonCanvas: ViewModifier {

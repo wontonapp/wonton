@@ -4,7 +4,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{ChatForm, PortProtocol, TunnelSpec};
@@ -13,6 +12,7 @@ use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
+use super::manifest_clients::ClientsSpec;
 pub use super::manifest_gpu_images::GpuImages;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
@@ -222,8 +222,6 @@ pub struct WebUi {
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
-    #[serde(default = "default_web_display")]
-    pub display: String,
     #[serde(default)]
     pub sso: Sso,
     #[serde(default)]
@@ -240,6 +238,9 @@ pub struct WebUi {
     /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<String>,
+    /// 应用自己能接待匿名用户（自带房间码或口令），可以给它建访客链接（ADR-0090）。
+    #[serde(default)]
+    pub guests: bool,
 }
 
 /// 清单 `webui.accounts` 的取值。
@@ -270,10 +271,6 @@ pub(super) fn default_web_path() -> String {
     "/".to_owned()
 }
 
-pub(super) fn default_web_display() -> String {
-    "standard".to_owned()
-}
-
 pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;
 pub use super::manifest_mcp::{McpEndpoint, McpTransport};
 
@@ -298,202 +295,11 @@ pub struct BotServices {
     pub services: Vec<String>,
 }
 
+pub use super::manifest_permission::{Access, Permission};
 pub use super::secret_spec::{
     CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
     ShowOwner, is_secret_name,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Access {
-    Read,
-    Write,
-}
-
-/// 清单里声明、安装时由主人确认的权限。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub enum Permission {
-    StorageShare {
-        name: String,
-        access: Access,
-    },
-    StorageHome {
-        access: Access,
-    },
-    Models,
-    Tools,
-    // 只读，只给状态，不算高权限（规范“插件健康探测”）。
-    PluginsHealth,
-    MatrixBot,
-    Notify,
-    OwnerIdentity,
-    NetworkEgress,
-    EgressProxy,
-    NetworkLan,
-    NetworkHost,
-    Capability {
-        name: String,
-    },
-    HostPid,
-    HostIpc,
-    SecurityOpt,
-    Privileged,
-    DevicesGpu,
-    /// 宿主串口设备，路径由主人选（ADR-0036）。
-    DevicesSerial,
-    /// 宿主 USB 设备，路径由主人选（ADR-0036）。
-    DevicesUsb,
-    Device {
-        path: String,
-    },
-    DockerSocket,
-}
-
-impl Permission {
-    /// 高权限在安装确认时单独醒目展示。
-    pub fn is_high(&self) -> bool {
-        matches!(
-            self,
-            Self::NetworkLan
-                | Self::EgressProxy
-                | Self::NetworkHost
-                | Self::Capability { .. }
-                | Self::HostPid
-                | Self::HostIpc
-                | Self::SecurityOpt
-                | Self::Privileged
-                | Self::DevicesGpu
-                | Self::DevicesSerial
-                | Self::DevicesUsb
-                | Self::Device { .. }
-                | Self::DockerSocket
-        )
-    }
-}
-
-fn parse_access(value: &str) -> Option<Access> {
-    match value {
-        "read" => Some(Access::Read),
-        "write" => Some(Access::Write),
-        _ => None,
-    }
-}
-
-impl FromStr for Permission {
-    type Err = ManifestError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let unknown = || ManifestError::UnknownPermission(value.to_owned());
-        let simple = match value {
-            "models" => Some(Self::Models),
-            "tools" => Some(Self::Tools),
-            "plugins.health" => Some(Self::PluginsHealth),
-            "matrix.bot" => Some(Self::MatrixBot),
-            "notify" => Some(Self::Notify),
-            "owner.identity" => Some(Self::OwnerIdentity),
-            "network.egress" => Some(Self::NetworkEgress),
-            "egress.proxy" => Some(Self::EgressProxy),
-            "network.lan" => Some(Self::NetworkLan),
-            "network.host" => Some(Self::NetworkHost),
-            "host.pid" => Some(Self::HostPid),
-            "host.ipc" => Some(Self::HostIpc),
-            "security.opt" => Some(Self::SecurityOpt),
-            "privileged" => Some(Self::Privileged),
-            "devices.gpu" => Some(Self::DevicesGpu),
-            "devices.serial" => Some(Self::DevicesSerial),
-            "devices.usb" => Some(Self::DevicesUsb),
-            "docker.socket" => Some(Self::DockerSocket),
-            _ => None,
-        };
-        if let Some(permission) = simple {
-            return Ok(permission);
-        }
-        if let Some(name) = value.strip_prefix("cap.") {
-            let name = name.to_ascii_uppercase();
-            if !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
-            {
-                return Ok(Self::Capability { name });
-            }
-            return Err(unknown());
-        }
-        if let Some(rest) = value.strip_prefix("storage.share.") {
-            let (name, access) = rest.split_once(':').ok_or_else(unknown)?;
-            let access = parse_access(access).ok_or_else(unknown)?;
-            if !is_label(name) {
-                return Err(unknown());
-            }
-            return Ok(Self::StorageShare {
-                name: name.to_owned(),
-                access,
-            });
-        }
-        if let Some(access) = value.strip_prefix("storage.home:") {
-            let access = parse_access(access).ok_or_else(unknown)?;
-            return Ok(Self::StorageHome { access });
-        }
-        if let Some(path) = value.strip_prefix("devices.")
-            && path.starts_with('/')
-        {
-            return Ok(Self::Device {
-                path: path.to_owned(),
-            });
-        }
-        Err(unknown())
-    }
-}
-
-impl fmt::Display for Permission {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let access = |access: &Access| match access {
-            Access::Read => "read",
-            Access::Write => "write",
-        };
-        match self {
-            Self::StorageShare { name, access: a } => {
-                write!(f, "storage.share.{name}:{}", access(a))
-            }
-            Self::StorageHome { access: a } => write!(f, "storage.home:{}", access(a)),
-            Self::Models => f.write_str("models"),
-            Self::Tools => f.write_str("tools"),
-            Self::PluginsHealth => f.write_str("plugins.health"),
-            Self::MatrixBot => f.write_str("matrix.bot"),
-            Self::Notify => f.write_str("notify"),
-            Self::OwnerIdentity => f.write_str("owner.identity"),
-            Self::NetworkEgress => f.write_str("network.egress"),
-            Self::EgressProxy => f.write_str("egress.proxy"),
-            Self::NetworkLan => f.write_str("network.lan"),
-            Self::NetworkHost => f.write_str("network.host"),
-            Self::Capability { name } => write!(f, "cap.{name}"),
-            Self::HostPid => f.write_str("host.pid"),
-            Self::HostIpc => f.write_str("host.ipc"),
-            Self::SecurityOpt => f.write_str("security.opt"),
-            Self::Privileged => f.write_str("privileged"),
-            Self::DevicesGpu => f.write_str("devices.gpu"),
-            Self::DevicesSerial => f.write_str("devices.serial"),
-            Self::DevicesUsb => f.write_str("devices.usb"),
-            Self::Device { path } => write!(f, "devices.{path}"),
-            Self::DockerSocket => f.write_str("docker.socket"),
-        }
-    }
-}
-
-impl TryFrom<String> for Permission {
-    type Error = ManifestError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
-impl From<Permission> for String {
-    fn from(permission: Permission) -> Self {
-        permission.to_string()
-    }
-}
 
 /// `x-wonton` 扩展字段。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -572,6 +378,9 @@ pub struct Manifest {
     /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
     #[serde(default)]
     pub lan: Option<LanSpec>,
+    /// 第三方原生 App 的入口，见规范“第三方 App 入口”；要和 `network.clients` 权限一起声明。
+    #[serde(default)]
+    pub clients: Option<ClientsSpec>,
     /// 已配对设备经隧道访问的端口；不发布到宿主网络。
     #[serde(default)]
     pub tunnel: Option<TunnelSpec>,
@@ -649,6 +458,7 @@ impl Manifest {
         super::requirements::validate(self, langs)?;
         super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;
+        super::manifest_clients::validate(self, langs)?;
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;

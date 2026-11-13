@@ -5,6 +5,7 @@ import android.content.Intent
 import android.provider.Settings
 import android.view.WindowManager
 import androidx.activity.compose.LocalActivity
+import androidx.biometric.BiometricManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +50,10 @@ fun AppLockGate(core: ClientCore, content: @Composable () -> Unit) {
     val activity = LocalActivity.current as? FragmentActivity
     val auth = remember(activity) { activity?.let(::SystemAuth) }
     // 设备后来没了锁屏（主人关了系统密码）时验不过去：停在锁页，指去系统设置。
-    val canAuthenticate = remember(view.locked, activity) { auth?.canAuthenticate() ?: false }
+    val canAuthenticate =
+        remember(view.locked, activity) {
+            auth?.canAuthenticate() != BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED
+        }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val context = LocalContext.current
     val promptTitle = stringResource(R.string.applock_locked_title)
@@ -59,7 +63,7 @@ fun AppLockGate(core: ClientCore, content: @Composable () -> Unit) {
         if (view.locked) {
             AppLockScreen(
                 needsDeviceLock = !canAuthenticate,
-                onUnlock = { auth?.prompt(promptTitle, promptReason) { passed -> if (passed) core.unlockApp() } },
+                onUnlock = { auth?.prompt(promptTitle, promptReason) { passed -> if (passed == AuthResult.Passed) core.unlockApp() } },
                 onOpenSettings = { context.openSecuritySettings() },
             )
         }
@@ -67,7 +71,7 @@ fun AppLockGate(core: ClientCore, content: @Composable () -> Unit) {
     // 页面看得见才弹验证：在后台弹出的会被系统收走，取消后停在锁页可再点。
     DisposableEffect(lifecycle, view.locked, auth) {
         if (auth == null || !view.locked) return@DisposableEffect onDispose {}
-        val prompt = { auth.prompt(promptTitle, promptReason) { passed -> if (passed) core.unlockApp() } }
+        val prompt = { auth.prompt(promptTitle, promptReason) { passed -> if (passed == AuthResult.Passed) core.unlockApp() } }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) prompt()
         }
