@@ -38,6 +38,8 @@ pub enum Permission {
     NetworkEgress,
     EgressProxy,
     NetworkLan,
+    // 不算高权限：装好不生效，等主人打开开关（ADR-0021）。
+    NetworkClients,
     NetworkHost,
     Capability {
         name: String,
@@ -102,6 +104,7 @@ impl FromStr for Permission {
             "network.egress" => Some(Self::NetworkEgress),
             "egress.proxy" => Some(Self::EgressProxy),
             "network.lan" => Some(Self::NetworkLan),
+            "network.clients" => Some(Self::NetworkClients),
             "network.host" => Some(Self::NetworkHost),
             "host.pid" => Some(Self::HostPid),
             "host.ipc" => Some(Self::HostIpc),
@@ -173,6 +176,7 @@ impl fmt::Display for Permission {
             Self::NetworkEgress => f.write_str("network.egress"),
             Self::EgressProxy => f.write_str("egress.proxy"),
             Self::NetworkLan => f.write_str("network.lan"),
+            Self::NetworkClients => f.write_str("network.clients"),
             Self::Capability { name } => write!(f, "cap.{name}"),
             Self::HostPid => f.write_str("host.pid"),
             Self::HostIpc => f.write_str("host.ipc"),

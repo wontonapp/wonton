@@ -12,6 +12,7 @@ use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
+use super::manifest_clients::ClientsSpec;
 pub use super::manifest_gpu_images::GpuImages;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
@@ -300,11 +301,11 @@ pub struct BotServices {
     pub services: Vec<String>,
 }
 
+pub use super::manifest_permission::{Access, Permission};
 pub use super::secret_spec::{
     CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
     ShowOwner, is_secret_name,
 };
-pub use super::manifest_permission::{Access, Permission};
 
 /// `x-wonton` 扩展字段。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -383,6 +384,9 @@ pub struct Manifest {
     /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
     #[serde(default)]
     pub lan: Option<LanSpec>,
+    /// 第三方原生 App 的入口，见规范“第三方 App 入口”；要和 `network.clients` 权限一起声明。
+    #[serde(default)]
+    pub clients: Option<ClientsSpec>,
     /// 已配对设备经隧道访问的端口；不发布到宿主网络。
     #[serde(default)]
     pub tunnel: Option<TunnelSpec>,
@@ -460,6 +464,7 @@ impl Manifest {
         super::requirements::validate(self, langs)?;
         super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;
+        super::manifest_clients::validate(self, langs)?;
         validate_tunnel(self)?;
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;

@@ -19,6 +19,7 @@ mod capability_manifest;
 mod capability_optional_lifecycle;
 mod chat_layout;
 mod check;
+mod clients_manifest_package;
 mod configs;
 mod configs_docker;
 mod docker_timeouts;
