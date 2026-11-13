@@ -271,6 +271,36 @@
           }
         }
       }
+    },
+    "friends.myCode": {
+      "comment": "Row in the add-friend sheet and title of the panel that shows my own matrix.to QR code; also the QR image's accessibility label.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My QR Code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的二维码"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我的QR碼"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自分のQRコード"
+          }
+        }
+      }
     }
   }
 }

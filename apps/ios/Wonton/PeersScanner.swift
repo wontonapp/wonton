@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 import WontonClient
 
@@ -6,11 +5,6 @@ import WontonClient
 struct PeersScannerView: View {
     let model: PeersModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.openURL) private var openURL
-    @Environment(\.wontonColors) private var colors
-    @State private var camera = CameraAccess.current
-    @State private var scannerProblem: String?
     @State private var scanProblem: Problem?
     @State private var pastedCode = ""
     /// 码进画面报一次，移出再进来会再报；提交过就不再提交。
@@ -18,47 +12,11 @@ struct PeersScannerView: View {
 
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s16) {
-            Group {
-                switch camera {
-                case .authorized:
-                    if let scannerProblem {
-                        WontonNotice(icon: .cameraOff, title: scannerProblem) {
-                            Button(.Peers3.peersCameraReopen) { self.scannerProblem = nil }
-                                .buttonStyle(WontonButtonStyle(kind: .secondary))
-                        }
-                    } else {
-                        QRScannerView(onCode: submit) { scannerProblem = $0 }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
-                    }
-                case .notDetermined:
-                    HStack(spacing: WontonTheme.spacing.s12) {
-                        ProgressView()
-                        Text(.Peers3.peersCameraWaiting).wontonText(WontonTheme.typography.body)
-                    }
-                    .foregroundStyle(Color(colors.textPrimary))
-                case .denied:
-                    WontonNotice(icon: .cameraOff, title: String(localized: .Peers1.peersCameraDenied)) {
-                        Button(.Common.commonOpenSettings) {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-                        }
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
-                    }
-                case .unsupported:
-                    WontonNotice(icon: .cameraOff, title: String(localized: .Peers.qrScannerUnsupportedPaste),
-                        isError: false)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            QRCameraArea(unsupported: .Peers.qrScannerUnsupportedPaste, onCode: submit)
             pasteSection
         }
         .padding(WontonTheme.spacing.pageInset)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task { await askForCamera() }
-        .onChange(of: scenePhase) { _, phase in
-            // 可能刚从系统设置里改了相机权限回来。
-            if phase == .active { camera = .current }
-        }
         .onChange(of: model.viewModel.state) { _, state in
             // 页面自己的首帧刷新也会走 Loading→Ready：没提交过就不收起。
             guard submitted else { return }
@@ -120,11 +78,5 @@ struct PeersScannerView: View {
         case .codeRevoked: String(localized: .Peers1.peersErrorCodeRevoked)
         default: String(localized: .Peers0.peersErrorCodeInvalid)
         }
-    }
-
-    private func askForCamera() async {
-        guard camera == .notDetermined else { return }
-        _ = await AVCaptureDevice.requestAccess(for: .video)
-        camera = .current
     }
 }
