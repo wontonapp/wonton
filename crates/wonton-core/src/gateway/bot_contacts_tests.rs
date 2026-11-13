@@ -158,6 +158,7 @@ async fn home() -> Home {
             link: Arc::new(Offline),
             invites: Arc::new(Offline),
             effects: effects.clone(),
+            open_federation: false,
         },
     )
     .unwrap();

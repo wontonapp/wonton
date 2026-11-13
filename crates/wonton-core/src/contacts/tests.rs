@@ -201,11 +201,29 @@ pub(crate) struct Server {
     pub(crate) effects: Arc<FakeEffects>,
     link: Arc<FakeLink>,
     pub(crate) dir: tempfile::TempDir,
+    open_federation: bool,
 }
 
 impl Server {
     pub(crate) fn start(net: &Arc<Net>, name: &str) -> Self {
-        Self::open(net, name, tempfile::tempdir().unwrap(), Arc::default())
+        Self::open(
+            net,
+            name,
+            tempfile::tempdir().unwrap(),
+            Arc::default(),
+            false,
+        )
+    }
+
+    /// 有名字模式（ADR-0051）：开放联邦，加“人”不要求对方配对。
+    pub(crate) fn start_open(net: &Arc<Net>, name: &str) -> Self {
+        Self::open(
+            net,
+            name,
+            tempfile::tempdir().unwrap(),
+            Arc::default(),
+            true,
+        )
     }
 
     fn open(
@@ -213,6 +231,7 @@ impl Server {
         name: &str,
         dir: tempfile::TempDir,
         directory: Arc<FakeDirectory>,
+        open_federation: bool,
     ) -> Self {
         let link = Arc::new(FakeLink {
             own: name.to_owned(),
@@ -229,6 +248,7 @@ impl Server {
                 link: link.clone(),
                 invites: invites.clone(),
                 effects: effects.clone(),
+                open_federation,
             },
         )
         .unwrap();
@@ -243,12 +263,13 @@ impl Server {
             effects,
             link,
             dir,
+            open_federation,
         }
     }
 
     /// 核心重启：同一份记录重新读。
     pub(crate) fn restart(self, net: &Arc<Net>, name: &str) -> Self {
-        Self::open(net, name, self.dir, self.directory)
+        Self::open(net, name, self.dir, self.directory, self.open_federation)
     }
 
     /// 加一个本机 Bot：私人 Bot 归 `keeper`；`keeper` 是 `owner` 时当共享 Bot。
