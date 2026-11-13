@@ -42,7 +42,7 @@ private val SCANNER_HEIGHT = 280.dp
  * 相机中途出错时说原因，按“重试”重新开。扫到的码交给 [onCode]，同一个码只报一次。
  */
 @Composable
-internal fun CameraArea(onCode: (String) -> Unit) {
+internal fun CameraArea(onCode: (String) -> Unit, singleScan: Boolean = false) {
     val context = LocalContext.current
     val activity = LocalActivity.current
     var access by remember { mutableStateOf(cameraAccess(context)) }
@@ -77,6 +77,7 @@ internal fun CameraArea(onCode: (String) -> Unit) {
             Modifier.fillMaxWidth()
                 .height(SCANNER_HEIGHT)
                 .clip(RoundedCornerShape(WontonTheme.radii.card)),
+            singleScan = singleScan,
         )
         CameraAccess.Asking -> Text(
             stringResource(R.string.camera_waiting),
