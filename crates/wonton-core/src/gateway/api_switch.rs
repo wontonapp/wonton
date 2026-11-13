@@ -1,5 +1,7 @@
 //! 插件可选权限的开关和上传安装的查询参数解析（ADR-0057）。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::Extension;
@@ -10,9 +12,9 @@ use axum::response::{IntoResponse, Json, Response};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-use super::api::{InstallQuery, error_response, install_error, languages, owner_denied};
+use super::api::{InstallQuery, error_response, install_error, languages};
 use super::api_body::package;
-use super::{Gateway, TunnelPeer};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
 use crate::plugin::store::{EnabledPermission, OpenedBy};
@@ -28,7 +30,9 @@ pub async fn set_plugin_permission(
     body: Bytes,
 ) -> Response {
     // 可选权限可能授予宿主 root 能力，安装授权不能代替主人的权限确认。
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {

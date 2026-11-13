@@ -7,44 +7,23 @@ use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
-use wonton_protocol::{
-    PERMISSION_REQUIRED, PermissionItem, PermissionRequired, RoleAssignment, RoleDef, RoleDraft,
-    RoleList,
-};
+use wonton_protocol::{PermissionItem, RoleAssignment, RoleDef, RoleDraft, RoleList};
 
-use super::api::{error_response, languages, owner_denied};
-use super::{ERROR_HEADER, Gateway, TunnelPeer};
+use super::api::{error_response, languages};
+use super::permissions;
+use super::{Gateway, TunnelPeer};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::roles::RolesError;
 
-/// 只收主人的接口：不是主人时 403 带上缺的那一项（[`PermissionItem::Owner`]），其余拒绝照旧。
+/// 只收主人的接口：缺的是 [`PermissionItem::Owner`]。
 fn owner_only(
     gateway: &Gateway,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Option<Response> {
-    let denied = owner_denied(gateway, peer, headers)?;
-    if denied
-        .headers()
-        .get(ERROR_HEADER)
-        .is_some_and(|kind| kind == PERMISSION_REQUIRED)
-    {
-        let mut response = (
-            StatusCode::FORBIDDEN,
-            Json(PermissionRequired {
-                missing: PermissionItem::Owner,
-            }),
-        )
-            .into_response();
-        response
-            .headers_mut()
-            .insert(ERROR_HEADER, HeaderValue::from_static(PERMISSION_REQUIRED));
-        return Some(response);
-    }
-    Some(denied)
+    permissions::require(gateway, peer, headers, PermissionItem::Owner)
 }
 
 /// 一条角色记录配上当前用的人数。

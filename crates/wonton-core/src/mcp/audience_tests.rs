@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use wonton_protocol::{
     AgentPermissionKind, AgentPermissionOption, AgentPermissionRequest, Answer, BotKeeper, BotRef,
-    ConfirmationCard, ConfirmationOrigin, ConfirmationRequester,
+    ConfirmationCard, ConfirmationOrigin, ConfirmationRequester, MemberStatus,
 };
 
 use super::Caller;
@@ -75,6 +75,11 @@ fn room(fake: &Fake, id: &str, members: &[&str]) {
 fn member(s: &Setup, username: &str, can_install_plugins: bool) {
     s.members
         .invite(MemberRecord {
+            username: username.to_owned(),
+            user_id: user(username),
+            display_name: username.to_owned(),
+            email: None,
+            status: MemberStatus::Active,
             // 能不能装插件改成看角色：能装的人给权限最大的管理员模板。
             role_id: if can_install_plugins {
                 "admin"
@@ -82,7 +87,10 @@ fn member(s: &Setup, username: &str, can_install_plugins: bool) {
                 "friend"
             }
             .to_owned(),
-            ..MemberRecord::for_test(username)
+            wants_private_bot: true,
+            private_bot: None,
+            pairing_code_hash: None,
+            pairing_code_expires_at_ms: None,
         })
         .unwrap();
 }

@@ -1,6 +1,8 @@
 //! 共享 Bot 的接口（ADR-0045）：主人在 App 里建一个归全家的 Bot。私人 Bot 的建法（家人加入时）在别的
 //! 任务里做，到时候走核心内部的 [`crate::plugin::PluginManager::add_bot`]。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -11,7 +13,7 @@ use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::NewSharedBot;
 
 use super::api::install_error;
-use super::{Gateway, TunnelPeer, api, pages};
+use super::{Gateway, TunnelPeer, api, pages, permissions};
 
 /// `POST SHARED_BOTS_PATH`：请求体 [`NewSharedBot`]，返回 [`wonton_protocol::BotRef`]。
 pub async fn create_shared(
@@ -20,7 +22,9 @@ pub async fn create_shared(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let req: NewSharedBot = match serde_json::from_slice(&body) {

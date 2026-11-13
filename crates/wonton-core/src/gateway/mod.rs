@@ -66,6 +66,7 @@ mod pages;
 mod panel_pins;
 mod peers;
 pub mod people_limits;
+pub(crate) mod permissions;
 mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
@@ -102,7 +103,7 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
-use wonton_protocol::{Gate, MemberStatus, Permissions, Role};
+use wonton_protocol::{MemberStatus, Permissions, Role};
 
 use crate::roles::RolesError;
 
@@ -548,11 +549,6 @@ impl Gateway {
         self.roles
             .get(&record.role_id)
             .map_or_else(Permissions::strictest, |role| role.permissions)
-    }
-
-    /// 这个人能不能装卸、升级插件：主人总是能，家人看角色里的“装、删、升级应用”。
-    pub(crate) fn can_install_plugins(&self, person: &Person) -> bool {
-        self.permissions(person).install_apps == Gate::Allow
     }
 
     /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。

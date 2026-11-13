@@ -10,6 +10,8 @@
 //! | POST | `/_wonton/api/pairing-codes` | 发一个配对码，请求体可选 `{"direct_addrs": ["192.168.1.2:18482"]}`；经隧道的已配对设备也能调（App 里的“添加设备”），码归这台设备的人 |
 //! | POST | `/_wonton/api/pairing-codes/first` | 首次配对码，和状态页上的是同一个；已经有设备时 409 `paired`。请求体同上 |
 
+use wonton_protocol::PermissionItem;
+
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -22,8 +24,8 @@ use iroh::EndpointId;
 use serde::Deserialize;
 use serde_json::json;
 
-use super::api::{denied, error_response, languages, owner_denied, plugin_denied, requester};
-use super::{Gateway, TunnelPeer, lan};
+use super::api::{denied, error_response, languages, plugin_denied, requester};
+use super::{Gateway, TunnelPeer, lan, permissions};
 use crate::device::DeviceError;
 use crate::l10n;
 use crate::pairing::{CodeKind, IssuedCode};
@@ -62,7 +64,11 @@ pub async fn list(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    let devices = if person.is_owner() {
+    // 有“管理成员”的人看所有人的设备，其余人只看自己的（ADR-0088）。
+    let devices = if gateway
+        .permissions(&person)
+        .allows(wonton_protocol::PermissionItem::ManageMembers)
+    {
         gateway.tunnel.devices.list()
     } else {
         gateway.tunnel.devices.of_user(&person.username)
@@ -135,8 +141,10 @@ pub async fn remove(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    // 家人的设备只能吊销自己的（ADR-0045）。
-    if !person.is_owner()
+    // 有“管理成员”的人吊销谁的都行，其余人只能吊销自己的设备。
+    if !gateway
+        .permissions(&person)
+        .allows(wonton_protocol::PermissionItem::ManageMembers)
         && gateway
             .tunnel
             .devices
@@ -227,7 +235,7 @@ pub async fn first_pairing_code(
     headers: HeaderMap,
     body: String,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) = permissions::require(&gateway, peer, &headers, PermissionItem::Owner) {
         return denied;
     }
     let langs = languages(&headers);

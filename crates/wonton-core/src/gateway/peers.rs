@@ -22,7 +22,8 @@ use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{PEER_ERROR_HEADER, PeerError, PeerErrorBody, PeerProblem, PeerScan};
 
 use super::isolation;
-use super::{Gateway, TunnelPeer, api};
+use super::{Gateway, TunnelPeer, api, permissions};
+use wonton_protocol::PermissionItem;
 
 use crate::plugin::languages::Languages;
 
@@ -45,12 +46,10 @@ fn denied(
     let Some(person) = gateway.device_person(peer.map(|Extension(peer)| peer)) else {
         return Some(error(&languages(headers), PeerError::Unauthenticated));
     };
-    if !person.is_owner() {
-        return Some(api::error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "服务器配对只有主人能管",
-        ));
+    if let Some(denied) =
+        permissions::require_person(gateway, &person, PermissionItem::ServerSettings)
+    {
+        return Some(denied);
     }
     if isolation::not_from_another_page(headers, &gateway.core_origin()) {
         None

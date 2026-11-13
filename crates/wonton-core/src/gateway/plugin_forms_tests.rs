@@ -101,8 +101,9 @@ async fn non_compose_upgrades_do_not_touch_the_installed_version() {
     }
 }
 
+/// 装得动应用的人（主人和有“装、删、升级应用”的角色）看得到已装的 `scope`，其余人看不到。
 #[tokio::test]
-async fn only_the_owner_sees_the_installed_scope() {
+async fn only_installers_see_the_installed_scope() {
     let index = tempfile::tempdir().unwrap();
     let compose = WHOAMI
         .replace("  icon: icon.svg\n", "")
@@ -132,7 +133,7 @@ async fn only_the_owner_sees_the_installed_scope() {
             display_name: "Mia".into(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
-            role_id: "admin".to_owned(),
+            role_id: "friend".to_owned(),
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,
@@ -143,10 +144,26 @@ async fn only_the_owner_sees_the_installed_scope() {
         .devices
         .add_if(device, None, Some("mia".into()), |_| true)
         .unwrap();
-    for path in [
-        "/_wonton/api/plugins/app.whoami",
-        "/_wonton/api/store/plugin?source=github:example/whoami",
-    ] {
+    // 一个“什么都看得到，但不能装、删、升级”的角色：看得到详情，看不到 scope。
+    let reply = send_as(
+        &h.app,
+        None,
+        Method::POST,
+        CORE,
+        wonton_protocol::ROLES_PATH,
+        &[
+            ("authorization", bearer().as_str()),
+            ("content-type", "application/json"),
+        ],
+        r#"{"name":"看得到","permissions":{"open_apps":{"type":"all"}}}"#,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.text());
+    h.members
+        .set_role("mia", reply.json()["id"].as_str().unwrap())
+        .unwrap();
+    // 插件详情看得到，scope 看不到；商店详情的接口要“装、删、升级应用”，看路由表。
+    for path in ["/_wonton/api/plugins/app.whoami"] {
         let owner = send_as(
             &h.app,
             None,
@@ -170,26 +187,21 @@ async fn only_the_owner_sees_the_installed_scope() {
             member.text()
         );
     }
-}
 
-pub(super) fn permission_required_routes() -> Vec<(Method, &'static str, &'static str)> {
-    vec![
-        (
-            Method::PUT,
-            "/_wonton/api/plugins/app.whoami/scope",
-            "{\"type\":\"all\"}",
-        ),
-        (
-            Method::GET,
-            "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
-            "",
-        ),
-        (
-            Method::PUT,
-            "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
-            "{\"enabled\":false}",
-        ),
-    ]
+    // 有“装、删、升级应用”的角色和主人一样看得到 scope。
+    h.members.set_role("mia", "admin").unwrap();
+    let member = send_as(
+        &h.app,
+        Some(device),
+        Method::GET,
+        CORE,
+        "/_wonton/api/plugins/app.whoami",
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(member.status, StatusCode::OK, "{}", member.text());
+    assert_eq!(member.json()["scope"]["type"], "all", "{}", member.text());
 }
 
 #[tokio::test]

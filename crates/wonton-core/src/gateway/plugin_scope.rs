@@ -7,11 +7,13 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use wonton_protocol::PluginScope;
 
-use super::api::{error_response, install_error, languages, owner_denied};
+use super::api::{error_response, install_error, languages};
 use super::api_body::invalid_body;
-use super::{Gateway, TunnelPeer};
+
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::PluginId;
+use wonton_protocol::PermissionItem;
 
 pub(super) async fn scope(
     State(gateway): State<Arc<Gateway>>,
@@ -20,7 +22,9 @@ pub(super) async fn scope(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     if let Err(error) = PluginId::parse(&id) {

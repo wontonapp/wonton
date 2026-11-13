@@ -7,6 +7,8 @@
 //! | PUT | `/_wonton/api/shares/{id}` | `ShareGrantUpdate` / `ShareGrant` |
 //! | DELETE | `/_wonton/api/shares/{id}` | 204 |
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -51,7 +53,9 @@ pub async fn create(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        super::super::permissions::require(&gateway, peer, &headers, PermissionItem::ShareApps)
+    {
         return denied;
     }
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
@@ -88,7 +92,9 @@ pub async fn update(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        super::super::permissions::require(&gateway, peer, &headers, PermissionItem::ShareApps)
+    {
         return denied;
     }
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
@@ -124,7 +130,9 @@ pub async fn revoke(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        super::super::permissions::require(&gateway, peer, &headers, PermissionItem::ShareApps)
+    {
         return denied;
     }
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);

@@ -1,5 +1,7 @@
 //! 镜像加速管理：只给主人（ADR-0045）。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -9,14 +11,16 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{RegistryMirrorTestRequest, RegistryMirrorUpdate};
 
-use super::{Gateway, TunnelPeer, api};
+use super::{Gateway, TunnelPeer, api, permissions};
 
 pub(super) async fn get(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(response) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(response) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return response;
     }
     match gateway
@@ -35,7 +39,9 @@ pub(super) async fn put(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(response) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(response) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return response;
     }
     let update = match serde_json::from_slice::<RegistryMirrorUpdate>(&body) {
@@ -64,7 +70,9 @@ pub(super) async fn test(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(response) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(response) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return response;
     }
     let request = match serde_json::from_slice::<RegistryMirrorTestRequest>(&body) {

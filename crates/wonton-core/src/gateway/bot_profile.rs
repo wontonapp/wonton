@@ -9,9 +9,11 @@ use serde_json::json;
 use wonton_protocol::BotProfileUpdate;
 
 use super::api::error_response;
+use super::permissions;
 use super::{Gateway, TunnelPeer, isolation};
 use crate::plugin::PluginId;
 use crate::plugin::bot_profile::ProfileError;
+use wonton_protocol::PermissionItem;
 
 pub(super) async fn save(
     State(gateway): State<Arc<Gateway>>,
@@ -20,23 +22,22 @@ pub(super) async fn save(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    match gateway.device_person(peer.map(|Extension(peer)| peer)) {
+    // 只认经隧道连接的设备，主人令牌不行：资料从网页和 App 的设备上下文改（ADR-0017）。
+    let person = match gateway.device_person(peer.map(|Extension(peer)| peer)) {
+        Some(person) => person,
         None => {
             return error_response(
                 StatusCode::UNAUTHORIZED,
                 "unauthenticated",
-                "需要经隧道连接的主人设备",
+                "需要经隧道连接的设备",
             );
         }
-        // Bot 的名字和头像全家都看得到，由主人定（ADR-0045“谁能做什么”）。
-        Some(person) if !person.is_owner() => {
-            return error_response(
-                StatusCode::FORBIDDEN,
-                "permission_required",
-                "Bot 资料只有主人能改",
-            );
-        }
-        Some(_) => {}
+    };
+    // Bot 的名字和头像归装卸应用的人管（ADR-0088）。
+    if let Some(denied) =
+        permissions::require_person(&gateway, &person, PermissionItem::InstallApps)
+    {
+        return denied;
     }
     if !isolation::not_from_another_page(&headers, &gateway.core_origin()) {
         return error_response(

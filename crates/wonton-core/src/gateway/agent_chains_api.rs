@@ -18,8 +18,9 @@ use wonton_protocol::{
 };
 
 use super::api::{error_response, requester};
-use super::{Gateway, TunnelPeer};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
+use wonton_protocol::PermissionItem;
 
 #[derive(Deserialize)]
 pub(super) struct WaitParams {
@@ -166,16 +167,10 @@ pub(super) async fn set_limits(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let person = match person(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(response) => return *response,
-    };
-    if !person.is_owner() {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "只有主人能改上限",
-        );
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
+        return denied;
     }
     let Some(chains) = &gateway.agent_chains else {
         return unavailable(&super::api::languages(&headers));
@@ -208,16 +203,10 @@ pub(super) async fn set_concurrency(
     Path(plugin): Path<String>,
     body: Bytes,
 ) -> Response {
-    let person = match person(&gateway, peer, &headers) {
-        Ok(person) => person,
-        Err(response) => return *response,
-    };
-    if !person.is_owner() {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "只有主人能改并发",
-        );
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
+        return denied;
     }
     let Some(chains) = &gateway.agent_chains else {
         return unavailable(&super::api::languages(&headers));

@@ -153,3 +153,49 @@ fn a_draft_without_permission_fields_defaults_to_the_strictest() {
     let draft: RoleDraft = serde_json::from_value(json!({"name": "客人"})).unwrap();
     assert_eq!(draft.permissions, Permissions::strictest());
 }
+
+/// 每一项只在对应的取值上放行；空名单和“不能”都算没有。
+#[test]
+fn permissions_allow_exactly_what_they_name() {
+    let mut permissions = Permissions::strictest();
+    for item in [
+        PermissionItem::OpenApps,
+        PermissionItem::PluginAdmin,
+        PermissionItem::InstallApps,
+        PermissionItem::AddFriends,
+        PermissionItem::ShareApps,
+        PermissionItem::PrivateBot,
+    ] {
+        assert!(!permissions.allows(item), "{item:?} 最严时不该放行");
+    }
+    assert!(
+        !Permissions::owner().allows(PermissionItem::Owner),
+        "主人不在权限项里"
+    );
+
+    permissions.open_apps = AppScope::Selected {
+        plugin_ids: vec!["app.snake".into()],
+    };
+    permissions.plugin_admin = AdminScope::Selected {
+        plugin_ids: vec!["app.snake".into()],
+    };
+    permissions.install_apps = Gate::Allow;
+    permissions.add_friends = Gate::AskAdmin;
+    permissions.share_apps = true;
+    permissions.private_bot = true;
+    for item in [
+        PermissionItem::OpenApps,
+        PermissionItem::PluginAdmin,
+        PermissionItem::InstallApps,
+        PermissionItem::ShareApps,
+        PermissionItem::PrivateBot,
+    ] {
+        assert!(permissions.allows(item), "{item:?} 该放行");
+    }
+    assert!(
+        !permissions.allows(PermissionItem::AddFriends),
+        "要批不等于能"
+    );
+    permissions.add_friends = Gate::Allow;
+    assert!(permissions.allows(PermissionItem::AddFriends));
+}

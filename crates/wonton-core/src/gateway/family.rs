@@ -1,6 +1,8 @@
 //! 家人的管理接口（ADR-0045）：邀请、设置、出码、移除，和插件的“家人能用”开关。都只给主人；共享 Bot 的
 //! 建号是后续任务，先如实报没有就绪。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -12,8 +14,8 @@ use wonton_protocol::{
     FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
 };
 
-use super::api::{error_response, languages, owner_denied};
-use super::{Gateway, TunnelPeer, devices, lan};
+use super::api::{error_response, languages};
+use super::{Gateway, TunnelPeer, devices, lan, permissions};
 use crate::matrix::ADMIN_LOCALPART;
 use crate::members::{MemberRecord, MembersError, family_username, username_candidate};
 
@@ -52,7 +54,9 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let members: Vec<Member> = gateway.members.list().iter().map(to_member).collect();
@@ -66,7 +70,9 @@ pub async fn invite(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let invite: MemberInvite = match serde_json::from_slice(&body) {
@@ -235,7 +241,9 @@ pub async fn pairing_code(
     Path(username): Path<String>,
     body: String,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -269,7 +277,9 @@ pub async fn void_pairing_code(
     headers: HeaderMap,
     Path(username): Path<String>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     match gateway.members.void_pairing_code(&username) {
@@ -287,7 +297,9 @@ pub async fn remove(
     Path(username): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let removal: MemberRemoval = match serde_json::from_slice(&body) {
@@ -322,7 +334,9 @@ pub async fn set_plugin_family(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let Ok(id) = crate::plugin::PluginId::parse(&id) else {

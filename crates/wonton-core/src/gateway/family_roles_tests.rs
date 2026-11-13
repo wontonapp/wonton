@@ -154,7 +154,8 @@ async fn an_unknown_permission_value_reads_as_the_strictest() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
-    assert_eq!(reply.error_kind(), Some("install_not_allowed"));
+    assert_eq!(reply.error_kind(), Some("permission_required"));
+    assert_eq!(reply.json()["missing"], "install_apps");
 }
 
 /// 分配角色以后，下一次请求 `Me` 就是新角色和它的权限。

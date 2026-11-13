@@ -19,7 +19,9 @@ use serde::Deserialize;
 use wonton_protocol::AddSourceRequest;
 
 use super::Gateway;
-use super::api::{install_denied, install_error, invalid_body, languages, owner_denied, requester};
+use super::api::{install_error, invalid_body, languages, requester};
+use super::permissions;
+use wonton_protocol::PermissionItem;
 
 #[derive(Deserialize)]
 pub struct StoreQuery {
@@ -33,7 +35,9 @@ pub async fn store(
     headers: HeaderMap,
     Query(query): Query<StoreQuery>,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     drop(gateway.plugins.spawn_upgrade_check(query.refresh));
@@ -55,7 +59,9 @@ pub async fn store_plugin(
     headers: HeaderMap,
     Query(query): Query<StorePluginQuery>,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let person = match requester(&gateway, peer, &headers) {
@@ -83,7 +89,9 @@ pub async fn add_store_source(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let request = match serde_json::from_slice::<AddSourceRequest>(&body) {
@@ -111,7 +119,9 @@ pub async fn remove_store_source(
     headers: HeaderMap,
     Query(query): Query<RemoveSourceQuery>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     match gateway
