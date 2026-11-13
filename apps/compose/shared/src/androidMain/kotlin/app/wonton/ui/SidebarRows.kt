@@ -75,6 +75,7 @@ internal fun SidebarAppRow(
             when (val open = app.open) {
                 is SidebarOpen.BotChat -> onGo(SidebarDestination.Plugin(PluginEntry.Chat(open.botUserId)))
                 is SidebarOpen.Page -> onGo(SidebarDestination.Plugin(PluginEntry.Web(open.tab)))
+                is SidebarOpen.ExternalBrowser -> onGo(SidebarDestination.Plugin(PluginEntry.Browser(open.url)))
             }
         },
         icon = { PluginIconImage(app.icon, ROW_ICON, plugins) },

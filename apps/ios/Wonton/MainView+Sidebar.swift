@@ -33,6 +33,10 @@ extension MainView {
                 open(.chat(botUserId: botUserId))
             case .page(let tab):
                 pages.open(tab)
+            case .externalBrowser(let url):
+                // 外部网页插件：系统的 App 内浏览器，顶上显示网址，没有和 App 通信的桥（ADR-0080）。
+                guard let url = URL(string: url) else { return }
+                navigation.safari = SafariTarget(url: url)
             }
         }
     }

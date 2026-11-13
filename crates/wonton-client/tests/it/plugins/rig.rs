@@ -450,6 +450,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         written_by: None,
         status,
         web_url: None,
+        link_url: None,
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),
