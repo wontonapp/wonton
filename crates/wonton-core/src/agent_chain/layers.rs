@@ -3,7 +3,7 @@
 
 use wonton_protocol::{AgentChainStatus, BotRef, ChainError, ChainLimitKind, ChainRefusal};
 
-use super::store::StoredChain;
+use super::store::{self, StoredChain};
 
 pub(super) fn layer_of(chain: &StoredChain, bot: &BotRef) -> Option<u32> {
     chain
@@ -50,13 +50,35 @@ pub(super) fn evaluate_attach(
     depth_check(chain, top_layer(chain) + 1)
 }
 
-/// 桥的一轮续到已有的链：Bot 已在链上就用自己的层（点名叫回沿用原链），
-/// 不在就当新的一跳查层数。
-pub(super) fn bridge_layer(chain: &StoredChain, bot: &BotRef) -> Result<u32, ChainError> {
+/// 桥的一轮续到已有的链：Bot 已在链上就用自己的层（点名叫回沿用原层）；
+/// 不在链上就是被点名的：进这条链、层同点名者，不加层（ADR-0061 第 10 节）。
+/// 唤醒标签只登记链上 Bot 发的消息（第 8 块），走到这里的点名者一定在链上；不是就是调用方报错了。
+pub(super) fn bridge_layer(
+    chain: &StoredChain,
+    bot: &BotRef,
+    mentioner: Option<&BotRef>,
+) -> Result<u32, ChainError> {
     match layer_of(chain, bot) {
         Some(layer) => Ok(layer),
-        None => depth_check(chain, top_layer(chain) + 1),
+        None => mentioner
+            .and_then(|mentioner| layer_of(chain, mentioner))
+            .ok_or(ChainError::InvalidInput {
+                refusal: ChainRefusal::Other,
+            }),
     }
+}
+
+/// 链上添一个 Bot，按层序入列：被点名的 Bot 用点名者的层进链，可能比已在链上的层小，
+/// `top_layer` 取末位靠的就是列保持层序。同层排在一起，后登记的在后。
+pub(super) fn admit_bot(chain: &mut StoredChain, bot: &BotRef, layer: u32) {
+    let position = chain.bots.partition_point(|entry| entry.layer <= layer);
+    chain.bots.insert(
+        position,
+        store::ChainBotEntry {
+            bot: bot.clone(),
+            layer,
+        },
+    );
 }
 
 fn depth_check(chain: &StoredChain, layer: u32) -> Result<u32, ChainError> {

@@ -49,6 +49,19 @@ fn start(
     sender: &str,
     event_id: &str,
 ) -> Result<ChainTurnGrant, ChainLedgerError> {
+    start_as(h, bot, session, sender, event_id, None, sender)
+}
+
+/// `mentioner` 是说话人是链上 Bot 时的那个 Bot，`chain_user` 是链代表的人（第 8 块）。
+fn start_as(
+    h: &Harness,
+    bot: &BotRef,
+    session: &str,
+    sender: &str,
+    event_id: &str,
+    mentioner: Option<BotRef>,
+    chain_user: &str,
+) -> Result<ChainTurnGrant, ChainLedgerError> {
     h.chains.start_bridge_turn(
         bot.clone(),
         ChainTurnReport::Start {
@@ -58,6 +71,8 @@ fn start(
             sender: sender.to_owned(),
             event_id: event_id.to_owned(),
         },
+        mentioner,
+        chain_user.to_owned(),
     )
 }
 
@@ -635,4 +650,128 @@ fn agent_settings_default_and_round_trip() {
 
     std::fs::write(&path, "不是 JSON").unwrap();
     assert!(AgentSettings::open(&path).is_err());
+}
+
+/// A、B 互相点名来回（第 8 块）：每一轮都记在同一条链上，轮数照加，
+/// 到上限那一下 `limit_reached`，事件只出一次。
+#[test]
+fn ping_pong_wakes_count_toward_the_round_limit() {
+    let h = harness();
+    let a = bot("app", "alice");
+    let b = bot("app", "bob");
+    let first = start(&h, &a, "s-a", "peter", "$e1").expect("第一轮开链");
+    h.chains
+        .register_session(
+            &first.chain,
+            "s-b",
+            b.clone(),
+            Some(&a),
+            ChainSessionSource::HandOff,
+        )
+        .expect("交接登记 B");
+    let mut event = 1;
+    for round in 2..=50 {
+        h.chains.end_session("s-a");
+        h.chains.end_session("s-b2");
+        event += 1;
+        h.chains
+            .bind_event(&format!("$ev{event}"), &first.chain)
+            .unwrap();
+        // 奇偶轮流被点名：A 沿用第 1 层，B 沿用第 2 层，轮数都记在同一条链上。
+        let (called, caller, session, layer) = if round % 2 == 0 {
+            (&a, &b, "s-a", 1)
+        } else {
+            (&b, &a, "s-b2", 2)
+        };
+        let granted = start_as(
+            &h,
+            called,
+            session,
+            &format!("@bot-{}:test", if round % 2 == 0 { "bob" } else { "alice" }),
+            &format!("$ev{event}"),
+            Some(caller.clone()),
+            "peter",
+        )
+        .unwrap_or_else(|error| panic!("第 {round} 轮被叫回要接上：{error:?}"));
+        assert_eq!(granted.chain, first.chain);
+        assert_eq!(granted.layer, layer);
+    }
+    assert_eq!(h.chains.row(&first.chain).unwrap().rounds, 50);
+    h.chains.end_session("s-a");
+    h.chains.bind_event("$ev-next", &first.chain).unwrap();
+    let error = start(&h, &a, "s-a", "@bot-bob:test", "$ev-next").unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ChainLedgerError::Rejected(ChainError::LimitReached {
+                kind: ChainLimitKind::Rounds
+            })
+        ),
+        "第 51 轮到轮数上限：{error:?}"
+    );
+    assert_eq!(h.events.lock().unwrap().len(), 1, "上限事件只出一次");
+}
+
+/// 点名不在链上的 Bot：进链、层同点名者（不加层），链上的层序保持，
+/// 下一跳查的还是最高层 + 1。
+#[test]
+fn the_mentioned_outsider_joins_at_the_mentioners_layer() {
+    let h = harness();
+    let a = bot("app", "alice");
+    let b = bot("app", "bob");
+    let c = bot("app", "carol");
+    let chain = start(&h, &a, "s-a", "peter", "$e1").expect("开链").chain;
+    h.chains
+        .register_session(
+            &chain,
+            "s-b",
+            b.clone(),
+            Some(&a),
+            ChainSessionSource::HandOff,
+        )
+        .expect("B 在第 2 层");
+    h.chains.bind_event("$ev-b", &chain).unwrap();
+    let granted = start_as(
+        &h,
+        &c,
+        "s-c",
+        "@bot-bob:test",
+        "$ev-b",
+        Some(b.clone()),
+        "peter",
+    )
+    .expect("B 点名 C，C 进链");
+    assert_eq!(granted.chain, chain);
+    assert_eq!(granted.layer, 2, "层同点名者");
+    let row = h.chains.row(&chain).unwrap();
+    let layers: Vec<u32> = row.bots.iter().map(|entry| entry.layer).collect();
+    assert_eq!(layers, vec![1, 2, 2], "层序保持，同层排在一起");
+    // 下一跳：最高层是 2，再来一个是第 3 层，不是列末位 + 1。
+    let d = bot("app", "dave");
+    assert_eq!(
+        h.chains.preview_attach(&chain, &d, Some(&a)).expect("预检"),
+        3
+    );
+}
+
+/// 唤醒标签只登记链上 Bot 的消息（第 8 块）：标签在而点名者不在链上是调用方的错，如实报。
+#[test]
+fn a_wake_hit_without_the_mentioner_on_the_chain_is_refused() {
+    let h = harness();
+    let a = bot("app", "alice");
+    let b = bot("app", "bob");
+    let chain = start(&h, &a, "s-a", "peter", "$e1").expect("开链").chain;
+    h.chains.bind_event("$ev-x", &chain).unwrap();
+    let error = start_as(&h, &b, "s-b", "@bot-bob:test", "$ev-x", None, "peter").unwrap_err();
+    assert!(
+        matches!(
+            error,
+            ChainLedgerError::Rejected(ChainError::InvalidInput {
+                refusal: ChainRefusal::Other
+            })
+        ),
+        "点名者不在链上：{error:?}"
+    );
+    // 被拒的轮不开工也不记轮数。
+    assert_eq!(h.chains.row(&chain).unwrap().rounds, 1);
 }
