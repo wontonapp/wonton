@@ -13,7 +13,7 @@ impl PagesLink {
         tab: TabRef,
         title: Option<String>,
     ) -> Result<(), CoreError> {
-        let plugins = self.plugins_view.borrow().clone();
+        let (plugins, _, _) = self.inputs();
         {
             let state = lock(&self.state);
             let entries = panel_entries(&state, &scope)?;
@@ -233,7 +233,7 @@ impl PagesLink {
         title: Option<String>,
         to: PinTarget,
     ) -> Result<(), CoreError> {
-        let plugins = self.plugins_view.borrow().clone();
+        let (plugins, _, _) = self.inputs();
         let (tab, default_title) = classify_pin(url, &plugins)?;
         let title = title.or(default_title);
         match to {

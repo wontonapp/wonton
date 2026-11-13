@@ -52,6 +52,7 @@ impl PagesLink {
 
     /// 会话来了（或换了）：先和账号数据对一次账，然后跟着它变化。
     pub(super) fn restart_sync(self: &Arc<Self>) {
+        self.layout_ready.store(false, Ordering::SeqCst);
         let mut task = lock(&self.sync_task);
         if let Some(task) = task.take() {
             task.abort();
@@ -95,7 +96,9 @@ impl PagesLink {
             let mut changes = std::pin::pin!(changes);
             while let Some(content) = changes.next().await {
                 let Some(link) = weak.upgrade() else { return };
-                link.follow_server(content).await;
+                if let Err(error) = link.follow_server(content).await {
+                    link.sync_problem.send_replace(Some(error.to_string()));
+                }
             }
         }));
     }
@@ -105,52 +108,57 @@ impl PagesLink {
     async fn reconcile(self: &Arc<Self>, session: &Arc<MatrixSession>) -> Result<(), CoreError> {
         let server = session.server_layout().await.map_err(core_error)?;
         let dirty = self.dirty.load(Ordering::SeqCst);
-        match (server, dirty) {
-            (Some(content), false) => self.follow_server(content).await,
-            _ => {
-                let settings = lock(&self.state).config.layout();
-                self.push_layout(session, settings).await;
-            }
+        if let (Some(content), false) = (server, dirty) {
+            self.follow_server(content).await?;
+            self.layout_ready.store(true, Ordering::SeqCst);
+            self.recompute();
+        } else {
+            self.recompute();
+            self.layout_ready.store(true, Ordering::SeqCst);
+            let settings = {
+                let state = lock(&self.state);
+                // 插件列表还没来时不把空的默认值写成账号偏好，否则它的同步回声会阻止首次初始化。
+                if !state.config.my_apps_initialized && !dirty {
+                    return Ok(());
+                }
+                state.config.layout()
+            };
+            self.push_layout(session, settings).await;
         }
         Ok(())
     }
 
     /// 服务器上的配置变了：本机有没同步上的改动就让位（推本机的），否则收下服务器这份。
-    async fn follow_server(self: &Arc<Self>, content: LayoutContent) {
+    pub(super) async fn follow_server(&self, content: LayoutContent) -> Result<(), CoreError> {
         if self.dirty.load(Ordering::SeqCst) {
             let session = match self.session.borrow().clone() {
                 Some(session) => session,
-                None => return,
+                None => return Ok(()),
             };
             let settings = lock(&self.state).config.layout();
             self.push_layout(&session, settings).await;
-            return;
+            return Ok(());
         }
-        let Ok(settings) = serde_json::from_value::<LayoutSettings>(content.0.into()) else {
-            // 账号数据整个读不出（多半是更新版 App 写的新格式）：显示原因，本机的照旧。
-            self.sync_problem.send_replace(Some(l10n!(
-                CATALOG,
-                language(),
-                "panel-sync-unreadable"
-            )));
-            return;
-        };
+        let has_my_apps = content.0.contains_key("my_apps");
+        let settings =
+            serde_json::from_value::<LayoutSettings>(content.0.into()).map_err(|_| {
+                CoreError::Upstream {
+                    reason: l10n!(CATALOG, language(), "panel-sync-unreadable"),
+                }
+            })?;
         let (plugins, _, _) = self.inputs();
         let _writing = lock(&self.writing);
         let mut state = lock(&self.state).clone();
-        if let Err(reason) = adopt_layout(&mut state.config, settings) {
-            self.sync_problem.send_replace(Some(reason));
-            return;
-        }
-        if let Err(error) = persist(&self.path, &state.config) {
-            self.sync_problem
-                .send_replace(Some(storage_problem(&error).message));
-            return;
-        }
+        adopt_layout(&mut state.config, settings)
+            .map_err(|reason| CoreError::Upstream { reason })?;
+        state.config.my_apps_initialized = has_my_apps;
+        persist(&self.path, &state.config)?;
+        self.sync_problem.send_replace(None);
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
         self.publish(view, &plugins);
+        Ok(())
     }
 
     /// 把本机的配置写上账号数据。写成了清掉“没同步上”；写不上留着，下次再推。

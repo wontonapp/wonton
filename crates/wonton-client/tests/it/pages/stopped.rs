@@ -26,15 +26,7 @@ async fn stopped_rig() -> (Rig, TabRef) {
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
     let page_tab = tab(ID, Some("home"));
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: ID.to_owned(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+    wait_my_app(&rig, &page_tab).await;
     rig.app
         .dispatch(Action::OpenPage {
             tab: page_tab.clone(),
@@ -333,15 +325,7 @@ async fn switching_home_ignores_old_start_success_and_failure() {
         })
         .await;
         let page_tab = tab(ID, Some("home"));
-        rig.app
-            .dispatch(Action::AddMyApp {
-                app: MyAppRef::Plugin {
-                    plugin_id: ID.to_owned(),
-                },
-                title: None,
-                index: None,
-            })
-            .unwrap();
+        wait_my_app(&rig, &page_tab).await;
         rig.app
             .dispatch(Action::OpenPage {
                 tab: page_tab.clone(),
@@ -419,15 +403,7 @@ async fn switching_home_ignores_old_start_list_refresh() {
     })
     .await;
     let page_tab = tab(ID, Some("home"));
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: ID.to_owned(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+    wait_my_app(&rig, &page_tab).await;
     rig.app
         .dispatch(Action::OpenPage {
             tab: page_tab.clone(),

@@ -4,6 +4,7 @@ mod bar_settings;
 mod default_bar;
 mod load;
 mod media_permission;
+mod my_apps;
 mod polling;
 mod revision;
 mod state;
@@ -67,17 +68,15 @@ pub(super) async fn open_ready(rig: &Rig, page_tab: &TabRef, state: TabState) ->
     wait_pages(rig, |view| item(view, page_tab).state == state).await
 }
 
-/// 把页面加进我的应用并等核心发布完。
-pub(super) fn add_my_app(rig: &Rig, page_tab: &TabRef) {
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: page_tab_plugin_id(page_tab).to_owned(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+async fn wait_my_app(rig: &Rig, page_tab: &TabRef) {
+    let id = page_tab_plugin_id(page_tab);
+    rig.wait_for(|view| {
+        view.sidebar
+            .apps
+            .iter()
+            .any(|app| app.plugin_id.as_deref() == Some(id))
+    })
+    .await;
 }
 
 fn page_tab_plugin_id(tab: &TabRef) -> &str {
@@ -201,16 +200,7 @@ async fn my_apps_add_remove_move_rules_and_sidebar_rows() {
 
     let one = tab(plugin_id, Some("one"));
     let two = tab(plugin_id, Some("two"));
-    // 插件行按插件加：同一个插件加第二行被拒。
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: plugin_id.to_owned(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+    wait_my_app(&rig, &one).await;
     assert_invalid(rig.app.dispatch(Action::AddMyApp {
         app: MyAppRef::Plugin {
             plugin_id: plugin_id.to_owned(),
@@ -279,16 +269,6 @@ async fn removing_my_app_rows_updates_the_sidebar_and_candidates() {
     let one = tab(plugin_id, Some("one"));
     let two = tab(plugin_id, Some("two"));
     let three = tab(plugin_id, Some("three"));
-    // 插件行加进来，再单独加一页并挪到最前。
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: plugin_id.to_owned(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
     rig.app
         .dispatch(Action::AddMyApp {
             app: MyAppRef::Page { tab: two.clone() },
@@ -356,7 +336,7 @@ async fn connected_page_rig(plugin_id: &str, page_id: &str) -> (Rig, TabRef, Ins
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some(page_id));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     open_ready(&rig, &page_tab, TabState::Ready).await;
     // 开页面会补一次列表；等它落地，后面测试设的列表节奏才不被它打乱。
     let before = rig
@@ -466,7 +446,7 @@ async fn corrupted_config_recovers_and_restart_starts_with_an_empty_stack() {
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some(page_id));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     open_ready(&rig, &page_tab, TabState::Ready).await;
 
     // 打开着的页面是运行时状态：重启后栈是空的，我的应用还在。
@@ -508,7 +488,7 @@ async fn cold_start_loading_keeps_cached_plugin_until_a_real_list_arrives() {
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some(page_id));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     std::fs::remove_file(rig.data_dir().join("installed-plugins.json")).unwrap();
     rig.core.set_lists(vec![Vec::new()]);
     rig.reopen();
@@ -540,7 +520,7 @@ async fn opening_a_page_is_not_a_selection_and_server_switch_clears_plugin_rows(
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some("full"));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     open_ready(&rig, &page_tab, TabState::Ready).await;
     assert_eq!(rig.app.pages().stack.len(), 1);
 

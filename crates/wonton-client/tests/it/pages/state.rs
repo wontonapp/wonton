@@ -35,7 +35,7 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some("home"));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     std::fs::remove_file(rig.data_dir().join("layout.json")).unwrap();
     std::fs::create_dir(rig.data_dir().join("layout.json")).unwrap();
     rig.core.set_lists(vec![Vec::new()]);
@@ -189,7 +189,7 @@ async fn reconnect_reload_clears_a_previous_load_failure() {
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some(page_id));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
     open_ready(&rig, &page_tab, TabState::Ready).await;
     rig.app
         .dispatch(Action::TabLoadFailed {
@@ -235,7 +235,7 @@ async fn open_pages_report_loading_and_removal_honestly() {
     rig.connected().await;
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some(page_id));
-    add_my_app(&rig, &page_tab);
+    wait_my_app(&rig, &page_tab).await;
 
     // 列表还没读到：页面如实说在加载。
     std::fs::remove_file(rig.data_dir().join("installed-plugins.json")).unwrap();

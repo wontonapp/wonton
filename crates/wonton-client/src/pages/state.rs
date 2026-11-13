@@ -39,8 +39,9 @@ pub(super) fn refresh_state(
             state.stack.clear();
         }
         state.config.server_id = home.server_id.clone();
+        state.config.my_apps_initialized = false;
         config_changed = true;
-        state.previous_plugins.clear();
+        state.previous_plugins = None;
         state.failures.clear();
         state.reloads.clear();
         state.connected = matches!(home.status, HomeStatus::Connected);
@@ -59,21 +60,32 @@ pub(super) fn refresh_state(
     config_changed
 }
 
-/// 新装的应用加进我的应用末尾（开关关着时不动）。只认这一刻才出现的：用户移除过的不回填。
+/// 首份列表初始化默认入口；已有偏好只追加新装的应用，不回填用户移除过的行。
 pub(super) fn auto_add_new(
     state: &mut PagesState,
     installed: &wonton_protocol::InstalledPlugins,
     plugins: &PluginsViewModel,
 ) -> bool {
-    if !state.config.auto_add || state.previous_plugins.is_empty() {
+    let initialize = !state.config.my_apps_initialized;
+    if !initialize && state.previous_plugins.is_none() {
         return false;
     }
-    let mut changed = false;
+    state.config.my_apps_initialized = true;
+    if !state.config.auto_add {
+        return initialize;
+    }
+    let mut changed = initialize;
     for plugin in &installed.plugins {
         if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
             continue;
         }
-        if state.previous_plugins.contains_key(&plugin.id) || state.config.has_plugin(&plugin.id) {
+        if (!initialize
+            && state
+                .previous_plugins
+                .as_ref()
+                .is_some_and(|previous| previous.contains_key(&plugin.id)))
+            || state.config.has_plugin(&plugin.id)
+        {
             continue;
         }
         let app = MyAppRef::Plugin {
@@ -96,7 +108,10 @@ pub(super) fn update_reload_counters(
     if let Some(installed) = &plugins.installed {
         if !server_changed {
             for plugin in &installed.plugins {
-                if let Some(previous) = state.previous_plugins.get(&plugin.id)
+                if let Some(previous) = state
+                    .previous_plugins
+                    .as_ref()
+                    .and_then(|previous| previous.get(&plugin.id))
                     && (previous.revision != plugin.revision
                         || (matches!(
                             previous.status,
@@ -107,21 +122,23 @@ pub(super) fn update_reload_counters(
                 }
             }
         }
-        state.previous_plugins = installed
-            .plugins
-            .iter()
-            .map(|plugin| {
-                (
-                    plugin.id.clone(),
-                    PreviousPlugin {
-                        status: plugin.status.clone(),
-                        revision: plugin.revision.clone(),
-                    },
-                )
-            })
-            .collect();
+        state.previous_plugins = Some(
+            installed
+                .plugins
+                .iter()
+                .map(|plugin| {
+                    (
+                        plugin.id.clone(),
+                        PreviousPlugin {
+                            status: plugin.status.clone(),
+                            revision: plugin.revision.clone(),
+                        },
+                    )
+                })
+                .collect(),
+        );
     } else {
-        state.previous_plugins.clear();
+        state.previous_plugins = None;
     }
     let connected = matches!(home.status, HomeStatus::Connected);
     if connected && !state.connected && !server_changed {

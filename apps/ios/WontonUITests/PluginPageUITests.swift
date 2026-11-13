@@ -26,13 +26,19 @@ final class PluginPageUITests: XCTestCase {
     func testImmichLargestTextDark() throws {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
-        try walk("Immich", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        try walk(
+            "Immich",
+            arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        )
     }
 
     func testNavidromeLargestTextDark() throws {
         XCUIDevice.shared.appearance = .dark
         defer { XCUIDevice.shared.appearance = .light }
-        try walk("Navidrome", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        try walk(
+            "Navidrome",
+            arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        )
     }
 
     private func walk(_ name: String, arguments: [String] = []) throws {
@@ -71,19 +77,12 @@ final class PluginPageUITests: XCTestCase {
         shot("\(name)-04-edge-back")
     }
 
-    /// 侧边栏“我的应用”里有就从那里开；新配上的设备“我的应用”是空的（配对前装的不自动加），从“全部应用”网格开。
     private func open(_ name: String) {
-        if let row = UITestSidebar.row(app, labels: [], containing: name) {
-            row.tap()
-            return
+        guard let row = UITestSidebar.row(app, labels: [], containing: name) else {
+            return XCTFail("新设备的“我的应用”里没有 \(name)\n\(app.debugDescription)")
         }
-        let allApps = UITestSidebar.allApps(app)
-        XCTAssertNotNil(allApps, "侧边栏里既没有 \(name) 也没有“全部应用”\n\(app.debugDescription)")
-        allApps?.tap()
-        let icon = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS[c] %@", name)).firstMatch
-        XCTAssertTrue(icon.waitForExistence(timeout: 20), "“全部应用”里没有 \(name)（开发栈没装？）\n\(app.debugDescription)")
-        icon.tap()
+        shot("\(name)-my-apps")
+        row.tap()
     }
 
     private func assertCapsule(_ when: String) {
