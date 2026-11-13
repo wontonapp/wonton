@@ -17,13 +17,7 @@ struct SettingsTab: View {
 
     var body: some View {
         NavigationStack(path: $model.path) {
-            SettingsView(
-                model: model, editProfile: { isEditingProfile = true },
-                chooseAgent: { isChoosingAgent = true })
-                .wontonRootScreen(TabText.settings, hasActions: isModal) {
-                    if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
-                }
-                .navigationDestination(for: SettingsRoute.self, destination: destination)
+            settingsRoot
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
@@ -34,6 +28,25 @@ struct SettingsTab: View {
         .wontonDialog(problem: plugins.rejection, isPresented: Binding(
             get: { isActive && plugins.rejection != nil }, set: { if !$0 && isActive { plugins.rejection = nil } }
         ))
+    }
+
+    @ViewBuilder
+    private var settingsRoot: some View {
+        if isModal {
+            settingsContent
+                .wontonModalScreen(TabText.settings, usesSystemToolbar: true)
+        } else {
+            settingsContent
+                .wontonRootScreen(TabText.settings, hasActions: false) { EmptyView() }
+        }
+    }
+
+    private var settingsContent: some View {
+        SettingsView(
+            model: model, editProfile: { isEditingProfile = true },
+            chooseAgent: { isChoosingAgent = true }
+        )
+        .navigationDestination(for: SettingsRoute.self, destination: destination)
     }
 
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
