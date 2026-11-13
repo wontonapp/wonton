@@ -22,16 +22,21 @@ final class TimelineModel {
     private(set) var panelSelected: TabRef?
     /// 房间里盖着消息列表的东西开着：上推拉面板的入口不响应。核心合成，壳只读。
     private(set) var entryBlocked = false
+    /// 这条时间线是旁聊时给标题和状态（ADR-0093），主时间线为空。
+    private(set) var sideChat: SideChatCard?
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
 
     private let core: ClientCore
     let roomId: String
+    /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
+    let threadRoot: String?
 
-    init(core: ClientCore, roomId: String) {
+    init(core: ClientCore, roomId: String, threadRoot: String? = nil) {
         self.core = core
         self.roomId = roomId
+        self.threadRoot = threadRoot
     }
 
     /// 在视图的 `.task` 里调用：订阅时间线，视图消失时订阅随之结束。
@@ -40,7 +45,7 @@ final class TimelineModel {
         let subscription: TimelineSubscription
         do {
             subscription = try await core.subscribeTimeline(
-                target: TimelineTarget(roomId: roomId, threadRoot: nil)
+                target: TimelineTarget(roomId: roomId, threadRoot: threadRoot)
             )
         } catch {
             failure = error.problem
@@ -66,6 +71,7 @@ final class TimelineModel {
             panelSelected = update.panelSelected
             entryBlocked = update.entryBlocked
             notice = update.keyNotice
+            sideChat = update.sideChat
             if let anchor = update.anchor {
                 self.anchor = anchor
             }
