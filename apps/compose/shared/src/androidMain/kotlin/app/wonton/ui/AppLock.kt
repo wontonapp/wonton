@@ -71,7 +71,11 @@ fun AppLockGate(core: ClientCore, content: @Composable () -> Unit) {
     // 页面看得见才弹验证：在后台弹出的会被系统收走，取消后停在锁页可再点。
     DisposableEffect(lifecycle, view.locked, auth) {
         if (auth == null || !view.locked) return@DisposableEffect onDispose {}
-        val prompt = { auth.prompt(promptTitle, promptReason) { passed -> if (passed == AuthResult.Passed) core.unlockApp() } }
+        val prompt = {
+            auth.prompt(promptTitle, promptReason) { result ->
+                if (result == AuthResult.Passed) core.unlockApp()
+            }
+        }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) prompt()
         }
