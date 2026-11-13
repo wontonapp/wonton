@@ -190,6 +190,62 @@ async fn room_panel_entries_from_other_clients_are_checked_when_built() {
     assert_eq!(view.panel[1].page.state, TabState::PageRemoved);
 }
 
+/// 面板里的条目只存名字。插件列表没到（新设备先同步到了面板、缓存读不到）时照样算得出视图：
+/// 这一页如实显示加载中，别的页面照常开、关；列表到了就恢复。
+#[tokio::test]
+async fn panel_pages_wait_for_the_plugin_list_without_blocking_other_pages() {
+    let rig = Rig::new();
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    rig.open(url_tab("https://example.com/report"));
+
+    rig.plugins.send_replace(PluginsViewModel::default());
+    rig.tabs.recompute();
+    let view = rig.view();
+    assert_eq!(panel_tabs(&rig), vec![page_tab()]);
+    assert_eq!(view.panel[0].page.state, TabState::Loading);
+    assert_eq!(view.panel[0].page.url, None);
+
+    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    assert!(rig.view().stack.is_empty());
+
+    rig.plugins.send_replace(plugins("new-content"));
+    rig.tabs.recompute();
+    assert_eq!(rig.view().panel[0].page.state, TabState::Ready);
+}
+
+/// 房间面板由别的客户端写进账号数据：指向插件已经不声明的页面时如实说页面被移走，
+/// 房间照样打得开，整页的页面照样关得掉。
+#[tokio::test]
+async fn room_panel_entry_for_an_undeclared_page_says_removed() {
+    let rig = Rig::new();
+    rig.open(page_tab());
+    let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();
+    rig.room_panel.send_replace(Some((
+        room,
+        RoomPanel {
+            pages: vec![PanelEntry {
+                tab: TabRef::Plugin {
+                    plugin_id: "app.shared".to_owned(),
+                    page: Some("gone".to_owned()),
+                },
+                title: None,
+            }],
+        },
+    )));
+    rig.tabs.recompute();
+    let view = rig.tabs.room_view.borrow().clone().unwrap();
+    assert_eq!(view.panel[0].page.state, TabState::PageRemoved);
+    assert_eq!(view.panel[0].page.url, None);
+
+    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    assert!(rig.view().stack.is_empty());
+}
+
 #[test]
 fn stored_public_pages_must_stay_https() {
     let mut file = default_file(Some("server".to_owned()));

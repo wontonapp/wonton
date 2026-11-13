@@ -51,7 +51,7 @@ impl ClientCore {
         // 假数据入口（`new_ui_fake`）没有后端：动作不落到作用域，免得把塞进去的 ViewModel 又改回空。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(());
+            return self.dispatch_ui_fake(action);
         }
         let scope = self.scope();
         match action {
