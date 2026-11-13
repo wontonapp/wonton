@@ -104,7 +104,7 @@ object NotificationActions {
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(IncomingRequests.EXTRA_SERVER, target.getStringExtra(IncomingRequests.EXTRA_SERVER))
             .putExtra(IncomingRequests.EXTRA_ROOM, target.getStringExtra(IncomingRequests.EXTRA_ROOM))
-            .putExtra(PushActionReceiver.EXTRA_THREAD, target.getStringExtra(PushActionReceiver.EXTRA_THREAD))
+            .putExtra(IncomingRequests.EXTRA_SIDE_CHAT, target.getStringExtra(PushActionReceiver.EXTRA_THREAD))
             .putExtra(PushBuilder.EXTRA_CARD, target.getStringExtra(PushBuilder.EXTRA_CARD))
             .addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,

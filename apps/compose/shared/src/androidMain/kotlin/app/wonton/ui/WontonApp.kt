@@ -80,7 +80,7 @@ internal fun ServerApp(
             when {
                 request.contacts != null -> navigation.openContacts(request.contacts)
                 request.roomId.isBlank() && request.cardId != null -> navigation.openConfirmations(request.cardId)
-                else -> navigation.openRoom(request.roomId)
+                else -> navigation.openRoom(request.roomId, request.sideChatRoot)
             }
             onRoomRequestHandled()
         }

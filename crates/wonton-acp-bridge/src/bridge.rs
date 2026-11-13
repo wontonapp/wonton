@@ -9,11 +9,13 @@
 
 pub(crate) mod attachments;
 mod busy;
+pub(crate) mod chain;
 mod permissions;
 mod refused;
 mod routing;
 mod run_status;
 mod sessions;
+mod side_chats;
 mod tasks;
 mod turns;
 mod updates;
@@ -43,6 +45,7 @@ use crate::{
     acp::{AcpClient, AgentNotice, PermissionAsk, PromptResult},
     commands::{CommandSink, Commands},
     config::Config,
+    core_feed,
     error::{Detail, Error, Result as BridgeResult, format_error},
     l10n::text,
     locale::{Locales, Origin},
@@ -57,13 +60,17 @@ use crate::{
 use permissions::ApprovalWaiter;
 
 #[derive(Clone)]
-struct Bridge {
-    config: Config,
-    acp: Arc<AcpClient>,
-    sessions: Arc<SessionStore>,
+pub(crate) struct Bridge {
+    pub(crate) config: Config,
+    pub(crate) acp: Arc<AcpClient>,
+    pub(crate) sessions: Arc<SessionStore>,
     last_seen: Arc<LastSeen>,
     bot: OwnedUserId,
     locales: Arc<Locales<Origin>>,
+    /// 轮次登记的客户端（ADR-0061 第 10 节）：每轮领链、结束报 End。
+    chains: chain::Client,
+    /// 桥挂在确认接口上的权限长轮询；会话被取消（停链的 CancelTurn）时断开。
+    pub(crate) pending_asks: permissions::PendingAsks,
 }
 
 impl Bridge {
@@ -88,6 +95,8 @@ struct Job {
     kind: JobKind,
     /// 这条请求的消息事件 ID，状态消息的 `run`（ADR-0082）。
     event_id: String,
+    /// 说话人：轮次登记报给核心（ADR-0061 第 10 节），一批里报最后一条的。
+    sender: String,
     /// 已落工作区的附件；纯文字为 None。
     media: Option<attachments::PreparedAttachment>,
 }
@@ -238,6 +247,8 @@ struct RoomState {
     waiters: Vec<ApprovalWaiter>,
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
+    /// 看过的旁聊根消息标题（ADR-0093 §1），话题第一轮取名字用。
+    side_chats: side_chats::Titles,
     last_activity: Instant,
     /// 被网关拒收的自己的消息。
     refused: refused::Refused,
@@ -380,6 +391,7 @@ pub async fn run() -> Result<()> {
         Origin::core(&config.mcp_url),
         config.owner.clone(),
     ));
+    let chains = chain::Client::new(&config.mcp_url, &config.access_token)?;
     let bridge = Bridge {
         config,
         acp,
@@ -387,7 +399,11 @@ pub async fn run() -> Result<()> {
         last_seen,
         bot,
         locales,
+        chains,
+        pending_asks: permissions::PendingAsks::default(),
     };
+    // 出箱是全 Bot 一份的：停链的取消轮次从这里来，和房间循环并行。
+    core_feed::spawn(bridge.clone());
     match direct {
         Some(direct) => {
             // 登录事件只由私聊循环消费；它结束后整座桥退出重连。
@@ -512,6 +528,7 @@ async fn fresh_state<R: Room>(bridge: &Bridge, room: &R, owner: OwnedUserId) -> 
         run_status: open_run_status(bridge, room).await,
         waiters: Vec::new(),
         history: VecDeque::new(),
+        side_chats: side_chats::Titles::default(),
         last_activity: Instant::now(),
         refused: refused::Refused::default(),
         last_sweep: Instant::now(),
@@ -529,6 +546,9 @@ async fn run_room<R: Room>(
     let bot = bridge.bot.clone();
     let mut commands = Commands::new();
     let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
+    // 桥照 ADR-0093 实现了话题分会话和结果行，在这里声明支持；state_key 是 Bot 自己的
+    // Matrix ID。发不出去就退出重连，不留一个没声明、卡片全按 Untracked 显示的桥。
+    side_chats::declare(room.as_ref(), &bot).await?;
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();

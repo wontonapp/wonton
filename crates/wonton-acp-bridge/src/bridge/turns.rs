@@ -4,9 +4,11 @@ use std::time::Instant;
 
 use wonton_l10n::Arg;
 
+use wonton_protocol::SideChatResultState;
+
 use super::{
-    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, busy, format_error,
-    now, permissions, routing, sessions,
+    Job, JobKind, PromptFinished, Room, RoomState, TurnContext, attachments, busy, chain,
+    format_error, now, permissions, routing, sessions, side_chats,
 };
 use crate::acp::PromptResult;
 use crate::commands;
@@ -35,6 +37,11 @@ pub(super) async fn receive_job<R: Room>(
     topics: &mut Topics,
     incoming: Incoming,
 ) -> Result<()> {
+    if let IncomingContent::SideChatRoot { title } = &incoming.content {
+        // 旁聊的根不是输入（ADR-0093 §1）：记下标题给话题取名用，不回应。
+        state.side_chats.observe(&incoming.event_id, title.clone());
+        return Ok(());
+    }
     let key = routing::session_key(incoming.thread_root.as_deref());
     if let IncomingContent::Unsupported { kind } = &incoming.content {
         return send_to(
@@ -51,7 +58,7 @@ pub(super) async fn receive_job<R: Room>(
     let user_text = match &incoming.content {
         IncomingContent::Media(media) => media.caption.clone().unwrap_or_default(),
         IncomingContent::Text(text) => text.clone(),
-        IncomingContent::Unsupported { .. } => String::new(),
+        IncomingContent::Unsupported { .. } | IncomingContent::SideChatRoot { .. } => String::new(),
     };
     if matches!(&incoming.content, IncomingContent::Text(text) if text.is_empty()) {
         return send_to(
@@ -99,10 +106,17 @@ pub(super) async fn receive_job<R: Room>(
         return Ok(());
     }
     let job = match incoming.content {
-        IncomingContent::Text(text) => {
-            parse_job(&incoming.event_id, &text, &context.bridge.config.limits)
+        // 旁聊的根在上面已经处理过，这里是保险。
+        IncomingContent::SideChatRoot { .. } => return Ok(()),
+        IncomingContent::Text(text) => parse_job(
+            &incoming.event_id,
+            &incoming.sender,
+            &text,
+            &context.bridge.config.limits,
+        ),
+        IncomingContent::Media(media) => {
+            media_job(context, media, &incoming.event_id, &incoming.sender).await
         }
-        IncomingContent::Media(media) => media_job(context, media, &incoming.event_id).await,
         IncomingContent::Unsupported { .. } => return Ok(()),
     };
     let job = match job {
@@ -125,6 +139,7 @@ async fn media_job<R: Room>(
     context: &TurnContext<R>,
     media: crate::matrix::MediaAttachment,
     event_id: &str,
+    sender: &str,
 ) -> Result<Job> {
     if media
         .caption
@@ -144,6 +159,7 @@ async fn media_job<R: Room>(
         kind: JobKind::Normal,
         text: media.caption.unwrap_or_default(),
         event_id: event_id.to_owned(),
+        sender: sender.to_owned(),
         media: Some(prepared),
     })
 }
@@ -187,7 +203,7 @@ pub(super) async fn prompt_blocks<R: Room>(
     Ok(blocks)
 }
 
-fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
+fn parse_job(event_id: &str, sender: &str, input: &str, limits: &Limits) -> Result<Job> {
     if input.len() > limits.max_input_bytes {
         return Err(Error::InvalidInput(Detail::msg_with(
             "input-too-long",
@@ -203,6 +219,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
             kind: JobKind::End,
             text: String::new(),
             event_id: event_id.to_owned(),
+            sender: sender.to_owned(),
             media: None,
         });
     }
@@ -219,6 +236,7 @@ fn parse_job(event_id: &str, input: &str, limits: &Limits) -> Result<Job> {
         kind,
         text: body.trim().to_owned(),
         event_id: event_id.to_owned(),
+        sender: sender.to_owned(),
         media: None,
     })
 }
@@ -271,18 +289,34 @@ async fn start_job<R: Room>(
     };
     // 话题准入排队只发生在话题的第一句（这时还没有在跑的一轮，`batch` 只有一条）；攒下的几条
     // 是一轮结束后才发，话题已经入场，不会在这里排队，所以排队位只存一条的附件就够。
-    if topics
+    let started = topics
         .turn_started(
             &key,
             &display,
             &last.event_id,
+            &last.sender,
             last.media.as_ref(),
             now(),
             context.lang,
         )
-        .await?
-        == TurnStart::Queued
+        .await?;
+    // 话题的名字按 ADR-0093 §1 定：根消息带 `app.wonton.side_chat.title` 用它，否则根
+    // 正文第一行的前 20 个字符；根不在历史里（桥重启过）时是第一句话，App 的标题正是
+    // 按它取的。任务话题的名字由编排器给，不改。
+    if first
+        && !topics.is_task(&key)
+        && let SessionKey::Topic(root) = &key
     {
+        let root_body = state
+            .sessions
+            .state(&key)
+            .root_text
+            .clone()
+            .unwrap_or_else(|| display.clone());
+        let title = side_chats::title_of(&state.side_chats, root, &root_body);
+        topics.set_name(&key, &title).await?;
+    }
+    if started == TurnStart::Queued {
         return announce_queue(context, state, topics, &key).await;
     }
     let session = state.sessions.state(&key);
@@ -311,21 +345,53 @@ async fn start_job<R: Room>(
         send_to(context, &key, &text(context.lang, "topic-no-ask-mode", &[])).await?;
     }
     // 一轮的内容块：说明（含开局说明/动态）在前，附件在后；没有文字就只有附件块。
+    // 块在领链前拼好：附件转换出错时这轮还没领链，不用报 End。
     let blocks = prompt_blocks(context, prefix, &batch).await?;
-    state.sessions.state(&key).active = true;
+    // 领链（ADR-0061 第 10 节）：拿到链才发给 Agent；被拒或核心不可用就在房间里
+    // 按类别说明，不开轮，也不发已读回执。
+    if !chain::begin(
+        &context.bridge.chains,
+        context.room.as_ref(),
+        context.lang,
+        &key,
+        last,
+        &session_id,
+    )
+    .await
+    {
+        let _ = topics.turn_finished(&key, "", now(), context.lang).await;
+        return Ok(());
+    }
+    launch_prompt(context, state, &key, &session_id, blocks, last).await;
+    Ok(())
+}
+
+/// 领链通过后把这一轮发给 Agent：标记在跑、挂状态消息（ADR-0082）、发已读回执，
+/// 提示词在后台任务里发，结束后报 End。
+async fn launch_prompt<R: Room>(
+    context: &TurnContext<R>,
+    state: &mut RoomState,
+    key: &SessionKey,
+    session_id: &str,
+    blocks: Vec<serde_json::Value>,
+    trigger: &Job,
+) {
+    state.sessions.state(key).active = true;
     state.last_activity = Instant::now();
     // 一轮一条的状态消息（ADR-0082）：发出提示词时先挂上“在想”，之后随 ACP 事件编辑。
     state
         .run_status
-        .start(context.room.as_ref(), &key, &last.event_id, context.lang)
+        .start(context.room.as_ref(), key, &trigger.event_id, context.lang)
         .await;
     // 这一轮就要发给 Agent：这批消息算收到了。回执只往前走，发给最后一条就覆盖了前面几条。
-    busy::receipt(context, &last.event_id).await;
+    busy::receipt(context, &trigger.event_id).await;
     let acp = context.bridge.acp.clone();
+    let chains = context.bridge.chains.clone();
     let room = context.room.clone();
     let limits = context.bridge.config.limits.clone();
     let finished_tx = context.finished_tx.clone();
     let thread = key.clone();
+    let session_id = session_id.to_owned();
     let lang = context.lang;
     tokio::spawn(async move {
         let _ = room.typing(true).await;
@@ -345,8 +411,10 @@ async fn start_job<R: Room>(
                 result,
             })
             .await;
+        // 一轮结束（成功、取消、出错）都报 End（ADR-0061 第 10 节）；放回执后面，
+        // 房间里的收尾不等核心。
+        chains.end(&session_id).await;
     });
-    Ok(())
 }
 
 /// 活跃话题已满时在话题里写明在排，同一话题只提醒一次。
@@ -388,12 +456,21 @@ pub(super) async fn finished<R: Room>(
         Ok(result) => result.text.clone(),
         Err(_) => String::new(),
     };
-    if let Some(notice) = topics
+    if let Some(title) = topics
         .turn_finished(&key, &reply, now(), context.lang)
         .await?
+        && let SessionKey::Topic(root) = &key
     {
-        // 主对话里一行不推送的提示；点开进话题。
-        let _ = context.room.send_notice(&notice).await;
+        // 主对话里一行不推送的结果行（ADR-0093）：带话题根和状态，App 点开进旁聊。
+        let turn_state = side_chats::result_state(&finished.result);
+        side_chats::result_line(
+            context.room.as_ref(),
+            root,
+            &title,
+            turn_state,
+            context.lang,
+        )
+        .await;
     }
     permissions::release(context, state, topics, &key).await?;
     permissions::drop_waiting(state, &key);
@@ -483,6 +560,17 @@ pub(super) async fn idle<R: Room>(
         permissions::release(context, state, topics, key).await?;
         permissions::drop_waiting(state, key);
         let _ = send_to(context, key, &text(context.lang, "topic-idle-ended", &[])).await;
+        // 旁聊关了，主对话里发 ended 的结果行（ADR-0093 §1）。
+        if let SessionKey::Topic(root) = key {
+            side_chats::result_line(
+                context.room.as_ref(),
+                root,
+                &topics.name(key),
+                SideChatResultState::Ended,
+                context.lang,
+            )
+            .await;
+        }
     }
     if !ended.is_empty() {
         promote(context, state, topics).await?;
@@ -528,6 +616,17 @@ async fn end<R: Room>(
         "topic-ended"
     };
     send_to(context, key, &text(context.lang, id, &[])).await?;
+    // 旁聊关了，主对话里发 ended 的结果行（ADR-0093 §1）。
+    if let SessionKey::Topic(root) = key {
+        side_chats::result_line(
+            context.room.as_ref(),
+            root,
+            &topics.name(key),
+            SideChatResultState::Ended,
+            context.lang,
+        )
+        .await;
+    }
     promote(context, state, topics).await
 }
 
@@ -537,7 +636,7 @@ pub(super) async fn promote<R: Room>(
     state: &mut RoomState,
     topics: &mut Topics,
 ) -> Result<()> {
-    while let Some((key, prompt, event_id, media)) = topics.poll_admission(now()).await? {
+    while let Some((key, prompt, event_id, sender, media)) = topics.poll_admission(now()).await? {
         start_or_report(
             context,
             state,
@@ -547,6 +646,7 @@ pub(super) async fn promote<R: Room>(
                 kind: JobKind::Normal,
                 text: prompt,
                 event_id,
+                sender,
                 media,
             }],
         )

@@ -65,3 +65,5 @@ install-unreviewed-provider = Wonton hasn't reviewed this app; the code and imag
 install-unreviewed-provider-via = Wonton hasn't reviewed this app; the code and images are provided by { $provider } and indexed by { $host }.
 install-unreviewed-upload-author = Wonton hasn't reviewed this app. It came from a file you uploaded; the author named in its manifest is { $author }, which can't be verified.
 install-unreviewed-upload = Wonton hasn't reviewed this app. It came from a file you uploaded, and its manifest doesn't name an author.
+plugin-widget-high = The app's page can read chat content in the room where you open it, and send or redact messages as you.
+plugin-widget-normal = The app's page can also send and receive call and to-device events, send events later, find the call server, and get your login token.

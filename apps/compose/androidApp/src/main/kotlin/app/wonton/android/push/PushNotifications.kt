@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import app.wonton.android.IncomingRequests
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushNotification
 import app.wonton.ui.notificationChannelId

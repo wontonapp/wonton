@@ -68,11 +68,13 @@ pub(crate) fn key_notice(
     }
 }
 
+/// `side_chats`：房间里有认得的 Bot 声明了支持旁聊（ADR-0093 §1）。
 pub(crate) fn room_row(
     room: RoomInfo,
     core: &UserId,
     layout: ChatLayout,
     bots: &HashSet<String>,
+    side_chats: bool,
 ) -> RoomRow {
     let is_read_only = room.direct_user_id.as_deref() == Some(core);
     RoomRow {
@@ -88,17 +90,31 @@ pub(crate) fn room_row(
             Membership::Invited => RoomMembership::Invited,
             Membership::Left | Membership::Knocked | Membership::Banned => RoomMembership::Left,
         },
-        preview: room.latest.and_then(|latest| preview(latest, bots)),
-        // 旁聊支持声明还没实现（ADR-0093 §4），先都按没有算；实现 PR 从声明状态事件来。
-        side_chats: false,
+        preview: room
+            .latest
+            .and_then(|latest| preview(latest, bots, side_chats)),
+        side_chats,
         unread_count: room.unread_count,
     }
 }
 
-/// 预览。不是消息的事件（成员变化等）不做预览。
-fn preview(latest: LatestMessage, bots: &HashSet<String>) -> Option<RoomPreview> {
+/// 预览。不是消息的事件（成员变化等）不做预览。旁聊的根、结果行和话题里的消息给旁聊的标题和状态
+/// （ADR-0093 §4）；只看这一条定不了“没收到结果”，那要看话题里的情况，预览里按结果行或开着算。
+fn preview(latest: LatestMessage, bots: &HashSet<String>, side_chats: bool) -> Option<RoomPreview> {
     if matches!(&latest.body, MessageBody::Other { kind } if kind == "state") {
         return None;
+    }
+    if let Some(side_chat) = &latest.side_chat {
+        let state = super::side_chat::card_state(side_chats, side_chat.result.as_ref(), None, 0);
+        return Some(RoomPreview {
+            sender_name: latest.sender_name,
+            is_own: latest.is_own,
+            body: MessageSummary::SideChat {
+                title: side_chat.title.clone(),
+                state,
+            },
+            timestamp_ms: latest.timestamp_ms,
+        });
     }
     // Agent 的状态行不进预览（ADR-0082）：状态对象在 SDK 的最新消息里读不到，只能按“Bot 发的提示消息”认，
     // 显示不出上一条就先空着，答案到了预览跟着换。
@@ -158,8 +174,12 @@ pub(crate) fn timeline_item(
                 };
                 bots.content(status, &body, message.sender.as_str(), &message.sender_name)
             }
-            _ => TimelineContent::Message {
-                message: timeline_message(*message, read_by, links, previews),
+            // 旁聊的结果行和带标记的根（ADR-0093 §4）。
+            _ => match bots.side_chats().content(&message) {
+                Some(content) => content,
+                None => TimelineContent::Message {
+                    message: timeline_message(*message, read_by, links, previews, bots),
+                },
             },
         },
         EntryKind::Notice(text) => TimelineContent::Notice { text },
@@ -189,7 +209,9 @@ fn timeline_message(
     read_by: Vec<String>,
     links: &LinkTargets,
     previews: &super::previews::Previews,
+    bots: &BotsView,
 ) -> TimelineMessage {
+    let side_chat = bots.side_chats().card_of(&message);
     // 卡片不再是时间线里的消息（ADR-0016）：旧的核心发的卡片和别的消息一样按正文显示，这里没有特殊处理。
     // 预览只给文字消息：事件里带的直接用，没有的用核心取回的缓存（还在取的下一批带上）。
     let preview = super::previews::message_preview(&message, links, previews);
@@ -224,8 +246,7 @@ fn timeline_message(
         },
         edited: message.edited,
         reply: message.reply.map(|reply| reply_quote(reply, links)),
-        // 旁聊卡片按 SDK 的话题汇总合成（ADR-0093 §4），还没实现：先都不带。
-        side_chat: None,
+        side_chat,
         preview,
         actions,
         body,
@@ -487,6 +508,7 @@ mod tests {
                 mentions: Vec::new(),
                 agent_run: None,
                 thread_root: None,
+                thread_replies: None,
                 edited: false,
                 read_by: Vec::new(),
                 reply: None,

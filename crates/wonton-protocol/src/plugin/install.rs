@@ -6,7 +6,7 @@ use super::{
     BlockedCategory, BotSwitch, CapabilityProviderRef, InstallTogether, LanWebuiOffer,
     MissingCapability, PermissionLine, PluginAuthor, PluginDevice, PluginIcon, PluginKind,
     PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues, SecurityTier,
-    SettingValues, SettingsForm,
+    SettingValues, SettingsForm, WidgetCapability,
 };
 use crate::CardLine;
 
@@ -52,8 +52,20 @@ pub struct InstallPreview {
     #[serde(default)]
     pub written_by: Option<PluginWriter>,
     pub author: Option<PluginAuthor>,
+    /// 应用的许可证原文（SPDX 表达式）；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS），非 SPDX 许可证（`LicenseRef-`）用它给出处；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license_url: Option<String>,
     /// 要授予的全部权限；主人确认的就是这些。
     pub permissions: Vec<PermissionLine>,
+    /// 插件的网页能当 Matrix widget 在房间里做什么（ADR-0096）；不是 widget 时为空。按级别醒目显示，
+    /// 升级时新申请的能力 `added` 为真。
+    #[serde(default)]
+    pub widget_capabilities: Vec<WidgetCapability>,
     /// 要主人填的密钥（ADR-0064）；值不在预览里，跟着安装、升级请求上行。升级预览只列新增的和还没填的。
     #[serde(default)]
     pub secret_inputs: Vec<SecretInput>,

@@ -43,8 +43,10 @@ mod room_link;
 mod room_rows;
 mod send;
 mod session;
+mod side_chat;
 mod sign_in;
 mod storage;
+mod target;
 mod timeline;
 mod timeline_previews;
 mod verification;
@@ -52,7 +54,7 @@ mod view;
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, MutexGuard, Weak};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -86,6 +88,7 @@ use confirmation::Answers;
 use draft::DraftWrite;
 use layout::Layouts;
 pub(crate) use storage::{ChatStorage, StoredSession};
+pub(crate) use target::TimelineKey;
 use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
@@ -107,12 +110,10 @@ pub(crate) struct ChatLink {
     session: Mutex<Option<Arc<MatrixSession>>>,
     session_out: watch::Sender<Option<Arc<MatrixSession>>>,
     room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    /// 订阅着时间线的房间。同一时间只打开一个房间。
-    open_room: Mutex<Option<(OwnedRoomId, Arc<ChatRoom>)>>,
-    /// 最近一次订阅的时间线里每条消息的菜单，转发、撤回只认这里有的（[`menu`]）。
-    open_menus: Mutex<Option<(OwnedRoomId, Arc<Mutex<menu::Menus>>)>>,
-    /// 打开的房间的时间线订阅，用来把壳报告的滚动位置送进去。订阅没了（壳重开、房间关掉）就升级不出来。
-    open_timeline: Mutex<Option<(OwnedRoomId, Weak<TimelineSubscription>)>>,
+    /// 订阅着的时间线：同一时间只开一个房间，主对话和一个旁聊可以同时开着（[`target`]）。
+    open: Mutex<target::OpenTimelines>,
+    /// 各房间的旁聊支持声明（ADR-0093 §1），按信任规则核对过。
+    side_chat_support: Arc<side_chat::Support>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
     answers: watch::Sender<Answers>,
     /// “等你确认”列表（ADR-0016）：长轮询核心的确认接口得到的视图，壳订阅它。换服务器时给壳接着订阅用，
@@ -187,8 +188,7 @@ impl Drop for Active {
 impl Drop for ChatLink {
     fn drop(&mut self) {
         let _context = self.runtime.enter();
-        lock(&self.open_room).take();
-        lock(&self.open_timeline).take();
+        lock(&self.open).clear();
         lock(&self.session).take();
         self.bots.session.send_replace(None);
         self.active.get_mut().take();
@@ -288,9 +288,8 @@ impl ChatLink {
             session: Mutex::new(None),
             session_out,
             room_panel_out,
-            open_room: Mutex::new(None),
-            open_menus: Mutex::new(None),
-            open_timeline: Mutex::new(None),
+            open: Mutex::default(),
+            side_chat_support: Arc::default(),
             answers: watch::Sender::default(),
             confirmations: reuse(
                 confirmations,
@@ -411,100 +410,65 @@ impl ChatLink {
         }
     }
 
-    /// 旁聊时间线（`TimelineTarget::thread_root` 不为空）还没实现（接口先合并，ADR-0093 §5）：
-    /// 调用方拿到明确的“还不能用”，不是空的成功。
-    fn side_chat_not_ready() -> CoreError {
-        CoreError::NotReady {
-            reason: l10n!(CATALOG, language(), "side-chat-not-ready"),
-        }
-    }
-
-    /// 拆 [`TimelineTarget`]：主时间线回房间 ID；带话题根的报还不能用。
-    fn timeline_target(&self, target: &TimelineTarget) -> Result<String, CoreError> {
-        if target.thread_root.is_some() {
-            return Err(Self::side_chat_not_ready());
-        }
-        Ok(target.room_id.clone())
-    }
-
-    /// 按时间线（主时间线或旁聊，ADR-0093 §5）分发的操作。实现和主时间线共用；旁聊路径在
-    /// [`Self::timeline_target`] 处统一挡下。
+    /// 按时间线（主对话或旁聊，ADR-0093 §5）分发的操作：实现和主对话共用，按 [`TimelineKey`] 分开记。
     fn timeline_action(self: &Arc<Self>, action: TimelineAction) -> Result<(), CoreError> {
         match action {
             TimelineAction::SendText {
                 target,
                 body,
                 reply_to,
-            } => {
-                let room_id = self.timeline_target(&target)?;
-                self.send_text(&room_id, &body, reply_to.as_deref())
-            }
+            } => self.send_text(&TimelineKey::parse(&target)?, &body, reply_to.as_deref()),
             TimelineAction::SendImage {
                 target,
                 image,
                 reply_to,
-            } => {
-                let room_id = self.timeline_target(&target)?;
-                self.send_image(&room_id, image, reply_to.as_deref())
-            }
+            } => self.send_image(&TimelineKey::parse(&target)?, image, reply_to.as_deref()),
             TimelineAction::ForwardMessage {
                 target,
                 item_id,
                 to_room_id,
-            } => {
-                let room_id = self.timeline_target(&target)?;
-                self.forward_message(&room_id, &item_id, &to_room_id)
-            }
+            } => self.forward_message(&TimelineKey::parse(&target)?, &item_id, &to_room_id),
             TimelineAction::RedactMessage { target, item_id } => {
-                let room_id = self.timeline_target(&target)?;
-                self.redact_message(&room_id, &item_id)
+                self.redact_message(&TimelineKey::parse(&target)?, &item_id)
             }
             TimelineAction::RetrySend { target, item_id } => {
-                let room_id = self.timeline_target(&target)?;
-                let room = self.opened(&room_id)?;
+                let key = TimelineKey::parse(&target)?;
+                let room = self.opened(&key)?;
                 let sent = self.sent.clone();
                 self.spawn_op_with_success(
                     "chat-op-resend-failed",
                     async move { room.retry_send(&item_id).await },
-                    move || onboarding::record_sent(&sent, room_id),
+                    move || onboarding::record_sent(&sent, key.room_id.to_string()),
                 );
                 Ok(())
             }
             TimelineAction::CancelSend { target, item_id } => {
-                let room_id = self.timeline_target(&target)?;
-                let room = self.opened(&room_id)?;
+                let room = self.opened(&TimelineKey::parse(&target)?)?;
                 self.spawn_op("chat-op-cancel-send-failed", async move {
                     room.cancel_send(&item_id).await
                 });
                 Ok(())
             }
             TimelineAction::PaginateBackwards { target } => {
-                let room_id = self.timeline_target(&target)?;
-                let room = self.opened(&room_id)?;
+                let room = self.opened(&TimelineKey::parse(&target)?)?;
                 self.spawn_op("chat-op-paginate-failed", async move {
                     room.paginate_backwards(PAGE).await.map(drop)
                 });
                 Ok(())
             }
             TimelineAction::SetTimelineScroll { target, scroll } => {
-                let room_id = self.timeline_target(&target)?;
-                self.set_timeline_scroll(&room_id, scroll)
+                self.set_timeline_scroll(&TimelineKey::parse(&target)?, scroll)
             }
             TimelineAction::MarkRead { target } => {
-                let room_id = self.timeline_target(&target)?;
-                self.mark_room_read(&room_id)
+                self.mark_room_read(&TimelineKey::parse(&target)?)
             }
             TimelineAction::SetDraft {
                 target,
                 body,
                 reply_to,
-            } => {
-                let room_id = self.timeline_target(&target)?;
-                self.set_draft(&room_id, &body, reply_to.as_deref())
-            }
+            } => self.set_draft(&TimelineKey::parse(&target)?, &body, reply_to.as_deref()),
             TimelineAction::DismissLinkPreview { target } => {
-                let room_id = self.timeline_target(&target)?;
-                self.dismiss_preview(&room_id);
+                self.dismiss_preview(TimelineKey::parse(&target)?);
                 Ok(())
             }
             // 附件区的操作由 `ClientCore::dispatch` 交给附件区（ADR-0094），不会到这里。
@@ -527,29 +491,32 @@ impl ChatLink {
         Ok(())
     }
 
-    /// 订阅一个已加入房间的时间线。打开另一个房间会关掉前一个的订阅。
+    /// 订阅一条时间线（主对话或旁聊）。打开另一个房间会关掉前一个房间的订阅；同一个房间里主对话和一个旁聊
+    /// 可以同时开着。
     ///
     /// `room_view` 是 tabs 合成的房间面板视图（面板页、上次看的那页、入口有没有被盖住），每批时间线增量
     /// 都带上当前值；变了也发一批（增量为空）。
     pub(crate) async fn open_timeline(
         self: &Arc<Self>,
-        room_id: &str,
+        target: &TimelineTarget,
         room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
-        let (session, room_id) = self.target(room_id)?;
+        let key = TimelineKey::parse(target)?;
+        let session = self.current()?;
+        let room_id = key.room_id.clone();
         if *self.bots.foreground.borrow() {
             self.bots.refresh_all();
         }
         let room = Arc::new(
-            session
-                .open_room(&room_id)
+            open_chat_room(&session, &key)
                 .await
                 .map_err(|e| core_error(&e))?,
         );
-        *lock(&self.open_room) = Some((room_id.clone(), room.clone()));
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
-        *lock(&self.open_menus) = Some((room_id.clone(), menus.clone()));
         self.publish_room_panel(&session, &room_id).await;
+        // 进房间时重新核对一次支持声明：Bot 可能是刚连上才写的（ADR-0093 §1）。
+        let support = self.side_chat_support.clone();
+        support.refresh(&self.runtime, &session, &room_id);
         // 链接的类别要认插件页，插件列表还一次没取过时先取一次（取过或正在取就不重复，免得打乱别处的节奏）。
         let plugins = self.plugins.view();
         if plugins.installed.is_none() && !plugins.refreshing {
@@ -558,17 +525,23 @@ impl ChatLink {
         let subscription = TimelineSubscription::start(
             &self.runtime,
             TimelineSource {
-                room,
+                room: room.clone(),
                 room_id: room_id.clone(),
                 confirmations: self.room_cards.subscribe(),
                 plugins: self.plugins.clone(),
                 previews: self.previews.clone(),
-                menus,
+                menus: menus.clone(),
                 room_view,
                 chat: self.view.subscribe(),
+                support,
             },
         );
-        *lock(&self.open_timeline) = Some((room_id, Arc::downgrade(&subscription)));
+        lock(&self.open).insert(target::OpenTimeline {
+            key,
+            room,
+            menus,
+            subscription: Arc::downgrade(&subscription),
+        });
         Ok(subscription)
     }
 
@@ -589,25 +562,21 @@ impl ChatLink {
             .send_replace(Some((room_id.to_owned(), panel)));
     }
 
-    /// 壳报告列表滚到了哪儿：交给这个房间现在的时间线订阅。
-    fn set_timeline_scroll(&self, room_id: &str, scroll: TimelineScroll) -> Result<(), CoreError> {
-        let subscription = lock(&self.open_timeline)
-            .as_ref()
-            .filter(|(id, _)| id.as_str() == room_id)
-            .and_then(|(_, subscription)| subscription.upgrade());
+    /// 壳报告列表滚到了哪儿：交给这条时间线现在的订阅。
+    fn set_timeline_scroll(
+        &self,
+        key: &TimelineKey,
+        scroll: TimelineScroll,
+    ) -> Result<(), CoreError> {
+        let subscription = lock(&self.open)
+            .get(key)
+            .and_then(|open| open.subscription.upgrade());
         match subscription {
             Some(subscription) => {
                 subscription.set_scroll(scroll);
                 Ok(())
             }
-            None => Err(CoreError::NotReady {
-                reason: l10n!(
-                    CATALOG,
-                    language(),
-                    "chat-room-not-subscribed",
-                    room = room_id
-                ),
-            }),
+            None => Err(target::not_subscribed(key)),
         }
     }
 
@@ -703,18 +672,11 @@ impl ChatLink {
         self.target(room_id)
     }
 
-    fn opened(&self, room_id: &str) -> Result<Arc<ChatRoom>, CoreError> {
-        match &*lock(&self.open_room) {
-            Some((id, room)) if id.as_str() == room_id => Ok(room.clone()),
-            _ => Err(CoreError::NotReady {
-                reason: l10n!(
-                    CATALOG,
-                    language(),
-                    "chat-room-not-subscribed",
-                    room = room_id
-                ),
-            }),
-        }
+    fn opened(&self, key: &TimelineKey) -> Result<Arc<ChatRoom>, CoreError> {
+        lock(&self.open)
+            .get(key)
+            .map(|open| open.room.clone())
+            .ok_or_else(|| target::not_subscribed(key))
     }
 
     /// 已打开的房间直接用，否则打开它。
@@ -722,14 +684,12 @@ impl ChatLink {
     /// 打开会把 Sliding Sync 的房间订阅换成这个房间（同一时间只订阅一个，见 `MatrixSession::open_room`），正在看的
     /// 房间就只剩房间列表带来的最新一条，时间线会断。现在界面只在打开着的房间里发消息、标为已读，走不到这一步；
     /// 以后在列表上做“标为已读”这类不进房间的操作时，要改成不动订阅的写法（比如直接对 SDK 的 `Room` 发回执）。
-    async fn room(&self, room_id: &OwnedRoomId) -> Result<Arc<ChatRoom>, Error> {
-        if let Some((id, room)) = &*lock(&self.open_room)
-            && id == room_id
-        {
-            return Ok(room.clone());
+    async fn room(&self, key: &TimelineKey) -> Result<Arc<ChatRoom>, Error> {
+        if let Some(open) = lock(&self.open).get(key) {
+            return Ok(open.room.clone());
         }
         let session = self.current().map_err(|e| Error::NotReady(e.to_string()))?;
-        Ok(Arc::new(session.open_room(room_id).await?))
+        Ok(Arc::new(open_chat_room(&session, key).await?))
     }
 }
 
@@ -739,9 +699,8 @@ impl ChatLink {
         self.session_out.send_replace(None);
         self.room_panel_out.send_replace(None);
         *lock(&self.verification) = None;
-        *lock(&self.open_room) = None;
-        *lock(&self.open_menus) = None;
-        *lock(&self.open_timeline) = None;
+        lock(&self.open).clear();
+        self.side_chat_support.clear();
         self.room_order.clear();
         self.sent.send_replace(Vec::new());
         self.home.set_catching_up(false);
@@ -820,6 +779,14 @@ impl ChatLink {
         ];
         tasks.extend(self.verification_tasks(session));
         tasks
+    }
+}
+
+/// 打开主对话或旁聊的时间线（ADR-0093 §4）。
+async fn open_chat_room(session: &MatrixSession, key: &TimelineKey) -> Result<ChatRoom, Error> {
+    match key.thread() {
+        Some(root) => session.open_thread(&key.room_id, root).await,
+        None => session.open_main(&key.room_id).await,
     }
 }
 

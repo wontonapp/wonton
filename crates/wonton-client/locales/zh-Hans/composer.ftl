@@ -13,3 +13,5 @@ composer-attachment-failed = 附件“{ $name }”没传上去。
 composer-transfer-gone = 这个文件的上传记录不见了，请重试。
 
 composer-upload-record-unreadable = 照片的上传记录读不懂：{ $reason }
+
+composer-side-chat-unsupported = 旁聊里不能加附件。

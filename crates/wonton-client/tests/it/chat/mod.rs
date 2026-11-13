@@ -31,6 +31,7 @@ mod replies;
 mod resume;
 mod send;
 mod server_switch;
+mod side_chat;
 mod stale_join;
 mod subscriptions;
 pub(crate) mod support;

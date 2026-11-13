@@ -56,7 +56,7 @@ object PushBuilder {
         val intent = Intent(context, MainActivity::class.java)
             .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
             .putExtra(EXTRA_CARD, notification.confirmation?.id)
-            .putExtra(PushActionReceiver.EXTRA_THREAD, notification.threadRoot)
+            .putExtra(IncomingRequests.EXTRA_SIDE_CHAT, notification.threadRoot)
             .addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP,

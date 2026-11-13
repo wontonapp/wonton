@@ -11,7 +11,7 @@ use futures_util::{Stream, StreamExt, stream};
 use matrix_sdk::{
     ComposerDraft, ComposerDraftType, Room, RoomDisplayName, RoomMemberships, RoomState,
     ruma::{
-        MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
+        EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId,
         api::{
             client::{
                 membership::join_room_by_id,
@@ -126,6 +126,8 @@ pub struct LatestMessage {
     pub body: MessageBody,
     /// 发送时间，Unix 毫秒。
     pub timestamp_ms: u64,
+    /// 这一条属于旁聊（根、结果行、话题里的消息）时，旁聊的标题和结果行（ADR-0093 §4）。
+    pub side_chat: Option<crate::side_chat::LatestSideChat>,
 }
 
 impl MatrixSession {
@@ -288,6 +290,13 @@ impl MatrixSession {
         let direct_changes = self
             .client
             .observe_events::<GlobalAccountDataEvent<DirectEventContent>, ()>();
+        // 房间的未读加上各旁聊的未读（ADR-0093 §4）：话题里来了消息只动事件缓存，话题回执只动话题，SDK 都不当成
+        // 房间的变化，单独跟着。
+        let mut cache_changes = self
+            .client
+            .event_cache()
+            .subscribe_to_room_generic_updates();
+        let rooms_changed = self.rooms_changed.clone();
         // 初值是“还没算出来”，不是空列表：界面要分得清“还在加载”和“真的没有房间”。
         let (sender, receiver) = watch::channel(None);
         tokio::spawn(async move {
@@ -305,6 +314,8 @@ impl MatrixSession {
                         }
                     }
                     Some(_) = direct_changes.next() => {}
+                    Ok(_) = cache_changes.recv() => {}
+                    () = rooms_changed.notified() => {}
                     () = sender.closed() => return,
                 }
                 let mut infos = Vec::with_capacity(rooms.len());
@@ -325,12 +336,17 @@ impl MatrixSession {
     /// 一个聊天一致。同一时间只打开一个房间，打开另一个房间会取消前一个的订阅，[`watch_room`](Self::watch_room)
     /// 的房间不受影响。
     pub async fn open_room(&self, room_id: &RoomId) -> Result<ChatRoom> {
+        let room = self.subscribe_opened(room_id).await?;
+        ChatRoom::open(room).await
+    }
+
+    /// 把这个房间记成打开着的、订阅它的完整时间线，返回 SDK 的房间。
+    pub(crate) async fn subscribe_opened(&self, room_id: &RoomId) -> Result<Room> {
         let room = self.joined(room_id)?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.opened = Some(room_id.to_owned());
         self.subscribe(&mut subscriptions, false).await;
-        drop(subscriptions);
-        ChatRoom::open(room).await
+        Ok(room)
     }
 
     /// 一直跟着一个已加入的房间：不管打开着哪个房间，都同步它的完整时间线。不用了调
@@ -494,9 +510,11 @@ impl MatrixSession {
     /// 这个房间输入框里的草稿，没打过字也没在回复时是 `None`。存在本机状态库里，关掉 App 也还在；不上服务器。
     ///
     /// 和 [`open_room`](Self::open_room) 不同，这里不订阅房间：敲字的房间和打开着的房间不是同一个时不打断那边的时间线。
-    pub async fn draft(&self, room_id: &RoomId) -> Result<Option<Draft>> {
+    ///
+    /// `thread` 是旁聊的话题根：每个旁聊的输入框各有一份草稿，主对话是 `None`（ADR-0093 §4）。
+    pub async fn draft(&self, room_id: &RoomId, thread: Option<&EventId>) -> Result<Option<Draft>> {
         let room = self.joined(room_id)?;
-        Ok(room.load_composer_draft(None).await?.map(|draft| Draft {
+        Ok(room.load_composer_draft(thread).await?.map(|draft| Draft {
             body: draft.plain_text,
             reply_to: match draft.draft_type {
                 ComposerDraftType::Reply { event_id } => Some(event_id),
@@ -507,10 +525,15 @@ impl MatrixSession {
 
     /// 记下草稿（matrix-sdk 的 composer draft，回复存成 `ComposerDraftType::Reply`），正文空、也没在回复时删掉。
     /// 存在本机状态库里。
-    pub async fn save_draft(&self, room_id: &RoomId, draft: &Draft) -> Result<()> {
+    pub async fn save_draft(
+        &self,
+        room_id: &RoomId,
+        thread: Option<&EventId>,
+        draft: &Draft,
+    ) -> Result<()> {
         let room = self.joined(room_id)?;
         if draft.body.is_empty() && draft.reply_to.is_none() {
-            room.clear_composer_draft(None).await?;
+            room.clear_composer_draft(thread).await?;
         } else {
             let draft = ComposerDraft {
                 plain_text: draft.body.clone(),
@@ -524,9 +547,14 @@ impl MatrixSession {
                 },
                 attachments: Vec::new(),
             };
-            room.save_composer_draft(draft, None).await?;
+            room.save_composer_draft(draft, thread).await?;
         }
         Ok(())
+    }
+
+    /// 叫房间列表重算一遍（自己发了话题回执以后，见 [`Self::rooms`]）。
+    pub fn refresh_rooms(&self) {
+        self.rooms_changed.notify_one();
     }
 
     pub(crate) fn joined(&self, room_id: &RoomId) -> Result<Room> {
@@ -676,7 +704,7 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         is_encrypted: room.encryption_state().is_encrypted(),
         membership: state.into(),
         latest: latest_message(room).await,
-        unread_count: room.num_unread_messages(),
+        unread_count: room.num_unread_messages() + crate::side_chat::threads_unread(room).await,
     }
 }
 
@@ -734,6 +762,7 @@ async fn latest_message(room: &Room) -> Option<LatestMessage> {
             },
         },
         timestamp_ms: millis(timestamp),
+        side_chat: crate::side_chat::latest_side_chat(room).await,
     })
 }
 

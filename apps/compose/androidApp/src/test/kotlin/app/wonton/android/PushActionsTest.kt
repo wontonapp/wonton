@@ -121,7 +121,7 @@ class PushActionsTest {
         val open = shadowOf(error.contentIntent).savedIntent
         assertEquals("server", open.getStringExtra(IncomingRequests.EXTRA_SERVER))
         assertEquals("!room:example.org", open.getStringExtra(IncomingRequests.EXTRA_ROOM))
-        assertEquals("thread", open.getStringExtra(PushActionReceiver.EXTRA_THREAD))
+        assertEquals("thread", IncomingRequests().apply { take(open) }.room?.sideChatRoot)
     }
 
     @Test
@@ -137,7 +137,7 @@ class PushActionsTest {
         val open = shadowOf(error.contentIntent).savedIntent
         assertEquals("server", open.getStringExtra(IncomingRequests.EXTRA_SERVER))
         assertEquals("!room:example.org", open.getStringExtra(IncomingRequests.EXTRA_ROOM))
-        assertEquals("thread", open.getStringExtra(PushActionReceiver.EXTRA_THREAD))
+        assertEquals("thread", IncomingRequests().apply { take(open) }.room?.sideChatRoot)
     }
 
     @Test

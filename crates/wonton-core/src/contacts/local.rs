@@ -36,7 +36,9 @@ impl Contacts {
             ));
         }
         if server != self.own_server {
-            check_reach(server, self.ports.link.reach(server))?;
+            let pairing_required =
+                request.kind != ContactKind::Person || !self.ports.open_federation;
+            check_reach(server, self.ports.link.reach(server), pairing_required)?;
         }
         let existing = self.lock().row(bot, user).cloned();
         match existing.as_ref().map(|row| row.state) {
@@ -296,20 +298,25 @@ impl Contacts {
 }
 
 /// 新请求要对方服务器在线：探活说连不上时直接失败，不记一个发不过去的请求（ADR-0050）。还在确认时照常发，
-/// 发不过去由通道报错。
-fn check_reach(server: &str, reach: PeerReach) -> Result<(), ContactFailure> {
+/// 发不过去由通道报错。有名字模式加“人”（ADR-0051）只走 Matrix 私聊邀请，没配对的服务器也放行；
+/// 已配对但探活说下线时照旧快速失败——有名字模式下配对过的目的地钉在 iroh 代理上，隧道不通邀请就发不过去。
+fn check_reach(
+    server: &str,
+    reach: PeerReach,
+    pairing_required: bool,
+) -> Result<(), ContactFailure> {
     match reach {
-        PeerReach::NotPaired | PeerReach::Paired(PeerStatus::RemovedByPeer) => {
+        PeerReach::Paired(PeerStatus::Offline) => Err(ContactFailure::new(
+            ContactError::PeerUnreachable,
+            format!("服务器 {server} 现在连不上"),
+        )),
+        PeerReach::NotPaired | PeerReach::Paired(PeerStatus::RemovedByPeer) if pairing_required => {
             Err(ContactFailure::new(
                 ContactError::NotPaired,
                 format!("服务器 {server} 没有和这台配对"),
             ))
         }
-        PeerReach::Paired(PeerStatus::Offline) => Err(ContactFailure::new(
-            ContactError::PeerUnreachable,
-            format!("服务器 {server} 现在连不上"),
-        )),
-        PeerReach::Paired(_) => Ok(()),
+        _ => Ok(()),
     }
 }
 

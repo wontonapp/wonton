@@ -100,4 +100,23 @@
     <string name="confirmations_title">確認待ち</string>
     <!-- Empty confirmation list after requests have been answered or expired. -->
     <string name="confirmations_empty">確認が必要なものはありません</string>
+    <string name="side_chat">サイドチャット</string>
+    <string name="side_chat_new">新しいサイドチャット</string>
+    <string name="side_chat_placeholder">何について話しますか</string>
+    <string name="side_chat_result_line">サイドチャット「%1$s」：%2$s</string>
+    <string name="side_chat_state_open">進行中</string>
+    <string name="side_chat_state_done">完了</string>
+    <string name="side_chat_state_failed">完了できませんでした</string>
+    <string name="side_chat_state_ended">終了</string>
+    <string name="side_chat_state_result_missing">結果が届いていません</string>
+    <string name="side_chat_state_untracked">結果はメインのチャットに戻りません</string>
+    <string name="side_chat_state_other">状態不明</string>
+    <string name="side_chat_unsupported">この AI はサイドチャットに対応していません</string>
+    <string name="side_chat_no_files">サイドチャットではファイルを送れません。メインのチャットで送ってください。</string>
+    <plurals name="side_chat_replies">
+        <item quantity="other">サイドチャット · %1$d 件</item>
+    </plurals>
+    <plurals name="side_chat_unread">
+        <item quantity="other">未読 %1$d 件</item>
+    </plurals>
 </resources>

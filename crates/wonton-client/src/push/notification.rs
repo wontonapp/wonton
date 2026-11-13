@@ -309,6 +309,8 @@ impl PushLink {
             Ok(None) => None,
             Ok(Some(card)) if card.state == ConfirmationState::Pending => {
                 let origin = card.origin.clone();
+                // 卡片来自旁聊的，点通知直接进那个旁聊（ADR-0093 §5）。
+                let thread_root = origin.as_ref().and_then(|origin| origin.thread_id.clone());
                 Some(PushNotification {
                     server_id: None,
                     // 有来源会话的进那个房间，没有的（核心自己发起的）进“等你确认”列表。
@@ -337,7 +339,7 @@ impl PushLink {
                         },
                     }),
                     contact_request: None,
-                    thread_root: None,
+                    thread_root,
                     lock_screen_private: false,
                     unread_total: 0,
                 })
@@ -381,6 +383,8 @@ pub(crate) fn push_notification(
     message: Notification,
 ) -> Option<PushNotification> {
     let notice = plugin_notice(own_user, &message.sender, &message.custom);
+    // 点通知直接进旁聊（ADR-0093 §5）：话题里的消息按它的话题根。
+    let thread_root = thread_of(&message.custom);
     let content = match message.body {
         MessageBody::Undecryptable => PushContent::Unavailable {
             reason: ChatFailure::NotReady,
@@ -405,11 +409,19 @@ pub(crate) fn push_notification(
         },
         confirmation: None,
         contact_request: None,
-        thread_root: None,
+        thread_root,
         // 这两项构造时还不知道：保持连接那一路自己填，推送这一路由 [`PushLink::decorate`] 统一补。
         lock_screen_private: false,
         unread_total: 0,
     })
+}
+
+/// 话题里的消息的话题根（`m.relates_to` 的 `m.thread`）。
+fn thread_of(custom: &Map<String, Value>) -> Option<String> {
+    let relation = custom.get("m.relates_to")?;
+    (relation.get("rel_type")?.as_str()? == "m.thread")
+        .then(|| relation.get("event_id")?.as_str().map(str::to_owned))
+        .flatten()
 }
 
 fn invalid(reason: &str) -> CoreError {

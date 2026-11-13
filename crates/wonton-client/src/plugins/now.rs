@@ -19,8 +19,9 @@ use wonton_l10n::l10n;
 const APP_LIMIT: usize = 8;
 
 /// 这份预览要不要主人看过才能装或升级。规则和确认页一致（ADR-0017），只是决定从壳挪进了核心：
-/// 装不了、缺资料、要用设备、有核心不支持的权限、缺 `requires` 要一起装；安装时高风险权限或醒目提醒
-/// （内存、架构、自动登录这类说明不拦）；更新时权限有变，或这个插件有 Bot 开了“始终允许”（ADR-0024）。
+/// 装不了、缺资料、要用设备、有核心不支持的权限、缺 `requires` 要一起装、widget 能力变多；安装时高风险权限、
+/// widget 能力或醒目提醒（内存、架构、自动登录这类说明不拦）；更新时权限有变，或这个插件有 Bot 开了
+/// “始终允许”（ADR-0024）。
 fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
     if preview.blocked.is_some()
         || preview.missing_profile.is_some()
@@ -34,6 +35,10 @@ fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
             .permissions
             .iter()
             .any(|line| !line.supported || line.added)
+        || preview
+            .widget_capabilities
+            .iter()
+            .any(|capability| capability.added)
     {
         return true;
     }
@@ -42,6 +47,7 @@ fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
     }
     preview.notices.iter().any(|notice| notice.emphasis)
         || preview.permissions.iter().any(|line| line.risk.is_some())
+        || !preview.widget_capabilities.is_empty()
 }
 
 /// 有新版本可升级的应用：核心查到新版本的，加上商店里版本号和装着的不一样的；正在装、升、卸的不算。
@@ -385,6 +391,7 @@ fn confirmation_preview(confirmation: &StoreConfirmation) -> &InstallPreview {
 mod tests {
     use wonton_protocol::{
         CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice,
+        WidgetCapability, WidgetCapabilityLevel,
     };
 
     use super::*;
@@ -464,6 +471,32 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn a_widget_page_asks_on_install_and_when_capabilities_grow() {
+        let capability = || WidgetCapability {
+            capability: "org.matrix.msc2762.send.state_event:m.room.member".into(),
+            level: WidgetCapabilityLevel::High,
+            added: false,
+        };
+        // 新装：能把网页当 widget 打开就要主人看过能力，不分级别。
+        assert!(needs_confirmation(
+            &preview_with(|p| p.widget_capabilities = vec![capability()]),
+            false
+        ));
+        // 更新：能力没变不用再问，变多了才问。
+        assert!(!needs_confirmation(
+            &preview_with(|p| p.widget_capabilities = vec![capability()]),
+            true
+        ));
+        assert!(needs_confirmation(
+            &preview_with(|p| p.widget_capabilities = vec![WidgetCapability {
+                added: true,
+                ..capability()
+            }]),
+            true
+        ));
+    }
+
     fn preview() -> InstallPreview {
         InstallPreview {
             source: Some("github:owner/app.photos@v1.0.0".into()),
@@ -473,6 +506,8 @@ mod tests {
             id: "app.photos".into(),
             title: "Photos".into(),
             summary: String::new(),
+            license: None,
+            license_url: None,
             version: "1.0.0".into(),
             kind: PluginKind::App,
             runtime: Default::default(),
@@ -485,6 +520,7 @@ mod tests {
             via_index: None,
             written_by: None,
             author: None,
+            widget_capabilities: Vec::new(),
             permissions: vec![PermissionLine {
                 permission: "storage.share.photos:read".into(),
                 text: "读共享文件夹".into(),

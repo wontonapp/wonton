@@ -5,7 +5,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.wonton.client.parseAppLink
-import app.wonton.android.push.PushActionReceiver
 import app.wonton.android.push.PushBuilder
 import app.wonton.protocol.BotRef
 import app.wonton.ui.AgentTextRequest
@@ -26,18 +25,19 @@ internal class IncomingRequests {
         takeContacts(intent)
         intent.getStringExtra(EXTRA_ROOM)?.let { room ->
             val server = intent.getStringExtra(EXTRA_SERVER)
+            val sideChat = intent.getStringExtra(EXTRA_SIDE_CHAT)
             intent.removeExtra(EXTRA_ROOM)
             intent.removeExtra(EXTRA_SERVER)
+            intent.removeExtra(EXTRA_SIDE_CHAT)
             if (server != null) {
                 // 新的跳转顶掉旧的：留下的只有最新这一个。
                 link = null
                 agentText = null
                 this.room = RoomRequest(
                     server, room, cardId = intent.getStringExtra(PushBuilder.EXTRA_CARD),
-                    threadRoot = intent.getStringExtra(PushActionReceiver.EXTRA_THREAD),
+                    sideChatRoot = sideChat,
                 )
                 intent.removeExtra(PushBuilder.EXTRA_CARD)
-                intent.removeExtra(PushActionReceiver.EXTRA_THREAD)
             }
         }
         if (intent.action == Intent.ACTION_VIEW) {
@@ -80,6 +80,7 @@ internal class IncomingRequests {
     companion object {
         const val EXTRA_ROOM = "wonton_open_room"
         const val EXTRA_SERVER = "wonton_open_server"
+        const val EXTRA_SIDE_CHAT = "wonton_open_side_chat"
         const val EXTRA_CONTACTS_PLUGIN = "wonton_open_contacts_plugin"
         const val EXTRA_CONTACTS_BOT = "wonton_open_contacts_bot"
     }

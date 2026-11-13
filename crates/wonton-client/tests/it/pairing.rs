@@ -25,9 +25,9 @@ use wonton_tunnel::pair::{
 };
 use wonton_tunnel::{Allowlist, PeerStream, TunnelListener, TunnelServer};
 
-/// 兜底预算，不是节奏：配对要另开 endpoint、建连再交换，繁忙时建连实测 16s+；取 60s，
-/// 超过就是真的配不上。
-const WAIT: Duration = Duration::from_secs(60);
+/// 兜底预算，不是节奏：配对要另开 endpoint、建连再交换，繁忙时建连实测 16s+；连不上的服务端还要再确认一次
+/// （两段 30 秒），取 90s，超过就是真的配不上。
+const WAIT: Duration = Duration::from_secs(90);
 
 /// 配上且连上了：核心把进展停在 `Paired`（壳离开配对页的类别），连接状态连着。
 fn paired(view: &HomeViewModel) -> bool {
@@ -59,6 +59,11 @@ const SLOW_REPLY: Duration = Duration::from_secs(8);
 impl Codes {
     /// 发一个码，配对时按 `outcome` 回应。
     fn issue(&self, outcome: Option<RejectReason>) -> String {
+        self.issue_at(outcome, None)
+    }
+
+    /// 同上，直连地址换成 `addr`（拦在中间的回环转发）。
+    fn issue_at(&self, outcome: Option<RejectReason>, addr: Option<SocketAddr>) -> String {
         let mut codes = self.codes.lock().unwrap();
         let secret =
             PairingSecret::from_bytes([u8::try_from(codes.len() + 1).unwrap(); SECRET_LEN]);
@@ -66,7 +71,7 @@ impl Codes {
         PairingCode {
             server_id: self.server_id,
             relays: Vec::new(),
-            direct_addrs: self.direct_addrs.clone(),
+            direct_addrs: addr.map_or_else(|| self.direct_addrs.clone(), |addr| vec![addr]),
             base_domain: "wonton.localhost".to_owned(),
             core_url: Url::from_str("http://wonton.localhost:18480/").unwrap(),
             secret,
@@ -161,6 +166,11 @@ impl Home {
 
     fn code(&self, outcome: Option<RejectReason>) -> String {
         self.codes.issue(outcome)
+    }
+
+    /// 直连地址换成 `addr` 的码。
+    fn code_at(&self, addr: SocketAddr) -> String {
+        self.codes.issue_at(None, Some(addr))
     }
 }
 
@@ -280,6 +290,24 @@ impl Phone {
         }
     }
 }
+/// 中继地址写成 http：码在本机就解析不过，当场报“要用 https”，不停在配对页等满时限。
+#[tokio::test]
+async fn a_code_with_an_http_relay_is_rejected_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let id = SecretKey::generate().public();
+    let relays =
+        serde_json::to_string(&json!([{ "url": "http://127.0.0.1:19194/", "tier": 0 }])).unwrap();
+    let code = format!(
+        "wonton://pair?v=0&id={id}&relays={}&addr=127.0.0.1:1&domain=wonton.localhost&core=http%3A%2F%2Fwonton.localhost%3A1%2F&secret={}",
+        url::form_urlencoded::byte_serialize(relays.as_bytes()).collect::<String>(),
+        "42".repeat(SECRET_LEN),
+    );
+    let error = phone.pair(&code).unwrap_err();
+    let text = format!("{error:?}");
+    assert!(text.contains("https"), "{text}");
+}
+
 #[tokio::test]
 async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
     let dir = tempfile::tempdir().unwrap();
@@ -299,7 +327,8 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
         phone.home().pairing,
         Some(PairingStatus::InProgress { .. })
     ));
-    // Existing pairing deadline is 30s. Two seconds only cover scheduling; QUIC cleanup must not delay the visible result.
+    // 建连那一段 30 秒，超时就报连不上（不再确认）。几秒只给调度和 QUIC 清理留余量：
+    // 清理不能推迟可见的结果。
     let (failure, message) = tokio::time::timeout(Duration::from_secs(32), phone.pairing_failure())
         .await
         .expect("pairing failure must be published before endpoint cleanup");
@@ -647,6 +676,32 @@ async fn a_reply_after_the_deadline_still_pairs() {
     restarted
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
+}
+
+/// 建连那一段超时就不确认了：没有 0-RTT，握手没完成时请求一个字节都发不出去，服务端不可能登记，
+/// 再问一次只会让死服务端多等一段。用一条拖慢第一个包的通道把握手拖过时限，断言只发生了一次交换。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_connect_that_misses_the_stage_fails_without_a_second_exchange() {
+    let home = Home::start().await;
+    // 设备→服务端的包都晚 1.5 秒才转：握手赶不上 1 秒的时限，整段交换超时。
+    let proxy = crate::home::support::SlowUdp::start_first(
+        home.server.endpoint().bound_sockets()[0],
+        1000,
+        Duration::from_millis(1500),
+    )
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    phone.test_set_pair_deadlines(Duration::from_secs(1), WATCH);
+    phone.pair(&home.code_at(proxy.addr())).unwrap();
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    assert_eq!(phone.home().status, HomeStatus::NotConfigured);
+    let device: EndpointId = phone.home().device_id.parse().unwrap();
+    assert!(
+        !home.codes.allowlist.contains(&device),
+        "握手都没完成，服务端不该登记"
+    );
 }
 
 /// 第一次和自动的确认都超过时限才报失败；服务端已经登记了这台设备，拿同一个码手动重试还能配上，
