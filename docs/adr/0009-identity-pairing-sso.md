@@ -113,6 +113,18 @@ JWT 登录可行，按下面的方案实现。验证版本：Tuwunel v1.9.4、ma
 5. 应用走 OIDC end-session 登出时，带回跳地址的请求只允许登记过的地址；没有回跳参数时由 Hydra 的
    `urls.post_logout_redirect` 送回核心首页，不停在身份提供方自己的默认页。
 
+**SQLite 并发（2026-11-13 验证）**
+
+Hydra 使用官方 DSN 参数 `max_conns=1&lock=false`：由 `database/sql` 的单连接队列串行执行数据库操作，
+不叠加 Pop 的语句锁。Pop 的事务锁和语句锁分别持有时，非事务写入可能持语句锁等待 SQLite 写锁，
+挡住已有事务继续执行和提交；实测四条并发授权链会报 `database is locked`，等待超过 Hydra 的写响应期限后，
+网关收到连接中断。只增加等待期限或重放 HTTP 请求不能解决锁竞争，还会重复消费一次性 verifier/code。
+安装和开发 Compose 使用同一组连接参数；不改上游镜像、HTTP 期限或非幂等请求的重放边界。
+
+`deploy/dev/core/smoke.sh` 的 `sso` 步骤覆盖四个独立会话的 PKCE 授权链，在授权确认结束和首次 Basic token 兑换前
+各设一道屏障，断言每个授权码只提交一次且 userinfo 认出主人。修改前的配置出现 502 和已消费 verifier，修改后全部成功。
+
+
 **遗留**
 
 - App 内 WebView 经隧道打开：见下一节。WebView 的 HTTP 代理设为客户端核心的本地代理，`Host` 原样保留，

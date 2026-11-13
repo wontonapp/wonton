@@ -213,7 +213,7 @@ services:
     command: migrate sql up -e --yes
     environment:
       <<: *no-proxy
-      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true&max_conns=1&lock=false
     volumes:
       # 镜像以 nonroot 运行，卷挂在它的家目录才有写权限。
       - hydra:/home/nonroot
@@ -227,7 +227,8 @@ services:
     restart: unless-stopped
     environment:
       <<: *no-proxy
-      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true
+      # 与安装模板一致：由单连接排队，避免 Pop 的语句锁与 SQLite 事务锁互相等待。
+      DSN: sqlite:///home/nonroot/hydra.sqlite?_fk=true&max_conns=1&lock=false
       # 签发方用插件网络里的内部名字（ADR-0063）：插件后端经核心的这个别名访问它，有的库把 *.localhost 直接当回环，
       # auth.<基础域名> 的别名对它们不起作用。签发方本身浏览器不访问，只走授权和登出端点。
       URLS_SELF_ISSUER: http://auth.wonton.internal:${WONTON_DEV_PORT:-18480}
