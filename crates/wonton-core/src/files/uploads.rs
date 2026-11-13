@@ -331,6 +331,11 @@ impl Files {
         };
         let langs = langs.clone();
         self.blocking(move |files| {
+            let _home = files
+                .home_changes
+                .read()
+                .expect("home changes lock poisoned");
+            files.host.check_person(&pending.accessor)?;
             let shares = files.home_shares(&pending.username, true)?;
             for dir in [
                 files.uploads.dir.as_path(),
@@ -508,6 +513,10 @@ impl Files {
     /// 放文件、写记录、清理，这个顺序：数据一直留到记录写好。任何一步失败或者崩溃，文件都还认得出来（`place_upload` 按 inode 认），
     /// 再来一次会收敛到同一个文件和同一条记录。
     fn place_pending(&self, pending: Pending, langs: &Languages) -> Result<FileRecord, Failure> {
+        let _home = self
+            .home_changes
+            .read()
+            .expect("home changes lock poisoned");
         self.host.check_person(&pending.accessor)?;
         let (name, placed) = self.place_marked(&pending, langs)?;
         let record = pending.record(name, placed);
@@ -664,6 +673,10 @@ impl Files {
     /// 没有记录的文件不能留在公开的名字上：App 删不掉，清理也再找不到它。还是放下时的样子就按没放过算，删掉，不补记录：客户端取消了就是
     /// 不要了，其余两种情况客户端已经被告知要重传，留着或者补上都会多一份。主人改过的是主人的文件：补一条记录，留着。
     fn settle_placed(&self, id: &FileId) -> Result<(), Failure> {
+        let _home = self
+            .home_changes
+            .read()
+            .expect("home changes lock poisoned");
         let Some(pending) = self.uploads.load_pending(id)? else {
             return Ok(());
         };

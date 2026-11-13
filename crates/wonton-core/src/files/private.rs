@@ -5,6 +5,23 @@ use super::{Failure, Files, share_failure};
 use crate::plugin::{hostdir, languages::Languages};
 
 impl Files {
+    pub(crate) async fn remove_home(
+        self: &std::sync::Arc<Self>,
+        username: &str,
+    ) -> Result<(), Failure> {
+        let username = username.to_owned();
+        self.blocking(move |files| {
+            let _home = files
+                .home_changes
+                .write()
+                .expect("home changes lock poisoned");
+            crate::private_home::remove(&files.data_dir, &username).map_err(Failure::internal)?;
+            files.registry.remove_home_uploads(&username)?;
+            Ok(())
+        })
+        .await
+    }
+
     pub(super) fn recover_homes(
         data_dir: &std::path::Path,
     ) -> Result<(), super::share_fs::ShareError> {

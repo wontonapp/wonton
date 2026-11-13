@@ -117,12 +117,12 @@ impl Gateway {
         })?;
         matrix.deactivate(&member.user_id).await?;
         if removal.delete_home {
-            let data_dir = self.plugins.data_dir();
-            let username = member.username.clone();
-            tokio::task::spawn_blocking(move || private_home::remove(&data_dir, &username))
-                .await
-                .map_err(storage)?
-                .map_err(InstallError::Storage)?;
+            let files = self.files.as_ref().ok_or_else(|| {
+                InstallError::Storage(
+                    "File service is not configured; cannot remove private file records".into(),
+                )
+            })?;
+            files.remove_home(&member.username).await.map_err(storage)?;
         }
         self.members
             .removal_finished(&member.username)

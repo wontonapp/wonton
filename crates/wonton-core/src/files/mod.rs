@@ -240,6 +240,8 @@ pub struct Files {
     registry: Registry,
     shares: Shares,
     data_dir: PathBuf,
+    // Home deletion excludes upload placement and recovery, which can publish new file records.
+    home_changes: std::sync::RwLock<()>,
     /// Bot 存文件的暂存目录（ADR-0027）。
     saving_dir: PathBuf,
     owner: Owner,
@@ -288,6 +290,7 @@ impl Files {
             registry,
             shares,
             data_dir: config.data_dir.clone(),
+            home_changes: std::sync::RwLock::default(),
             saving_dir,
             owner: config.owner,
             uploads: uploads::Uploads::open(&config.dir, config.owner)?,

@@ -355,6 +355,24 @@ impl Registry {
         Ok(())
     }
 
+    pub(super) fn remove_home_uploads(&self, username: &str) -> Result<(), RegistryError> {
+        let _queue = self.writes.lock().expect("编号记录写队列中毒");
+        let ids: Vec<FileId> = self
+            .records
+            .read()
+            .expect("编号记录锁中毒")
+            .by_id
+            .values()
+            .filter(|record| matches!(&record.origin, Origin::Upload { username: owner, .. } if owner == username))
+            .map(|record| record.id.clone())
+            .collect();
+        for id in ids {
+            remove_file(&self.path(&id))?;
+            self.records.write().expect("编号记录锁中毒").remove(&id);
+        }
+        Ok(())
+    }
+
     /// 写一条记录，返回目录项落盘了没有。写已经生效了，读得到；后面的步骤要删掉记录以外的东西时，要看这个结果。
     pub fn save_synced(&self, record: FileRecord) -> Result<bool, RegistryError> {
         let _queue = self.writes.lock().expect("编号记录写队列中毒");

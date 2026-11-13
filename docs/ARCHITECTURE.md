@@ -307,6 +307,7 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
   插件的 `storage.home` 只给 Bot 服务自动挂载归属人的家到 `/wonton/home`；只读声明或归属人的 AI 为只读时强制只读，
   共享 Bot 没有家目录。角色变更后核对实际挂载，不能把旧的可写挂载当成新权限已生效。
   移除成员先保存家目录和 Bot 数据的删留选择，吊销设备，再踢群、删 Bot、停用成员账号和按选择清目录；失败或重启按记录继续。
+  删除家目录也删除指向它的上传编号（包括已分享的）；保留家目录则保留编号及原有分享范围。目录或编号清理失败时不报告移除完成。
   保留 Bot 数据时保存无令牌的移除记录，之后明确删除仍可停用原账号；保留的 Bot 名不能被重新分配。
   `POST /_wonton/api/members/sync` 由管理员补齐整套成员设置与移除收尾；失败返回 503、日志保留原因，不回滚已保存的成员记录。
 - 核心经隧道的 `GET /_wonton/api/bots/activity?after=<rev>` 长轮询给出各 Bot 的运行、模型请求、工具调用和待确认事实，客户端核心结合 Matrix typing 合成状态（[ADR-0044](adr/0044-bot-profile-and-status-avatars.md)）。

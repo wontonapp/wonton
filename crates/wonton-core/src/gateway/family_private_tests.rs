@@ -1,3 +1,5 @@
+#[path = "family_private_files_tests.rs"]
+mod files;
 #[path = "family_private_permissions_tests.rs"]
 mod permissions;
 
@@ -142,20 +144,20 @@ impl Bed {
             )
             .with_matrix(Some(matrix.clone())),
         );
-        Arc::new(
-            Gateway::new(
-                public,
-                profile,
-                TOKEN.into(),
-                members,
-                plugins,
-                None,
-                HttpClient::new(),
-                tunnel,
-            )
-            .with_roles(Arc::new(Roles::open(dir.join("roles.json")).unwrap()))
-            .with_matrix(Some(matrix)),
+        let gateway = Gateway::new(
+            public,
+            profile,
+            TOKEN.into(),
+            members,
+            plugins,
+            None,
+            HttpClient::new(),
+            tunnel,
         )
+        .with_roles(Arc::new(Roles::open(dir.join("roles.json")).unwrap()))
+        .with_matrix(Some(matrix));
+        let files = files::service(&gateway);
+        Arc::new(gateway.with_files(Some(files)))
     }
 
     async fn call(&self, method: Method, path: &str, body: Value) -> Reply {
