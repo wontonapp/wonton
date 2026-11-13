@@ -29,7 +29,7 @@ struct PeersView: View {
     var body: some View {
         ScrollViewReader { proxy in
             content(proxy)
-                .wontonPushedScreen(String(localized: .Peers3.peersTitle)) {
+                .wontonPushedScreen(String(localized: .Peers3.peersTitle), usesSystemToolbar: true) {
                     WontonIconButton(icon: .add, label: String(localized: .Peers3.peersAdd)) { showsAdd = true }
                 }
                 .task { await model.observe() }
@@ -44,19 +44,23 @@ struct PeersView: View {
                     guard case let .failed(error, _) = state else { return }
                     if error == .requestNotFound { model.send(.refreshPeers) }
                 }
-                .wontonActionSheet(isPresented: $showsAdd, actions: addActions)
+                .wontonActionSheet(
+                    isPresented: $showsAdd, usesSystemPresentation: true, actions: addActions
+                )
                 .wontonSheet(
                     isPresented: Binding(
                         get: { wantsCode && model.viewModel.code != nil },
                         set: { if !$0 { hideCode() } }
                     ),
-                    title: String(localized: .Peers1.peersShowCodeTitle)
+                    title: String(localized: .Peers1.peersShowCodeTitle),
+                    usesSystemPresentation: true
                 ) { _ in
                     PeersCodePanel(viewModel: model.viewModel) { model.send(.resetPeerCode) }
                 }
                 .fullScreenCover(isPresented: $showsScanner) {
                     NavigationStack {
-                        PeersScannerView(model: model).wontonModalScreen(String(localized: .Peers2.peersScanCodeTitle))
+                        PeersScannerView(model: model)
+                            .wontonModalScreen(String(localized: .Peers2.peersScanCodeTitle), usesSystemToolbar: true)
                     }
                 }
                 .peersRemoveDialog($removing, model: model)

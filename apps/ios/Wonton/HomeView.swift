@@ -104,6 +104,7 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
+
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {

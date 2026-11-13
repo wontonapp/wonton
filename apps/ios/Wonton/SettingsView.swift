@@ -51,7 +51,7 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain), usesSystemToolbar: true)
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
@@ -60,9 +60,9 @@ struct SettingsTab: View {
         case .coreUpgrade: CoreUpgradeView(model: plugins)
         case .appearance:
             AppearanceView(model: appearance)
-                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle))
+                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle), usesSystemToolbar: true)
         case .chatBackup: ChatBackupView(model: chat)
-        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps)
+        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
@@ -209,6 +209,6 @@ private struct AboutView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Settings.settingsAbout))
+        .wontonPushedScreen(String(localized: .Settings.settingsAbout), usesSystemToolbar: true)
     }
 }

@@ -52,6 +52,7 @@ enum SnapshotFixtures {
     static func chatList(core: ClientCore) -> some View {
         ChatListView(model: chatModel(core: core), plugins: PluginsModel(core: core))
             .environment(PagesModel(core: core))
+            .environment(\.wontonOpenSidebar, {})
     }
 
     static func wideChat(core: ClientCore) -> some View {

@@ -66,7 +66,7 @@ struct MyAppsSettingsView: View {
         }
         .sheet(isPresented: $showsCandidates) {
             NavigationStack {
-                MyAppCandidates().wontonModalScreen(TabText.addToMyApps)
+                MyAppCandidates().wontonModalScreen(TabText.addToMyApps, usesSystemToolbar: true)
             }
         }
     }

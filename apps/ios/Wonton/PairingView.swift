@@ -73,23 +73,26 @@ struct PairingView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Color(colors.canvas))
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if model.servers.adding {
-                HStack {
+        .toolbar {
+            if #available(iOS 26, *), model.servers.adding {
+                ToolbarItem(placement: .cancellationAction) {
                     Button(.Common.commonCancel) {
                         if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
                     }
-                        .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
-                    Spacer()
+                    .buttonStyle(.automatic)
+                }
+                ToolbarItem(placement: .principal) {
                     Text(.Servers.serversAddTitle)
                         .wontonText(WontonTheme.typography.itemTitle)
                         .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    Color.clear.frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 }
-                .padding(.horizontal, WontonTheme.spacing.pageInset)
-                .frame(minHeight: WontonTheme.size.topBar)
-                .background(.ultraThinMaterial)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if #available(iOS 26, *) {
+                EmptyView()
+            } else {
+                legacyAddingBar
             }
         }
         .fullScreenCover(isPresented: $showsMatrixLogin) {
@@ -112,6 +115,27 @@ struct PairingView: View {
             if !model.servers.adding, old != .paired, new == .paired {
                 onPaired()
             }
+        }
+    }
+
+    @ViewBuilder private var legacyAddingBar: some View {
+        if model.servers.adding {
+            HStack {
+                Button(.Common.commonCancel) {
+                    if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
+                }
+                .wontonNavigationAction()
+                .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+                Spacer()
+                Text(.Servers.serversAddTitle)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Color.clear.frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+            }
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .frame(minHeight: WontonTheme.size.topBar)
+            .background(.ultraThinMaterial)
         }
     }
 

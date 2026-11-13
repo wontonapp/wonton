@@ -21,12 +21,14 @@ struct BotContactsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .Contacts0.contactsTitle)) {
+            .wontonPushedScreen(String(localized: .Contacts0.contactsTitle), usesSystemToolbar: true) {
                 WontonIconButton(icon: .add, label: String(localized: .Contacts0.contactsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Contacts0.contactsAdd)) { close in
+            .wontonSheet(
+                isPresented: $showsAdd, title: String(localized: .Contacts0.contactsAdd), usesSystemPresentation: true
+            ) { close in
                 addPanel(close)
             }
             .contactsRemoveDialog($removing, model: model)
