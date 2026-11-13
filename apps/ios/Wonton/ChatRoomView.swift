@@ -48,7 +48,9 @@ struct ChatRoomView: View {
                 RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                               blocked: entryBlocked, pullAnchor: roomPull) {
                     roomContent
-                        .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
+                    #if DEBUG
+                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                    #endif
                 }
             }
         } else {
@@ -467,8 +469,8 @@ private struct ScrollToBottomButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             count > 0
-                ? String(format: String(localized: "room.scrollToBottom.count"), "\(count)")
-                : String(localized: "room.scrollToBottom")
+                ? String(localized: .Chat.roomScrollToBottomCount("\(count)"))
+                : String(localized: .Chat.roomScrollToBottom)
         )
         .padding(.trailing, 16)
         .padding(.bottom, 16)
