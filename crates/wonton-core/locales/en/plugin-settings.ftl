@@ -420,3 +420,26 @@ plugin-settings-value-array-too-big = More than { $max } items
 plugin-settings-value-too-big = All settings together exceed { $max } bytes
 plugin-settings-value-unknown-type = This app version can't send this value type; update the app
 plugin-settings-value-problems = { $count } settings don't pass validation
+
+# ── Manifest `clients` (manifest_clients.rs) ─────────────────────────────────
+plugin-settings-clients-need-permission = `clients` needs the `network.clients` permission; write both
+plugin-settings-clients-need-clients = The `network.clients` permission needs `clients` saying what opens; write both
+plugin-settings-clients-empty = `clients` needs at least one of `http` and `tcp`
+plugin-settings-clients-port-zero = clients.{ $field } cannot be port 0
+plugin-settings-clients-port-mcp = clients.{ $field } cannot be the mcp port ({ $port } of { $service })
+plugin-settings-clients-tcp-webui = clients.tcp cannot be the web page port ({ $port } of { $service }): headers added by the gateway are forgeable over TCP
+plugin-settings-clients-tcp-name = clients.tcp names use a-z, 0-9 and inner hyphens only, at most 32 bytes: { $name }
+plugin-settings-clients-tcp-duplicate = clients.tcp name { $name } is used twice
+plugin-settings-clients-public = clients.http.public takes either allow or deny, not both
+plugin-settings-clients-paths = { $field } takes at most 64 entries
+plugin-settings-clients-path = { $field } path { $path } ({ $bytes } bytes) is invalid: it starts with /, uses only A-Z a-z 0-9 - . _ ~ ! $ & ' ( ) * + , = : @ /, has no % \ ; ? # or "." and ".." segments, and is at most 256 bytes
+plugin-settings-clients-status = clients.http.auth_failures status codes are 400 to 599: { $status }
+plugin-settings-clients-auth = clients.http.auth takes exactly one of gateway, credentials and app
+plugin-settings-clients-issue = clients.http.auth.credentials needs issue
+plugin-settings-clients-per-client = clients.http.auth.credentials issues one password per client by default and needs revoke; write per_client: false for a single password per plugin
+plugin-settings-clients-shared = clients.http.auth.credentials with per_client: false needs rotate and cannot have revoke
+plugin-settings-clients-generates = clients.http.auth.credentials with generates: true needs verify: a regenerated value must be checkable
+plugin-settings-clients-setup-done = clients.http.auth.app needs setup_done: the entry stays closed until the app's first registration is done
+plugin-settings-clients-gateway = gateway mode ignores auth_failures: remove it
+plugin-settings-clients-guests = webui.guests allows guest links and needs the network.clients permission
+plugin-settings-clients-external-url = The manifest references WONTON_EXTERNAL_URL and must declare clients.http or webui.guests: true

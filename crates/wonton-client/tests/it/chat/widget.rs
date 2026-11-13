@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, InstalledPlugin, PluginWidget, TabRef, TabsViewModel, TimelineUpdate, WidgetEntry,
+    Action, InstalledPlugin, PagesViewModel, PluginWidget, TabRef, TimelineUpdate, WidgetEntry,
 };
 use wonton_matrix::OwnedUserId;
 
@@ -84,23 +84,23 @@ async fn until_update(
         .unwrap_or_else(|_| panic!("{what}：{WAIT:?} 内没有等到"))
 }
 
-async fn until_tabs<R>(
+async fn until_pages<R>(
     phone: &Phone,
     what: &str,
-    check: impl Fn(&TabsViewModel) -> Option<R>,
+    check: impl Fn(&PagesViewModel) -> Option<R>,
 ) -> R {
-    let subscription = phone.subscribe_tabs();
+    let subscription = phone.subscribe_pages();
     let waiting = async {
         while let Some(view) = subscription.next().await {
             if let Some(found) = check(&view) {
                 return found;
             }
         }
-        panic!("底栏订阅提前结束");
+        panic!("页面订阅提前结束");
     };
     tokio::time::timeout(WAIT, waiting)
         .await
-        .unwrap_or_else(|_| panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", phone.tabs()))
+        .unwrap_or_else(|_| panic!("{what}：{WAIT:?} 内没有等到，当前：{:#?}", phone.pages()))
 }
 
 fn sorted(values: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -127,13 +127,13 @@ async fn the_widget_gets_only_granted_capabilities_and_talks_to_the_room() {
     assert_eq!(entry.widgets[0].entry, WidgetEntry::VideoCall);
 
     phone
-        .dispatch(Action::SelectTab { tab: tab.clone() })
+        .dispatch(Action::OpenPage { tab: tab.clone() })
         .unwrap();
-    let url = until_tabs(&phone, "widget 页的地址出来", |view| {
-        view.overlay
-            .as_ref()
-            .filter(|item| item.tab == tab)
-            .and_then(|item| item.page.as_ref()?.url.clone())
+    let url = until_pages(&phone, "widget 页的地址出来", |view| {
+        view.stack
+            .iter()
+            .find(|item| item.tab == tab)
+            .and_then(|item| item.page.url.clone())
     })
     .await;
 
@@ -205,7 +205,7 @@ async fn the_widget_gets_only_granted_capabilities_and_talks_to_the_room() {
     widget_to_bot(&mut page, &bot).await;
     bot_to_widget(&mut page, &bot, &device).await;
 
-    phone.dispatch(Action::CloseTabOverlay).unwrap();
+    phone.dispatch(Action::ClosePage).unwrap();
     page.ended().await;
 }
 

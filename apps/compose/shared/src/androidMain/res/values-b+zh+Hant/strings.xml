@@ -96,23 +96,11 @@
     <string name="widget_agent_status_unknown">狀態不明</string>
     <string name="widget_updated_at">更新於 %1$s</string>
     <string name="widget_status_at">%1$s · %2$s</string>
-    <string name="side_chat">旁聊</string>
-    <string name="side_chat_new">新旁聊</string>
-    <string name="side_chat_placeholder">想聊點什麼</string>
-    <string name="side_chat_result_line">旁聊「%1$s」：%2$s</string>
-    <string name="side_chat_state_open">進行中</string>
-    <string name="side_chat_state_done">已完成</string>
-    <string name="side_chat_state_failed">沒完成</string>
-    <string name="side_chat_state_ended">已結束</string>
-    <string name="side_chat_state_result_missing">沒收到結果</string>
-    <string name="side_chat_state_untracked">結果不會帶回主對話</string>
-    <string name="side_chat_state_other">狀態未知</string>
-    <string name="side_chat_unsupported">這個 AI 不支援旁聊</string>
-    <string name="side_chat_no_files">旁聊裡傳不了檔案，請在主對話裡傳。</string>
-    <plurals name="side_chat_replies">
-        <item quantity="other">旁聊 · %1$d 則</item>
-    </plurals>
-    <plurals name="side_chat_unread">
-        <item quantity="other">%1$d 則未讀</item>
-    </plurals>
+    <string name="myapp_add">加進我的應用</string>
+    <string name="myapp_add_more">新增應用</string>
+    <string name="myapp_auto_add">新裝的應用自動加入</string>
+    <string name="myapp_problem">我的應用讀寫出錯</string>
+    <string name="myapp_remove">從我的應用移出</string>
+    <string name="myapp_sync_stale">改動還沒同步上</string>
+    <string name="myapp_sync_stale_detail">本機已存好；連上伺服器後自動同步。</string>
 </resources>

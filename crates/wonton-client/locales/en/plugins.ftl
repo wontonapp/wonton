@@ -109,7 +109,7 @@ tabs-view-plugin-list-not-ready = The app list hasn't loaded yet, so app pages c
 tabs-view-unknown-plugin = Can't find this app.
 
 # $error is the local store's original error.
-tabs-storage-problem = Couldn't save the tab bar settings; the next launch may restore the old state: { $error }
+tabs-storage-problem = Couldn't save My Apps on this device; the next launch may restore the old state: { $error }
 
 tabs-view-plugin-no-page = This app has no web page to open.
 
@@ -118,9 +118,9 @@ tabs-page-not-placed = This page isn't in the panel.
 # Navigation bar settings file (tabs.json) errors. Shown as the reason of a CoreError::Storage / CoreError::InvalidInput,
 # which the problem banner wraps as "Can't read or write local storage: …".
 # $path is the settings file's path, $reason is the original parser or I/O error.
-tabs-config-read-failed = Can't read the Navigation bar settings file { $path }: { $reason }
+tabs-config-read-failed = Can't read the My Apps settings file { $path }: { $reason }
 
-tabs-config-corrupt = The Navigation bar settings file { $path } is damaged: { $reason }
+tabs-config-corrupt = The My Apps settings file { $path } is damaged: { $reason }
 
 # $count is the maximum number of items on the Navigation bar (MAX_ITEMS).
 tabs-config-too-many-items = { $count ->
@@ -128,14 +128,14 @@ tabs-config-too-many-items = { $count ->
    *[other] The Navigation bar can hold at most { $count } items.
 }
 
-tabs-config-duplicate-page = The Navigation bar has duplicate pages.
+tabs-config-duplicate-page = My Apps has duplicate pages.
 
 tabs-config-plugin-page-incomplete = An app page is missing its title and icon.
 
 tabs-config-missing-fixed = The Navigation bar is missing Chat.
 
 # $path is the settings file's path, $reason is the original I/O error.
-tabs-config-write-failed = Can't write the Navigation bar settings file { $path }: { $reason }
+tabs-config-write-failed = Can't write the My Apps settings file { $path }: { $reason }
 
 scope-task-crashed = A background task ended unexpectedly: { $error }
 
@@ -189,7 +189,7 @@ sessions-not-found = There's no such session: { $id }
 sessions-invalid-action = Not a session action.
 
 # The bridge of app pages (crates/wonton-client/src/tabs/bridge/).
-tabs-bridge-page-not-open = This app page isn't open or pinned.
+tabs-bridge-page-not-open = This app page isn't open.
 
 tabs-bridge-invalid-environment = The page insets and safe area must be finite, non-negative numbers.
 
@@ -199,7 +199,7 @@ tabs-page-cannot-reload = This page can't be reloaded.
 
 tabs-bar-not-pinned = This page isn't pinned to the Navigation bar.
 
-tabs-bar-already-pinned = This page is already pinned to the Navigation bar.
+tabs-bar-already-pinned = This page is already in My Apps.
 
 tabs-bar-replace-required = The Navigation bar is full; pick a page to replace.
 
@@ -211,9 +211,9 @@ tabs-bar-not-full = The Navigation bar isn't full, so there's nothing to replace
 
 tabs-bar-remove-fixed = Chat and Apps can't be removed.
 
-tabs-bar-page-missing = This page isn't in the Navigation bar.
+tabs-bar-page-missing = This page isn't in My Apps.
 
-tabs-bar-index-out-of-range = That position is past the end of the Navigation bar.
+tabs-bar-index-out-of-range = That position is past the end of My Apps.
 
 tabs-open-only-plugins = Only app pages have an opening mode.
 
@@ -229,3 +229,6 @@ tabs-widget-not-signed-in = Sign in to chat first, then open this app from the r
 tabs-widget-not-declared = This app can't be opened inside a room.
 
 tabs-widget-not-pinnable = Apps opened inside a room can't be pinned.
+
+tabs-view-not-a-page = Only app pages can be opened here.
+tabs-view-no-page-open = No app page is open right now.

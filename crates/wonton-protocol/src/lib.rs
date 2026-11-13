@@ -39,6 +39,7 @@ mod link_preview;
 mod matrix_login;
 mod onboarding;
 mod owner;
+mod pages;
 mod panel;
 mod peers;
 mod personal_data;
@@ -59,7 +60,6 @@ mod share_transport;
 mod sharing;
 mod side_chat;
 mod sidebar;
-mod tabs;
 mod timeline;
 mod timeline_action;
 mod verification;
@@ -67,14 +67,14 @@ mod widget;
 
 pub use action::Action;
 pub use agent_chain::{
-    AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS, AGENT_LIMITS_PATH,
-    AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentChainAction,
-    AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel, AgentConcurrency,
-    AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainError, ChainLimitKind, ChainLimits,
-    ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport, DEFAULT_CONSUMER_AGENT_CONCURRENCY,
-    SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER, WONTON_MAX_DEPTH_HEADER,
-    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
-    WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
+    ACP_CHAIN_META_KEY, AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS,
+    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH,
+    AgentChainAction, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
+    AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
+    ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
+    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
+    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
     agent_consumer_concurrency_path,
 };
 pub use agent_handoff::{
@@ -181,7 +181,7 @@ pub use file::{
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
     FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
-    FriendsState, FriendsViewModel, RemovedFriend,
+    FriendsState, FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -216,11 +216,16 @@ pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
     check_email, check_email_change, normalized_email,
 };
+pub use pages::{
+    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, OpenPage, PagesProblem,
+    PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure, TabMediaPrompt,
+    TabPage, TabRef, TabState,
+};
 pub use panel::{
     BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
     LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
     MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
-    ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting, bot_panel_consent_path, bot_panel_pin_path,
+    ROOM_PANEL_EVENT, RoomPanel, bot_panel_consent_path, bot_panel_pin_path,
     bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
@@ -308,12 +313,7 @@ pub use sharing::{
 pub use side_chat::{
     SideChatCard, SideChatResult, SideChatResultState, SideChatRoot, SideChatState, SideChatSupport,
 };
-pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
-pub use tabs::{
-    CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
-    TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem,
-    TabsViewModel,
-};
+pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
     MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,

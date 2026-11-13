@@ -16,11 +16,11 @@ use hyper::{Method, StatusCode};
 use wonton_protocol::{BOT_TOKEN_HEADER, BotRef, ChainError, ChainTurnReport};
 
 use super::Gateway;
-use super::agent_outbox::Outbox;
 use super::api::error_response;
 use crate::agent_chain::ChainLimitEvent;
 use crate::agent_chain::settings::AgentSettings;
 use crate::agent_chain::{ChainLedgerError, Chains};
+use crate::agent_outbox::Outbox;
 use crate::mcp::Caller;
 use crate::plugin::PluginId;
 
@@ -78,13 +78,16 @@ impl AgentChains {
     ) -> Result<crate::agent_chain::ChainStopOutcome, ChainLedgerError> {
         let outcome = self.ledger.stop(chain)?;
         for session in &outcome.bridge {
-            self.outbox.push(
+            // CancelTurn 不落盘，push 不会失败；失败了也只是这条取消发不出，链已经停了。
+            if let Err(error) = self.outbox.push(
                 &session.bot,
                 wonton_protocol::OutboxKind::CancelTurn {
                     chain: chain.to_owned(),
                     session: session.session.clone(),
                 },
-            );
+            ) {
+                tracing::warn!(%error, session = %session.session, "取消轮次没能排进出箱");
+            }
         }
         if let Some(acp) = self.acp.get() {
             for session in outcome.agent_acp.iter().chain(&outcome.hand_off) {
@@ -99,6 +102,12 @@ impl Gateway {
     #[must_use]
     pub fn with_agent_chains(mut self, chains: Option<Arc<AgentChains>>) -> Self {
         self.agent_chains = chains;
+        self
+    }
+
+    /// 接上 `agent_acp` 的连接注册表：并发计数和停链取消这才可用。
+    pub fn with_agent_acp(mut self, registry: Option<Arc<super::agent_acp::Registry>>) -> Self {
+        self.agent_acp = registry;
         self
     }
 

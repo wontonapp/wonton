@@ -302,6 +302,36 @@
         }
       }
     },
+    "secret.goFill": {
+      "comment": "Button under the missing-keys notice that scrolls to the keys section. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fill in"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去填写"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去填寫"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "入力する"
+          }
+        }
+      }
+    },
     "secret.filled": {
       "comment": "State line of a filled secret on the detail page; the change date is appended. No arguments.",
       "extractionState": "manual",

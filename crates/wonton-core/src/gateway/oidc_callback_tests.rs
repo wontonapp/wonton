@@ -339,6 +339,7 @@ fn member_device(h: &Harness) -> iroh::EndpointId {
             display_name: "Mia".into(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,

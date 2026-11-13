@@ -8,5 +8,5 @@
     <string name="shortcuts_update_refused">システムがショートカットの更新を受け付けませんでした。しばらくしてからWontonをもう一度開いてください。</string>
     <string name="shortcuts_app_uninstalled">このアプリはアンインストールされました</string>
     <string name="shortcuts_too_few">システムが許可するショートカットは%1$d個だけなので、「新しいチャット」と「ボットに質問」を同時に表示できません。</string>
-    <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはナビゲーションバーの順に表示します。</string>
+    <string name="shortcuts_too_many">システムが許可するショートカットは最大%1$d個です。「新しいチャット」「ボットに質問」を優先し、アプリのページはマイアプリの順に表示します。</string>
 </resources>

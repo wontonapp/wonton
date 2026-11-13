@@ -31,40 +31,96 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
     rig.wait_for(|view| view.installed.is_some()).await;
 
     rig.app
-        .dispatch(Action::SelectTab { tab: tab.clone() })
+        .dispatch(Action::OpenPage { tab: tab.clone() })
         .unwrap();
-    let view = rig.app.tabs();
-    let overlay = view.overlay.expect("widget 页盖在主界面上");
-    assert_eq!(overlay.tab, tab);
+    let view = rig.app.pages();
+    let opened = view.stack.last().expect("widget 页压到栈顶");
+    assert_eq!(opened.tab, tab);
     // 驱动在后台起，起不来的原因稍后才写进页面。
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let page = loop {
+    loop {
         let page = selected_page(&rig, &tab);
         if matches!(page.state, TabState::Failed { .. }) {
-            break page;
+            break;
         }
         assert!(std::time::Instant::now() < deadline, "{page:?}");
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    };
-    assert!(page.fullscreen);
+    }
     assert!(matches!(
         rig.app.subscribe_tab_widget(bar(&tab)),
         Err(CoreError::NotReady { .. })
     ));
 
-    let pinned = rig.app.dispatch(Action::PinTab {
-        tab: tab.clone(),
-        replacing: None,
+    let pinned = rig.app.dispatch(Action::AddMyApp {
+        app: wonton_client::MyAppRef::Page { tab: tab.clone() },
+        title: None,
+        index: None,
     });
     assert!(
         matches!(pinned, Err(CoreError::InvalidInput { .. })),
         "{pinned:?}"
     );
+
+    let other = TabRef::Url {
+        url: "https://example.com/other".to_owned(),
+    };
+    rig.app
+        .dispatch(Action::OpenPage { tab: other.clone() })
+        .unwrap();
+    assert_eq!(
+        rig.app
+            .pages()
+            .stack
+            .iter()
+            .map(|open| &open.tab)
+            .collect::<Vec<_>>(),
+        vec![&tab, &other]
+    );
+    rig.app
+        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .unwrap();
+    assert_eq!(
+        rig.app
+            .pages()
+            .stack
+            .iter()
+            .map(|open| &open.tab)
+            .collect::<Vec<_>>(),
+        vec![&other, &tab]
+    );
+    let second = TabRef::Widget {
+        plugin_id: "app.call".to_owned(),
+        room_id: "!second:wonton.localhost".to_owned(),
+    };
+    rig.app
+        .dispatch(Action::OpenPage {
+            tab: second.clone(),
+        })
+        .unwrap();
+    assert_eq!(
+        rig.app
+            .pages()
+            .stack
+            .iter()
+            .map(|open| &open.tab)
+            .collect::<Vec<_>>(),
+        vec![&other, &second]
+    );
+    rig.app.dispatch(Action::ClosePage).unwrap();
+    assert_eq!(
+        rig.app
+            .pages()
+            .stack
+            .iter()
+            .map(|open| &open.tab)
+            .collect::<Vec<_>>(),
+        vec![&other]
+    );
 }
 
 #[tokio::test]
 async fn an_ordinary_page_has_no_widget_channel() {
-    let (rig, tab) = open_page(wonton_client::TabDisplay::Standard, true).await;
+    let (rig, tab) = open_page(true).await;
     assert!(matches!(
         rig.app.subscribe_tab_widget(bar(&tab)),
         Err(CoreError::InvalidInput { .. })

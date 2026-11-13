@@ -1,6 +1,6 @@
 use axum::http::Method;
 use serde_json::{Value, json};
-use wonton_client::{TabBridgeAction, TabBridgeResult, TabDisplay, TabState};
+use wonton_client::{TabBridgeAction, TabBridgeResult, TabState};
 
 use super::support::{PAGE_ORIGIN, bar, environment, open_page, selected_page, wait_quiet};
 
@@ -21,15 +21,19 @@ fn assert_ignored(reply: TabBridgeResult) {
 
 #[tokio::test]
 async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
-    let (mut rig, tab) = open_page(TabDisplay::Standard, true).await;
+    let (mut rig, tab) = open_page(true).await;
     wait_quiet(&rig).await;
     rig.core.hold(Method::GET, "/_wonton/api/plugins");
     std::fs::remove_file(rig.data_dir().join("installed-plugins.json")).unwrap();
     rig.reopen();
+    // 重启后栈是空的：重新打开这一页，列表没读到前按存的元数据如实说加载中。
+    rig.app
+        .dispatch(wonton_client::Action::OpenPage { tab: tab.clone() })
+        .unwrap();
     let loading = selected_page(&rig, &tab);
     assert_eq!(loading.state, TabState::Loading);
     assert!(loading.url.is_none());
-    let before = rig.app.tabs();
+    let before = rig.app.pages();
     for message in page_requests() {
         assert_ignored(rig.app.tab_handle_message(
             bar(&tab),
@@ -39,7 +43,7 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
             environment(),
         ));
     }
-    assert_eq!(rig.app.tabs(), before);
+    assert_eq!(rig.app.pages(), before);
     rig.core.release(Method::GET, "/_wonton/api/plugins");
     tokio::time::timeout(std::time::Duration::from_secs(20), async {
         while selected_page(&rig, &tab).url.is_none() {
@@ -65,9 +69,9 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
 
 #[tokio::test]
 async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
+    let (rig, tab) = open_page(true).await;
     wait_quiet(&rig).await;
-    let before_tabs = rig.app.tabs();
+    let before_tabs = rig.app.pages();
     let before_chat = rig.app.chat();
     let before_requests = rig.core.all_seen().len();
     for origin in [
@@ -100,13 +104,13 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     }
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(rig.core.all_seen().len(), before_requests);
-    assert_eq!(rig.app.tabs(), before_tabs);
+    assert_eq!(rig.app.pages(), before_tabs);
     assert_eq!(rig.app.chat(), before_chat);
 }
 
 #[tokio::test]
 async fn matching_origin_accepts_implicit_and_explicit_default_ports() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
+    let (rig, tab) = open_page(true).await;
     for origin in [PAGE_ORIGIN, "http://APP.FEED.wonton.localhost:80"] {
         let reply = rig.app.tab_handle_message(
             bar(&tab),

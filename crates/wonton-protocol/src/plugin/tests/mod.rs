@@ -57,7 +57,6 @@ fn installed() -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
-        web_display: TabDisplay::Fullscreen,
         cross_origin_isolated: false,
         declares_tools: true,
         tabs: vec![PluginTab {
@@ -69,7 +68,6 @@ fn installed() -> InstalledPlugin {
             icon_selected: None,
             path: "/photos".into(),
             layout: TabLayout::EdgeToEdge,
-            display: TabDisplay::Standard,
         }],
         bot_user_id: None,
         family: false,
@@ -509,13 +507,9 @@ fn values_from_a_newer_core_still_parse() {
     assert_eq!(failure, StoreFailure::Other);
 
     let mut plugin = serde_json::to_value(installed()).unwrap();
-    plugin["web_display"] = json!("picture_in_picture");
     plugin["tabs"][0]["layout"] = json!("sidebar");
-    plugin["tabs"][0]["display"] = json!("picture_in_picture");
     let plugin: InstalledPlugin = serde_json::from_value(plugin).unwrap();
-    assert_eq!(plugin.web_display, TabDisplay::Other);
     assert_eq!(plugin.tabs[0].layout, TabLayout::Other);
-    assert_eq!(plugin.tabs[0].display, TabDisplay::Other);
 
     // 老客户端的文档里没有可选权限的字段：落到默认值，也就是“必需、关着”。
     let mut line =

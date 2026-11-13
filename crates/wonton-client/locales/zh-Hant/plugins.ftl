@@ -109,7 +109,7 @@ tabs-view-plugin-list-not-ready = 還沒載入應用程式清單，暫時無法�
 tabs-view-unknown-plugin = 找不到這個應用程式。
 
 # $error 是本地儲存的原始錯誤。
-tabs-storage-problem = 底欄設定存不下，下次啟動可能恢復舊狀態：{ $error }
+tabs-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
 
 tabs-view-plugin-no-page = 這個應用程式沒有可開啟的網頁。
 
@@ -117,21 +117,21 @@ tabs-page-not-placed = 這個頁面不在面板裡。
 
 # 底部導覽列設定檔（tabs.json）的錯誤，作為 CoreError 的 reason 顯示。
 # $path 是設定檔的路徑，$reason 是原始的剖析或讀寫錯誤。
-tabs-config-read-failed = 無法讀取底部導覽列設定檔 { $path }：{ $reason }
+tabs-config-read-failed = 無法讀取我的應用程式設定檔 { $path }：{ $reason }
 
-tabs-config-corrupt = 底部導覽列設定檔 { $path } 已損毀：{ $reason }
+tabs-config-corrupt = 我的應用程式設定檔 { $path } 已損毀：{ $reason }
 
 # $count 是底部導覽列最多能放的項目數（MAX_ITEMS）。
 tabs-config-too-many-items = 底部導覽列最多只能有 { $count } 個項目。
 
-tabs-config-duplicate-page = 底部導覽列裡有重複的頁面。
+tabs-config-duplicate-page = 我的應用程式裡有重複的頁面。
 
 tabs-config-plugin-page-incomplete = 應用程式頁面缺少標題和圖示。
 
 tabs-config-missing-fixed = 底部導覽列缺少聊天。
 
 # $path 是設定檔的路徑，$reason 是原始的寫入錯誤。
-tabs-config-write-failed = 無法寫入底部導覽列設定檔 { $path }：{ $reason }
+tabs-config-write-failed = 無法寫入我的應用程式設定檔 { $path }：{ $reason }
 
 scope-task-crashed = 背景工作異常結束：{ $error }
 
@@ -181,7 +181,7 @@ sessions-not-found = 沒有這個工作階段：{ $id }
 sessions-invalid-action = 不是工作階段操作
 
 # 應用程式頁面的橋接（crates/wonton-client/src/tabs/bridge/）。
-tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟或固定
+tabs-bridge-page-not-open = 這個 App 的頁面沒有開啟
 
 tabs-bridge-invalid-environment = 頁面欄高與安全區必須是有限的非負數
 
@@ -191,7 +191,7 @@ tabs-page-cannot-reload = 這個頁面不能重新載入。
 
 tabs-bar-not-pinned = 這個頁面沒有固定到底欄。
 
-tabs-bar-already-pinned = 這個頁面已經固定到底欄。
+tabs-bar-already-pinned = 這個頁面已經在我的應用程式裡。
 
 tabs-bar-replace-required = 底欄已滿，必須指定要替換的頁面。
 
@@ -203,9 +203,9 @@ tabs-bar-not-full = 底欄未滿時不能指定替換頁面。
 
 tabs-bar-remove-fixed = 聊天和應用不能拿掉。
 
-tabs-bar-page-missing = 這個頁面不在底欄。
+tabs-bar-page-missing = 這個頁面不在我的應用程式。
 
-tabs-bar-index-out-of-range = 底欄下標越界。
+tabs-bar-index-out-of-range = 位置超出我的應用程式的範圍。
 
 tabs-open-only-plugins = 只有外掛頁面可以設定開啟方式。
 
@@ -220,3 +220,6 @@ tabs-widget-not-signed-in = 先登入聊天，再從聊天室裡打開它。
 tabs-widget-not-declared = 這個應用程式不能在聊天室裡打開。
 
 tabs-widget-not-pinnable = 在聊天室裡打開的應用程式不能釘選。
+
+tabs-view-not-a-page = 只有應用程式頁面能在這裡開啟。
+tabs-view-no-page-open = 現在沒有開啟著的應用程式頁面。

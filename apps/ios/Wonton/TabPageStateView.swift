@@ -74,9 +74,7 @@ struct TabPageStateView: View {
             }
         case .pageRemoved:
             failure(TabText.pageRemoved) {
-                if case .sharedApp = session.tab {
-                    Button(TabText.close, action: remove)
-                } else { Button(isPanel ? TabText.removePanelPage : TabText.unpin, action: remove) }
+                Button(isPanel ? TabText.removePanelPage : TabText.close, action: remove)
             }
         case let .loadFailed(reason, status):
             if reason == .transport, !connected {

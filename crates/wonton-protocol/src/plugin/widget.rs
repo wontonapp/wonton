@@ -63,7 +63,7 @@ pub struct PluginWidget {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct RoomWidget {
-    /// [`TabRef::Widget`](crate::TabRef::Widget)，交给 [`Action::SelectTab`](crate::Action::SelectTab)。
+    /// [`TabRef::Widget`](crate::TabRef::Widget)，交给 [`Action::OpenPage`](crate::Action::OpenPage)。
     pub tab: crate::TabRef,
     /// 插件名；装了几个时菜单里用它。
     pub title: String,

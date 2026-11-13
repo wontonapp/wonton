@@ -149,3 +149,17 @@ gateway-web-storage-cross-site = このアプリのデータを変更できる�
 gateway-web-storage-not-ready = このアプリのデータを保存しているアプリが実行されていません。しばらくしてからもう一度お試しください
 
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
+
+# agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。
+gateway-agent-acp-websocket-only = この入口は WebSocket 接続のみを受け付けます
+gateway-agent-acp-path = agent_acp の入口は /acp のみです
+gateway-agent-acp-initiator-bot-required = 接続は X-Wonton-Bot で呼び出し元の Bot を示す必要があります
+gateway-agent-acp-initiator-bot-unrecognized = {$bot} はこのアプリ自身の Bot ではありません
+gateway-agent-acp-on-behalf-of = 接続は X-Wonton-On-Behalf-Of で誰の代わりに話すかを示す必要があります
+gateway-agent-acp-adopter-not-listened = {$bot} はこの接続が名乗る話し手を聞きません
+gateway-agent-acp-target-not-listened = {$bot} はこの人の話を聞きません
+gateway-agent-acp-no-bot = {$provider} にはまだ使える Bot がありません。先に Bot を作成してください
+gateway-agent-acp-multi-bot = {$provider} には複数の Bot があります。先に詳細ページで使う Bot を選んでください
+gateway-agent-acp-token-missing = {$provider} にはまだ提供者トークンがありません。再インストールすると作られます
+gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を引き受けませんでした：{$detail}
+gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限に達しました。しばらくしてからもう一度お試しください

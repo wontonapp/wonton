@@ -244,6 +244,26 @@ async fn query_user(
     }))
 }
 
+async fn account_data(
+    State(fake): State<Fake>,
+    headers: HeaderMap,
+    Path(user): Path<String>,
+) -> Reply {
+    let state = fake.state();
+    reply(admin(&state, &headers).and_then(|()| {
+        if !state.users.contains_key(&user) {
+            return Err(error(StatusCode::NOT_FOUND, "M_NOT_FOUND"));
+        }
+        let global: serde_json::Map<String, Value> = state
+            .account_data
+            .iter()
+            .filter(|((u, _), _)| *u == user)
+            .map(|((_, kind), content)| (kind.clone(), content.clone()))
+            .collect();
+        Ok(ok(json!({"account_data": {"global": global, "rooms": {}}})))
+    }))
+}
+
 async fn devices(State(fake): State<Fake>, headers: HeaderMap, Path(user): Path<String>) -> Reply {
     let state = fake.state();
     reply(admin(&state, &headers).and_then(|()| {
@@ -702,6 +722,10 @@ pub async fn start() -> (Fake, MatrixConfig) {
             get(|| async { Json(json!({"nonce": "n1"})) }).post(register),
         )
         .route("/_synapse/admin/v2/users/{user}", get(query_user))
+        .route(
+            "/_synapse/admin/v1/users/{user}/accountdata",
+            get(account_data),
+        )
         .route("/_synapse/admin/v2/users/{user}/devices", get(devices))
         .route(
             "/_synapse/admin/v2/users/{user}/devices/{device}",

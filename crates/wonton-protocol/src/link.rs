@@ -35,12 +35,14 @@ const ROOM_ID: &AsciiSet = &NON_ALPHANUMERIC
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AppLink {
-    /// 打开一个页面；没固定在底栏上的插件页盖在主界面上打开（[`Action::SelectTab`](crate::Action::SelectTab)）。
+    /// 打开一个页面，压进栈（[`Action::OpenPage`](crate::Action::OpenPage)）。
     Tab { tab: TabRef },
     /// 新会话：打开“发起私聊”。
     NewChat,
     /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`Action::AskAgent`](crate::Action::AskAgent)。
     AgentChat,
+    /// 打开设置。
+    Settings,
     /// 打开设置里的“其他服务器”，滚到“请求”（ADR-0050：核心在“Wonton”私聊里的配对提醒带这个链接）。
     Peers,
     /// 打开一个会话（ADR-0100：桌面小组件和系统搜索点进来）。还没加入的房间，壳等它出现再打开。
@@ -53,7 +55,6 @@ impl AppLink {
             Self::Tab { tab } => match tab {
                 TabRef::Chat => "tab/chat".to_owned(),
                 TabRef::Apps => "tab/apps".to_owned(),
-                TabRef::Settings => "tab/settings".to_owned(),
                 TabRef::Plugin {
                     plugin_id,
                     page: None,
@@ -101,6 +102,7 @@ impl AppLink {
                     utf8_percent_encode(room_id, ROOM_ID)
                 ),
             },
+            Self::Settings => "settings".to_owned(),
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
             Self::Peers => "settings/peers".to_owned(),
@@ -117,7 +119,6 @@ impl AppLink {
         match parts.as_slice() {
             ["tab", "chat"] => tab(TabRef::Chat),
             ["tab", "apps"] => tab(TabRef::Apps),
-            ["tab", "settings"] => tab(TabRef::Settings),
             ["tab", "plugin", plugin_id] if is_id(plugin_id) => tab(TabRef::Plugin {
                 plugin_id: (*plugin_id).to_owned(),
                 page: None,
@@ -200,6 +201,7 @@ impl AppLink {
             }
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
+            ["settings"] => Some(Self::Settings),
             ["settings", "peers"] => Some(Self::Peers),
             ["room", encoded] => {
                 let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
@@ -247,9 +249,7 @@ mod tests {
         let links = [
             AppLink::Tab { tab: TabRef::Chat },
             AppLink::Tab { tab: TabRef::Apps },
-            AppLink::Tab {
-                tab: TabRef::Settings,
-            },
+            AppLink::Settings,
             AppLink::Tab {
                 tab: TabRef::Plugin {
                     plugin_id: "filebrowser".into(),

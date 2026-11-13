@@ -27,6 +27,9 @@ tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 url = { workspace = true }
 # MCP 总线是 Streamable HTTP，客户端的握手交给官方 SDK。
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+# 出箱 Message 项挑已加入的私聊房间、带事务 ID 发送：这两个口子在 SDK 的 Room 上，wonton-matrix
+# 的封装没有包。版本随 workspace。
+matrix-sdk = { workspace = true }
 wonton-l10n = { path = "../wonton-l10n" }
 wonton-matrix = { path = "../wonton-matrix" }
 wonton-protocol = { path = "../wonton-protocol" }

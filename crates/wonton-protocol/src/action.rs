@@ -4,8 +4,7 @@ use crate::{
     Answer, AvatarUpload, BotActivity, BotRef, ChatLayoutChoice, ChatLayoutTarget, DeviceNetwork,
     FileId, FontStyle, FriendBlockScope, FriendBlockTarget, InstallPreview, MatrixOidcCallback,
     MatrixOidcLogin, MatrixPasswordLogin, ModelProviderInput, OnboardingTip, PushEndpoint,
-    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabDisplayChoice, TabRef, TextSize, ThemeMode,
-    UploadSource,
+    PushMethod, Rgb, SecretString, ShareGrantUpdate, TabRef, TextSize, ThemeMode, UploadSource,
 };
 
 /// 原生壳发给客户端核心的用户操作。
@@ -262,13 +261,6 @@ pub enum Action {
         enabled: bool,
     },
     /// 屏幕上正显示着哪个插件的页面；没有插件页面在屏幕上时发 `None`。
-    ///
-    /// 壳在页面换走、被盖住、重新露出来时发。App 进后台不用补发：核心按 [`Action::AppBackgrounded`] 一律当作
-    /// 不可见，回前台恢复，壳也不用重报。核心照它自动开关这个插件的端口映射（ADR-0072），不动
-    /// [`Action::SetPortMapping`] 记下的手动开关：手动打开的不因页面看不见而关掉。
-    SetVisiblePlugin {
-        plugin_id: Option<String>,
-    },
     /// 取商店的列表。`force` 为真时家里的服务器不等缓存过期，直接去来源取（下拉刷新）。
     RefreshStore {
         force: bool,
@@ -494,22 +486,36 @@ pub enum Action {
         choice: ChatLayoutChoice,
     },
 
-    // 底栏（ADR-0033）。配置存在本机，写不了时返回 `Storage`，底栏不变。
-    /// 打开一个页面。插件页已固定时切到它的标签，没固定时盖在主界面上（[`TabsViewModel::overlay`](crate::TabsViewModel::overlay)）。
-    SelectTab {
+    // 页面和我的应用（ADR-0095）。我的应用的配置存在账号数据，写不了时返回 `Storage` 并保持原样。
+    /// 打开一个页面：压进栈（[`PagesViewModel::stack`](crate::PagesViewModel::stack)），已经在栈里就挪到栈顶。
+    /// 打开根页面（聊天、应用网格页）等于一路弹回根。插件页要等插件列表读到。
+    OpenPage {
         tab: TabRef,
     },
-    /// 关掉盖在主界面上的插件页。
-    CloseTabOverlay,
-    /// 固定到底栏。栏满了（[`TabsViewModel::full`](crate::TabsViewModel::full)）要给 `replacing`，否则返回 `InvalidInput`。
-    PinTab {
-        tab: TabRef,
-        replacing: Option<TabRef>,
+    /// 关掉当前页，露出下面一层。
+    ClosePage,
+    /// 加进我的应用的 `index` 位置，不给就加到末尾。
+    AddMyApp {
+        app: crate::MyAppRef,
+        title: Option<String>,
+        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+        index: Option<u32>,
     },
-    /// 从栏上拿掉。聊天不能拿，返回 `InvalidInput`。
-    UnpinTab {
-        tab: TabRef,
+    /// 从我的应用拿掉。
+    RemoveMyApp {
+        app: crate::MyAppRef,
     },
+    /// 把一行移到 `index`（移动后的下标，从 0 开始）。
+    MoveMyApp {
+        app: crate::MyAppRef,
+        index: u32,
+    },
+    /// 新装的应用自动加到我的应用末尾。
+    SetAutoAddApps {
+        enabled: bool,
+    },
+    /// 重新和账号数据对一次账（侧边栏“我的应用”过期提示的重试）。没有会话时无事可做，等重连后自动对账。
+    RetryMyAppSync,
     /// 把页面放进面板的最后（ADR-0052）。`tab` 必须是插件页、插件里的某一页或 `https://` 公网网页，
     /// 聊天、应用、设置和分享页不行；已经在面板里、面板已满
     /// （[`MAX_PANEL_PAGES`](crate::MAX_PANEL_PAGES)）或页面现在放不了时返回 `InvalidInput`。
@@ -541,18 +547,15 @@ pub enum Action {
         bot: String,
         allowed: bool,
     },
-    /// 把正在看的页面钉到面板或底栏（胶囊“···”菜单里的“钉到面板”“钉到底栏”）。
+    /// 把正在看的页面钉到面板或我的应用（胶囊“···”菜单里的“钉到面板”“加到我的应用”）。
     ///
     /// `url` 是页面此刻的网址，核心按它算出要钉的是哪一种页面：装着的插件的网页入口下的路径，
     /// 钉成插件里的某一页（路径和清单里的页面对上时是那个页面本身）；不是插件的网站就只收
     /// `https://`，钉成公网网页。`title` 是页面自己的标题，没有时核心按插件或域名补。
-    /// 目标是底栏且栏满了时，`replacing` 同 [`Action::PinTab`]。
     PinCurrentPage {
         url: String,
         title: Option<String>,
         to: crate::PinTarget,
-        #[cfg_attr(feature = "uniffi", uniffi(default = None))]
-        replacing: Option<TabRef>,
     },
     /// 壳报告房间里盖着消息列表的东西开没开：长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、
     /// 斜杠命令列表。核心把它和核心自己知道的状态合成 [`TimelineUpdate::entry_blocked`]，
@@ -561,29 +564,7 @@ pub enum Action {
         room_id: String,
         blocked: bool,
     },
-    /// 把一项移到 `index`（移动后的下标，从 0 开始）。
-    MoveTab {
-        tab: TabRef,
-        index: u32,
-    },
-    /// 底栏上显示文字还是只显示图标。
-    SetTabLabels {
-        visible: bool,
-    },
-    /// 给插件页选打开方式，不是插件页时返回 `InvalidInput`。
-    SetTabDisplay {
-        tab: TabRef,
-        display: TabDisplayChoice,
-    },
-    /// 全屏显示插件页。主人把这个页面设成了 `Standard` 也可以手动进。
-    EnterFullscreen {
-        tab: TabRef,
-    },
-    /// 退出全屏。手动进的回到带栏的样子；打开就全屏的页面回到进来之前的标签，没有就回第一项。
-    ExitFullscreen {
-        tab: TabRef,
-    },
-    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：底栏的和面板里的同一页面
+    /// 重新加载插件页（重试、“···”里的重新加载）。`page` 指是哪一份：栈里的和面板里的同一页面
     /// 各自加载，互不影响（ADR-0052）。
     ReloadTab {
         page: crate::PlacedTab,
@@ -598,7 +579,7 @@ pub enum Action {
     TabLoadSucceeded {
         page: crate::PlacedTab,
     },
-    /// 主人看过了“已卸载，已从底栏移除”的提示。
+    /// 主人看过了“已卸载，已从我的应用移除”的提示。
     DismissUninstalledTabs,
 
     // 跨服务器配对（ADR-0050）。进展和失败原因都在 PeersViewModel 里。

@@ -1,5 +1,7 @@
 //! 插件对宿主的要求（清单的 `requirements`，见插件规范）：都是机器能判断的结构化字段。
 
+use std::collections::BTreeSet;
+
 use serde::{Deserialize, Serialize};
 
 use super::languages::Languages;
@@ -41,20 +43,34 @@ pub enum GpuNeed {
     Optional,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GpuVendor {
     Amd,
     Nvidia,
     Intel,
+    /// 比这个核心新的厂商：解析得出来，校验时提示先升级核心（探不到它，也就选不到）。
+    #[serde(other)]
+    Other,
 }
 
 impl GpuVendor {
+    /// 清单里的写法。
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Amd => "amd",
+            Self::Nvidia => "nvidia",
+            Self::Intel => "intel",
+            Self::Other => "other",
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Self::Amd => "AMD",
             Self::Nvidia => "NVIDIA",
             Self::Intel => "Intel",
+            Self::Other => "Other",
         }
     }
 }
@@ -124,6 +140,24 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
                 "plugin-install-req-size-format",
                 &[("field", field.into()), ("size", size.into())],
             )));
+        }
+    }
+    if let Some(vendors) = gpu.map(|gpu| gpu.vendors.as_slice()) {
+        let mut seen = BTreeSet::new();
+        let mut problems = Vec::new();
+        for vendor in vendors {
+            if *vendor == GpuVendor::Other {
+                problems.push(text(langs, "plugin-install-req-vendor-unknown", &[]));
+            } else if !seen.insert(*vendor) {
+                problems.push(text(
+                    langs,
+                    "plugin-install-req-vendor-duplicated",
+                    &[("vendor", vendor.key().into())],
+                ));
+            }
+        }
+        if !problems.is_empty() {
+            return Err(ManifestError::Invalid(problems.join("; ")));
         }
     }
     Ok(())

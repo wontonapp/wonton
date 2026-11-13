@@ -36,11 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.SidebarApp
 import app.wonton.protocol.SidebarOpen
 import app.wonton.protocol.TabRef
-import app.wonton.ui.icons.PinFill
-import app.wonton.ui.icons.WontonIcon
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -53,12 +52,13 @@ private val BADGE_PAD = 7.dp
 /** 侧边栏一行的高：44（iOS 原型也是）。 */
 private val ROW_HEIGHT = 44.dp
 
-/** 一行能打开的应用：插件图标加名字，可更新的带红点，固定了的带图钉；长按固定或拿掉。数据是核心算好的。 */
+/** "我的应用"的一行：插件图标加名字，行尾红点核心算好；长按加进或移出。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SidebarAppRow(
     app: SidebarApp,
     plugins: PluginsState,
-    tabs: TabsState,
+    pages: PagesState,
     current: TabRef,
     interactive: Boolean,
     onGo: (SidebarDestination) -> Unit,
@@ -70,9 +70,7 @@ internal fun SidebarAppRow(
         title = app.title,
         selected = choice != null && choice == current,
         interactive = interactive,
-        badge = if (app.update) 1 else 0,
-        dotOnly = true,
-        pinned = choice != null && tabs.viewModel.items.any { it.tab == choice },
+        badgeMark = SidebarAppBadge(app.badge.update, app.badge.problem),
         onClick = {
             when (val open = app.open) {
                 is SidebarOpen.BotChat -> onGo(SidebarDestination.Plugin(PluginEntry.Chat(open.botUserId)))
@@ -81,37 +79,37 @@ internal fun SidebarAppRow(
         },
         icon = { PluginIconImage(app.icon, ROW_ICON, plugins) },
         menu = plugin?.tabChoices?.takeIf { it.isNotEmpty() }?.let {
-            { onDismiss -> PinMenuItems(plugin, tabs, onDismiss) }
+            { onDismiss -> MyAppMenuItems(plugin, pages, onDismiss) }
         },
     )
 }
 
-/** 长按菜单：每个页面一项，没固定的固定到底栏（满了走现有的替换面板），拿得掉的从底栏拿掉。 */
+/** 长按菜单：每个页面一项，没加进的加进"我的应用"，加进了的移出。 */
 @Composable
-private fun PinMenuItems(plugin: InstalledPlugin, tabs: TabsState, onDismiss: () -> Unit) {
+private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss: () -> Unit) {
     plugin.tabChoices.forEach { choice ->
-        val item = tabs.viewModel.items.firstOrNull { it.tab == choice.tab }
-        when {
-            item == null -> DropdownMenuItem(
-                text = { Text(stringResource(R.string.pin_to_bar)) },
+        val mine = pages.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab }
+        if (mine) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.myapp_remove)) },
                 onClick = {
                     onDismiss()
-                    tabs.pin(choice.tab, choice.title)
+                    pages.send(Action.RemoveMyApp(MyAppRef.Page(choice.tab)))
                 },
             )
-
-            item.removable -> DropdownMenuItem(
-                text = { Text(stringResource(R.string.unpin_from_bar)) },
+        } else {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.myapp_add)) },
                 onClick = {
                     onDismiss()
-                    tabs.send(Action.UnpinTab(choice.tab))
+                    pages.send(Action.AddMyApp(MyAppRef.Page(choice.tab), null, null))
                 },
             )
         }
     }
 }
 
-/** 侧边栏的一行：图标、文字，选中一块圆角底色；行尾是图钉、红点或数字角标。 */
+/** 侧边栏的一行：图标、文字，选中一块圆角底色；行尾是红点或数字角标。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun SidebarRow(
@@ -123,7 +121,7 @@ internal fun SidebarRow(
     modifier: Modifier = Modifier,
     badge: Int = 0,
     dotOnly: Boolean = false,
-    pinned: Boolean = false,
+    badgeMark: SidebarAppBadge? = null,
     menu: (@Composable (onDismiss: () -> Unit) -> Unit)? = null,
 ) {
     val colors = WontonTheme.colors
@@ -157,13 +155,23 @@ internal fun SidebarRow(
                 color = colors.textPrimary.toColor(),
                 maxLines = 1,
             )
-            if (pinned) {
-                Icon(
-                    WontonIcon.PinFill,
-                    contentDescription = stringResource(R.string.sidebar_pinned),
-                    Modifier.size(WontonTheme.size.iconTiny),
-                    tint = colors.textSecondary.toColor(),
-                )
+            badgeMark?.let { mark ->
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (mark.update) {
+                        val updatableLabel = stringResource(R.string.sidebar_updatable)
+                        Box(
+                            Modifier.size(UPDATE_DOT).background(colors.danger.toColor(), CircleShape)
+                                .semantics { contentDescription = updatableLabel },
+                        )
+                    }
+                    if (mark.problem) {
+                        val problemLabel = stringResource(R.string.sidebar_problem)
+                        Box(
+                            Modifier.size(UPDATE_DOT).background(colors.warning.toColor(), CircleShape)
+                                .semantics { contentDescription = problemLabel },
+                        )
+                    }
+                }
             }
             if (badge > 0) {
                 if (dotOnly) {
@@ -197,3 +205,6 @@ internal fun SidebarRow(
         }
     }
 }
+
+/** 行尾的两个红点来源，分开画（SidebarBadge 的壳侧影子）。 */
+internal data class SidebarAppBadge(val update: Boolean, val problem: Boolean)

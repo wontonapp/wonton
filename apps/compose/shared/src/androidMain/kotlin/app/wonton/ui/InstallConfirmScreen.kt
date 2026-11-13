@@ -213,7 +213,7 @@ private fun InstallCompletion(
                 }
             }
             plugins.viewModel.problem?.let { ProblemNotice(it.problem) }
-            if (succeeded && installed != null) PluginTabPinButton(installed)
+            if (succeeded && installed != null) MyAppAddButton(installed)
             if (succeeded) OnboardingTipNotice(app.wonton.protocol.OnboardingTip.APP_INSTALLED)
             WontonButton(stringResource(R.string.install_done), onClose)
         }

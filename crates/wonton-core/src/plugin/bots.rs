@@ -597,8 +597,8 @@ impl PluginManager {
             .and_then(|entry| localpart(&entry.account.user_id).map(str::to_owned)))
     }
 
-    /// 记录在案的 Bot 名，按名字排序。
-    pub(super) fn bot_names(&self, id: &PluginId) -> Vec<String> {
+    /// 记录在案的 Bot 名，按名字排序。记录读不出来时是空：调用方按“没有 Bot”处理。
+    pub(crate) fn bot_names(&self, id: &PluginId) -> Vec<String> {
         self.store
             .bots()
             .load(id)

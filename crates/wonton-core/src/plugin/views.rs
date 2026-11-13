@@ -547,7 +547,6 @@ impl PluginManager {
                             icon_selected: selected.as_ref().map(IconSource::tab_image),
                             path: tab.path.clone(),
                             layout: manifest_tabs::layout(&tab.layout)?,
-                            display: manifest_tabs::display(&tab.display)?,
                         })
                     })
                     .collect()
@@ -596,10 +595,6 @@ impl PluginManager {
                 manifest,
             ),
             web_url: self.open_url(id, entry),
-            web_display: manifest
-                .and_then(|m| m.webui.as_ref())
-                .and_then(|webui| manifest_tabs::display(&webui.display))
-                .unwrap_or_default(),
             cross_origin_isolated: manifest
                 .and_then(|m| m.webui.as_ref())
                 .is_some_and(|webui| webui.cross_origin_isolated),

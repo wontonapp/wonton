@@ -149,3 +149,17 @@ gateway-web-storage-cross-site = 只有這個應用程式自己的頁面能修�
 gateway-web-storage-not-ready = 替這個應用程式儲存資料的應用程式沒有在執行，請稍後再試
 
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
+
+# agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。
+gateway-agent-acp-websocket-only = 這個入口只收 WebSocket 連線
+gateway-agent-acp-path = agent_acp 只有 /acp 一個入口
+gateway-agent-acp-initiator-bot-required = 連線要用 X-Wonton-Bot 寫明發起調用的 Bot
+gateway-agent-acp-initiator-bot-unrecognized = {$bot} 不是這個應用自己的 Bot
+gateway-agent-acp-on-behalf-of = 連線要用 X-Wonton-On-Behalf-Of 寫明替誰說話
+gateway-agent-acp-adopter-not-listened = {$bot} 不聽這個連線自報的說話人
+gateway-agent-acp-target-not-listened = {$bot} 不聽這個人
+gateway-agent-acp-no-bot = {$provider} 還沒有可用的 Bot，先把 Bot 建好
+gateway-agent-acp-multi-bot = {$provider} 有幾個 Bot，先在詳情頁綁定要用哪個
+gateway-agent-acp-token-missing = {$provider} 還沒有提供方權杖，重新安裝一次就有了
+gateway-agent-acp-provider-unreachable = Agent 執行時沒有接起這條連線：{$detail}
+gateway-agent-acp-busy = 這個應用開著的 Agent 連線已經到上限，稍後再試

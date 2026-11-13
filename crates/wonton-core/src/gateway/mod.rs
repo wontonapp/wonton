@@ -19,6 +19,7 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
+pub mod agent_acp;
 pub mod agent_chains;
 mod agent_chains_api;
 pub mod agent_outbox;
@@ -100,7 +101,9 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
-use wonton_protocol::{MemberStatus, Role};
+use wonton_protocol::{Gate, MemberStatus, Permissions, Role};
+
+use crate::roles::RolesError;
 
 /// 家人的记录找不到了（比如刚被移除）：代登录和 OIDC 声明拿不到身份，如实报错。
 #[derive(Debug, thiserror::Error)]
@@ -117,6 +120,7 @@ use crate::oidc::Hydra;
 use crate::owner::{Owner, OwnerStore};
 use crate::plugin::PluginManager;
 use crate::push::Push;
+use crate::roles::Roles;
 use crate::secret::constant_time_eq;
 use crate::tunnel::Tunnel;
 
@@ -161,6 +165,8 @@ pub struct Gateway {
     pub owner: Arc<OwnerStore>,
     owner_token: String,
     pub members: Arc<Members>,
+    /// 角色记录（ADR-0088）：主人以外的人按各自角色判断；主人短路为全部权限。
+    pub roles: Arc<Roles>,
     pub plugins: Arc<PluginManager>,
     pub hydra: Option<Hydra>,
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
@@ -204,6 +210,8 @@ pub struct Gateway {
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
+    /// `agent_acp` 的活连接注册表（ADR-0061 第 5 块）：并发计数和停链取消。
+    pub(crate) agent_acp: Option<Arc<agent_acp::Registry>>,
 }
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
@@ -238,6 +246,7 @@ impl Gateway {
             owner,
             owner_token,
             members,
+            roles: Arc::new(Roles::initial()),
             plugins,
             hydra,
             hydra_public,
@@ -271,12 +280,20 @@ impl Gateway {
             app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
             agent_chains: None,
+            agent_acp: None,
         }
     }
 
     #[must_use]
     pub fn with_sharing(mut self, sharing: Option<Arc<sharing::Sharing>>) -> Self {
         self.sharing = sharing;
+        self
+    }
+
+    /// 接上角色记录：网关自己只带模板时用 [`Roles::initial`]，生产由启动时装上 `roles.json`。
+    #[must_use]
+    pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
+        self.roles = roles;
         self
     }
 
@@ -494,13 +511,22 @@ impl Gateway {
             if record.status == MemberStatus::Removed {
                 return Err(MissingMember(person.username.clone()));
             }
+            // 角色记录读不到时按最严的权限报，不冒充能给：`role_id` 照实给出记录里那条。
+            let role = self.roles.get(&record.role_id);
             Ok(wonton_protocol::Me {
                 user_id,
                 username: record.username,
                 is_owner: false,
-                role_id: None,
-                role_name: None,
-                permissions: None,
+                role_name: role
+                    .as_ref()
+                    .map(|role| role.name.trim())
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_owned),
+                permissions: Some(
+                    role.as_ref()
+                        .map_or_else(Permissions::strictest, |role| role.permissions.clone()),
+                ),
+                role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
                 can_install_plugins: record.can_install_plugins,
@@ -508,13 +534,51 @@ impl Gateway {
         }
     }
 
-    /// 这个人能不能装卸、升级插件：主人总是能，家人要主人授权（ADR-0045）。
+    /// 这个人现在的权限：每次请求按记录里的角色解析，角色改了下一个请求就生效。主人短路为全部权限；
+    /// 记录被移除、或者记录里的角色不在了，按最严的 [`Permissions::strictest`] 算，不冒充能给。
+    pub(crate) fn permissions(&self, person: &Person) -> Permissions {
+        if person.is_owner() {
+            return Permissions::owner();
+        }
+        let Some(record) = self.members.get(&person.username) else {
+            return Permissions::strictest();
+        };
+        if record.status == MemberStatus::Removed {
+            return Permissions::strictest();
+        }
+        self.roles
+            .get(&record.role_id)
+            .map_or_else(Permissions::strictest, |role| role.permissions)
+    }
+
+    /// 这个人能不能装卸、升级插件：主人总是能，家人看角色里的“装、删、升级应用”。
     pub(crate) fn can_install_plugins(&self, person: &Person) -> bool {
-        person.is_owner()
-            || self
-                .members
-                .get(&person.username)
-                .is_some_and(|record| record.can_install_plugins)
+        self.permissions(person).install_apps == Gate::Allow
+    }
+
+    /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn role_people(&self, role_id: &str) -> u32 {
+        let members = self
+            .members
+            .list()
+            .iter()
+            .filter(|m| m.status != MemberStatus::Removed && m.role_id == role_id)
+            .count();
+        let friends = self.friends.as_ref().map_or(0, |friends| {
+            friends
+                .list_active()
+                .iter()
+                .filter(|f| f.role_id == role_id)
+                .count()
+        });
+        u32::try_from(members + friends).unwrap_or(u32::MAX)
+    }
+
+    /// 删一个角色。用的人数按这一刻的记录算：先把人换走，再删。角色接口接上之前只有测试用。
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn delete_role(&self, role_id: &str) -> Result<(), RolesError> {
+        self.roles.delete(role_id, self.role_people(role_id))
     }
 
     fn secure_cookies(&self) -> bool {
@@ -741,6 +805,8 @@ pub(crate) mod fakes;
 #[cfg(test)]
 mod family_plugin_tests;
 #[cfg(test)]
+mod family_roles_tests;
+#[cfg(test)]
 mod family_rules_tests;
 #[cfg(test)]
 mod family_tests;
@@ -772,6 +838,8 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
+#[cfg(test)]
+mod matrix_invite_filter_tests;
 #[cfg(test)]
 mod matrix_rtc_docker_tests;
 #[cfg(test)]

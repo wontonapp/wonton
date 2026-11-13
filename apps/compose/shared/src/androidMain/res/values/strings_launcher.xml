@@ -21,4 +21,6 @@
     <string name="launcher_upgrade_to">Update to %1$s</string>
     <!-- Content description of the warning badge on a launcher tile: the app has a problem. -->
     <string name="launcher_badge_degraded">Has a problem</string>
+    <!-- Content description of the wrench badge on a launcher tile: the app is installed but its required keys are not filled in. -->
+    <string name="launcher_badge_needs_configuration">Needs setup</string>
 </resources>

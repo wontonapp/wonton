@@ -57,6 +57,8 @@ pub fn free_port() -> u16 {
 pub struct MapHome {
     pub tcp: u16,
     pub udp: u16,
+    /// 家的假核心：测试里改已装列表用。
+    pub core: Arc<CoreState>,
     key: SecretKey,
     port: u16,
     resolver: Arc<Resolver>,
@@ -94,6 +96,7 @@ impl MapHome {
         Self {
             tcp,
             udp,
+            core,
             key,
             port,
             resolver,
@@ -135,11 +138,14 @@ impl MapHome {
 /// 声明了一个 TCP、一个 UDP 隧道端口的插件。
 pub fn remote(tcp: u16, udp: u16) -> wonton_client::InstalledPlugin {
     let spec = |port, protocol| MappedPort { port, protocol };
-    wonton_client::InstalledPlugin {
+    let mut plugin = wonton_client::InstalledPlugin {
         tunnel_ports: vec![spec(tcp, PortProtocol::Tcp), spec(udp, PortProtocol::Udp)],
         matrix_widget: None,
         ..running(PLUGIN)
-    }
+    };
+    // 可见性由页面栈的栈顶推导（ADR-0095）：装置给插件一个网页，测试打开它。
+    plugin.web_url = Some(format!("http://{PLUGIN}.wonton.localhost/"));
+    plugin
 }
 
 async fn endpoint(key: SecretKey, port: u16) -> Endpoint {
@@ -227,13 +233,48 @@ impl App {
             .unwrap();
     }
 
-    /// 壳报“屏幕上在显示哪个插件的页面”：`None` 是屏幕上没有插件页面。
-    pub fn show(&self, plugin: Option<&str>) {
-        self.core
-            .dispatch(Action::SetVisiblePlugin {
-                plugin_id: plugin.map(str::to_owned),
-            })
-            .unwrap();
+    /// 打开（或离开）一个插件的网页：可见性由页面栈的栈顶推导，壳不再上报。
+    /// 插件列表刚换过时页面那边可能还没收到新列表（打开会报“找不到这个应用”），先等它出现在列表里，
+    /// 再在等待时间内重试打开。
+    pub async fn show(&self, plugin: Option<&str>) {
+        let Some(id) = plugin else {
+            self.core
+                .dispatch(Action::OpenPage {
+                    tab: wonton_client::TabRef::Chat,
+                })
+                .unwrap();
+            return;
+        };
+        self.plugins(|view| {
+            view.installed
+                .as_ref()
+                .is_some_and(|list| list.plugins.iter().any(|plugin| plugin.id == id))
+        })
+        .await;
+        let app = wonton_client::MyAppRef::Plugin {
+            plugin_id: id.to_owned(),
+        };
+        let _ = self.core.dispatch(Action::AddMyApp {
+            app,
+            title: None,
+            index: None,
+        });
+        let deadline = Instant::now() + WAIT;
+        loop {
+            let opened = self.core.dispatch(Action::OpenPage {
+                tab: wonton_client::TabRef::Plugin {
+                    plugin_id: id.to_owned(),
+                    page: None,
+                },
+            });
+            match opened {
+                Ok(()) => return,
+                Err(_) if Instant::now() < deadline => {
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(error) => panic!("打不开 {id} 的页面：{error:?}"),
+            }
+        }
     }
 
     pub async fn mapping(&self, state: PortMappingState) -> PluginPortMapping {

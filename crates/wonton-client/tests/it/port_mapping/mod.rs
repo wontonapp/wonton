@@ -11,7 +11,7 @@ use wonton_client::{HomeStatus, MappedPort, PortMappingState, PortProtocol};
 use wonton_tunnel::PortResolveError;
 
 use crate::home::support::bind_udp_until_free;
-use crate::plugins::rig::{FakeHome, WAIT};
+use crate::plugins::rig::{FakeHome, WAIT, running};
 use rig::{App, MapHome, PLUGIN, free_port, remote};
 
 /// 一次 UDP 往返。流向是收到第一个包才开的，回包按来源地址送回。
@@ -227,14 +227,21 @@ async fn showing_a_plugin_page_maps_its_ports_and_leaving_releases_them() {
     let app = App::open(dir.path());
     app.connect(&home);
     app.mapping(PortMappingState::Off).await;
+    // 列表里再放一个带网页但没声明端口的插件；隧道层只认 PLUGIN（等于“这台服务器上没装”）。
+    let mut other = wonton_client::InstalledPlugin {
+        ..running("app.other")
+    };
+    other.web_url = Some("http://app.other.wonton.localhost/".to_owned());
+    home.core
+        .set_lists(vec![vec![remote(home.tcp, home.udp), other]]);
 
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     let mapping = app.mapping(PortMappingState::On).await;
     assert!(!mapping.enabled, "自动映射不动手动开关");
     assert_eq!(tcp_round_trip(home.tcp, b"visible").await, b"visible");
 
-    // 屏幕上换成了别的插件（这台服务器上没装）：PLUGIN 的端口全放掉。
-    app.show(Some("app.other"));
+    // 屏幕上换成了别的插件：PLUGIN 的端口全放掉。
+    app.show(Some("app.other")).await;
     app.mapping(PortMappingState::Off).await;
     std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
     let held = bind_udp_until_free(home.udp).await;
@@ -244,7 +251,7 @@ async fn showing_a_plugin_page_maps_its_ports_and_leaving_releases_them() {
     drop(held);
 
     // 页面换回来，不用动开关又映射上。
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     app.mapping(PortMappingState::On).await;
     assert_eq!(tcp_round_trip(home.tcp, b"again").await, b"again");
 }
@@ -259,8 +266,8 @@ async fn a_manually_opened_mapping_survives_the_page_becoming_invisible() {
     app.mapping(PortMappingState::Off).await;
     app.map(true);
     app.mapping(PortMappingState::On).await;
-    app.show(Some(PLUGIN));
-    app.show(None);
+    app.show(Some(PLUGIN)).await;
+    app.show(None).await;
 
     home.refuse(Some(PortResolveError::PluginNotRunning));
     let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, home.tcp))
@@ -287,7 +294,7 @@ async fn going_to_the_background_counts_as_invisible_and_foreground_restores_the
     let app = App::open(dir.path());
     app.connect(&home);
     app.mapping(PortMappingState::Off).await;
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     app.mapping(PortMappingState::On).await;
 
     app.core
@@ -313,14 +320,14 @@ async fn a_page_left_while_backgrounded_stays_invisible_on_foreground() {
     let app = App::open(dir.path());
     app.connect(&home);
     app.mapping(PortMappingState::Off).await;
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     app.mapping(PortMappingState::On).await;
 
     app.core
         .dispatch(wonton_client::Action::AppBackgrounded)
         .unwrap();
     app.mapping(PortMappingState::Off).await;
-    app.show(None);
+    app.show(None).await;
     app.core
         .dispatch(wonton_client::Action::AppForegrounded)
         .unwrap();
@@ -328,7 +335,7 @@ async fn a_page_left_while_backgrounded_stays_invisible_on_foreground() {
         app.core.plugins().port_mappings[0].state,
         PortMappingState::Off
     );
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     app.mapping(PortMappingState::On).await;
 }
 
@@ -340,7 +347,7 @@ async fn turning_the_switch_off_while_the_page_is_visible_keeps_mapping() {
     let app = App::open(dir.path());
     app.connect(&home);
     app.mapping(PortMappingState::Off).await;
-    app.show(Some(PLUGIN));
+    app.show(Some(PLUGIN)).await;
     app.mapping(PortMappingState::On).await;
 
     app.map(false);
@@ -358,7 +365,7 @@ async fn turning_the_switch_off_while_the_page_is_visible_keeps_mapping() {
         b"still visible"
     );
 
-    app.show(None);
+    app.show(None).await;
     app.mapping(PortMappingState::Off).await;
     std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
     bind_udp_until_free(home.udp).await;

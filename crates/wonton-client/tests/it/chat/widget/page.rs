@@ -32,7 +32,7 @@ impl WidgetPage {
         url: &str,
         capabilities: &[&str],
     ) -> (Self, Value) {
-        let page = PlacedTab::Bar { tab };
+        let page = PlacedTab::Page { tab };
         // 起容器之前拿：拿不到就失败，不留下没人收的容器。
         let script = core
             .tab_document_script(page.clone(), environment())

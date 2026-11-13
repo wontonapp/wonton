@@ -172,7 +172,7 @@ fn is_own_message(item: &TimelineItem) -> bool {
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
-    room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     chat: watch::Receiver<ChatViewModel>,
     room_id: OwnedRoomId,
     confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
@@ -184,7 +184,7 @@ impl Outbox {
     pub(super) fn new(
         sender: mpsc::UnboundedSender<TimelineUpdate>,
         menus: Arc<Mutex<Menus>>,
-        room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+        room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
         chat: watch::Receiver<ChatViewModel>,
         room_id: OwnedRoomId,
         confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
