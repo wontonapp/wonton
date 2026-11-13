@@ -25,6 +25,7 @@ import app.wonton.protocol.Rgb
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
+import app.wonton.ui.design.generated.WontonGesture
 import app.wonton.ui.design.generated.WontonMotion
 import app.wonton.ui.design.generated.WontonRadii
 import app.wonton.ui.design.generated.WontonRatio
@@ -50,6 +51,7 @@ object WontonTheme {
     val size = WontonSize
     val ratio = WontonRatio
     val motion = WontonMotion
+    val gesture = WontonGesture
 
     val isDark: Boolean
         @Composable @ReadOnlyComposable

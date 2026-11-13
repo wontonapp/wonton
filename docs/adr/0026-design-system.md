@@ -107,9 +107,11 @@
 
 ### 其他令牌
 
-间距、圆角、字号、尺寸和动效是固定值，写在 `design/tokens.toml`，脚本生成 Swift 和 Kotlin 两份常量，生成结果提交进仓库，CI 重新生成并比对。两端名字对齐：`WontonTheme.spacing.s4`、`WontonTheme.radii.card`、`WontonTheme.typography.body`、`WontonTheme.motion.state`。屏幕代码不再写字面量。
+间距、圆角、字号、尺寸、动效和手势阈值是固定值，写在 `design/tokens.toml`，脚本生成 Swift 和 Kotlin 两份常量，生成结果提交进仓库，CI 重新生成并比对。两端名字对齐：`WontonTheme.spacing.s4`、`WontonTheme.radii.card`、`WontonTheme.typography.body`、`WontonTheme.motion.state`、`WontonTheme.gesture.pullDistance`。屏幕代码不再写字面量。
 
 取值只写在 `design/tokens.toml`（[ADR-0029](0029-platform-material.md)）。字号默认跟随系统，用户也可以选固定的档（[ADR-0028](0028-settings-page.md)）。系统“减少动态”打开时一律改成不超过 100ms 的淡入淡出。动画结束不代表业务完成，状态只听核心的。
+
+手势距离用 pt/dp，速度用 pt/dp 每秒，壳只负责转换为平台坐标。慢拖达到完整距离，或实际距离达到快甩的最小距离且松手速度达标，才改变开合状态；不能只靠速度投影把一次轻碰算作拉开。取消手势回到起始状态。聊天面板和侧栏共用这一规则，面板级别见 [ADR-0052](0052-chat-pull-panel.md)。
 
 ### 图标：Phosphor
 

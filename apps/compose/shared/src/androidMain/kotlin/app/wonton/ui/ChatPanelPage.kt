@@ -57,14 +57,20 @@ internal fun PanelPage(
     val direction = LocalLayoutDirection.current
     val density = LocalDensity.current
     val edge = page.layout == TabLayout.EDGE_TO_EDGE
+    val panelTop = if (panel.edge == PanelEdge.BOTTOM) panel.height - panel.shiftPx else 0f
+    val top = with(density) { (panel.safeTop - panelTop).coerceAtLeast(0f).toDp() }
+    val pageSafe = PaddingValues(
+        top = top, bottom = safe.calculateBottomPadding(),
+        start = safe.calculateLeftPadding(direction), end = safe.calculateRightPadding(direction),
+    )
     val cover = if (panel.level == PanelLevel.FULL) panel.safeBottom else panel.strip
     val environment = tabEnvironment(
-        safe.calculateTopPadding(), with(density) { cover.toDp() }, safe, edge,
+        top, with(density) { cover.toDp() }, pageSafe, edge,
     )
     val inset = if (edge) {
         PaddingValues(0.dp)
     } else {
-        PaddingValues(top = safe.calculateTopPadding(), bottom = safe.calculateBottomPadding())
+        PaddingValues(top = top, bottom = safe.calculateBottomPadding())
     }
     val environmentKey = environment
     val canConnect = public || home.status is HomeStatus.Connected

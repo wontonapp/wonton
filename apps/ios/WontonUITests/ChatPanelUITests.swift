@@ -91,15 +91,118 @@ final class ChatPanelUITests: XCTestCase {
         pullUpInRoom()
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "到底后往上推没有面板")
         shot("11-room-peek")
-        pullStrip(.up)
+        pullStrip(.upward)
         XCTAssertTrue(capsule.waitForExistence(timeout: 5), "在露出的聊天条上推没有到整页")
         shot("12-room-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
     }
 
-    /// 长消息的最后一段不被输入框盖住：大字号下发一条长消息，再把输入框打到多行、键盘弹着，列表仍贴底，
-    /// 内容的底边在列表里、列表的底边在输入框上面。不按正文找那一行：开发栈里本机常解不开自己刚发的消息。
+    func testHomePullRequiresDeliberateGesture() throws {
+        try launch()
+        XCTAssertNotNil(botRoom(timeout: 30), "Real chat list has not finished loading")
+        shot("polish-home-before-pulls")
+        let panel = app.otherElements["chatPanel"]
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        drag(start, dy: 20, velocity: .fast)
+        XCTAssertTrue(waitGone(panel), "Tiny fast home pull opened the panel")
+        drag(start, dy: 64, velocity: .slow)
+        XCTAssertTrue(waitGone(panel), "Short slow home pull opened the panel")
+        drag(start, dy: 120, velocity: .slow)
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow home pull did not open")
+        shot("polish-home-slow-peek")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
+        XCTAssertTrue(waitGone(panel))
+        drag(start, dy: 64, velocity: XCUIGestureVelocity(rawValue: 1_200))
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast home pull did not open")
+    }
+
+    func testRoomPullRequiresDeliberateGesture() throws {
+        try launch()
+        XCTAssertNotNil(enterBotRoom())
+        let panel = app.otherElements["chatPanel"]
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
+        drag(start, dy: -20, velocity: .fast)
+        XCTAssertTrue(waitGone(panel), "Tiny fast room pull opened the panel")
+        drag(start, dy: -64, velocity: .slow)
+        XCTAssertTrue(waitGone(panel), "Short slow room pull opened the panel")
+        drag(start, dy: -120, velocity: .slow)
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow room pull did not open")
+        shot("polish-room-slow-peek")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        XCTAssertTrue(waitGone(panel))
+        drag(start, dy: -64, velocity: XCUIGestureVelocity(rawValue: 1_200))
+        XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast room pull did not open")
+    }
+
+    func testSidebarRequiresDeliberateEdgeSwipe() throws {
+        try launch()
+        let collapse = app.buttons.matching(NSPredicate(
+            format: "label IN %@", ["Collapse sidebar", "收起侧边栏", "收起側邊欄", "サイドバーを閉じる"]
+        )).firstMatch
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: 4, dy: 0))
+        let tiny = start.withOffset(CGVector(dx: 20, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: tiny, withVelocity: .fast, thenHoldForDuration: 0)
+        XCTAssertTrue(waitGone(collapse), "Tiny fast edge swipe opened the sidebar")
+        let short = start.withOffset(CGVector(dx: 48, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: short, withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertTrue(waitGone(collapse), "Short slow edge swipe opened the sidebar")
+        let deliberate = start.withOffset(CGVector(dx: 80, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: deliberate, withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5), "Slow edge swipe did not open the sidebar")
+        shot("polish-sidebar-deliberate")
+        collapse.tap()
+        XCTAssertTrue(waitGone(collapse))
+        let flick = start.withOffset(CGVector(dx: 48, dy: 0))
+        start.press(forDuration: 0.05, thenDragTo: flick,
+                    withVelocity: XCUIGestureVelocity(rawValue: 1_200), thenHoldForDuration: 0)
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5), "Qualified edge flick did not open the sidebar")
+        collapse.tap()
+        XCTAssertTrue(waitGone(collapse))
+        let button = app.buttons.matching(UITestSidebar.button).firstMatch
+        XCTAssertTrue(button.isHittable, "Accessible sidebar button was lost")
+        button.tap()
+        XCTAssertTrue(collapse.waitForExistence(timeout: 5))
+    }
+
+    func testChatMaterialUnderlapAndPanelSeam() throws {
+        try launch()
+        guard let field = enterBotRoom() else { return XCTFail("Bot room unavailable") }
+        field.tap()
+        field.typeText(String(repeating: "Material underlap sample: long message with several lines. ", count: 30))
+        tapAnyButton(["Send", "发送", "傳送", "送信"], timeout: 5, required: true)
+        field.typeText("Multiline draft\nSecond line\nThird line")
+        shot("polish-composer-keyboard-multiline")
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.exists)
+        XCTAssertGreaterThan(list.frame.maxY, field.frame.minY, "Timeline does not extend behind composer material")
+        list.swipeDown(velocity: .slow)
+        shot("polish-top-and-composer-under-scrolled-message")
+        goToBottom()
+        shot("polish-last-message-above-composer")
+        pullUpInRoom()
+        XCTAssertTrue(app.otherElements["chatPanel"].waitForExistence(timeout: 5))
+        if app.buttons["panelAdd"].exists {
+            app.buttons["panelAdd"].tap()
+            let models = app.buttons.matching(NSPredicate(
+                format: "label BEGINSWITH %@", "Models"
+            )).firstMatch
+            XCTAssertTrue(models.waitForExistence(timeout: 10), "Installed Models page unavailable")
+            models.tap()
+            tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
+        }
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "Plugin panel did not render")
+        shot("polish-composer-panel-seam")
+    }
+
+    private func drag(_ start: XCUICoordinate, dy delta: CGFloat, velocity: XCUIGestureVelocity) {
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: delta)),
+                    withVelocity: velocity, thenHoldForDuration: 0)
+    }
+
+    /// The list renders behind the composer, but its inset keeps the last message above the field
+    /// while a multiline draft and the keyboard change the unobscured viewport.
     func testLastMessageClearsComposer() throws {
         try launch(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
         guard let field = enterBotRoom() else {
@@ -124,17 +227,20 @@ final class ChatPanelUITests: XCTestCase {
         attach("after-draft \(now) \(state)")
         // 贴底看 App 自己的位置：List 的内容高度比真实内容矮一段，按内容外框比较在长行上必败（见 PR 说明）。
         XCTAssertTrue(state.contains("pin=true") && isAtBottom(state), "发完以后列表没贴底：\(now) \(state)")
-        XCTAssertLessThanOrEqual(list.frame.maxY, field.frame.minY + 1, "列表的底边被输入框盖住：\(now)")
+        XCTAssertLessThanOrEqual(visibleBottom(state), Double(field.frame.minY + 1),
+                                 "Last-message viewport extends under the composer: \(now)")
     }
+}
+
+extension ChatPanelUITests {
 
     // MARK: - 摆台
 
     private func launch(arguments: [String] = []) throws {
+        try UITestBackend.require()
         app = XCUIApplication()
         app.launchArguments += arguments
-        if let code = try UITestBackend.codes().first {
-            app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
-        }
+        try UITestBackend.passPairingCode(to: app)
         app.launch()
         if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
             XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
@@ -165,7 +271,7 @@ final class ChatPanelUITests: XCTestCase {
         return false
     }
 
-    private enum Direction { case up, down }
+    private enum Direction { case upward, down }
 
     /// 列表/页面中间往下拉：页面滚到顶后接着拉。
     private func pullPageDown() {
@@ -192,7 +298,7 @@ final class ChatPanelUITests: XCTestCase {
         let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
         switch direction {
         case .down: low.press(forDuration: 0.05, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0)
-        case .up: high.press(forDuration: 0.05, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0)
+        case .upward: high.press(forDuration: 0.05, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0)
         }
     }
 
@@ -260,13 +366,19 @@ final class ChatPanelUITests: XCTestCase {
 
     /// `snapshot` 里的 y 是不是到位（`bottom` 是 App 算出来的底部）。
     private func isAtBottom(_ state: String) -> Bool {
-        let values = Dictionary(uniqueKeysWithValues: state.split(separator: " ").compactMap { part -> (String, Double)? in
+        let pairs = state.split(separator: " ").compactMap { part -> (String, Double)? in
             let pair = part.split(separator: "=", maxSplits: 1)
             guard pair.count == 2, let value = Double(pair[1]) else { return nil }
             return (String(pair[0]), value)
-        })
-        guard let y = values["y"], let bottom = values["bottom"] else { return false }
-        return y >= bottom - 2
+        }
+        let values = Dictionary(uniqueKeysWithValues: pairs)
+        guard let offsetY = values["y"], let bottom = values["bottom"] else { return false }
+        return offsetY >= bottom - 2
+    }
+
+    private func visibleBottom(_ state: String) -> Double {
+        let part = state.split(separator: " ").first { $0.hasPrefix("visibleBottom=") }
+        return part.flatMap { Double($0.dropFirst("visibleBottom=".count)) } ?? .infinity
     }
 
     private func attach(_ text: String) {
@@ -314,9 +426,15 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 房间里的手指从不挡输入框的位置往上推。
     private func pullUpInRoom() {
-        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
-        let high = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-        low.press(forDuration: 0.05, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0)
+        let list = app.collectionViews.firstMatch
+        let field = composer(timeout: 1)
+        let upper = max(app.frame.minY + 150, list.frame.minY + 24)
+        let lower = min(list.frame.maxY, field?.frame.minY ?? list.frame.maxY) - 24
+        XCTAssertGreaterThan(lower - upper, 96, "Not enough unobscured timeline for a deliberate pull")
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: lower))
+        let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: upper))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
     }
 
     private var capsule: XCUIElement {

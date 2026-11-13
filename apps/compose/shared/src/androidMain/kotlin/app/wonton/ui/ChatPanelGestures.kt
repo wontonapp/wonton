@@ -1,6 +1,5 @@
 package app.wonton.ui
 
-import android.content.res.Resources
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.width
@@ -34,14 +33,8 @@ import app.wonton.ui.design.toColor
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
-private val EDGE_WIDTH = 20.dp
-
-/** 边缘滑动的距离换算成速度的量：一段 75px 的滑动够关掉面板。 */
-private const val EDGE_SWIPE_GAIN = 10f
-
 /** 边缘热区占屏高的比例：系统返回手势的排除区最多认 200dp，2400px 屏上 0.22 ≈ 528px（≈220dp，压到上限内）。 */
 private const val EDGE_ZONE_RATIO = 0.22f
-private const val SLOP_DP = 8f
 @Composable
 internal fun BoxScope.ChatPanelStrip(state: ChatPanelState) {
     val interaction = remember { MutableInteractionSource() }
@@ -56,14 +49,17 @@ internal fun BoxScope.ChatPanelStrip(state: ChatPanelState) {
             .pointerInput(state) {
                 val tracker = VelocityTracker()
                 detectDragGestures(
-                    onDragStart = { state.begin() },
+                    onDragStart = {
+                        tracker.resetTracking()
+                        state.begin()
+                    },
                     onDrag = { change, amount ->
                         change.consume()
                         tracker.addPosition(change.uptimeMillis, change.position)
                         state.pull(amount.y * state.sign)
                     },
                     onDragEnd = { state.settle(state.level, tracker.calculateVelocity().y * state.sign) },
-                    onDragCancel = { state.settle(state.level, 0f) },
+                    onDragCancel = { state.cancelDrag() },
                 )
             },
     ) {
@@ -97,7 +93,7 @@ internal fun ChatPanelTopPull(state: ChatPanelState) {
                         state.pull(-amount.y)
                     },
                     onDragEnd = { state.settle(state.level, -tracker.calculateVelocity().y) },
-                    onDragCancel = { state.settle(state.level, 0f) },
+                    onDragCancel = { state.cancelDrag() },
                 )
             },
         contentAlignment = Alignment.TopCenter,
@@ -120,20 +116,25 @@ internal fun ChatPanelEdge(state: ChatPanelState, enabled: Boolean) {
         Box(
             Modifier.align(Alignment.CenterStart)
                 .fillMaxHeight(EDGE_ZONE_RATIO)
-                .width(EDGE_WIDTH)
+                .width(WontonTheme.gesture.edgeWidth.dp)
                 .systemGestureExclusion()
                 .semantics { contentDescription = label }
                 .pointerInput(state) {
                     var total = 0f
+                    val tracker = VelocityTracker()
                     detectDragGestures(
-                        onDragStart = { total = 0f },
+                        onDragStart = {
+                            total = 0f
+                            tracker.resetTracking()
+                        },
                         onDrag = { change, amount ->
                             change.consume()
-                            total += -amount.x
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            total += amount.x
                             state.pull(-amount.x)
                         },
-                        onDragEnd = { state.settle(state.level, total * EDGE_SWIPE_GAIN) },
-                        onDragCancel = { state.settle(state.level, 0f) },
+                        onDragEnd = { state.settleEdge(total, tracker.calculateVelocity().x) },
+                        onDragCancel = { state.cancelDrag() },
                     )
                 },
         )
@@ -162,10 +163,9 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
     private var pulled = 0f
 
     private var origin: Offset? = null
-    private var last = Offset.Zero
     private var mode = Mode.NONE
     private val tracker = VelocityTracker()
-    private val slop = SLOP_DP * Resources.getSystem().displayMetrics.density
+    private val slop: Float get() = state.dragSlop
 
     private enum class Mode { NONE, FLIP, PULL }
 
@@ -175,15 +175,14 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
                 origin = Offset(event.x, event.y)
                 downRawX = event.rawX
                 downRawY = event.rawY
-                last = origin ?: Offset.Zero
                 mode = Mode.NONE
                 pulled = 0f
                 tracker.resetTracking()
-                tracker.addPosition(event.eventTime, last)
+                tracker.addPosition(event.eventTime, Offset(event.rawX, event.rawY))
             }
             MotionEvent.ACTION_MOVE -> move(event)
             MotionEvent.ACTION_UP -> {
-                tracker.addPosition(event.eventTime, Offset(event.x, event.y))
+                tracker.addPosition(event.eventTime, Offset(event.rawX, event.rawY))
                 val velocity = tracker.calculateVelocity()
                 catchUp(event)
                 when (mode) {
@@ -194,10 +193,9 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
                 finish()
             }
             MotionEvent.ACTION_CANCEL -> {
-                catchUp(event)
                 when (mode) {
-                    Mode.FLIP -> flipEnd(0f)
-                    Mode.PULL -> state.settle(PanelLevel.PEEK, 0f)
+                    Mode.FLIP -> flipTo(flipBase)
+                    Mode.PULL -> state.cancelDrag()
                     Mode.NONE -> Unit
                 }
                 finish()
@@ -221,15 +219,13 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
             }
             if (mode == Mode.NONE) return
             if (mode == Mode.FLIP) flipBase = position()
-            last = point
         }
-        tracker.addPosition(event.eventTime, point)
+        tracker.addPosition(event.eventTime, Offset(event.rawX, event.rawY))
         when (mode) {
             Mode.FLIP -> flipTo(flipBase - (event.rawX - downRawX) / width().coerceAtLeast(1f))
-            Mode.PULL -> pulled += state.pull(point.y - last.y)
+            Mode.PULL -> pulled += state.pull(event.rawY - downRawY - pulled)
             Mode.NONE -> Unit
         }
-        last = point
     }
 
     /** 移动事件被系统合并时，按这最后一下的屏幕坐标把少算的位移补齐。 */

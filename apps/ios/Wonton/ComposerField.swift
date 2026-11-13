@@ -30,7 +30,10 @@ struct ComposerField: View {
         )
         .fixedSize(horizontal: false, vertical: true)
         .frame(minHeight: WontonTheme.size.composerField)
-        .background(RoundedRectangle(cornerRadius: WontonTheme.radii.composerField).fill(Color(colors.surfaceSubtle)))
+        .background {
+            RoundedRectangle(cornerRadius: WontonTheme.radii.composerField)
+                .fill(Color(colors.surfaceSubtle).opacity(WontonTheme.ratio.secondaryContent))
+        }
     }
 }
 
@@ -158,8 +161,13 @@ final class ComposerTextView: UITextView {
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         backgroundColor = .clear
-        // 文字贴着左缘:SwiftUI 那层的横向 padding 负责边距。参数在有些 SDK 上是可选的,属性在另一些上是,用参数加可选链接两边都编译。
-        textContainer?.lineFragmentPadding = 0
+        // Insets belong to the text view so wrapping, the caret and placeholder share the same bounds.
+        let container: NSTextContainer? = self.textContainer
+        container?.lineFragmentPadding = 0
+        textContainerInset = UIEdgeInsets(
+            top: WontonTheme.spacing.s8, left: WontonTheme.spacing.s12,
+            bottom: WontonTheme.spacing.s8, right: WontonTheme.spacing.s12
+        )
         alwaysBounceVertical = false
         showsVerticalScrollIndicator = false
         setUpPlaceholder()
@@ -177,8 +185,10 @@ final class ComposerTextView: UITextView {
         placeholderTop = placeholderLabel.topAnchor.constraint(equalTo: topAnchor)
         NSLayoutConstraint.activate([
             placeholderTop,
-            placeholderLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
-            placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor)
+            placeholderLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: WontonTheme.spacing.s12),
+            placeholderLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor, constant: -WontonTheme.spacing.s12
+            )
         ])
     }
 
@@ -207,7 +217,7 @@ final class ComposerTextView: UITextView {
         if markedTextRange == nil {
             textStorage.setAttributes(typingStyle, range: NSRange(location: 0, length: (text as NSString).length))
         }
-        placeholderLabel.isHidden = text.isEmpty
+        placeholderLabel.isHidden = !text.isEmpty
         fitHeight()
     }
 
@@ -225,7 +235,9 @@ final class ComposerTextView: UITextView {
         let content = contentHeight(width: bounds.width)
         let box = boxHeight(content: content)
         let pad = max(WontonTheme.spacing.s8, (box - content) / 2)
-        textContainerInset = UIEdgeInsets(top: pad, left: 0, bottom: pad, right: 0)
+        textContainerInset = UIEdgeInsets(
+            top: pad, left: WontonTheme.spacing.s12, bottom: pad, right: WontonTheme.spacing.s12
+        )
         placeholderTop.constant = pad
         isScrollEnabled = content + WontonTheme.spacing.s8 * 2 > box + 0.5
         if fittedHeight != box {

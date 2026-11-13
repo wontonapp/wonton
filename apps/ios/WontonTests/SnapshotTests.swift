@@ -118,6 +118,30 @@ final class SnapshotTests: XCTestCase {
         )
     }
 
+    /// 侧边栏容器要把页面的底铺进系统栏那两条（状态栏、Home 条）：收起时整屏是页面的底色，
+    /// 打开时露出来的那一条连同圆角也铺到屏幕上下边。主内容故意不画底，底只能来自容器。
+    func testSidebarClosedFillsSafeArea() throws {
+        let view = SnapshotFixtures.sidebar(isOpen: false)
+        assertWithSafeArea(view, testName: "testSidebarClosedFillsSafeArea", line: #line)
+    }
+
+    func testSidebarOpenFillsSafeArea() throws {
+        let view = SnapshotFixtures.sidebar(isOpen: true)
+        assertWithSafeArea(view, testName: "testSidebarOpenFillsSafeArea", line: #line)
+    }
+
+    /// 截图用的窗口没有系统栏，安全区是零；这里按带 Home 条的 iPhone 补上，安全区的画法才进得了参考图。
+    private func assertWithSafeArea(_ view: some View, testName: String, line: UInt) {
+        let controller = UIHostingController(rootView: SnapshotFixtures.wrapped(view))
+        controller.additionalSafeAreaInsets = SnapshotFixtures.safeArea
+        assertSnapshot(
+            of: controller,
+            as: .image(drawHierarchyInKeyWindow: true, size: SnapshotFixtures.size, traits: Self.traits),
+            testName: testName,
+            line: line
+        )
+    }
+
     /// 逐像素比较；系统字体和矢量图标在同一台模拟器上是确定的，放宽精度要写明原因。
     private func assert(_ view: some View, size: CGSize = SnapshotFixtures.size, testName: String, line: UInt) {
         assertSnapshot(

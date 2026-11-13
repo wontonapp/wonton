@@ -66,6 +66,16 @@ enum WontonRatio {
     static let codeFill: CGFloat = 0.1
 }
 
+enum WontonGesture {
+    static let pullDistance: CGFloat = 96
+    static let pushDistance: CGFloat = 64
+    static let swipeDistance: CGFloat = 64
+    static let flickDistance: CGFloat = 32
+    static let flickVelocity: CGFloat = 900
+    static let dragSlop: CGFloat = 8
+    static let edgeWidth: CGFloat = 24
+}
+
 enum WontonMotion {
     static let feedback: Double = 0.12
     static let state: Double = 0.18

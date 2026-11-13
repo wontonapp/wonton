@@ -2,6 +2,13 @@ import SwiftUI
 import UIKit
 import WebKit
 
+extension WontonGesture {
+    static func commits(distance: CGFloat, velocity: CGFloat, threshold: CGFloat) -> Bool {
+        distance >= threshold || (distance >= WontonTheme.gesture.flickDistance
+            && velocity >= WontonTheme.gesture.flickVelocity)
+    }
+}
+
 /// 面板从哪一边出来：主聊天页在上（列表到顶后往下拉），房间在下（最新一条之后往上推）。
 enum PanelEdge { case top, bottom }
 
@@ -10,6 +17,7 @@ struct ChatPull {
     let enabled: Bool
     let changed: (CGFloat) -> Void
     let ended: (CGFloat, CGFloat) -> Void
+    let cancelled: () -> Void
 }
 
 extension EnvironmentValues {
@@ -33,6 +41,7 @@ struct ChatPullDetector: UIViewRepresentable {
         anchor.enabled = pull.enabled
         anchor.changed = pull.changed
         anchor.ended = pull.ended
+        anchor.cancelled = pull.cancelled
     }
 }
 
@@ -47,6 +56,7 @@ struct RoomPullBinder: UIViewRepresentable {
         anchor.enabled = pull?.enabled ?? false
         anchor.changed = pull?.changed
         anchor.ended = pull?.ended
+        anchor.cancelled = pull?.cancelled
     }
 }
 
@@ -56,6 +66,7 @@ final class PullAnchor: UIView {
     var enabled = true
     var changed: ((CGFloat) -> Void)?
     var ended: ((CGFloat, CGFloat) -> Void)?
+    var cancelled: (() -> Void)?
     private let attachesToAncestor: Bool
     var edge: PanelEdge
     private weak var scrollView: UIScrollView?
@@ -81,6 +92,10 @@ final class PullAnchor: UIView {
 
     func attach(to target: UIScrollView?) {
         guard target !== scrollView else { return }
+        if pullStart != nil {
+            cancelled?()
+            pullStart = nil
+        }
         scrollView?.panGestureRecognizer.removeTarget(self, action: #selector(panned(_:)))
         scrollView = target
         target?.panGestureRecognizer.addTarget(self, action: #selector(panned(_:)))
@@ -97,9 +112,13 @@ final class PullAnchor: UIView {
         let translation = sign * pan.translation(in: scrollView.superview).y
         switch pan.state {
         case .began:
-            pullStart = nil
+            pullStart = atEnd && sign * pan.velocity(in: scrollView).y > 0 ? 0 : nil
         case .changed:
-            guard enabled else { return }
+            guard enabled else {
+                if pullStart != nil { cancelled?() }
+                pullStart = nil
+                return
+            }
             if pullStart == nil, atEnd, sign * pan.velocity(in: scrollView).y > 0 {
                 pullStart = translation
             }
@@ -112,11 +131,18 @@ final class PullAnchor: UIView {
             }
             scrollView.contentOffset.y = end
             changed?(distance)
-        case .ended, .cancelled, .failed:
-            if let start = pullStart, enabled {
-                scrollView.contentOffset.y = end
-                ended?(translation - start, sign * pan.velocity(in: scrollView.superview).y)
+        case .ended:
+            if let start = pullStart {
+                if enabled {
+                    scrollView.contentOffset.y = end
+                    ended?(translation - start, sign * pan.velocity(in: scrollView.superview).y)
+                } else {
+                    cancelled?()
+                }
             }
+            pullStart = nil
+        case .cancelled, .failed:
+            if pullStart != nil { cancelled?() }
             pullStart = nil
         default:
             break
@@ -138,6 +164,7 @@ struct PanelPagePull: UIViewRepresentable {
     let edge: PanelEdge
     let changed: (CGFloat) -> Void
     let ended: (CGFloat, CGFloat) -> Void
+    let cancelled: () -> Void
 
     func makeUIView(context: Context) -> PullAnchor {
         PullAnchor(attachesToAncestor: false, edge: edge)
@@ -148,6 +175,7 @@ struct PanelPagePull: UIViewRepresentable {
         anchor.enabled = enabled
         anchor.changed = changed
         anchor.ended = ended
+        anchor.cancelled = cancelled
         anchor.attach(to: webView?.scrollView)
     }
 

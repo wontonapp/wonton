@@ -1,5 +1,6 @@
 #if DEBUG
 import SwiftUI
+import UIKit
 import WontonClient
 
 @testable import Wonton
@@ -15,6 +16,18 @@ enum SnapshotFixtures {
     /// 固定的消息时刻，2024-03-08 09:41 UTC。取一年以前，时间永远落在“年月日”这一档，
     /// 不会随运行日期变成“昨天”或星期几；格式化按工作流设的 TZ=UTC 和 en_US。
     static let timestampMs: UInt64 = 1_709_890_860_000
+
+    /// 带 Home 条的竖屏 iPhone 的系统栏高度（状态栏 47、Home 条 34）。
+    static let safeArea = UIEdgeInsets(top: 47, left: 0, bottom: 34, right: 0)
+
+    /// 侧边栏容器配不画底的主内容和面板：系统栏那两条是什么颜色，只看容器自己铺的底。
+    static func sidebar(isOpen: Bool) -> some View {
+        SidebarContainer(isOpen: .constant(isOpen), edgeSwipe: false) {
+            Text("Chats").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } panel: {
+            Text("Sidebar").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
 
     /// 外观、语言和字号都钉死：参考图不能受模拟器的系统设置影响。
     static func wrapped<V: View>(_ view: V) -> some View {
