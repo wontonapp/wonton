@@ -20,12 +20,12 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use super::agent_chains::{AgentAcpCancel, AgentChains};
-use super::agent_outbox::Outbox;
 use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
 use super::{ERROR_HEADER, Gateway, TunnelPeer, router};
 use crate::agent_chain::Chains;
 use crate::agent_chain::settings::AgentSettings;
+use crate::agent_outbox::Outbox;
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
 use crate::mcp::Bus;
@@ -382,7 +382,7 @@ impl Home {
         body["chains"].as_array().unwrap().clone()
     }
 
-    async fn outbox(&self, bus_token: &str) -> Option<Value> {
+    async fn outbox(&self, bus_token: &str, matrix_token: &str) -> Option<Value> {
         let request = hyper::Request::builder()
             .method(Method::GET)
             .uri(format!(
@@ -390,6 +390,7 @@ impl Home {
                 wonton_protocol::AGENT_OUTBOX_PATH
             ))
             .header(header::HOST, format!("{PLUGIN_MCP_HOST}:18480"))
+            .header(wonton_protocol::BOT_TOKEN_HEADER, matrix_token)
             .body(Body::empty())
             .unwrap();
         let mut request = request;
@@ -683,7 +684,10 @@ async fn the_app_stop_cancels_the_turn_and_withdraws_cards() {
 
     // 链上经 agent_acp 的会话交给了网关取消（第 5 块的接口，这里用替身）；桥的轮次进了出箱。
     assert_eq!(home.acp.cancelled.lock().unwrap().as_slice(), ["s-acp"]);
-    let item = home.outbox(BUS_ALICE).await.expect("出箱有取消");
+    let item = home
+        .outbox(BUS_ALICE, MATRIX_ALICE)
+        .await
+        .expect("出箱有取消");
     assert_eq!(item["kind"]["type"], "cancel_turn");
     assert_eq!(item["kind"]["chain"], chain.as_str());
     assert_eq!(item["kind"]["session"], "s-1");
@@ -759,14 +763,80 @@ async fn the_outbox_receipt_accepts_taken_items_only() {
     let response = home
         .app
         .clone()
-        .oneshot(home.receipt_request(Bot::Bob.bus(), unknown))
+        .oneshot(home.receipt_request(Bot::Bob.bus(), MATRIX_BOB, unknown))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
+/// 出箱的门：只有总线令牌（Agent 自己读）→ 403；别家 Bot 的 Matrix 令牌 → 403；
+/// 正是自己的 Matrix 令牌才取得到。
+#[tokio::test]
+async fn the_outbox_requires_the_bots_matrix_token() {
+    let home = start().await;
+    let get = |matrix_token: Option<&str>| {
+        let mut request = hyper::Request::builder()
+            .method(Method::GET)
+            .uri(format!(
+                "{}/{BUS_ALICE}",
+                wonton_protocol::AGENT_OUTBOX_PATH
+            ))
+            .header(header::HOST, format!("{PLUGIN_MCP_HOST}:18480"))
+            .body(Body::empty())
+            .unwrap();
+        if let Some(token) = matrix_token {
+            request
+                .headers_mut()
+                .insert(wonton_protocol::BOT_TOKEN_HEADER, token.parse().unwrap());
+        }
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:18080".parse::<SocketAddr>().unwrap(),
+        ));
+        request
+    };
+    // 只有总线令牌：Agent 自己也拿得到它，读不了出箱。
+    let response = home.app.clone().oneshot(get(None)).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 别家 Bot 的 Matrix 令牌。
+    let response = home
+        .app
+        .clone()
+        .oneshot(get(Some(MATRIX_BOB)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 正是这个 Bot 的 Matrix 令牌。
+    let response = home
+        .app
+        .clone()
+        .oneshot(get(Some(MATRIX_ALICE)))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 impl Home {
-    fn receipt_request(&self, bus_token: &str, body: Value) -> hyper::Request<Body> {
+    fn receipt_request(
+        &self,
+        bus_token: &str,
+        matrix_token: &str,
+        body: Value,
+    ) -> hyper::Request<Body> {
+        let mut request = self.receipt_request_with(bus_token, Some(matrix_token), body);
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:18080".parse::<SocketAddr>().unwrap(),
+        ));
+        request
+    }
+
+    fn receipt_request_with(
+        &self,
+        bus_token: &str,
+        matrix_token: Option<&str>,
+        body: Value,
+    ) -> hyper::Request<Body> {
         let mut request = hyper::Request::builder()
             .method(Method::POST)
             .uri(format!(
@@ -777,6 +847,11 @@ impl Home {
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();
+        if let Some(token) = matrix_token {
+            request
+                .headers_mut()
+                .insert(wonton_protocol::BOT_TOKEN_HEADER, token.parse().unwrap());
+        }
         request.extensions_mut().insert(ConnectInfo(
             "127.0.0.1:18080".parse::<SocketAddr>().unwrap(),
         ));

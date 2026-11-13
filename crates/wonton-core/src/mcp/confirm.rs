@@ -179,6 +179,8 @@ struct Table {
     slots: HashMap<String, Slot>,
     /// 生效中的放行时段：（Bot，插件）→ 打开它的卡片。其余状态在卡片的 `window` 里。
     windows: HashMap<(PluginId, String), String>,
+    /// 按收件人放宽的时段（ADR-0024，`wonton__send_message`）：（Bot，收件人）→ 打开它的卡片。
+    recipient_windows: HashMap<(PluginId, String), String>,
     /// 上次运行留下、卡片还没改成“已结束”的时段。
     leftovers: HashMap<String, windows::Persisted>,
 }
@@ -553,7 +555,16 @@ impl Confirmations {
         slot.card.state = state.clone();
         slot.ended = Some(now);
         if answer == Answer::AllowWindow {
-            self.open_window(&mut table, id, now);
+            // 发消息的卡片按收件人放宽，其余按插件。
+            let send_message = matches!(
+                slot.card.category,
+                Some(wonton_protocol::ConfirmationCategory::SendMessage { .. })
+            );
+            if send_message {
+                self.open_recipient_window(&mut table, id, now);
+            } else {
+                self.open_window(&mut table, id, now);
+            }
         }
         self.activity_changed();
         self.bump();

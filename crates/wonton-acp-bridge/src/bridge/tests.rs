@@ -153,6 +153,7 @@ impl Harness {
                 &self.config.access_token,
             )
             .unwrap(),
+            dm: std::sync::Arc::new(crate::bridge::outbox::tests::FakeDm::for_bridge()),
             pending_asks: permissions::PendingAsks::default(),
         };
         // 出箱和房间循环并行（生产里 run() 就这么起）。

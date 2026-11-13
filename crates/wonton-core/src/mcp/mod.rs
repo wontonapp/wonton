@@ -27,6 +27,7 @@ mod people_tools;
 mod profile_tools;
 mod risky;
 mod save_tools;
+mod send_message_tool;
 mod server;
 mod takeover;
 mod tool_policy;
@@ -91,8 +92,8 @@ pub struct Cards {
 }
 
 pub struct People {
-    server_name: String,
-    members: Arc<crate::members::Members>,
+    pub(crate) server_name: String,
+    pub(crate) members: Arc<crate::members::Members>,
 }
 
 pub struct Bus {
@@ -115,6 +116,8 @@ pub struct Bus {
     contacts: OnceLock<Arc<crate::contacts::Contacts>>,
     /// 调用链（ADR-0061 第 10 节）：权限卡片按会话认到链上、停链时撤回，上限卡片也从这里发。
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
+    /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
+    friends: OnceLock<Arc<crate::friends::Friends>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -151,6 +154,7 @@ impl Bus {
             matrix: OnceLock::new(),
             contacts: OnceLock::new(),
             agent_chains: OnceLock::new(),
+            friends: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -251,6 +255,21 @@ impl Bus {
 
     pub(crate) fn agent_chains(&self) -> Option<&Arc<crate::gateway::agent_chains::AgentChains>> {
         self.agent_chains.get()
+    }
+
+    /// 接上好友名单（ADR-0051）。只接一次。
+    pub fn attach_friends(&self, friends: Arc<crate::friends::Friends>) {
+        if self.friends.set(friends).is_err() {
+            tracing::warn!("好友名单接了两次，用先接上的");
+        }
+    }
+
+    pub(crate) fn friends(&self) -> Option<&Arc<crate::friends::Friends>> {
+        self.friends.get()
+    }
+
+    pub fn audit(&self) -> &Arc<Audit> {
+        &self.audit
     }
 
     /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、桥的轮次进他的出箱、`agent_acp` 的会话交给网关取消，
@@ -681,6 +700,8 @@ mod profile_tests;
 mod risky_tests;
 #[cfg(test)]
 mod save_tests;
+#[cfg(test)]
+mod send_message_tests;
 #[cfg(test)]
 mod takeover_tests;
 #[cfg(test)]
