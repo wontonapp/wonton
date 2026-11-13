@@ -6,34 +6,37 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.MatrixLoginFailure
 import app.wonton.protocol.MatrixLoginState
 import app.wonton.protocol.MatrixOidcCallback
+import java.net.URI
+import java.net.URISyntaxException
 
 /** 登录起手时填的服务器；核心的发现也是这个默认值（ADR-0051）。 */
 internal const val DEFAULT_MATRIX_SERVER = "matrix.org"
 
-/** Matrix 登录的 OIDC 回调地址（MSC2965/2966：scheme 是 client_uri `https://wontonapp.github.io` 的反写）。
- *  核心的 `REDIRECT_URIS` 必须收这个值，浏览器完成登录带授权码回到这里（MainActivity 的深链处理）。 */
-const val MATRIX_LOGIN_REDIRECT_URI = "io.github.wontonapp:/matrix-login"
+/** 浏览器回来的地址是不是这次登录的回调。[redirectUri] 用核心给的 `oidcRedirectUri`，壳不另写一份。
+ *  浏览器会把 `scheme:/path` 归一成 host 为空的 `scheme:///path`，两种算同一个地址；前缀撞上的（如 `…-loginx`）不算。 */
+fun isMatrixLoginCallback(url: String, redirectUri: String): Boolean {
+    val received = url.toCallbackUri()
+    val redirect = redirectUri.toCallbackUri()
+    return received != null && redirect != null &&
+        received.scheme.equals(redirect.scheme, ignoreCase = true) &&
+        (received.host ?: "") == (redirect.host ?: "") && received.path == redirect.path
+}
 
-/** 浏览器归一出来的 host 为空的写法，和 [MATRIX_LOGIN_REDIRECT_URI] 是同一个地址。 */
-const val MATRIX_LOGIN_REDIRECT_URI_HOST_EMPTY = "io.github.wontonapp:///matrix-login"
-
-/** 浏览器回来的地址是不是这次登录的回调。浏览器会把 `io.github.wontonapp:/matrix-login` 归一成
- *  host 为空的 `io.github.wontonapp:///matrix-login`，两种算同一个地址；前缀撞上的（如 `…-loginx`）不算。 */
-fun isMatrixLoginCallback(url: String): Boolean =
-    url == MATRIX_LOGIN_REDIRECT_URI || url == MATRIX_LOGIN_REDIRECT_URI_HOST_EMPTY ||
-        url.startsWith("$MATRIX_LOGIN_REDIRECT_URI?") ||
-        url.startsWith("$MATRIX_LOGIN_REDIRECT_URI_HOST_EMPTY?")
+/** 解析不了的地址（本来就不是 URL）不认，不抛。 */
+private fun String.toCallbackUri(): URI? = try {
+    URI(this)
+} catch (_: URISyntaxException) {
+    null
+}
 
 /**
- * 浏览器回来的回调交给核心续上流程。没有进行中的登录（已结束或本来没有）就不是这次流程的回调，
- * 原样丢弃：迟到的回调不能恢复已取消的流程。返回是否按回调处理了。
+ * 浏览器回来的回调交给核心续上流程。没有进行中的登录（已结束或本来没有）或地址对不上，
+ * 就不是这次流程的回调，原样丢弃：迟到的回调不能恢复已取消的流程。返回是否按回调处理了。
  */
 fun ClientCore.completeMatrixOidcCallback(callbackUrl: String): Boolean {
-    if (!isMatrixLoginCallback(callbackUrl)) return false
-    val loginId = servers().matrixLogin?.loginId
-    if (loginId != null) {
-        send(Action.CompleteMatrixOidc(MatrixOidcCallback(loginId, callbackUrl)))
-    }
+    val login = servers().matrixLogin
+    if (login == null || !isMatrixLoginCallback(callbackUrl, login.oidcRedirectUri)) return false
+    send(Action.CompleteMatrixOidc(MatrixOidcCallback(login.loginId, callbackUrl)))
     return true
 }
 

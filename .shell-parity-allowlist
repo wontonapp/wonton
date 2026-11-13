@@ -36,6 +36,24 @@ PluginsViewModel.port_mappings | ADR-0072：映射到本机给第三方 App 只�
 # 测试入口。
 ClientCore.new_ui_fake | UI 测试的假数据入口；iOS 在 App 代码的 DEBUG 分支里调，Android 在 debug 源集里调，检查不看 debug 源集
 
+# 服务器列表：两个壳的行都只显示名字和当前勾，不按 ServerKind 区分样子；Matrix 账号的信息走 MatrixAccount，两边都显示。
+# iOS 的 `.wonton` 命中来自字符串字面量（DispatchQueue 标签 "app.wonton.network"），不是这个枚举。
+ServerKind | 两壳都不按服务器类型显示行；iOS 的命中是 "app.wonton.*" 字符串字面量撞名
+
+# 传输：Transfer.file 是文件的编号，两壳的传输卡片都不显示它（iOS 的 `.file` 命中来自 WontonIcon.file 和 ByteCountStyle.file）。
+Transfer.file | 两壳传输卡片都不显示文件编号；iOS 的 `.file` 是同名图标/字数风格的撞名
+
+# 插件共享撤销：两壳都走 ClientCore.revoke_plugin_share 函数（iOS PluginShareEditor、Android PluginSharesSection 都有撤销按钮），
+# 不经 Action 分发；Kotlin 的匹配只认 Action.RevokePluginShare 字面量。
+Action.RevokePluginShare | 两壳都经 ClientCore.revoke_plugin_share 函数撤销，Action 分支没人发
+
+# 上传进共享文件夹（Action.UploadFile）：iOS 唯一引用是 FilesModel.upload，没有任何界面调用；
+# 聊天里的文件上传两边都走 ClientCore.add_file_attachment。两壳一起定入口后再接，不先做 Android 一边。
+Action.UploadFile | iOS 也只有无调用方的辅助函数；聊天上传两边都走 add_file_attachment，入口两壳一起接
+
+# 固定当前插件页：Android 的导航正随 #379 去底栏重做，等它合并后照新导航一起接。
+Action.PinCurrentPage | Android 等 #379（去底栏的导航大改）合并后再接，先不碰导航文件
+
 # Agent 调用链（ADR-0061 第 10 节）：客户端核心已就绪，壳的界面在前端线的需求里，暂未接（任务卡 chain-client）。
 AgentChainStatus | 壳待前端线接
 ChainLimitKind | 壳待前端线接
