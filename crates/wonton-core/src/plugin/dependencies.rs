@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CapabilityProviderRef, CapabilityProviderSettings, CapabilitySetting, ConsumerCapabilitySetting,
+    BotRef, CapabilityProviderRef, CapabilityProviderSettings, CapabilitySetting,
+    ConsumerCapabilitySetting,
 };
 
 use super::capabilities;
@@ -23,6 +24,7 @@ mod preflight;
 pub(crate) mod preview;
 pub(crate) use install::DependencyInstall;
 mod lifecycle;
+mod provider_token;
 mod rollback;
 mod selection;
 mod store;
@@ -87,7 +89,11 @@ fn chosen<'a>(
     providers: &'a [Provider],
     consumer: &PluginId,
     capability: &str,
+    _bot: Option<&BotRef>,
 ) -> Option<&'a Provider> {
+    // 按 Bot 覆盖的默认应用见 ADR-0053（能力路由的 Bot 维），接在这里：`bot` 是这条连接或这次调用
+    // 指定的目标 Bot，它的绑定优先于下面的使用方单独选择和全局默认；连接和确认记录也要带上这一维。
+    //
     // ADR-0061 第 9 节：提供方可以 requires/wants 自己也提供的能力，选提供方时排除它自己；
     // 显式选择或全局默认指向自己时，落到别的提供方上。
     if let Some(id) = state
@@ -175,6 +181,7 @@ impl PluginManager {
         consumer: &PluginId,
         capability: &str,
         langs: &Languages,
+        bot: Option<&BotRef>,
     ) -> Result<CapabilityRoute, CapabilityAccessError> {
         // 提供方列表在插件表锁外先解析好：chosen 要按完整列表排除使用方自己（ADR-0061 第 9 节）。
         let providers = self.capability_providers();
@@ -199,7 +206,8 @@ impl PluginManager {
                 };
                 self.dependencies
                     .inspect(|state| {
-                        let Some(provider) = chosen(state, &providers, consumer, capability) else {
+                        let Some(provider) = chosen(state, &providers, consumer, capability, bot)
+                        else {
                             // 必需能力还没获准连接是权限问题（gateway-capability-permission 的文案）；
                             // 可选能力没有提供方是可用性问题，主人随时可以再装一个。
                             if required {

@@ -94,7 +94,7 @@ async fn host_capability_routes_over_unix_and_recovers_after_watch_and_restore()
     assert_eq!(created["HostConfig"]["NetworkMode"], "host");
     assert_eq!(created["Cmd"][1], "TCP:127.0.0.1:8080");
     let route = manager
-        .capability_route(&id("app.test"), CAPABILITY, &langs())
+        .capability_route(&id("app.test"), CAPABILITY, &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.search"));
@@ -106,7 +106,7 @@ async fn host_capability_routes_over_unix_and_recovers_after_watch_and_restore()
     assert!(docker.containers().contains(&name));
     assert_eq!(docker.creations(&name), 2);
     let route = manager
-        .capability_route(&id("app.test"), CAPABILITY, &langs())
+        .capability_route(&id("app.test"), CAPABILITY, &langs(), None)
         .await
         .unwrap();
     request(&route.endpoint, &socket).await;
@@ -118,7 +118,7 @@ async fn host_capability_routes_over_unix_and_recovers_after_watch_and_restore()
     assert!(docker.containers().contains(&name));
     assert_eq!(docker.creations(&name), 3);
     let route = restarted
-        .capability_route(&id("app.test"), CAPABILITY, &langs())
+        .capability_route(&id("app.test"), CAPABILITY, &langs(), None)
         .await
         .unwrap();
     request(&route.endpoint, &socket).await;
@@ -186,7 +186,7 @@ async fn a_bridge_capability_keeps_its_ordinary_service_address() {
         .await
         .unwrap();
     let route = manager
-        .capability_route(&id("app.test"), CAPABILITY, &langs())
+        .capability_route(&id("app.test"), CAPABILITY, &langs(), None)
         .await
         .unwrap();
     let slug = id("app.search").slug();

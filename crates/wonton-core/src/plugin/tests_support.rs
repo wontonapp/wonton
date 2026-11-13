@@ -129,6 +129,12 @@ fn serve_declared(entry: &mut Entry, manifest: &Manifest) {
                 .as_ref()
                 .and_then(|provides| provides.models.as_ref())
                 .map(|models| &models.service),
+        )
+        .chain(
+            manifest
+                .provides
+                .iter()
+                .flat_map(|provides| provides.capabilities.values().map(|c| &c.service)),
         );
     entry.serving.extend(services.cloned());
 }

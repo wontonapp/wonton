@@ -149,7 +149,7 @@ impl PluginManager {
         for capability in declarations(manifest) {
             // Keep confirmed URLs and keys stable while the provider is unavailable; forwarding
             // checks readiness per request, without rebuilding otherwise healthy consumers.
-            let connected = chosen(&state, &providers, &manifest.id, capability)
+            let connected = chosen(&state, &providers, &manifest.id, capability, None)
                 .and_then(|p| connection(&state, &manifest.id, &p.id, capability))
                 .filter(|c| c.ready);
             vars.insert(

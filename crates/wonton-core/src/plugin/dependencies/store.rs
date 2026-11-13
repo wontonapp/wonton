@@ -4,6 +4,7 @@ use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
 
+use super::PluginId;
 use crate::plugin::InstallError;
 use crate::plugin::store::{read_json, write_json};
 
@@ -26,6 +27,17 @@ pub(super) struct State {
     pub selected: BTreeMap<String, BTreeMap<String, String>>,
     pub providers: Vec<String>,
     pub connections: Vec<Connection>,
+    /// 提供方令牌（ADR-0061 第 3 节），键 `<能力>/<插件 ID>`，见 [`super::provider_token`]。
+    #[serde(default)]
+    pub provider_tokens: BTreeMap<String, String>,
+}
+
+impl State {
+    /// 一个提供方在这项能力上的令牌。
+    pub(super) fn provider_token(&self, capability: &str, provider: &PluginId) -> Option<&String> {
+        self.provider_tokens
+            .get(&format!("{capability}/{}", provider.as_str()))
+    }
 }
 
 pub(crate) struct Dependencies {
