@@ -164,10 +164,6 @@ private fun StoreScreen(plugins: PluginsState, navigation: PluginNavigation, onB
             plugins.send(Action.UpgradeAll)
         }
     }
-    // 核心判断要主人拿主意的一键操作：照着打开确认页，预览已经取好。
-    LaunchedEffect(viewModel.confirmation) {
-        navigation.confirmation = viewModel.confirmation?.let(PluginConfirmation::Store)
-    }
 }
 
 /** 还没取到商店：取不到的原因和下一步，或者正在取。 */

@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
+import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginDetailOutcome
@@ -157,7 +158,7 @@ private fun DetailContent(
             BotProfileSection(bot, plugins)
             BotContactsEntry { navigation.contacts = bot.bot }
         }
-        DetailHeader(detail, plugins, detailAction(detail, working, navigation, LocalContext.current))
+        DetailHeader(detail, plugins, detailAction(detail, working, plugins, navigation, LocalContext.current))
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(
                 it,
@@ -324,17 +325,19 @@ private fun AskEveryUpdateSection(
     }
 }
 
-/** 标题旁的按钮：没装的“获取”，能升级的“更新”，装着的“打开”。 */
+/** 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。 */
 private fun detailAction(
-    detail: PluginDetail, working: Boolean, navigation: PluginNavigation, context: Context,
+    detail: PluginDetail, working: Boolean, plugins: PluginsState, navigation: PluginNavigation, context: Context,
 ): DetailAction? {
     val installed = detail.installed
     val source = detail.source
     val entry = installed?.entries?.firstOrNull()
+    // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
+    val busy = working || (installed != null && installed.id in plugins.viewModel.pending)
     return when {
         installed?.upgrade != null -> DetailAction(
-            context.getString(R.string.install_action_upgrade), !installed.isBusy,
-        ) { navigation.confirmation = PluginConfirmation.Upgrade(installed.id) }
+            context.getString(R.string.install_action_upgrade), !busy,
+        ) { plugins.send(Action.UpgradeNow(pluginId = installed.id)) }
         installed != null -> entry?.let {
             DetailAction(context.getString(R.string.store_open), !installed.isBusy) { navigation.open(it) }
         }

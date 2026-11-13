@@ -277,6 +277,7 @@ impl PluginsLink {
                     reason: problem.reason,
                     message: problem.message,
                 },
+                install_progress: None,
                 waiting_for_connection: false,
                 added_tools: None,
                 id,

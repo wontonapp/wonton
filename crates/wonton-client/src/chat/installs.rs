@@ -217,15 +217,15 @@ fn task_rows<'a>(
         }
         let state = match &task.state {
             PluginTaskState::Running => {
-                // 已安装列表里还看不到它时，也只有这一条能说明在装。
+                // 已安装列表里还看不到它时，任务里家里服务器报到的阶段就是唯一线索。
                 if covered.contains(task.id.as_str()) {
                     continue;
                 }
                 BotInstallState::Running {
-                    progress: InstallProgress {
+                    progress: task.install_progress.clone().unwrap_or(InstallProgress {
                         stage: InstallStage::Other,
                         percent: None,
-                    },
+                    }),
                 }
             }
             PluginTaskState::Failed { .. } | PluginTaskState::Uncertain { .. } => {
@@ -327,6 +327,7 @@ mod tests {
             icon: None,
             operation: PluginOperation::Install,
             state,
+            install_progress: None,
             waiting_for_connection: false,
             added_tools: None,
         }

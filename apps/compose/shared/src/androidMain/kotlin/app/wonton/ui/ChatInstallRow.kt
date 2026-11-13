@@ -147,9 +147,9 @@ private fun UncertainLine(message: String, onOpenPage: () -> Unit) {
     Row { WontonSmallButton(stringResource(R.string.chat_install_open_page), onOpenPage) }
 }
 
-/** 阶段由核心给，不认识的阶段落到这个操作通用的进行时。 */
+/** 阶段由核心给，不认识的阶段落到这个操作通用的进行时。聊天安装行和商店任务行共用。 */
 @Composable
-private fun stageText(stage: InstallStage, operation: PluginOperation): String = when (stage) {
+internal fun stageText(stage: InstallStage, operation: PluginOperation): String = when (stage) {
     InstallStage.PULLING_IMAGES -> stringResource(R.string.chat_install_stage_pulling_images)
     InstallStage.PREPARING -> stringResource(R.string.chat_install_stage_preparing)
     InstallStage.STARTING -> stringResource(R.string.chat_install_stage_starting)

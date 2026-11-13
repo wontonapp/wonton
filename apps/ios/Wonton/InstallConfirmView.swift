@@ -5,6 +5,9 @@ import WontonClient
 struct InstallConfirmView: View {
     let model: PluginsModel
     let confirmation: PluginConfirmation
+    /// 核心取好预览的确认页（HomeView 那层）：确认后核心自己把这条撤走、跟着关页或放下一条，
+    /// 这里不再主动 dismiss——和核心撤走抢先后会在“全部更新”排队时多发一次撤回、跳过下一条。
+    var coreOffered = false
     @Environment(\.dismiss) private var dismiss
     @State private var loaded: Result<InstallPreview, Error>?
     @State private var rejection: Problem?
@@ -156,7 +159,7 @@ struct InstallConfirmView: View {
         do {
             try model.core.dispatch(action: action)
             if isUpgrade {
-                dismiss()
+                if !coreOffered { dismiss() }
             } else {
                 submittedId = preview.id
             }
