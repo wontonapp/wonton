@@ -80,8 +80,8 @@ resvg = { version = "0.49.0", default-features = false }
 # MCP 总线（ADR-0006、ADR-0016）：对 Agent 是 Streamable HTTP 服务器，对插件是客户端。
 rmcp = { workspace = true, features = ["server", "client", "transport-streamable-http-server", "transport-streamable-http-client-reqwest"] }
 # Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT。处理图片的子进程给自己设资源上限（setrlimit）；逐级 openat 打开共享文件夹
-# 里的文件。都不用写 unsafe。
-rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std"] }
+# 里的文件；配对 CLI 读取终端列数。都不用写 unsafe。
+rustix = { version = "1.1.6", default-features = false, features = ["fs", "process", "std", "termios"] }
 # MIT OR Apache-2.0。`quotactl_fd` 查用户配额（libc 还没有这个函数，只有 syscall 号和 `dqblk`）。
 libc = "0.2.189"
 # 存文件的审计里记内容的哈希（MIT OR Apache-2.0）。
