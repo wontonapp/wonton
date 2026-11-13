@@ -10,12 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,25 +65,38 @@ class PluginNavigation(val open: (PluginEntry) -> Unit, val checkInstalled: () -
     var contacts by mutableStateOf<BotRef?>(null)
 }
 
-/** [list] 上叠着打开的详情页和确认页，返回键逐层关掉。 */
+/** [list] 上叠着打开的详情页和确认页，返回键逐层关掉。[storeConfirmations] 开在“应用”这一层：
+ * 核心取好预览、要主人拿主意的一键操作（ADR-0017）从商店列表和详情页都可能发起，确认页要盖在两层上面。 */
 @Composable
-fun PluginPages(plugins: PluginsState, navigation: PluginNavigation, list: @Composable () -> Unit) {
+fun PluginPages(
+    plugins: PluginsState,
+    navigation: PluginNavigation,
+    storeConfirmations: Boolean = false,
+    list: @Composable () -> Unit,
+) {
     val confirmation = navigation.confirmation
     val detail = navigation.detail
-    // 商店的一键操作确认页关掉时没装也没升，要告诉核心放下一条排队的（iOS 的 StoreView 同）：
-    // 主人自己关（返回、关闭、跳转重置）和核心撤走（装完了、队列空了）都收拢到这一处。
-    var presented by remember { mutableStateOf<PluginConfirmation?>(null) }
-    LaunchedEffect(confirmation) {
-        val previous = presented
-        presented = confirmation
-        if (previous is PluginConfirmation.Store && confirmation == null) {
-            plugins.send(Action.DismissStoreConfirmation)
-        }
-    }
+    // 核心取好预览、要主人拿主意的一键操作：预览已经取好。确认后核心自己把这条撤走（排着队的放下一条进来），
+    // 只有主人自己关才要告诉核心撤走；认的是还在的那条，确认后落进来的下一条不受影响。
+    val storeConfirmation = plugins.viewModel.confirmation
     val changingVersion = navigation.changingVersion
     val settings = navigation.settings
     val contacts = navigation.contacts
     when {
+        storeConfirmations && storeConfirmation != null -> {
+            val drop = {
+                if (plugins.viewModel.confirmation?.preview?.id == storeConfirmation.preview.id) {
+                    plugins.send(Action.DismissStoreConfirmation)
+                }
+            }
+            BackHandler(onBack = drop)
+            InstallConfirmScreen(
+                plugins,
+                PluginConfirmation.Store(storeConfirmation),
+                onClose = drop,
+                onCheckInstalled = navigation.checkInstalled,
+            )
+        }
         contacts != null -> {
             BackHandler { navigation.contacts = null }
             BotContactsPage(plugins.core, contacts, onBack = { navigation.contacts = null })
@@ -179,15 +191,23 @@ private fun TaskState(task: PluginTask, onReview: () -> Unit, onCheckInstalled: 
     val style = WontonTheme.typography.supporting
     val operation = task.operation
     when (val state = task.state) {
-        is PluginTaskState.Running -> Text(
-            if (task.waitingForConnection) {
-                stringResource(R.string.plugin_task_waiting_for_connection)
-            } else {
-                operation.runningText
-            },
-            style = style,
-            color = colors.textSecondary.toColor(),
-        )
+        is PluginTaskState.Running -> Column(
+            Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+        ) {
+            val progress = task.installProgress
+            Text(
+                when {
+                    task.waitingForConnection -> stringResource(R.string.plugin_task_waiting_for_connection)
+                    progress != null -> stageText(progress.stage, operation)
+                    else -> operation.runningText
+                },
+                style = style,
+                color = colors.textSecondary.toColor(),
+            )
+            // 家里的服务器算得出比例的只有拉镜像这一步，其余阶段照实说，不造百分比。
+            progress?.percent?.let { LinearProgressIndicator(progress = { it.toFloat() / 100f }) }
+        }
         is PluginTaskState.Succeeded -> StateLine(WontonIcon.CheckCircleFill, operation.doneText, colors.success)
         is PluginTaskState.Failed -> {
             val problem = state.reason.problem(state.message)
