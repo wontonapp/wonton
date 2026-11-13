@@ -12,4 +12,12 @@
     <string name="connection_value_none">—</string>
     <string name="connection_last_handshake">最後のハンドシェイク</string>
     <string name="connection_last_failure">最後の失敗</string>
+    <plurals name="connection_udp_flows">
+        <item quantity="other">UDP フロー%d件</item>
+    </plurals>
+    <plurals name="connection_udp_flow_dropped">
+        <item quantity="other">送信バッファが満杯で%d件のデータグラムを破棄</item>
+    </plurals>
+    <string name="connection_udp_flow_traffic">ポート%1$d · 受信 %2$d / 送信 %3$d</string>
+    <string name="connection_udp_flow_traffic_dropped">ポート%1$d · 受信 %2$d / 送信 %3$d · 長すぎて%4$d件破棄</string>
 </resources>

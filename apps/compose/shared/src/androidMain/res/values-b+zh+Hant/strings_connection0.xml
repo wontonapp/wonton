@@ -12,4 +12,12 @@
     <string name="connection_value_none">—</string>
     <string name="connection_last_handshake">上次交握</string>
     <string name="connection_last_failure">上次失敗</string>
+    <plurals name="connection_udp_flows">
+        <item quantity="other">UDP 流向 %d 條</item>
+    </plurals>
+    <plurals name="connection_udp_flow_dropped">
+        <item quantity="other">傳送緩衝區滿時丟棄 %d 個資料報</item>
+    </plurals>
+    <string name="connection_udp_flow_traffic">連接埠 %1$d · 收 %2$d / 傳 %3$d</string>
+    <string name="connection_udp_flow_traffic_dropped">連接埠 %1$d · 收 %2$d / 傳 %3$d · 超長丟棄 %4$d 個</string>
 </resources>

@@ -43,6 +43,9 @@ class PreviewSnapshotsTest {
     fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
 
     @Test
+    fun connectionDetailsFlows() = paparazzi.snapshot { ConnectionDetailsFlowsPreview() }
+
+    @Test
     fun shareSheet() = paparazzi.snapshot { ShareSheetPreview() }
 
     @Test

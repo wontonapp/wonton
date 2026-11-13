@@ -22,7 +22,7 @@ internal fun ServerSettingsPage(
         SettingsSubpage.SERVER -> ConnectionPage(
             home, plugins, onRetry = { plugins.send(Action.RetryConnection) }, onNavigate = onPage,
         )
-        SettingsSubpage.CONNECTION_DETAILS -> ConnectionDetailsPage(home, back)
+        SettingsSubpage.CONNECTION_DETAILS -> ConnectionDetailsPage(home, plugins.viewModel.installed, back)
         SettingsSubpage.EGRESS -> EgressPage(plugins, back)
         SettingsSubpage.REGISTRY_MIRROR -> RegistryMirrorPage(plugins, back)
         SettingsSubpage.CORE_UPGRADE -> CoreUpgradePage(plugins, back)

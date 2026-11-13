@@ -26,6 +26,7 @@ import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.TextSize
+import app.wonton.protocol.UdpFlowStats
 import app.wonton.ui.ConnectionDetailsPage
 import app.wonton.ui.R
 import app.wonton.ui.connectionBarStatus
@@ -36,7 +37,7 @@ import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 
 /**
- * #847 的界面走查：核心还没判 Poor 时，用假数据把三种状态摆出来。`-e screen poor|relay|details` 选页。
+ * #847 的界面走查：核心还没判 Poor 时，用假数据把三种状态摆出来。`-e screen poor|relay|details|details-flows` 选页。
  * 只在 debug 构建注册（src/debug/AndroidManifest.xml），不进 release。
  */
 class QualityPreviewActivity : ComponentActivity() {
@@ -50,7 +51,12 @@ class QualityPreviewActivity : ComponentActivity() {
             WontonTheme(previewAppearance()) {
                 when (screen) {
                     SCREEN_RELAY -> RelayBarPreview()
-                    SCREEN_DETAILS -> ConnectionDetailsPage(previewHome(relay = true), onBack = {})
+                    SCREEN_DETAILS -> ConnectionDetailsPage(previewHome(relay = true), null, onBack = {})
+                    SCREEN_DETAILS_FLOWS -> ConnectionDetailsPage(
+                        previewHome(relay = true, flows = previewUdpFlows(), evicted = 57uL),
+                        null,
+                        onBack = {},
+                    )
                     else -> PoorBarPreview()
                 }
             }
@@ -92,8 +98,13 @@ private const val EXTRA_SCREEN = "screen"
 private const val SCREEN_POOR = "poor"
 private const val SCREEN_RELAY = "relay"
 private const val SCREEN_DETAILS = "details"
+private const val SCREEN_DETAILS_FLOWS = "details-flows"
 
-private fun previewHome(relay: Boolean) = HomeViewModel(
+private fun previewHome(
+    relay: Boolean,
+    flows: List<UdpFlowStats> = emptyList(),
+    evicted: ULong? = null,
+) = HomeViewModel(
     deviceId = "0".repeat(64),
     serverId = null,
     status = HomeStatus.Connected,
@@ -114,8 +125,8 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
         rttMs = 1240u,
         lastFailure = null,
         addressesStale = false,
-        udpFlows = emptyList(),
-        udpBufferEvictedDatagrams = null,
+        udpFlows = flows,
+        udpBufferEvictedDatagrams = evicted,
     ),
     proxy = null,
     webUrl = null,
@@ -123,6 +134,27 @@ private fun previewHome(relay: Boolean) = HomeViewModel(
     invite = null,
     keepConnection = false,
     justRecovered = false,
+)
+
+private fun previewUdpFlows() = listOf(
+    UdpFlowStats(
+        flowId = 3u,
+        pluginId = "app.sunshine",
+        port = 47998u,
+        receivedPackets = 1_824uL,
+        sentPackets = 1_795uL,
+        oversizedDrops = 3uL,
+        bufferEvictedDrops = null,
+    ),
+    UdpFlowStats(
+        flowId = 4u,
+        pluginId = "app.neko",
+        port = 8080u,
+        receivedPackets = 412uL,
+        sentPackets = 398uL,
+        oversizedDrops = 0uL,
+        bufferEvictedDrops = null,
+    ),
 )
 
 // 和 StepCardFrameTest 的假外观同一套颜色。
