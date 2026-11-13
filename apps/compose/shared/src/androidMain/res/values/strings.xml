@@ -107,10 +107,6 @@
     <string name="widget_updated_at">Updated %1$s</string>
     <!-- Agent status widget's second line. Arguments: the agent's state (e.g. Working), then a time like 14:05 when it was last written. -->
     <string name="widget_status_at">%1$s · %2$s</string>
-    <!-- Notification fallback page for cards without a chat room; no arguments. -->
-    <string name="confirmations_title">Waiting for you</string>
-    <!-- Empty confirmation list after requests have been answered or expired. -->
-    <string name="confirmations_empty">Nothing needs your confirmation</string>
     <string name="myapp_add">Add to My apps</string>
     <string name="myapp_add_more">Add apps</string>
     <string name="myapp_auto_add">Add new apps automatically</string>

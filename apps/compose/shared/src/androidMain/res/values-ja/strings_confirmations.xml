@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="confirmations_empty">確認が必要なものはありません</string>
+    <plurals name="confirmations_more_cards">
+        <item quantity="other">他%1$d件</item>
+    </plurals>
+    <string name="confirmations_state_failed">実行できませんでした</string>
+    <string name="confirmations_state_succeeded">完了</string>
+    <string name="confirmations_state_uncertain">結果は不明</string>
+    <string name="confirmations_title">確認待ち</string>
+    <string name="confirmations_remaining">残り %1$s</string>
+</resources>

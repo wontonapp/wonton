@@ -13,7 +13,7 @@ struct PanelDependencies {
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
 }
 
 extension EnvironmentValues {
@@ -59,7 +59,7 @@ struct ChatPanelHost<Content: View>: View {
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     let select: (TabRef) -> Void
     let remove: (TabRef) -> Void
     let move: (TabRef, Int) -> Void

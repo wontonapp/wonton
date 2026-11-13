@@ -49,6 +49,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
 
     /** 点通知进房间；通知来自旁聊时 [sideChatRoot] 是它的根，进那个旁聊（ADR-0093 §4）。 */
     fun openRoom(roomId: String, sideChatRoot: String? = null) {
+        chat.showingConfirmations = false
         settingsOverlay = false
         closeApps()
         pages.send(Action.OpenPage(TabRef.Chat))
@@ -59,6 +60,13 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         resetNavigation()
         pages.send(Action.OpenPage(TabRef.Chat))
         confirmationCard = cardId
+    }
+
+    fun openCardTarget(roomId: String?) {
+        if (roomId != null) openRoom(roomId) else {
+            resetNavigation()
+            chat.openConfirmations()
+        }
     }
 
     /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */

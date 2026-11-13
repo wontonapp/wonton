@@ -86,6 +86,9 @@ open class MainActivity : AppCompatActivity() {
                     requestedLink = requests.link,
                     shareIntake = shareIntake,
                     onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
+                    onContactRequests = { server, active ->
+                        PushNotifications.reconcileContactRequests(this, server, active)
+                    },
                 )
             }
         }

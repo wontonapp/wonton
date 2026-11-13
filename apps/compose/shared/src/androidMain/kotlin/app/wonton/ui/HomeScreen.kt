@@ -24,7 +24,7 @@ fun HomeRoute(
     page: HomePage?,
     onPage: (HomePage) -> Unit,
     pendingCards: List<PendingConfirmation>,
-    onOpenCardRoom: (String) -> Unit,
+    onOpenCardRoom: (String?) -> Unit,
     onConnection: () -> Unit,
     settingsUpgrade: Boolean,
     onSettings: (() -> Unit)? = null,

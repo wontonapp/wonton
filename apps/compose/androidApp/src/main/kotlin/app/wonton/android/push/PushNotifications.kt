@@ -110,4 +110,14 @@ object PushNotifications {
         (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
             context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
+
+    fun reconcileContactRequests(context: Context, serverId: String, activeRequests: List<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        val active = activeRequests.toSet()
+        manager.activeNotifications.filter { notification ->
+            val tag = notification.tag
+            notification.notification.extras.getString(IncomingRequests.EXTRA_SERVER) == serverId &&
+                tag?.startsWith("contact:") == true && tag !in active
+        }.forEach { manager.cancel(it.tag, it.id) }
+    }
 }

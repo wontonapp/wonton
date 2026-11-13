@@ -254,7 +254,8 @@ struct MainView: View {
 
     private var pendingElsewhere: [PendingConfirmation] {
         let shown: String? = if pages.showsPluginPage { nil } else { chat.shownRoom(in: .chat) }
-        return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
+        if !pages.showsPluginPage, chat.path.last == .confirmations { return [] }
+        return chat.viewModel.pendingConfirmations.filter { $0.roomId == nil || shown != $0.roomId }
     }
 
     /// “添加设备”和聊天备份页正开着：这两处不管什么状态都在页面里显示确认流程（ADR-0046），所以页面开着就不弹窗。

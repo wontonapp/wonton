@@ -320,6 +320,7 @@ enum SnapshotFixtures {
             SettingsSection(entries: [.about])
         ]))
     }
+
 }
 
 #Preview("Wide chat") {

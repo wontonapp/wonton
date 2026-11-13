@@ -95,6 +95,7 @@ fun ChatRoute(
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
+    val confirmations by remember(core) { core.confirmationsUpdates() }.collectAsState(core.confirmations())
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
@@ -105,6 +106,12 @@ fun ChatRoute(
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
     val profile = navigation.botProfile
     when {
+        navigation.showingConfirmations -> {
+            BackHandler { navigation.showingConfirmations = false }
+            ConfirmationsScreen(confirmations, viewModel.bots, plugins, onAction) {
+                navigation.showingConfirmations = false
+            }
+        }
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
             ChatBackupScreen(
@@ -157,6 +164,8 @@ fun ChatRoute(
                 viewModel = viewModel,
                 plugins = plugins,
                 pluginNavigation = pluginNavigation,
+                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
+                onOpenConfirmations = navigation::openConfirmations,
                 onAction = onAction,
                 onOpenRoom = { navigation.openRoom = it },
                 onOpenBackup = {
@@ -180,6 +189,8 @@ internal fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
+    confirmationCount: Int,
+    onOpenConfirmations: () -> Unit,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
@@ -207,6 +218,14 @@ internal fun ChatListScreen(
                 ),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
+                item(key = "confirmations") {
+                    WontonRow(
+                        stringResource(R.string.confirmations_title),
+                        badgeCount = confirmationCount,
+                        showsForward = true,
+                        onClick = onOpenConfirmations,
+                    )
+                }
                 itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
                     if (index > 0) {
                         Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {

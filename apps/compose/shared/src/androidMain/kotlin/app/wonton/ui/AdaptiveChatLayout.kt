@@ -120,6 +120,8 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
         Box(Modifier.weight(1f)) {
             ChatListScreen(
                 chat, nav.pages.plugins, nav.plugins,
+                confirmationCount = chat.pendingConfirmations.size,
+                onOpenConfirmations = nav.chat::openConfirmations,
                 onAction = { nav.pages.plugins.reject(nav.pages.core.send(it)) },
                 onOpenRoom = {
                     nav.chat.startingChat = false

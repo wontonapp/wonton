@@ -75,6 +75,7 @@ final class TimelineModel {
             panel = update.panel
             panelSelected = update.panelSelected
             entryBlocked = update.entryBlocked
+            confirmations = update.confirmations
             notice = update.keyNotice
             sideChat = update.sideChat
             if let anchor = update.anchor {

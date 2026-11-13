@@ -37,9 +37,7 @@ object PushBuilder {
         val contact = notification.contactRequest ?: return tag(
             notification.serverId, notification.roomId, notification.confirmation?.id,
         )
-        return Uri.Builder().appendPath("contact").appendPath(contact.bot.pluginId)
-            .appendPath(contact.bot.bot).appendPath(contact.userId)
-            .appendQueryParameter("server", notification.serverId).build().toString()
+        return "contact:${contact.bot.pluginId}:${contact.bot.bot}:${contact.userId}"
     }
 
     /** 撤下已答卡片时认的标记。 */

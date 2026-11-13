@@ -7,7 +7,7 @@ struct HomeStatusPanel: View {
     let plugins: PluginsViewModel
     let cards: [PendingConfirmation]
     let showConnection: () -> Void
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -21,7 +21,7 @@ struct HomeStatusPanel: View {
             .buttonStyle(.plain)
             WontonSeparator()
             if let first = cards.first {
-                Button { if let room = first.roomId { openCardRoom(room) } } label: {
+                Button { openCardRoom(first.roomId) } label: {
                     WontonRow(
                         title: String(localized: .HomeStatus.homeStatusPending),
                         value: String(localized: .HomeStatus.homeStatusPendingCount(count: cards.count)),
