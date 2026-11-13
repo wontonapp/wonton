@@ -100,6 +100,8 @@ final class ChatPanelUITests: XCTestCase {
 
     func testHomePullRequiresDeliberateGesture() throws {
         try launch()
+        XCTAssertNotNil(botRoom(timeout: 30), "Real chat list has not finished loading")
+        shot("polish-home-before-pulls")
         let panel = app.otherElements["chatPanel"]
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
         drag(start, dy: 20, velocity: .fast)

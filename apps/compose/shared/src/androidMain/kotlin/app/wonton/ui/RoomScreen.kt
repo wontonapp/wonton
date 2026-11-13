@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
@@ -568,8 +569,9 @@ private fun Messages(
     Box(modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
+                .testTag("room-timeline")
                 .panelAction(panel)
-                .chatPanelPull(panel, { !listState.canScrollForward }, !timeline.entryBlocked),
+                .chatPanelPull(panel, { !listState.canScrollBackward }, !timeline.entryBlocked),
             state = listState,
             reverseLayout = true,
             overscrollEffect = null,

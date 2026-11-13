@@ -307,10 +307,10 @@ private fun connection(
             return Offset(0f, consumed * state.sign)
         }
 
-        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-            if (enabled && state.level == PanelLevel.CLOSED && state.shiftPx > 0f) {
-                state.settle(PanelLevel.CLOSED, available.y * state.sign)
-            }
+        override suspend fun onPreFling(available: Velocity): Velocity {
+            if (!enabled || state.level != PanelLevel.CLOSED || state.shiftPx <= 0f) return Velocity.Zero
+            // The list's fling can consume the release speed even while its boundary is held by the panel.
+            state.settle(PanelLevel.CLOSED, available.y * state.sign)
             return available
         }
     }

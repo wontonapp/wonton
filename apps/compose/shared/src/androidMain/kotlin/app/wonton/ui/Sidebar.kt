@@ -56,6 +56,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -276,6 +277,7 @@ internal fun SidebarContainer(
                 val collapse = stringResource(R.string.sidebar_collapse)
                 Box(
                     Modifier.matchParentSize()
+                        .testTag("sidebar-close")
                         .background(Color.Black.copy(alpha = SCRIM_ALPHA * progress))
                         .then(
                             if (isOpen) Modifier.sidebarDrag(
@@ -318,6 +320,7 @@ internal fun SidebarMenuButton(onClick: () -> Unit) {
     val label = stringResource(R.string.sidebar_open)
     Box(
         Modifier.size(WontonTheme.size.target)
+            .testTag("sidebar-open")
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
@@ -450,7 +453,7 @@ internal fun SidebarApps(
         Spacer(Modifier.weight(1f))
         Text(
             stringResource(R.string.sidebar_all),
-            Modifier.heightIn(min = WontonTheme.size.target).clickable(
+            Modifier.testTag("sidebar-all-apps").heightIn(min = WontonTheme.size.target).clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = interactive,
@@ -503,6 +506,7 @@ private fun SidebarFooter(
         val attentionLabel = stringResource(R.string.sidebar_needs_attention)
         Box(
             Modifier.size(WontonTheme.size.target)
+                .testTag("sidebar-settings")
                 .background(colors.surface.toColor(), CircleShape)
                 .border(WontonTheme.size.hairline, colors.separator.toColor(), CircleShape)
                 .clickable(

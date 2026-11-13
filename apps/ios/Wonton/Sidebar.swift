@@ -42,11 +42,21 @@ struct SidebarContainer<Main: View, Panel: View>: View {
                     .accessibilityHidden(!isOpen)
                 main
                     .allowsHitTesting(progress == 0)
+                    // Expand only the drawing/clipping bounds; the paired padding keeps native content
+                    // in its original safe bounds, including safeAreaBar and scroll-edge effects.
+                    .padding(geometry.safeAreaInsets)
+                    .background(Color(colors.canvas))
                     .overlay { scrim(progress) }
                     .clipShape(RoundedRectangle(cornerRadius: 40 * progress, style: .continuous))
                     .shadow(color: .black.opacity(0.18 * progress), radius: 24, x: -4)
                     .scaleEffect(1 - 0.06 * progress, anchor: .leading)
                     .offset(x: width * progress)
+                    .padding(EdgeInsets(
+                        top: -geometry.safeAreaInsets.top,
+                        leading: -geometry.safeAreaInsets.leading,
+                        bottom: -geometry.safeAreaInsets.bottom,
+                        trailing: -geometry.safeAreaInsets.trailing
+                    ))
                 if edgeSwipe, !isOpen {
                     Color.clear
                         .frame(width: edgeWidth)
