@@ -21,7 +21,8 @@ extension EnvironmentValues {
 }
 
 struct TabPanelMode {
-    let expanded: Bool
+    /// 面板拉开着（第 1、2 级）：胶囊这时显示，退出按钮收起面板。
+    let open: Bool
     /// 这一页是当前页、面板也拉着：加载好或被翻到时发“被看到了”，页面据此刷新（ADR-0052）。
     let visible: Bool
     /// 网页框顶边在面板里的位置：第 2 级让出状态栏，第 1 级贴着面板顶边。
@@ -315,6 +316,8 @@ extension ChatPanelHost {
         .background(Color(colors.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chatPanel")
+        // 两级都有胶囊，界面测试按这个值认到了哪一级。
+        .accessibilityValue(level == .full ? "full" : level == .peek ? "peek" : "closed")
         .accessibilityHidden(level == .closed && drag == 0)
     }
 
@@ -345,7 +348,7 @@ extension ChatPanelHost {
         let pageDirection: CGFloat = level == .full ? -1 : 1
         let pageEdge: PanelEdge = level == .full ? .top : edge
         let mode = TabPanelMode(
-            expanded: level == .full,
+            open: level != .closed,
             visible: level != .closed && selectedPage,
             insetTop: insetTop,
             insetBottom: insetBottom,

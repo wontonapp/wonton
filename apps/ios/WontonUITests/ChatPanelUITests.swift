@@ -24,7 +24,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(app.buttons["panelAdd"].exists, "空面板没有添加页面的加号")
 
         pullStrip(.down)
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "再往下推没有到第 2 级")
+        XCTAssertTrue(waitFull(), "再往下推没有到第 2 级")
         shot("03-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
@@ -44,7 +44,7 @@ final class ChatPanelUITests: XCTestCase {
 
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "面板网页没加载出来")
         pullPageDown()
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "页面滚到顶后接着拉没到第 2 级")
+        XCTAssertTrue(waitFull(), "页面滚到顶后接着拉没到第 2 级")
         shot("06-page-full")
     }
 
@@ -65,7 +65,7 @@ final class ChatPanelUITests: XCTestCase {
         tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 30), "面板网页没加载出来")
         pullPageDown()
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "没到第 2 级")
+        XCTAssertTrue(waitFull(), "没到第 2 级")
         // 以前的胶囊 3 秒没碰就藏起来，等过这段时间它还得在。
         Thread.sleep(forTimeInterval: 5)
         XCTAssertTrue(capsule.isHittable, "胶囊自己藏起来了")
@@ -92,7 +92,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "到底后往上推没有面板")
         shot("11-room-peek")
         pullStrip(.upward)
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5), "在露出的聊天条上推没有到整页")
+        XCTAssertTrue(waitFull(), "在露出的聊天条上推没有到整页")
         shot("12-room-full")
         capsule.tap()
         XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
@@ -435,6 +435,17 @@ extension ChatPanelUITests {
         let start = origin.withOffset(CGVector(dx: app.frame.midX, dy: lower))
         let end = origin.withOffset(CGVector(dx: app.frame.midX, dy: upper))
         start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
+    }
+
+    /// 面板到了第 2 级（整页）。第 1 级也有胶囊（iOS 没有系统返回键），不能拿胶囊在不在当整页的信号。
+    private func waitFull(timeout: TimeInterval = 5) -> Bool {
+        let panel = app.otherElements["chatPanel"]
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if panel.exists, panel.value as? String == "full" { return true }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+        return false
     }
 
     private var capsule: XCUIElement {

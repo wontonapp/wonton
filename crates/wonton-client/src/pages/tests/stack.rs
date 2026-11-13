@@ -149,3 +149,41 @@ async fn switching_servers_does_not_seed_apps_from_the_previous_server() {
     assert!(rig.view().uninstalled.is_empty());
     assert!(rig.view().stack.is_empty());
 }
+
+/// 重启 App：打开过的页面不恢复，回到根页面；钉在面板里的页面是存下来的偏好，照旧在。
+/// 壳不会一启动就盖上一个整页的插件页。
+#[tokio::test]
+async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
+    let rig = Rig::new();
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    rig.open(page_tab());
+    rig.open(url_tab("https://example.com/report"));
+    assert_eq!(rig.view().stack.len(), 2);
+
+    let restarted = PagesLink::new(
+        Handle::current(),
+        rig.tabs.home_link.clone(),
+        rig.tabs.plugins.clone(),
+        rig._dir.path(),
+        None,
+        watch::channel(None).1,
+        watch::channel(None),
+    );
+    let view = restarted.view();
+    assert!(view.stack.is_empty(), "{:?}", view.stack);
+    assert_eq!(
+        view.panel
+            .iter()
+            .map(|item| item.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab()]
+    );
+    // 没有页面开着：关页被拒，不会把别的东西弹掉。
+    let nothing = restarted.dispatch(Action::ClosePage).unwrap_err();
+    assert!(matches!(nothing, CoreError::InvalidInput { .. }));
+}
