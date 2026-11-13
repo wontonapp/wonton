@@ -58,3 +58,8 @@ home-pairing-aborted = 配对没有完成就中断了，再试一次。
 home-pairing-not-pairing = 没有正在进行的配对。
 
 home-pairing-failed-detail = 直连地址：{ $addresses }。中继：[{ $relays }]。已用时 { $milliseconds } 毫秒，限时 { $seconds } 秒。原因：{ $error }
+
+home-pairing-joining-pending = 这是加入用的码，正在等管理员同意。
+home-pairing-joining-pending-role = 这是加入用的码，正在等管理员同意。同意后加入的角色是“{ $role }”。
+home-pairing-joining-rejected = 管理员拒绝了这个加入请求。
+home-pairing-joining-code-used = 这个加入用的码已经被别的设备用过了。

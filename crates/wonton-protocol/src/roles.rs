@@ -302,18 +302,21 @@ pub struct JoinRequestList {
     pub requests: Vec<JoinRequest>,
 }
 
-/// 被邀请的人那一边，交上邀请码以后的结果。
+/// 被邀请的人那一边，交上邀请码以后的结果。经配对协议（`wonton-tunnel` 的 `PairResponse::Joining`）送到被邀请的
+/// 设备；管理员同意时不发它，服务端直接回 `Paired`，所以 `Approved` 只是类型里留着的位置。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum JoinOutcome {
-    /// 等管理员同意。
+    /// 等管理员同意。同一个码再交上来一直是这个结果，直到同意或拒绝。
     Pending,
+    /// 管理员同意了。
     Approved,
     /// 管理员拒绝了，这张码也作废了。
     Rejected,
-    /// 这张码已经被用过。
+    /// 这张码已经被别的设备用过。
     CodeUsed,
+    /// 比这个 App 新的服务端给的结果，按 [`Self::Pending`] 处理。
     #[serde(other)]
     Other,
 }

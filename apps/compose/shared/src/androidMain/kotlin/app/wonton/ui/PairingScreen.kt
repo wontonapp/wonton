@@ -258,15 +258,17 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.REJECTED -> R.string.pairing_failure_rejected
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
+    PairingFailure.PENDING_APPROVAL -> R.string.pairing_failure_pending
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_failure_transport
     PairingFailure.UPSTREAM -> R.string.problem_upstream_title
     PairingFailure.PROTOCOL -> R.string.pairing_failure_protocol
 }
 
-/** 码被拒、过期、停用这几类，服务器写的说明和标题说的是同一件事，只留标题和下一步。 */
+/** 码被拒、过期、停用这几类，服务器写的说明和标题说的是同一件事，只留标题和下一步。等批的说明是核心写的，带加入后的角色。 */
 private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.REJECTED, PairingFailure.EXPIRED -> R.string.pairing_next_new_code
     PairingFailure.CLOSED -> R.string.pairing_next_closed
+    PairingFailure.PENDING_APPROVAL -> R.string.pairing_next_pending
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_hint_transport
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
     PairingFailure.UPSTREAM -> null
@@ -274,10 +276,12 @@ private fun failureHint(reason: PairingFailure): Int? = when (reason) {
 
 /** 核心按 App 语言生成的诊断信息只在默认收起的详情里显示。 */
 private fun PairingFailure.showsCoreMessage(): Boolean = when (this) {
-    PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL -> true
+    PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL,
+    PairingFailure.PENDING_APPROVAL -> true
     PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.CLOSED -> false
 }
 
-/** 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。 */
+/** 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。 */
 private fun PairingFailure.canRetrySameCode() =
-    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM
+    this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM ||
+        this == PairingFailure.PENDING_APPROVAL

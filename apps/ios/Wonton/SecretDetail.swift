@@ -19,7 +19,7 @@ struct SecretSection: View {
                 }
             }
             .task {
-                isOwner = (try? await model.core.me())?.role == .owner
+                isOwner = (try? await model.core.me())?.isOwner == true
             }
         }
     }

@@ -1,6 +1,6 @@
 //! 家人和多人（ADR-0045）：每人一个账号，Bot 有归属人，同机的 Bot 经联系人互发消息。
 //!
-//! - [`ME_PATH`]：这台设备的人是谁、什么角色，每个人都能读。
+//! - [`ME_PATH`]：这台设备的人是谁、是不是主人、什么角色、能做什么，每个人都能读自己的。
 //! - [`MEMBERS_PATH`] 和 [`member_path`] 之下：主人邀请、管理、移除家人，给家人出配对码。
 //! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。Bot 的联系人在 [`crate::bot_contacts_path`]，归属人管。
 //! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]；跳数到顶另用
@@ -9,6 +9,8 @@
 //! 核心可能比 App 新：核心多给的字段被忽略；枚举遇到不认识的取值时落到 `Other`。
 
 use serde::{Deserialize, Serialize};
+
+use crate::Permissions;
 
 /// `GET`：[`Me`]。`PUT`：请求体 [`OwnerProfileUpdate`](crate::OwnerProfileUpdate)，改自己的资料，规则同 ADR-0030，返回 [`Me`]。
 pub const ME_PATH: &str = "/_wonton/api/me";
@@ -63,7 +65,14 @@ pub struct Me {
     pub user_id: String,
     /// 用户名，固定、不复用（ADR-0022）。
     pub username: String,
-    pub role: Role,
+    /// 主人有全部权限，在角色之外（ADR-0088）。
+    pub is_owner: bool,
+    /// 这个人的角色（[`RoleDef::id`](crate::RoleDef::id)）；主人没有角色，为空。
+    pub role_id: Option<String>,
+    /// 角色的名字；主人没有角色，名字还没定（模板）时也为空，壳按 [`role_id`](Self::role_id) 对应的模板本地化。
+    pub role_name: Option<String>,
+    /// 这个人能做什么；主人没有角色，为空。主人的全部权限由 [`is_owner`](Self::is_owner) 表达。
+    pub permissions: Option<Permissions>,
     /// 还没填时为空。
     pub display_name: Option<String>,
     /// 还没填时为空。
@@ -72,6 +81,8 @@ pub struct Me {
     pub can_install_plugins: bool,
 }
 
+/// 一个人的身份种类，网关按它分主人、家人和好友；能做什么不看它，看角色（ADR-0088）。
+/// 主人和家人在 [`Me::is_owner`] 和 [`Me::role_id`] 上表达，好友只在插件分享里出现。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
@@ -104,6 +115,8 @@ pub struct Member {
     /// 家人自己填；没填时为空。
     pub email: Option<String>,
     pub status: MemberStatus,
+    /// 他的角色（[`RoleDef::id`](crate::RoleDef::id)）。
+    pub role_id: String,
     /// 主人授权了“能装插件”。
     pub can_install_plugins: bool,
     /// 他的私人 Bot；没建（只加了人，或者默认 Agent 不支持多个 Bot）时为空。
@@ -247,6 +260,8 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::Gate;
+
     #[test]
     fn plugin_identity_roles_round_trip() {
         for role in [Role::Owner, Role::Member, Role::Friend, Role::Other] {
@@ -256,18 +271,66 @@ mod tests {
     }
 
     #[test]
+    fn me_carries_whether_it_is_the_owner_and_its_role() {
+        let owner = json!({
+            "user_id": "@owner:x.wonton.internal",
+            "username": "owner",
+            "is_owner": true,
+            "role_id": null,
+            "role_name": null,
+            "permissions": null,
+            "display_name": null,
+            "email": null,
+            "can_install_plugins": true,
+        });
+        let me: Me = serde_json::from_value(owner.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&me).unwrap(), owner);
+
+        let member = json!({
+            "user_id": "@alice:x.wonton.internal",
+            "username": "alice",
+            "is_owner": false,
+            "role_id": "child",
+            "role_name": "孩子",
+            "permissions": {
+                "open_apps": {"type": "selected", "plugin_ids": ["app.example.notes"]},
+                "plugin_admin": {"type": "none"},
+                "install_apps": "ask_admin",
+                "model_settings": false,
+                "server_settings": false,
+                "manage_members": false,
+                "add_friends": "ask_admin",
+                "share_apps": false,
+                "ai": "read_only",
+                "privileged_tools": false,
+                "private_bot": true,
+                "shared_bots": false,
+                "lend_own_bot": false,
+            },
+            "display_name": "爱丽丝",
+            "email": null,
+            "can_install_plugins": false,
+        });
+        let me: Me = serde_json::from_value(member.clone()).unwrap();
+        assert_eq!(
+            me.permissions.as_ref().unwrap().install_apps,
+            Gate::AskAdmin
+        );
+        assert_eq!(serde_json::to_value(&me).unwrap(), member);
+    }
+
+    #[test]
     fn values_a_newer_core_adds_fall_back_to_other() {
         let me: Me = serde_json::from_value(json!({
             "user_id": "@alice:x.wonton.internal",
             "username": "alice",
-            "role": "guest",
-            "display_name": null,
-            "email": null,
-            "can_install_plugins": false,
+            "is_owner": false,
             "avatar": "ignored",
+            "can_install_plugins": false,
         }))
         .unwrap();
-        assert_eq!(me.role, Role::Other);
+        assert_eq!(me.role_id, None);
+        assert_eq!(me.permissions, None);
         assert_eq!(
             serde_json::from_value::<MemberStatus>(json!("suspended")).unwrap(),
             MemberStatus::Other

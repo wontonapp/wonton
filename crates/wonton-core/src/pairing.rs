@@ -362,6 +362,7 @@ mod tests {
         match response {
             PairResponse::Paired => None,
             PairResponse::Rejected { reason, .. } => Some(*reason),
+            PairResponse::Joining { .. } => None,
         }
     }
 
@@ -459,7 +460,7 @@ mod tests {
                 "手机",
             ) {
                 PairResponse::Rejected { message, .. } => message,
-                PairResponse::Paired => panic!("未知码应该被拒"),
+                PairResponse::Paired | PairResponse::Joining { .. } => panic!("未知码应该被拒"),
             }
         };
         let ja = message("ja");

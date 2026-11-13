@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use wonton_l10n::{Lang, l10n};
-use wonton_protocol::{CoreError, PairingFailure, PairingStage, PairingStatus};
+use wonton_protocol::{
+    CoreError, JoinOutcome, PairingFailure, PairingStage, PairingStatus, RoleDef,
+};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
 
@@ -239,7 +241,12 @@ impl HomeLink {
             return;
         }
         let status = match outcome {
-            Ok(PairResponse::Paired) => {
+            // 管理员同意时服务端直接回 `Paired`；真收到 `Approved` 说明设备已登记，照它接上。
+            Ok(PairResponse::Paired)
+            | Ok(PairResponse::Joining {
+                outcome: JoinOutcome::Approved,
+                ..
+            }) => {
                 tracing::info!(server = %code.server_id.fmt_short(), "paired with the home server");
                 if let Some(endpoint) = endpoint.take() {
                     endpoint.close().await;
@@ -249,6 +256,22 @@ impl HomeLink {
                     Ok(()) => Some(PairingStatus::Paired),
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
+            }
+            Ok(PairResponse::Joining { outcome, role }) => {
+                tracing::info!(?outcome, "the home server answered the join request");
+                Some(match outcome {
+                    JoinOutcome::Pending | JoinOutcome::Other => pending(lang, role.as_ref()),
+                    JoinOutcome::Rejected => failed(
+                        PairingFailure::Rejected,
+                        l10n!(CATALOG, lang, "home-pairing-joining-rejected"),
+                    ),
+                    JoinOutcome::CodeUsed => failed(
+                        rejected(RejectReason::Used),
+                        l10n!(CATALOG, lang, "home-pairing-joining-code-used"),
+                    ),
+                    // 上面那个分支接掉了。
+                    JoinOutcome::Approved => unreachable!("approved is handled above"),
+                })
             }
             Ok(PairResponse::Rejected { reason, message }) => {
                 tracing::info!(?reason, "the home server rejected pairing: {message}");
@@ -455,6 +478,23 @@ fn detail(
 
 fn failed(reason: PairingFailure, message: String) -> PairingStatus {
     PairingStatus::Failed { reason, message }
+}
+
+/// 等管理员同意。带上加入后的角色名；模板还没改名时角色名为空，只说在等批。
+fn pending(lang: Lang, role: Option<&RoleDef>) -> PairingStatus {
+    let name = role
+        .map(|role| role.name.trim())
+        .filter(|name| !name.is_empty());
+    let message = match name {
+        Some(name) => l10n!(
+            CATALOG,
+            lang,
+            "home-pairing-joining-pending-role",
+            role = name
+        ),
+        None => l10n!(CATALOG, lang, "home-pairing-joining-pending"),
+    };
+    failed(PairingFailure::PendingApproval, message)
 }
 
 fn rejected(reason: RejectReason) -> PairingFailure {

@@ -35,4 +35,8 @@
     <string name="pairing_hint_transport">確認家用伺服器已開機並連上網路，再試一次。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">請把 App 和伺服器都更新到最新版本。</string>
+    <!-- 加入用的碼在等管理員同意時的標題。無參數。 -->
+    <string name="pairing_failure_pending">等管理員同意</string>
+    <!-- 等批時下一步：管理員同意後重試同一個碼。無參數。 -->
+    <string name="pairing_next_pending">管理員同意後，用這個碼再試一次。</string>
 </resources>

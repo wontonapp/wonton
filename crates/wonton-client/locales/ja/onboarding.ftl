@@ -58,3 +58,8 @@ home-pairing-aborted = ペアリングが完了する前に中断しました。
 home-pairing-not-pairing = 進行中のペアリングはありません。
 
 home-pairing-failed-detail = 直接接続先：{ $addresses }。リレー：[{ $relays }]。経過時間：{ $milliseconds } ミリ秒、制限時間：{ $seconds } 秒。原因：{ $error }
+
+home-pairing-joining-pending = 参加用のコードです。管理者の承認を待っています。
+home-pairing-joining-pending-role = 参加用のコードです。管理者の承認を待っています。承認されると { $role } として参加します。
+home-pairing-joining-rejected = 管理者がこの参加リクエストを断りました。
+home-pairing-joining-code-used = この参加用のコードは別のデバイスがすでに使いました。

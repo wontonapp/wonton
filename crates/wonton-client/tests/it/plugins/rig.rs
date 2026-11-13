@@ -426,7 +426,7 @@ fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
     serde_json::json!({
         "user_id": "@owner:wonton.localhost",
         "username": "owner",
-        "role": "owner",
+        "is_owner": true,
         "display_name": name,
         "email": email,
         "can_install_plugins": true,

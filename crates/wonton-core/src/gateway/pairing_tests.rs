@@ -45,6 +45,7 @@ fn reject_reason(response: PairResponse) -> Option<RejectReason> {
     match response {
         PairResponse::Paired => None,
         PairResponse::Rejected { reason, .. } => Some(reason),
+        PairResponse::Joining { .. } => None,
     }
 }
 

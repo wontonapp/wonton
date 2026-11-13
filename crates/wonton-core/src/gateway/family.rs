@@ -41,6 +41,8 @@ fn to_member(record: &MemberRecord) -> Member {
         display_name: record.display_name.clone(),
         email: record.email.clone(),
         status: record.status,
+        // 角色存储还没接上，先都记权限最少的“朋友”，不冒充主人或家人。
+        role_id: "friend".to_owned(),
         can_install_plugins: record.can_install_plugins,
         private_bot: record.private_bot.clone(),
         pairing_code_expires_at_ms: record.pairing_code_expires_at_ms,

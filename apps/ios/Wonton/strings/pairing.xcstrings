@@ -212,6 +212,36 @@
         }
       }
     },
+    "pairing.nextStep.pending": {
+      "comment": "Next step under a pending join: retry the same code once an admin approves.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Once an admin approves, try again with this code."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理员同意后，用这个码再试一次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理員同意後，用這個碼再試一次。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理者が承認したら、同じコードでもう一度お試しください。"
+          }
+        }
+      }
+    },
     "pairing.instructions": {
       "comment": "Explanation above the paste field: where the pairing QR code lives. May wrap.",
       "extractionState": "manual",
@@ -508,6 +538,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "このペアリングコードは無効化されています"
+          }
+        }
+      }
+    },
+    "pairing.failure.pending": {
+      "comment": "Failure title when the code is a joining code and the admins haven't approved yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for an admin to approve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等管理员同意"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等管理員同意"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理者の承認待ち"
           }
         }
       }

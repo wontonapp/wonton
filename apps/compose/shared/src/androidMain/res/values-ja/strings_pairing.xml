@@ -35,4 +35,8 @@
     <string name="pairing_hint_transport">自宅サーバーの電源とネットワーク接続を確認して、もう一度試してください。</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Appとサーバーを最新バージョンに更新してください。</string>
+    <!-- 参加用コードで管理者の承認待ちのときの見出し。引数なし。 -->
+    <string name="pairing_failure_pending">管理者の承認待ち</string>
+    <!-- 承認待ちの次の手順：管理者が承認したら同じコードで再試行。引数なし。 -->
+    <string name="pairing_next_pending">管理者が承認したら、同じコードでもう一度お試しください。</string>
 </resources>

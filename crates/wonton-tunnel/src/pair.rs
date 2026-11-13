@@ -15,6 +15,7 @@ use std::str::FromStr;
 use iroh::{EndpointAddr, EndpointId};
 use serde::{Deserialize, Serialize};
 use url::Url;
+use wonton_protocol::{JoinOutcome, RoleDef};
 
 pub use client::{PAIR_TIMEOUT, pair, pair_with_timeout};
 pub use server::{PairHandler, PairProtocol};
@@ -291,6 +292,13 @@ pub enum PairRequest {
 pub enum PairResponse {
     /// 已登记，可以用隧道的 ALPN 连接了。
     Paired,
+    /// 这个码是加入别人家的邀请码，设备还没登记：管理员同意时服务端直接回 `Paired`，所以 `outcome` 只会是
+    /// `Pending`、`Rejected`、`CodeUsed`。等 `Pending` 的人要用同一个码再发一次。
+    Joining {
+        outcome: JoinOutcome,
+        /// 加入后拿到的角色，只在 `Pending` 时给。
+        role: Option<RoleDef>,
+    },
     Rejected {
         reason: RejectReason,
         /// 给人看的说明。
@@ -322,6 +330,7 @@ pub enum RejectReason {
 #[cfg(test)]
 mod tests {
     use iroh::SecretKey;
+    use wonton_protocol::{AdminScope, AiLevel, AppScope, Gate, Permissions, RoleTemplate};
 
     use super::*;
 
@@ -465,5 +474,78 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// 加入别人家的码：三种结果都过线，等批的时候带角色，另外两种不带。
+    #[test]
+    fn joining_replies_carry_the_outcome_and_the_role_only_while_pending() {
+        let role = RoleDef {
+            id: "child".to_owned(),
+            name: String::new(),
+            template: Some(RoleTemplate::Child),
+            permissions: Permissions {
+                open_apps: AppScope::Selected {
+                    plugin_ids: vec!["app.example.notes".to_owned()],
+                },
+                plugin_admin: AdminScope::NoApps,
+                install_apps: Gate::AskAdmin,
+                model_settings: false,
+                server_settings: false,
+                manage_members: false,
+                add_friends: Gate::Allow,
+                share_apps: false,
+                ai: AiLevel::ReadOnly,
+                privileged_tools: false,
+                private_bot: true,
+                shared_bots: false,
+                lend_own_bot: false,
+            },
+            people: 1,
+        };
+        let pending = PairResponse::Joining {
+            outcome: JoinOutcome::Pending,
+            role: Some(role.clone()),
+        };
+        let value = serde_json::to_value(&pending).unwrap();
+        assert_eq!(value["result"], "joining");
+        assert_eq!(value["outcome"], "pending");
+        assert_eq!(value["role"]["id"], "child");
+        assert_eq!(value["role"]["name"], "");
+        assert_eq!(value["role"]["template"], "child");
+        assert_eq!(
+            serde_json::from_value::<PairResponse>(value).unwrap(),
+            pending
+        );
+
+        for (outcome, wire) in [
+            (JoinOutcome::Rejected, "rejected"),
+            (JoinOutcome::CodeUsed, "code_used"),
+        ] {
+            let reply = PairResponse::Joining {
+                outcome,
+                role: None,
+            };
+            let value = serde_json::to_value(&reply).unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({"result": "joining", "outcome": wire, "role": null})
+            );
+            assert_eq!(
+                serde_json::from_value::<PairResponse>(value).unwrap(),
+                reply
+            );
+        }
+
+        let newer: PairResponse = serde_json::from_value(serde_json::json!({
+            "result": "joining", "outcome": "needs_second_opinion", "role": null,
+        }))
+        .unwrap();
+        assert_eq!(
+            newer,
+            PairResponse::Joining {
+                outcome: JoinOutcome::Other,
+                role: None,
+            }
+        );
     }
 }

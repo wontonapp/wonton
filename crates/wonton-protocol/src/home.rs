@@ -80,7 +80,7 @@ pub enum PairingStatus {
     Failed {
         reason: PairingFailure,
         /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言
-        /// 写的，和类别说的是一件事，壳不显示，按类别自己写标题和下一步。
+        /// 写的，和类别说的是一件事，壳不显示，按类别自己写标题和下一步；`PendingApproval` 是核心写的，可以显示。
         message: String,
     },
 }
@@ -96,6 +96,8 @@ pub enum PairingFailure {
     Expired,
     /// 服务器不再接受这种码，例如已经有配对的设备时的首次配对码。要在已配对的设备上添加，或在服务器上另发一个码。
     Closed,
+    /// 这是加入别人家的码：管理员还没同意。管理员同意后用同一个码再试一次；`message` 里写的是加入后的角色。
+    PendingApproval,
     /// 连不上服务器：手机和服务器之间不通，或者服务器没在运行。
     TransportUnavailable,
     /// 服务器出错了，稍后再试；原因在 `message` 里。

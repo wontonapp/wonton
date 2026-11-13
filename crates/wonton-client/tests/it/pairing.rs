@@ -20,6 +20,7 @@ use wonton_client::{
     Action, ClientCore, CoreError, DeviceInvite, HomeFailure, HomeStatus, HomeViewModel, Network,
     PairingFailure, PairingStage, PairingStatus, SecretString,
 };
+use wonton_protocol::{AdminScope, AiLevel, AppScope, Gate, JoinOutcome, Permissions, RoleDef};
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, RejectReason, SECRET_LEN,
 };
@@ -41,6 +42,8 @@ struct Codes {
     server_id: EndpointId,
     direct_addrs: Vec<SocketAddr>,
     codes: Mutex<HashMap<String, Option<RejectReason>>>,
+    /// 加入别人家的码：配对时回这个结果和角色，不登记设备。
+    joins: Mutex<HashMap<String, (JoinOutcome, Option<RoleDef>)>>,
     names: Mutex<Vec<String>>,
     /// 设备经隧道要码（添加设备）时的请求体。
     invites: Mutex<Vec<String>>,
@@ -83,6 +86,9 @@ impl Codes {
 impl PairHandler for Codes {
     fn pair(&self, device: EndpointId, secret: &PairingSecret, device_name: &str) -> PairResponse {
         let key = (secret.expose().to_owned(), device);
+        if let Some((outcome, role)) = self.joins.lock().unwrap().get(secret.expose()).cloned() {
+            return PairResponse::Joining { outcome, role };
+        }
         let first = self.seen.lock().unwrap().insert(key);
         // 登记先于回应，和真的核心一样：回应慢不代表登记慢，确认请求也不跟着一起慢。
         if first && matches!(self.codes.lock().unwrap().get(secret.expose()), Some(None)) {
@@ -148,6 +154,7 @@ impl Home {
             server_id: endpoint.id(),
             direct_addrs: endpoint.bound_sockets(),
             codes: Mutex::new(HashMap::new()),
+            joins: Mutex::new(HashMap::new()),
             names: Mutex::new(Vec::new()),
             invites: Mutex::new(Vec::new()),
             refuse: Mutex::new(None),
@@ -171,6 +178,22 @@ impl Home {
     /// 直连地址换成 `addr` 的码。
     fn code_at(&self, addr: SocketAddr) -> String {
         self.codes.issue_at(None, Some(addr))
+    }
+
+    /// 发一个加入别人家的码：配对时回 `outcome`，等批时带 `role`。
+    fn join_code(&self, outcome: JoinOutcome, role: Option<RoleDef>) -> String {
+        let code = self.code(None);
+        let secret = PairingCode::parse(&code)
+            .unwrap()
+            .secret
+            .expose()
+            .to_owned();
+        self.codes
+            .joins
+            .lock()
+            .unwrap()
+            .insert(secret, (outcome, role));
+        code
     }
 }
 
@@ -550,6 +573,65 @@ async fn a_rejected_code_says_what_to_do_next() {
     }
     // 拒绝之后换一个好码照样能配上。
     phone.pair(&home.code(None)).unwrap();
+    phone.wait_for(paired).await;
+}
+
+/// 加入别人家的码：等批如实报出角色、码被用过说要换码，管理员同意后用同一个码重试能配上。
+#[tokio::test]
+async fn a_joining_code_waits_for_approval_and_the_same_code_pairs_once_approved() {
+    let home = Home::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Phone::open(dir.path());
+    let role = RoleDef {
+        id: "child".to_owned(),
+        name: "孩子".to_owned(),
+        template: None,
+        permissions: Permissions {
+            open_apps: AppScope::Other,
+            plugin_admin: AdminScope::NoApps,
+            install_apps: Gate::AskAdmin,
+            model_settings: false,
+            server_settings: false,
+            manage_members: false,
+            add_friends: Gate::Deny,
+            share_apps: false,
+            ai: AiLevel::ReadOnly,
+            privileged_tools: false,
+            private_bot: true,
+            shared_bots: false,
+            lend_own_bot: false,
+        },
+        people: 0,
+    };
+    let code = home.join_code(JoinOutcome::Pending, Some(role.clone()));
+    phone.pair(&code).unwrap();
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::PendingApproval, "{message}");
+    assert!(message.contains("孩子"), "{message}");
+    assert_eq!(
+        phone.home().status,
+        HomeStatus::NotConfigured,
+        "等批时还不存连接信息"
+    );
+
+    // 同一台设备再交同一个码还是等批；换成被别的设备用过的码就报换码。
+    phone.pair(&code).unwrap();
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::PendingApproval, "{message}");
+    let used = home.join_code(JoinOutcome::CodeUsed, None);
+    phone.pair(&used).unwrap();
+    let (failure, message) = phone.pairing_failure().await;
+    assert_eq!(failure, PairingFailure::Rejected, "{message}");
+
+    // 管理员同意了：同一个码再交，服务端直接登记设备、回 Paired。
+    let secret = PairingCode::parse(&code)
+        .unwrap()
+        .secret
+        .expose()
+        .to_owned();
+    home.codes.joins.lock().unwrap().remove(&secret);
+    home.codes.codes.lock().unwrap().insert(secret, None);
+    phone.pair(&code).unwrap();
     phone.wait_for(paired).await;
 }
 
