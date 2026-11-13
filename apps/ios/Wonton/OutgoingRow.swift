@@ -48,7 +48,6 @@ struct OutgoingRow: View {
 
     private var footer: some View {
         HStack(spacing: WontonTheme.spacing.s4) {
-            Text(TimelineRow.time(message.timestampMs))
             switch message.state {
             case let .sending(progress):
                 // 传着的时候也能取消：整条不发，上传停下（盲测：取消了照样发出去）。

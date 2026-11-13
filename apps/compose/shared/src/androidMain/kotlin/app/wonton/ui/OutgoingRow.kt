@@ -39,9 +39,7 @@ import app.wonton.ui.icons.Refresh
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircle
 import app.wonton.ui.icons.WontonIcon
-import java.text.DateFormat
 import java.text.NumberFormat
-import java.util.Date
 
 /** 一行最多并排几个附件。 */
 private const val TILES_PER_ROW = 3
@@ -96,11 +94,6 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
-        Text(
-            DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong())),
-            style = style,
-            color = colors.textSecondary.toColor(),
-        )
         when (val state = message.state) {
             is SendState.Sending -> Text(
                 state.progress?.let { progress ->

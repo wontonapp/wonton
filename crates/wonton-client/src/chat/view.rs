@@ -163,7 +163,7 @@ pub(crate) fn timeline_item(
     bots: &BotsView,
     previews: &super::previews::Previews,
 ) -> TimelineItem {
-    let read_by = read.readers_of(&entry.id);
+    let mark = read.of_entry(&entry.id);
     let content = match entry.kind {
         EntryKind::Message(message) => match &message.agent_run {
             // 只有核心认得的 Bot 发的状态对象才是 AgentRun，别人发的按普通消息显示（ADR-0082 第 4 节）。
@@ -178,7 +178,7 @@ pub(crate) fn timeline_item(
             _ => match bots.side_chats().content(&message) {
                 Some(content) => content,
                 None => TimelineContent::Message {
-                    message: timeline_message(*message, read_by, links, previews, bots),
+                    message: timeline_message(*message, mark, links, previews, bots),
                 },
             },
         },
@@ -206,7 +206,7 @@ pub(crate) fn timeline_item(
 
 fn timeline_message(
     message: Message,
-    read_by: Vec<String>,
+    mark: super::read_mark::EntryMark,
     links: &LinkTargets,
     previews: &super::previews::Previews,
     bots: &BotsView,
@@ -250,8 +250,10 @@ fn timeline_message(
         preview,
         actions,
         body,
-        read_by,
+        read_by: mark.readers,
         group: message.group,
+        receipt: mark.receipt,
+        starts_time_group: mark.starts_time_group,
     }
 }
 

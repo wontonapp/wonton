@@ -82,6 +82,7 @@ object WontonGesture {
     val flickVelocity = 900f
     val dragSlop = 8f
     val edgeWidth = 24f
+    val timeReveal = 64f
 }
 
 object WontonMotion {

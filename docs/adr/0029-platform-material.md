@@ -32,7 +32,7 @@ ADR-0026 定的是两端一模一样，全部自绘。主人在模拟器上看�
 | 长按菜单 | 系统的 `contextMenu`：预览、背后的效果和菜单都由系统画 | 消息预览，背后的页面模糊并压暗，菜单是 Material 3 的表面 |
 | 弹窗和底部面板的底 | 系统材质 | Material 3 的表面 |
 
-iOS 的材质用 SwiftUI 的 `Material`。控件和布局还是自己摆，只有底换成材质。长按菜单例外，整个用系统的：抬起预览的动画、读屏和无障碍都不用自己做。代价是它跟着系统变，iOS 26.5 模拟器上背后只是压暗，菜单是玻璃，不是整屏模糊。
+iOS 的材质用 SwiftUI 的 `Material`。控件和布局还是自己摆，只有底换成材质。长按菜单例外，整个用系统的：抬起预览的动画、读屏和无障碍都不用自己做。代价是它跟着系统变，iOS 26.5 模拟器上背后只是压暗，菜单是玻璃，不是整屏模糊。菜单项的图标也用系统的 SF Symbols（回复 `arrowshape.turn.up.left`、转发 `arrowshape.turn.up.right`、复制 `doc.on.doc`、删除 `trash`），不用 Phosphor：菜单里图标的大小、粗细由系统跟着菜单的字排，自带的图标资源对不上。
 
 ### 栏不垫底色
 
@@ -48,6 +48,8 @@ iOS 的材质用 SwiftUI 的 `Material`。控件和布局还是自己摆，只�
 - 插件页带栏时，网页框在标题栏和底栏之间，不铺到底栏后面，见 ADR-0033 的“页面怎么显示”。
 
 Android 的 Material 3 组件取色来自令牌：`WontonTheme` 把令牌映射进 `MaterialTheme`，不用动态取色和默认紫。选中的指示条用 `accentFill`，选中时再换字或图标，这条规则不变。
+
+消息的时间和送达状态不贴在气泡上（两端都是）：隔了 15 分钟以上的那条上方居中写一行时间，日期分隔线带着当天第一条的时间；“已送达”“已读”只写在自己发的最后一条下面。哪条上方写时间、哪条下面写状态由核心给（`TimelineMessage.starts_time_group`、`receipt`），壳不自己比时间。其余消息的时间，iOS 左滑整列露出来（同 iMessage），Android 点一下气泡露出来（同 Google Messages）。
 
 Android 的长按菜单用 `Modifier.blur` 模糊背后的页面，它只在 Android 12 及以上生效。Android 10 和 11（`minSdk` 是 29）上只把页面压暗。
 

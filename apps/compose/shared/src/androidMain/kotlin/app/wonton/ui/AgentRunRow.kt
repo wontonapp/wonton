@@ -15,8 +15,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -29,7 +34,6 @@ import app.wonton.protocol.TimelineContent
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Agent
-import app.wonton.ui.icons.CheckCircleFill
 import app.wonton.ui.icons.Error
 import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.Help
@@ -42,6 +46,7 @@ import app.wonton.ui.icons.WontonIcon
  * 真的在干活才转圈，要人管的醒目，打断了和结果不确定不用失败的红；减弱动态效果时不转圈。
  * `step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的文字，原样显示，不翻译、不拼句；
  * 不认识的 `state` 落到通用样子，按 `body` 显示。
+ * 做完了的一轮只留一行小的步骤摘要，点开是 Bot 自己的总结；没有步数也没有总结的不占地方（[isBlank]）。
  */
 @Composable
 fun AgentRunRowView(
@@ -56,7 +61,7 @@ fun AgentRunRowView(
         modifier.fillMaxWidth().padding(end = WontonTheme.spacing.s48),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
     ) {
-        StatusLine(run, onOpenCard)
+        if (run.state == AgentRunState.Done) DoneSummary(run) else StatusLine(run, onOpenCard)
         if (run.state == AgentRunState.Working && run.progress != null) {
             LinearProgressIndicator(
                 progress = { run.progress },
@@ -67,6 +72,54 @@ fun AgentRunRowView(
         if (run.state !is AgentRunState.Other && run.choices.isNotEmpty()) {
             Asking(run, onAnswerChoice)
         }
+    }
+}
+
+/** 做完了、没有步数也没有总结、也没在问的一轮没有可写的：时间线不给它留行。 */
+val TimelineContent.AgentRun.isBlank: Boolean
+    get() = state == AgentRunState.Done && (steps ?: 0u) == 0u && result.isNullOrEmpty() && choices.isEmpty()
+
+/** 展开时尖角朝下：转四分之一圈。 */
+private const val EXPANDED_TURN = 90f
+
+/** 做完的一轮：一行“N 步”，有总结时能点开；没有步数只有总结时直接写总结。 */
+@Composable
+private fun DoneSummary(run: TimelineContent.AgentRun) {
+    val ink = WontonTheme.colors.textSecondary.toColor()
+    val style = WontonTheme.typography.caption
+    val total = run.steps?.toInt() ?: 0
+    val result = run.result.orEmpty()
+    var showsResult by remember { mutableStateOf(false) }
+    if (total > 0) {
+        Row(
+            Modifier
+                .then(
+                    if (result.isEmpty()) {
+                        Modifier
+                    } else {
+                        Modifier
+                            .testTag("agentRunSteps")
+                            .clickable(role = Role.Button) { showsResult = !showsResult }
+                            .heightIn(min = WontonTheme.size.chip)
+                    },
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+        ) {
+            Text(pluralStringResource(R.plurals.agent_run_steps, total, total), style = style, color = ink)
+            if (result.isNotEmpty()) {
+                // 装饰：整行可点，尖角只表示能展开。
+                Icon(
+                    WontonIcon.Forward,
+                    null,
+                    Modifier.size(WontonTheme.size.iconTiny).rotate(if (showsResult) EXPANDED_TURN else 0f),
+                    tint = ink,
+                )
+            }
+        }
+    }
+    if (result.isNotEmpty() && (showsResult || total == 0)) {
+        Text(result, style = style, color = ink)
     }
 }
 
@@ -94,11 +147,7 @@ private fun StatusLine(run: TimelineContent.AgentRun, onOpenCard: (String) -> Un
             Text(
                 text,
                 Modifier.weight(1f),
-                style = if (run.state == AgentRunState.Done) {
-                    WontonTheme.typography.caption
-                } else {
-                    WontonTheme.typography.supporting
-                },
+                style = WontonTheme.typography.supporting,
                 color = statusInk(run, colors).toColor(),
             )
         }
@@ -128,12 +177,10 @@ private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
             }
         AgentRunState.Waiting ->
             Icon(WontonIcon.Notify, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        AgentRunState.Done ->
-            Icon(WontonIcon.CheckCircleFill, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
         AgentRunState.Failed -> failedMark(run, colors)
         AgentRunState.Uncertain ->
             Icon(WontonIcon.Help, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
-        is AgentRunState.Other -> Unit
+        AgentRunState.Done, is AgentRunState.Other -> Unit
     }
 }
 
@@ -153,12 +200,7 @@ private fun failedMark(run: TimelineContent.AgentRun, colors: ThemeColors) {
 private fun statusText(run: TimelineContent.AgentRun): String = when (run.state) {
     AgentRunState.Working -> run.step ?: ""
     AgentRunState.Waiting -> stringResource(R.string.agent_run_waiting)
-    AgentRunState.Done ->
-        if (run.steps != null) {
-            pluralStringResource(R.plurals.agent_run_done_steps, run.steps.toInt(), run.steps.toInt())
-        } else {
-            stringResource(R.string.agent_run_done)
-        }
+    AgentRunState.Done -> ""
     AgentRunState.Failed -> when {
         run.end is AgentRunEnd.Cancelled -> stringResource(R.string.agent_run_cancelled)
         run.end is AgentRunEnd.Uncertain -> stringResource(R.string.agent_run_uncertain)
@@ -171,7 +213,7 @@ private fun statusText(run: TimelineContent.AgentRun): String = when (run.state)
 private fun statusInk(run: TimelineContent.AgentRun, colors: ThemeColors) = when (run.state) {
     AgentRunState.Working -> colors.textSecondary
     AgentRunState.Waiting -> colors.accentInk
-    AgentRunState.Done -> colors.success
+    AgentRunState.Done -> colors.textSecondary
     AgentRunState.Failed -> when {
         run.end is AgentRunEnd.Cancelled -> colors.textSecondary
         run.end is AgentRunEnd.Uncertain -> colors.warning

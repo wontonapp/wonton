@@ -266,6 +266,31 @@ pub struct TimelineMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub group: Option<crate::MessageGroup>,
+    /// 这条下面那行小字（学 iMessage）：整条时间线里最多两条有——别人读到的自己发的最后一条是
+    /// [`MessageReceipt::Read`]，它后面要是还有发出去了的，最后那条是 [`MessageReceipt::Delivered`]。
+    /// 其余的消息为空，壳不在每个气泡上写状态。还没发出去和发送失败看 [`TimelineMessage::send_state`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub receipt: Option<MessageReceipt>,
+    /// 这条和上一条消息隔得够久（间隔由核心定），壳在它上方居中写一行时间。紧跟在
+    /// [`TimelineContent::DateDivider`] 后面的那条为假：分隔线自己带着那条的时间，壳把日期和时间写在一行。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub starts_time_group: bool,
+}
+
+/// 自己发的消息下面那行小字写什么。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum MessageReceipt {
+    /// 服务器收下了，还没有人读到。
+    Delivered,
+    /// 有人读到了这一条；是谁在 [`TimelineMessage::read_by`]。
+    Read,
+    /// 更新的核心给出的取值：壳不写这行。
+    #[serde(other)]
+    Other,
 }
 
 /// 长按消息的菜单里的一项。
@@ -828,6 +853,8 @@ mod tests {
                     index: 0,
                     count: 2,
                 }),
+                receipt: Some(MessageReceipt::Read),
+                starts_time_group: true,
             },
         }
     }

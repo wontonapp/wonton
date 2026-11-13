@@ -36,9 +36,12 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
@@ -89,19 +92,23 @@ fun TimelineItemView(
     onOpenSideChat: (String) -> Unit,
 ) {
     when (val content = item.content) {
-        is TimelineContent.Message -> MessageBubble(
-            content.message,
-            core,
-            showsSender && !joinsPrevious,
-            joinsPrevious,
-            joinsNext,
-            onRetry,
-            onCancel,
-            onCardAction,
-            { message, bounds -> onOpenMenu(item, message, bounds) },
-            onReply,
-            onOpenSideChat,
-        )
+        // 时间不贴在气泡上：隔得久的那条上方写一行，其余的点一下气泡才露出来。
+        is TimelineContent.Message -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            if (content.message.startsTimeGroup) CenteredNote(messageTime(content.message))
+            MessageBubble(
+                content.message,
+                core,
+                showsSender && !joinsPrevious,
+                joinsPrevious,
+                joinsNext,
+                onRetry,
+                onCancel,
+                onCardAction,
+                { message, bounds -> onOpenMenu(item, message, bounds) },
+                onReply,
+                onOpenSideChat,
+            )
+        }
         is TimelineContent.Notice -> CenteredNote(content.text)
         is TimelineContent.AgentRun -> AgentRunRowView(content, onOpenAgentCard, onAnswerAgentChoice)
         is TimelineContent.ProfileChange -> CenteredNote(
@@ -109,8 +116,11 @@ fun TimelineItemView(
                 ?.let { stringResource(R.string.timeline_profile_rename, it, content.name) }
                 ?: stringResource(R.string.timeline_profile_avatar, content.name),
         )
-        is TimelineContent.DateDivider ->
-            CenteredNote(DateFormat.getDateInstance(DateFormat.FULL).format(Date(content.timestampMs.toLong())))
+        // 分隔线带着这一天第一条消息的时间：日期和时间写在一行，那条消息上方不再另写。
+        is TimelineContent.DateDivider -> CenteredNote(
+            DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
+                .format(Date(content.timestampMs.toLong())),
+        )
         TimelineContent.ReadMarker -> Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -182,23 +192,24 @@ private fun MessageBubble(
     var bounds by remember { mutableStateOf(Rect.Zero) }
     val haptics = LocalHapticFeedback.current
     val showsMenu = message.actions.isNotEmpty()
+    // 点一下气泡露出这条的时间，再点收起（Material 的做法，对应 iOS 的左滑整列）。
+    var showsTime by remember { mutableStateOf(false) }
     val swipe = rememberSwipeToReply(message.replyAction != null) { onReply(message) }
     // 长按开菜单；图片消息自己的点击在它上面处理，长按也从那里来（onLongPress 传下去）。
     val openMenu = {
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         onOpenMenu(message, bounds)
     }
-    val pressable = if (!showsMenu) {
-        Modifier
-    } else {
-        Modifier
-            .combinedClickable(
-                interactionSource = null,
-                indication = null,
-                onLongClick = openMenu,
-                onClick = {},
-            )
-    }
+    // 时间不画在气泡里了，读屏照样念得到。
+    val time = messageTime(message)
+    val pressable = Modifier
+        .semantics { stateDescription = time }
+        .combinedClickable(
+            interactionSource = null,
+            indication = null,
+            onLongClick = openMenu.takeIf { showsMenu },
+            onClick = { showsTime = !showsTime },
+        )
     Column(
         Modifier.fillMaxWidth().padding(start = if (isOwn) gutter else 0.dp, end = if (isOwn) 0.dp else gutter),
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
@@ -224,6 +235,15 @@ private fun MessageBubble(
                 onLongPress = openMenu.takeIf { showsMenu },
             )
         }
+        if (showsTime) {
+            Text(
+                time,
+                Modifier.testTag("messageTime").clearAndSetSemantics {},
+                style = WontonTheme.typography.caption,
+                color = colors.textSecondary.toColor(),
+            )
+        }
+        ReceiptLine(message.receipt)
         // 有回复的消息下面挂一张旁聊卡片（ADR-0093），点了进那个旁聊。
         message.sideChat?.let { card -> SideChatCardRow(card) { onOpenSideChat(card.rootEventId) } }
     }
@@ -264,11 +284,13 @@ fun BubbleSurface(
         }
     }
     val reserve = footerReserve(message, LocalContext.current.resources)
-    if (reserve != null) {
-        // 正文末尾有一段和时间等宽的透明占位，时间压在它上面。放不下时占位自己换行，时间就落在新的一行。
+    if (!message.hasFooter) {
+        Box(padded) { styledBody(null) }
+    } else if (reserve != null) {
+        // 正文末尾有一段和脚注等宽的透明占位，脚注压在它上面。放不下时占位自己换行，脚注就落在新的一行。
         Box(padded) {
             styledBody(reserve)
-            // 占位文字已经念过一遍时间了。
+            // 占位文字已经念过一遍了。
             MessageFooter(
                 message,
                 Modifier.align(Alignment.BottomEnd).clearAndSetSemantics {},
@@ -287,8 +309,12 @@ fun BubbleSurface(
 private fun messageTime(message: TimelineMessage): String =
     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(message.timestampMs.toLong()))
 
+/** 气泡里只在有话要说时才有脚注：编辑过、还在发、没发出去。时间和已读不在气泡里。 */
+private val TimelineMessage.hasFooter: Boolean
+    get() = edited || sendState !is SendState.Sent
+
 /**
- * 时间能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
+ * 脚注能压在最后一行上时，给它留的透明文字。发送失败的说明太长，文件卡片和代码块、表格后面也没有文字行，都单独占一行。
  * 开头是普通空格：不能和前一个词连着折行。
  */
 private fun footerReserve(message: TimelineMessage, resources: Resources): String? {
@@ -300,11 +326,7 @@ private fun footerReserve(message: TimelineMessage, resources: Resources): Strin
     if (!inlineLast || !body?.files.isNullOrEmpty() || message.sendState is SendState.Failed) return null
     val parts = buildList {
         if (message.edited) add(resources.getString(R.string.timeline_edited))
-        add(messageTime(message))
         if (message.sendState is SendState.Sending) add(resources.getString(R.string.timeline_sending))
-        if (message.sendState is SendState.Sent && message.isOwn && message.readBy.isNotEmpty()) {
-            add(resources.getString(R.string.timeline_read))
-        }
     }
     return " \u00A0\u00A0" + parts.joinToString("  ").replace(' ', '\u00A0')
 }
@@ -316,13 +338,10 @@ private fun MessageFooter(message: TimelineMessage, modifier: Modifier, onRetry:
     val color = (if (message.isOwn) colors.accentInkOnFill else colors.textSecondary).toColor()
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4)) {
         if (message.edited) Text(stringResource(R.string.timeline_edited), style = style, color = color)
-        Text(messageTime(message), style = style, color = color)
         when (val state = message.sendState) {
             is SendState.Sending -> Text(stringResource(R.string.timeline_sending), style = style, color = color)
             is SendState.Failed -> FailedSend(state, onRetry, onCancel)
-            SendState.Sent -> if (message.isOwn && message.readBy.isNotEmpty()) {
-                Text(stringResource(R.string.timeline_read), style = style, color = color)
-            }
+            SendState.Sent -> Unit
         }
     }
 }

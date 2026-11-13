@@ -28,7 +28,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 夜跑界面测试（ADR-0082）：working 转圈加步骤、一轮收成“完成 · N 步”，waiting 整行可点开卡片。
+ * 夜跑界面测试（ADR-0082）：working 转圈加步骤、一轮收成一行“N 步”，waiting 整行可点开卡片。
  * 时间线要登录后的房间才有（核心假数据只够首屏），所以直接渲染真组件，数据用核心类型构造。
  */
 @RunWith(AndroidJUnit4::class)
@@ -56,7 +56,7 @@ class AgentRunRowTest {
         run = fixture(AgentRunState.Done, steps = 5u)
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithTag("agentRunSpinner").assertDoesNotExist()
-        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.agent_run_done_steps, 5, 5))
+        compose.onNodeWithText(context.resources.getQuantityString(R.plurals.agent_run_steps, 5, 5))
             .assertExists()
 
         compose.setContent {

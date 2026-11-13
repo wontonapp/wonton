@@ -76,7 +76,15 @@ enum SnapshotFixtures {
                     core: core, showsSender: true)
                 row(message(id: "m2", sender: "Owner", isOwn: true,
                             text: "Good. Bring the tables to the drawing room tomorrow.",
-                            readBy: ["Ada Lovelace"]),
+                            readBy: ["Ada Lovelace"], receipt: .read),
+                    core: core, showsSender: true)
+                row(TimelineItem(id: "run", content: .agentRun(
+                    run: nil, state: .done, step: nil, steps: 3, progress: nil,
+                    result: "Checked the card sequence", end: nil, body: "", cardId: nil, choices: [],
+                    senderName: "Ada Lovelace"
+                )), core: core, showsSender: false)
+                row(message(id: "m3", sender: "Owner", isOwn: true, text: "And the punched cards.",
+                            minutesLater: 40, receipt: .delivered, startsTimeGroup: true),
                     core: core, showsSender: true)
                 row(TimelineItem(id: "read", content: .readMarker), core: core, showsSender: false)
             }
@@ -223,18 +231,20 @@ enum SnapshotFixtures {
     }
 
     private static func message(
-        id: String, sender: String, isOwn: Bool, text: String, readBy: [String] = []
+        id: String, sender: String, isOwn: Bool, text: String, readBy: [String] = [],
+        minutesLater: UInt64 = 0, receipt: MessageReceipt? = nil, startsTimeGroup: Bool = false
     ) -> TimelineItem {
         let senderId = isOwn ? "@owner:home.example" : "@ada:home.example"
         return TimelineItem(id: id, content: .message(message: TimelineMessage(
             eventId: "$\(id):home.example", senderId: senderId, senderName: sender, isOwn: isOwn,
-            timestampMs: timestampMs, sendState: .sent,
+            timestampMs: timestampMs + minutesLater * 60_000, sendState: .sent,
             body: .text(body: text, blocks: [
                 RichBlock(kind: .paragraph, depth: 0, quoted: false, spans: [
                     RichSpan(text: text, bold: false, italic: false, code: false, strike: false, link: nil)
                 ])
             ], files: []),
-            edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)]
+            edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)],
+            receipt: receipt, startsTimeGroup: startsTimeGroup
         )))
     }
 
