@@ -232,8 +232,6 @@ struct MainView: View {
         )
     }
 
-
-
     private var pendingElsewhere: [PendingConfirmation] {
         let shown: String? = if pages.showsPluginPage { nil } else { chat.shownRoom(in: .chat) }
         if !pages.showsPluginPage, chat.path.last == .confirmations { return [] }
