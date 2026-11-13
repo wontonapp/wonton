@@ -28,12 +28,15 @@ struct FriendsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .Friends2.friendsTitle)) {
+            .wontonPushedScreen(String(localized: .Friends2.friendsTitle), usesSystemToolbar: true) {
                 WontonIconButton(icon: .add, label: String(localized: .Friends1.friendsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Friends1.friendsAdd)) { close in
+            .wontonSheet(
+                isPresented: $showsAdd,
+                title: String(localized: .Friends1.friendsAdd), usesSystemPresentation: true
+            ) { close in
                 addPanel(close)
             }
             .fullScreenCover(isPresented: $showsScanner, onDismiss: sendScannedCode) {
@@ -42,25 +45,29 @@ struct FriendsView: View {
                         scannedCode = code
                         showsScanner = false
                     }
-                    .wontonModalScreen(String(localized: .Friends1.friendsScanCode))
+                    .wontonModalScreen(String(localized: .Friends1.friendsScanCode), usesSystemToolbar: true)
                 }
             }
             .wontonSheet(
                 isPresented: Binding(
                     get: { showsMyCode && model.viewModel.myLink != nil }, set: { if !$0 { showsMyCode = false } }
                 ),
-                title: String(localized: .Friends3.friendsMyCode)
+                title: String(localized: .Friends3.friendsMyCode),
+                usesSystemPresentation: true
             ) { _ in
                 if let link = model.viewModel.myLink { MyFriendCodePanel(link: link) }
             }
-            .wontonSheet(isPresented: isEditingGroup, title: groupPanelTitle) { close in
+            .wontonSheet(
+                isPresented: isEditingGroup, title: groupPanelTitle, usesSystemPresentation: true
+            ) { close in
                 groupPanel(close)
             }
             .wontonSheet(
                 isPresented: Binding(
                     get: { choosingGroups != nil }, set: { if !$0 { choosingGroups = nil } }
                 ),
-                title: String(localized: .Friends1.friendsGroupsChoose)
+                title: String(localized: .Friends1.friendsGroupsChoose),
+                usesSystemPresentation: true
             ) { _ in
                 groupsPanel
             }

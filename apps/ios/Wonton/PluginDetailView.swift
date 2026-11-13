@@ -26,7 +26,7 @@ struct PluginDetailView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen("", showsStatusLine: true)
+            .wontonPushedScreen("", showsStatusLine: true, usesSystemToolbar: true)
             .task(id: route) { await load() }
             .task { isOwner = (try? await model.core.me())?.isOwner == true }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }

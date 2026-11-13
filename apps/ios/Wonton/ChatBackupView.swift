@@ -51,7 +51,7 @@ struct ChatBackupView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("chat-backup")
-        .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle))
+        .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle), usesSystemToolbar: true)
         .wontonDialog(
             String(localized: .ChatBackup1.chatBackupResetTitle),
             message: String(localized: .ChatBackup0.chatBackupResetMessage),

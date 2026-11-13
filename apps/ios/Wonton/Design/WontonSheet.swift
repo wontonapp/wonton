@@ -10,20 +10,28 @@ struct WontonSheetAction {
 }
 
 extension View {
-    /// 自己画的底部面板（ADR-0026）。往下拖、点空白处都能关。
-    func wontonSheet(
+    /// 传 `usesSystemPresentation` 的非聊天面板在 iOS 26 用系统 sheet；默认保留自绘 fullScreenCover，避免改变聊天面板布局。
+    @ViewBuilder func wontonSheet(
         isPresented: Binding<Bool>,
         title: String? = nil,
+        usesSystemPresentation: Bool = false,
         @ViewBuilder content: @escaping (_ close: @escaping (@escaping () -> Void) -> Void) -> some View
     ) -> some View {
-        background {
-            // 为什么这样挂，见 `wontonDialog`。
-            Color.clear
-                .fullScreenCover(isPresented: isPresented) {
-                    WontonSheetView(title: title, finish: { isPresented.wrappedValue = false }, content: content)
-                        .presentationBackground(.clear)
-                }
-                .transaction { $0.disablesAnimations = true }
+        if #available(iOS 26, *), usesSystemPresentation {
+            modifier(WontonNativeSheet(isPresented: isPresented, title: title, panelContent: content))
+        } else {
+            background {
+                // 为什么这样挂，见 `wontonDialog`。
+                Color.clear
+                    .fullScreenCover(isPresented: isPresented) {
+                        WontonSheetView(
+                            title: title, usesMaterial: usesSystemPresentation,
+                            finish: { isPresented.wrappedValue = false }, content: content
+                        )
+                            .presentationBackground(.clear)
+                    }
+                    .transaction { $0.disablesAnimations = true }
+            }
         }
     }
 
@@ -31,9 +39,12 @@ extension View {
     func wontonActionSheet(
         isPresented: Binding<Bool>,
         title: String? = nil,
+        usesSystemPresentation: Bool = false,
         actions: [WontonSheetAction]
     ) -> some View {
-        wontonSheet(isPresented: isPresented, title: title) { close in
+        wontonSheet(
+            isPresented: isPresented, title: title, usesSystemPresentation: usesSystemPresentation
+        ) { close in
             VStack(spacing: 0) {
                 ForEach(actions.indices, id: \.self) { index in
                     WontonSheetActionRow(action: actions[index]) { close(actions[index].perform) }
@@ -67,6 +78,7 @@ struct WontonSheetActionRow: View {
 
 private struct WontonSheetView<Content: View>: View {
     let title: String?
+    let usesMaterial: Bool
     let finish: () -> Void
     let content: (_ close: @escaping (@escaping () -> Void) -> Void) -> Content
     @State private var appeared = false
@@ -128,7 +140,7 @@ private struct WontonSheetView<Content: View>: View {
                 topLeadingRadius: WontonTheme.radii.card,
                 topTrailingRadius: WontonTheme.radii.card
             )
-            .fill(Color(colors.surface))
+            .fill(usesMaterial ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color(colors.surface)))
             .ignoresSafeArea(edges: .bottom)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { panelHeight = $0 + 64 }
@@ -153,5 +165,54 @@ private struct WontonSheetView<Content: View>: View {
             finish()
             action()
         }
+    }
+}
+
+@available(iOS 26, *)
+private struct WontonNativeSheet<PanelContent: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let title: String?
+    let panelContent: (_ close: @escaping (@escaping () -> Void) -> Void) -> PanelContent
+    @State private var pendingAction: (() -> Void)?
+    @Environment(\.wontonColors) private var colors
+
+    func body(content: Content) -> some View {
+        content.background {
+            Color.clear.sheet(isPresented: $isPresented, onDismiss: performPendingAction) {
+                panel
+                    .presentationSizing(.fitted)
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private var panel: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            if let title {
+                Text(title)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .padding(.horizontal, WontonTheme.spacing.pageInset)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            ViewThatFits(in: .vertical) {
+                panelContent(close)
+                ScrollView { panelContent(close) }
+            }
+        }
+        .padding(.vertical, WontonTheme.spacing.s16)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func close(then action: @escaping () -> Void) {
+        guard pendingAction == nil else { return }
+        pendingAction = action
+        isPresented = false
+    }
+
+    private func performPendingAction() {
+        let action = pendingAction
+        pendingAction = nil
+        action?()
     }
 }

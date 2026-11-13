@@ -65,7 +65,9 @@ struct ConfirmationCardView: View {
                         .buttonStyle(WontonSmallButtonStyle())
                     }
                 }
-                .wontonSheet(isPresented: $showsPages, title: installed.title) { _ in
+                .wontonSheet(
+                    isPresented: $showsPages, title: installed.title, usesSystemPresentation: true
+                ) { _ in
                     MyAppChoiceSheet(plugin: installed) { showsPages = false }
                         .padding(WontonTheme.spacing.pageInset)
                 }

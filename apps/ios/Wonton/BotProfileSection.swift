@@ -70,6 +70,7 @@ struct BotProfileSection: View {
                     get: { sheetSlot != nil },
                     set: { if !$0 { sheetSlot = nil } }
                 ),
+                usesSystemPresentation: true,
                 actions: sheetActions
             )
             .onChange(of: bot.saving) { _, saving in

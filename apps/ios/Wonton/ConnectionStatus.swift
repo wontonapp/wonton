@@ -237,7 +237,7 @@ struct ConnectionView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .removeServerDialog($removing, model: model)
-        .wontonPushedScreen(String(localized: .Egress.egressPathHomeServer))
+        .wontonPushedScreen(String(localized: .Egress.egressPathHomeServer), usesSystemToolbar: true)
     }
 }
 
@@ -261,7 +261,7 @@ struct ConnectionDetailsView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Common.commonDetails))
+        .wontonPushedScreen(String(localized: .Common.commonDetails), usesSystemToolbar: true)
     }
 }
 

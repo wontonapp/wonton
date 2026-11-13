@@ -17,13 +17,7 @@ struct SettingsTab: View {
 
     var body: some View {
         NavigationStack(path: $model.path) {
-            SettingsView(
-                model: model, editProfile: { isEditingProfile = true },
-                chooseAgent: { isChoosingAgent = true })
-                .wontonRootScreen(TabText.settings, hasActions: isModal) {
-                    if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
-                }
-                .navigationDestination(for: SettingsRoute.self, destination: destination)
+            settingsRoot
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
@@ -34,6 +28,25 @@ struct SettingsTab: View {
         .wontonDialog(problem: plugins.rejection, isPresented: Binding(
             get: { isActive && plugins.rejection != nil }, set: { if !$0 && isActive { plugins.rejection = nil } }
         ))
+    }
+
+    @ViewBuilder
+    private var settingsRoot: some View {
+        if isModal {
+            settingsContent
+                .wontonModalScreen(TabText.settings, usesSystemToolbar: true)
+        } else {
+            settingsContent
+                .wontonRootScreen(TabText.settings, hasActions: false) { EmptyView() }
+        }
+    }
+
+    private var settingsContent: some View {
+        SettingsView(
+            model: model, editProfile: { isEditingProfile = true },
+            chooseAgent: { isChoosingAgent = true }
+        )
+        .navigationDestination(for: SettingsRoute.self, destination: destination)
     }
 
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
@@ -51,7 +64,7 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain), usesSystemToolbar: true)
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
@@ -60,9 +73,9 @@ struct SettingsTab: View {
         case .coreUpgrade: CoreUpgradeView(model: plugins)
         case .appearance:
             AppearanceView(model: appearance)
-                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle))
+                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle), usesSystemToolbar: true)
         case .chatBackup: ChatBackupView(model: chat)
-        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps)
+        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
@@ -209,6 +222,6 @@ private struct AboutView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Settings.settingsAbout))
+        .wontonPushedScreen(String(localized: .Settings.settingsAbout), usesSystemToolbar: true)
     }
 }

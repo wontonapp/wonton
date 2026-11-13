@@ -73,23 +73,26 @@ struct PairingView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(Color(colors.canvas))
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if model.servers.adding {
-                HStack {
+        .toolbar {
+            if #available(iOS 26, *), model.servers.adding {
+                ToolbarItem(placement: .cancellationAction) {
                     Button(.Common.commonCancel) {
                         if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
                     }
-                        .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
-                    Spacer()
+                    .buttonStyle(.automatic)
+                }
+                ToolbarItem(placement: .principal) {
                     Text(.Servers.serversAddTitle)
                         .wontonText(WontonTheme.typography.itemTitle)
                         .accessibilityAddTraits(.isHeader)
-                    Spacer()
-                    Color.clear.frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
                 }
-                .padding(.horizontal, WontonTheme.spacing.pageInset)
-                .frame(minHeight: WontonTheme.size.topBar)
-                .background(.ultraThinMaterial)
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if #available(iOS 26, *) {
+                EmptyView()
+            } else {
+                legacyAddingBar
             }
         }
         .fullScreenCover(isPresented: $showsMatrixLogin) {
@@ -115,63 +118,24 @@ struct PairingView: View {
         }
     }
 
-    private var pairingForm: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                scanner
-                #if DEBUG
-                    if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SCAN_INJECTION"] == "1" {
-                        Button(.Pairing.pairingSubmit) { scanned(model.pairingCode) }
-                            .accessibilityIdentifier("pairing-inject-scan")
-                    }
-                #endif
-                Text(.Pairing.pairingInstructions)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.Pairing.pairingPasteLabel)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-                    .accessibilityHidden(true)
-                TextField(
-                    String(localized: .Pairing.pairingPastePlaceholder),
-                    text: $model.pairingCode,
-                    axis: .vertical
-                )
-                    .accessibilityIdentifier("pairing-code")
-                    .accessibilityLabel(String(localized: .Pairing.pairingPasteLabel))
-                    .textFieldStyle(.plain)
-                    .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
-                    .focused($isEditingCode)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .lineLimit(1...5)
-                    .wontonField()
-                if let domain = pairingDomain {
-                    Text(domain)
-                        .wontonText(WontonTheme.typography.body)
-                        .textSelection(.enabled)
+    @ViewBuilder private var legacyAddingBar: some View {
+        if model.servers.adding {
+            HStack {
+                Button(.Common.commonCancel) {
+                    if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
                 }
-                Button {
-                    pair(model.pairingCode)
-                } label: {
-                    Text(.Pairing.pairingSubmit).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle())
-                .accessibilityIdentifier("pairing-submit")
-                .disabled(model.pairingCode.isEmpty || isPairing)
+                .wontonNavigationAction()
+                .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+                Spacer()
+                Text(.Servers.serversAddTitle)
+                    .wontonText(WontonTheme.typography.itemTitle)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer()
+                Color.clear.frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
             }
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.Pairing.pairingDeviceName)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-                    .accessibilityHidden(true)
-                TextField(String(localized: .Pairing.pairingDeviceName), text: $deviceName)
-                    .accessibilityIdentifier("pairing-device-name")
-                    .textFieldStyle(.plain)
-                    .wontonField()
-            }
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .frame(minHeight: WontonTheme.size.topBar)
+            .background(.ultraThinMaterial)
         }
     }
 
@@ -278,6 +242,67 @@ struct PairingView: View {
         guard camera == .notDetermined else { return }
         _ = await AVCaptureDevice.requestAccess(for: .video)
         camera = .current
+    }
+}
+private extension PairingView {
+    private var pairingForm: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                scanner
+                #if DEBUG
+                    if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SCAN_INJECTION"] == "1" {
+                        Button(.Pairing.pairingSubmit) { scanned(model.pairingCode) }
+                            .accessibilityIdentifier("pairing-inject-scan")
+                    }
+                #endif
+                Text(.Pairing.pairingInstructions)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.Pairing.pairingPasteLabel)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
+                TextField(
+                    String(localized: .Pairing.pairingPastePlaceholder),
+                    text: $model.pairingCode,
+                    axis: .vertical
+                )
+                    .accessibilityIdentifier("pairing-code")
+                    .accessibilityLabel(String(localized: .Pairing.pairingPasteLabel))
+                    .textFieldStyle(.plain)
+                    .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
+                    .focused($isEditingCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .lineLimit(1...5)
+                    .wontonField()
+                if let domain = pairingDomain {
+                    Text(domain)
+                        .wontonText(WontonTheme.typography.body)
+                        .textSelection(.enabled)
+                }
+                Button {
+                    pair(model.pairingCode)
+                } label: {
+                    Text(.Pairing.pairingSubmit).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .accessibilityIdentifier("pairing-submit")
+                .disabled(model.pairingCode.isEmpty || isPairing)
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.Pairing.pairingDeviceName)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
+                TextField(String(localized: .Pairing.pairingDeviceName), text: $deviceName)
+                    .accessibilityIdentifier("pairing-device-name")
+                    .textFieldStyle(.plain)
+                    .wontonField()
+            }
+        }
     }
 }
 

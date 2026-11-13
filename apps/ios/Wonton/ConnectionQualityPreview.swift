@@ -72,7 +72,7 @@ private struct QualityDetailsPreview: View {
             ConnectionDetailsRows(details: home.details, path: home.path)
                 .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Common.commonDetails))
+        .wontonPushedScreen(String(localized: .Common.commonDetails), usesSystemToolbar: true)
     }
 }
 

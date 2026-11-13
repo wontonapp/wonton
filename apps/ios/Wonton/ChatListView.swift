@@ -121,17 +121,31 @@ struct ChatListView: View {
         }
     }
 
-    private var newChatButton: some View {
-        NavigationLink(value: ChatRoute.startChat) {
-            WontonIcon.add.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
-                .contentShape(Circle())
+    @ViewBuilder private var newChatButton: some View {
+        if #available(iOS 26, *) {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.onPrimary))
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .tint(Color(colors.primary))
+            .frame(minWidth: WontonTheme.size.floatingActionButton, minHeight: WontonTheme.size.floatingActionButton)
+            .contentShape(Circle())
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
+        } else {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(.Chat1.chatNewChat))
     }
 
     /// 关过的提醒不再挂（本机显示偏好，存壳里）；这次会话里刚关的立即生效。
@@ -519,7 +533,7 @@ private struct StartChatView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle))
+        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle), usesSystemToolbar: true)
     }
 }
 

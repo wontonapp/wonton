@@ -20,14 +20,14 @@ struct RegistryMirrorSettingsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(String(localized: .RegistryMirror.registryMirrorTitle)) {
+            .wontonPushedScreen(String(localized: .RegistryMirror.registryMirrorTitle), usesSystemToolbar: true) {
                 if mirror.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
                     Button(String(localized: .Common.commonSave)) {
                         model.send(.saveRegistryMirror(mirror: enabled ? draft : ""))
                     }
-                    .buttonStyle(WontonSmallButtonStyle())
+                    .wontonBarAction()
                     .disabled(mirror.settings == nil ||
                               (enabled && draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
                     .padding(.trailing, WontonTheme.spacing.s12)

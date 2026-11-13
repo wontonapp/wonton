@@ -12,18 +12,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.BlurredEdgeTreatment
-import androidx.compose.ui.draw.blur
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.ViewConfiguration
@@ -32,7 +27,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.TabRef
@@ -42,17 +36,7 @@ import app.wonton.ui.icons.Leave
 import app.wonton.ui.icons.More
 import app.wonton.ui.icons.WontonIcon
 
-private const val CAPSULE_FILL_ALPHA = 0.2f
-private const val CAPSULE_SHADOW_ALPHA = 0.4f
-private const val CAPSULE_DIVIDER_ALPHA = 0.2f
-private val capsuleShadowRadius = 1.dp
-
-/** 胶囊上的菜单开没开；胶囊本身一直显示，不随滚动或空闲隐藏。 */
-internal class PageCapsuleState {
-    var menuOpen by mutableStateOf(false)
-}
-
-/** 页面右上角的胶囊:左键开菜单,右键关掉页面;透明底,一直在。 */
+/** 页面右上角的 Material 导航胶囊；菜单和退出常驻，不随网页滚动隐藏。 */
 @Composable
 internal fun PluginPageCapsule(
     tab: TabRef, tabs: PagesState, state: PageCapsuleState,
@@ -68,17 +52,24 @@ internal fun PluginPageCapsule(
         }
     }
     CompositionLocalProvider(LocalViewConfiguration provides exactTargets) {
-        Box(Modifier.size(WontonTheme.size.target * 2 + WontonTheme.size.hairline, WontonTheme.size.smallButton)) {
-            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = CAPSULE_FILL_ALPHA),
-                RoundedCornerShape(WontonTheme.radii.pill)))
-            CapsuleArtwork(WontonIcon.Leave)
-            Row(Modifier.height(WontonTheme.size.smallButton)) {
-                CapsuleHitTarget(stringResource(R.string.tab_page_menu)) { state.menuOpen = true }
-                Spacer(Modifier.width(WontonTheme.size.hairline))
-                CapsuleHitTarget(stringResource(R.string.tab_page_close), onClose)
-            }
-            Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
-                CapsuleMenu(tab, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
+        Surface(
+            modifier = Modifier.size(
+                WontonTheme.size.target * 2 + WontonTheme.size.hairline,
+                WontonTheme.size.smallButton,
+            ),
+            color = WontonTheme.colors.surface.toColor(),
+            shape = RoundedCornerShape(WontonTheme.radii.pill),
+        ) {
+            Box {
+                CapsuleArtwork(WontonIcon.Leave)
+                Row(Modifier.height(WontonTheme.size.smallButton)) {
+                    CapsuleHitTarget(stringResource(R.string.tab_page_menu)) { state.menuOpen = true }
+                    Spacer(Modifier.width(WontonTheme.size.hairline))
+                    CapsuleHitTarget(stringResource(R.string.tab_page_close), onClose)
+                }
+                Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton)) {
+                    CapsuleMenu(tab, tabs, state, controller, takeover, onReload, onDetails, onEditPanel)
+                }
             }
         }
     }
@@ -89,7 +80,7 @@ private fun CapsuleArtwork(trailingIcon: ImageVector) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         CapsuleGlyph(WontonIcon.More)
         Box(Modifier.width(WontonTheme.size.hairline).height(WontonTheme.size.iconSmall)
-            .background(Color.White.copy(alpha = CAPSULE_DIVIDER_ALPHA)))
+            .background(WontonTheme.colors.separator.toColor()))
         CapsuleGlyph(trailingIcon)
     }
 }
@@ -97,12 +88,8 @@ private fun CapsuleArtwork(trailingIcon: ImageVector) {
 @Composable
 private fun CapsuleGlyph(icon: ImageVector) {
     Box(Modifier.size(WontonTheme.size.target, WontonTheme.size.smallButton), contentAlignment = Alignment.Center) {
-        // 装饰：这是同一个图形的阴影层。
-        Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall)
-            .blur(capsuleShadowRadius, BlurredEdgeTreatment.Unbounded),
-            tint = Color.Black.copy(alpha = CAPSULE_SHADOW_ALPHA))
         // 装饰：旁边叠着的命中区自己带名字。
-        Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = Color.White)
+        Icon(icon, null, Modifier.size(WontonTheme.size.iconSmall), tint = WontonTheme.colors.textPrimary.toColor())
     }
 }
 

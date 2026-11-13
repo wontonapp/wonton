@@ -104,6 +104,7 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
+
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
@@ -238,6 +239,7 @@ extension HomeView {
             .wontonActionSheet(
                 isPresented: isShowingMenu,
                 title: menuPlugin?.title,
+                usesSystemPresentation: true,
                 actions: menuPlugin.map(menu(for:)) ?? []
             )
             .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }

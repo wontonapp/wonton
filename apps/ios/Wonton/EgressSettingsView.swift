@@ -15,14 +15,14 @@ struct EgressSettingsView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(String(localized: .Egress.egressTitle)) {
+            .wontonPushedScreen(String(localized: .Egress.egressTitle), usesSystemToolbar: true) {
                 if egress.saving {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
                     Button(String(localized: .Common.commonSave)) {
                         save(address: selectedPlugin ? "" : address, usePlugin: selectedPlugin)
                     }
-                        .buttonStyle(WontonSmallButtonStyle())
+                        .wontonBarAction()
                         .disabled(egress.current == nil)
                         .padding(.trailing, WontonTheme.spacing.s12)
                 }
