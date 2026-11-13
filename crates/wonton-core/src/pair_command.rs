@@ -5,6 +5,8 @@
 //! - 不带 `--first`：发一个主人的码，已经有设备时也能用，设备都丢了时用它找回。
 //! - `--first`：显示首次配对码（和局域网状态页上的是同一个），换码时显示新的，第一台设备配上后退出。
 
+use std::fmt::Write;
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::time::Duration;
 
@@ -40,8 +42,7 @@ pub async fn run(args: Vec<String>) -> anyhow::Result<()> {
         return wait_for_first_device(&core, &body).await;
     }
     let (status, bytes) = core.post("/_wonton/api/pairing-codes", &body).await?;
-    show(&issued(status, &bytes)?, "只能用一次");
-    Ok(())
+    show(&issued(status, &bytes)?, "只能用一次")
 }
 
 /// 一开始就已经有设备时说明怎么加设备；否则显示首次配对码，直到第一台设备配上。
@@ -61,7 +62,7 @@ async fn wait_for_first_device(core: &LocalCore, body: &str) -> anyhow::Result<(
         }
         let code = issued(status, &bytes)?;
         if shown.as_deref() != Some(code.code.as_str()) {
-            show(&code, "第一台设备配上后作废，过期前这里会换一个新码");
+            show(&code, "第一台设备配上后作废，过期前这里会换一个新码")?;
             shown = Some(code.code);
         }
         tokio::time::sleep(POLL).await;
@@ -78,13 +79,40 @@ fn issued(status: StatusCode, bytes: &[u8]) -> anyhow::Result<Issued> {
     serde_json::from_slice(bytes).context("核心的回应不是发码的 JSON")
 }
 
-fn show(issued: &Issued, rule: &str) {
+fn show(issued: &Issued, rule: &str) -> anyhow::Result<()> {
+    let stdout = std::io::stdout();
+    let columns = if stdout.is_terminal() {
+        Some(
+            rustix::termios::tcgetwinsize(&stdout)
+                .context("读取终端宽度失败")?
+                .ws_col,
+        )
+    } else {
+        None
+    };
+    print!("{}", format_pairing(issued, rule, columns));
+    Ok(())
+}
+
+fn format_pairing(issued: &Issued, rule: &str, columns: Option<u16>) -> String {
+    let (mut output, action) = match terminal_qr(&issued.code, columns) {
+        Ok(qr) => (qr, "用云吞 App 扫上面的二维码，或者在 App 里粘贴这段配对码"),
+        Err(required) => (
+            format!(
+                "终端窗口太窄（需要至少 {required} 列，现在 {} 列），请把窗口拉宽后重新运行。",
+                columns.expect("只有限制列数时二维码才会放不下")
+            ),
+            "在云吞 App 里粘贴这段配对码",
+        ),
+    };
     let minutes = issued.expires_in.div_ceil(60);
-    println!("{}", terminal_qr(&issued.code));
-    println!(
-        "用云吞 App 扫上面的二维码，或者在 App 里粘贴这段配对码（{minutes} 分钟内有效，{rule}）："
-    );
-    println!("{}", issued.code);
+    write!(
+        output,
+        "\n{action}（{minutes} 分钟内有效，{rule}）：\n{}\n",
+        issued.code
+    )
+    .expect("写入字符串不会失败");
+    output
 }
 
 /// 同一个容器里运行中的核心，用主人令牌调它的管理 API。
@@ -131,3 +159,7 @@ impl LocalCore {
         Ok((status, bytes.to_vec()))
     }
 }
+
+#[cfg(test)]
+#[path = "pair_command_tests.rs"]
+mod pair_command_tests;
