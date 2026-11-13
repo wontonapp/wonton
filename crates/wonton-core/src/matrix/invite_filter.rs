@@ -14,8 +14,7 @@ use serde_json::{Value, json};
 
 use super::{Matrix, MatrixError, api};
 
-/// 账号数据的事件类型，和 wonton-client 写的是同一个。
-pub const INVITE_FILTER_TYPE: &str = "org.matrix.msc4155.invite_permission_config";
+pub use wonton_protocol::INVITE_FILTER_EVENT as INVITE_FILTER_TYPE;
 
 /// 临时替账号登录的设备名，写完就吊销。
 const DEVICE_NAME: &str = "Wonton 核心（默认过滤）";
