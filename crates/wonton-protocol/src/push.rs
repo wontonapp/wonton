@@ -80,6 +80,9 @@ pub struct PushNotification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub thread_root: Option<String>,
+    /// App 锁着（ADR-0102）：壳不显示发送者和正文，只写一句有新消息。
+    #[serde(default)]
+    pub hidden: bool,
     /// 锁屏上是否隐藏这条通知的内容（ADR-0101 §5，主人在设置里按类别关的）。壳据此设系统的可见性；
     /// 系统自己的“显示预览”设成隐藏时它优先。
     #[serde(default)]
@@ -223,6 +226,7 @@ mod tests {
             }),
             contact_request: None,
             thread_root: None,
+            hidden: false,
             lock_screen_private: true,
             unread_total: 3,
         };

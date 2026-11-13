@@ -9,8 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    HomeStatus, MatrixAccount, NotificationCategory, PushMethod, PushStatus, RecoveryStatus,
-    ServerName,
+    AppLockTimeout, HomeStatus, MatrixAccount, NotificationCategory, PushMethod, PushStatus,
+    RecoveryStatus, ServerName,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,6 +72,11 @@ pub enum SettingsEntry {
         method: PushMethod,
         push: PushStatus,
         categories: Vec<NotificationCategorySetting>,
+    },
+    /// App 锁（ADR-0102）：开关和退到后台后多久要求解锁。
+    AppLock {
+        enabled: bool,
+        timeout: AppLockTimeout,
     },
     /// 默认 Agent。配对以后才有。
     DefaultAgent,

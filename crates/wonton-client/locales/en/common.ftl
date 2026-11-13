@@ -150,5 +150,11 @@ browser-unknown-address = This address has expired. Go back to Wonton and open t
 browser-not-connected = Wonton isn't connected to your home server right now. Go back to Wonton, wait until it connects, then reload this page.
 
 browser-bad-request = Open this page from Wonton.
+
+# The app lock settings (crates/wonton-client/src/app_lock.rs, ADR-0102).
+# $path is the settings file's path, $reason is the original I/O error.
+app-lock-write-failed = Can't write the app lock settings file { $path }: { $reason }
+app-lock-read-failed = Can't read the app lock settings file { $path }: { $reason }
+app-lock-corrupt = The app lock settings file { $path } is damaged: { $reason }
 pages-storage-problem = Could not save My Apps; they may fall back to an older state on next launch: { $error }
 pages-file-unreadable = Can't read My Apps on this device, so the defaults are in use for now: { $reason }

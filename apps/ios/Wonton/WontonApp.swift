@@ -19,28 +19,32 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins, appearance, navigation, _):
+            case let .ready(chat, home, plugins, appearance, navigation, systemEntry, lock):
                 WontonThemeRoot(appearance: appearance.viewModel) {
-                    #if DEBUG
-                    if AgentRunPreview.active {
-                        AgentRunPreview.root
-                    } else if QualityPreviews.active {
-                        QualityPreviews.root
-                    } else {
+                    // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
+                    AppLockGate(lock: lock) {
+                        #if DEBUG
+                        if AgentRunPreview.active {
+                            AgentRunPreview.root
+                        } else if QualityPreviews.active {
+                            QualityPreviews.root
+                        } else {
+                            MainView(
+                                chat: chat, home: home, plugins: plugins, appearance: appearance,
+                                lock: lock, navigation: navigation, devWebURL: Launch.devWebURL
+                            )
+                        }
+                        #else
                         MainView(
                             chat: chat, home: home, plugins: plugins, appearance: appearance,
-                            navigation: navigation, devWebURL: Launch.devWebURL
+                            lock: lock, navigation: navigation, devWebURL: Launch.devWebURL
                         )
+                        #endif
                     }
-                    #else
-                    MainView(
-                        chat: chat, home: home, plugins: plugins, appearance: appearance,
-                        navigation: navigation, devWebURL: Launch.devWebURL
-                    )
-                    #endif
                 }
                 .environmentObject(orientation)
                 .task { await appearance.observe() }
+                .task { await lock.observe() }
                 .onContinueUserActivity(CSSearchableItemActionType) { activity in
                     guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
                           let url = URL(string: identifier) else { return }
@@ -67,7 +71,9 @@ struct WontonApp: App {
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation, SystemEntryModel)
+    case ready(
+        ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation, SystemEntryModel,
+        AppLockModel)
     case failed(String)
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
@@ -125,7 +131,9 @@ private enum Launch {
         let plugins = PluginsModel(core: core)
         let navigation = AppNavigation(chat: chat, home: home, plugins: plugins)
         let systemEntry = SystemEntryModel(core: core, dataDirectory: directory)
-        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation, systemEntry)
+        return .ready(
+            chat, home, plugins, AppearanceModel(core: core), navigation, systemEntry,
+            AppLockModel(core: core))
     }
 
     /// 核心的数据目录，存设备密钥和连接信息。

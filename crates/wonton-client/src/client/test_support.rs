@@ -1,5 +1,7 @@
 //! 只给测试用的内部状态辅助：直接拨连接状态，观测任务和界面怎么反应，隧道本身不动。
 
+use std::time::Duration;
+
 use wonton_protocol::HomeStatus;
 
 use super::ClientCore;
@@ -16,5 +18,10 @@ impl ClientCore {
             .send_modify(|view| view.status = status);
         #[cfg(not(feature = "ui-fake"))]
         self.views.home.send_modify(|view| view.status = status);
+    }
+
+    /// 测试用：宽限期往后拨 `elapsed`，再到点判定一次（宽限只有整分档，测试不真等）。
+    pub fn expire_app_lock_for_test(&self, elapsed: Duration) {
+        self.app_lock.backdate_for_test(elapsed);
     }
 }

@@ -7,6 +7,7 @@ struct MainView: View {
     let home: HomeModel
     let plugins: PluginsModel
     let appearance: AppearanceModel
+    let lock: AppLockModel
     let devWebURL: URL?
     let navigation: AppNavigation
     var pages: PagesModel { navigation.pages }
@@ -35,11 +36,12 @@ struct MainView: View {
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
-         navigation: AppNavigation, devWebURL: URL?) {
+         lock: AppLockModel, navigation: AppNavigation, devWebURL: URL?) {
         self.chat = chat
         self.home = home
         self.plugins = plugins
         self.appearance = appearance
+        self.lock = lock
         self.navigation = navigation
         self.devWebURL = devWebURL
         _settings = State(initialValue: SettingsModel(core: chat.core))
@@ -62,7 +64,7 @@ struct MainView: View {
         }
 
         .fullScreenCover(isPresented: $showsSettings) {
-            SettingsTab(model: settings, appearance: appearance, chat: chat,
+            SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, isModal: true)
         }
         .wontonDialog(problem: pages.rejection, isPresented: Binding(

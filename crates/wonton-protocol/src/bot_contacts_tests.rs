@@ -272,6 +272,7 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
         confirmation: None,
         contact_request: Some(push),
         thread_root: None,
+        hidden: false,
         lock_screen_private: false,
         unread_total: 1,
     };
@@ -283,6 +284,7 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
     let message = crate::PushNotification {
         contact_request: None,
         thread_root: None,
+        hidden: false,
         ..notification
     };
     assert!(

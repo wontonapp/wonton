@@ -144,6 +144,8 @@ pub(crate) struct ChatLink {
     avatar_files: avatar_files::AvatarFiles,
     /// 收新消息的方式（ADR-0003）：保持连接时后台同步到的新消息要弹通知。
     method: watch::Receiver<PushMethod>,
+    /// App 锁（ADR-0102）：锁着时弹出的通知不带内容。
+    app_lock: crate::app_lock::AppLockLink,
     /// 锁屏上隐藏内容的类别（ADR-0101 §5）：后台通知照它设系统的可见性。
     lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     /// 排队的草稿写入，见 [`draft::write_drafts`]。
@@ -203,6 +205,8 @@ pub(crate) struct ChatChannels {
     pub(crate) confirmations: Option<watch::Sender<ConfirmationsViewModel>>,
     /// 推送方式。
     pub(crate) method: watch::Receiver<PushMethod>,
+    /// App 锁，锁着时通知藏内容。
+    pub(crate) app_lock: crate::app_lock::AppLockLink,
     /// 锁屏上隐藏内容的类别（ADR-0101 §5），通知照它设系统的可见性。
     pub(crate) lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     /// 登录着的会话。
@@ -244,6 +248,7 @@ impl ChatLink {
             view,
             confirmations,
             method,
+            app_lock,
             lock_screen,
             session_out,
             room_panel_out,
@@ -312,6 +317,7 @@ impl ChatLink {
             plugins,
             avatar_files: avatar_files::AvatarFiles::new(data_dir),
             method,
+            app_lock,
             lock_screen,
             draft_writes,
             previews: previews::Previews::new(),

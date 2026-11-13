@@ -7,14 +7,14 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
 /**
- * 看恢复密钥前的系统验证（盲测 11-12：横幅一点开就是明文密钥）：指纹、面容或锁屏密码都算过。
+ * 系统验证：指纹、面容或锁屏密码都算过（ADR-0102），看恢复密钥和 App 锁共用这一处：指纹、面容或锁屏密码都算过。
  * 设备没设锁屏（canAuthenticate 给 NONE_ENROLLED）就不拦，密钥直接显示。
  * 验证只对这一次显示有效；用户取消不算过也不算失败，其余失败交给页面按"失败即停"给提示。
  *
  * BIOMETRIC_STRONG 和 DEVICE_CREDENTIAL 的组合 API 28-29 不支持（canAuthenticate 回 UNSUPPORTED、
  * authenticate 抛 IllegalArgumentException），按 androidx.biometric 文档在 30 以下用 BIOMETRIC_WEAK。
  */
-internal class RecoveryKeyAuth(private val activity: FragmentActivity) {
+internal class SystemAuth(private val activity: FragmentActivity) {
 
     /** canAuthenticate 的结果：SUCCESS 能验证，NONE_ENROLLED 不用验证，其余是验证用不了的原因。 */
     fun canAuthenticate(): Int =
@@ -99,6 +99,6 @@ internal sealed interface AuthResult {
     companion object {
         /** 用户取消（含系统代取消和负按钮）不算过也不算失败，不提示；其余错误按失败即停。 */
         internal fun fromErrorCode(code: Int): AuthResult =
-            if (code in RecoveryKeyAuth.cancelCodes()) Cancelled else Failed(code)
+            if (code in SystemAuth.cancelCodes()) Cancelled else Failed(code)
     }
 }

@@ -15,6 +15,7 @@ use wonton_protocol::{
 };
 
 use crate::agent_chains::AgentChainsLink;
+use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::composer::{ComposerLink, uplink::LiveUplink};
@@ -116,6 +117,7 @@ struct Shared<'a> {
     home: &'a Arc<HomeLink>,
     plugins: &'a Arc<PluginsLink>,
     push_method: &'a PushMethodLink,
+    app_lock: &'a AppLockLink,
     lock_screen: &'a LockScreenLink,
     dir: &'a Path,
     views: Option<&'a Views>,
@@ -144,6 +146,7 @@ fn chat_links(
         home,
         plugins,
         push_method,
+        app_lock: _,
         lock_screen,
         dir,
         views,
@@ -209,6 +212,7 @@ fn people_links(
         home,
         plugins,
         push_method,
+        app_lock,
         lock_screen,
         dir,
         views,
@@ -230,6 +234,7 @@ fn people_links(
         friends.subscribe(),
         servers,
         push_method.subscribe(),
+        app_lock.subscribe(),
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
@@ -246,6 +251,7 @@ impl Scope {
         dir: &Path,
         network: Network,
         servers: watch::Receiver<ServersViewModel>,
+        app_lock: &AppLockLink,
         views: Option<&Views>,
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
@@ -299,6 +305,7 @@ impl Scope {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
             method: push_method.subscribe(),
+            app_lock: app_lock.clone(),
             lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),
@@ -310,6 +317,7 @@ impl Scope {
             home: &home,
             plugins: &plugins,
             push_method: &push_method,
+            app_lock,
             lock_screen: &lock_screen,
             dir,
             views,
@@ -402,6 +410,11 @@ impl Scope {
 
     pub(crate) fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
         self.runtime.spawn(task);
+    }
+
+    /// 作用域的运行时。给不归本作用域管的部件（App 锁的宽限定时器）借用，作用域停掉定时器就没了。
+    pub(crate) fn handle(&self) -> Option<tokio::runtime::Handle> {
+        self.runtime.handle()
     }
 
     /// 停掉这台服务器：进行中的传输记成暂停，后台任务一起结束。

@@ -531,6 +531,7 @@ mod tests {
                 confirmation: None,
                 contact_request: None,
                 thread_root: None,
+                hidden: false,
                 lock_screen_private: true,
                 unread_total: 2,
             }],

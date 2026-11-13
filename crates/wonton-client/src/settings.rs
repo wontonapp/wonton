@@ -3,10 +3,10 @@
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
-    ChatViewModel, FriendsState, FriendsViewModel, HomeStatus, HomeViewModel, NotificationCategory,
-    NotificationCategorySetting, PeersState, PeersViewModel, PluginsViewModel, PushMethod,
-    PushStatus, RecoveryStatus, ServerName, ServersViewModel, SettingsEntry, SettingsSection,
-    SettingsViewModel,
+    AppLockViewModel, ChatViewModel, FriendsState, FriendsViewModel, HomeStatus, HomeViewModel,
+    NotificationCategory, NotificationCategorySetting, PeersState, PeersViewModel,
+    PluginsViewModel, PushMethod, PushStatus, RecoveryStatus, ServerName, ServersViewModel,
+    SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 use crate::scope::reuse;
@@ -28,37 +28,39 @@ impl SettingsLink {
         mut friends: watch::Receiver<FriendsViewModel>,
         mut servers: watch::Receiver<ServersViewModel>,
         mut method: watch::Receiver<PushMethod>,
+        mut app_lock: watch::Receiver<AppLockViewModel>,
         mut lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
         view: Option<watch::Sender<SettingsViewModel>>,
     ) -> Self {
-        let compute =
-            |home: &watch::Receiver<HomeViewModel>,
-             chat: &watch::Receiver<ChatViewModel>,
-             plugins: &watch::Receiver<PluginsViewModel>,
-             peers: &watch::Receiver<PeersViewModel>,
-             friends: &watch::Receiver<FriendsViewModel>,
-             servers: &watch::Receiver<ServersViewModel>,
-             method: &watch::Receiver<PushMethod>,
-             lock_screen: &watch::Receiver<crate::lock_screen::Hidden>| {
-                // 同一个 watch 不能同时借两份：发送方在两次 borrow 之间等写锁时，第二次 borrow 排在它后面，
-                // 第一份又不会还，两个线程一起卡死。
-                let peer_count = {
-                    let peers = peers.borrow();
-                    (peers.state == PeersState::Ready).then(|| peers.peers.len())
-                };
-                let chat = chat.borrow();
-                settings_view(
-                    &home.borrow().status,
-                    current_name(&servers.borrow()),
-                    chat.encryption.recovery,
-                    *method.borrow(),
-                    &lock_screen.borrow(),
-                    &chat.push,
-                    plugins.borrow().core_upgrade.is_prompting(),
-                    peer_count,
-                    friends_count(&friends.borrow()),
-                )
+        let compute = |home: &watch::Receiver<HomeViewModel>,
+                       chat: &watch::Receiver<ChatViewModel>,
+                       plugins: &watch::Receiver<PluginsViewModel>,
+                       peers: &watch::Receiver<PeersViewModel>,
+                       friends: &watch::Receiver<FriendsViewModel>,
+                       servers: &watch::Receiver<ServersViewModel>,
+                       method: &watch::Receiver<PushMethod>,
+                       lock_screen: &watch::Receiver<crate::lock_screen::Hidden>,
+                       app_lock: &watch::Receiver<AppLockViewModel>| {
+            // 同一个 watch 不能同时借两份：发送方在两次 borrow 之间等写锁时，第二次 borrow 排在它后面，
+            // 第一份又不会还，两个线程一起卡死。
+            let peer_count = {
+                let peers = peers.borrow();
+                (peers.state == PeersState::Ready).then(|| peers.peers.len())
             };
+            let chat = chat.borrow();
+            settings_view(
+                &home.borrow().status,
+                current_name(&servers.borrow()),
+                chat.encryption.recovery,
+                *method.borrow(),
+                &lock_screen.borrow(),
+                &chat.push,
+                plugins.borrow().core_upgrade.is_prompting(),
+                peer_count,
+                friends_count(&friends.borrow()),
+                &app_lock.borrow(),
+            )
+        };
         let view = reuse(
             view,
             compute(
@@ -70,6 +72,7 @@ impl SettingsLink {
                 &servers,
                 &method,
                 &lock_screen,
+                &app_lock,
             ),
         );
         let sender = view.clone();
@@ -83,6 +86,7 @@ impl SettingsLink {
                     changed = friends.changed() => if changed.is_err() { break },
                     changed = servers.changed() => if changed.is_err() { break },
                     changed = method.changed() => if changed.is_err() { break },
+                    changed = app_lock.changed() => if changed.is_err() { break },
                     changed = lock_screen.changed() => if changed.is_err() { break },
                 }
                 let next = compute(
@@ -94,6 +98,7 @@ impl SettingsLink {
                     &servers,
                     &method,
                     &lock_screen,
+                    &app_lock,
                 );
                 sender.send_if_modified(|view| {
                     let modified = *view != next;
@@ -148,6 +153,7 @@ fn settings_view(
     upgrade: bool,
     peers: Option<usize>,
     friends: Option<(u32, u32)>,
+    app_lock: &AppLockViewModel,
 ) -> SettingsViewModel {
     let paired = !matches!(status, HomeStatus::NotConfigured);
     let backup = SettingsEntry::ChatBackup { recovery };
@@ -165,6 +171,10 @@ fn settings_view(
                     lock_screen_private: lock_screen.hidden(category),
                 })
                 .collect(),
+        },
+        SettingsEntry::AppLock {
+            enabled: app_lock.enabled,
+            timeout: app_lock.timeout,
         },
     ];
     let groups = if paired {
@@ -206,6 +216,11 @@ fn settings_view(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wonton_protocol::AppLockTimeout;
+
+    fn no_lock() -> AppLockViewModel {
+        AppLockViewModel::default()
+    }
 
     fn entries(view: &SettingsViewModel) -> Vec<SettingsEntry> {
         view.sections
@@ -227,6 +242,7 @@ mod tests {
                 false,
                 Some(0),
                 None,
+                &no_lock(),
             );
             let all = entries(&view);
             let appearance = all
@@ -249,6 +265,7 @@ mod tests {
             false,
             None,
             None,
+            &no_lock(),
         );
         assert_eq!(
             entries(&view),
@@ -266,6 +283,10 @@ mod tests {
                             lock_screen_private: false
                         })
                         .collect(),
+                },
+                SettingsEntry::AppLock {
+                    enabled: false,
+                    timeout: AppLockTimeout::Immediate
                 },
                 SettingsEntry::ChatBackup {
                     recovery: RecoveryStatus::Unknown
@@ -289,6 +310,7 @@ mod tests {
             true,
             None,
             None,
+            &no_lock(),
         );
         assert_eq!(
             view.sections[0].entries,
@@ -328,6 +350,7 @@ mod tests {
                 false,
                 None,
                 friends,
+                &no_lock(),
             )
         };
         assert!(
@@ -367,6 +390,7 @@ mod tests {
                 false,
                 peers,
                 None,
+                &no_lock(),
             )
         };
         let server_group = |view: &SettingsViewModel| view.sections[1].entries.clone();
@@ -389,6 +413,63 @@ mod tests {
                 SettingsEntry::Peers { count: 2 },
             ]
         );
+    }
+
+    /// App 锁的开关和档位跟着核心的设置走。发送端都留着：`SettingsLink` 的等待循环在任一通道断开时收尾，
+    /// 一进来就断开会让它连第一次变化都不算。
+    #[tokio::test]
+    async fn the_app_lock_entry_follows_the_settings() {
+        let (_app_lock_tx, app_lock_rx) = watch::channel(AppLockViewModel::default());
+        let (_home, home_rx) = watch::channel(HomeViewModel {
+            device_id: "device".into(),
+            server_id: Some("server".into()),
+            status: HomeStatus::Connected,
+            path: None,
+            notice: None,
+            details: Default::default(),
+            proxy: None,
+            web_url: None,
+            pairing: None,
+            invite: None,
+            keep_connection: false,
+            just_recovered: false,
+        });
+        let (_chat, chat_rx) = watch::channel(chat_view_model());
+        let (_plugins, plugins_rx) = watch::channel(PluginsViewModel::default());
+        let (_peers, peers_rx) = watch::channel(peers_view_model());
+        let (_friends, friends_rx) = watch::channel(friends_view_model());
+        let (_servers, servers_rx) = watch::channel(ServersViewModel::default());
+        let (_method, method_rx) = watch::channel(PushMethod::default());
+        let (_lock_screen_tx, lock_screen_rx) =
+            watch::channel(crate::lock_screen::Hidden::default());
+        let link = SettingsLink::new(
+            &Handle::current(),
+            home_rx,
+            chat_rx,
+            plugins_rx,
+            peers_rx,
+            friends_rx,
+            servers_rx,
+            method_rx,
+            app_lock_rx,
+            lock_screen_rx,
+            None,
+        );
+        assert!(entries(&link.view()).contains(&SettingsEntry::AppLock {
+            enabled: false,
+            timeout: AppLockTimeout::Immediate
+        }));
+        let mut updates = link.sender().subscribe();
+        _app_lock_tx.send_replace(AppLockViewModel {
+            enabled: true,
+            timeout: AppLockTimeout::FiveMinutes,
+            ..Default::default()
+        });
+        updates.changed().await.unwrap();
+        assert!(entries(&link.view()).contains(&SettingsEntry::AppLock {
+            enabled: true,
+            timeout: AppLockTimeout::FiveMinutes
+        }));
     }
 
     #[tokio::test]
@@ -414,6 +495,7 @@ mod tests {
         let (_friends_tx, friends_rx) = watch::channel(friends_view_model());
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
         let (_method_tx, method_rx) = watch::channel(PushMethod::default());
+        let (_app_lock_tx, app_lock_rx) = watch::channel(AppLockViewModel::default());
         let (_lock_screen_tx, lock_screen_rx) =
             watch::channel(crate::lock_screen::Hidden::default());
         let link = SettingsLink::new(
@@ -425,6 +507,7 @@ mod tests {
             friends_rx,
             servers_rx,
             method_rx,
+            app_lock_rx,
             lock_screen_rx,
             None,
         );
