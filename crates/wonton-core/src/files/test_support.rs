@@ -12,7 +12,7 @@ use wonton_protocol::{FileFailure, FileId, FileSource};
 
 use super::record::{Accessor, FileRecord, Origin};
 use super::resource::InternalUrl;
-use super::share_fs::{Names, ShareRef, Shares, TRANSFERS};
+use super::share_fs::{Names, ShareRef, TRANSFERS};
 use super::{Failure, FileHost, Files, FilesConfig};
 use crate::http::HttpClient;
 use crate::mcp::audit::Audit;
@@ -62,6 +62,10 @@ pub struct FakeHost {
     pub reads_release: tokio::sync::Notify,
     /// 读真的结束了（没有被丢掉时也一样）。每次读结束都会发，用的测试里只跑一次读。
     pub reads_over: tokio::sync::Notify,
+    pub people: Mutex<BTreeMap<String, (String, Accessor)>>,
+    pub denied: Mutex<Vec<Accessor>>,
+    pub keepers: Mutex<BTreeMap<String, Accessor>>,
+    pub person_notices: Mutex<Vec<(Accessor, String)>>,
 }
 
 /// 读取结束或者被丢掉时减一，并通知等在“读真的结束”上的测试。
@@ -82,6 +86,52 @@ impl Drop for RunningRead<'_> {
 }
 
 impl FileHost for FakeHost {
+    fn check_person(&self, who: &Accessor) -> Result<(), Failure> {
+        if self.denied.lock().unwrap().contains(who) {
+            Err(Failure::new(FileFailure::NotShared, "No private home"))
+        } else {
+            Ok(())
+        }
+    }
+    fn upload_person(&self, device: &str) -> Result<(String, Accessor), Failure> {
+        let identity = self
+            .people
+            .lock()
+            .unwrap()
+            .get(device)
+            .cloned()
+            .unwrap_or_else(|| ("owner".into(), Accessor::Owner));
+        self.check_person(&identity.1)?;
+        Ok(identity)
+    }
+    fn bot_person(&self, bot: &str) -> Result<Accessor, Failure> {
+        Ok(self
+            .keepers
+            .lock()
+            .unwrap()
+            .get(bot)
+            .cloned()
+            .unwrap_or(Accessor::Owner))
+    }
+    fn notify_person<'a>(
+        &'a self,
+        who: &'a Accessor,
+        text: &'a str,
+    ) -> BoxFuture<'a, Result<(), Failure>> {
+        async move {
+            self.check_person(who)?;
+            self.person_notices
+                .lock()
+                .unwrap()
+                .push((who.clone(), text.to_owned()));
+            if matches!(who, Accessor::Owner) {
+                self.notify_owner(text).await
+            } else {
+                Ok(())
+            }
+        }
+        .boxed()
+    }
     fn check_plugin(&self, plugin: &PluginId) -> Result<(), Failure> {
         if self.services.lock().unwrap().contains_key(plugin.as_str()) {
             Ok(())
@@ -204,6 +254,7 @@ impl Fixture {
         let audit_path = dir.path().join("audit.jsonl");
         let host = Arc::new(FakeHost::default());
         let config = FilesConfig {
+            data_dir: dir.path().to_path_buf(),
             dir: dir.path().join("files"),
             shares_dir: shares_dir.clone(),
             owner,
@@ -229,6 +280,7 @@ impl Fixture {
     /// 重启核心：同样的目录再打开一次。
     pub fn reopen(&self) -> Arc<Files> {
         let config = FilesConfig {
+            data_dir: self.dir.path().to_path_buf(),
             dir: self.dir.path().join("files"),
             shares_dir: self.shares_dir.clone(),
             owner: self.owner,
@@ -275,7 +327,7 @@ impl Fixture {
         fs::create_dir_all(&incoming).unwrap();
         let data = super::new_id();
         fs::write(incoming.join(data.as_str()), content).unwrap();
-        let shares = Shares::new(self.shares_dir.clone());
+        let shares = self.files.home_shares("owner", true).unwrap();
         let (name, placed) = shares
             .place_upload(
                 &incoming,
@@ -298,7 +350,11 @@ impl Fixture {
         };
         self.save(
             &name,
-            Origin::Upload { reference, placed },
+            Origin::Upload {
+                reference,
+                placed,
+                username: "owner".into(),
+            },
             [Accessor::Owner].into(),
         )
     }
@@ -337,6 +393,10 @@ impl Fixture {
         };
         record.declared_size = Some(size);
         self.files.registry.save(record).unwrap();
+    }
+
+    pub fn home_dir(&self) -> PathBuf {
+        self.dir.path().join("core/home/owner")
     }
 
     /// tusd 存字节的目录。

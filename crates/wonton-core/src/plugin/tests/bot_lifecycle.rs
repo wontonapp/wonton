@@ -721,27 +721,6 @@ async fn a_shared_bot_belongs_to_the_household_and_validations_hold() {
     );
 }
 
-#[tokio::test]
-async fn a_home_bot_permission_is_not_supported_yet() {
-    let bed = Bed::start().await;
-    let m = bed.manager();
-    let home_plugin = agent().replace(
-        "permissions: [matrix.bot, tools]",
-        "permissions: [matrix.bot, tools, storage.home:read]",
-    );
-    let mut granted = granted_with_tools();
-    granted.push("storage.home:read".parse().unwrap());
-    // 核心还没兑现 `storage.home`（装的时候路径不变、不挂私人空间），如实拒绝。
-    let refused = m
-        .install(&home_plugin, &granted, super::langs())
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(refused, InstallError::Unsupported(ref e) if e.contains("storage.home:read")),
-        "{refused}"
-    );
-}
-
 /// 安装失败回滚、账号留给下次时，这次建的 Bot 数据也留下：init 在服务器上建的加密身份，私钥只在这里，删了
 /// 下次就解不开（Tuwunel 删不掉也换不掉那个身份）。重试沿用同一个账号和同一份数据。
 #[tokio::test]

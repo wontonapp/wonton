@@ -203,6 +203,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
             home_room: "!room:t".into(),
         }),
         bots: Default::default(),
+        homes: Default::default(),
         models: Some(ModelVars {
             base_url: "http://models.wonton.internal/v1".into(),
             anthropic_url: None,

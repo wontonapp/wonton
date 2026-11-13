@@ -173,7 +173,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     let (home, _matrix_state) = home_with_matrix().await;
     let member = invite(
         &home,
-        json!({"display_name": "爱丽丝", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "爱丽丝", "private_bot": false, "role_id": "family"}),
     )
     .await;
     assert_eq!(
@@ -256,7 +256,7 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     let (home, _matrix_state) = home_with_matrix().await;
     invite(
         &home,
-        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "Mia", "private_bot": false, "role_id": "family"}),
     )
     .await;
     // 再出一个，旧的作废。
@@ -309,7 +309,7 @@ async fn removing_a_member_revokes_her_devices_and_keeps_the_username_taken() {
     let (home, _matrix_state) = home_with_matrix().await;
     invite(
         &home,
-        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "Mia", "private_bot": false, "role_id": "family"}),
     )
     .await;
     let code = member_code(&home, "mia").await;

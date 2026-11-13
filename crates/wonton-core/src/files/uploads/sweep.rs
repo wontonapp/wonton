@@ -271,19 +271,51 @@ impl Files {
     /// 清掉没有待完成记录的临时文件。名字要是一个合法的编号才算：主人可能有名字相近的文件。
     async fn remove_orphan_temps(self: &Arc<Self>) {
         let temps = self
-            .blocking(move |files| Ok(files.shares.upload_temps()?))
+            .blocking(move |files| {
+                let root = files.data_dir.join("core/home");
+                let entries = match fs::read_dir(root) {
+                    Ok(entries) => entries,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+                    Err(e) => return Err(Failure::internal(e.to_string())),
+                };
+                let mut temps = Vec::new();
+                for entry in entries {
+                    let entry = entry.map_err(|e| Failure::internal(e.to_string()))?;
+                    if !entry
+                        .file_type()
+                        .map_err(|e| Failure::internal(e.to_string()))?
+                        .is_dir()
+                    {
+                        continue;
+                    }
+                    let username = entry
+                        .file_name()
+                        .into_string()
+                        .map_err(|_| Failure::internal("Invalid home name"))?;
+                    let shares = files.home_shares(&username, false)?;
+                    for id in shares.upload_temps()? {
+                        temps.push((username.clone(), id));
+                    }
+                }
+                Ok(temps)
+            })
             .await;
         let temps = temps.unwrap_or_else(|e: Failure| {
-            tracing::error!(error = %e, "读不了共享文件夹 transfers，临时文件这次不清");
+            tracing::error!(error = %e, "Failed to read private upload directories for cleanup");
             Vec::new()
         });
-        for id in temps.iter().filter_map(|id| id.parse::<FileId>().ok()) {
+        for (username, id) in temps
+            .into_iter()
+            .filter_map(|(user, id)| id.parse::<FileId>().ok().map(|id| (user, id)))
+        {
             let _turn = self.uploads.turn(&id).await;
             let task = id.clone();
             let removed = self
                 .blocking(move |files| {
                     if files.uploads.load_pending(&task)?.is_none() {
-                        files.shares.remove_upload_temp(task.as_str())?;
+                        files
+                            .home_shares(&username, false)?
+                            .remove_upload_temp(task.as_str())?;
                     }
                     Ok(())
                 })

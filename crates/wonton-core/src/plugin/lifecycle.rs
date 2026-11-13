@@ -442,6 +442,7 @@ impl PluginManager {
             }),
             matrix: None,
             bots: Default::default(),
+            homes: self.private_home_mounts(manifest, granted)?,
             models: None,
             capabilities,
             mcp_url: manifest.permissions.contains(&Permission::Tools).then(|| {

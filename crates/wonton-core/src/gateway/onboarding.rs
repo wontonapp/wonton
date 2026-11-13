@@ -64,6 +64,10 @@ impl OnboardingState {
         self.load_locked()
     }
 
+    pub(crate) async fn primary_agent(&self) -> Result<Option<String>, InstallError> {
+        Ok(self.load().await?.primary_agent)
+    }
+
     fn load_locked(&self) -> Result<StoredState, InstallError> {
         read_json(&self.path)
             .map_err(storage)
