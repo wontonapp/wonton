@@ -217,9 +217,19 @@ async fn a_stack_restart_with_lost_network_and_containers_recovers_on_restore() 
     let network = names.instance().network(&slug);
     let container = container_name(&slug, "app");
 
-    // 相当于 compose down：先删容器（网络还挂着端点时 Docker 不让删网络），再删网络。
+    // 相当于 compose down：先断开并删容器（网络还挂着端点时 Docker 不让删网络），再删网络。Docker 的
+    // 端点清理是异步的，删网络要等它收完端点。
+    engine
+        .disconnect_network(&network, &container)
+        .await
+        .unwrap();
     engine.remove_container(&container).await.unwrap();
-    engine.remove_network(&network).await.unwrap();
+    for _ in 0..20 {
+        match engine.remove_network(&network).await {
+            Ok(()) => break,
+            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
     assert!(engine.network_reach(&network).await.unwrap().is_none());
 
     let restarted = manager_in_instance(engine.clone(), &dir, names.name());
