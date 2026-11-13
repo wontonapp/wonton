@@ -26,4 +26,6 @@
     <string name="share_problem_unreachable">友だちのサーバーに接続できません</string>
     <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
     <string name="share_risk">友だちは自分のユーザー名でこのアプリにログインします。アプリが友だちのアカウントを作成し、あなたのデータを閲覧できるようにする可能性があります。</string>
+    <!-- Share sheet notice when this phone isn't paired with a server yet; the shared items stay in the sheet. -->
+    <string name="share_in_not_paired">送信するにはサーバーとペアリングしてください</string>
 </resources>

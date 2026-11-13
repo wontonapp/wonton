@@ -128,6 +128,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
     for (name, value) in super::settings::value::vars(&ctx.settings) {
         set(&name, value);
     }
+    if let Some(vendor) = ctx.gpu.as_ref().map(|gpu| gpu.vendor) {
+        set("WONTON_GPU_VENDOR", vendor.key().to_owned());
+    }
     if let Some(oidc) = &ctx.oidc {
         set("WONTON_OIDC_ISSUER", oidc.issuer.clone());
         set("WONTON_OIDC_CLIENT_ID", oidc.client_id.clone());

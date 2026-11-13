@@ -44,4 +44,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun connectionDetailsFlows() = paparazzi.snapshot { ConnectionDetailsFlowsPreview() }
+
+    @Test
+    fun shareSheet() = paparazzi.snapshot { ShareSheetPreview() }
+
+    @Test
+    fun shareSheetNotPaired() = paparazzi.snapshot { ShareSheetNotPairedPreview() }
 }

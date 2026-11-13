@@ -43,6 +43,9 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         written_by: None,
         ask_every_update: false,
         family: false,
+        static_files: Default::default(),
+        hosted: Vec::new(),
+        gpu_vendor: None,
     }
 }
 
