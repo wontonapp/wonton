@@ -257,6 +257,14 @@ async fn a_link_installs_without_containers_or_a_provider() {
         json!("https://example.com/app"),
         "{detail}"
     );
+    // 已装列表也带着网址：壳按它把插件钉进“我的应用”（ADR-0080 第 5 节）。
+    let installed = manager.installed(&super::langs());
+    let installed = serde_json::to_value(&installed).unwrap();
+    assert_eq!(
+        installed["plugins"][0]["link_url"],
+        json!("https://example.com/app"),
+        "{installed}"
+    );
 }
 
 #[tokio::test]

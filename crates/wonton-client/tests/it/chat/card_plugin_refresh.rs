@@ -67,6 +67,7 @@ fn plugin() -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: None,
+        link_url: None,
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),

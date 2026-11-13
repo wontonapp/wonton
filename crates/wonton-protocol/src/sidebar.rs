@@ -68,6 +68,9 @@ pub enum SidebarOpen {
     },
     /// 插件网页。
     Page { tab: TabRef },
+    /// 外部网页插件（`runtime: link`，ADR-0080）：壳用系统的 App 内浏览器打开这个地址，
+    /// 顶上显示网址，页面不给任何和 App 通信的桥。
+    ExternalBrowser { url: String },
 }
 
 #[cfg(test)]
@@ -125,6 +128,16 @@ mod tests {
                         tab: TabRef::Url {
                             url: "https://example.com/weather".into(),
                         },
+                    },
+                    icon: None,
+                    badge: SidebarBadge::default(),
+                },
+                SidebarApp {
+                    plugin_id: Some("app.example.weather".into()),
+                    tab: None,
+                    title: "天气".into(),
+                    open: SidebarOpen::ExternalBrowser {
+                        url: "https://example.com/weather".into(),
                     },
                     icon: None,
                     badge: SidebarBadge::default(),

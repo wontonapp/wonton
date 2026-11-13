@@ -3,9 +3,9 @@
 use url::Url;
 use wonton_protocol::{
     CandidatePlugin, CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesProblem, PagesViewModel,
-    PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel,
-    SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
-    TabPage, TabRef, TabState,
+    PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginIcon, PluginState,
+    PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout,
+    TabLoadFailure, TabPage, TabRef, TabState,
 };
 
 use super::panel_view::main_panel;
@@ -42,7 +42,7 @@ pub(super) fn make_view(
         auto_add: state.config.auto_add,
         bot_pin_consents: state.bot_pin_consents.clone(),
         panel: main_panel(state, plugins),
-        panel_candidates: plugin_pages(plugins)
+        panel_candidates: plugin_pages(plugins, false)
             .filter(|candidate| {
                 !state
                     .config
@@ -81,78 +81,26 @@ pub(super) fn build_app(
     let plugin = |plugin_id: &str| {
         installed.and_then(|list| list.plugins.iter().find(|plugin| plugin.id == plugin_id))
     };
-    let (plugin_id, tab, title, icon, open) = match &entry.app {
-        MyAppRef::Plugin { plugin_id } => match plugin(plugin_id) {
-            Some(plugin) => {
-                let open = if plugin.kind == wonton_protocol::PluginKind::Agent
-                    && let Some(bot_user_id) = plugin.bot_user_id.clone()
-                {
-                    SidebarOpen::BotChat { bot_user_id }
-                } else if plugin.web_url.is_some() {
-                    SidebarOpen::Page {
-                        tab: TabRef::Plugin {
-                            plugin_id: plugin_id.clone(),
-                            page: plugin.tabs.first().map(|page| page.id.clone()),
-                        },
-                    }
-                } else {
-                    return None;
-                };
-                (
-                    Some(plugin_id.clone()),
-                    None,
-                    entry.title.clone().unwrap_or_else(|| plugin.title.clone()),
-                    plugin.icon.clone(),
-                    open,
-                )
-            }
-            // 列表没读到：按存的元数据显示（真被卸载的行在卸载时就拿掉了）。
-            // Agent 行没有存的 bot 账号，显示不了，先空着。
-            None => {
-                let page = entry.page.as_ref()?;
-                (
-                    Some(plugin_id.clone()),
-                    None,
-                    entry.title.clone().unwrap_or_else(|| page.title.clone()),
-                    match &page.icon {
-                        TabIcon::Plugin { icon } => icon.clone(),
-                        TabIcon::Monochrome { .. } => None,
-                    },
-                    SidebarOpen::Page {
-                        tab: TabRef::Plugin {
-                            plugin_id: plugin_id.clone(),
-                            page: None,
-                        },
-                    },
-                )
-            }
-        },
-        MyAppRef::Page { tab } => {
-            let page = entry.page.clone()?;
-            let plugin_id = match tab {
-                TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                    Some(plugin_id.clone())
-                }
-                _ => None,
-            };
-            let _live_problem = state
-                .failures
-                .contains_key(&PlacedTab::Page { tab: tab.clone() });
-            (
-                plugin_id,
-                Some(tab.clone()),
-                entry.title.clone().unwrap_or(page.title),
-                match &page.icon {
-                    TabIcon::Plugin { icon } => icon.clone(),
-                    TabIcon::Monochrome { .. } => None,
-                },
-                SidebarOpen::Page { tab: tab.clone() },
-            )
-        }
+    let row = match &entry.app {
+        MyAppRef::Plugin { plugin_id } => plugin_row(entry, plugin_id, plugin(plugin_id))?,
+        MyAppRef::Page { tab } => page_row(
+            state,
+            entry,
+            tab,
+            super::tab_plugin_id(tab),
+            super::tab_plugin_id(tab).and_then(plugin),
+        ),
     };
+    let AppRow {
+        plugin_id,
+        tab,
+        title,
+        icon,
+        open,
+    } = row;
     let page_tab = tab.or_else(|| match &open {
         SidebarOpen::Page { tab } => Some(tab.clone()),
-        SidebarOpen::BotChat { .. } => None,
+        SidebarOpen::BotChat { .. } | SidebarOpen::ExternalBrowser { .. } => None,
     });
     let plugin = plugin_id.as_deref().and_then(plugin);
     let problem = problem_badge(entry, page_tab.as_ref(), plugin, open_pages);
@@ -172,6 +120,102 @@ pub(super) fn build_app(
             problem,
         },
     })
+}
+
+/// 行拆开后、拼 [`SidebarApp`] 前的中间值，`plugin_row` 和 `page_row` 共用。
+struct AppRow {
+    plugin_id: Option<String>,
+    tab: Option<TabRef>,
+    title: String,
+    icon: Option<PluginIcon>,
+    open: SidebarOpen,
+}
+
+/// 插件行的一行：打开动作按插件算。列表没读到时按存的元数据显示（真被卸载的行在卸载时就拿掉了）；
+/// Agent 行没有存的 bot 账号，显示不了，先空着。
+fn plugin_row(
+    entry: &StoredApp,
+    plugin_id: &str,
+    plugin: Option<&InstalledPlugin>,
+) -> Option<AppRow> {
+    let icon = |page: &StoredPage| match &page.icon {
+        TabIcon::Plugin { icon } => icon.clone(),
+        TabIcon::Monochrome { .. } => None,
+    };
+    let Some(plugin) = plugin else {
+        let page = entry.page.as_ref()?;
+        return Some(AppRow {
+            plugin_id: Some(plugin_id.to_owned()),
+            tab: None,
+            title: entry.title.clone().unwrap_or_else(|| page.title.clone()),
+            icon: icon(page),
+            open: SidebarOpen::Page {
+                tab: TabRef::Plugin {
+                    plugin_id: plugin_id.to_owned(),
+                    page: None,
+                },
+            },
+        });
+    };
+    let open = if plugin.kind == wonton_protocol::PluginKind::Agent
+        && let Some(bot_user_id) = plugin.bot_user_id.clone()
+    {
+        SidebarOpen::BotChat { bot_user_id }
+    } else if let Some(url) = plugin.link_url.clone() {
+        SidebarOpen::ExternalBrowser { url }
+    } else if plugin.web_url.is_some() {
+        SidebarOpen::Page {
+            tab: TabRef::Plugin {
+                plugin_id: plugin_id.to_owned(),
+                page: plugin.tabs.first().map(|page| page.id.clone()),
+            },
+        }
+    } else {
+        return None;
+    };
+    Some(AppRow {
+        plugin_id: Some(plugin_id.to_owned()),
+        tab: None,
+        title: entry.title.clone().unwrap_or_else(|| plugin.title.clone()),
+        icon: plugin.icon.clone(),
+        open,
+    })
+}
+
+/// 页面行的一行：外部网页插件的行（页面行和插件行都可能是它）打开的是系统的 App 内浏览器（ADR-0080）。
+fn page_row(
+    state: &PagesState,
+    entry: &StoredApp,
+    tab: &TabRef,
+    plugin_id: Option<&str>,
+    plugin: Option<&InstalledPlugin>,
+) -> AppRow {
+    let page = entry
+        .page
+        .clone()
+        .expect("page rows always keep their metadata");
+    let _live_problem = state
+        .failures
+        .contains_key(&PlacedTab::Page { tab: tab.clone() });
+    let open = match (tab, plugin) {
+        (TabRef::Plugin { .. }, Some(plugin)) if plugin.web_url.is_none() => plugin
+            .link_url
+            .clone()
+            .map(|url| SidebarOpen::ExternalBrowser { url }),
+        _ => Some(SidebarOpen::Page { tab: tab.clone() }),
+    }
+    .expect("page rows of openable plugins always have an open action");
+    let icon = match &page.icon {
+        TabIcon::Plugin { icon } => icon.clone(),
+        TabIcon::Monochrome { .. } => None,
+    };
+    AppRow {
+        plugin_id: plugin_id.map(str::to_owned),
+        tab: Some(tab.clone()),
+        title: entry.title.clone().unwrap_or(page.title),
+        icon,
+        open,
+    }
 }
 
 /// 页面出了问题要不要红点：插件坏了（降级）、或这一行对应的打开页面被新版本移走。
@@ -211,7 +255,7 @@ fn problem_badge(
 
 /// 还没加进我的应用的插件页，按已装插件的顺序。没有网页的插件没有页面可加。
 fn my_app_candidates(state: &PagesState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
-    plugin_pages(plugins)
+    plugin_pages(plugins, true)
         .filter(|candidate| match &candidate.tab {
             // 插件行盖住这个插件的全部页面；只加了别的页面行时，这一页还能加。
             TabRef::Plugin { plugin_id, page: Some(_) } => {
@@ -241,10 +285,14 @@ fn my_app_candidates(state: &PagesState, plugins: &PluginsViewModel) -> Vec<TabC
 }
 
 /// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口。没有网页的插件没有页面。
-fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate> + '_ {
+/// `with_link`：外部网页插件（`runtime: link`）没有页面可嵌进面板，只进"我的应用"（ADR-0080）。
+fn plugin_pages(
+    plugins: &PluginsViewModel,
+    with_link: bool,
+) -> impl Iterator<Item = TabCandidate> + '_ {
     let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
     installed
-        .filter(|plugin| plugin.web_url.is_some())
+        .filter(move |plugin| plugin.web_url.is_some() || (with_link && plugin.link_url.is_some()))
         .flat_map(|plugin| {
             let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
                 tab: TabRef::Plugin {
@@ -598,7 +646,8 @@ pub(super) fn metadata_for_plugin(
     page: Option<&str>,
 ) -> Option<StoredPage> {
     let Some(page) = page else {
-        return plugin.web_url.as_ref().map(|_| StoredPage {
+        // 网页入口（`webui`）和外部网页（`link`）都没有声明的页面，行就是整个插件。
+        return (plugin.web_url.is_some() || plugin.link_url.is_some()).then(|| StoredPage {
             plugin_title: plugin.title.clone(),
             title: plugin.title.clone(),
             icon: TabIcon::Plugin {
@@ -788,7 +837,7 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
             .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id))
             .is_some_and(|plugin| match page {
                 Some(page) => plugin.tabs.iter().any(|tab| tab.id == *page),
-                None => plugin.web_url.is_some(),
+                None => plugin.web_url.is_some() || plugin.link_url.is_some(),
             }),
         TabRef::PluginPath { plugin_id, .. } => plugins
             .installed

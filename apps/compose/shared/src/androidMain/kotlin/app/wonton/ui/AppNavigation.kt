@@ -38,6 +38,10 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
                     closeApps()
                     pages.send(Action.OpenPage(entry.tab))
                 }
+                is PluginEntry.Browser -> {
+                    closeApps()
+                    pages.plugins.reject(openExternalBrowser(context, entry.url))
+                }
             }
         },
         checkInstalled = { checkInstalled() },
@@ -88,7 +92,21 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     fun openLink(link: AppLink, onboarding: OnboardingViewModel) {
         resetNavigation()
         when (link) {
-            is AppLink.Tab -> pages.send(Action.OpenPage(link.tab))
+            is AppLink.Tab -> {
+                // 外部网页插件不经页面栈打开：交给系统的 App 内浏览器（ADR-0080）。
+                val url = (link.tab as? TabRef.Plugin)
+                    ?.let { tab ->
+                        pages.plugins.viewModel.installed?.plugins
+                            ?.firstOrNull { it.id == tab.pluginId }
+                            ?.takeIf { it.webUrl == null }
+                            ?.linkUrl
+                    }
+                if (url != null) {
+                    pages.plugins.reject(openExternalBrowser(context, url))
+                } else {
+                    pages.send(Action.OpenPage(link.tab))
+                }
+            }
             AppLink.Settings -> settings()
             AppLink.NewChat -> {
                 pages.send(Action.OpenPage(TabRef.Chat))

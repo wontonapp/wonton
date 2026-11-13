@@ -353,6 +353,7 @@ mod tests {
             written_by: None,
             status: state,
             web_url: None,
+            link_url: None,
             cross_origin_isolated: false,
             declares_tools: false,
             tabs: Vec::new(),

@@ -613,6 +613,9 @@ impl PluginManager {
                 manifest,
             ),
             web_url: self.open_url(id, entry),
+            link_url: manifest
+                .and_then(|m| m.link.as_ref())
+                .map(|link| link.url.clone()),
             cross_origin_isolated: manifest
                 .and_then(|m| m.webui.as_ref())
                 .is_some_and(|webui| webui.cross_origin_isolated),

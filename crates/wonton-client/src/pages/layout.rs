@@ -304,7 +304,8 @@ pub(super) fn stored_app(
                     "tabs-view-unknown-plugin"
                 )));
             };
-            if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
+            if plugin.web_url.is_none() && plugin.bot_user_id.is_none() && plugin.link_url.is_none()
+            {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),
@@ -351,7 +352,7 @@ fn check_page_tab(
                 .as_ref()
                 .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id))
                 .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "tabs-view-unknown-plugin")))?;
-            if plugin.web_url.is_none() {
+            if plugin.web_url.is_none() && plugin.link_url.is_none() {
                 return Err(invalid(&l10n!(
                     CATALOG,
                     language(),

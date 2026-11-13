@@ -77,7 +77,9 @@ pub(super) fn auto_add_new(
     let mut changed = initialize;
     for plugin in &installed.plugins {
         if plugin.install_failure.is_some()
-            || (plugin.web_url.is_none() && plugin.bot_user_id.is_none())
+            || (plugin.web_url.is_none()
+                && plugin.bot_user_id.is_none()
+                && plugin.link_url.is_none())
         {
             continue;
         }
