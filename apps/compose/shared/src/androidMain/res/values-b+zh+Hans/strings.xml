@@ -96,23 +96,4 @@
     <string name="widget_agent_status_unknown">状态未知</string>
     <string name="widget_updated_at">更新于 %1$s</string>
     <string name="widget_status_at">%1$s · %2$s</string>
-    <string name="side_chat">旁聊</string>
-    <string name="side_chat_new">新旁聊</string>
-    <string name="side_chat_placeholder">想聊点什么</string>
-    <string name="side_chat_result_line">旁聊「%1$s」：%2$s</string>
-    <string name="side_chat_state_open">进行中</string>
-    <string name="side_chat_state_done">已完成</string>
-    <string name="side_chat_state_failed">没完成</string>
-    <string name="side_chat_state_ended">已结束</string>
-    <string name="side_chat_state_result_missing">没收到结果</string>
-    <string name="side_chat_state_untracked">结果不会带回主对话</string>
-    <string name="side_chat_state_other">状态未知</string>
-    <string name="side_chat_unsupported">这个 AI 不支持旁聊</string>
-    <string name="side_chat_no_files">旁聊里发不了文件，请在主对话里发。</string>
-    <plurals name="side_chat_replies">
-        <item quantity="other">旁聊 · %1$d 条</item>
-    </plurals>
-    <plurals name="side_chat_unread">
-        <item quantity="other">%1$d 条未读</item>
-    </plurals>
 </resources>
