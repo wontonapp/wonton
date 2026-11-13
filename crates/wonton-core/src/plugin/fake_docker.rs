@@ -593,6 +593,16 @@ fn others(
         (&Method::GET, ["distribution", image @ .., "json"]) => {
             return distribution(docker, &image.join("/"));
         }
+        // 拉不到镜像时本地也没有这张镜像：查镜像要报没有，安装才会走到拉镜像那步。
+        (&Method::GET, ["images", image @ .., "json"])
+            if docker.pull_error.is_some()
+                && !docker
+                    .pull_spared
+                    .as_ref()
+                    .is_some_and(|spared| image.join("/").contains(spared.as_str())) =>
+        {
+            json_reply(StatusCode::NOT_FOUND, json!({"message": "No such image"}))
+        }
         (&Method::GET, ["info"]) if docker.info_error.is_some() => json_reply(
             StatusCode::INTERNAL_SERVER_ERROR,
             json!({"message": docker.info_error}),
