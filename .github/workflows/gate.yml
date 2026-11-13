@@ -29,8 +29,10 @@ permissions:
 jobs:
   changes:
     name: 改动范围
-    # PR 用 REST 列改动文件，不用检出代码；草稿 PR 和 push 跳过，重作业跟着跳过。
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    # PR 用 REST 列改动文件，不用检出代码；草稿 PR 跳过，重作业跟着跳过。
+    # push（合进 main）也进这个作业：main 上 rust 一律全跑——合后必须真验一遍，之前只在每天 3 点的定时里跑，
+    # 合进 main 的提交到那时之前一次单测都没有（11-13 #470 就是这样合进去的）。ios/android 合后仍交给夜间兜底。
+    if: (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || github.event_name == 'push'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -38,13 +40,21 @@ jobs:
       # 按 REST 接口列 PR 改动的文件，不用检出代码。
       pull-requests: read
     outputs:
-      rust: ${{ steps.filter.outputs.rust }}
-      ios: ${{ steps.filter.outputs.ios }}
-      android: ${{ steps.filter.outputs.android }}
+      rust: ${{ steps.pushrun.outputs.rust || steps.filter.outputs.rust }}
+      ios: ${{ steps.pushrun.outputs.ios || steps.filter.outputs.ios }}
+      android: ${{ steps.pushrun.outputs.android || steps.filter.outputs.android }}
     steps:
+      - name: main push：rust 全跑
+        id: pushrun
+        if: github.event_name == 'push'
+        run: |
+          echo "rust=true" >> "$GITHUB_OUTPUT"
+          echo "ios=false" >> "$GITHUB_OUTPUT"
+          echo "android=false" >> "$GITHUB_OUTPUT"
       # MIT
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        if: github.event_name == 'pull_request'
         with:
           # 和 GitHub 自己的 paths 一样按文件判断：命中任意一条正向规则、且不命中任何 ! 排除项才算改到。
           predicate-quantifier: some-with-excludes

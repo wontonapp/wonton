@@ -68,6 +68,8 @@ pub enum PackageError {
     /// 静态网页的文件目录不合规则（ADR-0080 第 3 节）。
     #[error("{0}")]
     StaticDir(String),
+    #[error("{0}")]
+    GpuImages(String),
 }
 
 pub(super) fn static_error(
