@@ -134,7 +134,6 @@ fn open_whoami(h: &Harness) {
 fn assert_failure(reply: &Reply, status: StatusCode, reason: &str) {
     assert_eq!(reply.status, status, "{}", reply.text());
     assert_eq!(reply.error_kind(), Some(reason));
-    assert_eq!(reply.json()["error"]["kind"], reason);
     assert!(reply.json().get("page").is_none());
 }
 
@@ -234,6 +233,7 @@ async fn metadata_storage_failure_is_not_not_found_or_not_shared() {
     let h = Harness::start(None).await;
     setup(&h).await;
     let device = member(&h);
+    open_whoami(&h);
     std::fs::write(h.data_dir.join("plugins/app.whoami.json"), "{").unwrap();
     let reply = send_as(
         &h.app,
