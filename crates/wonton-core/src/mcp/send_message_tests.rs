@@ -81,7 +81,7 @@ fn member(username: &str, display: &str) -> MemberRecord {
         display_name: display.into(),
         email: None,
         status: MemberStatus::Joined,
-        role_id: crate::roles::DEFAULT_INVITE_ROLE.to_owned(),
+        role_id: "friend".to_owned(),
         can_install_plugins: false,
         wants_private_bot: false,
         private_bot: None,
