@@ -13,6 +13,10 @@ struct HomeView: View {
     let showSettings: () -> Void
     let showServer: () -> Void
     var settingsPresented = false
+    /// 配对后“全部应用”是盖在聊天根页面上的一层（ADR-0095）：导航栈的根是透明的，网格是推入的第一页，
+    /// 所以网格的左边缘右滑、返回按钮回聊天，和插件页一个手感。不做成 fullScreenCover：盖子没有系统返回，
+    /// 盖子开着时同一个视图上的设置盖子也弹不出来。没配对时网格（或配对页）自己就是根页面。
+    var layered = false
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
@@ -24,43 +28,55 @@ struct HomeView: View {
     @State private var menuPlugin: InstalledPlugin?
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if case .notConfigured = model.viewModel.status,
-                   model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
-                    PairingView(model: model)
-                        .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
-                            settingsLink
-                        }
-                } else {
-                    launcher
-                        .wontonRootScreen(String(localized: .Launcher.launcherTitle), hasActions: true) {
-                            settingsLink
-                        }
-                }
+        NavigationStack(path: $path) { prompts(on: stackRoot) }
+            .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
+            .environment(\.goToInstalledApps, {
+                pages.open(.apps)
+            })
+    }
+
+    private var stackRoot: some View {
+        Group {
+            if layered {
+                // 这一层的导航栈整片内容右滑返回照常留着（网格、商店里没有要让的横滑）。
+                Color.clear
+                    .background { PageStackBack(contentPop: true) }
+                    .toolbar(.hidden, for: .navigationBar)
+            } else if case .notConfigured = model.viewModel.status,
+               model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
+                PairingView(model: model)
+                    .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
+                        settingsLink
+                    }
+            } else {
+                launcher
+                    .wontonRootScreen(String(localized: .Launcher.launcherTitle), hasActions: true) {
+                        settingsLink
+                    }
             }
-            .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
-            .navigationDestination(for: AppsRoute.self) { route in
-                switch route {
-                case .store: StoreView(model: plugins, open: open)
-                }
-            }
-            .navigationDestination(for: PluginRoute.self) { route in
-                PluginDetailView(model: plugins, chat: chat, route: route, open: open)
-            }
-            .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
-                guard !openedDevPage, let devWebURL,
-                      let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
-                      let choice = plugin.tabChoices.first else { return }
-                openedDevPage = true
-                pages.open(choice.tab)
-            }
-            .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
-        .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
-        .environment(\.goToInstalledApps, {
-            pages.open(.apps)
-        })
+        .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
+        .navigationDestination(for: AppsRoute.self) { route in
+            switch route {
+            case .launcher:
+                launcher
+                    .wontonPushedScreen(
+                        String(localized: .Launcher.launcherTitle), showsStatus: true, showsStatusLine: true
+                    ) { settingsLink }
+            case .store: StoreView(model: plugins, open: open)
+            }
+        }
+        .navigationDestination(for: PluginRoute.self) { route in
+            PluginDetailView(model: plugins, chat: chat, route: route, open: open)
+        }
+        .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
+            guard !openedDevPage, let devWebURL,
+                  let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
+                  let choice = plugin.tabChoices.first else { return }
+            openedDevPage = true
+            pages.open(choice.tab)
+        }
+        .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
     }
 
     private var launcher: some View {
@@ -88,29 +104,6 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
-        .fullScreenCover(item: $confirmation) {
-            InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true)
-        }
-        // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
-        // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
-        .onChange(of: plugins.viewModel.confirmation) { _, offered in
-            confirmation = offered.map(PluginConfirmation.store)
-        }
-        .onChange(of: confirmation) { (old: PluginConfirmation?, new: PluginConfirmation?) in
-            // 主人自己关掉确认页：核心撤走这条、放下一条。确认后核心已把这条撤走，ID 对不上，不会再进来。
-            guard new == nil, let shown = old, case let .store(offer) = shown else { return }
-            let current = plugins.viewModel.confirmation
-            if current?.preview.id == offer.preview.id {
-                plugins.send(.dismissStoreConfirmation)
-            }
-        }
-        .uninstallDialog($uninstalling, model: plugins)
-        .wontonActionSheet(
-            isPresented: isShowingMenu,
-            title: menuPlugin?.title,
-            actions: menuPlugin.map(menu(for:)) ?? []
-        )
-        .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
@@ -186,6 +179,70 @@ struct HomeView: View {
         }
     }
 
+    private var settingsLink: some View {
+        WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
+            .overlay(alignment: .topTrailing) {
+                if settings.hasServerUpgrade {
+                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
+                        .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
+                        .padding(WontonTheme.spacing.s8)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+
+    private var isShowingRejection: Binding<Bool> {
+        Binding(
+            get: { !settingsPresented && model.rejection != nil },
+            set: { isShowing in
+                if !isShowing && !settingsPresented { model.rejection = nil }
+            }
+        )
+    }
+
+    private var isShowingPluginRejection: Binding<Bool> {
+        Binding(
+            get: { !settingsPresented && plugins.rejection != nil },
+            set: { isShowing in
+                if !isShowing && !settingsPresented { plugins.rejection = nil }
+            }
+        )
+    }
+}
+
+/// 网格这一层弹出来的东西：安装确认、卸载和长按菜单。
+extension HomeView {
+    /// 确认页、卸载和长按菜单挂在栈的根上，不挂在网格上：网格在这一层里是推入的页面，从侧边栏直接进商店时
+    /// 它夹在栈中间、没上过屏，挂在它上面的 onChange 不保证在跑。
+    private func prompts(on content: some View) -> some View {
+        content
+            .fullScreenCover(item: $confirmation) {
+                InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true)
+            }
+            // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
+            // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
+            .onChange(of: plugins.viewModel.confirmation) { _, offered in
+                // 这一层收着的时候和以前盖子没开一样，不接。
+                guard !layered || !path.isEmpty else { return }
+                confirmation = offered.map(PluginConfirmation.store)
+            }
+            .onChange(of: confirmation) { (old: PluginConfirmation?, new: PluginConfirmation?) in
+                // 主人自己关掉确认页：核心撤走这条、放下一条。确认后核心已把这条撤走，ID 对不上，不会再进来。
+                guard new == nil, let shown = old, case let .store(offer) = shown else { return }
+                let current = plugins.viewModel.confirmation
+                if current?.preview.id == offer.preview.id {
+                    plugins.send(.dismissStoreConfirmation)
+                }
+            }
+            .uninstallDialog($uninstalling, model: plugins)
+            .wontonActionSheet(
+                isPresented: isShowingMenu,
+                title: menuPlugin?.title,
+                actions: menuPlugin.map(menu(for:)) ?? []
+            )
+            .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
+    }
+
     private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
         var actions = [
             WontonSheetAction(title: String(localized: .Common.commonDetails), icon: .info) {
@@ -234,39 +291,11 @@ struct HomeView: View {
             }
         )
     }
-
-    private var settingsLink: some View {
-        WontonIconButton(icon: .settings, label: TabText.settings, action: showSettings)
-            .overlay(alignment: .topTrailing) {
-                if settings.hasServerUpgrade {
-                    Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
-                        .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
-                        .padding(WontonTheme.spacing.s8)
-                        .allowsHitTesting(false)
-                }
-            }
-    }
-
-    private var isShowingRejection: Binding<Bool> {
-        Binding(
-            get: { !settingsPresented && model.rejection != nil },
-            set: { isShowing in
-                if !isShowing && !settingsPresented { model.rejection = nil }
-            }
-        )
-    }
-
-    private var isShowingPluginRejection: Binding<Bool> {
-        Binding(
-            get: { !settingsPresented && plugins.rejection != nil },
-            set: { isShowing in
-                if !isShowing && !settingsPresented { plugins.rejection = nil }
-            }
-        )
-    }
 }
 
 enum AppsRoute: Hashable {
+    /// 配对后那一层里的网格页（见 `HomeView.layered`）。
+    case launcher
     case store
 }
 

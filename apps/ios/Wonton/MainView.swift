@@ -18,9 +18,6 @@ struct MainView: View {
     /// 最近关掉的插件页：最多留 4 个实例（内存考虑），重开不重载。
     @State private var recentPages: [TabRef] = []
     @State var showsSettings = false
-    @State var pendingSettingsPresentation = false
-    /// “全部应用”网格这一层：配对后的根页面是聊天，网格从侧边栏进。
-    @State var showsApps = false
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
@@ -30,6 +27,7 @@ struct MainView: View {
         horizontalSizeClass == .regular && isPaired && !home.servers.adding && onboarding.viewModel.step == .finished
     }
     @State var showsPanel = false
+    /// 没配对时是根页面（网格或配对页）的路径；配对后是“全部应用”那一层的路径，空就是没开（见 `HomeView.layered`）。
     @State var appsPath = NavigationPath()
     /// 插件页层的路径，和核心的页面栈一一对应；左边缘右滑是系统的交互式返回。
     @State var pagePath: [TabRef] = []
@@ -59,10 +57,6 @@ struct MainView: View {
             pages.open(.chat)
             chat.path = [.chatBackup]
         })
-        .fullScreenCover(isPresented: $showsApps, onDismiss: presentPendingSettings) {
-            appsGrid
-        }
-
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, isModal: true)
@@ -127,12 +121,14 @@ struct MainView: View {
         .onChange(of: pages.viewModel.myAppCandidates) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
+        // 根页面和“全部应用”那一层共用一条路径，配对状态一变含义就换了。
+        .onChange(of: isPaired) { _, _ in closeApps() }
         .environment(plugins)
         .environment(\.wontonBarStatus, barStatus)
     }
 
     /// 服务器列表变化时的界面善后：换服务器清聊天导航；“添加服务器”盖住设置，取消后回设置；
-    /// 服务器清空时回应用网格。
+    /// 服务器清空时根页面换成没配对的那一个，“全部应用”那一层跟着收起。
 
     private func updatePairingPresentation(from old: ServersViewModel, to new: ServersViewModel) {
         if old.servers.first(where: { $0.current })?.id != new.servers.first(where: { $0.current })?.id {
@@ -143,7 +139,8 @@ struct MainView: View {
             addingReturn = (old.servers.first(where: { $0.current })?.id, showsSettings)
             showsSettings = false
             onboardingGateway = nil
-            pendingSettingsPresentation = false
+            // 配对页在根页面上，“全部应用”那一层盖着它。
+            closeApps()
         } else if old.adding && !new.adding {
             if let target = addingReturn,
                new.servers.first(where: { $0.current })?.id == target.serverID {
@@ -154,7 +151,7 @@ struct MainView: View {
         if !new.adding, new.servers.isEmpty, !old.servers.isEmpty {
             showsSettings = false
             settings.path = []
-            showsApps = true
+            closeApps()
         }
     }
 
@@ -190,7 +187,7 @@ struct MainView: View {
                             )
                         }
                     }
-                    .environment(\.wontonOpenApps) { showsApps = true }
+                    .environment(\.wontonOpenApps) { openApps() }
                 }
             })
         }
@@ -217,19 +214,6 @@ struct MainView: View {
             pullAnchor: nil,
             content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
-    }
-
-    /// 侧边栏的“全部应用”：独立的一层，配对后才开。
-    @ViewBuilder private var appsGrid: some View {
-        if isPaired {
-            HomeView(
-                model: home, plugins: plugins, chat: chat, settings: settings, open: open,
-                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-                showSettings: { settings.path = []; showsSettings = true },
-                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings || !isPaired,
-                devWebURL: devWebURL, path: $appsPath
-            )
-        }
     }
 
     /// 插件页层：系统的 NavigationStack 供给左边缘右滑的交互式返回；路径空时透明且不挡下面的根页面。
