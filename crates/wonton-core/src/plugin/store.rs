@@ -94,6 +94,9 @@ pub struct InstalledRecord {
     /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_label: Option<String>,
+    /// 客户端入口的开关（ADR-0021，见 [`crate::clients::state`]）：局域网、公网，默认全关。开关接口在 C7。
+    #[serde(default)]
+    pub clients_entries: crate::clients::state::ClientsEntries,
     /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
@@ -612,6 +615,7 @@ mod tests {
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
             origin: None,
             written_by: None,
             ask_every_update: false,

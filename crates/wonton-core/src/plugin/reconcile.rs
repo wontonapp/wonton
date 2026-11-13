@@ -189,6 +189,7 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
             hosted: self.hosted_upstreams(manifest, &network).await?,
+            clients: self.clients_upstream(manifest, &network).await?,
         }))
     }
 

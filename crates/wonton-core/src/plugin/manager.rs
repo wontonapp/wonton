@@ -44,7 +44,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 

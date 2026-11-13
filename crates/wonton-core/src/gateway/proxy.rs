@@ -10,6 +10,7 @@ use hyper::{StatusCode, Uri, Version};
 use hyper_util::rt::TokioIo;
 
 use tokio::net::UnixStream;
+use tokio::sync::watch;
 
 use super::pages;
 use super::session::{is_reserved_cookie, strip_cookies};
@@ -55,6 +56,34 @@ pub struct Target<'a> {
 pub struct Forwarded<'a> {
     pub client: Option<SocketAddr>,
     pub scheme: &'a str,
+}
+
+/// 转发途中可以撤销的访问：share 收回（[`super::sharing::guard`]）和客户端入口的开关关闭
+/// （ADR-0021，[`crate::clients::state`]）共用一个形状——置位就断，已升级的连接立即断。
+#[derive(Clone)]
+pub(crate) enum Cancel {
+    Share(super::sharing::AccessGuard),
+    /// 入口开关：`true` 是已关。
+    Entry(watch::Receiver<bool>),
+}
+
+impl Cancel {
+    async fn cancelled(&self) {
+        match self {
+            Self::Share(guard) => guard.cancelled().await,
+            Self::Entry(receiver) => {
+                let mut receiver = receiver.clone();
+                if *receiver.borrow_and_update() {
+                    return;
+                }
+                while receiver.changed().await.is_ok() {
+                    if *receiver.borrow_and_update() {
+                        return;
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn is_upgrade(headers: &HeaderMap) -> bool {
@@ -186,60 +215,24 @@ async fn forward_with_limit(
     limit: Duration,
     langs: &Languages,
 ) -> Result<Response, ForwardError> {
-    let guard = req
+    let cancel = req
         .extensions()
         .get::<super::sharing::AccessGuard>()
-        .cloned();
+        .cloned()
+        .map(Cancel::Share)
+        .or_else(|| req.extensions().get::<Cancel>().cloned());
     let upgrade = is_upgrade(req.headers());
     let client_upgrade = upgrade.then(|| hyper::upgrade::on(&mut req));
     let limit = response_header_deadline(&req, upgrade, limit);
     let format = pages::Format::of(req.headers());
-    let (mut parts, body) = req.into_parts();
-    let path = parts
-        .uri
-        .path_and_query()
-        .map_or("/", |p| p.as_str())
-        .to_owned();
-    let uri = match target.endpoint {
-        Endpoint::Tcp(authority) => format!("http://{authority}{path}").parse::<Uri>(),
-        Endpoint::Unix(_) => path.parse::<Uri>(),
+    let outbound = match build_outbound(req, target.endpoint, fwd, upgrade, langs, format) {
+        Ok(outbound) => outbound,
+        Err(response) => return Ok(*response),
     };
-    let Ok(uri) = uri else {
-        return Ok(pages::error(
-            StatusCode::BAD_REQUEST,
-            "invalid_input",
-            &l10n::text(langs, "gateway-invalid-path", &[]),
-            langs,
-            format,
-        ));
-    };
-    let host = parts.headers.get(header::HOST).cloned();
-    strip_hop_by_hop(&mut parts.headers, upgrade);
-    strip_cookies(&mut parts.headers, is_reserved_cookie);
-    for name in UNTRUSTED {
-        parts.headers.remove(*name);
-    }
-    if let Some(client) = fwd.client
-        && let Ok(ip) = HeaderValue::from_str(&client.ip().to_string())
-    {
-        parts.headers.insert("x-forwarded-for", ip.clone());
-        parts.headers.insert("x-real-ip", ip);
-    }
-    if let Some(host) = host {
-        parts.headers.insert("x-forwarded-host", host);
-    }
-    if let Ok(proto) = HeaderValue::from_str(fwd.scheme) {
-        parts.headers.insert("x-forwarded-proto", proto);
-    }
-    parts.uri = uri;
-    parts.version = Version::HTTP_11;
-    let outbound = Request::from_parts(parts, body);
-
-    let sent = if let Some(guard) = &guard {
+    let sent = if let Some(cancel) = &cancel {
         tokio::select! {
             biased;
-            _ = guard.cancelled() => return Ok(super::sharing::refused(
-                wonton_protocol::GatewayRefusal::ShareRevoked, langs, format)),
+            _ = cancel.cancelled() => return Ok(revoked_response(cancel, langs, format)),
             result = send_upstream(http, target.endpoint, outbound, limit) => result,
         }
     } else {
@@ -264,24 +257,117 @@ async fn forward_with_limit(
         && let Some(client_upgrade) = client_upgrade
     {
         let upstream_upgrade = hyper::upgrade::on(&mut response);
-        tokio::spawn(copy_upgraded(client_upgrade, upstream_upgrade, guard));
+        tokio::spawn(copy_upgraded(client_upgrade, upstream_upgrade, cancel));
         let (mut parts, _) = response.into_parts();
         strip_hop_by_hop(&mut parts.headers, true);
         return Ok(Response::from_parts(parts, Body::empty()));
     }
     let (mut parts, body) = response.into_parts();
     strip_hop_by_hop(&mut parts.headers, false);
-    let body = match guard {
-        Some(guard) => super::sharing::guard_body(body, guard),
+    let body = match cancel {
+        Some(cancel) => cancelled_body(body, cancel),
         None => Body::new(body),
     };
     Ok(Response::from_parts(parts, body).into_response())
 }
 
+/// 检查之后、发出去之前访问被撤销：share 收回和入口开关关闭各自如实回一个响应。
+fn revoked_response(cancel: &Cancel, langs: &Languages, format: pages::Format) -> Response {
+    match cancel {
+        Cancel::Share(_) => {
+            super::sharing::refused(wonton_protocol::GatewayRefusal::ShareRevoked, langs, format)
+        }
+        // 开关在检查之后、转发之前关上了：如实回「已关」，不带插件的一个字节。
+        Cancel::Entry(_) => pages::error(
+            StatusCode::FORBIDDEN,
+            "entry_closed",
+            &l10n::text(langs, "gateway-entry-closed", &[]),
+            langs,
+            format,
+        ),
+    }
+}
+
+/// 转发出去的请求：重建 URI、剥掉逐跳头、保留 Cookie 和客户端伪造的转发头，写上真实的来源和地址。
+fn build_outbound(
+    req: Request,
+    endpoint: &Endpoint,
+    fwd: Forwarded<'_>,
+    upgrade: bool,
+    langs: &Languages,
+    format: pages::Format,
+) -> Result<Request, Box<Response>> {
+    let (mut parts, body) = req.into_parts();
+    let path = parts
+        .uri
+        .path_and_query()
+        .map_or("/", |p| p.as_str())
+        .to_owned();
+    let uri = match endpoint {
+        Endpoint::Tcp(authority) => format!("http://{authority}{path}").parse::<Uri>(),
+        Endpoint::Unix(_) => path.parse::<Uri>(),
+    };
+    let Ok(uri) = uri else {
+        return Err(Box::new(pages::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            &l10n::text(langs, "gateway-invalid-path", &[]),
+            langs,
+            format,
+        )));
+    };
+    let host = parts.headers.get(header::HOST).cloned();
+    strip_hop_by_hop(&mut parts.headers, upgrade);
+    strip_cookies(&mut parts.headers, is_reserved_cookie);
+    for name in UNTRUSTED {
+        parts.headers.remove(*name);
+    }
+    if let Some(client) = fwd.client
+        && let Ok(ip) = HeaderValue::from_str(&client.ip().to_string())
+    {
+        parts.headers.insert("x-forwarded-for", ip.clone());
+        parts.headers.insert("x-real-ip", ip);
+    }
+    if let Some(host) = host {
+        parts.headers.insert("x-forwarded-host", host);
+    }
+    if let Ok(proto) = HeaderValue::from_str(fwd.scheme) {
+        parts.headers.insert("x-forwarded-proto", proto);
+    }
+    parts.uri = uri;
+    parts.version = Version::HTTP_11;
+    Ok(Request::from_parts(parts, body))
+}
+
+/// 响应体上挂撤销：置位后立刻断，后面的帧不再转发（share 收回、入口开关关闭共用）。
+fn cancelled_body(body: hyper::body::Incoming, cancel: Cancel) -> Body {
+    use http_body_util::BodyExt;
+    let frames = futures_util::stream::unfold(
+        (body, cancel, false),
+        |(mut body, cancel, stopped)| async move {
+            if stopped {
+                return None;
+            }
+            let next = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => Some(Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionAborted, "access revoked",
+                ))),
+                frame = body.frame() => frame.map(|frame| frame.map_err(std::io::Error::other)),
+            };
+            next.map(|frame| {
+                let stopped = frame.is_err();
+                (frame, (body, cancel, stopped))
+            })
+        },
+    );
+    Body::new(http_body_util::StreamBody::new(frames))
+}
+
 async fn copy_upgraded(
     client: hyper::upgrade::OnUpgrade,
     upstream: hyper::upgrade::OnUpgrade,
-    guard: Option<super::sharing::AccessGuard>,
+    cancel: Option<Cancel>,
 ) {
     let copy = async {
         match (client.await, upstream.await) {
@@ -292,8 +378,8 @@ async fn copy_upgraded(
             (c, u) => tracing::warn!(client = c.is_ok(), upstream = u.is_ok(), "协议升级失败"),
         }
     };
-    if let Some(guard) = guard {
-        tokio::select! { _ = copy => {}, _ = guard.cancelled() => {} }
+    if let Some(cancel) = cancel {
+        tokio::select! { _ = copy => {}, _ = cancel.cancelled() => {} }
     } else {
         copy.await;
     }

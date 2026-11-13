@@ -48,6 +48,13 @@ gateway-login-required = まずWontonにログインしてください
 gateway-name-oidc = IDプロバイダー
 gateway-name-models = モデルゲートウェイ
 
+# TLS入口コンテナの後ろにあるクライアント入口（ADR-0021）。
+gateway-entry-header-invalid = 入口ゲートウェイがこのリクエストに正しい印を付けていません
+gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
+gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
+gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
+gateway-entry-auth-unsupported = このアプリはまだ、Wontonが発行したパスワードでのログインに対応していません
+
 # SSOの引き渡しとOIDCログイン、承認確認。
 gateway-sso-invalid-next = リダイレクト先のアドレスが不正です
 gateway-sso-local-only = リダイレクトできるのは、このサーバー上のアプリのアドレスだけです

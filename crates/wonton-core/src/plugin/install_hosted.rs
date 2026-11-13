@@ -357,6 +357,7 @@ impl PluginManager {
                 Some(old) => old.entry_label.clone(),
                 None => self.install_entry_label(&manifest.id)?,
             },
+            clients_entries: old.map_or_else(Default::default, |old| old.clients_entries),
             written_by: old.and_then(|old| old.written_by.clone()),
             ask_every_update: old.is_some_and(|old| old.ask_every_update),
             family: old.is_some_and(|old| old.family),

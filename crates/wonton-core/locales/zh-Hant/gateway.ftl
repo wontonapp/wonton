@@ -48,6 +48,13 @@ gateway-login-required = 需要先登入 Wonton
 gateway-name-oidc = 身分提供者
 gateway-name-models = 模型閘道
 
+# TLS 入口容器後面的客戶端入口（ADR-0021）。
+gateway-entry-header-invalid = 入口閘道沒有給這個請求標上正確的記號
+gateway-entry-closed = 這個入口沒有開啟，主人可以在 Wonton 應用程式裡開啟
+gateway-entry-public-denied = 公網位址上存取不了這個路徑
+gateway-entry-setup-pending = 請先在這個應用程式的網頁上完成首次註冊，然後再試
+gateway-entry-auth-unsupported = 這個應用程式還不支援用雲吞發的密碼登入
+
 # SSO 交接和 OIDC 登入、授權確認。
 gateway-sso-invalid-next = 跳轉位址不合法
 gateway-sso-local-only = 只能跳轉到本機的外掛程式位址
