@@ -93,6 +93,7 @@ impl Rig {
             home_link,
             plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
+            chat: chat.subscribe(),
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {
