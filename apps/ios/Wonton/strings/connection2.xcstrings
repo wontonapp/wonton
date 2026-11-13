@@ -2,6 +2,166 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "connection.udp.flows": {
+      "comment": "Collapsed UDP flow summary; argument is the number of flows. Tap to expand.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld UDP flow"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%lld UDP flows"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "UDP 流向 %lld 条"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "UDP 流向 %lld 條"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@count@"
+          },
+          "substitutions": {
+            "count": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "UDP フロー%lld件"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "connection.udp.flow.traffic": {
+      "comment": "One UDP flow: port number, localized received packet count, localized submitted packet count. Submission does not guarantee delivery.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "port %1$@ · recv %2$@ / sent %3$@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口 %1$@ · 收 %2$@ / 发 %3$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠 %1$@ · 收 %2$@ / 傳 %3$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポート%1$@ · 受信 %2$@ / 送信 %3$@"
+          }
+        }
+      }
+    },
+    "connection.udp.flow.traffic.dropped": {
+      "comment": "One UDP flow: port number, localized received count, localized submitted count, localized oversized packet drop count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "port %1$@ · recv %2$@ / sent %3$@ · %4$@ dropped as too large"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口 %1$@ · 收 %2$@ / 发 %3$@ · 超长丢弃 %4$@ 个"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠 %1$@ · 收 %2$@ / 傳 %3$@ · 超長丟棄 %4$@ 個"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ポート%1$@ · 受信 %2$@ / 送信 %3$@ · 長すぎて%4$@件破棄"
+          }
+        }
+      }
+    },
     "connection.notice.connecting": {
       "comment": "Short connection status while connecting.",
       "extractionState": "manual",

@@ -144,6 +144,10 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
 界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
 
+连接详情的 UDP 流向默认收起，没有流向时不显示。展开后列出插件、端口、收发包数和超长丢弃；
+发送缓冲丢弃只在核心给出大于零的连接级计数时显示，未知不伪装成零（ADR-0072）。
+`UdpFlowsUITests` 使用 Debug 固定 ViewModel 检查收放、空列表和完整无符号计数；不需要配对栈，也不代表 UDP 传输实测。
+
 ```bash
 xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -destination 'platform=iOS Simulator,name=<模拟器名称>' \

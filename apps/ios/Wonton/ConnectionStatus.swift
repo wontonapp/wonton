@@ -243,13 +243,16 @@ struct ConnectionView: View {
 
 struct ConnectionDetailsView: View {
     let model: HomeModel
+    let plugins: PluginsModel
 
     private var details: ConnectionDetails { model.viewModel.details }
 
     var body: some View {
         ScrollView {
             VStack(spacing: WontonTheme.spacing.sectionGap) {
-                ConnectionDetailsRows(details: details, path: model.viewModel.path)
+                ConnectionDetailsRows(
+                    details: details, path: model.viewModel.path, installed: plugins.viewModel.installed
+                )
                 if let failure = details.lastFailure {
                     WontonGroup {
                         WontonRow(title: String(localized: .Connection0.connectionDetailLastFailure), value: failure)
@@ -266,10 +269,22 @@ struct ConnectionDetailsView: View {
 struct ConnectionDetailsRows: View {
     let details: ConnectionDetails
     let path: HomePath?
+    var installed: InstalledPlugins?
 
     private static let missing = "—"
 
     var body: some View {
+        VStack(spacing: WontonTheme.spacing.sectionGap) {
+            qualityRows
+            if !details.udpFlows.isEmpty {
+                UdpFlowsGroup(
+                    flows: details.udpFlows, evictedDatagrams: details.udpBufferEvictedDatagrams, installed: installed
+                )
+            }
+        }
+    }
+
+    private var qualityRows: some View {
         WontonGroup {
             if details.addressesStale {
                 WontonRow(title: String(localized: .Connection1.connectionAddressesStale))
