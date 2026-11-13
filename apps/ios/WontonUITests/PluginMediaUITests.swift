@@ -55,6 +55,8 @@ final class PluginMediaUITests: XCTestCase {
 
         let prompt = Prompt(app: app)
         XCTAssertTrue(prompt.title.waitForExistence(timeout: 20), "首次要麦克风没出壳的确认弹窗\n\(app.debugDescription)")
+        XCTAssertTrue(prompt.deny.waitForExistence(timeout: 5) && prompt.allow.waitForExistence(timeout: 5),
+                      "确认弹窗的两个按钮没出来\n\(app.debugDescription)")
         try answer(prompt)
         XCTAssertTrue(waitGone(prompt.title), "答完弹窗还在\n\(app.debugDescription)")
 
@@ -78,7 +80,7 @@ final class PluginMediaUITests: XCTestCase {
         if start.waitForExistence(timeout: 5) { start.tap() }
     }
 
-    /// 壳的确认弹窗：标题带插件名和“麦克风”，允许和不允许两个按钮。
+    /// 壳的确认弹窗：标题带插件名和“麦克风”，允许和不允许两个按钮（按稳定标识找，不按文案找）。
     private struct Prompt {
         let title: XCUIElement
         let allow: XCUIElement
@@ -88,8 +90,8 @@ final class PluginMediaUITests: XCTestCase {
             title = app.staticTexts.matching(NSPredicate(
                 format: "label CONTAINS 'use your microphone' OR label CONTAINS '使用麦克风'"
             )).firstMatch
-            allow = app.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "允许", "允許", "許可"])).firstMatch
-            deny = app.buttons.matching(NSPredicate(format: "label IN %@", ["Don't allow", "不允许", "不允許", "許可しない"])).firstMatch
+            allow = app.buttons["tabMediaAllow"].firstMatch
+            deny = app.buttons["tabMediaDeny"].firstMatch
         }
     }
 

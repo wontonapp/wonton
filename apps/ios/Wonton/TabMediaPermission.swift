@@ -99,10 +99,18 @@ extension TabWebSession: WKUIDelegate {
         let camera = type == .camera || type == .cameraAndMicrophone
         let microphone = type == .microphone || type == .cameraAndMicrophone
         // 源从 WebView 的原生回调取，核心按页面自己的源核对；页面里嵌的其他源核心直接拒。
-        let decision = try? core.tabMediaPermissionRequest(
-            page: placed, origin: Self.originString(initiatedByFrame.securityOrigin),
-            camera: camera, microphone: microphone
-        )
+        // 核心问不出来（页面关了、源不符、查记录失败）就是拒：如实拒网页并留日志，不静默。
+        let decision: TabMediaPermission?
+        do {
+            decision = try core.tabMediaPermissionRequest(
+                page: placed, origin: Self.originString(initiatedByFrame.securityOrigin),
+                camera: camera, microphone: microphone
+            )
+        } catch {
+            decision = nil
+            NSLog("[media] request failed origin=%@ error=%@",
+                  Self.originString(initiatedByFrame.securityOrigin), String(describing: error))
+        }
         let answer = { (allow: Bool) in decisionHandler(allow ? .grant : .deny) }
         switch decision {
         case .allow:
@@ -129,14 +137,17 @@ struct TabMediaDialogs: ViewModifier {
                 actions: [
                     WontonDialogAction(
                         title: String(localized: .Tab2.tabMediaDeny),
-                        perform: { answered(false) }
+                        perform: { answered(false) },
+                        identifier: "tabMediaDeny"
                     ),
                     WontonDialogAction(
                         title: String(localized: .Tab0.tabMediaAllow),
                         kind: .primary,
-                        perform: { answered(true) }
+                        perform: { answered(true) },
+                        identifier: "tabMediaAllow"
                     ),
                 ],
+
                 onDismiss: { answered(false) }
             )
             .wontonDialog(
@@ -180,8 +191,16 @@ struct TabMediaDialogs: ViewModifier {
     }
 
     /// 主人答了：决定交核心记下（按插件记住），网页的请求按核心给的处置走。
+    /// 记不下（询问已被清、写盘失败）就是没记住，如实告诉网页拒绝并留日志，不静默。
     private func answered(_ allow: Bool) {
-        let decision = try? model.core.tabMediaPermissionDecide(allow: allow)
+        let decision: TabMediaPermission?
+        do {
+            decision = try model.core.tabMediaPermissionDecide(allow: allow)
+            NSLog("[media] decide ok allow=%d", allow ? 1 : 0)
+        } catch {
+            decision = nil
+            NSLog("[media] decide failed allow=%d error=%@", allow ? 1 : 0, String(describing: error))
+        }
         TabMediaRequests.shared.answered(decision)
     }
 }
