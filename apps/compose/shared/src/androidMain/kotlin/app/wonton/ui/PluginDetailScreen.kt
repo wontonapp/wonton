@@ -168,7 +168,7 @@ private fun DetailContent(
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
         GoFillSecrets(detail.installed, owner, secretsInView)
-        detail.installed?.let { PluginTabPinControls(it) }
+        detail.installed?.let { MyAppsControls(it) }
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }

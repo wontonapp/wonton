@@ -222,8 +222,6 @@ pub struct WebUi {
     pub port: u16,
     #[serde(default = "default_web_path")]
     pub path: String,
-    #[serde(default = "default_web_display")]
-    pub display: String,
     #[serde(default)]
     pub sso: Sso,
     #[serde(default)]
@@ -271,10 +269,6 @@ pub struct ProxyCredentials {
 
 pub(super) fn default_web_path() -> String {
     "/".to_owned()
-}
-
-pub(super) fn default_web_display() -> String {
-    "standard".to_owned()
 }
 
 pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;

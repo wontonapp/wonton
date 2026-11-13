@@ -1,0 +1,129 @@
+//! 页面栈的开与关：复用实例、弹回根、换服务器清栈。
+
+use super::*;
+
+#[tokio::test]
+async fn opening_a_page_pushes_it_and_opening_again_reuses_the_instance() {
+    let rig = Rig::new();
+    rig.open(page_tab());
+    let first = rig.page(&page_tab());
+    assert_eq!(first.state, TabState::Ready);
+    assert_eq!(first.reload, 0);
+
+    // 换一个页面再回来：栈里同一页只有一份。
+    rig.open(url_tab("https://example.com/report"));
+    assert_eq!(
+        rig.view()
+            .stack
+            .iter()
+            .map(|open| open.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab(), url_tab("https://example.com/report")]
+    );
+    rig.open(page_tab());
+    assert_eq!(
+        rig.view()
+            .stack
+            .iter()
+            .map(|open| open.tab.clone())
+            .collect::<Vec<_>>()
+            .len(),
+        2
+    );
+    assert_eq!(rig.view().stack.last().unwrap().tab, page_tab());
+}
+
+#[tokio::test]
+async fn closing_a_page_pops_the_top_and_root_pages_clear_the_stack() {
+    let rig = Rig::new();
+    rig.open(page_tab());
+    rig.open(url_tab("https://example.com/report"));
+
+    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    assert_eq!(rig.view().stack.len(), 1);
+
+    // 根页面（聊天）一路弹回根。
+    rig.tabs
+        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .unwrap();
+    assert!(rig.view().stack.is_empty());
+
+    let nothing = rig.tabs.dispatch(Action::ClosePage).unwrap_err();
+    assert!(matches!(nothing, CoreError::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn opening_before_the_list_arrives_fails_and_succeeds_after() {
+    let rig = Rig::new();
+    rig.plugins.send_replace(PluginsViewModel::default());
+    rig.tabs.recompute();
+    let missing = rig
+        .tabs
+        .dispatch(Action::OpenPage { tab: page_tab() })
+        .unwrap_err();
+    assert!(matches!(missing, CoreError::NotReady { .. }), "{missing:?}");
+
+    rig.plugins.send_replace(plugins("new-content"));
+    rig.open(page_tab());
+    assert_eq!(rig.page(&page_tab()).title, "new-content");
+}
+
+#[tokio::test]
+async fn switching_servers_discards_previous_pages_and_reload_counts() {
+    let rig = Rig::new();
+    rig.add_app(plugin_app("app.shared"));
+    rig.open(page_tab());
+    let inner = TabRef::PluginPath {
+        plugin_id: "app.shared".to_owned(),
+        path: "/report".to_owned(),
+    };
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: inner.clone(),
+        })
+        .unwrap();
+    rig.open(inner.clone());
+    rig.tabs
+        .reload(PlacedTab::Page { tab: page_tab() })
+        .unwrap();
+    assert_eq!(rig.page(&page_tab()).reload, 1);
+
+    rig.home.send_replace(home("new-server"));
+    rig.tabs.recompute();
+    rig.plugins.send_replace(plugins("new-content"));
+    rig.tabs.recompute();
+    // 插件和插件里的某一页都绑在上一台服务器上；面板整个清掉（账号数据按服务器存）。
+    let view = rig.view();
+    assert!(view.stack.is_empty());
+    assert_eq!(view.root, TabRef::Chat);
+    assert!(panel_tabs(&rig).is_empty());
+
+    rig.add_app(plugin_app("app.shared"));
+    rig.open(page_tab());
+    assert_eq!(rig.page(&page_tab()).reload, 0);
+}
+
+#[tokio::test]
+async fn new_list_before_pages_observes_server_change_starts_fresh() {
+    let rig = Rig::new();
+    rig.add_app(plugin_app("app.shared"));
+    rig.open(page_tab());
+    rig.tabs
+        .reload(PlacedTab::Page { tab: page_tab() })
+        .unwrap();
+    assert_eq!(rig.page(&page_tab()).reload, 1);
+
+    // 两个来源都已发布，但 pages 尚未消费 home 的换机通知。
+    rig.home.send_replace(home("new-server"));
+    rig.plugins.send_replace(plugins("new-content"));
+    rig.tabs
+        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .unwrap();
+    let switched = rig.view();
+    assert!(switched.stack.is_empty());
+    assert!(switched.uninstalled.is_empty());
+
+    rig.open(page_tab());
+    assert_eq!(rig.page(&page_tab()).reload, 0);
+}

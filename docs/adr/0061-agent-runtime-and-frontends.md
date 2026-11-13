@@ -7,6 +7,7 @@
   网关和桥用官方的 Rust ACP 库（第 11 节）。被调的 Agent 在房间里怎么出现见 [ADR-0083](0083-bot-contacts-and-group-chat.md)
 - 延伸：运行时的 Agent 进程可以在用户自己的电脑上，见 [ADR-0081](0081-local-agent-host.md)
 - 2026-11-12 修订：Agent 自带的网页是运行时本身，不是前端，第 2、3、10 节不管它，见 [ADR-0084](0084-agent-own-web.md)
+- 2026-11-13 修订：`agent_acp` 每一跳经 `session/new` 的 `_meta` 传链（链 ID 和已走层数），经编排器的跳转不再把层数清零（第 12 节）
 
 ## 背景
 
@@ -46,7 +47,8 @@ ADR-0015 要求组件只经标准接口连接、每个都能单独替换。这�
 前端不直接对 Agent 说话。运行时插件里有一道**网关**，夹在前端和 Agent 进程之间，下面这些都在网关里做，前端怎么填都改不了：
 
 - **`session/new` 的字段由网关定**：丢掉前端给的 `mcpServers`，换成运行时自己的 Wonton MCP 入口（不然 stdio 类型的条目就是在运行时容器里
-  起任意命令）；`cwd` 固定为运行时配置的工作区（或其下按前端分的子目录），不接受前端给的；去掉前端的 `_meta`。
+  起任意命令）；`cwd` 固定为运行时配置的工作区（或其下按前端分的子目录），不接受前端给的；去掉前端的 `_meta`
+  （`app.wonton/task`、`app.wonton/chain` 两项例外，见第 9、12 节）。
 - **权限请求由网关回答**：Agent 的 `session/request_permission` 由网关转成核心的确认卡片（`POST /agent/permissions`），卡片写明是哪个前端、
   替谁在问；前端只收到“在等主人确认”。卡片过期时，网关先对这个会话发 `session/cancel`，再回 `cancelled`（照官方库 cookbook 的建议）。ADR-0058 的“改同一个文件时排队”也挪到网关：它看得到所有前端的所有会话改了哪些文件，
   排队因此跨前端也有效。
@@ -157,7 +159,7 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
     或交出去的那个 Bot，如“「修登录页」→ Codex → 想运行 git push”“Hermes → Codex → 想改 src/main.rs”。
   - 来源照 ADR-0016（已定第 6 条和“敏感操作的确认”第 2 步）：`requester` 是发起的插件或 Bot，带任务名；`origin` 是发起的对话，
     核心照常核对，对不上时落到目标 Bot 的主房间。编排器在 `session/new` 的 `_meta["app.wonton/task"]` 里给任务名和房间、话题，
-    网关只留这一项，其余 `_meta` 照第 2 节丢掉。群里只显示“在等某某确认”。
+    网关只留这一项和第 12 节的链载体，其余 `_meta` 照第 2 节丢掉。群里只显示“在等某某确认”。
 
 ### 10. 调用链：身份、层数、上限和记账
 
@@ -217,6 +219,36 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 - 它的 schema 给整个 workspace 的 serde_json 打开 `preserve_order`：同一次构建里所有 crate 的 JSON 对象都按插入顺序。
   `serde_json::Value` 因此变大，wonton-core 里两处返回 `CallToolResult` 的地方会触发 `clippy::result_large_err`（#255 发现），换库前先把它们装箱或改小。
 
+### 12. 跨插件传链：`session/new` 的 `_meta` 里带链载体
+
+编排器类 Agent 经 `agent_acp` 调别的 Agent 时，那一跳不能把层数清零，否则绕一圈就躲过第 10 节的上限。做法照分布式追踪传上下文的现成标准
+（W3C Trace Context 的 traceparent）：链的上下文跟着 `session/new` 走，写的都是可信的一侧，读的原样往下带。
+
+- **载体**在 `session/new` 的 `_meta["app.wonton/chain"]`，值是 `{"id": <链 ID>, "depth": <已走层数>}`。`depth` 是带这个载体的会话所在的层
+  （人直接对话的是第 1 层，第 10 节）；同一会话的后续帧不重带，核心按会话找链（第 10 节的账本）。键名照已有的 `app.wonton/*`
+  （第 9 节的 `app.wonton/task`、工具结果里的 `app.wonton/origin` 等）；ACP 把 `_meta` 的根级键 `traceparent`、`tracestate`、`baggage`
+  留给 W3C Trace Context，扩展键按它的约定用自有前缀，`app.wonton/` 不撞。
+- **谁写**：
+  - **核心**：发往目标运行时的每个 `session/new` 都注入——转发使用方的连接和 `wonton__hand_off` 开的会话都一样。进来的载体只用来认链，
+    写出去的 `depth` 以核心算的为准，使用方改不了。
+  - **桥**：每轮开头的第一个 `session/new` 写上刚领到的 `ChainTurnGrant`（`crates/wonton-protocol` 的 `agent_chain.rs`，链 ID 和层数现成），
+    编排器的 Agent 手里才有往下一跳带的载体。不经编排器、也没有下一跳的会话，带不带这个键都无所谓。
+- **谁读**：目标运行时的网关把 `app.wonton/chain` 和 `app.wonton/task` 一起透传给 Agent 进程，其余 `_meta` 照第 2 节丢掉；编排器类 Agent
+  把收到的载体原样抄进它再往下的 `session/new`。网关或 Agent 不认识这个键，丢掉就是，那一跳退回第 10 节“建连接时发”的新链。
+- **核心进来核对**（对带载体的 `session/new`，核对在转发前；第 10 节建连接时预发的链 ID 照旧给网关，载体核对通过的会话挂到载体的链上）：
+  - 链 ID 在账本里、这个使用方也在链上（发起连接的插件，能认到 Bot 就认到 Bot）→ 挂到这条链，新会话的层 =
+    max(账本里这条链已到的层, 带进来的 `depth`) + 1。伪造降低层数没用：核心以自己账本为准，只取 max；往高伪造只会让自己更快到上限。
+  - 链 ID 没记过、那条链已经结束（做完了，或核心重启后连接都断了，第 10 节）、或不属于这个使用方 → 当新链，但层数不从 1 数：从带进来的
+    `depth` 继续，新会话的层 = `depth` + 1，轮数和花费按新链记。
+  - 链被人停了 → 照旧返回 `stopped`（第 10 节），换了条链 ID 也接不回停了的链。
+  - 载体缺 → 当新链，照第 10 节建连接时发的链，从第 1 层起。
+  - 带进来的值不合法（不是对象、`id` 不是字符串、`depth` 不是非负整数）→ `invalid_input`，会话不开。类型是
+    `crates/wonton-protocol` 的 `ChainCarrier`（键 `ACP_CHAIN_META_KEY`）。
+- **绕圈**跟着准了：链上已有的 Bot（含发起的那个）再被调，照第 10 节拒绝。以前按连接各记各的链，跨跳的 A→B→A 查不出来；载体把
+  前后几跳接回同一条链，账本看得见了。
+- **边界**：载体是协作式传递（同 traceparent），存心不带、或带假链 ID 的使用方总能把层数重置。这和“插件网络按来源地址认”（ADR-0053）
+  是同一个信任级：Agent 跑的是任意程序，核心核对不了它内存里的值。兜底在第 10 节——链上的人随时能停链，每一跳的权限请求都有卡片。
+
 ## 考虑过的做法
 
 - **自定一套“Agent 接口”**（REST 加事件流）：ACP 已经是开放标准，主流 Agent 都有适配；自定接口要给每家 Agent 再写一遍适配。
@@ -237,6 +269,12 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
 - **B 的结果由 A 转述**：主人要把 Agent 当真人同事，B 在同一个对话里自己说话；转述还会丢掉 B 的进度和问题。
 - **花费按 Bot 记、不分链**：几个链同时用同一个 Bot 时分不出是谁花的，主人看不懂账，链也停不下来。
 - **立刻把桥抽成独立插件**：同时改了 Bot 账号归属和多 Bot 模型，风险集中；先拆网关、后挪桥。
+- **直接用 W3C traceparent 当载体**：格式是 `版本-trace-id-parent-id-标志`（[W3C Trace Context](https://www.w3.org/TR/trace-context/)），
+  三个字段都是给跟踪系统的，没有层数；层数得塞进 `tracestate` 的厂商段，核心还得把 32 位十六进制的 trace-id 当链 ID 用。ACP 自己也把
+  `traceparent`、`tracestate`、`baggage` 三个根级键留给 W3C Trace Context（v1 extensibility），拿来装链的语义会和 OpenTelemetry 工具打架。
+  以后要做观测性，另带一个真的 traceparent，链载体用自己的键。
+- **核心按“这个使用方正在跑的桥轮次”猜链**（连接一到就挂到它当前的链上，不用带载体）：一个插件几个 Bot、几条链同时跑时分不清，
+  猜错了悄悄记错账、放错人；显式载体多一行 JSON，谁带的、带的是哪条链，核对和审计都对着实物。
 
 ## 代价与待验证项
 
@@ -254,4 +292,6 @@ Agent 插件 `wants: [agent_acp]` 时，确认页同样写明它能把事交给 
   Alma 的子代理到 100 步停（[v0.0.729](https://github.com/yetone/alma-releases/releases/tag/v0.0.729)）。
 - 编排器的 ACP 客户端要能指到 `agent_acp.wonton.internal`。AO 按各家找官方程序起 ACP，能不能配置自定义命令没查实，可能要一个
   在容器里冒充某家 ACP 程序的小转发器。
+- 编排器类 Agent 要把收到的链载体（第 12 节）抄进下一跳的 `session/new`，各家能不能在 `_meta` 里带自定义键要逐家实测；官方
+  SDK 的请求类型都带 `_meta` 字段，自己写 HTTP 的要自己加。
 - 被派活的 Agent 各用自己运行时的工作区，彼此不共享目录，交付靠 git 分支，编排器不能假设工人在同一个目录里。

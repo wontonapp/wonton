@@ -27,7 +27,6 @@ fn plugin() -> SharedPlugin {
         plugin_id: "app.snake".into(),
         title: "Snake".into(),
         web_url: "http://app-snake.home.example.org/".into(),
-        display: TabDisplay::Standard,
         state: TabState::Ready,
     }
 }

@@ -184,7 +184,7 @@ fn service<'a>(plan: &'a Deployment, name: &str) -> &'a super::super::render::Co
 /// 宿主网络里解析不了 `egress.wonton.internal`：那里写出口容器在插件网络里的地址，别的服务照旧写别名。
 #[test]
 fn host_networked_services_get_the_egress_address_instead_of_the_alias() {
-    let host = "http://10.213.0.125:3128";
+    let host = "http://192.0.10.125:3128";
     let compose = package(
         "  web:\n    image: nginx\n  \
          esp:\n    image: esphome/esphome\n    network_mode: host\n    environment:\n      \

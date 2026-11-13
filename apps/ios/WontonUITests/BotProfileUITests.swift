@@ -2,7 +2,7 @@ import XCTest
 
 /// Bot 资料（ADR-0044）的走屏：改名、静态头像、4 个状态头像，以及聊天顶栏随 Bot 变化。
 ///
-/// 全新安装会先落在引导页（`OnboardingGate` 顶替整页，连标签栏都没有），所以先走完引导或跳过。
+/// 全新安装会先落在引导页（`OnboardingGate` 顶替整页），所以先走完引导或跳过。
 /// 每一步都留截图附件；外观（浅色/深色）由外部 `simctl ui` 设定，名字写在附件里。
 final class BotProfileUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -41,7 +41,7 @@ final class BotProfileUITests: XCTestCase {
         return nil
     }
 
-    /// 引导页：跳过优先，跳过不了就按下一步/完成，直到标签栏出现。
+    /// 引导页：跳过优先，跳过不了就按下一步/完成，直到侧边栏按钮出现。
     /// 等一组候选按钮里任意一个出现（同一个按钮的不同语言写法）。
     private func waitAnyButton(_ labels: [String], timeout: TimeInterval = 10) -> XCUIElement? {
         let deadline = Date().addingTimeInterval(timeout)
@@ -107,31 +107,20 @@ final class BotProfileUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: offset).press(forDuration: seconds)
     }
 
-    /// 底栏的标签按钮：同名文字在页面别处也有（比如「应用商店」），按位置筛出底部那条。
+    /// 底栏没了：入口在侧边栏，开抽屉找那一行（ADR-0095）。
     private func tabButton(_ labels: [String]) -> XCUIElement? {
-        let height = app.windows.firstMatch.frame.height
-        for label in labels {
-            for element in app.buttons.matching(identifier: label).allElementsBoundByIndex
-            where element.frame.minY > height * 0.7 {
-                return element
-            }
-        }
-        return nil
+        UITestSidebar.row(app, labels: labels)
     }
 
-    /// 等底部标签栏（三个标签任意一个）。
+    /// 主界面到了：根页面左上角有侧边栏按钮。
     @discardableResult
     private func waitForTabs(timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if tabButton(["Apps", "应用", "Chats", "聊天", "Settings", "设置"]) != nil { return true }
-            _ = app.wait(for: .runningForeground, timeout: 1)
-        }
-        return false
+        UITestSidebar.waitForMain(app, timeout: timeout)
     }
 
     private func passOnboarding() {
         for _ in 0..<12 {
+            if UITestBackend.skipKeyHandoff(app) { continue }
             if waitForTabs(timeout: 1) { return }
             // 最后一页的「跳过」是禁用的，要看「完成」。
             if let skip = waitAnyButton(["Skip", "跳过"], timeout: 2), skip.isEnabled {
@@ -150,18 +139,20 @@ final class BotProfileUITests: XCTestCase {
     }
 
     func testProfileFlows() throws {
-        // 冷启动先恢复连接和引导状态：等到「跳过」或标签栏任一个。
+        continueAfterFailure = false
+        // 冷启动先恢复连接和引导状态：等到「跳过」或侧边栏按钮任一个。
         // 冷启动先恢复连接；引导页和主界面二选一，别只等一个。
-        let start = waitAnyButton(["Apps", "应用"], timeout: 25)
+        let start = waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 25)
             ?? waitAnyButton(["Skip", "跳过", "Next", "下一步", "Done", "完成"], timeout: 60)
-        XCTAssertNotNil(start, "既没到底部标签栏也没到引导页")
+        XCTAssertNotNil(start, "既没到主界面也没到引导页")
         passOnboarding()
+        UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(waitForTabs(timeout: 240), "没回到主界面")
         // 落在哪个标签不确定，统一去应用页。
         // 引导结束后落在哪个标签不确定，一定要切到应用页再找卡片（别的页也有叫「回声」的元素）。
-        tabButton(["Apps", "应用"])?.tap()
+        tabButton(["All Apps", "全部应用", "全部應用程式", "すべてのアプリ"])?.tap()
         XCTAssertTrue(app.buttons["应用商店"].waitForExistence(timeout: 15), "不在应用页")
-        XCTAssertTrue(waitForTabs(timeout: 10), "标签栏消失了")
+        XCTAssertTrue(waitForTabs(timeout: 10), "侧边栏消失了")
         shot("00-launcher")
 
         // 长按 Echo → 详情。
@@ -175,7 +166,7 @@ final class BotProfileUITests: XCTestCase {
             details = waitFor([app.buttons], "详情", timeout: 4) ?? waitFor([app.buttons], "Details", timeout: 4)
             if details == nil, app.descendants(matching: .any)["roomTopBarAvatar"].waitForExistence(timeout: 3) {
                 if let back = waitAnyButton(["Back", "返回"], timeout: 3) { back.tap() } else { app.navigationBars.buttons.firstMatch.tap() }
-                _ = waitAnyButton(["Apps", "应用"], timeout: 5)
+                UITestSidebar.waitForMain(app, timeout: 5)
             }
         }
         print("HIER_AFTER_LONGPRESS:\(app.debugDescription)")
