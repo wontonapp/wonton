@@ -43,7 +43,7 @@ fn member(s: &Setup, username: &str, role: &str, status: MemberStatus) {
     s.members.invite(record).unwrap();
     match status {
         MemberStatus::Joined => {
-            s.members.consume_code(username).unwrap();
+            s.members.mark_joined(username).unwrap();
         }
         MemberStatus::Removed => {
             s.members.remove(username, false, true).unwrap();

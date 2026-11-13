@@ -82,7 +82,7 @@ fn member(s: &Setup, username: &str, can_install_plugins: bool) {
     }
     .to_owned();
     s.members.invite(record).unwrap();
-    s.members.consume_code(username).unwrap();
+    s.members.mark_joined(username).unwrap();
 }
 
 async fn matrix(s: &Setup) -> Fake {
