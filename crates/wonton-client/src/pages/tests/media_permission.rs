@@ -90,7 +90,10 @@ async fn deciding_without_pending_prompt_errors_and_keeps_state() {
 #[tokio::test]
 async fn plugin_state_update_between_request_and_decide_keeps_the_pending_prompt() {
     let rig = Rig::new();
-    rig.plugins.send_replace(plugins("1"));
+    // 走查的真实顺序：插件懒启动，页面在 Stopped 时打开（出「已停止/Start」），点了启动容器才转 Running。
+    let mut stopped = plugins("1");
+    stopped.installed.as_mut().unwrap().plugins[0].status = PluginState::Stopped;
+    rig.plugins.send_replace(stopped);
     rig.open(page_tab());
 
     let first = rig
@@ -99,8 +102,8 @@ async fn plugin_state_update_between_request_and_decide_keeps_the_pending_prompt
         .unwrap();
     assert!(matches!(first, TabMediaPermission::Prompt));
 
-    // 弹窗开着时插件状态在变（容器从启动到运行）：走的查必须保留没答的询问。
-    rig.plugins.send_replace(plugins("2"));
+    // 弹窗开着时容器起起来了：publish 路径上的 clear_gone_prompt 不能把没答的询问清掉。
+    rig.plugins.send_replace(plugins("1"));
 
     let answered = rig.tabs.decide_media_permission(true).unwrap();
     assert!(matches!(answered, TabMediaPermission::Allow));
