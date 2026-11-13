@@ -1,6 +1,9 @@
-//! 家人（ADR-0045）：记录在 `core/members.json`，写法照 `device.rs`：整份重写，0600，启动时读回。
-//! 已移除的家人留在表里，用户名不再分配。归家人的配对码只存密钥的 SHA-256 和过期时间，随记录落盘，
-//! 核心重启后还在；码有效一次，配上就清掉。
+//! 成员和加入请求（ADR-0088）：记录在 `core/members.json`，整份重写，0600，启动时读回。
+//! 已移除的成员留在表里，用户名不再分配。邀请码只存 SHA-256；请求绑定设备 endpoint，批准后的同设备重试到期前有效。
+
+mod join_requests;
+
+pub use join_requests::JoinCheck;
 
 use std::fs;
 use std::io::Write;
@@ -55,6 +58,10 @@ pub enum MembersError {
     NotFound(String),
     #[error("{0} 已被移除：移除后的家人不能出码")]
     Removed(String),
+    #[error(transparent)]
+    Device(#[from] crate::device::DeviceError),
+    #[error("这台设备已经登记，不能改变归属")]
+    DeviceRegistered,
 }
 
 /// 后续任务订阅的家人事件：第一台设备配上（建私人 Bot、Wonton 私聊、拉进家庭群）和移除家人
@@ -86,9 +93,6 @@ pub struct MemberRecord {
     /// 他的角色（`roles.json` 的 ID）。记录里没有这一项时按权限最少的默认角色算。
     #[serde(default = "default_role_id")]
     pub role_id: String,
-    /// 旧的“能装插件”开关：角色接上以后不再读（`install_apps` 说了算），留着等接口跟着删。
-    #[serde(default)]
-    pub can_install_plugins: bool,
     /// 邀请时主人选了建私人 Bot；建 Bot 是后续任务，先记下来。
     #[serde(default)]
     pub wants_private_bot: bool,
@@ -102,18 +106,31 @@ pub struct MemberRecord {
     pub pairing_code_expires_at_ms: Option<u64>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct Stored {
-    members: Vec<MemberRecord>,
+impl MemberRecord {
+    /// 测试里记一个家人：用户名、显示名和用户 ID 由用户名派生，状态“已邀请”，其余按最小。
+    /// 只有测试用，生产走邀请。
+    #[cfg(test)]
+    pub fn for_test(username: &str) -> Self {
+        Self {
+            username: username.to_owned(),
+            user_id: format!("@{username}:test"),
+            display_name: username.to_owned(),
+            email: None,
+            status: MemberStatus::Invited,
+            role_id: default_role_id(),
+            wants_private_bot: true,
+            private_bot: None,
+            pairing_code_hash: None,
+            pairing_code_expires_at_ms: None,
+        }
+    }
 }
 
-/// 用归家人的码来配对时，密钥查出来的结果。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CodeCheck {
-    /// 码归这个家人。
-    Match(String),
-    Expired,
-    Unknown,
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct Stored {
+    members: Vec<MemberRecord>,
+    #[serde(default)]
+    joins: Vec<join_requests::StoredJoin>,
 }
 
 /// 发出去的归家人的码。
@@ -127,7 +144,7 @@ pub struct IssuedCode {
 /// 家人记录。整份重写、随数据目录备份恢复；用户名固定、不复用（ADR-0022）。
 pub struct Members {
     path: PathBuf,
-    members: Mutex<Vec<MemberRecord>>,
+    members: Mutex<Stored>,
     events: tokio::sync::broadcast::Sender<MemberEvent>,
     now_ms: Arc<dyn Fn() -> u64 + Send + Sync>,
 }
@@ -153,15 +170,11 @@ impl Members {
     ) -> Result<Self, MembersError> {
         let path = path.into();
         let members = match fs::read_to_string(&path) {
-            Ok(text) => {
-                let stored: Stored =
-                    serde_json::from_str(&text).map_err(|e| MembersError::Corrupt {
-                        path: path.clone(),
-                        message: e.to_string(),
-                    })?;
-                stored.members
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+            Ok(text) => serde_json::from_str(&text).map_err(|e| MembersError::Corrupt {
+                path: path.clone(),
+                message: e.to_string(),
+            })?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Stored::default(),
             Err(source) => {
                 return Err(MembersError::Io { path, source });
             }
@@ -183,23 +196,40 @@ impl Members {
 
     /// 全部家人，包括已移除的；按用户名排序。
     pub fn list(&self) -> Vec<MemberRecord> {
-        self.lock().sort_by(|a, b| a.username.cmp(&b.username));
-        self.lock().clone()
+        let mut members = self.lock().members.clone();
+        members.sort_by(|a, b| a.username.cmp(&b.username));
+        members
     }
 
     pub fn get(&self, username: &str) -> Option<MemberRecord> {
-        self.lock().iter().find(|m| m.username == username).cloned()
+        self.lock()
+            .members
+            .iter()
+            .find(|m| m.username == username)
+            .cloned()
     }
 
     /// 这个用户名是不是任何一条家人记录（包括已移除的）。
     pub fn taken(&self, username: &str) -> bool {
-        self.lock().iter().any(|m| m.username == username)
+        self.lock().members.iter().any(|m| m.username == username)
+    }
+
+    pub(crate) fn count_role(&self, role_id: &str) -> usize {
+        self.lock()
+            .members
+            .iter()
+            .filter(|member| member.status != MemberStatus::Removed && member.role_id == role_id)
+            .count()
     }
 
     /// 记下一个“已邀请”的家人。用户名的查重由调用方做完，这里只拦记录里已经有的。
     pub fn invite(&self, record: MemberRecord) -> Result<MemberRecord, MembersError> {
         let mut members = self.lock();
-        if members.iter().any(|m| m.username == record.username) {
+        if members
+            .members
+            .iter()
+            .any(|m| m.username == record.username)
+        {
             return Err(MembersError::NotFound(record.username));
         }
         let record = MemberRecord {
@@ -212,26 +242,25 @@ impl Members {
 
     /// 主人给别人换角色（`roles.json` 的 ID）。角色在不在由调用方先查。
     pub fn set_role(&self, username: &str, role_id: &str) -> Result<MemberRecord, MembersError> {
-        let role_id = role_id.to_owned();
-        self.update(username, |record| {
-            if record.status == MemberStatus::Removed {
-                return Err(MembersError::Removed(record.username.clone()));
+        let mut stored = self.lock();
+        let mut next = stored.clone();
+        let record = next
+            .members
+            .iter_mut()
+            .find(|member| member.username == username)
+            .ok_or_else(|| MembersError::NotFound(username.to_owned()))?;
+        if record.status == MemberStatus::Removed {
+            return Err(MembersError::Removed(username.to_owned()));
+        }
+        record.role_id = role_id.to_owned();
+        let record = record.clone();
+        for join in &mut next.joins {
+            if join.request.username == username {
+                join.request.role_id = role_id.to_owned();
             }
-            record.role_id = role_id;
-            Ok(())
-        })
-    }
-
-    /// 主人改一个家人的设置。
-    pub fn set_settings(
-        &self,
-        username: &str,
-        can_install_plugins: bool,
-    ) -> Result<MemberRecord, MembersError> {
-        self.update(username, |record| {
-            record.can_install_plugins = can_install_plugins;
-            Ok(())
-        })
+        }
+        self.commit(&mut stored, next)?;
+        Ok(record)
     }
 
     /// 家人改自己的资料，规则同 ADR-0030（[`owner`] 的检查）：名字必填，邮箱填过以后只能改，不能清空。
@@ -262,8 +291,10 @@ impl Members {
 
     /// 主人给这个家人出码：一次一个，再出一个旧的作废。已移除的家人不再出码。
     pub fn issue_pairing_code(&self, username: &str) -> Result<IssuedCode, MembersError> {
-        let mut members = self.lock();
-        let record = members
+        let mut stored = self.lock();
+        let mut next = stored.clone();
+        let record = next
+            .members
             .iter_mut()
             .find(|m| m.username == username)
             .ok_or_else(|| MembersError::NotFound(username.to_owned()))?;
@@ -276,10 +307,8 @@ impl Members {
         let expires_at_ms = (self.now_ms)() + MEMBER_PAIRING_CODE_TTL_SECS * 1000;
         record.pairing_code_hash = Some(code_hash(secret.expose()));
         record.pairing_code_expires_at_ms = Some(expires_at_ms);
-        let stored = Stored {
-            members: members.clone(),
-        };
-        write_record(&self.path, &stored)?;
+        next.joins.retain(|join| join.request.username != username);
+        self.commit(&mut stored, next)?;
         Ok(IssuedCode {
             secret,
             expires_at_ms,
@@ -296,64 +325,11 @@ impl Members {
         Ok(())
     }
 
-    /// 配对入口查码：密钥对得上、没过期、家人没被移除才算数。改记录在配上之后（[`Self::consume_code`]）。
-    pub fn verify_code(&self, secret_hex: &str) -> CodeCheck {
-        let hash = code_hash(secret_hex);
-        let now_ms = (self.now_ms)();
-        let members = self.lock();
-        let Some(record) = members
-            .iter()
-            .find(|m| m.pairing_code_hash.as_deref() == Some(hash.as_str()))
-        else {
-            return CodeCheck::Unknown;
-        };
-        if record.status == MemberStatus::Removed
-            || record
-                .pairing_code_expires_at_ms
-                .is_none_or(|at| at <= now_ms)
-        {
-            return CodeCheck::Expired;
-        }
-        CodeCheck::Match(record.username.clone())
-    }
-
-    /// 家人的码配对：查码、核对、清码在同一把锁里完成。码是一次性的：两台设备同时拿同一个码，
-    /// 只有一台拿到 `Match`，另一台看到码已经不在了。返回用户名后在外面登记设备；登记失败时
-    /// 码已经作废，主人重发一个。写盘失败时不放行（`Err`）：内存里的码照样清掉，但盘上还在的
-    /// 旧码核心重启后会复活，不能再配出一台设备。
-    pub fn take_code(&self, secret_hex: &str) -> Result<CodeCheck, MembersError> {
-        let hash = code_hash(secret_hex);
-        let now_ms = (self.now_ms)();
-        let mut members = self.lock();
-        let Some(record) = members
-            .iter_mut()
-            .find(|m| m.pairing_code_hash.as_deref() == Some(hash.as_str()))
-        else {
-            return Ok(CodeCheck::Unknown);
-        };
-        if record.status == MemberStatus::Removed
-            || record
-                .pairing_code_expires_at_ms
-                .is_none_or(|at| at <= now_ms)
-        {
-            return Ok(CodeCheck::Expired);
-        }
-        let username = record.username.clone();
-        record.pairing_code_hash = None;
-        record.pairing_code_expires_at_ms = None;
-        let stored = Stored {
-            members: members.clone(),
-        };
-        write_record(&self.path, &stored)?;
-        Ok(CodeCheck::Match(username))
-    }
-
-    /// 配上之后清码；第一次用上时家人从“已邀请”改成“已加入”，发 [`MemberEvent::Joined`]。
-    pub fn consume_code(&self, username: &str) -> Result<bool, MembersError> {
+    /// 测试夹具跳过真实配对；生产只能批准加入请求。
+    #[cfg(test)]
+    pub(crate) fn mark_joined(&self, username: &str) -> Result<bool, MembersError> {
         let mut joined = false;
         self.update(username, |record| {
-            record.pairing_code_hash = None;
-            record.pairing_code_expires_at_ms = None;
             if record.status == MemberStatus::Invited {
                 record.status = MemberStatus::Joined;
                 joined = true;
@@ -386,7 +362,7 @@ impl Members {
         let mut record = None;
         self.update(username, |member| {
             member.status = MemberStatus::Removed;
-            // 配对码的哈希留着：verify_code 对“已移除”的记录回 Expired，码作废但不是不存在的码。
+            // 保留哈希才能向持旧码的设备说明成员已移除，而不是把它当成没发过的码。
             record = Some(member.clone());
             Ok(())
         })?;
@@ -406,40 +382,35 @@ impl Members {
         change: impl FnOnce(&mut MemberRecord) -> Result<(), MembersError>,
     ) -> Result<MemberRecord, MembersError> {
         let mut members = self.lock();
-        let Some(record) = members.iter_mut().find(|m| m.username == username) else {
+        let mut next = members.clone();
+        let Some(record) = next.members.iter_mut().find(|m| m.username == username) else {
             return Err(MembersError::NotFound(username.to_owned()));
         };
         change(record)?;
         // 先复制要返回的记录，可变借用就此结束，整份快照才能克隆出来。
-        let updated = members
+        let updated = next
+            .members
             .iter()
             .find(|m| m.username == username)
             .cloned()
             .expect("update 找到了这条记录");
-        let stored = Stored {
-            members: members.clone(),
-        };
-        write_record(&self.path, &stored)?;
+        self.commit(&mut members, next)?;
         Ok(updated)
     }
 
-    fn save(
-        &self,
-        members: &mut Vec<MemberRecord>,
-        record: MemberRecord,
-    ) -> Result<(), MembersError> {
-        members.push(record);
-        let stored = Stored {
-            members: members.clone(),
-        };
-        if let Err(e) = write_record(&self.path, &stored) {
-            members.pop();
-            return Err(e);
-        }
+    fn save(&self, members: &mut Stored, record: MemberRecord) -> Result<(), MembersError> {
+        let mut next = members.clone();
+        next.members.push(record);
+        self.commit(members, next)
+    }
+
+    fn commit(&self, stored: &mut Stored, next: Stored) -> Result<(), MembersError> {
+        write_record(&self.path, &next)?;
+        *stored = next;
         Ok(())
     }
 
-    fn lock(&self) -> MutexGuard<'_, Vec<MemberRecord>> {
+    fn lock(&self) -> MutexGuard<'_, Stored> {
         self.members.lock().expect("家人记录锁中毒")
     }
 }
@@ -506,42 +477,30 @@ pub fn family_username(taken: impl Fn(&str) -> bool) -> String {
 }
 
 #[cfg(test)]
+#[path = "members_join_tests.rs"]
+mod members_join_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use wonton_protocol::MemberInvite;
-
-    fn record(username: &str) -> MemberRecord {
-        MemberRecord {
-            username: username.to_owned(),
-            user_id: format!("@{username}:wonton.localhost"),
-            display_name: username.to_owned(),
-            email: None,
-            status: MemberStatus::Invited,
-            role_id: default_role_id(),
-            can_install_plugins: false,
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
-        }
-    }
 
     #[test]
     fn invite_survives_a_restart_and_removed_usernames_are_never_reused() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("members.json");
         let members = Members::open(&path).unwrap();
-        members.invite(record("alice")).unwrap();
-        members.set_settings("alice", true).unwrap();
+        members.invite(MemberRecord::for_test("alice")).unwrap();
+        members.set_role("alice", "admin").unwrap();
         members.remove("alice", false, true).unwrap();
 
         let reopened = Members::open(&path).unwrap();
         let alice = reopened.get("alice").unwrap();
         assert_eq!(alice.status, MemberStatus::Removed);
-        assert!(alice.can_install_plugins, "设置跟着记录走");
+        assert_eq!(alice.role_id, "admin", "角色跟着记录走");
         assert!(reopened.taken("alice"), "移除后用户名不再分配");
         assert!(matches!(
-            reopened.invite(record("alice")),
+            reopened.invite(MemberRecord::for_test("alice")),
             Err(MembersError::NotFound(_))
         ));
     }
@@ -559,131 +518,12 @@ mod tests {
     }
 
     #[test]
-    fn two_devices_racing_on_one_code_leave_one_match() {
-        let dir = tempfile::tempdir().unwrap();
-        let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
-        members.invite(record("alice")).unwrap();
-        let code = members.issue_pairing_code("alice").unwrap();
-        let secret = code.secret.expose().to_owned();
-
-        // 两台设备同时拿同一个码：只有一台配上，另一台看到码已经不在了。
-        let handles: Vec<_> = (0..2)
-            .map(|_| {
-                let members = members.clone();
-                let secret = secret.clone();
-                std::thread::spawn(move || members.take_code(&secret))
-            })
-            .collect();
-        let results: Vec<CodeCheck> = handles
-            .into_iter()
-            .map(|h| h.join().unwrap().unwrap())
-            .collect();
-        let matches = results
-            .iter()
-            .filter(|check| matches!(check, CodeCheck::Match(_)))
-            .count();
-        assert_eq!(matches, 1, "{results:?}");
-        assert!(
-            results
-                .iter()
-                .any(|check| matches!(check, CodeCheck::Unknown)),
-            "{results:?}"
-        );
-        // 码已经清掉：再拿一次是不存在的码。
-        assert!(matches!(
-            members.take_code(&secret).unwrap(),
-            CodeCheck::Unknown
-        ));
-    }
-
-    #[test]
-    fn a_failed_write_does_not_pair() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("members.json");
-        let members = Members::open(&path).unwrap();
-        members.invite(record("alice")).unwrap();
-        let code = members.issue_pairing_code("alice").unwrap();
-        // 记录目录只读：写盘失败。
-        std::fs::set_permissions(
-            dir.path(),
-            std::os::unix::fs::PermissionsExt::from_mode(0o555),
-        )
-        .unwrap();
-        assert!(members.take_code(code.secret.expose()).is_err());
-        // 内存里的码照样清掉：恢复写权限后，再拿同一个码是不存在的码。
-        std::fs::set_permissions(
-            dir.path(),
-            std::os::unix::fs::PermissionsExt::from_mode(0o755),
-        )
-        .unwrap();
-        assert!(matches!(
-            members.take_code(code.secret.expose()).unwrap(),
-            CodeCheck::Unknown
-        ));
-    }
-
-    #[test]
-    fn pairing_codes_are_hashed_single_use_and_expire_by_the_injected_clock() {
-        let dir = tempfile::tempdir().unwrap();
-        let now = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1_000_000));
-        let members = Members::with_clock(
-            dir.path().join("members.json"),
-            Arc::new({
-                let now = now.clone();
-                move || now.load(std::sync::atomic::Ordering::SeqCst)
-            }),
-        )
-        .unwrap();
-        members.invite(record("alice")).unwrap();
-
-        let code = members.issue_pairing_code("alice").unwrap();
-        assert_eq!(
-            members.list()[0].pairing_code_hash.as_deref(),
-            Some(code_hash(code.secret.expose()).as_str()),
-            "存的是哈希，不是密钥"
-        );
-        let text = fs::read_to_string(dir.path().join("members.json")).unwrap();
-        assert!(!text.contains(code.secret.expose()), "码的原文不落盘");
-
-        assert_eq!(
-            members.verify_code(code.secret.expose()),
-            CodeCheck::Match("alice".to_owned())
-        );
-        members.consume_code("alice").unwrap();
-        assert_eq!(members.get("alice").unwrap().status, MemberStatus::Joined);
-        assert_eq!(
-            members.verify_code(code.secret.expose()),
-            CodeCheck::Unknown,
-            "码只能用一次"
-        );
-
-        // 再出一个，旧的作废；24 小时后不能用。
-        let second = members.issue_pairing_code("alice").unwrap();
-        assert_eq!(
-            members.verify_code(code.secret.expose()),
-            CodeCheck::Unknown,
-            "再出一个以后旧的不能用"
-        );
-        now.store(
-            1_000_000 + MEMBER_PAIRING_CODE_TTL_SECS * 1000 + 1,
-            std::sync::atomic::Ordering::SeqCst,
-        );
-        assert_eq!(
-            members.verify_code(second.secret.expose()),
-            CodeCheck::Expired,
-            "过了 24 小时不能用"
-        );
-        members.void_pairing_code("alice").unwrap();
-        assert_eq!(members.get("alice").unwrap().pairing_code_hash, None);
-    }
-
-    #[test]
     fn removed_members_get_no_codes_and_joining_emits_events() {
         let dir = tempfile::tempdir().unwrap();
         let members = Members::open(dir.path().join("members.json")).unwrap();
         let mut events = members.subscribe();
-        members.invite(record("bob")).unwrap();
-        members.consume_code("bob").unwrap();
+        members.invite(MemberRecord::for_test("bob")).unwrap();
+        members.mark_joined("bob").unwrap();
         match events.try_recv() {
             Ok(MemberEvent::Joined { username }) => assert_eq!(username, "bob"),
             other => panic!("要发 Joined 事件：{other:?}"),
@@ -698,10 +538,17 @@ mod tests {
             members.issue_pairing_code("bob"),
             Err(MembersError::Removed(_))
         ));
+        let devices = crate::device::Devices::open(dir.path().join("devices.json")).unwrap();
         assert_eq!(
-            members.verify_code(code.secret.expose()),
-            CodeCheck::Expired,
-            "移除时码作废"
+            members
+                .request_join(
+                    code.secret.expose(),
+                    iroh::SecretKey::generate().public(),
+                    "手机",
+                    &devices,
+                )
+                .unwrap(),
+            JoinCheck::Expired
         );
         assert!(
             members
@@ -720,7 +567,7 @@ mod tests {
     fn profile_updates_follow_the_owner_rules() {
         let dir = tempfile::tempdir().unwrap();
         let members = Members::open(dir.path().join("members.json")).unwrap();
-        let mut invited = record("carol");
+        let mut invited = MemberRecord::for_test("carol");
         invited.display_name = "卡罗尔".to_owned();
         members.invite(invited).unwrap();
         let filled = members

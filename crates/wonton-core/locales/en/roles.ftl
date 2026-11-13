@@ -1,0 +1,11 @@
+roles-not-found = There is no role { $role }.
+roles-name-taken = A role named “{ $name }” already exists.
+roles-in-use = People still have the role { $role }; give them another role first.
+roles-default = The default invite role can't be deleted; pick another default first.
+roles-too-many = There are already as many roles as allowed ({ $max }).
+roles-invalid-name = The role name isn't valid: { $error }
+roles-storage = Couldn't save the roles: { $error }
+roles-member-not-found = There is no member { $username }.
+roles-member-removed = { $username } was removed; an invite has to bring them back.
+roles-friend-not-found = There is no friend { $user_id }.
+roles-friends-unavailable = Friends aren't available on this server.

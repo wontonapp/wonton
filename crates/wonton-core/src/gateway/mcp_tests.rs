@@ -589,6 +589,17 @@ async fn bus_tokens_identify_bots_and_reject_foreign_ones() {
     let home = start(Some(vec![Permission::Tools])).await;
     let agent_id = PluginId::parse("com.example.agent").unwrap();
     let other_id = PluginId::parse("com.example.other").unwrap();
+    home.members
+        .invite(crate::members::MemberRecord {
+            role_id: "admin".into(),
+            ..crate::members::MemberRecord::for_test("alice")
+        })
+        .unwrap();
+    home.gateway.mcp.as_ref().unwrap().bus.attach_people(
+        "test".into(),
+        home.members.clone(),
+        home.gateway.roles.clone(),
+    );
     home.manager.bot_records_for_test(
         &agent_id,
         &[

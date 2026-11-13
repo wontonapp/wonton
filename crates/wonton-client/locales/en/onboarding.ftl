@@ -61,5 +61,3 @@ home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relay
 
 home-pairing-joining-pending = This is a joining code: waiting for an admin to approve.
 home-pairing-joining-pending-role = This is a joining code: waiting for an admin to approve. Once approved, you join as { $role }.
-home-pairing-joining-rejected = An admin turned down this joining request.
-home-pairing-joining-code-used = Another device already used this joining code.

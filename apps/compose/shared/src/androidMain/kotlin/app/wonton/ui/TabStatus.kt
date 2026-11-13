@@ -44,7 +44,9 @@ internal fun PluginTabStatus(
         state is TabState.PageRemoved -> Problem(stringResource(R.string.tab_page_removed))
         state is TabState.Unknown -> Problem(stringResource(R.string.tab_status_unknown))
         state is TabState.LoadFailed -> Problem(
-            loadFailureTitle(state.failure), detail = state.status?.let { "HTTP $it" },
+            loadFailureTitle(state.failure),
+            // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
+            detail = state.details ?: state.status?.let { "HTTP $it" },
         )
         else -> null
     }

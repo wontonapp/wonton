@@ -31,6 +31,7 @@ use crate::plugin::manifest::Permission;
 use crate::plugin::upstreams::Endpoint;
 use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, ChainLimits, MemberStatus};
 
+mod carrier;
 mod consumer;
 mod minimal_provider;
 
@@ -131,17 +132,11 @@ async fn bed() -> Bed {
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
     members
         .invite(MemberRecord {
-            username: "alice".into(),
             user_id: ALICE.into(),
-            display_name: "alice".into(),
-            email: None,
             status: MemberStatus::Joined,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: false,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test("alice")
         })
         .unwrap();
     let (gateway_addr, server) = serve_gateway(

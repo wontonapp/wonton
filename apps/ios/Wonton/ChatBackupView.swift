@@ -194,6 +194,7 @@ extension BackupReminder {
 private struct RecoveryKeySection: View {
     let recoveryKey: String
     let confirm: () -> Void
+    @State private var isConfirmingSaved = false
     // 验证只对这一次显示有效：收起页面再进会重建这个视图，要重新验证。
     @State private var revealed: Bool
     // 验证用不了（canEvaluatePolicy 失败且不是没设密码）按失败即停给提示，不让按钮静默无反应。
@@ -233,6 +234,17 @@ private struct RecoveryKeySection: View {
                 .buttonStyle(WontonButtonStyle(kind: .primary))
             }
         }
+        .wontonDialog(
+            String(localized: .ChatBackup0.chatBackupSavedConfirmTitle),
+            message: String(localized: .ChatBackup0.chatBackupSavedConfirmMessage),
+            isPresented: $isConfirmingSaved,
+            actions: [
+                WontonDialogAction(title: String(localized: .Common.commonCancel)) {},
+                WontonDialogAction(title: String(localized: .ChatBackup1.chatBackupSaved), kind: .primary) {
+                    confirm()
+                }
+            ]
+        )
     }
 
     /// 验证用不了：一句人话说明，系统给的原因收进默认收起的“详情”（失败即停，不让按钮静默无反应）。
@@ -288,7 +300,8 @@ private struct RecoveryKeySection: View {
                     Text(.ChatBackup1.chatBackupCopy).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
-                Button(action: confirm) {
+                // 点“已保存”先确认一次：关掉后本机不再显示这把密钥，误点等于永久丢失（盲测 11-12）。
+                Button { isConfirmingSaved = true } label: {
                     Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))

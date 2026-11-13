@@ -1,5 +1,7 @@
 //! 引导状态与官方推荐清单接口。
 
+use wonton_protocol::PermissionItem;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -16,7 +18,7 @@ use wonton_protocol::{
     PluginKind, StoreFailure, StoreItem, StoreProblem,
 };
 
-use super::{Gateway, TunnelPeer, api};
+use super::{Gateway, TunnelPeer, api, permissions};
 use crate::l10n;
 use crate::plugin::InstallError;
 use crate::plugin::languages::Languages;
@@ -116,7 +118,9 @@ pub(crate) async fn get(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let langs = api::languages(&headers);
@@ -138,7 +142,9 @@ pub(crate) async fn put(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = api::owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let update: OnboardingUpdate = match serde_json::from_slice(&body) {

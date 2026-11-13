@@ -336,7 +336,6 @@ fn profile(name: Option<&str>, email: Option<&str>) -> Canned {
         "is_owner": true,
         "display_name": name,
         "email": email,
-        "can_install_plugins": true,
     });
     Canned(200, body.to_string())
 }

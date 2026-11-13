@@ -1,18 +1,19 @@
-//! 扫码配对：核心发一次性的配对码，设备经隧道 endpoint 的 `wonton/pair/0` 出示后登记成主人的设备。码的规则见
-//! ADR-0009 的“接口：扫码配对”。主人和主人的码走内存表（10 分钟）；归家人的码（24 小时）存在
-//! [`crate::members::Members`]，配上时设备登记在那个家人名下（ADR-0045）。
+//! 扫码配对：主人的设备码直接登记；成员邀请码先提交加入请求，管理员批准后才允许隧道连接（ADR-0088）。
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use iroh::EndpointId;
+use wonton_protocol::{JoinOutcome, RoleDef};
 use wonton_tunnel::pair::{PairHandler, PairResponse, PairingSecret, RejectReason, SECRET_LEN};
 
 use crate::device::Devices;
+use crate::friends::Friends;
 use crate::l10n;
-use crate::members::{CodeCheck, Members};
+use crate::members::{JoinCheck, Members};
 use crate::plugin::languages::Languages;
+use crate::roles::Roles;
 
 /// 每次发拒绝文案时问一句主人的语言（配对走 QUIC 协议没有请求头，按 ADR-0043 用主人最近的语言）。
 pub type OwnerLanguages = Arc<dyn Fn() -> Languages + Send + Sync>;
@@ -61,6 +62,8 @@ pub struct Pairing {
     devices: Arc<Devices>,
     members: Arc<Members>,
     owner_languages: OwnerLanguages,
+    roles: RwLock<Option<Arc<Roles>>>,
+    friends: RwLock<Option<Arc<Friends>>>,
     ttl: Duration,
     codes: Mutex<HashMap<String, Entry>>,
 }
@@ -94,6 +97,8 @@ impl Pairing {
             devices,
             members,
             owner_languages,
+            roles: RwLock::new(None),
+            friends: RwLock::new(None),
             ttl,
             codes: Mutex::new(HashMap::new()),
         }
@@ -101,6 +106,28 @@ impl Pairing {
 
     pub fn devices(&self) -> &Devices {
         &self.devices
+    }
+
+    /// 接上配对时返回给被邀请人的实时角色记录。
+    pub fn attach_roles(&self, roles: Arc<Roles>) {
+        *self.roles.write().expect("配对角色锁中毒") = Some(roles);
+    }
+
+    pub(crate) fn attach_friends(&self, friends: Option<Arc<Friends>>) {
+        *self.friends.write().expect("配对好友锁中毒") = friends;
+    }
+
+    fn role_people(&self, role_id: &str) -> u32 {
+        let members = self.members.count_role(role_id);
+        let friends = self.friends.read().expect("配对好友锁中毒");
+        let friends = friends.as_ref().map_or(0, |friends| {
+            friends
+                .list_active()
+                .iter()
+                .filter(|friend| friend.role_id == role_id)
+                .count()
+        });
+        u32::try_from(members + friends).unwrap_or(u32::MAX)
     }
 
     /// 发一个新码。`user` 是出码的人：主人的码为空，家人经“添加设备”出的码是他自己（ADR-0045）。
@@ -171,7 +198,12 @@ impl PairHandler for Pairing {
         let name = (!name.is_empty()).then_some(name);
         let Some(entry) = codes.get_mut(secret.expose()) else {
             // 内存表里没有：可能是归家人的码，存在家人记录里，核心重启后还在（ADR-0045）。
-            return self.pair_with_member_code(&mut codes, device, secret.expose(), &name, &langs);
+            return self.pair_with_member_code(
+                device,
+                secret.expose(),
+                name.as_deref().unwrap_or(""),
+                &langs,
+            );
         };
         if let Some(used_by) = entry.used_by {
             // 同一台设备重发、而且它还在登记表里：第一次已经配上，回应可能只是没赶上（慢中继），幂等地再回一次。
@@ -224,85 +256,62 @@ impl PairHandler for Pairing {
 }
 
 impl Pairing {
-    /// 归家人的码：设备登记在这个家人名下，第一次用上时家人改成“已加入”（ADR-0045）。
-    /// 码在 [`Members::take_code`] 里一次取走：两台设备同时扫码只有一台配上。登记失败时码
-    /// 已经作废，回服务器错误，主人重发一个。
-    ///
-    /// 家人记录里的码取用时就清掉了，同一台设备重发只能靠内存表里的记号认出“已经配上过”。
     fn pair_with_member_code(
         &self,
-        codes: &mut HashMap<String, Entry>,
         device: EndpointId,
         secret_hex: &str,
-        name: &Option<String>,
+        name: &str,
         langs: &Languages,
     ) -> PairResponse {
-        match self.members.take_code(secret_hex) {
-            Err(e) => {
-                tracing::error!(error = %e, "家人的配对码取用失败");
+        let result = self
+            .members
+            .request_join(secret_hex, device, name, &self.devices);
+        match result {
+            Ok(JoinCheck::Unknown) => rejected(
+                RejectReason::UnknownCode,
+                &l10n::text(langs, "gateway-pair-unknown-code", &[]),
+            ),
+            Ok(JoinCheck::Expired) => rejected(
+                RejectReason::Expired,
+                &l10n::text(langs, "gateway-pair-code-expired", &[]),
+            ),
+            Ok(JoinCheck::Paired) => PairResponse::Paired,
+            Ok(JoinCheck::Rejected) => joining(JoinOutcome::Rejected),
+            Ok(JoinCheck::CodeUsed) => joining(JoinOutcome::CodeUsed),
+            Ok(JoinCheck::Pending(role_id)) => {
+                let role = self
+                    .roles
+                    .read()
+                    .expect("配对角色锁中毒")
+                    .as_ref()
+                    .and_then(|roles| roles.get(&role_id));
+                match role {
+                    Some(role) => PairResponse::Joining {
+                        outcome: JoinOutcome::Pending,
+                        role: Some(RoleDef {
+                            id: role.id,
+                            name: role.name,
+                            template: role.template,
+                            permissions: role.permissions,
+                            people: self.role_people(&role_id),
+                        }),
+                    },
+                    None => rejected(
+                        RejectReason::ServerError,
+                        &l10n::text(langs, "gateway-pair-role-unavailable", &[]),
+                    ),
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "记录成员加入请求失败");
                 rejected(
                     RejectReason::ServerError,
                     &l10n::text(
                         langs,
                         "gateway-pair-register-failed",
-                        &[("error", e.to_string().into())],
+                        &[("error", error.to_string().into())],
                     ),
                 )
-            }
-            Ok(CodeCheck::Unknown) => rejected(
-                RejectReason::UnknownCode,
-                &l10n::text(langs, "gateway-pair-unknown-code", &[]),
-            ),
-            Ok(CodeCheck::Expired) => rejected(
-                RejectReason::Expired,
-                &l10n::text(langs, "gateway-pair-code-expired", &[]),
-            ),
-            Ok(CodeCheck::Match(username)) => {
-                match self
-                    .devices
-                    .add_if(device, name.clone(), Some(username.clone()), |_| true)
-                {
-                    Ok(Some(_)) => {
-                        if let Err(e) = self.members.consume_code(&username) {
-                            tracing::error!(member = %username, error = %e, "配上后记家人已加入失败");
-                        }
-                        codes.insert(
-                            secret_hex.to_owned(),
-                            Entry {
-                                // 记号只用 `used_by`：重发在 `pair` 里就回 `Paired`，走不到按 kind 判断的那一步。
-                                kind: CodeKind::Invite,
-                                expires_at: Instant::now(),
-                                used_by: Some(device),
-                                user: None,
-                            },
-                        );
-                        tracing::info!(device = %device.fmt_short(), member = %username, "家人的设备扫码配对");
-                        PairResponse::Paired
-                    }
-                    // 家人的码对登记没有前置条件，这里到不了；真到了也不放行。
-                    Ok(None) => rejected(
-                        RejectReason::ServerError,
-                        &l10n::text(
-                            langs,
-                            "gateway-pair-register-failed",
-                            &[(
-                                "error",
-                                "unreachable: member codes have no precondition".into(),
-                            )],
-                        ),
-                    ),
-                    Err(e) => {
-                        tracing::error!(error = %e, "配对时登记设备失败");
-                        rejected(
-                            RejectReason::ServerError,
-                            &l10n::text(
-                                langs,
-                                "gateway-pair-register-failed",
-                                &[("error", e.to_string().into())],
-                            ),
-                        )
-                    }
-                }
             }
         }
     }
@@ -327,6 +336,13 @@ fn rejected(reason: RejectReason, message: &str) -> PairResponse {
     }
 }
 
+fn joining(outcome: JoinOutcome) -> PairResponse {
+    PairResponse::Joining {
+        outcome,
+        role: None,
+    }
+}
+
 fn prune(codes: &mut HashMap<String, Entry>) {
     let now = Instant::now();
     codes.retain(|_, entry| entry.expires_at + REMEMBER > now);
@@ -337,7 +353,6 @@ mod tests {
     use iroh::SecretKey;
 
     use super::*;
-    use wonton_protocol::MemberStatus;
 
     fn pairing(ttl: Duration) -> (tempfile::TempDir, Pairing, Arc<Members>) {
         pairing_with(ttl, Arc::new(|| Languages::from_header(None)))
@@ -472,103 +487,6 @@ mod tests {
         assert_ne!(ja, fr, "拒绝文案跟着主人的语言协商");
     }
 
-    #[test]
-    fn a_member_code_registers_the_device_under_the_member_and_joins_once() {
-        let (_dir, pairing, members) = pairing(CODE_TTL);
-        members
-            .invite(crate::members::MemberRecord {
-                username: "alice".to_owned(),
-                user_id: "@alice:wonton.localhost".to_owned(),
-                display_name: "Alice".to_owned(),
-                email: None,
-                status: MemberStatus::Invited,
-                role_id: "friend".to_owned(),
-                can_install_plugins: false,
-                wants_private_bot: true,
-                private_bot: None,
-                pairing_code_hash: None,
-                pairing_code_expires_at_ms: None,
-            })
-            .unwrap();
-        let code = members.issue_pairing_code("alice").unwrap();
-        let phone = device();
-        assert_eq!(
-            reason(&pairing.pair(phone, &code.secret, "Alice 的手机")),
-            None
-        );
-        assert_eq!(
-            pairing.devices().list()[0].user.as_deref(),
-            Some("alice"),
-            "设备登记在家人名下"
-        );
-        assert_eq!(
-            members.get("alice").unwrap().status,
-            MemberStatus::Joined,
-            "家人的码第一次用上时状态改成已加入"
-        );
-        assert_eq!(
-            members.get("alice").unwrap().pairing_code_hash,
-            None,
-            "配上后码清掉"
-        );
-        // 同一台设备重发同一个码是幂等的（回应可能在慢中继上丢了）；别的设备拿这个码不行。
-        assert_eq!(reason(&pairing.pair(phone, &code.secret, "再来")), None);
-        assert_eq!(
-            reason(&pairing.pair(device(), &code.secret, "别人")),
-            Some(RejectReason::Used)
-        );
-        assert_eq!(pairing.devices().list().len(), 1);
-        // 主人发的码照样登记在主人名下。
-        let owner_code = pairing.issue(CodeKind::Invite, None);
-        let tablet = device();
-        assert_eq!(
-            reason(&pairing.pair(tablet, &owner_code.secret, "平板")),
-            None
-        );
-        let tablet_device = pairing
-            .devices()
-            .list()
-            .into_iter()
-            .find(|d| d.id == tablet)
-            .expect("平板已在登记表里");
-        assert_eq!(tablet_device.user, None, "主人的码配上还是主人的设备");
-    }
-
-    /// 重发的记号只在内存里：核心重启后码已经不作数了，重发按没发过处理，主人重发一个。
-    #[test]
-    fn a_retry_is_not_recognized_after_a_restart() {
-        let dir = tempfile::tempdir().unwrap();
-        let devices = Arc::new(Devices::open(dir.path().join("devices.json")).unwrap());
-        let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
-        let langs = Arc::new(|| Languages::from_header(None));
-        let pairing = Pairing::with_ttl(devices.clone(), members.clone(), langs.clone(), CODE_TTL);
-        members
-            .invite(crate::members::MemberRecord {
-                username: "alice".to_owned(),
-                user_id: "@alice:wonton.localhost".to_owned(),
-                display_name: "Alice".to_owned(),
-                email: None,
-                status: MemberStatus::Invited,
-                role_id: "friend".to_owned(),
-                can_install_plugins: false,
-                wants_private_bot: false,
-                private_bot: None,
-                pairing_code_hash: None,
-                pairing_code_expires_at_ms: None,
-            })
-            .unwrap();
-        let code = members.issue_pairing_code("alice").unwrap();
-        let phone = device();
-        assert_eq!(reason(&pairing.pair(phone, &code.secret, "手机")), None);
-        drop(pairing);
-
-        let restarted = Pairing::with_ttl(devices, members, langs, CODE_TTL);
-        assert_eq!(
-            reason(&restarted.pair(phone, &code.secret, "重发")),
-            Some(RejectReason::UnknownCode)
-        );
-    }
-
     /// 吊销以后同一台设备拿用过的码重发，不能因为幂等又配回来：回 `used`，登记表里仍然没有它。
     #[test]
     fn a_revoked_device_cannot_reuse_its_code() {
@@ -579,36 +497,6 @@ mod tests {
         assert!(pairing.devices().remove(&phone).unwrap());
         assert_eq!(
             reason(&pairing.pair(phone, &invite.secret, "重发")),
-            Some(RejectReason::Used)
-        );
-        assert!(!pairing.devices().contains(&phone));
-    }
-
-    /// 家人码配上以后吊销，同样不能重发配回来。
-    #[test]
-    fn a_revoked_member_device_cannot_reuse_the_member_code() {
-        let (_dir, pairing, members) = pairing(CODE_TTL);
-        members
-            .invite(crate::members::MemberRecord {
-                username: "alice".to_owned(),
-                user_id: "@alice:wonton.localhost".to_owned(),
-                display_name: "Alice".to_owned(),
-                email: None,
-                status: MemberStatus::Invited,
-                role_id: "friend".to_owned(),
-                can_install_plugins: false,
-                wants_private_bot: false,
-                private_bot: None,
-                pairing_code_hash: None,
-                pairing_code_expires_at_ms: None,
-            })
-            .unwrap();
-        let code = members.issue_pairing_code("alice").unwrap();
-        let phone = device();
-        assert_eq!(reason(&pairing.pair(phone, &code.secret, "手机")), None);
-        assert!(pairing.devices().remove(&phone).unwrap());
-        assert_eq!(
-            reason(&pairing.pair(phone, &code.secret, "重发")),
             Some(RejectReason::Used)
         );
         assert!(!pairing.devices().contains(&phone));

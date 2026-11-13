@@ -95,10 +95,10 @@ services:
       - ${WONTON_DATA_DIR}:${WONTON_DATA_DIR}
       # 宿主网络中继的 unix 套接字（ADR-0036）：`sun_path` 只有 108 字节，放在固定的短目录里，不跟数据目录的长度走。
       - ${WONTON_RELAY_DIR:-/run/wonton/relay}:${WONTON_RELAY_DIR:-/run/wonton/relay}
+      # 密钥只读；联邦名单（ADR-0050）核心要原地重写，Tuwunel 只读挂了整个 secrets/tuwunel 目录，所以把这个
+      # 子目录再单独挂成可写（深路径的挂载盖过上面的只读），secrets/ 根上别的密钥照旧只读。
       - ${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro
-      # 联邦名单（ADR-0050）：核心原地重写（不能换 inode，单文件绑定挂载钉住 inode），Tuwunel 只读挂载里面的
-      # config.toml。
-      - ${WONTON_INSTALL_DIR}/fed:${WONTON_INSTALL_DIR}/fed
+      - ${WONTON_INSTALL_DIR}/secrets/tuwunel:${WONTON_INSTALL_DIR}/secrets/tuwunel
       # 只读看宿主的设备节点（有没有显卡、属于哪个组）；设备 cgroup 没放行，核心开不了它们。不递归：/dev 下的子挂载
       # （/dev/shm 里是宿主其他进程的共享内存，还有 /dev/pts、/dev/mqueue）不带进来，核心只要 devtmpfs 里的节点。
       - type: bind

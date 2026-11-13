@@ -130,6 +130,7 @@ async fn outgoing_prompt_cancel_and_close_match_official_schema() {
         client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "hi"})],
+            None,
             1024,
             Duration::from_secs(2),
             zh(),
@@ -284,6 +285,7 @@ async fn official_updates_flow_through_the_real_read_loop() {
         let mut prompt = std::pin::pin!(client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "hi"})],
+            None,
             1024,
             Duration::from_secs(30),
             zh(),

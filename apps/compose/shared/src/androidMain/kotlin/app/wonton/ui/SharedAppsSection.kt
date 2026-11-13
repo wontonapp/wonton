@@ -73,6 +73,6 @@ internal fun sharedPluginProblem(state: TabState, title: String): Problem? = whe
         app.wonton.protocol.TabLoadFailure.TRANSPORT -> R.string.problem_transport_unavailable_title
         app.wonton.protocol.TabLoadFailure.PLUGIN_NOT_READY -> R.string.tab_load_not_ready
         app.wonton.protocol.TabLoadFailure.UPSTREAM -> R.string.tab_load_upstream
-    }, detail = state.status?.let { "HTTP $it" })
+    }, detail = state.details ?: state.status?.let { "HTTP $it" })
     is TabState.Ready, is TabState.Loading -> null
 }
