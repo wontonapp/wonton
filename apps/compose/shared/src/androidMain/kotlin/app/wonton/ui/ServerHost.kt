@@ -26,7 +26,7 @@ fun WontonApp(
     onRoomRequestHandled: () -> Unit = {},
     onCardsSettled: (String, List<String>) -> Unit = { _, _ -> },
     requestedLink: AppLinkRequest? = null,
-    requestedAgentText: AgentTextRequest? = null,
+    shareIntake: ShareIntake = remember { ShareIntake() },
 ) {
     val servers by remember(core) { core.serversUpdates() }.collectAsState(remember(core) { core.servers() })
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
@@ -68,6 +68,7 @@ fun WontonApp(
                         onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
                         requestedLink = requestedLink,
                         requestedAgentText = requestedAgentText,
+                        shareIntake = shareIntake,
                     )
                 }
             }

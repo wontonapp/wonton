@@ -33,13 +33,19 @@ import app.wonton.protocol.FontStyle
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.InstalledPlugins
 import app.wonton.protocol.PendingConfirmation
+import app.wonton.protocol.PluginKind
+import app.wonton.protocol.PluginRuntime
+import app.wonton.protocol.PluginState
+import app.wonton.protocol.PluginTrust
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
+import app.wonton.protocol.RolesViewModel
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
@@ -48,6 +54,7 @@ import app.wonton.protocol.StorageUsage
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
+import app.wonton.protocol.UdpFlowStats
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 
@@ -142,8 +149,27 @@ internal fun previewHome() = HomeViewModel(
         rttMs = 48u,
         lastFailure = null,
         addressesStale = false,
-        udpFlows = emptyList(),
-        udpBufferEvictedDatagrams = 0u,
+        udpFlows = listOf(
+            UdpFlowStats(
+                flowId = 3u,
+                pluginId = "app.sunshine",
+                port = 47998u,
+                receivedPackets = 1_824uL,
+                sentPackets = 1_795uL,
+                oversizedDrops = 3uL,
+                bufferEvictedDrops = null,
+            ),
+            UdpFlowStats(
+                flowId = 4u,
+                pluginId = "app.neko",
+                port = 8080u,
+                receivedPackets = 412uL,
+                sentPackets = 398uL,
+                oversizedDrops = 0uL,
+                bufferEvictedDrops = null,
+            ),
+        ),
+        udpBufferEvictedDatagrams = 57uL,
     ),
     proxy = null,
     webUrl = null,
@@ -151,6 +177,71 @@ internal fun previewHome() = HomeViewModel(
     invite = null,
     keepConnection = false,
     justRecovered = false,
+)
+
+/** 连接详情预览里 UDP 流向指向的已装插件：只填画面用得到的名字，其余取空值。 */
+internal fun previewInstalled() = InstalledPlugins(
+    plugins = listOf(
+        InstalledPlugin(
+            id = "app.sunshine",
+            title = "Sunshine",
+            summary = "",
+            version = "1.0.0",
+            revision = "r1",
+            kind = PluginKind.APP,
+            runtime = PluginRuntime.COMPOSE,
+            icon = null,
+            trust = PluginTrust.COMMUNITY,
+            source = null,
+            provider = null,
+            viaIndex = null,
+            writtenBy = null,
+            status = PluginState.Stopped,
+            webUrl = null,
+            crossOriginIsolated = false,
+            declaresTools = false,
+            tabs = emptyList(),
+            chat = null,
+            botUserId = null,
+            family = false,
+            upgrade = null,
+            removable = true,
+            notices = emptyList(),
+            enabledRootPermissions = emptyList(),
+            installProgress = null,
+            tunnelPorts = emptyList(),
+        ),
+        InstalledPlugin(
+            id = "app.neko",
+            title = "neko",
+            summary = "",
+            version = "1.0.0",
+            revision = "r1",
+            kind = PluginKind.APP,
+            runtime = PluginRuntime.COMPOSE,
+            icon = null,
+            trust = PluginTrust.COMMUNITY,
+            source = null,
+            provider = null,
+            viaIndex = null,
+            writtenBy = null,
+            status = PluginState.Stopped,
+            webUrl = null,
+            crossOriginIsolated = false,
+            declaresTools = false,
+            tabs = emptyList(),
+            chat = null,
+            botUserId = null,
+            family = false,
+            upgrade = null,
+            removable = true,
+            notices = emptyList(),
+            enabledRootPermissions = emptyList(),
+            installProgress = null,
+            tunnelPorts = emptyList(),
+        ),
+    ),
+    upgradeCheck = null,
 )
 
 internal fun previewPlugins() = PluginsViewModel(
@@ -198,6 +289,7 @@ internal fun previewPlugins() = PluginsViewModel(
     portMappings = emptyList(),
     ownerSecrets = null,
     mediaGrants = emptyList(),
+    roles = RolesViewModel(loading = false, roles = emptyList(), defaultInviteRole = null, problem = null),
 )
 
 internal fun previewCard() = PendingConfirmation(
@@ -272,6 +364,15 @@ internal fun HomeStatusPanelDarkPreview() {
             onConnection = {},
             onOpenCardRoom = {},
         )
+    }
+}
+
+/** 连接详情页（ADR-0072 的 UDP 流向）：汇总行默认收起，点开每个流向一行。 */
+@Preview(name = "连接详情", locale = "en", widthDp = 390, heightDp = 560)
+@Composable
+internal fun ConnectionDetailsFlowsPreview() {
+    PreviewFrame {
+        ConnectionDetailsPage(previewHome(), previewInstalled(), onBack = {})
     }
 }
 

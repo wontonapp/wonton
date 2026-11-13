@@ -116,6 +116,7 @@ plugins-core-upgrade-timed-out = Your home server didn't respond within the time
 plugins-core-upgrade-timed-out-rollback = Your home server didn't respond within the time limit, so the update result is unknown. The result will show here once you're connected. To go back to the old version, run the install command on your computer again with WONTON_CORE_PIN={ $digest }.
 
 plugins-core-upgrade-invalid-action = Not a home server update action.
+plugins-roles-invalid-action = Not a role page action.
 
 plugins-core-upgrade-already-running = An update is already in progress.
 

@@ -19,6 +19,7 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
+pub mod agent_acp;
 pub mod agent_chains;
 mod agent_chains_api;
 pub mod agent_outbox;
@@ -75,6 +76,7 @@ mod push;
 mod pushers;
 mod registry_mirror;
 mod request_guards;
+mod roles;
 mod room_rules;
 pub(crate) mod send_limits;
 pub mod sharing;
@@ -197,7 +199,7 @@ pub struct Gateway {
     pub tusd: Option<String>,
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
-    friends: Option<Arc<Friends>>,
+    pub(crate) friends: Option<Arc<Friends>>,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -209,6 +211,8 @@ pub struct Gateway {
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
+    /// `agent_acp` 的活连接注册表（ADR-0061 第 5 块）：并发计数和停链取消。
+    pub(crate) agent_acp: Option<Arc<agent_acp::Registry>>,
 }
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
@@ -277,6 +281,7 @@ impl Gateway {
             app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
             agent_chains: None,
+            agent_acp: None,
         }
     }
 
@@ -497,7 +502,6 @@ impl Gateway {
                 permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
-                can_install_plugins: true,
             })
         } else {
             let record = self
@@ -525,7 +529,6 @@ impl Gateway {
                 role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
-                can_install_plugins: record.can_install_plugins,
             })
         }
     }

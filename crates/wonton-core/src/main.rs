@@ -342,7 +342,14 @@ async fn serve() -> anyhow::Result<()> {
         .matrix
         .as_ref()
         .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
-    attach_identity(&bus, matrix.as_ref(), &cfg, server_name, members.clone());
+    attach_identity(
+        &bus,
+        matrix.as_ref(),
+        &cfg,
+        server_name,
+        members.clone(),
+        roles.clone(),
+    );
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -438,6 +445,9 @@ fn open_gateway(
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
+    let agent_acp = gateway::agent_acp::Registry::new();
+    // 停链对 agent_acp 会话的取消（ADR-0061 第 10 节）走这张注册表。
+    agent_chains.attach_acp_cancel(agent_acp.clone());
     Arc::new(
         Gateway::new(
             cfg.public.clone(),
@@ -467,6 +477,7 @@ fn open_gateway(
         .with_friends(Some(friends))
         .with_contacts(contacts)
         .with_agent_chains(Some(agent_chains))
+        .with_agent_acp(Some(agent_acp))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing)),
     )
@@ -649,8 +660,9 @@ fn attach_identity(
     cfg: &Config,
     server_name: String,
     members: Arc<Members>,
+    roles: Arc<Roles>,
 ) {
-    bus.attach_people(server_name, members);
+    bus.attach_people(server_name, members, roles);
     bus.attach_matrix(matrix.cloned(), cfg.username.clone());
 }
 

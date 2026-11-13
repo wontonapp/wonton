@@ -104,6 +104,7 @@ impl FakeHost {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::os::unix::fs::MetadataExt;
 
     use bollard::models::HostConfig;
@@ -112,6 +113,7 @@ mod tests {
 
     use crate::plugin::gpu::*;
     use crate::plugin::languages::Languages;
+    use crate::plugin::requirements::GpuVendor;
     use wonton_l10n::Arg;
 
     /// 测试用的语言和期望值都走同一个目录，防止文案漂移。
@@ -132,13 +134,12 @@ mod tests {
         let host = FakeHost::amd();
         let grant = probe(&host.paths(), &zh()).unwrap();
         assert_eq!(grant.devices, ["/dev/kfd", "/dev/dri"]);
-        assert!(!grant.nvidia);
-        assert_eq!(grant.vendors, ["AMD"]);
+        assert_eq!(grant.vendors, BTreeSet::from([GpuVendor::Amd]));
         // 假设备节点是普通文件，属于测试进程的组；真机上是 video、render 的 GID。
         let gid = std::fs::metadata(host.dev().join("kfd")).unwrap().gid();
         let expected: Vec<u32> = if gid == 0 { Vec::new() } else { vec![gid] };
         assert_eq!(grant.groups, expected);
-        let text = grant.describe(&zh());
+        let text = grant.keep(GpuVendor::Amd).describe(&zh());
         let groups: Vec<String> = expected.iter().map(ToString::to_string).collect();
         let group_refs: Vec<&str> = groups.iter().map(String::as_str).collect();
         assert_eq!(
@@ -146,7 +147,7 @@ mod tests {
             say(
                 "plugin-install-gpu-describe-vendors",
                 &[
-                    ("vendors", zh_list(&["AMD"]).into()),
+                    ("vendors", "AMD".into()),
                     ("devices", zh_list(&["/dev/kfd", "/dev/dri"]).into()),
                     ("groups", zh_list(&group_refs).into()),
                 ],
@@ -162,7 +163,7 @@ mod tests {
         host.dev_node("dri/renderD128");
         let grant = probe(&host.paths(), &zh()).unwrap();
         assert_eq!(grant.devices, ["/dev/dri"]);
-        assert_eq!(grant.vendors, ["Intel"]);
+        assert_eq!(grant.vendors, BTreeSet::from([GpuVendor::Intel]));
     }
 
     #[test]
@@ -171,9 +172,9 @@ mod tests {
         let grant = probe(&host.paths(), &zh()).unwrap();
         assert!(grant.nvidia);
         assert!(grant.devices.is_empty(), "NVIDIA 的设备由运行时放进容器");
-        assert_eq!(grant.vendors, ["NVIDIA"]);
+        assert_eq!(grant.vendors, BTreeSet::from([GpuVendor::Nvidia]));
         assert_eq!(
-            grant.describe(&zh()),
+            grant.keep(GpuVendor::Nvidia).describe(&zh()),
             say("plugin-install-gpu-describe-nvidia", &[])
         );
 
@@ -234,10 +235,12 @@ mod tests {
     #[test]
     fn grants_become_devices_groups_and_device_requests() {
         let grant = GpuGrant {
+            vendor: GpuVendor::Amd,
             devices: vec!["/dev/kfd".into(), "/dev/dri".into()],
             groups: vec![983, 987],
             nvidia: true,
-            vendors: vec!["AMD".into(), "NVIDIA".into()],
+            images: Vec::new(),
+            arch_unknown: Vec::new(),
         };
         let mut host = HostConfig::default();
         grant.apply(&mut host);
@@ -260,7 +263,7 @@ mod tests {
                 say(
                     "plugin-install-gpu-describe-vendors",
                     &[
-                        ("vendors", zh_list(&["AMD"]).into()),
+                        ("vendors", "AMD".into()),
                         ("devices", zh_list(&["/dev/kfd", "/dev/dri"]).into()),
                         ("groups", zh_list(&["983", "987"]).into()),
                     ],

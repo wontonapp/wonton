@@ -137,7 +137,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         Ok(super::declarations(manifest)
             .filter_map(|capability| {
-                super::chosen(&state, &providers, &manifest.id, capability)
+                super::chosen(&state, &providers, &manifest.id, capability, None)
                     .map(|provider| (capability.clone(), provider.id.to_string()))
             })
             .collect())

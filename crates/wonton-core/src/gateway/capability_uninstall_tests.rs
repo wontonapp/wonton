@@ -177,7 +177,6 @@ async fn install_member(h: &Harness) -> iroh::EndpointId {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "admin".to_owned(),
-            can_install_plugins: true,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,
@@ -261,6 +260,7 @@ async fn capability_uninstall_by_a_member_does_not_authorize_a_high_privilege_re
                         &PluginId::parse(CONSUMER).unwrap(),
                         CAPABILITY,
                         &Languages::default(),
+                        None,
                     )
                     .await
                     .unwrap()
@@ -277,6 +277,7 @@ async fn capability_uninstall_by_a_member_does_not_authorize_a_high_privilege_re
                         &PluginId::parse(CONSUMER).unwrap(),
                         CAPABILITY,
                         &Languages::default(),
+                        None,
                     )
                     .await,
                 Err(crate::plugin::dependencies::CapabilityAccessError::Denied)
@@ -394,6 +395,7 @@ async fn capability_batch_uninstall_only_uses_providers_that_survive_the_whole_r
                         &PluginId::parse(CONSUMER).unwrap(),
                         CAPABILITY,
                         &Languages::default(),
+                        None,
                     )
                     .await
                     .unwrap()

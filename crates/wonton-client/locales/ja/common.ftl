@@ -107,6 +107,7 @@ plugins-core-upgrade-timed-out = 制限時間を過ぎても自宅サーバー�
 plugins-core-upgrade-timed-out-rollback = 制限時間を過ぎても自宅サーバーに接続できず、アップデートの結果は不明です。接続するとここが更新されます。旧バージョンに戻すには、ホストでインストールコマンドをもう一度実行し、WONTON_CORE_PIN={ $digest } を付けてください
 
 plugins-core-upgrade-invalid-action = 自宅サーバーのアップデートの操作ではありません
+plugins-roles-invalid-action = 役割ページの操作ではありません
 
 plugins-core-upgrade-already-running = すでにアップデートを実行中です
 

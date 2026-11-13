@@ -131,6 +131,7 @@ impl ClientCore {
             | Action::SendFileToDevices { .. }
             | Action::GrantFileToRoom { .. }
             | Action::DismissFileProblem) => scope.files.dispatch(action),
+            action if is_roles_action(&action) => scope.plugins.dispatch_roles(action),
             action @ (Action::RefreshCoreUpgrade { .. }
             | Action::StartCoreUpgrade { .. }
             | Action::CancelCoreUpgrade
@@ -170,6 +171,20 @@ fn is_page_action(action: &Action) -> bool {
             | Action::TabLoadSucceeded { .. }
             | Action::DismissUninstalledTabs
             | Action::SetRoomEntryBlocked { .. }
+    )
+}
+
+/// 角色页的操作（ADR-0088）。
+fn is_roles_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::RefreshRoles
+            | Action::CreateRole { .. }
+            | Action::UpdateRole { .. }
+            | Action::DeleteRole { .. }
+            | Action::SetDefaultRole { .. }
+            | Action::AssignMemberRole { .. }
+            | Action::AssignFriendRole { .. }
     )
 }
 
