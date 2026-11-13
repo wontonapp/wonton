@@ -1,4 +1,4 @@
-//! 真实 Docker：安装、停止、重启核心读取 Stopped、HTTP 启动、幂等与数据保留。
+//! 真实 Docker：安装、意外停止（保留运行意图，算 Degraded）、重启核心照样 Degraded、HTTP 启动、幂等与数据保留。
 //! 这些测试验证行为不验证速度，期限和生产一致；共用 runner 忙时 Docker 起容器会慢。
 
 use std::sync::Arc;
@@ -119,12 +119,21 @@ async fn exercise(
         Some(ContainerStateStatusEnum::EXITED)
     );
     manager.watch_containers().await;
-    assert_eq!(manager.list()[0].status, PluginStatus::Stopped);
+    // 不是主人要求的停止：保留运行意图，算 Degraded 而不是 Stopped（ADR-0105）。
+    assert!(
+        matches!(manager.list()[0].status, PluginStatus::Degraded { .. }),
+        "{:?}",
+        manager.list()[0].status
+    );
     let mut restarted = manager_in_instance(engine.clone(), dir, names.name());
     restarted.cfg.install_timeout = DEFAULT_INSTALL_TIMEOUT;
     let restarted = Arc::new(restarted);
     restarted.restore().await.unwrap();
-    assert_eq!(restarted.list()[0].status, PluginStatus::Stopped);
+    assert!(
+        matches!(restarted.list()[0].status, PluginStatus::Degraded { .. }),
+        "{:?}",
+        restarted.list()[0].status
+    );
 
     let (port, server) = gateway(restarted.clone(), dir.path()).await;
     let http = reqwest::Client::builder().no_proxy().build().unwrap();
@@ -167,14 +176,14 @@ async fn exercise(
         Some(ContainerStateStatusEnum::RUNNING)
     );
     println!(
-        "{}: exited → Stopped（巡检和核心重启）→ POST start 200 → Running；重复 start 200；网页 persistent；容器 ID 和一次性服务未改变",
+        "{}: exited → Degraded（巡检和核心重启）→ POST start 200 → Running；重复 start 200；网页 persistent；容器 ID 和一次性服务未改变",
         names.name()
     );
     server.abort();
 }
 
 #[tokio::test]
-#[ignore = "需要 Docker，真实容器 停→Stopped→start→Running"]
+#[ignore = "需要 Docker，真实容器 停→Degraded→start→Running"]
 async fn stopped_plugin_starts_existing_containers_via_http() {
     let engine = Engine::connect().unwrap();
     engine.check_server().await.unwrap();
