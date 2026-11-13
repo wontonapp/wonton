@@ -88,7 +88,20 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
-        .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
+        .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true) }
+        // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
+        // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
+        .onChange(of: plugins.viewModel.confirmation) { _, offered in
+            confirmation = offered.map(PluginConfirmation.store)
+        }
+        .onChange(of: confirmation) { (old: PluginConfirmation?, new: PluginConfirmation?) in
+            // 主人自己关掉确认页：核心撤走这条、放下一条。确认后核心已把这条撤走，ID 对不上，不会再进来。
+            guard new == nil, let shown = old, case let .store(offer) = shown else { return }
+            let current = plugins.viewModel.confirmation
+            if current?.preview.id == offer.preview.id {
+                plugins.send(.dismissStoreConfirmation)
+            }
+        }
         .uninstallDialog($uninstalling, model: plugins)
         .wontonActionSheet(
             isPresented: isShowingMenu,

@@ -12,8 +12,8 @@ use wonton_l10n::l10n;
 use wonton_protocol::{
     CoreError, HomeStatus, HomeViewModel, InstallPreview, InstallRequest, PluginDetail,
     PluginFailure, PluginIcon, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskNextStep, PluginTaskState, SecretString, SecretUpdate, SecretValues, SettingValues,
-    UpgradeRequest, UpgradeResult,
+    PluginTaskNextStep, PluginTaskState, PluginsViewModel, SecretString, SecretUpdate,
+    SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
@@ -197,6 +197,38 @@ impl PluginsLink {
         Ok(())
     }
 
+    /// 家里的服务器报到的阶段（拉镜像、准备、启动、等 Bot）放进在做的任务：升级几分钟里只有小圈时，
+    /// 主人看不出在做哪一步。跟着已安装列表走，列表里不忙了就清掉，任务自己的结果另说。
+    pub(super) fn sync_task_progress(view: &mut PluginsViewModel) -> bool {
+        let busy = |status: &PluginState| {
+            matches!(
+                status,
+                PluginState::Installing | PluginState::Upgrading | PluginState::Uninstalling
+            )
+        };
+        let mut changed = false;
+        for task in &mut view.tasks {
+            if !task.state.in_progress() || task.operation == PluginOperation::Uninstall {
+                if task.install_progress.is_some() {
+                    task.install_progress = None;
+                    changed = true;
+                }
+                continue;
+            }
+            let progress = view
+                .installed
+                .as_ref()
+                .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == task.id))
+                .filter(|plugin| busy(&plugin.status))
+                .and_then(|plugin| plugin.install_progress.clone());
+            if task.install_progress != progress {
+                task.install_progress = progress;
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// `DismissPluginTask`：清掉做完的任务；没做完的不能清，壳不会给这个按钮。
     pub(crate) fn dismiss_task(&self, id: &str) -> Result<(), CoreError> {
         let mut outcome = Ok(());
@@ -264,6 +296,7 @@ impl PluginsLink {
                 icon,
                 operation,
                 state: PluginTaskState::Running,
+                install_progress: None,
                 waiting_for_connection: false,
                 added_tools: None,
             });

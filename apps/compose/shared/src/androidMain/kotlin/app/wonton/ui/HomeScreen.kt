@@ -39,7 +39,7 @@ fun HomeRoute(
                     { SettingsToolbarButton(settingsUpgrade, onSettings) }
                 } else null,
             )
-        else -> PluginPages(plugins, navigation) {
+        else -> PluginPages(plugins, navigation, storeConfirmations = true) {
             if (page == HomePage.STORE && app.wonton.protocol.AppsAction.STORE in plugins.viewModel.actions) {
                 StoreRoute(plugins, navigation, onBack = { onPage(HomePage.LAUNCHER) })
             } else {

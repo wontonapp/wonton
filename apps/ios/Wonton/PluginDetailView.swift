@@ -204,12 +204,14 @@ struct PluginDetailView: View {
         }
     }
 
-    /// 标题旁的按钮：没装的“获取”，能升级的“更新”，装着的“打开”。
+    /// 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。
     private func action(for detail: PluginDetail) -> DetailAction? {
         if let installed = detail.installed {
             if installed.upgrade != nil {
-                return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !installed.isBusy) {
-                    confirmation = .upgrade(id: installed.id)
+                // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
+                let busy = isWorking || model.viewModel.pending.contains(installed.id)
+                return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
+                    model.send(.upgradeNow(pluginId: installed.id))
                 }
             }
             guard let entry = installed.entries.first else { return nil }

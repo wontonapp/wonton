@@ -132,6 +132,7 @@ fn sidebar_view_model_round_trip() {
                 reason: PluginFailure::Changed,
                 message: "插件包在预览之后变了".into(),
             },
+            install_progress: None,
             waiting_for_connection: false,
             added_tools: Some(AddedTools::NotCompared {
                 reason: "插件没有运行，列不出工具".into(),

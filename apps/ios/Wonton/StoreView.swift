@@ -57,14 +57,6 @@ struct StoreView: View {
             }
         }
         .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
-        // 关掉确认页没装也没升：告诉核心放下一条（“全部更新”排队时）。
-        .onChange(of: confirmation) { old, new in
-            if old != nil, new == nil { model.send(.dismissStoreConfirmation) }
-        }
-        // 核心判断要主人拿主意的一键操作：照着打开确认页，预览已经取好。
-        .onChange(of: model.viewModel.confirmation) { _, confirmation in
-            self.confirmation = confirmation.map(PluginConfirmation.store)
-        }
         .confirmationDialog(
             String(localized: .Store.storeUpdateAllTitle(count: model.viewModel.updatable.count)),
             isPresented: $showsUpdateAll,
@@ -390,12 +382,22 @@ struct TaskRow: View {
     @ViewBuilder private var state: some View {
         switch task.state {
         case .running:
-            Text(
-                task.waitingForConnection
-                    ? String(localized: .Plugin1.pluginTaskWaitingForConnection)
-                    : task.operation.runningText
-            )
-            .foregroundStyle(Color(colors.textSecondary))
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
+                if task.waitingForConnection {
+                    Text(String(localized: .Plugin1.pluginTaskWaitingForConnection))
+                        .foregroundStyle(Color(colors.textSecondary))
+                } else if let progress = task.installProgress {
+                    Text(ChatInstallRowView.stageText(progress.stage, operation: task.operation))
+                        .foregroundStyle(Color(colors.textSecondary))
+                    // 家里的服务器算得出比例的只有拉镜像这一步，其余阶段照实说，不造百分比。
+                    if let percent = progress.percent {
+                        ProgressView(value: Double(percent), total: 100)
+                    }
+                } else {
+                    Text(task.operation.runningText)
+                        .foregroundStyle(Color(colors.textSecondary))
+                }
+            }
         case .succeeded:
             HStack(spacing: WontonTheme.spacing.s4) {
                 WontonIcon.checkCircleFill.view(size: WontonTheme.size.iconTiny)

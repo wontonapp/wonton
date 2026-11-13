@@ -186,8 +186,9 @@ impl PluginsLink {
     /// 中间状态（测试按事件断言时会正好撞上）。值没变时返回 false。
     /// 应用行由页面那边算（`set_sidebar_apps`），这里只跟可更新数和设置红点。
     pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
+        let mut changed = Self::sync_task_progress(view);
         let updatable = now::updatable(view);
-        let mut changed = view.updatable != updatable;
+        changed |= view.updatable != updatable;
         view.updatable = updatable.clone();
         let updates = updatable.len() as u32;
         changed |= view.sidebar.updates != updates;
