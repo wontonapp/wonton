@@ -409,19 +409,17 @@ impl EntryContainers {
         let same_options = found.as_ref().is_some_and(|info| same_options(info, &body));
         let recreate = !current || !running || !same_options || previous_version;
         if found.is_some() && recreate {
-            // 安全换法：新容器先建在临时名下、接好网、起起来，都成了再把旧的删掉、临时名改成正式名。
-            // 直接删旧建新，创建一失败（端口被占）就把能用的入口拆成了没有。
-            let staging = format!("{name}-new");
-            self.engine.remove_container(&staging).await?;
-            self.engine.create_container(&staging, body).await?;
+            // 换法（复审 451 定）：先停删旧、再建新。旧容器在跑时占着 edge 的固定地址，Docker 在 start
+            // 时才分配地址，并存必然 Address already in use（真 Docker 29.7.2 实测）——旧的不让位，新的
+            // 起不来。接受换容器期间的短暂断开；fake Docker 有地址冲突模拟，顺序错了改端口测试会红。
+            self.engine.remove_container(&name).await?;
+            self.engine.create_container(&name, body).await?;
             for (network, endpoint) in &side.endpoints {
                 self.engine
-                    .connect_network_at(network, &staging, endpoint.clone())
+                    .connect_network_at(network, &name, endpoint.clone())
                     .await?;
             }
-            self.engine.start_container(&staging).await?;
-            self.engine.remove_container(&name).await?;
-            self.engine.rename_container(&staging, &name).await?;
+            self.engine.start_container(&name).await?;
             return Ok(());
         }
         if recreate {

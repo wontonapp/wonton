@@ -14,7 +14,7 @@ use bollard::query_parameters::{
     CreateContainerOptionsBuilder, DownloadFromContainerOptionsBuilder,
     KillContainerOptionsBuilder, ListContainersOptionsBuilder, ListNetworksOptionsBuilder,
     ListVolumesOptionsBuilder, RemoveContainerOptionsBuilder, RemoveVolumeOptionsBuilder,
-    RenameContainerOptionsBuilder, StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
+    StopContainerOptionsBuilder, UploadToContainerOptionsBuilder,
 };
 use futures_util::StreamExt;
 use wonton_l10n::Arg;
@@ -598,21 +598,6 @@ impl Engine {
             .start_container(name, None)
             .await
             .map_err(|e| self.fail_name("plugin-install-docker-context-start-container", name, e))
-    }
-
-    /// 给容器改名。旧名字立刻让出来，新名字撞上别人时报错。
-    pub async fn rename_container(&self, name: &str, to: &str) -> Result<()> {
-        let options = RenameContainerOptionsBuilder::default().name(to).build();
-        self.docker
-            .rename_container(name, options)
-            .await
-            .map_err(|e| {
-                self.fail(
-                    "plugin-install-docker-context-rename-container",
-                    &[("name", name.into()), ("to", to.into())],
-                    e,
-                )
-            })
     }
     /// 给容器发信号（如 `SIGUSR1`）；返回错误时信号可能已经发出，调用方不要盲目重试。
     pub async fn kill_container(&self, name: &str, signal: &str) -> Result<()> {

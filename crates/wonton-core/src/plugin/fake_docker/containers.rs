@@ -9,38 +9,6 @@ use super::networks::{endpoint_settings, published, running, state_name};
 use super::update::update_container;
 use super::{FakeExec, Resources, archive_of, gone, json_reply, labeled, labels_of, query_param};
 
-/// 改名 = 把这个容器在每张按名字存的表里的记录搬过去（端点、创建记录、状态、输出、创建计数）。
-/// 计数跟着容器走：旧名下已有的（临时名被复用时）加上带过来的。
-fn rename(docker: &mut Resources, name: &str, to: &str) {
-    let labels = docker.containers.remove(name).expect("刚查过存在");
-    // 创建记录按名字存：改名后 inspect 新名字要能读到同一份参数。
-    let body = docker.created.remove(name);
-    let states = docker.states.remove(name);
-    let outputs = docker.outputs.remove(name);
-    let creations = docker.creation_count.remove(name);
-    let mut endpoints_all = std::mem::take(&mut docker.endpoints);
-    for endpoints in endpoints_all.values_mut() {
-        if endpoints.contains_key(name) {
-            let endpoint = endpoints.remove(name).expect("刚查过存在");
-            endpoints.insert(to.to_owned(), endpoint);
-        }
-    }
-    docker.endpoints = endpoints_all;
-    if let Some(body) = body {
-        docker.created.insert(to.to_owned(), body);
-    }
-    if let Some(state) = states {
-        docker.states.insert(to.to_owned(), state);
-    }
-    if let Some(output) = outputs {
-        docker.outputs.insert(to.to_owned(), output);
-    }
-    if let Some(count) = creations {
-        *docker.creation_count.entry(to.to_owned()).or_default() += count;
-    }
-    docker.containers.insert(to.to_owned(), labels);
-}
-
 pub(super) fn containers(
     docker: &mut Resources,
     method: &Method,
@@ -63,19 +31,15 @@ pub(super) fn containers(
             create(docker, &name, body)
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
-        (&Method::POST, [name, "rename"]) => {
-            let to = query_param(query, "name").unwrap_or_default();
-            if !exists(name) {
-                gone(true)
-            } else if exists(to.as_str()) {
-                let message = format!("Conflict. The container name \"/{to}\" is already in use");
-                json_reply(StatusCode::CONFLICT, json!({"message": message}))
-            } else {
-                rename(docker, name, &to);
-                StatusCode::OK.into_response()
-            }
-        }
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
+        (&Method::POST, [name, "stop"]) if exists(name) => {
+            // 和 Docker 一样：停掉的容器交回网络端点（固定地址让出来），inspect 显示 exited。
+            docker.states.insert(
+                name.to_string(),
+                json!({"Status": "exited", "Running": false, "ExitCode": 0}),
+            );
+            StatusCode::OK.into_response()
+        }
         (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name])
@@ -94,6 +58,9 @@ pub(super) fn containers(
             for endpoints in docker.endpoints.values_mut() {
                 endpoints.remove(*name);
             }
+            // 容器没了，它的运行状态清掉：同名的下一个容器不该继承上一个的退出态。start_states 的
+            // 覆盖保留——它是测试按名字预置的"这个容器起成什么样"，重建后照样适用。
+            docker.states.remove(*name);
             gone(docker.containers.remove(*name).is_some())
         }
         (&Method::GET, [name, "json"]) if exists(name) => inspect_container(docker, name),
@@ -145,6 +112,29 @@ pub(super) fn containers(
         _ => return None,
     };
     Some(reply)
+}
+
+/// Docker 在 start 时才分配地址：同网络里别的运行中容器已经占着同一个固定 IP，start 报这句
+/// （真 Docker 29.7.2 原话，复审 451 实测）。返回撞上的容器名。
+fn address_conflict(docker: &Resources, name: &str) -> Option<String> {
+    for (network, endpoints) in &docker.endpoints {
+        let Some(mine) = endpoints.get(name) else {
+            continue;
+        };
+        let Some(wanted) = mine["IPAMConfig"]["IPv4Address"].as_str() else {
+            continue;
+        };
+        for (other, endpoint) in endpoints {
+            if other == name || endpoint["IPAMConfig"]["IPv4Address"].as_str() != Some(wanted) {
+                continue;
+            }
+            if running(&docker.states, other) {
+                return Some(other.clone());
+            }
+        }
+        let _ = network;
+    }
+    None
 }
 
 /// 创建容器。镜像记录被清掉时 Docker 对创建回 404（#666），容器不会留下来。
@@ -205,8 +195,27 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
             json!({"message": message}),
         );
     }
+    if let Some(other) = address_conflict(docker, name) {
+        // start 失败的容器停在 created 态：不运行、不占地址。
+        docker.states.insert(
+            name.to_string(),
+            json!({"Status": "created", "Running": false}),
+        );
+        return json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": format!("failed to set up container networking: Address already in use: {other} holds the fixed address")}),
+        );
+    }
     if let Some(state) = docker.start_states.get(name).cloned() {
         docker.states.insert(name.to_owned(), state);
+    } else if docker
+        .states
+        .get(name)
+        .is_some_and(|s| s["Status"] == "created")
+    {
+        // 只有"建了没起起来"的标记要清掉；测试预置的状态（退出、不健康）照旧保留——真 Docker 里
+        // start 后立刻退出或起不健康是常有的事，安装的健康门禁靠它模拟。
+        docker.states.remove(name);
     }
     gone(true)
 }

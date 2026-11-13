@@ -85,7 +85,6 @@ pub struct Domain {
     install_dir: PathBuf,
     data_dir: PathBuf,
     engine: Engine,
-    core_container: String,
     /// 核心的实例名：入口容器按组件标签找时用它限定自己这套，别热加载别家的入口。
     instance: Instance,
     notices: Option<Arc<NoticeRoom>>,
@@ -113,7 +112,6 @@ impl Domain {
         install_dir: PathBuf,
         data_dir: PathBuf,
         engine: Engine,
-        core_container: String,
         instance: Instance,
         notices: Option<Arc<NoticeRoom>>,
     ) -> Arc<Self> {
@@ -121,7 +119,6 @@ impl Domain {
             install_dir,
             data_dir,
             engine,
-            core_container,
             instance,
             notices,
             issuance: Mutex::new(()),

@@ -118,25 +118,34 @@ pub fn spawn(
         let mut previous = None;
         let mut hours = 0;
         let mut retry = Duration::from_secs(RETRY_MIN);
+        // 上一次对账的成败：None=还没对过。失败进通知、恢复时再发一条（复用家名状态的转移+notify 模式）。
+        let mut reconciled: Option<bool> = None;
         let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         loop {
             // 对账按退避间隔跑，家名和证书按小时跑；第一次对账等一会儿，起来先服务再对账。
             tokio::select! {
                 _ = tokio::time::sleep(retry) => {
-                    retry = reconcile_entry(&containers)
+                    retry = reconcile_entry(&containers, &notices, &mut reconciled)
                         .await
                         .unwrap_or(retry * 2)
                         .min(Duration::from_secs(RETRY_MAX));
                 }
                 _ = hourly.tick() => {
-                    let Ok(Some(settings)) = EntrySettings::load(containers.install_dir()) else {
-                        continue;
-                    };
-                    check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
-                    if hours % 24 == 0 {
-                        domain.renew_if_configured();
+                    match EntrySettings::load(containers.install_dir()) {
+                        Ok(Some(settings)) => {
+                            check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
+                            if hours % 24 == 0 {
+                                domain.renew_if_configured();
+                            }
+                            hours += 1;
+                        }
+                        // 没有设置就没有家名和证书可查；读不了是不确定，记下来别无声跳过。
+                        Ok(None) => continue,
+                        Err(error) => {
+                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查和证书续期");
+                            continue;
+                        }
                     }
-                    hours += 1;
                 }
             }
         }
@@ -144,7 +153,12 @@ pub fn spawn(
 }
 
 /// 对一次账，返回下一次的退避间隔：成功时回到最短，失败时翻倍（调用方封顶到 [`RETRY_MAX`]）。
-async fn reconcile_entry(containers: &EntryContainers) -> Option<Duration> {
+/// 失败进入和恢复退出各发一条通知——对账持续失败时公网入口和联邦 TLS 整个不可用，主人得知道。
+async fn reconcile_entry(
+    containers: &EntryContainers,
+    notices: &Option<Arc<NoticeRoom>>,
+    reconciled: &mut Option<bool>,
+) -> Option<Duration> {
     let settings = match EntrySettings::load(containers.install_dir()) {
         Ok(settings) => settings,
         Err(error) => {
@@ -153,8 +167,23 @@ async fn reconcile_entry(containers: &EntryContainers) -> Option<Duration> {
         }
     };
     match containers.reconcile(settings.as_ref()).await {
-        Ok(()) => Some(Duration::from_secs(RETRY_MIN)),
+        Ok(()) => {
+            if *reconciled == Some(false) {
+                notify(notices, "entry-reconcile-recovered", &[]).await;
+            }
+            *reconciled = Some(true);
+            Some(Duration::from_secs(RETRY_MIN))
+        }
         Err(error) => {
+            if *reconciled != Some(false) {
+                notify(
+                    notices,
+                    "entry-reconcile-failed",
+                    &[("error", error.to_string().as_str())],
+                )
+                .await;
+            }
+            *reconciled = Some(false);
             // 核心照常服务；入口的状态在下一次对账成功时恢复。
             tracing::warn!(category = error.category(), %error, "入口容器没对上，稍后重试");
             None

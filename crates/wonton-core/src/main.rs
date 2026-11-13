@@ -110,9 +110,12 @@ async fn open_peers_and_federation(
         },
     )
     .context("读取服务器配对记录")?;
-    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。
-    let upstream = federation_addrs::upstream(cfg).await?;
-    let protocol = FederationProtocol::new(peers.server_allowlist().clone(), upstream);
+    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。上游地址按连接现
+    // 解析（入口容器运行时会被对账重建，启动时钉死 SocketAddr 会在重建后断流）。
+    let protocol = FederationProtocol::new(
+        peers.server_allowlist().clone(),
+        cfg.matrix_federation_addr.clone(),
+    );
     let lookup = peers.clone();
     let listen = federation_addrs::listen(&cfg.federation_listen).await?;
     let forwarder = FederationForwarder::bind(
@@ -127,7 +130,7 @@ async fn open_peers_and_federation(
     .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;
     tracing::info!(
         listen = %forwarder.listen_addr(),
-        upstream = %upstream,
+        upstream = %cfg.matrix_federation_addr,
         "联邦转发已启动"
     );
     peers.attach_forwarder(forwarder.watch_status());
@@ -365,8 +368,9 @@ async fn serve() -> anyhow::Result<()> {
     let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
-    // 入口容器先对账：联邦转发要解析 `entry.wonton.internal`，那个别名只有入口容器带着。失败按类别记日志、照常启动
-    // （`upstream` 解析不到时会退回 Tuwunel 的 8448），带退避的重试在入口的每小时循环里。
+    // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
+    // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
+    // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。
     let entry = start_entry_runtime(&cfg, &engine).await;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
@@ -751,20 +755,19 @@ fn message_settled_audit(
     })
 }
 
-/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口和自己的域名。
+/// 用安装脚本装的核心（有安装目录）才管入口和自己的域名。
 fn open_clients(
     cfg: &Config,
     engine: &Engine,
     notices: &Option<Arc<NoticeRoom>>,
 ) -> anyhow::Result<Option<Arc<wonton_core::clients::domain::Domain>>> {
-    let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) else {
+    let Some(dir) = &cfg.install_dir else {
         return Ok(None);
     };
     Ok(Some(wonton_core::clients::domain::Domain::new(
         dir.clone(),
         cfg.data_dir.clone(),
         engine.clone(),
-        container.clone(),
         cfg.instance.clone(),
         notices.clone(),
     )))
@@ -784,16 +787,18 @@ async fn start_entry_runtime(
         cfg.instance.clone(),
         cfg.core_container.clone(),
     );
-    let settings = match wonton_core::entry_settings::EntrySettings::load(dir) {
-        Ok(settings) => settings,
+    // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
+    // 带退避重试；只有确实没有设置（Ok(None)）才按"不要"对账。
+    match wonton_core::entry_settings::EntrySettings::load(dir) {
         Err(error) => {
-            tracing::warn!(%error, "入口设置读不了，先不建入口");
-            None
+            tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
         }
-    };
-    if let Err(error) = containers.reconcile(settings.as_ref()).await {
-        // 入口的循环会带退避重试，这里不挡住核心启动。
-        tracing::warn!(category = error.category(), %error, "入口容器没对上");
+        Ok(settings) => {
+            if let Err(error) = containers.reconcile(settings.as_ref()).await {
+                // 入口的循环会带退避重试，这里不挡住核心启动。
+                tracing::warn!(category = error.category(), %error, "入口容器没对上");
+            }
+        }
     }
     Some(containers)
 }

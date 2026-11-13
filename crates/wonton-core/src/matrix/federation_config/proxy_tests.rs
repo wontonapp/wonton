@@ -179,7 +179,7 @@ impl Core {
     fn accept_from(&self, peer: &Core, federation_port: u16) -> Router {
         let protocol = FederationProtocol::new(
             Allowlist::new([peer.id()]),
-            SocketAddr::from((Ipv4Addr::LOCALHOST, federation_port)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, federation_port)).to_string(),
         );
         Router::builder(self.endpoint.clone())
             .accept(FEDERATION_ALPN, protocol)
