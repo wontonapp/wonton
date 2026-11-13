@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import VisionKit
 
@@ -77,5 +78,63 @@ struct QRScannerView: UIViewControllerRepresentable {
         ) {
             parent.onUnavailable(QRScannerView.describe(error))
         }
+    }
+}
+
+/// 扫码页上半部分：按相机权限显示取景框、等授权、去设置或“这台设备不能扫码”。配对和加好友共用，
+/// 扫到的原文交给 `onCode`；粘贴框由各页自己放在下面。
+struct QRCameraArea: View {
+    /// 设备不能扫码时的提示：各页说该粘贴什么。
+    let unsupported: LocalizedStringResource
+    let onCode: @MainActor (String) -> Void
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
+    @Environment(\.wontonColors) private var colors
+    @State private var camera = CameraAccess.current
+    @State private var scannerProblem: String?
+
+    var body: some View {
+        Group {
+            switch camera {
+            case .authorized:
+                if let scannerProblem {
+                    WontonNotice(icon: .cameraOff, title: scannerProblem) {
+                        Button(.Peers3.peersCameraReopen) { self.scannerProblem = nil }
+                            .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    }
+                } else {
+                    QRScannerView(onCode: onCode) { scannerProblem = $0 }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
+                }
+            case .notDetermined:
+                HStack(spacing: WontonTheme.spacing.s12) {
+                    ProgressView()
+                    Text(.Peers3.peersCameraWaiting).wontonText(WontonTheme.typography.body)
+                }
+                .foregroundStyle(Color(colors.textPrimary))
+            case .denied:
+                WontonNotice(icon: .cameraOff, title: String(localized: .Peers1.peersCameraDenied)) {
+                    Button(.Common.commonOpenSettings) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+                }
+            case .unsupported:
+                WontonNotice(icon: .cameraOff, title: String(localized: unsupported), isError: false)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task { await askForCamera() }
+        .onChange(of: scenePhase) { _, phase in
+            // 可能刚从系统设置里改了相机权限回来。
+            if phase == .active { camera = .current }
+        }
+    }
+
+    private func askForCamera() async {
+        guard camera == .notDetermined else { return }
+        _ = await AVCaptureDevice.requestAccess(for: .video)
+        camera = .current
     }
 }
