@@ -7,6 +7,7 @@ use wonton_protocol::{
 mod bot_pages;
 mod bot_pins;
 mod media_permission;
+mod bridge_origin;
 mod my_apps;
 mod page_rules;
 mod room_panel;
