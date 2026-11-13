@@ -1,8 +1,10 @@
 //! 跨机 Bot 联系人（ADR-0050）的隔离端到端：两台真云吞经 iroh 配对，各装一个回声 Bot，走请求、同意、私聊、
-//! 删除、拒绝和取消。用法见 deploy/dev/core/smoke-contacts.sh：每一步单独跑一次，步与步之间脚本停、起 Bot 的容器
-//! （两个回声 Bot 在同一个房间里会互相回声停不下来，私聊时只留收消息的那一个在跑）。
+//! 跨机群、群里的 Bot 回复、对方整台停着时的补发、删除、拒绝和取消。用法见 deploy/dev/core/smoke-contacts.sh：
+//! 每一步单独跑一次，步与步之间脚本停、起 Bot 的容器（两个回声 Bot 在同一个房间里会互相回声停不下来，只留一个在跑）。
 #[path = "fr_contacts_smoke/bots.rs"]
 mod bots;
+#[path = "fr_contacts_smoke/group.rs"]
+mod group;
 #[path = "fr_share_smoke/owner.rs"]
 mod owner;
 
@@ -27,11 +29,18 @@ async fn main() -> Result<()> {
         "approve" => approve().await,
         "chat-a" => bots::chat("owner.test", "friend.test").await,
         "chat-b" => bots::chat("friend.test", "owner.test").await,
+        "group-contacts" => group::contacts().await,
+        "group-room" => group::create().await,
+        "group-join" => group::join().await,
+        "group-reply" => group::reply().await,
+        "group-offline" => group::send_while_offline().await,
+        "group-backfill" => group::backfilled().await,
         "remove" => remove().await,
         "reject" => reject().await,
         "cancel" => cancel().await,
         _ => bail!(
-            "usage: fr_contacts_smoke setup|ignored|approve|chat-a|chat-b|remove|reject|cancel"
+            "usage: fr_contacts_smoke setup|ignored|approve|chat-a|chat-b|group-contacts|group-room|group-join|\
+             group-reply|group-offline|group-backfill|remove|reject|cancel"
         ),
     }
 }
@@ -110,7 +119,7 @@ async fn approve() -> Result<()> {
         sent["contacts"][0]["state"] == "pending",
         "request not pending"
     );
-    let waiting = wait_confirmation(&b).await?;
+    let waiting = wait_confirmation(&b, A).await?;
     show(
         "B GET /_wonton/api/confirmations contact_requests",
         &waiting,
@@ -146,7 +155,7 @@ async fn reject() -> Result<()> {
         "A POST contacts",
         &a.api(Method::POST, &contacts_path(), Some(request)).await?,
     );
-    show("B confirmations", &wait_confirmation(&b).await?);
+    show("B confirmations", &wait_confirmation(&b, A).await?);
     let rejected = b
         .api(Method::POST, &format!("{}/reject", contact_path(A)), None)
         .await?;
@@ -170,7 +179,7 @@ async fn cancel() -> Result<()> {
         "A POST contacts",
         &a.api(Method::POST, &contacts_path(), Some(request)).await?,
     );
-    show("B confirmations", &wait_confirmation(&b).await?);
+    show("B confirmations", &wait_confirmation(&b, A).await?);
     show(
         "A DELETE pending (cancel)",
         &a.api(Method::DELETE, &contact_path(B), None).await?,
@@ -198,8 +207,8 @@ fn state_of<'a>(rows: &'a Value, user: &str) -> Option<&'a str> {
         .and_then(|row| row["state"].as_str())
 }
 
-/// 等对方核心收到经 Matrix 送来的请求。
-async fn wait_confirmation(owner: &Owner) -> Result<Value> {
+/// 等对方核心收到经 Matrix 送来的、联系人 `user` 的请求。
+async fn wait_confirmation(owner: &Owner, user: &str) -> Result<Value> {
     for _ in 0..60 {
         let list = owner
             .api(Method::GET, "/_wonton/api/confirmations", None)
@@ -207,7 +216,7 @@ async fn wait_confirmation(owner: &Owner) -> Result<Value> {
         let requests = &list["contact_requests"];
         if requests
             .as_array()
-            .is_some_and(|rows| rows.iter().any(|row| row["contact"]["user_id"] == A))
+            .is_some_and(|rows| rows.iter().any(|row| row["contact"]["user_id"] == user))
         {
             return Ok(requests.clone());
         }

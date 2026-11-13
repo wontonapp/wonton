@@ -322,8 +322,8 @@ impl PluginManager {
     ) -> Result<UninstallReport, InstallError> {
         self.check_uninstall_state(id, langs)?;
         let _dependencies = self.dependencies.changing.lock().await;
-        self.uninstall_locked(id, purge, std::slice::from_ref(id), true, langs)
-            .await
+        // 卸载链里一路到对账、清卷、清会话，调试构建的帧很大：放堆上，别挤占调用方的栈。
+        Box::pin(self.uninstall_locked(id, purge, std::slice::from_ref(id), true, langs)).await
     }
 
     pub(in crate::plugin) fn check_uninstall_state(

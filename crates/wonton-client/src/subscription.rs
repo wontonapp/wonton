@@ -1,6 +1,6 @@
 use tokio::sync::{Mutex, watch};
 use wonton_protocol::{
-    AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
+    AgentChainsViewModel, AppearanceViewModel, BotContactsViewModel, ChatViewModel, ComposerViewModel,
     ConfirmationsViewModel, FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel,
     PeersViewModel, PluginsViewModel, ServersViewModel, SessionListViewModel, SettingsViewModel,
     TransfersViewModel, WidgetSnapshot,
@@ -70,6 +70,33 @@ impl SessionListSubscription {
     ///
     /// Kotlin 协程取消时 UniFFI 会释放等待中的 Rust future；Swift 的 Task 取消不会传到
     /// Rust（UniFFI 0.32），所以 Swift 侧要在取消时调用它。
+    pub fn cancel(&self) {
+        self.updates.cancel();
+    }
+}
+
+/// Agent 链列表的订阅（ADR-0061 第 10 节），用法同 [`SessionListSubscription`]。
+#[derive(uniffi::Object)]
+pub struct AgentChainsSubscription {
+    updates: Updates<AgentChainsViewModel>,
+}
+
+impl AgentChainsSubscription {
+    pub(crate) fn new(receiver: watch::Receiver<AgentChainsViewModel>) -> Self {
+        Self {
+            updates: Updates::new(receiver),
+        }
+    }
+}
+
+#[uniffi::export]
+impl AgentChainsSubscription {
+    /// 等待下一份链列表，语义同 [`SessionListSubscription::next`]。
+    pub async fn next(&self) -> Option<AgentChainsViewModel> {
+        self.updates.next(AgentChainsViewModel::clone).await
+    }
+
+    /// 取消订阅，语义同 [`SessionListSubscription::cancel`]。
     pub fn cancel(&self) {
         self.updates.cancel();
     }
