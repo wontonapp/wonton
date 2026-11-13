@@ -95,7 +95,7 @@ async fn an_installed_provider_issues_the_consumers_key_and_cannot_be_removed_wh
     assert!(!env["KEY"].is_empty());
     assert_eq!(keys.lock().unwrap()["app.test"], env["KEY"]);
     let route = manager
-        .capability_route(&id("app.test"), "x-acme.search", &langs())
+        .capability_route(&id("app.test"), "x-acme.search", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.search"));
@@ -123,7 +123,7 @@ async fn an_installed_provider_issues_the_consumers_key_and_cannot_be_removed_wh
     ));
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .capability_route(&id("app.test"), "x-acme.search", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -148,7 +148,7 @@ async fn removing_the_default_provider_reroutes_a_required_consumer_to_the_alter
         .unwrap();
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .capability_route(&id("app.test"), "x-acme.search", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -161,7 +161,7 @@ async fn removing_the_default_provider_reroutes_a_required_consumer_to_the_alter
     assert!(!manager.is_installed(&id("app.search-one")));
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), "x-acme.search", &langs())
+            .capability_route(&id("app.test"), "x-acme.search", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -225,7 +225,7 @@ async fn owner_default_change_connects_followers_but_preserves_explicit_consumer
         .unwrap();
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .capability_route(&id("app.test"), "x-acme.agent", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -233,7 +233,7 @@ async fn owner_default_change_connects_followers_but_preserves_explicit_consumer
     );
     assert_eq!(
         manager
-            .capability_route(&id("app.pinned"), "x-acme.agent", &langs())
+            .capability_route(&id("app.pinned"), "x-acme.agent", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -252,7 +252,7 @@ async fn owner_default_change_connects_followers_but_preserves_explicit_consumer
         .unwrap();
     assert_eq!(
         manager
-            .capability_route(&id("app.pinned"), "x-acme.agent", &langs())
+            .capability_route(&id("app.pinned"), "x-acme.agent", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -283,7 +283,7 @@ async fn unrelated_removal_cannot_grant_a_late_high_privilege_connection() {
         .unwrap();
     assert!(matches!(
         manager
-            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .capability_route(&id("app.test"), "x-acme.agent", &langs(), None)
             .await,
         Err(super::super::dependencies::CapabilityAccessError::Denied)
     ));
@@ -293,7 +293,7 @@ async fn unrelated_removal_cannot_grant_a_late_high_privilege_connection() {
         .unwrap();
     assert!(
         manager
-            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .capability_route(&id("app.test"), "x-acme.agent", &langs(), None)
             .await
             .is_ok()
     );
@@ -325,7 +325,7 @@ async fn owner_provider_removal_confirms_high_privilege_replacement_but_reinstal
         .unwrap();
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .capability_route(&id("app.test"), "x-acme.agent", &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -349,7 +349,7 @@ async fn owner_provider_removal_confirms_high_privilege_replacement_but_reinstal
         .unwrap();
     assert!(matches!(
         manager
-            .capability_route(&id("app.test"), "x-acme.agent", &langs())
+            .capability_route(&id("app.test"), "x-acme.agent", &langs(), None)
             .await,
         Err(super::super::dependencies::CapabilityAccessError::Denied)
     ));
@@ -419,7 +419,7 @@ async fn refused_uninstall_keeps_the_consumers_working_credential() {
     assert_eq!(keys.lock().unwrap()["app.test"], key);
     assert_eq!(
         manager
-            .capability_route(&id("app.test"), capability, &langs())
+            .capability_route(&id("app.test"), capability, &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -483,7 +483,7 @@ async fn an_agent_acp_provider_never_connects_to_itself_and_requires_another_pro
     assert!(no_self_connections(dir.path()));
     assert!(matches!(
         manager
-            .capability_route(&id("app.q"), "agent_acp", &langs())
+            .capability_route(&id("app.q"), "agent_acp", &langs(), None)
             .await,
         Err(super::super::dependencies::CapabilityAccessError::Unavailable(_))
     ));
@@ -494,7 +494,7 @@ async fn an_agent_acp_provider_never_connects_to_itself_and_requires_another_pro
         .await
         .unwrap();
     let route = manager
-        .capability_route(&id("app.p"), "agent_acp", &langs())
+        .capability_route(&id("app.p"), "agent_acp", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.q"));
@@ -508,7 +508,7 @@ async fn an_agent_acp_provider_never_connects_to_itself_and_requires_another_pro
         .await
         .unwrap();
     let route = manager
-        .capability_route(&id("app.q"), "agent_acp", &langs())
+        .capability_route(&id("app.q"), "agent_acp", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.p"));

@@ -98,7 +98,7 @@ async fn upgrading_a_provider_retaining_its_required_capability_keeps_the_consum
     assert_eq!(version(&m), "1.1.0");
     assert_eq!(image(&docker, &web()), "web:1.1.0");
     let route = m
-        .capability_route(&consumer_id(), "x-acme.search", &zh())
+        .capability_route(&consumer_id(), "x-acme.search", &zh(), None)
         .await
         .ok()
         .unwrap();
@@ -130,7 +130,7 @@ async fn upgrading_a_provider_can_drop_a_capability_when_an_alternative_remains(
     upgrade(&m).await.unwrap();
     assert_eq!(version(&m), "1.1.0");
     let route = m
-        .capability_route(&consumer_id(), "x-acme.search", &zh())
+        .capability_route(&consumer_id(), "x-acme.search", &zh(), None)
         .await
         .ok()
         .unwrap();
@@ -180,7 +180,7 @@ async fn provider_upgrade_cannot_grant_an_unconfirmed_high_privilege_replacement
     assert_eq!(version(&m), "1.0.0");
     assert_eq!(docker.writes(), before);
     assert_eq!(
-        m.capability_route(&consumer_id(), "x-acme.agent", &zh())
+        m.capability_route(&consumer_id(), "x-acme.agent", &zh(), None)
             .await
             .unwrap()
             .provider,
@@ -232,7 +232,7 @@ async fn provider_upgrade_reuses_a_previously_confirmed_high_privilege_connectio
     upgrade(&m).await.unwrap();
     assert_eq!(version(&m), "1.1.0");
     assert_eq!(
-        m.capability_route(&consumer_id(), "x-acme.agent", &zh())
+        m.capability_route(&consumer_id(), "x-acme.agent", &zh(), None)
             .await
             .unwrap()
             .provider,
@@ -300,14 +300,14 @@ async fn a_failed_upgrade_revokes_new_dependency_keys_and_connection_approval() 
     assert!(keys.lock().unwrap().is_empty());
     assert_eq!(version(&m), "1.0.0");
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh()).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
         Err(CapabilityAccessError::Denied)
     ));
     docker.fail_pulls(None);
     upgrade(&m).await.unwrap();
     assert_eq!(keys.lock().unwrap().len(), 1);
     assert!(
-        m.capability_route(&id(), "x-acme.search", &zh())
+        m.capability_route(&id(), "x-acme.search", &zh(), None)
             .await
             .is_ok()
     );
@@ -347,7 +347,7 @@ async fn a_failed_consumer_upgrade_preserves_existing_dependency_keys() {
     assert_eq!(*keys.lock().unwrap(), before);
     assert_eq!(version(&m), "1.0.0");
     assert!(
-        m.capability_route(&id(), "x-acme.search", &zh())
+        m.capability_route(&id(), "x-acme.search", &zh(), None)
             .await
             .is_ok()
     );
@@ -378,7 +378,7 @@ async fn partial_dependency_preparation_failure_revokes_the_connection_already_a
     assert!(keys.lock().unwrap().is_empty());
     assert_eq!(version(&m), "1.0.0");
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh()).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
         Err(CapabilityAccessError::Denied)
     ));
     assert!(
@@ -415,7 +415,7 @@ async fn a_successful_consumer_upgrade_revokes_a_dependency_it_no_longer_declare
     assert_eq!(version(&m), "1.1.0");
     assert!(keys.lock().unwrap().is_empty());
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh()).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
         Err(CapabilityAccessError::Denied)
     ));
 }

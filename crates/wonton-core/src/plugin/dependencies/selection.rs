@@ -94,7 +94,7 @@ impl PluginManager {
                 entries.remove(&choice.capability);
             }
         }
-        let provider = chosen(&next, &providers, consumer, &choice.capability);
+        let provider = chosen(&next, &providers, consumer, &choice.capability, None);
         if provider.is_none()
             && (package.manifest.requires.contains(&choice.capability)
                 || next
@@ -142,7 +142,7 @@ impl PluginManager {
                 .iter()
                 .filter(|c| super::generic(c))
                 .any(|capability| {
-                    chosen(&state, &providers, &consumer.manifest.id, capability)
+                    chosen(&state, &providers, &consumer.manifest.id, capability, None)
                         .is_some_and(|p| p.id == *provider)
                         && !replacement.is_some_and(|m| service(m, capability).is_some())
                         && !providers.iter().any(|p| {
@@ -202,7 +202,7 @@ impl PluginManager {
         let consumers = self.capability_consumers();
         let selected_uses = |consumer: &Manifest, provider: &PluginId| {
             declarations(consumer).any(|capability| {
-                chosen(&state, &providers, &consumer.id, capability)
+                chosen(&state, &providers, &consumer.id, capability, None)
                     .is_some_and(|selected| selected.id == *provider)
             })
         };
@@ -281,7 +281,7 @@ impl PluginManager {
         let mut rebuilt = BTreeSet::new();
         let mut failure: Option<InstallError> = None;
         for (consumer, capability) in affected {
-            if let Some(provider) = chosen(&state, &providers, &consumer, &capability)
+            if let Some(provider) = chosen(&state, &providers, &consumer, &capability, None)
                 && (approve_connections
                     || !high(&provider.listed.manifest, &capability)
                     || connection(&state, &consumer, &provider.id, &capability).is_some())
@@ -356,7 +356,7 @@ impl PluginManager {
                     service(&p.listed.manifest, capability).is_some()
                         && (!high(&p.listed.manifest, capability)
                             || connection(state, consumer, &p.id, capability).is_some())
-                }) && chosen(state, &providers, consumer, capability)
+                }) && chosen(state, &providers, consumer, capability, None)
                     .is_none_or(|selected| selected.id != provider.id)
                 {
                     state
@@ -370,7 +370,7 @@ impl PluginManager {
         let state = self.dependencies.load()?;
         let mut rebuilt = BTreeSet::new();
         for (consumer, capability) in affected {
-            if let Some(provider) = chosen(&state, &providers, &consumer, &capability)
+            if let Some(provider) = chosen(&state, &providers, &consumer, &capability, None)
                 && (!high(&provider.listed.manifest, &capability)
                     || connection(&state, &consumer, &provider.id, &capability).is_some())
             {

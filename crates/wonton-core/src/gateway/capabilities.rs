@@ -21,7 +21,7 @@ pub(super) async fn request(gateway: &Gateway, capability: &str, mut req: Reques
     };
     let route = match gateway
         .plugins
-        .capability_route(&source.id, capability, &langs)
+        .capability_route(&source.id, capability, &langs, None)
         .await
     {
         Ok(route) => route,
