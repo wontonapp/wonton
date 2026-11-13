@@ -162,6 +162,6 @@ class PushActionsTest {
         serverId = "server", roomId = "!room:example.org", eventId = "event", sender = "Agent",
         roomName = null, content = PushContent.Message(MessageSummary.Text("hello")),
         category = NotificationCategory.MESSAGE, confirmation = null, contactRequest = null,
-        threadRoot = null, lockScreenPrivate = false, unreadTotal = 1u,
+        threadRoot = null, hidden = false, lockScreenPrivate = false, unreadTotal = 1u,
     )
 }
