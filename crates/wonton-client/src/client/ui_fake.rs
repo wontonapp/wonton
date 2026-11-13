@@ -51,6 +51,7 @@ impl ClientCore {
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             settings: watch::Sender::new(current.settings.borrow().clone()),
             confirmations: watch::Sender::new(current.confirmations.borrow().clone()),
+            agent_chains: watch::Sender::new(current.agent_chains.borrow().clone()),
         };
         drop(current);
         self.servers.seed_ui_fake(fake_servers());

@@ -9,11 +9,12 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError, FriendsViewModel,
-    HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel, RoomPanel,
-    ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
+    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
+    FriendsViewModel, HomeViewModel, OnboardingViewModel, PeersViewModel, PluginsViewModel,
+    RoomPanel, ServersViewModel, SettingsViewModel, TabsViewModel, TransfersViewModel,
 };
 
+use crate::agent_chains::AgentChainsLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::composer::{ComposerLink, uplink::LiveUplink};
@@ -38,6 +39,7 @@ pub(crate) struct Scope {
     pub(crate) push: Arc<PushLink>,
     pub(crate) push_method: PushMethodLink,
     pub(crate) plugins: Arc<PluginsLink>,
+    pub(crate) agent_chains: Arc<AgentChainsLink>,
     pub(crate) tabs: Arc<TabsLink>,
     pub(crate) files: Arc<FilesLink>,
     pub(crate) composer: Arc<ComposerLink>,
@@ -64,6 +66,7 @@ pub(crate) struct Views {
     pub(crate) chat: watch::Sender<ChatViewModel>,
     pub(crate) confirmations: watch::Sender<ConfirmationsViewModel>,
     pub(crate) plugins: watch::Sender<PluginsViewModel>,
+    pub(crate) agent_chains: watch::Sender<AgentChainsViewModel>,
     pub(crate) tabs: watch::Sender<TabsViewModel>,
     pub(crate) transfers: watch::Sender<TransfersViewModel>,
     pub(crate) onboarding: watch::Sender<OnboardingViewModel>,
@@ -80,6 +83,7 @@ impl Views {
             chat: scope.chat.sender(),
             confirmations: scope.chat.confirmations_sender(),
             plugins: scope.plugins.sender(),
+            agent_chains: scope.agent_chains.sender(),
             tabs: scope.tabs.sender(),
             transfers: scope.files.sender(),
             onboarding: scope.onboarding.sender(),
@@ -266,6 +270,14 @@ impl Scope {
             views.map(|v| v.plugins.clone()),
             external,
         );
+        let agent_chains = AgentChainsLink::new(
+            handle.clone(),
+            home.clone(),
+            reuse(
+                views.map(|v| v.agent_chains.clone()),
+                AgentChainsViewModel::default(),
+            ),
+        );
         #[cfg(feature = "test-hooks")]
         let card_success_hook = Arc::new(crate::test_hooks::CardSuccessHook::new());
         // 测试钩子开着时决定先报到、等放行（见 test_hooks），settled 也就发不出去；生产构建直通。
@@ -332,6 +344,7 @@ impl Scope {
             push: links.push,
             push_method,
             plugins,
+            agent_chains,
             tabs: links.tabs,
             files: links.files,
             composer,
