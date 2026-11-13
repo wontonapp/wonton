@@ -68,7 +68,7 @@ impl PagesLink {
             camera,
             microphone,
         });
-        let plugins = self.plugins_view.borrow().clone();
+        let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
@@ -90,7 +90,7 @@ impl PagesLink {
         };
         self.plugins
             .record_media_decision(&pending.plugin_id, allow)?;
-        let plugins = self.plugins_view.borrow().clone();
+        let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;

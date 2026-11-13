@@ -62,6 +62,8 @@ pub(crate) struct PluginsLink {
     home: Arc<HomeLink>,
     external: bool,
     view: watch::Sender<PluginsViewModel>,
+    /// 与 installed 同锁发布；Home 的新身份可能早于插件观察者撤下旧列表。
+    installed_server: Mutex<Option<String>>,
     languages: Mutex<Vec<String>>,
     /// 本地代理的凭据每次启动都换；同一个代理上复用连接。
     client: Mutex<Option<(ProxySettings, Client)>>,
@@ -114,10 +116,10 @@ impl PluginsLink {
         external: bool,
     ) -> Arc<Self> {
         let installed_cache = data_dir.join("installed-plugins.json");
-        let installed = home
-            .view()
-            .server_id
-            .and_then(|server| cache::load(&installed_cache, &server));
+        let server = home.view().server_id;
+        let installed = server
+            .as_deref()
+            .and_then(|server| cache::load(&installed_cache, server));
         let view = reuse(
             view,
             PluginsViewModel {
@@ -140,6 +142,7 @@ impl PluginsLink {
             home,
             external,
             view,
+            installed_server: Mutex::new(server),
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             images_dir: data_dir.join("plugin-images"),
@@ -179,6 +182,22 @@ impl PluginsLink {
 
     pub(crate) fn is_external(&self) -> bool {
         self.external
+    }
+
+    pub(crate) fn view_for_server(&self, server: Option<&str>) -> PluginsViewModel {
+        let installed_server = lock(&self.installed_server);
+        let mut view = self.view.borrow().clone();
+        if installed_server.as_deref() != server {
+            view.installed = None;
+        }
+        view
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_view_for_test(&self, server: Option<String>, view: PluginsViewModel) {
+        let mut installed_server = lock(&self.installed_server);
+        *installed_server = server;
+        self.view.send_replace(view);
     }
 
     /// 派生字段跟着输入重算：可更新的应用和侧边栏都由已安装列表、商店、任务忙闲和核心升级页算出来。
@@ -414,6 +433,8 @@ impl PluginsLink {
         self.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.starts).clear();
         cache::forget(&self.installed_cache);
+        let mut installed_server = lock(&self.installed_server);
+        *installed_server = None;
         self.view.send_modify(|view| {
             *lock(&self.problem_of) = None;
             view.installed = None;
@@ -431,6 +452,7 @@ impl PluginsLink {
             }
             Self::derive(view);
         });
+        drop(installed_server);
         self.forget_core_upgrade();
         self.forget_takeover();
     }
@@ -504,10 +526,13 @@ impl PluginsLink {
             return Ok(());
         }
         self.applied_seq.store(seq, Ordering::SeqCst);
+        let mut installed_server = lock(&self.installed_server);
+        *installed_server = server.clone();
         self.view.send_modify(|view| {
             view.installed = Some(installed);
             Self::derive(view);
         });
+        drop(installed_server);
         if self.needs_polling().is_some() {
             self.start_polling();
         }

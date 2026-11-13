@@ -36,9 +36,13 @@ targets:
     sources:
       - Wonton
       - Shared
+      # 系统入口（ADR-0100）：快照解码、链接和 OpenIntent 与小组件扩展共用；App 进程里由 SystemEntryModel
+      # 订阅核心刷新 WidgetKit 时间线和 Spotlight。
+      - SystemEntry
     dependencies:
       - package: WontonClient
       - target: ShareExtension
+      - target: WidgetExtension
     # 数据目录在 App Group 的容器里，分享扩展才放得进收件目录（ADR-0097）。
     entitlements:
       path: Wonton/Wonton.entitlements
@@ -91,6 +95,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID)
         GENERATE_INFOPLIST_FILE: YES
+        # OpenIntent（ADR-0100）同时编进 App 和小组件扩展，只有 App 进程里的实现能碰导航模型。
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) WONTON_APP"
         INFOPLIST_KEY_CFBundleDisplayName: Wonton
         # 文字按含义起名的键写在 String Catalog 里，代码用生成的符号（`Text(.settingsLanguage)`），键写错编译不过；
         # 不让编译器从 `Text("…")` 里自动抽取，免得写死的字面量混进目录。
@@ -132,6 +138,36 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID).share
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Wonton
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        TARGETED_DEVICE_FAMILY: "1"
+
+  # 系统入口（ADR-0100）：WidgetKit 小组件和控制按钮。不链接 WontonClient，只读 App Group 里的
+  # widget/snapshot.json（快照字段名由 wonton-protocol 的契约测试锁住），点了经 wonton:// 链接进 App。
+  WidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - WidgetExtension
+      - SystemEntry
+      - Shared
+    entitlements:
+      path: WidgetExtension/WidgetExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WONTON_BUNDLE_ID)
+    info:
+      path: WidgetExtension/Info.plist
+      properties:
+        WontonAppGroup: group.$(WONTON_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    # 版本号同 App（见 ShareExtension 的注释）：扩展的 CFBundleShortVersionString、CFBundleVersion 必须和 App 的一致。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID).widget
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Wonton
         STRING_CATALOG_GENERATE_SYMBOLS: YES

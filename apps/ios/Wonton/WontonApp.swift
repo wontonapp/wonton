@@ -1,3 +1,4 @@
+import CoreSpotlight
 import Foundation
 import SwiftUI
 import UIKit
@@ -18,7 +19,7 @@ struct WontonApp: App {
     var body: some Scene {
         WindowGroup {
             switch launch {
-            case let .ready(chat, home, plugins, appearance, navigation):
+            case let .ready(chat, home, plugins, appearance, navigation, _):
                 WontonThemeRoot(appearance: appearance.viewModel) {
                     #if DEBUG
                     if AgentRunPreview.active {
@@ -40,6 +41,11 @@ struct WontonApp: App {
                 }
                 .environmentObject(orientation)
                 .task { await appearance.observe() }
+                .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                    guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                          let url = URL(string: identifier) else { return }
+                    navigation.receive(url)
+                }
                 .onChange(of: scenePhase) { old, phase in
                     // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
                     // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
@@ -61,7 +67,7 @@ struct WontonApp: App {
 /// 启动核心。核心失败时如实显示原因，不进入主界面。
 @MainActor
 private enum Launch {
-    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation)
+    case ready(ChatModel, HomeModel, PluginsModel, AppearanceModel, AppNavigation, SystemEntryModel)
     case failed(String)
 
     /// 开发时 `WONTON_DEV_OPEN_WEB=<插件网页地址>`：本地代理就绪后自动打开（见 HomeView）。
@@ -79,16 +85,18 @@ private enum Launch {
         initLogging(filter: filter, file: nil)
         #endif
         let core: ClientCore
+        let directory: URL
         do {
+            directory = try dataDirectory()
             #if DEBUG
             // UI 测试的假数据入口（见 crates/wonton-client/src/client/ui_fake.rs）：不进主界面以外的路径。
             if ProcessInfo.processInfo.environment["WONTON_UI_FAKE"] != nil {
-                core = try ClientCore.newUiFake(dataDir: dataDirectory().path(percentEncoded: false))
+                core = try ClientCore.newUiFake(dataDir: directory.path(percentEncoded: false))
             } else {
-                core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
+                core = try ClientCore(dataDir: directory.path(percentEncoded: false))
             }
             #else
-            core = try ClientCore(dataDir: dataDirectory().path(percentEncoded: false))
+            core = try ClientCore(dataDir: directory.path(percentEncoded: false))
             #endif
         } catch {
             return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
@@ -116,7 +124,8 @@ private enum Launch {
         let home = HomeModel(core: core)
         let plugins = PluginsModel(core: core)
         let navigation = AppNavigation(chat: chat, home: home, plugins: plugins)
-        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation)
+        let systemEntry = SystemEntryModel(core: core, dataDirectory: directory)
+        return .ready(chat, home, plugins, AppearanceModel(core: core), navigation, systemEntry)
     }
 
     /// 核心的数据目录，存设备密钥和连接信息。

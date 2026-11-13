@@ -13,10 +13,22 @@ mod stack;
 struct Rig {
     tabs: PagesLink,
     home: watch::Sender<HomeViewModel>,
-    plugins: watch::Sender<PluginsViewModel>,
+    plugins: PluginSnapshots,
     /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
     room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
     _dir: tempfile::TempDir,
+}
+
+struct PluginSnapshots {
+    link: Arc<PluginsLink>,
+    home: watch::Receiver<HomeViewModel>,
+}
+
+impl PluginSnapshots {
+    fn send_replace(&self, view: PluginsViewModel) {
+        self.link
+            .replace_view_for_test(self.home.borrow().server_id.clone(), view);
+    }
 }
 
 impl Rig {
@@ -27,6 +39,8 @@ impl Rig {
     fn for_account(external: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
+        let mut config = default_file(Some("old-server".to_owned()));
+        config.my_apps_initialized = true;
         let (_, method_rx) = tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
         let home_link = HomeLink::new(
             runtime.clone(),
@@ -45,25 +59,30 @@ impl Rig {
             external,
         );
         let home = watch::Sender::new(home("old-server"));
-        let plugins = watch::Sender::new(plugins("old-content"));
+        let initial = plugins("old-content");
+        let plugins = PluginSnapshots {
+            link: plugins_link.clone(),
+            home: home.subscribe(),
+        };
+        plugins.send_replace(initial);
         let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
             home_link,
+            plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
-            plugins_view: plugins.subscribe(),
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {
-                config: default_file(Some("old-server".to_owned())),
+                config,
                 problem: None,
                 stack: Vec::new(),
                 paired: true,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
-                previous_plugins: HashMap::new(),
+                previous_plugins: None,
                 connected: true,
                 attention: HashSet::new(),
                 panel_selected: None,
@@ -84,6 +103,7 @@ impl Rig {
             room_view: watch::Sender::new(None),
             sync_problem: watch::Sender::new(None),
             dirty: AtomicBool::new(false),
+            layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
             widgets: Default::default(),
