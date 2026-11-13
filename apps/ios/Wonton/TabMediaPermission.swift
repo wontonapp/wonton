@@ -93,25 +93,44 @@ struct TabMediaDialogs: ViewModifier {
     let model: PagesModel
     @State private var showsPrompt = false
 
+    /// 壳确认弹窗的两个动作。提出来既避开多行数组字面量后的参数逗号（SwiftLint strict），也让 body 短一截。
+    private var promptActions: [WontonDialogAction] {
+        [
+            WontonDialogAction(
+                title: String(localized: .Tab2.tabMediaDeny),
+                perform: { answered(false) },
+                identifier: "tabMediaDeny"
+            ),
+            WontonDialogAction(
+                title: String(localized: .Tab0.tabMediaAllow),
+                kind: .primary,
+                perform: { answered(true) },
+                identifier: "tabMediaAllow"
+            )
+        ]
+    }
+
+    /// 系统层拒绝提示的动作：去设置开 App 的权限页。
+    private var systemDeniedActions: [WontonDialogAction] {
+        [
+            WontonDialogAction(
+                title: String(localized: .Tab0.tabMediaSystemSettings),
+                perform: {
+                    TabMediaRequests.shared.systemDenied = false
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            )
+        ]
+    }
+
     func body(content: Content) -> some View {
         content
             .wontonDialog(
                 promptTitle,
                 isPresented: $showsPrompt,
-                actions: [
-                    WontonDialogAction(
-                        title: String(localized: .Tab2.tabMediaDeny),
-                        perform: { answered(false) },
-                        identifier: "tabMediaDeny"
-                    ),
-                    WontonDialogAction(
-                        title: String(localized: .Tab0.tabMediaAllow),
-                        kind: .primary,
-                        perform: { answered(true) },
-                        identifier: "tabMediaAllow"
-                    ),
-                ],
-
+                actions: promptActions,
                 onDismiss: { answered(false) }
             )
             .wontonDialog(
@@ -121,17 +140,7 @@ struct TabMediaDialogs: ViewModifier {
                     get: { TabMediaRequests.shared.systemDenied },
                     set: { if !$0 { TabMediaRequests.shared.systemDenied = false } }
                 ),
-                actions: [
-                    WontonDialogAction(
-                        title: String(localized: .Tab0.tabMediaSystemSettings),
-                        perform: {
-                            TabMediaRequests.shared.systemDenied = false
-                            if let url = URL(string: UIApplication.openSettingsURLString) {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                    ),
-                ]
+                actions: systemDeniedActions
             )
             .onChange(of: model.viewModel.mediaPrompt, initial: true) { _, value in
                 if value != nil {
