@@ -263,8 +263,9 @@ impl ClientCore {
         let scope = self.scope();
         let chat = scope.chat.clone();
         let room_view = scope.pages.subscribe_room_view();
+        let opening = chat.begin_timeline(&target)?;
         scope
-            .run(async move { chat.open_timeline(&target, room_view).await })
+            .run(async move { chat.open_timeline(opening, room_view).await })
             .await
     }
 

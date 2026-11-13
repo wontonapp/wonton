@@ -82,8 +82,9 @@ pub(crate) fn page_of(tabs: &PagesLink, placed: &PlacedTab) -> Result<TabPage, C
             let view = tabs.view();
             let pages = match scope {
                 PanelScope::Main => view.panel,
-                PanelScope::Room { .. } => tabs
+                PanelScope::Room { room_id } => tabs
                     .room_view()
+                    .filter(|view| view.room_id.as_str() == room_id)
                     .map(|view| view.panel.clone())
                     .unwrap_or_default(),
             };
