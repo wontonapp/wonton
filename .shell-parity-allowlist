@@ -53,3 +53,19 @@ Action.UploadFile | iOS 也只有无调用方的辅助函数；聊天上传两�
 
 # 固定当前插件页：Android 的导航正随 #379 去底栏重做，等它合并后照新导航一起接。
 Action.PinCurrentPage | Android 等 #379（去底栏的导航大改）合并后再接，先不碰导航文件
+
+# Agent 调用链（ADR-0061 第 10 节）：客户端核心已就绪，壳的界面在前端线的需求里，暂未接（任务卡 chain-client）。
+AgentChainStatus | 壳待前端线接
+ChainLimitKind | 壳待前端线接
+ChainSpend | 壳待前端线接
+AgentChainRow | 壳待前端线接
+AgentChainBot | 壳待前端线接
+AgentChainsViewModel | 壳待前端线接
+AgentSettingsViewModel | 壳待前端线接
+ChainLimits | 壳待前端线接
+AgentConcurrency | 壳待前端线接
+AgentChainAction | 壳待前端线接
+ClientCore.agent_chains | 壳待前端线接
+ClientCore.subscribe_agent_chains | 壳待前端线接
+ClientCore.dispatch_agent_chain | 壳待前端线接
+ClientCore.agent_settings | 壳待前端线接
