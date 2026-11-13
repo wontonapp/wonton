@@ -342,7 +342,14 @@ async fn serve() -> anyhow::Result<()> {
         .matrix
         .as_ref()
         .map_or_else(|| cfg.public.base_domain.clone(), |m| m.server_name.clone());
-    attach_identity(&bus, matrix.as_ref(), &cfg, server_name, members.clone());
+    attach_identity(
+        &bus,
+        matrix.as_ref(),
+        &cfg,
+        server_name,
+        members.clone(),
+        roles.clone(),
+    );
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
     let host = Arc::new(CoreHost::new(
         manager.clone(),
@@ -653,8 +660,9 @@ fn attach_identity(
     cfg: &Config,
     server_name: String,
     members: Arc<Members>,
+    roles: Arc<Roles>,
 ) {
-    bus.attach_people(server_name, members);
+    bus.attach_people(server_name, members, roles);
     bus.attach_matrix(matrix.cloned(), cfg.username.clone());
 }
 

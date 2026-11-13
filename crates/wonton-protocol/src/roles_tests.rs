@@ -146,3 +146,10 @@ fn the_owner_has_more_of_everything_and_the_strictest_never_more_than_the_friend
         assert!(strictest.plugin_admin != AdminScope::AllOpenable);
     }
 }
+
+/// 建角色时没写的权限项按最严的算：旧的 App 不认识新项，发出来的草稿不能因此放开。
+#[test]
+fn a_draft_without_permission_fields_defaults_to_the_strictest() {
+    let draft: RoleDraft = serde_json::from_value(json!({"name": "客人"})).unwrap();
+    assert_eq!(draft.permissions, Permissions::strictest());
+}

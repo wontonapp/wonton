@@ -249,7 +249,7 @@ async fn installing_plugins_needs_the_owners_grant() {
     assert_listed_after_grant(&h, hers).await;
 }
 
-/// 记一个“mia”：`can_install_plugins` 按测试要的开。
+/// 记一个“mia”：能不能装插件按测试要的给角色。
 async fn invite_record(h: &Harness, can_install: bool) {
     h.members
         .invite(MemberRecord {
@@ -259,7 +259,6 @@ async fn invite_record(h: &Harness, can_install: bool) {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: if can_install { "admin" } else { "friend" }.to_owned(),
-            can_install_plugins: can_install,
             wants_private_bot: true,
             private_bot: None,
             pairing_code_hash: None,

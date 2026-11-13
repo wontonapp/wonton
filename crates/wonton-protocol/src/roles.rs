@@ -24,7 +24,7 @@ pub const DEFAULT_INVITE_ROLE_PATH: &str = "/_wonton/api/roles/default-invite";
 
 /// `PUT`：请求体 [`RoleAssignment`]，给一个成员分配角色。
 pub fn member_role_path(username: &str) -> String {
-    format!("{}/role", crate::member_path(username))
+    format!("{}/{username}/role", crate::MEMBERS_PATH)
 }
 
 /// `PUT`：请求体 [`RoleAssignment`]，给一个好友分配角色。`user_id` 是完整的 Matrix 用户 ID。
@@ -130,6 +130,8 @@ pub struct RoleList {
 pub struct RoleDraft {
     /// 去掉首尾空白后不能为空，不能和别的角色重名。
     pub name: String,
+    /// 没写时按最严的算。
+    #[serde(default)]
     pub permissions: Permissions,
 }
 
@@ -140,8 +142,9 @@ pub struct RoleAssignment {
     pub role_id: String,
 }
 
-/// 一个角色的权限项。新加的项在旧 App 上不显示；旧核心不认识的项被忽略。
+/// 一个角色的权限项。新加的项在旧 App 上不显示；旧核心不认识的项被忽略；没写的项按最严的算。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct Permissions {
     /// 能打开哪些应用：底栏、插件列表、网页、总线上的工具都按它过滤。
@@ -170,6 +173,12 @@ pub struct Permissions {
     pub shared_bots: bool,
     /// 能在群里把自己的 Bot 给别人用（ADR-0083 的房间表）。
     pub lend_own_bot: bool,
+}
+
+impl Default for Permissions {
+    fn default() -> Self {
+        Self::strictest()
+    }
 }
 
 impl Permissions {
@@ -361,6 +370,23 @@ pub enum JoinOutcome {
     /// 比这个 App 新的服务端给的结果，按 [`Self::Pending`] 处理。
     #[serde(other)]
     Other,
+}
+
+/// 角色页：全部角色和默认邀请角色。还没取到过时列表为空（模板总在，空只表示没取）。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct RolesViewModel {
+    /// 正在取；期间显示上次取到的列表。
+    #[serde(default)]
+    pub loading: bool,
+    #[serde(default)]
+    pub roles: Vec<RoleDef>,
+    /// 别的管理员发邀请时新人拿的角色；还没取到时为空。
+    #[serde(default)]
+    pub default_invite_role: Option<String>,
+    /// 最近一次操作失败的原因；下一次成功时清空。
+    #[serde(default)]
+    pub problem: Option<crate::PluginProblem>,
 }
 
 /// 哪些角色能打开一个插件。“能打开哪些应用”是“全部”的角色总在里面。

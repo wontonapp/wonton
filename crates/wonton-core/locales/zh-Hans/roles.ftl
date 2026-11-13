@@ -1,0 +1,11 @@
+roles-not-found = 没有这个角色：{ $role }。
+roles-name-taken = 已经有叫“{ $name }”的角色。
+roles-in-use = 还有人在用角色“{ $role }”，先给他们换掉。
+roles-default = 默认邀请角色删不掉，先把默认换成别的角色。
+roles-too-many = 角色已经到上限 { $max } 个。
+roles-invalid-name = 角色名不合规则：{ $error }
+roles-storage = 角色存不下来：{ $error }
+roles-member-not-found = 没有这个家人：{ $username }。
+roles-member-removed = { $username } 已经被移除，要重新邀请回来。
+roles-friend-not-found = 好友名单里没有 { $user_id }。
+roles-friends-unavailable = 这台服务器没接好友。

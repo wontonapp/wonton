@@ -86,9 +86,6 @@ pub struct MemberRecord {
     /// 他的角色（`roles.json` 的 ID）。记录里没有这一项时按权限最少的默认角色算。
     #[serde(default = "default_role_id")]
     pub role_id: String,
-    /// 旧的“能装插件”开关：角色接上以后不再读（`install_apps` 说了算），留着等接口跟着删。
-    #[serde(default)]
-    pub can_install_plugins: bool,
     /// 邀请时主人选了建私人 Bot；建 Bot 是后续任务，先记下来。
     #[serde(default)]
     pub wants_private_bot: bool,
@@ -100,6 +97,26 @@ pub struct MemberRecord {
     pub pairing_code_hash: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pairing_code_expires_at_ms: Option<u64>,
+}
+
+impl MemberRecord {
+    /// 测试里记一个家人：用户名、显示名和用户 ID 由用户名派生，状态“已邀请”，其余按最小。
+    /// 只有测试用，生产走邀请。
+    #[cfg(test)]
+    pub fn for_test(username: &str) -> Self {
+        Self {
+            username: username.to_owned(),
+            user_id: format!("@{username}:test"),
+            display_name: username.to_owned(),
+            email: None,
+            status: MemberStatus::Invited,
+            role_id: default_role_id(),
+            wants_private_bot: true,
+            private_bot: None,
+            pairing_code_hash: None,
+            pairing_code_expires_at_ms: None,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -218,18 +235,6 @@ impl Members {
                 return Err(MembersError::Removed(record.username.clone()));
             }
             record.role_id = role_id;
-            Ok(())
-        })
-    }
-
-    /// 主人改一个家人的设置。
-    pub fn set_settings(
-        &self,
-        username: &str,
-        can_install_plugins: bool,
-    ) -> Result<MemberRecord, MembersError> {
-        self.update(username, |record| {
-            record.can_install_plugins = can_install_plugins;
             Ok(())
         })
     }
@@ -510,38 +515,22 @@ mod tests {
     use super::*;
     use wonton_protocol::MemberInvite;
 
-    fn record(username: &str) -> MemberRecord {
-        MemberRecord {
-            username: username.to_owned(),
-            user_id: format!("@{username}:wonton.localhost"),
-            display_name: username.to_owned(),
-            email: None,
-            status: MemberStatus::Invited,
-            role_id: default_role_id(),
-            can_install_plugins: false,
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
-        }
-    }
-
     #[test]
     fn invite_survives_a_restart_and_removed_usernames_are_never_reused() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("members.json");
         let members = Members::open(&path).unwrap();
-        members.invite(record("alice")).unwrap();
-        members.set_settings("alice", true).unwrap();
+        members.invite(MemberRecord::for_test("alice")).unwrap();
+        members.set_role("alice", "admin").unwrap();
         members.remove("alice", false, true).unwrap();
 
         let reopened = Members::open(&path).unwrap();
         let alice = reopened.get("alice").unwrap();
         assert_eq!(alice.status, MemberStatus::Removed);
-        assert!(alice.can_install_plugins, "设置跟着记录走");
+        assert_eq!(alice.role_id, "admin", "角色跟着记录走");
         assert!(reopened.taken("alice"), "移除后用户名不再分配");
         assert!(matches!(
-            reopened.invite(record("alice")),
+            reopened.invite(MemberRecord::for_test("alice")),
             Err(MembersError::NotFound(_))
         ));
     }
@@ -562,7 +551,7 @@ mod tests {
     fn two_devices_racing_on_one_code_leave_one_match() {
         let dir = tempfile::tempdir().unwrap();
         let members = Arc::new(Members::open(dir.path().join("members.json")).unwrap());
-        members.invite(record("alice")).unwrap();
+        members.invite(MemberRecord::for_test("alice")).unwrap();
         let code = members.issue_pairing_code("alice").unwrap();
         let secret = code.secret.expose().to_owned();
 
@@ -601,7 +590,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("members.json");
         let members = Members::open(&path).unwrap();
-        members.invite(record("alice")).unwrap();
+        members.invite(MemberRecord::for_test("alice")).unwrap();
         let code = members.issue_pairing_code("alice").unwrap();
         // 记录目录只读：写盘失败。
         std::fs::set_permissions(
@@ -634,7 +623,7 @@ mod tests {
             }),
         )
         .unwrap();
-        members.invite(record("alice")).unwrap();
+        members.invite(MemberRecord::for_test("alice")).unwrap();
 
         let code = members.issue_pairing_code("alice").unwrap();
         assert_eq!(
@@ -682,7 +671,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let members = Members::open(dir.path().join("members.json")).unwrap();
         let mut events = members.subscribe();
-        members.invite(record("bob")).unwrap();
+        members.invite(MemberRecord::for_test("bob")).unwrap();
         members.consume_code("bob").unwrap();
         match events.try_recv() {
             Ok(MemberEvent::Joined { username }) => assert_eq!(username, "bob"),
@@ -720,7 +709,7 @@ mod tests {
     fn profile_updates_follow_the_owner_rules() {
         let dir = tempfile::tempdir().unwrap();
         let members = Members::open(dir.path().join("members.json")).unwrap();
-        let mut invited = record("carol");
+        let mut invited = MemberRecord::for_test("carol");
         invited.display_name = "卡罗尔".to_owned();
         members.invite(invited).unwrap();
         let filled = members
