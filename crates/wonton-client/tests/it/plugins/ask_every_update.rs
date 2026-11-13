@@ -32,6 +32,7 @@ fn detail(ask: bool) -> Canned {
         homepage: None,
         repository: None,
         license: None,
+        license_url: None,
         stars: None,
         release_notes: None,
         permissions: Vec::new(),

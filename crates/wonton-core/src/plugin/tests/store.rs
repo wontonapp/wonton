@@ -124,6 +124,64 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
     );
 }
 
+/// 许可证是后加的字段：旧的索引用没有它，照常列出（强制要求在 `plugin check-index`）。
+#[tokio::test]
+async fn an_index_entry_without_a_license_still_lists() {
+    let index = tempfile::tempdir().unwrap();
+    write_index(index.path(), &compose("1.0.0", "nginx"), ICON);
+    let path = index.path().join("index.json");
+    let mut raw: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let entry = raw["plugins"][0].as_object_mut().unwrap();
+    entry.remove("license");
+    entry.remove("license_url");
+    fs::write(&path, raw.to_string()).unwrap();
+
+    let bed = bed(index.path(), false).await;
+    let listing = bed.m.store_listing(&zh(), false).await;
+    let [item] = &listing.official.plugins[..] else {
+        panic!("{listing:?}");
+    };
+    assert!(item.license.is_none());
+}
+
+/// 应用的许可证原文和全文地址原样给壳：商店条目、详情、安装确认页都有。
+#[tokio::test]
+async fn the_license_reaches_the_store_item_detail_and_preview() {
+    let index = tempfile::tempdir().unwrap();
+    let licensed = compose("1.0.0", "nginx").replace(
+        "  permissions: []\n",
+        "  license: LicenseRef-Acme-Eula\n  license_url: https://example.com/eula\n  permissions: []\n",
+    );
+    write_index(index.path(), &licensed, ICON);
+    let bed = bed(index.path(), false).await;
+    let m = &bed.m;
+
+    for (license, url) in [
+        ("LicenseRef-Acme-Eula", "https://example.com/eula"),
+        // 一般 SPDX 许可证也一样带出去，不按有没有 LicenseRef 分。
+        ("AGPL-3.0-only", "https://example.com/agpl"),
+    ] {
+        let c = licensed
+            .replace("LicenseRef-Acme-Eula", license)
+            .replace("https://example.com/eula", url);
+        write_index(index.path(), &c, ICON);
+        let listing = m.store_listing(&zh(), true).await;
+        let [item] = &listing.official.plugins[..] else {
+            panic!("{listing:?}");
+        };
+        assert_eq!(item.license.as_deref(), Some(license));
+        assert_eq!(item.license_url.as_deref(), Some(url));
+
+        let detail = m.store_plugin("github:acme/hello", &zh()).await.unwrap();
+        assert_eq!(detail.license.as_deref(), Some(license));
+        assert_eq!(detail.license_url.as_deref(), Some(url));
+
+        let preview = m.preview_source("github:acme/hello", &zh()).await.unwrap();
+        assert_eq!(preview.license.as_deref(), Some(license));
+        assert_eq!(preview.license_url.as_deref(), Some(url));
+    }
+}
+
 #[tokio::test]
 async fn files_that_do_not_match_the_index_are_refused() {
     let index = tempfile::tempdir().unwrap();

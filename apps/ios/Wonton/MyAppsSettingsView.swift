@@ -17,7 +17,7 @@ struct MyAppsSettingsView: View {
                     set: { pages.send(.setAutoAddApps(enabled: $0)) }
                 ))
             }
-            Section(String(localized: .sidebarMyApps)) {
+            Section(String(localized: .Sidebar.sidebarMyApps)) {
                 let apps = plugins.viewModel.sidebar.apps
                 ForEach(apps, id: \.self) { app in
                     if let appRef = app.myAppRef {
@@ -52,7 +52,7 @@ struct MyAppsSettingsView: View {
             if let problem = pages.viewModel.problem {
                 Section {
                     ProblemNotice(problem: Problem(
-                        title: String(localized: .tabSettingsUnreadable),
+                        title: String(localized: .Tab1.tabSettingsUnreadable),
                         detail: problem.message
                     ))
                 }
@@ -96,7 +96,7 @@ private struct MyAppCandidates: View {
                             PluginIconView(icon: plugin.icon, size: WontonTheme.size.icon, model: plugins)
                             Text(plugin.pageTitle.map { "\(plugin.title) · \($0)" } ?? plugin.title)
                         } else {
-                            Text(String(localized: .tabSettings))
+                            Text(String(localized: .Tab2.tabSettings))
                         }
                         Spacer(minLength: 0)
                         WontonIcon.add.view(size: WontonTheme.size.icon)
@@ -108,7 +108,7 @@ private struct MyAppCandidates: View {
             if let problem = pages.viewModel.problem {
                 Section {
                     ProblemNotice(problem: Problem(
-                        title: String(localized: .tabSettingsUnreadable),
+                        title: String(localized: .Tab1.tabSettingsUnreadable),
                         detail: problem.message
                     ))
                 }

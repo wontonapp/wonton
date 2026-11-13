@@ -273,6 +273,17 @@ impl Run {
     }
 }
 
+/// 一轮的结果按“答完了”的口径（ADR-0082）：`end_turn` 收尾、没截断、没有权限失败。
+/// 旁聊结果行同用这个口径；打断（cancelled）算“失败或被打断”。
+fn answered_prompt(result: &PromptResult) -> bool {
+    !result.output_limited && result.permission_error.is_none() && result.stop_reason == "end_turn"
+}
+
+/// 状态消息和旁聊结果行（ADR-0093）共用的口径；出错的一轮没答完。
+pub(super) fn answered(result: &Result<PromptResult>) -> bool {
+    matches!(result, Ok(result) if answered_prompt(result))
+}
+
 /// 一个房间的进行中的一轮。一个会话同一时间只有一轮（桥保证），按会话键各记一条。
 #[derive(Default)]
 pub(super) struct Board {
@@ -484,6 +495,7 @@ impl Board {
                     (State::Failed, None, Some(format_error(error, lang)))
                 }
             }
+            Ok(result) if answered_prompt(result) => (State::Done, None, None),
             Ok(result) => {
                 if result.output_limited {
                     (State::Failed, None, Some(text(lang, "output-limited", &[])))
@@ -499,7 +511,6 @@ impl Board {
                     )
                 } else {
                     match result.stop_reason.as_str() {
-                        "end_turn" => (State::Done, None, None),
                         "cancelled" => (State::Failed, Some(End::Cancelled), None),
                         "max_tokens" => {
                             (State::Failed, None, Some(text(lang, "run-max-tokens", &[])))

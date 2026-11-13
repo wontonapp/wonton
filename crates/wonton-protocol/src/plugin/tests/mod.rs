@@ -101,6 +101,8 @@ fn store() -> StoreListing {
             name: "Example".into(),
             url: Some("https://example.com".into()),
         }),
+        license: Some("AGPL-3.0-only".into()),
+        license_url: None,
         stars: None,
         installed_version: Some("2.0.0".into()),
         security_tier: Some(SecurityTier::Standard),
@@ -178,6 +180,8 @@ fn preview() -> InstallPreview {
             title: "Hermes".into(),
         }),
         author: None,
+        license: Some("LicenseRef-Samba-Share".into()),
+        license_url: Some("https://example.com/license".into()),
         permissions: vec![
             permission(
                 "storage.share.documents:write",
@@ -278,6 +282,7 @@ fn detail() -> PluginDetail {
         homepage: Some("https://immich.app".into()),
         repository: Some("https://github.com/example/wonton-immich".into()),
         license: Some("AGPL-3.0-only".into()),
+        license_url: None,
         stars: None,
         release_notes: None,
         permissions: vec![permission(
@@ -529,16 +534,36 @@ fn values_from_a_newer_core_still_parse() {
     .unwrap();
     assert!(request.enabled_permissions.is_empty());
 
+    // 许可证同样是后加的字段：老核心不给时是空的。
+    let mut old_item = serde_json::to_value(&store().official.plugins[0]).unwrap();
+    for key in ["license", "license_url"] {
+        old_item.as_object_mut().unwrap().remove(key);
+    }
+    let old_item: StoreItem = serde_json::from_value(old_item).unwrap();
+    assert!(old_item.license.is_none());
+    assert!(old_item.license_url.is_none());
+
     let mut older = serde_json::to_value(preview()).unwrap();
     older.as_object_mut().unwrap().remove("secret_inputs");
+    for key in ["license", "license_url"] {
+        older.as_object_mut().unwrap().remove(key);
+    }
     let older: InstallPreview = serde_json::from_value(older).unwrap();
     assert!(
         older.secret_inputs.is_empty(),
         "旧核心没有这个字段，没有要填的"
     );
+    assert!(older.license.is_none());
+    assert!(older.license_url.is_none());
 
     let mut shown = serde_json::to_value(detail()).unwrap();
     shown["hints"] = json!([{"category": "model_pool_drained", "detail": "x"}]);
+    for key in ["license", "license_url"] {
+        shown.as_object_mut().unwrap().remove(key);
+    }
+    let bare: PluginDetail = serde_json::from_value(shown.clone()).unwrap();
+    assert!(bare.license.is_none());
+    assert!(bare.license_url.is_none());
     let shown: PluginDetail = serde_json::from_value(shown).unwrap();
     assert_eq!(
         shown.hints,
