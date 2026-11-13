@@ -32,6 +32,7 @@ struct TabPanelMode {
     let pageEdge: PanelEdge
     let pageChanged: (CGFloat) -> Void
     let pageEnded: (CGFloat, CGFloat) -> Void
+    let pageCancelled: () -> Void
     let close: () -> Void
     let edit: () -> Void
 }
@@ -74,14 +75,13 @@ struct ChatPanelHost<Content: View>: View {
     @State private var safeTop: CGFloat = 0
     @State private var screenHeight: CGFloat = 0
     @State private var armed = PanelLevel.closed
+    @GestureState private var stripDragging = false
     @State private var buzzes = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
     private static var mainPeekChatFraction: CGFloat { 0.18 }
     /// 房间第 1 级让面板占约 55%，聊天仍留在上方约 45%。
     private static var roomPeekChatFraction: CGFloat { 0.45 }
-    private static var pullThreshold: CGFloat { 80 }
-    private static var pushThreshold: CGFloat { 50 }
 
     var body: some View {
         GeometryReader { geometry in
@@ -91,12 +91,12 @@ struct ChatPanelHost<Content: View>: View {
                 Color(colors.canvas).ignoresSafeArea()
                 if mounted {
                     pager(height: height, safe: geometry.safeAreaInsets)
-                        .offset(y: edge == .bottom ? max(0, height - chatOffset(height)) : 0)
+                        .offset(y: panelTop(height, safeBottom: geometry.safeAreaInsets.bottom))
                         .ignoresSafeArea()
                 }
-                chat(height: height)
+                chat(height: height, safeBottom: geometry.safeAreaInsets.bottom)
                 if level != .closed {
-                    strip(height: height)
+                    strip(height: height, safeBottom: geometry.safeAreaInsets.bottom)
                 }
                 attention(height: height)
                 #if DEBUG
@@ -134,7 +134,8 @@ struct ChatPanelHost<Content: View>: View {
         ChatPull(
             enabled: level == .closed && !blocked,
             changed: { distance in pullChanged(distance) },
-            ended: { distance, velocity in settle(distance: distance, velocity: velocity, height: height) }
+            ended: { distance, velocity in settle(distance: distance, velocity: velocity, height: height) },
+            cancelled: { move(to: level) }
         )
     }
 
@@ -164,18 +165,24 @@ struct ChatPanelHost<Content: View>: View {
     }
 
     private func settle(distance: CGFloat, velocity: CGFloat, height: CGFloat) {
-        move(to: target(distance: distance + velocity * 0.15, height: height))
+        move(to: target(distance: distance, velocity: velocity, height: height))
     }
 
-    private func target(distance: CGFloat, height: CGFloat) -> PanelLevel {
+    private func target(distance: CGFloat, velocity: CGFloat = 0, height: CGFloat) -> PanelLevel {
+        let opens = WontonGesture.commits(distance: distance, velocity: velocity,
+                                         threshold: WontonTheme.gesture.pullDistance)
+        let advances = WontonGesture.commits(distance: distance, velocity: velocity,
+                                            threshold: WontonTheme.gesture.pushDistance)
+        let closes = WontonGesture.commits(distance: -distance, velocity: -velocity,
+                                          threshold: WontonTheme.gesture.pullDistance)
         switch level {
         case .closed:
-            distance > base(.peek, height) + Self.pushThreshold ? .full
-                : distance > Self.pullThreshold ? .peek : .closed
+            return distance >= base(.peek, height) + WontonTheme.gesture.pushDistance ? .full
+                : opens ? .peek : .closed
         case .peek:
-            distance > Self.pushThreshold ? .full : distance < -Self.pullThreshold ? .closed : .peek
+            return advances ? .full : closes ? .closed : .peek
         case .full:
-            distance < -Self.pullThreshold ? .peek : .full
+            return closes ? .peek : .full
         }
     }
 
@@ -235,11 +242,16 @@ struct ChatPanelHost<Content: View>: View {
 extension ChatPanelHost {
     // MARK: - 视图
 
-    private func chat(height: CGFloat) -> some View {
+    private func chat(height: CGFloat, safeBottom: CGFloat) -> some View {
         content()
             // 拉开后聊天页不接点击：它的整屏底色背景还留在原位，会把面板整块盖住（房间有 WontonCanvas 的底色时实测）。
             // 露出的那一条由上面的 `strip` 单独接点按和拖动；收起时聊天页照常可点。
             .allowsHitTesting(level == .closed)
+            // The moved page must not carry its home-indicator canvas between composer and panel.
+            .mask(alignment: .top) {
+                Rectangle().padding(.bottom, edge == .bottom && (level != .closed || drag > 0) ? safeBottom : 0)
+                    .ignoresSafeArea()
+            }
             .offset(y: sign * chatOffset(height))
             .background {
                 if let pullAnchor {
@@ -252,7 +264,7 @@ extension ChatPanelHost {
 
     /// 露出的那条聊天页：点一下收起，往外推换级。单独一层放在聊天页上面，不靠它的位移决定命中区——
     /// 叠在聊天页上的点按区不跟着 `.offset` 走，面板会被整块盖住，第 1 级里点加号、圆点、网页都会被吃掉。
-    private func strip(height: CGFloat) -> some View {
+    private func strip(height: CGFloat, safeBottom: CGFloat) -> some View {
         ZStack(alignment: edge == .top ? .top : .bottom) {
             Color.clear
             if level == .peek {
@@ -260,12 +272,13 @@ extension ChatPanelHost {
             }
         }
         .contentShape(Rectangle())
-        .frame(height: max(0, height - chatOffset(height)))
+        .frame(height: max(0, height - chatOffset(height) - (edge == .bottom ? safeBottom : 0)))
         .frame(maxHeight: .infinity, alignment: edge == .top ? .bottom : .top)
         .onTapGesture { move(to: .closed) }
         .gesture(
             // 按屏幕算：聊天页跟着手指动，按它自己的坐标算的话手指一直停在原处。
-            DragGesture(minimumDistance: 4, coordinateSpace: .global)
+            DragGesture(minimumDistance: WontonTheme.gesture.dragSlop, coordinateSpace: .global)
+                .updating($stripDragging) { _, active, _ in active = true }
                 .onChanged {
                     drag = sign * $0.translation.height
                     arm(distance: drag, height: height)
@@ -275,14 +288,18 @@ extension ChatPanelHost {
                            velocity: sign * value.velocity.height, height: height)
                 }
         )
+        .onChange(of: stripDragging) { _, active in
+            if !active, drag != 0 { move(to: level) }
+        }
     }
 
     @ViewBuilder private func pager(height: CGFloat, safe: EdgeInsets) -> some View {
         // 网页框一直是整屏高：主面板被聊天页盖住的是聊天页顶边以下，房间是滑出屏幕的那段。
         let covered = level == .full
             ? safe.bottom
-            : max(0, height - chatOffset(height) - (edge == .top ? safe.top : 0))
-        let top = max(0, safe.top - panelTop(height))
+            : edge == .bottom ? panelTop(height, safeBottom: safe.bottom)
+                : max(0, height - chatOffset(height) - safe.top)
+        let top = max(0, safe.top - panelTop(height, safeBottom: safe.bottom))
         ZStack(alignment: .bottom) {
             if items.isEmpty {
                 PanelEmpty(add: { editing = true })
@@ -306,8 +323,8 @@ extension ChatPanelHost {
         return true
     }
 
-    private func panelTop(_ height: CGFloat) -> CGFloat {
-        edge == .top ? 0 : max(0, height - chatOffset(height))
+    private func panelTop(_ height: CGFloat, safeBottom: CGFloat) -> CGFloat {
+        edge == .top ? 0 : max(0, height - chatOffset(height) - safeBottom)
     }
 
     private func pages(height: CGFloat, insetTop: CGFloat, insetBottom: CGFloat) -> some View {
@@ -346,6 +363,7 @@ extension ChatPanelHost {
                     height: height
                 )
             },
+            pageCancelled: { move(to: level) },
             close: { move(to: .closed) },
             edit: { editing = true }
         )

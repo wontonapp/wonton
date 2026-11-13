@@ -94,7 +94,11 @@ final class BottomPin {
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
     var snapshot: String {
         let view = scrollView
+        let visibleBottom = view.map {
+            $0.convert(CGPoint(x: 0, y: $0.bounds.maxY - $0.adjustedContentInset.bottom), to: nil).y
+        } ?? -1
         return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
+            + " visibleBottom=\(visibleBottom)"
     }
 
     /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
