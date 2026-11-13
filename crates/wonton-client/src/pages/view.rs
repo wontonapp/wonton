@@ -638,7 +638,7 @@ pub(super) fn page_state(
 
 /// 出错页默认收起的"详情"：核心按 App 语言写，HTTP 错误码收在里面（ADR-0032）。没拿到响应
 /// 就没有错误码可写，交回空，壳保持只显示错误码的原样。
-fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
+pub(super) fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
     match (failure, status) {
         (TabLoadFailure::Transport, _) => {
             Some(l10n!(CATALOG, language(), "tabs-load-details-transport"))

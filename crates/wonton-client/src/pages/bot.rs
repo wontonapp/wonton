@@ -1,3 +1,4 @@
+use super::view::load_failed_details;
 use super::*;
 use wonton_protocol::{
     BotRef, BotWebFailure, BotWebPage, BotWebView, TabLayout, TabPage, TabState,
@@ -160,6 +161,7 @@ pub(super) fn build_page(
             .map_or(TabState::Ready, |(failure, status)| TabState::LoadFailed {
                 failure: *failure,
                 status: *status,
+                details: load_failed_details(*failure, *status),
             })
     } else {
         match view.and_then(|view| view.web.as_ref()) {
