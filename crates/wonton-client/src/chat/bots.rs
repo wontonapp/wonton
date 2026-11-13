@@ -24,29 +24,43 @@ pub(super) struct Bots {
     pub plugins: Arc<PluginsLink>,
     pub view: watch::Sender<ChatViewModel>,
     pub session: watch::Sender<Option<Arc<MatrixSession>>>,
-    layouts: Arc<Layouts>,
+    pub layouts: Arc<Layouts>,
     pub foreground: watch::Sender<bool>,
     pub changed: Notify,
     pub epoch: AtomicU64,
-    refresh_serial: AtomicU64,
+    pub refresh_serial: AtomicU64,
     pub local: Mutex<Local>,
 }
 
 #[derive(Default)]
 pub(super) struct Local {
-    installed: Option<InstalledPlugins>,
-    pub records: HashMap<String, Record>,
+    pub installed: Option<InstalledPlugins>,
+    pub records: HashMap<BotRef, Record>,
     pub report: Option<wonton_protocol::BotActivityReport>,
+    pub web_generation: u64,
+}
+
+impl Local {
+    #[cfg(test)]
+    pub(super) fn clear_runtime(&mut self) {
+        self.report = None;
+        self.web_generation = self.web_generation.wrapping_add(1);
+        for record in self.records.values_mut() {
+            record.facts = None;
+            record.typing.clear();
+            record.activity = Activity::default();
+        }
+    }
 }
 
 pub(super) struct Record {
     pub user_id: String,
-    title: String,
+    pub title: String,
     pub facts: Option<BotActivityFacts>,
     pub profile_rev: Option<u64>,
     pub typing: HashMap<String, bool>,
     pub activity: Activity,
-    refresh: u64,
+    pub refresh: u64,
     pub identity: u64,
 }
 
@@ -91,10 +105,9 @@ impl Bots {
 
     pub fn set_session(self: &Arc<Self>, session: Option<Arc<MatrixSession>>) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
-        if session.is_none() {
-            self.clear_activity();
-        }
+        self.clear_activity();
         self.session.send_replace(session);
+        self.changed.notify_one();
         self.view.send_modify(|view| {
             for bot in &mut view.bots {
                 bot.saving = false;
@@ -125,7 +138,7 @@ impl Bots {
         }
     }
 
-    pub fn refresh(self: &Arc<Self>, id: &str) {
+    pub fn refresh(self: &Arc<Self>, id: &BotRef) {
         let Some(session) = self.session.borrow().clone() else {
             return;
         };
@@ -142,7 +155,7 @@ impl Bots {
             return;
         };
         let epoch = self.epoch.load(Ordering::SeqCst);
-        let id = id.to_owned();
+        let id = id.clone();
         let bots = self.clone();
         self.runtime.spawn(async move {
             let profile = session.fetch_user_profile(&user_id).await;
@@ -166,12 +179,12 @@ impl Bots {
             let (name, avatar, state_avatars) = match profile {
                 Ok(profile) => profile_view(profile, &record.title),
                 Err(error) => {
-                    tracing::info!(plugin_id = id, %error, "Cannot fetch Bot profile");
+                    tracing::info!(plugin_id = id.plugin_id, bot = id.bot, %error, "Cannot fetch Bot profile");
                     (record.title.clone(), None, Vec::new())
                 }
             };
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot == id && bot.user_id == user) {
                     bot.name = name;
                     bot.avatar = avatar;
                     bot.state_avatars = state_avatars;
@@ -193,8 +206,12 @@ impl Bots {
                 let Some(user) = plugin.bot_user_id.as_ref().filter(|user| !user.is_empty()) else {
                     continue;
                 };
+                let key = BotRef {
+                    plugin_id: plugin.id.clone(),
+                    bot: "default".into(),
+                };
                 let previous = records
-                    .remove(&plugin.id)
+                    .remove(&key)
                     .filter(|record| record.user_id == *user);
                 let mut bot = previous
                     .as_ref()
@@ -241,7 +258,7 @@ impl Bots {
                             .find(|facts| facts.plugin_id == plugin.id && facts.user_id == *user)
                     })
                     .cloned();
-                local.records.insert(plugin.id.clone(), record);
+                local.records.insert(key, record);
                 views.push(bot);
             }
         }
@@ -299,6 +316,13 @@ impl Bots {
     pub fn clear_activity(&self) {
         let mut local = lock(&self.local);
         local.report = None;
+        // 后台或换会话时网页状态作废：换一代，把已发的网页地址撤下来。
+        local.web_generation = local.web_generation.wrapping_add(1);
+        self.view.send_modify(|view| {
+            for bot in &mut view.bots {
+                bot.web = None;
+            }
+        });
         for record in local.records.values_mut() {
             record.facts = None;
             record.typing.clear();
@@ -332,7 +356,7 @@ impl Bots {
             for bot in &mut view.bots {
                 let activity = local
                     .records
-                    .get(&bot.bot.plugin_id)
+                    .get(&bot.bot)
                     .and_then(|record| record.activity.state);
                 changed |= bot.activity != activity;
                 bot.activity = activity;

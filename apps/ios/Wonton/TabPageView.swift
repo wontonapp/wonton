@@ -26,6 +26,8 @@ struct TabPageView: View {
     @State private var showsDetails = false
     @State private var isVisible = false
     @State private var seenReady = false
+    @State private var disclosedURL: String?
+    @State private var disclosedProxy: ProxySettings?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -76,7 +78,11 @@ struct TabPageView: View {
             if panel == nil { takeover?.end() }
         }
         .sheet(isPresented: $showsDetails) {
-            if let pluginId {
+            if case let .bot(bot, _) = tab {
+                NavigationStack {
+                    BotProfileView(chat: chat, plugins: plugins, botRef: bot) { showsDetails = false }
+                }
+            } else if let pluginId {
                 NavigationStack {
                     PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
                         showsDetails = false
@@ -93,26 +99,27 @@ struct TabPageView: View {
             let safe = geometry.safeAreaInsets
             let inputs = inputs(safe: safe)
             ZStack {
-                if let webView = session.webView, sourceAvailable {
-                    TabWebView(webView: webView, obscured: obscured())
-                        .id(ObjectIdentifier(webView))
-                        .ignoresSafeArea(.container)
-                }
-                TabPageStateView(
-                    page: page, session: session, connected: connected,
-                    shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
-                    details: { showsDetails = true },
-                    remove: {
-                        if let remove {
-                            remove()
-                        } else if let close {
-                            close()
-                        } else {
-                            pages.send(.closePage)
-                        }
+                if blocksBotPage {
+                    ProblemView(problem: Problem(title: blockedBotText), retry: session.retry)
+                } else if requiresDisclosure {
+                    BotWebDisclosure(url: page.url, proceed: {
+                        disclosedURL = page.url
+                        disclosedProxy = home.viewModel.proxy
+                        updatePermittedSession(inputs)
+                    }, cancel: closePage)
+                } else {
+                    if let webView = session.webView, sourceAvailable {
+                        TabWebView(webView: webView, obscured: obscured())
+                            .id(ObjectIdentifier(webView))
+                            .ignoresSafeArea(.container)
                     }
-                )
-                .ignoresSafeArea(.container)
+                    TabPageStateView(
+                        page: page, session: session, connected: connected,
+                        shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
+                        details: { showsDetails = true }, remove: closePage
+                    )
+                    .ignoresSafeArea(.container)
+                }
                 chrome(safe: safe)
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
@@ -125,7 +132,9 @@ struct TabPageView: View {
                     )
                 }
             }
-            .task(id: inputs) { updateSession(inputs) }
+            .task(id: inputs) { updatePermittedSession(inputs) }
+            .onChange(of: blocksBotPage) { updatePermittedSession(inputs) }
+            .onChange(of: requiresDisclosure) { updatePermittedSession(inputs) }
             .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
             .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
         }
@@ -150,6 +159,16 @@ struct TabPageView: View {
             Spacer(minLength: 0)
         }
         .ignoresSafeArea(.container)
+    }
+
+    private func closePage() {
+        if let remove {
+            remove()
+        } else if let close {
+            close()
+        } else {
+            pages.send(.closePage)
+        }
     }
 
     /// 面板拉开、翻到这一页只发一次“被看到了”，重新翻回来再发。
@@ -197,7 +216,81 @@ struct TabPageView: View {
         }
     }
 
+}
+
+private extension TabPageView {
+    /// Only Bot-bound entries need this disclosure; ordinary plugin pages retain their existing behavior.
+    private var requiresDisclosure: Bool {
+        guard isBotPage, let url = page.url else { return false }
+        return disclosedURL != url || disclosedProxy != home.viewModel.proxy
+    }
+
+    private var pageBotRef: BotRef? {
+        switch tab {
+        case let .bot(bot, _): return bot
+        case let .plugin(id, _), let .pluginPath(id, _):
+            guard plugins.viewModel.installed?.plugins.contains(where: {
+                $0.id == id && ($0.botUserId != nil || $0.chat != nil)
+            }) == true else { return nil }
+            return BotRef(pluginId: id, bot: "default")
+        case .chat, .apps, .url, .sharedApp, .uiResource: return nil
+        }
+    }
+
+    private var pageBot: BotView? {
+        guard let pageBotRef else { return nil }
+        return chat.viewModel.bots.first { $0.bot == pageBotRef }
+    }
+
+    private var verifiedBotPage: Bool {
+        guard let ref = pageBotRef, let bot = pageBot, let web = bot.web,
+              case let .ready(metadata) = web, metadata.bot == ref,
+              let origin = webOrigin(metadata.url), origin == webOrigin(page.url) else { return false }
+        return true
+    }
+
+    private var blocksBotPage: Bool { isBotPage && !verifiedBotPage }
+
+    private var blockedBotText: String {
+        if let web = pageBot?.web, case let .unavailable(reason) = web { return reason.profileText }
+        return String(localized: .BotProfile1.botProfileWebUnknown)
+    }
+
+    private func updatePermittedSession(_ inputs: TabWebInputs) {
+        guard !blocksBotPage, !requiresDisclosure else {
+            session.withhold()
+            return
+        }
+        updateSession(inputs)
+    }
+
+    private func webOrigin(_ value: String?) -> String? {
+        guard let value, var url = URLComponents(string: value), let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased() else { return nil }
+        url.scheme = scheme
+        url.host = host
+        if (scheme == "http" && url.port == 80) || (scheme == "https" && url.port == 443) { url.port = nil }
+        url.path = ""
+        url.query = nil
+        url.fragment = nil
+        url.user = nil
+        url.password = nil
+        return url.string
+    }
+
+    private var isBotPage: Bool {
+        switch tab {
+        case .bot: return true
+        case .plugin, .pluginPath:
+            guard pageBotRef != nil else { return false }
+            if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
+            return true
+        case .chat, .apps, .url, .sharedApp, .uiResource: return false
+        }
+    }
+
     private var takeover: PageTakeover? {
+        if case .bot = tab { return nil }
         guard let pluginId, let plugin = plugins.viewModel.installed?.plugins.first(where: { $0.id == pluginId }),
               plugin.declaresTools else { return nil }
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
@@ -236,7 +329,7 @@ struct TabPageView: View {
 
     private func revive(_ inputs: TabWebInputs) {
         session = store.session(for: placed, core: pages.core)
-        updateSession(inputs)
+        updatePermittedSession(inputs)
     }
 
     private func updateSession(_ inputs: TabWebInputs) {

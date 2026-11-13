@@ -22,6 +22,8 @@ pub struct BotVars {
     pub matrix: Option<MatrixVars>,
     /// 这个 Bot 的总线地址，令牌在路径里：`http://mcp.wonton.internal:<端口>/mcp/<令牌>`。
     pub mcp_url: Option<String>,
+    pub app_url: Option<String>,
+    pub oidc: Option<super::vars::OidcVars>,
 }
 
 /// 服务名之外，Bot 服务的另一个网络别名：同一个 Bot 的服务之间用它互访。
@@ -64,6 +66,16 @@ impl<'a> ServiceVars<'a> {
         }
         for (bot, runtime) in bots {
             let mut vars = plugin.clone();
+            if let Some(url) = &runtime.app_url {
+                vars.insert("WONTON_APP_URL".to_owned(), url.clone());
+            }
+            if let Some(oidc) = &runtime.oidc {
+                vars.insert("WONTON_OIDC_CLIENT_ID".to_owned(), oidc.client_id.clone());
+                vars.insert(
+                    "WONTON_OIDC_CLIENT_SECRET".to_owned(),
+                    oidc.client_secret.clone(),
+                );
+            }
             vars.insert("WONTON_BOT_NAME".to_owned(), bot.clone());
             let data = app_data.join("bots").join(bot);
             vars.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
@@ -154,6 +166,10 @@ impl<'a> ServiceVars<'a> {
             && self.bot_services.contains(service)
         {
             aliases.push(bot_alias(service, bot));
+            aliases.push(super::names::service_host(
+                &self.slug,
+                &bot_alias(service, bot),
+            ));
         }
         aliases.push(super::names::service_host(&self.slug, service));
         aliases

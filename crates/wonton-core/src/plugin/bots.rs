@@ -268,6 +268,7 @@ impl PluginManager {
     ) -> Result<ProvisionedBot, InstallError> {
         // 同时建的两个 Bot 不能分到同一个用户名，也不能同时改 Bot 记录。
         let _allocating = self.bot_allocation.lock().await;
+        self.reserve_bot_web(manifest, bot)?;
         self.provision_bot_locked(id, manifest, bot, keeper, package)
             .await
     }
@@ -405,7 +406,7 @@ impl PluginManager {
         manifest: &Manifest,
         bot: &ProvisionedBot,
         ctx: &mut super::render::InstallContext,
-    ) {
+    ) -> Result<(), InstallError> {
         ctx.matrix = Some(self.matrix_vars(bot));
         // Bot 的变量先放齐（模型凭据、Matrix 身份），总线地址只有申请了 tools 的插件才有。
         if manifest.bots.is_some() {
@@ -418,18 +419,18 @@ impl PluginManager {
                         .and_then(|m| m.bot_keys.get(super::bot_services::DEFAULT_BOT).cloned()),
                     matrix: ctx.matrix.clone(),
                     mcp_url: None,
+                    ..Default::default()
                 },
             );
         }
         if !manifest.permissions.contains(&Permission::Tools) {
-            return;
+            return Ok(());
         }
-        let Ok(plugin_bots) = self.store.bots().load(&manifest.id) else {
-            return;
-        };
-        let Some(entry) = plugin_bots.bots.get(super::bot_services::DEFAULT_BOT) else {
-            return;
-        };
+        let plugin_bots = self.store.bots().load(&manifest.id)?;
+        let entry = plugin_bots
+            .bots
+            .get(super::bot_services::DEFAULT_BOT)
+            .ok_or_else(|| InstallError::Storage("Missing default Bot record".to_owned()))?;
         let url = format!(
             "http://{}:{}/mcp/{}",
             crate::config::PLUGIN_MCP_HOST,
@@ -440,6 +441,7 @@ impl PluginManager {
         if let Some(vars) = ctx.bots.get_mut(super::bot_services::DEFAULT_BOT) {
             vars.mcp_url = Some(url);
         }
+        Ok(())
     }
 
     /// 存下来的一个 Bot 的 Matrix 变量：令牌是占位值（重建时从旧容器读回），名单按归属人算
@@ -637,6 +639,11 @@ impl PluginManager {
             .load(id)
             .map(|bots| bots.bots.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// 同 [`Self::bot_names`]，但读不了 Bot 记录时报错：核对容器不能把读失败当成没有 Bot。
+    pub(super) fn stored_bot_names(&self, id: &PluginId) -> Result<Vec<String>, StoreError> {
+        Ok(self.store.bots().load(id)?.bots.into_keys().collect())
     }
 
     /// 这个插件有没有 Bot 记录：有的插件调用总线必须带令牌认 Bot。

@@ -173,6 +173,7 @@ async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
         None,
         watch::channel(None).1,
         watch::channel(None),
+        rig.chat.subscribe(),
     );
     let view = restarted.view();
     assert!(view.stack.is_empty(), "{:?}", view.stack);

@@ -215,7 +215,14 @@ impl PluginManager {
             return Ok(None);
         };
         let slug = manifest.id.slug();
-        let name = self.cfg.instance.container(&slug, &webui.service);
+        let per_bot = super::bot_web_registry::has_bot_web(manifest);
+        let name = if per_bot {
+            self.cfg
+                .instance
+                .bot_container(&slug, &webui.service, "default")
+        } else {
+            self.cfg.instance.container(&slug, &webui.service)
+        };
         if let Some(endpoint) = self
             .host_relay_endpoint(manifest, Purpose::Webui, &webui.service, webui.port)
             .await?
@@ -224,7 +231,14 @@ impl PluginManager {
         }
         self.service_address(
             &name,
-            &names::service_host(&slug, &webui.service),
+            &names::service_host(
+                &slug,
+                &if per_bot {
+                    super::bot_services::bot_alias(&webui.service, "default")
+                } else {
+                    webui.service.clone()
+                },
+            ),
             webui.port,
             network,
         )
@@ -480,6 +494,11 @@ impl PluginManager {
         )?;
         if let (Some(upstream), Some(webui)) = (&upstream, &manifest.webui) {
             health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
+        }
+        if super::bot_web_registry::has_bot_web(manifest) {
+            for bot in self.store.bots().load(&manifest.id)?.bots.keys() {
+                self.wait_bot_web(manifest, bot, deadline).await?;
+            }
         }
         Ok((upstream, models, mcp))
     }

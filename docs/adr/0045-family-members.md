@@ -133,13 +133,13 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   origin 内的路径，可含查询和片段。选择／打开沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage`
   和 `Panel`；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
   和页面容器，不另建壳层 WebView，也不省略桥。
-  实现时把聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
+  聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
   `TabPage`，桥和媒体使用它的精确页面 URL／origin。URL 只来自该 `BotRef` 的 `BotView.web.Ready.page.url`，
   不读 `plugin.web_url`。`BotView.web: None` 表示没有验证可用的 URL，包括断连或身份变化；未知、缺失或错误时
   不给页面 URL，断连或身份变化时清空，不猜 URL、不回退默认 Bot。运行事实只带 Bot 身份和运行计数，不混入访问授权。
   Bot 不存在为 404 `not_found`，未认证为 401 `unauthenticated`，服务未就绪为 503 `not_ready`，
-  无网页为 404 `no_webui`。这些是接口和目标行为约定，不是网关路由、App 打开行为或端到端验证结论；
-  接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
+  无网页为 404 `no_webui`。元数据、会话交接与网页转发使用相同的目标和权限检查。这些是接口和目标行为约定，
+  不是网关路由、App 打开行为或端到端验证结论；接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
 - **身份**（`groups` 改成按能力给、`owner_groups` 改名 `admin_groups`、`{role}` 的取值，由 [ADR-0088](0088-family-accounts.md) 第 8 节修订）：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
   `{user}`、`{name}`、`{email}` 也是当前这个人。`owner.identity` 不变，注入的是主人（服务器管理员）；在 `bots.services` 里注入的是这个 Bot 的归属人，
   共享 Bot 是主人。

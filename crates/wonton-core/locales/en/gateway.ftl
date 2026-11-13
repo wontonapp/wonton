@@ -43,6 +43,8 @@ gateway-plugin-not-shared = { $id } isn't shared with family members
 gateway-proxy-sso-failed = Can't get the sign-in credentials for the app { $id }: { $error }
 gateway-cross-site-login = The gateway doesn't trust sign-in state on requests from another site; use the app's own page
 gateway-login-required = Sign in to Wonton first
+gateway-bot-web-permission = Apps on the plugin network cannot open Bot web pages or use browser sign-in
+gateway-bot-web-storage = Can't read the Bot web page records; check the server's storage and try again
 
 # Names shown when an upstream behind the gateway fails.
 gateway-name-oidc = identity provider

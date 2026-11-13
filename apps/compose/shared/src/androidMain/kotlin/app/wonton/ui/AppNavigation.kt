@@ -161,6 +161,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         settingsOverlay = false
         closeApps()
         pages.send(Action.OpenPage(TabRef.Chat))
+        chat.botProfile = null
         chat.openRoom = null
         chat.showingBackup = false
         chat.startingChat = startingChat

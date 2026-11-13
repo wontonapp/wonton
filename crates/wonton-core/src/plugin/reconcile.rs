@@ -130,6 +130,7 @@ impl PluginManager {
         let manifest = &package.manifest;
         let slug = manifest.id.slug();
         let langs = self.owner_languages();
+        self.ensure_bot_web_registration(manifest).await?;
         let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
         let actual = self.engine.network_reach(&network).await?;
@@ -153,6 +154,7 @@ impl PluginManager {
         self.recreate_on_drift(package, record, &langs, false, gate)
             .await?;
         let checked = self.check_containers(package, &langs).await?;
+        self.refresh_bot_web_routes(manifest).await?;
         let health = match checked.state {
             ContainersState::Stopped => return Ok(None),
             ContainersState::Running(health) => health,
@@ -166,7 +168,7 @@ impl PluginManager {
         let proxy =
             ProxyAuth::resolve(manifest, &generated, &langs).map_err(InstallError::Storage)?;
         if let Some(secret) = &record.oidc_client_secret {
-            let ctx = self
+            let mut ctx = self
                 .install_context(
                     manifest,
                     Some(secret),
@@ -175,6 +177,18 @@ impl PluginManager {
                     &langs,
                 )
                 .await?;
+            if super::bot_web_registry::has_bot_web(manifest) {
+                ctx.bots = self
+                    .store
+                    .bots()
+                    .load(&manifest.id)?
+                    .bots
+                    .keys()
+                    .map(|name| (name.clone(), Default::default()))
+                    .collect();
+                self.fill_bot_web_vars(manifest, &mut ctx)?;
+            }
+            self.sync_bot_web_clients(manifest, &ctx).await?;
             self.hydra(&langs)?
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
@@ -272,7 +286,7 @@ impl PluginManager {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
         let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots = self.bot_names(&package.manifest.id);
+        let bots = self.stored_bot_names(&package.manifest.id)?;
         let mut running = 0;
         let mut healthy = true;
         let mut stopped = Vec::new();

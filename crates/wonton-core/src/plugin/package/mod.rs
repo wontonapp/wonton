@@ -30,6 +30,7 @@ use super::package_files::{
 };
 use crate::l10n::text;
 
+mod bot_service;
 #[path = "package_capability_services.rs"]
 mod capability_services;
 mod gpu_images;

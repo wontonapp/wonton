@@ -70,6 +70,10 @@ internal fun PluginsState.iconFor(pluginId: String): PluginIcon? =
  */
 @Composable
 internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
+    if (bot.bot.bot != "default") {
+        ReadOnlyBotProfile(bot, plugins)
+        return
+    }
     DetailSection(stringResource(R.string.bot_profile_title)) {
         var editingName by remember { mutableStateOf(false) }
         var nameDraft by remember { mutableStateOf(bot.name) }

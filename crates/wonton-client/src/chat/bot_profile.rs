@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use wonton_matrix::{Error, MatrixSession};
 use wonton_protocol::{
     AvatarChange, AvatarMediaProblem, AvatarUpload, BotActivity, BotNameProblem, BotProfileFailure,
-    BotProfileProblem, BotProfileUpdate, BotProfileUpdated, CoreError, MAX_AVATAR_BYTES,
+    BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotRef, CoreError, MAX_AVATAR_BYTES,
     check_bot_name,
 };
 
@@ -99,7 +99,11 @@ impl Bots {
 
     pub fn dismiss_problem(&self, id: &str) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view
+                .bots
+                .iter_mut()
+                .find(|bot| bot.bot.plugin_id == id && bot.bot.bot == "default")
+            {
                 bot.problem = None;
             }
         });
@@ -107,7 +111,11 @@ impl Bots {
 
     fn problem(&self, id: &str, reason: BotProfileFailure, detail: String) {
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view
+                .bots
+                .iter_mut()
+                .find(|bot| bot.bot.plugin_id == id && bot.bot.bot == "default")
+            {
                 bot.problem = Some(BotProfileProblem { reason, detail });
             }
         });
@@ -126,7 +134,7 @@ impl Bots {
         };
         let (user, identity) = lock(&self.local)
             .records
-            .get(&id)
+            .get(&default_bot(&id))
             .map(|record| (record.user_id.clone(), record.identity))
             .ok_or_else(|| CoreError::NotReady {
                 reason: "The plugin has no installed Bot".to_owned(),
@@ -134,7 +142,11 @@ impl Bots {
         let api = self.plugins.api();
         let mut busy = false;
         self.view.send_modify(|view| {
-            if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+            if let Some(bot) = view
+                .bots
+                .iter_mut()
+                .find(|bot| bot.bot.plugin_id == id && bot.bot.bot == "default")
+            {
                 busy = bot.saving;
                 if !busy {
                     bot.saving = true;
@@ -163,21 +175,25 @@ impl Bots {
             let local = lock(&bots.local);
             if !local
                 .records
-                .get(&id)
+                .get(&default_bot(&id))
                 .is_some_and(|record| record.user_id == user && record.identity == identity)
             {
                 return;
             }
             let success = result.is_ok();
             bots.view.send_modify(|view| {
-                if let Some(bot) = view.bots.iter_mut().find(|bot| bot.bot.plugin_id == id) {
+                if let Some(bot) = view
+                    .bots
+                    .iter_mut()
+                    .find(|bot| bot.bot.plugin_id == id && bot.bot.bot == "default")
+                {
                     bot.saving = false;
                     bot.problem = result.err();
                 }
             });
             drop(local);
             if success {
-                bots.refresh(&id);
+                bots.refresh(&default_bot(&id));
             }
         });
         Ok(())
@@ -227,6 +243,13 @@ impl Bots {
             .await
             .map_err(profile_problem)?;
         Ok(())
+    }
+}
+
+fn default_bot(plugin_id: &str) -> BotRef {
+    BotRef {
+        plugin_id: plugin_id.to_owned(),
+        bot: "default".to_owned(),
     }
 }
 

@@ -1,6 +1,8 @@
 //! 网页身份和应用授权、同源跳转、写 Cookie 的小工具。
 
 use super::*;
+use axum::response::{IntoResponse, Redirect};
+use hyper::Method;
 
 pub(super) fn unauthenticated(
     gateway: &Gateway,
