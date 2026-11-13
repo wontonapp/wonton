@@ -104,6 +104,7 @@ impl PluginManager {
         if let Some(write) = super::private_homes::home_access(&package.manifest.permissions) {
             self.keeper_home(&keeper, write)?;
         }
+        self.reserve_bot_web(&package.manifest, bot)?;
         let provisioned = self
             .provision_bot_locked(plugin, &package.manifest, bot, keeper.clone(), &package)
             .await?;
@@ -164,6 +165,8 @@ impl PluginManager {
                 self.cfg.gateway_port,
                 entry.bus_token
             )),
+            app_url: None,
+            oidc: None,
         };
         self.start_bot_containers(package, record, bot, runtime)
             .await?;

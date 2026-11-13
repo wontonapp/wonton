@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
@@ -51,6 +52,7 @@ class ChatNavigation(
     private var returnTab by returnTab
     var showingBackup by showingBackup
     var startingChat by startingChat
+    var botProfile by mutableStateOf<BotRef?>(null)
 
     /** 主人在交接页点了“稍后”（ADR-0087）：只在这台 App 里先收起，聊天列表顶上的提醒再打开。 */
     var keyHandoffDeferred by mutableStateOf(false)
@@ -69,6 +71,7 @@ class ChatNavigation(
     val isOpeningChat get() = awaitedPeer != null
 
     fun closeRoom() {
+        botProfile = null
         openRoom = null
         returnTab?.let(selectTab)
         returnTab = null
@@ -76,6 +79,7 @@ class ChatNavigation(
 
     /** 外部导航清掉旧的返回页和异步等待，不能在新页面打开后被旧房间覆盖。 */
     fun reset() {
+        botProfile = null
         awaitedPeer = null
         awaitedRoom = null
         awaitedSideChat = null
@@ -87,6 +91,7 @@ class ChatNavigation(
 
     /** 打开 [roomId]，[sideChatRoot] 不为空时进这个旁聊。这时还没有同步到它的话，等它出现。 */
     fun openWhenJoined(core: ClientCore, roomId: String, sideChatRoot: String? = null) {
+        botProfile = null
         awaitedPeer = null
         openRoom = null
         returnTab = null
@@ -165,6 +170,7 @@ class ChatNavigation(
     }
 
     private fun show(roomId: String, from: TabRef) {
+        botProfile = null
         returnTab = from.takeIf { it != TabRef.Chat }
         openRoom = roomId
         selectTab(TabRef.Chat)

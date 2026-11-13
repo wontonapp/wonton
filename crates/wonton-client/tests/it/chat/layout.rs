@@ -9,7 +9,7 @@ use wonton_client::{
     ChatTextScale, CodeOverflow, RoomMembership,
 };
 use wonton_matrix::{MatrixSession, OwnedUserId};
-use wonton_protocol::PluginChat;
+use wonton_protocol::{BotActivityFacts, PluginChat};
 
 use super::support::{Home, OWNER, Phone, WAIT};
 
@@ -106,6 +106,24 @@ fn plugins(writer: &MatrixSession, chatty: &MatrixSession) -> Vec<wonton_client:
     vec![declared, undeclared]
 }
 
+fn set_plugins(home: &Home, writer: &MatrixSession, chatty: &MatrixSession) {
+    home.set_installed_plugins(plugins(writer, chatty));
+    home.bot_api.bots(
+        [(DOCUMENT, writer), (PLAIN, chatty)]
+            .map(|(id, bot)| BotActivityFacts {
+                plugin_id: id.into(),
+                bot: Some("default".into()),
+                user_id: bot.user_id().to_string(),
+                running: true,
+                model_requests: 0,
+                tool_calls: 0,
+                waiting: 0,
+                profile_rev: 0,
+            })
+            .to_vec(),
+    );
+}
+
 fn bot(phone: &Phone, user: &MatrixSession) -> wonton_client::BotView {
     phone
         .chat()
@@ -132,7 +150,7 @@ async fn chat_layouts_follow_the_plugin_the_owners_choice_and_the_global_default
     let home = Home::start(&[phone.device_id(), second.device_id()]).await;
     let writer = Arc::new(home.bot("writer", "Writer").await);
     let chatty = Arc::new(home.bot("chatty", "Chatty").await);
-    home.set_installed_plugins(plugins(&writer, &chatty));
+    set_plugins(&home, &writer, &chatty);
     // 另一台设备：同一个主人账号，自己连 Tuwunel，用来读原始账号数据。
     let other = home.matrix.login("owner", "Other device").await;
     other.start_sync().await.unwrap();
@@ -441,7 +459,7 @@ async fn a_failed_layout_read_is_reported_and_followed_again_after_the_connectio
     let home = Home::start(&[phone.device_id()]).await;
     let writer = Arc::new(home.bot("writer", "Writer").await);
     let chatty = Arc::new(home.bot("chatty", "Chatty").await);
-    home.set_installed_plugins(plugins(&writer, &chatty));
+    set_plugins(&home, &writer, &chatty);
     // 手机上第一件事就是取账号数据：这时让取显示方式的那条请求断掉，别的照常。
     home.set_layout_down(true);
     phone.connect(&home);

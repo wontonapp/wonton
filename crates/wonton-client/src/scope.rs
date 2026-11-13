@@ -176,6 +176,7 @@ fn chat_links(
         views.map(|v| v.pages.clone()),
         session_in,
         (room_sender, room_receiver),
+        chat.subscribe(),
     );
     let files = FilesLink::new(
         handle.clone(),
@@ -347,6 +348,7 @@ impl Scope {
             device_key,
             home.subscribe(),
             plugins.subscribe(),
+            links.chat.subscribe(),
         );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),

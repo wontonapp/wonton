@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -48,9 +48,14 @@ internal fun PanelPage(
     onDraft: (String) -> Unit,
     onDetails: (String) -> Unit,
 ) {
-    val page = item.page
+    val sourcePage = item.page
     val tab = item.tab
     val public = tab is TabRef.Url
+    val plugin = tabs.installedPlugin(tab)
+    val access = botWebPageAccess(tab, sourcePage.url, plugin, rememberChat(tabs.core).bots)
+    val page = if (access.allowed) sourcePage else sourcePage.copy(url = null, state = TabState.Unknown)
+    val loginAcknowledged = remember(page.url) { mutableStateOf(false) }
+    val awaitingLogin = access.disclosure && !loginAcknowledged.value
     val place = remember(scope, tab) { PlacedTab.Panel(scope, tab) }
     val state = remember(place) { WebPageState(place, tabs) }
     val safe = tabSafeInsets()
@@ -111,14 +116,17 @@ internal fun PanelPage(
     }
     val crossOriginBlocked = !public && page.opensInBrowser
     val openLink = externalLinkOpener { state.problem = it }
+    val admitted = access.allowed && !awaitingLogin
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
-        val loadable = page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
+        val loadable = admitted && page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
         if (state.started && supported && loadable) {
             PageWebView(
                 state, page, home, environmentKey, script.orEmpty(), inset,
                 visible = active, openLink = openLink, onDraft = onDraft, publicPage = public,
             )
         }
+        BotPageDisclosure(page, active, awaitingLogin, tabs,
+            onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
         PageStatusOverlay(
             state, page, tab, supported, crossOriginBlocked, inset, onDetails,
             unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,

@@ -13,7 +13,7 @@ impl PagesLink {
         tab: TabRef,
         title: Option<String>,
     ) -> Result<(), CoreError> {
-        let (plugins, _, _) = self.inputs();
+        let (plugins, _, _, _) = self.inputs();
         {
             let state = lock(&self.state);
             let entries = panel_entries(&state, &scope)?;
@@ -34,9 +34,10 @@ impl PagesLink {
                 return Err(invalid(&l10n!(CATALOG, language(), "panel-full")));
             }
         }
-        check_placeable(&tab, &plugins)?;
-        // 名字落进条目：卸载插件时报告才知道拿掉的是哪些页，视图也不用每次再算。
-        let title = Some(title.unwrap_or_else(|| default_panel_title(&tab, &plugins)));
+        let state = lock(&self.state);
+        check_placeable(&tab, &plugins, &state)?;
+        let title = Some(title.unwrap_or_else(|| default_panel_title(&tab, &plugins, &state)));
+        drop(state);
         match scope {
             PanelScope::Main => self.config_change(|state, _| {
                 state.config.panel.push(PanelEntry { tab, title });
@@ -233,8 +234,8 @@ impl PagesLink {
         title: Option<String>,
         to: PinTarget,
     ) -> Result<(), CoreError> {
-        let (plugins, _, _) = self.inputs();
-        let (tab, default_title) = classify_pin(url, &plugins)?;
+        let (plugins, _, _, _) = self.inputs();
+        let (tab, default_title) = classify_pin_for_state(url, &plugins, &lock(&self.state))?;
         let title = title.or(default_title);
         match to {
             PinTarget::Panel { scope } => self.add_panel_page(scope, tab, title),
@@ -400,8 +401,13 @@ fn not_in_panel() -> CoreError {
 }
 
 /// 只有插件页、插件里的某一页和公网网页能放进面板；插件不在了（或还没装好列表）放不了。
-fn check_placeable(tab: &TabRef, plugins: &PluginsViewModel) -> Result<(), CoreError> {
+fn check_placeable(
+    tab: &TabRef,
+    plugins: &PluginsViewModel,
+    state: &PagesState,
+) -> Result<(), CoreError> {
     match tab {
+        TabRef::Bot { .. } => bot::stored_item(state, tab, None).map(|_| ()),
         TabRef::Plugin { .. } | TabRef::PluginPath { .. } => {
             let Some(installed) = plugins.installed.as_ref() else {
                 return Err(CoreError::NotReady {
@@ -438,8 +444,14 @@ fn check_placeable(tab: &TabRef, plugins: &PluginsViewModel) -> Result<(), CoreE
 }
 
 /// 没给名字时的默认标题：插件页用清单标题，网址用域名。
-fn default_panel_title(tab: &TabRef, plugins: &PluginsViewModel) -> String {
+fn default_panel_title(tab: &TabRef, plugins: &PluginsViewModel, state: &PagesState) -> String {
     match tab {
+        TabRef::Bot { bot, .. } => state
+            .bots
+            .iter()
+            .find(|view| view.bot == *bot)
+            .map(|view| view.name.clone())
+            .unwrap_or_else(|| bot.bot.clone()),
         TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
             .installed
             .as_ref()
@@ -473,6 +485,66 @@ fn move_entry(entries: &mut Vec<PanelEntry>, tab: &TabRef, index: u32) -> Result
 
 /// 正在看的网址是哪一种页面：装着的插件的网站里就是那个插件的页（路径对上清单就是声明的那页，
 /// 否则是插件里的某一页）；不是插件的网站只收 `https://`。返回页面身份和没有用户名字时的默认标题。
+fn classify_pin_for_state(
+    url: &str,
+    plugins: &PluginsViewModel,
+    state: &PagesState,
+) -> Result<(TabRef, Option<String>), CoreError> {
+    let shown = state.stack.last().map(|open| &open.tab);
+    if let Some(TabRef::Bot { bot, .. }) = shown
+        && bot::ready_page(state, bot).is_none()
+    {
+        return Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-plugin-no-page"
+        )));
+    }
+    if let Ok(parsed) = Url::parse(url)
+        && let Some(tab) = bot::classify_pin(state, &parsed)
+    {
+        return Ok(tab);
+    }
+    if Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| host.starts_with(wonton_protocol::BOT_WEB_LABEL_PREFIX))
+    {
+        return Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-plugin-no-page"
+        )));
+    }
+    if state.bots.iter().any(|view| {
+        view.bot.bot == "default"
+            && !matches!(
+                view.web,
+                Some(wonton_protocol::BotWebView::Unavailable {
+                    reason: wonton_protocol::BotWebFailure::NoWebui
+                })
+            )
+            && plugins.installed.as_ref().is_some_and(|installed| {
+                installed.plugins.iter().any(|plugin| {
+                    plugin.id == view.bot.plugin_id
+                        && plugin.web_url.as_ref().is_some_and(|base| {
+                            Url::parse(base)
+                                .ok()
+                                .zip(Url::parse(url).ok())
+                                .is_some_and(|(base, url)| base.origin() == url.origin())
+                        })
+                })
+            })
+    }) {
+        return Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-view-plugin-no-page"
+        )));
+    }
+    classify_pin(url, plugins)
+}
+
 fn classify_pin(
     url: &str,
     plugins: &PluginsViewModel,

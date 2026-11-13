@@ -437,6 +437,7 @@ fn dry_run_bots(manifest: &Manifest) -> BTreeMap<String, BotVars> {
             .permissions
             .contains(&Permission::Tools)
             .then(|| "http://mcp.wonton.internal/mcp/dry-run".into()),
+        ..Default::default()
     };
     BTreeMap::from([(super::bot_services::DEFAULT_BOT.to_owned(), vars)])
 }
@@ -479,13 +480,10 @@ fn render_service_containers(
             })?,
             None => vars.get(name),
         };
-        let resolved;
-        let service = if bot.is_some() {
-            resolved = package.service(name, service_vars, variables, langs)?;
-            &resolved
-        } else {
-            service
-        };
+        let scoped_service = bot
+            .map(|_| package.bot_service(name, service_vars, variables, langs))
+            .transpose()?;
+        let service = scoped_service.as_ref().unwrap_or(service);
         let mut mounts = Mounts {
             ctx,
             read_only_shares,

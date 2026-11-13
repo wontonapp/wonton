@@ -91,6 +91,7 @@ impl PluginManager {
         for name in self.bot_containers(plugin, bot).await? {
             self.engine.remove_container(&name).await?;
         }
+        self.delete_bot_web_clients(plugin, Some(bot)).await?;
         self.revoke_bot_credential(plugin, bot, &self.owner_languages())
             .await?;
         let mut report = BotReport {
@@ -115,6 +116,11 @@ impl PluginManager {
             self.drop_bot_secrets(plugin, &manifest, bot)?;
         }
         self.forget_handoff_bot(plugin, bot)?;
+        self.release_bot_web(plugin, Some(bot))?;
+        if let Some(record) = &record {
+            let manifest = installed_package(record, &self.owner_languages())?.manifest;
+            self.refresh_bot_core_aliases(&manifest).await?;
+        }
         if !keep_data {
             let dir = self.cfg.apps_dir.join(plugin.slug()).join("bots").join(bot);
             match fs::remove_dir_all(&dir) {
@@ -274,6 +280,7 @@ impl PluginManager {
             ctx.matrix = Some(matrix);
             ctx.mcp_url = runtime.mcp_url.clone();
         }
+        self.fill_bot_web_vars(manifest, ctx)?;
         Ok(())
     }
 
@@ -406,6 +413,7 @@ impl PluginManager {
             model_key,
             matrix: Some(self.stored_matrix_vars(entry)?),
             mcp_url: Some(mcp_url(self.cfg.gateway_port, &entry.bus_token)),
+            ..Default::default()
         })
     }
 
@@ -422,6 +430,8 @@ impl PluginManager {
         let mut ctx = self.rebuild_context(package, record, lan, None).await?;
         ctx.bots.clear();
         ctx.bots.insert(bot.to_owned(), runtime);
+        self.fill_bot_web_vars(&package.manifest, &mut ctx)?;
+        self.sync_bot_web_clients(&package.manifest, &ctx).await?;
         let mut plan = render(package, &ctx, &langs)?;
         plan.containers.retain(|c| c.bot.as_deref() == Some(bot));
         let mut undo = Undo::default();
@@ -444,7 +454,8 @@ impl PluginManager {
                 deadline,
                 &langs,
             ))
-            .await
+            .await?;
+            self.wait_bot_web(&package.manifest, bot, deadline).await
         }
         .await;
         if let Err(e) = started {
@@ -459,6 +470,7 @@ impl PluginManager {
             };
             return Err(error);
         }
+        self.refresh_bot_web_routes(&package.manifest).await?;
         Ok(())
     }
 
@@ -475,6 +487,7 @@ impl PluginManager {
         let mut ctx = self.rebuild_context(package, record, lan, None).await?;
         ctx.bots.clear();
         ctx.bots.insert(bot.to_owned(), runtime);
+        self.fill_bot_web_vars(&package.manifest, &mut ctx)?;
         let mut plan = render(package, &ctx, &langs)?;
         plan.containers.retain(|c| c.bot.as_deref() == Some(bot));
         let id = &package.manifest.id;
@@ -498,6 +511,7 @@ impl PluginManager {
             &langs,
         ))
         .await?;
+        self.refresh_bot_web_routes(&package.manifest).await?;
         Ok(())
     }
 
@@ -532,7 +546,7 @@ impl PluginManager {
             username: self.cfg.owner.clone(),
         };
         let bot = self
-            .provision_bot(
+            .provision_bot_locked(
                 &manifest.id,
                 manifest,
                 super::bot_services::DEFAULT_BOT,

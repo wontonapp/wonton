@@ -43,6 +43,8 @@ gateway-plugin-not-shared = 应用 { $id } 没有开放给家人
 gateway-proxy-sso-failed = 拿不到应用 { $id } 的代登录凭据：{ $error }
 gateway-cross-site-login = 网关不认其他网页发来的跨站请求的登录状态，请从应用自己的页面操作
 gateway-login-required = 需要先登录 Wonton
+gateway-bot-web-permission = 插件网络里的应用不能打开 Bot 网页或使用浏览器登录
+gateway-bot-web-storage = 无法读取 Bot 网页记录，请检查服务器存储后重试
 
 # 上游（身份提供方端点、模型网关）出错时显示的名字。
 gateway-name-oidc = 身份提供方

@@ -42,9 +42,10 @@ pub async fn start(
     Query(query): Query<SsoQuery>,
     req: Request,
 ) -> Response {
-    let Some(person) = gateway.core_person(req.extensions().get().copied(), req.headers()) else {
-        return login_redirect(&gateway, &path_and_query(req.uri()));
-    };
+    if let Some(response) = super::bot_web::source_denied(&gateway, &req) {
+        return response;
+    }
+    let person = super::bot_web::core_person(&gateway, &req);
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let Ok(target) = url::Url::parse(&query.to) else {
@@ -69,6 +70,14 @@ pub async fn start(
             format,
         );
     }
+    if let HostKind::Plugin(label) = gateway.public.classify(&host)
+        && let Err(response) = super::bot_web::sso_target(&gateway, &label, &req, person.as_ref())
+    {
+        return *response;
+    }
+    let Some(person) = person else {
+        return login_redirect(&gateway, &path_and_query(req.uri()));
+    };
     let code = gateway.sessions.create_code(&person, &host);
     let mut path = target.path().to_owned();
     if let Some(q) = target.query() {
@@ -91,6 +100,9 @@ struct RedeemQuery {
 
 /// `GET <slug>.<base>/_wonton/session?code=..&to=..`：兑换交接码，设置本域名的插件会话。
 pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
+    if let Some(response) = super::bot_web::source_denied(gateway, req) {
+        return response;
+    }
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let Ok(Query(query)) = Query::<RedeemQuery>::try_from_uri(req.uri()) else {
@@ -111,6 +123,11 @@ pub fn redeem(gateway: &Gateway, host: &str, req: &Request) -> Response {
             format,
         );
     };
+    if let HostKind::Plugin(label) = gateway.public.classify(host)
+        && let Err(response) = super::bot_web::sso_target(gateway, &label, req, Some(&person))
+    {
+        return *response;
+    }
     // 只允许跳到本域名内的路径，防止开放重定向。
     let to =
         same_origin_path(&gateway.public.origin(host), &query.to).unwrap_or_else(|| "/".to_owned());
@@ -181,6 +198,9 @@ pub async fn oidc_login(
     Query(query): Query<LoginChallenge>,
     mut req: Request,
 ) -> Response {
+    if let Some(response) = super::bot_web::source_denied(&gateway, &req) {
+        return response;
+    }
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let person = match oidc::person(&gateway, &req) {
@@ -205,6 +225,11 @@ pub async fn oidc_login(
         Ok(person) => person,
         Err(response) => return response,
     };
+    if let Err(response) =
+        super::bot_web::oidc_target(&gateway, &request.client.client_id, &req, &person)
+    {
+        return *response;
+    }
     if request.skip && request.subject != person.username {
         return pages::error(
             StatusCode::CONFLICT,
@@ -238,6 +263,9 @@ pub async fn oidc_consent(
     Query(query): Query<ConsentChallenge>,
     mut req: Request,
 ) -> Response {
+    if let Some(response) = super::bot_web::source_denied(&gateway, &req) {
+        return response;
+    }
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     let person = match oidc::person(&gateway, &req) {
@@ -262,6 +290,11 @@ pub async fn oidc_consent(
         Ok(person) => person,
         Err(response) => return response,
     };
+    if let Err(response) =
+        super::bot_web::oidc_target(&gateway, &request.client.client_id, &req, &person)
+    {
+        return *response;
+    }
     if request.subject != person.username {
         return pages::error(
             StatusCode::FORBIDDEN,

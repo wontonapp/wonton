@@ -4,6 +4,7 @@ use wonton_protocol::{
     SidebarOpen, TabState,
 };
 
+mod bot_pages;
 mod bot_pins;
 mod my_apps;
 mod page_rules;
@@ -14,6 +15,7 @@ struct Rig {
     tabs: PagesLink,
     home: watch::Sender<HomeViewModel>,
     plugins: PluginSnapshots,
+    chat: watch::Sender<ChatViewModel>,
     /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
     room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
     _dir: tempfile::TempDir,
@@ -28,6 +30,33 @@ impl PluginSnapshots {
     fn send_replace(&self, view: PluginsViewModel) {
         self.link
             .replace_view_for_test(self.home.borrow().server_id.clone(), view);
+    }
+}
+
+fn empty_chat() -> ChatViewModel {
+    ChatViewModel {
+        account: wonton_protocol::ChatAccount::SignedOut,
+        sync: wonton_protocol::ChatSync::Idle,
+        encryption: wonton_protocol::EncryptionStatus {
+            verification: wonton_protocol::DeviceVerification::Unknown,
+            recovery: wonton_protocol::RecoveryStatus::Unknown,
+            recovery_key: None,
+            backup_reminder: None,
+            can_verify_with_other_device: false,
+            can_reset: false,
+            recovery_next_step: wonton_protocol::RecoveryNextStep::None,
+            verification_flow: None,
+            key_handoff: None,
+        },
+        push: wonton_protocol::PushStatus::NoEndpoint,
+        chat_layout_default: Default::default(),
+        installing_bots: Vec::new(),
+        rooms: Vec::new(),
+        problem: None,
+        pending_confirmations: Vec::new(),
+        settled_confirmations: Vec::new(),
+        background_notifications: Vec::new(),
+        bots: Vec::new(),
     }
 }
 
@@ -56,6 +85,7 @@ impl Rig {
             home: home.subscribe(),
         };
         plugins.send_replace(initial);
+        let chat = watch::Sender::new(empty_chat());
         let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = PagesLink {
             runtime,
@@ -63,6 +93,7 @@ impl Rig {
             home_link,
             plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
+            chat: chat.subscribe(),
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {
@@ -86,6 +117,7 @@ impl Rig {
                 bot_pin_consents: Vec::new(),
                 pins_problem: None,
                 media_prompt: None,
+                bots: Vec::new(),
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
@@ -102,6 +134,7 @@ impl Rig {
             tabs,
             home,
             plugins,
+            chat,
             room_panel: panel_sender,
             _dir: dir,
         }

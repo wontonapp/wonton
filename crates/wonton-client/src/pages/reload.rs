@@ -83,11 +83,12 @@ pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
     }
 }
 
-fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
+pub(super) fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
     match tab {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
         | TabRef::UiResource { plugin_id, .. } => Some(plugin_id),
+        TabRef::Bot { bot, .. } => Some(&bot.plugin_id),
         _ => None,
     }
 }

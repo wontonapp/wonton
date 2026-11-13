@@ -8,6 +8,7 @@ impl PagesLink {
         let mut home = self.home.clone();
         let mut room_panel = self.room_panel.1.clone();
         let mut sync_problem = self.sync_problem.subscribe();
+        let mut chat = self.chat.clone();
         let weak = Arc::downgrade(self);
         self.runtime.spawn(async move {
             loop {
@@ -16,6 +17,7 @@ impl PagesLink {
                     changed = home.changed() => if changed.is_err() { break },
                     changed = room_panel.changed() => if changed.is_err() { break },
                     changed = sync_problem.changed() => if changed.is_err() { break },
+                    changed = chat.changed() => if changed.is_err() { break },
                 }
                 let Some(link) = weak.upgrade() else { break };
                 link.recompute();
@@ -146,7 +148,7 @@ impl PagesLink {
                     reason: l10n!(CATALOG, language(), "panel-sync-unreadable"),
                 }
             })?;
-        let (plugins, _, _) = self.inputs();
+        let (plugins, _, _, _) = self.inputs();
         let _writing = lock(&self.writing);
         let mut state = lock(&self.state).clone();
         adopt_layout(&mut state.config, settings)

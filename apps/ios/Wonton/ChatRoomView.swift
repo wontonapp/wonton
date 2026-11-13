@@ -23,6 +23,8 @@ struct ChatRoomView: View {
     @State private var showingRedact = false
     @State private var showingConfirmations = false
     @State private var selectedConfirmation: String?
+    @State private var showsBotProfile = false
+    @State private var profileBot: BotRef?
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
     /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
@@ -103,6 +105,9 @@ private extension ChatRoomView {
                 }
             }
         }
+        .navigationDestination(isPresented: $showsBotProfile) {
+            if let profileBot { BotProfileView(chat: model, plugins: plugins, botRef: profileBot) }
+        }
         .wontonDialog(
             redactTitle,
             message: String(localized: .Message2.messageRedactMessage),
@@ -126,6 +131,14 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
         ) {
+            // 和 Bot 的私聊：顶栏进它的资料页（ADR-0044）。
+            if let bot {
+                WontonIconButton(icon: .info, label: String(localized: .BotProfile0.botProfileTitle)) {
+                    profileBot = bot.bot
+                    showsBotProfile = true
+                }
+                .accessibilityIdentifier("roomBotProfile")
+            }
             if supportsSideChats {
                 WontonIconButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
                     model.composingSideChat = roomId
@@ -380,7 +393,7 @@ private extension ChatRoomView {
 
     var barAvatar: AnyView? {
         guard let bot else { return nil }
-        let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
+        let plugin = plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }
         return AnyView(BotAvatarView(
             bot: bot, pluginIcon: plugin?.icon, core: model.core, model: plugins, size: WontonTheme.size.avatar
         ).accessibilityIdentifier("roomTopBarAvatar"))
@@ -393,6 +406,22 @@ private extension ChatRoomView {
 
     var isReadOnly: Bool {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
+    }
+}
+private extension ChatRoomView {
+    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+    private func keyNotice(_ notice: KeyNotice) -> some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
     }
 }
 

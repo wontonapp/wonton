@@ -32,6 +32,31 @@ impl PluginManager {
             .await;
         self.rollback_clients_and_volumes(&undo, langs, &mut failures)
             .await;
+        for (id, bot, provisioned) in &undo.extra_bots {
+            if let Err(error) = self.revoke_bot_device(id, provisioned).await {
+                failures.push(error);
+            }
+            if let Err(error) = self.delete_bot_web_clients(id, Some(bot)).await {
+                failures.push(error.to_string());
+            }
+        }
+        if let Some((id, bot, _)) = &undo.bot {
+            if let Err(error) = self.delete_bot_web_clients(id, Some(bot)).await {
+                failures.push(error.to_string());
+            }
+            self.clear_bot_web_routes(id);
+        }
+        if let Some(id) = &undo.web_plugin {
+            match self.store.bots().load(id) {
+                Ok(records) if records.bots.is_empty() => {
+                    if let Err(error) = self.release_bot_web(id, None) {
+                        failures.push(error.to_string());
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => failures.push(error.to_string()),
+            }
+        }
         self.rollback_networks(&undo, langs, &mut failures).await;
         self.rollback_files(&undo, langs, &mut failures).await;
         self.rollback_install_record(&undo, &mut failures);

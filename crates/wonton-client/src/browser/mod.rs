@@ -15,7 +15,9 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use url::Url;
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, HomeViewModel, InstalledPlugin, PluginsViewModel};
+use wonton_protocol::{
+    BotWebView, ChatViewModel, CoreError, HomeViewModel, InstalledPlugin, PluginsViewModel,
+};
 use wonton_tunnel::ProxyCredential;
 use wonton_tunnel::browser_front::{
     BrowserFront, BrowserRefusal, BrowserRoute, BrowserRoutes, LABEL_LEN,
@@ -40,7 +42,16 @@ pub(crate) const ENGINE: WebEngine = if cfg!(target_os = "android") {
 
 /// 这个插件的网页要不要交给系统浏览器：清单声明了跨源隔离，而这个引擎给不了。
 pub(crate) fn opens_in_browser(plugin: &InstalledPlugin, engine: WebEngine) -> bool {
-    engine == WebEngine::AndroidWebView && plugin.cross_origin_isolated && plugin.web_url.is_some()
+    plugin.web_url.is_some() && isolated_page(plugin.cross_origin_isolated, engine)
+}
+
+/// Bot 的网页要不要交给系统浏览器：同上，隔离与否由 Bot 页面自己声明。
+pub(crate) fn opens_in_browser_bot(isolated: bool, engine: WebEngine) -> bool {
+    isolated_page(isolated, engine)
+}
+
+fn isolated_page(isolated: bool, engine: WebEngine) -> bool {
+    engine == WebEngine::AndroidWebView && isolated
 }
 
 /// 浏览器入口的首选端口落在这个范围：避开特权端口和 Android 的临时端口（32768 起）。
@@ -60,6 +71,7 @@ impl BrowserLink {
         device_key: [u8; 32],
         home: watch::Receiver<HomeViewModel>,
         plugins: watch::Receiver<PluginsViewModel>,
+        chat: watch::Receiver<ChatViewModel>,
     ) -> Arc<Self> {
         Arc::new(Self {
             runtime,
@@ -67,6 +79,7 @@ impl BrowserLink {
                 device_key,
                 home,
                 plugins,
+                chat,
             }),
             front: Mutex::new(None),
         })
@@ -78,9 +91,9 @@ impl BrowserLink {
             reason: l10n!(CATALOG, language(), "browser-page-not-isolated"),
         };
         let page = Url::parse(url).map_err(|_| not_isolated())?;
-        let plugin_id = self
+        let page_id = self
             .routes
-            .isolated_plugins()
+            .isolated_pages()
             .into_iter()
             .find(|(_, origin)| *origin == page.origin().ascii_serialization())
             .map(|(id, _)| id)
@@ -89,7 +102,7 @@ impl BrowserLink {
             reason: l10n!(CATALOG, language(), "browser-not-paired"),
         })?;
         let front = self.front()?;
-        let label = label(&self.routes.device_key, &server, &plugin_id);
+        let label = label(&self.routes.device_key, &server, &page_id);
         let mut target = format!("{}{}", front.origin(&label), page.path());
         if let Some(query) = page.query() {
             target.push('?');
@@ -133,6 +146,7 @@ struct Routes {
     device_key: [u8; 32],
     home: watch::Receiver<HomeViewModel>,
     plugins: watch::Receiver<PluginsViewModel>,
+    chat: watch::Receiver<ChatViewModel>,
 }
 
 impl Routes {
@@ -140,11 +154,11 @@ impl Routes {
         self.home.borrow().server_id.clone()
     }
 
-    /// 声明了跨源隔离的插件：（插件 ID，网页的 origin）。
-    fn isolated_plugins(&self) -> Vec<(String, String)> {
+    /// 声明了跨源隔离的页面：（标签用的 ID，网页的 origin）。插件用插件 ID，Bot 用 `bot:<插件>/<Bot>`。
+    fn isolated_pages(&self) -> Vec<(String, String)> {
         let view = self.plugins.borrow();
         let plugins = view.installed.as_ref().map(|list| list.plugins.as_slice());
-        plugins
+        let mut pages: Vec<(String, String)> = plugins
             .unwrap_or_default()
             .iter()
             .filter(|plugin| plugin.cross_origin_isolated)
@@ -152,7 +166,24 @@ impl Routes {
                 let url = Url::parse(plugin.web_url.as_deref()?).ok()?;
                 Some((plugin.id.clone(), url.origin().ascii_serialization()))
             })
-            .collect()
+            .collect();
+        drop(view);
+        for bot in &self.chat.borrow().bots {
+            let Some(BotWebView::Ready { page }) = bot.web.as_ref() else {
+                continue;
+            };
+            if !page.cross_origin_isolated {
+                continue;
+            }
+            let Ok(url) = Url::parse(&page.url) else {
+                continue;
+            };
+            pages.push((
+                format!("bot:{}/{}", page.bot.plugin_id, page.bot.bot),
+                url.origin().ascii_serialization(),
+            ));
+        }
+        pages
     }
 }
 
@@ -160,7 +191,7 @@ impl BrowserRoutes for Routes {
     fn resolve(&self, wanted: &str) -> Result<BrowserRoute, BrowserRefusal> {
         let server = self.server().ok_or(BrowserRefusal::NotConnected)?;
         let (_, origin) = self
-            .isolated_plugins()
+            .isolated_pages()
             .into_iter()
             .find(|(id, _)| same(&label(&self.device_key, &server, id), wanted))
             .ok_or(BrowserRefusal::UnknownAddress)?;

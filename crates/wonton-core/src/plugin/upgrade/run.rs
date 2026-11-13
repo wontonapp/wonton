@@ -383,6 +383,7 @@ impl PluginManager {
             let spec = client_spec(manifest, &ctx, secret);
             self.hydra(&langs)?.upsert_client(&spec).await?;
         }
+        self.sync_bot_web_clients(manifest, &ctx).await?;
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline =
             super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
@@ -433,6 +434,7 @@ impl PluginManager {
             hosted: Vec::new(),
             gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
         })?;
+        self.refresh_bot_web_routes(manifest).await?;
         Ok(Deployed {
             upstream,
             serving: package
@@ -462,6 +464,7 @@ impl PluginManager {
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
+        self.ensure_bot_web_registration(manifest).await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         let oidc_secret = uses_sso(manifest)
             .then(|| old.record.oidc_client_secret.clone())
@@ -513,10 +516,11 @@ impl PluginManager {
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         if let Some(bot) = new_bot {
-            self.fill_default_bot_vars(manifest, &bot, &mut ctx);
+            self.fill_default_bot_vars(manifest, &bot, &mut ctx)?;
         } else {
             self.fill_bot_vars(package, &mut ctx, &langs).await?;
         }
+        self.fill_bot_web_vars(manifest, &mut ctx)?;
         let mut plan = render(package, &ctx, &langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), &langs)
             .await?;
@@ -713,6 +717,7 @@ impl PluginManager {
                 None => {}
             }
         }
+        self.sync_bot_web_clients(manifest, &ctx).await?;
         let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
@@ -726,6 +731,12 @@ impl PluginManager {
         let manifest = &package.manifest;
         let id = &manifest.id;
         let was = &old.package.manifest;
+        if super::super::bot_web_registry::has_bot_web(was)
+            && (!super::super::bot_web_registry::has_bot_web(manifest) || !uses_sso(manifest))
+            && let Err(error) = self.drop_unused_bot_web(manifest).await
+        {
+            tracing::warn!(plugin = %id, %error, "Cannot delete unused Bot web registrations");
+        }
         if let (true, false, Some(hydra)) = (uses_sso(was), uses_sso(manifest), &self.oidc)
             && let Err(e) = hydra.delete_client(id.as_str()).await
         {

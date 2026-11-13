@@ -11,6 +11,7 @@ use super::render::{RenderError, dry_run};
 pub(crate) mod agent_acp_contract;
 mod bot_avatars;
 mod bot_lifecycle;
+mod bot_web;
 mod bots;
 mod capability_deps_install;
 mod capability_host_network;

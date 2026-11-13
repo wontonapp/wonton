@@ -85,14 +85,68 @@ fn proxy_at(addr: SocketAddr, credential: &ProxyCredential) -> ProxySettings {
     }
 }
 
+fn chat_view(bots: Vec<wonton_protocol::BotView>) -> wonton_protocol::ChatViewModel {
+    wonton_protocol::ChatViewModel {
+        account: wonton_protocol::ChatAccount::SignedOut,
+        sync: wonton_protocol::ChatSync::Idle,
+        encryption: wonton_protocol::EncryptionStatus {
+            verification: wonton_protocol::DeviceVerification::Unknown,
+            recovery: wonton_protocol::RecoveryStatus::Unknown,
+            recovery_key: None,
+            backup_reminder: None,
+            can_verify_with_other_device: false,
+            can_reset: false,
+            recovery_next_step: wonton_protocol::RecoveryNextStep::None,
+            verification_flow: None,
+            key_handoff: None,
+        },
+        installing_bots: Vec::new(),
+        rooms: Vec::new(),
+        problem: None,
+        push: wonton_protocol::PushStatus::NoEndpoint,
+        pending_confirmations: Vec::new(),
+        settled_confirmations: Vec::new(),
+        background_notifications: Vec::new(),
+        bots,
+        chat_layout_default: Default::default(),
+    }
+}
+
+fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protocol::BotView {
+    let bot = wonton_protocol::BotRef {
+        plugin_id: plugin.to_owned(),
+        bot: bot.to_owned(),
+    };
+    wonton_protocol::BotView {
+        user_id: format!("@{}:{}:wonton.localhost", bot.plugin_id, bot.bot),
+        web: Some(wonton_protocol::BotWebView::Ready {
+            page: wonton_protocol::BotWebPage {
+                bot: bot.clone(),
+                url: url.to_owned(),
+                cross_origin_isolated: isolated,
+            },
+        }),
+        bot,
+        name: "Bot".into(),
+        avatar: None,
+        state_avatars: Vec::new(),
+        activity: None,
+        saving: false,
+        problem: None,
+        chat: Default::default(),
+    }
+}
+
 struct Rig {
     link: Arc<BrowserLink>,
     home: watch::Sender<HomeViewModel>,
     plugins: watch::Sender<PluginsViewModel>,
+    chat: watch::Sender<wonton_protocol::ChatViewModel>,
 }
 
 fn rig(key: u8, server: Option<&str>) -> Rig {
     let home = watch::Sender::new(home(server, None));
+    let chat = watch::Sender::new(chat_view(Vec::new()));
     let plugins = watch::Sender::new(installed(vec![
         plugin("org.actualbudget.actual", BUDGET, true),
         plugin("app.photos", PHOTOS, false),
@@ -107,11 +161,13 @@ fn rig(key: u8, server: Option<&str>) -> Rig {
         [key; 32],
         home.subscribe(),
         plugins.subscribe(),
+        chat.subscribe(),
     );
     Rig {
         link,
         home,
         plugins,
+        chat,
     }
 }
 
@@ -280,4 +336,30 @@ async fn the_browser_reaches_the_plugin_through_the_apps_proxy() {
         response.contains("x-wonton-tunnel-error: unknown-address\r\n"),
         "{response}"
     );
+}
+
+/// Bot 的网页地址按它自己的 origin 交给浏览器；同一插件里没声明隔离的 Bot 页面留在 App 里。
+#[tokio::test]
+async fn an_isolated_bot_page_gets_its_own_address() {
+    let rig = rig(4, Some("server-a"));
+    let isolated = "http://hermes.agent-echo.wonton.localhost:8480";
+    let plain = "http://raw.agent-echo.wonton.localhost:8480";
+    rig.chat.send_replace(chat_view(vec![
+        bot_view("agent-echo", "hermes", isolated, true),
+        bot_view("agent-echo", "raw", plain, false),
+    ]));
+    let url = rig.link.open(&format!("{isolated}/chat")).unwrap();
+    let (label, _, rest) = split(&url);
+    assert!(rest.starts_with("/chat"), "{url}");
+    assert_eq!(&label, &split(&rig.link.open(isolated).unwrap()).0);
+    assert!(rig.link.open(&format!("{plain}/")).is_err());
+
+    // 同一个 Bot 在别的插件 ID 下是别的地址。
+    rig.chat.send_replace(chat_view(vec![bot_view(
+        "other-plugin",
+        "hermes",
+        isolated,
+        true,
+    )]));
+    assert_ne!(split(&rig.link.open(isolated).unwrap()).0, label);
 }

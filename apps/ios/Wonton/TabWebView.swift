@@ -301,6 +301,20 @@ final class TabWebSession: NSObject {
         update(input, action: action)
     }
 
+    /// Remove a previously loaded page when exact Bot metadata or pre-open consent no longer permits it.
+    func withhold() {
+        dispose()
+        input = nil
+        ready = false
+        hasContent = false
+        canGoBack = false
+        loadedReload = nil
+        loadedEntry = nil
+        loadedProxy = nil
+        recoveryURL = nil
+        navigationURL = nil
+    }
+
     func dispose() {
         backObservation = nil
         webView?.stopLoading()

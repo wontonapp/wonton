@@ -14,7 +14,7 @@ impl PagesLink {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")));
             }
             // 列表还没读到时，我的应用里已有的行照样打开：按存的元数据显示，状态页如实说加载中。
-            let item = match stored_item_for_tab(&tab, plugins) {
+            let item = match bot::stored_item_or_plugin(state, &tab, plugins, None) {
                 Ok(item) => item,
                 Err(error @ CoreError::NotReady { .. }) => {
                     stored_item_from_config(&state.config, &tab).ok_or(error)?
@@ -170,7 +170,7 @@ impl PagesLink {
                 TabLoadFailure::Upstream
             } else if status.is_none() {
                 TabLoadFailure::Transport
-            } else if !plugin_is_running(tab, plugins) {
+            } else if !plugin_is_running(state, tab, plugins) {
                 TabLoadFailure::PluginNotReady
             } else {
                 TabLoadFailure::Upstream

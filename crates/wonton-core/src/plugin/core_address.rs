@@ -511,7 +511,24 @@ impl PluginManager {
         self.attach_mailpit(network, manifest).await?;
         let address = self.engine.core_address(network).await?.to_string();
         let current = self.engine.endpoint_address(core, network).await?;
-        if current.as_deref() == Some(address.as_str()) {
+        if current.as_deref() == Some(address.as_str())
+            && !super::bot_web_registry::has_bot_web(manifest)
+        {
+            return Ok(());
+        }
+        let aliases = self.runtime_core_aliases(manifest)?;
+        let actual_aliases = self
+            .engine
+            .inspect_container(core)
+            .await?
+            .and_then(|info| info.network_settings)
+            .and_then(|settings| settings.networks)
+            .and_then(|mut networks| networks.remove(network))
+            .and_then(|endpoint| endpoint.aliases)
+            .unwrap_or_default();
+        if current.as_deref() == Some(address.as_str())
+            && aliases.iter().all(|alias| actual_aliases.contains(alias))
+        {
             return Ok(());
         }
         if current.is_some() {

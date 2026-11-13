@@ -113,7 +113,7 @@ private class AppShortcuts(private val context: Context) {
                 .sortedBy { it.rank }.take((maximum - dynamic.size).coerceAtLeast(0))
         } else {
             for (page in pages.take((maximum - fixed.size).coerceAtLeast(0))) {
-                if (page.tab.pluginId !in installed) continue
+                if (page.tab.localPluginId() !in installed) continue
                 try {
                     val icon = pluginIcon(plugins, page, icons.missing)
                     dynamic += shortcut(shortcutId(page.tab), page.title, AppLink.Tab(page.tab), icon, dynamic.size)
@@ -163,14 +163,14 @@ private class AppShortcuts(private val context: Context) {
 
     private fun disableUninstalled(existing: Collection<ShortcutInfoCompat>, ids: Set<String>) {
         val removed = existing.filter { shortcut ->
-            shortcut.pluginTab()?.let { it.pluginId !in ids } == true
+            shortcut.pluginTab()?.let { it.localPluginId() !in ids } == true
         }.map { it.id }
         if (removed.isNotEmpty()) {
             val reason = context.getString(R.string.shortcuts_app_uninstalled)
             ShortcutManagerCompat.disableShortcuts(context, removed, reason)
         }
         val restored = existing.filter { shortcut ->
-            !shortcut.isEnabled && shortcut.pluginTab()?.let { it.pluginId in ids } == true
+            !shortcut.isEnabled && shortcut.pluginTab()?.let { it.localPluginId() in ids } == true
         }
         if (restored.isNotEmpty()) ShortcutManagerCompat.enableShortcuts(context, restored)
     }
@@ -200,14 +200,15 @@ private class AppShortcuts(private val context: Context) {
             .build()
 }
 
-private fun shortcutId(tab: TabRef.Plugin): String = "$PLUGIN_SHORTCUT_PREFIX${appLinkUrl(AppLink.Tab(tab))}"
+private fun shortcutId(tab: TabRef): String = "$PLUGIN_SHORTCUT_PREFIX${appLinkUrl(AppLink.Tab(tab))}"
 
-private fun ShortcutInfoCompat.pluginTab(): TabRef.Plugin? {
+private fun ShortcutInfoCompat.pluginTab(): TabRef? {
     if (!id.startsWith(PLUGIN_SHORTCUT_PREFIX)) return null
-    return (parseAppLink(id.removePrefix(PLUGIN_SHORTCUT_PREFIX)) as? AppLink.Tab)?.tab as? TabRef.Plugin
+    return (parseAppLink(id.removePrefix(PLUGIN_SHORTCUT_PREFIX)) as? AppLink.Tab)?.tab
+        ?.takeIf { it.localPluginId() != null }
 }
 
-private data class ShortcutPage(val tab: TabRef.Plugin, val title: String, val icon: PluginImage?)
+private data class ShortcutPage(val tab: TabRef, val title: String, val icon: PluginImage?)
 
 private data class ShortcutRoom(val roomId: String, val name: String)
 

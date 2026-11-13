@@ -99,6 +99,7 @@ pub struct PluginManager {
     pub(super) storefront: Storefront,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
+    pub(super) bot_web_routes: RwLock<BTreeMap<String, super::bot_web::BotRoute>>,
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
@@ -193,6 +194,7 @@ impl PluginManager {
             storefront,
             core_proxy,
             bot_allocation: tokio::sync::Mutex::new(()),
+            bot_web_routes: Default::default(),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
             failed_installs: RwLock::new(BTreeMap::new()),
@@ -388,7 +390,18 @@ impl PluginManager {
     /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
     /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
     pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
-        let Ok(id) = PluginId::parse(client_id) else {
+        let identity = match self.bot_web_oidc_identity(client_id) {
+            Ok(identity) => identity,
+            Err(error) => {
+                tracing::warn!(%error, "Cannot read Bot OIDC identity");
+                return Vec::new();
+            }
+        };
+        let Ok(id) = PluginId::parse(
+            identity
+                .as_ref()
+                .map_or(client_id, |bot| bot.plugin_id.as_str()),
+        ) else {
             return Vec::new();
         };
         self.plugins
@@ -530,6 +543,7 @@ impl PluginManager {
     /// 的所有插件拖住几十分钟（见 [`Gate`]）。超时的插件容器留着，健康以后由容器监视捡回来。
     pub async fn restore(&self) -> Result<(), InstallError> {
         let langs = self.owner_languages();
+        self.prune_orphaned_bot_web().await?;
         let files = self.store.load_all()?;
         let mut ordered = Vec::with_capacity(files.len());
         for file in files {

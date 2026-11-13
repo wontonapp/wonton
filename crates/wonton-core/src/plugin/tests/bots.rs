@@ -52,12 +52,13 @@ fn bot_services_get_the_bot_name_and_their_own_data_dir() {
     assert_eq!(mounts[0].source.as_deref(), Some(bot_data));
     let dirs: Vec<_> = plan.dirs.keys().cloned().collect();
     assert_eq!(dirs, [std::path::PathBuf::from(bot_data)]);
-    // 同一个 Bot 的服务之间用 `<服务名>-<Bot 名>` 互访；每个服务再有一个 `wonton.internal` 的稳定域名。
+    // Bot 服务的稳定 Host 还带 Bot 名；全插件服务只暴露插件级稳定 Host。
     assert_eq!(
         aliases(&plan, "gateway"),
         [
             "gateway",
             "gateway-default",
+            "gateway-default.app-test.wonton.internal",
             "gateway.app-test.wonton.internal"
         ]
     );

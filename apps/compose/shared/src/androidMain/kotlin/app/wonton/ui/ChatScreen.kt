@@ -103,6 +103,7 @@ fun ChatRoute(
     val room = navigation.openRoom
     // 提示条和通知能在备份页面上打开房间。
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
+    val profile = navigation.botProfile
     when {
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
@@ -111,6 +112,13 @@ fun ChatRoute(
                 onAction,
                 onContinueHandoff = { navigation.keyHandoffDeferred = false },
                 onClose = { navigation.showingBackup = false },
+            )
+        }
+        profile != null -> {
+            BackHandler { navigation.botProfile = null }
+            BotProfileScreen(
+                profile, viewModel.bots.firstOrNull { it.bot == profile }, plugins, onAction,
+                onClose = { navigation.botProfile = null },
             )
         }
         navigation.startingChat -> {

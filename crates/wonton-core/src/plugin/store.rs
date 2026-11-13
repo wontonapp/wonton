@@ -267,6 +267,10 @@ impl Store {
         &self.preinstalled
     }
 
+    pub(super) fn bot_web_registry(&self) -> PathBuf {
+        self.dir.join("bot-web").join("registrations.json")
+    }
+
     fn path(&self, id: &PluginId) -> PathBuf {
         self.dir.join(format!("{id}.json"))
     }

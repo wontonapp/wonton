@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 import WontonClient
 
-/// 已装 Agent 插件详情页最上面的「资料」一节（ADR-0044）：名字、头像和状态头像，家人线的「谁能用」以后加在这一节下面。
+/// The plugin detail profile edits only the default Bot; nondefault profiles are read-only in BotProfileView.
 /// 资料存在 Matrix，改动经客户端核心提交；进展和失败都在 `BotView.saving`、`BotView.problem` 里，这里只渲染和转发。
 struct BotProfileSection: View {
     let chat: ChatModel

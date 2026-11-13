@@ -84,6 +84,7 @@ fn network_mode_bot_services_share_the_default_bots_target_container() {
             &[
                 "target".to_owned(),
                 "target-default".to_owned(),
+                service_host("app-test", "target-default"),
                 service_host("app-test", "target")
             ][..]
         )
@@ -213,7 +214,7 @@ async fn network_mode_webui_uses_the_default_bot_container() {
             .unwrap(),
         Some(Endpoint::Tcp(format!(
             "{}:80",
-            service_host("app-test", "target")
+            service_host("app-test", "target-default")
         )))
     );
 }
