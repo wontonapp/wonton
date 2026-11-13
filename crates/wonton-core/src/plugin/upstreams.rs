@@ -310,7 +310,8 @@ impl PluginManager {
     }
 
     /// 声明了 `mcp` 时：MCP 总线连插件 MCP 服务的地址（`http://主机:端口/路径`），和按插件密钥解析好的
-    /// 请求头。密钥还没有值、不是文本或者填不出合法的头值时安装失败：总线的头填不出来，宁可不上线。
+    /// 请求头。密钥还没有值、不是文本或者填不出合法的头值时安装失败：总线的头填不出来，宁可不上线；必填的
+    /// 用户填写密钥没填时例外，头先空着，总线按未就绪拒绝（ADR-0064）。
     pub(super) async fn mcp_upstream(
         &self,
         manifest: &Manifest,
@@ -322,8 +323,8 @@ impl PluginManager {
         };
         // 插件交的东西不对（密钥没写下、不是文本、填不出合法头值）：不是核心存储的错，按输入错误报。
         let langs = self.owner_languages();
-        let headers =
-            super::proxy_auth::resolve_mcp_headers(manifest, secrets, &langs).map_err(|e| {
+        let headers = super::proxy_auth::resolve_mcp_headers_or_pending(manifest, secrets, &langs)
+            .map_err(|e| {
                 InstallError::Invalid(l10n::text(
                     &langs,
                     "plugin-install-upstream-mcp-headers",

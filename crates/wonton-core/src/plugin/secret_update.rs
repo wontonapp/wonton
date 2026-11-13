@@ -5,9 +5,10 @@ use super::install_error::InstallError;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{PluginManager, detached, now_secs};
-use super::manifest::PluginId;
+use super::manifest::{Manifest, PluginId};
 use super::package::PluginPackage;
 use super::render::render;
+use super::secrets::Secrets;
 use super::store::InstalledRecord;
 use super::{secret_input, secrets};
 use std::sync::Arc;
@@ -75,6 +76,7 @@ impl PluginManager {
                 .store
                 .secrets()
                 .save_changed(id, &before, &before_changed);
+            self.refresh_mcp_headers(id, &package.manifest, &before, langs);
             match self
                 .rebuild_secret_users(&listed, &package, &record, name, langs)
                 .await
@@ -87,6 +89,7 @@ impl PluginManager {
             }
             tracing::warn!(plugin = %id, secret = %name, error = %e, "改密钥失败");
         } else {
+            self.refresh_mcp_headers(id, &package.manifest, &stored, langs);
             tracing::info!(plugin = %id, secret = %name, "主人改了一项密钥");
             self.changed();
         }
@@ -95,6 +98,26 @@ impl PluginManager {
         self.judged_detail(id, langs)
             .await
             .ok_or_else(|| not_installed(id))
+    }
+
+    /// `mcp.headers` 里引用的密钥换了值：按新值重新解析到插件表的连接上。填齐必填项后，MCP 的未就绪和这
+    /// 时空了头的请求头一起恢复。解析不出来（别的密钥有问题）就留着旧头，等下次核对。
+    fn refresh_mcp_headers(
+        &self,
+        id: &PluginId,
+        manifest: &Manifest,
+        secrets: &Secrets,
+        langs: &Languages,
+    ) {
+        let Ok(headers) =
+            super::proxy_auth::resolve_mcp_headers_or_pending(manifest, secrets, langs)
+        else {
+            return;
+        };
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        if let Some(target) = plugins.get_mut(id).and_then(|entry| entry.mcp.as_mut()) {
+            target.headers = headers;
+        }
     }
 
     /// 只重建 env 里有 `WONTON_SECRET_<名字>` 的服务；没有服务用它就只存值，下次启动生效。

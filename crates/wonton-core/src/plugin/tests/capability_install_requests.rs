@@ -335,7 +335,6 @@ async fn an_inner_optional_grant_does_not_enable_the_option_or_copy_outer_lan_ch
 
 #[derive(Clone, Copy, Debug)]
 enum InvalidDecision {
-    MissingInput,
     UnknownInput,
     MissingGrant,
     UndeclaredGrant,
@@ -353,7 +352,6 @@ fn invalidate(outer: &mut InstallRequest, decision: InvalidDecision) {
     let duplicate = outer.install_together[0].clone();
     let inner = &mut outer.install_together.last_mut().unwrap().request;
     match decision {
-        InvalidDecision::MissingInput => inner.secrets.clear(),
         InvalidDecision::UnknownInput => {
             inner
                 .secrets
@@ -375,7 +373,6 @@ fn invalidate(outer: &mut InstallRequest, decision: InvalidDecision) {
 #[tokio::test]
 async fn every_nested_decision_is_validated_before_any_provider_or_secret_is_installed() {
     for decision in [
-        InvalidDecision::MissingInput,
         InvalidDecision::UnknownInput,
         InvalidDecision::MissingGrant,
         InvalidDecision::UndeclaredGrant,
