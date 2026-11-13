@@ -573,7 +573,6 @@ impl PluginManager {
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
     }
 
-
     /// 网络建好才知道的变量：核心在网络里的地址、网关，以及宿主网络的服务要用的出口容器地址（ADR-0023）。
     async fn fill_network_vars(
         &self,
