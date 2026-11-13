@@ -278,8 +278,8 @@ plugin_containers() {
 
 # 核心经 API 建的组件容器（入口、连接器），按标签找；有实例名时只认本栈的。
 component_containers() {
-  local filter=(label=wonton.managed-by=core label=wonton.core.component="$1")
-  [[ -z "$WONTON_DEV_INSTANCE" ]] || filter+=("label=wonton.instance=$WONTON_DEV_INSTANCE")
+  local filter=(--filter label=wonton.managed-by=core --filter "label=wonton.core.component=$1")
+  [[ -z "$WONTON_DEV_INSTANCE" ]] || filter+=(--filter "label=wonton.instance=$WONTON_DEV_INSTANCE")
   docker ps -aq "${filter[@]}" 2>/dev/null
 }
 
