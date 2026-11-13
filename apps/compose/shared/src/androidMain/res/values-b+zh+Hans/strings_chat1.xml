@@ -42,6 +42,4 @@
     <string name="chat_backup_value_enabled">已开启</string>
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">处理中</string>
-    <!-- 按钮：看恢复密钥前先请求系统验证（ADR-0102、盲测 11-12）。 -->
-    <string name="chat_backup_reveal_key">查看恢复密钥</string>
 </resources>
