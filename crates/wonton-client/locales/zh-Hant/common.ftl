@@ -140,5 +140,11 @@ browser-unknown-address = 這個位址已經失效。回到雲吞，重新開啟
 browser-not-connected = 雲吞目前沒有連上家裡的伺服器。回到雲吞，等連上後再重新整理這個頁面。
 
 browser-bad-request = 請從雲吞裡開啟這個頁面。
+
+# App 鎖的設定（crates/wonton-client/src/app_lock.rs，ADR-0102）。
+# $path 是設定檔的路徑，$reason 是原始的 IO 錯誤。
+app-lock-write-failed = 無法寫入 App 鎖設定檔 { $path }：{ $reason }
+app-lock-read-failed = 無法讀取 App 鎖設定檔 { $path }：{ $reason }
+app-lock-corrupt = App 鎖設定檔 { $path } 已損壞：{ $reason }
 pages-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
 pages-file-unreadable = 這台裝置上的我的應用讀不了，先用預設值：{ $reason }

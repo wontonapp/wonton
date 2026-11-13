@@ -26,6 +26,7 @@ uniffi::setup_scaffolding!();
 mod agent_chains;
 #[cfg(target_os = "android")]
 mod android;
+mod app_lock;
 mod appearance;
 mod bot_contacts;
 mod browser;
@@ -73,11 +74,11 @@ pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AgentChainsSubscription, AppearanceSubscription, BotContactsSubscription, ChatSubscription,
-    ComposerSubscription, ConfirmationsSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
-    UnreadSubscription, WidgetSnapshotSubscription,
+    AgentChainsSubscription, AppLockSubscription, AppearanceSubscription, BotContactsSubscription,
+    ChatSubscription, ComposerSubscription, ConfirmationsSubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TransfersSubscription, UnreadSubscription, WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。

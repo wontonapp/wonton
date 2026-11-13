@@ -5,6 +5,7 @@
 // 同 wonton-matrix：matrix-sdk 的 future 嵌套很深。
 #![recursion_limit = "256"]
 
+mod app_lock;
 mod bot_contacts;
 mod chat;
 mod files;

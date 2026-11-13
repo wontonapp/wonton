@@ -8,14 +8,16 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
-    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
-    PluginImage, PluginsViewModel, RoomTransfers, SecretString, ServersViewModel,
-    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
+    Action, AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact,
+    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
+    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
+    LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate,
+    PagesViewModel, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
+    SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem,
+    TimelineTarget, TransfersViewModel,
 };
 
+use crate::app_lock::AppLockLink;
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
@@ -25,10 +27,10 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
-    UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 
@@ -65,6 +67,8 @@ mod widget;
 #[derive(uniffi::Object)]
 pub struct ClientCore {
     state: watch::Sender<SessionStore>,
+    /// App 锁（ADR-0102）：整机一个，不随服务器切换重建。
+    app_lock: AppLockLink,
     appearance: AppearanceLink,
     servers: Arc<ServerList>,
     root: PathBuf,
@@ -111,6 +115,27 @@ impl ClientCore {
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_pages(&self) -> Arc<PagesSubscription> {
         Arc::new(PagesSubscription::new(self.views().pages.subscribe()))
+    }
+
+    /// 当前的 App 锁状态，用于首帧渲染。
+    pub fn app_lock(&self) -> AppLockViewModel {
+        self.app_lock.view()
+    }
+
+    /// 订阅 App 锁，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_app_lock(&self) -> Arc<AppLockSubscription> {
+        Arc::new(AppLockSubscription::new(self.app_lock.subscribe()))
+    }
+
+    /// 开关 App 锁、选退到后台后多久要求解锁，存在本机，写不了时返回 `Storage`。开着时下一次进后台才锁，
+    /// 主人正看着的界面不盖上；设备没设锁屏也能开，验证不了时停在锁定页。
+    pub fn set_app_lock(&self, enabled: bool, timeout: AppLockTimeout) -> Result<(), CoreError> {
+        self.app_lock.set(enabled, timeout)
+    }
+
+    /// 壳的系统验证通过后调用，幂等。
+    pub fn unlock_app(&self) {
+        self.app_lock.unlock();
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -624,6 +649,7 @@ impl ClientCore {
         crate::l10n::init();
         let root = PathBuf::from(data_dir);
         let servers = Arc::new(ServerList::open(&root)?);
+        let app_lock = AppLockLink::new(&root);
         let slot = servers.current();
         let scope = Scope::open(
             &slot,
@@ -631,14 +657,22 @@ impl ClientCore {
             &servers.slot_dir(&slot),
             network,
             servers.subscribe(),
+            &app_lock,
             None,
         )?;
         let switching = Arc::new(Mutex::new(()));
-        let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
+        let visits = Visits::new(
+            servers.clone(),
+            root.clone(),
+            network,
+            switching.clone(),
+            app_lock.clone(),
+        );
         let servers_for_login = servers.clone();
         let share_in = Arc::new(crate::share_in::ShareInLink::new(&root));
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
+            app_lock,
             appearance: AppearanceLink::new(&root),
             widget: crate::widget::WidgetFile::new(&root),
             #[cfg(feature = "ui-fake")]

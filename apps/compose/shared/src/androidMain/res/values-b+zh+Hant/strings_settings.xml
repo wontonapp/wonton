@@ -41,6 +41,19 @@
     <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
     <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
     <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>
+    <!-- App 鎖（ADR-0102）：開關、寬限和鎖定頁。 -->
+    <string name="applock_title">App 鎖</string>
+    <string name="applock_locked_title">雲吞已鎖定</string>
+    <string name="applock_unlock">解鎖</string>
+    <string name="applock_verify_reason">驗證身分後繼續使用雲吞</string>
+    <string name="applock_need_device_lock">裝置沒有設定螢幕鎖定，無法開啟 App 鎖。請到系統設定設定一個。</string>
+    <string name="applock_no_device_lock">裝置沒有設定螢幕鎖定。請到系統設定設定一個就能解鎖。</string>
+    <string name="applock_open_settings">前往系統設定</string>
+    <string name="applock_timeout">離開後多久鎖上</string>
+    <string name="applock_timeout_immediate">立即</string>
+    <string name="applock_timeout_one_minute">1 分鐘後</string>
+    <string name="applock_timeout_five_minutes">5 分鐘後</string>
+    <string name="applock_timeout_fifteen_minutes">15 分鐘後</string>
     <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
     <string name="notification_lock_screen">鎖屏上顯示內容</string>
     <string name="settings_my_apps">我的應用</string>

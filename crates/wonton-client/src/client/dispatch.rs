@@ -245,11 +245,14 @@ impl ClientCore {
     fn lifecycle_action(&self, scope: &Scope, action: Action) -> Result<(), CoreError> {
         match action {
             Action::AppForegrounded => {
+                // 先判锁再叫醒各部件：锁定页盖上之前不放任何一页先动。
+                self.app_lock.foregrounded();
                 scope.foregrounded();
                 Ok(())
             }
             Action::AppBackgrounded => {
                 scope.backgrounded();
+                self.app_lock.backgrounded(scope.handle());
                 Ok(())
             }
             Action::NetworkChanged { network } => {
