@@ -266,13 +266,10 @@ pub async fn list(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    // 家人的插件列表只列主人开放给家人的；能装插件的家人装卸时和主人看同一份（ADR-0045）。
-    if !gateway
-        .permissions(&person)
-        .allows(PermissionItem::InstallApps)
-    {
-        plugins.plugins.retain(|plugin| plugin.family);
-    }
+    let open_apps = gateway.permissions(&person).open_apps;
+    plugins
+        .plugins
+        .retain(|plugin| open_apps.allows_plugin(&plugin.id));
     Json(plugins).into_response()
 }
 
@@ -293,12 +290,8 @@ pub async fn detail(
         Ok(person) => person,
         Err(response) => return *response,
     };
-    // 家人能打开的插件才看得到详情（能装的家人除外，他们要装卸）。
-    if !gateway
-        .permissions(&person)
-        .allows(PermissionItem::OpenApps)
-        && !gateway.plugins.family_enabled(&id)
-    {
+    let permissions = gateway.permissions(&person);
+    if !permissions.open_apps.allows_plugin(id.as_str()) {
         return error_response(
             StatusCode::FORBIDDEN,
             "not_shared",
@@ -311,17 +304,11 @@ pub async fn detail(
         .await
     {
         Some(mut detail) => {
-            if !gateway
-                .permissions(&person)
-                .allows(PermissionItem::InstallApps)
-            {
+            if !permissions.allows(PermissionItem::InstallApps) {
                 detail.scope = None;
             }
-            // Sharing settings are never exposed to family members, including installers.
             detail.shares = None;
-            if gateway
-                .permissions(&person)
-                .allows(PermissionItem::ShareApps)
+            if permissions.allows(PermissionItem::ShareApps)
                 && let Some(sharing) = gateway.sharing.as_ref()
             {
                 let offer = gateway.plugins.share_offer(&id);

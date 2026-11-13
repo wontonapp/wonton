@@ -1,4 +1,4 @@
-//! 未登录与同源跳转、写 Cookie 的小工具。
+//! 网页身份和应用授权、同源跳转、写 Cookie 的小工具。
 
 use super::*;
 
@@ -35,6 +35,35 @@ pub(super) fn unauthenticated(
         &langs,
         format,
     )
+}
+
+/// 没有身份只用于已验证的 OIDC 表单回调；有身份的回调仍须检查当前角色。
+pub(super) fn app_denied(
+    gateway: &Gateway,
+    person: Option<&Person>,
+    id: &crate::plugin::PluginId,
+    req: &Request,
+) -> Option<Response> {
+    let person = person?;
+    if gateway
+        .permissions(person)
+        .open_apps
+        .allows_plugin(id.as_str())
+    {
+        return None;
+    }
+    let langs = api::languages(req.headers());
+    Some(pages::error(
+        StatusCode::FORBIDDEN,
+        "not_shared",
+        &l10n::text(
+            &langs,
+            "gateway-plugin-not-shared",
+            &[("id", id.as_str().into())],
+        ),
+        &langs,
+        pages::Format::of(req.headers()),
+    ))
 }
 
 /// 把跳转目标相对 `origin` 解析，只接受同源结果，返回站内路径（含查询）。浏览器会把 http(s)

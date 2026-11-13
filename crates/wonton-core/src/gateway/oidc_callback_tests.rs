@@ -10,7 +10,7 @@ use iroh::SecretKey;
 use serde_json::json;
 
 use super::APP_COOKIE;
-use super::family_tests::{bearer, send_as};
+use super::family_tests::send_as;
 use super::tests::{CORE, Harness, PLUGIN, Reply, WHOAMI};
 use crate::members::MemberRecord;
 use crate::plugin::languages::Languages;
@@ -382,26 +382,29 @@ async fn member_session(h: &Harness, device: iroh::EndpointId) -> String {
     redeemed.cookie(APP_COOKIE)
 }
 
-async fn set_family(h: &Harness, enabled: bool) {
-    let token = bearer();
-    let reply = h
-        .send(
-            Method::PUT,
-            CORE,
-            "/_wonton/api/plugins/app.callback/family",
-            &[
-                ("authorization", token.as_str()),
-                ("content-type", "application/json"),
-            ],
-            Body::from(json!({"enabled": enabled}).to_string()),
+fn set_open_apps(h: &Harness, enabled: bool) {
+    h.roles
+        .update(
+            "friend",
+            &wonton_protocol::RoleDraft {
+                name: "朋友".into(),
+                permissions: wonton_protocol::Permissions {
+                    open_apps: wonton_protocol::AppScope::Selected {
+                        plugin_ids: if enabled {
+                            vec!["app.callback".into()]
+                        } else {
+                            vec![]
+                        },
+                    },
+                    ..wonton_protocol::Permissions::strictest()
+                },
+            },
         )
-        .await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(reply.json()["family"], enabled);
+        .unwrap();
 }
 
 #[tokio::test]
-async fn recognized_members_keep_the_family_gate_on_callback_posts() {
+async fn recognized_members_keep_the_role_gate_on_callback_posts() {
     let h = fixture().await;
     let device = member_device(&h);
     let session = member_session(&h, device).await;
@@ -413,7 +416,7 @@ async fn recognized_members_keep_the_family_gate_on_callback_posts() {
         ("sec-fetch-mode", "navigate"),
     ];
     for enabled in [false, true, false] {
-        set_family(&h, enabled).await;
+        set_open_apps(&h, enabled);
         for via_tunnel in [false, true] {
             let mut request_headers = headers.to_vec();
             if !via_tunnel {

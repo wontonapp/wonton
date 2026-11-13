@@ -199,3 +199,18 @@ fn permissions_allow_exactly_what_they_name() {
     permissions.add_friends = Gate::Allow;
     assert!(permissions.allows(PermissionItem::AddFriends));
 }
+
+#[test]
+fn app_scopes_match_whole_plugin_ids_and_unknown_scopes_grant_nothing() {
+    let selected = AppScope::Selected {
+        plugin_ids: vec!["app.snake".into()],
+    };
+    assert!(selected.allows_plugin("app.snake"));
+    for id in ["app.snake.extra", "app.snak", "app.other"] {
+        assert!(!selected.allows_plugin(id), "{id}");
+    }
+    assert!(!AppScope::Selected { plugin_ids: vec![] }.allows_plugin("app.snake"));
+    let unknown: AppScope = serde_json::from_value(json!({"type":"by_tag"})).unwrap();
+    assert!(!unknown.allows_plugin("app.snake"));
+    assert!(AppScope::All.allows_plugin("app.future"));
+}
