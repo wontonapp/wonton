@@ -91,8 +91,13 @@ pub(super) fn container_plan(
             },
         )])),
     });
+    // 选中那家有厂商版镜像的服务换这一家的：只换 image，其余照清单（ADR-0099）。
+    let image = options
+        .gpu
+        .and_then(|gpu| gpu.images.iter().find(|image| image.service == name))
+        .map_or_else(|| service.image.clone(), |image| image.image.clone());
     let body = ContainerCreateBody {
-        image: Some(service.image.clone()),
+        image: Some(image.clone()),
         cmd: words(name, service.command.as_ref(), langs)?,
         entrypoint: words(name, service.entrypoint.as_ref(), langs)?,
         env: Some(env.into_iter().map(|(k, v)| format!("{k}={v}")).collect()),
@@ -125,7 +130,7 @@ pub(super) fn container_plan(
             Some(bot) => ctx.instance.bot_container(&ctx.slug, name, bot),
             None => ctx.instance.container(&ctx.slug, name),
         },
-        image: service.image.clone(),
+        image,
         pull_policy: service.pull_policy,
         depends_on,
         body,

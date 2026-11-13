@@ -152,6 +152,20 @@ struct Resources {
     /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
     update_error: Option<String>,
     hold: Option<Hold>,
+    /// `GET /version`、`/info` 报告的架构；没设时 `x86_64`。
+    arch: Option<String>,
+    /// 镜像 → 平台列表（`GET /distribution/{镜像}/json`）。没设的镜像报一个 linux/amd64 的单清单。
+    platforms: BTreeMap<String, FakePlatforms>,
+    /// 设了时 `/distribution/` 回这个错误（离线、仓库拒绝）。
+    platform_error: Option<String>,
+}
+
+/// 假 Docker 对镜像平台列表的回答。
+#[derive(Debug, Clone, Default)]
+pub struct FakePlatforms {
+    pub architectures: Vec<String>,
+    /// 单个清单时的压缩后大小；多架构列表没有。
+    pub size: Option<u64>,
 }
 
 impl FakeDocker {
@@ -431,6 +445,27 @@ impl FakeDocker {
         self.lock().outputs.insert(container.to_owned(), output);
     }
 
+    /// 让 `GET /version`、`/info` 报告这个宿主架构（`aarch64` 等）；没设时 `x86_64`。
+    pub fn set_arch(&self, arch: &str) {
+        self.lock().arch = Some(arch.to_owned());
+    }
+
+    /// 让 `GET /distribution/{镜像}/json` 报告这些架构（不写 `os`）。
+    pub fn set_platforms(&self, image: &str, architectures: &[&str], size: Option<u64>) {
+        self.lock().platforms.insert(
+            image.to_owned(),
+            FakePlatforms {
+                architectures: architectures.iter().map(|a| (*a).to_owned()).collect(),
+                size,
+            },
+        );
+    }
+
+    /// 让查镜像平台列表回这个错误。
+    pub fn set_platform_error(&self, error: &str) {
+        self.lock().platform_error = Some(error.to_owned());
+    }
+
     /// 让 `GET /info` 报告这些运行时（如 `runc`、`nvidia`）。
     /// 给镜像设上它自带的 `HEALTHCHECK`（Docker 的 JSON 写法）。
     pub fn set_image_healthcheck(&self, image: &str, check: Value) {
@@ -550,11 +585,15 @@ fn others(
     parts: &[&str],
     query: &str,
 ) -> Option<Response> {
+    let arch = docker.arch.clone().unwrap_or_else(|| "x86_64".to_owned());
     let reply = match (method, parts) {
-        (&Method::GET, ["version"]) => json_reply(
-            StatusCode::OK,
-            json!({"Arch": "x86_64", "Version": "29.0.0"}),
-        ),
+        (&Method::GET, ["version"]) => {
+            json_reply(StatusCode::OK, json!({"Arch": arch, "Version": "29.0.0"}))
+        }
+        (&Method::GET, ["distribution", image @ .., "json"]) => {
+            return distribution(docker, &image.join("/"));
+        }
+        // 拉不到镜像时本地也没有这张镜像：查镜像要报没有，安装才会走到拉镜像那步。
         (&Method::GET, ["images", image @ .., "json"])
             if docker.pull_error.is_some()
                 && !docker
@@ -579,7 +618,7 @@ fn others(
                 .collect();
             json_reply(
                 StatusCode::OK,
-                json!({"Name": docker.name, "Runtimes": map, "Architecture": "x86_64", "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
+                json!({"Name": docker.name, "Runtimes": map, "Architecture": arch, "OSType": "linux", "NCPU": 32, "HttpsProxy": docker.https_proxy}),
             )
         }
         (&Method::GET, ["images", image @ .., "json"])
@@ -700,4 +739,40 @@ fn labeled<'a>(
             None => labels.contains_key(filter),
         })
     })
+}
+
+/// `GET /distribution/{镜像}/json`：平台列表和单清单的大小；没设的镜像报一个 linux/amd64。
+fn distribution(docker: &Resources, image: &str) -> Option<Response> {
+    if let Some(error) = &docker.platform_error {
+        return Some(json_reply(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            json!({"message": error}),
+        ));
+    }
+    let platforms = docker.platforms.get(image).cloned().unwrap_or_default();
+    let architectures: Vec<Value> = if platforms.architectures.is_empty() {
+        vec![json!({"architecture": "amd64", "os": "linux"})]
+    } else {
+        platforms
+            .architectures
+            .iter()
+            .map(|arch| json!({"architecture": arch, "os": "linux"}))
+            .collect()
+    };
+    let media_type = if architectures.len() > 1 {
+        "application/vnd.docker.distribution.manifest.list.v2+json"
+    } else {
+        "application/vnd.docker.distribution.manifest.v2+json"
+    };
+    Some(json_reply(
+        StatusCode::OK,
+        json!({
+            "Descriptor": {
+                "mediaType": media_type,
+                "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+                "size": platforms.size,
+            },
+            "Platforms": architectures,
+        }),
+    ))
 }

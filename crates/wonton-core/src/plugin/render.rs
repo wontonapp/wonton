@@ -23,6 +23,7 @@ use super::manifest::{Access, Manifest, Permission, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
+use super::requirements::GpuVendor;
 use super::vars::injected_vars;
 pub use super::vars::{MatrixVars, ModelVars, OidcVars, OwnerVars};
 use spec::{ContainerOptions, container_plan};
@@ -227,6 +228,20 @@ pub fn dry_run(package: &PluginPackage, langs: &Languages) -> Result<Deployment,
     render(package, &dry_run_context(package), langs)
 }
 
+/// dry run 的显卡占位：只为了 `${WONTON_GPU_VENDOR}` 能插值，真选哪家要在安装时看本机的显卡。
+fn dry_run_gpu(manifest: &Manifest) -> Option<GpuGrant> {
+    manifest.gpu.as_ref().map(|_| {
+        let vendor = manifest
+            .requirements
+            .as_ref()
+            .and_then(|requirements| requirements.gpu.as_ref())
+            .and_then(|gpu| gpu.vendors.first())
+            .copied()
+            .unwrap_or(GpuVendor::Amd);
+        GpuGrant::images_only(vendor, Vec::new())
+    })
+}
+
 /// [`dry_run`] 用的占位环境。
 pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
     let manifest = &package.manifest;
@@ -308,7 +323,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         pgid: 1000,
         install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
-        gpu: None,
+        gpu: dry_run_gpu(manifest),
         lan: dry_run_lan(manifest, &slug),
         egress: None,
         core_address: webui

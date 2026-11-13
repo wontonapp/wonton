@@ -137,17 +137,11 @@ async fn a_card_from_the_wrong_vendor_is_refused_or_left_out() {
 
     let compose = gpu_plugin("{vendors: [nvidia]}");
     let reason = blocked(&m, &compose).await.unwrap();
-    let card = crate::l10n::text(
-        &super::langs(),
-        "plugin-install-req-card-named",
-        &[("names", " NVIDIA".into())],
+    // 失败原因写清本机的显卡不在插件支持的厂商里（ADR-0099）。
+    assert!(
+        reason.contains("AMD") && reason.contains("NVIDIA"),
+        "{reason}"
     );
-    let missing = crate::l10n::text(
-        &super::langs(),
-        "plugin-install-host-gpu-missing",
-        &[("card", card.into())],
-    );
-    assert!(reason.contains(&missing), "{reason}");
     let err = m
         .install(&compose, &gpu_permission(), super::langs())
         .await

@@ -30,6 +30,7 @@ pub mod github_source;
 pub mod gpu;
 #[cfg(test)]
 pub(crate) mod gpu_fake_host;
+mod gpu_select;
 mod grant;
 pub mod health;
 mod health_gate;

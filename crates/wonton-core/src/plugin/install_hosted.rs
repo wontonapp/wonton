@@ -362,6 +362,7 @@ impl PluginManager {
             family: old.is_some_and(|old| old.family),
             static_files: package.static_hashes().clone(),
             hosted,
+            gpu_vendor: old.and_then(|old| old.gpu_vendor),
         };
         let saved = self.store.save(&record);
         if saved.is_err()

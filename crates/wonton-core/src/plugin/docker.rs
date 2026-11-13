@@ -22,6 +22,7 @@ use wonton_l10n::Arg;
 use super::lan::{Detector, ports};
 use super::languages::Languages;
 use super::network_pool::NetworkPool;
+use super::requirements::Arch;
 use crate::l10n;
 use ipnet::Ipv4Net;
 
@@ -178,6 +179,33 @@ impl LabeledResources {
         self.containers.is_empty() && self.networks.is_empty() && self.volumes.is_empty()
     }
 }
+
+/// 镜像的平台列表。`size` 只在单个清单（不是多架构列表）时有，是压缩后的大小。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImagePlatforms {
+    pub architectures: Vec<String>,
+    pub size: Option<u64>,
+}
+
+impl ImagePlatforms {
+    /// Docker 报告的架构（`x86_64`、`aarch64`）和镜像仓库里的（`amd64`、`arm64`）写法不同，两边都归一。
+    pub fn supports(&self, arch: &str) -> bool {
+        let arch = Arch::from_docker(arch);
+        arch.is_some_and(|arch| {
+            self.architectures
+                .iter()
+                .any(|candidate| Arch::from_docker(candidate) == Some(arch))
+        })
+    }
+
+    /// 没有平台列表时不给大小：多架构的列表大小不是任何一个镜像的。
+    pub fn compressed_size(&self) -> Option<u64> {
+        self.size
+    }
+}
+
+const MEDIA_TYPE_INDEX: &str = "application/vnd.oci.image.index.v1+json";
+const MEDIA_TYPE_LIST: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 
 #[derive(Clone)]
 pub struct Engine {
@@ -384,6 +412,39 @@ impl Engine {
             )
         })?;
         Ok(inspect.config.and_then(|config| config.healthcheck))
+    }
+
+    /// 镜像的平台列表（`GET /distribution/{name}/json`，不拉镜像）：架构，以及单个清单时报的压缩后大小。
+    /// 装了镜像仓库的凭据由 daemon 自己用。读不到时算查不出来，由调用方决定怎么显示。
+    pub async fn image_platforms(&self, image: &str) -> Result<ImagePlatforms> {
+        let inspect = self
+            .docker
+            .inspect_registry_image(image, None)
+            .await
+            .map_err(|e| {
+                self.fail(
+                    "plugin-install-docker-context-image-platforms",
+                    &[("image", image.into())],
+                    e,
+                )
+            })?;
+        Ok(ImagePlatforms {
+            architectures: inspect
+                .platforms
+                .into_iter()
+                .filter_map(|platform| platform.architecture)
+                .collect(),
+            size: inspect
+                .descriptor
+                .media_type
+                .as_deref()
+                .is_some_and(|media_type| {
+                    media_type != MEDIA_TYPE_INDEX && media_type != MEDIA_TYPE_LIST
+                })
+                .then_some(inspect.descriptor.size)
+                .flatten()
+                .and_then(|size| u64::try_from(size).ok()),
+        })
     }
 
     pub async fn create_volume(&self, name: &str, labels: &HashMap<String, String>) -> Result<()> {

@@ -77,6 +77,22 @@ impl PluginManager {
                 .enabled_permissions
                 .retain(|item| &item.permission != permission);
         }
+        // 开关 `devices.gpu` 要重新选厂商（ADR-0099）：开就按清单和本机的显卡选，关就不给。
+        if permission == &Permission::DevicesGpu {
+            record.gpu_vendor = if enabled {
+                let effective =
+                    listed
+                        .manifest
+                        .effective_permissions(&super::store::permission_set(
+                            &record.enabled_permissions,
+                        ));
+                self.gpu_grant(&listed.manifest, &effective, &self.owner_languages())
+                    .await?
+                    .map(|grant| grant.vendor)
+            } else {
+                None
+            };
+        }
         if !self.begin_rebuild(id) {
             return Err(InstallError::Conflict(format!(
                 "插件 {id} 正在安装、卸载或重建，等那边做完"

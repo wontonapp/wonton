@@ -424,7 +424,12 @@ impl PluginManager {
         ctx.limits = record.limits;
         ctx.settings = record.settings.clone();
         ctx.gpu = self
-            .gpu_grant(manifest, &record.effective_permissions(manifest), &langs)
+            .gpu_grant_recorded(
+                manifest,
+                &record.effective_permissions(manifest),
+                record.gpu_vendor,
+                &langs,
+            )
             .await?;
         ctx.models = self.stored_model_vars(package)?;
         if let Some(network) = lan.as_ref().and_then(|grant| grant.network.as_ref())

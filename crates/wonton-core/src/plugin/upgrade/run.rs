@@ -16,7 +16,8 @@ use super::super::health_gate::Gate;
 use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
-use super::super::lifecycle::{Undo, VolumeAction, client_spec, volume_action};
+use super::super::lifecycle::volumes::{VolumeAction, volume_action};
+use super::super::lifecycle::{Undo, client_spec};
 use super::super::listed::Listed;
 use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
@@ -428,6 +429,7 @@ impl PluginManager {
             settings_changed_ms: old.record.settings_changed_ms,
             static_files: Default::default(),
             hosted: Vec::new(),
+            gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
         })?;
         Ok(Deployed {
             upstream,

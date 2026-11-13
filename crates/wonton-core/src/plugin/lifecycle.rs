@@ -1,6 +1,6 @@
 //! 部署、恢复与卸载：把部署计划交给 Docker，失败时按相反顺序回滚。
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,7 +20,6 @@ use super::hostdir::{self, Owner};
 use super::install_notes::note_dropped_capabilities;
 use super::lan::LanGrant;
 use super::languages::Languages;
-use super::leftovers::name_taken;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
 use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::models::ModelsRoute;
@@ -40,6 +39,7 @@ use crate::oidc::{ClientSpec, Hydra};
 use crate::secret::random_token;
 
 pub(super) mod rollback;
+pub(super) mod volumes;
 
 /// 插件管理器需要的那部分核心配置。
 #[derive(Debug, Clone)]
@@ -103,36 +103,6 @@ pub(super) struct Undo {
     models: Option<PluginId>,
 }
 
-/// 插件声明的命名卷怎么处理。
-#[derive(Debug, PartialEq, Eq)]
-pub(super) enum VolumeAction {
-    Create,
-    Reuse,
-}
-
-/// Docker 创建同名卷时直接返回已有的卷，所以先看它属于谁：不存在就新建（安装失败时回滚删除）；
-/// 属于本插件（上次不删数据卸载后保留的）就复用，回滚时不删；属于其他插件或不是核心创建的，拒绝安装。
-pub(super) fn volume_action(
-    volume: &str,
-    labels: Option<&HashMap<String, String>>,
-    plugin: &PluginId,
-    langs: &Languages,
-) -> Result<VolumeAction, InstallError> {
-    let Some(labels) = labels else {
-        return Ok(VolumeAction::Create);
-    };
-    if labels.get(LABEL_PLUGIN).map(String::as_str) == Some(plugin.as_str()) {
-        Ok(VolumeAction::Reuse)
-    } else {
-        Err(name_taken(
-            &l10n::text(langs, "plugin-install-word-volume", &[]),
-            volume,
-            labels,
-            langs,
-        ))
-    }
-}
-
 impl PluginManager {
     pub(super) fn hydra(&self, langs: &Languages) -> Result<&Hydra, InstallError> {
         self.oidc.as_ref().ok_or_else(|| {
@@ -181,26 +151,6 @@ impl PluginManager {
                 }
             }
         }
-    }
-
-    /// 安装时代默认 Bot 登录（归属人是主人），失败时回滚吊销设备。没有 Bot 的插件返回 `None`。
-    /// 按计划建卷；已存在的卷不动（见 [`volume_action`]）。
-    async fn create_volumes(
-        &self,
-        plan: &Deployment,
-        manifest: &Manifest,
-        undo: &mut Undo,
-        langs: &Languages,
-    ) -> Result<(), InstallError> {
-        for volume in &plan.volumes {
-            let labels = self.engine.volume_labels(volume).await?;
-            if volume_action(volume, labels.as_ref(), &manifest.id, langs)? == VolumeAction::Create
-            {
-                self.engine.create_volume(volume, &plan.labels).await?;
-                undo.volumes.push(volume.clone());
-            }
-        }
-        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)] // 装插件要的几样各管各的来源，打包反而看不清哪来的。
@@ -323,6 +273,7 @@ impl PluginManager {
             settings_changed_ms: None,
             static_files: Default::default(),
             hosted: Vec::new(),
+            gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
         })?;
         Ok(())
     }
@@ -913,35 +864,5 @@ pub(super) fn client_spec(manifest: &Manifest, ctx: &InstallContext, secret: &st
         token_endpoint_auth_method: oidc
             .map(|o| o.token_endpoint_auth_method.as_str())
             .unwrap_or("client_secret_basic"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn owned_by(owner: Option<&str>) -> HashMap<String, String> {
-        owner
-            .map(|o| HashMap::from([(LABEL_PLUGIN.to_owned(), o.to_owned())]))
-            .unwrap_or_default()
-    }
-
-    #[test]
-    fn named_volumes_are_created_reused_or_refused_by_owner() {
-        let plugin = PluginId::parse("app.foo-bar").unwrap();
-        let langs = Languages::from_header(Some("en"));
-        let action = |labels: Option<HashMap<String, String>>| {
-            volume_action("wonton-app-foo-bar--data", labels.as_ref(), &plugin, &langs)
-        };
-        assert_eq!(action(None).unwrap(), VolumeAction::Create);
-        assert_eq!(
-            action(Some(owned_by(Some("app.foo-bar")))).unwrap(),
-            VolumeAction::Reuse
-        );
-        // app.foo.bar 和 app.foo-bar 的 slug 相同，它卸载时保留的 data 卷同名：不能挂上别的插件的数据。
-        let other = action(Some(owned_by(Some("app.foo.bar")))).unwrap_err();
-        assert_eq!(other.kind(), "conflict", "{other}");
-        let unlabeled = action(Some(owned_by(None))).unwrap_err();
-        assert_eq!(unlabeled.kind(), "conflict", "{unlabeled}");
     }
 }

@@ -106,6 +106,9 @@ pub struct InstalledRecord {
     /// 副作用账本里的托管目录：这个插件在哪些托管能力下有自己的子目录（ADR-0080 第 2 节）。卸载照它撤。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub hosted: Vec<String>,
+    /// 安装时选中的显卡厂商（ADR-0099）：重建、重启、核心升级都用它换镜像，主机换了显卡也不悄悄换。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_vendor: Option<super::requirements::GpuVendor>,
 }
 
 impl InstalledRecord {
@@ -617,6 +620,7 @@ mod tests {
             settings_changed_ms: None,
             static_files: Default::default(),
             hosted: Vec::new(),
+            gpu_vendor: None,
         }
     }
 

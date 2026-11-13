@@ -547,6 +547,8 @@ impl PluginManager {
             .await?;
         Ok(found.containers)
     }
+
+    /// 安装时代默认 Bot 登录（归属人是主人），失败时回滚吊销设备。没有 Bot 的插件返回 `None`。
     pub(in crate::plugin) async fn provision_default_bot(
         &self,
         package: &PluginPackage,

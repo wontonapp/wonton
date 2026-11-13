@@ -273,7 +273,22 @@ fn gpu(wanted: &GpuRequirement, facts: &HostFacts, langs: &Languages) -> Verdict
             _ => None,
         })
         .collect();
-    let problem = if no.is_empty() {
+    // 本机有显卡、只是没有插件要的厂商：写清本机是哪家（ADR-0099 的失败原因）。
+    let mut vendors: Vec<String> = gpus.iter().map(|gpu| gpu.name(langs)).collect();
+    vendors.dedup();
+    let problem = if no.is_empty() && candidates.is_empty() && !gpus.is_empty() {
+        text(
+            langs,
+            "plugin-install-host-gpu-not-among",
+            &[
+                ("host", list(langs, &vendors).into()),
+                (
+                    "wanted",
+                    requirements::card_name(&wanted.vendors, langs).into(),
+                ),
+            ],
+        )
+    } else if no.is_empty() {
         let card = requirements::card_name(&wanted.vendors, langs);
         text(
             langs,
