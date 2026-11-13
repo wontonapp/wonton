@@ -212,10 +212,13 @@ pub enum TabState {
     },
     /// 新版本不再提供这个页面。
     PageRemoved,
-    /// 页面打不开。`status` 是 HTTP 状态码，没拿到响应时为空。
+    /// 页面打不开。`status` 是 HTTP 状态码，没拿到响应时为空；`details` 是核心按 App 语言写的
+    /// "详情"原文（出错页默认收起的那段，错误码收在里面），壳有这行就不再自己拼。
     LoadFailed {
         failure: TabLoadFailure,
         status: Option<u16>,
+        #[serde(default)]
+        details: Option<String>,
     },
     /// 核心给的插件状态这个 App 不认识，不知道页面能不能用。
     #[serde(other)]
@@ -336,6 +339,7 @@ mod tests {
             TabState::LoadFailed {
                 failure: TabLoadFailure::Upstream,
                 status: Some(503),
+                details: Some("应用的网页返回了错误（HTTP 503）。".into()),
             },
             TabState::Unknown,
         ] {
