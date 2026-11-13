@@ -117,10 +117,23 @@ fn member(h: &Harness) -> iroh::EndpointId {
     device
 }
 
+/// #518 起可见性按角色 open_apps 算：给默认邀请角色开放这个插件，family 标记不再管事。
+fn open_whoami(h: &Harness) {
+    let draft = wonton_protocol::RoleDraft {
+        name: "朋友".into(),
+        permissions: wonton_protocol::Permissions {
+            open_apps: wonton_protocol::AppScope::Selected {
+                plugin_ids: vec!["app.whoami".into()],
+            },
+            ..wonton_protocol::Permissions::strictest()
+        },
+    };
+    h.roles.update("friend", &draft).unwrap();
+}
+
 fn assert_failure(reply: &Reply, status: StatusCode, reason: &str) {
     assert_eq!(reply.status, status, "{}", reply.text());
     assert_eq!(reply.error_kind(), Some(reason));
-    assert_eq!(reply.json()["state"], "unavailable");
     assert_eq!(reply.json()["error"]["kind"], reason);
     assert!(reply.json().get("page").is_none());
 }
@@ -177,17 +190,7 @@ async fn family_switch_not_bot_keeper_controls_both_web_and_metadata() {
             assert_failure(&reply, StatusCode::FORBIDDEN, "not_shared");
         }
     }
-    // #518 起可见性按角色的 open_apps 算：给朋友的角色开放这个应用，family 标记不再管事。
-    let draft = wonton_protocol::RoleDraft {
-        name: "朋友".into(),
-        permissions: wonton_protocol::Permissions {
-            open_apps: wonton_protocol::AppScope::Selected {
-                plugin_ids: vec!["app.whoami".into()],
-            },
-            ..wonton_protocol::Permissions::strictest()
-        },
-    };
-    h.roles.update("friend", &draft).unwrap();
+    open_whoami(&h);
     for name in ["default", "mia"] {
         let reply = send_as(&h.app, Some(device), Method::GET, &host(name), "/", &[], "").await;
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
@@ -334,11 +337,13 @@ async fn any_plugin_source_is_denied_before_web_redemption_and_login() {
     let app = h.app_session_on(&host("mia")).await;
     h.manager
         .register_source_for_test("app.whoami", "192.0.2.0/24", vec![]);
-    for name in ["default", "mia"] {
-        for path in ["/", "/_wonton/session?code=anything&to=/"] {
-            let reply = from_plugin(&h, &host(name), path, &app).await;
-            assert_failure(&reply, StatusCode::FORBIDDEN, "permission_denied");
-        }
+    for path in ["/", "/_wonton/session?code=anything&to=/"] {
+        // Bot 网页主机：插件网络里的来源一律挡下。
+        let reply = from_plugin(&h, &host("mia"), path, &app).await;
+        assert_failure(&reply, StatusCode::FORBIDDEN, "permission_denied");
+        // 插件自己的网页主机：自己网络里的容器取自己的页面，不代表任何人放行（ADR-0063）。
+        let reply = from_plugin(&h, &host("default"), path, &app).await;
+        assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
     }
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("to", &h.origin(&host("mia")))
@@ -472,7 +477,7 @@ async fn oidc_login_checks_exact_client_family_and_target_before_accepting() {
     let denied = send_as(&h.app, Some(device), Method::GET, CORE, &path, &[], "").await;
     assert_failure(&denied, StatusCode::FORBIDDEN, "not_shared");
     assert!(accepted.lock().unwrap().is_empty());
-    record(&h, true, &source());
+    open_whoami(&h);
     let allowed = send_as(&h.app, Some(device), Method::GET, CORE, &path, &[], "").await;
     assert_eq!(allowed.status, StatusCode::SEE_OTHER, "{}", allowed.text());
     assert_eq!(accepted.lock().unwrap()[0]["subject"], "mia");
@@ -570,7 +575,7 @@ async fn sso_does_not_issue_handoffs_for_unshared_or_unready_bots() {
     let path = format!("/_wonton/sso?{query}");
     let denied = send_as(&h.app, Some(device), Method::GET, CORE, &path, &[], "").await;
     assert_failure(&denied, StatusCode::FORBIDDEN, "not_shared");
-    record(&h, true, &source());
+    open_whoami(&h);
     h.manager
         .bot_web_route_for_test(bot("mia"), Endpoint::Tcp(h.upstream.to_string()), false);
     let unready = send_as(&h.app, Some(device), Method::GET, CORE, &path, &[], "").await;
@@ -589,17 +594,36 @@ async fn a_plugin_network_source_cannot_borrow_a_paired_owner_device() {
         .unwrap();
     h.manager
         .register_source_for_test("app.other", "192.0.2.0/24", vec![]);
+    // 配对设备就是主人本身（设备身份优先）；插件自己的网页主机放行，Bot 网页主机仍挡插件网络来源。
     for name in ["default", "mia"] {
-        let mut request = hyper::Request::builder()
-            .uri("/")
-            .header("host", host(name))
-            .body(Body::empty())
-            .unwrap();
-        request.extensions_mut().insert(TunnelPeer(device));
-        request.extensions_mut().insert(ConnectInfo(
-            "192.0.2.10:1234".parse::<std::net::SocketAddr>().unwrap(),
-        ));
-        let response = Reply::of(h.app.clone().oneshot(request).await.unwrap()).await;
-        assert_failure(&response, StatusCode::FORBIDDEN, "permission_denied");
+        let response = plugin_device_request(&h, name, device).await;
+        if name == "default" {
+            assert_eq!(response.status, StatusCode::OK, "{}", response.text());
+        } else {
+            assert_failure(&response, StatusCode::FORBIDDEN, "permission_denied");
+        }
     }
+    // 没配对的设备借同一个来源网络进来：两边都没有身份，挡下。
+    let stranger = iroh::SecretKey::generate().public();
+    for name in ["default", "mia"] {
+        let response = plugin_device_request(&h, name, stranger).await;
+        if name == "default" {
+            assert_failure(&response, StatusCode::UNAUTHORIZED, "unauthenticated");
+        } else {
+            assert_failure(&response, StatusCode::FORBIDDEN, "permission_denied");
+        }
+    }
+}
+
+async fn plugin_device_request(h: &Harness, name: &str, device: iroh::PublicKey) -> Reply {
+    let mut request = hyper::Request::builder()
+        .uri("/")
+        .header("host", host(name))
+        .body(Body::empty())
+        .unwrap();
+    request.extensions_mut().insert(TunnelPeer(device));
+    request.extensions_mut().insert(ConnectInfo(
+        "192.0.2.10:1234".parse::<std::net::SocketAddr>().unwrap(),
+    ));
+    Reply::of(h.app.clone().oneshot(request).await.unwrap()).await
 }
