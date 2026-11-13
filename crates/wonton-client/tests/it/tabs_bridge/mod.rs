@@ -3,6 +3,7 @@ mod origin;
 mod sdk;
 mod support;
 
+use axum::http::Method;
 use serde_json::json;
 use wonton_client::{Action, CoreError, PlacedTab, TabRef};
 use wonton_protocol::PanelScope;
@@ -127,7 +128,6 @@ async fn unsupported_requests_cannot_reach_core_or_mutate_client_state() {
     support::wait_quiet(&rig).await;
     let before_tabs = rig.app.pages();
     let before_chat = rig.app.chat();
-    let before_requests = rig.core.all_seen().len();
     for (method, params) in [
         (
             "tools/call",
@@ -144,7 +144,21 @@ async fn unsupported_requests_cannot_reach_core_or_mutate_client_state() {
         assert!(reply.action.is_none());
     }
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert_eq!(rig.core.all_seen().len(), before_requests);
+    // 后台轮询（列表、登录重试）本来就会来，不数总数；只找这三种报文漏出桥的样子：
+    // 原样转发的报文（方法名在正文里），或它触发的动作——卸载插件的 DELETE。
+    let leaked: Vec<String> = rig
+        .core
+        .all_seen()
+        .iter()
+        .filter(|seen| {
+            (seen.method == Method::DELETE && seen.path.starts_with("/_wonton/api/plugins/"))
+                || ["tools/call", "resources/read", "update-model-context"]
+                    .iter()
+                    .any(|marker| seen.body.contains(marker))
+        })
+        .map(|seen| format!("{} {}", seen.method, seen.path))
+        .collect();
+    assert!(leaked.is_empty(), "不支持的桥请求漏到了核心: {leaked:?}");
     assert_eq!(rig.app.pages(), before_tabs);
     assert_eq!(rig.app.chat(), before_chat);
 }
