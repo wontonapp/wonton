@@ -410,6 +410,87 @@ impl MatrixSession {
         Ok(())
     }
 
+    /// 入队前恢复房间并校验回复关系；不发送、不打开房间，也不改变草稿。
+    pub async fn prepare_reply(
+        &self,
+        room_id: &RoomId,
+        body: &str,
+        event_id: Option<&matrix_sdk::ruma::EventId>,
+        thread_root: Option<&matrix_sdk::ruma::EventId>,
+    ) -> Result<crate::PreparedReply> {
+        use matrix_sdk::room::reply::{EnforceThread, Reply};
+        use matrix_sdk::ruma::events::room::message::{
+            AddMentions, Relation, ReplyWithinThread, RoomMessageEventContentWithoutRelation,
+        };
+        let room = self.joined_within(room_id, ROOM_SYNC_WAIT).await?;
+        let Some(event_id) = event_id.or(thread_root) else {
+            return Ok(crate::PreparedReply(Box::new(
+                RoomMessageEventContent::text_plain(body),
+            )));
+        };
+        crate::reply::load_event(&room, event_id).await?;
+        let enforce_thread = match thread_root {
+            Some(_) => EnforceThread::Threaded(ReplyWithinThread::Yes),
+            None => EnforceThread::Unthreaded,
+        };
+        let content = room
+            .make_reply_event(
+                RoomMessageEventContentWithoutRelation::text_plain(body),
+                Reply {
+                    event_id: event_id.to_owned(),
+                    enforce_thread,
+                    add_mentions: AddMentions::Yes,
+                },
+            )
+            .await
+            .map_err(|error| Error::Upstream(format!("组回复失败：{error}")))?;
+        if let Some(root) = thread_root
+            && !matches!(&content.relates_to, Some(Relation::Thread(thread)) if thread.event_id.as_str() == root.as_str())
+        {
+            return Err(Error::InvalidInput(
+                "Reply target belongs to a different thread".into(),
+            ));
+        }
+        Ok(crate::PreparedReply(Box::new(content)))
+    }
+
+    /// 临时作用域在持久入队后留出发送窗口；遇到拒收或窗口结束时仍由本机发送队列保留待发内容。
+    pub async fn wait_for_queued_sends(&self, room_id: &RoomId) -> Result<()> {
+        use matrix_sdk::send_queue::{LocalEchoContent, RoomSendQueueUpdate};
+        let room = self.joined(room_id)?;
+        let queue = room.send_queue();
+        let mut updates = room.client().send_queue().subscribe();
+        loop {
+            let (pending, _) = queue
+                .subscribe()
+                .await
+                .map_err(|error| Error::Upstream(format!("读不了待发消息：{error}")))?;
+            if pending.is_empty()
+                || pending.iter().any(|echo| {
+                    matches!(
+                        &echo.content,
+                        LocalEchoContent::Event {
+                            send_error: Some(_),
+                            ..
+                        }
+                    )
+                })
+            {
+                return Ok(());
+            }
+            match updates.recv().await {
+                Ok(update)
+                    if update.room_id == room_id
+                        && matches!(update.update, RoomSendQueueUpdate::SendError { .. }) =>
+                {
+                    return Ok(());
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => return Ok(()),
+            }
+        }
+    }
+
     /// 房间同步到本地并成为已加入；等过了期限还没有，按原来的错报（没同步到，或者没加入）。
     async fn joined_within(&self, room_id: &RoomId, wait: Duration) -> Result<Room> {
         let deadline = tokio::time::Instant::now() + wait;

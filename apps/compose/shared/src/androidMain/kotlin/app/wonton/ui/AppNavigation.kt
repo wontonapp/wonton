@@ -23,6 +23,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     // 配对提醒的链接（wonton://settings/peers）带着它来：其他服务器页滚回顶上的“请求”。
     var peersOpenRequests by mutableStateOf(false)
     var settingsOverlay by mutableStateOf(false)
+    var confirmationCard by mutableStateOf<String?>(null)
 
     // 网格这一层在页面底下留着，又盖着聊天根：从网格打开先收起它，不然关掉页面回到网格、私聊开在看不见的地方（iOS 同）。
     val plugins = PluginNavigation(
@@ -50,6 +51,12 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         chat.openWhenJoined(pages.core, roomId, sideChatRoot)
     }
 
+    fun openConfirmations(cardId: String) {
+        resetNavigation()
+        pages.send(Action.OpenPage(TabRef.Chat))
+        confirmationCard = cardId
+    }
+
     /** 联系人请求的通知点进来：这个 Bot 的详情页上打开联系人页。 */
     fun openContacts(bot: BotRef) {
         resetNavigation()
@@ -67,6 +74,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     /** 重置到主界面的导航状态：链接、分享进来时都从干净的一屏开始。 */
     private fun resetNavigation() {
         settingsOverlay = false
+        confirmationCard = null
         chat.reset()
         closeApps()
         settingsPage = SettingsSubpage.MAIN

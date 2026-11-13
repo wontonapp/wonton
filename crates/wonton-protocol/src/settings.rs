@@ -71,7 +71,7 @@ pub enum SettingsEntry {
     Notifications {
         method: PushMethod,
         push: PushStatus,
-        categories: Vec<NotificationCategory>,
+        categories: Vec<NotificationCategorySetting>,
     },
     /// 默认 Agent。配对以后才有。
     DefaultAgent,
@@ -85,6 +85,15 @@ pub enum SettingsEntry {
     /// 比壳新的核心给的未知入口，壳必须忽略，不显示按钮或占位行。
     #[serde(other)]
     Other,
+}
+
+/// 一个通知类别在设置页里的一行（ADR-0101 §5）：开关在系统设置里，另一项是锁屏上给不给看内容。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct NotificationCategorySetting {
+    pub category: NotificationCategory,
+    /// 锁屏上隐藏这条通知的内容，只写“新消息”这类占位。
+    pub lock_screen_private: bool,
 }
 
 #[cfg(test)]
@@ -145,7 +154,10 @@ mod tests {
                         SettingsEntry::Notifications {
                             method: PushMethod::Keepalive,
                             push: PushStatus::NoEndpoint,
-                            categories: vec![],
+                            categories: vec![NotificationCategorySetting {
+                                category: NotificationCategory::Message,
+                                lock_screen_private: true,
+                            }],
                         },
                         SettingsEntry::Language,
                         SettingsEntry::AddWontonServer,

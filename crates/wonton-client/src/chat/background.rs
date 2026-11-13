@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use wonton_matrix::{BackgroundNotification, MatrixSession, UserId};
 use wonton_protocol::{PushContent, PushMethod};
 
+use super::unread_total;
 use crate::push::push_notification;
 
 use super::ChatLink;
@@ -72,7 +73,7 @@ impl ChatLink {
         }
         // 契约（`PushNotification::server_id`）是本机槽位号（`ServerRow::id`），不是这台的 endpoint ID：
         // 壳点开通知按槽位号切服务器，端点 ID 在槽位列表里查不到，会被当成“已移除的服务器”误报。
-        let Some(notification) = push_notification(
+        let Some(mut notification) = push_notification(
             Some(self.slot.clone()),
             own,
             &event.room_id,
@@ -81,6 +82,8 @@ impl ChatLink {
         ) else {
             return;
         };
+        notification.lock_screen_private = self.lock_screen.borrow().hidden(notification.category);
+        notification.unread_total = unread_total(&self.view.borrow());
         self.view.send_modify(|view| {
             if let Some(shown) = view
                 .background_notifications

@@ -96,6 +96,10 @@
     <string name="widget_agent_status_unknown">状态未知</string>
     <string name="widget_updated_at">更新于 %1$s</string>
     <string name="widget_status_at">%1$s · %2$s</string>
+    <!-- Notification fallback page for cards without a chat room; no arguments. -->
+    <string name="confirmations_title">等你确认</string>
+    <!-- Empty confirmation list after requests have been answered or expired. -->
+    <string name="confirmations_empty">没有需要确认的事</string>
     <string name="myapp_add">加进我的应用</string>
     <string name="myapp_add_more">添加应用</string>
     <string name="myapp_auto_add">新装的应用自动加入</string>

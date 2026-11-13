@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
-use wonton_protocol::{ConfirmationCard, DeviceConfirmationPush};
+use wonton_protocol::{CardChoice, ConfirmationCard, DeviceConfirmationPush};
 
 use super::confirm::Notifier;
 use crate::push::Push;
@@ -40,6 +40,7 @@ impl Notifier for DevicePush {
                 title: card.title.clone(),
                 expires_at_ms: card.expires_at_ms,
                 origin: card.origin.clone(),
+                choices: button_choices(card),
             };
             // 推送没发出去不拦卡片：它已在确认表里，App 打开时从列表照样看得到。
             if let Err(error) = self.push.send_confirmation(recipient, &confirmation).await {
@@ -53,5 +54,73 @@ impl Notifier for DevicePush {
             Ok(())
         }
         .boxed()
+    }
+}
+
+/// 通知上能画的按钮（ADR-0101 §1）：和卡片同一组，取前 3 个（推送载荷要小）。要填密钥或设置的卡片一个都不给，
+/// 表单塞不进通知，点开进 App 填。
+fn button_choices(card: &ConfirmationCard) -> Vec<CardChoice> {
+    if !card.secret_inputs.is_empty() || card.settings.is_some() {
+        return Vec::new();
+    }
+    card.choices.iter().take(3).cloned().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wonton_protocol::{Answer, ConfirmationState, SecretInput, SettingsForm};
+
+    fn card(choices: Vec<CardChoice>) -> ConfirmationCard {
+        ConfirmationCard {
+            id: "card".into(),
+            state: ConfirmationState::Pending,
+            title: "Hermes 想安装 Grafana".into(),
+            lines: Vec::new(),
+            choices,
+            expires_at_ms: 1,
+            window: None,
+            plugin_id: None,
+            secret_inputs: Vec::new(),
+            settings: None,
+            requester: None,
+            category: None,
+            origin: None,
+            audience: Default::default(),
+            answered_by: None,
+        }
+    }
+
+    fn choice(answer: Answer) -> CardChoice {
+        CardChoice {
+            answer,
+            label: format!("{answer:?}"),
+            choice_id: None,
+        }
+    }
+
+    /// 通知上只画前 3 个按钮，标签和卡片上是同一批。
+    #[test]
+    fn at_most_three_buttons_go_into_the_push() {
+        let buttons = button_choices(&card((0..5).map(|_| choice(Answer::Approve)).collect()));
+        assert_eq!(buttons.len(), 3);
+    }
+
+    /// 表单塞不进通知：要密钥或要设置的卡片不给按钮，点开进 App 填（ADR-0101 §1）。
+    #[test]
+    fn cards_with_a_form_have_no_buttons() {
+        let mut with_secret = card(vec![choice(Answer::Approve)]);
+        with_secret.secret_inputs = vec![SecretInput {
+            name: "key".into(),
+            title: "密钥".into(),
+            description: None,
+            url: None,
+            required: true,
+        }];
+        assert!(button_choices(&with_secret).is_empty());
+
+        let mut with_settings = card(vec![choice(Answer::Approve)]);
+        with_settings.settings = Some(SettingsForm { fields: Vec::new() });
+        assert!(button_choices(&with_settings).is_empty());
     }
 }

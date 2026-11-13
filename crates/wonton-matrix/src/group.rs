@@ -33,6 +33,12 @@ use wonton_protocol::MessageGroup;
 use crate::chat_room::{check_upload_size, ensure_recipient_devices};
 use crate::{Error, ImageUpload, MatrixSession, Result};
 
+/// 已校验回复房间和旁聊关系的文字；和待发消息一起存盘，不在重试时重新解释目标。
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PreparedReply(
+    pub(crate) Box<matrix_sdk::ruma::events::room::message::RoomMessageEventContent>,
+);
+
 /// 传上去了的一张照片：事件要用的地址、加密信息和尺寸。可以存盘，App 重启后接着发；加密房间里带着解密密钥，按密钥保管。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UploadedImage {
@@ -71,6 +77,8 @@ pub enum GroupPart {
     },
     /// 一条纯文本。
     Text { body: String },
+    /// 通知回复：关系已在入队前核对，重启后原样交给同一个发送队列。
+    Reply(PreparedReply),
 }
 
 impl MatrixSession {
@@ -153,20 +161,27 @@ impl MatrixSession {
         let mut contents = Vec::with_capacity(parts.len());
         for (index, part) in parts.into_iter().enumerate() {
             let last = index + 1 == count as usize;
-            let content = RoomMessageEventContentWithoutRelation::new(msgtype(part));
-            let content = match reply_to.filter(|_| last) {
-                Some(event_id) => room
-                    .make_reply_event(
-                        content,
-                        Reply {
-                            event_id: event_id.to_owned(),
-                            enforce_thread: EnforceThread::MaybeThreaded,
-                            add_mentions: AddMentions::Yes,
-                        },
-                    )
-                    .await
-                    .map_err(|error| Error::InvalidInput(format!("组不了对这条的回复：{error}")))?,
-                None => content.with_relation(None),
+            let content = match part {
+                GroupPart::Reply(reply) => *reply.0,
+                part => {
+                    let content = RoomMessageEventContentWithoutRelation::new(msgtype(part));
+                    match reply_to.filter(|_| last) {
+                        Some(event_id) => room
+                            .make_reply_event(
+                                content,
+                                Reply {
+                                    event_id: event_id.to_owned(),
+                                    enforce_thread: EnforceThread::MaybeThreaded,
+                                    add_mentions: AddMentions::Yes,
+                                },
+                            )
+                            .await
+                            .map_err(|error| {
+                                Error::InvalidInput(format!("组不了对这条的回复：{error}"))
+                            })?,
+                        None => content.with_relation(None),
+                    }
+                }
             };
             let marker = group_id.map(|id| MessageGroup {
                 id: id.to_owned(),
@@ -260,6 +275,7 @@ fn msgtype(part: GroupPart) -> MessageType {
     match part {
         GroupPart::Text { body } => MessageType::text_plain(body),
         GroupPart::Image { image, caption } => MessageType::Image(image_content(image, caption)),
+        GroupPart::Reply(reply) => reply.0.msgtype,
     }
 }
 

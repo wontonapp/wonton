@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{BotRef, ChatProblem, ConfirmationView};
+use crate::{BotRef, CardChoice, ChatProblem, ConfirmationView};
 
 /// MCP `tools/call` 请求的 `params._meta` 里报来源会话的键，值是 [`ConfirmationOrigin`]。
 pub const ORIGIN_META_KEY: &str = "app.wonton/origin";
@@ -72,6 +72,10 @@ pub struct DeviceConfirmationPush {
     /// 没有时（核心自己发起的，如服务器配对）点开去“等你确认”列表。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<ConfirmationOrigin>,
+    /// 通知上能直接点的按钮（ADR-0101 §1），和卡片上是同一组，最多 3 个：载荷要小，iOS 的推送上限 4 KB。
+    /// 要填密钥或设置的卡片为空。设备收到后照着画，也能凭 `id` 取卡片自己算。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<CardChoice>,
 }
 
 /// “等你确认”列表：代替原来的 Wonton 私聊，所有卡片都在这里，也能直接回答。
@@ -137,10 +141,34 @@ mod tests {
             title: "Alex 的服务器想和你的服务器连接".into(),
             expires_at_ms: 1,
             origin: None,
+            choices: Vec::new(),
         };
         assert_eq!(
             json!(push),
             json!({"id": "abc", "title": "Alex 的服务器想和你的服务器连接", "expires_at_ms": 1})
         );
+    }
+
+    /// 契约：无表单卡片的按钮随推送到设备，设备凭它答；没有按钮时不写空数组。
+    #[test]
+    fn device_push_carries_the_cards_buttons() {
+        let push = DeviceConfirmationPush {
+            id: "abc".into(),
+            title: "Hermes 想安装 Grafana".into(),
+            expires_at_ms: 1,
+            origin: None,
+            choices: vec![CardChoice {
+                answer: crate::Answer::Approve,
+                label: "允许".into(),
+                choice_id: None,
+            }],
+        };
+        assert_eq!(
+            json!(push)["choices"],
+            json!([{"answer": "approve", "label": "允许"}])
+        );
+        let older: DeviceConfirmationPush =
+            serde_json::from_value(json!({"id": "abc", "title": "t", "expires_at_ms": 1})).unwrap();
+        assert!(older.choices.is_empty(), "老核心的推送里没有按钮");
     }
 }

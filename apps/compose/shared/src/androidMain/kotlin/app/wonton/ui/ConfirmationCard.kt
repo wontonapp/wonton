@@ -27,6 +27,7 @@ import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
+import app.wonton.protocol.SettingValue
 import app.wonton.protocol.WindowView
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -47,6 +48,8 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     val card = view.card
     val colors = WontonTheme.colors
     var secrets by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var settings by remember(card.id) { mutableStateOf<Map<String, SettingValue?>>(emptyMap()) }
+    var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
     CardSecureScreen(card, secrets, shown)
     val tabs = LocalPages.current
@@ -68,11 +71,22 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 onShownChange = { shown = it },
             ) { name, value -> secrets = secrets + (name to value) }
         }
+        card.settings?.fields?.forEach { field ->
+            SettingsField(
+                field, effectiveValue(field, settings), textDraft(field, settings, drafts), field.problem,
+                disabled = card.state != ConfirmationState.Pending || isUnsupported(field, settings),
+                missing = isMissingRequired(field, settings),
+                onEdit = { name, value -> settings = settings + (name to value) },
+                onDraft = { edited, text ->
+                    drafts = drafts + (edited.name to text)
+                    settings = settings + (edited.name to draftValue(edited, text))
+                },
+            )
+        }
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
-        // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
-        // 刷新）时如实不显示。
+        // 成功卡片只在已装列表确认插件存在时提供入口；列表未刷新或插件已卸载时不显示。
         val installed = if (card.state is ConfirmationState.Succeeded) {
             card.pluginId?.let { id -> tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id } }
         } else {
@@ -88,7 +102,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                     ChoiceButton(
                         choice,
                         view,
-                        secretsReady = !missingRequiredSecret(card.secretInputs, secrets),
+                        secretsReady = cardInputsReady(card, secrets, settings),
                     ) {
                         onAction(
                             Action.AnswerConfirmation(
@@ -96,7 +110,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                                 choice.answer,
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
-                                emptyMap(),
+                                cardSettingsValues(settings),
                             ),
                         )
                     }
@@ -106,7 +120,18 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     }
 }
 
-/** 卡片上已装插件的按钮：“打开”到第一项 tab；“放到底栏”走现有固定流程，已固定时不显示。 */
+private fun cardInputsReady(
+    card: ConfirmationCard,
+    secrets: Map<String, String>,
+    settings: Map<String, SettingValue?>,
+): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && card.settings?.fields.orEmpty().none {
+    isUnsupported(it, settings) || isMissingRequired(it, settings)
+}
+
+private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
+    settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
+
+/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。 */
 @Composable
 private fun CardInstalledActions(installed: InstalledPlugin, tabs: PagesState, onAction: (Action) -> Unit) {
     var showsPages by remember(installed.id) { mutableStateOf(false) }

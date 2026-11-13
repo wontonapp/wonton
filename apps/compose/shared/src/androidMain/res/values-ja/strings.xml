@@ -96,6 +96,10 @@
     <string name="widget_agent_status_unknown">状態不明</string>
     <string name="widget_updated_at">%1$s に更新</string>
     <string name="widget_status_at">%1$s · %2$s</string>
+    <!-- Notification fallback page for cards without a chat room; no arguments. -->
+    <string name="confirmations_title">確認待ち</string>
+    <!-- Empty confirmation list after requests have been answered or expired. -->
+    <string name="confirmations_empty">確認が必要なものはありません</string>
     <string name="myapp_add">マイアプリに追加</string>
     <string name="myapp_add_more">アプリを追加</string>
     <string name="myapp_auto_add">新しく入れたアプリを自動で追加</string>

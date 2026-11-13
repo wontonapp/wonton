@@ -455,7 +455,7 @@ async fn a_repeated_endpoint_while_another_server_is_still_registering_is_not_re
 }
 
 /// 等和家里的连接就绪：推送路由按已登记的服务器行找作用域，行是连接成功时写下的。
-async fn wait_connected(phone: &Phone) {
+pub(super) async fn wait_connected(phone: &Phone) {
     let deadline = tokio::time::Instant::now() + WAIT;
     while !matches!(phone.home().status, HomeStatus::Connected) {
         assert!(

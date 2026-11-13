@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatFailure
+import app.wonton.protocol.CoreException
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushMethod
 import app.wonton.protocol.PushStatus
@@ -143,7 +144,7 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                 entry.categories.forEachIndexed { index, category ->
                     if (index > 0) WontonSeparator()
                     val channel = remember(manager, category, refresh) {
-                        manager.getNotificationChannel(category.notificationChannelId)
+                        manager.getNotificationChannel(category.category.notificationChannelId)
                     }
                     val status = when {
                         // 系统没允许时渠道的状态没有意义，先去解决权限。
@@ -154,20 +155,57 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
                         else -> stringResource(R.string.notification_value_on)
                     }
                     WontonRow(
-                        stringResource(category.notificationTitleRes), status, showsForward = true,
+                        stringResource(category.category.notificationTitleRes), status, showsForward = true,
                         onClick = if (!enabled) openSystem else {
                             {
                                 context.startActivity(Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                                     .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                                    .putExtra(Settings.EXTRA_CHANNEL_ID, category.notificationChannelId))
+                                    .putExtra(Settings.EXTRA_CHANNEL_ID, category.category.notificationChannelId))
                             }
                         },
                     )
+                    WontonSeparator()
+                    // 锁屏上给不给看内容（ADR-0101 §5）：默认给，关掉后锁屏只写一句占位。
+                    LockScreenToggle(!category.lockScreenPrivate) { shown ->
+                        rejection = core.setLockScreen(category.category, !shown)
+                    }
                 }
             }
         }
     }
     rejection?.let { ProblemDialog(it) { rejection = null } }
+}
+
+/** 直接调用不返回结果的核心方法（`setLockScreenContent`），失败按同一个 [Problem] 提示。 */
+private fun ClientCore.setLockScreen(category: NotificationCategory, hidden: Boolean): Problem? =
+    try {
+        setLockScreenContent(category, hidden)
+        null
+    } catch (rejection: CoreException) {
+        rejection.problem
+    }
+
+/** 一个类别的“锁屏上显示内容”开关。 */
+@Composable
+private fun LockScreenToggle(shown: Boolean, onChange: (Boolean) -> Unit) {
+    val title = stringResource(R.string.notification_lock_screen)
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = WontonTheme.size.target)
+            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+    ) {
+        Text(
+            title, Modifier.weight(1f),
+            style = WontonTheme.typography.body,
+            color = WontonTheme.colors.textPrimary.toColor(),
+        )
+        WontonSwitch(
+            shown, onChange, modifier = Modifier.widthIn(min = WontonTheme.size.target)
+                .semantics { contentDescription = title },
+        )
+    }
 }
 
 /** “保持连接”的开关：开 = 核心收集后台新消息、前台服务保持隧道；关 = 走 UnifiedPush（ADR-0003）。 */

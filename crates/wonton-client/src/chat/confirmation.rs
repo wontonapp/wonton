@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header::CONTENT_TYPE;
+use tokio::sync::watch;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
@@ -494,6 +495,56 @@ fn ended_note(end: WindowEnd, allowed: Option<u32>) -> String {
     )
 }
 
+/// 占住的一张卡片和发这次回答要用的东西：发出去、按结果写回进展。
+struct PreparedAnswer {
+    answers: watch::Sender<Answers>,
+    core_url: Url,
+    proxy: ProxySettings,
+    id: String,
+    body: ConfirmationAnswer,
+}
+
+impl PreparedAnswer {
+    /// 发出回答并写回进展；只有核心明确确认收下回答才算成功。
+    async fn send(self) -> Result<(), CoreError> {
+        let outcome = send_answer(&self.core_url, &self.proxy, &self.id, self.body).await;
+        let refused = match &outcome {
+            AnswerProgress::Settled(
+                ConfirmationState::Running
+                | ConfirmationState::Succeeded { .. }
+                | ConfirmationState::Rejected,
+            ) => None,
+            AnswerProgress::Failed(problem) | AnswerProgress::Refused(problem) => {
+                Some(problem.clone())
+            }
+            AnswerProgress::Settled(_) | AnswerProgress::Sending(..) => Some(ChatProblem {
+                reason: ChatFailure::InvalidInput,
+                message: l10n!(CATALOG, language(), "chat-unknown-answer"),
+            }),
+        };
+        self.answers
+            .send_modify(|answers| answers.finish(self.id, outcome));
+        match refused {
+            Some(problem) => Err(answer_error(&problem)),
+            None => Ok(()),
+        }
+    }
+}
+
+/// 回答失败的类别（给通知上写原因）。
+fn answer_error(problem: &ChatProblem) -> CoreError {
+    let message = problem.message.clone();
+    match problem.reason {
+        ChatFailure::InvalidInput => CoreError::InvalidInput { reason: message },
+        ChatFailure::NotReady => CoreError::NotReady { reason: message },
+        ChatFailure::TransportUnavailable => CoreError::TransportUnavailable { reason: message },
+        ChatFailure::Unauthorized | ChatFailure::Forbidden => {
+            CoreError::Unauthorized { reason: message }
+        }
+        ChatFailure::Upstream | ChatFailure::Other => CoreError::Upstream { reason: message },
+    }
+}
+
 impl ChatLink {
     /// 确认卡片的操作：回答、停掉放行时段、重试取列表。`dispatch` 里确认的动作才路由到这里。
     pub(super) fn confirmation_action(&self, action: Action) -> Result<(), CoreError> {
@@ -524,6 +575,124 @@ impl ChatLink {
         secrets: wonton_protocol::SecretValues,
         settings: wonton_protocol::SettingValues,
     ) -> Result<(), CoreError> {
+        let answer = self.prepare_answer(id, answer, choice_id, secrets, settings)?;
+        let Some(answer) = answer else {
+            return Ok(());
+        };
+        self.runtime.spawn(answer.send());
+        Ok(())
+    }
+
+    /// 通知动作等冷启动连接和回答结果，总计最多 30 秒。错误同时交回通知和卡片视图。
+    pub(crate) async fn answer_from_push(
+        &self,
+        id: String,
+        answer: Answer,
+        choice_id: Option<String>,
+    ) -> Result<(), CoreError> {
+        let sending = matches!(
+            self.answers.borrow().answers.get(&id),
+            Some(AnswerProgress::Sending(..))
+        );
+        if sending {
+            return Err(CoreError::NotReady {
+                reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
+            });
+        }
+        let mut owns_answer = false;
+        let result = tokio::time::timeout(ANSWER_TIMEOUT, async {
+            let (core_url, proxy) = self.push_home().await?;
+            let card = fetch_card(core_url, proxy, &id)
+                .await
+                .map_err(|problem| answer_error(&problem))?
+                .ok_or_else(|| invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")))?;
+            if card.state != ConfirmationState::Pending
+                || !card.secret_inputs.is_empty()
+                || card.settings.is_some()
+                || !card
+                    .choices
+                    .iter()
+                    .any(|choice| choice.answer == answer && choice.choice_id == choice_id)
+            {
+                return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
+            }
+            match self.prepare_answer(
+                id.clone(),
+                answer,
+                choice_id,
+                Default::default(),
+                Default::default(),
+            )? {
+                Some(answer) => {
+                    owns_answer = true;
+                    answer.send().await
+                }
+                None => Err(CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
+                }),
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(CoreError::TransportUnavailable {
+                reason: l10n!(CATALOG, language(), "chat-send-no-response"),
+            })
+        });
+        if let Err(error) = &result {
+            self.answers.send_modify(|answers| {
+                // A second notification action must not overwrite the first request's progress.
+                if !owns_answer
+                    && matches!(answers.answers.get(&id), Some(AnswerProgress::Sending(..)))
+                {
+                    return;
+                }
+                answers.finish(
+                    id,
+                    AnswerProgress::Failed(ChatProblem {
+                        reason: match error {
+                            CoreError::InvalidInput { .. } => ChatFailure::InvalidInput,
+                            CoreError::Unauthorized { .. } => ChatFailure::Unauthorized,
+                            CoreError::TransportUnavailable { .. } => {
+                                ChatFailure::TransportUnavailable
+                            }
+                            CoreError::NotReady { .. } => ChatFailure::NotReady,
+                            _ => ChatFailure::Upstream,
+                        },
+                        message: error.to_string(),
+                    }),
+                );
+            });
+        }
+        result
+    }
+
+    /// 外层通知动作持有总期限；这里等待隧道恢复，不把冷启动误判成永久未连接。
+    pub(super) async fn push_home(&self) -> Result<(Url, ProxySettings), CoreError> {
+        let mut home = self.home.subscribe();
+        loop {
+            let proxy = home.borrow_and_update().proxy.clone();
+            if let Some(proxy) = proxy
+                && let Some(url) = self.home.core_url()
+            {
+                return Ok((url, proxy));
+            }
+            if home.changed().await.is_err() {
+                return Err(CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "chat-action-not-connected"),
+                });
+            }
+        }
+    }
+
+    /// 校验并占住这张卡片，返回一个发出去、写回进展的 future。已经答过、正在发时返回空。
+    fn prepare_answer(
+        &self,
+        id: String,
+        answer: Answer,
+        choice_id: Option<String>,
+        secrets: wonton_protocol::SecretValues,
+        settings: wonton_protocol::SettingValues,
+    ) -> Result<Option<PreparedAnswer>, CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
         }
@@ -536,20 +705,20 @@ impl ChatLink {
             .answers
             .send_if_modified(|answers| answers.start(&id, answer, choice_id.clone()))
         {
-            return Ok(());
+            return Ok(None);
         }
-        let answers = self.answers.clone();
-        self.runtime.spawn(async move {
-            let body = ConfirmationAnswer {
+        Ok(Some(PreparedAnswer {
+            answers: self.answers.clone(),
+            core_url,
+            proxy,
+            id,
+            body: ConfirmationAnswer {
                 answer,
                 choice_id,
                 secrets,
                 settings,
-            };
-            let outcome = send_answer(&core_url, &proxy, &id, body).await;
-            answers.send_modify(|answers| answers.finish(id, outcome));
-        });
-        Ok(())
+            },
+        }))
     }
 
     /// 主人点了卡片上放行时段的“停止”：经隧道发给核心，进展放进 `answers`。

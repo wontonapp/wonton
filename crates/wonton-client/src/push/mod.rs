@@ -44,6 +44,8 @@ pub(crate) struct PushLink {
     dir: PathBuf,
     /// 收新消息的方式（ADR-0003）：保持连接时不登记推送，家里的登记和 pusher 都删掉。
     method: watch::Receiver<PushMethod>,
+    /// 锁屏上隐藏内容的类别（ADR-0101 §5）：通知照它设系统可见性。
+    lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     state: Mutex<State>,
     /// 串行化登记和取消登记。
     busy: tokio::sync::Mutex<()>,
@@ -63,6 +65,7 @@ impl PushLink {
         chat: Arc<ChatLink>,
         dir: &Path,
         method: watch::Receiver<PushMethod>,
+        lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
     ) -> Arc<Self> {
         let push = Arc::new(Self {
             runtime: runtime.clone(),
@@ -70,6 +73,7 @@ impl PushLink {
             chat: chat.clone(),
             dir: dir.to_owned(),
             method: method.clone(),
+            lock_screen,
             state: Mutex::new(State::default()),
             busy: tokio::sync::Mutex::new(()),
         });

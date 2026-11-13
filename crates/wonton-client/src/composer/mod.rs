@@ -438,6 +438,7 @@ impl ComposerLink {
                 group,
                 body: body.trim().to_owned(),
                 reply_to,
+                prepared_reply: None,
                 items: std::mem::take(&mut room.tray),
                 timestamp_ms: now_ms(),
                 handed: 0,
@@ -448,6 +449,50 @@ impl ComposerLink {
         self.uplink.forget_draft(room, body);
         self.kick(room);
         Ok(())
+    }
+
+    /// 通知只能发文字，不能消耗同一房间正在编辑的草稿或附件区。
+    pub(crate) fn send_push_reply(
+        self: &Arc<Self>,
+        room: &str,
+        body: &str,
+        reply: wonton_matrix::PreparedReply,
+    ) -> Result<(), CoreError> {
+        self.uplink.check_send(room, None)?;
+        let ((), saved) = self.change(room, |state| {
+            let group = random_hex();
+            state
+                .rooms
+                .entry(room.to_owned())
+                .or_default()
+                .outgoing
+                .push(Outgoing {
+                    id: format!("outgoing-{group}"),
+                    group,
+                    body: body.trim().to_owned(),
+                    reply_to: None,
+                    prepared_reply: Some(reply),
+                    items: Vec::new(),
+                    timestamp_ms: now_ms(),
+                    handed: 0,
+                    failure: None,
+                });
+        });
+        saved?;
+        self.kick(room);
+        Ok(())
+    }
+
+    pub(crate) async fn wait_for_handover(&self, room: &str) {
+        let mut view = self.subscribe(room);
+        let _ = view
+            .wait_for(|view| {
+                view.outgoing.is_empty()
+                    || view.outgoing.iter().any(|outgoing| {
+                        matches!(outgoing.state, wonton_protocol::SendState::Failed { .. })
+                    })
+            })
+            .await;
     }
 
     pub(crate) fn retry_outgoing(self: &Arc<Self>, room: &str, id: &str) -> Result<(), CoreError> {

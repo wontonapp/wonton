@@ -272,6 +272,8 @@ fn contact_requests_ride_the_confirmation_list_and_push() {
         confirmation: None,
         contact_request: Some(push),
         thread_root: None,
+        lock_screen_private: false,
+        unread_total: 1,
     };
     let value = serde_json::to_value(&notification).unwrap();
     assert_eq!(

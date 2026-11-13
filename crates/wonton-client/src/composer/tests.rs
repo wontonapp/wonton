@@ -38,6 +38,7 @@ struct Fake {
     /// 交出这么多条后断线一次。
     cut_after: Mutex<Option<usize>>,
     drafts: Mutex<Vec<String>>,
+    send_error: Mutex<Option<UplinkError>>,
 }
 
 impl Fake {
@@ -52,6 +53,7 @@ impl Fake {
             groups: Mutex::default(),
             cut_after: Mutex::default(),
             drafts: Mutex::default(),
+            send_error: Mutex::default(),
         })
     }
 
@@ -184,6 +186,9 @@ impl Uplink for Fake {
         handed: Handed,
     ) -> BoxFuture<'static, Result<(), UplinkError>> {
         self.log.lock().unwrap().push("send".into());
+        if let Some(error) = self.send_error.lock().unwrap().take() {
+            return Box::pin(async move { Err(error) });
+        }
         let cut = self.cut_after.lock().unwrap().take();
         let total = handover.parts.len();
         let stop = cut.unwrap_or(total);
@@ -672,6 +677,64 @@ async fn sending_and_adding_refuse_what_cannot_go_out() {
     s.link.remove(ROOM, &failed).unwrap();
     s.link.send(ROOM, "发", None).unwrap();
     assert_eq!(view(&s).outgoing[0].attachments.len(), 9);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_notification_reply_failure_survives_restart_and_retries_without_using_the_tray() {
+    let s = setup();
+    let tray = s.link.add_image(ROOM, photo("draft.jpg")).unwrap();
+    *s.fake.send_error.lock().unwrap() = Some(UplinkError::Failed(
+        AttachmentFailure::Rejected,
+        "发送被拒绝".into(),
+    ));
+    let reply = serde_json::from_value(json!({
+        "msgtype": "m.text", "body": "通知里的回复",
+        "m.relates_to": { "m.in_reply_to": { "event_id": "$original:example.org" } }
+    }))
+    .unwrap();
+    s.link.send_push_reply(ROOM, "通知里的回复", reply).unwrap();
+    until("通知回复在时间线里显示失败", || {
+        matches!(
+            view(&s).outgoing.first().map(|outgoing| &outgoing.state),
+            Some(SendState::Failed {
+                recoverable: false,
+                ..
+            })
+        )
+    })
+    .await;
+    let failed = view(&s).outgoing[0].clone();
+    assert_eq!(failed.body, "通知里的回复");
+    assert!(failed.attachments.is_empty());
+    assert_eq!(view(&s).attachments[0].id, tray);
+    assert!(
+        s.fake.drafts.lock().unwrap().is_empty(),
+        "没有清掉输入框草稿"
+    );
+
+    let fake = Fake::new();
+    let link = ComposerLink::new(
+        tokio::runtime::Handle::current(),
+        fake.clone(),
+        s._dir.path(),
+    );
+    let restored = link.subscribe(ROOM);
+    assert_eq!(
+        restored.borrow().outgoing.as_slice(),
+        std::slice::from_ref(&failed)
+    );
+    link.retry_outgoing(ROOM, &failed.id).unwrap();
+    until("主人在App重试后交给Matrix", || fake.groups() == 1).await;
+    until("待发由Matrix本地回显接替", || {
+        restored.borrow().outgoing.is_empty()
+    })
+    .await;
+    assert!(matches!(
+        fake.groups.lock().unwrap()[0].parts.as_slice(),
+        [Part::Reply(_)]
+    ));
+    assert_eq!(restored.borrow().attachments[0].id, tray);
+    assert!(fake.drafts.lock().unwrap().is_empty());
 }
 
 /// 系统分享进来的东西（ADR-0097）直接成一条待发消息，不带上这个房间附件区里放了一半的附件，也不动草稿。

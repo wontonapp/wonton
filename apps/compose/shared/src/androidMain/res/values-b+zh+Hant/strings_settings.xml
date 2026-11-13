@@ -41,5 +41,7 @@
     <string name="push_status_failed_upstream">註冊失敗，家用伺服器出錯了</string>
     <string name="push_status_failed_not_ready">註冊失敗，請等聊天連線就緒</string>
     <string name="push_status_failed_invalid_input">註冊失敗，推送位址無效</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">鎖屏上顯示內容</string>
     <string name="settings_my_apps">我的應用</string>
 </resources>

@@ -101,6 +101,10 @@ pub struct PendingConfirmation {
     #[serde(default)]
     #[cfg_attr(feature = "uniffi", uniffi(default = 0))]
     pub expires_at_ms: u64,
+    /// Bot 已连续等主人回答至少一分钟；Android 可显示进行中通知。重启后重新观察，不猜任务开始时间。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub ongoing: bool,
 }
 
 /// 发起私聊时能直接选的人。
@@ -509,6 +513,7 @@ mod tests {
                 title: "Hermes 想安装 文件搜索".into(),
                 requester: None,
                 expires_at_ms: 1_793_000_000_000,
+                ongoing: false,
             }],
             settled_confirmations: vec!["older-card".into()],
             background_notifications: vec![PushNotification {
@@ -526,6 +531,8 @@ mod tests {
                 confirmation: None,
                 contact_request: None,
                 thread_root: None,
+                lock_screen_private: true,
+                unread_total: 2,
             }],
             bots: Vec::new(),
         }

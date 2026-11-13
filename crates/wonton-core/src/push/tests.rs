@@ -386,6 +386,7 @@ async fn a_confirmation_push_reaches_only_the_recipients_devices() {
         title: "claw 想安装 Grafana".into(),
         expires_at_ms: 42,
         origin: None,
+        choices: Vec::new(),
     };
     let sent = push.send_confirmation(Some("alice"), &card).await.unwrap();
     assert_eq!(sent, 1, "只发给 alice 的设备");

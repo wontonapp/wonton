@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import app.wonton.client.parseAppLink
+import app.wonton.android.push.PushBuilder
 import app.wonton.protocol.BotRef
 import app.wonton.ui.AppLinkRequest
 import app.wonton.ui.RoomRequest
@@ -28,7 +29,11 @@ internal class IncomingRequests {
             if (server != null) {
                 // 新的跳转顶掉旧的：留下的只有最新这一个。
                 link = null
-                this.room = RoomRequest(server, room, sideChatRoot = sideChat)
+                this.room = RoomRequest(
+                    server, room, cardId = intent.getStringExtra(PushBuilder.EXTRA_CARD),
+                    sideChatRoot = sideChat,
+                )
+                intent.removeExtra(PushBuilder.EXTRA_CARD)
             }
         }
         if (intent.action == Intent.ACTION_VIEW) {

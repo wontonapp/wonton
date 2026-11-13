@@ -50,7 +50,7 @@ pub use chat_room::{
 pub use encryption::{EncryptionState, Recovery, Verification};
 pub use error::{Error, Result};
 pub use friends::{Blocked, FRIEND_CREATE_KEY, FriendChat, FriendInvite};
-pub use group::{GroupPart, UploadedImage};
+pub use group::{GroupPart, PreparedReply, UploadedImage};
 pub use layout::{CHAT_LAYOUT_EVENT, ChatLayoutContent};
 pub use login::{LoginError, OidcClient, OidcStart, PendingLogin};
 pub use matrix_sdk::ruma::{

@@ -69,6 +69,7 @@ pub(crate) struct Outgoing {
     pub(crate) group: String,
     pub(crate) body: String,
     pub(crate) reply_to: Option<String>,
+    pub(crate) prepared_reply: Option<wonton_matrix::PreparedReply>,
     pub(crate) items: Vec<Item>,
     pub(crate) timestamp_ms: u64,
     /// 已经交给发送队列的事件条数：交到一半断了，下次从这里接着交，不重复发。

@@ -37,6 +37,7 @@ mod friends;
 mod home;
 mod l10n;
 mod link;
+mod lock_screen;
 mod logging;
 mod matrix_login;
 mod onboarding;
@@ -76,7 +77,7 @@ pub use subscription::{
     ComposerSubscription, ConfirmationsSubscription, FriendsSubscription, HomeSubscription,
     OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
     ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
-    WidgetSnapshotSubscription,
+    UnreadSubscription, WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
