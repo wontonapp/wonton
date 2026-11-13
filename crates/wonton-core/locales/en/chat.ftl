@@ -45,7 +45,7 @@ chat-card-update-header-ask-every = Permissions didn't widen; you turned on "Ask
 chat-card-update-header-adopt = You installed this app yourself; approving hands it to { $requester }:
 chat-card-update-adopt-replace = Approving replaces the version you installed; data is kept, failed updates roll back
 
-# Card titles. $requester is the bot's name; $title, $plugin and $tool are app-provided names.
+# Card titles. $requester is the bot's name; $title is the app-provided name.
 chat-card-install-title = { $requester } wants to install { $title }
 chat-card-update-title = { $requester } wants to update { $title }
 chat-card-uninstall-title = { $requester } wants to uninstall { $title }
@@ -57,7 +57,6 @@ chat-choice-permission-enable = Turn on
 chat-choice-permission-disable = Turn off
 chat-permission-done = Updated the permission for { $title }
 chat-permission-failed = Changing the permission for { $id } failed: { $error }
-chat-card-tool-title = { $requester } wants to use { $tool } from { $plugin }
 
 # Title of an agent-permission card. $title is what the agent called its request.
 chat-card-agent-title = { $requester }: { $title }
@@ -71,10 +70,7 @@ chat-card-highest-confirm = I understand this app can control the whole machine
 chat-card-uninstall-purge = Its data will be deleted too, and old encrypted messages with its bots become unreadable; this can't be undone
 chat-card-uninstall-keep = Keep its data; it's still there if you reinstall later
 
-# Tool-call card lines. $args is the raw JSON arguments, truncated when too long.
-chat-card-tool-data = This tool changes data
-chat-card-tool-root = This runs as root on this machine
-chat-card-tool-deletes = The app marks this tool as deleting or overwriting data
+# Agent-permission arguments. $args is the raw JSON, truncated when too long.
 chat-card-args = Arguments: { $args }
 
 # Bot file-save card. $name and $size describe one file; $total is the combined size.

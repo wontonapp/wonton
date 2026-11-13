@@ -219,9 +219,8 @@ async fn core_tools_offer_no_window_and_refuse_the_answer() {
 async fn open_on(confirmations: &Arc<Confirmations>, cards: &Arc<Cards>) -> String {
     let caller = PluginId::parse("com.example.agent").unwrap();
     let draft = cards::tool_call(
-        "Bot",
         "笔记",
-        "delete",
+        &rmcp::model::Tool::new("delete", "Delete note", rmcp::model::JsonObject::new()),
         &json!({}),
         false,
         &Languages::default(),
@@ -347,9 +346,8 @@ async fn opening_and_expiring_a_card_bump_the_revision() {
     let mut watcher = confirmations.subscribe();
     let caller = PluginId::parse("com.example.agent").unwrap();
     let draft = cards::tool_call(
-        "Hermes",
         "笔记",
-        "delete",
+        &rmcp::model::Tool::new("delete", "Delete note", rmcp::model::JsonObject::new()),
         &json!({"name": "a"}),
         false,
         &Languages::default(),
@@ -387,9 +385,8 @@ async fn a_finished_card_becomes_unavailable_after_the_keep_window() {
     );
     let caller = PluginId::parse("com.example.agent").unwrap();
     let draft = cards::tool_call(
-        "Hermes",
         "笔记",
-        "delete",
+        &rmcp::model::Tool::new("delete", "Delete note", rmcp::model::JsonObject::new()),
         &json!({"name": "a"}),
         false,
         &Languages::default(),
