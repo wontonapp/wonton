@@ -348,6 +348,7 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
     let Some(proxy) = manifest.webui.as_ref().and_then(|w| w.proxy.as_ref()) else {
         return Ok(());
     };
+    validate_headers(manifest, &proxy.headers, langs)?;
     let check_template = |template: &str, in_cookie: bool| -> Result<(), ManifestError> {
         for part in parse(template, langs).map_err(invalid)? {
             match part {
@@ -372,7 +373,27 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
         }
         Ok(())
     };
-    for (name, template) in &proxy.headers {
+    for (name, template) in &proxy.cookies {
+        if !is_cookie_name(name) || name.to_ascii_lowercase().starts_with("wonton_") {
+            return Err(invalid(text(
+                langs,
+                "plugin-install-proxy-cookie-forbidden",
+                &[("name", name.into())],
+            )));
+        }
+        check_template(template, true)?;
+    }
+    Ok(())
+}
+
+/// 代登录请求头（`webui.proxy.headers`、`clients.http.auth.gateway.headers`）的校验：名字合法、不是网关
+/// 自己设置的头，值模板里的每一段都能原样放进响应头。
+pub fn validate_headers(
+    manifest: &Manifest,
+    headers: &BTreeMap<String, String>,
+    langs: &Languages,
+) -> Result<(), ManifestError> {
+    for (name, template) in headers {
         let lower = name.to_ascii_lowercase();
         if HeaderName::from_bytes(name.as_bytes()).is_err()
             || FORBIDDEN_HEADERS.contains(&lower.as_str())
@@ -384,17 +405,17 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
                 &[("name", name.into())],
             )));
         }
-        check_template(template, false)?;
-    }
-    for (name, template) in &proxy.cookies {
-        if !is_cookie_name(name) || name.to_ascii_lowercase().starts_with("wonton_") {
-            return Err(invalid(text(
-                langs,
-                "plugin-install-proxy-cookie-forbidden",
-                &[("name", name.into())],
-            )));
+        for part in parse(template, langs).map_err(invalid)? {
+            match part {
+                Part::Secret(name) if !secret_ok(manifest, &name) => {
+                    return Err(invalid(unknown_secret(langs, &name)));
+                }
+                Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
+                    return Err(invalid(control_chars_error(langs, template)));
+                }
+                _ => {}
+            }
         }
-        check_template(template, true)?;
     }
     Ok(())
 }

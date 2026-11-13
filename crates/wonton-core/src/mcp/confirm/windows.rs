@@ -9,7 +9,8 @@ use std::time::{Duration, SystemTime};
 
 use serde::{Deserialize, Serialize};
 use wonton_protocol::{
-    Answer, ConfirmationCard, ConfirmationState, ConfirmationWindow, SecretValues, WindowEnd,
+    Answer, ConfirmationCard, ConfirmationCategory, ConfirmationState, ConfirmationWindow,
+    SecretValues, WindowEnd,
 };
 
 use super::{Chosen, Confirmations, Slot, Table, now_ms};
@@ -23,6 +24,9 @@ use crate::plugin::store::write_json;
 pub(super) struct Persisted {
     caller: String,
     plugin: String,
+    /// 按收件人放宽（`wonton__send_message`）的时段记着收件人；插件的时段没有。
+    #[serde(default)]
+    recipient: Option<String>,
     card: ConfirmationCard,
 }
 
@@ -105,6 +109,23 @@ impl Confirmations {
         Some(id)
     }
 
+    /// 按收件人放宽（ADR-0024，`wonton__send_message` 用）：这个 Bot 给这个收件人发消息的时段
+    /// 生效中就算一次，返回打开时段的卡片。时段和插件的互不相干。
+    pub fn allow_in_recipient_window(&self, caller: &PluginId, recipient: &str) -> Option<String> {
+        let now = now_ms(SystemTime::now());
+        let mut table = self.lock();
+        let id = table
+            .recipient_windows
+            .get(&(caller.clone(), recipient.to_owned()))?
+            .clone();
+        let window = table.slots.get_mut(&id)?.card.window.as_mut()?;
+        if window.ended.is_some() || now >= window.expires_at_ms {
+            return None;
+        }
+        window.allowed = window.allowed.map(|n| n.saturating_add(1));
+        Some(id)
+    }
+
     /// 这个插件生效中的时段。
     pub fn active_windows(&self, plugin: &str) -> Vec<ActiveWindow> {
         let now = now_ms(SystemTime::now());
@@ -168,6 +189,61 @@ impl Confirmations {
         }
     }
 
+    /// 给收件人发消息的时段从点的那一刻开始算（ADR-0024 按收件人放宽）：这个 Bot 在等对同一个
+    /// 收件人发消息的其他卡片一起放行，反正它们晚一秒发来也会放行。
+    pub(super) fn open_recipient_window(&self, table: &mut Table, id: &str, now: u64) {
+        let Some(opener) = table.slots.get(id) else {
+            return;
+        };
+        let caller = opener.caller.clone();
+        let Some(ConfirmationCategory::SendMessage { recipient, .. }) = &opener.card.category
+        else {
+            return;
+        };
+        let recipient = recipient.clone();
+        let mut released = 0;
+        for slot in table.slots.values_mut() {
+            if slot.caller != caller || now >= slot.card.expires_at_ms {
+                continue;
+            }
+            let Some(ConfirmationCategory::SendMessage {
+                recipient: other, ..
+            }) = &slot.card.category
+            else {
+                continue;
+            };
+            if other != &recipient {
+                continue;
+            }
+            let Some(waiter) = slot.waiter.take() else {
+                continue;
+            };
+            let chosen = Chosen {
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: SecretValues::new(),
+                settings: Default::default(),
+            };
+            if waiter.send(chosen).is_ok() {
+                slot.card.state = ConfirmationState::Running;
+                slot.ended = Some(now);
+                slot.released_by = Some(id.to_owned());
+                released += 1;
+            }
+        }
+        table
+            .recipient_windows
+            .insert((caller, recipient), id.to_owned());
+        if let Some(slot) = table.slots.get_mut(id) {
+            let length = u64::try_from(self.window.as_millis()).unwrap_or(u64::MAX);
+            slot.card.window = Some(ConfirmationWindow {
+                expires_at_ms: now.saturating_add(length),
+                allowed: Some(released),
+                ended: None,
+            });
+        }
+    }
+
     /// 这张卡片打开的时段：刚打开时写审计用。
     pub fn opened_window(&self, id: &str) -> Option<OpenedWindow> {
         let table = self.lock();
@@ -211,16 +287,30 @@ impl Confirmations {
         };
         let table = self.lock();
         let mut saved = table.leftovers.clone();
+        // 按收件人的时段：卡片 ID 反查收件人。两种时段互斥，一张卡片只有一种。
+        let recipients: HashMap<&str, &String> = table
+            .recipient_windows
+            .iter()
+            .map(|((_, recipient), id)| (id.as_str(), recipient))
+            .collect();
         for (id, slot) in &table.slots {
             let open = slot.card.window.as_ref().is_some_and(|w| w.ended.is_none());
-            if let (true, Some(plugin)) = (open, &slot.scope) {
-                let entry = Persisted {
-                    caller: slot.caller.to_string(),
-                    plugin: plugin.clone(),
-                    card: slot.card.clone(),
-                };
-                saved.insert(id.clone(), entry);
+            if !open {
+                continue;
             }
+            let recipient = recipients.get(id.as_str()).map(|r| (*r).clone());
+            let plugin = match (&slot.scope, &recipient) {
+                (Some(plugin), _) => plugin.clone(),
+                (None, Some(_)) => String::new(),
+                (None, None) => continue,
+            };
+            let entry = Persisted {
+                caller: slot.caller.to_string(),
+                plugin,
+                recipient,
+                card: slot.card.clone(),
+            };
+            saved.insert(id.clone(), entry);
         }
         if let Err(e) = write_json(file, &saved) {
             tracing::error!(path = %file.display(), error = %e, "can't save the confirmation windows");

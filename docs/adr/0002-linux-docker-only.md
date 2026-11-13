@@ -48,7 +48,7 @@
 
 ### 公开发布后
 
-用公开仓库的一行命令（`curl -fsSL https://raw.githubusercontent.com/geraldpeng6/wonton-install/main/install.sh | sudo sh`）
+用公开仓库的一行命令（`curl -fsSL https://raw.githubusercontent.com/wontonapp/wonton-install/main/install.sh | sudo sh`）
 装发布出来的 `v0.1.0-beta.1`（beta 渠道）。验证条件（2026-10-30）：同上的 OrbStack 虚拟机，arm64 原生、amd64 在 Rosetta 下，
 Docker Engine 29.9.2、Compose v5.6.1，所有镜像都从公开的仓库拉取。
 

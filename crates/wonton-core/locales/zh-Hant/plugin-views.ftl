@@ -25,6 +25,7 @@ permission-owner-identity = 知道你的使用者名稱和電子郵件，也能�
 permission-network-egress = 存取外部網路和區域網路
 permission-egress-proxy = 提供代理伺服器（高權限）
 permission-network-lan = 在區域網路上開放連接埠（高權限）
+permission-network-clients = 讓別的 App 從區域網路或公網連進來，由你打開開關
 permission-network-host = 使用主機的網路（很高權限）
 permission-capability = 增加核心能力 { $name }
 permission-host-pid = 共用主機的行程空間（最高權限）

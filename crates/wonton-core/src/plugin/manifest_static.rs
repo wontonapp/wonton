@@ -114,6 +114,7 @@ impl Manifest {
                 proxy: None,
                 accounts: None,
                 health: None,
+                guests: false,
                 cross_origin_isolated: false,
             });
         }

@@ -2,7 +2,7 @@
 //!
 //! | 方法 | 地址 | 说明 |
 //! | --- | --- | --- |
-//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址 |
+//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址；发令牌前写好新账号默认的邀请过滤（[`crate::matrix::invite_filter`]） |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
 //! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
 //!
@@ -68,6 +68,14 @@ pub async fn login_token(
         );
     };
     let localpart = person.username;
+    // 账号第一次登录时 Tuwunel 才建号，默认的邀请过滤也只能这时候写；写不进去就不发令牌，别让人带着没有过滤的账号上线。
+    if let Err(error) = matrix.ensure_default_invite_filter(&localpart).await {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            KIND_UNAVAILABLE,
+            &format!("写默认的邀请过滤失败：{error}"),
+        );
+    }
     Json(LoginToken {
         homeserver_url: gateway.public.origin(&gateway.public.matrix_host()),
         server_name: matrix.server_name().to_owned(),
