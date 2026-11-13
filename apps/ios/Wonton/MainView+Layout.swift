@@ -41,8 +41,10 @@ extension MainView {
     /// 主界面叠着的三层，窄屏和宽屏的右栏都是它：根页面、“全部应用”、插件页。
     var contentLayers: some View {
         ZStack {
+            // 被上面一层整个盖住时不留在辅助功能里：出错页的底色不是辅助功能元素，旁白和界面测试会穿过去
+            // 落到下面聊天页的按钮上。
             rootContent
-                .accessibilityHidden(showsApps)
+                .accessibilityHidden(showsApps || pages.showsPluginPage)
             appsLayer
             pageStack
         }
@@ -60,7 +62,7 @@ extension MainView {
                 layered: true, devWebURL: devWebURL, path: $appsPath
             )
             .allowsHitTesting(showsApps)
-            .accessibilityHidden(!showsApps)
+            .accessibilityHidden(!showsApps || pages.showsPluginPage)
         }
     }
 

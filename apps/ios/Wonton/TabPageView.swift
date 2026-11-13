@@ -138,7 +138,8 @@ struct TabPageView: View {
                 shown: capsuleAllowed, panel: panel,
                 close: close ?? { pages.send(.closePage) }
             )
-            .padding(.top, safe.top)
+            // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
+            .padding(.top, panel?.insetTop ?? safe.top)
             .padding(.leading, safe.leading + WontonTheme.spacing.s8)
             .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
             if panel == nil, !pendingCards.isEmpty {
@@ -157,8 +158,8 @@ struct TabPageView: View {
         session.seen()
     }
 
-    /// 面板里的页面按整页显示：状态栏照常显示，右上角是胶囊（ADR-0052）。
-    private var capsuleAllowed: Bool { panel?.expanded ?? true }
+    /// 面板拉开着就有胶囊，两级都是（ADR-0052）：第 1 级只靠点露出的那条聊天页收回时，页面出错或空白就找不到出口。
+    private var capsuleAllowed: Bool { panel?.open ?? true }
 
     private var connected: Bool {
         if case .sharedApp = tab { return sourceProxy != nil }
