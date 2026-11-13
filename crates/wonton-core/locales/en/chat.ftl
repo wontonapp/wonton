@@ -209,3 +209,7 @@ chat-chain-stopped-card = The chain was stopped; this card is void
 # Send-message card (ADR-0061 §9): $recipient is the recipient, $bot is the sending bot.
 chat-send-message-title = Send a message to { $recipient }
 chat-send-message-queued = Approved, waiting for { $bot } to send
+
+chat-handoff-title = { $from } → { $bot }
+chat-handoff-risk = This bot can run commands, change files, and read anything inside the target runtime, including login credentials and other conversations.
+chat-handoff-started = Handed off; the target bot is working
