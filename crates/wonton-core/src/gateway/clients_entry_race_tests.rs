@@ -184,6 +184,37 @@ async fn cleared_data_after_setup_closes_and_notifies() {
         .expect("the owner must be told about the closed entries");
 }
 
+// 关闭入口会清掉该部署代的检查缓存（复审 P2-4）：重开开关后首个请求必须重查，不能命中旧 Done。
+#[tokio::test]
+async fn closing_entries_forgets_the_setup_cache() {
+    let home = Home::start().await;
+    home.register(ENTRY_APP, "entryapp", true, true);
+    let host = home.host("entryapp");
+    home.docker.on_exec(|_, _, _| (0, String::new()));
+    let ok = home.get(&host, "/", &entry_public()).await;
+    assert_eq!(ok.status, StatusCode::OK);
+    assert!(home.manager.setup_done_cached_for_test(&entry_id()));
+    // 数据被清空、容器重启：检查得 1 关闭入口，检查任务里同步清掉检查缓存。
+    home.docker.set_state(
+        &app_container(),
+        serde_json::json!({
+            "Status": "running", "Running": true,
+            "StartedAt": "2026-01-02T00:00:00Z", "Health": {"Status": "healthy"},
+        }),
+    );
+    home.docker.on_exec(|_, _, _| (1, String::new()));
+    let after = home.get(&host, "/", &entry_public()).await;
+    assert_eq!(after.status, StatusCode::FORBIDDEN);
+    let cleared = async {
+        while home.manager.setup_done_cached_for_test(&entry_id()) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(5), cleared)
+        .await
+        .expect("closing the entries must forget the setup cache");
+}
+
 #[tokio::test]
 async fn closed_entries_do_not_reopen_on_zero() {
     let home = Home::start().await;

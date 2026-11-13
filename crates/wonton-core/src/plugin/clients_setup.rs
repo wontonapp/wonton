@@ -40,6 +40,18 @@ struct Memory {
 #[derive(Default)]
 pub(super) struct SetupState(Mutex<Memory>);
 
+impl SetupState {
+    /// 测试用：当前部署代是否记着一次完成的检查。
+    #[cfg(test)]
+    pub(super) fn has_done_for_test(&self) -> bool {
+        self.0
+            .lock()
+            .expect("客户端初始化检查锁中毒")
+            .done
+            .is_some()
+    }
+}
+
 impl PluginManager {
     pub(crate) async fn clients_setup_done(
         self: &Arc<Self>,
@@ -181,6 +193,8 @@ impl PluginManager {
     /// 检查得 0：记下「这个应用注册过管理员」。之后得 1 才算数据被清空（关闭分支）；
     /// 从没注册过的应用得 1 只是主人还没注册，入口保持开（ADR-0022）。只在翻转时写盘。
     async fn mark_setup_done_ever(&self, id: &PluginId) {
+        // 读改写持 lan.pass：settings、permissions、lan 等写方都用它互斥，绕开会把主人的改动丢掉。
+        let _pass = self.lan.pass.lock().await;
         let mut record = match self.store.load(id) {
             Ok(Some(record)) => record,
             Ok(None) => return,
@@ -205,25 +219,30 @@ impl PluginManager {
     /// 检查（请求或后台重查）会再来，通知不能先于生效的关闭。
     async fn close_clients_entries(&self, id: &PluginId, notices: Option<&Arc<NoticeRoom>>) {
         let closed = crate::clients::state::ClientsEntries::default();
-        let mut record = match self.store.load(id) {
-            Ok(Some(record)) => record,
-            Ok(None) => return,
-            Err(error) => {
-                tracing::error!(
-                    plugin = %id, %error, "Cannot load the record to close its client entries"
-                );
+        {
+            // 读改写持 lan.pass（顺序同 lan_pass：先 lan.pass 再插件表锁），清缓存也在同一把锁里。
+            let _pass = self.lan.pass.lock().await;
+            let mut record = match self.store.load(id) {
+                Ok(Some(record)) => record,
+                Ok(None) => return,
+                Err(error) => {
+                    tracing::error!(
+                        plugin = %id, %error, "Cannot load the record to close its client entries"
+                    );
+                    return;
+                }
+            };
+            if record.clients_entries == closed || !record.setup_done_ever {
                 return;
             }
-        };
-        if record.clients_entries == closed || !record.setup_done_ever {
-            return;
+            record.clients_entries = closed;
+            if let Err(error) = self.store.save(&record) {
+                tracing::error!(plugin = %id, %error, "Cannot persist the closed client entries");
+                return;
+            }
+            self.changed();
+            self.forget_clients_setup(id);
         }
-        record.clients_entries = closed;
-        if let Err(error) = self.store.save(&record) {
-            tracing::error!(plugin = %id, %error, "Cannot persist the closed client entries");
-            return;
-        }
-        self.changed();
         let text = l10n::text(
             &self.owner_languages(),
             "gateway-entry-setup-closed",
@@ -245,6 +264,15 @@ impl PluginManager {
                     plugin = %id, "No Matrix session: the owner is not told about the closed entries"
                 )
             }
+        }
+    }
+
+    /// 关闭入口后清掉该部署的检查缓存：重开开关（C7）后首个请求不能命中旧的 Done 跳过重验。
+    /// 锁序同 lan_pass：先 lan.pass 再插件表读锁。
+    fn forget_clients_setup(&self, id: &PluginId) {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        if let Some(entry) = plugins.get(id) {
+            entry.setup.0.lock().expect("客户端初始化检查锁中毒").done = None;
         }
     }
 

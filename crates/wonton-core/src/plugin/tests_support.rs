@@ -104,6 +104,15 @@ impl PluginManager {
         self.store.load(id).ok().flatten()
     }
 
+    /// 测试用：该插件当前部署代是否记着一次完成的 setup 检查。
+    #[cfg(test)]
+    pub(crate) fn setup_done_cached_for_test(&self, id: &PluginId) -> bool {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .is_some_and(|entry| entry.setup.has_done_for_test())
+    }
+
     /// 测试用：给登记过的插件塞密钥值，供主人查看接口的测试。
     #[cfg(test)]
     pub(crate) fn secrets_for_test(&self, id: &PluginId, values: &[(&str, &str)]) {
