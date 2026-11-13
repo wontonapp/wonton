@@ -36,4 +36,5 @@
     <string name="sidebar_pinned">ナビゲーションバーに固定済み</string>
     <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
     <string name="sidebar_needs_attention">対応が必要です</string>
+    <string name="sidebar_problem">ページに問題あり</string>
 </resources>

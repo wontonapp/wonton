@@ -48,6 +48,7 @@ import app.wonton.protocol.AppsAction
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.PluginState
 import app.wonton.ui.design.WontonActionSheet
 import app.wonton.ui.design.WontonButton
@@ -219,7 +220,7 @@ private fun StoreEntry(upgradeCount: Int, onClick: () -> Unit) {
 private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigation: PluginNavigation) {
     var showingMenu by remember { mutableStateOf(false) }
     var choosingPage by remember { mutableStateOf(false) }
-    val tabs = LocalTabs.current
+    val pages = LocalPages.current
     val entry = plugin.entries.firstOrNull()?.takeUnless { plugin.isBusy }
     val size = WontonTheme.size.launcherIcon
     Column(
@@ -270,12 +271,13 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
             overflow = TextOverflow.Ellipsis,
         )
     }
-    if (showingMenu) LauncherMenu(plugin, plugins, navigation, onPin = {
-        val choices = plugin.tabChoices.filter { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
-        if (choices.size == 1) tabs.pin(choices.single().tab, choices.single().title)
+    if (showingMenu) LauncherMenu(plugin, plugins, navigation, onAdd = {
+        val mine = pages.plugins.viewModel.sidebar.apps.mapNotNull { it.tab }.toSet()
+        val choices = plugin.tabChoices.filter { choice -> choice.tab !in mine }
+        if (choices.size == 1) pages.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
         else if (choices.isNotEmpty()) choosingPage = true
     }) { showingMenu = false }
-    if (choosingPage) TabPageChoiceSheet(plugin) { choosingPage = false }
+    if (choosingPage) MyAppChoiceSheet(plugin) { choosingPage = false }
 }
 
 @Composable
@@ -309,14 +311,15 @@ private fun LauncherMenu(
     plugin: InstalledPlugin,
     plugins: PluginsState,
     navigation: PluginNavigation,
-    onPin: () -> Unit,
+    onAdd: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val pinLabel = stringResource(R.string.launcher_pin_to_bar)
-    val tabs = LocalTabs.current
-    val canPin = plugin.tabChoices.any { choice -> tabs.viewModel.items.none { it.tab == choice.tab } }
+    val addLabel = stringResource(R.string.myapp_add)
+    val pages = LocalPages.current
+    val mine = pages.plugins.viewModel.sidebar.apps.mapNotNull { it.tab }.toSet()
+    val canAdd = plugin.tabChoices.any { choice -> choice.tab !in mine }
     val actions = buildList {
-        if (canPin) add(WontonSheetAction(pinLabel, WontonIcon.Web, onClick = onPin))
+        if (canAdd) add(WontonSheetAction(addLabel, WontonIcon.Web, onClick = onAdd))
         add(WontonSheetAction(stringResource(R.string.common_details), WontonIcon.Info) {
             navigation.detail = PluginRoute.Installed(plugin.id)
         })

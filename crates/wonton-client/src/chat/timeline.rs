@@ -43,7 +43,7 @@ pub struct TimelineSource {
     pub plugins: Arc<crate::plugins::PluginsLink>,
     pub previews: Previews,
     pub menus: Arc<std::sync::Mutex<Menus>>,
-    pub room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    pub room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     pub chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     /// 各房间的旁聊支持声明（ADR-0093 §1）。
     pub support: Arc<Support>,
@@ -177,7 +177,7 @@ async fn forward(
     previews: Previews,
     sender: &Outbox,
     scrolled: &mut watch::Receiver<TimelineScroll>,
-    mut room_view: watch::Receiver<Option<Arc<crate::tabs::RoomPanelView>>>,
+    mut room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     mut chat: watch::Receiver<wonton_protocol::ChatViewModel>,
     mut confirmations: watch::Receiver<Arc<Vec<ConfirmationView>>>,
     support: &Support,

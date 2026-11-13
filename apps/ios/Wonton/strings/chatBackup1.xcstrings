@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "chatBackup.authUnavailable": {
+      "comment": "Error under the reveal button when the system identity verification can't run; the user's own cancel shows nothing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identity verification isn't available right now. Try again later."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统验证暂时用不了，稍后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統驗證暫時用不了，稍後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "いま本人確認を利用できません。のちほどお試しください。"
+          }
+        }
+      }
+    },
     "chatBackup.copy": {
       "comment": "Button that copies the recovery key to the local clipboard only.",
       "extractionState": "manual",
@@ -448,6 +478,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "復旧キーが必要"
+          }
+        }
+      }
+    },
+    "chatBackup.revealKey": {
+      "comment": "Button that asks the system to verify the owner before showing the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View recovery key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを表示"
+          }
+        }
+      }
+    },
+    "chatBackup.verifyReason": {
+      "comment": "Explains the system verification prompt shown before the recovery key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verify your identity to view the recovery key"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "验证身份后查看恢复密钥"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "驗證身分後查看復原金鑰"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "復旧キーを表示するには認証してください"
           }
         }
       }

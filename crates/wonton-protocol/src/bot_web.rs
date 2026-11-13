@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{BotRef, TabDisplay};
+use crate::BotRef;
 
 /// 非默认 Bot 的网页标签前缀；合法插件 ID 派生的 slug 不含连续连字符，不会占用此命名空间。
 pub const BOT_WEB_LABEL_PREFIX: &str = "bot--";
@@ -77,7 +77,6 @@ pub struct BotWebPage {
     pub bot: BotRef,
     /// 网关给出的规范 origin 加清单 `webui.path`；壳原样打开，不自行拼域名或替换 Bot。
     pub url: String,
-    pub display: TabDisplay,
     pub cross_origin_isolated: bool,
 }
 
