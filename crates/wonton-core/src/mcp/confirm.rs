@@ -735,6 +735,7 @@ impl Confirmations {
             choice_id: Some(CANCELLED.to_owned()),
             secrets: SecretValues::new(),
             settings: Default::default(),
+            devices: Vec::new(),
         });
         self.bump();
         true

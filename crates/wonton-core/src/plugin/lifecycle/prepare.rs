@@ -54,7 +54,8 @@ impl PluginManager {
             secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
         let proxy =
             ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
+        let effective =
+            manifest.effective_permissions(&super::super::store::permission_set(enabled));
         let mut ctx = self
             .install_context(manifest, secret.as_deref(), generated, &effective, langs)
             .await?;
