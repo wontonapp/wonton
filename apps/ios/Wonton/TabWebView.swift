@@ -91,6 +91,8 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private var lastTextScale: CGFloat?
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
+    /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
+    @ObservationIgnored private var mediaPlaying = false
 
     init(placed: PlacedTab, core: ClientCore, dataStore: WKWebsiteDataStore) {
         self.placed = placed
@@ -138,7 +140,11 @@ final class TabWebSession: NSObject {
         configuration.websiteDataStore = Self.dataStore(for: placed)
         // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
         if bridged {
-            configuration.userContentController.add(WeakTabMessageHandler(self), name: "wontonBridge")
+            let controller = configuration.userContentController
+            controller.add(WeakTabMessageHandler(self), name: "wontonBridge")
+            controller.add(WeakTabMessageHandler(self), name: "wontonMedia")
+            // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的（同 Android）。
+            configuration.mediaTypesRequiringUserActionForPlayback = .none
         }
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
@@ -187,6 +193,12 @@ final class TabWebSession: NSObject {
             controller.addUserScript(WKUserScript(
                 source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true
             ))
+            // 核心的媒体脚本经 window.wontonMedia 发状态（同 Android 的 WebMessageListener 名字）；
+            // iOS 的消息处理挂在 window.webkit.messageHandlers 上，先垫一段把两边对上。
+            controller.addUserScript(WKUserScript(
+                source: Self.mediaChannelScript + "\n" + core.pageMediaScript(),
+                injectionTime: .atDocumentStart, forMainFrameOnly: true
+            ))
             controller.addUserScript(WKUserScript(
                 source: Self.focusZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true
             ))
@@ -234,6 +246,14 @@ final class TabWebSession: NSObject {
         return WKWebsiteDataStore(forIdentifier: publicPanelStore)
     }
 
+    /// 核心的媒体脚本经 window.wontonMedia 发状态（同 Android 的 WebMessageListener 名字）；
+    /// iOS 的消息处理挂在 window.webkit.messageHandlers 上，先垫一段把两边对上。
+    private static let mediaChannelScript = """
+    window.wontonMedia = {
+      postMessage: (message) => window.webkit.messageHandlers.wontonMedia.postMessage(message),
+    };
+    """
+
     /// WebKit 在输入框字号小于 16px 时聚焦会放大页面，失焦不缩回（#442）。聚焦放大的上限
     /// 取 viewport 的 maximum-scale，不受 ignoresViewportScaleLimits 影响，所以补上
     /// maximum-scale=1 只拦它。页面自己写了 maximum-scale 的照它的；没有 viewport 的
@@ -270,6 +290,42 @@ final class TabWebSession: NSObject {
     func seen() {
         guard let webView else { return }
         evaluate(core.tabReselectedScript(), in: webView)
+    }
+
+    /// 网页开始或停止放媒体：上报核心，App 退到后台也照常探测、自动重连（ADR-0033）。
+    /// 整页和面板里的同一页各一份会话，都停了才解除，换曲的一瞬由核心的宽限兜住。
+    func setMediaPlaying(_ playing: Bool) {
+        guard mediaPlaying != playing else { return }
+        mediaPlaying = playing
+        PageMediaActive.shared.set(self, playing: playing, core: core)
+    }
+
+    /// 原生回调里的来源拼成 URL 字符串（桥的来源同款），核心按它和页面自己的源核对。
+    static func originString(_ origin: WKSecurityOrigin) -> String {
+        var components = URLComponents()
+        components.scheme = origin.protocol
+        components.host = origin.host
+        if origin.port > 0 { components.port = origin.port }
+        return components.string ?? ""
+    }
+
+    /// 同一个源：scheme、主机和有效端口（缺省按方案的默认口）。桥的来源判定是同一条规矩，
+    /// 媒体通道核心不核对，壳在收消息时照它核对。
+    static func sameOrigin(_ origin: WKSecurityOrigin, of view: WKWebView) -> Bool {
+        guard let url = view.url else { return false }
+        let scheme = url.scheme?.lowercased()
+        guard origin.protocol.lowercased() == scheme,
+              origin.host.lowercased() == url.host?.lowercased() else { return false }
+        let port = origin.port > 0 ? origin.port : defaultPort(scheme)
+        return port == (url.port ?? defaultPort(scheme))
+    }
+
+    private static func defaultPort(_ scheme: String?) -> Int {
+        switch scheme {
+        case "http": 80
+        case "https": 443
+        default: 0
+        }
     }
 
     func retry() {
@@ -316,11 +372,14 @@ final class TabWebSession: NSObject {
     }
 
     func dispose() {
+        setMediaPlaying(false)
         backObservation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         if bridged {
-            webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")
+            let controller = webView?.configuration.userContentController
+            controller?.removeScriptMessageHandler(forName: "wontonBridge")
+            controller?.removeScriptMessageHandler(forName: "wontonMedia")
         }
         webView = nil
         action = nil

@@ -1,7 +1,8 @@
 # 插件页媒体
 
 Android WebView 不导出网页 Media Session，壳用 Media3 转接系统控制，不替代网页播放器。
-iOS 只声明后台音频，不注入本模块脚本。
+iOS 注入本模块脚本，只在播放状态变化时调 `page_media_active`：放歌退到后台，核心照常探测、
+自动重连；锁屏控制条由 WebKit 自己给（Media Session API），壳不再接一份。
 
 1. 主框架文档开始前注册 `wontonMedia` 字符串通道，限制到插件 origin，注入
    `ClientCore.page_media_script()`。非主框架消息不处理。
