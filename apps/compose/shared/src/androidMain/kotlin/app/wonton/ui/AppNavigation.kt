@@ -17,25 +17,23 @@ import app.wonton.protocol.OnboardingViewModel
 import app.wonton.protocol.TabRef
 
 internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, val context: Context) {
-    // 应用网格这一层（全部应用、商店）：配对后的根页面是聊天，网格从侧边栏进，null 是没开。
-    var appsPage by mutableStateOf<HomePage?>(null)
+    // 只保留应用网格内部的路由；是否显示由核心的页面状态决定。
+    var appsPage by mutableStateOf(HomePage.LAUNCHER)
     var settingsPage by mutableStateOf(SettingsSubpage.MAIN)
     // 配对提醒的链接（wonton://settings/peers）带着它来：其他服务器页滚回顶上的“请求”。
     var peersOpenRequests by mutableStateOf(false)
     var settingsOverlay by mutableStateOf(false)
     var confirmationCard by mutableStateOf<String?>(null)
 
-    // 网格这一层在页面底下留着，又盖着聊天根：从网格打开先收起它，不然关掉页面回到网格、私聊开在看不见的地方（iOS 同）。
     val plugins = PluginNavigation(
         open = { entry ->
             when (entry) {
                 is PluginEntry.Chat -> {
-                    val problem = chat.openDirectChat(pages.core, entry.botUserId, pages.current)
-                    if (problem == null) closeApps()
+                    val problem = chat.openDirectChat(pages.core, entry.botUserId)
+                    if (problem == null) pages.send(Action.OpenPage(TabRef.Chat))
                     pages.plugins.reject(problem)
                 }
                 is PluginEntry.Web -> {
-                    closeApps()
                     pages.send(Action.OpenPage(entry.tab))
                 }
                 is PluginEntry.Browser -> {
@@ -51,7 +49,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     fun openRoom(roomId: String, sideChatRoot: String? = null) {
         chat.showingConfirmations = false
         settingsOverlay = false
-        closeApps()
+        plugins.detail = null
         pages.send(Action.OpenPage(TabRef.Chat))
         chat.openWhenJoined(pages.core, roomId, sideChatRoot)
     }
@@ -88,7 +86,8 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         settingsOverlay = false
         confirmationCard = null
         chat.reset()
-        closeApps()
+        appsPage = HomePage.LAUNCHER
+        plugins.detail = null
         settingsPage = SettingsSubpage.MAIN
         plugins.confirmation = null
         plugins.uninstalling = null
@@ -111,6 +110,8 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
                     }
                 if (url != null) {
                     pages.plugins.reject(openExternalBrowser(context, url))
+                } else if (link.tab == TabRef.Apps) {
+                    openApps(HomePage.LAUNCHER)
                 } else {
                     pages.send(Action.OpenPage(link.tab))
                 }
@@ -147,10 +148,11 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
         settingsOverlay = true
     }
 
-    /** 打开应用网格这一层（全部应用或商店），根页面回到聊天。 */
+    /** 打开应用网格这一层（全部应用或商店），由核心收起插件页面栈。 */
     fun openApps(page: HomePage) {
         appsPage = page
-        pages.send(Action.OpenPage(TabRef.Chat))
+        plugins.detail = null
+        pages.send(Action.OpenPage(TabRef.Apps))
     }
 
     /** 侧边栏的入口：先收起侧边栏（WontonApp 做），再按目的地跳。 */
@@ -195,7 +197,7 @@ internal fun AppNavigation.detail(id: String) {
 }
 
 internal fun AppNavigation.closeApps() {
-    appsPage = null
+    pages.send(Action.ClosePage)
     plugins.detail = null
 }
 
@@ -205,7 +207,7 @@ internal fun TabRef.isNativeRoot(): Boolean = this == TabRef.Chat || this == Tab
 /** 原生层此刻画的是哪一块（重组不丢滚动位置用）。 */
 internal fun AppNavigation.nativeKey(): String = when {
     settingsOverlay -> "settings/${settingsPage.name}"
-    appsPage != null -> "apps/$appsPage"
+    pages.viewModel.showsApps || pages.current == TabRef.Apps -> "apps/$appsPage"
     else -> "chat"
 }
 

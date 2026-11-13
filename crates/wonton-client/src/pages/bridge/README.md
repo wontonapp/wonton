@@ -53,7 +53,9 @@ Bot 页沿用上述 WebView 容器、文档／消息／上下文接口、`--wont
 
 ## 验证
 
-`cargo test -p wonton-client --locked --test it tabs_bridge` 覆盖 Rust 行为，
+`cargo test -p wonton-client --locked -- bridge_rejection:: tabs_bridge::` 覆盖 Rust 行为。
+来源、不支持的方法拒绝与面板红点在不启动后台同步的页面夹具里验证；全客户端的 HTTP 请求总数包含登录和刷新，不能用来判断桥消息有没有副作用。
+
 `cargo test -p wonton-client --locked --test it tabs_bridge::sdk::official_sdk_roundtrip -- --ignored --exact`
 用固定摘要的官方 Node 22 镜像跑 SDK 双平台通道。widget 页对真实 Tuwunel 的行为测试是 `cargo test -p wonton-client --test it chat::widget -- --include-ignored`，页面用固定版本的官方 matrix-widget-api。SDK 来源、许可证和驱动协议见
 [测试夹具](../../../tests/it/tabs_bridge/fixtures/README.md)。

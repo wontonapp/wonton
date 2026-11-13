@@ -29,6 +29,7 @@ pub(super) fn make_view(
     let main = PanelScope::Main;
     PagesViewModel {
         root: state.root(),
+        shows_apps: state.shows_apps,
         stack,
         uninstalled: state.uninstalled.clone(),
         // 钉页拉不到（连着却出错）也如实报；已知连不上时 pins 那边不记，只有连接提示和侧边栏的轻提示。

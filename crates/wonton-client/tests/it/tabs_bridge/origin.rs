@@ -68,59 +68,7 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
 }
 
 #[tokio::test]
-async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
-    let (rig, tab) = open_page(true).await;
-    wait_quiet(&rig).await;
-    let before_tabs = rig.app.pages();
-    let before_chat = rig.app.chat();
-    for origin in [
-        "http://other.wonton.localhost",
-        "http://auth.wonton.localhost",
-        "https://app.feed.wonton.localhost",
-        "http://app.feed.wonton.localhost:8080",
-        "http://app.feed.wonton.localhost.evil.example",
-        "null",
-        "",
-    ] {
-        for mut message in page_requests() {
-            // 正文伪造的来源不能盖过原生回调给出的来源。
-            message["origin"] = PAGE_ORIGIN.into();
-            assert_ignored(rig.app.tab_handle_message(
-                bar(&tab),
-                true,
-                origin.to_owned(),
-                message.to_string(),
-                environment(),
-            ));
-        }
-        assert_ignored(rig.app.tab_handle_message(
-            bar(&tab),
-            true,
-            origin.to_owned(),
-            "{".to_owned(),
-            environment(),
-        ));
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    // 后台轮询本来就会来，不数总数；被来源挡下的报文若漏出桥，核心会看到原样转发的报文
-    // （方法名在正文里）。
-    let leaked: Vec<String> = rig
-        .core
-        .all_seen()
-        .iter()
-        .filter(|seen| {
-            page_requests()
-                .iter()
-                .any(|message| seen.body.contains(message["method"].as_str().unwrap()))
-        })
-        .map(|seen| format!("{} {}", seen.method, seen.path))
-        .collect();
-    assert!(leaked.is_empty(), "被来源挡下的报文漏到了核心: {leaked:?}");
-    assert_eq!(rig.app.pages(), before_tabs);
-    assert_eq!(rig.app.chat(), before_chat);
-}
 
-#[tokio::test]
 async fn matching_origin_accepts_implicit_and_explicit_default_ports() {
     let (rig, tab) = open_page(true).await;
     for origin in [PAGE_ORIGIN, "http://APP.FEED.wonton.localhost:80"] {

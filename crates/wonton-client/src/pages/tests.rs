@@ -6,6 +6,7 @@ use wonton_protocol::{
 
 mod bot_pages;
 mod bot_pins;
+mod bridge_rejection;
 mod media_permission;
 mod my_apps;
 mod page_rules;
@@ -111,6 +112,7 @@ impl Rig {
                 problem: None,
                 stack: Vec::new(),
                 paired: true,
+                shows_apps: false,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),

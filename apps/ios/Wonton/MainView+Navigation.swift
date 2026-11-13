@@ -15,7 +15,11 @@ extension MainView {
     func applyAppNavigation() {
         guard navigation.presentationRevision > 0, navigation.allowsNavigation else { return }
         showsSettings = false
-        closeApps()
+        if navigation.opensSettings || !pages.viewModel.showsApps {
+            closeApps()
+        } else {
+            appsPath = NavigationPath([AppsRoute.launcher])
+        }
         onboardingGateway = nil
         if navigation.opensSettings {
             settings.path = []
@@ -34,16 +38,15 @@ extension MainView {
         showsSettings = true
     }
 
-    /// “全部应用”这一层开没开（配对后）。
-    var showsApps: Bool { isPaired && !appsPath.isEmpty }
-
-    /// 打开“全部应用”这一层：网格在最下面，`above` 是接着推入的页面（商店）。
+    /// 打开“全部应用”这一层：核心记录网格是否显示，路径承载网格上面的商店和详情页。
     func openApps(above routes: [AppsRoute] = []) {
+        pages.open(.apps)
         // 没配对时网格自己就是根页面，路径里只放它上面的。
         appsPath = NavigationPath(isPaired ? [AppsRoute.launcher] + routes : routes)
     }
 
     func closeApps() {
+        if pages.viewModel.showsApps { pages.closeCurrent() }
         appsPath = NavigationPath()
     }
 

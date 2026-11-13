@@ -7,6 +7,7 @@ use wonton_l10n::l10n;
 pub(super) fn empty_view() -> PagesViewModel {
     PagesViewModel {
         root: TabRef::Apps,
+        shows_apps: false,
         stack: Vec::new(),
         uninstalled: Vec::new(),
         problem: None,
@@ -29,6 +30,9 @@ pub(super) fn refresh_state(
 ) -> bool {
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;
+    if server_changed || state.paired != home.server_id.is_some() {
+        state.shows_apps = false;
+    }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
             clear_plugin_config(state);

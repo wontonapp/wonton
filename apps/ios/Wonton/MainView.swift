@@ -18,6 +18,7 @@ struct MainView: View {
     /// 最近关掉的插件页：最多留 4 个实例（内存考虑），重开不重载。
     @State private var recentPages: [TabRef] = []
     @State var showsSettings = false
+    var showsApps: Bool { pages.viewModel.showsApps }
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
@@ -58,6 +59,7 @@ struct MainView: View {
             pages.open(.chat)
             chat.path = [.chatBackup]
         })
+
         .fullScreenCover(isPresented: $showsSettings) {
             SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, isModal: true)
@@ -124,6 +126,18 @@ struct MainView: View {
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
         // 根页面和“全部应用”那一层共用一条路径，配对状态一变含义就换了。
         .onChange(of: isPaired) { _, _ in closeApps() }
+        .onChange(of: pages.viewModel.showsApps, initial: true) { _, shown in
+            if shown && isPaired && appsPath.isEmpty {
+                appsPath = NavigationPath([AppsRoute.launcher])
+            } else if !shown && !appsPath.isEmpty {
+                appsPath = NavigationPath()
+            }
+        }
+        .onChange(of: appsPath.count) { _, count in
+            if isPaired && count == 0 && pages.viewModel.showsApps {
+                pages.closeCurrent()
+            }
+        }
         .environment(plugins)
         .environment(\.wontonBarStatus, barStatus)
     }
@@ -135,6 +149,7 @@ struct MainView: View {
         if old.servers.first(where: { $0.current })?.id != new.servers.first(where: { $0.current })?.id {
             chat.path = []
             chat.visiting = nil
+            closeApps()
         }
         if new.adding && !old.adding {
             addingReturn = (old.servers.first(where: { $0.current })?.id, showsSettings)
@@ -215,42 +230,6 @@ struct MainView: View {
             pullAnchor: nil,
             content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
-    }
-
-    /// 插件页层：系统的 NavigationStack 供给左边缘右滑的交互式返回；路径空时透明且不挡下面的根页面。
-    @ViewBuilder var pageStack: some View {
-        NavigationStack(path: $pagePath) {
-            Color.clear
-                .background { PageStackBack() }
-                .navigationDestination(for: TabRef.self) { tab in
-                    Group {
-                        if let open = pages.viewModel.stack.first(where: { $0.tab == tab }) {
-                            pluginPage(open)
-                        } else {
-                            // 核心已把这页弹走：保活的会话还在，等这一帧过渡结束。
-                            Color.clear
-                        }
-                    }
-                    .toolbar(.hidden, for: .navigationBar)
-                }
-        }
-        .allowsHitTesting(pagePath.isEmpty ? false : pages.showsPluginPage)
-    }
-
-    @ViewBuilder private func pluginPage(_ entry: OpenPage) -> some View {
-        TabPageView(
-            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            tab: entry.tab, placed: .page(tab: entry.tab), store: pages.webViews,
-            page: entry.page, draft: receiveDraft, open: open,
-            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            close: onboardingGateway?.tab == entry.tab ? { closeGateway(entry.tab) } : nil
-        )
-        .id(entry.tab)
-    }
-
-    private func closeGateway(_ tab: TabRef) {
-        if pages.viewModel.stack.last?.tab == tab { pages.closeCurrent() }
-        onboardingGateway = nil
     }
 
     private var pendingElsewhere: [PendingConfirmation] {

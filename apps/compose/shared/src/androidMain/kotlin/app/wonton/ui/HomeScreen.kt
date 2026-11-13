@@ -21,7 +21,7 @@ fun HomeRoute(
     viewModel: HomeViewModel,
     plugins: PluginsState,
     navigation: PluginNavigation,
-    page: HomePage?,
+    page: HomePage,
     onPage: (HomePage) -> Unit,
     pendingCards: List<PendingConfirmation>,
     onOpenCardRoom: (String?) -> Unit,
