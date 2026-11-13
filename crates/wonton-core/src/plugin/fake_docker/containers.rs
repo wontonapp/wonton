@@ -132,10 +132,8 @@ fn create(docker: &mut Resources, name: &str, body: Value) -> Response {
             .entry(network.clone())
             .or_default()
             .insert(name.to_owned(), endpoint.clone());
-        // 创建时带的端点也是这个网络最近一次的接入（GatewayPriority 之类的断言看它）。
-        docker
-            .connections
-            .insert(network.clone(), json!({"EndpointConfig": endpoint.clone()}));
+        // 创建时带的端点也是这个网络最近一次的接入（GatewayPriority 之类的断言看它）；和已有的合并。
+        super::networks::record_endpoint(docker, network, endpoint);
     }
     // 和 Docker 一样：`NetworkMode` 写网络名时，容器接在这个网络上。
     if let Some(mode) = body["HostConfig"]["NetworkMode"].as_str()

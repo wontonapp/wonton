@@ -54,6 +54,56 @@ fn reject_overlap(docker: &mut Resources, body: &Value) -> Option<Response> {
 }
 
 /// `/networks...` 的端点。
+/// `connect` / `disconnect`：接上时记端点（优先级、别名），断开时移掉。
+fn connect(docker: &mut Resources, name: &str, action: &str, body: &Value) -> Response {
+    let found = docker.networks.contains_key(name);
+    let container = body["Container"].as_str().unwrap_or_default().to_owned();
+    if found
+        && action == "connect"
+        && let Some(reply) = reject_none_mode(docker, &container)
+    {
+        return reply;
+    }
+    let endpoints = docker.endpoints.entry(name.to_owned()).or_default();
+    if found && action == "connect" {
+        endpoints.insert(container, body["EndpointConfig"].clone());
+        record_endpoint(docker, name, &body["EndpointConfig"]);
+        // 别名按“最近一次主动接入”算（创建时带的端点是服务自己的，核心接入的别名在后面）。
+        let aliases: Vec<String> =
+            serde_json::from_value(body["EndpointConfig"]["Aliases"].clone()).unwrap_or_default();
+        docker.aliases.insert(name.to_owned(), aliases);
+    } else if found {
+        endpoints.remove(&container);
+    }
+    if found {
+        StatusCode::OK.into_response()
+    } else {
+        gone(false)
+    }
+}
+
+/// 记下一次端点（创建时带的也算）：按网络合并，后写的字段赢，先前的优先级不被空的字段抹掉。
+pub(super) fn record_endpoint(docker: &mut Resources, network: &str, endpoint: &Value) {
+    let recorded = docker
+        .connections
+        .entry(network.to_owned())
+        .or_insert_with(|| json!({"EndpointConfig": {}}));
+    let outer = recorded.as_object_mut().expect("端点记录是对象");
+    let target = outer
+        .entry("EndpointConfig")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("端点配置是对象");
+    for (key, value) in endpoint.as_object().into_iter().flatten() {
+        // 序列化会带上值为 null 的字段（如没写 GwPriority）：别让它把先前写下的值抹掉。
+        // 别名只认 `connect`（下面的 aliases 表），创建时带的不覆盖。
+        if value.is_null() || key == "Aliases" {
+            continue;
+        }
+        target.insert(key.clone(), value.clone());
+    }
+}
+
 /// Docker 29 的行为：`network_mode: none` 的容器接不上任何网络（真实 Docker 的原话）。
 fn reject_none_mode(docker: &Resources, container: &str) -> Option<Response> {
     let none_mode = docker
@@ -98,26 +148,7 @@ pub(super) fn networks(
             json_reply(StatusCode::CREATED, json!({"Id": name, "Warning": ""}))
         }
         (&Method::POST, [name, action @ ("connect" | "disconnect")]) => {
-            let found = docker.networks.contains_key(*name);
-            let container = body["Container"].as_str().unwrap_or_default().to_owned();
-            if found
-                && *action == "connect"
-                && let Some(reply) = reject_none_mode(docker, &container)
-            {
-                return Some(reply);
-            }
-            let endpoints = docker.endpoints.entry((*name).to_owned()).or_default();
-            if found && *action == "connect" {
-                endpoints.insert(container, body["EndpointConfig"].clone());
-                docker.connections.insert((*name).to_owned(), body);
-            } else if found {
-                endpoints.remove(&container);
-            }
-            if found {
-                StatusCode::OK.into_response()
-            } else {
-                gone(false)
-            }
+            connect(docker, name, action, &body)
         }
         (&Method::GET, [name]) if docker.networks.contains_key(*name) => {
             let created = &docker.network_bodies[*name];
