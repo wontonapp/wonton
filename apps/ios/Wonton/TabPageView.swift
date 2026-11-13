@@ -233,7 +233,7 @@ private extension TabPageView {
                 $0.id == id && ($0.botUserId != nil || $0.chat != nil)
             }) == true else { return nil }
             return BotRef(pluginId: id, bot: "default")
-        case .chat, .apps, .url, .sharedApp, .uiResource: return nil
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return nil
         }
     }
 
@@ -285,7 +285,7 @@ private extension TabPageView {
             guard pageBotRef != nil else { return false }
             if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
             return true
-        case .chat, .apps, .url, .sharedApp, .uiResource: return false
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return false
         }
     }
 
