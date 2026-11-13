@@ -12,18 +12,26 @@ import org.junit.Test
 class MatrixLoginLogicTest {
     @Test
     fun oidcCallbackUrlsMatchExactly() {
-        assertTrue(isMatrixLoginCallback("io.github.wontonapp:/matrix-login"))
-        assertTrue(isMatrixLoginCallback("io.github.wontonapp:/matrix-login?code=private-code&state=private-state"))
+        // 核心给的回调地址，浏览器会把它归一成 host 为空的写法。
+        val redirect = "io.github.wontonapp:/matrix-login"
+        assertTrue(isMatrixLoginCallback("io.github.wontonapp:/matrix-login", redirect))
+        assertTrue(
+            isMatrixLoginCallback("io.github.wontonapp:/matrix-login?code=private-code&state=private-state", redirect),
+        )
         // 浏览器归一出来的 host 为空写法，算同一个地址。
-        assertTrue(isMatrixLoginCallback("io.github.wontonapp:///matrix-login"))
-        assertTrue(isMatrixLoginCallback("io.github.wontonapp:///matrix-login?code=private-code&state=private-state"))
+        assertTrue(isMatrixLoginCallback("io.github.wontonapp:///matrix-login", redirect))
+        assertTrue(
+            isMatrixLoginCallback("io.github.wontonapp:///matrix-login?code=private-code&state=2", redirect),
+        )
         // 前缀撞上的地址不是这次登录的回调，别把别的链接吞掉。
-        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-loginx"))
-        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-login/extra"))
-        assertFalse(isMatrixLoginCallback("io.github.wontonapp:///matrix-loginx"))
-        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-other"))
-        assertFalse(isMatrixLoginCallback("wonton://settings/peers"))
-        assertFalse(isMatrixLoginCallback("https://example.org/io.github.wontonapp:/matrix-login"))
+        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-loginx", redirect))
+        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-login/extra", redirect))
+        assertFalse(isMatrixLoginCallback("io.github.wontonapp:///matrix-loginx", redirect))
+        assertFalse(isMatrixLoginCallback("io.github.wontonapp:/matrix-other", redirect))
+        assertFalse(isMatrixLoginCallback("wonton://settings/peers", redirect))
+        assertFalse(isMatrixLoginCallback("https://example.org/io.github.wontonapp:/matrix-login", redirect))
+        // host 不为空的地址是别的 App 的回调，不算。
+        assertFalse(isMatrixLoginCallback("io.github.wontonapp://evil.example/matrix-login", redirect))
     }
 
     @Test

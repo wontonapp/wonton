@@ -79,8 +79,8 @@ private fun ProbeDetail(probe: RegistryProbe?) {
 
 @Composable
 private fun RegistryProbe?.registryLabel(): String {
+    val latency = this?.latencyMs
     if (this == null) return stringResource(R.string.registry_mirror_probe_unknown)
-    val latency = latencyMs
     return when (problem?.reason) {
         RegistryFailure.UNREACHABLE -> stringResource(R.string.registry_mirror_probe_unreachable)
         RegistryFailure.REJECTED -> stringResource(R.string.registry_mirror_probe_rejected)
