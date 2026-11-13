@@ -34,14 +34,17 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.io.File
 
-class MainActivity : AppCompatActivity() {
+internal const val UI_FAKE_EXTRA = "wonton_ui_fake"
+
+open class MainActivity : AppCompatActivity() {
     private val requests = IncomingRequests()
     private val shareIntake = ShareIntake()
     private var shareInbox: ShareInbox? = null
     private var networkWatcher: NetworkWatcher? = null
     private lateinit var notificationPermission: NotificationPermission
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    open override fun onCreate(savedInstanceState: Bundle?) {
+        (application as WontonApplication).configureForLaunch(intent)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
