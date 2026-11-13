@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{AddedTools, InstalledPlugin, PluginFailure, PluginIcon};
+use super::{AddedTools, InstallProgress, InstalledPlugin, PluginFailure, PluginIcon};
 
 /// 一次安装、升级或卸载。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +14,9 @@ pub struct PluginTask {
     pub icon: Option<PluginIcon>,
     pub operation: PluginOperation,
     pub state: PluginTaskState,
+    /// 家里的服务器报到的那一步（拉镜像、准备、启动、等 Bot 上线）：做的时候跟着已安装列表走，
+    /// 壳只显示阶段，不显示没有的百分比。没在做或核心没报时为空。
+    pub install_progress: Option<InstallProgress>,
     /// 请求发出后连接断了，在等连接回来：`state` 还是 `Running`，结果不知道。等连接时核心不自动重试。
     pub waiting_for_connection: bool,
     /// 升级比旧版本多了哪些工具；不是升级、没做完或者等不到结果时为空。

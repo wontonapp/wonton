@@ -73,7 +73,6 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     wait_quiet(&rig).await;
     let before_tabs = rig.app.pages();
     let before_chat = rig.app.chat();
-    let before_requests = rig.core.all_seen().len();
     for origin in [
         "http://other.wonton.localhost",
         "http://auth.wonton.localhost",
@@ -103,7 +102,20 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
         ));
     }
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert_eq!(rig.core.all_seen().len(), before_requests);
+    // 后台轮询本来就会来，不数总数；被来源挡下的报文若漏出桥，核心会看到原样转发的报文
+    // （方法名在正文里）。
+    let leaked: Vec<String> = rig
+        .core
+        .all_seen()
+        .iter()
+        .filter(|seen| {
+            page_requests()
+                .iter()
+                .any(|message| seen.body.contains(message["method"].as_str().unwrap()))
+        })
+        .map(|seen| format!("{} {}", seen.method, seen.path))
+        .collect();
+    assert!(leaked.is_empty(), "被来源挡下的报文漏到了核心: {leaked:?}");
     assert_eq!(rig.app.pages(), before_tabs);
     assert_eq!(rig.app.chat(), before_chat);
 }

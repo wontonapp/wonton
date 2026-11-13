@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Immediate feedback after recognizing a pairing QR code. No arguments. -->
+    <string name="pairing_scan_recognized">コードを読み取りました。サーバーに接続しています…</string>
+    <!-- Restart the camera in place after a pairing failure. No arguments. -->
+    <string name="pairing_scan_again">もう一度スキャン</string>
+    <!-- Failure title for an already consumed pairing code. No arguments. -->
+    <string name="pairing_scan_used">このペアリングコードは使用済みです</string>
+</resources>

@@ -42,6 +42,9 @@ pub fn plugin_family_path(plugin_id: &str) -> String {
 /// 家庭群的状态事件类型，状态键为空。核心建群时写，App 凭它给这个房间加家庭的标记。
 pub const FAMILY_ROOM_EVENT: &str = "app.wonton.family";
 
+/// `POST`：按成员和角色记录重同步家庭群，成功回 204；失败回 503，记录已保存的操作不回滚。要管理成员权限。
+pub const FAMILY_ROOM_SYNC_PATH: &str = "/_wonton/api/members/family-room/sync";
+
 /// 总线转给插件的 `tools/call` 在 `_meta` 里带这一项：私人 Bot 调用时是归属人的用户名，共享 Bot 不带。
 pub const TOOL_CALL_USER_META: &str = "app.wonton/user";
 

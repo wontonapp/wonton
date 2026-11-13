@@ -7,6 +7,7 @@ import VisionKit
 /// 用 VisionKit 的 `DataScannerViewController`，iOS 17 支持的机型都能用；模拟器上 `isSupported` 为假。
 /// 相机权限由调用方先取得。
 struct QRScannerView: UIViewControllerRepresentable {
+    var singleShot = false
     let onCode: @MainActor (String) -> Void
     /// 扫描用不了或中途停了，参数是给人看的原因。
     let onUnavailable: @MainActor (String) -> Void
@@ -25,7 +26,7 @@ struct QRScannerView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
         context.coordinator.parent = self
-        guard !scanner.isScanning else { return }
+        guard !context.coordinator.hasDeliveredCode, !scanner.isScanning else { return }
         do {
             try scanner.startScanning()
         } catch {
@@ -57,6 +58,7 @@ struct QRScannerView: UIViewControllerRepresentable {
     @MainActor
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         var parent: QRScannerView
+        private(set) var hasDeliveredCode = false
 
         init(parent: QRScannerView) {
             self.parent = parent
@@ -68,8 +70,18 @@ struct QRScannerView: UIViewControllerRepresentable {
             allItems: [RecognizedItem]
         ) {
             for case let .barcode(barcode) in addedItems {
-                if let text = barcode.payloadStringValue { parent.onCode(text) }
+                guard let text = barcode.payloadStringValue else { continue }
+                deliver(text, stopScanning: dataScanner.stopScanning)
             }
+        }
+
+        func deliver(_ code: String, stopScanning: () -> Void) {
+            guard !hasDeliveredCode else { return }
+            if parent.singleShot {
+                hasDeliveredCode = true
+                stopScanning()
+            }
+            parent.onCode(code)
         }
 
         func dataScanner(

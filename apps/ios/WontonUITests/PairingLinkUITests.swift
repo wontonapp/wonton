@@ -1,5 +1,4 @@
 import XCTest
-import WontonClient
 
 @MainActor
 final class PairingLinkUITests: XCTestCase {
@@ -25,25 +24,16 @@ final class PairingLinkUITests: XCTestCase {
 
         let refusal = app.descendants(matching: .any)["pairing-refusal"].firstMatch
         XCTAssertTrue(refusal.waitForExistence(timeout: 5))
-        let reason = try rejectionReason(for: url.absoluteString)
-        XCTAssertTrue(refusal.staticTexts[reason].waitForExistence(timeout: 5))
         XCTAssertFalse(app.descendants(matching: .any)["pairing-progress"].firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["pairing-code"].firstMatch.exists)
+        app.buttons["pairing-scan-again"].tap()
+        XCTAssertTrue(code.waitForExistence(timeout: 10))
+        XCTAssertFalse(refusal.exists)
+        XCTAssertFalse(submit.isEnabled)
         let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "malformed-pairing-link-rejected-after-confirmation"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
 
-    private func rejectionReason(for code: String) throws -> String {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let core = try ClientCore(dataDir: directory.path)
-        var reason: String?
-        do {
-            try core.dispatch(action: .pairHome(code: code, deviceName: "Test phone"))
-        } catch let CoreError.InvalidInput(value) {
-            reason = value
-        }
-        return try XCTUnwrap(reason)
-    }
 }

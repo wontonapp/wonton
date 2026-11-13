@@ -36,7 +36,10 @@ pub(super) async fn approve(
         return denied;
     }
     match gateway.members.approve_join(&id, &gateway.tunnel.devices) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => match super::family_room::synchronize(&gateway, &headers).await {
+            None => StatusCode::NO_CONTENT.into_response(),
+            Some(response) => response,
+        },
         Err(error) => family::members_error(error),
     }
 }

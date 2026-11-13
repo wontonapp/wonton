@@ -147,6 +147,8 @@ user="$(b "$grafana_url/api/user")"
 expect "Grafana 里的用户是主人" "$(json login <<<"$user")" owner
 expect "邮箱来自核心签发的 ID 令牌" "$(json email <<<"$user")" "owner@wonton.internal"
 expect "按 groups 声明映射为管理员" "$(b "$grafana_url/api/user/orgs" | json 0.role)" Admin
+printf '%s' "$("$dev" token)" |
+  python3 "$here/smoke-oidc.py" "$browser" "$grafana" "$core_url" "$grafana_url"
 
 fi
 if step models "模型网关（models）：核心预装 magpie，给使用方签发只属于它的凭据，经 models.wonton.internal 转发"; then
