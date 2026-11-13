@@ -73,13 +73,19 @@ final class SystemEntryModel {
             ))
         }
         for room in snapshot.rooms {
-            append(name: room.name, link: .room(roomId: room.roomId), symbol: room.isDirect ? "person.crop.circle" : "bubble.left.and.bubble.right")
+            let symbol = room.isDirect ? "person.crop.circle" : "bubble.left.and.bubble.right"
+            append(name: room.name, link: .room(roomId: room.roomId), symbol: symbol)
         }
         for contact in snapshot.contacts {
-            append(name: contact.name, link: .room(roomId: contact.roomId), symbol: contact.isBot ? "sparkles" : "person.crop.circle")
+            let symbol = contact.isBot ? "sparkles" : "person.crop.circle"
+            append(name: contact.name, link: .room(roomId: contact.roomId), symbol: symbol)
         }
         for plugin in snapshot.plugins {
-            append(name: plugin.title, link: .tab(tab: .plugin(pluginId: plugin.pluginId, page: nil)), symbol: "square.grid.2x2")
+            append(
+                name: plugin.title,
+                link: .tab(tab: .plugin(pluginId: plugin.pluginId, page: nil)),
+                symbol: "square.grid.2x2"
+            )
         }
         return items
     }

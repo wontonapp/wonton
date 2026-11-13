@@ -167,7 +167,7 @@ private struct RoomRow: View {
         return preview.isOwn ? String(localized: .SystemEntry.systemEntryOwnPreview(line)) : line
     }
 
-    private static func line(_ body: EntrySnapshot.Preview.Body) -> String {
+    private static func line(_ body: EntrySnapshot.PreviewBody) -> String {
         switch body.type {
         case "text":
             return body.text ?? ""
@@ -218,7 +218,7 @@ private struct StatusCard: View {
                 Image("EntryAgent", bundle: nil)
                     .renderingMode(.template)
                     .resizable()
-                    .aspectRatio(contentMode: .fit)
+                    .scaledToFit()
                     .frame(width: 20, height: 20)
                     .foregroundStyle(palette.accentInk.color)
                 Text(verbatim: snapshot.defaultAgent?.name ?? "")
@@ -271,10 +271,12 @@ private struct RectangularStatus: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-            Text(String(localized: .SystemEntry.systemEntryUnreadCount(Int(clamping: snapshot.defaultAgent?.unreadCount ?? 0))))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            Text(String(localized: .SystemEntry.systemEntryUnreadCount(
+                Int(clamping: snapshot.defaultAgent?.unreadCount ?? 0)
+            )))
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
     }
 
@@ -314,7 +316,7 @@ private struct AskCard: View {
             Image("EntryAgent", bundle: nil)
                 .renderingMode(.template)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(width: 28, height: 28)
                 .foregroundStyle(palette.accentInk.color)
             Text(String(localized: .SystemEntry.systemEntryAskBot))
@@ -331,7 +333,7 @@ private struct AskRound: View {
             Image("EntryAgent", bundle: nil)
                 .renderingMode(.template)
                 .resizable()
-                .aspectRatio(contentMode: .fit)
+                .scaledToFit()
                 .frame(width: 22, height: 22)
                 .foregroundStyle(.primary)
             Text(String(localized: .SystemEntry.systemEntryAskBot))

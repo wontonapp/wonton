@@ -7,7 +7,10 @@ struct AskBotControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
         StaticControlConfiguration(kind: "WontonAskBotControl") {
             ControlWidgetButton(action: OpenSystemEntryIntent(target: .agent)) {
-                Label(String(localized: .SystemEntry.systemEntryAskBot), systemImage: "bubble.left.and.text.bubble.right")
+                Label(
+                    String(localized: .SystemEntry.systemEntryAskBot),
+                    systemImage: "bubble.left.and.text.bubble.right"
+                )
             }
         }
         .displayName(.SystemEntry.systemEntryAskBot)
@@ -26,9 +29,15 @@ struct PluginControlConfiguration: ControlConfigurationIntent {
 @available(iOS 18.0, *)
 struct OpenPluginControl: ControlWidget {
     var body: some ControlWidgetConfiguration {
-        AppIntentControlConfiguration(kind: "WontonOpenPluginControl", intent: PluginControlConfiguration.self) { configuration in
+        AppIntentControlConfiguration(
+            kind: "WontonOpenPluginControl",
+            intent: PluginControlConfiguration.self
+        ) { configuration in
             ControlWidgetButton(action: OpenSystemEntryIntent(target: configuration.plugin ?? .apps)) {
-                Label(configuration.plugin?.title ?? String(localized: .SystemEntry.systemEntryOpenPlugin), systemImage: "square.grid.2x2")
+                Label(
+                    configuration.plugin?.title ?? String(localized: .SystemEntry.systemEntryOpenPlugin),
+                    systemImage: "square.grid.2x2"
+                )
             }
         }
         .displayName(.SystemEntry.systemEntryOpenPlugin)

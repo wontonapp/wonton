@@ -31,16 +31,16 @@ struct EntrySnapshot: Decodable, Sendable {
     struct Preview: Decodable, Sendable {
         let senderName: String?
         let isOwn: Bool
-        let body: Body
+        let body: PreviewBody
+    }
 
-        struct Body: Decodable, Sendable {
-            let type: String
-            let text: String?
-            let title: String?
-            let state: String?
-            /// 未知事件的事件类型原文（如 m.sticker），预览里不翻译。
-            var kind: String? = nil
-        }
+    struct PreviewBody: Decodable, Sendable {
+        let type: String
+        let text: String?
+        let title: String?
+        let state: String?
+        /// 未知事件的事件类型原文（如 m.sticker），预览里不翻译。
+        var kind: String?
     }
 
     struct Agent: Decodable, Sendable {
@@ -151,5 +151,8 @@ enum EntryLink {
         URL(string: "wonton://tab/plugin/\(id)")!
     }
 
-    private static let roomCharacters = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@")
+    /// 房间 ID 不转义的字符集，同 wonton-protocol 的 ROOM_ID：RFC 3986 的 pchar，`!` 和 `:` 原样留着。
+    private static let roomCharacters = CharacterSet(
+        charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~!$&'()*+,;=:@"
+    )
 }

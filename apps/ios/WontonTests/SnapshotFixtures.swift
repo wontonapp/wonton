@@ -142,28 +142,28 @@ enum SnapshotFixtures {
                     roomId: "!family:home.example", name: "Family", unreadCount: 3,
                     preview: EntrySnapshot.Preview(
                         senderName: "Ann", isOwn: false,
-                        body: EntrySnapshot.Preview.Body(type: "text", text: "Dinner at seven?", title: nil, state: nil)
+                        body: EntrySnapshot.PreviewBody(type: "text", text: "Dinner at seven?", title: nil, state: nil)
                     )
                 ),
                 EntrySnapshot.Room(
                     roomId: "!hermes:home.example", name: "Hermes", unreadCount: 2,
                     preview: EntrySnapshot.Preview(
                         senderName: "Hermes", isOwn: false,
-                        body: EntrySnapshot.Preview.Body(type: "text", text: "Here's the summary you asked for.", title: nil, state: nil)
+                        body: EntrySnapshot.PreviewBody(type: "text", text: "Here's the summary you asked for.", title: nil, state: nil)
                     )
                 ),
                 EntrySnapshot.Room(
                     roomId: "!research:home.example", name: "Research", unreadCount: 0,
                     preview: EntrySnapshot.Preview(
                         senderName: "Hermes", isOwn: false,
-                        body: EntrySnapshot.Preview.Body(type: "side_chat", text: nil, title: "Research", state: "done")
+                        body: EntrySnapshot.PreviewBody(type: "side_chat", text: nil, title: "Research", state: "done")
                     )
                 ),
                 EntrySnapshot.Room(
                     roomId: "!ann:home.example", name: "Ann", unreadCount: 0,
                     preview: EntrySnapshot.Preview(
                         senderName: "Me", isOwn: true,
-                        body: EntrySnapshot.Preview.Body(type: "text", text: "See you tomorrow", title: nil, state: nil)
+                        body: EntrySnapshot.PreviewBody(type: "text", text: "See you tomorrow", title: nil, state: nil)
                     )
                 ),
                 EntrySnapshot.Room(roomId: "!trip:home.example", name: "Trip planning", unreadCount: 0, preview: nil),
