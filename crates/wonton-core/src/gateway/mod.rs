@@ -44,6 +44,7 @@ mod devices;
 mod entry;
 mod entry_federation;
 pub mod family;
+mod family_private;
 mod family_room;
 mod files;
 mod friends;
@@ -172,6 +173,7 @@ pub struct Gateway {
     owner_token: String,
     pub members: Arc<Members>,
     family_room_sync: tokio::sync::Mutex<()>,
+    member_sync: tokio::sync::Mutex<()>,
     /// 角色记录（ADR-0088）：主人以外的人按各自角色判断；主人短路为全部权限。
     pub roles: Arc<Roles>,
     /// 客户端入口的开关状态和连接守卫（ADR-0021，[`crate::clients::state`]）。
@@ -252,12 +254,14 @@ impl Gateway {
         ));
         let roles = Arc::new(Roles::initial());
         tunnel.pairing.attach_roles(roles.clone());
+        plugins.attach_person_roles(roles.clone());
         Self {
             public,
             owner,
             owner_token,
             members,
             family_room_sync: tokio::sync::Mutex::new(()),
+            member_sync: tokio::sync::Mutex::new(()),
             roles,
             clients: plugins.clients.clone(),
             plugins,
@@ -307,6 +311,7 @@ impl Gateway {
     #[must_use]
     pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
         self.tunnel.pairing.attach_roles(roles.clone());
+        self.plugins.attach_person_roles(roles.clone());
         self.roles = roles;
         self
     }

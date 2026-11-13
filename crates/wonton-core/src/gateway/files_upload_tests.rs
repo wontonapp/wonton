@@ -361,7 +361,7 @@ async fn the_last_patch_answers_only_when_the_file_is_available() {
     assert_eq!(file.json()["size"], 5);
     assert_eq!(file.json()["source"]["type"], "device");
     assert_eq!(
-        std::fs::read(home.f.shares_dir.join("transfers/a.txt")).unwrap(),
+        std::fs::read(home.f.home_dir().join("transfers/a.txt")).unwrap(),
         b"hello"
     );
     assert!(!home.f.uploads_dir().join(id.as_str()).exists());
@@ -390,7 +390,7 @@ async fn the_last_patch_answers_only_when_the_file_is_available() {
 async fn a_failed_placement_is_reported_and_retried() {
     let (home, fake, tusd) = home().await;
     let id = home.pending(tusd, 5, b"hello").await;
-    let transfers = home.f.shares_dir.join("transfers");
+    let transfers = home.f.home_dir().join("transfers");
     let aside = home.f.dir.path().join("transfers-aside");
     std::fs::rename(&transfers, &aside).unwrap();
     std::os::unix::fs::symlink(home.f.dir.path(), &transfers).unwrap();
@@ -435,7 +435,7 @@ async fn data_that_does_not_match_the_declared_length_is_not_a_file() {
     let reply = home.send(home.tus(Method::PATCH, &id)).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.error_kind(), "internal");
-    assert!(!home.f.shares_dir.join("transfers/a.txt").exists());
+    assert!(!home.f.home_dir().join("transfers/a.txt").exists());
 }
 
 /// 记录写不成（磁盘满时就是这样）：文件已经在 `transfers` 里，数据也还在。之后重试收敛到同一个文件，客户端看到的是原因，不是 tusd 的裸错误。
@@ -452,7 +452,7 @@ async fn a_record_that_cannot_be_written_converges_on_retry() {
     let reply = home.send(home.tus(Method::PATCH, &id)).await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(reply.error_kind(), "internal");
-    let transfers = home.f.shares_dir.join("transfers");
+    let transfers = home.f.home_dir().join("transfers");
     assert!(transfers.join("a.txt").exists());
     assert!(home.f.uploads_dir().join(id.as_str()).exists());
 
@@ -673,7 +673,7 @@ async fn a_404_from_tusd_right_after_placing_reports_the_file_as_finished() {
         reply.header(hyper::header::HeaderName::from_static("upload-offset")),
         "5"
     );
-    let transfers = home.f.shares_dir.join("transfers");
+    let transfers = home.f.home_dir().join("transfers");
     assert_eq!(std::fs::read(transfers.join("a.txt")).unwrap(), b"hello");
     assert!(!transfers.join("a (1).txt").exists());
 }
@@ -709,7 +709,7 @@ async fn cancelling_waits_for_placing_and_is_not_interleaved_with_it() {
         placed.unwrap_err().kind,
         wonton_protocol::FileFailure::FileUnknown
     );
-    assert!(!home.f.shares_dir.join("transfers/a.txt").exists());
+    assert!(!home.f.home_dir().join("transfers/a.txt").exists());
 }
 
 /// 放文件失败时也要回 tusd 的响应：客户端没有 `Location` 就没法问进度，可之后清理照样会把文件放好。
@@ -718,7 +718,7 @@ async fn creating_a_complete_upload_answers_with_its_location_even_if_placing_fa
     let (home, fake, tusd) = home().await;
     let id = home.pending(tusd, 0, b"").await;
     *fake.location.lock().unwrap() = Some(format!("/files/{id}"));
-    let transfers = home.f.shares_dir.join("transfers");
+    let transfers = home.f.home_dir().join("transfers");
     let aside = home.f.dir.path().join("transfers-aside");
     std::fs::rename(&transfers, &aside).unwrap();
     std::os::unix::fs::symlink(home.f.dir.path(), &transfers).unwrap();

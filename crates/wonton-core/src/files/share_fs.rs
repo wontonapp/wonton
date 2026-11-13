@@ -27,7 +27,7 @@ pub mod saving;
 
 /// 工具结果里共享文件夹引用的前缀（插件规范的“工具结果里的文件”）。
 const SHARE_SCHEME: &str = "wonton-share:";
-/// 设备上传的文件放在这个共享文件夹里（ADR-0020）。
+/// Upload subdirectory inside each person's private home.
 pub const TRANSFERS: &str = "transfers";
 /// 文件名的上限：常见文件系统都是 255 字节，留出重名序号的位置。
 const MAX_NAME_BYTES: usize = 240;
@@ -214,6 +214,13 @@ impl Shares {
         }
     }
 
+    pub(super) fn at_root(&self, root: PathBuf) -> Self {
+        Self {
+            root,
+            removing: self.removing.clone(),
+        }
+    }
+
     /// 逐级打开目录。路径上任何一级是软链接都拒绝，不是目录就算文件没了。
     fn open_dir(&self, share: &str, dirs: &[String]) -> Result<OwnedFd, ShareError> {
         check_public(share)?;
@@ -272,6 +279,7 @@ impl Shares {
 
     /// 启动时：建好回收槽，建不了要让启动失败：磁盘满了再建就晚了，主人会删不了文件。
     pub fn prepare_removal(&self) -> Result<(), ShareError> {
+        let _removing = self.removing.lock().expect("删除锁中毒");
         let dir = self.open_dir(TRANSFERS, &[])?;
         // 启动时没有请求头：回收槽的核对错误按英文说，只进启动日志。
         prepare_trash(dir.as_fd(), &Languages::from_header(None))

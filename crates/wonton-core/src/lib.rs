@@ -46,6 +46,7 @@ pub mod owner;
 pub mod pairing;
 pub mod peers;
 pub mod plugin;
+pub mod private_home;
 pub mod push;
 pub mod roles;
 pub mod secret;

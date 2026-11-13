@@ -325,6 +325,8 @@ async fn serve() -> anyhow::Result<()> {
         hydra_for_manager,
         &matrix,
         owner.clone(),
+        members.clone(),
+        roles.clone(),
         &sharing_registries,
         mailpit.clone(),
     )
@@ -350,12 +352,17 @@ async fn serve() -> anyhow::Result<()> {
         roles.clone(),
     );
     bus.attach_help(help_docs(&cfg, manager.clone(), upgrades.clone()));
-    let host = Arc::new(CoreHost::new(
-        manager.clone(),
-        bus.upstreams(),
-        notices.clone(),
-    ));
-    let files = open_files(&cfg, host, http.clone(), audit.clone(), images)?;
+    let host = Arc::new(
+        CoreHost::new(manager.clone(), bus.upstreams(), notices.clone()).with_people(
+            members.clone(),
+            roles.clone(),
+            tunnel.devices.clone(),
+            cfg.username.clone(),
+            matrix.clone(),
+            cfg.core_state_dir(),
+        ),
+    );
+    let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
@@ -405,9 +412,6 @@ async fn serve() -> anyhow::Result<()> {
         contacts,
         agent_chains,
     );
-    if let Err(error) = gateway.sync_family_room().await {
-        tracing::error!(%error, retry_path = wonton_protocol::FAMILY_ROOM_SYNC_PATH, "Family room startup synchronization failed");
-    }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,
@@ -776,26 +780,6 @@ fn help_docs(
     wonton_core::help::Help::new(cfg.docs.clone(), manager, version)
 }
 
-/// 文件服务（ADR-0020）。读不出编号记录、建不了 `transfers` 就启动失败。
-fn open_files(
-    cfg: &Config,
-    host: Arc<CoreHost>,
-    http: HttpClient,
-    audit: Arc<Audit>,
-    images: Arc<ImageWorker>,
-) -> anyhow::Result<Arc<Files>> {
-    let config = FilesConfig {
-        dir: cfg.core_state_dir().join("files"),
-        shares_dir: cfg.shares_dir(),
-        owner: Owner {
-            uid: cfg.puid,
-            gid: cfg.pgid,
-        },
-    };
-    let files = Files::open(&config, host, http, audit, images).context("打开文件服务")?;
-    Ok(Arc::new(files))
-}
-
 /// 装配插件管理器：恢复已安装的插件、起监控、装默认插件（ADR-0025 的预装在后台跑）。
 #[allow(clippy::too_many_arguments)]
 async fn start_plugin_manager(
@@ -806,6 +790,8 @@ async fn start_plugin_manager(
     hydra: Option<Hydra>,
     matrix: &Option<Arc<Matrix>>,
     owner: Arc<OwnerStore>,
+    members: Arc<Members>,
+    roles: Arc<Roles>,
     sharing: &sharing_start::Registries,
     mailpit: Option<Arc<wonton_core::mailbox::Component>>,
 ) -> anyhow::Result<(Arc<PluginManager>, Arc<ImageWorker>)> {
@@ -837,6 +823,7 @@ async fn start_plugin_manager(
         .with_mailpit(mailpit)
         .with_matrix_rtc_ca(matrix_rtc_ca),
     );
+    manager.attach_person_state(members, roles);
     manager.attach_sharing(sharing.friends.clone(), sharing.shares.clone());
     manager.spawn_registry_mirror_probe();
     // 启动时把宿主主机名取好缓存起来，装插件、重建容器时不再查 Docker；没取到时下次安装再取。

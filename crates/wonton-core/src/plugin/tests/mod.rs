@@ -71,6 +71,8 @@ mod people_languages;
 mod personal_data_contract;
 mod plugin_settings;
 mod preinstall;
+mod private_home;
+mod private_home_docker;
 mod privileges;
 mod render_drift;
 mod resources;

@@ -11,3 +11,4 @@ roles-friend-not-found = 好友名單裡沒有 { $user_id }。
 roles-friends-unavailable = 這台伺服器沒接好友。
 family-room-name = 家庭群
 family-room-sync-failed = 成員和角色記錄已儲存，但家庭群未能同步。請管理員重試家庭群同步：{ $error }
+family-private-sync-failed = 成員記錄已儲存，但聊天、私人 Bot 或檔案空間未能同步。請管理員重試成員同步：{ $error }

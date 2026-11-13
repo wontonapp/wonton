@@ -44,7 +44,7 @@ async fn an_abandoned_upload_is_never_placed_again() {
         FileFailure::FileUnknown,
         "tusd 的钩子排在后面也一样"
     );
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     assert!(!transfers.join("a.txt").exists());
     assert!(!transfers.join("a (1).txt").exists());
     assert!(!data.exists());
@@ -56,11 +56,11 @@ async fn an_abandoned_upload_is_never_placed_again() {
 async fn the_sweep_finishes_an_abandoned_upload_without_placing_it() {
     let f = Fixture::new();
     let (id, data, _temp) = placed_without_record(&f, "hello").await;
-    fs::remove_file(f.shares_dir.join(TRANSFERS).join("a.txt")).unwrap();
+    fs::remove_file(f.home_dir().join(TRANSFERS).join("a.txt")).unwrap();
     f.files.mark_abandoned(&id).unwrap();
     fs::write(&data, "he").unwrap();
     f.files.sweep(now_secs()).await;
-    assert!(!f.shares_dir.join(TRANSFERS).join("a.txt").exists());
+    assert!(!f.home_dir().join(TRANSFERS).join("a.txt").exists());
     assert!(!data.exists());
     assert!(f.files.uploads.load_pending(&id).unwrap().is_none());
 }
@@ -73,7 +73,7 @@ async fn a_removal_not_confirmed_on_disk_keeps_the_upload_for_the_next_sweep() {
     DIR_SYNC_FAILS.set(Some("a.txt".to_owned()));
     assert!(!f.files.abandon_now(&id));
     DIR_SYNC_FAILS.set(None);
-    assert!(!f.shares_dir.join(TRANSFERS).join("a.txt").exists());
+    assert!(!f.home_dir().join(TRANSFERS).join("a.txt").exists());
     assert!(f.files.uploads.load_pending(&id).unwrap().is_some());
     let audited = f.audit_lines();
     assert_eq!(audited.last().unwrap()["outcome"], DELETED_UNSYNCED);
@@ -87,7 +87,7 @@ async fn a_removal_not_confirmed_on_disk_keeps_the_upload_for_the_next_sweep() {
 async fn a_temporary_file_someone_planted_is_not_kept_as_the_upload() {
     let f = Fixture::new();
     let (id, data, temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::remove_file(transfers.join("a.txt")).unwrap();
     fs::remove_file(&temp).unwrap();
     fs::write(&temp, "planted").unwrap();
@@ -113,7 +113,7 @@ async fn a_temporary_file_someone_planted_is_not_kept_as_the_upload() {
 async fn placing_again_does_not_trust_a_planted_temporary_file() {
     let f = Fixture::new();
     let (id, _data, temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::remove_file(transfers.join("a.txt")).unwrap();
     fs::remove_file(&temp).unwrap();
     fs::write(&temp, "planted").unwrap();

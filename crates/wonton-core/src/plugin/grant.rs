@@ -13,6 +13,7 @@ pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
     matches!(
         permission,
         Permission::StorageShare { .. }
+            | Permission::StorageHome { .. }
             | Permission::NetworkEgress
             | Permission::EgressProxy
             | Permission::MatrixBot

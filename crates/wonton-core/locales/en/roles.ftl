@@ -11,3 +11,4 @@ roles-friend-not-found = There is no friend { $user_id }.
 roles-friends-unavailable = Friends aren't available on this server.
 family-room-name = Family
 family-room-sync-failed = The saved member and role records could not be applied to the family chat. An administrator can retry the family chat sync: { $error }
+family-private-sync-failed = Member records were saved, but their chat, private Bot or files could not be synchronized. An administrator can retry member setup: { $error }

@@ -390,7 +390,7 @@ async fn uploads_through_the_tunnel_stream_resume_and_end_as_a_file() {
         .call(Method::GET, &format!("/_wonton/files/{id}/content"))
         .await;
     assert_eq!(content.body, data);
-    let placed = s.home.f.shares_dir.join("transfers/a.bin");
+    let placed = s.home.f.home_dir().join("transfers/a.bin");
     assert_eq!(std::fs::metadata(&placed).unwrap().len(), size);
     assert!(!stored.exists());
 
@@ -407,7 +407,7 @@ async fn uploads_through_the_tunnel_stream_resume_and_end_as_a_file() {
         .body(Body::from("x"))
         .unwrap();
     assert_eq!(s.send(request).await.status, StatusCode::NO_CONTENT);
-    assert!(s.home.f.shares_dir.join("transfers/a (1).bin").exists());
+    assert!(s.home.f.home_dir().join("transfers/a (1).bin").exists());
 }
 
 #[tokio::test(flavor = "multi_thread")]

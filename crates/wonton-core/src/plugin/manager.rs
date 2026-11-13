@@ -128,6 +128,7 @@ pub struct PluginManager {
     pub(super) sharing:
         std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
     pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
+    pub(super) person_roles: RwLock<Arc<crate::roles::Roles>>,
     /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
     /// [`super::contacts`]。
     pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
@@ -211,6 +212,7 @@ impl PluginManager {
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
             person_members: std::sync::OnceLock::new(),
+            person_roles: RwLock::new(Arc::new(crate::roles::Roles::initial())),
             contact_source: std::sync::OnceLock::new(),
         }
     }

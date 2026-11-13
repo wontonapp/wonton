@@ -1,6 +1,7 @@
 //! 网关行为测试：走真实 TCP 连接。插件上游和 Hydra 管理接口的替身在 [`super::fakes`] 里。
 
 use std::net::SocketAddr;
+use std::os::unix::fs::MetadataExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -166,6 +167,8 @@ impl Harness {
             port: addr.port(),
         };
         let dir = tempfile::tempdir().unwrap();
+        // 数据目录的属主按当前用户派生（CI runner 的 uid 不是 1000）：目录都以进程自己的属主建，不靠 chown。
+        let owner_ids = std::fs::metadata(dir.path()).unwrap();
         let http = HttpClient::new();
         let hydra = hydra_admin.map(|admin| {
             let cfg = OidcProviderConfig {
@@ -183,8 +186,8 @@ impl Harness {
             relay_dir: dir.path().join("relay"),
             core_container: None,
             tz: "UTC".into(),
-            puid: 1000,
-            pgid: 1000,
+            puid: owner_ids.uid(),
+            pgid: owner_ids.gid(),
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
             profile: profile.clone(),

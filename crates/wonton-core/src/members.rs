@@ -2,6 +2,9 @@
 //! 已移除的成员留在表里，用户名不再分配。邀请码只存 SHA-256；请求绑定设备 endpoint，批准后的同设备重试到期前有效。
 
 mod join_requests;
+mod lifecycle;
+
+pub(crate) use lifecycle::Lifecycle;
 
 pub use join_requests::JoinCheck;
 
@@ -64,8 +67,7 @@ pub enum MembersError {
     DeviceRegistered,
 }
 
-/// 后续任务订阅的家人事件：第一台设备配上（建私人 Bot、Wonton 私聊、拉进家庭群）和移除家人
-/// （停用 Matrix 账号、删 Bot、删私人空间）。发送失败（还没有订阅者）就丢弃，事件只是通知。
+/// 成员变化通知。收尾根据持久记录重算，不依赖事件可靠送达。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemberEvent {
     Joined {
@@ -93,7 +95,7 @@ pub struct MemberRecord {
     /// 他的角色（`roles.json` 的 ID）。记录里没有这一项时按权限最少的默认角色算。
     #[serde(default = "default_role_id")]
     pub role_id: String,
-    /// 邀请时主人选了建私人 Bot；建 Bot 是后续任务，先记下来。
+    /// 邀请时选择创建私人 Bot；角色也必须允许。
     #[serde(default)]
     pub wants_private_bot: bool,
     /// 他的私人 Bot；还没建时为空。
@@ -131,6 +133,8 @@ struct Stored {
     members: Vec<MemberRecord>,
     #[serde(default)]
     joins: Vec<join_requests::StoredJoin>,
+    #[serde(default)]
+    lifecycle: std::collections::BTreeMap<String, Lifecycle>,
 }
 
 /// 发出去的归家人的码。
@@ -359,14 +363,25 @@ impl Members {
         delete_home: bool,
         keep_bot_data: bool,
     ) -> Result<MemberRecord, MembersError> {
-        let mut record = None;
-        self.update(username, |member| {
-            member.status = MemberStatus::Removed;
-            // 保留哈希才能向持旧码的设备说明成员已移除，而不是把它当成没发过的码。
-            record = Some(member.clone());
-            Ok(())
-        })?;
-        let record = record.unwrap_or_else(|| unreachable!("update 找到了这条记录"));
+        let mut stored = self.lock();
+        let mut next = stored.clone();
+        let member = next
+            .members
+            .iter_mut()
+            .find(|member| member.username == username)
+            .ok_or_else(|| MembersError::NotFound(username.to_owned()))?;
+        member.status = MemberStatus::Removed;
+        // 保留哈希才能向持旧码的设备说明成员已移除；保留收尾选项才能在失败或重启后继续。
+        let record = member.clone();
+        next.lifecycle
+            .entry(username.to_owned())
+            .or_default()
+            .removal = Some(wonton_protocol::MemberRemoval {
+            delete_home,
+            keep_bot_data,
+        });
+        self.commit(&mut stored, next)?;
+        drop(stored);
         tracing::info!(member = %username, "家人已移除");
         let _ = self.events.send(MemberEvent::Removed {
             username: username.to_owned(),

@@ -28,7 +28,7 @@ async fn placed(f: &Fixture, id: &FileId) -> std::path::PathBuf {
         .unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     f.files.finish_upload(id, &any_langs()).await.unwrap();
-    f.shares_dir.join(TRANSFERS).join("a.txt")
+    f.home_dir().join(TRANSFERS).join("a.txt")
 }
 
 /// 把记录改成 `at` 过期。
@@ -157,7 +157,7 @@ async fn a_delete_that_keeps_failing_keeps_the_record_and_file() {
     let public = placed(&f, &id).await;
     let now = now_secs();
     expire(&f, &id, now);
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::remove_dir_all(transfers.join(".wonton-trash")).unwrap();
 
     f.files.sweep(now).await;

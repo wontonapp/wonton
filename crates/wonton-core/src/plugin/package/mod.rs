@@ -553,14 +553,9 @@ impl PluginPackage {
         let services: BTreeMap<String, Service> = self
             .services
             .iter()
-            .map(|(name, raw)| {
-                let mut value = raw.clone();
-                strip_extensions(&mut value);
+            .map(|(name, _)| {
                 let mut variables = UsedVars::new();
-                interpolate_value(&mut value, vars(name), &mut variables)
-                    .map_err(|source| interpolate_error(langs, name.clone(), source))?;
-                let service: Service = serde_path_to_error::deserialize(value)
-                    .map_err(|e| service_error(langs, name, pathed(&e)))?;
+                let service = self.service(name, vars(name), &mut variables, langs)?;
                 if !variables.is_empty() {
                     used.insert(name.clone(), variables);
                 }
@@ -569,6 +564,20 @@ impl PluginPackage {
             .collect::<Result<_, PackageError>>()?;
         super::network_mode::validate(&self.manifest, &services)?;
         Ok(services)
+    }
+
+    pub(in crate::plugin) fn service(
+        &self,
+        name: &str,
+        vars: &Vars,
+        used: &mut UsedVars,
+        langs: &Languages,
+    ) -> Result<Service, PackageError> {
+        let mut value = self.services[name].clone();
+        strip_extensions(&mut value);
+        interpolate_value(&mut value, vars, used)
+            .map_err(|source| interpolate_error(langs, name.to_owned(), source))?;
+        serde_path_to_error::deserialize(value).map_err(|e| service_error(langs, name, pathed(&e)))
     }
 }
 

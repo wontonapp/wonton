@@ -87,6 +87,7 @@ impl Family {
             .members
             .invite(MemberRecord {
                 role_id: role.to_owned(),
+                wants_private_bot: false,
                 ..MemberRecord::for_test(username)
             })
             .unwrap();
@@ -339,7 +340,7 @@ async fn failed_creation_is_reported_and_retry_uses_saved_approval_without_reinv
         "{}",
         reply.text()
     );
-    assert_eq!(reply.error_kind(), Some("family_room_sync_failed"));
+    assert_eq!(reply.error_kind(), Some("matrix_unavailable"));
     assert_eq!(
         f.gateway.members.get("alice").unwrap().status,
         MemberStatus::Joined

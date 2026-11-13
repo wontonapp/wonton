@@ -56,7 +56,7 @@ impl PluginBots {
 
 /// Bot 记录的存取。
 pub struct BotStore {
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
 }
 
 impl BotStore {
@@ -93,6 +93,7 @@ impl BotStore {
             .into_values()
             .flat_map(|bots| bots.bots.into_values())
             .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
+            .chain(self.pending_localparts()?)
             .collect())
     }
 
@@ -284,13 +285,26 @@ impl PluginManager {
         let store = self.store.bots();
         let mut plugin_bots = store.load(id)?;
         // 同一个 Bot 重试安装时沿用账号；其他 Bot 的令牌不变。
-        let existing = plugin_bots.bots.get(bot).cloned();
-        let mut taken: BTreeSet<String> = store
-            .all()?
-            .into_values()
-            .flat_map(|bots| bots.bots.into_values())
-            .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
-            .collect();
+        let mut pending = store.pending(id)?;
+        let existing = plugin_bots.bots.get(bot).cloned().or_else(|| {
+            pending.get(bot).map(|intent| BotEntry {
+                account: intent.account(),
+                device_id: intent.device_id.clone(),
+                keeper: intent.keeper.clone(),
+                bus_token: intent.bus_token.clone(),
+            })
+        });
+        if let Some(entry) = &existing {
+            if entry.keeper != keeper {
+                return Err(self.home_denied());
+            }
+            for device in matrix.devices(&entry.account.user_id).await? {
+                matrix
+                    .delete_device(&entry.account.user_id, &device)
+                    .await?;
+            }
+        }
+        let mut taken = store.localparts()?;
         self.reserve_friend_names(&mut taken);
         if let Some(members) = self.person_members.get() {
             taken.extend(members.list().into_iter().map(|member| member.username));
@@ -309,39 +323,58 @@ impl PluginManager {
             avatar: avatar(package, &langs)?,
             owner: &self.keeper_user(&keeper),
         };
-        let provisioned = matrix.provision_bot(&spec).await.map_err(|e| {
-            if e.errcode() == "M_USER_DEACTIVATED" {
-                let user = existing.as_ref().map_or("", |e| e.account.user_id.as_str());
-                InstallError::Conflict(crate::l10n::text(
-                    &langs,
-                    "plugin-settings-bot-account-deactivated",
-                    &[("user", user.into())],
-                ))
-            } else {
-                e.into()
-            }
-        })?;
-        let bus_token = existing.map_or_else(random_token, |e| e.bus_token);
-        plugin_bots.bots.insert(
+        let reserved = matrix.reserve_bot_account(&spec).await?;
+        let bus_token = existing
+            .as_ref()
+            .map_or_else(random_token, |entry| entry.bus_token.clone());
+        pending.insert(
             bot.to_owned(),
-            BotEntry {
-                account: provisioned.account.clone(),
-                device_id: Some(provisioned.device_id.clone()),
-                keeper,
+            super::bot_intents::PendingBot {
+                user_id: reserved.user_id.clone(),
+                home_room: (!reserved.home_room.is_empty()).then(|| reserved.home_room.clone()),
+                device_id: None,
+                keeper: keeper.clone(),
                 bus_token,
             },
         );
-        store.save(id, &plugin_bots)?;
+        store.save_pending(id, &pending)?;
+        let spec = BotSpec {
+            previous: Some(&reserved),
+            ..spec
+        };
+        let provisioned = matrix
+            .provision_bot_checkpointed(&spec, |provisioned| {
+                let intent = pending.get_mut(bot).expect("reserved bot intent");
+                intent.home_room = (!provisioned.account.home_room.is_empty())
+                    .then(|| provisioned.account.home_room.clone());
+                intent.device_id = Some(provisioned.device_id.clone());
+                store
+                    .save_pending(id, &pending)
+                    .map_err(|error| MatrixError::Invalid(error.to_string()))
+            })
+            .await
+            .map_err(|e| {
+                if e.errcode() == "M_USER_DEACTIVATED" {
+                    let user = existing.as_ref().map_or("", |e| e.account.user_id.as_str());
+                    InstallError::Conflict(crate::l10n::text(
+                        &langs,
+                        "plugin-settings-bot-account-deactivated",
+                        &[("user", user.into())],
+                    ))
+                } else {
+                    e.into()
+                }
+            })?;
+        let intent = pending.remove(bot).expect("checkpointed bot intent");
+        if let Err(error) = store.publish_pending(id, bot, &provisioned, intent, &mut plugin_bots) {
+            matrix
+                .delete_device(&provisioned.account.user_id, &provisioned.device_id)
+                .await?;
+            return Err(error.into());
+        }
         self.changed();
         self.initialize_default_avatars(package, &provisioned)
             .await?;
-        tracing::info!(
-            plugin = %id,
-            bot,
-            user = %provisioned.account.user_id,
-            room = %provisioned.account.home_room,
-            "Bot 已就绪"
-        );
         Ok(provisioned)
     }
 
