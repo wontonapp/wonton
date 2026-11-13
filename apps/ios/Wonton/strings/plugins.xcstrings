@@ -392,6 +392,276 @@
         }
       }
     },
+    "portMapping.reasonPortInUse": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The port is already in use by another app on this phone."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口被手机上的其他应用占用了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "連接埠被手機上的其他應用程式佔用了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このポートは端末上の別のアプリが使用中です。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonServerTooOld": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server is too old and needs an update."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家里的服务器版本太旧，需要先升级。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "家用伺服器版本太舊，需要先升級。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーのバージョンが古いため、先にアップデートが必要です。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonTunnelDisconnected": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The tunnel to your home server isn't connected."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到家里服务器的隧道没连上。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "到家用伺服器的隧道沒連上。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーへのトンネルに接続していません。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonPluginNotInstalled": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app isn't installed on your home server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器上没有安装这个应用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器上沒有安裝這個應用程式。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリは自宅サーバーにインストールされていません。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonPortNotDeclared": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app doesn't declare that port."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用没有声明这个端口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個應用程式沒有宣告這個連接埠。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリはそのポートを宣言していません。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonPluginNotRunning": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This app isn't running on your home server."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个应用没有在运行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個應用程式沒有在執行。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリが動いていません。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonPluginUnreachable": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your home server can't reach this app."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器连不上这个应用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "伺服器連不上這個應用程式。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自宅サーバーからこのアプリに接続できません。"
+          }
+        }
+      }
+    },
+    "portMapping.reasonOther": {
+      "comment": "Reason the declared ports could not be mapped on this device. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Port mapping ran into a problem."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射出错了。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "映射出錯了。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マッピングで問題が発生しました。"
+          }
+        }
+      }
+    },
+    "portMapping.warningPublicRelayBandwidth": {
+      "comment": "Informational warning below the local port mapping; mapping still works. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected only through the public relay — not enough bandwidth for streaming."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只连上了公共中继，带宽不够传画面。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只連上了公共中繼，頻寬不夠傳畫面。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公共リレー経由でしか接続できておらず、映像を送る帯域が足りません。"
+          }
+        }
+      }
+    },
     "portMapping.title": {
       "comment": "Section title listing the ports a plugin maps to this device (ADR-0072). No arguments.",
       "extractionState": "manual",
