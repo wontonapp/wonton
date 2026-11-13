@@ -107,7 +107,7 @@ iOS 的控制中心和锁屏按钮。三类入口画的时候核心都不一定�
 
 ### 8. iOS 工程
 
-- 一个 WidgetKit 扩展目标（`$(WONTON_BUNDLE_ID).widgets`），小组件和控制按钮都在它的 `WidgetBundle` 里，接 PR #402 的 App Group。
+- 一个 WidgetKit 扩展目标（`$(WONTON_BUNDLE_ID).widget`，照分享扩展的写法），小组件和控制按钮都在它的 `WidgetBundle` 里，接 PR #402 的 App Group。
 - 扩展不链接 `WontonClient`：它只读一份 JSON，不必带上连网、Matrix 和存储。Swift 那边按快照的字段名解码，字段名由协议的契约测试锁住，
   改了契约测试先失败。
 - 主屏小组件的预览文字标 `privacySensitive()`；锁屏的只放未读数和 Bot 状态，不放人名和正文。
