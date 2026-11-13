@@ -277,13 +277,6 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
-        self.upgrade_devices(
-            &package.manifest,
-            &record.effective_permissions(&package.manifest),
-            &record.devices,
-            &[],
-            langs,
-        )?;
         let devices = self.recovery_devices(&package.manifest, &record)?;
         self.start_dependency_providers(&package.manifest, langs, gate == Gate::StartPeriod)
             .await?;
