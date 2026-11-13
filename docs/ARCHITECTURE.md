@@ -63,7 +63,7 @@ flowchart LR
 | `mailpit` | 核心组件 | 收插件应用发的信（SMTP），接入申请了 `notify` 的插件网络，只收发给家里人的内部邮箱；核心取走后转进聊天（ADR-0056）。 |
 | 第三方 App 入口 | 核心组件（主人打开才有） | 入口容器、局域网转发、连接器和 lego，由核心管理（ADR-0021）。连接器是 TCP 转发、frpc 或 cloudflared，主人在设置里选，公网访问有总开关（ADR-0090）；lego 用主人的 DNS 服务商（ADR-0089）。 |
 | `hermes` | 默认插件（可替换） | 默认 Agent，以 Matrix bot 身份接入；一个 Hermes profile 对应一个 Bot。核心启动后自动装一次，主人卸掉就不再装（ADR-0007）。 |
-| `magpie` | 系统插件 | 模型网关：provider 和 key 只配一次，所有插件共用。主人换不掉；我们换实现时 Agent 不用改（ADR-0008）。 |
+| `magpie` | 系统插件 | 模型网关：provider 和 key 只配一次，供插件共用。主人换不掉；我们换实现时 Agent 不用改（ADR-0008）。模型来源边界见 ADR-0055。 |
 | 其他 | 可选插件 | Immich、Navidrome、Paperless-ngx、Ollama、Syncthing、Samba 等。 |
 | `wonton-updater` | 一次性容器 | 升级核心时拉起，用核心自己的镜像：拉新镜像、重建核心、健康检查，失败回滚（ADR-0025）。 |
 
@@ -137,7 +137,9 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 
 服务器比 App 旧时，引导不整页报错：某个接口回 404、而服务器报的版本比这个接口要的旧（`minimum_server_version`），客户端核心归成“服务器太旧”，这一步整步不显示、完成时也不做它；连引导接口都没有时整段不出现，只留一条升级服务器的提示。服务器不旧却回 404 的照旧按原类别报。服务器版本从核心升级状态的 `current.version` 取，取不到就不判旧。
 
-配对之后，App 依次带主人填资料、选默认的 Agent、接模型、按需求选应用，最后一页列出全部选择和权限，点完成才一起执行：保存资料和模型，在后台装 Agent 和应用，然后进入聊天。每一步都能跳过，核心只记走没走完。Agent 名单和推荐清单放在官方索引里，核心取来交给 App，不用发版。key 的测试和保存由模型网关声明的命令执行，核心只转交，不存。设计见 [ADR-0034](adr/0034-onboarding-and-help.md) 和 [ADR-0038](adr/0038-multi-step-cards.md)。
+配对之后，App 依次带主人填资料、选默认的 Agent、接模型、按需求选应用，最后一页列出全部选择和权限，点完成才保存引导草稿、在后台装 Agent 和应用，然后进入聊天。每一步都能跳过，核心只记走没走完。Agent 名单和推荐清单放在官方索引里，核心取来交给 App，不用发版。
+
+模型配置使用和侧栏“模型设置”相同的 magpie 原生网页，不另做服务商、key 和测试表单；网页保存不属于引导草稿。入口、官方订阅登录和保存边界见 [ADR-0034](adr/0034-onboarding-and-help.md#接模型)，页面外框见 [ADR-0038](adr/0038-multi-step-cards.md)。
 
 ### 帮助文档
 
@@ -146,7 +148,7 @@ Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须
 ### 聊天
 
 App 的 Matrix 客户端请求进入客户端核心的本地代理，经 iroh 隧道到核心网关，再转给 Tuwunel。
-Bot（Agent 插件）作为 Matrix 用户收到消息，通过 magpie 调模型，通过 MCP 调工具，再把回复发回房间，
+Bot（Agent 插件）作为 Matrix 用户收到消息，按 [ADR-0055 的模型来源规则](adr/0055-model-gateway-optional.md#agent-的模型来源只有两种)调模型，通过 MCP 调工具，再把回复发回房间，
 由 Sliding Sync 同步到所有设备。
 
 输入框里选的照片和文件先进附件区预上传；一次发送里的附件全部传完、文件授权给房间以后才发第一条事件，几条事件带同一个分组标记，
@@ -280,7 +282,7 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
   请求对应聊天里的确认按钮。
   `agent_acp` 的跨插件调用由核心在创建会话前核对并重写链载体；载体核对规则见
   [ADR-0061 第 12 节](adr/0061-agent-runtime-and-frontends.md#12-跨插件传链sessionnew-的-_meta-里带链载体)。
-- 模型默认经 magpie。订阅账号只在 Agent 官方程序里登录，不经 magpie（ADR-0034）。
+- 模型来源与缺网关处理见 [ADR-0055](adr/0055-model-gateway-optional.md)，官方订阅登录和统一的模型设置入口见 [ADR-0034](adr/0034-onboarding-and-help.md#接模型)。
 - 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。
 - 网关的管理接口按 ADR-0088 的权限项判断：每个接口声明要哪一项，主人一律放行，其余按这个家人的角色判断，
   缺了回 403 `permission_required` 并写明缺的项；角色的管理本身仍在角色之外，只收主人。
@@ -296,7 +298,7 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 - 插件权限写在清单里，安装时确认。高权限声明了就给，按风险分三级提示；Docker socket、特权模式这类等于交出宿主 root
   的单独确认；Agent 和 Bot 插件拿不到它们（ADR-0036）。
   显卡由核心按宿主实际有的显卡交给清单指定的服务（ADR-0018）。
-- provider key 等密钥只存在核心密钥库和 magpie，插件拿到的是受限令牌。
+- 模型服务商的 key 由模型网关保存，Agent 只拿受限网关凭据；官方订阅登录态的边界见 ADR-0034。
 - 来自其他 Bot、网页、文件的内容都视为不可信输入。
 
 ## 仓库布局
