@@ -361,6 +361,36 @@
           }
         }
       }
+    },
+    "tab.media.promptCamera": {
+      "comment": "Title of the prompt asking to let a page's app use the camera. Argument: the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow %@ to use your camera?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 %@ 使用摄像头吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許 %@ 使用相機嗎？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にカメラの使用を許可しますか？"
+          }
+        }
+      }
     }
   }
 }

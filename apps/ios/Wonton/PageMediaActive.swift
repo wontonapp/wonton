@@ -1,3 +1,4 @@
+import Foundation
 import WontonClient
 
 /// 插件网页在放媒体：核心据此在 App 退到后台时照常探测、自动重连（ADR-0033）。

@@ -52,6 +52,16 @@ extension TabWebSession: WKNavigationDelegate {
             try updateContext(webView, force: true)
         } catch { problem = error.problem }
         #if DEBUG
+        // 夜跑的网页媒体权限用例（wonton-media-capture-test）：真插件页没有现成的麦克风入口，
+        // XCUITest 也执行不了网页脚本，页面加载完在页面里要一次麦克风，出壳的询问弹窗。
+        if ProcessInfo.processInfo.arguments.contains("wonton-media-capture-test") {
+            // 首句实锤插件页的安全上下文（*.wonton.localhost 按安全上下文算）；结果看走查日志里的 "Wonton media probe"。
+            webView.evaluateJavaScript(
+                "typeof navigator.mediaDevices + ':' + (navigator.mediaDevices ? navigator.mediaDevices.getUserMedia({audio: true}).then(() => 'granted', (e) => 'denied:' + e.name).catch(() => 'error') : 'none')"
+            ) { result, error in
+                NSLog("Wonton media probe: %@%@", result as? String ?? "?", error.map { " error:\($0)" } ?? "")
+            }
+        }
         let path = webView.url?.path ?? ""
         NSLog("Wonton tab loaded: %@ %@", String(describing: tab), path)
         #endif

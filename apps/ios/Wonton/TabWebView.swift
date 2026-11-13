@@ -144,7 +144,7 @@ final class TabWebSession: NSObject {
             controller.add(WeakTabMessageHandler(self), name: "wontonBridge")
             controller.add(WeakTabMessageHandler(self), name: "wontonMedia")
             // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的（同 Android）。
-            configuration.mediaTypesRequiringUserActionForPlayback = .none
+            configuration.mediaTypesRequiringUserActionForPlayback = []
         }
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
@@ -156,6 +156,7 @@ final class TabWebSession: NSObject {
         // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
+        if bridged { view.uiDelegate = self }
         #if DEBUG
         view.isInspectable = true
         #endif
@@ -376,6 +377,7 @@ final class TabWebSession: NSObject {
         backObservation = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
         if bridged {
             let controller = webView?.configuration.userContentController
             controller?.removeScriptMessageHandler(forName: "wontonBridge")
