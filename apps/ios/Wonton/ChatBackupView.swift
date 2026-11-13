@@ -1,3 +1,4 @@
+import LocalAuthentication
 import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
@@ -193,13 +194,79 @@ extension BackupReminder {
 private struct RecoveryKeySection: View {
     let recoveryKey: String
     let confirm: () -> Void
+    // 验证只对这一次显示有效：收起页面再进会重建这个视图，要重新验证。
+    @State private var revealed: Bool
+    // 验证用不了（canEvaluatePolicy 失败且不是没设密码）按失败即停给提示，不让按钮静默无反应。
+    @State private var unavailable: Bool
+    @State private var failureDetail: String?
+    @State private var showsDetails = false
     @Environment(\.wontonColors) private var colors
+
+    /// 没设锁屏密码的设备不拦（canEvaluatePolicy 报 passcodeNotSet），密钥直接显示。
+    init(recoveryKey: String, confirm: @escaping () -> Void) {
+        self.recoveryKey = recoveryKey
+        self.confirm = confirm
+        let context = LAContext()
+        var error: NSError?
+        let canEvaluate = context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
+        let passcodeNotSet = (error as? LAError)?.code == .passcodeNotSet
+        _revealed = State(initialValue: !canEvaluate && passcodeNotSet)
+        _unavailable = State(initialValue: !canEvaluate && !passcodeNotSet)
+        _failureDetail = State(initialValue: canEvaluate ? nil : error?.localizedDescription)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             Text(.ChatBackup0.chatBackupSaveKeyTitle)
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
+            if revealed {
+                revealedKey
+            } else if unavailable {
+                authUnavailable
+            } else {
+                Button {
+                    authenticate()
+                } label: {
+                    Text(.ChatBackup1.chatBackupRevealKey).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+    }
+
+    /// 验证用不了：一句人话说明，系统给的原因收进默认收起的“详情”（失败即停，不让按钮静默无反应）。
+    private var authUnavailable: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text(.ChatBackup1.chatBackupAuthUnavailable)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+            Button {
+                showsDetails.toggle()
+            } label: {
+                HStack {
+                    Text(.Common.commonDetails)
+                    Spacer(minLength: 0)
+                    WontonIcon.forward.view(size: WontonTheme.size.iconSmall)
+                        .rotationEffect(.degrees(showsDetails ? 90 : 0))
+                }
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+                .frame(minHeight: WontonTheme.size.target)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showsDetails, let failureDetail {
+                Text(failureDetail)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var revealedKey: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
             // 不能长按选中：系统的拷贝不带下面的保护，复制只走“复制”按钮。
             Text(recoveryKey)
                 .font(.body.monospaced())
@@ -225,6 +292,42 @@ private struct RecoveryKeySection: View {
                     Text(.ChatBackup1.chatBackupSaved).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+    }
+
+    @MainActor
+    private func authenticate() {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            // 没设密码不该走到这（初始就直显了）；真发生了当作不用验证。
+            if (error as? LAError)?.code == .passcodeNotSet {
+                revealed = true
+                return
+            }
+            // 生物识别坏了这类失败：按失败即停给提示，不再静默无反应。
+            unavailable = true
+            failureDetail = error?.localizedDescription
+            return
+        }
+        Task {
+            do {
+                let passed = try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: String(localized: .ChatBackup1.chatBackupVerifyReason)
+                )
+                if passed { revealed = true }
+            } catch {
+                // 只有通过才显示；用户取消（含系统和 App 代取消）不算过也不算失败，不提示；
+                // 其余失败（单次没对上、生物识别锁死这类）按失败即停给提示，不再静默无反应。
+                switch (error as? LAError)?.code {
+                case .userCancel, .systemCancel, .appCancel:
+                    break
+                default:
+                    unavailable = true
+                    failureDetail = error.localizedDescription
+                }
             }
         }
     }

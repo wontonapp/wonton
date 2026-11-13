@@ -8,6 +8,7 @@ jna = "5.19.1"
 kotlinx-coroutines = "1.11.0"
 androidx-activity = "1.13.0"
 androidx-appcompat = "1.8.0"
+androidx-biometric = "1.1.0"
 androidx-core = "1.18.0"
 androidx-webkit = "1.18.0"
 androidx-browser = "1.9.0"
@@ -36,6 +37,8 @@ compose-material3 = { module = "org.jetbrains.compose.material3:material3", vers
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 androidx-appcompat = { module = "androidx.appcompat:appcompat", version.ref = "androidx-appcompat" }
+# Apache-2.0。看恢复密钥前先过系统验证（指纹、面容或锁屏密码）。
+androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "androidx-biometric" }
 androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
 androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "androidx-webkit" }
 # Apache-2.0。外部链接用 Custom Tabs 打开，不换 App。

@@ -23,6 +23,8 @@
     <string name="chat_install_stage_preparing">Preparing</string>
     <!-- Button on an install row when the source is unknown or the result is uncertain; opens the app's page. No arguments; short label. -->
     <string name="chat_install_open_page">Open app page</string>
+    <!-- Error under the reveal button when the system identity verification can't run; the user's own cancel shows nothing. -->
+    <string name="chat_backup_auth_unavailable">Identity verification isn\'t available right now. Try again later.</string>
     <!-- Explanation when the backup status can't be confirmed because the server isn't reachable. -->
     <string name="chat_backup_detail_unknown">Connect to your home server to confirm.</string>
     <!-- Primary button under the recovery key field: fetch past messages with the entered key. -->
@@ -33,6 +35,8 @@
     <string name="chat_backup_reset_confirm">Reset</string>
     <!-- Title of the reset confirmation dialog. -->
     <string name="chat_backup_reset_title">Reset chat backup?</string>
+    <!-- Button that asks the system to verify the owner before showing the recovery key. -->
+    <string name="chat_backup_reveal_key">View recovery key</string>
     <!-- Note under the freshly issued recovery key: it is only shown once. -->
     <string name="chat_backup_save_key_note">You\'ll need it when you switch phones. It\'s only shown once; after \"Saved\" this device keeps no copy.</string>
     <string name="chat_backup_saved_confirm_message">After this, this device no longer shows the key. Make sure you have a copy before you continue.</string>
