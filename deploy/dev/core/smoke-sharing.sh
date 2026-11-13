@@ -79,8 +79,33 @@ export SHARE_SMOKE_BIN_DIR="$bin_dir"
 export SHARE_SMOKE_INSTANCE="ss$RANDOM"
 slot="${prefix##*.}"
 export SHARE_SMOKE_IDENTITY_PREFIX="11.213.$slot"
-# 别的栈的插件网络可能已经占了按名额算的这一段（它们不按名额分），撞了就用 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段。
+# 别的栈的插件网络可能已经占了按名额算的这一段（它们不按名额分）：起栈前对现网子网查一遍重叠，
+# 撞了就报错说明用 WONTON_SHARE_SMOKE_PLUGIN_POOL 换一段（11-13 65 号：194 上 wonton-app-hermes-*
+# 的 /26 散布在整个 10.213/16，按名额算的默认段撞上就是 compose 起网的 Pool overlaps）。
 export SHARE_SMOKE_PLUGIN_POOL="${WONTON_SHARE_SMOKE_PLUGIN_POOL:-10.213.$slot.0/24}"
+pool_busy() { # $1=CIDR；本机现有 Docker 网络的子网和它有重叠就返回 0（打到 stdout 的是撞上的子网）
+  local subs
+  subs=$(docker network ls -q | xargs -r docker network inspect --format "{{range .IPAM.Config}}{{.Subnet}} {{end}}" 2>/dev/null)
+  [[ -n $subs ]] || return 1
+  python3 -c "
+import ipaddress, sys
+pool = ipaddress.ip_network(sys.argv[1])
+busy = False
+for tok in sys.argv[2].split():
+    try:
+        net = ipaddress.ip_network(tok, strict=False)
+    except ValueError:
+        continue
+    if net.version == pool.version and net.overlaps(pool):
+        print(net)
+        busy = True
+sys.exit(0 if busy else 1)
+" "$1" "$subs"
+}
+if [[ -z ${WONTON_SHARE_SMOKE_PLUGIN_POOL:-} ]] && hit=$(pool_busy "$SHARE_SMOKE_PLUGIN_POOL"); then
+  echo "smoke-sharing：默认插件网段 $SHARE_SMOKE_PLUGIN_POOL 已被网络 $hit 占着，起不起来；用 WONTON_SHARE_SMOKE_PLUGIN_POOL=<另一段 /24> 换一段" >&2
+  exit 4
+fi
 # 必须是含分享实现的镜像（dev.sh share-smoke 会编好它）。
 export SHARE_SMOKE_CORE_IMAGE="${WONTON_SHARE_SMOKE_CORE_IMAGE:-wonton-core:share-smoke}"
 export SHARE_SMOKE_TUWUNEL_IMAGE="ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730"
