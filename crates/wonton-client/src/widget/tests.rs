@@ -210,6 +210,7 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
         matrix_widget: None,
     }

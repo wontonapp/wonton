@@ -48,6 +48,17 @@ gateway-login-required = Sign in to Wonton first
 gateway-name-oidc = identity provider
 gateway-name-models = model gateway
 
+# Client entries behind the TLS entry container (ADR-0021).
+gateway-entry-header-invalid = The entry gateway didn't label this request correctly
+gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
+gateway-entry-public-denied = This path isn't available on the public address
+gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
+gateway-entry-auth-unsupported = Signing in with a Wonton-issued password isn't supported for this app yet
+gateway-entry-state-unavailable = Can't read this app's entry settings; the owner can check them in Wonton
+gateway-entry-setup-closed = The app { $id } has no admin account any more, so its entry addresses were turned off to stop someone from claiming one. Reopen them in the Wonton app once the app is set up again.
+gateway-entry-setup-timeout = Checking this app's first-time setup took too long
+gateway-entry-target-unavailable = This app's entry must point to one shared service on its own app network
+
 # SSO handoff and OIDC login and consent.
 gateway-sso-invalid-next = That redirect address isn't valid
 gateway-sso-local-only = Redirects can only go to this server's app addresses

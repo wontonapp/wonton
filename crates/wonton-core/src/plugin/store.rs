@@ -94,6 +94,14 @@ pub struct InstalledRecord {
     /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_label: Option<String>,
+    /// 客户端入口的开关（ADR-0021，见 [`crate::clients::state`]）：局域网、公网，默认全关。开关接口在 C7。
+    #[serde(default)]
+    pub clients_entries: crate::clients::state::ClientsEntries,
+    /// `clients.http.auth.app` 的 `setup_done` 曾查到过完成（退出码 0）。之后得 1 才说明数据被
+    /// 清空或恢复过（关闭入口并通知主人，ADR-0022）；从没注册过的应用得 1 只是主人还没注册，
+    /// 入口保持开、回 409，不能把首次注册的入口关死。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub setup_done_ever: bool,
     /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
@@ -612,6 +620,8 @@ mod tests {
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,

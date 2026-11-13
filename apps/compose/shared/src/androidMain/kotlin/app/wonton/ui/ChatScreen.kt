@@ -38,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
@@ -142,6 +143,7 @@ fun ChatRoute(
                 OpenRoom(core, navigation, room, row, viewModel, plugins, onAction) { rejection = it }
             }
         }
+        LocalExpandedChat.current -> PluginPages(plugins, pluginNavigation) { ChatDetailEmpty() }
         else -> PluginPages(plugins, pluginNavigation) {
             ChatListScreen(
                 viewModel = viewModel,
@@ -166,7 +168,7 @@ fun ChatRoute(
 }
 
 @Composable
-private fun ChatListScreen(
+internal fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
@@ -175,6 +177,9 @@ private fun ChatListScreen(
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
     onOpenApps: () -> Unit,
+    showNewChat: Boolean = true,
+    selectedRoom: String? = null,
+    onReviewInstall: () -> Unit = {},
 ) {
     val installing = viewModel.installingBots
     val panel = LocalChatPanel.current
@@ -204,6 +209,7 @@ private fun ChatListScreen(
                         row,
                         plugins,
                         onRetry = {
+                            onReviewInstall()
                             // 重试不进核心的执行路径：重新预览，主人在确认页上再点一次（ADR-0067）。
                             pluginNavigation.confirmation = when (row.operation) {
                                 PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(row.pluginId)
@@ -222,7 +228,9 @@ private fun ChatListScreen(
                     if (row.membership == RoomMembership.INVITED) {
                         InviteItem(row, onAction)
                     } else {
-                        RoomItem(row, viewModel.bots.directBot(row), plugins, onClick = { onOpenRoom(row.roomId) })
+                        RoomItem(row, viewModel.bots.directBot(row), plugins, row.roomId == selectedRoom) {
+                            onOpenRoom(row.roomId)
+                        }
                     }
                 }
             }
@@ -237,7 +245,7 @@ private fun ChatListScreen(
                     )
                 }
             }
-            FloatingActionButton(
+            if (showNewChat) FloatingActionButton(
                 onClick = onStartChat,
                 modifier = Modifier.align(Alignment.BottomEnd)
                     .padding(
@@ -322,11 +330,13 @@ internal fun List<BotView>.directBot(row: RoomRow?): BotView? =
     row?.directUserId?.let { direct -> firstOrNull { it.userId == direct } }
 
 @Composable
-private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick: () -> Unit) {
+private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelected: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
+            .semantics { selected = isSelected }
+            .then(if (isSelected) Modifier.background(colors.accentFill.toColor()) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
@@ -347,7 +357,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick
                         row.name,
                         Modifier.weight(1f, fill = false),
                         style = WontonTheme.typography.itemTitle,
-                        color = colors.textPrimary.toColor(),
+                        color = (if (isSelected) colors.accentInkOnFill else colors.textPrimary).toColor(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

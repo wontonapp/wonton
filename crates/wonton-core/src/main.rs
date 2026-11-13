@@ -844,10 +844,11 @@ async fn start_plugin_manager(
 async fn start_restored_plugins(
     cfg: &Config,
     manager: &Arc<PluginManager>,
+    notices: Option<Arc<NoticeRoom>>,
     upgrades: Arc<Upgrades>,
 ) -> anyhow::Result<()> {
     manager.restore().await.context("恢复已安装的插件")?;
-    serve::spawn_plugin_monitors(manager);
+    serve::spawn_plugin_monitors(manager, notices);
     upgrades.spawn();
     preinstall(cfg, manager.clone(), upgrades)?;
     Ok(())

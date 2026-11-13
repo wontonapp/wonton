@@ -2,8 +2,7 @@
 import SwiftUI
 import WontonClient
 
-/// #847 的壳走查：核心的质量判定还没合进这条分支（只给 Unknown 和空值），用假 ViewModel 渲染 Poor、经中继、详情三种状态。
-/// 核心判定合入后，真实状态走同样的 `WontonBarStatus(home:)` 和 `ConnectionDetailsRows`。
+/// 固定 ViewModel 的界面走查，不替代真实隧道验证。
 /// 模拟器截图：`xcrun simctl launch <sim> app.wonton.ios wonton-quality-preview[-relay|-details]`，
 /// 再 `xcrun simctl io <sim> screenshot <文件>`。
 enum QualityPreviews {
@@ -17,6 +16,10 @@ enum QualityPreviews {
         switch ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("wonton-quality-preview") }) {
         case "wonton-quality-preview-relay": QualityHintPreview(home: fakeHome(relay: true), chat: true)
         case "wonton-quality-preview-details": QualityDetailsPreview()
+        case "wonton-quality-preview-udp": UdpDetailsPreview(evicted: 3)
+        case "wonton-quality-preview-udp-unknown": UdpDetailsPreview(evicted: nil)
+        case "wonton-quality-preview-udp-zero": UdpDetailsPreview(evicted: 0)
+        case "wonton-quality-preview-udp-large": UdpDetailsPreview(evicted: .max)
         default: QualityHintPreview(home: fakeHome(relay: false), chat: false)
         }
     }
@@ -63,6 +66,36 @@ private struct QualityHintPreview: View {
 /// 详情页：三行质量指标有值时的样子。
 private struct QualityDetailsPreview: View {
     private let home = QualityPreviews.fakeHome(relay: true)
+
+    var body: some View {
+        ScrollView {
+            ConnectionDetailsRows(details: home.details, path: home.path)
+                .padding(WontonTheme.spacing.pageInset)
+        }
+        .wontonPushedScreen(String(localized: .Common.commonDetails))
+    }
+}
+
+private struct UdpDetailsPreview: View {
+    let evicted: UInt64?
+
+    private var home: HomeViewModel {
+        var home = QualityPreviews.fakeHome(relay: false)
+        home.details.lastConnectedAtMs = nil
+        home.details.udpFlows = [
+            UdpFlowStats(
+                flowId: 1, pluginId: "LiveKit", port: 7882,
+                receivedPackets: 240, sentPackets: 120, oversizedDrops: 0, bufferEvictedDrops: nil
+            ),
+            UdpFlowStats(
+                flowId: 2, pluginId: "Neko", port: 52000,
+                receivedPackets: evicted == .max ? .max : 900,
+                sentPackets: 800, oversizedDrops: 2, bufferEvictedDrops: nil
+            )
+        ]
+        home.details.udpBufferEvictedDatagrams = evicted
+        return home
+    }
 
     var body: some View {
         ScrollView {

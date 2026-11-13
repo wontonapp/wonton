@@ -80,6 +80,7 @@ fn installed() -> InstalledPlugin {
         notices: vec![],
         enabled_root_permissions: vec!["docker.socket".into()],
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
         matrix_widget: Some(PluginWidget {
             url: "/room?widgetId=$matrix_widget_id".into(),

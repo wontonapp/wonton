@@ -114,6 +114,34 @@ fn invalid(service: &str, message: String) -> PackageError {
 }
 
 impl Deployment {
+    /// HTTP 的连接地址属于网络命名空间所有者；命令仍在清单声明的服务里执行。
+    /// 只接受唯一的全插件服务，不能把缺失或每 Bot 的容器偷偷换成另一份。
+    pub(super) fn clients_http_network_service(&self, declared: &str) -> Option<&str> {
+        let mut declared_plans = self
+            .containers
+            .iter()
+            .filter(|plan| plan.service == declared);
+        let plan = declared_plans.next()?;
+        if declared_plans.next().is_some() || plan.bot.is_some() {
+            return None;
+        }
+        let mode = plan.body.host_config.as_ref()?.network_mode.as_deref();
+        if mode == Some(self.network.as_str()) {
+            return Some(&plan.service);
+        }
+        let target = mode?.strip_prefix("container:")?;
+        let mut targets = self.containers.iter().filter(|plan| plan.name == target);
+        let target = targets.next()?;
+        if targets.next().is_some()
+            || target.bot.is_some()
+            || target.body.host_config.as_ref()?.network_mode.as_deref()
+                != Some(self.network.as_str())
+        {
+            return None;
+        }
+        Some(&target.service)
+    }
+
     /// Docker 的 container: 绑定容器 ID，目标换掉时必须一起换掉共用者。
     pub(super) fn retain_services(&mut self, services: &BTreeSet<String>) {
         let targets: BTreeSet<String> = self

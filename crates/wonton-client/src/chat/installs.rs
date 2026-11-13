@@ -125,7 +125,14 @@ fn rows(
     let mut rows = Vec::new();
     let mut covered: HashSet<&str> = HashSet::new();
     if let Some(installed) = installed {
-        listed_rows(installed, previews, &has_chat, &mut rows, &mut covered);
+        listed_rows(
+            installed,
+            tasks,
+            previews,
+            &has_chat,
+            &mut rows,
+            &mut covered,
+        );
     }
     task_rows(
         listed,
@@ -143,6 +150,7 @@ fn rows(
 /// 插件列表里正在装、正在升级的 Bot 插件。
 fn listed_rows<'a>(
     installed: &'a InstalledPlugins,
+    tasks: &[PluginTask],
     previews: &HashMap<String, InstallPreview>,
     has_chat: &impl Fn(&str) -> bool,
     rows: &mut Vec<BotInstallRow>,
@@ -150,6 +158,30 @@ fn listed_rows<'a>(
 ) {
     for plugin in &installed.plugins {
         if plugin.chat.is_none() {
+            continue;
+        }
+        if let Some(failure) = &plugin.install_failure {
+            if tasks
+                .iter()
+                .any(|task| task.id == plugin.id && task.state.in_progress())
+            {
+                continue;
+            }
+            rows.push(BotInstallRow {
+                plugin_id: plugin.id.clone(),
+                title: plugin.title.clone(),
+                icon: plugin.icon.clone(),
+                operation: PluginOperation::Install,
+                source: plugin.source.clone(),
+                state: BotInstallState::Failed {
+                    reason: crate::plugins::api::failure_kind(Some(&failure.kind), 500),
+                    message: match &plugin.status {
+                        PluginState::Degraded { reason } => reason.clone(),
+                        _ => failure.message.clone(),
+                    },
+                },
+            });
+            covered.insert(plugin.id.as_str());
             continue;
         }
         let operation = match plugin.status {
@@ -167,7 +199,7 @@ fn listed_rows<'a>(
             title: plugin.title.clone(),
             icon: plugin.icon.clone(),
             operation,
-            source: source(previews, &plugin.id),
+            source: source(previews, &plugin.id).or_else(|| plugin.source.clone()),
             state: BotInstallState::Running {
                 progress: plugin.install_progress.clone().unwrap_or(InstallProgress {
                     stage: InstallStage::Other,
@@ -203,6 +235,17 @@ fn task_rows<'a>(
             .and_then(|plugin| plugin.bot_user_id.as_deref())
     };
     for task in tasks {
+        if !task.state.in_progress()
+            && installed.is_some_and(|installed| {
+                installed
+                    .plugins
+                    .iter()
+                    .any(|plugin| plugin.id == task.id && plugin.install_failure.is_some())
+            })
+        {
+            settling.remove(&task.id);
+            continue;
+        }
         if task.operation == PluginOperation::Uninstall
             || !previews
                 .get(&task.id)
@@ -268,7 +311,11 @@ fn task_rows<'a>(
             title: task.title.clone(),
             icon: task.icon.clone(),
             operation: task.operation,
-            source: source(previews, &task.id),
+            source: source(previews, &task.id).or_else(|| {
+                installed
+                    .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == task.id))
+                    .and_then(|plugin| plugin.source.clone())
+            }),
             state,
         });
     }
@@ -316,6 +363,7 @@ mod tests {
             notices: Vec::new(),
             enabled_root_permissions: Vec::new(),
             install_progress: None,
+            install_failure: None,
             tunnel_ports: Vec::new(),
             matrix_widget: None,
         }
@@ -426,6 +474,112 @@ mod tests {
             settling,
             now,
         )
+    }
+
+    fn failed_record() -> InstalledPlugin {
+        let mut value = serde_json::to_value(plugin(
+            "app.hermes",
+            PluginState::Degraded {
+                reason: "pull failed; cleanup failed".into(),
+            },
+            None,
+        ))
+        .unwrap();
+        value["source"] = serde_json::json!("github:owner/hermes@v1.0.0");
+        value["install_failure"] = serde_json::json!({
+            "kind": "image_pull_failed",
+            "message": "pull failed",
+            "stage": "pulling_images",
+            "failed_plugin_id": "app.hermes",
+            "cleanup_errors": ["cleanup failed"]
+        });
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn server_failure_restores_a_retryable_row_without_local_task_or_preview() {
+        let failed = failed_record();
+        let expected_source = failed.source.clone();
+        let rows = run(
+            vec![failed],
+            &[],
+            &[],
+            &[],
+            &mut HashMap::new(),
+            Instant::now(),
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].source, expected_source);
+        assert_eq!(rows[0].operation, PluginOperation::Install);
+        assert_eq!(
+            rows[0].state,
+            BotInstallState::Failed {
+                reason: PluginFailure::SourceUnavailable,
+                message: "pull failed; cleanup failed".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn server_failure_overrides_stale_uncertain_and_successful_tasks() {
+        for state in [
+            PluginTaskState::Uncertain {
+                message: "connection lost".into(),
+                next_step: wonton_protocol::PluginTaskNextStep::CheckInstalled,
+            },
+            PluginTaskState::Succeeded,
+        ] {
+            let mut settling = HashMap::from([("app.hermes".into(), Instant::now())]);
+            let rows = run(
+                vec![failed_record()],
+                &[task("app.hermes", state)],
+                &[preview("app.hermes", true)],
+                &[],
+                &mut settling,
+                Instant::now(),
+            );
+            assert_eq!(rows.len(), 1);
+            assert!(matches!(
+                rows[0].state,
+                BotInstallState::Failed {
+                    reason: PluginFailure::SourceUnavailable,
+                    ..
+                }
+            ));
+            assert_eq!(
+                rows[0].source.as_deref(),
+                Some("github:owner/hermes@v1.0.0")
+            );
+            assert!(settling.is_empty());
+        }
+    }
+
+    #[test]
+    fn successful_retry_is_not_reclassified_by_the_previous_failure_snapshot() {
+        let mut view = wonton_protocol::PluginsViewModel {
+            installed: Some(installed(vec![failed_record()])),
+            tasks: vec![task("app.hermes", PluginTaskState::Succeeded)],
+            ..Default::default()
+        };
+        PluginsLink::derive(&mut view);
+        assert_eq!(view.tasks[0].state, PluginTaskState::Succeeded);
+        assert!(view.updatable.is_empty());
+        assert!(!PluginsLink::derive(&mut view));
+    }
+
+    #[test]
+    fn active_retry_supersedes_the_cached_failure_row() {
+        let rows = run(
+            vec![failed_record()],
+            &[task("app.hermes", PluginTaskState::Running)],
+            &[preview("app.hermes", true)],
+            &[],
+            &mut HashMap::new(),
+            Instant::now(),
+        );
+        assert_eq!(rows.len(), 1);
+        assert!(matches!(rows[0].state, BotInstallState::Running { .. }));
+        assert_eq!(rows[0].source, preview("app.hermes", true).source);
     }
 
     #[test]

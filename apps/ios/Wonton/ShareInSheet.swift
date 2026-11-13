@@ -28,6 +28,9 @@ struct ShareInPresenter: ViewModifier {
                             }
                         }
                     )
+                    // 新的分享顶掉还没发的上一次（ADR-0097）：面板开着时又认领了新的一次分享，
+                    // 内容的 @State（输入框、勾选的去向）是按旧分享初始化的，按令牌换身份让它整个重建。
+                    .id(share.id)
                 }
             }
             .wontonDialog(problem: model.problem, isPresented: Binding(

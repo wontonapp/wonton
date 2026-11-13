@@ -77,10 +77,13 @@ pub async fn bind() -> anyhow::Result<Option<TcpListener>> {
 }
 
 pub fn router(gateway: Arc<Gateway>) -> axum::Router {
-    crate::gateway::entry_router(gateway).layer(middleware::from_fn_with_state(
-        "entry.wonton.internal:8449".to_owned(),
-        trusted_entry,
-    ))
+    router_with_trusted(gateway, crate::entry_haproxy::model::PAIRED_BIND.to_owned())
+}
+
+/// 对端必须是入口容器（ADR-0021「网络规则」）：生产上认它在内部网络上的固定名字；测试可指到本地地址。
+pub(crate) fn router_with_trusted(gateway: Arc<Gateway>, authority: String) -> axum::Router {
+    crate::gateway::entry_router(gateway)
+        .layer(middleware::from_fn_with_state(authority, trusted_entry))
 }
 
 async fn trusted_entry(State(authority): State<String>, req: Request, next: Next) -> Response {

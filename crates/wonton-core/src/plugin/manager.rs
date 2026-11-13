@@ -44,7 +44,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -102,9 +102,11 @@ pub struct PluginManager {
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    pub(crate) clients: Arc<crate::clients::state::State>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
@@ -171,6 +173,7 @@ impl PluginManager {
         let storefront =
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
+        let clients = Arc::new(crate::clients::state::State::new(&store));
         Self {
             engine,
             store,
@@ -191,8 +194,10 @@ impl PluginManager {
             bot_allocation: tokio::sync::Mutex::new(()),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
+            failed_installs: RwLock::new(BTreeMap::new()),
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
+            clients,
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             lan,
@@ -221,6 +226,7 @@ impl PluginManager {
     }
 
     pub(super) fn changed(&self) {
+        self.clients.refresh(&self.store);
         self.changes.send_modify(|generation| *generation += 1);
         self.activity.changed();
     }
@@ -301,9 +307,15 @@ impl PluginManager {
 
     pub fn list(&self) -> Vec<PluginView> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
+        let failed = self.failed_installs.read().expect("安装结果锁中毒");
         plugins
             .iter()
             .map(|(id, entry)| self.view(id, entry))
+            .chain(failed.iter().map(|(id, entry)| {
+                let mut view = self.view(id, &entry.entry);
+                view.url = None;
+                view
+            }))
             .collect()
     }
 
@@ -323,7 +335,16 @@ impl PluginManager {
 
     pub(super) fn status_of(&self, id: &PluginId) -> Option<PluginStatus> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins.get(id).map(|entry| entry.status.clone())
+        plugins
+            .get(id)
+            .map(|entry| entry.status.clone())
+            .or_else(|| {
+                self.failed_installs
+                    .read()
+                    .expect("安装结果锁中毒")
+                    .get(id)
+                    .map(|failed| failed.entry.status.clone())
+            })
     }
 
     /// 插件的名字（多语言）。
@@ -385,6 +406,10 @@ impl PluginManager {
             title: manifest.title.clone(),
             ..Entry::broken(&manifest.id, manifest.version.clone(), reason)
         };
+        self.failed_installs
+            .write()
+            .expect("安装结果锁中毒")
+            .remove(&manifest.id);
         self.plugins
             .write()
             .expect("插件表锁中毒")

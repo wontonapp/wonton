@@ -29,6 +29,8 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
   `Sources/WontonClient/Generated/` 由脚本生成，不提交；手写的只有把订阅包装成 `AsyncStream`
   等几行胶水代码。Rust 静态库依赖的系统框架由包声明，App 和测试目标不各自补链接选项。
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
+- iPad regular 宽度用 `NavigationSplitView` 展示会话列表和当前内容，插件页只铺右栏；compact 宽度保留单列和抽屉。
+  当前房间沿用 `ChatModel.path`，旋转和系统分屏不改选中项；iPad 不套用 iPhone 的竖屏限制。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
 
 插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。
@@ -143,6 +145,10 @@ swiftlint lint --strict --config apps/ios/.swiftlint.yml apps/ios
 
 配对链接回归在 `WontonTests/PairingLinkTests`（真实核心，临时数据目录）和 `WontonUITests/PairingLinkUITests`。
 界面用例通过 Debug 环境变量 `WONTON_DEV_DATA_SUFFIX` 使用独立的 App 数据目录，不读取或改动其他用例的配对信息。
+
+连接详情的 UDP 流向默认收起，没有流向时不显示。展开后列出插件、端口、收发包数和超长丢弃；
+发送缓冲丢弃只在核心给出大于零的连接级计数时显示，未知不伪装成零（ADR-0072）。
+`UdpFlowsUITests` 使用 Debug 固定 ViewModel 检查收放、空列表和完整无符号计数；不需要配对栈，也不代表 UDP 传输实测。
 
 ```bash
 xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \

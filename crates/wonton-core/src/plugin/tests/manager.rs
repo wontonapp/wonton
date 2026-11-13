@@ -222,7 +222,13 @@ async fn a_failed_record_write_rolls_back_the_deployment() {
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
     assert!(docker.networks().is_empty(), "{:?}", docker.networks());
     assert!(!dir.path().join("apps/app-test").exists());
-    assert!(m.list().is_empty(), "失败的安装不能留在插件表里");
+    let failed = m
+        .installed_plugin(&PluginId::parse("app.test").unwrap(), &super::langs())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "storage"
+    );
 }
 
 /// 归档里的文件：（路径，uid，gid，权限，内容）。
@@ -395,6 +401,8 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
@@ -514,7 +522,13 @@ async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() 
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "image_pull_failed", "{err}");
-    assert!(m.list().is_empty());
+    let failed = m
+        .installed_plugin(&example("whoami").manifest.id, &super::langs())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "image_pull_failed"
+    );
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }
 
@@ -790,6 +804,8 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,

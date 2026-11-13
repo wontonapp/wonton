@@ -33,6 +33,18 @@ pub(super) fn containers(
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
+        (&Method::DELETE, [name])
+            if docker
+                .remove_error
+                .as_ref()
+                .is_some_and(|(target, _)| target == name) =>
+        {
+            let (_, message) = docker.remove_error.as_ref().unwrap();
+            json_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"message": message}),
+            )
+        }
         (&Method::DELETE, [name]) => {
             for endpoints in docker.endpoints.values_mut() {
                 endpoints.remove(*name);
@@ -154,7 +166,12 @@ fn start_container(docker: &mut Resources, name: &str) -> Response {
 
 fn inspect_container(docker: &Resources, name: &str) -> Response {
     let healthy = json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}});
-    let state = docker.states.get(name).cloned().unwrap_or(healthy);
+    let mut state = docker.states.get(name).cloned().unwrap_or(healthy);
+    state
+        .as_object_mut()
+        .unwrap()
+        .entry("StartedAt")
+        .or_insert_with(|| json!("2026-01-01T00:00:00Z"));
     let created = docker.created.get(name).cloned().unwrap_or_default();
     let image = created["Image"].clone();
     // 创建请求里单独写了 `Config.Image` 时（`add_core_container`），inspect 的两处镜像就不一样。
@@ -175,7 +192,7 @@ fn inspect_container(docker: &Resources, name: &str) -> Response {
         .collect();
     json_reply(
         StatusCode::OK,
-        json!({"Name": format!("/{name}"), "State": state, "Image": image,
+        json!({"Id": name, "Name": format!("/{name}"), "State": state, "Image": image, "RestartCount": 0,
                "Config": {"Image": config_image, "Labels": created["Labels"], "Env": created["Env"],
                           "Healthcheck": created["Healthcheck"]},
                "HostConfig": created["HostConfig"],

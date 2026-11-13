@@ -22,6 +22,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -39,6 +41,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.SettingsViewModel
@@ -92,7 +95,12 @@ internal fun ServerApp(
             if (LocalServers.current.adding) {
                 AddServerPairing(plugins, home)
             } else OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
-                AppContent(navigation, home, settings, appearance, chatView)
+                AdaptiveChatLayout(
+                    list = { ExpandedChatPane(navigation, chatView, home, appearance) },
+                    enabled = home.status != HomeStatus.NotConfigured,
+                ) {
+                    AppContent(navigation, home, settings, appearance, chatView)
+                }
                 navigation.confirmationCard?.let { card ->
                     ConfirmationsScreen(core, card) { navigation.confirmationCard = null }
                 }
@@ -120,6 +128,7 @@ private fun AppContent(
     val opened = view.stack.lastOrNull()
     val pluginShown = opened != null && !opened.tab.isNativeRoot()
     val native = !pluginShown || nav.settingsOverlay
+    val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
     val nativeState = rememberSaveableStateHolder()
     val status = connectionBarStatus(home, { pages.send(Action.RetryConnection) }, nav::settings)
@@ -131,19 +140,19 @@ private fun AppContent(
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
     val panelActive = !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
         !nav.chat.showingBackup && !nav.chat.startingChat
-    val panel = if (panelActive) {
+    val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
     } else null
     if (panel != null && panel.scope == PanelScope.Main) {
         SideEffect { panel.feed(view.panel, view.panelSelected) }
     }
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
-    val edgeSwipe = panelActive && nav.chat.openRoom == null && panel?.visible != true
+    val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openRoom) { bannerTop ->
             val page: @Composable () -> Unit = {
                 SidebarContainer(
-                    isOpen = showsSidebar,
+                    isOpen = showsSidebar && !expanded,
                     edgeSwipe = edgeSwipe,
                     onSetOpen = { showsSidebar = it },
                     panel = { width, interactive ->
@@ -165,7 +174,8 @@ private fun AppContent(
                                 onDetails = nav::detail, onDraft = onDraft, bannerTop = bannerTop,
                             )
                             if (native) Box(Modifier.fillMaxSize()) {
-                                CompositionLocalProvider(LocalWontonOpenSidebar provides { showsSidebar = true }) {
+                                CompositionLocalProvider(LocalWontonOpenSidebar provides
+                                    if (expanded) null else ({ showsSidebar = true })) {
                                     NativeContent(nav, home, settings, appearance, chat, nativeState)
                                 }
                                 OpeningChat(nav.chat)
@@ -174,18 +184,20 @@ private fun AppContent(
                     }
                 }
             }
+            val latestPage by rememberUpdatedState(page)
+            val retainedPage = remember { movableContentOf { latestPage() } }
             CompositionLocalProvider(LocalChatPanel provides panel) {
                 if (panel != null) {
                     ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail,
-                        content = page)
+                        content = retainedPage)
                 } else {
-                    page()
+                    retainedPage()
                 }
             }
         }
     }
     if (panel != null && panel.editing) ChatPanelEditor(panel, pages) { panel.editing = false }
-    BackHandler(enabled = showsSidebar) { showsSidebar = false }
+    BackHandler(enabled = showsSidebar && !expanded) { showsSidebar = false }
     BackHandler(enabled = nav.appsPage != null) { nav.closeApps() }
     TabNotices(pages)
 }

@@ -41,7 +41,7 @@ struct SettingsTab: View {
             MatrixLoginView(model: home) {
                 if model.path.last == .matrixLogin { model.path.removeLast() }
             }
-        case .connectionDetails: ConnectionDetailsView(model: home)
+        case .connectionDetails: ConnectionDetailsView(model: home, plugins: plugins)
         case .invite: InviteView(model: home, chat: chat)
         case .pairing:
             PairingView(

@@ -36,11 +36,13 @@ mod bots;
 mod capabilities;
 mod capability_settings;
 mod chain_mentions;
+mod clients_entry;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
 mod entry;
+mod entry_federation;
 pub mod family;
 mod family_room;
 mod files;
@@ -172,6 +174,8 @@ pub struct Gateway {
     family_room_sync: tokio::sync::Mutex<()>,
     /// 角色记录（ADR-0088）：主人以外的人按各自角色判断；主人短路为全部权限。
     pub roles: Arc<Roles>,
+    /// 客户端入口的开关状态和连接守卫（ADR-0021，[`crate::clients::state`]）。
+    pub(crate) clients: Arc<crate::clients::state::State>,
     pub plugins: Arc<PluginManager>,
     pub hydra: Option<Hydra>,
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
@@ -255,6 +259,7 @@ impl Gateway {
             members,
             family_room_sync: tokio::sync::Mutex::new(()),
             roles,
+            clients: plugins.clients.clone(),
             plugins,
             hydra,
             hydra_public,
@@ -786,12 +791,19 @@ mod capabilities_tests;
 mod capability_uninstall_tests;
 #[cfg(test)]
 mod chain_mentions_tests;
+// 原有联邦用例照旧跑（main 上这个文件一度没人挂载，用例没在跑）：421、点段和发现文件的行为由它们锁住。
+#[cfg(test)]
+#[path = "clients_entry_tests.rs"]
+mod clients_entry_tests;
 #[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]
 mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
+#[cfg(test)]
+#[path = "entry_tests.rs"]
+mod entry_tests;
 #[cfg(test)]
 pub(crate) mod fakes;
 #[cfg(test)]
@@ -868,6 +880,8 @@ mod panel_pins_tests;
 mod peers_api_tests;
 #[cfg(test)]
 mod plugin_forms_tests;
+#[cfg(test)]
+mod plugin_install_failure_tests;
 #[cfg(test)]
 mod plugin_start_tests;
 #[cfg(test)]
