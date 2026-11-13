@@ -54,6 +54,10 @@ pub struct SidebarBadge {
     /// 页面出了问题或插件已停：点了能看原因。
     #[serde(default)]
     pub problem: bool,
+    /// 插件已停止，与出错红点分开显示。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub stopped: bool,
 }
 
 /// 点了一行"我的应用"打开什么。编辑态的候选不在这里：壳从 [`crate::PagesViewModel`] 的候选里拿。
@@ -106,6 +110,7 @@ mod tests {
                     badge: SidebarBadge {
                         update: true,
                         problem: false,
+                        stopped: false,
                     },
                 },
                 SidebarApp {

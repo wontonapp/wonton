@@ -25,6 +25,7 @@ impl ChatLink {
         let support = self.side_chat_support.clone();
         let runtime = self.runtime.clone();
         let chat = Arc::downgrade(self);
+        let plugins = self.plugins.subscribe();
         self.runtime.spawn(async move {
             let rooms = match session.rooms().await {
                 Ok(rooms) => rooms,
@@ -86,6 +87,7 @@ impl ChatLink {
                         room_row(room, &core, layout, &bot_users, side_chats)
                     })
                     .collect();
+                super::plugin_status::refresh(&mut rows, &plugins.borrow());
                 sort_rooms(&mut rows);
                 let bot = lock(&primary_bot).clone();
                 let rows = room_order.replace(rows, bot.as_deref());

@@ -226,7 +226,9 @@ struct SidebarPanel: View {
             SidebarRow(
                 title: app.title,
                 selected: selected(app),
-                badgeMark: SidebarBadgeMark(update: app.badge.update, problem: app.badge.problem)
+                badgeMark: SidebarBadgeMark(
+                    update: app.badge.update, problem: app.badge.problem, stopped: app.badge.stopped
+                )
             ) {
                 PluginIconView(icon: app.icon, size: 28, model: plugins)
             } action: {
@@ -339,10 +341,11 @@ enum SidebarDestination {
     case app(SidebarApp)
 }
 
-/// 行尾两个红点的来源，分开画。
+/// 行尾各个独立状态的来源，分开画。
 struct SidebarBadgeMark {
     var update = false
     var problem = false
+    var stopped = false
 }
 
 private struct SidebarRow<Icon: View>: View {
@@ -365,6 +368,11 @@ private struct SidebarRow<Icon: View>: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if let badgeMark {
+                    if badgeMark.stopped {
+                        WontonIcon.pauseFill.view(size: WontonTheme.size.iconSmall)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .accessibilityLabel(String(localized: .Launcher.launcherBadgeStopped))
+                    }
                     if badgeMark.update {
                         Circle().fill(Color(colors.danger)).frame(width: 8, height: 8)
                             .accessibilityLabel(String(localized: .Sidebar.sidebarUpdatable))

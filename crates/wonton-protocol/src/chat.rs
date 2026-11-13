@@ -313,6 +313,10 @@ pub struct RoomRow {
     /// 私聊对方的 Matrix 用户 ID，壳按它找和某个用户（如插件的 Bot）的私聊。加入了的私聊是 `m.direct` 里记的
     /// 对方，记了不止一个时为空；收到邀请、还没加入的私聊是邀请人。不是私聊时为空。
     pub direct_user_id: Option<String>,
+    /// 私聊背后的插件未就绪；正常运行或不是插件私聊时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub plugin: Option<crate::RoomPlugin>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
@@ -490,6 +494,7 @@ mod tests {
                 name: "Hermes".into(),
                 is_direct: true,
                 direct_user_id: Some("@hermes:home.example".into()),
+                plugin: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: RoomMembership::Invited,

@@ -166,6 +166,7 @@ fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
         name: name.to_owned(),
         is_direct: peer.is_some(),
         direct_user_id: peer.map(str::to_owned),
+        plugin: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

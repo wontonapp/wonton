@@ -360,7 +360,19 @@ private struct LauncherIcon: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder private var badge: some View {
+    private var badge: some View {
+        HStack(spacing: WontonTheme.spacing.s4) {
+            if case .stopped = plugin.status {
+                WontonIcon.pauseFill.view(size: WontonTheme.size.iconSmall)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .background(Circle().fill(Color(colors.canvas)))
+                    .accessibilityLabel(String(localized: .Launcher.launcherBadgeStopped))
+            }
+            problemBadge
+        }
+    }
+
+    @ViewBuilder private var problemBadge: some View {
         if case .degraded = plugin.status {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))

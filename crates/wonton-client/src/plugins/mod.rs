@@ -205,7 +205,8 @@ impl PluginsLink {
     /// 中间状态（测试按事件断言时会正好撞上）。值没变时返回 false。
     /// 应用行由页面那边算（`set_sidebar_apps`），这里只跟可更新数和设置红点。
     pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
-        let mut changed = Self::sync_task_progress(view);
+        let mut changed = Self::reconcile_starts(view);
+        changed |= Self::sync_task_progress(view);
         let updatable = now::updatable(view);
         changed |= view.updatable != updatable;
         view.updatable = updatable.clone();
@@ -436,6 +437,7 @@ impl PluginsLink {
             view.installed = None;
             view.store = None;
             view.problem = None;
+            view.starts.clear();
             view.egress = EgressViewModel::default();
             view.registry_mirror = wonton_protocol::RegistryMirrorViewModel::default();
             view.core_upgrade = CoreUpgradeViewModel::default();

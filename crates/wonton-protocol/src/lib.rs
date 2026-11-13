@@ -280,6 +280,7 @@ pub use plugin::{
     plugin_settings_path, plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
+pub use plugin::{PluginStart, PluginStartState, RoomPlugin};
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use port_mapping::{
