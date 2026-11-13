@@ -12,7 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 
 /** 进程内唯一的核心实例：状态都在核心里，Activity 重建时不丢。核心起不来时如实给出原因。 */
-class WontonApplication : Application(), PageMediaCoreOwner {
+open class WontonApplication : Application(), PageMediaCoreOwner {
     override fun onCreate() {
         super.onCreate()
         // 赶在第一个 Activity 的 AppCompat 同步之前，系统设置里的“应用语言”才不会被清掉（AppLanguage.kt）。
@@ -20,6 +20,9 @@ class WontonApplication : Application(), PageMediaCoreOwner {
         installSystemDns()
         installCertificateVerifier()
     }
+
+    /** Debug 壳可在核心第一次取用前选择测试启动方式；生产实现不读取启动参数。 */
+    open fun configureForLaunch(intent: android.content.Intent) = Unit
 
     private external fun installSystemDns()
 
@@ -29,16 +32,23 @@ class WontonApplication : Application(), PageMediaCoreOwner {
     /** 跟进程一样长的协程：桌面小组件跟着核心写的快照重画（ADR-0100）。 */
     private val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    override val core: Result<ClientCore> by lazy {
-        try {
+    override val core: Result<ClientCore> by lazy { createCore() }
+
+    protected open fun createCore(): Result<ClientCore> {
+        return try {
             val core = ClientCore(filesDir.absolutePath)
-            // 赶在核心接着传上次没传完的文件之前。
-            core.setFileOpener(ContentFileOpener(this))
-            processScope.followWidgetSnapshots(this, core)
+            configureCore(core)
             Result.success(core)
         } catch (failure: CoreException) {
             Result.failure(failure)
         }
+    }
+
+    /** 交给子类的核心做相同的壳侧配置（文件打开器、小组件快照）。 */
+    protected fun configureCore(core: ClientCore) {
+        // 赶在核心接着传上次没传完的文件之前。
+        core.setFileOpener(ContentFileOpener(this))
+        processScope.followWidgetSnapshots(this, core)
     }
 
     private companion object {
