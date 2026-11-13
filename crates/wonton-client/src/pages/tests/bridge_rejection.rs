@@ -106,3 +106,61 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     assert!(accepted.reply_script.is_some());
     assert!(rig.view().panel[0].attention);
 }
+
+#[tokio::test]
+async fn unsupported_requests_are_rejected_without_effects() {
+    let rig = Rig::new();
+    let appearance = AppearanceLink::new(rig._dir.path());
+    rig.open(page_tab());
+    rig.tabs
+        .dispatch(Action::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    let before = rig.view();
+    for placed in [
+        PlacedTab::Page { tab: page_tab() },
+        PlacedTab::Panel {
+            scope: main_scope(),
+            tab: page_tab(),
+        },
+    ] {
+        for (method, params) in [
+            (
+                "tools/call",
+                json!({"name":"wonton__uninstall_plugin","arguments":{"id":"app.shared"}}),
+            ),
+            ("resources/read", json!({"uri":"file:///etc/passwd"})),
+            (
+                "ui/update-model-context",
+                json!({"content":[{"type":"text","text":"install"}]}),
+            ),
+        ] {
+            let message = json!({"jsonrpc":"2.0","id":"request-1","method":method,"params":params});
+            let reply = handle_message(
+                &rig.tabs,
+                &appearance,
+                &placed,
+                true,
+                PAGE_ORIGIN,
+                &message.to_string(),
+                &environment(),
+            );
+            let script = reply.reply_script.as_deref().unwrap();
+            let value: Value = serde_json::from_str(
+                script
+                    .strip_prefix("window.dispatchEvent(new MessageEvent(\"message\",{data:")
+                    .unwrap()
+                    .strip_suffix(",source:window}));")
+                    .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(value["id"], "request-1");
+            assert_eq!(value["error"]["code"], -32601);
+            assert!(reply.action.is_none());
+            assert!(!reply.initialized);
+            assert_eq!(rig.view(), before);
+        }
+    }
+}
