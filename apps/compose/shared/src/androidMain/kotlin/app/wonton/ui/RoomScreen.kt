@@ -58,6 +58,7 @@ import app.wonton.protocol.MessageContent
 import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.SideChatCard
 import app.wonton.protocol.TabRef
@@ -321,7 +322,7 @@ private fun RoomScreen(
             ) { backdrop ->
                 Conversation(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
-                    openMenu,
+                    rooms.firstOrNull { it.roomId == roomId }?.plugin, title, openMenu,
                     onOpenBackup, backdrop,
                 )
             }
@@ -447,6 +448,8 @@ private fun Conversation(
     draft: RoomDraft,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
+    plugin: RoomPlugin?,
+    title: String,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onOpenBackup: () -> Unit,
     backdrop: RoomBackdrop,
@@ -479,6 +482,7 @@ private fun Conversation(
             }
         }
         Column(Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }) {
+            AgentPluginStatusBanner(plugin, title, onAction)
             timeline.sideChat?.let { SideChatHeaderLine(it.state) }
             if (sideChats.unsupportedHint) NoSideChatsHint()
         }

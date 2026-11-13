@@ -490,6 +490,7 @@ fn room_row(room_id: &str, name: &str) -> RoomRow {
         name: name.into(),
         is_direct: true,
         direct_user_id: None,
+        plugin: None,
         is_encrypted: true,
         is_read_only: false,
         membership: crate::RoomMembership::Joined,

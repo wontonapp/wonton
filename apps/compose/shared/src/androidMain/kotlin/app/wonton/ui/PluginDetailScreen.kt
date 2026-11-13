@@ -124,7 +124,14 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
             when {
                 result == null -> LoadingView()
                 result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                else -> DetailContent(toggled ?: result.getOrThrow(), task, plugins, navigation) { toggled = it }
+                else -> {
+                    val detail = toggled ?: result.getOrThrow()
+                    val installedList = plugins.viewModel.installed
+                    val current = if (installedList == null) detail else detail.copy(
+                        installed = installedList.plugins.firstOrNull { it.id == detail.id },
+                    )
+                    DetailContent(current, task, plugins, navigation) { toggled = it }
+                }
             }
         }
     }
@@ -159,6 +166,7 @@ private fun DetailContent(
             BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, plugins, navigation, LocalContext.current))
+        PluginDetailStatus(detail, plugins, working)
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(
                 it,
@@ -377,7 +385,6 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
         }
         action?.let { WontonButton(it.title, it.perform, Modifier.fillMaxWidth(), enabled = it.enabled) }
         detail.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
-        (detail.installed?.status as? PluginState.Degraded)?.let { WontonNotice(WontonIcon.Warning, it.reason) }
     }
 }
 

@@ -51,6 +51,7 @@ fn room(id: &str, direct: Option<&str>) -> RoomRow {
         name: id.trim_start_matches('!').into(),
         is_direct: direct.is_some(),
         direct_user_id: direct.map(str::to_owned),
+        plugin: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

@@ -118,6 +118,7 @@ pub(super) fn build_app(
                     .any(|updatable| updatable.plugin_id == plugin_id)
             }),
             problem,
+            stopped: plugin.is_some_and(|plugin| matches!(plugin.status, PluginState::Stopped)),
         },
     })
 }

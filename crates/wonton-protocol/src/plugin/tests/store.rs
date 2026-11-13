@@ -188,12 +188,14 @@ fn sidebar_view_model_round_trip() {
                 badge: crate::SidebarBadge {
                     update: true,
                     problem: false,
+                    stopped: false,
                 },
             }],
             more_apps: false,
             updates: 1,
             settings_badge: false,
         },
+        starts: Vec::new(),
     };
     assert_eq!(round_trip(&view_model), view_model);
 }

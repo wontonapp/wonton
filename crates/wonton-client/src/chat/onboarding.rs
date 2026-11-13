@@ -70,6 +70,7 @@ mod tests {
             name: id.to_owned(),
             is_direct: direct_user_id.is_some(),
             direct_user_id: direct_user_id.map(str::to_owned),
+            plugin: None,
             is_encrypted: false,
             is_read_only: false,
             membership: RoomMembership::Joined,

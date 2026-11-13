@@ -50,4 +50,5 @@
     <string name="chat_backup_value_enabled">On</string>
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">Working</string>
+    <string name="chat_plugin_stopped">This agent is stopped. Start it to receive replies.</string>
 </resources>

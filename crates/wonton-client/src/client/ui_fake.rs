@@ -208,6 +208,7 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
         name: "Echo".into(),
         is_direct: true,
         direct_user_id: Some("@echo:home.example".into()),
+        plugin: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,

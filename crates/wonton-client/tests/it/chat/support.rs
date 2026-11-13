@@ -39,6 +39,7 @@ mod friends;
 mod io;
 mod link_preview;
 mod matrix;
+mod plugin_start;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use endpoint::loopback_endpoint;
@@ -200,6 +201,7 @@ struct Core {
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
+    plugin_starts: plugin_start::Starts,
     /// “等你确认”列表的假数据（ADR-0016）：卡片和 revision 由测试改，改了挂着的取列表请求就回来。
     confirmations: Mutex<FakeConfirmations>,
     /// [`Self::confirmations`] 的 revision，等的一方靠它的事件变化再查。
@@ -286,6 +288,7 @@ impl Home {
             pairing_codes_issued: AtomicUsize::new(0),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
+            plugin_starts: plugin_start::Starts::default(),
             confirmations: Mutex::default(),
             confirmations_revision: watch::Sender::new(0),
             failing_confirmations: AtomicUsize::new(0),

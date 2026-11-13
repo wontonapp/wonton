@@ -23,4 +23,5 @@
     <string name="launcher_badge_degraded">Has a problem</string>
     <!-- Content description of the wrench badge on a launcher tile: the app is installed but its required keys are not filled in. -->
     <string name="launcher_badge_needs_configuration">Needs setup</string>
+    <string name="launcher_badge_stopped">Stopped</string>
 </resources>

@@ -21,6 +21,7 @@ mod message_actions;
 mod notification_actions;
 mod onboarding;
 mod pending;
+mod plugin_status;
 mod push;
 mod push_method;
 mod rebuild_reason;

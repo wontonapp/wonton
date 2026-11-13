@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "chat.pluginStarting": {
+      "comment": "Agent startup progress in a conversation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Starting agent…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在启动 Agent…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在啟動 Agent…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントを起動中…"
+          }
+        }
+      }
+    },
     "chat.profile.renamed": {
       "comment": "Timeline note when someone renamed themselves. First argument: the old name, second: the new name. Shown even when the avatar changed at the same time.",
       "extractionState": "manual",

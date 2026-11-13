@@ -48,4 +48,5 @@
     <string name="chat_backup_verify_reason">验证身份后查看恢复密钥</string>
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">正在重连…</string>
+    <string name="chat_plugin_starting">正在启动 Agent…</string>
 </resources>

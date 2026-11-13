@@ -24,6 +24,9 @@ pub struct PluginsViewModel {
     pub problem: Option<PluginProblem>,
     /// 安装、升级、卸载的进展，按发起的先后。同一个插件同时只有一个。
     pub tasks: Vec<PluginTask>,
+    /// 本设备发起的启动及其失败；成功后移除，不进入安装任务或磁盘缓存。
+    #[serde(default)]
+    pub starts: Vec<super::PluginStart>,
     /// 有新版本可升级的应用：商店页更新图标的角标、"全部更新"弹窗和侧边栏的红点都是它。顺序同已安装列表。
     #[serde(default)]
     pub updatable: Vec<UpdatablePlugin>,
