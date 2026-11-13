@@ -4,6 +4,8 @@ included:
   - Wonton
   - Shared
   - ShareExtension
+  - SystemEntry
+  - WidgetExtension
   - WontonClient/Package.swift
   - WontonClient/Sources
 
