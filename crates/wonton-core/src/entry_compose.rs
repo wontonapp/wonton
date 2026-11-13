@@ -286,6 +286,47 @@ mod tests {
         }
     }
 
+    /// 联邦名单在 `secrets/tuwunel/wonton-fed.toml`，配对变化时核心原地重写（ADR-0050）：整个 `secrets/`
+    /// 只读，这个子目录要单独挂成可写核心才写得了；旧的 `fed/` 挂载已废弃。
+    #[test]
+    fn core_can_rewrite_the_federation_list() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        for rendered in [
+            render(crate::install::COMPOSE, None, dir.path()).unwrap(),
+            render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
+        ] {
+            // core 还挂着结构形式的 /dev 只读挂载，不是字符串；名单和密钥挂载都是字符串形式。
+            let volumes: Vec<String> =
+                serde_json::from_str::<Value>(&rendered).unwrap()["services"]["core"]["volumes"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|volume| volume.as_str().map(str::to_owned))
+                    .collect();
+            assert!(
+                volumes.contains(
+                    &"${WONTON_INSTALL_DIR}/secrets:${WONTON_INSTALL_DIR}/secrets:ro".to_owned()
+                ),
+                "secrets 根目录要只读：{volumes:?}"
+            );
+            assert!(
+                volumes.contains(
+                    &"${WONTON_INSTALL_DIR}/secrets/tuwunel:${WONTON_INSTALL_DIR}/secrets/tuwunel"
+                        .to_owned()
+                ),
+                "联邦名单子目录要单独可写：{volumes:?}"
+            );
+            assert!(
+                !volumes
+                    .iter()
+                    .any(|volume| volume.split(':').next().unwrap().ends_with("/fed")),
+                "fed/ 挂载已废弃：{volumes:?}"
+            );
+        }
+    }
+
     /// 连接器要固定地址：入口核对端在连接层，那里只认 IP。入口也固定，局域网前端单独网段。
     #[test]
     fn edge_network_pins_the_connector_address() {
