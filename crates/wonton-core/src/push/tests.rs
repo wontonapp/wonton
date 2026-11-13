@@ -439,6 +439,7 @@ async fn without_a_paired_device_nobody_can_confirm() {
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     };
     let refusal = confirmations.ask(&caller, draft()).await.err().unwrap();
     assert_eq!(refusal.kind(), "confirmation_unavailable");

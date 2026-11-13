@@ -33,7 +33,7 @@ chat-card-update-header-ask-every = 权限没有变宽，你打开了“每次�
 chat-card-update-header-adopt = 这个应用是你装的，同意后交给 { $requester } 管：
 chat-card-update-adopt-replace = 同意后换成它交来的这份，数据保留，装不上会退回
 
-# 卡片标题。$requester 是 Bot 的名字；$title、$plugin、$tool 是应用给的名字。
+# 卡片标题。$requester 是 Bot 的名字；$title 是应用给的名字。
 chat-card-install-title = { $requester } 想安装 { $title }
 chat-card-update-title = { $requester } 想更新 { $title }
 chat-card-uninstall-title = { $requester } 想卸载 { $title }
@@ -45,7 +45,6 @@ chat-choice-permission-enable = 打开
 chat-choice-permission-disable = 关掉
 chat-permission-done = 已经改好“{ $title }”的权限
 chat-permission-failed = 给 { $id } 改权限失败：{ $error }
-chat-card-tool-title = { $requester } 想用 { $plugin } 的 { $tool }
 
 # Agent 权限卡片的标题。$title 是 Agent 给这次请求起的名字。
 chat-card-agent-title = { $requester }：{ $title }
@@ -59,10 +58,7 @@ chat-card-highest-confirm = 我知道这个应用能控制整台主机
 chat-card-uninstall-purge = 并删除它的数据，和 Bot 的旧加密消息将无法再查看，不可恢复
 chat-card-uninstall-keep = 保留它的数据，以后重装还在
 
-# 工具调用卡片的行。$args 是原始 JSON 参数，太长时截断。
-chat-card-tool-data = 这个工具会改动数据
-chat-card-tool-root = 这个操作以本机 root 身份执行
-chat-card-tool-deletes = 应用标明这个工具会删除或覆盖数据
+# Agent 权限卡片的参数。$args 是原始 JSON，太长时截断。
 chat-card-args = 参数：{ $args }
 
 # Bot 存文件的卡片。$name 和 $size 描述一个文件；$total 是加在一起的大小。

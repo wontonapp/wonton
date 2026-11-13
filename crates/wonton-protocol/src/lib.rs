@@ -146,7 +146,8 @@ pub use composer::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
     ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
-    ConfirmationView, ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
+    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, WindowEnd,
+    WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,

@@ -30,7 +30,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -50,6 +49,7 @@ import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.OutgoingMessage
@@ -83,7 +83,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.launch
 
 private const val TAG = "RoomScreen"
 
@@ -123,6 +122,8 @@ internal class TimelineState {
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
+    var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
+    var openedConfirmation by mutableStateOf<String?>(null)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -182,6 +183,7 @@ internal fun RoomRoute(
                 timeline.panelSelected = update.panelSelected
                 timeline.entryBlocked = update.entryBlocked
                 timeline.sideChat = update.sideChat
+                timeline.confirmations = update.confirmations
                 if (update.scrollToBottom) timeline.bottomRequest++
                 timeline.revision++
                 timeline.loaded = true
@@ -237,6 +239,22 @@ internal fun RoomRoute(
 private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
 
 @Composable
+private fun messageMenuBounds(): Rect {
+    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
+    // 横屏时导航栏或挖孔在侧边，左右也要让。
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val direction = LocalLayoutDirection.current
+    return Rect(
+        safe.getLeft(density, direction).toFloat(),
+        safe.getTop(density).toFloat(),
+        (windowSize.width - safe.getRight(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density)).toFloat(),
+    )
+}
+
+@Composable
 private fun RoomScreen(
     core: ClientCore,
     target: TimelineTarget,
@@ -259,18 +277,7 @@ private fun RoomScreen(
     val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
         menu = MessageMenuTarget(item.id, message, bounds)
     }
-    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
-    // 横屏时导航栏或挖孔在侧边，左右也要让。
-    val windowSize = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val direction = LocalLayoutDirection.current
-    val visible = Rect(
-        safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density).toFloat(),
-        (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density)).toFloat(),
-    )
+    val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
     val panel = LocalChatPanel.current
@@ -290,7 +297,8 @@ private fun RoomScreen(
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
     // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。旁聊页没有面板，不报。
-    val covers = menu != null || forwarding != null || redacting != null
+    val messageOverlay = menu != null || forwarding != null || redacting != null
+    val covers = messageOverlay || timeline.openedConfirmation != null
     if (target.threadRoot == null) {
         LaunchedEffect(covers, roomId) { onAction(Action.SetRoomEntryBlocked(roomId, covers)) }
     }
@@ -343,6 +351,12 @@ private fun RoomScreen(
                 onDismiss = { redacting = null },
             )
         }
+        RoomConfirmationSheet(
+            timeline.confirmations,
+            timeline.openedConfirmation,
+            onDismiss = { timeline.openedConfirmation = null },
+            onAction = onAction,
+        )
         if (sideChats.composing) {
             NewSideChatSheet(
                 core,
@@ -447,6 +461,7 @@ private fun Conversation(
         }
         timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
         TransfersStrip(target.roomId, core)
+        RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
         if (!isReadOnly) {
             Composer(
                 target = target,
@@ -533,13 +548,7 @@ private fun Messages(
     }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
-    val scope = rememberCoroutineScope()
-    // Agent 在等回答的卡片就在这个房间：滚到那张卡片所在的消息，不另开界面（ADR-0082）。
-    val openCard: (String) -> Unit = { cardId ->
-        val index = newestFirst.indexOfFirst { it.cardId == cardId }
-        // 列表最前面是还没交出去的发送中消息，时间线的下标要接在它们后面。
-        if (index >= 0) scope.launch { listState.animateScrollToItem(index + outgoing.size) }
-    }
+    val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, target) {
         snapshotFlow { listState.reachedTop(timeline) }
