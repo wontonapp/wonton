@@ -25,7 +25,8 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
     let owner_id = owner.user_id().to_owned();
     let bot_token = bot_setup.tokens().expect("Bot 令牌").0;
     let owner_room = open_room(&owner, &room_id).await;
-    // setup 会话到此为止：桥要用同一个设备令牌、同一个状态库登录。
+    // 同一个 Matrix 设备不能同时由 setup 会话和桥同步。
+    bot_setup.stop_sync().await;
     drop(bot_setup);
 
     let agent = FakeAgent::start(Scenario::Manual).await;
@@ -64,11 +65,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
         .await
         .expect("主人发消息");
     wait_for_prompt(&agent, "在线时的话").await;
-    task.abort();
-    drop(task);
-    // 释放 SQLite 状态库，第二段才能用同一个库登录。
-    drop(session);
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    stop_bridge(session, task).await;
 
     // 停机期间主人的话。
     owner_room
@@ -77,7 +74,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
         .expect("主人发消息");
 
     // 第二段：桥起（重新登录同一个状态库），停机期间的那条要补。
-    let (_session, task) = spawn_bridge(&config).await;
+    let (session, task) = spawn_bridge(&config).await;
     wait_for_prompt(&agent, "停机期间的话").await;
     // 在线时的那条整个测试里只发给过 Agent 一次，没有重跑。
     let repeats = agent
@@ -90,7 +87,7 @@ async fn a_message_sent_while_down_is_processed_after_a_real_restart() {
         })
         .count();
     assert_eq!(repeats, 1, "重启前的消息不该重跑");
-    task.abort();
+    stop_bridge(session, task).await;
     agent.finish().await;
     core.finish();
 }
@@ -165,6 +162,13 @@ async fn spawn_bridge(config: &Config) -> (MatrixSession, JoinHandle<BridgeResul
     };
     let task = tokio::spawn(run_room(bridge, room, false, None, login));
     (session, task)
+}
+
+/// 先让房间循环释放房间订阅，再显式停止同步；`MatrixSession::drop` 不会停止 `SyncService`。
+async fn stop_bridge(session: MatrixSession, task: JoinHandle<BridgeResult<()>>) {
+    task.abort();
+    let _ = task.await;
+    session.stop_sync().await;
 }
 
 /// 等到 Agent 手上出现这句话；真服务器起步几秒，5 秒的 wait_for 不够。
