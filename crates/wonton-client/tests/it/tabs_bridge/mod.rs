@@ -3,7 +3,6 @@ mod origin;
 mod sdk;
 mod support;
 
-use axum::http::Method;
 use serde_json::json;
 use wonton_client::{Action, CoreError, PlacedTab, TabRef};
 use wonton_protocol::PanelScope;
