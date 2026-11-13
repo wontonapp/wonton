@@ -270,6 +270,8 @@ enable = true
 format = "EDDSA"
 algorithm = "EdDSA"
 require_exp = true
+# 用户由核心签的 JWT 第一次登录时建（核心没有单独的建号调用）；写明而不靠 Tuwunel 的默认值。
+register_user = true
 issuer = ["wonton-core"]
 audience = ["tuwunel"]
 key = """

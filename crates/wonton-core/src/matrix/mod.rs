@@ -9,6 +9,7 @@ mod bot;
 mod bot_profile;
 mod contact_api;
 pub mod federation_config;
+pub mod invite_filter;
 pub mod issuer;
 mod notices;
 mod session;
@@ -201,6 +202,8 @@ impl Matrix {
 
 #[cfg(test)]
 pub(crate) mod fake;
+#[cfg(test)]
+mod invite_filter_docker_tests;
 #[cfg(test)]
 mod profile_tests;
 #[cfg(test)]

@@ -200,7 +200,7 @@ impl Home {
         self.app.clone().oneshot(request).await.unwrap().status()
     }
 
-    async fn register(&self, device: &SecretKey) {
+    pub(super) async fn register(&self, device: &SecretKey) {
         let body = format!("{{\"endpoint_id\": \"{}\"}}", device.public());
         let status = self
             .manage(Method::POST, "/_wonton/api/devices", &body)

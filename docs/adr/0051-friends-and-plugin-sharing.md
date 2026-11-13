@@ -36,6 +36,9 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 
 **挡垃圾**：
 - MSC4155 邀请过滤：每个用户在账号数据里设“接受、忽略、拒绝谁的邀请”（按用户或服务器的通配），Tuwunel 1.9.4 已实现。
+  v2.0.0 的源码里还在（`src/service/users/invite_filter.rs`，读 `org.matrix.msc4155.invite_permission_config` 的六份名单）：
+  命中“拒绝”回来的是 403，命中“忽略”只是不下发。稳定的 `m.invite_permission_config` 在 Tuwunel 只认 MSC4380 的一刀切
+  `default_action`，不认这些名单，所以名单要写不稳定的事件类型。
 - Tuwunel 的配置：`forbidden_remote_server_names` 拉黑整台服务器，`block_non_admin_invites` 一刀切（连家人之间也拦），`forbidden_alias_names`、`forbidden_usernames`。
 - Draupnir（AFL-3.0，独立运行的管理 Bot）：订阅社区共享的封禁名单，在主人管的群里自动封人、删垃圾。
 - matrix.org 的做法：Synapse 模块、策略服务器（MSC4284，Tuwunel 部分实现）、专人审核。
@@ -147,10 +150,14 @@ YunoHost、Sandstorm 给免费子域名但要求公网 IP；Home Assistant Cloud
 开放联邦以后，家里这台成了公网上的一台小型 Matrix 服务器。先用现成的，网关只补缺口：
 
 - **邀请**：本机每个人默认开 MSC4155，陌生人的邀请进“请求”，不直接出现在聊天列表；屏蔽的进“拒绝”名单。不用 `block_non_admin_invites`（会连家人之间也拦）。
+  默认值由核心在账号第一次登录、发登录令牌之前写进账号数据：过滤开着（`enabled: true`）、名单为空，所以它不挡住谁，只保证账号（包括之后用 Element 这类别家客户端登录的）一出生就是过滤着的；账号已经写过这份数据时不覆盖，Bot 的账号不写。
+  名单为空时陌生人的邀请照常到客户端，由 App 收进“请求”；“挡住”发生在主人把某个人或某台服务器放进名单之后（此人回 403，此服务器被忽略）。
 - **整台服务器**：主人在设置里能拉黑一台服务器，写进 Tuwunel 的 `forbidden_remote_server_names`（可热加载）。
 - **群里的垃圾**：主人管的群可以选装 Draupnir 插件（独立容器），订阅社区的共享封禁名单。和 Tuwunel 的配合没有实测，做插件时验证。
-- **注册**：Tuwunel 照旧不开注册，账号只由核心建（ADR-0045）。
+- **注册**：Tuwunel 照旧不开注册，账号只由核心签的登录令牌建（ADR-0045）。
 - **网关补的**：本机的人每分钟发邀请、发消息的上限（Tuwunel 没有）；好友的连接（`wonton/share/0`）每个 endpoint 的建连频率。上限由核心的环境变量改。
+  默认值：邀请 `WONTON_PEOPLE_INVITES_PER_MINUTE` 每分钟 20 个、消息 `WONTON_PEOPLE_MESSAGES_PER_MINUTE` 每分钟 60 个（`gateway/people_limits.rs`），分享建连
+  `WONTON_SHARE_CONNECTIONS_PER_MINUTE` 每个 endpoint 每分钟 30 次（`sharing_start/rate.rs`）。按“日常聊天够用、刷屏挡得住”取，改默认值要一起改这三个环境变量的文档。
 - **跟着漏洞升级**：Matrix 联邦近两年的严重漏洞（如 CVE-2025-30355、CVE-2024-31208）公告里都写着“封闭联邦不受影响”，开放后就受影响。
   Tuwunel 跟着官方版本走，核心升级时一起升（ADR-0025）；主人在设置里看得到 Tuwunel 的版本和有没有安全更新。
 

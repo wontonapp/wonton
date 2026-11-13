@@ -25,8 +25,7 @@ use crate::{Error, Result};
 
 /// `m.room.create` 内容里的标记键，取值是 `true`。
 pub const FRIEND_CREATE_KEY: &str = "app.wonton.friend";
-/// MSC4155 的规则列表事件类型（Tuwunel 只认这个不稳定名称）。
-const MSC4155_TYPE: &str = "org.matrix.msc4155.invite_permission_config";
+use wonton_protocol::INVITE_FILTER_EVENT as MSC4155_TYPE;
 
 /// MSC4155 的拒绝名单：个人屏蔽的用户和整台服务器。空集合表示都不拒绝。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

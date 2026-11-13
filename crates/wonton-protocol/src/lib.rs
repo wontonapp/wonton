@@ -181,7 +181,7 @@ pub use file::{
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
     FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
-    FriendsState, FriendsViewModel, RemovedFriend,
+    FriendsState, FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
