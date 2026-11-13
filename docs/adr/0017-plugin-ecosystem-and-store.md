@@ -221,7 +221,8 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   处理图片的进程；图片本身处理不了是 `invalid_input`）。原有的类别照旧（`invalid_input`、`permission_denied`、
   `unsupported`、`conflict`、`not_installed` 等）。设置另有 `settings_schema_invalid`（包的 Schema 不合格）和
   `settings_invalid`（值过不了 Schema），见 [ADR-0077](0077-plugin-settings.md)。
-- 安装、升级和卸载在核心里单独执行：请求断开了也照样做完，结果体现在已安装列表里。
+- 安装、升级和卸载在核心里单独执行：请求断开了也照样做完，结果体现在已安装列表里。普通安装回滚的失败占位及清理期限见
+  [ADR-0067](0067-chat-installing-bot.md#回滚结果不随请求断开消失)；它不代表已安装的应用或能力提供方。
 
 **客户端核心**（`ClientCore`）：
 

@@ -504,6 +504,11 @@ async fn a_failed_consumer_rolls_back_all_new_providers_but_preserves_existing_c
             1
         );
         assert!(!bed.manager.is_installed(&id(plugin)), "{plugin}");
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.test");
+        assert_eq!(failure["kind"], "unhealthy");
+        assert_eq!(failure["cleanup_errors"], json!([]));
         assert_eq!(stored_secrets(&bed, plugin), None, "{plugin}");
         assert!(
             !bed.data
@@ -548,7 +553,17 @@ async fn a_provider_that_fails_readiness_rolls_back_before_creating_the_consumer
         1
     );
     assert_eq!(bed.docker.creations(&container_name("app-test", "web")), 0);
-    assert!(bed.manager.installed(&langs()).plugins.is_empty());
+    for plugin in ["app.search", "app.ledger"] {
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.ledger");
+        assert_eq!(failure["kind"], "unhealthy");
+    }
+    assert!(
+        bed.manager
+            .installed_plugin(&id("app.test"), &langs())
+            .is_none()
+    );
     assert!(bed.docker.containers().is_empty());
     assert_eq!(bed.docker.networks(), ["bridge"]);
     assert!(bed.docker.volumes().is_empty());
@@ -594,7 +609,12 @@ async fn a_failed_transaction_restores_retained_secrets_and_data_for_every_layer
         }),
     );
     bed.manager.install_source(&outer).await.unwrap_err();
-    assert!(bed.manager.installed(&langs()).plugins.is_empty());
+    for plugin in ["app.search", "app.test"] {
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.test");
+        assert_eq!(failure["kind"], "unhealthy");
+    }
     assert!(bed.docker.containers().is_empty());
     assert_eq!(bed.docker.networks(), ["bridge"]);
     assert!(bed.keys.lock().unwrap().is_empty());

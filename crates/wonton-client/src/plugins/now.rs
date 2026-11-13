@@ -50,7 +50,7 @@ fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
 pub(super) fn updatable(view: &PluginsViewModel) -> Vec<UpdatablePlugin> {
     let installed = view.installed.iter().flat_map(|list| &list.plugins);
     installed
-        .filter(|plugin| !is_busy(plugin))
+        .filter(|plugin| plugin.install_failure.is_none() && !is_busy(plugin))
         .filter_map(|plugin| {
             if let Some(offer) = &plugin.upgrade {
                 return Some(updatable_of(plugin, &offer.version));

@@ -5,6 +5,7 @@ use wonton_protocol::InstallRequest;
 use super::preflight::PreparedInstall;
 use super::{InstallError, Languages, PluginManager};
 use crate::plugin::lifecycle::Undo;
+use crate::plugin::listed::Listed;
 use crate::plugin::manager::{PluginView, detached};
 use crate::plugin::manifest::PluginId;
 use crate::plugin::package::PluginPackage;
@@ -61,6 +62,10 @@ impl PluginManager {
         } in layers
         {
             let manifest = decision.package.manifest.clone();
+            self.failed_installs
+                .write()
+                .expect("安装结果锁中毒")
+                .remove(&manifest.id);
             rollback.push(LayerRollback {
                 id: manifest.id.clone(),
                 secrets: secrets_before,
@@ -69,7 +74,7 @@ impl PluginManager {
             });
             let installed = async {
                 self.store_input_values(&manifest, &inputs, None, langs)?;
-                self.install_checked_retained(decision, settings, langs)
+                self.install_checked_retained(&decision, settings, langs)
                     .await
             }
             .await;
@@ -80,9 +85,30 @@ impl PluginManager {
                     result = Some(view);
                 }
                 Err(error) => {
+                    let cause = self.failure_cause(&manifest.id, &error);
+                    if !self.failed_install(&manifest.id) && !self.is_installed(&manifest.id) {
+                        self.retain_install_failure(
+                            &manifest.id,
+                            cause.clone(),
+                            Some(Listed::new(
+                                &decision.package,
+                                crate::plugin::manager::now_secs(),
+                                decision.lan_webui,
+                                false,
+                                Default::default(),
+                            )),
+                            langs,
+                        );
+                    }
                     let error = error.with_note(langs, manifest.id.as_str());
                     return Err(self
-                        .rollback_dependency_batch(rollback, snapshot, consumers, error, langs)
+                        .rollback_dependency_batch(
+                            rollback,
+                            snapshot,
+                            consumers,
+                            (error, cause),
+                            langs,
+                        )
                         .await);
                 }
             }
@@ -97,8 +123,9 @@ impl PluginManager {
                 &[]
             };
             if let Err(error) = self.capabilities_installed(manifest, connect, false).await {
+                let cause = self.failure_cause(&manifest.id, &error);
                 return Err(self
-                    .rollback_dependency_batch(rollback, snapshot, consumers, error, langs)
+                    .rollback_dependency_batch(rollback, snapshot, consumers, (error, cause), langs)
                     .await);
             }
         }
@@ -113,7 +140,7 @@ impl PluginManager {
         rollback: Vec<LayerRollback>,
         snapshot: super::plan::CapabilityStateSnapshot,
         consumers: super::transaction_recovery::InstallConsumerSnapshot,
-        error: InstallError,
+        (error, cause): (InstallError, wonton_protocol::InstallFailure),
         langs: &Languages,
     ) -> InstallError {
         let mut failures = Vec::new();
@@ -121,9 +148,14 @@ impl PluginManager {
             failures.push(error.to_string());
         }
         failures.extend(Box::pin(self.restore_install_consumers(consumers, langs)).await);
+        let shared_failures = failures.clone();
         for layer in rollback.into_iter().rev() {
+            let mut root = cause.clone();
+            root.cleanup_errors.extend(shared_failures.iter().cloned());
             if let Some(undo) = layer.undo {
-                failures.extend(self.rollback_installed(&layer.id, undo, langs).await);
+                failures.extend(self.rollback_installed(&layer.id, undo, &root, langs).await);
+            } else {
+                self.retain_install_failure(&layer.id, root, None, langs);
             }
             let restored = match layer.secrets {
                 Some(secrets) => {
@@ -135,6 +167,7 @@ impl PluginManager {
             };
             if let Err(error) = restored {
                 failures.push(error.to_string());
+                self.append_install_cleanup(&layer.id, &[error.to_string()], langs);
             }
         }
         self.install_rollback_error(error, failures, langs)
