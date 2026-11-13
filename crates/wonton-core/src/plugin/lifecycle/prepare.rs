@@ -63,14 +63,8 @@ impl PluginManager {
         ctx.lan = lan;
         ctx.settings = settings;
         self.check_network_names(&ctx).await?;
-        let default_bot = self.provision_default_bot(package, undo).await?;
-        if let Some(models) = self.provision_models(package, langs).await? {
-            ctx.models = Some(models);
-            undo.models = Some(manifest.id.clone());
-        }
-        if let Some(bot) = &default_bot {
-            self.fill_default_bot_vars(manifest, bot, &mut ctx);
-        }
+        // 默认 Bot、模型网关变量和留着的其它 Bot 都在这步准备好（见 `bot_web_install`）。
+        self.prepare_install_bots(package, &mut ctx, undo).await?;
         Ok((ctx, secret, secrets, proxy))
     }
 }

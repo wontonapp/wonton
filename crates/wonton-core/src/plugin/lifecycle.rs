@@ -34,7 +34,7 @@ use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
 use crate::matrix::ProvisionedBot;
-use crate::oidc::{ClientSpec, Hydra};
+use crate::oidc::Hydra;
 
 mod oidc_client;
 mod prepare;
