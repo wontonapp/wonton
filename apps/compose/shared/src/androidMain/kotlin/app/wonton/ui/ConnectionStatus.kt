@@ -1,16 +1,20 @@
 package app.wonton.ui
 
 import androidx.annotation.StringRes
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -21,7 +25,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.ConnectionCheck
 import app.wonton.protocol.ConnectionNotice
@@ -30,6 +38,8 @@ import app.wonton.protocol.DeviceNetwork
 import app.wonton.protocol.HomePath
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.InstalledPlugins
+import app.wonton.protocol.UdpFlowStats
 import app.wonton.ui.design.WontonBarStatus
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.wontonContentPadding
@@ -40,6 +50,8 @@ import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.Forward
+import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -281,7 +293,7 @@ fun ConnectionPage(
 }
 
 @Composable
-fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
+fun ConnectionDetailsPage(viewModel: HomeViewModel, installed: InstalledPlugins?, onBack: () -> Unit) {
     val details = viewModel.details
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.connection_details_title), onBack) }) {
         Column(
@@ -326,9 +338,82 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, onBack: () -> Unit) {
                     )
                 }
             }
+            if (details.udpFlows.isNotEmpty()) {
+                UdpFlowsGroup(details.udpFlows, details.udpBufferEvictedDatagrams, installed)
+            }
             details.lastFailure?.let { WontonGroup { WontonRow(stringResource(R.string.connection_last_failure), it) } }
         }
     }
+}
+
+private const val EXPANDED_DEGREES = 90f
+
+/** 隧道上的 UDP 流向（ADR-0072）：一行汇总默认收起，点开每个流向一行；没有流向时整块不出现。 */
+@Composable
+private fun UdpFlowsGroup(flows: List<UdpFlowStats>, evicted: ULong?, installed: InstalledPlugins?) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val colors = WontonTheme.colors
+    WontonGroup {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
+        ) {
+            Text(
+                pluralStringResource(R.plurals.connection_udp_flows, flows.size, flows.size),
+                style = WontonTheme.typography.body,
+                color = colors.textPrimary.toColor(),
+            )
+            // 测不到（null）和 0 都不显示：iroh 只给连接级发送帧数，核心推不出来时不能伪装成 0。
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                evicted?.takeIf { it > 0uL }?.let { dropped ->
+                    Text(
+                        pluralStringResource(R.plurals.connection_udp_flow_dropped, dropped.toInt(), dropped.toLong()),
+                        style = WontonTheme.typography.body.copy(textAlign = TextAlign.End),
+                        color = colors.textSecondary.toColor(),
+                    )
+                }
+            }
+            Icon(
+                WontonIcon.Forward,
+                // 装饰：整行可点，箭头只表示能展开。
+                contentDescription = null,
+                Modifier.size(WontonTheme.size.iconSmall).rotate(if (expanded) EXPANDED_DEGREES else 0f),
+                tint = colors.textSecondary.toColor(),
+            )
+        }
+        if (expanded) {
+            flows.forEach { flow ->
+                WontonSeparator()
+                UdpFlowRow(flow, installed)
+            }
+        }
+    }
+}
+
+/** 一个流向一行：插件名、端口、收发数；超长丢弃非 0 才显示（ADR-0072）。 */
+@Composable
+private fun UdpFlowRow(flow: UdpFlowStats, installed: InstalledPlugins?) {
+    val title = installed?.plugins?.firstOrNull { it.id == flow.pluginId }?.title ?: flow.pluginId
+    val value = if (flow.oversizedDrops > 0uL) {
+        stringResource(
+            R.string.connection_udp_flow_traffic_dropped,
+            flow.port.toInt(),
+            flow.receivedPackets.toLong(),
+            flow.sentPackets.toLong(),
+            flow.oversizedDrops.toLong(),
+        )
+    } else {
+        stringResource(
+            R.string.connection_udp_flow_traffic,
+            flow.port.toInt(),
+            flow.receivedPackets.toLong(),
+            flow.sentPackets.toLong(),
+        )
+    }
+    WontonRow(title, value)
 }
 
 private val HomePath.kindText: String
