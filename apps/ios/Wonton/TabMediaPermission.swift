@@ -106,6 +106,14 @@ extension TabWebSession: WKUIDelegate {
                 page: placed, origin: Self.originString(initiatedByFrame.securityOrigin),
                 camera: camera, microphone: microphone
             )
+            let what = if decision == .allow {
+                "allow"
+            } else if decision == .prompt {
+                "prompt"
+            } else {
+                "deny"
+            }
+            NSLog("[media] request ok %@ microphone=%d", what, microphone ? 1 : 0)
         } catch {
             decision = nil
             NSLog("[media] request failed origin=%@ error=%@",
