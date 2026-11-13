@@ -338,6 +338,9 @@ fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
                 sender: sender.into(),
                 event_id: format!("${session}"),
             },
+            // 说话人不是 Bot：链代表就是说话人（网关侧对 Bot 说话人才换归属人，第 8 块）。
+            None,
+            sender.into(),
         )
         .unwrap();
     caller.chain = Some(grant.chain);

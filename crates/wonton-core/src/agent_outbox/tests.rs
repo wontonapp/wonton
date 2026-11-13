@@ -40,7 +40,7 @@ async fn a_taken_message_is_redelivered_before_new_items() {
                 event_id: "$e1".into(),
             },
         })
-        .then(|| ())
+        .then_some(())
         .expect("回报认这项");
     let next = outbox.next(&bot("main")).await.unwrap();
     assert_eq!(next.id, second);
@@ -61,7 +61,7 @@ async fn a_failed_receipt_settles_the_item() {
                 category: OutboxFailure::NoRoom,
             },
         })
-        .then(|| ())
+        .then_some(())
         .expect("回报认这项");
     assert!(
         outbox.next(&bot("main")).await.is_none(),
@@ -113,7 +113,7 @@ async fn message_items_survive_a_restart() {
                     event_id: "$e1".into(),
                 },
             })
-            .then(|| ())
+            .then_some(())
             .expect("回报认这项");
     }
     let outbox = Outbox::with_store(&path).unwrap();
@@ -162,7 +162,7 @@ async fn settled_messages_reach_the_handler() {
                 event_id: "$e1".into(),
             },
         })
-        .then(|| ())
+        .then_some(())
         .expect("回报认这项");
     assert_eq!(
         *seen.lock().unwrap(),

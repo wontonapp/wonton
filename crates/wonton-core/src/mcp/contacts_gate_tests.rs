@@ -91,7 +91,10 @@ fn start_turn(ledger: &Chains, bot: &BotRef, sender: &str, session: &str) {
         sender: sender.to_owned(),
         event_id: format!("$ev-{session}:a.test"),
     };
-    ledger.start_bridge_turn(bot.clone(), report).unwrap();
+    let sender = sender.to_owned();
+    ledger
+        .start_bridge_turn(bot.clone(), report, None, sender)
+        .unwrap();
 }
 
 /// b.test 上的 bob 成为 alice 这个 Bot 的已成立远端联系人。

@@ -204,6 +204,7 @@ impl PluginManager {
             homepage: m.homepage.clone(),
             repository: origin.map(|o| o.repository_url()),
             license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             permissions: m
@@ -282,6 +283,8 @@ impl PluginManager {
             version: m.version.clone(),
             trust: shown.trust,
             author: author(m),
+            license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars: shown.stars,
             installed_version,
             security_tier: Some(tier),

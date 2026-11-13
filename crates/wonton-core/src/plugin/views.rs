@@ -128,6 +128,7 @@ impl PluginManager {
         let Some(listed) = listed else {
             return Some(broken_detail(installed));
         };
+        let needs_configuration = installed.status == PluginState::NeedsConfiguration;
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
         let record = self.store.load(id).ok().flatten();
@@ -159,6 +160,7 @@ impl PluginManager {
             homepage: m.homepage.clone(),
             repository: origin.map(Origin::repository_url),
             license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             permissions: super::views_permissions::permission_lines(
@@ -188,6 +190,7 @@ impl PluginManager {
                 )
                 .chain(cross_origin_isolation_notice(m, langs))
                 .chain(super::manifest_widget::manifest_notices(m, langs))
+                .chain(self.unfilled_notice(needs_configuration, id, m, langs))
                 .chain(
                     super::egress::provider::provides_proxy(m)
                         .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
@@ -262,18 +265,7 @@ impl PluginManager {
         installed: Option<&InstalledRecord>,
     ) -> Result<InstallPreview, InstallError> {
         super::install_entry::check_runtime(&package.manifest, langs)?;
-        // 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
-        let schema = super::settings::load(package, langs)?;
-        let settings = match &schema {
-            None => None,
-            Some(schema) => {
-                let mut values: std::collections::BTreeMap<String, serde_json::Value> = installed
-                    .map(|record| record.settings.clone())
-                    .unwrap_or_default();
-                super::settings::value::defaults(schema, &mut values);
-                Some(super::settings::install_form(schema, &values, langs))
-            }
-        };
+        let settings = settings_form(package, installed, langs)?;
         let plan = dry_run(package, langs)?;
         let icon = self.check_icon(package, langs).await?;
         if let Some(icon) = &icon {
@@ -331,6 +323,8 @@ impl PluginManager {
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
+            license: m.license.clone(),
+            license_url: m.license_url.clone(),
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
             widget_capabilities: super::manifest_widget::capabilities(m),
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
@@ -462,6 +456,46 @@ impl PluginManager {
         blocked_by(self.fits_host(m, langs).await)
     }
 
+    /// 详情页顶上那条“还没填哪些密钥”：和状态一样只在运行中给，别的状态有自己的提示。
+    fn unfilled_notice(
+        &self,
+        needs_configuration: bool,
+        id: &PluginId,
+        manifest: &Manifest,
+        langs: &Languages,
+    ) -> Option<CardLine> {
+        if !needs_configuration {
+            return None;
+        }
+        let missing = self.unfilled_secrets(id, Some(manifest));
+        (!missing.is_empty()).then(|| {
+            let names: Vec<&str> = missing.iter().map(String::as_str).collect();
+            let mut line = line(l10n::text(
+                langs,
+                "plugin-secret-required-missing",
+                &[("names", l10n::list(langs, &names).into())],
+            ));
+            line.emphasis = true;
+            line
+        })
+    }
+
+    /// 列表和详情里的状态：运行中、但必填的用户填写密钥还没填的是“待配置”（ADR-0064）。
+    /// 只覆盖运行中：异常、停下、正在安装时那几种原因更要紧。
+    fn plugin_state(
+        &self,
+        id: &PluginId,
+        status: PluginState,
+        manifest: Option<&Manifest>,
+    ) -> PluginState {
+        if matches!(status, PluginState::Running { .. })
+            && !self.unfilled_secrets(id, manifest).is_empty()
+        {
+            return PluginState::NeedsConfiguration;
+        }
+        status
+    }
+
     fn with_dependency_status(
         &self,
         mut plugin: InstalledPlugin,
@@ -553,9 +587,13 @@ impl PluginManager {
             provider: origin.map(Origin::provider),
             via_index: origin.and_then(Origin::via_index),
             written_by: None,
-            status: state(
-                &super::install_hosted::effective_status(plugins, entry, langs),
-                entry.health,
+            status: self.plugin_state(
+                id,
+                state(
+                    &super::install_hosted::effective_status(plugins, entry, langs),
+                    entry.health,
+                ),
+                manifest,
             ),
             web_url: self.open_url(id, entry),
             web_display: manifest
@@ -725,6 +763,22 @@ pub(super) fn author(manifest: &Manifest) -> Option<PluginAuthor> {
     })
 }
 
+/// 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
+fn settings_form(
+    package: &PluginPackage,
+    installed: Option<&InstalledRecord>,
+    langs: &Languages,
+) -> Result<Option<wonton_protocol::SettingsForm>, InstallError> {
+    let Some(schema) = super::settings::load(package, langs)? else {
+        return Ok(None);
+    };
+    let mut values = installed
+        .map(|record| record.settings.clone())
+        .unwrap_or_default();
+    super::settings::value::defaults(&schema, &mut values);
+    Ok(Some(super::settings::install_form(&schema, &values, langs)))
+}
+
 /// 记录读不出来的插件：只有列表里的那些信息。
 fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
     PluginDetail {
@@ -749,6 +803,7 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         homepage: None,
         repository: None,
         license: None,
+        license_url: None,
         stars: None,
         release_notes: None,
         permissions: Vec::new(),

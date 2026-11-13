@@ -158,6 +158,8 @@ impl PluginManager {
         let state = match plugin.status {
             PluginState::Installing => TabState::Starting,
             PluginState::Running { .. } => TabState::Ready,
+            // 待配置时网页照常，只是 MCP 工具报未就绪。
+            PluginState::NeedsConfiguration => TabState::Ready,
             PluginState::Stopped => TabState::Stopped,
             PluginState::Upgrading => TabState::Upgrading,
             PluginState::Uninstalling => return None,

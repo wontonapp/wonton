@@ -376,13 +376,23 @@ impl Bus {
 
     /// 调用方能看到的工具：核心自己的，加上所有在运行、对它放行（[`Bus::bot_access`]）的插件的。并发地问，一个插件卡住
     /// 挡不住别的（每个插件有期限，见 [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
+    ///
+    /// 必填密钥还没填的插件不连：直接把原因记进工具的 `tools_problem`，省掉一次必然失败的握手。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
         if self.remote_contact_blocked(caller) {
             return contacts_gate::tools();
         }
         let mut servers = self.plugins.mcp_servers();
         servers.retain(|server| self.bot_access(caller, &server.id).is_ok());
-        let listed = servers.iter().map(|server| self.upstreams.tools(server));
+        let listed = servers.iter().map(|server| async {
+            match self.unconfigured(&server.id) {
+                Some(notice) => {
+                    self.upstreams.note_problem(server, notice.clone());
+                    Err(notice)
+                }
+                None => self.upstreams.tools(server).await,
+            }
+        });
         let listed = futures_util::future::join_all(listed).await;
         let mut tools = core_tools::definitions();
         for (server, list) in servers.iter().zip(listed) {
@@ -395,6 +405,18 @@ impl Bus {
             }
         }
         tools
+    }
+
+    /// 插件必填的密钥还没填时的说明，填齐后为空：它的 MCP 工具这时连上也会被对方拒，调用直接按未就绪回绝并
+    /// 点名缺哪项（ADR-0064）。
+    fn unconfigured(&self, id: &PluginId) -> Option<String> {
+        let missing = self.plugins.unfilled_secrets(id, None);
+        (!missing.is_empty()).then(|| {
+            format!(
+                "插件 {id} 还没填好密钥，先填 {} 再用它的工具",
+                missing.join("、")
+            )
+        })
     }
 
     /// `cancelled` 完成时调用方已经不要结果了（取消了，或者断开了）。
@@ -437,6 +459,9 @@ impl Bus {
         };
         if let Err(failure) = self.bot_access(caller, &server.id) {
             return self.deny(caller, &name, &args, &failure);
+        }
+        if let Some(notice) = self.unconfigured(&server.id) {
+            return self.deny(caller, &name, &args, &ToolFailure::new("not_ready", notice));
         }
         self.call_plugin(
             caller,

@@ -200,21 +200,32 @@ pub(super) async fn report(gateway: &Gateway, caller: &Caller, req: Request) -> 
         }
     };
     match report {
-        ChainTurnReport::Start {
-            ref sender,
-            ref event_id,
-            ..
-        } => {
+        ChainTurnReport::Start { ref sender, .. } => {
             if !gateway.bot_listens_to(&bot, sender) {
                 return refused("说话的人不是这个 Bot 听的人");
             }
-            // Bot 说的话只当叫回（ADR-0083 第 4 节）：触发消息得认回一条链，第 8 块绑定唤醒标签。
-            if gateway.plugins.bot_by_user(sender).is_some()
-                && chains.ledger().chain_for_event(event_id).is_none()
+            // 说话人是 Bot 时链跟着叫回走（第 8 块）：消息带唤醒标签接回那条链；没有标签
+            // （点名者不在链上，如自带 Matrix 的 Agent）按点名者的归属人开新链——链代表是
+            // 归属人，不是 Bot 的 Matrix 账号。归属人记的是和别的链一样的完整 Matrix ID。
+            let (mentioner, chain_user) = match gateway.plugins.bot_by_user(sender) {
+                Some((id, bot, keeper)) => {
+                    let Some(matrix) = &gateway.matrix else {
+                        return refused("认不出归属人的 Matrix 账号");
+                    };
+                    (
+                        Some(BotRef {
+                            plugin_id: id.to_string(),
+                            bot,
+                        }),
+                        matrix.user_id(&keeper),
+                    )
+                }
+                None => (None, sender.clone()),
+            };
+            match chains
+                .ledger()
+                .start_bridge_turn(bot, report, mentioner, chain_user)
             {
-                return refused("Bot 说话，但这条消息认不回任何链");
-            }
-            match chains.ledger().start_bridge_turn(bot, report) {
                 Ok(grant) => axum::Json(grant).into_response(),
                 Err(error) => ledger_error(error),
             }

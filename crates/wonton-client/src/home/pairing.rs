@@ -7,12 +7,15 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use wonton_l10n::{Lang, l10n};
-use wonton_protocol::{CoreError, PairingFailure, PairingStage, PairingStatus};
+use wonton_protocol::{
+    CoreError, JoinOutcome, PairingFailure, PairingStage, PairingStatus, RoleDef,
+};
 use wonton_tunnel::TunnelError;
 use wonton_tunnel::pair::{self, InvalidCode, PairResponse, PairingCode, RejectReason};
 
 use super::HomeLink;
 use super::bind::BindError;
+use super::ticket::Ticket;
 use crate::l10n::{CATALOG, language};
 
 impl HomeLink {
@@ -40,6 +43,12 @@ impl HomeLink {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "home-pairing-name-empty"),
             });
+        }
+        // 码里的地址和域名还要能变成一份合法的连接信息：配上以后存不下，码已经用掉了，只能重新发码再扫一遍。
+        // 先在这里拒，配对页当场报出是哪一项不对。
+        if let Err(reason) = Ticket::parse(&ticket(&code, device_name)) {
+            tracing::info!(%reason, "the pairing code does not make usable connection info");
+            return Err(CoreError::InvalidInput { reason });
         }
         Ok(Some(code))
     }
@@ -197,13 +206,20 @@ impl HomeLink {
     ) {
         let started = Instant::now();
         let mut endpoint = None;
-        // 绑定的时限只包绑定：中继慢、网卡枚举慢不该吃掉交换的预算。
+        tracing::info!(server = %code.server_id.fmt_short(), "pairing: connecting");
+        // 绑定单独计时、单独重试：卡死的绑定一直不回来（见 `bind.rs`），换一次新的就好；它也不该吃掉交换的预算。
         let bound = self
-            .bind_endpoint(&code.relays, usize::MAX, lang, limit)
+            .bind_for_pairing(&code, lang, PAIR_BIND_TIMEOUT.min(limit))
             .await;
+        let bound = match bound {
+            Ok(bound) => {
+                tracing::info!(elapsed = ?started.elapsed(), "pairing: bound the endpoint");
+                Ok(bound)
+            }
+            Err(error) => Err(error),
+        };
         let outcome = match bound {
-            // 交换自己按同样的时限计时，并且请求已经发出去、回应没到时再确认一次：服务端对同一台设备的
-            // 重发幂等地回 `Paired`，慢中继上第一次配对照样能成，不留下一半的配对。
+            // 交换按小段计时：每段慢不占别的段；请求可能已经到了服务端时，客户端自己再确认一次。
             Ok(bound) => {
                 let home = self.clone();
                 pair::pair_with_timeout(
@@ -215,15 +231,7 @@ impl HomeLink {
                 )
                 .await
             }
-            Err(BindError::Failed(reason)) => Err(TunnelError::TransportUnavailable { reason }),
-            Err(BindError::TimedOut) => Err(TunnelError::TransportUnavailable {
-                reason: l10n!(
-                    CATALOG,
-                    lang,
-                    "home-pairing-timeout",
-                    seconds = limit.as_secs()
-                ),
-            }),
+            Err(error) => Err(error),
         };
         if self.pair_attempt.load(Ordering::SeqCst) != attempt {
             tracing::info!("a newer pairing started, dropping this one's result");
@@ -233,7 +241,12 @@ impl HomeLink {
             return;
         }
         let status = match outcome {
-            Ok(PairResponse::Paired) => {
+            // 管理员同意时服务端直接回 `Paired`；真收到 `Approved` 说明设备已登记，照它接上。
+            Ok(PairResponse::Paired)
+            | Ok(PairResponse::Joining {
+                outcome: JoinOutcome::Approved,
+                ..
+            }) => {
                 tracing::info!(server = %code.server_id.fmt_short(), "paired with the home server");
                 if let Some(endpoint) = endpoint.take() {
                     endpoint.close().await;
@@ -244,17 +257,32 @@ impl HomeLink {
                     Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
                 }
             }
+            Ok(PairResponse::Joining { outcome, role }) => {
+                tracing::info!(?outcome, "the home server answered the join request");
+                Some(match outcome {
+                    JoinOutcome::Pending | JoinOutcome::Other => pending(lang, role.as_ref()),
+                    JoinOutcome::Rejected => failed(
+                        PairingFailure::Rejected,
+                        l10n!(CATALOG, lang, "home-pairing-joining-rejected"),
+                    ),
+                    JoinOutcome::CodeUsed => failed(
+                        rejected(RejectReason::Used),
+                        l10n!(CATALOG, lang, "home-pairing-joining-code-used"),
+                    ),
+                    // 上面那个分支接掉了。
+                    JoinOutcome::Approved => unreachable!("approved is handled above"),
+                })
+            }
             Ok(PairResponse::Rejected { reason, message }) => {
                 tracing::info!(?reason, "the home server rejected pairing: {message}");
                 Some(failed(rejected(reason), message))
             }
             Err(e) => {
-                tracing::info!("pairing failed: {e}");
                 let elapsed = started.elapsed();
-                Some(failed(
-                    transport(&e),
-                    detail(&code, lang, elapsed, limit, &e),
-                ))
+                let text = detail(&code, lang, elapsed, limit, &e);
+                // 详情原来只进界面：拿 adb 看日志查不出卡在哪一段、试过什么地址、服务端是什么时候登记的。
+                tracing::info!(elapsed = ?elapsed, "pairing failed: {e}; {text}");
+                Some(failed(transport(&e), text))
             }
         };
         self.finish_pairing(attempt, status);
@@ -331,8 +359,47 @@ impl HomeLink {
         }
     }
 
-    /// 每一段（绑定、一次交换、一次确认）的时限，和看门线程的时限：整次最多三段，看门线程再多留一段，
-    /// 只兜“这几道时限都轮不到”的情况，不和它们抢着报。
+    /// 绑定本机的 endpoint：到 `timeout`（不长于交换的时限）还没回来就换一次新的绑定，最多 [`PAIR_BIND_ATTEMPTS`] 次。
+    /// 卡死的绑定事后从不回来（`bind.rs` 的说明），重试比把时限放长有用。
+    async fn bind_for_pairing(
+        self: &Arc<Self>,
+        code: &PairingCode,
+        lang: Lang,
+        timeout: Duration,
+    ) -> Result<iroh::Endpoint, TunnelError> {
+        let mut tries = 0;
+        loop {
+            tries += 1;
+            match self
+                .bind_endpoint(&code.relays, usize::MAX, lang, timeout)
+                .await
+            {
+                Ok(endpoint) => return Ok(endpoint),
+                Err(BindError::Failed(reason)) => {
+                    return Err(TunnelError::TransportUnavailable { reason });
+                }
+                Err(BindError::TimedOut) if tries < PAIR_BIND_ATTEMPTS => {
+                    tracing::warn!(
+                        tries,
+                        "pairing: binding the endpoint timed out, binding again"
+                    );
+                }
+                Err(BindError::TimedOut) => {
+                    return Err(TunnelError::TransportUnavailable {
+                        reason: l10n!(
+                            CATALOG,
+                            lang,
+                            "home-pairing-timeout",
+                            seconds = timeout.as_secs()
+                        ),
+                    });
+                }
+            }
+        }
+    }
+
+    /// 每小段的时限（见 [`pair::PAIR_TIMEOUT`]）和看门线程的时限：整次最多两次交换、每次四小段，加上两次绑定，
+    /// 看门线程再多留一点，只兜“这几道时限都轮不到”的情况，不和它们抢着报。
     fn pair_deadlines(&self) -> (Duration, Duration) {
         #[cfg(feature = "test-hooks")]
         if let Some(deadlines) = *self
@@ -345,12 +412,15 @@ impl HomeLink {
         }
         (
             pair::PAIR_TIMEOUT,
-            pair::PAIR_TIMEOUT * 3 + PAIR_WATCH_GRACE,
+            pair::PAIR_TIMEOUT * 8 + PAIR_BIND_TIMEOUT * PAIR_BIND_ATTEMPTS + PAIR_WATCH_GRACE,
         )
     }
 }
 
 const PAIR_WATCH_GRACE: Duration = Duration::from_secs(5);
+/// 绑定 iroh endpoint 的时限和最多试几次：和建连的绑定一样，卡死的那种换一次新的绑定，不再等它。
+const PAIR_BIND_TIMEOUT: Duration = Duration::from_secs(10);
+const PAIR_BIND_ATTEMPTS: u32 = 2;
 
 /// 进度心跳的间隔：壳的“还在连接”和取消按它出现，不用更细。
 const PAIR_TICK: Duration = Duration::from_secs(1);
@@ -408,6 +478,23 @@ fn detail(
 
 fn failed(reason: PairingFailure, message: String) -> PairingStatus {
     PairingStatus::Failed { reason, message }
+}
+
+/// 等管理员同意。带上加入后的角色名；模板还没改名时角色名为空，只说在等批。
+fn pending(lang: Lang, role: Option<&RoleDef>) -> PairingStatus {
+    let name = role
+        .map(|role| role.name.trim())
+        .filter(|name| !name.is_empty());
+    let message = match name {
+        Some(name) => l10n!(
+            CATALOG,
+            lang,
+            "home-pairing-joining-pending-role",
+            role = name
+        ),
+        None => l10n!(CATALOG, lang, "home-pairing-joining-pending"),
+    };
+    failed(PairingFailure::PendingApproval, message)
 }
 
 fn rejected(reason: RejectReason) -> PairingFailure {

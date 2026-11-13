@@ -11,6 +11,7 @@ mod stop;
 mod store;
 #[cfg(test)]
 mod tests;
+mod turns;
 mod wake;
 
 use std::collections::{BTreeMap, HashMap};
@@ -247,10 +248,14 @@ impl Chains {
     /// 桥的一轮开始（`POST /agent/chains` 的 start 报告）：按触发消息的唤醒标签沿用原链，
     /// 沿用不上就开新链（发起的 Bot 记在第 1 层）。拿到 [`ChainTurnGrant`] 才发 prompt，
     /// 轮数在拿到的那一刻记。说话人是不是这个 Bot 听的人归第 3 块核，账本只记。
+    /// `mentioner` 是说话人是链上 Bot 时的那个 Bot（第 8 块：被点名的 Bot 用它的层进链）；
+    /// `chain_user` 是链代表的人——说话的人，或点名 Bot 的归属人。
     pub fn start_bridge_turn(
         &self,
         bot: BotRef,
         report: ChainTurnReport,
+        mentioner: Option<BotRef>,
+        chain_user: String,
     ) -> Result<ChainTurnGrant, ChainLedgerError> {
         let ChainTurnReport::Start {
             session,
@@ -270,10 +275,18 @@ impl Chains {
                 thread_id: thread,
             };
             match wake::lookup(state, &event_id) {
-                Some(chain_id) => continue_bridge_round(state, &chain_id, &bot, &session, &sender),
-                None => open_chain(
+                Some(chain_id) => turns::continue_bridge_round(
                     state,
-                    sender,
+                    &chain_id,
+                    &bot,
+                    &session,
+                    &sender,
+                    mentioner.as_ref(),
+                ),
+                None => turns::open_chain(
+                    state,
+                    chain_user,
+                    &sender,
                     origin,
                     bot,
                     &session,
@@ -384,9 +397,10 @@ impl Chains {
         session: &str,
     ) -> Result<ChainTurnGrant, ChainLedgerError> {
         self.mutate(|state| {
-            open_chain(
+            turns::open_chain(
                 state,
                 user.to_owned(),
+                user,
                 origin,
                 target,
                 session,
@@ -534,6 +548,12 @@ impl Chains {
         self.read(|state| wake::lookup(state, event_id))
     }
 
+    /// 链上 Bot 的这条消息挂回哪条链（第 8 块在 Bot 发消息的转发路上查）：
+    /// 按 Bot、房间、话题找它当时活的链。
+    pub fn chain_for_wake(&self, bot: &BotRef, room: &str, thread: Option<&str>) -> Option<String> {
+        self.read(|state| wake::chain_for_wake(state, bot, room, thread))
+    }
+
     /// 按会话找链。
     pub fn session_chain(&self, session: &str) -> Option<ChainSessionInfo> {
         self.read(|state| {
@@ -673,168 +693,6 @@ impl LedgerState {
             dirty: false,
         }
     }
-}
-
-/// 桥的一轮续到已有的链：检查（已停、到上限）→ 记轮数（到轮数上限的那一下就地翻转）→
-/// 登记桥会话。被拒的轮不登记会话，但翻转要提交——"再给一份"靠它。
-fn continue_bridge_round(
-    state: &mut LedgerState,
-    chain_id: &str,
-    bot: &BotRef,
-    session: &str,
-    sender: &str,
-) -> Result<ChainTurnGrant, ChainLedgerError> {
-    let (layer, new_bot) = {
-        let chain = state
-            .chains
-            .get(chain_id)
-            .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-        layers::reject_if_closed(chain).map_err(ChainLedgerError::Rejected)?;
-        let layer = layers::bridge_layer(chain, bot).map_err(ChainLedgerError::Rejected)?;
-        (layer, layers::layer_of(chain, bot).is_none())
-    };
-    // 同一桥会话的重复 start（响应丢了重试）：幂等重发，不重复记轮。
-    if let Some(existing) = state.sessions.get(session)
-        && existing.source == ChainSessionSource::Bridge
-        && existing.chain == chain_id
-        && existing.bot == *bot
-        && existing.live
-    {
-        return Ok(ChainTurnGrant {
-            chain: chain_id.to_owned(),
-            layer: existing.layer,
-        });
-    }
-    state.dirty = true;
-    {
-        let chain = state.chains.get_mut(chain_id).expect("链刚查过");
-        budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
-        // 被拒的轮不加轮数也不入列；走到这里的 Bot 已经过了层数检查，这轮记上了它才入列。
-        if new_bot {
-            chain.bots.push(store::ChainBotEntry {
-                bot: bot.clone(),
-                layer,
-            });
-        }
-    }
-    bind_session(
-        state,
-        chain_id,
-        session,
-        bot,
-        layer,
-        ChainSessionSource::Bridge,
-        Some(sender),
-    )?;
-    stop::bump_activity(state, chain_id);
-    Ok(ChainTurnGrant {
-        chain: chain_id.to_owned(),
-        layer,
-    })
-}
-
-/// 开一条新链：发起的 Bot 记在第 1 层。桥的轮在开链那刻记一轮（start 就是 prompt 的开始）；
-/// `agent_acp` 的轮等 prompt 来了再记。开链不可能撞上限检查（新链是空的）。
-fn open_chain(
-    state: &mut LedgerState,
-    user: String,
-    origin: ConfirmationOrigin,
-    bot: BotRef,
-    session: &str,
-    source: ChainSessionSource,
-) -> Result<ChainTurnGrant, ChainLedgerError> {
-    if let Some(existing) = state.sessions.get(session) {
-        // 桥会话每轮重新登记（同一会话的下一句话是另一条链，start 的契约）；
-        // 上一轮没报 end 就来登记下一轮，或 `agent_acp` 会话想换链，都是调用方的错。
-        if source != ChainSessionSource::Bridge || existing.live {
-            return Err(ChainLedgerError::Invalid(format!(
-                "会话 {session} 已登记在别的链上"
-            )));
-        }
-    }
-    let chain_id = new_chain_id();
-    let sender = (source == ChainSessionSource::Bridge).then(|| user.clone());
-    let mut chain = store::StoredChain {
-        chain: chain_id.clone(),
-        user,
-        origin,
-        bots: vec![store::ChainBotEntry {
-            bot: bot.clone(),
-            layer: 1,
-        }],
-        limits: state.default_limits,
-        rounds: 0,
-        tokens: 0,
-        amount: None,
-        spend_by_bot: Vec::new(),
-        status: AgentChainStatus::Running,
-        limit_kind: None,
-        limit_events: 0,
-    };
-    if source == ChainSessionSource::Bridge {
-        budget::count_round(&mut chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
-    }
-    state.chains.insert(chain_id.clone(), chain);
-    state.dirty = true;
-    bind_session(
-        state,
-        &chain_id,
-        session,
-        &bot,
-        1,
-        source,
-        sender.as_deref(),
-    )?;
-    stop::bump_activity(state, &chain_id);
-    Ok(ChainTurnGrant {
-        chain: chain_id,
-        layer: 1,
-    })
-}
-
-/// 登记会话。桥会话每轮重新登记、覆盖旧登记（上一轮必须已报 end）；
-/// `agent_acp` 和交接会话一登记就定死，重复登记同一对（链、Bot）按幂等处理。
-fn bind_session(
-    state: &mut LedgerState,
-    chain_id: &str,
-    session: &str,
-    bot: &BotRef,
-    layer: u32,
-    source: ChainSessionSource,
-    sender: Option<&str>,
-) -> Result<(), ChainLedgerError> {
-    let entry = SessionEntry {
-        chain: chain_id.to_owned(),
-        bot: bot.clone(),
-        layer,
-        source,
-        sender: sender.map(str::to_owned),
-        live: true,
-    };
-    match state.sessions.get(session) {
-        Some(existing) if source == ChainSessionSource::Bridge => {
-            if existing.live {
-                return Err(ChainLedgerError::Invalid(format!(
-                    "会话 {session} 的上一轮还没报 end"
-                )));
-            }
-        }
-        Some(_) => {
-            return Err(ChainLedgerError::Invalid(format!(
-                "会话 {session} 已登记在别的链上"
-            )));
-        }
-        None => {}
-    }
-    state.sessions.insert(session.to_owned(), entry);
-    Ok(())
-}
-
-/// 128 位随机的链 ID（ADR-0061 第 10 节），32 个十六进制字符。
-fn new_chain_id() -> String {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("操作系统随机数源不可用");
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn build_row(chain: &store::StoredChain) -> AgentChainRow {

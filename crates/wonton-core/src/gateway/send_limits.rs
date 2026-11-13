@@ -206,6 +206,14 @@ impl TxnRing {
     }
 }
 
+/// 一条数得上的、认得出 Bot 的 Bot 发送（第 8 块挂叫回标签用）：哪个房间、哪个 Bot、
+/// 话题根（主时间线是没有话题的 `None`）。编辑不带——它不是新的一句话。
+pub(crate) struct SentMessage {
+    pub(super) room: String,
+    pub(super) bot_user: String,
+    pub(super) thread: Option<String>,
+}
+
 /// 一个房间的跳数：人上一次说话之后不同 Bot 之间来回了几跳，上一条（不算编辑的）Bot 消息是谁发的，和这个
 /// 回合里在说话的 Bot。
 #[derive(Default)]
@@ -379,21 +387,22 @@ impl SendLimiter {
     }
 
     /// Bot 入口的发送：数得上的请求先过频率和跳数，放行的原样返回（请求体读过一遍，原样装回）。
+    /// 数得上的、认得出 Bot 的非编辑发送带回 [`SentMessage`]，给叫回标签用（第 8 块）。
     pub(crate) async fn check_bot_send(
         &self,
         req: Request,
         matrix: Option<&Matrix>,
-    ) -> Result<Request, Box<Refused>> {
+    ) -> Result<(Request, Option<SentMessage>), Box<Refused>> {
         let Some((room, txn)) = counted_send(req.method(), req.uri().path()) else {
-            return Ok(req);
+            return Ok((req, None));
         };
         // 没带访问令牌的请求不归这里管：上游照样会 401。
         let Some(token) = bearer(&req) else {
-            return Ok(req);
+            return Ok((req, None));
         };
         let hash = token_hash(&token);
         let user = self.user_id(&token, hash, matrix).await;
-        let (req, edit) = read_edit(req).await?;
+        let (req, edit, thread) = read_edit(req).await?;
         let now = (self.now)();
         let bot = user.clone().unwrap_or_else(|| hex(&hash));
         let send = BotSend {
@@ -408,8 +417,18 @@ impl SendLimiter {
             let mut state = self.state.lock().expect("发送限制的锁");
             state.decide(&self.limits, &send, now)
         };
+        // 挂叫回标签的素材：认得出 Bot 的新消息（编辑不是新的一句话，也不带自己的话题根）。
+        let sent = if let (Decision::Pass, false, Some(bot_user)) = (&decision, edit, &user) {
+            Some(SentMessage {
+                room: room.clone(),
+                bot_user: bot_user.clone(),
+                thread,
+            })
+        } else {
+            None
+        };
         match decision {
-            Decision::Pass => Ok(req),
+            Decision::Pass => Ok((req, sent)),
             Decision::RateLimited { retry_after_ms } => {
                 tracing::info!(room = %room, retry_after_ms, "Bot 发消息太快，先挡住");
                 Err(Box::new(Refused::plain(rate_limited(retry_after_ms))))
@@ -479,9 +498,10 @@ fn hex(hash: &[u8; 32]) -> String {
     hash.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// 读出请求体看是不是编辑（`m.relates_to.rel_type` 是 `m.replace`），再把原始字节装回去。读不出 JSON 的不算编辑，
-/// 交给上游判断。
-async fn read_edit(req: Request) -> Result<(Request, bool), Box<Refused>> {
+/// 读出请求体看是不是编辑（`m.relates_to.rel_type` 是 `m.replace`）和话题根（`rel_type` 是
+/// `m.thread` 时的 `event_id`；加密消息的 `m.relates_to` 在密文外，两种都读得到），再把原始
+/// 字节装回去。读不出 JSON 的不算编辑、没有话题，交给上游判断。
+async fn read_edit(req: Request) -> Result<(Request, bool, Option<String>), Box<Refused>> {
     let (parts, body) = req.into_parts();
     let Ok(bytes) = to_bytes(body, MAX_BODY).await else {
         return Err(Box::new(Refused::plain(matrix_error(
@@ -491,16 +511,24 @@ async fn read_edit(req: Request) -> Result<(Request, bool), Box<Refused>> {
             "消息太大",
         ))));
     };
-    let edit = serde_json::from_slice::<Value>(&bytes)
+    let relates = serde_json::from_slice::<Value>(&bytes)
         .ok()
-        .and_then(|content| {
-            content
-                .pointer("/m.relates_to/rel_type")
+        .and_then(|content| content.pointer("/m.relates_to").cloned());
+    let rel_type = relates
+        .as_ref()
+        .and_then(|relates| relates.get("rel_type"))
+        .and_then(Value::as_str);
+    let edit = rel_type == Some("m.replace");
+    let thread = (rel_type == Some("m.thread"))
+        .then(|| {
+            relates
+                .as_ref()
+                .and_then(|relates| relates.get("event_id"))
                 .and_then(Value::as_str)
-                .map(|kind| kind == "m.replace")
+                .map(str::to_owned)
         })
-        .unwrap_or(false);
-    Ok((Request::from_parts(parts, Body::from(bytes)), edit))
+        .flatten();
+    Ok((Request::from_parts(parts, Body::from(bytes)), edit, thread))
 }
 
 /// 跳数到顶的拒绝：403，`errcode` 是 [`HOP_LIMIT_ERRCODE`]，SDK 不重试，又能从错误里认出类别（matrix-sdk 读

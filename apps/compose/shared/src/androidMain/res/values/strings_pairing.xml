@@ -40,4 +40,8 @@
     <string name="pairing_hint_transport">Check that your home server is on and connected to the network, then try again.</string>
     <!-- Next step under the protocol failure. May wrap. -->
     <string name="pairing_hint_protocol">Update the app and the server to the latest versions.</string>
+    <!-- Failure title when the code is a joining code and the admins haven't approved yet. No arguments. -->
+    <string name="pairing_failure_pending">Waiting for an admin to approve</string>
+    <!-- Next step under a pending join: retry the same code once an admin approves. No arguments. -->
+    <string name="pairing_next_pending">Once an admin approves, try again with this code.</string>
 </resources>

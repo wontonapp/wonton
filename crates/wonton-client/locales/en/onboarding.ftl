@@ -58,3 +58,8 @@ home-pairing-aborted = Pairing stopped before it finished. Try again.
 home-pairing-not-pairing = No pairing is in progress.
 
 home-pairing-failed-detail = Direct addresses: { $addresses }. Relays: [{ $relays }]. Elapsed: { $milliseconds } ms; time limit: { $seconds } seconds. Reason: { $error }
+
+home-pairing-joining-pending = This is a joining code: waiting for an admin to approve.
+home-pairing-joining-pending-role = This is a joining code: waiting for an admin to approve. Once approved, you join as { $role }.
+home-pairing-joining-rejected = An admin turned down this joining request.
+home-pairing-joining-code-used = Another device already used this joining code.

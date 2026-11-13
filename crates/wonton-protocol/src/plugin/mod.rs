@@ -197,6 +197,9 @@ pub enum PluginState {
     Running {
         health: PluginHealth,
     },
+    /// 装着，但清单里必填的用户填写密钥还没填（ADR-0064）：网页照常，MCP 工具报未就绪并点名缺哪项。
+    /// 填齐后核心重建容器，回到 `running`。
+    NeedsConfiguration,
     /// 所有常驻服务的容器都已退出或尚未启动，不包括一次性服务。
     Stopped,
     Upgrading,
@@ -389,6 +392,14 @@ pub struct StoreItem {
     /// 经第三方索引装的插件是索引的主机，如 `example.com`：装哪个提交由它决定。
     pub via_index: Option<String>,
     pub author: Option<PluginAuthor>,
+    /// 应用的许可证原文（SPDX 表达式）；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS），非 SPDX 许可证（`LicenseRef-`）用它给出处；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license_url: Option<String>,
     /// GitHub 星数；官方插件为空。
     pub stars: Option<u32>,
     /// 装着的版本；没装时为空。

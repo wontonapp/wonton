@@ -506,6 +506,8 @@ mod tests {
             id: "app.photos".into(),
             title: "Photos".into(),
             summary: String::new(),
+            license: None,
+            license_url: None,
             version: "1.0.0".into(),
             kind: PluginKind::App,
             runtime: Default::default(),
