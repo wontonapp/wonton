@@ -289,7 +289,7 @@ impl PluginManager {
         devices: Vec<super::store::InstalledDevice>,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
-        self.store.save(&InstalledRecord {
+        self.store.save(&super::store::InstalledRecord {
             lifecycle: super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),

@@ -22,7 +22,7 @@ impl PluginManager {
         let id = PluginId::parse(plan.labels.get(LABEL_PLUGIN).expect("渲染计划带插件归属"))
             .expect("渲染计划的插件 ID 已校验");
         if let Some(devices) = &ctx.devices {
-            devices.retain_available(plan);
+            devices.retain_available(&mut plan);
         }
         self.recovery_stage(&id, PluginRecoveryStage::Preparing)?;
         let result = self
