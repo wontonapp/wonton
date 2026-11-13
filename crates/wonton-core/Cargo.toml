@@ -9,6 +9,8 @@ publish.workspace = true
 
 # 依赖许可证均为 MIT 或 Apache-2.0（bollard 为 Apache-2.0），另注明的除外。
 [dependencies]
+# Apache-2.0。hand_off 使用官方 ACP v1 client；桥保留独立的 0.13.x 依赖。
+agent-client-protocol = "=5.2.0"
 anyhow = { workspace = true }
 # ISC AND (Apache-2.0 OR ISC)。注册 Tuwunel 管理账号要 HMAC-SHA1；rustls 和 jsonwebtoken 已经依赖它。
 aws-lc-rs = { workspace = true }

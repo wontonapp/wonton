@@ -96,7 +96,11 @@ impl PluginManager {
                 );
             }
         }
-        self.dependencies.change(|state| *state = snapshot.0)?;
+        self.dependencies.change(|state| {
+            let consents = std::mem::take(&mut state.handoff_consents);
+            *state = snapshot.0;
+            state.handoff_consents = consents;
+        })?;
         self.changed();
         match failure {
             Some(detail) => Err(InstallError::UpstreamUnavailable(detail)),

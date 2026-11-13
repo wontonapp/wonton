@@ -8,6 +8,7 @@
 
 mod concurrency;
 mod frames;
+mod handoff;
 mod headers;
 mod identity;
 mod sessions;
@@ -44,7 +45,9 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 /// 提供方一侧的 WebSocket：升级握手已完成，直接收发帧。
 type ProviderStream = WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>;
 
+pub(crate) use concurrency::Registration;
 pub use concurrency::Registry;
+pub(crate) use handoff::connect_handoff;
 
 /// 停链的取消方：注册表按账本会话键找到活连接，发 `session/cancel`。
 impl super::agent_chains::AgentAcpCancel for Registry {

@@ -150,6 +150,7 @@ impl PluginManager {
             matrix.deactivate(user).await?;
             deactivated = true;
         }
+        self.forget_handoff_bot(plugin, bot)?;
         plugin_bots.bots.remove(bot);
         self.store.bots().save(plugin, &plugin_bots)?;
         self.tool_policy().forget_bot(plugin.as_str(), bot);

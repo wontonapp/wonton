@@ -33,7 +33,7 @@ use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, ChainLimits, Member
 
 mod carrier;
 mod consumer;
-mod minimal_provider;
+pub(crate) mod minimal_provider;
 
 use consumer::Ws;
 

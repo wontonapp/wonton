@@ -146,7 +146,7 @@ pub mod written_by;
 #[cfg(test)]
 pub(crate) mod fake_docker;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
 pub use manifest::{Manifest, Permission, PluginId};

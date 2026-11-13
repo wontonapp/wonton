@@ -30,6 +30,9 @@ pub struct Caller {
     /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
+    /// 核对过归属的 ACP 会话；交接去重和父会话路径用它，不以房间或链 ID 代替。
+    pub session: Option<String>,
+    pub request_id: Option<rmcp::model::RequestId>,
 }
 
 /// 令牌认出的 Bot。
@@ -55,6 +58,8 @@ impl Caller {
             bot: None,
             origin: None,
             chain: None,
+            session: None,
+            request_id: None,
         }
     }
 
@@ -82,12 +87,12 @@ struct ForeignSession<'a> {
     chain: &'a str,
 }
 
-/// `wonton-session` 头 → 链 ID（ADR-0061 第 10 节）：会话没登记、或者登记在别的 Bot 的轮次里时当没带。
-fn chain_for_session(
+/// `wonton-session` 只在账本确认归属后采用；会话与链必须来自同一条登记。
+fn chain_session(
     bus: &Bus,
     caller: &Caller,
     headers: Option<&hyper::HeaderMap>,
-) -> Option<String> {
+) -> Option<(String, String)> {
     let session = headers?
         .get(wonton_protocol::SESSION_HEADER)?
         .to_str()
@@ -99,7 +104,7 @@ fn chain_for_session(
         bot: bot.bot.clone(),
     });
     if own.as_ref() == Some(&info.bot) {
-        return Some(info.chain);
+        return Some((info.chain, session.to_owned()));
     }
     bus.audit.record(&ForeignSession {
         caller: caller.id.as_str(),
@@ -158,12 +163,13 @@ impl ServerHandler for Handler {
     ) -> Result<CallToolResponse, ErrorData> {
         let mut caller = caller(&ctx)?;
         let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
-        let meta = request
-            .meta
-            .as_ref()
-            .and_then(|meta| meta.0.0.get(ORIGIN_META_KEY));
+        let meta = ctx.meta.0.0.get(ORIGIN_META_KEY);
         caller.origin = super::audience::reported_origin(meta, headers);
-        caller.chain = chain_for_session(&self.bus, &caller, headers);
+        if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {
+            caller.chain = Some(chain);
+            caller.session = Some(session);
+        }
+        caller.request_id = Some(ctx.id.clone());
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())
     }
