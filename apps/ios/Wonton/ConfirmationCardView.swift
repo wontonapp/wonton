@@ -22,6 +22,9 @@ struct ConfirmationCardView: View {
                     .fontWeight(line.emphasis ? .semibold : .regular)
                     .foregroundStyle(line.emphasis ? Color(colors.danger) : Color(colors.textPrimary))
             }
+            if case let .toolCall(tool) = view.card.category {
+                toolDetails(tool)
+            }
             if !view.card.secretInputs.isEmpty {
                 SecretInputsSection(
                     inputs: view.card.secretInputs, values: secrets,
@@ -74,6 +77,40 @@ struct ConfirmationCardView: View {
     private var hidesValues: Bool {
         !view.card.secretInputs.isEmpty
             && (shownSecrets || view.card.secretInputs.contains { !(secrets[$0.name] ?? "").isEmpty })
+    }
+
+    private func toolDetails(_ tool: ConfirmationTool) -> some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+            Text(.ConfirmationCard.confirmationCardToolSource(tool.pluginTitle))
+                .foregroundStyle(Color(colors.textSecondary))
+            switch tool.impact {
+            case .readOnly:
+                EmptyView()
+            case .changesData:
+                Text(.ConfirmationCard.confirmationCardToolChangesData)
+                    .foregroundStyle(Color(colors.warning))
+            case let .destructive(target):
+                Group {
+                    Text(.ConfirmationCard.confirmationCardToolDestructive)
+                    if let target {
+                        Text(.ConfirmationCard.confirmationCardToolDestructiveTarget(target))
+                    } else {
+                        Text(.ConfirmationCard.confirmationCardToolDestructiveUnknown)
+                    }
+                }
+                .foregroundStyle(Color(colors.danger))
+            case .other:
+                Text(.ConfirmationCard.confirmationCardToolUnknownImpact)
+                    .foregroundStyle(Color(colors.warning))
+            }
+            if tool.runsAsRoot {
+                Text(.ConfirmationCard.confirmationCardToolRoot)
+                    .foregroundStyle(Color(colors.warning))
+            }
+            ProblemDetail(text: tool.name + "\n\n" + tool.arguments)
+                .id(view.card.id)
+        }
+        .wontonText(WontonTheme.typography.supporting)
     }
 
     @ViewBuilder private var state: some View {

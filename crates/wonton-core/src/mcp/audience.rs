@@ -135,7 +135,6 @@ impl Bus {
             recipient,
             requester: Some(requester),
             origin,
-            category: None,
         }
     }
 

@@ -347,6 +347,7 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });
@@ -378,11 +379,6 @@ async fn writes_run_only_after_the_owner_approves() {
     let call = s.spawn("app-example-notes__delete", json!({"name": "b"}));
     let card = s.cards.wait_for(1).await;
     assert_eq!(card.state, ConfirmationState::Pending);
-    assert!(
-        card.title.contains("测试 Bot") && card.title.contains("笔记"),
-        "{}",
-        card.title
-    );
     assert!(
         s.notes.deleted.lock().unwrap().is_empty(),
         "主人回答之前不执行"

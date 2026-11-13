@@ -88,7 +88,6 @@ async fn ask_all(
                 room_id: stopped.room_id.clone(),
                 thread_id: None,
             }),
-            category: None,
         };
         async move {
             let answer = bus
@@ -153,5 +152,6 @@ fn draft(stopped: &HopLimitReached, hops: u32, langs: &Languages) -> Draft {
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }

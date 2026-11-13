@@ -19,6 +19,8 @@ struct ChatRoomView: View {
     @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
+    @State private var showingConfirmations = false
+    @State private var selectedConfirmation: String?
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
     /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
@@ -57,7 +59,7 @@ struct ChatRoomView: View {
 @MainActor
 private extension ChatRoomView {
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
-    private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
+    private var entryBlocked: Bool { pickingForwardRoom || showingRedact || showingConfirmations }
 
     private var roomContent: some View {
         VStack(spacing: 0) {
@@ -77,6 +79,10 @@ private extension ChatRoomView {
                 KeyNoticeBanner(notice: notice)
             }
             TransfersStrip(roomId: roomId)
+            RoomConfirmationBanner(cards: timeline.confirmations) {
+                selectedConfirmation = nil
+                showingConfirmations = true
+            }
             if !isReadOnly {
                 if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
@@ -89,6 +95,15 @@ private extension ChatRoomView {
             }
         }
         .modifier(RoomPresentations(presenter: presenter))
+        .wontonSheet(isPresented: $showingConfirmations,
+            title: String(localized: .ConfirmationCard.confirmationCardRequests)) { _ in
+            RoomConfirmationSheet(
+                cards: timeline.confirmations, selectedId: selectedConfirmation,
+                action: { model.send($0) }
+            )
+            .environment(pages)
+            .environment(plugins)
+        }
         .wontonSheet(isPresented: $pickingForwardRoom,
             title: String(localized: .Message0.messageForwardTitle)) { close in
             ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
@@ -230,9 +245,8 @@ private extension ChatRoomView {
                             showingRedact = true
                         },
                         openCard: { cardId in
-                            guard let target = timeline.items.first(where: { $0.cardId == cardId }) else { return }
-                            pin.unpin()
-                            DispatchQueue.main.async { scroller.scrollTo(target.id, anchor: .center) }
+                            selectedConfirmation = cardId
+                            showingConfirmations = true
                         },
                         answerChoice: { key in
                             model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))

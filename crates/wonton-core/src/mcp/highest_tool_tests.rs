@@ -9,10 +9,8 @@ const AGENT: &str = "com.example.agent";
 const SEARCH: &str = "app-example-notes__search";
 const DELETE: &str = "app-example-notes__delete";
 
-fn has_root_line(card: &wonton_protocol::ConfirmationCard) -> bool {
-    card.lines
-        .iter()
-        .any(|line| line.text == "这个操作以本机 root 身份执行")
+fn runs_as_root(card: &wonton_protocol::ConfirmationCard) -> bool {
+    matches!(&card.category, Some(wonton_protocol::ConfirmationCategory::ToolCall { tool }) if tool.runs_as_root)
 }
 
 fn has_window(card: &wonton_protocol::ConfirmationCard) -> bool {
@@ -29,7 +27,7 @@ async fn every_call_of_a_read_only_tool_asks_once_and_says_root() {
     for n in 1..=2 {
         let call = root_tool_call(&s, SEARCH);
         let card = s.cards.wait_for(n).await;
-        assert!(has_root_line(&card), "{:?}", card.lines);
+        assert!(runs_as_root(&card));
         assert!(!has_window(&card), "最高级的工具不开放行时段");
         s.answer(&card.id, Answer::Approve).unwrap();
         assert_eq!(text(&call.await.unwrap()), "找到 a.txt");

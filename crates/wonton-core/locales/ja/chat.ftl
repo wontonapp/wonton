@@ -36,7 +36,7 @@ chat-card-update-header-ask-every = 権限は変わっていませんが、「�
 chat-card-update-header-adopt = このアプリはあなたがインストールしたものです。承認すると { $requester } が管理します：
 chat-card-update-adopt-replace = 承認するとインストール済みの版を置き換えます。データは保持され、失敗時は元に戻ります
 
-# カードのタイトル。$requester は Bot の名前、$title・$plugin・$tool はアプリが渡す名前。
+# カードのタイトル。$requester は Bot の名前、$title はアプリが渡す名前。
 chat-card-install-title = { $requester }が{ $title }のインストールを要求しています
 chat-card-update-title = { $requester }が{ $title }のアップデートを要求しています
 chat-card-uninstall-title = { $requester }が{ $title }のアンインストールを要求しています
@@ -48,7 +48,6 @@ chat-choice-permission-enable = オンにする
 chat-choice-permission-disable = オフにする
 chat-permission-done = 「{ $title }」の権限を変更しました
 chat-permission-failed = { $id } の権限の変更に失敗しました：{ $error }
-chat-card-tool-title = { $requester }が{ $plugin }の{ $tool }を使おうとしています
 
 # エージェント権限カードのタイトル。$title はエージェントが付けたリクエスト名。
 chat-card-agent-title = { $requester }：{ $title }
@@ -62,10 +61,7 @@ chat-card-highest-confirm = このアプリがホスト全体を制御するこ�
 chat-card-uninstall-purge = データも削除します。ボットとの過去の暗号化メッセージも読めなくなり、元に戻せません
 chat-card-uninstall-keep = データは残します。次にインストールしたときにも使えます
 
-# ツール呼び出しカードの行。$args は生の JSON パラメーターで、長いときは切り詰めます。
-chat-card-tool-data = このツールはデータを変更します
-chat-card-tool-root = この操作はこのホストのroot権限で実行されます
-chat-card-tool-deletes = アプリはこのツールがデータを削除または上書きすると示しています
+# エージェント権限カードの引数。$args は生の JSON で、長いときは切り詰めます。
 chat-card-args = 引数：{ $args }
 
 # Bot のファイル保存カード。$name と $size は1つのファイル、$total は合計サイズ。

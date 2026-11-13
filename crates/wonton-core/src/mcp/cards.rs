@@ -1,6 +1,9 @@
 //! 确认卡片的内容（ADR-0016）：标题、说明行、按钮。文字都由核心写好，App 原样渲染。
 
 mod permission;
+mod tool;
+
+pub use tool::tool_call;
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -38,6 +41,7 @@ pub struct Draft {
     pub secret_inputs: Vec<SecretInput>,
     /// 卡片要主人填的设置（ADR-0077）；没有设置的应用为空。
     pub settings: Option<SettingsForm>,
+    pub category: Option<wonton_protocol::ConfirmationCategory>,
 }
 
 impl Draft {
@@ -258,6 +262,7 @@ pub fn install(
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
         settings: None,
+        category: None,
     }
 }
 
@@ -327,6 +332,7 @@ pub fn agent_install(
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
         settings: None,
+        category: None,
     }
 }
 
@@ -381,6 +387,7 @@ pub fn agent_update(
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs,
         settings: None,
+        category: None,
     }
 }
 
@@ -442,11 +449,18 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         plugin_id: Some(manifest.id.to_string()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }
 
 /// 卸载插件。
-pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Languages) -> Draft {
+pub fn uninstall(
+    requester: &str,
+    title: &str,
+    delete_data: bool,
+    arguments: &Value,
+    langs: &Languages,
+) -> Draft {
     let data = if delete_data {
         emphasized(l10n::text(langs, "chat-card-uninstall-purge", &[]))
     } else {
@@ -467,42 +481,21 @@ pub fn uninstall(requester: &str, title: &str, delete_data: bool, langs: &Langua
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
-    }
-}
-
-/// 调用插件里会改数据的工具。参数原样列出，太长时截断。最高级插件的工具写明以 root 执行。
-pub fn tool_call(
-    requester: &str,
-    plugin: &str,
-    tool: &str,
-    arguments: &Value,
-    highest: bool,
-    langs: &Languages,
-) -> Draft {
-    let mut lines = vec![line(l10n::text(langs, "chat-card-tool-data", &[]))];
-    if highest {
-        lines.push(emphasized(l10n::text(langs, "chat-card-tool-root", &[])));
-    }
-    lines.push(arguments_line(arguments, langs));
-    Draft {
-        title: l10n::text(
-            langs,
-            "chat-card-tool-title",
-            &[
-                ("requester", requester.into()),
-                ("plugin", plugin.into()),
-                ("tool", tool.into()),
-            ],
-        ),
-        lines,
-        choices: choices(
-            &l10n::text(langs, "chat-choice-allow", &[]),
-            &l10n::text(langs, "chat-choice-deny", &[]),
-        ),
-        scope: None,
-        plugin_id: None,
-        secret_inputs: Vec::new(),
-        settings: None,
+        category: Some(wonton_protocol::ConfirmationCategory::ToolCall {
+            tool: wonton_protocol::ConfirmationTool {
+                name: "wonton__uninstall_plugin".to_owned(),
+                plugin_title: title.to_owned(),
+                arguments: serde_json::to_string_pretty(arguments).expect("JSON value serializes"),
+                impact: if delete_data {
+                    wonton_protocol::ConfirmationToolImpact::Destructive {
+                        target: Some(title.to_owned()),
+                    }
+                } else {
+                    wonton_protocol::ConfirmationToolImpact::ChangesData
+                },
+                runs_as_root: false,
+            },
+        }),
     }
 }
 
@@ -534,6 +527,7 @@ pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }
 
@@ -580,6 +574,7 @@ pub fn agent_permission(
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }
 
@@ -670,5 +665,6 @@ pub fn save_file(
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }

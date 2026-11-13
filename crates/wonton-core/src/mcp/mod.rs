@@ -729,6 +729,8 @@ mod people_tests;
 #[cfg(test)]
 mod profile_tests;
 #[cfg(test)]
+mod readable_card_tests;
+#[cfg(test)]
 mod risky_tests;
 #[cfg(test)]
 mod save_tests;

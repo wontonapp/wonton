@@ -60,8 +60,6 @@ pub struct Audience {
     pub recipient: Option<String>,
     pub requester: Option<ConfirmationRequester>,
     pub origin: Option<ConfirmationOrigin>,
-    /// 卡片问的是哪类事（ADR-0061 的链上限卡片等），壳据此画专门的界面；不分类的是 `None`。
-    pub category: Option<wonton_protocol::ConfirmationCategory>,
 }
 
 /// 没能执行的原因。
@@ -295,7 +293,6 @@ impl Confirmations {
             recipient,
             requester,
             origin,
-            category,
         } = audience;
         let card = ConfirmationCard {
             id: random_token(),
@@ -312,7 +309,7 @@ impl Confirmations {
             origin,
             audience: wonton_protocol::CardAudience::Keeper,
             answered_by: None,
-            category,
+            category: draft.category,
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();

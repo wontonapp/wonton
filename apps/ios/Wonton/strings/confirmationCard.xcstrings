@@ -2,6 +2,96 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "confirmationCard.tool.changesData": {
+      "comment": "Risk note for a tool that changes data.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This changes data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个操作会改动数据"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個操作會改動資料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作はデータを変更します"
+          }
+        }
+      }
+    },
+    "confirmationCard.tool.destructiveTarget": {
+      "comment": "Verified name of the object being deleted. Argument: name supplied by the core.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Will delete: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将删除：%1$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將刪除：%1$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "削除する対象：%1$@"
+          }
+        }
+      }
+    },
+    "confirmationCard.tool.destructive": {
+      "comment": "Warning for a destructive tool call.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This deletes data"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个操作会删除数据"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個操作會刪除資料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作はデータを削除します"
+          }
+        }
+      }
+    },
     "confirmationCard.expired": {
       "comment": "Status line on an approval request card: the request expired, so nothing was carried out.",
       "extractionState": "manual",
@@ -92,6 +182,36 @@
         }
       }
     },
+    "confirmationCard.tool.root": {
+      "comment": "Tool privilege warning on a confirmation card.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This runs as root on this machine"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个操作会以 root 身份在这台机器上运行"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個操作會以 root 身分在這台機器上執行"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この操作はこのマシン上で root として実行されます"
+          }
+        }
+      }
+    },
     "confirmationCard.running": {
       "comment": "Status line on an approval request card while the action is being carried out, next to a spinner.",
       "extractionState": "manual",
@@ -118,6 +238,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "実行中"
+          }
+        }
+      }
+    },
+    "confirmationCard.requests": {
+      "comment": "Heading and compact room entry for confirmation requests.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmation requests"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認リクエスト"
+          }
+        }
+      }
+    },
+    "confirmationCard.tool.source": {
+      "comment": "Provider of the tool. Argument: localized provider display name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "来自 %1$@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "來自 %1$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@での操作"
           }
         }
       }
@@ -152,6 +332,36 @@
         }
       }
     },
+    "confirmationCard.unavailable": {
+      "comment": "Shown when room confirmation records are no longer available.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No confirmation requests here"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这里没有确认请求"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這裡沒有確認請求"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ここには確認リクエストがありません"
+          }
+        }
+      }
+    },
     "confirmationCard.uncertainResult": {
       "comment": "Status line on an approval request card: the action ran, but whether it worked is unknown. Argument: the home server's result message, shown as is.",
       "extractionState": "manual",
@@ -178,6 +388,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "結果を確認できません：%1$@"
+          }
+        }
+      }
+    },
+    "confirmationCard.tool.unknownImpact": {
+      "comment": "The provider has not specified what the tool changes.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The effect on data is unknown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还不知道这个操作会怎样影响数据"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還不知道這個操作會怎樣影響資料"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データへの影響は不明です"
+          }
+        }
+      }
+    },
+    "confirmationCard.tool.destructiveUnknown": {
+      "comment": "Deletion target is unknown; never infer it from tool arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot see which item will be deleted"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看不到要删的是哪一条"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "看不到要刪的是哪一筆"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "どの項目が削除されるか確認できません"
           }
         }
       }

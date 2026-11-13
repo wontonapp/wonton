@@ -96,10 +96,6 @@ async fn ask_one(
                 user_id: bot_user(bus, &row.bots[0].bot),
             }),
             origin: Some(row.origin.clone()),
-            category: Some(ConfirmationCategory::ChainLimitReached {
-                chain: row.chain.clone(),
-                kind: event.kind,
-            }),
         },
     ) {
         Ok(opened) => opened,
@@ -199,6 +195,10 @@ fn draft(row: &AgentChainRow, kind: ChainLimitKind, langs: &Languages) -> Draft 
         plugin_id: row.bots.first().map(|entry| entry.bot.plugin_id.clone()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: Some(ConfirmationCategory::ChainLimitReached {
+            chain: row.chain.clone(),
+            kind,
+        }),
     }
 }
 

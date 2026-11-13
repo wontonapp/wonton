@@ -465,6 +465,7 @@ async fn uninstall(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
+    let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let checked = required(&args, "id").and_then(|id| {
         let id =
             PluginId::parse(id).map_err(|e| ToolFailure::new("invalid_input", e.to_string()))?;
@@ -483,7 +484,7 @@ async fn uninstall(
                 format!("{id} 是系统插件，不能卸载"),
             ));
         }
-        Ok((id, cards::text(&view.title)))
+        Ok((id, langs.pick_owned(&view.title)))
     });
     let (id, title) = match checked {
         Ok(found) => found,
@@ -493,8 +494,7 @@ async fn uninstall(
         .get("delete_data")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let langs = bus.card_languages(caller, Subject::PluginAdmin);
-    let draft = cards::uninstall(&caller.name, &title, purge, &langs);
+    let draft = cards::uninstall(&caller.name, &title, purge, &value, &langs);
     let run = move |bus: Arc<Bus>,
                     _secrets: SecretValues,
                     _settings: wonton_protocol::SettingValues| async move {

@@ -103,6 +103,14 @@
     <string name="confirmation_card_uncertain_result">It\'s unclear whether it worked: %1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">Approved until %1$s</string>
+    <string name="confirmation_card_tool_source">In %1$s</string>
+    <string name="confirmation_card_tool_changes_data">This changes data</string>
+    <string name="confirmation_card_tool_destructive_target">This may delete or overwrite: %1$s</string>
+    <string name="confirmation_card_tool_destructive_unknown">This may delete or overwrite data. We can’t see which item.</string>
+    <string name="confirmation_card_tool_unknown_impact">The impact of this action is unknown</string>
+    <string name="confirmation_card_tool_root">This runs as root on this machine</string>
+    <string name="confirmation_card_requests">Requests to confirm</string>
+    <string name="confirmation_card_unavailable">This request is no longer available</string>
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <string name="bot_avatar_pick_state">Change the %1$s picture</string>
     <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->

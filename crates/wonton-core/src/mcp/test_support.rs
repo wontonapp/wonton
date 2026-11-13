@@ -33,6 +33,7 @@ pub struct Notes {
     pub found: Arc<Mutex<CallToolResult>>,
     /// 每次调用收到的 `_meta`（没有时是 `None`）。
     pub received_meta: Arc<Mutex<Vec<Option<rmcp::model::MetaObject>>>>,
+    pub tools: Arc<Mutex<Option<Vec<Tool>>>>,
 }
 
 impl Default for Notes {
@@ -43,6 +44,7 @@ impl Default for Notes {
             cancelled: Arc::default(),
             found: Arc::new(Mutex::new(CallToolResult::success(Vec::new()))),
             received_meta: Arc::default(),
+            tools: Arc::default(),
         }
     }
 }
@@ -67,6 +69,9 @@ impl ServerHandler for Notes {
         _request: Option<PaginatedRequestParams>,
         _ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
+        if let Some(tools) = self.tools.lock().unwrap().as_ref() {
+            return Ok(ListToolsResult::with_all_items(tools.clone()));
+        }
         let search = Tool::new("search", "找笔记", schema())
             .with_annotations(ToolAnnotations::new().read_only(true))
             .with_meta(rmcp::model::MetaObject(
