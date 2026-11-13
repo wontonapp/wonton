@@ -46,7 +46,7 @@ pub struct CertificateConfig {
 pub struct CertificateManager {
     install_dir: PathBuf,
     engine: Engine,
-    config: CertificateConfig,
+    pub(crate) config: CertificateConfig,
     operation: Arc<Mutex<()>>,
 }
 

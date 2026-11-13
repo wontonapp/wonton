@@ -38,11 +38,21 @@ struct Store {
     provider: Option<String>,
     #[serde(default)]
     credentials: BTreeMap<String, String>,
+    /// 装机给的 dotenv 文件：值不解析、原样交给 lego；App 提交了新凭据后作废。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    env_file: Option<std::path::PathBuf>,
     #[serde(default)]
     terms_accepted: bool,
     /// 最近一次签发失败的原因；成功后清空。
     #[serde(default)]
     last_error: Option<String>,
+}
+
+impl Store {
+    /// 有凭据可用：App 提交过，或装机给了原样 dotenv 文件。
+    fn has_credentials(&self) -> bool {
+        !self.credentials.is_empty() || self.env_file.is_some()
+    }
 }
 
 /// 设置项的失败，接口按类别回 400 或 409。
@@ -127,7 +137,8 @@ impl Domain {
             store.provider = settings.dns_provider;
             store.terms_accepted = settings.acme_accept_terms;
             if let Some(path) = settings.dns_env_file {
-                store.credentials = read_dotenv(&path)?;
+                dotenv_names(&path)?;
+                store.env_file = Some(path);
             }
         }
         Ok(store)
@@ -168,7 +179,7 @@ impl Domain {
             .and_then(|settings| settings.registration.as_ref());
         // 有家名服务时走 acme-dns；自己的服务商只在没有家名服务时装进 lego。
         let custom = registration.is_none();
-        let credentials_set = !store.credentials.is_empty();
+        let credentials_set = store.has_credentials();
         CertificateManager::new(
             self.install_dir.clone(),
             self.engine.clone(),
@@ -186,8 +197,13 @@ impl Domain {
                 dns_provider: (custom && credentials_set)
                     .then(|| store.provider.clone())
                     .flatten(),
-                dns_env_file: (custom && credentials_set)
-                    .then(|| self.install_dir.join(DNS_ENV_FILE)),
+                // 装机给的文件原样交给 lego；App 提交的凭据才由我们写成 dns.env。
+                dns_env_file: (custom && credentials_set).then(|| {
+                    store
+                        .env_file
+                        .clone()
+                        .unwrap_or_else(|| self.install_dir.join(DNS_ENV_FILE))
+                }),
             },
         )
     }
@@ -232,7 +248,7 @@ impl Domain {
             suffix: fixed.clone().or(store.suffix.clone()),
             suffix_editable: fixed.is_none(),
             provider: store.provider.clone(),
-            credentials_set: !store.credentials.is_empty(),
+            credentials_set: store.has_credentials(),
             terms_accepted: store.terms_accepted,
             certificate: self.certificate_state(&store),
             caa: self.caa_state(&store).await,
@@ -309,7 +325,7 @@ impl Domain {
                 // 首次配置或换服务商必须一起提交凭据，否则设置收下了却永远不签，也没人知道为什么。
                 if credentials.is_empty()
                     && !(registered && provider.is_empty())
-                    && (provider_changed || store.credentials.is_empty())
+                    && (provider_changed || !store.has_credentials())
                 {
                     return Err(DomainError::Invalid(
                         "首次配置或换服务商时要一起提交这个服务商的凭据".into(),
@@ -321,6 +337,8 @@ impl Domain {
                 }
                 if !credentials.is_empty() {
                     store.credentials = credentials.clone();
+                    // App 提交的凭据取代装机给的文件，别再让旧文件抢着生效。
+                    store.env_file = None;
                 }
                 store.terms_accepted = true;
                 Ok(Saved {
@@ -379,39 +397,53 @@ impl Domain {
             return false;
         }
         let registration = settings.and_then(|settings| settings.registration);
-        registration.is_some() || (store.provider.is_some() && !store.credentials.is_empty())
+        registration.is_some() || (store.provider.is_some() && store.has_credentials())
     }
 
-    async fn run_issue(self: Arc<Self>, store: Store) {
-        {
-            let _serial = self.issuance.lock().await;
-            let result = self.issue_once(&store).await;
-            let error = result.as_ref().err().map(|error| format!("{error:#}"));
-            if let Err(write) = self.update(|state| state.last_error = error.clone()).await {
-                tracing::error!(%write, "记录证书签发结果失败");
-                return;
+    async fn run_issue(self: Arc<Self>, snapshot: Store) {
+        let _serial = self.issuance.lock().await;
+        // 排队时设置可能已经变过：拿到锁后以现状为准，快照过期就跳过——变更方自己排的
+        // 任务会按新设置签。旧任务若按旧快照重新 prepare，会把新设置的准备状态和证书
+        // 都写成旧的，续期从此对不上。
+        match self.effective() {
+            Ok(current) if current == snapshot => self.issue_locked(&current).await,
+            Ok(_) => {
+                tracing::info!("签发任务排队期间设置已变更，跳过这次（按新设置另排的任务负责）");
             }
-            match result {
-                Ok(()) => {
-                    let loaded = async {
-                        crate::entry_compose::prepare_permissions(&self.install_dir)?;
-                        self.reload_entry().await
-                    }
-                    .await;
-                    if let Err(error) = loaded {
-                        tracing::error!(%error, "入口证书热加载失败");
-                        self.notify("entry-certificate-reload-failed", &error.to_string())
-                            .await;
-                    }
-                }
-                Err(error) => {
-                    tracing::error!(%error, "入口证书签发失败，保留原证书");
-                    self.notify("entry-certificate-renew-failed", &format!("{error:#}"))
-                        .await;
-                }
+            Err(error) => {
+                tracing::error!(%error, "重读域名设置失败，跳过排队中的签发");
             }
         }
         self.pending.fetch_sub(1, Ordering::SeqCst);
+    }
+
+    /// 持有签发锁时真正跑一轮签发；结果进设置文件，失败原证书保留。
+    async fn issue_locked(&self, store: &Store) {
+        let result = self.issue_once(store).await;
+        let error = result.as_ref().err().map(|error| format!("{error:#}"));
+        if let Err(write) = self.update(|state| state.last_error = error.clone()).await {
+            tracing::error!(%write, "记录证书签发结果失败");
+            return;
+        }
+        match result {
+            Ok(()) => {
+                let loaded = async {
+                    crate::entry_compose::prepare_permissions(&self.install_dir)?;
+                    self.reload_entry().await
+                }
+                .await;
+                if let Err(error) = loaded {
+                    tracing::error!(%error, "入口证书热加载失败");
+                    self.notify("entry-certificate-reload-failed", &error.to_string())
+                        .await;
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error, "入口证书签发失败，保留原证书");
+                self.notify("entry-certificate-renew-failed", &format!("{error:#}"))
+                    .await;
+            }
+        }
     }
 
     /// 装机路径：同步签发一次，失败让安装停下。主人自己放 `site.pem` 的装机只核对文件在不在。
@@ -438,6 +470,7 @@ impl Domain {
 
     async fn issue_once(&self, store: &Store) -> Result<()> {
         let suffix = store.suffix.as_deref().context("没有配置后缀")?;
+        let acme = self.acme()?;
         let manager = self.manager(store)?;
         let settings = EntrySettings::load(&self.install_dir)?;
         let registration = settings
@@ -458,7 +491,15 @@ impl Domain {
                 && let Some(service) = settings.service(&self.data_dir)?
             {
                 service.bind_caa(&registration.home, &account).await?;
-                crate::entry_dns::verify_caa(suffix, &account, &settings.acme_resolvers).await?;
+                let identity =
+                    crate::entry_dns::caa_identity(&acme.directory_url).with_context(|| {
+                        format!(
+                            "认不出 {} 的 CAA 身份，不能核对 CAA 绑定",
+                            acme.directory_url
+                        )
+                    })?;
+                crate::entry_dns::verify_caa(suffix, &account, &identity, &settings.acme_resolvers)
+                    .await?;
             }
             manager.issue(suffix).await
         }
@@ -583,13 +624,17 @@ impl Domain {
         let Ok(acme) = self.acme() else {
             return CaaState::Unknown;
         };
+        // 认不出当前 CA 的身份就不猜：显示 Unknown，签发路径会当场拒绝。
+        let Some(identity) = crate::entry_dns::caa_identity(&acme.directory_url) else {
+            return CaaState::Unknown;
+        };
         let Ok(manager) = self.manager(store) else {
             return CaaState::Unknown;
         };
         let Ok(account) = manager.account_uri() else {
             return CaaState::Unknown;
         };
-        let key = format!("{suffix}|{account}");
+        let key = format!("{suffix}|{account}|{identity}");
         if let Some((at, cached_key, state)) = &*self.caa_cache.lock().await
             && cached_key == &key
             && at.elapsed() < std::time::Duration::from_secs(60)
@@ -599,7 +644,7 @@ impl Domain {
         let Ok(records) = crate::entry_dns::caa_issues(suffix, &acme.resolvers).await else {
             return CaaState::Unknown;
         };
-        let state = crate::entry_dns::caa_state(&records, &account);
+        let state = crate::entry_dns::caa_state(&records, &account, &identity);
         *self.caa_cache.lock().await = Some((std::time::Instant::now(), key, state));
         state
     }
@@ -687,25 +732,31 @@ pub(super) fn dotenv_value(value: &str) -> String {
     format!("'{value}'")
 }
 
-pub(super) fn read_dotenv(path: &Path) -> Result<BTreeMap<String, String>> {
-    let mut values = BTreeMap::new();
+/// 装机给的 dotenv 原样交给 lego，值不解析（godotenv v1.5.1 的双引号、转义和展开语义归它，
+/// 我们不复刻）。这里只认变量名做存在性检查：`export ` 前缀可带空白，键在第一个 `=` 左边，
+/// `#` 开头是注释，没有键的文件报错。
+pub(super) fn dotenv_names(path: &Path) -> Result<std::collections::BTreeSet<String>> {
     let text = std::fs::read_to_string(path).with_context(|| format!("读 {}", path.display()))?;
+    let mut names = std::collections::BTreeSet::new();
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        let Some((name, value)) = line.split_once('=') else {
+        let line = match line.strip_prefix("export") {
+            Some(rest) if rest.starts_with(char::is_whitespace) => rest.trim_start(),
+            _ => line,
+        };
+        let Some((name, _)) = line.split_once('=') else {
             continue;
         };
-        let value = value.trim();
-        let value = match value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')) {
-            Some(quoted) => quoted.to_owned(),
-            None => value.to_owned(),
-        };
-        values.insert(name.trim().to_owned(), value);
+        let name = name.trim();
+        if !name.is_empty() {
+            names.insert(name.to_owned());
+        }
     }
-    Ok(values)
+    ensure!(!names.is_empty(), "{} 里没有可用的凭据变量", path.display());
+    Ok(names)
 }
 
 #[cfg(test)]
