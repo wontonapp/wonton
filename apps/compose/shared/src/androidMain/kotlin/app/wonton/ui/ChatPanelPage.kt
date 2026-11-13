@@ -122,7 +122,7 @@ internal fun PanelPage(
                 visible = active, openLink = openLink, onDraft = onDraft, publicPage = public,
             )
         }
-        BotPageDisclosure(page, active, awaitingLogin, overlay = false, tabs,
+        BotPageDisclosure(page, active, awaitingLogin, tabs,
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
         PageStatusOverlay(
             state, page, tab, supported, crossOriginBlocked, inset, onDetails,
