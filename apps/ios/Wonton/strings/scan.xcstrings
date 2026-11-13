@@ -1,0 +1,96 @@
+{
+  "sourceLanguage": "en",
+  "version": "1.0",
+  "strings": {
+    "pairing.scan.again": {
+      "comment": "Button after pairing fails: return to scanning without leaving this page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scan again"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新扫描"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新掃描"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "もう一度スキャン"
+          }
+        }
+      }
+    },
+    "pairing.scan.recognized": {
+      "comment": "Progress immediately after recognizing a pairing QR code; scanning is stopped.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code recognized. Connecting to the server…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已识别，正在连接服务器…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已辨識，正在連線到伺服器…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コードを読み取りました。サーバーに接続しています…"
+          }
+        }
+      }
+    },
+    "pairing.scan.used": {
+      "comment": "Pairing failure: the server reports that this pairing code has already been used.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This pairing code has already been used"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个配对码已用过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個配對碼已使用過"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペアリングコードは使用済みです"
+          }
+        }
+      }
+    }
+  }
+}
