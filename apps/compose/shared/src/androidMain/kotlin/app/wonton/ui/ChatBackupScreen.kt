@@ -308,8 +308,16 @@ private fun RecoveryKey(key: String, onConfirm: () -> Unit) {
                 WontonButton(
                     stringResource(R.string.chat_backup_reveal_key),
                     {
-                        auth.prompt(promptTitle, promptReason) { error ->
-                            if (error == null) revealed = true else authError = error
+                        auth.prompt(promptTitle, promptReason) { result ->
+                            // 只有通过才显示；取消什么都不做（也不提示），其余失败按失败即停给提示。
+                            when (result) {
+                                AuthResult.Passed -> {
+                                    revealed = true
+                                    authError = null
+                                }
+                                AuthResult.Cancelled -> Unit
+                                is AuthResult.Failed -> authError = result.code
+                            }
                         }
                     },
                     Modifier.fillMaxWidth(),

@@ -311,12 +311,22 @@ private struct RecoveryKeySection: View {
             return
         }
         Task {
-            // 成功才显示；用户取消和验证失败（系统界面当场已说明原因）都不显示、不另弹提示。
-            if (try? await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: String(localized: .ChatBackup1.chatBackupVerifyReason)
-            )) == true {
-                revealed = true
+            do {
+                let passed = try await context.evaluatePolicy(
+                    .deviceOwnerAuthentication,
+                    localizedReason: String(localized: .ChatBackup1.chatBackupVerifyReason)
+                )
+                if passed { revealed = true }
+            } catch {
+                // 只有通过才显示；用户取消（含系统和 App 代取消）不算过也不算失败，不提示；
+                // 其余失败（单次没对上、生物识别锁死这类）按失败即停给提示，不再静默无反应。
+                switch (error as? LAError)?.code {
+                case .userCancel, .systemCancel, .appCancel:
+                    break
+                default:
+                    unavailable = true
+                    failureDetail = error.localizedDescription
+                }
             }
         }
     }
