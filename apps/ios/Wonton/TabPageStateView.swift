@@ -71,11 +71,12 @@ struct TabPageStateView: View {
             failure(TabText.pageRemoved) {
                 Button(isPanel ? TabText.removePanelPage : TabText.close, action: remove)
             }
-        case let .loadFailed(reason, status):
+        case let .loadFailed(reason, status, details):
             if reason == .transport, !connected {
                 if !session.ready { skeleton() }
             } else {
-                failure(TabText.pageFailed, detail: status.map { "HTTP \($0)" }, next: reason.label) {
+                // 详情是核心按 App 语言写的（错误码收在里面）；核心没给时退回裸错误码。
+                failure(TabText.pageFailed, detail: details ?? status.map { "HTTP \($0)" }, next: reason.label) {
                     Button(TabText.retry, action: session.retry)
                     if isPanel { Button(TabText.removePanelPage, action: remove) }
                 }

@@ -111,13 +111,14 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
             status: Some(404),
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         rig.tabs.view().panel[0].page.state,
         TabState::LoadFailed {
             failure: TabLoadFailure::Upstream,
             status: Some(404),
+            details: Some(_)
         }
-    );
+    ));
     rig.tabs
         .dispatch(Action::ReloadTab {
             page: placed_inner.clone(),
@@ -137,13 +138,14 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
             status: None,
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         rig.tabs.view().panel[1].page.state,
         TabState::LoadFailed {
             failure: TabLoadFailure::Upstream,
             status: None,
+            details: None
         }
-    );
+    ));
     rig.tabs
         .dispatch(Action::ReloadTab {
             page: placed_public.clone(),

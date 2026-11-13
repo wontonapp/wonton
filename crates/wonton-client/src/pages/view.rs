@@ -4,8 +4,8 @@ use url::Url;
 use wonton_protocol::{
     CandidatePlugin, CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesProblem, PagesViewModel,
     PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel,
-    SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout, TabPage, TabRef,
-    TabState,
+    SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
+    TabPage, TabRef, TabState,
 };
 
 use super::panel_view::main_panel;
@@ -366,6 +366,7 @@ fn build_url_page(
             Some((failure, status)) => TabState::LoadFailed {
                 failure: *failure,
                 status: *status,
+                details: load_failed_details(*failure, *status),
             },
             None => TabState::Ready,
         }
@@ -447,6 +448,7 @@ fn compose_page(
                     Some((failure, status)) => TabState::LoadFailed {
                         failure: *failure,
                         status: *status,
+                        details: load_failed_details(*failure, *status),
                     },
                     None => TabState::Ready,
                 }
@@ -550,6 +552,7 @@ pub(super) fn page_state(
         return TabState::LoadFailed {
             failure: *failure,
             status: *status,
+            details: load_failed_details(*failure, *status),
         };
     }
     match &plugin.status {
@@ -564,6 +567,29 @@ pub(super) fn page_state(
             reason: reason.clone(),
         },
         PluginState::Unknown => TabState::Unknown,
+    }
+}
+
+/// 出错页默认收起的"详情"：核心按 App 语言写，HTTP 错误码收在里面（ADR-0032）。没拿到响应
+/// 就没有错误码可写，交回空，壳保持只显示错误码的原样。
+fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
+    match (failure, status) {
+        (TabLoadFailure::Transport, _) => {
+            Some(l10n!(CATALOG, language(), "tabs-load-details-transport"))
+        }
+        (TabLoadFailure::PluginNotReady, Some(code)) => Some(l10n!(
+            CATALOG,
+            language(),
+            "tabs-load-details-not-ready",
+            code = code.to_string()
+        )),
+        (TabLoadFailure::Upstream, Some(code)) => Some(l10n!(
+            CATALOG,
+            language(),
+            "tabs-load-details-upstream",
+            code = code.to_string()
+        )),
+        (TabLoadFailure::PluginNotReady, None) | (TabLoadFailure::Upstream, None) => None,
     }
 }
 

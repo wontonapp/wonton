@@ -216,3 +216,10 @@ tabs-fullscreen-none = 目前沒有全螢幕頁面。
 tabs-fullscreen-not-current = 退出的頁面不是目前全螢幕頁面。
 tabs-view-not-a-page = 只有應用程式頁面能在這裡開啟。
 tabs-view-no-page-open = 現在沒有開啟著的應用程式頁面。
+
+# 出错页默认收起的"详情"（ADR-0032）：核心按 App 语言写，错误码收在里面。
+tabs-load-details-transport = 連不上家用伺服器。連上後，頁面會自動重新載入。
+
+tabs-load-details-not-ready = 頁面載入時 App 還沒就緒（HTTP {$code}）。
+
+tabs-load-details-upstream = App 的網頁回傳了錯誤（HTTP {$code}）。
