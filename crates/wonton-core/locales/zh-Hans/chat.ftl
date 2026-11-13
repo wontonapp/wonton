@@ -180,3 +180,7 @@ chat-chain-stopped-card = 链被停了，这张卡片作废
 # 发消息卡片（ADR-0061 第 9 节）：$recipient 是收件人，$bot 是发消息的 Bot。
 chat-send-message-title = 向 { $recipient } 发消息
 chat-send-message-queued = 已批准，等 { $bot } 发送
+
+chat-handoff-title = { $from } → { $bot }
+chat-handoff-risk = 这个 Bot 能借目标运行时执行命令、改文件，也能读出里面的任何东西，包括登录凭据和别的会话。
+chat-handoff-started = 已交接，目标 Bot 正在处理

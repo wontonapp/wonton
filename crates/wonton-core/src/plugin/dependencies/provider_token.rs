@@ -37,7 +37,7 @@ impl PluginManager {
 
     /// 有则取，没有就生成一把。提供方的清单渲染（注入变量）在装、升级、重建时都走这里；
     /// 并发装同一个提供方时 `or_insert` 保留先到的那把，两边拿到同一个值。
-    pub(in crate::plugin) fn ensure_provider_token(
+    pub(crate) fn ensure_provider_token(
         &self,
         capability: &str,
         provider: &PluginId,

@@ -21,6 +21,12 @@ pub(super) struct Connection {
     pub problem: Option<String>,
 }
 
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct HandoffConsent {
+    pub from: wonton_protocol::BotRef,
+    pub target: wonton_protocol::BotRef,
+}
+
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct State {
     pub defaults: BTreeMap<String, String>,
@@ -30,6 +36,8 @@ pub(super) struct State {
     /// 提供方令牌（ADR-0061 第 3 节），键 `<能力>/<插件 ID>`，见 [`super::provider_token`]。
     #[serde(default)]
     pub provider_tokens: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub handoff_consents: Vec<HandoffConsent>,
 }
 
 impl State {

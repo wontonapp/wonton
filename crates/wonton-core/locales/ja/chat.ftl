@@ -183,3 +183,7 @@ chat-chain-stopped-card = 連鎖が止まったため、このカードは無効
 # メッセージ送信カード（ADR-0061 §9）：$recipient は受信者、$bot は送信するボット。
 chat-send-message-title = { $recipient } にメッセージを送る
 chat-send-message-queued = 承認済み。{ $bot } の送信を待っています
+
+chat-handoff-title = { $from } → { $bot }
+chat-handoff-risk = このボットは対象の実行環境でコマンドの実行、ファイルの変更、ログイン情報や別の会話を含むすべての読み取りができます。
+chat-handoff-started = 引き継ぎました。対象のボットが処理中です

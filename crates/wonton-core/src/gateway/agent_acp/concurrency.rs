@@ -62,7 +62,7 @@ impl Registry {
 }
 
 /// 一条活连接在注册表里的席位。
-pub(super) struct Registration {
+pub(crate) struct Registration {
     registry: Arc<Registry>,
     consumer: String,
     connection: String,
@@ -70,15 +70,18 @@ pub(super) struct Registration {
 }
 
 impl Registration {
-    pub(super) fn bind_session(&mut self, session: &str) {
+    /// 交接的真实会话 ID 登记在停链接口上，但仍只占这条连接的一个并发名额。
+    pub(crate) fn bind_session(&mut self, session: &str) -> bool {
         let mut state = self.registry.inner.lock().expect("agent_acp 注册表锁中毒");
-        let cancel = state
-            .connections
-            .get(&self.connection)
-            .expect("连接已登记")
-            .clone();
+        if state.connections.contains_key(session) {
+            return false;
+        }
+        let Some(cancel) = state.connections.get(&self.connection).cloned() else {
+            return false;
+        };
         state.connections.insert(session.to_owned(), cancel);
         self.sessions.push(session.to_owned());
+        true
     }
 }
 

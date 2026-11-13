@@ -20,6 +20,8 @@ mod core_tools;
 mod dependencies;
 mod file_results;
 mod file_tools;
+mod handoff;
+mod handoff_tools;
 mod naming;
 mod notifier;
 mod panel_tools;
@@ -119,6 +121,8 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
+    handoffs: Arc<handoff::Handoffs>,
+    handoff_gateway: OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -156,6 +160,8 @@ impl Bus {
             contacts: OnceLock::new(),
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
+            handoffs: Arc::default(),
+            handoff_gateway: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -262,6 +268,12 @@ impl Bus {
 
     pub(crate) fn agent_chains(&self) -> Option<&Arc<crate::gateway::agent_chains::AgentChains>> {
         self.agent_chains.get()
+    }
+
+    pub fn attach_handoff_gateway(&self, gateway: std::sync::Weak<crate::gateway::Gateway>) {
+        if self.handoff_gateway.set(gateway).is_err() {
+            tracing::error!("交接的网关接了两次，用先接上的");
+        }
     }
 
     /// 接上好友名单（ADR-0051）。只接一次。
@@ -532,8 +544,13 @@ impl Bus {
             == Some(true);
         let highest = self.plugins.requires_root_confirmation(&server.id);
         let every_time = highest || risky::deletes(&definition);
+        let relaxed = handoff::allows_relaxation(self, caller);
         let policy = self.plugins.tool_policy();
-        let clearance = || policy.clearance(caller.id.as_str(), server.id.as_str(), tool);
+        let clearance = || {
+            relaxed
+                .then(|| policy.clearance(caller.id.as_str(), server.id.as_str(), tool))
+                .flatten()
+        };
         let not_sensitive = if every_time {
             None
         } else if read_only {
@@ -556,7 +573,7 @@ impl Bus {
                 Err(result) => return *result,
             };
             // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
-            let cleared = if every_time {
+            let cleared = if every_time || !relaxed {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
@@ -716,6 +733,12 @@ mod contacts_gate_tests;
 mod file_block_tests;
 #[cfg(test)]
 mod file_tests;
+#[cfg(test)]
+mod handoff_path_tests;
+#[cfg(test)]
+mod handoff_test_support;
+#[cfg(test)]
+mod handoff_tests;
 #[cfg(test)]
 mod help_tests;
 #[cfg(test)]

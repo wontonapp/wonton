@@ -22,7 +22,7 @@ pub(crate) const CONFIRMATION_META: &str = "app.wonton/confirmation";
 
 /// 工具失败的两半：`kind` 是给机器的类别（结果的 `app.wonton/failure`），`message` 是给模型的人话。
 /// 检查链里 `Result<_, ToolFailure>` 一路带到 [`super::Bus::deny`]，类别不丢。
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct ToolFailure {
     pub(crate) kind: &'static str,
     pub(crate) message: String,
