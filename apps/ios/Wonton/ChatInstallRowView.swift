@@ -59,7 +59,9 @@ struct ChatInstallRowView: View {
             Text(.Plugin2.pluginTaskUncertain(message))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.warning))
-            actions
+            // 结果不确定就不能重试：可能已经装上了，去应用页看（与 Android 的 UncertainLine 一致）。
+            Button(String(localized: .Chat1.chatInstallOpenPage), action: openPage)
+                .buttonStyle(WontonSmallButtonStyle())
         }
     }
 

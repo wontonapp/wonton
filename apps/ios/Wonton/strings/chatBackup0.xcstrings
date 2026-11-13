@@ -391,6 +391,66 @@
           }
         }
       }
+    },
+    "chatBackup.savedConfirmTitle": {
+      "comment": "Title of the dialog before the saved button takes effect: after this the key is no longer shown on this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved it somewhere safe?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已经存好了吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已經存好了嗎？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安全な場所に保存しましたか？"
+          }
+        }
+      }
+    },
+    "chatBackup.savedConfirmMessage": {
+      "comment": "Body of the dialog before the saved button takes effect: copy or write the key down first.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "After this, this device no longer shows the key. Make sure you have a copy before you continue."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确认后这台设备不再显示这把密钥。先复制或抄下来，再点确认。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認後這台裝置不再顯示這把密鑰。先複製或抄下來，再點確認。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認すると、このデバイスにはもう表示されません。先にコピーかメモをしてください。"
+          }
+        }
+      }
     }
   }
 }
