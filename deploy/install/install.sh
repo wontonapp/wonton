@@ -576,6 +576,9 @@ write_config() {
   setup_plugin_slice
 
   umask 077
+  # 主人手写的连接器发布地址和端口要保住：这两行不在下面的固定键表里，重跑安装不能把它们删掉。
+  entry_bind="$(saved WONTON_ENTRY_BIND)"
+  entry_port="$(saved WONTON_ENTRY_PORT)"
   # 写临时文件、落盘、改名：一键升级也读这个文件，不能让它读到写了一半的。
   cat >"$env_file.tmp" <<EOF
 # 由 install.sh 写出。改端口、换镜像后再执行一次 install.sh；基础域名装好后不能改。
@@ -597,6 +600,8 @@ WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
 WONTON_DOH_URL=$doh_url
 EOF
+  [ -z "$entry_bind" ] || echo "WONTON_ENTRY_BIND=$entry_bind" >>"$env_file.tmp"
+  [ -z "$entry_port" ] || echo "WONTON_ENTRY_PORT=$entry_port" >>"$env_file.tmp"
   # 设了才写：没设时核心用自己的默认值，.env 里不记常用默认。
   if [ -n "$install_timeout" ]; then
     echo "WONTON_INSTALL_TIMEOUT_SECS=$install_timeout" >>"$env_file.tmp"

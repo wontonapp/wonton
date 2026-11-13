@@ -68,7 +68,11 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     assert_eq!(created(&docker), (false, Value::Null, Value::Null));
     // 核心以低于默认（0）的优先级接入：默认路由和发布的端口留在核心自己的网络上（#90）。
     let priority = docker.gateway_priority("wonton-app-test");
-    assert!(priority.is_some_and(|p| p < 0), "{priority:?}");
+    assert!(
+        priority.is_some_and(|p| p < 0),
+        "writes={:?}",
+        docker.writes()
+    );
 }
 
 #[tokio::test]

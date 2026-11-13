@@ -126,6 +126,8 @@ struct Resources {
     remove_error: Option<(String, String)>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
+    /// 每个网络最近一次主动接入（`connect`）的别名；创建时带的端点不算。
+    aliases: BTreeMap<String, Vec<String>>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
     endpoints: BTreeMap<String, BTreeMap<String, Value>>,
     /// exec ID → 这次执行，按创建顺序编号。
@@ -280,10 +282,10 @@ impl FakeDocker {
 
     /// 最近一次接入这个网络的容器在网络里的别名。
     pub fn aliases(&self, network: &str) -> Vec<String> {
-        let connection = self.lock().connections.get(network).cloned();
-        let aliases = connection.map(|c| c["EndpointConfig"]["Aliases"].clone());
-        aliases
-            .and_then(|a| serde_json::from_value(a).ok())
+        self.lock()
+            .aliases
+            .get(network)
+            .cloned()
             .unwrap_or_default()
     }
 

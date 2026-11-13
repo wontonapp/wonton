@@ -5,7 +5,6 @@
 
 use std::{
     collections::HashSet,
-    net::SocketAddr,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -32,15 +31,15 @@ const MAX_CONCURRENT_STREAMS: VarInt = VarInt::from_u32(256);
 #[derive(Debug)]
 pub struct FederationProtocol {
     allowlist: Allowlist,
-    /// 本机 Tuwunel 的联邦端口（8448），入站的流都接到它。
-    upstream: SocketAddr,
+    /// 本机 Tuwunel 的联邦地址（主机名:端口），入站的流都接到它；按连接现解析，容器重建后地址变了也能跟上。
+    upstream: String,
     /// 被名单拒绝的连接数。
     rejected: AtomicU64,
 }
 
 impl FederationProtocol {
-    /// `upstream` 是本机 Tuwunel 的联邦端口。
-    pub fn new(allowlist: Allowlist, upstream: SocketAddr) -> Self {
+    /// `upstream` 是本机 Tuwunel 的联邦地址（主机名:端口）。
+    pub fn new(allowlist: Allowlist, upstream: String) -> Self {
         Self {
             allowlist,
             upstream,
@@ -65,7 +64,7 @@ impl FederationProtocol {
             tokio::select! {
                 accepted = conn.accept_bi() => match accepted {
                     Ok((send, recv)) => {
-                        streams.spawn(serve_stream(send, recv, self.upstream));
+                        streams.spawn(serve_stream(send, recv, self.upstream.clone()));
                     }
                     Err(err) => return err.to_string(),
                 },
@@ -107,14 +106,14 @@ impl ProtocolHandler for FederationProtocol {
     }
 }
 
-async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
+async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: String) {
     let mut kind = [0u8; 1];
     if let Err(err) = recv.read_exact(&mut kind).await {
         debug!("the stream ended before the request type: {err}");
         return;
     }
     match Request::from_byte(kind[0]) {
-        Some(Request::Forward) => forward_to_upstream(send, recv, upstream).await,
+        Some(Request::Forward) => forward_to_upstream(send, recv, &upstream).await,
         Some(Request::Ping) => reply(&mut send, Status::Ok).await,
         Some(Request::Port | Request::Udp) | None => {
             warn!(kind = kind[0], "unsupported request type");
@@ -123,11 +122,31 @@ async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: Sock
     }
 }
 
-async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstream: SocketAddr) {
-    let mut tcp = match TcpStream::connect(upstream).await {
+async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstream: &str) {
+    // 入口容器运行时会被对账删掉重建（clients 上的地址是动态分配的）：每条入站流现解析一次，
+    // 重建后新流自动跟上，不用重启核心。
+    let resolved: Vec<std::net::SocketAddr> = match tokio::net::lookup_host(upstream).await {
+        Ok(addrs) => addrs.collect(),
+        Err(err) => {
+            warn!(%upstream, "cannot resolve the local Tuwunel federation address: {err}");
+            reply(&mut send, Status::UpstreamUnavailable).await;
+            return;
+        }
+    };
+    let Some(addr) = resolved
+        .iter()
+        .find(|addr| addr.is_ipv4())
+        .or(resolved.first())
+        .copied()
+    else {
+        warn!(%upstream, "the local Tuwunel federation address resolved to nothing");
+        reply(&mut send, Status::UpstreamUnavailable).await;
+        return;
+    };
+    let mut tcp = match TcpStream::connect(addr).await {
         Ok(tcp) => tcp,
         Err(err) => {
-            warn!(%upstream, "cannot reach the local Tuwunel federation port: {err}");
+            warn!(%upstream, %addr, "cannot reach the local Tuwunel federation port: {err}");
             reply(&mut send, Status::UpstreamUnavailable).await;
             return;
         }
