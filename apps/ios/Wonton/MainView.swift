@@ -53,6 +53,7 @@ struct MainView: View {
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
+        .modifier(TabMediaDialogs(model: pages))
         .modifier(KeyHandoffCover(model: chat) {
             pages.open(.chat)
             chat.path = [.chatBackup]

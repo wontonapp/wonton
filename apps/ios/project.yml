@@ -89,6 +89,8 @@ targets:
         # 这三句和 App 名字的各语言版本在 InfoPlist.xcstrings，这里是英文的基础值。
         NSLocalNetworkUsageDescription: Wonton connects directly to your home server over the local network.
         NSCameraUsageDescription: Wonton uses the camera to scan the pairing QR code from your home server.
+        # 插件网页要麦克风时弹（ADR-0033）；各语言版本在 InfoPlist.xcstrings。
+        NSMicrophoneUsageDescription: Wonton uses the microphone for voice input on app pages.
         NSPhotoLibraryAddUsageDescription: Wonton saves photos from your chats to your photo library.
         UILaunchScreen:
           UIColorName: LaunchBackground

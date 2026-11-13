@@ -6,6 +6,8 @@ struct WontonDialogAction {
     let title: String
     var kind: WontonButtonStyle.Kind = .secondary
     var perform: () -> Void = {}
+    /// 可达性树的稳定标识：界面测试按它找按钮，不按会变的文案找。
+    var identifier: String?
 }
 
 extension View {
@@ -115,13 +117,18 @@ private struct WontonDialogView: View {
     private var actionButtons: some View {
         ForEach(actions.indices, id: \.self) { index in
             let action = actions[index]
-            Button {
+            let button = Button {
                 close()
                 action.perform()
             } label: {
                 Text(action.title).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: action.kind))
+            if let identifier = action.identifier {
+                button.accessibilityIdentifier(identifier)
+            } else {
+                button
+            }
         }
     }
 
