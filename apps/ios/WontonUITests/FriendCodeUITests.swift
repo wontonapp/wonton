@@ -28,26 +28,68 @@ final class FriendCodeUITests: XCTestCase {
     }
 
     func testPastedLinkSendsRequest() throws {
+        let peer = try peerId()
+        openAddFriend()
+        // 二维码里是百分号转义的 matrix.to 用户链接，原样交给核心。
+        let encoded = peer.replacingOccurrences(of: "@", with: "%40").replacingOccurrences(of: ":", with: "%3A")
+        pasteInScanner("https://matrix.to/#/\(encoded)")
+        shot("scan-pasted")
+        tapButton("Send Request", timeout: 10)
+        XCTAssertTrue(requestArrived(peer), "请求没发出去\n\(app.debugDescription)")
+        shot("request-sent")
+    }
+
+    /// 对照：同一个人直接在输入框里写用户 ID，和粘贴链接应当得到同样的结果。
+    func testTypedIdSendsRequest() throws {
+        let peer = try peerId()
+        openAddFriend()
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "没有输入框")
+        field.tap()
+        field.typeText(peer)
+        tapButton("Send Request", timeout: 10)
+        XCTAssertTrue(requestArrived(peer), "请求没发出去\n\(app.debugDescription)")
+        shot("typed-request-sent")
+    }
+
+    func testNonUserLinkShowsError() throws {
+        openAddFriend()
+        pasteInScanner("https://matrix.to/#/!room:example.org")
+        tapButton("Send Request", timeout: 10)
+        XCTAssertTrue(
+            app.staticTexts["That is not a Matrix ID"].waitForExistence(timeout: 20),
+            "非用户链接没有报错\n\(app.debugDescription)"
+        )
+        shot("non-user-link")
+    }
+
+    /// 请求发出去的两种可见结果：对方是人，好友页出现“等对方同意”；对方是自动接受邀请的 Bot（开发栈里的 wonton-core），
+    /// 它立刻加入，聊天列表里多出和它的私聊。
+    private func requestArrived(_ peer: String) -> Bool {
+        let localpart = String(peer.dropFirst().prefix { $0 != ":" })
+        let bot = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", localpart)).firstMatch
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline {
+            if app.staticTexts["Waiting for them to accept"].exists || bot.exists { return true }
+            _ = app.wait(for: .runningForeground, timeout: 1)
+        }
+        return false
+    }
+
+    private func peerId() throws -> String {
         let env = ProcessInfo.processInfo.environment
         let peer = env["PEER"] ?? env["TEST_RUNNER_PEER"] ?? ""
         try XCTSkipIf(peer.isEmpty, "没给 TEST_RUNNER_PEER")
-        openAddFriend()
-        tapButton("Scan Their Code", timeout: 10)
+        return peer
+    }
 
+    /// 打开“扫对方的码”，模拟器不能扫码，把文字粘进粘贴框。
+    private func pasteInScanner(_ text: String) {
+        tapButton("Scan Their Code", timeout: 10)
         let field = app.textFields["Paste Their Code"].firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "扫码页没有粘贴框")
-        // 二维码里是百分号转义的 matrix.to 用户链接，原样交给核心。
-        let encoded = peer.replacingOccurrences(of: "@", with: "%40").replacingOccurrences(of: ":", with: "%3A")
         field.tap()
-        field.typeText("https://matrix.to/#/\(encoded)")
-        shot("scan-pasted")
-        tapButton("Send Request", timeout: 10)
-
-        XCTAssertTrue(
-            app.staticTexts["Waiting for them to accept"].waitForExistence(timeout: 40),
-            "请求没发出去\n\(app.debugDescription)"
-        )
-        shot("request-sent")
+        field.typeText(text)
     }
 
     // MARK: - 走到加好友面板
