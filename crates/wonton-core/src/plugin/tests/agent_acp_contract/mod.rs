@@ -9,11 +9,11 @@ use std::time::Duration;
 use super::langs;
 use super::manager::manager_in_instance;
 use super::package;
+use crate::agent_outbox::Outbox;
 use crate::config::PublicUrls;
 use crate::gateway::Gateway;
 use crate::gateway::agent_acp::Registry;
 use crate::gateway::agent_chains::{self, AgentChains};
-use crate::gateway::agent_outbox::Outbox;
 use crate::gateway::fakes::loopback_tunnel;
 use crate::gateway::router;
 use crate::http::HttpClient;
@@ -136,6 +136,7 @@ async fn bed() -> Bed {
             display_name: "alice".into(),
             email: None,
             status: MemberStatus::Joined,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
