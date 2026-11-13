@@ -85,6 +85,8 @@ enum PluginEntry {
     /// 和插件的 Bot 的私聊。
     case chat(botUserId: String)
     case web(tab: TabRef)
+    /// 外部网页插件：交给系统的 App 内浏览器，不给任何和 App 通信的桥（ADR-0080）。
+    case browser(url: URL)
 }
 
 extension InstalledPlugin {
@@ -92,6 +94,9 @@ extension InstalledPlugin {
     var entries: [PluginEntry] {
         var entries: [PluginEntry] = []
         if kind == .agent, let bot = botUserId { entries.append(.chat(botUserId: bot)) }
+        if let url = linkUrl, let external = URL(string: url) {
+            entries.append(.browser(url: external))
+        }
         if let first = tabChoices.first { entries.append(.web(tab: first.tab)) }
         return entries
     }

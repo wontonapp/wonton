@@ -54,6 +54,7 @@ struct Asked {
     /// 收件人的语言：卡片结束时的文字也用它。
     langs: Languages,
     settled: bool,
+    permission: Option<super::handoff::Permission>,
 }
 
 impl Asked {
@@ -159,6 +160,7 @@ impl Bus {
             request,
             langs,
             settled: true,
+            permission: None,
         };
         let (card, answered) = match self.confirmations.open_as(&caller.id, draft, audience) {
             Ok(opened) => opened,
@@ -170,7 +172,7 @@ impl Bus {
         asked.card.clone_from(&card.id);
         asked.settled = false;
         // 请求报了会话、会话在链上：卡片认到这条链，停链时撤回，状态查询里报 waiting_permission。
-        asked.chain = card_chain(self, &asked.request).filter(|chain| {
+        asked.chain = card_chain(self, &caller, &asked.request).filter(|chain| {
             let bound = self
                 .agent_chains()
                 .is_some_and(|chains| chains.ledger().bind_card(chain, &card.id).is_ok());
@@ -179,6 +181,15 @@ impl Bus {
             }
             bound
         });
+        if asked.chain.is_some()
+            && let Some(session) = asked.request.session.as_deref()
+        {
+            asked.permission = Some(self.handoffs.permission(
+                session,
+                &card.id,
+                card.expires_at_ms,
+            ));
+        }
         match self.confirmations.deliver(&card, answered).await {
             Ok(chosen) => Ok(asked.answered(chosen.choice_id.as_deref()).await),
             Err(Refusal::Expired) => {
@@ -203,12 +214,17 @@ impl Bus {
 }
 
 /// 卡片该认到哪条链：请求里带了会话、会话登记在链上时是那条链。
-fn card_chain(bus: &Bus, request: &AgentPermissionRequest) -> Option<String> {
+fn card_chain(bus: &Bus, caller: &Caller, request: &AgentPermissionRequest) -> Option<String> {
     let session = request.session.as_deref()?;
     let chains = bus.agent_chains()?;
     chains
         .ledger()
         .session_chain(session)
+        .filter(|info| {
+            caller.bot.as_ref().is_some_and(|bot| {
+                info.bot.plugin_id == caller.id.as_str() && info.bot.bot == bot.bot
+            })
+        })
         .map(|info| info.chain)
 }
 

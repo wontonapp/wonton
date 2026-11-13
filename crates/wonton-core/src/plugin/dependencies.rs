@@ -23,6 +23,7 @@ mod plan;
 mod preflight;
 pub(crate) mod preview;
 pub(crate) use install::DependencyInstall;
+mod handoff;
 mod lifecycle;
 mod provider_token;
 mod rollback;

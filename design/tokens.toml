@@ -78,6 +78,16 @@ panel = 240
 messageInsert = 180
 reduced = 100
 
+# 距离以 pt/dp、速度以 pt/dp 每秒计；快甩仍须越过最小实际距离。
+[gesture]
+pullDistance = 96
+pushDistance = 64
+swipeDistance = 64
+flickDistance = 32
+flickVelocity = 900
+dragSlop = 8
+edgeWidth = 24
+
 # ADR-0033：公开变量只增不改名。颜色引用 ThemeColors，字体引用 AppearanceViewModel。
 # --wonton-* 只注入根元素；--wonton-inset-* 由运行时环境提供。
 [web_variables]

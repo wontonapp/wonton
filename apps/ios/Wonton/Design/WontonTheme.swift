@@ -8,6 +8,7 @@ enum WontonTheme {
     static let size = WontonSize.self
     static let ratio = WontonRatio.self
     static let motion = WontonMotion.self
+    static let gesture = WontonGesture.self
     static let typography = WontonTextStyle.self
 }
 

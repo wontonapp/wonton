@@ -150,6 +150,10 @@ pub struct InstalledPlugin {
     pub status: PluginState,
     /// 插件网页的地址，点开就是整页的应用；没有网页时为空。
     pub web_url: Option<String>,
+    /// `runtime` 是 [`PluginRuntime::Link`] 时的外部网页地址，壳用系统的 App 内浏览器打开，页面
+    /// 不给任何和 App 通信的桥（ADR-0080）；其他形态为空。
+    #[serde(default)]
+    pub link_url: Option<String>,
     /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,

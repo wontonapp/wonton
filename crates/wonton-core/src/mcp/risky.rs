@@ -33,7 +33,11 @@ impl Bus {
         let draft = cards::tool_call(langs.pick(&server.title), definition, args, highest, &langs);
         let deletes = deletes(definition);
         // 放行时段按插件记，不分 Bot：家人打开的时段会连主人的 Bot 一起放行，所以发给家人的卡片不给这个选项。
-        if highest || deletes || self.recipient(caller, Subject::Tool).is_some() {
+        if highest
+            || deletes
+            || self.recipient(caller, Subject::Tool).is_some()
+            || !super::handoff::allows_relaxation(self, caller)
+        {
             return draft;
         }
         draft.with_window(
