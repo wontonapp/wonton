@@ -88,7 +88,9 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
-        .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true) }
+        .fullScreenCover(item: $confirmation) {
+            InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true)
+        }
         // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
         // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
         .onChange(of: plugins.viewModel.confirmation) { _, offered in
