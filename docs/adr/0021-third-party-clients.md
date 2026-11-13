@@ -44,7 +44,7 @@ ADR-0004 否掉公网隧道的理由（流量都经过我们的服务器，带�
 | 入口容器（HAProxy） | 终止 TLS、读 PROXY v2、按来源限速和封禁、转普通 HTTP 给核心 | 只有证书目录（只读） | `wonton-edge`、`wonton-lanfwd`、`wonton-clients` |
 | 局域网转发（HAProxy，TCP 模式） | 发布 8483，按来源过滤，带 PROXY v2 把连接转给入口容器，不解 TLS | 什么密钥都没有 | `wonton-lanpub`、`wonton-lanfwd` |
 | 证书续期（lego，一次性容器） | 申请和续期证书 | acme-dns 凭据、ACME 账号钥匙、核心给的 CSR，拿不到证书私钥 | 只出网 |
-| 核心 | 生成上面这些的配置和证书钥匙、验证专用密码、按名字找插件 | 全部（本来就有 Docker socket） | `core`、`wonton-clients`、各插件网络 |
+| 核心 | 生成上面这些的配置和证书钥匙、验证专用密码、按名字找插件；给入口容器开专用监听端口，监听地址由部署注入 `WONTON_ENTRY_LISTEN` | 全部（本来就有 Docker socket） | `core`、`wonton-clients`、各插件网络 |
 
 **网络规则，不是可选项：**
 
@@ -54,7 +54,7 @@ ADR-0004 否掉公网隧道的理由（流量都经过我们的服务器，带�
 - **公网和局域网分两条路进入口容器。** 被攻破的 frpc 如果够得着局域网前端，就能带着任意来源发 PROXY v2，拿到 `X-Wonton-Entry: lan`，绕过公网开关和 `public`，按来源封禁也失效。所以局域网转发到入口容器单独用 `wonton-lanfwd`，连接器不在上面；每个前端绑一个接口，不只靠对端 IP 区分（实测连接器连不到）。
 - **连接器、局域网转发、lego 都 `--cap-drop ALL`、非 root、根文件系统只读。** 没有 NET_RAW 就冒充不了别的地址。frp 还没到 1.0，frpc 和中继讲 frp 协议，又连得上宿主，要按被攻破来防（frpc 这样能跑、能 reload，实测）。
 - **frpc 的管理接口（`webServer`，`frpc reload` 要用）只绑容器内的 `127.0.0.1`。** 否则被攻破的入口容器能改写 frpc 的代理，把 `localIP` 指向宿主，经中继把宿主的 sshd 和 `WONTON_PORT` 暴露出去（实测入口容器连不上）。
-- **核心给入口容器开一个专用监听端口（默认 8484），只绑在 `wonton-clients` 上，校验对端是入口容器的固定地址。** 这个端口收普通 HTTP，信任入口容器写的 `X-Real-IP` 和 `X-Wonton-Entry`，绝不把请求当作主人；它和主网关共用转发代码（`gateway/proxy.rs`），只放行 `clients.http` 声明的路由。核心的 HTTP 解析（hyper）仍然看得到这些请求的字节，但前面已经挡掉了 TLS、PROXY 和来源限速。
+- **核心给入口容器开一个专用监听端口（默认 8484），只绑在 `wonton-clients` 上，只认入口容器（按它的固定别名解析，容器重建换 IP 不用改配置）。** 这个端口收普通 HTTP，信任入口容器写的 `X-Real-IP` 和 `X-Wonton-Entry`，绝不把请求当作主人；它和主网关共用转发代码（`gateway/proxy.rs`），只放行 `clients.http` 声明的路由。核心的 HTTP 解析（hyper）仍然看得到这些请求的字节，但前面已经挡掉了 TLS、PROXY 和来源限速。
 - **主网关和隧道不在 `wonton-clients` 上服务。** 它们默认绑所有接口（`WONTON_LISTEN`、`tunnel.rs`），核心一加入这个网络，被攻破的入口容器就能连到状态页（没配对时上面有配对二维码）和 iroh 端口。主网关按连接的本地地址判断，落在这个子网上的直接关掉；隧道的 IPv4 UDP 套接字绑核心在 `core` 网络上的地址；`wonton-clients` 只有 IPv4。
 - **`clients` 要求核心跑在容器里。** 核心跑在宿主上时（开发时，没设 `WONTON_CORE_CONTAINER`）没有 `core` 网络，`wonton-clients` 是 `isolated`，宿主一侧没有地址，上面两条绑定都做不到。这时打开入口回 `core_not_in_container`，不降级，不退回绑 `0.0.0.0`。
 
@@ -464,7 +464,7 @@ auth:
 
 - 每个插件一页：地址、开关、用户名、密码，能查看、复制、吊销，`per_client` 的能新建（给客户端起个名字）。复制时标成敏感内容（iOS 只留在本机，Android 用 `EXTRA_IS_SENSITIVE`）。
 - **“查看前过 Face ID 或指纹”只在客户端检查。** 被攻破的设备绕得过，所以核心不把它当作安全边界：**每次取值都记审计，具体到设备。**
-- 明文存在核心的密钥库里（0600，同插件密钥），因为要能查看。值是 128 位随机数的小写 base32，和 ADR-0020 的编号一样长。
+- 明文存进插件密钥那套存储（同一把密钥库，0600，App 能查看的那套），不另起文件，因为要能查看。值是 128 位随机数的小写 base32，和 ADR-0020 的编号一样长。
 - **吊销设备时**，这台设备看过或建过的专用密码一起吊销；**这台设备看过或建过的共享密码（`per_client: false`）默认 `rotate`**（Immich、Jellyfin、Navidrome 都是这样，手机丢了是最常见的吊销原因）。结束不结束已有的登录，按上面的 `ends_sessions`，吊销设备的响应列出哪些应用的登录没结束。主人要保留就明确选“不换”。没被这台设备看过的不动。
 - 卸载插件时全部删除，保留数据时除外。
 - Bot 和插件都拿不到别人的专用密码，MCP 总线没有相关工具。
@@ -484,6 +484,8 @@ auth:
 | GET | `/_wonton/clients/status` | 注册进度、证书、入口自检、CT 监控、配额和用量、最近的封禁、待生效的 CAA 变更、待完成的吊销 |
 | DELETE | `/_wonton/clients/bans/{来源}` | 解除封禁（入口容器的运行时接口，只在 `wonton-clients` 上可达） |
 | POST | `/_wonton/clients/home/{rotate-tokens 或 deregister}` | 轮换令牌；注销这个家 |
+
+公网访问自己的接口（domain、ingress、guests、`status` 的扩展）在 [ADR-0090](0090-public-access.md) 的“接口”，不在这里重复。
 
 吊销设备的接口加一个参数 `keep_shared_passwords`，默认 false，响应列出待完成的吊销和登录没结束的应用。
 
@@ -510,7 +512,7 @@ ADR-0011 写的是“所有访问经核心网关鉴权”。这篇开了一个�
 **防暴力破解不能对所有插件一样：** Immich 错了回 401，Vaultwarden 回 400 `invalid_grant`，Subsonic 回 200 加错误码。所以由清单声明，或者明确交给应用：
 
 - **`auth_failures` 声明哪些响应算验证失败**（路径和状态码）。核心按“路径怎么匹配”判断，命中就在响应上加内部头 `X-Wonton-Auth-Failure`，入口容器据此计数并删掉它（实测）；插件自己带这个头时核心先删掉。不看响应体。**声明才计数**，匿名访问也可能回 401（[Immich 的共享相册就撞过](https://github.com/immich-app/immich/issues/3358)），不能默认全算。
-- **`gateway` 模式只计带了 `Authorization` 但校验失败的 401，核心同样加内部头。** 没带时网关回的 401 是正常的 Basic 质询，DAV、Git 客户端第一次请求都会收到。这种入口忽略 `auth_failures`。
+- **`gateway` 模式只计带了 `Authorization` 但校验失败的 401，核心同样加内部头。** 没带时网关回的 401 是正常的 Basic 质询，DAV、Git 客户端第一次请求都会收到。`gateway` 入口不得声明 `auth_failures`，清单校验直接报错，不静默忽略：声明了却不生效的字段是清单陷阱。
 - **看不出失败的，交给应用，并定为插件必配：** Vaultwarden 配 `LOGIN_RATELIMIT_*` 和 `IP_HEADER=X-Real-IP`（`IP_HEADER_TRUSTED_PROXIES` 默认的 `local` 覆盖内部网络）。Navidrome 的 Subsonic 接口回 200，看不出来，但它自己按来源和用户名限失败次数（`server/subsonic/middlewares.go`，默认分支），网页登录有 `AuthRequestLimit`。
 - **官方索引收录时要求二选一：** 声明了 `auth_failures`，或者在 `about` 写明应用自己怎么限。Immich [没有登录限速](https://github.com/immich-app/immich/discussions/21165)（2025-08 的讨论），所以 Immich 插件声明 `/api/auth/login` 的 401。Jellyfin 的 `LoginAttemptsBeforeLockout` 是按用户锁的，外人能把主人锁在外面，插件不要打开它。
 - **计数：** 按来源（IPv4 单个地址，IPv6 /64，实测同一个 /64 共用一个计数），5 分钟内失败 10 次，这个来源全部回 429，封 15 分钟（入口容器执行，机制实测，数值见[待验证](0021-verification.md#待验证)）。另外按入口一个全局上限：所有来源合计 5 分钟内失败 50 次，封 15 分钟，防止换很多 /64 慢慢试（核心执行）。**全局上限只拦 `auth_failures` 声明的路径**，已登录的客户端不受影响；否则外人能把整个入口打成 429。**`gateway` 入口不设全局上限：** 所有请求都带 `Authorization`，入口容器分不清对错，一拦连主人的日历同步也拦了；网关的密码都是 128 位随机数，猜不中，按来源封就够了。取 50 的理由：共享密码换值后，几台设备一起失败，每台到 10 次就被单独封了，碰不到它；换来源的攻击者被压到每 20 分钟 50 次，一天约 3600 次，猜不中 128 位的专用密码，主要保护主人自己设的密码。
