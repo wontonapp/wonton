@@ -77,7 +77,6 @@ impl PluginManager {
                 self.cfg.public.origin(&self.cfg.public.plugin_host(&label)),
                 web.path
             ),
-            display: super::manifest_tabs::display(&web.display).expect("validated web display"),
             cross_origin_isolated: web.cross_origin_isolated,
         };
         Ok((route, page))
