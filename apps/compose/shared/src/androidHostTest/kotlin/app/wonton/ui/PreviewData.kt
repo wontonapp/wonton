@@ -50,7 +50,6 @@ import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.SidebarViewModel
 import app.wonton.protocol.StorageUsage
-import app.wonton.protocol.TabDisplay
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
@@ -198,7 +197,6 @@ internal fun previewInstalled() = InstalledPlugins(
             writtenBy = null,
             status = PluginState.Stopped,
             webUrl = null,
-            webDisplay = TabDisplay.STANDARD,
             crossOriginIsolated = false,
             declaresTools = false,
             tabs = emptyList(),
@@ -228,7 +226,6 @@ internal fun previewInstalled() = InstalledPlugins(
             writtenBy = null,
             status = PluginState.Stopped,
             webUrl = null,
-            webDisplay = TabDisplay.STANDARD,
             crossOriginIsolated = false,
             declaresTools = false,
             tabs = emptyList(),
