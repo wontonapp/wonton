@@ -96,6 +96,7 @@ extension TabWebSession: WKUIDelegate {
         type: WKMediaCaptureType,
         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
     ) {
+        NSLog("[media] capture entry type=%d", type == .camera ? 0 : type == .microphone ? 1 : 2)
         let camera = type == .camera || type == .cameraAndMicrophone
         let microphone = type == .microphone || type == .cameraAndMicrophone
         // 源从 WebView 的原生回调取，核心按页面自己的源核对；页面里嵌的其他源核心直接拒。

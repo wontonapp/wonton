@@ -156,7 +156,12 @@ final class TabWebSession: NSObject {
         // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
-        if bridged { view.uiDelegate = self }
+        if bridged {
+            view.uiDelegate = self
+            NSLog("[media] create bridged uiDelegate=session")
+        } else {
+            NSLog("[media] create unbridged (public page), no uiDelegate")
+        }
         #if DEBUG
         view.isInspectable = true
         #endif
