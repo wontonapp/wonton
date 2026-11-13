@@ -64,7 +64,8 @@ def source_lang(path: str) -> Optional[str]:
     if path.startswith("apps/ios/") and path.endswith(".swift"):
         return None if any("Tests" in p for p in parts) else "swift"
     if path.startswith("apps/compose/") and path.endswith(".kt"):
-        if "/src/" not in "/" + path or re.search(r"/src/(android(Host|Device)?Test|test)", "/" + path):
+        # debug 源集只进 debug 构建（#507：走查 Activity），用户在正式构建里看不到，不算壳用到
+        if "/src/" not in "/" + path or re.search(r"/src/(android(Host|Device)?Test|test|debug)", "/" + path):
             return None
         if "/ui/icons/" in "/" + path or "/ui/design/generated/" in "/" + path:
             return None
