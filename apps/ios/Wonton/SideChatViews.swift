@@ -19,6 +19,66 @@ extension SideChatState {
     var isFailure: Bool { self == .failed }
 }
 
+/// 主对话上的旁聊盖层（ADR-0093）：下面的主对话继续订阅，被盖住时隐藏、读不到、摸不着、右滑不退出整个房间；
+/// 上面全屏盖旁聊页（独立导航栈，供旁聊里推入备份页等）。
+struct SideChatCover<Main: View>: View {
+    let model: ChatModel
+    let plugins: PluginsModel
+    let roomId: String
+    let title: String
+    @ViewBuilder let main: () -> Main
+
+    var body: some View {
+        let root = model.sideChats[roomId]
+        let covered = root != nil
+        ZStack {
+            main()
+                .opacity(covered ? 0 : 1)
+                .allowsHitTesting(!covered)
+                .accessibilityHidden(covered)
+                .navigationBarBackButtonHidden(covered)
+            if let root {
+                NavigationStack {
+                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, threadRoot: root, title: title)
+                }
+            }
+        }
+    }
+}
+
+/// 主对话上的“开新旁聊”面板（ADR-0093 §6）：`model.composingSideChat == roomId` 时弹出，挂在房间内容上。
+struct NewSideChatSheet: ViewModifier {
+    let model: ChatModel
+    let roomId: String
+
+    func body(content: Content) -> some View {
+        content.wontonSheet(
+            isPresented: Binding(
+                get: { model.composingSideChat == roomId },
+                set: { if !$0 { model.composingSideChat = nil } }
+            ),
+            title: String(localized: .Chat.sideChatNew)
+        ) { close in
+            NewSideChatFields(model: model, roomId: roomId, close: close) { root in
+                model.openSideChat(root, in: roomId)
+            }
+        }
+    }
+}
+
+extension ChatRoomView {
+    /// 旁聊页盖在这条主对话上（ADR-0093）：只挂在主对话实例上。
+    var covered: Bool { threadRoot == nil && model.sideChats[roomId] != nil }
+
+    /// 房间里有旁聊支持声明、能写：顶栏给开旁聊的按钮（ADR-0093 §1、§6）。
+    var supportsSideChats: Bool {
+        guard threadRoot == nil, let row = model.viewModel.rooms.first(where: { $0.roomId == roomId }) else {
+            return false
+        }
+        return row.sideChats && !row.isReadOnly
+    }
+}
+
 /// 主对话里的旁聊卡片（ADR-0093 §6）：标题，下面一行“旁聊 · 3 条”和状态，有未读时右边一个角标。点了进旁聊。
 /// 带标记的根占满一行，普通消息下面挂的随内容宽。
 struct SideChatCardView: View {

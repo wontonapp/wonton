@@ -38,33 +38,24 @@ struct ChatRoomView: View {
     }
 
     var body: some View {
-        Group {
-            if threadRoot == nil {
-                // 旁聊页全屏盖在这条主对话上（ADR-0093）：下面的继续订阅，被盖住时不标已读、
-                // 屏幕阅读器读不到、触摸也进不去；盖着时右滑不退出整个房间。
-                ZStack {
-                    RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
-                                  blocked: entryBlocked, pullAnchor: roomPull) {
-                        roomContent
-                            .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
-                    }
-                    .opacity(covered ? 0 : 1)
-                    .allowsHitTesting(!covered)
-                    .accessibilityHidden(covered)
-                    .navigationBarBackButtonHidden(covered)
-                    if let root = model.sideChats[roomId] {
-                        NavigationStack {
-                            ChatRoomView(model: model, plugins: plugins, roomId: roomId, threadRoot: root, title: title)
-                        }
-                    }
+        if threadRoot == nil {
+            // 旁聊页全屏盖在这条主对话上（ADR-0093）：盖层的机制在 SideChatCover。
+            SideChatCover(model: model, plugins: plugins, roomId: roomId, title: title) {
+                RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
+                              blocked: entryBlocked, pullAnchor: roomPull) {
+                    roomContent
+                        .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
                 }
-            } else {
-                // 旁聊页没有房间的面板（ADR-0093）：不挂面板宿主，也没有上推入口。
-                roomContent
             }
+        } else {
+            // 旁聊页没有房间的面板（ADR-0093）：不挂面板宿主，也没有上推入口。
+            roomContent
         }
     }
+}
 
+@MainActor
+private extension ChatRoomView {
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
     private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
 
@@ -123,13 +114,8 @@ struct ChatRoomView: View {
         .environment(model.files)
         .environment(presenter)
         // 开新旁聊的面板（ADR-0093 §6）。
-        .wontonSheet(isPresented: composingBinding, title: String(localized: .Chat.sideChatNew)) { close in
-            NewSideChatFields(model: model, roomId: roomId, close: close) { root in
-                model.openSideChat(root, in: roomId)
-            }
-        }
-        // 旁聊页全屏盖在这条主对话上：见 body 里的 ZStack，这里不另做系统呈现，
-        // 免得和上面收起的“开新旁聊”面板撞在同一个呈现时机上。
+        .modifier(NewSideChatSheet(model: model, roomId: roomId))
+        // 盖层见 body 里的 SideChatCover：这里不另做系统呈现，免得和收起的“开新旁聊”面板撞在同一个呈现时机上。
         .modifier(RoomTopBar(
             title: bot?.name ?? title,
             avatar: barAvatar,
@@ -190,15 +176,11 @@ struct ChatRoomView: View {
 
     /// 这条时间线：主对话或一个旁聊（ADR-0093）。
     private var target: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: threadRoot) }
+}
 
-    /// “开新旁聊”的面板开着（只挂在这条主对话上）。
-    private var composingBinding: Binding<Bool> {
-        Binding(
-            get: { model.composingSideChat == roomId },
-            set: { if !$0 { model.composingSideChat = nil } }
-        )
-    }
-
+/// 消息列表、落点摆放和位置报告（ADR-0071）。
+@MainActor
+private extension ChatRoomView {
     private var messages: some View {
         ScrollViewReader { scroller in
             // 不用 ScrollView + LazyVStack：行高相差悬殊时（一行和六十行）它的内容高度全靠估算，同样的数据几毫秒内差出几千点，
@@ -347,16 +329,6 @@ struct ChatRoomView: View {
 
 @MainActor
 private extension ChatRoomView {
-    /// 旁聊页盖在这条主对话上（ADR-0093）：只挂在主对话实例上。
-    var covered: Bool { threadRoot == nil && model.sideChats[roomId] != nil }
-
-    /// 房间里有旁聊支持声明、能写：顶栏给开旁聊的按钮（ADR-0093 §1、§6）。
-    var supportsSideChats: Bool {
-        guard threadRoot == nil, !isReadOnly, let row = model.viewModel.rooms.first(where: { $0.roomId == roomId })
-        else { return false }
-        return row.sideChats
-    }
-
     func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 
     var isDirect: Bool {
@@ -531,7 +503,9 @@ private struct RoomTopBar<Trailing: View>: ViewModifier {
         if let sideChatTitle {
             content.wontonPushedScreen(sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
         } else {
-            content.wontonPushedScreen(title, avatar: avatar, showsStatus: true, showsStatusLine: true, trailing: trailing)
+            content.wontonPushedScreen(
+                title, avatar: avatar, showsStatus: true, showsStatusLine: true, trailing: trailing
+            )
         }
     }
 }
