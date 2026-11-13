@@ -108,7 +108,7 @@ final class PullAnchor: UIView {
         guard let scrollView else { return }
         // 往打开的方向是正：到顶时往下，到底时往上。
         let sign: CGFloat = edge == .top ? 1 : -1
-        let end = edge == .top ? -scrollView.adjustedContentInset.top : scrollView.bottomEnd
+        let end = edge == .top ? -scrollView.adjustedContentInset.top : scrollView.bottomOffset
         let atEnd = edge == .top
             ? scrollView.contentOffset.y <= end + 0.5
             : scrollView.contentOffset.y >= end - 0.5
@@ -151,13 +151,6 @@ final class PullAnchor: UIView {
         default:
             break
         }
-    }
-}
-
-private extension UIScrollView {
-    /// 滚到最底下时的偏移；内容不满一屏时就是顶上。
-    var bottomEnd: CGFloat {
-        max(-adjustedContentInset.top, contentSize.height + adjustedContentInset.bottom - bounds.height)
     }
 }
 

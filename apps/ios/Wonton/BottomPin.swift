@@ -118,9 +118,13 @@ final class BottomPin {
     }
 }
 
-private extension UIScrollView {
-    /// 贴底的位置。List 报的 `contentSize` 会少算比可见区还高的行的后半截（iOS 26.5 模拟器实测：按它算的底
-    /// 到不了最后一条，还差一千多点），所以可见的最下面那一格比 `contentSize` 还靠下时按格子算。
+extension UIScrollView {
+    /// 贴底的位置；内容不满一屏时就是顶上。贴底（`BottomPin`）和到底后上推（`PullAnchor`）都按这一个算：
+    /// 两处各算各的，差一点就是“贴着底却推不出面板”或一推就被拽回去。
+    ///
+    /// 可见的最下面那一格比 `contentSize` 还靠下时按格子算：行高刚量出来、`contentSize` 还没跟上的那一轮也不落在半截。
+    /// 停稳以后两者一致（iOS 26.5 模拟器，3000pt 高的行，2026-11-14 实测 `contentSize`、布局的内容高度和最后一格的
+    /// 底边都是 21676.67）。
     var bottomOffset: CGFloat {
         let end = (self as? UICollectionView).map { view in
             max(contentSize.height, view.visibleCells.map(\.frame.maxY).max() ?? 0)
@@ -166,14 +170,17 @@ struct EnclosingScrollView: UIViewRepresentable {
     }
 }
 
-/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。
+/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。只在 Debug 包里挂。
 struct ScrollDebug: View {
-    let text: String
+    let pin: BottomPin
 
     var body: some View {
-        Text(verbatim: text)
-            .accessibilityIdentifier("roomScroll")
-            .allowsHitTesting(false)
-            .opacity(0.02)
+        // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            Text(verbatim: pin.snapshot)
+                .accessibilityIdentifier("roomScroll")
+                .allowsHitTesting(false)
+                .opacity(0.02)
+        }
     }
 }
