@@ -563,3 +563,8 @@ plugin-hosted-provider-in-use = 这些应用由它托管，卸载后会打不开
 plugin-hosted-dir-missing = 这个应用在 { $capability } 下的文件不见了，请重新安装
 plugin-hosted-storage-failed = 托管文件写不进去：{ $error }
 plugin-hosted-data-missing = 这个应用在 { $capability } 下存的数据不见了，重新安装会从空的开始
+
+plugin-recovery-interrupted = 应用的启动或重建没有完成，核心会先检查已有容器再重试
+plugin-recovery-owner-stopped = 这个应用已主动停止，请启动后再继续
+plugin-recovery-not-due = 这个应用还没到下一次恢复的时间，或自动重试次数已用完
+plugin-recovery-stop-interrupted = 应用停止没有完成，核心不会自动启动它

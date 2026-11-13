@@ -402,9 +402,8 @@ type GuardedRoutes = Vec<(
     Vec<(Method, &'static str, &'static str)>,
 )>;
 
-fn guarded_routes() -> GuardedRoutes {
-    use wonton_protocol::PermissionItem as Item;
-    let install: Vec<(Method, &str, &str)> = vec![
+fn install_guarded_routes() -> Vec<(Method, &'static str, &'static str)> {
+    vec![
         (
             Method::POST,
             "/_wonton/api/plugins/preview",
@@ -412,6 +411,8 @@ fn guarded_routes() -> GuardedRoutes {
         ),
         (Method::POST, "/_wonton/api/plugins", "{}"),
         (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/lifecycle", ""),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/stop", ""),
         (
             Method::POST,
             "/_wonton/api/plugins/app.whoami/upgrade",
@@ -462,7 +463,12 @@ fn guarded_routes() -> GuardedRoutes {
             "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
             "",
         ),
-    ];
+    ]
+}
+
+fn guarded_routes() -> GuardedRoutes {
+    use wonton_protocol::PermissionItem as Item;
+    let install = install_guarded_routes();
     let server: Vec<(Method, &str, &str)> = vec![
         (Method::GET, "/_wonton/api/egress-proxy", ""),
         (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
@@ -546,6 +552,9 @@ async fn routes_ask_for_their_permission_item() {
         (Method::GET, "/_wonton/api/devices", ""),
         (Method::GET, "/_wonton/api/storage", ""),
         (Method::POST, "/_wonton/api/store/sources", "{}"),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/lifecycle", ""),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/stop", ""),
     ] {
         let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
         assert_ne!(
@@ -554,6 +563,21 @@ async fn routes_ask_for_their_permission_item() {
             "管理员 {method} {path}: {}",
             reply.text()
         );
+    }
+    // 三个接口复用启动权限；未安装只报业务错误，不能把获授权的家人误挡为未登录或仅限主人。
+    for (method, path) in [
+        (Method::POST, "/_wonton/api/plugins/app.missing/start"),
+        (Method::GET, "/_wonton/api/plugins/app.missing/lifecycle"),
+        (Method::POST, "/_wonton/api/plugins/app.missing/stop"),
+    ] {
+        let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], "").await;
+        assert_eq!(
+            reply.status,
+            StatusCode::NOT_FOUND,
+            "{method} {path}: {}",
+            reply.text()
+        );
+        assert_eq!(reply.error_kind(), Some("not_installed"), "{path}");
     }
     let reply = send_as(
         &h.app,

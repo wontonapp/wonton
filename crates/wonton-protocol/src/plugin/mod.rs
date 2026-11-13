@@ -10,6 +10,8 @@ mod detail;
 mod forms;
 pub mod hint;
 mod install;
+mod lifecycle;
+pub use lifecycle::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 mod owner_secrets;
 pub mod store;
 mod view_model;

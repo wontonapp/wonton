@@ -564,3 +564,8 @@ plugin-hosted-provider-in-use = These apps are served by it and would stop worki
 plugin-hosted-dir-missing = The files of this app for { $capability } are missing; reinstall it
 plugin-hosted-storage-failed = Could not write the hosted files: { $error }
 plugin-hosted-data-missing = This app's saved data for { $capability } is missing; reinstalling starts it empty
+
+plugin-recovery-interrupted = Starting or rebuilding this app did not finish; the core will check the containers before trying again
+plugin-recovery-owner-stopped = This app was stopped deliberately; start it to resume
+plugin-recovery-not-due = This app is not scheduled for another recovery attempt yet
+plugin-recovery-stop-interrupted = Stopping this app did not finish; automatic startup is disabled

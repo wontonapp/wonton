@@ -149,9 +149,12 @@ async fn an_image_that_cannot_be_pulled_leaves_the_old_container_running_and_mar
     assert!(reason.contains("toomanyrequests"), "{reason}");
     assert!(!m.store.load(&id("app.out")).unwrap().unwrap().proxied);
 
-    // 下次核对时再试。
+    // 换容器失败沿用有限退避；巡检到期后再续建，代理检测不重置额度。
     docker.fail_pulls(None);
-    m.apply_egress().await.unwrap();
+    let mut record = m.store.load(&id("app.out")).unwrap().unwrap();
+    record.lifecycle.recovery.as_mut().unwrap().next_retry_at = Some(0);
+    m.store.save(&record).unwrap();
+    m.watch_containers().await;
     assert_eq!(status(&m, "app.out"), PluginStatus::Running);
     assert_eq!(starts(&docker, &web), 2);
 }

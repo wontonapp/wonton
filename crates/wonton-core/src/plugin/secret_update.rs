@@ -149,7 +149,8 @@ impl PluginManager {
         }
         rendered.retain_services(&users);
         self.replace_containers(&ctx, rendered, Gate::StartPeriod)
-            .await
+            .await?;
+        self.recovery_complete(&record.id)
     }
 }
 

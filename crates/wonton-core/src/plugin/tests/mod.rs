@@ -75,6 +75,7 @@ mod preinstall;
 mod private_home;
 mod private_home_docker;
 mod privileges;
+mod rebuild_resume;
 mod render_drift;
 mod resources;
 mod runtime;

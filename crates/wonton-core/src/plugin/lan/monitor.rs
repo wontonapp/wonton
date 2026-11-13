@@ -9,7 +9,6 @@ use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::time::Instant;
 use wonton_protocol::{LanChoice, LanFailure};
 
 use super::select::{self, Bound, Host, Plan, Problem};
@@ -17,7 +16,6 @@ use super::{LanGrant, LanSpec, published};
 use crate::l10n;
 use crate::plugin::health_gate::Gate;
 use crate::plugin::languages::Languages;
-use crate::plugin::lifecycle::Undo;
 use crate::plugin::manager::{Deployed, Entry, InstallError, PluginManager, PluginStatus};
 use crate::plugin::manifest::PluginId;
 use crate::plugin::package::PluginPackage;
@@ -216,6 +214,9 @@ impl PluginManager {
         plan: &Result<Plan, String>,
         langs: &Languages,
     ) {
+        if self.explicitly_stopped(id).unwrap_or(true) || self.recovery_pending(id) {
+            return;
+        }
         let running = self.status_of(id) == Some(PluginStatus::Running);
         if !running && !self.lan.is_degraded(id) {
             return;
@@ -471,20 +472,10 @@ impl PluginManager {
     pub(in crate::plugin) async fn replace_containers(
         &self,
         ctx: &InstallContext,
-        mut plan: Deployment,
+        plan: Deployment,
         gate: Gate,
     ) -> Result<(), InstallError> {
-        let langs = self.owner_languages();
-        self.prepare_images(&mut plan, None, &langs).await?;
-        // 计划按依赖拓扑排序，正序删除让共享网络命名空间的容器先于目标删；逆序会把目标先删，等价于按容器 ID 绑定的依赖先拆引用者。
-        for container in plan.containers.iter() {
-            self.engine.remove_container(&container.name).await?;
-        }
-        self.rewrite_image_healthchecks(ctx, &mut plan).await?;
-        let deadline = gate.deadline(&plan, ctx.install_limit, Instant::now());
-        Box::pin(self.start_containers(None, &plan, None, &mut Undo::default(), deadline, &langs))
-            .await?;
-        Ok(())
+        self.replace_recorded(ctx, plan, gate).await
     }
 
     /// 标为异常，以后每次检测都重新处理它。只改在运行的和已经因为局域网异常的插件。

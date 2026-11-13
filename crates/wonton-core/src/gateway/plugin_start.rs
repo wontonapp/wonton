@@ -39,3 +39,50 @@ pub async fn start(
         None => install_error(&InstallError::not_installed(&languages(&headers), &id)),
     }
 }
+
+pub async fn lifecycle(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(error) => return install_error(&InstallError::Invalid(error.to_string())),
+    };
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    match gateway.plugins.lifecycle_status(&id) {
+        Ok(lifecycle) => Json(lifecycle).into_response(),
+        Err(error) => install_error(&error),
+    }
+}
+
+pub async fn stop(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(error) => return install_error(&InstallError::Invalid(error.to_string())),
+    };
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    if let Err(error) = gateway.plugins.stop_detached(id.clone()).await {
+        return install_error(&error);
+    }
+    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+        Some(installed) => Json(installed).into_response(),
+        None => install_error(&InstallError::not_installed(&languages(&headers), &id)),
+    }
+}
