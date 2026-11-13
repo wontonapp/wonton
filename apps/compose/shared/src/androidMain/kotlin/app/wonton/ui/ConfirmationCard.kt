@@ -67,15 +67,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 color = (if (line.emphasis) colors.danger else colors.textPrimary).toColor(),
             )
         }
-        (card.category as? ConfirmationCategory.ToolCall)?.let { category ->
-            CardToolSummary(category.tool)
-            key(card.id) {
-                ProblemDetail(
-                    text = "${category.tool.name}\n\n${category.tool.arguments}",
-                    modifier = Modifier.heightIn(min = WontonTheme.size.target),
-                )
-            }
-        }
+        CardToolCallSection(card.category, card.id)
         if (card.secretInputs.isNotEmpty()) {
             SecretInputsSection(
                 card.secretInputs,
@@ -143,6 +135,18 @@ private fun cardInputsReady(
 
 private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
     settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
+
+@Composable
+private fun CardToolCallSection(category: ConfirmationCategory?, cardId: String) {
+    val tool = (category as? ConfirmationCategory.ToolCall)?.tool ?: return
+    CardToolSummary(tool)
+    key(cardId) {
+        ProblemDetail(
+            text = "${tool.name}\n\n${tool.arguments}",
+            modifier = Modifier.heightIn(min = WontonTheme.size.target),
+        )
+    }
+}
 
 @Composable
 private fun CardToolSummary(tool: ConfirmationTool) {
