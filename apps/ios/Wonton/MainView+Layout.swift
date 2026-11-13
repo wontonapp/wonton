@@ -17,14 +17,11 @@ extension MainView {
                 }
                 .clipped()
                 .accessibilityIdentifier("wide-screen-list")
-                .environment(\.wontonOpenApps) { showsApps = true }
+                .environment(\.wontonOpenApps) { openApps() }
                 .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
                 .toolbar(removing: .sidebarToggle)
             } detail: {
-                ZStack {
-                    rootContent
-                    pageStack
-                }
+                contentLayers
                 .clipped()
                 .accessibilityIdentifier("wide-screen-detail")
                 .toolbar(removing: .sidebarToggle)
@@ -32,15 +29,38 @@ extension MainView {
             .navigationSplitViewStyle(.balanced)
         } else {
             SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
-                ZStack {
-                    rootContent
-                    pageStack
-                }
+                contentLayers
                 .environment(\.wontonOpenSidebar) { showsSidebar = true }
             } panel: {
                 SidebarPanel(home: home, plugins: plugins,
                              current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
             }
+        }
+    }
+
+    /// 主界面叠着的三层，窄屏和宽屏的右栏都是它：根页面、“全部应用”、插件页。
+    var contentLayers: some View {
+        ZStack {
+            rootContent
+                .accessibilityHidden(showsApps)
+            appsLayer
+            pageStack
+        }
+    }
+
+    /// “全部应用”这一层（网格、商店、插件详情），配对后才有：和插件页层一样是盖在根页面上的导航栈，
+    /// 栈空时透明且不挡下面，所以左边缘右滑是系统的交互式返回，设置的盖子也照常从主界面弹。
+    @ViewBuilder private var appsLayer: some View {
+        if isPaired {
+            HomeView(
+                model: home, plugins: plugins, chat: chat, settings: settings, open: open,
+                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
+                showSettings: { settings.path = []; showsSettings = true },
+                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings || !showsApps,
+                layered: true, devWebURL: devWebURL, path: $appsPath
+            )
+            .allowsHitTesting(showsApps)
+            .accessibilityHidden(!showsApps)
         }
     }
 
