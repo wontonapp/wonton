@@ -775,6 +775,43 @@ impl Phone {
             }
         }
     }
+    /// 同 [`Self::wait_chat_within`]，超时额外带上最后一次视图和完整同步请求序列，供同步注入类测试诊断。
+    pub async fn wait_chat_within_and_sync<R>(
+        &self,
+        home: &Home,
+        what: &str,
+        within: Duration,
+        mut check: impl FnMut(&ChatViewModel) -> Option<R>,
+    ) -> R {
+        let subscription = self.subscribe_chat();
+        let since = std::time::Instant::now();
+        let mut last = None;
+        let waiting = async {
+            while let Some(view) = subscription.next().await {
+                if let Some(found) = check(&view) {
+                    return found;
+                }
+                last = Some(view);
+            }
+            panic!("订阅提前结束");
+        };
+        match tokio::time::timeout(within, waiting).await {
+            Ok(found) => found,
+            Err(_) => {
+                let view = self.chat();
+                let device = match &view.account {
+                    ChatAccount::SignedIn { device_id, .. } => device_id.as_str(),
+                    _ => "",
+                };
+                panic!(
+                    "{what}：{within:?} 内没有等到，当前：{view:#?}\n最后一次视图：{last:#?}\n同步起步：{}\n同步请求：{:#?}\n挂着的请求：{}",
+                    wonton_matrix::last_sync_diagnostic(device),
+                    home.sync_requests(),
+                    pending_requests(since)
+                )
+            }
+        }
+    }
 
     /// 等登录并同步起来，返回用户 ID 和设备 ID。
     pub async fn signed_in(&self) -> (String, String) {

@@ -36,8 +36,10 @@ struct TransfersStrip: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
                 }
-                .wontonSheet(isPresented: $isShowingDownloaded,
-                    title: String(localized: .Transfer0.transferDownloaded)) { _ in
+                .wontonSheet(
+                    isPresented: $isShowingDownloaded,
+                    title: String(localized: .Transfer0.transferDownloaded), usesSystemPresentation: true
+                ) { _ in
                     DownloadedList().environment(files)
                 }
             }

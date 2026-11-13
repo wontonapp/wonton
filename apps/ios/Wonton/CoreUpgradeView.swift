@@ -12,7 +12,7 @@ struct CoreUpgradeView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .CoreUpgrade2.coreUpgradeTitle))
+            .wontonPushedScreen(String(localized: .CoreUpgrade2.coreUpgradeTitle), usesSystemToolbar: true)
             .onAppear { model.refresh(.refreshCoreUpgrade(manual: false)) }
             .onChange(of: upgrade.offer?.digest) { isConfirming = false }
     }

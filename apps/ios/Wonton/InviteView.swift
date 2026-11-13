@@ -31,7 +31,7 @@ struct InviteView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Invite.inviteTitle))
+        .wontonPushedScreen(String(localized: .Invite.inviteTitle), usesSystemToolbar: true)
         .task { model.send(.inviteDevice) }
         .onDisappear { model.send(.closeDeviceInvite) }
     }
