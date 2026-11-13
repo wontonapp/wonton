@@ -79,8 +79,7 @@ pub enum PairingStatus {
     Paired,
     Failed {
         reason: PairingFailure,
-        /// 原始说明，壳只在“详情”里显示。被服务器拒绝的几类（`Rejected`、`Expired`、`Closed`）是服务器按它主人的语言
-        /// 写的，和类别说的是一件事，壳不显示，按类别自己写标题和下一步；`PendingApproval` 是核心写的，可以显示。
+        /// 原始说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步，不从说明里猜类别。
         message: String,
     },
 }
@@ -90,7 +89,7 @@ pub enum PairingStatus {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum PairingFailure {
-    /// 服务器不认这个码：没发过，或者已经用过。要拿一个新码。
+    /// 服务器不认这个码，或给出了客户端不认识的拒绝原因。要拿一个新码。
     Rejected,
     /// 码过期了，要拿一个新码。
     Expired,
@@ -108,6 +107,8 @@ pub enum PairingFailure {
     Upstream,
     /// 两端协议版本不匹配：App 或服务器要更新。
     Protocol,
+    /// 配对码已被其他设备用过，或使用它的设备已被吊销。要拿一个新码。
+    Used,
 }
 
 /// 连接状态。

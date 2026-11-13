@@ -17,8 +17,9 @@ struct PairingView: View {
     @State private var deviceName = UIDevice.current.name
     /// 核心当场拒绝的原因，比如扫到的不是配对码。
     @State private var refusal: Problem?
-    /// 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
+    /// 最近一次出示的码供手动重试使用；扫码锁独立于码的内容。
     @State private var lastCode: String?
+    @State private var scanConsumed = false
     @FocusState private var isEditingCode: Bool
     @State private var showsMatrixLogin = false
     @Environment(\.wontonColors) private var colors
@@ -41,13 +42,24 @@ struct PairingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                if hasFailedPairing, let pairing = model.viewModel.pairing {
+                if let refusal {
+                    VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
+                        ProblemNotice(problem: refusal, icon: .error)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("pairing-refusal")
+                        scanAgainButton
+                    }
+                } else if let pairing = model.viewModel.pairing {
                     PairingProgress(
                         status: pairing,
+                        recognized: scanConsumed,
                         retry: lastCode.map { code in { pair(code) } },
+                        scanAgain: scanAgain,
                         back: leaveFailure,
-                        cancel: nil
+                        cancel: cancelPairing
                     )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("pairing-progress")
                 } else {
                     pairingForm
                     // 没有自己服务器的人从这里用别家的 Matrix 账号登录（ADR-0051）。
@@ -95,9 +107,9 @@ struct PairingView: View {
             if phase == .active { camera = .current }
         }
         .onChange(of: model.viewModel.pairing) { old, new in
-            // 配上了由核心说：进展从“正在配对”翻到 Paired；取消回到没有进展，不算配上。添加服务器
-            // 的流程有自己的收尾，不在这里走。
-            if !model.servers.adding, inProgress(old), new == .paired {
+            // 同步读取核心可能直接得到 Paired，不要求订阅一定交付中间的进展帧。
+            // 添加服务器有自己的收尾，不在这里走。
+            if !model.servers.adding, old != .paired, new == .paired {
                 onPaired()
             }
         }
@@ -107,6 +119,12 @@ struct PairingView: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 scanner
+                #if DEBUG
+                    if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SCAN_INJECTION"] == "1" {
+                        Button(.Pairing.pairingSubmit) { scanned(model.pairingCode) }
+                            .accessibilityIdentifier("pairing-inject-scan")
+                    }
+                #endif
                 Text(.Pairing.pairingInstructions)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
@@ -144,21 +162,6 @@ struct PairingView: View {
                 .accessibilityIdentifier("pairing-submit")
                 .disabled(model.pairingCode.isEmpty || isPairing)
             }
-            if let refusal {
-                ProblemNotice(problem: refusal, icon: .error)
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("pairing-refusal")
-            }
-            if let pairing = model.viewModel.pairing {
-                PairingProgress(
-                    status: pairing,
-                    retry: nil,
-                    back: leaveFailure,
-                    cancel: { model.send(.cancelPairing) }
-                )
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("pairing-progress")
-            }
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 Text(.Pairing.pairingDeviceName)
                     .wontonText(WontonTheme.typography.supporting)
@@ -181,7 +184,7 @@ struct PairingView: View {
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                 }
             } else {
-                QRScannerView(onCode: scanned) { scannerProblem = $0 }
+                QRScannerView(singleShot: true, onCode: scanned) { scannerProblem = $0 }
                     .frame(height: 280)
                     .clipShape(RoundedRectangle(cornerRadius: WontonTheme.radii.card))
             }
@@ -222,10 +225,33 @@ struct PairingView: View {
         return false
     }
 
+    private var scanAgainButton: some View {
+        Button(.Scan.pairingScanAgain, action: scanAgain)
+            .buttonStyle(WontonButtonStyle())
+            .accessibilityIdentifier("pairing-scan-again")
+    }
+
+    private func scanAgain() {
+        refusal = nil
+        lastCode = nil
+        scanConsumed = false
+        scannerProblem = nil
+        model.pairingCode = ""
+        model.dismissPairingFailure()
+    }
+
+    private func cancelPairing() {
+        scanConsumed = false
+        lastCode = nil
+        model.cancelPairing()
+    }
+
     private func leaveFailure() {
         guard hasFailedPairing else { return }
         refusal = nil
-        model.send(.dismissPairingFailure)
+        lastCode = nil
+        scanConsumed = false
+        model.dismissPairingFailure()
         if model.servers.adding {
             model.send(.cancelAddServer)
         } else {
@@ -234,8 +260,10 @@ struct PairingView: View {
     }
 
     private func scanned(_ code: String) {
-        guard !hasFailedPairing else { return }
-        if code != lastCode { pair(code) }
+        guard !scanConsumed, !isPairing, !hasFailedPairing, refusal == nil else { return }
+        scanConsumed = true
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        pair(code)
     }
 
     private func pair(_ code: String) {
@@ -278,8 +306,10 @@ enum CameraAccess {
 /// 配对的进展；失败时按原因说下一步怎么做。
 private struct PairingProgress: View {
     let status: PairingStatus
+    let recognized: Bool
     /// 用最近一次的码再试一次；只对可能是暂时的失败显示。
     let retry: (() -> Void)?
+    let scanAgain: () -> Void
     let back: () -> Void
     /// 取消这次配对；只在“正在配对”的进展里用。
     let cancel: (() -> Void)?
@@ -290,14 +320,15 @@ private struct PairingProgress: View {
 
     var body: some View {
         switch status {
-        // 配上了就该离开配对页（onPaired）；这个视图只为失败而挂载，Paired 不画。
+        // 配上了就该离开配对页（onPaired），Paired 不画。
         case .paired:
             EmptyView()
         case let .inProgress(elapsed, stage):
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     ProgressView()
-                    Text(.Pairing.pairingInProgress).wontonText(WontonTheme.typography.body)
+                    Text(recognized ? .Scan.pairingScanRecognized : .Pairing.pairingInProgress)
+                        .wontonText(WontonTheme.typography.body)
                 }
                 .foregroundStyle(Color(colors.textPrimary))
                 if elapsed >= Self.slowAfterMs {
@@ -315,12 +346,18 @@ private struct PairingProgress: View {
                     }
                 }
             }
+            .accessibilityIdentifier("pairing-connecting")
         case let .failed(reason, message):
             WontonNotice(
                 icon: .warning,
                 title: Self.title(reason),
                 lines: Self.hint(reason).map { [$0] } ?? []
             ) {
+                Button(action: scanAgain) {
+                    Text(.Scan.pairingScanAgain).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .accessibilityIdentifier("pairing-scan-again")
                 if let retry, Self.canRetrySameCode(reason) {
                     Button(action: retry) {
                         Text(.Pairing.pairingRetrySameCode).frame(maxWidth: .infinity)
@@ -331,10 +368,12 @@ private struct PairingProgress: View {
                     Text(.Pairing.pairingBack).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
-                if let detail = Self.detail(reason, message) {
-                    ProblemDetail(text: detail, minimumTargetHeight: WontonTheme.size.target)
+                if !message.isEmpty {
+                    ProblemDetail(text: message, minimumTargetHeight: WontonTheme.size.target)
                 }
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("pairing-failure")
         }
     }
 
@@ -342,6 +381,7 @@ private struct PairingProgress: View {
         switch reason {
         case .rejected: String(localized: .Pairing.pairingFailureRejected)
         case .expired: String(localized: .Pairing.pairingFailureExpired)
+        case .used: String(localized: .Scan.pairingScanUsed)
         case .closed: String(localized: .Pairing.pairingFailureClosed)
         case .pendingApproval: String(localized: .Pairing.pairingFailurePending)
         case .joinRejected: String(localized: .Joining.joiningFailureRejected)
@@ -355,21 +395,13 @@ private struct PairingProgress: View {
     /// 码过期、不认识、已停用这几类不再重复服务器的说明；本机失败补一句下一步。
     private static func hint(_ reason: PairingFailure) -> String? {
         switch reason {
-        case .rejected, .expired: String(localized: .Pairing.pairingNextStepNewCode)
+        case .rejected, .expired, .used: String(localized: .Pairing.pairingNextStepNewCode)
         case .closed: String(localized: .Pairing.pairingNextStepClosed)
         case .pendingApproval: String(localized: .Pairing.pairingNextStepPending)
         case .joinRejected, .codeUsed: String(localized: .Joining.joiningNextStepInvite)
         case .transportUnavailable: String(localized: .Pairing.pairingHintTransport)
         case .protocol: String(localized: .Pairing.pairingHintProtocol)
         case .upstream: nil
-        }
-    }
-
-    /// 核心按 App 语言写的诊断收进详情；码无效的几类已说明下一步，不再重复。等批的详情里写着加入后的角色。
-    private static func detail(_ reason: PairingFailure, _ message: String) -> String? {
-        switch reason {
-        case .rejected, .expired, .closed, .joinRejected, .codeUsed: nil
-        case .pendingApproval, .transportUnavailable, .upstream, .protocol: message
         }
     }
 

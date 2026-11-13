@@ -349,7 +349,10 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
     phone.pair(&code).unwrap();
     assert!(matches!(
         phone.home().pairing,
-        Some(PairingStatus::InProgress { .. })
+        Some(PairingStatus::InProgress {
+            stage: PairingStage::Connecting,
+            ..
+        })
     ));
     // 建连那一段 30 秒，超时就报连不上（不再确认）。几秒只给调度和 QUIC 清理留余量：
     // 清理不能推迟可见的结果。
@@ -558,12 +561,16 @@ async fn a_rejected_code_says_what_to_do_next() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     for (outcome, failure) in [
+        (Some(RejectReason::UnknownCode), PairingFailure::Rejected),
         (Some(RejectReason::Expired), PairingFailure::Expired),
-        (Some(RejectReason::Used), PairingFailure::Rejected),
+        (Some(RejectReason::Used), PairingFailure::Used),
         (Some(RejectReason::Closed), PairingFailure::Closed),
+        (Some(RejectReason::BadRequest), PairingFailure::Protocol),
         (Some(RejectReason::ServerError), PairingFailure::Upstream),
+        (Some(RejectReason::Other), PairingFailure::Rejected),
     ] {
-        phone.pair(&home.code(outcome)).unwrap();
+        let code = home.code(outcome);
+        phone.pair(&code).unwrap();
         let (got, message) = phone.pairing_failure().await;
         assert_eq!(got, failure, "{outcome:?}: {message}");
         assert_eq!(
@@ -571,6 +578,11 @@ async fn a_rejected_code_says_what_to_do_next() {
             HomeStatus::NotConfigured,
             "配不上就不存连接信息"
         );
+        phone.dispatch(Action::DismissPairingFailure).unwrap();
+        assert!(phone.home().pairing.is_none());
+        phone.pair(&code).unwrap();
+        let (rescanned, message) = phone.pairing_failure().await;
+        assert_eq!(rescanned, failure, "重新扫描同一个码：{message}");
     }
     // 拒绝之后换一个好码照样能配上。
     phone.pair(&home.code(None)).unwrap();

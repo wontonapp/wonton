@@ -4,6 +4,20 @@ import WontonClient
 
 @MainActor
 final class PairingLinkTests: XCTestCase {
+    func testRefusedScanKeepsRawReasonInDetailsAndCanBeRetried() throws {
+        let core = try makeCore()
+        let home = HomeModel(core: core)
+        let code = "wonton://pair?v=0"
+
+        let refusal = try XCTUnwrap(home.pair(code: code, deviceName: "Test phone"))
+        XCTAssertNil(refusal.nextStep)
+        XCTAssertFalse(try XCTUnwrap(refusal.detail).isEmpty)
+        XCTAssertNil(home.viewModel.pairing)
+        home.dismissPairingFailure()
+        XCTAssertNil(home.viewModel.pairing)
+        XCTAssertNotNil(home.pair(code: code, deviceName: "Test phone"))
+    }
+
     func testPairLinkOnlyPrefillsUntilConfirmation() async throws {
         let core = try makeCore()
         let home = HomeModel(core: core)
@@ -18,6 +32,9 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertEqual(core.servers(), servers)
         XCTAssertNil(home.pair(code: home.pairingCode, deviceName: "Test phone"))
         XCTAssertTrue(core.home().pairing.isPairing, "点确认后核心应报正在配对：\(String(describing: core.home().pairing))")
+        XCTAssertTrue(home.viewModel.pairing.isPairing)
+        home.cancelPairing()
+        XCTAssertNil(home.viewModel.pairing)
     }
 
     func testLinkCannotReplaceAnActivePairingAttempt() async throws {

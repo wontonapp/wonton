@@ -3,6 +3,7 @@ package app.wonton.ui
 import android.content.Context
 import android.os.Build
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.hideFromAccessibility
@@ -71,36 +73,50 @@ fun PairingScreen(
     var pastedCode by rememberSaveable { mutableStateOf("") }
     // 核心当场拒绝的原因，比如扫到的不是配对码。
     var refusal by remember { mutableStateOf<Problem?>(null) }
-    // 最近一次出示的码。扫到同一个码不再自动出示，失败后由“再试一次”重来。
     var lastCode by rememberSaveable { mutableStateOf<String?>(null) }
-    var previous by remember { mutableStateOf(pairing) }
-    LaunchedEffect(pairing) {
-        // 配上了由核心说：进展从“正在配对”翻到 Paired；取消回到没有进展，不算配上。
-        if (previous is PairingStatus.InProgress && pairing is PairingStatus.Paired) onPaired()
-        previous = pairing
+    var scanRecognized by remember { mutableStateOf(false) }
+    var status by remember(pairing) { mutableStateOf(core.home().pairing) }
+    var submitted by remember { mutableStateOf(status is PairingStatus.InProgress) }
+    LaunchedEffect(status, submitted) {
+        if (submitted && status is PairingStatus.Paired) {
+            submitted = false
+            onPaired()
+        }
     }
-    val inProgress = pairing is PairingStatus.InProgress
+    val view = LocalView.current
     val focus = LocalFocusManager.current
     fun pair(code: String) {
-        if (inProgress) return
+        if (core.home().pairing is PairingStatus.InProgress) return
         // 收起键盘，让配对结果和操作保持可见。
         focus.clearFocus()
         lastCode = code
-        refusal = core.send(Action.PairHome(code, deviceName))
+        refusal = core.send(Action.PairHome(code, deviceName))?.pairingRefusal()
+        submitted = refusal == null
+        status = core.home().pairing
     }
-    val leaveFailure = {
-        previous = pairing
+    val scanAgain = {
         focus.clearFocus()
         refusal = null
+        lastCode = null
+        pastedCode = ""
+        scanRecognized = false
+        submitted = false
         core.send(Action.DismissPairingFailure)
+        status = core.home().pairing
+        Unit
+    }
+    val leaveFailure = {
+        scanAgain()
         onBack?.invoke()
         Unit
     }
-    BackHandler(enabled = pairing is PairingStatus.Failed, onBack = leaveFailure)
-    if (pairing is PairingStatus.Failed) {
+    BackHandler(enabled = status is PairingStatus.Failed, onBack = leaveFailure)
+    val failed = status as? PairingStatus.Failed
+    if (failed != null) {
         PairingFailureNotice(
-            pairing,
+            failed,
             onRetry = lastCode?.let { code -> { pair(code) } },
+            onScanAgain = scanAgain,
             onBack = leaveFailure,
             modifier = modifier.verticalScroll(rememberScrollState())
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
@@ -111,15 +127,30 @@ fun PairingScreen(
                 .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
-            PairingForm(
-                pastedCode, { pastedCode = it }, inProgress,
-                onScan = { code -> if (code != lastCode) pair(code) }, pair = ::pair,
-            )
-            refusal?.let { ProblemNotice(it, WontonIcon.Error) }
-            if (pairing is PairingStatus.InProgress) {
-                PairingProgress(pairing, onCancel = { core.send(Action.CancelPairing) })
+            val progress = status as? PairingStatus.InProgress
+            if (progress != null) {
+                PairingProgress(progress, scanRecognized, onCancel = {
+                    core.send(Action.CancelPairing)
+                    submitted = false
+                    status = core.home().pairing
+                    scanRecognized = false
+                })
+            } else if (refusal != null) {
+                ProblemNotice(requireNotNull(refusal), WontonIcon.Error)
+                WontonButton(stringResource(R.string.pairing_scan_again), scanAgain)
+            } else {
+                PairingForm(pastedCode, { pastedCode = it }, onScan = { code ->
+                    if (!scanRecognized && core.home().pairing !is PairingStatus.InProgress) {
+                        scanRecognized = true
+                        view.performHapticFeedback(
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) HapticFeedbackConstants.CONFIRM
+                            else HapticFeedbackConstants.VIRTUAL_KEY,
+                        )
+                        pair(code)
+                    }
+                }, pair = ::pair)
+                PairingDeviceName(deviceName, onDeviceName = { deviceName = it })
             }
-            PairingDeviceName(deviceName, onDeviceName = { deviceName = it })
         }
     }
 }
@@ -128,14 +159,13 @@ fun PairingScreen(
 private fun PairingForm(
     pastedCode: String,
     onPastedCode: (String) -> Unit,
-    inProgress: Boolean,
     onScan: (String) -> Unit,
     pair: (String) -> Unit,
 ) {
     val secondary = WontonTheme.colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            CameraArea(onCode = onScan)
+            CameraArea(onCode = onScan, singleScan = true)
             Text(
                 stringResource(R.string.pairing_instructions),
                 style = WontonTheme.typography.supporting,
@@ -164,7 +194,7 @@ private fun PairingForm(
                 stringResource(R.string.pairing_submit),
                 onClick = { pair(pastedCode) },
                 modifier = Modifier.fillMaxWidth().testTag("pairing-submit"),
-                enabled = pastedCode.isNotBlank() && !inProgress,
+                enabled = pastedCode.isNotBlank(),
             )
         }
     }
@@ -196,7 +226,7 @@ fun defaultDeviceName(context: Context): String =
 
 /** 配对的进展只反映核心状态；等久了补一句还在哪一步，慢的话可以取消。 */
 @Composable
-private fun PairingProgress(status: PairingStatus.InProgress, onCancel: () -> Unit) {
+private fun PairingProgress(status: PairingStatus.InProgress, scanRecognized: Boolean, onCancel: () -> Unit) {
     val color = WontonTheme.colors.textPrimary.toColor()
     val secondary = WontonTheme.colors.textSecondary.toColor()
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
@@ -205,7 +235,11 @@ private fun PairingProgress(status: PairingStatus.InProgress, onCancel: () -> Un
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
             CircularProgressIndicator(Modifier.size(WontonTheme.size.iconSmall), color = color, strokeWidth = 2.dp)
-            Text(stringResource(R.string.pairing_in_progress), style = WontonTheme.typography.body, color = color)
+            Text(
+                stringResource(if (scanRecognized) R.string.pairing_scan_recognized else R.string.pairing_in_progress),
+                style = WontonTheme.typography.body,
+                color = color,
+            )
         }
         // 壳的显示门槛：等了这么久还没好就补一句还在哪一步和取消；时间本身来自核心的进展。
         if (status.elapsedMs >= SLOW_AFTER_MS) {
@@ -228,9 +262,10 @@ private fun PairingProgress(status: PairingStatus.InProgress, onCancel: () -> Un
 }
 
 @Composable
-private fun PairingFailureNotice(
+fun PairingFailureNotice(
     status: PairingStatus.Failed,
     onRetry: (() -> Unit)?,
+    onScanAgain: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -240,16 +275,21 @@ private fun PairingFailureNotice(
             stringResource(failureTitle(status.reason)),
             lines = listOfNotNull(failureHint(status.reason)?.let { stringResource(it) }),
         ) {
+            WontonButton(
+                stringResource(R.string.pairing_scan_again), onScanAgain,
+                modifier = Modifier.fillMaxWidth().testTag("pairing-scan-again"),
+            )
             if (onRetry != null && status.reason.canRetrySameCode()) {
                 WontonButton(
-                    stringResource(R.string.pairing_retry_same_code), onRetry, modifier = Modifier.fillMaxWidth(),
+                    stringResource(R.string.pairing_retry_same_code), onRetry,
+                    modifier = Modifier.fillMaxWidth().testTag("pairing-retry"),
                 )
             }
             WontonButton(
                 stringResource(R.string.design_back), onBack,
-                modifier = Modifier.fillMaxWidth(), kind = WontonButtonKind.SECONDARY,
+                modifier = Modifier.fillMaxWidth().testTag("pairing-back"), kind = WontonButtonKind.SECONDARY,
             )
-            if (status.reason.showsCoreMessage()) ProblemDetail(status.message)
+            if (status.message.isNotBlank()) ProblemDetail(status.message)
         }
     }
 }
@@ -257,6 +297,7 @@ private fun PairingFailureNotice(
 private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.REJECTED -> R.string.pairing_failure_rejected
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
+    PairingFailure.USED -> R.string.pairing_scan_used
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
     PairingFailure.PENDING_APPROVAL -> R.string.pairing_failure_pending
     PairingFailure.JOIN_REJECTED -> R.string.joining_failure_rejected
@@ -266,9 +307,8 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.PROTOCOL -> R.string.pairing_failure_protocol
 }
 
-/** 码被拒、过期、停用这几类，服务器写的说明和标题说的是同一件事，只留标题和下一步。等批的说明是核心写的，带加入后的角色。 */
 private fun failureHint(reason: PairingFailure): Int? = when (reason) {
-    PairingFailure.REJECTED, PairingFailure.EXPIRED -> R.string.pairing_next_new_code
+    PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.USED -> R.string.pairing_next_new_code
     PairingFailure.CLOSED -> R.string.pairing_next_closed
     PairingFailure.PENDING_APPROVAL -> R.string.pairing_next_pending
     PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> R.string.joining_next_invite
@@ -276,16 +316,13 @@ private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
     PairingFailure.UPSTREAM -> null
 }
-
-/** 核心按 App 语言生成的诊断信息只在默认收起的详情里显示。 */
-private fun PairingFailure.showsCoreMessage(): Boolean = when (this) {
-    PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL,
-    PairingFailure.PENDING_APPROVAL -> true
-    PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.CLOSED -> false
-    PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> false
-}
-
 /** 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。 */
 private fun PairingFailure.canRetrySameCode() =
     this == PairingFailure.TRANSPORT_UNAVAILABLE || this == PairingFailure.UPSTREAM ||
         this == PairingFailure.PENDING_APPROVAL
+
+internal fun Problem.pairingRefusal(): Problem = copy(
+    nextStep = null,
+    detail = listOfNotNull(nextStep, detail).filter { it.isNotBlank() }.joinToString("\n\n")
+        .takeIf { it.isNotBlank() },
+)

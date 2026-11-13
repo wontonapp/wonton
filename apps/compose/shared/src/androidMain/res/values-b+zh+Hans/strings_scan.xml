@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Immediate feedback after recognizing a pairing QR code. No arguments. -->
+    <string name="pairing_scan_recognized">已识别，正在连接服务器…</string>
+    <!-- Restart the camera in place after a pairing failure. No arguments. -->
+    <string name="pairing_scan_again">重新扫描</string>
+    <!-- Failure title for an already consumed pairing code. No arguments. -->
+    <string name="pairing_scan_used">这个配对码已用过</string>
+</resources>

@@ -494,12 +494,11 @@ fn pending(lang: Lang, role: Option<&RoleDef>) -> PairingStatus {
 fn rejected(reason: RejectReason) -> PairingFailure {
     match reason {
         RejectReason::Expired => PairingFailure::Expired,
+        RejectReason::Used => PairingFailure::Used,
         RejectReason::Closed => PairingFailure::Closed,
         RejectReason::BadRequest => PairingFailure::Protocol,
         RejectReason::ServerError => PairingFailure::Upstream,
-        RejectReason::UnknownCode | RejectReason::Used | RejectReason::Other => {
-            PairingFailure::Rejected
-        }
+        RejectReason::UnknownCode | RejectReason::Other => PairingFailure::Rejected,
     }
 }
 

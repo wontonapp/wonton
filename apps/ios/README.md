@@ -141,6 +141,24 @@ xcodebuild test -project apps/ios/Wonton.xcodeproj -scheme Wonton \
   -only-testing:WontonUITests/PairingLinkUITests CODE_SIGNING_ALLOWED=NO
 ```
 
+扫码反馈回归在 `WontonTests/QRScannerTests` 和 `WontonUITests/PairingScanUITests`。后者自动启用
+Debug 专用环境变量 `WONTON_UI_TEST_SCAN_INJECTION=1`，显示标识为 `pairing-inject-scan` 的按钮；
+按钮把配对输入框中的码交给真正的 `scanned()` 回调和客户端核心，不模拟连接进展或网络结果。
+手动走查也可在 Debug 启动环境中开启此变量，粘贴码或用深链接预填后点该按钮；不要同时设置自动配对变量
+`WONTON_DEV_PAIRING_CODE`。模拟器能验证进度、失败和重扫，但不能验证相机识别或真实触感。
+
+```bash
+apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
+  -only-testing:WontonTests/QRScannerTests \
+  -only-testing:WontonUITests/PairingScanUITests
+```
+
+不提供后端码时，上述界面类验证核心当场拒绝、不可达服务器的连接进度和失败、同码重新扫描；
+`testSuppliedServerCode` 则跳过。提供 `PAIRING_CODE` 时该方法走真实服务器，默认期待成功；
+用已用过或过期的真实码验证失败时，额外传 `TEST_RUNNER_PAIRING_SCAN_EXPECT_FAILURE=1`。
+截图保留为 XCTest attachments。分开构建和运行时，用 `test-without-building -xctestrun <构建产物里的测试清单>`
+指向自己那次构建保存的测试包，不依赖下一次构建名额的缓存目录；配对码在构建完成后生成，避免等待期间过期。
+
 要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
 `PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
 
