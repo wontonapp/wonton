@@ -64,6 +64,7 @@ enum SnapshotFixtures {
         SettingsTab(
             model: settingsModel(core: core),
             appearance: AppearanceModel(core: core),
+            appLock: AppLockModel(core: core),
             chat: ChatModel(core: core),
             home: HomeModel(core: core),
             plugins: PluginsModel(core: core)
