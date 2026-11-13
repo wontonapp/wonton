@@ -128,6 +128,7 @@ async fn started_with(outcome: Value) -> (FakeAgent, FakeCore, AcpClient, Prompt
                 .prompt(
                     "session-1",
                     vec![json!({"type": "text", "text": "hi"})],
+                    None,
                     1024,
                     Duration::from_secs(2),
                     zh(),
@@ -170,6 +171,7 @@ async fn fake_agent_round_trip_sets_http_mcp_and_mode() {
         client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "hi"})],
+            None,
             1024,
             Duration::from_secs(2),
             zh(),
@@ -246,6 +248,7 @@ async fn timeout_cancels_and_next_prompt_discards_late_update() {
         client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "long"})],
+            None,
             1024,
             Duration::from_millis(50),
             zh(),
@@ -258,6 +261,7 @@ async fn timeout_cancels_and_next_prompt_discards_late_update() {
         client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "new"})],
+            None,
             1024,
             Duration::from_secs(2),
             zh(),
@@ -306,6 +310,7 @@ async fn restored_replay_updates_do_not_leak_into_the_next_prompt() {
         client.prompt(
             "session-1",
             vec![json!({"type": "text", "text": "next"})],
+            None,
             1024,
             Duration::from_secs(2),
             zh(),
@@ -358,6 +363,7 @@ async fn prompt_errors_keep_their_categories() {
             client.prompt(
                 "session-1",
                 vec![json!({"type": "text", "text": "hi"})],
+                None,
                 1024,
                 Duration::from_secs(2),
                 zh(),
@@ -390,6 +396,7 @@ async fn prompt_errors_show_the_reason_from_data() {
             client.prompt(
                 "session-1",
                 vec![json!({"type": "text", "text": "hi"})],
+                None,
                 1024,
                 Duration::from_secs(2),
                 zh(),
@@ -537,6 +544,7 @@ async fn oversized_agent_line_disconnects_and_fails_the_pending_prompt() {
                 client.prompt(
                     "session-1",
                     vec![json!({"type": "text", "text": "hi"})],
+                    None,
                     1024,
                     Duration::from_secs(2),
                     zh(),

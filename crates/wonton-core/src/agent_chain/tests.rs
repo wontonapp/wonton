@@ -712,8 +712,7 @@ fn ping_pong_wakes_count_toward_the_round_limit() {
     assert_eq!(h.events.lock().unwrap().len(), 1, "上限事件只出一次");
 }
 
-/// 点名不在链上的 Bot：进链、层同点名者（不加层），链上的层序保持，
-/// 下一跳查的还是最高层 + 1。
+/// 点名不在链上的 Bot：进链、层同点名者（不加层），下一跳仍按调用方会话层计算。
 #[test]
 fn the_mentioned_outsider_joins_at_the_mentioners_layer() {
     let h = harness();
@@ -746,11 +745,11 @@ fn the_mentioned_outsider_joins_at_the_mentioners_layer() {
     let row = h.chains.row(&chain).unwrap();
     let layers: Vec<u32> = row.bots.iter().map(|entry| entry.layer).collect();
     assert_eq!(layers, vec![1, 2, 2], "层序保持，同层排在一起");
-    // 下一跳：最高层是 2，再来一个是第 3 层，不是列末位 + 1。
+    // A's next child is layer 2, independent of the deeper B/C branch.
     let d = bot("app", "dave");
     assert_eq!(
         h.chains.preview_attach(&chain, &d, Some(&a)).expect("预检"),
-        3
+        2
     );
 }
 

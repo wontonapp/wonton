@@ -3,13 +3,14 @@
 //! （计轮）、停链时向提供方注入 `session/cancel`（能力表的转发约束见 plugin/capabilities.rs 开头）。
 //!
 //! 建连顺序：认使用方（插件网络来源）→ 读使用方自报的发起 Bot（ADR-0053）→ 找提供方（Bot 作路由键）
-//! → 定目标 Bot → 采纳说话人 → 核对目标 Bot 听人 → 提供方令牌 → 并发名额 → 连提供方 → 开链
-//! （一条连接一条新链，ADR-0061 第 10 节）→ 回 101 开转发。任何一步不过都回 HTTP 错误，不转给运行时。
+//! → 定目标 Bot → 采纳说话人 → 核对目标 Bot 听人 → 提供方令牌 → 并发名额 → 预发链 → 连提供方
+//! → 回 101 开转发。每个 session/new 再按载体核对归链；使用方的 depth 不直接透传。
 
 mod concurrency;
 mod frames;
 mod headers;
 mod identity;
+mod sessions;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,7 +46,7 @@ type ProviderStream = WebSocketStream<TokioIo<hyper::upgrade::Upgraded>>;
 
 pub use concurrency::Registry;
 
-/// 停链的取消方（第 3 块接上的接口）：注册表按连接键找到活连接，发 `session/cancel`。
+/// 停链的取消方：注册表按账本会话键找到活连接，发 `session/cancel`。
 impl super::agent_chains::AgentAcpCancel for Registry {
     fn cancel(&self, session: &str) {
         self.cancel(session);
@@ -54,13 +55,11 @@ impl super::agent_chains::AgentAcpCancel for Registry {
 
 /// 建连检查都过后的上下文：转发要用的全部事实。
 struct Prepared {
-    chains: Arc<AgentChains>,
-    /// 账本里的会话键（就是这条连接）：prompt 计轮、停链取消都按它。
-    connection: String,
+    sessions: sessions::Sessions,
     endpoint: Endpoint,
     provider: ProviderStream,
     registration: concurrency::Registration,
-    cancel_rx: mpsc::UnboundedReceiver<()>,
+    cancel_rx: mpsc::UnboundedReceiver<String>,
 }
 
 pub(super) async fn request(gateway: &Gateway, mut req: Request) -> Response {
@@ -137,39 +136,49 @@ async fn prepare(
             registry.register(consumer.as_str(), &connection, cancel_tx, concurrency)
         })
         .ok_or_else(|| busy(langs))?;
-    // 先连提供方再开链：连不上就没有链，账本里不剩半条。
+    let grant = chains
+        .ledger()
+        .open_acp_connection(
+            &user,
+            ConfirmationOrigin {
+                room_id: String::new(),
+                thread_id: None,
+            },
+            target.clone(),
+            &connection,
+        )
+        .map_err(super::agent_chains::ledger_error)?;
+    let sessions = sessions::Sessions::new(
+        chains.ledger().clone(),
+        connection.clone(),
+        consumer.to_string(),
+        initiator,
+    );
     let host = req.headers().get(HOST).cloned();
-    let provider = dial(
+    let provider = match dial(
         gateway,
         host,
         &route.endpoint,
         consumer,
         &user,
         &target,
-        &connection,
+        &grant.chain,
         limits,
         &token,
         langs,
     )
-    .await?;
-    // 一条连接一条新链（负责人决定）：链代表的人是核心采纳的说话人，目标 Bot 是第 1 层。
-    // 连接本身登记成账本里的会话：prompt 计轮、停链取消都按它来。
-    let grant = chains
-        .ledger()
-        .open_acp_chain(
-            &user,
-            ConfirmationOrigin {
-                room_id: String::new(),
-                thread_id: None,
-            },
-            target,
-            &connection,
-        )
-        .map_err(super::agent_chains::ledger_error)?;
+    .await
+    {
+        Ok(provider) => provider,
+        Err(error) => {
+            drop(sessions);
+            let _ = chains.ledger().end_chain(&grant.chain);
+            return Err(error);
+        }
+    };
     tracing::info!(chain = %grant.chain, "agent_acp 连接开了一条新链");
     Ok(Prepared {
-        chains,
-        connection,
+        sessions,
         endpoint: route.endpoint,
         provider,
         registration,
@@ -180,11 +189,10 @@ async fn prepare(
 /// 转发泵：使用方的升级完成后，两条流逐帧对接直到任一侧结束。
 async fn pump(
     Prepared {
-        chains,
-        connection,
+        mut sessions,
         endpoint,
         provider,
-        registration,
+        mut registration,
         mut cancel_rx,
     }: Prepared,
     on_upgrade: hyper::upgrade::OnUpgrade,
@@ -201,14 +209,13 @@ async fn pump(
     };
     let (mut consumer_tx, mut consumer_rx) = consumer_ws.split();
     let (mut provider_tx, mut provider_rx) = provider.split();
-    let mut sessions: Vec<String> = Vec::new();
     let mut cancel_open = true;
     loop {
         tokio::select! {
             signal = cancel_rx.recv(), if cancel_open => match signal {
                 // 停链（ADR-0061 第 10 节）：对每个活着的会话发取消；未决请求由双方按 ACP 自己回 cancelled。
-                Some(()) => {
-                    for session in &sessions {
+                Some(key) => {
+                    for session in sessions.cancelling(&key) {
                         if provider_tx
                             .send(Message::text(frames::cancel_notification(session)))
                             .await
@@ -225,8 +232,8 @@ async fn pump(
                     if !forward_consumer(
                         &mut consumer_tx,
                         &mut provider_tx,
-                        &chains,
-                        &connection,
+                        &mut sessions,
+                        &mut registration,
                         message,
                     )
                     .await
@@ -242,7 +249,7 @@ async fn pump(
             },
             frame = provider_rx.next() => match frame {
                 Some(Ok(message)) => {
-                    if !forward_provider(&mut consumer_tx, &mut sessions, message).await {
+                    if !forward_provider(&mut consumer_tx, &mut provider_tx, &mut sessions, message).await {
                         break;
                     }
                 }
@@ -254,36 +261,49 @@ async fn pump(
             },
         }
     }
-    chains.ledger().end_session(&connection);
     drop(registration);
 }
 
-/// 使用方 → 提供方：`session/prompt` 先过链账本（计轮；超了或停了直接回错误，不转发），
-/// 其余帧原样转发。返回 false 表示连接到头了。
+/// 使用方 → 提供方：建会话先核对并注入链载体，prompt 按会话记轮；拒绝不转给提供方。
 async fn forward_consumer(
     consumer_tx: &mut (impl futures_util::Sink<Message, Error = tokio_websockets::Error> + Unpin),
     provider_tx: &mut (impl futures_util::Sink<Message, Error = tokio_websockets::Error> + Unpin),
-    chains: &Arc<AgentChains>,
-    connection: &str,
+    sessions: &mut sessions::Sessions,
+    registration: &mut concurrency::Registration,
     message: Message,
 ) -> bool {
     if message.is_text() {
-        let frame = message.as_text().and_then(frames::parse);
-        if frame.is_none() {
+        let Some(mut frame) = message.as_text().and_then(frames::parse) else {
             tracing::warn!("agent_acp 收到不是 JSON-RPC 的文本帧，断开");
             return false;
-        }
-        if frame.as_ref().and_then(|f| f.method.as_deref()) == Some("session/prompt")
-            && let Err(error) = chains.ledger().begin_round(connection)
-        {
-            tracing::info!(%error, "agent_acp 的 session/prompt 没有放行");
-            // 拒绝回给使用方（JSON-RPC 的响应属于发起连接的一侧），不转给提供方。
-            let id = frame.and_then(|f| f.id).unwrap_or(serde_json::Value::Null);
-            return consumer_tx
-                .send(Message::text(frames::error_reply(&id, &error)))
-                .await
-                .is_ok();
-        }
+        };
+        let is_new = frame["method"] == "session/new";
+        let checked = if is_new {
+            sessions
+                .prepare_new(&mut frame, registration)
+                .map(|()| true)
+        } else if frame["method"] == "session/load" {
+            sessions.prepare_load(&frame, registration).map(|()| false)
+        } else if frame["method"] == "session/prompt" {
+            sessions.prepare_prompt(&mut frame)
+        } else {
+            Ok(false)
+        };
+        let rewritten = match checked {
+            Ok(rewritten) => rewritten,
+            Err(error) => {
+                let id = frame.get("id").unwrap_or(&serde_json::Value::Null);
+                return consumer_tx
+                    .send(Message::text(frames::error_reply(id, &error)))
+                    .await
+                    .is_ok();
+            }
+        };
+        let message = if rewritten {
+            Message::text(frame.to_string())
+        } else {
+            message
+        };
         return provider_tx.send(message).await.is_ok();
     }
     if message.is_close() {
@@ -297,14 +317,19 @@ async fn forward_consumer(
 /// 提供方 → 使用方：原样转发，顺手记下会话 ID（停链时逐个取消）。
 async fn forward_provider(
     consumer: &mut (impl futures_util::Sink<Message, Error = tokio_websockets::Error> + Unpin),
-    sessions: &mut Vec<String>,
+    provider: &mut (impl futures_util::Sink<Message, Error = tokio_websockets::Error> + Unpin),
+    sessions: &mut sessions::Sessions,
     message: Message,
 ) -> bool {
     if message.is_text() {
         if let Some(frame) = message.as_text().and_then(frames::parse)
-            && let Some(session) = frame.session_id
+            && let Some(session) = sessions.observe_response(&frame)
+            && provider
+                .send(Message::text(frames::cancel_notification(&session)))
+                .await
+                .is_err()
         {
-            sessions.push(session);
+            return false;
         }
         return consumer.send(message).await.is_ok();
     }
