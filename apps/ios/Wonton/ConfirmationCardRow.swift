@@ -42,7 +42,6 @@ struct ConfirmationCardRow: View {
     }
 }
 
-
 /// 收起的卡片行：发起者头像、标题和一行次要信息，右侧箭头指示能不能展开。
 struct ConfirmationCardHeader: View {
     let title: String

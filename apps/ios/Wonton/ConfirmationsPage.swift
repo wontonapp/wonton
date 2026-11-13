@@ -17,8 +17,11 @@ struct ConfirmationsPage: View {
             stopWindow: { chat.send(.stopConfirmationWindow(id: $0.card.id)) },
             retry: { chat.send(.retryConfirmations) },
             approveContact: { request in
-                if request.contact.remote == nil { model.act(on: request, approve: true, chat: chat) }
-                else { approvingRemote = request }
+                if request.contact.remote == nil {
+                    model.act(on: request, approve: true, chat: chat)
+                } else {
+                    approvingRemote = request
+                }
             },
             rejectContact: { model.act(on: $0, approve: false, chat: chat) },
             contactFailure: model.contactFailure, contactBusy: model.contactBusy
@@ -26,7 +29,11 @@ struct ConfirmationsPage: View {
         .task { await model.observe() }
         .task { await model.observeContacts() }
         .wontonDialog(
-            String(localized: .Contacts1.contactsApproveRemoteTitle(approvingRemote.map { contactName($0.contact) } ?? "")),
+            String(
+                localized: .Contacts1.contactsApproveRemoteTitle(
+                    approvingRemote.map { contactName($0.contact) } ?? ""
+                )
+            ),
             message: String(localized: .Contacts1.contactsApproveRemoteMessage),
             isPresented: Binding(get: { approvingRemote != nil }, set: { if !$0 { approvingRemote = nil } }),
             actions: [
