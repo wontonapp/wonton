@@ -15,6 +15,7 @@ mod refused;
 mod routing;
 mod run_status;
 mod sessions;
+mod side_chats;
 mod tasks;
 mod turns;
 mod updates;
@@ -246,6 +247,8 @@ struct RoomState {
     waiters: Vec<ApprovalWaiter>,
     /// 主对话最近的文字消息（事件 ID 和原文），拼话题开局时取话题起点和前文。
     history: VecDeque<(String, String)>,
+    /// 看过的旁聊根消息标题（ADR-0093 §1），话题第一轮取名字用。
+    side_chats: side_chats::Titles,
     last_activity: Instant,
     /// 被网关拒收的自己的消息。
     refused: refused::Refused,
@@ -525,6 +528,7 @@ async fn fresh_state<R: Room>(bridge: &Bridge, room: &R, owner: OwnedUserId) -> 
         run_status: open_run_status(bridge, room).await,
         waiters: Vec::new(),
         history: VecDeque::new(),
+        side_chats: side_chats::Titles::default(),
         last_activity: Instant::now(),
         refused: refused::Refused::default(),
         last_sweep: Instant::now(),
@@ -542,6 +546,9 @@ async fn run_room<R: Room>(
     let bot = bridge.bot.clone();
     let mut commands = Commands::new();
     let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
+    // 桥照 ADR-0093 实现了话题分会话和结果行，在这里声明支持；state_key 是 Bot 自己的
+    // Matrix ID。发不出去就退出重连，不留一个没声明、卡片全按 Untracked 显示的桥。
+    side_chats::declare(room.as_ref(), &bot).await?;
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();

@@ -39,25 +39,42 @@ async fn topic_message_opens_its_own_session_and_answers_in_the_thread() {
     wait_until(|| !harness.room.thread_texts("$root").is_empty()).await;
     assert!(harness.room.thread_texts("$root")[0].contains("照片按年月分好了"));
 
-    // 主对话里留一条不推送的提示。
+    // 主对话里留一条不推送的结果行（ADR-0093）：结构化字段带话题根，App 点开进旁聊。
     wait_until(|| {
         harness
             .room
             .effects()
             .iter()
-            .any(|effect| matches!(effect, Effect::Notice(_)))
+            .any(|effect| matches!(effect, Effect::SideChatResult { .. }))
     })
     .await;
-    let notice = harness
+    let line = harness
         .room
         .effects()
         .into_iter()
         .find_map(|effect| match effect {
-            Effect::Notice(text) => Some(text),
+            Effect::SideChatResult { content } => Some(content),
             _ => None,
         })
         .unwrap();
-    assert!(notice.contains("话题「开始吧」：已完成"), "notice={notice}");
+    // 话题的名字按根消息正文取（ADR-0093 §1），不是话题里的第一句
+    assert_eq!(line["msgtype"], "m.notice");
+    assert_eq!(line["app.wonton.side_chat_result"]["root"], "$root");
+    assert_eq!(line["app.wonton.side_chat_result"]["title"], "整理照片目录");
+    assert_eq!(line["app.wonton.side_chat_result"]["state"], "done");
+    assert_eq!(line["app.wonton.side_chat_result"]["v"], 1);
+    assert_eq!(
+        line["m.relates_to"]["m.in_reply_to"]["event_id"],
+        serde_json::json!("$root")
+    );
+    assert!(
+        line["body"]
+            .as_str()
+            .unwrap()
+            .contains("旁聊「整理照片目录」：已完成"),
+        "body={}",
+        line["body"]
+    );
     harness.finish().await;
 }
 

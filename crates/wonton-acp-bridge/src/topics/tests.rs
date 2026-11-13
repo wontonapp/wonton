@@ -170,7 +170,7 @@ async fn second_edit_of_same_file_reports_conflict_to_both_sides() {
 }
 
 #[tokio::test]
-async fn topic_turn_finished_notifies_main_and_reaches_other_digests() {
+async fn topic_turn_finished_returns_title_and_reaches_other_digests() {
     let dir = tempfile::tempdir().unwrap();
     let mut topics = Topics::open(dir.path().join("topics.json"), at(0))
         .await
@@ -211,7 +211,7 @@ async fn topic_turn_finished_notifies_main_and_reaches_other_digests() {
         .await
         .unwrap();
 
-    let notice = topics
+    let title = topics
         .turn_finished(
             &t,
             "整理好了 120 张照片\n排除了重复项\n生成了索引\n（完）",
@@ -221,9 +221,8 @@ async fn topic_turn_finished_notifies_main_and_reaches_other_digests() {
         .await
         .unwrap()
         .unwrap();
-    // notice 的关键字段：话题名、文件数
-    assert!(notice.contains("「整理照片目录」"));
-    assert!(notice.contains("3 个文件"));
+    // 话题返回主对话里结果行（ADR-0093）要用的标题；文件数那些细节由桥拼进正文
+    assert_eq!(title, "整理照片目录");
 
     // 主对话下一轮的动态里有它
     let digest = topics.digest_for(&main, zh()).unwrap();
@@ -498,14 +497,13 @@ async fn execute_is_noted_on_board_but_claims_no_files() {
         .tool_call(&t, &execute_update("ls -la"), at(1), zh())
         .await
         .unwrap();
-    // 不记文件：notice 里没有文件数
-    let notice = topics
+    // 不记文件：结果行要用的标题就是话题名，文件数那些细节由桥拼进正文
+    let title = topics
         .turn_finished(&t, "跑完了", at(2), zh())
         .await
         .unwrap()
         .unwrap();
-    assert!(notice.contains("「跑个命令」"));
-    assert!(!notice.contains("个文件"));
+    assert_eq!(title, "跑个命令");
     // 工作板上有一笔，下一个开新轮的会话（这里还没有行，从工作板开头看起）能看到
     let other = topic("other");
     let digest = topics.digest_for(&other, zh()).unwrap();
@@ -589,13 +587,13 @@ async fn topic_name_takes_first_twenty_characters() {
         .turn_started(&t, prompt, "t", "@owner:example.org", None, at(0), zh())
         .await
         .unwrap();
-    let notice = topics
+    let title = topics
         .turn_finished(&t, "done", at(1), zh())
         .await
         .unwrap()
         .unwrap();
     let expected: String = prompt.chars().take(20).collect();
-    assert!(notice.contains(&format!("话题「{expected}」：已完成")));
+    assert_eq!(title, expected);
 }
 
 #[tokio::test]
@@ -752,10 +750,10 @@ async fn ended_topic_reopens_on_new_message() {
             .unwrap(),
         TurnStart::Started
     );
-    let notice = topics
+    let title = topics
         .turn_finished(&t, "又做完了", at(4), zh())
         .await
         .unwrap()
         .unwrap();
-    assert!(notice.contains("「第一件事」"));
+    assert_eq!(title, "第一件事");
 }

@@ -12,6 +12,7 @@ mod mode;
 mod refused;
 mod restore;
 mod run_status;
+mod side_chats;
 mod tasks;
 mod topics;
 mod undecryptable;

@@ -196,7 +196,7 @@ fn preview(message: &Incoming) -> String {
     let first = match &message.content {
         IncomingContent::Text(text) => text.lines().next().unwrap_or(""),
         IncomingContent::Media(media) => &media.filename,
-        IncomingContent::Unsupported { .. } => "",
+        IncomingContent::Unsupported { .. } | IncomingContent::SideChatRoot { .. } => "",
     };
     let mut preview: String = first.chars().take(PREVIEW_MAX).collect();
     if first.chars().count() > PREVIEW_MAX {
