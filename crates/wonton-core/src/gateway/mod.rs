@@ -76,6 +76,7 @@ mod push;
 mod pushers;
 mod registry_mirror;
 mod request_guards;
+mod roles;
 mod room_rules;
 pub(crate) mod send_limits;
 pub mod sharing;
@@ -198,7 +199,7 @@ pub struct Gateway {
     pub tusd: Option<String>,
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
-    friends: Option<Arc<Friends>>,
+    pub(crate) friends: Option<Arc<Friends>>,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -501,7 +502,6 @@ impl Gateway {
                 permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
-                can_install_plugins: true,
             })
         } else {
             let record = self
@@ -529,7 +529,6 @@ impl Gateway {
                 role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
-                can_install_plugins: record.can_install_plugins,
             })
         }
     }

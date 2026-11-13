@@ -215,6 +215,11 @@ impl Friends {
         })
     }
 
+    /// 好友名单里给他换一个角色（`roles.json` 的 ID）。角色在不在由调用方先查。
+    pub fn set_role(&self, user_id: &str, role_id: &str) -> Result<FriendRecord, FriendsError> {
+        self.update(user_id, |friend| friend.role_id = role_id.to_owned())
+    }
+
     pub fn update_display_name(
         &self,
         user_id: &str,
