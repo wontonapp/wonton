@@ -421,6 +421,7 @@ impl PluginManager {
             installed_at: old.record.installed_at,
             entry_label: old.record.entry_label.clone(),
             clients_entries: old.record.clients_entries,
+            setup_done_ever: old.record.setup_done_ever,
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
@@ -446,7 +447,7 @@ impl PluginManager {
             mcp,
             firewalled,
             hosted: self.hosted_upstreams(manifest, &network).await?,
-            clients: self.clients_upstream(manifest, &network).await?,
+            clients: self.clients_upstream(manifest, &plan).await?,
         })
     }
 

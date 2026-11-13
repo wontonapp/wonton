@@ -54,6 +54,10 @@ gateway-entry-closed = この入口は開いていません。オーナーがWon
 gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
 gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
 gateway-entry-auth-unsupported = このアプリはまだ、Wontonが発行したパスワードでのログインに対応していません
+gateway-entry-state-unavailable = このアプリの入口設定を読み取れません。オーナーがWontonで確認してください
+gateway-entry-setup-closed = アプリ{ $id }に管理者アカウントがなくなりました（データが初期化または復元された可能性があります）。第三者に登録されるのを防ぐため、入口を自動的に閉じました。アプリの準備ができたらWontonアプリで再度開いてください。
+gateway-entry-setup-timeout = アプリの初回登録状態の確認がタイムアウトしました
+gateway-entry-target-unavailable = アプリの入口は、専用ネットワーク内でアプリ全体が共有する一つのサービスを指定してください
 
 # SSOの引き渡しとOIDCログイン、承認確認。
 gateway-sso-invalid-next = リダイレクト先のアドレスが不正です

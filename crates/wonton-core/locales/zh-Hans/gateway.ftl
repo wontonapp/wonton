@@ -54,6 +54,10 @@ gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用�
 gateway-entry-public-denied = 公网地址上访问不了这个路径
 gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
 gateway-entry-auth-unsupported = 这个应用还不支持用云吞发的密码登录
+gateway-entry-state-unavailable = 读不到这个应用的入口设置，请主人在云吞里检查
+gateway-entry-setup-closed = 应用 { $id } 里已经没有管理员账号（数据可能被清空或恢复过）。为防止有人抢注管理员，它的入口已自动关闭；确认应用就绪后在云吞应用里重新打开。
+gateway-entry-setup-timeout = 检查应用首次注册状态超时
+gateway-entry-target-unavailable = 应用入口必须指向本应用网络中全应用共用的唯一服务
 
 # SSO 交接和 OIDC 登录、授权确认。
 gateway-sso-invalid-next = 跳转地址不合法

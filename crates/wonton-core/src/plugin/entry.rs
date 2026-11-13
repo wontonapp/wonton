@@ -94,8 +94,8 @@ pub(super) struct Entry {
     pub(super) hosted: BTreeMap<String, Endpoint>,
     /// 声明了 `clients.http` 时的转发地址（ADR-0021）；部署或核对时解析，没解析出来时为空。
     pub(super) clients: Option<super::manager::ClientsRoute>,
-    /// `setup_done` 查到完成的缓存（ADR-0022）；查到之前每次现查，重新部署时清掉。
-    pub(super) setup_done: Option<bool>,
+    /// 随部署表项隔离，完成结果还必须匹配 Docker 的容器和启动代次。
+    pub(super) setup: Arc<super::clients_setup::SetupState>,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -150,8 +150,7 @@ impl Entry {
             follows_containers: false,
             hosted: BTreeMap::new(),
             clients: None,
-            // `setup_done` 的缓存（ADR-0022）：查到完成才记，插件重新部署时随整个 Entry 一起清掉。
-            setup_done: None,
+            setup: Arc::default(),
         }
     }
 
@@ -215,7 +214,7 @@ impl Entry {
             follows_containers: false,
             hosted: BTreeMap::new(),
             clients: None,
-            setup_done: None,
+            setup: Arc::default(),
         }
     }
 

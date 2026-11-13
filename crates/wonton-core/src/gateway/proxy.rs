@@ -68,7 +68,7 @@ pub(crate) enum Cancel {
 }
 
 impl Cancel {
-    async fn cancelled(&self) {
+    pub(super) async fn cancelled(&self) {
         match self {
             Self::Share(guard) => guard.cancelled().await,
             Self::Entry(receiver) => {

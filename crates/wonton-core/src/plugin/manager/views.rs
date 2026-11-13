@@ -97,6 +97,12 @@ fn clients_route(manifest: Option<&Manifest>, entry: &Entry) -> Option<ClientsRo
             .clients
             .as_ref()
             .filter(|resolved| resolved.http == http)
+            .filter(|_| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                ) && entry.serving.contains(&http.service)
+            })
             .and_then(|resolved| resolved.upstream.clone()),
         http,
     })

@@ -54,6 +54,10 @@ gateway-entry-closed = 這個入口沒有開啟，主人可以在 Wonton 應用�
 gateway-entry-public-denied = 公網位址上存取不了這個路徑
 gateway-entry-setup-pending = 請先在這個應用程式的網頁上完成首次註冊，然後再試
 gateway-entry-auth-unsupported = 這個應用程式還不支援用雲吞發的密碼登入
+gateway-entry-state-unavailable = 讀不到這個應用程式的入口設定，請擁有者在雲吞裡檢查
+gateway-entry-setup-closed = 應用程式 { $id } 裡已經沒有管理員帳號（資料可能被清空或還原過）。為防止有人搶註管理員，它的入口已自動關閉；確認應用程式就緒後在雲吞應用程式裡重新開啟。
+gateway-entry-setup-timeout = 檢查應用程式首次註冊狀態逾時
+gateway-entry-target-unavailable = 應用程式入口必須指向本應用程式網路中全應用程式共用的唯一服務
 
 # SSO 交接和 OIDC 登入、授權確認。
 gateway-sso-invalid-next = 跳轉位址不合法

@@ -85,7 +85,7 @@ pub(super) async fn dispatch(
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
     // 访客链接（C18）还没来；这个前缀是核心的，不问开关、不转发，也不借它探测标签和开关。
-    if req.uri().path().starts_with("/_wonton/") {
+    if path_rules::is_reserved_path(req.uri().path()) {
         return pages::error(
             StatusCode::NOT_FOUND,
             "not_found",
@@ -94,8 +94,10 @@ pub(super) async fn dispatch(
             format,
         );
     }
-    let Some(resolved) = gateway.clients.resolve(&label) else {
-        return misdirected();
+    let resolved = match gateway.clients.resolve(&label, kind) {
+        Ok(Some(resolved)) => resolved,
+        Ok(None) => return misdirected(),
+        Err(_) => return entry_unavailable(&langs, format),
     };
     // 入口容器的标记：恰好一个，取值和主机名的形式对得上。放在标签解析之后：不是插件的名字先按
     // 421 拒（和联邦用例对非服务器名的断言一致），是插件的名字才看标记。
@@ -125,28 +127,33 @@ pub(super) async fn dispatch(
         return misdirected();
     };
     let Some(upstream) = &clients.upstream else {
-        let detail = pages::state_of(&route.status, &langs);
-        return pages::error_with_detail(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "not_ready",
-            &l10n::text(
-                &langs,
-                "gateway-app-not-ready",
-                &[("id", route.id.as_str().into())],
-            ),
-            Some(&detail),
-            &langs,
-            format,
-        );
+        return plugin_unavailable(&route, &langs, format);
     };
     // 路径按值存：原始路径一路转发，命中 auth_failures 时还要拿它比对。
     let path = req.uri().path().to_owned();
+    // 点段在两种入口都拒（ADR-0021「路径怎么匹配」对声明了 public/auth_failures 的入口一致收紧，
+    // 局域网的失败计数同样不能被点段绕过）；`public.allow/deny` 仍只限制公网。
+    if path_rules::check_dot_segments(&path).is_err() {
+        return pages::error(
+            StatusCode::BAD_REQUEST,
+            "invalid_input",
+            &l10n::text(&langs, "gateway-invalid-path", &[]),
+            &langs,
+            format,
+        );
+    }
     if kind == Kind::Public
         && let Some(response) = public_rules_reject(clients, &path, &langs, format)
     {
         return response;
     }
-    if let Some(response) = auth_reject(gateway, &route, clients, &langs, format).await {
+    let cancel = proxy::Cancel::Entry(resolved.revoked);
+    let rejected = tokio::select! {
+        biased;
+        _ = cancel.cancelled() => return entry_closed(&langs, format),
+        response = auth_reject(gateway, &route, clients, &langs, format) => response,
+    };
+    if let Some(response) = rejected {
         return response;
     }
 
@@ -160,8 +167,7 @@ pub(super) async fn dispatch(
         .and_then(|value| value.parse::<IpAddr>().ok())
         .map(|ip| SocketAddr::new(ip, 0));
     // 关开关断的是这个入口已有的连接：守卫从这进转发层，已升级的连接立即断。
-    req.extensions_mut()
-        .insert(proxy::Cancel::Entry(gateway.clients.watch(&label, kind)));
+    req.extensions_mut().insert(cancel);
     let forwarded = proxy::Forwarded {
         client,
         scheme: "https",
@@ -175,27 +181,53 @@ pub(super) async fn dispatch(
             Ok(response) => response,
             Err(error) => return error.response(route.id.as_str(), &langs, format),
         };
+    super::isolation::sanitize_set_cookies(response.headers_mut());
     mark_auth_failure(&mut response, clients, &path);
     response
 }
 
-/// 公网入口的路径规则（局域网入口不受 ADR-0021 的 `public` 限制）：点段一律 400，
-/// `public.deny`/`allow` 之外的路径 403。转发给插件的始终是原始路径。
+fn entry_closed(langs: &Languages, format: pages::Format) -> Response {
+    pages::error(
+        StatusCode::FORBIDDEN,
+        "entry_closed",
+        &l10n::text(langs, "gateway-entry-closed", &[]),
+        langs,
+        format,
+    )
+}
+
+fn entry_unavailable(langs: &Languages, format: pages::Format) -> Response {
+    pages::error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "plugin_unavailable",
+        &l10n::text(langs, "gateway-entry-state-unavailable", &[]),
+        langs,
+        format,
+    )
+}
+
+fn plugin_unavailable(route: &Route, langs: &Languages, format: pages::Format) -> Response {
+    pages::error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "plugin_unavailable",
+        &l10n::text(
+            langs,
+            "gateway-app-not-ready",
+            &[("id", route.id.as_str().into())],
+        ),
+        langs,
+        format,
+    )
+}
+
+/// 公网入口的 `public.allow`/`deny`（局域网入口不受 ADR-0021 的 `public` 限制；点段的检查对
+/// 两种入口都在 [`dispatch`] 里执行）。转发给插件的始终是原始路径。
 fn public_rules_reject(
     clients: &crate::plugin::manager::ClientsRoute,
     path: &str,
     langs: &Languages,
     format: pages::Format,
 ) -> Option<Response> {
-    if path_rules::check_dot_segments(path).is_err() {
-        return Some(pages::error(
-            StatusCode::BAD_REQUEST,
-            "invalid_input",
-            &l10n::text(langs, "gateway-invalid-path", &[]),
-            langs,
-            format,
-        ));
-    }
     let rules =
         clients
             .http
@@ -244,17 +276,18 @@ async fn auth_reject(
         // C17：核心发的专用密码。
         return unsupported();
     }
-    let Some(app) = &clients.http.auth.app else {
+    if clients.http.auth.app.is_none() {
         // 清单校验保证三种恰好一种；都缺的清单到不了运行时，这里不兜底。
         return unsupported();
-    };
+    }
     use crate::plugin::clients_entry::SetupCheck;
     match gateway
         .plugins
-        .clients_setup_done(&route.id, &clients.http.service, &app.setup_done)
+        .clients_setup_done(&route.id, clients, gateway.notices.as_ref())
         .await
     {
         SetupCheck::Done => None,
+        SetupCheck::Unavailable => Some(plugin_unavailable(route, langs, format)),
         SetupCheck::Pending => Some(pages::error(
             StatusCode::CONFLICT,
             "setup_pending",
@@ -262,18 +295,13 @@ async fn auth_reject(
             langs,
             format,
         )),
-        SetupCheck::Undetermined(stderr) => Some(pages::error_with_detail(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "plugin_unavailable",
-            &l10n::text(
-                langs,
-                "gateway-app-not-ready",
-                &[("id", route.id.as_str().into())],
-            ),
-            Some(&stderr),
-            langs,
-            format,
-        )),
+        SetupCheck::Undetermined(stderr) => {
+            // 匿名访客只看到通用类别；执行错误（stderr、Docker 错误）写服务器日志（review
+            // P0-4：入口的执行错误不能离开已鉴权的管理面）。主人管理接口还没有读它的视图，
+            // 日志是目前的完整来源，PR 里写明。
+            tracing::error!(plugin = %route.id, "{stderr}");
+            Some(plugin_unavailable(route, langs, format))
+        }
     }
 }
 

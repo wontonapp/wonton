@@ -1,17 +1,16 @@
-//! 客户端入口的开关状态（ADR-0021）：开关存插件记录（照 `lan_webui` 的存法），标签就是记录里的
-//! `entry_label`。这里按入口转发的节奏读：标签 → 插件记录，缓存到插件表的下一次变化为止。
-//! 关开关的接口在 C7；它改完记录后照例唤醒插件表（`PluginManager::changed`），监视任务据此把
-//! 这个入口的 watch 置位，正在转发的连接（含已升级的 WebSocket）立即断。
+//! 客户端入口的记录快照和不可恢复的连接撤销（ADR-0021）。
+//!
+//! `PluginManager::changed` 同步刷新快照：一次关闭立即撤销旧守卫，之后重开创建新守卫，
+//! 不依赖可能合并多次变化的异步通知。请求准入同时取得标签、开关和守卫，不在热路径读盘。
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use crate::plugin::PluginId;
-use crate::plugin::PluginManager;
+use crate::plugin::store::Store;
 
 /// 插件入口的开关（ADR-0021）：局域网入口、公网入口，默认全关。存插件记录。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,135 +47,138 @@ impl Kind {
     }
 }
 
-/// 按标签解析出的一个插件入口。
+/// 同一快照里的目标、开关与连接守卫；关闭后守卫永远保持撤销。
 pub(crate) struct Resolved {
     pub id: PluginId,
     pub switches: ClientsEntries,
+    pub revoked: watch::Receiver<bool>,
 }
 
-struct LabelMap {
-    generation: u64,
-    by_label: BTreeMap<String, (PluginId, ClientsEntries)>,
+struct Binding {
+    id: PluginId,
+    switches: ClientsEntries,
+    guards: [watch::Sender<bool>; 2],
 }
 
-/// 客户端入口的状态：标签解析缓存和每个入口的连接守卫。挂在网关上，生命周期同网关。
+type Labels = BTreeMap<String, Option<Binding>>;
+
+/// 记录无法确定或标签冲突，不能冒充「没有这个标签」。详情只记服务器日志。
+#[derive(Debug)]
+pub(crate) struct Unavailable;
+
 pub(crate) struct State {
-    manager: Arc<PluginManager>,
-    changes: watch::Receiver<u64>,
-    labels: Mutex<LabelMap>,
-    watches: Mutex<BTreeMap<(String, Kind), watch::Sender<bool>>>,
-    /// 监视任务只起一次：第一次有连接要守卫时才需要它。
-    monitor: AtomicBool,
+    labels: Mutex<Result<Labels, Unavailable>>,
 }
 
 impl State {
-    pub(crate) fn new(manager: Arc<PluginManager>) -> Self {
-        let changes = manager.changes();
-        Self {
-            manager,
-            changes,
-            labels: Mutex::new(LabelMap {
-                generation: 0,
-                by_label: BTreeMap::new(),
-            }),
-            watches: Mutex::new(BTreeMap::new()),
-            monitor: AtomicBool::new(false),
-        }
-    }
-
-    /// 标签 → 插件和它的开关。缓存到插件表的下一次变化为止：装、卸、升级、开关都会唤醒插件表。
-    pub(crate) fn resolve(&self, label: &str) -> Option<Resolved> {
-        let generation = *self.changes.borrow();
-        {
-            let labels = self.labels.lock().expect("标签缓存锁中毒");
-            if labels.generation == generation
-                && let Some((id, switches)) = labels.by_label.get(label)
-            {
-                return Some(Resolved {
-                    id: id.clone(),
-                    switches: *switches,
-                });
-            }
-        }
-        let mut by_label = BTreeMap::new();
-        if let Ok(files) = self.manager.store().load_all() {
-            for file in files {
-                let Ok(record) = file.record else {
-                    continue;
-                };
-                let Some(label) = record.entry_label else {
-                    continue;
-                };
-                if by_label
-                    .insert(label.clone(), (file.id, record.clients_entries))
-                    .is_some()
-                {
-                    // 安装时会避开重名（entry_haproxy::labels），撞上了说明记录被外部改过：后一个不动开关，
-                    // 提醒排查，不猜谁是真身。
-                    tracing::warn!(%label, "两个插件记录用了同一个入口标签，开关以后者为准前存疑");
-                }
-            }
-        }
-        let resolved = by_label.get(label).map(|(id, switches)| Resolved {
-            id: id.clone(),
-            switches: *switches,
-        });
-        *self.labels.lock().expect("标签缓存锁中毒") = LabelMap {
-            generation,
-            by_label,
+    pub(crate) fn new(store: &Store) -> Self {
+        let state = Self {
+            labels: Mutex::new(Ok(BTreeMap::new())),
         };
-        resolved
+        state.refresh(store);
+        state
     }
 
-    /// 这个入口的连接守卫：开关关闭（或插件没了）时置位。每个插件、每个入口一个 watch，照
-    /// `gateway/sharing/guard.rs` 的守卫；转发层收到置位就断，已升级的连接立即断。
-    pub(crate) fn watch(self: &Arc<Self>, label: &str, kind: Kind) -> watch::Receiver<bool> {
-        self.ensure_monitor();
-        let key = (label.to_owned(), kind);
-        let mut watches = self.watches.lock().expect("入口 watch 锁中毒");
-        if let Some(sender) = watches.get(&key) {
-            return sender.subscribe();
-        }
-        let (sender, _) = watch::channel(false);
-        watches.insert(key, sender.clone());
-        sender.subscribe()
+    pub(crate) fn resolve(&self, label: &str, kind: Kind) -> Result<Option<Resolved>, Unavailable> {
+        let labels = self.labels.lock().expect("入口快照锁中毒");
+        let labels = labels.as_ref().map_err(|_| Unavailable)?;
+        let Some(binding) = labels.get(label) else {
+            return Ok(None);
+        };
+        let binding = binding.as_ref().ok_or(Unavailable)?;
+        Ok(Some(Resolved {
+            id: binding.id.clone(),
+            switches: binding.switches,
+            revoked: binding.guards[guard_index(kind)].subscribe(),
+        }))
     }
 
-    /// 监视插件表：哪个入口的开关关了（或插件没了、记录读不出），把它的 watch 置位并从表里删掉，
-    /// 之后重新打开会拿到新的 watch。
-    fn ensure_monitor(self: &Arc<Self>) {
-        if self.monitor.swap(true, Ordering::SeqCst) {
-            return;
-        }
-        let state = self.clone();
-        tokio::spawn(async move {
-            let mut changes = state.manager.changes();
-            loop {
-                if changes.changed().await.is_err() {
-                    return;
-                }
-                let keys: Vec<(String, Kind)> = state
-                    .watches
-                    .lock()
-                    .expect("入口 watch 锁中毒")
-                    .keys()
-                    .cloned()
-                    .collect();
-                for (label, kind) in keys {
-                    let open = state
-                        .resolve(&label)
-                        .is_some_and(|resolved| resolved.switches.of(kind));
-                    if !open
-                        && let Some(sender) = state
-                            .watches
-                            .lock()
-                            .expect("入口 watch 锁中毒")
-                            .remove(&(label.clone(), kind))
-                    {
-                        sender.send_replace(true);
+    /// 写记录的一方必须在返回成功前调用；持锁完成刷新与撤销，关后重开不会合并掉关闭。
+    pub(crate) fn refresh(&self, store: &Store) {
+        let mut labels = self.labels.lock().expect("入口快照锁中毒");
+        let next = read_labels(store);
+        let mut previous = std::mem::replace(&mut *labels, Err(Unavailable));
+        if let (Ok(next), Ok(previous)) = (&next, &mut previous) {
+            for (label, binding) in previous.iter_mut() {
+                let Some(binding) = binding else { continue };
+                for kind in [Kind::Lan, Kind::Public] {
+                    let stays_open = next
+                        .get(label)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|next| {
+                            next.id == binding.id
+                                && next.switches.of(kind)
+                                && binding.switches.of(kind)
+                        });
+                    if !stays_open {
+                        binding.guards[guard_index(kind)].send_replace(true);
                     }
                 }
             }
+        } else if let Ok(previous) = &previous {
+            for binding in previous.values().flatten() {
+                for guard in &binding.guards {
+                    guard.send_replace(true);
+                }
+            }
+        }
+        *labels = next.map(|mut next| {
+            if let Ok(previous) = &mut previous {
+                for (label, binding) in &mut next {
+                    if let (Some(binding), Some(Some(old))) = (binding, previous.remove(label)) {
+                        for kind in [Kind::Lan, Kind::Public] {
+                            if old.id == binding.id
+                                && old.switches.of(kind)
+                                && binding.switches.of(kind)
+                            {
+                                binding.guards[guard_index(kind)] =
+                                    old.guards[guard_index(kind)].clone();
+                            }
+                        }
+                    }
+                }
+            }
+            next
         });
     }
+}
+
+fn guard_index(kind: Kind) -> usize {
+    match kind {
+        Kind::Lan => 0,
+        Kind::Public => 1,
+    }
+}
+
+fn read_labels(store: &Store) -> Result<Labels, Unavailable> {
+    let files = store.load_all().map_err(|error| {
+        tracing::error!(%error, "Cannot read client entry records");
+        Unavailable
+    })?;
+    let mut labels = BTreeMap::new();
+    for file in files {
+        let record = file.record.map_err(|error| {
+            tracing::error!(%error, "Cannot read client entry record");
+            Unavailable
+        })?;
+        let Some(label) = record.entry_label else {
+            continue;
+        };
+        let binding = Binding {
+            id: file.id,
+            switches: record.clients_entries,
+            guards: [record.clients_entries.lan, record.clients_entries.public]
+                .map(|open| watch::channel(!open).0),
+        };
+        match labels.entry(label) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(Some(binding));
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                tracing::error!(label = %entry.key(), "Conflicting client entry labels");
+                entry.insert(None);
+            }
+        }
+    }
+    Ok(labels)
 }

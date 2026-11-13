@@ -139,3 +139,90 @@ fn candidates_dedup_and_collapse() {
     assert_eq!(candidates("\\share\\\\x"), ["/share/x"]);
     assert_eq!(candidates("/"), ["/"]);
 }
+
+#[test]
+fn repeated_separator_deny_declarations_match_requests() {
+    let rules = deny(&["/API//Admin/"]);
+    for raw in ["/api/admin", "/api//admin", "/API\\admin/child"] {
+        assert!(!public_allows(&rules, raw), "{raw}");
+    }
+    for raw in ["/api/admin-extra", "/api/administrator", "/other/api/admin"] {
+        assert!(public_allows(&rules, raw), "{raw}");
+    }
+}
+
+#[test]
+fn repeated_separator_allow_declarations_match_requests() {
+    let rules = allow(&["/API//Share/"]);
+    for raw in ["/api/share", "/api//share", "/API\\share/child"] {
+        assert!(public_allows(&rules, raw), "{raw}");
+    }
+    for raw in ["/api/share-extra", "/api/share;x", "/other/api/share"] {
+        assert!(!public_allows(&rules, raw), "{raw}");
+    }
+}
+
+#[test]
+fn repeated_separator_auth_failure_declarations_match_requests() {
+    let rules = [failure("/API//Login/", &[401, 403])];
+    for raw in [
+        "/api/login",
+        "/api//login",
+        "/API\\login/child",
+        "/api/login;x",
+    ] {
+        assert!(is_auth_failure(&rules, raw, 401), "{raw}");
+        assert!(!is_auth_failure(&rules, raw, 200), "{raw}");
+    }
+    for raw in ["/api/login-extra", "/api/logins", "/other/api/login"] {
+        assert!(!is_auth_failure(&rules, raw, 403), "{raw}");
+    }
+}
+
+#[test]
+fn reserved_namespace_matches_normalized_variants() {
+    for raw in [
+        "/_wonton",
+        "/_wonton/guest/x",
+        "/_WONTON/guest/x",
+        "//_wonton//guest/x",
+        "\\_wonton\\guest\\x",
+        "/%5fwonton/guest/x",
+        "/%255fwonton/guest/x",
+        "/%2f_wonton/guest/x",
+        "/%252f_wonton/guest/x",
+        "/%5c_wonton/guest/x",
+        "/_wonton;session/guest/x",
+        "/a/../_wonton/guest/x",
+        "/a/%2e%2e/_wonton/guest/x",
+        "/a/%252e%252e/%255fwonton/guest/x",
+        "/a/..;session/_wonton",
+        "/./_wonton",
+        "/.;session/_wonton",
+        "/;session/_wonton",
+        "/a\\..\\_wonton",
+        "/../../_wonton",
+        "/_wonton/../ordinary",
+    ] {
+        assert!(is_reserved_path(raw), "{raw}");
+    }
+}
+
+#[test]
+fn reserved_namespace_keeps_ordinary_paths_usable() {
+    for raw in [
+        "/",
+        "/ordinary",
+        "/_wonton-extra",
+        "/_wontons/guest",
+        "/ordinary/_wonton/guest",
+        "/a/../ordinary",
+        "/_wonton./guest",
+        "/%25255fwonton/guest",
+        "/a/%25252e%25252e/_wonton",
+        "/%zz/../ordinary",
+        "/ordinary%3bextra/../ordinary-path",
+    ] {
+        assert!(!is_reserved_path(raw), "{raw}");
+    }
+}

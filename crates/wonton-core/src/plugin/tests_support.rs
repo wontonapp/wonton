@@ -89,6 +89,7 @@ impl PluginManager {
     ) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins.get_mut(id).expect("先 register_for_test");
+        entry.serving.insert(http.service.clone());
         entry.clients = Some(super::manager::ClientsRoute {
             http,
             upstream: upstream.map(Endpoint::Tcp),
@@ -153,6 +154,14 @@ impl PluginManager {
         drop(plugins);
         self.changed();
     }
+
+    #[cfg(test)]
+    pub(crate) fn clients_status_for_test(&self, id: &PluginId, status: PluginStatus) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        plugins.get_mut(id).expect("先 register_for_test").status = status;
+        drop(plugins);
+        self.changed();
+    }
 }
 
 /// 测试用的最小安装记录：只够 `store.save` 落盘和入口侧按标签查到开关。
@@ -174,6 +183,7 @@ fn minimal_record(id: &PluginId) -> InstalledRecord {
         installed_at: 0,
         entry_label: None,
         clients_entries: Default::default(),
+        setup_done_ever: false,
         origin: None,
         written_by: None,
         ask_every_update: false,
@@ -182,6 +192,7 @@ fn minimal_record(id: &PluginId) -> InstalledRecord {
         settings_changed_ms: None,
         static_files: Default::default(),
         hosted: Vec::new(),
+        gpu_vendor: None,
     }
 }
 

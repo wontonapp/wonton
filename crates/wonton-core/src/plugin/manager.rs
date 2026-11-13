@@ -105,6 +105,7 @@ pub struct PluginManager {
     pub(super) dependencies: super::dependencies::Dependencies,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    pub(crate) clients: Arc<crate::clients::state::State>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
@@ -171,6 +172,7 @@ impl PluginManager {
         let storefront =
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
+        let clients = Arc::new(crate::clients::state::State::new(&store));
         Self {
             engine,
             store,
@@ -193,6 +195,7 @@ impl PluginManager {
             plugins: RwLock::new(BTreeMap::new()),
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
+            clients,
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             lan,
@@ -221,6 +224,7 @@ impl PluginManager {
     }
 
     pub(super) fn changed(&self) {
+        self.clients.refresh(&self.store);
         self.changes.send_modify(|generation| *generation += 1);
         self.activity.changed();
     }

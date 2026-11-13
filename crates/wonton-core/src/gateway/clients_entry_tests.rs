@@ -130,16 +130,24 @@ impl Home {
         let gateway = gateway(&h);
         let (backend, received, backend_task) = start_backend().await;
         let (fake, config) = crate::matrix::fake::start().await;
-        let matrix = Matrix::connect(
-            &config,
-            &h.data_dir.join("clients-entry-matrix"),
-            HttpClient::new(),
-        )
-        .await
-        .unwrap();
+        let matrix = Arc::new(
+            Matrix::connect(
+                &config,
+                &h.data_dir.join("clients-entry-matrix"),
+                HttpClient::new(),
+            )
+            .await
+            .unwrap(),
+        );
         let mut gateway = gateway;
-        gateway.matrix = Some(Arc::new(matrix));
-        let gateway = Arc::new(gateway);
+        let notices = Arc::new(crate::matrix::NoticeRoom::new(
+            matrix.clone(),
+            "owner",
+            h.data_dir.join("clients-entry-notice-room"),
+            Arc::new(Languages::default),
+        ));
+        gateway.matrix = Some(matrix);
+        let gateway = Arc::new(gateway.with_notices(Some(notices.clone())));
         let manager = gateway.plugins.clone();
         let docker = h.docker.clone();
         let app = entry_router(gateway.clone());
@@ -276,6 +284,20 @@ async fn start_backend() -> (
     let (listener, addr) = bind().await;
     let router = Router::new()
         .route("/ws", get(upgrade_echo))
+        .route(
+            "/cookies",
+            get(|| async {
+                Response::builder()
+                    .header(
+                        header::SET_COOKIE,
+                        "session=attacker; Domain=homes.test; Path=/",
+                    )
+                    .header(header::SET_COOKIE, "wonton_session=attacker; Path=/")
+                    .header(header::SET_COOKIE, "theme=dark; Path=/; HttpOnly")
+                    .body(Body::empty())
+                    .unwrap()
+            }),
+        )
         .route(
             "/spoof",
             get(|| async {
@@ -506,11 +528,12 @@ async fn dot_segments_400_before_upstream() {
         assert_eq!(reply.error_kind(), Some("invalid_input"));
     }
     assert!(home.upstream_hits().is_empty());
-    // 局域网入口没有 `public` 规则，也就没有点段这道检查（C6 的任务书口径）：原样转发给应用自己处理。
+    // 点段在两种入口都拒（review P1-6 裁定）：应用会各自解成点段，局域网的失败计数同样不能被绕过。
     let lan = home.lan_host("entryapp");
     let forwarded = home.get(&lan, "/a/../b", &entry_lan()).await;
-    assert_eq!(forwarded.status, StatusCode::OK);
-    assert_eq!(home.upstream_hits().len(), 1);
+    assert_eq!(forwarded.status, StatusCode::BAD_REQUEST);
+    assert_eq!(forwarded.error_kind(), Some("invalid_input"));
+    assert!(home.upstream_hits().is_empty());
 }
 
 #[tokio::test]
@@ -543,7 +566,7 @@ async fn setup_pending_until_setup_done_succeeds() {
 }
 
 #[tokio::test]
-async fn setup_done_error_is_plugin_unavailable_with_stderr() {
+async fn setup_done_error_hides_stderr_from_anonymous() {
     let home = Home::start().await;
     home.register(ENTRY_APP, "entryapp", false, true);
     let host = home.host("entryapp");
@@ -552,7 +575,8 @@ async fn setup_done_error_is_plugin_unavailable_with_stderr() {
     let reply = home.get(&host, "/", &entry_public()).await;
     assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(reply.error_kind(), Some("plugin_unavailable"));
-    assert!(reply.text().contains("database is migrating"));
+    // 匿名响应只带通用类别，不带 stderr 或 Docker 错误（review P0-4）；完整错误在服务器日志里。
+    assert!(!reply.text().contains("database is migrating"));
     assert!(home.upstream_hits().is_empty());
 }
 
@@ -772,3 +796,9 @@ async fn plugin_requests_carry_no_duplicate_host_and_lan_ports_pass() {
         Some(format!("entryapp.{server}:443").as_str())
     );
 }
+
+#[path = "clients_entry_isolation_tests.rs"]
+mod clients_entry_isolation_tests;
+
+#[path = "clients_entry_race_tests.rs"]
+mod clients_entry_race_tests;

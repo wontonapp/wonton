@@ -259,7 +259,7 @@ impl Gateway {
             members,
             family_room_sync: tokio::sync::Mutex::new(()),
             roles,
-            clients: Arc::new(crate::clients::state::State::new(plugins.clone())),
+            clients: plugins.clients.clone(),
             plugins,
             hydra,
             hydra_public,
