@@ -69,8 +69,11 @@ final class PullAnchor: UIView {
     var cancelled: (() -> Void)?
     private let attachesToAncestor: Bool
     var edge: PanelEdge
+    /// 面板网页才有：只认从网页露出的那条边附近起手的拖动。聊天列表整片都能拉，为空。
+    var startZone: PagePullZone?
     private weak var scrollView: UIScrollView?
     private var pullStart: CGFloat?
+    private var startsInZone = true
 
     init(attachesToAncestor: Bool = true, edge: PanelEdge = .top) {
         self.attachesToAncestor = attachesToAncestor
@@ -101,7 +104,7 @@ final class PullAnchor: UIView {
         target?.panGestureRecognizer.addTarget(self, action: #selector(panned(_:)))
     }
 
-    @objc private func panned(_ pan: UIPanGestureRecognizer) {
+    @objc func panned(_ pan: UIPanGestureRecognizer) {
         guard let scrollView else { return }
         // 往打开的方向是正：到顶时往下，到底时往上。
         let sign: CGFloat = edge == .top ? 1 : -1
@@ -112,14 +115,15 @@ final class PullAnchor: UIView {
         let translation = sign * pan.translation(in: scrollView.superview).y
         switch pan.state {
         case .began:
-            pullStart = atEnd && sign * pan.velocity(in: scrollView).y > 0 ? 0 : nil
+            startsInZone = startZone?.contains(pan, over: scrollView, edge: edge) ?? true
+            pullStart = startsInZone && atEnd && sign * pan.velocity(in: scrollView).y > 0 ? 0 : nil
         case .changed:
             guard enabled else {
                 if pullStart != nil { cancelled?() }
                 pullStart = nil
                 return
             }
-            if pullStart == nil, atEnd, sign * pan.velocity(in: scrollView).y > 0 {
+            if pullStart == nil, startsInZone, atEnd, sign * pan.velocity(in: scrollView).y > 0 {
                 pullStart = translation
             }
             guard let start = pullStart else { return }
@@ -157,11 +161,44 @@ private extension UIScrollView {
     }
 }
 
-/// 第 1 级时面板网页滚到顶后继续往下拉，进第 2 级（ADR-0052）。
+/// 面板网页上能拖动面板的起手区（ADR-0052）：网页露出的那条边往里 `gesture.pageEdgeZone`。
+///
+/// 网页的滚动位置说明不了手指下面是什么：全屏的固定浮层（音乐播放器）、自己滚动的容器都让主滚动视图一直停在头上，
+/// 只凭“滚到头了”就接手，页面里任何一处的拖动都成了拖面板（Navidrome 播放器，2026-11-12 盲测）。问页面手指下面是
+/// 什么要等一次异步的脚本往返，拖动已经开始了；公网网页也不注入脚本。所以按起手的位置分：边上归面板，里面归网页。
+struct PagePullZone: Equatable {
+    /// 网页框被面板挡住或在屏幕外的上下两条，同 `TabWebView` 的 `obscured`。
+    let obscured: UIEdgeInsets
+
+    /// `start` 和 `visible` 在同一个坐标系里；`visible` 是网页看得见、点得到的那一块。
+    static func contains(_ start: CGPoint, visible: CGRect, edge: PanelEdge) -> Bool {
+        switch edge {
+        case .top: start.y <= visible.minY + WontonTheme.gesture.pageEdgeZone
+        case .bottom: start.y >= visible.maxY - WontonTheme.gesture.pageEdgeZone
+        }
+    }
+
+    /// 拖动手势认出来时手指已经走了一小段：按起手的位置算，不按认出来的那一下。
+    @MainActor
+    func contains(_ pan: UIPanGestureRecognizer, over scrollView: UIScrollView, edge: PanelEdge) -> Bool {
+        let now = pan.location(in: nil)
+        let moved = pan.translation(in: nil)
+        let start = CGPoint(x: now.x - moved.x, y: now.y - moved.y)
+        var visible = scrollView.convert(scrollView.bounds, to: nil).inset(by: obscured)
+        // Home 条和状态栏那两段是系统手势的地方，起手区从安全区的边往里算。
+        if let window = scrollView.window {
+            visible = visible.intersection(window.bounds.inset(by: window.safeAreaInsets))
+        }
+        return Self.contains(start, visible: visible, edge: edge)
+    }
+}
+
+/// 面板网页滚到头后从边上接着拉：第 1 级进第 2 级，房间的第 2 级从顶上下拉回第 1 级（ADR-0052）。
 struct PanelPagePull: UIViewRepresentable {
     let enabled: Bool
     let webView: WKWebView?
     let edge: PanelEdge
+    let zone: PagePullZone
     let changed: (CGFloat) -> Void
     let ended: (CGFloat, CGFloat) -> Void
     let cancelled: () -> Void
@@ -172,6 +209,7 @@ struct PanelPagePull: UIViewRepresentable {
 
     func updateUIView(_ anchor: PullAnchor, context: Context) {
         anchor.edge = edge
+        anchor.startZone = zone
         anchor.enabled = enabled
         anchor.changed = changed
         anchor.ended = ended

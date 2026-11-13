@@ -273,9 +273,12 @@ extension ChatPanelUITests {
 
     private enum Direction { case upward, down }
 
-    /// 列表/页面中间往下拉：页面滚到顶后接着拉。
+    /// 从面板网页的顶边附近往下拉：页面滚到顶后接着拉。页面里面起手的归网页，不拖面板（ADR-0052）。
     private func pullPageDown() {
-        let inside = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
+        // 主面板的网页框从屏幕顶上开始，上面一截在状态栏下面：起手点放在状态栏下沿往下的起手区里。
+        // UI 测试读不到安全区；走屏用的机型状态栏高 47–62pt，起手区 48pt。靠左起手，不落在胶囊上。
+        let top = max(app.webViews.firstMatch.frame.minY + 12, 70)
+        let inside = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 48, dy: top))
         let outward = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
         inside.press(forDuration: 0.05, thenDragTo: outward, withVelocity: .slow, thenHoldForDuration: 0)
     }

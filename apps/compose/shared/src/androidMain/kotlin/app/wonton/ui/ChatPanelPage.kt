@@ -87,6 +87,9 @@ internal fun PanelPage(
         if (!public) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
     }
     val capsule = state.capsule
+    // 没铺满的页面网页框已经从状态栏下沿开始，铺满的要把状态栏那一截算进去。
+    val visibleTop = if (edge) with(density) { top.toPx() } else 0f
+    if (current) SideEffect { touch.visibleTop = { visibleTop } }
     DisposableEffect(state.controller, current, touch) {
         // 拉满时网页自己滚动，不再旁听拉面板的手势。
         state.controller.touchObserver = { event ->
