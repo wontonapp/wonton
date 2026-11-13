@@ -42,10 +42,10 @@ final class SafeAreaUITests: XCTestCase {
 
         let allApps = try XCTUnwrap(UITestSidebar.allApps(app))
         allApps.tap()
-        let appsSettings = app.buttons.matching(NSPredicate(
-            format: "label == %@ AND hittable == true", "Settings"
-        )).firstMatch
-        XCTAssertTrue(appsSettings.waitForExistence(timeout: 10))
+        // The sidebar keeps its own hidden Settings button; wait for one that can actually be tapped.
+        // `hittable` is not a valid key path in an element query predicate, so check it on the elements.
+        let settingsButtons = app.buttons.matching(NSPredicate(format: "label == %@", "Settings"))
+        XCTAssertTrue(waitForHittable(settingsButtons, timeout: 10))
         XCTAssertTrue(collapse.waitForNonExistence(timeout: 10))
         captures.append(try capture("my-apps"))
 
@@ -69,6 +69,15 @@ final class SafeAreaUITests: XCTestCase {
         }
     }
 
+    private func waitForHittable(_ query: XCUIElementQuery, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if query.allElementsBoundByIndex.contains { $0.isHittable } { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        } while Date() < deadline
+        return false
+    }
+
     private struct Capture {
         let name: String
         let image: CGImage
@@ -88,9 +97,9 @@ final class SafeAreaUITests: XCTestCase {
     }
 
     private func assertContinuousBackground(_ captured: Capture) throws {
-        // Five-pixel patches at the side margins avoid the clock, island, home indicator and page content.
-        // The fixture has no rows at mid-height; settings cards start inside the 24pt page inset.
-        let columns: [CGFloat] = captured.sidebarOpen ? [0.05] : [0.05, 0.95]
+        // Five-pixel patches in the page margin avoid the clock, island, home indicator and page content:
+        // 2% of the width is 8pt, inside the 16pt page inset, so buttons and cards never reach it.
+        let columns: [CGFloat] = captured.sidebarOpen ? [0.02] : [0.02, 0.98]
         for column in columns {
             let middle = try patch(captured.image, x: column, y: 0.5)
             for edge: CGFloat in [0.02, 0.98] {
