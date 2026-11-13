@@ -243,13 +243,15 @@ async fn background_disconnect_and_session_change_clear_the_existing_chat_watch(
     let (_, method) = watch::channel(wonton_protocol::PushMethod::default());
     let home = crate::home::HomeLink::new(
         runtime.clone(),
+        crate::sharing::hub::bind(runtime.clone()).unwrap(),
         crate::home::Storage::open(dir.path(), dir.path()).unwrap(),
         crate::home::Network::DirectOnly,
         Some(home_view.clone()),
         method,
     )
     .unwrap();
-    let plugins = crate::plugins::PluginsLink::new(runtime.clone(), home.clone(), dir.path(), None);
+    let plugins =
+        crate::plugins::PluginsLink::new(runtime.clone(), home.clone(), dir.path(), None, false);
     let bots = Arc::new(Bots {
         runtime,
         home,

@@ -70,10 +70,7 @@ async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
         .unwrap();
     let view = rig.tabs.view();
     assert_eq!(view.panel[0].tab, identity);
-    assert_eq!(
-        view.panel[0].page.url,
-        view.stack.last().unwrap().page.url
-    );
+    assert_eq!(view.panel[0].page.url, view.stack.last().unwrap().page.url);
     let placed = PlacedTab::Panel {
         scope: PanelScope::Main,
         tab: identity.clone(),

@@ -286,13 +286,7 @@ impl PluginManager {
         let slug = package.manifest.id.slug();
         let one_shot = package.one_shot_services();
         let bot_services = super::bot_services::bot_services(&package.manifest);
-        let bots: Vec<String> = self
-            .store
-            .bots()
-            .load(&package.manifest.id)?
-            .bots
-            .into_keys()
-            .collect();
+        let bots = self.stored_bot_names(&package.manifest.id)?;
         let mut running = 0;
         let mut healthy = true;
         let mut stopped = Vec::new();

@@ -15,9 +15,9 @@ use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
     Action, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
-    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PagesProblem, PagesViewModel, PanelEntry,
-    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel,
-    TabIcon, TabLoadFailure, TabRef,
+    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PagesProblem, PagesViewModel, PanelEntry, PanelItem,
+    PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
+    TabLoadFailure, TabRef,
 };
 
 use crate::home::HomeLink;

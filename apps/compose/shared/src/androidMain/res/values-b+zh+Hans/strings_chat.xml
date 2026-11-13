@@ -140,4 +140,3 @@
     <string name="bot_web_login_warning">服务器主人可以查看、管理这里的登录状态。</string>
     <string name="bot_web_shared_state">家人可能查看或修改同一份上游应用状态。账号是否独立取决于应用本身，不保证登录或数据按人隔离。</string>
 </resources>
-</resources>

@@ -140,4 +140,3 @@
     <string name="bot_web_login_warning">サーバーの所有者は、ここでのログイン状態を確認・管理できます。</string>
     <string name="bot_web_shared_state">家族が同じアプリの状態を閲覧・変更できる場合があります。アカウントの分離はアプリの仕組みに依存し、ログインやデータが利用者ごとに分離される保証はありません。</string>
 </resources>
-</resources>

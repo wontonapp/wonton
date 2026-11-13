@@ -174,4 +174,3 @@
     <string name="bot_web_login_warning">The server owner can view and manage the login state here.</string>
     <string name="bot_web_shared_state">Family members may view or change the same upstream application state. Whether accounts are separate depends on the application; a separate login or private state is not guaranteed.</string>
 </resources>
-</resources>

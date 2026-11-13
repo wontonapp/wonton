@@ -91,9 +91,9 @@ use confirmation::Answers;
 use draft::DraftWrite;
 use layout::Layouts;
 use storage::ChatStorage;
-use util::{invalid, lock};
 pub(crate) use storage::{ChatStorage, StoredSession};
 pub(crate) use target::TimelineKey;
+use util::{invalid, lock};
 use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。

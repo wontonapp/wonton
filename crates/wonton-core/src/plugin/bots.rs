@@ -641,6 +641,11 @@ impl PluginManager {
             .unwrap_or_default()
     }
 
+    /// 同 [`Self::bot_names`]，但读不了 Bot 记录时报错：核对容器不能把读失败当成没有 Bot。
+    pub(super) fn stored_bot_names(&self, id: &PluginId) -> Result<Vec<String>, StoreError> {
+        Ok(self.store.bots().load(id)?.bots.into_keys().collect())
+    }
+
     /// 这个插件有没有 Bot 记录：有的插件调用总线必须带令牌认 Bot。
     pub fn has_bots(&self, id: &PluginId) -> bool {
         self.store
