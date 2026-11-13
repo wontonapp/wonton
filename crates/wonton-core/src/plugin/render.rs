@@ -158,19 +158,6 @@ pub struct InstallContext {
     pub devices: Option<DeviceGrant>,
 }
 
-impl InstallContext {
-    /// 把按主机探测出来的资源塞进上下文：显卡、局域网端口和设备（ADR-0018、0019、0036）。
-    pub(in crate::plugin) fn apply_grants(
-        &mut self,
-        grants: super::lifecycle::Grants,
-    ) -> Vec<super::store::InstalledDevice> {
-        self.gpu = grants.gpu;
-        self.lan = grants.lan;
-        self.devices = Some(grants.devices);
-        grants.device_record
-    }
-}
-
 impl std::fmt::Debug for InstallContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InstallContext")

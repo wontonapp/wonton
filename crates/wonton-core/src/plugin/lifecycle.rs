@@ -25,20 +25,19 @@ use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::models::ModelsRoute;
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
-use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, render};
-use super::secrets::{self, Secrets};
+use super::secrets::Secrets;
 use super::store::EnabledPermission;
 use super::upstreams::Endpoint;
-use super::upstreams::{McpTarget, uses_sso};
+use super::upstreams::McpTarget;
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
 use crate::matrix::ProvisionedBot;
-use crate::oidc::Hydra;
-use crate::secret::random_token;
+use crate::oidc::{ClientSpec, Hydra};
 
 mod oidc_client;
+mod prepare;
 pub(super) mod rollback;
 pub(super) mod volumes;
 pub(super) use oidc_client::{client_spec, client_spec_at};
@@ -183,7 +182,14 @@ impl PluginManager {
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let (mut ctx, secret, mut secrets, proxy) = self
-            .prepare_install(package, enabled, (grants.gpu, grants.lan), settings, undo, langs)
+            .prepare_install(
+                package,
+                enabled,
+                (grants.gpu, grants.lan),
+                settings,
+                undo,
+                langs,
+            )
             .await?;
         ctx.devices = Some(grants.devices);
         let device_record = grants.device_record;
@@ -355,26 +361,6 @@ impl PluginManager {
             undo.lan_network = Some(network);
         }
         Ok(())
-    }
-
-    /// 容器起来之后收存插件写下的密钥（`collect` 项），变了就保存。Bot 服务上的按 Bot 各一份。
-    /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
-    pub(super) fn prepare_secrets(
-        &self,
-        manifest: &Manifest,
-        undo: &mut Undo,
-    ) -> Result<Secrets, InstallError> {
-        if manifest.secrets.is_empty() {
-            return Ok(Secrets::new());
-        }
-        let store = self.store.secrets();
-        let before = store.load(&manifest.id)?;
-        let mut secrets = before.clone().unwrap_or_default();
-        undo.secrets_before = Some((manifest.id.clone(), before));
-        if secrets::generate_missing(manifest, &mut secrets) {
-            store.save(&manifest.id, &secrets)?;
-        }
-        Ok(secrets)
     }
 
     /// 注入给 SSO 插件的端点：签发方和后台端点在插件网络里，授权端点给浏览器（ADR-0063）。
@@ -587,37 +573,6 @@ impl PluginManager {
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
     }
 
-    /// 安装的前半段：清残留、备密钥、定权限和上下文，再定默认 Bot 和模型网关凭据。
-    async fn prepare_install(
-        &self,
-        package: &PluginPackage,
-        enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
-        settings: std::collections::BTreeMap<String, serde_json::Value>,
-        undo: &mut Undo,
-        langs: &Languages,
-    ) -> Result<(InstallContext, Option<String>, Secrets, Option<ProxyAuth>), InstallError> {
-        let manifest = &package.manifest;
-        self.stage(&manifest.id, InstallStage::Preparing);
-        self.clear_leftovers(&manifest.id).await?;
-        let secret = uses_sso(manifest).then(random_token);
-        let secrets = self.prepare_secrets(manifest, undo)?;
-        let generated =
-            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
-        let proxy =
-            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
-        let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
-            .await?;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
-        ctx.settings = settings;
-        self.check_network_names(&ctx).await?;
-        // 默认 Bot、模型网关变量和留着的其它 Bot 都在这步准备好（见 `bot_web_install`）。
-        self.prepare_install_bots(package, &mut ctx, undo).await?;
-        Ok((ctx, secret, secrets, proxy))
-    }
 
     /// 网络建好才知道的变量：核心在网络里的地址、网关，以及宿主网络的服务要用的出口容器地址（ADR-0023）。
     async fn fill_network_vars(

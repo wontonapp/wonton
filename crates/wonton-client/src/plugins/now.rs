@@ -347,8 +347,8 @@ fn confirmation_preview(confirmation: &StoreConfirmation) -> &InstallPreview {
 #[cfg(test)]
 mod tests {
     use wonton_protocol::{
-        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice, PluginDeviceKind,
-        PluginKind, WidgetCapability, WidgetCapabilityLevel,
+        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice,
+        PluginDeviceKind, PluginKind, WidgetCapability, WidgetCapabilityLevel,
     };
 
     use super::*;

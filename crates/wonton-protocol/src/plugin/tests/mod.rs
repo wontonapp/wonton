@@ -164,6 +164,19 @@ fn store() -> StoreListing {
     }
 }
 
+fn preview_device() -> PluginDevice {
+    PluginDevice {
+        id: "usb-1".into(),
+        name: "Zigbee 棒".into(),
+        target: "/dev/zigbee".into(),
+        service: "homeassistant".into(),
+        optional: true,
+        kind: PluginDeviceKind::Serial,
+        system: false,
+        chosen: false,
+    }
+}
+
 fn preview() -> InstallPreview {
     InstallPreview {
         source: Some("github:someone/wonton-samba@v1.0.0".into()),
@@ -242,16 +255,7 @@ fn preview() -> InstallPreview {
         missing_profile: None,
         blocked: None,
         blocked_category: None,
-        devices: Some(vec![PluginDevice {
-            id: "usb-1".into(),
-            name: "Zigbee 棒".into(),
-            target: "/dev/zigbee".into(),
-            service: "homeassistant".into(),
-            optional: true,
-            kind: PluginDeviceKind::Serial,
-            system: false,
-            chosen: false,
-        }]),
+        devices: Some(vec![preview_device()]),
         lan_webui: Some(LanWebuiOffer {
             ports: vec![LanPort {
                 port: 8080,
