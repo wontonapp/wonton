@@ -67,11 +67,9 @@ final class PagesModel {
 
     private func update(_ view: PagesViewModel) {
         viewModel = view
-        var retained = Set(view.stack.map { PlacedTab.page(tab: $0.tab) })
-        for tab in keepAlive where !retained.contains(.page(tab: tab)) {
-            retained.insert(.page(tab: tab))
-        }
-        webViews.retain(retained)
+        let open = Set(view.stack.map { PlacedTab.page(tab: $0.tab) })
+        let retained = open.union(keepAlive.map { PlacedTab.page(tab: $0) })
+        webViews.retain(retained, open: open)
     }
 }
 

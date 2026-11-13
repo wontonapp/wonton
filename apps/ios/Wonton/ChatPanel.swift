@@ -249,9 +249,13 @@ extension ChatPanelHost {
             // 露出的那一条由上面的 `strip` 单独接点按和拖动；收起时聊天页照常可点。
             .allowsHitTesting(level == .closed)
             // The moved page must not carry its home-indicator canvas between composer and panel.
+            // 聊天页排在安全区里，底色自己铺到屏幕边，蒙版按安全区往外补回去；房间的面板拉开时不补底下那一段。
+            // 不用 ignoresSafeArea：它在蒙版里不往外扩（iOS 26.5 实测），原来再减的 safeBottom 减在了输入栏上，
+            // 面板第 1 级时输入栏被裁掉大半。
             .mask(alignment: .top) {
-                Rectangle().padding(.bottom, edge == .bottom && (level != .closed || drag > 0) ? safeBottom : 0)
-                    .ignoresSafeArea()
+                Rectangle()
+                    .padding(.top, -safeTop)
+                    .padding(.bottom, edge == .bottom && (level != .closed || drag > 0) ? 0 : -safeBottom)
             }
             .offset(y: sign * chatOffset(height))
             .background {
@@ -273,7 +277,9 @@ extension ChatPanelHost {
             }
         }
         .contentShape(Rectangle())
-        .frame(height: max(0, height - chatOffset(height) - (edge == .bottom ? safeBottom : 0)))
+        // 只盖露出来的那一条。`height` 是整屏高，这一层却排在安全区里：不把上下安全区都减掉，它会往面板那边
+        // 多盖一截（主面板多盖状态栏那么高，小圆点正在那里），点小圆点和那一截网页都成了收起面板。
+        .frame(height: max(0, height - chatOffset(height) - safeTop - safeBottom))
         .frame(maxHeight: .infinity, alignment: edge == .top ? .bottom : .top)
         .onTapGesture { move(to: .closed) }
         .gesture(

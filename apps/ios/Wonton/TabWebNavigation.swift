@@ -8,7 +8,8 @@ extension TabWebSession: WKNavigationDelegate {
             receiveMedia(message, view: view)
             return
         }
-        guard let body = message.body as? String else { return }
+        // 关掉后保活着的页面不在核心的栈里：桥的请求不转给核心（见 `parked`）。媒体状态照常上报，在上面。
+        guard !parked, let body = message.body as? String else { return }
         let origin = Self.originString(message.frameInfo.securityOrigin)
         let result = core.tabHandleMessage(
             page: placed, isMainFrame: message.frameInfo.isMainFrame,
@@ -18,7 +19,7 @@ extension TabWebSession: WKNavigationDelegate {
         if let reply = result.replyScript {
             view.evaluateJavaScript(reply) { [weak self, weak view] _, error in
                 guard let self, self.webView === view else { return }
-                if let error { self.problem = error.problem; return }
+                if let error, !Self.resultUnsupported(error) { self.problem = error.problem; return }
                 if let action = result.action { self.action?(action) }
             }
         } else if let action = result.action { self.action?(action) }
@@ -47,10 +48,14 @@ extension TabWebSession: WKNavigationDelegate {
         webView.isOpaque = true
         recoveryURL = nil
         canGoBack = webView.canGoBack
-        do {
-            try core.dispatch(action: .tabLoadSucceeded(page: placed))
-            try updateContext(webView, force: true)
-        } catch { problem = error.problem }
+        if parked {
+            missedFinish = true
+        } else {
+            do {
+                try core.dispatch(action: .tabLoadSucceeded(page: placed))
+                try updateContext(webView, force: true)
+            } catch { problem = error.problem }
+        }
         #if DEBUG
         // 夜跑的网页媒体权限用例（wonton-media-capture-test）：真插件页没有现成的麦克风入口，
         // XCUITest 也执行不了网页脚本，页面加载完在页面里要一次麦克风，出壳的询问弹窗。
@@ -171,6 +176,11 @@ extension TabWebSession: WKNavigationDelegate {
     private func loadFailed(status: UInt16?) {
         ready = hasContent
         if recoveryURL == nil { recoveryURL = navigationURL }
+        guard !parked else {
+            // 没处报：重开时重新加载，失败了那时再报给核心。
+            loadedReload = nil
+            return
+        }
         do {
             try core.dispatch(action: .tabLoadFailed(page: placed, status: status))
         } catch { problem = error.problem }
