@@ -63,6 +63,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.Rgb
@@ -335,7 +336,7 @@ internal fun SidebarMenuButton(onClick: () -> Unit) {
 internal fun SidebarPanel(
     home: HomeViewModel,
     plugins: PluginsState,
-    tabs: TabsState,
+    tabs: PagesState,
     current: TabRef,
     width: Dp,
     interactive: Boolean,
@@ -423,11 +424,11 @@ private fun SidebarHeader(home: HomeViewModel) {
     }
 }
 
-/** “我的应用”：能打开的插件，最多八个，多出的收进最后一行“全部应用”。 */
+/** “我的应用”：用户选出来的行，核心排好序；装了还没加进的收进最后一行“全部应用”。 */
 @Composable
 private fun SidebarApps(
     plugins: PluginsState,
-    tabs: TabsState,
+    tabs: PagesState,
     current: TabRef,
     interactive: Boolean,
     onGo: (SidebarDestination) -> Unit,
@@ -456,11 +457,12 @@ private fun SidebarApps(
             color = colors.accentInk.toColor(),
         )
     }
-    // “我的应用”由核心给：最多八个，多出的收进“全部应用”，行尾红点也是核心算的。
+    // “我的应用”由核心给：顺序和选择在账号数据里，行尾红点也是核心算的。
     val apps = plugins.viewModel.sidebar.apps
     apps.forEach { app ->
         SidebarAppRow(app, plugins, tabs, current, interactive, onGo)
     }
+    MyAppsSyncHint(tabs, interactive)
     if (plugins.viewModel.sidebar.moreApps) {
         SidebarRow(
             title = stringResource(R.string.sidebar_all_apps),

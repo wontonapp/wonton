@@ -39,6 +39,7 @@ mod link_preview;
 mod matrix_login;
 mod onboarding;
 mod owner;
+mod pages;
 mod panel;
 mod peers;
 mod personal_data;
@@ -59,7 +60,6 @@ mod share_transport;
 mod sharing;
 mod side_chat;
 mod sidebar;
-mod tabs;
 mod timeline;
 mod timeline_action;
 mod verification;
@@ -216,11 +216,16 @@ pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
     check_email, check_email_change, normalized_email,
 };
+pub use pages::{
+    CandidatePlugin, KEEP_ALIVE_PAGES, MyAppEntry, MyAppRef, OpenPage, PagesProblem,
+    PagesViewModel, PluginTab, TabCandidate, TabIcon, TabLayout, TabLoadFailure, TabMediaPrompt,
+    TabPage, TabRef, TabState,
+};
 pub use panel::{
     BOT_PANEL_PINS_PATH, BotPanelPin, BotPanelPins, BotPinConsent, BotPinOwner, LAYOUT_EVENT,
     LayoutSettings, MAX_PANEL_PAGES, MCP_APP_CALLS_PATH, MCP_APP_MESSAGE_PATH, MCP_APP_READ_PATH,
     MCP_APP_TOOLS_PATH, PanelEntry, PanelItem, PanelScope, PanelSource, PinTarget, PlacedTab,
-    ROOM_PANEL_EVENT, RoomPanel, TabDisplaySetting, bot_panel_consent_path, bot_panel_pin_path,
+    ROOM_PANEL_EVENT, RoomPanel, bot_panel_consent_path, bot_panel_pin_path,
     bot_panel_pin_seen_path, mcp_app_call_path, mcp_app_host_path,
 };
 pub use peers::{
@@ -308,12 +313,7 @@ pub use sharing::{
 pub use side_chat::{
     SideChatCard, SideChatResult, SideChatResultState, SideChatRoot, SideChatState, SideChatSupport,
 };
-pub use sidebar::{SidebarApp, SidebarOpen, SidebarViewModel};
-pub use tabs::{
-    CandidatePlugin, PluginTab, TabCandidate, TabDisplay, TabDisplayChoice, TabIcon, TabItem,
-    TabLayout, TabLoadFailure, TabMediaPrompt, TabPage, TabRef, TabState, TabsProblem,
-    TabsViewModel,
-};
+pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
     MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,

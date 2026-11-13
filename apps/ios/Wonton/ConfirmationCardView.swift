@@ -6,10 +6,9 @@ struct ConfirmationCardView: View {
     let view: ConfirmationView
     let answer: (CardChoice, [String: String]) -> Void
     let stopWindow: () -> Void
-    @Environment(TabsModel.self) private var tabs
+    @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
     @State private var showsPages = false
-    @State private var pinRequest: TabRef?
     @State private var secrets: [String: String] = [:]
     @State private var shownSecrets = false
     @Environment(\.wontonColors) private var colors
@@ -40,23 +39,23 @@ struct ConfirmationCardView: View {
             }
             if let installed {
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    Button(TabText.open) { tabs.select(installed.tabChoices[0].tab) }
+                    Button(TabText.open) { pages.open(installed.tabChoices[0].tab) }
                         .buttonStyle(WontonSmallButtonStyle())
-                    if !pinned {
-                        Button(TabText.pinToBar) {
+                    if !added {
+                        Button(TabText.addToMyApps) {
                             if installed.tabChoices.count > 1 {
                                 showsPages = true
                             } else {
-                                pinRequest = installed.tabChoices[0].tab
+                                add(installed.tabChoices[0].tab)
                             }
                         }
                         .buttonStyle(WontonSmallButtonStyle())
                     }
                 }
                 .wontonSheet(isPresented: $showsPages, title: installed.title) { _ in
-                    PluginTabPins(plugin: installed).padding(WontonTheme.spacing.pageInset)
+                    MyAppChoiceSheet(plugin: installed) { showsPages = false }
+                        .padding(WontonTheme.spacing.pageInset)
                 }
-                .tabPinRequests($pinRequest)
             }
             if !view.card.choices.isEmpty {
                 ViewThatFits(in: .horizontal) {
@@ -133,7 +132,7 @@ struct ConfirmationCardView: View {
         }
     }
 
-    /// 已装好且列表里查得到的插件才给"打开/放到底栏"；查不到（已卸载或列表没刷新）时如实不显示。
+    /// 已装好且列表里查得到的插件才给"打开"；查不到（已卸载或列表没刷新）时如实不显示。
     private var installed: InstalledPlugin? {
         guard case .succeeded = view.card.state, let id = view.card.pluginId,
               let installed = plugins.viewModel.installed else { return nil }
@@ -141,8 +140,14 @@ struct ConfirmationCardView: View {
         return (plugin?.tabChoices.isEmpty == false) ? plugin : nil
     }
 
-    private var pinned: Bool {
-        installed?.tabChoices.contains { tabs.isPinned($0.tab) } == true
+    /// 任一页已加进“我的应用”就不再给加的按钮。
+    private var added: Bool {
+        let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
+        return installed?.tabChoices.contains { mine.contains($0.tab) } == true
+    }
+
+    private func add(_ tab: TabRef) {
+        pages.send(.addMyApp(app: .page(tab: tab), title: nil, index: nil))
     }
 
     private func note(_ text: String, icon: WontonIcon, color: Rgb) -> some View {

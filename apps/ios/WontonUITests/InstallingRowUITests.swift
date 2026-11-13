@@ -63,12 +63,12 @@ final class InstallingRowUITests: XCTestCase {
         element.tap()
     }
 
-    /// 回到主界面的标志：根页面有「Sidebar」按钮。单标签时底栏是隐藏的（show_bar 只在标签多于一个时真），
-    /// 等不到 Chats/Apps 标签按钮。
+    /// 回到主界面的标志：根页面有「Sidebar」按钮（没有底栏，没有别的固定入口可等）。
     private func waitForRoot(timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             if app.buttons["Sidebar"].firstMatch.exists { return true }
+
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
         return false
@@ -104,6 +104,7 @@ final class InstallingRowUITests: XCTestCase {
             if let pair = waitAnyButton(["Pair", "配对"], timeout: 8), pair.isEnabled { pair.tap() }
             for _ in 0..<20 {
                 if waitAnyButton(["Sidebar", "Apps", "应用", "Skip", "跳过"], timeout: 1) != nil { return }
+
             }
             // 换下一个码：清空输入框。
             field.tap()
@@ -116,6 +117,7 @@ final class InstallingRowUITests: XCTestCase {
 
     private func passOnboarding() {
         for _ in 0..<12 {
+            if UITestBackend.skipKeyHandoff(app) { continue }
             if waitForRoot(timeout: 1) { return }
             if let skip = waitAnyButton(["Skip", "跳过"], timeout: 2), skip.isEnabled {
                 skip.tap()
@@ -150,15 +152,18 @@ final class InstallingRowUITests: XCTestCase {
     }
 
     func testInstallRow() throws {
+        continueAfterFailure = false
         // 排队的机器上等锁很慢，最早的码可能已经过期：逐个试。
         let pairCodes = try UITestBackend.codes()
         try XCTSkipIf(pairCodes.isEmpty, "需要开发栈：没有 PAIRING_CODE")
         pairIfNeeded(pairCodes)
         XCTAssertTrue(waitForRoot(timeout: 120), "配对后没回到主界面")
         passOnboarding()
+        UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(waitForRoot(timeout: 300), "没回到主界面")
 
         sidebarGo("Store")
+
         shot("01-store")
         guard let get = getButton(for: plugin) else {
             XCTFail("商店里没有 \(plugin)")

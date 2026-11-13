@@ -14,9 +14,9 @@ use tokio::sync::watch;
 use wonton_protocol::{
     ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceNetwork,
     DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, MessageSummary,
-    OnboardingStep, OnboardingViewModel, PushStatus, RecoveryNextStep, RecoveryStatus,
-    RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel,
-    TabItem, TabRef, TabsViewModel,
+    OnboardingStep, OnboardingViewModel, PagesViewModel, PushStatus, RecoveryNextStep,
+    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
+    ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabRef,
 };
 
 use super::ClientCore;
@@ -43,7 +43,7 @@ impl ClientCore {
             home: watch::Sender::new(fake_home(current.home.borrow().clone())),
             chat: watch::Sender::new(fake_chat(current.chat.borrow().clone())),
             plugins: watch::Sender::new(current.plugins.borrow().clone()),
-            tabs: watch::Sender::new(fake_tabs(current.tabs.borrow().clone())),
+            pages: watch::Sender::new(fake_pages(current.pages.borrow().clone())),
             transfers: watch::Sender::new(current.transfers.borrow().clone()),
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
             peers: watch::Sender::new(current.peers.borrow().clone()),
@@ -141,31 +141,27 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat
 }
 
-fn fake_tabs(mut tabs: TabsViewModel) -> TabsViewModel {
-    tabs.items = vec![
-        TabItem {
-            tab: TabRef::Chat,
-            removable: false,
-            badge: false,
+fn fake_pages(mut pages: PagesViewModel) -> PagesViewModel {
+    pages.root = TabRef::Chat;
+    pages.stack.clear();
+    pages.my_app_candidates = vec![];
+    let _: SidebarApp = SidebarApp {
+        plugin_id: Some("app.example.notes".into()),
+        tab: Some(TabRef::Plugin {
+            plugin_id: "app.example.notes".into(),
             page: None,
+        }),
+        title: "Notes".into(),
+        open: SidebarOpen::Page {
+            tab: TabRef::Plugin {
+                plugin_id: "app.example.notes".into(),
+                page: None,
+            },
         },
-        TabItem {
-            tab: TabRef::Apps,
-            removable: true,
-            badge: false,
-            page: None,
-        },
-        TabItem {
-            tab: TabRef::Settings,
-            removable: true,
-            badge: false,
-            page: None,
-        },
-    ];
-    tabs.show_bar = true;
-    tabs.selected = TabRef::Chat;
-    tabs.overlay = None;
-    tabs
+        icon: None,
+        badge: SidebarBadge::default(),
+    };
+    pages
 }
 
 fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
@@ -190,22 +186,20 @@ mod tests {
         assert_eq!(core.home().status, HomeStatus::Connected);
         assert_eq!(core.servers().servers.len(), 1);
         assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
-        assert_eq!(core.tabs().selected, TabRef::Chat);
+        assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 作用域的首帧是后台算完才发的：等一会儿，确认它盖不掉假数据。
         std::thread::sleep(std::time::Duration::from_millis(500));
         assert_eq!(core.home().status, HomeStatus::Connected);
         assert_eq!(core.chat().rooms[0].name, "Echo");
-        assert_eq!(core.tabs().selected, TabRef::Chat);
+        assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
         assert!(
-            core.dispatch(wonton_protocol::Action::SelectTab {
-                tab: TabRef::Settings
-            })
-            .is_ok()
+            core.dispatch(wonton_protocol::Action::OpenPage { tab: TabRef::Apps })
+                .is_ok()
         );
-        assert_eq!(core.tabs().selected, TabRef::Chat);
+        assert_eq!(core.pages().root, TabRef::Chat);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
