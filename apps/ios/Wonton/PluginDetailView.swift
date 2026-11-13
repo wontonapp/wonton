@@ -1,6 +1,9 @@
 import SwiftUI
 import WontonClient
 
+/// 详情页上密钥一节的滚动锚点：缺必填项时“去填写”滚到这里。
+private let pluginSecretsAnchor = "pluginSecrets"
+
 /// 插件的详情页：商店里的看来源最新的版本，主屏上的看装着的版本。
 struct PluginDetailView: View {
     let model: PluginsModel
@@ -14,6 +17,8 @@ struct PluginDetailView: View {
     @State private var changingVersionOf: String?
     @State private var showsSettings = false
     @State private var showsContacts = false
+    @State private var isOwner = false
+    @State private var secretsScrollTarget: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.wontonColors) private var colors
     @Environment(\.goToInstalledApps) private var goToInstalledApps
@@ -23,6 +28,7 @@ struct PluginDetailView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .wontonPushedScreen("", showsStatusLine: true)
             .task(id: route) { await load() }
+            .task { isOwner = (try? await model.core.me())?.isOwner == true }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
             .changeVersionCover(of: $changingVersionOf, model: model, confirmation: $confirmation)
             .uninstallDialog($uninstalling, model: model)
@@ -95,6 +101,14 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.tabChoices.isEmpty {
                         MyAppsSection(plugin: installed)
                     }
+                    if let installed = detail.installed, case .needsConfiguration = installed.status, isOwner {
+                        Button {
+                            secretsScrollTarget = pluginSecretsAnchor
+                        } label: {
+                            Text(.Plugins.secretGoFill).frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    }
                     if detail.installed != nil, detail.hasSettings {
                         WontonGroup {
                             Button {
@@ -115,7 +129,8 @@ struct PluginDetailView: View {
                             .foregroundStyle(Color(colors.textPrimary))
                     }
                     if detail.installed != nil {
-                        SecretSection(detail: detail, model: model) { loaded = .success($0) }
+                        SecretSection(detail: detail, model: model, isOwner: isOwner) { loaded = .success($0) }
+                            .id(pluginSecretsAnchor)
                     }
                     if let installed = detail.installed, let offer = detail.lanWebui {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
@@ -155,7 +170,9 @@ struct PluginDetailView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(WontonTheme.spacing.pageInset)
+                .scrollTargetLayout()
             }
+            .scrollPosition(id: $secretsScrollTarget, anchor: .top)
             .navigationDestination(isPresented: $showsSettings) {
                 PluginSettingsScreen(model: model, pluginId: pluginId ?? "")
             }

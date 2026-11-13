@@ -69,6 +69,7 @@ import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircleFill
 import app.wonton.ui.icons.Web
 import app.wonton.ui.icons.WontonIcon
+import app.wonton.ui.icons.WrenchFill
 
 /** 配上以后的“应用”：独立的应用商店入口和已装插件网格。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -289,6 +290,12 @@ private fun Badge(plugin: InstalledPlugin, modifier: Modifier) {
             contentDescription = stringResource(R.string.launcher_badge_degraded),
             modifier = modifier.size(WontonTheme.size.iconSmall).background(colors.canvas.toColor(), CircleShape),
             tint = colors.danger.toColor(),
+        )
+        plugin.status is PluginState.NeedsConfiguration -> Icon(
+            WontonIcon.WrenchFill,
+            contentDescription = stringResource(R.string.launcher_badge_needs_configuration),
+            modifier = modifier.size(WontonTheme.size.iconSmall).background(colors.canvas.toColor(), CircleShape),
+            tint = colors.warning.toColor(),
         )
         plugin.upgrade != null -> Box(
             modifier.size(12.dp)

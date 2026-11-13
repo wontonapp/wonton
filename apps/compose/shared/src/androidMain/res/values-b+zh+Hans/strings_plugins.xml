@@ -86,4 +86,5 @@
     <string name="secret_clear">清空</string>
     <string name="secret_filled">已填写</string>
     <string name="secret_unfilled">未就绪：要先填令牌</string>
+    <string name="secret_go_fill">去填写</string>
 </resources>

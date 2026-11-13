@@ -322,6 +322,11 @@ private struct LauncherIcon: View {
                 .foregroundStyle(Color(colors.danger))
                 .background(Circle().fill(Color(colors.canvas)))
                 .accessibilityLabel(String(localized: .Launcher.launcherBadgeDegraded))
+        } else if case .needsConfiguration = plugin.status {
+            WontonIcon.wrenchFill.view(size: WontonTheme.size.iconSmall)
+                .foregroundStyle(Color(colors.warning))
+                .background(Circle().fill(Color(colors.canvas)))
+                .accessibilityLabel(String(localized: .Launcher.launcherBadgeNeedsConfiguration))
         } else if plugin.upgrade != nil {
             Circle().fill(Color(colors.primary)).frame(width: 12, height: 12)
                 .overlay(Circle().strokeBorder(Color(colors.canvas), lineWidth: 2))
