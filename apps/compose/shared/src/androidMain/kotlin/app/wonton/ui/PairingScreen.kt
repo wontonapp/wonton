@@ -259,6 +259,8 @@ private fun failureTitle(reason: PairingFailure): Int = when (reason) {
     PairingFailure.EXPIRED -> R.string.pairing_failure_expired
     PairingFailure.CLOSED -> R.string.pairing_failure_closed
     PairingFailure.PENDING_APPROVAL -> R.string.pairing_failure_pending
+    PairingFailure.JOIN_REJECTED -> R.string.joining_failure_rejected
+    PairingFailure.CODE_USED -> R.string.joining_failure_code_used
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_failure_transport
     PairingFailure.UPSTREAM -> R.string.problem_upstream_title
     PairingFailure.PROTOCOL -> R.string.pairing_failure_protocol
@@ -269,6 +271,7 @@ private fun failureHint(reason: PairingFailure): Int? = when (reason) {
     PairingFailure.REJECTED, PairingFailure.EXPIRED -> R.string.pairing_next_new_code
     PairingFailure.CLOSED -> R.string.pairing_next_closed
     PairingFailure.PENDING_APPROVAL -> R.string.pairing_next_pending
+    PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> R.string.joining_next_invite
     PairingFailure.TRANSPORT_UNAVAILABLE -> R.string.pairing_hint_transport
     PairingFailure.PROTOCOL -> R.string.pairing_hint_protocol
     PairingFailure.UPSTREAM -> null
@@ -279,6 +282,7 @@ private fun PairingFailure.showsCoreMessage(): Boolean = when (this) {
     PairingFailure.TRANSPORT_UNAVAILABLE, PairingFailure.UPSTREAM, PairingFailure.PROTOCOL,
     PairingFailure.PENDING_APPROVAL -> true
     PairingFailure.REJECTED, PairingFailure.EXPIRED, PairingFailure.CLOSED -> false
+    PairingFailure.JOIN_REJECTED, PairingFailure.CODE_USED -> false
 }
 
 /** 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。 */

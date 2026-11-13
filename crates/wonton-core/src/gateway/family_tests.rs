@@ -96,7 +96,7 @@ pub(super) async fn invite(home: &Home, invite: Value) -> Value {
 }
 
 /// 给家人出码，返回配对码（直连地址换成服务端真实绑定的地址，回环里才连得上）。
-async fn member_code(home: &Home, username: &str) -> PairingCode {
+pub(super) async fn member_code(home: &Home, username: &str) -> PairingCode {
     let path = wonton_protocol::member_pairing_code_path(username);
     let (status, body) = owner_call(
         home,
@@ -120,11 +120,38 @@ fn reject_reason(response: PairResponse) -> Option<RejectReason> {
 }
 
 /// 用归家人的码配一台真设备（真实隧道，同 `pairing_tests` 的扫码）。
-async fn pair_member_phone(home: &Home, code: &PairingCode) -> (SecretKey, Phone) {
+pub(super) async fn pair_member_phone(home: &Home, code: &PairingCode) -> (SecretKey, Phone) {
     let key = SecretKey::generate();
     let endpoint = loopback_endpoint(key.clone()).await;
     let response = pair(&endpoint, code, "家人的手机").await.unwrap();
-    assert_eq!(reject_reason(response), None, "家人的码应当配上");
+    assert!(
+        matches!(
+            response,
+            PairResponse::Joining {
+                outcome: wonton_protocol::JoinOutcome::Pending,
+                ..
+            }
+        ),
+        "{response:?}"
+    );
+    let requests = home.members.join_requests();
+    let request = requests
+        .iter()
+        .find(|request| request.device_name == "家人的手机")
+        .unwrap();
+    let (status, body) = owner_call(
+        home,
+        Method::POST,
+        &wonton_protocol::join_request_approve_path(&request.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(
+        pair(&endpoint, code, "家人的手机").await.unwrap(),
+        PairResponse::Paired
+    );
+    endpoint.close().await;
     let phone = Phone::start(key.clone(), home).await;
     (key, phone)
 }
@@ -175,7 +202,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     let token: super::matrix::LoginToken = serde_json::from_str(&body).unwrap();
     assert_eq!(token.user_id, "@family1:test", "登录令牌是这个家人的账号");
 
-    // 家人只看到自己的设备；主人看到她“已加入”，码已清掉。
+    // 家人只看到自己的设备；批准后成员为“已加入”。
     let (status, _, body) = phone.get(CORE, "/_wonton/api/devices").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let devices: Value = serde_json::from_str(&body).unwrap();
@@ -184,11 +211,6 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
 
     let her = member_record(&home, "family1").await;
     assert_eq!(her["status"], "joined", "配上后主人看到已加入");
-    assert_eq!(
-        her["pairing_code_expires_at_ms"],
-        Value::Null,
-        "码用掉后清掉"
-    );
 
     // 家人改自己的资料；主人的名单跟着更新。
     let request = phone
@@ -254,7 +276,13 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     assert_eq!(reject_reason(response), None);
     let again = loopback_endpoint(SecretKey::generate()).await;
     let rejected = pair(&again, &second, "再用").await.unwrap();
-    assert_eq!(reject_reason(rejected), Some(RejectReason::Used));
+    assert!(matches!(
+        rejected,
+        PairResponse::Joining {
+            outcome: wonton_protocol::JoinOutcome::CodeUsed,
+            role: None
+        }
+    ));
 
     // 作废以后不能用。
     invite(
@@ -627,17 +655,8 @@ async fn installers_can_change_plugin_permissions() {
 pub(super) fn seed_member(h: &Harness, username: &str, can_install: bool) {
     h.members
         .invite(MemberRecord {
-            username: username.to_owned(),
-            user_id: format!("@{username}:test"),
-            display_name: username.to_owned(),
-            email: None,
-            status: wonton_protocol::MemberStatus::Invited,
-            // 能装插件改成看角色：直接给权限最大的管理员模板。
             role_id: if can_install { "admin" } else { "friend" }.to_owned(),
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test(username)
         })
         .unwrap();
 }
@@ -669,16 +688,8 @@ async fn a_device_whose_member_is_gone_is_rejected() {
     let hers = SecretKey::generate().public();
     h.members
         .invite(MemberRecord {
-            username: "mia".to_owned(),
-            user_id: "@mia:test".to_owned(),
             display_name: "Mia".to_owned(),
-            email: None,
-            status: wonton_protocol::MemberStatus::Invited,
-            role_id: "friend".to_owned(),
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test("mia")
         })
         .unwrap();
     h.tunnel
