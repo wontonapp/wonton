@@ -214,13 +214,22 @@ class Home:
             networks = run("docker", "inspect", "-f",
                            "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}",
                            connector, check=False).stdout.split()
-            if network in networks:
-                return True
-            run("docker", "stop", connector, check=False)
+            return network in networks
+
+        # 对账循环（30 秒起）撞上"停着等接网"的窗口就会重建连接器、冲掉刚接的云网络：先停核心（对账随进程停），
+        # 接完网再起。组件容器 restart=unless-stopped，核心停着它们照跑。
+        # 对账失败会按退避重试，连接器可能晚几拍才建出来：等它存在（核心运行着重试才有机会），再停核心动手。
+        wait_for("connector created", lambda: self.component_container("connector") is not None,
+                 seconds=240)
+        run("docker", "stop", "-t", "30", self.core, check=False)
+        try:
+            connector = self.component_container("connector")
+            assert connector, "等到了核心把连接器建出来"
+            run("docker", "stop", "-t", "30", connector, check=False)
             run("docker", "network", "connect", network, connector, check=False)
             run("docker", "start", connector, check=False)
-            return False
-
+        finally:
+            run("docker", "start", self.core, check=False)
         wait_for("connector attached", attached, seconds=180)
         connector = self.component_container("connector")
         run("docker", "exec", "-u", "0", connector, "sh", "-c",
