@@ -63,7 +63,11 @@ fun AppLockGate(core: ClientCore, content: @Composable () -> Unit) {
         if (view.locked) {
             AppLockScreen(
                 needsDeviceLock = !canAuthenticate,
-                onUnlock = { auth?.prompt(promptTitle, promptReason) { passed -> if (passed == AuthResult.Passed) core.unlockApp() } },
+                onUnlock = {
+                    auth?.prompt(promptTitle, promptReason) { result ->
+                        if (result == AuthResult.Passed) core.unlockApp()
+                    }
+                },
                 onOpenSettings = { context.openSecuritySettings() },
             )
         }
