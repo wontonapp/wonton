@@ -7,6 +7,10 @@ struct FriendsView: View {
     @State private var model: FriendsModel
     @Environment(\.wontonColors) private var colors
     @State private var showsAdd = false
+    @State private var showsScanner = false
+    @State private var showsMyCode = false
+    /// 扫到或粘贴的原文：扫码页收起之后才交给核心，失败的弹窗才挂得上这一页。
+    @State private var scannedCode: String?
     @State private var newUserId = ""
     @FocusState private var addFocused: Bool
     /// 删除好友、删除分组的确认框挂在整页上：挂在行上，滑动删除后行没了，弹窗跟着消失。
@@ -31,6 +35,23 @@ struct FriendsView: View {
             .refreshable { await model.refresh() }
             .wontonSheet(isPresented: $showsAdd, title: String(localized: .Friends1.friendsAdd)) { close in
                 addPanel(close)
+            }
+            .fullScreenCover(isPresented: $showsScanner, onDismiss: sendScannedCode) {
+                NavigationStack {
+                    FriendScannerView { code in
+                        scannedCode = code
+                        showsScanner = false
+                    }
+                    .wontonModalScreen(String(localized: .Friends1.friendsScanCode))
+                }
+            }
+            .wontonSheet(
+                isPresented: Binding(
+                    get: { showsMyCode && model.viewModel.myLink != nil }, set: { if !$0 { showsMyCode = false } }
+                ),
+                title: String(localized: .Friends3.friendsMyCode)
+            ) { _ in
+                if let link = model.viewModel.myLink { MyFriendCodePanel(link: link) }
             }
             .wontonSheet(isPresented: isEditingGroup, title: groupPanelTitle) { close in
                 groupPanel(close)
@@ -261,10 +282,9 @@ private extension FriendsView {
         newUserId.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// 明显的格式错误先挡在本地：以 `@` 开头、有服务器名的冒号。其余细节由核心判。
+    /// 用户 ID 和 matrix.to 链接都收，认不认得由核心判（不是用户的报输入非法）。
     private var canSubmitAdd: Bool {
-        normalizedUserId.hasPrefix("@") && normalizedUserId.contains(":")
-            && normalizedUserId.count > 3
+        !normalizedUserId.isEmpty
     }
 
     private var normalizedServerName: String {
@@ -272,6 +292,28 @@ private extension FriendsView {
     }
 
     private func addPanel(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            addForm(close)
+            ForEach(addActions.indices, id: \.self) { index in
+                WontonSheetActionRow(action: addActions[index]) { close(addActions[index].perform) }
+            }
+        }
+    }
+
+    /// 表单下面的两条退路：扫对方的码；出示自己的码要等核心给出自己的链接。
+    private var addActions: [WontonSheetAction] {
+        var actions = [WontonSheetAction(title: String(localized: .Friends1.friendsScanCode), icon: .expand) {
+            showsScanner = true
+        }]
+        if model.viewModel.myLink != nil {
+            actions.append(WontonSheetAction(title: String(localized: .Friends3.friendsMyCode), icon: .qrCode) {
+                showsMyCode = true
+            })
+        }
+        return actions
+    }
+
+    private func addForm(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
             TextField(String(localized: .Friends2.friendsAddField), text: $newUserId,
                       prompt: Text(verbatim: "@bob:example.org"))
@@ -296,6 +338,12 @@ private extension FriendsView {
             newUserId = ""
             addFocused = true
         }
+    }
+
+    private func sendScannedCode() {
+        guard let code = scannedCode else { return }
+        scannedCode = nil
+        model.send(.addFriend(userId: code))
     }
 
     /// 发出去就收起面板；格式不对由核心回来时说。

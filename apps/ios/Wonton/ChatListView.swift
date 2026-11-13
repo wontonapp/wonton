@@ -9,6 +9,9 @@ struct ChatListView: View {
     @Environment(\.wontonOpenApps) private var openApps
     @Environment(\.chatPull) private var pull
     @State private var confirmation: PluginConfirmation?
+    /// 这次会话里刚关掉的提醒：关了立刻收横幅；换类提醒由 onChange 重新看存下来的记忆。
+    @State private var locallyDismissed = false
+    private let reminderDismissals = BackupReminderDismissals()
 
     var body: some View {
         NavigationStack(path: $model.path) {
@@ -67,6 +70,10 @@ struct ChatListView: View {
                     StartChatView(model: model)
                 }
             }
+            .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
+                // 换一类提醒（保存↔输入）时重新看关没关过；核心清掉提醒后也落回未关。
+                locallyDismissed = false
+            }
         }
     }
 
@@ -97,25 +104,34 @@ struct ChatListView: View {
         .accessibilityLabel(Text(.Chat1.chatNewChat))
     }
 
+    /// 关过的提醒不再挂（本机显示偏好，存壳里）；这次会话里刚关的立即生效。
+    private var reminderDismissed: Bool {
+        locallyDismissed
+            || (model.viewModel.encryption.backupReminder.map { reminderDismissals.dismissed($0) } ?? false)
+    }
+
     @ViewBuilder private var notices: some View {
         let status = ChatStatus(model.viewModel)
-        let reminder = model.viewModel.encryption.backupReminder?.text
-        if status != nil || reminder != nil {
+        let backupReminder = model.viewModel.encryption.backupReminder
+        let reminder = backupReminder?.text
+        if status != nil || (reminder != nil && !reminderDismissed) {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                 status.map(ChatStatusView.init)
-                if let reminder {
+                if let reminder, let backupReminder, !reminderDismissed {
                     WontonGroup {
-                        if model.viewModel.encryption.backupReminder == .continueOnOtherDevice {
-                            // 交接还没完成，主人先进了列表：点了回到交接页（ADR-0087）。
-                            Button { model.keyHandoffDeferred = false } label: {
-                                WontonRow(title: reminder, showsForward: true)
+                        HStack(spacing: WontonTheme.spacing.s8) {
+                            if backupReminder == .continueOnOtherDevice {
+                                // 交接还没完成，主人先进了列表：点了回到交接页（ADR-0087）。
+                                Button { model.keyHandoffDeferred = false } label: { reminderTitle(reminder) }
+                                    .buttonStyle(.plain)
+                            } else {
+                                NavigationLink(value: ChatRoute.chatBackup) { reminderTitle(reminder) }
+                                    .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
-                        } else {
-                            NavigationLink(value: ChatRoute.chatBackup) {
-                                WontonRow(title: reminder, showsForward: true)
+                            WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
+                                reminderDismissals.dismiss(backupReminder)
+                                locallyDismissed = true
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -123,6 +139,14 @@ struct ChatListView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WontonTheme.spacing.pageInset)
         }
+    }
+
+    private func reminderTitle(_ reminder: String) -> some View {
+        Text(reminder)
+            .wontonText(WontonTheme.typography.body)
+            .foregroundStyle(Color(colors.textPrimary))
+            .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
+            .contentShape(Rectangle())
     }
 
     /// 同步好之前列表是空的不代表没有聊天。
@@ -412,7 +436,7 @@ private struct StartChatView: View {
                         ForEach(Array(contacts.enumerated()), id: \.element.userId) { index, contact in
                             if index > 0 { WontonSeparator() }
                             Button {
-                                model.openDirectChat(with: contact.userId)
+                                model.startChat(with: contact)
                             } label: {
                                 WontonRow(title: contact.name, showsForward: true)
                             }
@@ -427,7 +451,8 @@ private struct StartChatView: View {
     }
 }
 
-/// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。
+/// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。旁聊的根、结果行或旁聊里的消息给标题和状态
+/// （ADR-0093 §4）；不回报结果的 AI 没有状态可说，那句提示留在卡片和旁聊页上，预览只给标题。
 private extension MessageSummary {
     var line: String {
         switch self {
@@ -436,7 +461,8 @@ private extension MessageSummary {
         case .image: String(localized: .Message0.messageSummaryImage)
         case .undecryptable: String(localized: .Message0.messageSummaryUndecryptable)
         case .redacted: String(localized: .Message0.messageSummaryRedacted)
-        case let .sideChat(title, _): title
+        case let .sideChat(title, state):
+            state == .untracked ? title : String(localized: .Chat.sideChatResultLine(title, state.text))
         case let .other(kind): String(localized: .Chat0.chatSummaryOther(kind))
         }
     }

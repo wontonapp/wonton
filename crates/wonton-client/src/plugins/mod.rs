@@ -12,6 +12,7 @@ mod media;
 mod now;
 mod polling;
 mod registry_mirror;
+mod roles;
 mod settings;
 mod sharing;
 mod start;
@@ -302,6 +303,7 @@ impl PluginsLink {
             link.home.retry_if_rejected().await;
             link.spawn_installed();
             link.spawn_storage();
+            link.spawn_roles();
             // 商店留下的问题，已安装列表取到了也清不掉，页面上的重试不连它一起取就没有用。
             if *lock(&link.problem_of) == Some(Listing::Store) {
                 link.spawn_store(false);

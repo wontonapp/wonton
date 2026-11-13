@@ -45,6 +45,9 @@ pub enum AppLink {
     Settings,
     /// 打开设置里的“其他服务器”，滚到“请求”（ADR-0050：核心在“Wonton”私聊里的配对提醒带这个链接）。
     Peers,
+    /// 认领系统分享进来的一次分享（ADR-0097）：iOS 的分享扩展写好收件目录后用它打开 App，壳把令牌交给
+    /// `ClientCore::claim_share`。
+    Share { token: String },
     /// 打开一个会话（ADR-0100：桌面小组件和系统搜索点进来）。还没加入的房间，壳等它出现再打开。
     Room { room_id: String },
 }
@@ -106,6 +109,7 @@ impl AppLink {
             Self::NewChat => "new-chat".to_owned(),
             Self::AgentChat => "agent-chat".to_owned(),
             Self::Peers => "settings/peers".to_owned(),
+            Self::Share { token } => format!("share/{token}"),
             Self::Room { room_id } => format!("room/{}", utf8_percent_encode(room_id, ROOM_ID)),
         };
         format!("{SCHEME}{path}")
@@ -189,26 +193,20 @@ impl AppLink {
                     plugin_id: (*plugin_id).to_owned(),
                 })
             }
-            ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => {
-                let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
-                if !is_room_id(&room_id) {
-                    return None;
-                }
-                tab(TabRef::Widget {
-                    plugin_id: (*plugin_id).to_owned(),
-                    room_id: room_id.into_owned(),
-                })
-            }
+            ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => tab(TabRef::Widget {
+                plugin_id: (*plugin_id).to_owned(),
+                room_id: decode_room_id(encoded)?,
+            }),
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
             ["settings"] => Some(Self::Settings),
             ["settings", "peers"] => Some(Self::Peers),
-            ["room", encoded] => {
-                let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
-                is_room_id(&room_id).then(|| Self::Room {
-                    room_id: room_id.into_owned(),
-                })
-            }
+            ["share", token] if crate::is_share_token(token) => Some(Self::Share {
+                token: (*token).to_owned(),
+            }),
+            ["room", encoded] => Some(Self::Room {
+                room_id: decode_room_id(encoded)?,
+            }),
             _ => None,
         }
     }
@@ -228,6 +226,11 @@ fn is_room_id(text: &str) -> bool {
     text.len() > 1
         && text.starts_with('!')
         && !text.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+fn decode_room_id(encoded: &str) -> Option<String> {
+    let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
+    is_room_id(&room_id).then(|| room_id.into_owned())
 }
 
 #[cfg(test)]
@@ -294,6 +297,9 @@ mod tests {
             AppLink::NewChat,
             AppLink::AgentChat,
             AppLink::Peers,
+            AppLink::Share {
+                token: "6F9619FF-8B86-D011-B42D-00C04FC964FF".into(),
+            },
             AppLink::Room {
                 room_id: "!family:home.example".into(),
             },
@@ -319,6 +325,8 @@ mod tests {
             "wonton://tab/plugin/a b",
             "wonton://tab/plugin/a/b/c",
             "wonton://ask",
+            "wonton://share/../../servers",
+            "wonton://share/",
             "wonton://room/",
             "wonton://room/!",
             "wonton://room/family:home.example",

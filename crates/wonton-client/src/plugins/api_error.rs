@@ -44,7 +44,10 @@ pub(super) fn core_error(
         Some("image_pull_failed") => PluginFailure::SourceUnavailable,
         Some("record_unusable") => PluginFailure::RecordUnusable,
         Some("source_unavailable") => PluginFailure::SourceUnavailable,
-        Some("not_found" | "not_installed") => PluginFailure::NotFound,
+        Some("not_found" | "not_installed" | "role_not_found") => PluginFailure::NotFound,
+        Some("role_name_taken" | "role_in_use" | "default_role" | "role_limit" | "removed") => {
+            PluginFailure::Conflict
+        }
         Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
         Some("device_unavailable") => PluginFailure::DeviceUnavailable,
         Some("conflict") => PluginFailure::Conflict,

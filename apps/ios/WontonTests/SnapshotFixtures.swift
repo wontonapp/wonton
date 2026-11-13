@@ -82,6 +82,42 @@ enum SnapshotFixtures {
         )
     }
 
+    /// 分享页（ADR-0097）面板里的内容：分享进来三项和一句话，去向是默认 Agent，提示丢了两项。
+    /// 照片的路径故意不存在，缩略图走占位图标，不读磁盘。
+    static func shareSheet() -> some View {
+        let layout = ChatLayout(form: .bubbles, textScale: .standard, code: .wrap)
+        let agent = RoomRow(
+            roomId: "!agent:home.example", name: "Agent", isDirect: true, directUserId: "@agent:home.example",
+            isEncrypted: true, isReadOnly: false, membership: .joined, preview: nil,
+            sideChats: false, unreadCount: 0, layout: layout
+        )
+        let family = RoomRow(
+            roomId: "!family:home.example", name: "Family", isDirect: false, directUserId: nil,
+            isEncrypted: true, isReadOnly: false, membership: .joined, preview: nil,
+            sideChats: false, unreadCount: 0, layout: layout
+        )
+        func item(_ id: String, _ name: String, image: Bool) -> ShareInItem {
+            ShareInItem(id: id, kind: image ? .image(width: nil, height: nil) : .file, name: name,
+                        mimeType: image ? "image/jpeg" : "application/pdf", size: 1_200_000, path: "/nonexistent/\(id)")
+        }
+        let share = PendingShare(
+            id: "snapshot",
+            items: [item("0", "IMG_0001.JPG", image: true), item("1", "IMG_0002.JPG", image: true),
+                    item("2", "Floor plan.pdf", image: false)],
+            text: "Which one looks better?",
+            destinations: .ready(rooms: [agent, family], suggestedRoom: agent.roomId),
+            dropped: 2
+        )
+        return VStack {
+            Spacer()
+            ShareInSheetContent(share: share, sending: false, avatar: { row in
+                Text(row.name.prefix(1))
+                    .frame(width: WontonTheme.size.avatar, height: WontonTheme.size.avatar)
+                    .background(Circle().fill(Color.gray.opacity(0.2)))
+            }, pair: {}, remove: { _ in }, send: { _, _ in })
+        }
+    }
+
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,

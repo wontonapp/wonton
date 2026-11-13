@@ -43,7 +43,8 @@ extension View {
     }
 }
 
-private struct WontonSheetActionRow: View {
+/// 面板里的一行操作；自带表单的面板（如加好友）在表单下面接着用同样的行。
+struct WontonSheetActionRow: View {
     let action: WontonSheetAction
     let choose: () -> Void
     @Environment(\.wontonColors) private var colors

@@ -1,6 +1,9 @@
 # 由 xcodegen 从 project.yml 生成
 Wonton.xcodeproj/
 Wonton/Info.plist
+Wonton/Wonton.entitlements
+ShareExtension/Info.plist
+ShareExtension/ShareExtension.entitlements
 
 # 由 scripts/build-core.sh 生成
 WontonClient/build/

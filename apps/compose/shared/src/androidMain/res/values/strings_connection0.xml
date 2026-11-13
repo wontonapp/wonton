@@ -24,4 +24,18 @@
     <string name="connection_last_handshake">Last handshake</string>
     <!-- Label of the last failure in the connection details; the core's text follows. -->
     <string name="connection_last_failure">Last failure</string>
+    <!-- Title of the UDP flow summary in the connection details; tapping it expands one row per flow. First argument: number of flows. -->
+    <plurals name="connection_udp_flows">
+        <item quantity="one">%d UDP flow</item>
+        <item quantity="other">%d UDP flows</item>
+    </plurals>
+    <!-- Value of the UDP flow summary: datagrams dropped because the send buffer was full; shown only when the core could measure it. First argument: number of dropped datagrams. -->
+    <plurals name="connection_udp_flow_dropped">
+        <item quantity="one">%d datagram dropped by a full send buffer</item>
+        <item quantity="other">%d datagrams dropped by a full send buffer</item>
+    </plurals>
+    <!-- Value of one UDP flow row. First argument: port; second: packets received; third: packets sent. -->
+    <string name="connection_udp_flow_traffic">port %1$d · recv %2$d / sent %3$d</string>
+    <!-- Value of one UDP flow row when packets too large for the tunnel were dropped. First argument: port; second: packets received; third: packets sent; fourth: dropped packets. -->
+    <string name="connection_udp_flow_traffic_dropped">port %1$d · recv %2$d / sent %3$d · %4$d dropped as too large</string>
 </resources>
