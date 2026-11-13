@@ -47,9 +47,27 @@ impl HomeLink {
             }
             builder.bind()
         });
-        let error = match tokio::time::timeout(deadline, bind).await {
+        // 到点放弃时，绑定本身还在跑：日志里记下它之后多久才回来。看得出时限是不是掐了一个快好的绑定，
+        // 还是真卡住的那种（真卡住就一直不回来）。
+        let started = std::time::Instant::now();
+        let mut bind = Box::pin(bind);
+        let error = match tokio::time::timeout(deadline, &mut bind).await {
             Ok(Ok(Ok(endpoint))) => return Ok(endpoint),
-            Err(_) => return Err(BindError::TimedOut),
+            Err(_) => {
+                tokio::spawn(async move {
+                    let elapsed = started.elapsed();
+                    match bind.await {
+                        Ok(Ok(_)) => {
+                            tracing::info!(?elapsed, "an abandoned bind only finished now")
+                        }
+                        Ok(Err(error)) => {
+                            tracing::info!(?elapsed, error = %error, "an abandoned bind only failed now");
+                        }
+                        Err(_) => {}
+                    }
+                });
+                return Err(BindError::TimedOut);
+            }
             Ok(Ok(Err(error))) => error.to_string(),
             Ok(Err(error)) => error.to_string(),
         };
@@ -104,4 +122,6 @@ pub(crate) struct TestHooks {
     /// 配对后建连的绑定时限和建不起来后第一次再试的间隔，替掉生产的那两份。
     pub(crate) establish_timing:
         std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
+    /// 冷启动的建连时限和之后的建连时限，替掉生产的那两份。
+    pub(crate) cold_allowance: std::sync::Mutex<Option<(std::time::Duration, std::time::Duration)>>,
 }

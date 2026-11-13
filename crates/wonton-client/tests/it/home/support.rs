@@ -133,6 +133,11 @@ impl Home {
         self.server.as_ref().expect("服务端没在运行")
     }
 
+    /// 服务端的地址（给中间的转发用）。
+    pub(crate) fn socket(&self) -> SocketAddr {
+        self.server().endpoint().bound_sockets()[0]
+    }
+
     pub(super) fn ticket(&self) -> String {
         self.ticket_at(self.server().endpoint().bound_sockets()[0])
     }
@@ -374,12 +379,19 @@ impl Gate {
 }
 
 /// 转发的 UDP 代理：让设备经它连服务端。`packets` 个设备→服务端的包各晚 `delay`，之后立即转；
-/// 用来把第一次建连拖过时限、之后的又恢复正常。
+/// 用来把第一次建连拖过时限、之后的又恢复正常；`packets` 取 `usize::MAX` 时两个方向都晚，
+/// 一次握手被拖得比时限还久，模拟慢设备上的拨号和交换。
 pub(crate) struct SlowUdp {
     addr: SocketAddr,
 }
 
 impl SlowUdp {
+    /// 两个方向都晚 `delay`：建连要几个往返，把一次握手拖得比时限还久。
+    pub(crate) async fn start(server: SocketAddr, delay: Duration) -> Self {
+        Self::start_first(server, usize::MAX, delay).await
+    }
+
+    /// 只有最初的 `packets` 个设备→服务端的包晚 `delay`，之后立即转：第一次建连被拖到超时，之后又正常。
     pub(crate) async fn start_first(server: SocketAddr, packets: usize, delay: Duration) -> Self {
         let socket = Arc::new(UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap());
         let addr = socket.local_addr().unwrap();
