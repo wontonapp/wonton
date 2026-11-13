@@ -31,7 +31,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * 夜跑界面测试（ADR-0082）：working 转圈加步骤、一轮收成一行“N 步”，waiting 整行可点开卡片。
+ * 夜跑界面测试（ADR-0082）：working 显示工作标记和步骤、一轮收成一行“N 步”，waiting 整行可点开卡片。
  * 时间线要登录后的房间才有（核心假数据只够首屏），所以直接渲染真组件，数据用核心类型构造。
  */
 @RunWith(AndroidJUnit4::class)
@@ -68,7 +68,7 @@ class AgentRunRowTest {
     fun workingToDoneAndWaitingOpensCard() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         var openedCardId: String? = null
-        // 转圈不结束，waitForIdle 等不到静止：停掉帧钟，断言之间手动走一帧。
+        // 工作状态可能是转圈或静态图标；停掉帧钟，阶段之间手动走一帧。
         // 三个阶段共用一次 setContent（ui-test 不允许设第二次），阶段之间改状态。
         compose.mainClock.autoAdvance = false
         var run by mutableStateOf(fixture(AgentRunState.Working, step = "Reading files"))
@@ -81,12 +81,12 @@ class AgentRunRowTest {
         // reduceMotion 的系统监听是异步进来的：先等它落进组合，再走帧断言。
         compose.waitForIdle()
         compose.mainClock.advanceTimeBy(100)
-        compose.onNodeWithTag("agentRunSpinner").assertExists()
+        compose.onNodeWithTag("agentRunWorkingMark").assertExists()
         compose.onNodeWithText("Reading files").assertExists()
 
         run = fixture(AgentRunState.Done, steps = 5u)
         compose.mainClock.advanceTimeBy(100)
-        compose.onNodeWithTag("agentRunSpinner").assertDoesNotExist()
+        compose.onNodeWithTag("agentRunWorkingMark").assertDoesNotExist()
         compose.onNodeWithText(context.resources.getQuantityString(R.plurals.agent_run_steps, 5, 5))
             .assertExists()
 

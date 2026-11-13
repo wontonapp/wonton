@@ -168,10 +168,15 @@ private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
     when (run.state) {
         AgentRunState.Working ->
             if (AvatarEnvironment.reduceMotion) {
-                Icon(WontonIcon.Agent, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
+                Icon(
+                    WontonIcon.Agent,
+                    null,
+                    Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunWorkingMark"),
+                    tint = tint,
+                )
             } else {
                 CircularProgressIndicator(
-                    Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunSpinner"),
+                    Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunWorkingMark"),
                     color = colors.accentInk.toColor(),
                 )
             }
