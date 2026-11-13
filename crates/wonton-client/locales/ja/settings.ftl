@@ -62,3 +62,6 @@ push-home-unreachable = 自宅サーバーに接続できません：{ $reason }
 push-session-timeout = { $seconds }秒以内にMatrixにログインできませんでした
 
 push-room-key-missing = このメッセージのルームキーがまだ届いていません
+
+# $path is the private device file; $reason is the underlying storage error.
+notification-lock-screen-storage-failed = ロック画面の設定ファイル{ $path }に読み書きできません：{ $reason }

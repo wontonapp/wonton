@@ -41,5 +41,7 @@
     <string name="push_status_failed_upstream">注册失败，家里的服务器出错了</string>
     <string name="push_status_failed_not_ready">注册失败，请等聊天连接就绪</string>
     <string name="push_status_failed_invalid_input">注册失败，推送地址无效</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">锁屏上显示内容</string>
     <string name="settings_my_apps">我的应用</string>
 </resources>
