@@ -25,6 +25,7 @@ permission-owner-identity = 知道你的用户名和邮箱，还能查家人用�
 permission-network-egress = 访问外网和局域网
 permission-egress-proxy = 提供出网代理（高权限）
 permission-network-lan = 在局域网上开放端口（高权限）
+permission-network-clients = 让别的 App 从局域网或公网连进来，由你打开开关
 permission-network-host = 使用宿主的网络（很高权限）
 permission-capability = 增加内核能力 { $name }
 permission-host-pid = 共享宿主进程空间（最高权限）

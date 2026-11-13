@@ -330,7 +330,6 @@ fn dedicated_provider_fields_keep_their_original_spec_floors() {
         assert!(problems(&document("0.7", manifest, plain())).is_empty());
     }
 }
-
 #[test]
 fn base64url_secret_encoding_needs_spec_0_14() {
     let manifest =
@@ -354,6 +353,27 @@ fn a_widget_needs_spec_0_14() {
 }
 
 #[test]
+fn clients_needs_spec_0_14() {
+    let manifest = json!({
+        "permissions": ["network.clients"],
+        "clients": {"tcp": [{"service": "web", "port": 22, "name": "ssh"}]}
+    });
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert!(
+        found.iter().any(|p| p.contains("x-wonton.clients")),
+        "{found:?}"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("permission network.clients")),
+        "{found:?}"
+    );
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
 fn the_install_deadline_needs_spec_0_14() {
     let manifest = json!({"install_timeout_secs": 900});
     let found = problems(&document("0.13", manifest.clone(), plain()));
@@ -366,6 +386,15 @@ fn the_install_deadline_needs_spec_0_14() {
 }
 
 #[test]
+fn guests_needs_spec_0_14() {
+    let manifest = json!({"webui": {"service": "web", "port": 80, "guests": true}});
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.webui.guests"), "{found:?}");
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
 fn other_secret_encodings_stay_at_the_old_spec() {
     let manifest = json!({"secrets": {"key": {"generate": {"encoding": "base64"}}}});
     assert!(problems(&document("0.13", manifest, plain())).is_empty());
@@ -374,4 +403,18 @@ fn other_secret_encodings_stay_at_the_old_spec() {
 #[test]
 fn the_supported_spec_version_covers_the_newest_table_entry() {
     assert!(TABLE.iter().all(|(since, _)| *since <= SPEC_VERSION));
+}
+
+#[test]
+fn external_url_needs_spec_0_14() {
+    let manifest = json!({"clients": {"tcp": [{"service": "web", "port": 22, "name": "ssh"}]}});
+    let service = json!({"image": "nginx", "labels": {"url": "${WONTON_EXTERNAL_URL}"}});
+    let found = problems(&document("0.13", manifest.clone(), service.clone()));
+    assert!(
+        found
+            .iter()
+            .any(|p| p.contains("services.web.labels.url references WONTON_EXTERNAL_URL")),
+        "{found:?}"
+    );
+    assert!(problems(&document("0.14", manifest, service)).is_empty());
 }

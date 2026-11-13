@@ -420,3 +420,26 @@ plugin-settings-value-array-too-big = 超過 { $max } 項
 plugin-settings-value-too-big = 設定合計超過 { $max } 位元組
 plugin-settings-value-unknown-type = 這個 App 版本送不出這種值，更新 App
 plugin-settings-value-problems = { $count } 項設定不合格
+
+# ── 資訊清單的 clients（manifest_clients.rs）─────────────────────────────────
+plugin-settings-clients-need-permission = 宣告了 clients 就要申請 network.clients 權限，兩個一起寫
+plugin-settings-clients-need-clients = 申請了 network.clients 就要用 clients 寫明開什麼，兩個一起寫
+plugin-settings-clients-empty = clients 至少要有 http 或 tcp 一項
+plugin-settings-clients-port-zero = clients.{ $field } 的連接埠不能為 0
+plugin-settings-clients-port-mcp = clients.{ $field } 不能是 mcp 的連接埠（{ $service } 的 { $port }）
+plugin-settings-clients-tcp-webui = clients.tcp 不能是網頁的連接埠（{ $service } 的 { $port }）：經閘道加的請求標頭偽造得了
+plugin-settings-clients-tcp-name = clients.tcp 的 name 只能用 a-z、0-9 和中間的連字號，最長 32 位元組：{ $name }
+plugin-settings-clients-tcp-duplicate = clients.tcp 裡的 name { $name } 重複了
+plugin-settings-clients-public = clients.http.public 的 allow 和 deny 只能寫一個
+plugin-settings-clients-paths = { $field } 最多 64 條
+plugin-settings-clients-path = { $field } 的路徑 { $path }（{ $bytes } 位元組）不合格：以 / 開頭，只能有 A-Z a-z 0-9 - . _ ~ ! $ & ' ( ) * + , = : @ /，不能有 %、\、;、?、# 和「.」「..」段，最長 256 位元組
+plugin-settings-clients-status = clients.http.auth_failures 的 status 要寫 400 到 599：{ $status }
+plugin-settings-clients-auth = clients.http.auth 的 gateway、credentials、app 要恰好寫一個
+plugin-settings-clients-issue = clients.http.auth.credentials 要寫 issue
+plugin-settings-clients-per-client = clients.http.auth.credentials 預設每個用戶端一個密碼，要寫 revoke；整個應用程式一個密碼時寫 per_client: false
+plugin-settings-clients-shared = clients.http.auth.credentials 的 per_client 為 false 時要寫 rotate，不能寫 revoke
+plugin-settings-clients-generates = clients.http.auth.credentials 的 generates 為 true 時要寫 verify：重新產生的值要能驗
+plugin-settings-clients-setup-done = clients.http.auth.app 要寫 setup_done：首次註冊沒完成時入口打不開
+plugin-settings-clients-gateway = clients.http.auth 是 gateway 時不看 auth_failures，刪掉它
+plugin-settings-clients-guests = webui.guests 表示能建訪客連結，要申請 network.clients 權限
+plugin-settings-clients-external-url = 資訊清單引用了 WONTON_EXTERNAL_URL，就要宣告 clients.http 或 webui.guests: true

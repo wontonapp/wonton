@@ -35,6 +35,7 @@ pub fn permission_text(permission: &Permission, langs: &Languages) -> String {
         Permission::NetworkEgress => l10n::text(langs, "permission-network-egress", &[]),
         Permission::EgressProxy => l10n::text(langs, "permission-egress-proxy", &[]),
         Permission::NetworkLan => l10n::text(langs, "permission-network-lan", &[]),
+        Permission::NetworkClients => l10n::text(langs, "permission-network-clients", &[]),
         Permission::NetworkHost => l10n::text(langs, "permission-network-host", &[]),
         Permission::Capability { name } => l10n::text(
             langs,
