@@ -137,8 +137,10 @@ private fun okAction(onDismiss: () -> Unit) = WontonDialogAction(
 /** “添加设备”或聊天备份页正开着：确认流程在这两处就地显示（ADR-0046），不弹窗。 */
 private fun surfaceShowing(navigation: AppNavigation): Boolean {
     // 页面盖着时确认流程进不去那两层：设置里看邀请和备份，聊天里看备份。
-    val settingsVisible = navigation.settingsOverlay || navigation.appsPage != null
+    val settingsVisible = navigation.settingsOverlay
+    val chatVisible = !settingsVisible && !navigation.pages.viewModel.showsApps &&
+        navigation.pages.current == TabRef.Chat
     return (settingsVisible && navigation.settingsPage == SettingsSubpage.INVITE) ||
-        (navigation.chat.showingBackup) ||
+        (chatVisible && navigation.chat.showingBackup) ||
         (settingsVisible && navigation.settingsPage == SettingsSubpage.BACKUP)
 }

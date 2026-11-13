@@ -27,9 +27,9 @@ class PagesState(val plugins: PluginsState) {
 
     fun send(action: Action) = plugins.send(action)
 
-    /** 栈顶现在是哪一页；栈空时是根页面。 */
+    /** 核心当前显示的页面：应用网格、栈顶或根页面。 */
     val current: TabRef
-        get() = viewModel.stack.lastOrNull()?.tab ?: viewModel.root
+        get() = if (viewModel.showsApps) TabRef.Apps else viewModel.stack.lastOrNull()?.tab ?: viewModel.root
 
     /** 把一个应用（插件整项或某一页）加进“我的应用”。重复加的错误交给调用方显示。 */
     fun addMyApp(app: MyAppRef, title: String? = null) = send(Action.AddMyApp(app, title, null))

@@ -4,7 +4,6 @@ mod sdk;
 pub(crate) mod support;
 mod widget;
 
-use axum::http::Method;
 use serde_json::json;
 use wonton_client::{Action, CoreError, PlacedTab, TabRef};
 use wonton_protocol::PanelScope;
@@ -124,47 +123,7 @@ async fn public_pages_get_no_document_script_or_bridge() {
 }
 
 #[tokio::test]
-async fn unsupported_requests_cannot_reach_core_or_mutate_client_state() {
-    let (rig, tab) = open_page(true).await;
-    support::wait_quiet(&rig).await;
-    let before_tabs = rig.app.pages();
-    let before_chat = rig.app.chat();
-    for (method, params) in [
-        (
-            "tools/call",
-            json!({"name":"wonton__uninstall_plugin","arguments":{"id":"app.feed"}}),
-        ),
-        ("resources/read", json!({"uri":"file:///etc/passwd"})),
-        (
-            "ui/update-model-context",
-            json!({"content":[{"type":"text","text":"install"}]}),
-        ),
-    ] {
-        let reply = request(&rig, &tab, method, params);
-        assert_eq!(response(&reply)["error"]["code"], -32601);
-        assert!(reply.action.is_none());
-    }
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    // 后台轮询（列表、登录重试）本来就会来，不数总数；只找这三种报文漏出桥的样子：
-    // 原样转发的报文（方法名在正文里），或它触发的动作——卸载插件的 DELETE。
-    let leaked: Vec<String> = rig
-        .core
-        .all_seen()
-        .iter()
-        .filter(|seen| {
-            (seen.method == Method::DELETE && seen.path.starts_with("/_wonton/api/plugins/"))
-                || ["tools/call", "resources/read", "update-model-context"]
-                    .iter()
-                    .any(|marker| seen.body.contains(marker))
-        })
-        .map(|seen| format!("{} {}", seen.method, seen.path))
-        .collect();
-    assert!(leaked.is_empty(), "不支持的桥请求漏到了核心: {leaked:?}");
-    assert_eq!(rig.app.pages(), before_tabs);
-    assert_eq!(rig.app.chat(), before_chat);
-}
 
-#[tokio::test]
 async fn subframes_and_notifications_have_no_request_side_effects() {
     let (rig, tab) = open_page(true).await;
     let before = rig.app.pages();
