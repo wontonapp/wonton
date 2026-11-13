@@ -40,6 +40,18 @@ fn setup_needs_spec_0_11() {
 }
 
 #[test]
+fn a_license_url_needs_spec_0_14() {
+    let manifest = json!({
+        "license": "LicenseRef-Acme-Eula",
+        "license_url": "https://example.com/eula",
+    });
+    let found = problems(&document("0.13", manifest.clone(), plain()));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("x-wonton.license_url"), "{found:?}");
+    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+}
+
+#[test]
 fn compose_fields_and_permissions_count_too() {
     let manifest = json!({"permissions": ["plugins.health"]});
     let service = json!({"image": "nginx", "cap_drop": ["ALL"], "network_mode": "service:db"});

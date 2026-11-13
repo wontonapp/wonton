@@ -16,7 +16,7 @@ use tokio::{
 };
 
 use wonton_l10n::Lang;
-use wonton_protocol::{ConfirmationOrigin, ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER};
+use wonton_protocol::ConfirmationOrigin;
 
 use crate::{
     config::MAX_FRAME_BYTES,
@@ -27,6 +27,7 @@ use crate::{
 
 pub mod auth;
 mod frame;
+mod mcp_headers;
 mod mode;
 mod permissions;
 use permissions::PermissionWaiter;
@@ -295,7 +296,7 @@ impl AcpClient {
                 "session/new",
                 json!({
                     "cwd": cwd,
-                    "mcpServers": [http_mcp_server(mcp_url, origin)]
+                    "mcpServers": [mcp_headers::wonton_mcp_server(mcp_url, origin, None)]
                 }),
             )
             .await
@@ -348,7 +349,7 @@ impl AcpClient {
         let params = json!({
             "sessionId": session_id,
             "cwd": cwd,
-            "mcpServers": [http_mcp_server(mcp_url, origin)]
+            "mcpServers": [mcp_headers::wonton_mcp_server(mcp_url, origin, Some(session_id))]
         });
         if self.capabilities.load_session {
             self.restore_with("session/load", params).await?;
@@ -810,16 +811,6 @@ fn permission_detail(error: &Error) -> Detail {
 
 fn id_key(id: &Value) -> String {
     id.to_string()
-}
-
-/// 会话的 MCP 服务器配置：带上来源会话的请求头（ADR-0016），Agent 对这个 MCP 服务器的
-/// 每个请求都带着它们，核心据此认出会话在哪个房间、哪个话题里。
-fn http_mcp_server(mcp_url: &str, origin: &ConfirmationOrigin) -> Value {
-    let mut headers = vec![json!({"name": ORIGIN_ROOM_HEADER, "value": origin.room_id})];
-    if let Some(thread) = &origin.thread_id {
-        headers.push(json!({"name": ORIGIN_THREAD_HEADER, "value": thread}));
-    }
-    json!({"type": "http", "name": "wonton", "url": mcp_url, "headers": headers})
 }
 
 fn parse_capabilities(result: &Value) -> Capabilities {

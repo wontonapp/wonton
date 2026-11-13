@@ -13,15 +13,15 @@ use tokio::sync::watch;
 use wonton_protocol::ChatViewModel;
 
 impl ChatLink {
+    /// 把一条时间线（主对话或旁聊）标为已读。壳报告的位置不在底部时不发：主人可能已经翻走。
     pub(super) fn mark_room_read(
         self: &std::sync::Arc<Self>,
-        room_id: &str,
+        key: &super::TimelineKey,
     ) -> Result<(), wonton_protocol::CoreError> {
-        let (_, room_id) = self.target(room_id)?;
-        let subscription = super::lock(&self.open_timeline)
-            .as_ref()
-            .filter(|(id, _)| id == &room_id)
-            .and_then(|(_, subscription)| subscription.upgrade());
+        let session = self.current()?;
+        let subscription = super::lock(&self.open)
+            .get(key)
+            .and_then(|open| open.subscription.upgrade());
         if subscription
             .as_ref()
             .is_none_or(|timeline| !timeline.is_at_bottom())
@@ -29,11 +29,14 @@ impl ChatLink {
             return Ok(());
         }
         let chat = self.clone();
+        let key = key.clone();
         self.spawn_op("chat-op-mark-read-failed", async move {
             // 主人可能在任务排队时翻走，取到房间后再核对同一个订阅。
-            let room = chat.room(&room_id).await?;
+            let room = chat.room(&key).await?;
             if subscription.is_some_and(|timeline| timeline.is_at_bottom()) {
                 room.mark_as_read().await?;
+                // 话题回执只动这个旁聊的未读，聊天列表那一行的未读要重算（ADR-0093 §4）。
+                session.refresh_rooms();
             }
             Ok(())
         });

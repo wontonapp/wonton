@@ -10,9 +10,6 @@ core-error-forbidden = Your home server refused this: { $reason }
 core-error-upstream = Something went wrong on your home server: { $reason }
 core-error-server-too-old = Your home server is too old for this. Update the server, then try again.
 
-# Shown when the shell routes a chat action this core doesn't know.
-side-chat-not-ready = This version of the client core doesn't support side chats yet.
-
 ## Plugin module: technical details, collapsed by default in the Details of
 ## errors, app task rows, and the Internet proxy / Download Mirror settings pages.
 ## No length limit. Each parameter is diagnostic data, not a translation key.

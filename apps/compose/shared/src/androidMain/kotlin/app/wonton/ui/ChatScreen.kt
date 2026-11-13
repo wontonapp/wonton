@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatAccount
+import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.ChatSync
 import app.wonton.protocol.ChatViewModel
@@ -114,9 +115,13 @@ fun ChatRoute(
             BackHandler { navigation.startingChat = false }
             StartChatScreen(
                 core = core,
-                onStart = { userId ->
+                onStart = { userId, contact ->
                     navigation.startingChat = false
-                    rejection = navigation.openDirectChat(core, userId)
+                    rejection = if (contact != null) {
+                        navigation.startChatWith(core, contact) { row -> viewModel.bots.directBot(row) != null }
+                    } else {
+                        navigation.openDirectChat(core, userId)
+                    }
                 },
                 onClose = { navigation.startingChat = false },
             )
@@ -133,21 +138,7 @@ fun ChatRoute(
                 AndroidLinkOpener(context, core, navigation, scope) { rejection = it }
             }
             CompositionLocalProvider(LocalLinkOpener provides opener) {
-                RoomRoute(
-                    core = core,
-                    roomId = room,
-                    title = row?.name ?: room,
-                    isDirect = row?.isDirect == true,
-                    isReadOnly = row?.isReadOnly == true,
-                    bot = viewModel.bots.directBot(row),
-                    plugins = plugins,
-                    rooms = viewModel.rooms,
-                    onAction = onAction,
-                    onReject = { rejection = it },
-                    onOpenRoom = { navigation.openRoom = it },
-                    onOpenBackup = { navigation.showingBackup = true },
-                    onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
-                )
+                OpenRoom(core, navigation, room, row, viewModel, plugins, onAction) { rejection = it }
             }
         }
         else -> PluginPages(plugins, pluginNavigation) {
@@ -478,7 +469,7 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
 
 /** 选一个人或输入用户名发起私聊，房间出现后打开。 */
 @Composable
-private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose: () -> Unit) {
+private fun StartChatScreen(core: ClientCore, onStart: (String, ChatContact?) -> Unit, onClose: () -> Unit) {
     var peer by rememberSaveable { mutableStateOf("") }
     val input = peer.trim()
     val contacts = remember(input) { core.chatContacts(input) }
@@ -499,14 +490,16 @@ private fun StartChatScreen(core: ClientCore, onStart: (String) -> Unit, onClose
                 ),
             )
             WontonButton(
-                stringResource(R.string.chat_start), { onStart(input) }, Modifier.fillMaxWidth(),
+                stringResource(R.string.chat_start),
+                { onStart(input, contacts.firstOrNull { it.userId == input }) },
+                Modifier.fillMaxWidth(),
                 enabled = input.isNotEmpty(),
             )
             if (contacts.isNotEmpty()) {
                 WontonGroup {
                     contacts.forEachIndexed { index, contact ->
                         if (index > 0) WontonSeparator()
-                        WontonRow(contact.name, showsForward = true, onClick = { onStart(contact.userId) })
+                        WontonRow(contact.name, showsForward = true, onClick = { onStart(contact.userId, contact) })
                     }
                 }
             }

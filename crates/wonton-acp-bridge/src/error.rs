@@ -79,6 +79,10 @@ pub enum Error {
     InvalidInput(Detail),
     #[error("确认卡片不可用：{0}")]
     ConfirmationUnavailable(Detail),
+    /// 核心的调用链接口拒了这一轮（ADR-0061 第 10 节）：上限和已停有各自的说明，
+    /// 这里是其余类别（权限、输入非法、未知），详情是核心写的。
+    #[error("调用链拒绝了这一轮：{0}")]
+    ChainRefused(Detail),
     #[error("队列已满：{0}")]
     Busy(Detail),
     #[error("Matrix 操作失败：{0}")]
@@ -101,6 +105,7 @@ pub fn format_error(error: &Error, lang: Lang) -> String {
         Error::Upstream(detail) => ("err-upstream", detail),
         Error::InvalidInput(detail) => ("err-invalid", detail),
         Error::ConfirmationUnavailable(detail) => ("err-confirmation", detail),
+        Error::ChainRefused(detail) => ("err-chain-refused", detail),
         Error::Busy(detail) => ("err-busy", detail),
         Error::Matrix(detail) => ("err-matrix", detail),
     };

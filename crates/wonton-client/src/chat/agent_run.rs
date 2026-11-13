@@ -4,13 +4,14 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use wonton_matrix::AgentRunStatus;
+use wonton_matrix::{AgentRunStatus, ChatRoom};
 use wonton_protocol::{
     AgentRunState, BotActivity, ChatViewModel, ConfirmationRequester, ConfirmationState,
     ConfirmationView, CoreError, TimelineContent,
 };
 
-use super::ChatLink;
+use super::side_chat::{SideChatsView, Support};
+use super::{ChatLink, TimelineKey, lock};
 
 /// 合成 AgentRun 条目要用的 Bot 情况：Bot 列表和每个账号的活动来自 [`ChatViewModel`]；这个房间里
 /// 等回答的卡片来自「等你确认」列表按 `origin.room_id` 过滤后的房间卡片（ADR-0016：卡片不在时间线里）。
@@ -22,6 +23,8 @@ pub(super) struct BotsView {
     activity: HashMap<String, Option<BotActivity>>,
     /// Bot 账号 → 这个房间里它等回答的卡片（多张时取最早到期的）。
     waiting_cards: HashMap<String, String>,
+    /// 这个房间里旁聊的情况（ADR-0093）：卡片、结果行的状态也跟着 Bot 走，一起带着。
+    side_chats: SideChatsView,
 }
 
 impl BotsView {
@@ -35,7 +38,25 @@ impl BotsView {
                 .map(|bot| (bot.user_id.clone(), bot.activity))
                 .collect(),
             waiting_cards: waiting_cards_from(cards),
+            side_chats: SideChatsView::default(),
         }
+    }
+
+    /// 换上重算过的旁聊情况。
+    pub(super) fn with_side_chats(&self, side_chats: SideChatsView) -> Self {
+        Self {
+            side_chats,
+            ..self.clone()
+        }
+    }
+
+    pub(super) fn side_chats(&self) -> &SideChatsView {
+        &self.side_chats
+    }
+
+    /// 房间里有没有认得的 Bot 声明了支持旁聊（ADR-0093 §1 的信任规则）。
+    pub(super) fn supports(&self, support: &Support, room: &ChatRoom) -> bool {
+        support.supports(&room.room_id().to_owned(), &self.users)
     }
 
     /// 这个房间等回答的卡片变了（来了、答了、到期了）而 Bot 列表没变时，只重算卡片映射。
@@ -127,11 +148,23 @@ impl ChatLink {
         item_id: &str,
         key: &str,
     ) -> Result<(), CoreError> {
-        let room = self.opened(room_id)?;
+        let (_, room_id) = self.target(room_id)?;
+        // 状态行可能在主对话里，也可能在打开着的旁聊里（ADR-0093）：在哪条时间线里找到就在哪里回答。
+        let rooms = lock(&self.open).all_in(&room_id);
+        if rooms.is_empty() {
+            return Err(super::target::not_subscribed(&TimelineKey::main(room_id)));
+        }
         let item_id = item_id.to_owned();
         let key = key.to_owned();
         self.spawn_op("chat-op-agent-answer-failed", async move {
-            room.answer_agent_choice(&item_id, &key).await
+            let mut outcome = Ok(());
+            for room in rooms {
+                outcome = room.answer_agent_choice(&item_id, &key).await;
+                if !matches!(outcome, Err(wonton_matrix::Error::InvalidInput(_))) {
+                    break;
+                }
+            }
+            outcome
         });
         Ok(())
     }
