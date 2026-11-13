@@ -13,8 +13,10 @@ use super::super::{PluginId, PluginPackage, PluginStatus};
 use super::manager::manager_with;
 use super::{langs, package};
 
+type RecordedEvent = (tracing::Level, BTreeMap<String, String>);
+
 #[derive(Clone, Default)]
-struct Events(Arc<Mutex<Vec<(tracing::Level, BTreeMap<String, String>)>>>);
+struct Events(Arc<Mutex<Vec<RecordedEvent>>>);
 
 #[derive(Default)]
 struct Fields(BTreeMap<String, String>);
