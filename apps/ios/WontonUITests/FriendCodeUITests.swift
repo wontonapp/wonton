@@ -53,12 +53,10 @@ final class FriendCodeUITests: XCTestCase {
     // MARK: - 走到加好友面板
 
     private func openAddFriend() {
-        passOnboarding()
-        guard let settings = tabButton(["Settings"]) else {
-            shot("no-tab-bar")
+        guard openSettings() else {
+            shot("no-settings")
             return XCTFail("没进主界面\n\(app.debugDescription)")
         }
-        settings.tap()
         // 设置行的读屏标签带着好友数（“Friends, 0”），按开头认；行可能在首屏下面。
         let friends = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Friends")).firstMatch
         let deadline = Date().addingTimeInterval(30)
@@ -71,20 +69,30 @@ final class FriendCodeUITests: XCTestCase {
         add.tap()
     }
 
-    /// 配对后走完引导：能跳过的跳过。整段最多 60 秒（含配对和首次同步）。
-    private func passOnboarding() {
-        let deadline = Date().addingTimeInterval(60)
+    /// 配对后走到设置：能跳过的引导和“在另一台设备继续”都跳过，设置在侧栏里，侧栏收着就先打开。最多 90 秒。
+    private func openSettings() -> Bool {
+        let deadline = Date().addingTimeInterval(90)
+        var sidebarTapped = Date.distantPast
         while Date() < deadline {
-            if tabButton(["Chats", "Apps"]) != nil { return }
-            for label in ["Skip", "Done", "Next"] {
-                let button = app.buttons[label].firstMatch
-                if button.exists && button.isHittable && button.isEnabled {
-                    button.tap()
-                    break
+            let settings = app.buttons["Settings"].firstMatch
+            if settings.exists && settings.isHittable {
+                settings.tap()
+                return true
+            }
+            if let skip = ["Later", "Skip", "Done", "Next"]
+                .map({ app.buttons[$0].firstMatch })
+                .first(where: { $0.exists && $0.isHittable && $0.isEnabled }) {
+                skip.tap()
+            } else {
+                let sidebar = app.buttons["Sidebar"].firstMatch
+                if sidebar.exists && sidebar.isHittable && Date().timeIntervalSince(sidebarTapped) > 6 {
+                    sidebar.tap()
+                    sidebarTapped = Date()
                 }
             }
             _ = app.wait(for: .runningForeground, timeout: 1)
         }
+        return false
     }
 
     private func tapButton(_ label: String, timeout: TimeInterval) {
@@ -103,16 +111,6 @@ final class FriendCodeUITests: XCTestCase {
             }
             _ = app.wait(for: .runningForeground, timeout: 1)
         } while Date() < deadline
-        return nil
-    }
-
-    /// 底栏的按钮：在屏幕下部，和页面里同名的按钮分开。
-    private func tabButton(_ labels: [String]) -> XCUIElement? {
-        let height = app.windows.firstMatch.frame.height
-        for label in labels {
-            for element in app.buttons.matching(identifier: label).allElementsBoundByIndex
-            where element.frame.minY > height * 0.7 { return element }
-        }
         return nil
     }
 
