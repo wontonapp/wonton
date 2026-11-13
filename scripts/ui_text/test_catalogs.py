@@ -37,6 +37,10 @@ class ResolveTest(unittest.TestCase):
         self.assertEqual(groups.resolve("core-error-storage", "fluent"), ("common", ""))
         self.assertEqual(groups.resolve("Ask a bot: %@", "ios"), ("common", ""))
 
+    def test_side_keys_land_in_the_chat_file(self):
+        self.assertEqual(groups.resolve("side_chat_new", "android"), ("chat", "chat"))
+        self.assertEqual(groups.resolve("side-chat-title", "fluent"), ("chat", "chat"))
+
     def test_emoji_keys_land_by_number(self):
         self.assertEqual(groups.resolve("verification.emoji.0", "ios"), ("peers", "verificationEmoji0"))
         self.assertEqual(groups.resolve("verification.emoji.7", "ios"), ("peers", "verificationEmoji2"))

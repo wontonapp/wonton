@@ -443,6 +443,15 @@ impl Upstreams {
         clients.get(id)?.tools_problem.clone()
     }
 
+    /// 不建连接，直接记下列工具的问题（这次没去连的插件用它，见总线列工具时对未配置插件的处理）。
+    pub fn note_problem(&self, server: &McpServer, problem: String) {
+        let mut clients = self.clients.lock().expect("MCP 客户端表锁中毒");
+        clients
+            .entry(server.id.clone())
+            .or_insert_with(|| Slot::new(server.url.clone(), server.headers.clone()))
+            .tools_problem = Some(problem);
+    }
+
     async fn list_tools(&self, server: &McpServer) -> Result<Vec<Tool>, String> {
         let id = &server.id;
         let started = Instant::now();

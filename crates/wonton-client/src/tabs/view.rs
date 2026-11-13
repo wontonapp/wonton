@@ -392,6 +392,8 @@ pub(super) fn page_state(
         PluginState::Installing => TabState::Starting,
         PluginState::Stopped => TabState::Stopped,
         PluginState::Running { .. } => TabState::Ready,
+        // 待配置时网页照常，只是插件的工具不能调。
+        PluginState::NeedsConfiguration => TabState::Ready,
         PluginState::Upgrading => TabState::Upgrading,
         PluginState::Uninstalling => TabState::Uninstalling,
         PluginState::Degraded { reason } => TabState::Failed {
