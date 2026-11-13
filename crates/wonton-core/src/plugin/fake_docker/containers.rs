@@ -16,6 +16,9 @@ pub(super) fn containers(
     query: &str,
     raw: &Bytes,
 ) -> Option<Response> {
+    if let Some(reply) = container_details(docker, method, parts, query, raw) {
+        return Some(reply);
+    }
     let exists = |name: &str| docker.containers.contains_key(name);
     let reply = match (method, parts) {
         (&Method::POST, ["create"])
@@ -81,6 +84,21 @@ pub(super) fn containers(
             let code = docker.outputs.get(*name).map_or(0, |o| o.0);
             json_reply(StatusCode::OK, json!({"StatusCode": code}))
         }
+        (&Method::GET, ["json"]) => list_containers(docker, query),
+        _ => return None,
+    };
+    Some(reply)
+}
+
+fn container_details(
+    docker: &mut Resources,
+    method: &Method,
+    parts: &[&str],
+    query: &str,
+    raw: &Bytes,
+) -> Option<Response> {
+    let exists = |name: &str| docker.containers.contains_key(name);
+    let reply = match (method, parts) {
         (&Method::GET, [name, "logs"]) if exists(name) => {
             let (_, stdout, stderr) = docker.outputs.get(*name).cloned().unwrap_or_default();
             let mut frames = Vec::new();
@@ -121,7 +139,6 @@ pub(super) fn containers(
                 ),
             }
         }
-        (&Method::GET, ["json"]) => list_containers(docker, query),
         _ => return None,
     };
     Some(reply)
