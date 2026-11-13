@@ -22,7 +22,7 @@ use wonton_protocol::ClientsFailure;
 /// `GET /_wonton/clients/domain`
 pub async fn domain(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Response {
     let langs = languages(&headers);
-    let Some(clients) = &gateway.clients else {
+    let Some(clients) = &gateway.domain else {
         return unavailable(&langs);
     };
     match clients.view().await {
@@ -45,7 +45,7 @@ pub async fn save_domain(
     Json(request): Json<PutDomainRequest>,
 ) -> Response {
     let langs = languages(&headers);
-    let Some(clients) = &gateway.clients else {
+    let Some(clients) = &gateway.domain else {
         return unavailable(&langs);
     };
     let saved = match clients.save(request).await {

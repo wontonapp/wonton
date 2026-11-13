@@ -64,11 +64,10 @@ pub fn caa_state(records: &[CaaIssue], account_uri: &str) -> CaaState {
                 .iter()
                 .any(|(key, value)| key.eq_ignore_ascii_case("accounturi") && value == account_uri)
             && record.parameters.iter().any(|(key, value)| {
-                // RFC 8657 的列表是逗号分隔，大小写不敏感。
+                // RFC 8657 的列表是逗号分隔；方法名按 Boulder 的语义精确比较，只认小写 dns-01
+                // （Boulder va/caa.go 对方法名不做大小写归一，大写 DNS-01 实际会被拒单）。
                 key.eq_ignore_ascii_case("validationmethods")
-                    && value
-                        .split(',')
-                        .any(|method| method.trim().eq_ignore_ascii_case("dns-01"))
+                    && value.split(',').any(|method| method.trim() == "dns-01")
             })
     });
     if bound {
@@ -148,26 +147,61 @@ mod tests {
         );
     }
 
-    /// 多方法列表和额外空白不影响；只有 `issuewild` 的不算绑定 apex。
-    #[test]
-    fn method_lists_and_issuewild() {
-        let record = issue(&[
-            ("accounturi", "https://pebble.test/my-account/1"),
-            ("validationmethods", "http-01, DNS-01"),
-        ]);
-        assert_eq!(
-            caa_state(&[record], "https://pebble.test/my-account/1"),
-            CaaState::Bound
-        );
-        let mut wild = issue(&[
-            ("accounturi", "https://pebble.test/my-account/1"),
-            ("validationmethods", "dns-01"),
-        ]);
-        wild.tag = "issuewild".into();
-        assert_eq!(
-            caa_state(&[wild], "https://pebble.test/my-account/1"),
-            CaaState::Mismatch
-        );
+    async fn wire_issues(tag: &str, methods: &str) -> Vec<CaaIssue> {
+        use hickory_resolver::proto::op::{Message, OpCode};
+        use hickory_resolver::proto::rr::{Record, rdata::CAA};
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let server = socket.local_addr().unwrap().to_string();
+        let mut caa = CAA::new_issue(false, None, Vec::new());
+        caa.tag = tag.into();
+        caa.value = format!(
+            "letsencrypt.org; accounturi=https://pebble.test/my-account/1; validationmethods={methods}"
+        ).into_bytes();
+        let responding = tokio::spawn(async move {
+            let mut bytes = [0; 2048];
+            let (length, peer) = socket.recv_from(&mut bytes).await.unwrap();
+            let query = Message::from_vec(&bytes[..length]).unwrap();
+            let question = query.queries[0].clone();
+            let mut reply = Message::response(query.metadata.id, OpCode::Query);
+            reply.queries.push(question.clone());
+            reply
+                .answers
+                .push(Record::from_rdata(question.name, 60, RData::CAA(caa)));
+            socket
+                .send_to(&reply.to_vec().unwrap(), peer)
+                .await
+                .unwrap();
+        });
+        let records = caa_issues("example.test", &[server]).await.unwrap();
+        responding.await.unwrap();
+        records
+    }
+
+    #[tokio::test]
+    async fn validation_methods_match_boulder_case_sensitively() {
+        let account = "https://pebble.test/my-account/1";
+        for methods in ["DNS-01", "http-01,DNS-01", "Dns-01"] {
+            let records = wire_issues("issue", methods).await;
+            assert_eq!(records.len(), 1, "CAA RDATA was not parsed: {methods}");
+            assert_eq!(
+                caa_state(&records, account),
+                CaaState::Mismatch,
+                "{methods}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn method_lists_and_issuewild() {
+        let account = "https://pebble.test/my-account/1";
+        for methods in ["dns-01", "http-01,dns-01", "dns-01,http-01"] {
+            let records = wire_issues("issue", methods).await;
+            assert_eq!(records.len(), 1, "CAA RDATA was not parsed: {methods}");
+            assert_eq!(caa_state(&records, account), CaaState::Bound, "{methods}");
+        }
+        let records = wire_issues("issuewild", "dns-01").await;
+        assert_eq!(records.len(), 1);
+        assert_eq!(caa_state(&records, account), CaaState::Mismatch);
     }
 
     #[test]

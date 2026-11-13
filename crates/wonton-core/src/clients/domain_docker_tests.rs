@@ -226,6 +226,11 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
 
     def handle_post(self):
+        expected = 'Basic ' + base64.b64encode(b'user$TOKEN:pass\\path$TOKEN "quoted"').decode()
+        if self.headers.get("authorization") != expected:
+            self.send_response(401)
+            self.end_headers()
+            return
         body = json.loads(self.rfile.read(int(self.headers.get("content-length", "0"))) or b"{}")
         host = "_acme-challenge." + body.get("domain", "").removeprefix("*.") + "."
         if self.path == "/present":
@@ -535,11 +540,16 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     let env_file = dir.path().join("provider.env");
     write(
         &env_file,
-        &format!("HTTPREQ_ENDPOINT=http://{helper_ip}:8484\nHTTPREQ_MODE=RAW\n"),
+        &format!(
+            "HTTPREQ_ENDPOINT=http://{helper_ip}:8484\nHTTPREQ_MODE=RAW\nHTTPREQ_USERNAME={}\nHTTPREQ_PASSWORD={}\n",
+            super::domain::dotenv_value("user$TOKEN"),
+            super::domain::dotenv_value(r#"pass\path$TOKEN "quoted""#),
+        ),
     );
     // 先自检辅助容器的写入器和 DNS 转发，和 lego 要走的路径一样。
     let preflight = reqwest::Client::new()
         .post(format!("http://{helper_ip}:8484/present"))
+        .basic_auth("user$TOKEN", Some(r#"pass\path$TOKEN "quoted""#))
         .json(&json!({"domain": ZONE, "keyAuth": "preflight"}))
         .send()
         .await
@@ -548,6 +558,7 @@ async fn case(provider: Provider) -> (Vec<u8>, Vec<u8>) {
     // 自检的那条值要清掉，否则 lego 的传播预检会看到一条对不上的 TXT。
     reqwest::Client::new()
         .post(format!("http://{helper_ip}:8484/cleanup"))
+        .basic_auth("user$TOKEN", Some(r#"pass\path$TOKEN "quoted""#))
         .json(&json!({"domain": ZONE, "keyAuth": "preflight"}))
         .send()
         .await

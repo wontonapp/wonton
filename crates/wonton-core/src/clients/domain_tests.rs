@@ -4,8 +4,7 @@ use std::path::Path;
 
 use wonton_protocol::{CaaState, CredentialEntry, PutDomainRequest, SecretString};
 
-use super::domain::{Domain, DomainError};
-use super::domain::{dotenv_value, read_dotenv};
+use super::{Domain, DomainError, dotenv_value, read_dotenv};
 use crate::plugin::docker::Engine;
 
 fn domain(dir: &Path) -> std::sync::Arc<Domain> {
@@ -254,18 +253,21 @@ async fn env_install_seeds_settings() {
 }
 
 #[test]
-fn dotenv_values_keep_backslashes_and_dollars() {
-    // godotenv 的单引号是字面量：反斜杠和 `$` 原样写、原样读。
+fn dotenv_values_quote_metacharacters_for_godotenv() {
+    // godotenv 的单引号是字面量：`$`、反斜杠和空格都进单引号，lego 实收的值和主人填的一致。
     assert_eq!(dotenv_value("plain-token_1"), "plain-token_1");
-    assert_eq!(dotenv_value("a\\b$c"), "a\\b$c");
+    assert_eq!(dotenv_value("x_./:+-y"), "x_./:+-y");
+    assert_eq!(dotenv_value("user$TOKEN"), "'user$TOKEN'");
+    assert_eq!(dotenv_value("a\\b$c"), "'a\\b$c'");
     assert_eq!(dotenv_value("with space"), "'with space'");
-    assert_eq!(dotenv_value("a\\b c$d"), "'a\\b c$d'");
+    assert_eq!(dotenv_value(""), "''");
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("dns.env");
-    fs::write(&path, "A='a\\b c$d'\nB=a\\b$c\n# comment\n").unwrap();
+    fs::write(&path, "A='a\\b$c'\nB='user$TOKEN'\nC=x_./:+-y\n# comment\n").unwrap();
     let values = read_dotenv(&path).unwrap();
-    assert_eq!(values["A"], "a\\b c$d");
-    assert_eq!(values["B"], "a\\b$c");
+    assert_eq!(values["A"], "a\\b$c");
+    assert_eq!(values["B"], "user$TOKEN");
+    assert_eq!(values["C"], "x_./:+-y");
 }
 
 #[tokio::test]
@@ -280,4 +282,117 @@ async fn credentials_accept_backslash_and_dollar_but_not_single_quote() {
         domain(dir.path()).save(put).await,
         Err(DomainError::Invalid(_))
     ));
+}
+
+fn registered_settings(dir: &Path) {
+    settings(dir, Some("abcdefgh.example.test"));
+    let path = dir.join("entry/settings.json");
+    let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let credentials = serde_json::json!({
+        "username": "test", "password": "test", "subdomain": "test",
+        "fulldomain": "test.auth.example.test"
+    });
+    value["registration"] = serde_json::json!({
+        "home": "abcdefgh", "domain": "abcdefgh.example.test", "frp_token": "test",
+        "acme_dns": credentials, "lan_acme_dns": credentials,
+        "acme_dns_url": "https://auth.example.test",
+        "relay": {"host": "relay.example.test", "port": 7000, "server_name": "relay.example.test"},
+        "suspended": false
+    });
+    fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+}
+
+#[tokio::test]
+async fn registered_unchanged_save_preserves_prepared_issuance() {
+    let dir = tempfile::tempdir().unwrap();
+    registered_settings(dir.path());
+    let clients = domain(dir.path());
+    let mut put = request(Some("abcdefgh.example.test"));
+    put.provider.clear();
+    put.credentials.clear();
+    let saved = clients.save(put).await.unwrap();
+    assert!(!saved.provider_changed);
+    let prepared = dir.path().join("entry/prepared.json");
+    fs::write(&prepared, "in-progress").unwrap();
+    let mut put = request(Some("abcdefgh.example.test"));
+    put.provider.clear();
+    put.credentials.clear();
+    let saved = clients.save(put).await.unwrap();
+    assert!(!saved.provider_changed);
+    assert_eq!(fs::read_to_string(prepared).unwrap(), "in-progress");
+}
+
+#[tokio::test]
+async fn provider_change_waits_for_inflight_issuance() {
+    use std::time::Duration;
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("abcdefgh.example.test"));
+    let clients = domain(dir.path());
+    clients.save(request(None)).await.unwrap();
+    let serial = clients.issuance.lock().await;
+    let prepared = dir.path().join("entry/prepared.json");
+    fs::write(&prepared, "in-progress").unwrap();
+    let mut put = request(None);
+    put.provider = "otherdns".into();
+    let saving = clients.save(put);
+    tokio::pin!(saving);
+    if tokio::time::timeout(Duration::from_millis(150), saving.as_mut())
+        .await
+        .is_ok()
+    {
+        panic!("签发进行中 save 不该删准备状态、不该完成");
+    }
+    assert_eq!(fs::read_to_string(&prepared).unwrap(), "in-progress");
+    drop(serial);
+    assert!(saving.await.unwrap().provider_changed);
+    assert!(!prepared.exists());
+}
+
+#[tokio::test]
+async fn first_provider_requires_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    let clients = domain(dir.path());
+    let mut put = request(Some("example.test"));
+    put.credentials.clear();
+    assert!(matches!(
+        clients.save(put).await,
+        Err(DomainError::Invalid(_))
+    ));
+    assert!(!dir.path().join("entry/domain.json").exists());
+}
+
+#[tokio::test]
+async fn changed_provider_requires_its_own_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("abcdefgh.example.test"));
+    let clients = domain(dir.path());
+    clients.save(request(None)).await.unwrap();
+    let before = fs::read(dir.path().join("entry/domain.json")).unwrap();
+    let mut put = request(None);
+    put.provider = "cloudflare".into();
+    put.credentials.clear();
+    assert!(matches!(
+        clients.save(put).await,
+        Err(DomainError::Invalid(_))
+    ));
+    assert_eq!(
+        fs::read(dir.path().join("entry/domain.json")).unwrap(),
+        before
+    );
+}
+
+#[tokio::test]
+async fn unchanged_provider_retains_credentials() {
+    let dir = tempfile::tempdir().unwrap();
+    settings(dir.path(), Some("abcdefgh.example.test"));
+    let clients = domain(dir.path());
+    clients.save(request(None)).await.unwrap();
+    let before = fs::read(dir.path().join("entry/domain.json")).unwrap();
+    let mut put = request(None);
+    put.credentials.clear();
+    assert!(!clients.save(put).await.unwrap().provider_changed);
+    assert_eq!(
+        fs::read(dir.path().join("entry/domain.json")).unwrap(),
+        before
+    );
 }

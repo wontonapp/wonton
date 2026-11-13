@@ -471,7 +471,7 @@ chmod 600 "$temporary"
 [ ! -f "$output" ] || cat "$output" >"$temporary"
 for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVICE \
   WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL WONTON_ACME_ACCEPT_TERMS \
-  WONTON_ACME_NETWORK WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
+  WONTON_ACME_NETWORK WONTON_ACME_PROPAGATION_DISABLE_ANS WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
   value=$(printenv "$key" || true)
   [ -n "$value" ] || continue
   case "$value" in *'
@@ -611,7 +611,8 @@ EOF
   # ACME 坐标要活到运行时（ADR-0089 第 3 节）：none 模式没有 settings.json，核心只认环境和设置。
   # 值从 init.env 取：复制进来的 CA 在里面的路径已经改成私有安装目录下的那份。
   for key in WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL \
-    WONTON_ACME_ACCEPT_TERMS WONTON_ACME_NETWORK WONTON_ACME_CA_FILE; do
+    WONTON_ACME_ACCEPT_TERMS WONTON_ACME_NETWORK WONTON_ACME_CA_FILE \
+    WONTON_ACME_PROPAGATION_DISABLE_ANS; do
     value=$(grep -m1 "^$key=" "$install_dir/entry-input/init.env" 2>/dev/null | cut -d= -f2- || true)
     [ -n "$value" ] || continue
     printf '%s=%s\n' "$key" "$value" >>"$env_file.tmp"

@@ -299,10 +299,25 @@ impl Domain {
                     }
                 };
                 let changed = previous.as_deref().is_some_and(|old| old != suffix);
-                let provider_changed = store.provider.as_deref() != Some(provider.as_str());
+                // 空服务商＝沿用现状（家名安装的常态），不算变更，不然每次保存都会误重置签发准备。
+                let effective_provider = if provider.is_empty() {
+                    store.provider.clone()
+                } else {
+                    Some(provider.clone())
+                };
+                let provider_changed = store.provider != effective_provider;
+                // 首次配置或换服务商必须一起提交凭据，否则设置收下了却永远不签，也没人知道为什么。
+                if credentials.is_empty()
+                    && !(registered && provider.is_empty())
+                    && (provider_changed || store.credentials.is_empty())
+                {
+                    return Err(DomainError::Invalid(
+                        "首次配置或换服务商时要一起提交这个服务商的凭据".into(),
+                    ));
+                }
                 store.suffix = Some(suffix);
-                if !provider.is_empty() {
-                    store.provider = Some(provider.clone());
+                if let Some(provider) = effective_provider {
+                    store.provider = Some(provider);
                 }
                 if !credentials.is_empty() {
                     store.credentials = credentials.clone();
@@ -316,6 +331,8 @@ impl Domain {
             })
             .await?;
         if saved.suffix_changed || saved.provider_changed {
+            // 删准备状态要和进行中的签发互斥：签发正用着它们。
+            let _serial = self.issuance.lock().await;
             self.reset_prepared();
         }
         self.spawn_issue();
@@ -656,13 +673,14 @@ fn validate_credentials(credentials: &[CredentialEntry]) -> Result<()> {
     Ok(())
 }
 
-/// 值里有 dotenv 有意义的字符时用单引号包起来。godotenv 的单引号是字面量（不解 `\`、不展开 `$`），
-/// 值里只要没有单引号（校验时已拒绝）就原样写。
+/// 值里有 godotenv 有意义的字符时用单引号包起来。godotenv 的单引号是字面量（不解 `\`、不展开 `$`），
+/// 值里只要没有单引号（校验时已拒绝）就原样写。未引用值里 godotenv 会展开 `$VAR`、吃掉 `\$` 前的
+/// 反斜杠，所以 `$` 和 `\` 都不能走未引用路径（实测 godotenv v1.5.1，lego v5.5.2 引的就是它）。
 pub(super) fn dotenv_value(value: &str) -> String {
     let plain = !value.is_empty()
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:+$\\".contains(&byte));
+            .all(|byte| byte.is_ascii_alphanumeric() || b"-_./:+".contains(&byte));
     if plain {
         return value.to_owned();
     }
@@ -689,3 +707,7 @@ pub(super) fn read_dotenv(path: &Path) -> Result<BTreeMap<String, String>> {
     }
     Ok(values)
 }
+
+#[cfg(test)]
+#[path = "domain_tests.rs"]
+mod domain_tests;
