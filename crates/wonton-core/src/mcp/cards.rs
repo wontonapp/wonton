@@ -519,12 +519,6 @@ pub fn uninstall(
     }
 }
 
-/// 调用插件里会改数据的工具。参数原样列出，太长时截断。最高级插件的工具写明以 root 执行。
-pub fn tool_call(
-    requester: &str,
-    }
-}
-
 fn arguments_line(arguments: &Value, langs: &Languages) -> CardLine {
     const MAX: usize = 600;
     let mut args = arguments.to_string();
