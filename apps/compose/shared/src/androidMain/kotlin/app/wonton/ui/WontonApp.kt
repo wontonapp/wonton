@@ -125,7 +125,7 @@ private fun AppContent(
     val native = nav.settingsOverlay || when (shown) {
         TabRef.Chat, TabRef.Apps, TabRef.Settings -> true
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> false
+        is TabRef.UiResource, is TabRef.Widget -> false
     }
     val fullscreen = !native && isFullscreen(tabs, shown)
     VisiblePluginReporting(tabs, shown.takeUnless { native })
@@ -266,7 +266,7 @@ private fun NativeTab(
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> Unit
+        is TabRef.UiResource, is TabRef.Widget -> Unit
     }
 }
 

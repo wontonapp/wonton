@@ -168,7 +168,7 @@ internal fun AppNavigation.hidesBar(): Boolean = settingsOverlay || when (tabs.v
     TabRef.Apps -> appsPage != HomePage.LAUNCHER || plugins.detail != null || plugins.confirmation != null
     TabRef.Settings -> settingsPage != SettingsSubpage.MAIN
     is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-    is TabRef.UiResource -> false
+    is TabRef.UiResource, is TabRef.Widget -> false
 }
 
 /** 每次系统 Intent 有自己的消费状态；重组或 Activity 重建不能重放已处理的导航。 */

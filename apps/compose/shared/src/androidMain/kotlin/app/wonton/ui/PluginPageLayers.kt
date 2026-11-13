@@ -42,7 +42,8 @@ internal fun PageLayers(
     }
     Box(Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding()) {
         if (active) Box(Modifier.fillMaxSize().background(WontonTheme.colors.canvas.toColor()))
-        val canLoad = state.started && supported && script != null
+        // widget 页（ADR-0096）要壳接上驱动的订阅才说得上话，这一版的壳没有：不加载，如实说打不开。
+        val canLoad = state.started && supported && script != null && item.tab !is TabRef.Widget
         if (canLoad && connection.authorized) {
             PageWebView(state, page, connection.proxy, environment, requireNotNull(script), viewport.inset,
                 active && !cover, openLink, onDraft, connection.profile)
@@ -69,7 +70,11 @@ private fun PageOverlays(
     if (shared != null) {
         SharedPageStatus(page, shared, connection.source, tabs, state.problem, supported, cover, inset)
     } else {
-        PageStatusOverlay(state, page, item.tab, supported, crossOriginBlocked, inset, onDetails)
+        val widget = item.tab is TabRef.Widget
+        PageStatusOverlay(
+            state, page, item.tab, supported && !widget, crossOriginBlocked, inset, onDetails,
+            unsupported = if (widget) stringResource(R.string.tab_widget_unsupported) else null,
+        )
     }
     PageChrome(item.tab, page, tabs, state.capsule, state.controller, viewport.safe, bannerTop,
         top = setTop, overlay, onBack = back, takeover, onDetails)

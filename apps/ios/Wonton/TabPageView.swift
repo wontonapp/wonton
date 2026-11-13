@@ -119,7 +119,7 @@ struct TabPageView: View {
     @ViewBuilder
     private func panelStack(safe: EdgeInsets, frame: EdgeInsets, inputs: TabWebInputs) -> some View {
         ZStack {
-                if let webView = session.webView, sourceAvailable {
+                if let webView = session.webView, sourceAvailable, !tab.isWidget {
                     TabWebView(webView: webView, obscured: obscured(safe: safe))
                     .id(ObjectIdentifier(webView))
                     .padding(frame)
@@ -345,5 +345,13 @@ extension TabPageView {
             case let .draftMessage(text): draft(text)
             }
         }
+    }
+}
+
+private extension TabRef {
+    /// widget 页这一版的壳不加载（见 `TabPageStateView`）。
+    var isWidget: Bool {
+        if case .widget = self { return true }
+        return false
     }
 }

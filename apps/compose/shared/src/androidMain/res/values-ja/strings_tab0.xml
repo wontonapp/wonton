@@ -17,4 +17,6 @@
     <string name="tab_exit_fullscreen">全画面を終了</string>
     <!-- 全画面カプセルのメニュー項目:アプリの詳細ページを開く。 -->
     <string name="tab_menu_details">アプリ詳細</string>
+    <!-- ルームで開くプラグインページ(Matrix ウィジェット)をこのバージョンのアプリがまだ開けないときの表示。 -->
+    <string name="tab_widget_unsupported">このバージョンのアプリではまだこのページを開けません。アプリを更新してもう一度お試しください。</string>
 </resources>

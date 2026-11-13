@@ -123,7 +123,7 @@ internal fun TabBarIcon(item: TabItem, selected: Boolean, tint: Color, plugins: 
         TabRef.Apps -> if (selected) WontonIcon.AppsFill else WontonIcon.Apps
         TabRef.Settings -> if (selected) WontonIcon.SettingsFill else WontonIcon.Settings
         is TabRef.Plugin, is TabRef.PluginPath, is TabRef.Bot, is TabRef.Url, is TabRef.SharedApp,
-        is TabRef.UiResource -> null
+        is TabRef.UiResource, is TabRef.Widget -> null
     }
     if (builtIn != null) {
         // 装饰：底栏每一格都有标题。

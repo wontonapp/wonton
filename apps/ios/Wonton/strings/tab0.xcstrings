@@ -271,6 +271,36 @@
           }
         }
       }
+    },
+    "tab.widgetUnsupported": {
+      "comment": "Shown in place of a room's plugin page (a Matrix widget) that this app version can't open yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This version of the app can't open this page yet. Update the app and try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这个版本的 App 还打不开这个页面，更新 App 后再试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這個版本的 App 還打不開這個頁面，更新 App 後再試。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このバージョンのアプリではまだこのページを開けません。アプリを更新してもう一度お試しください。"
+          }
+        }
+      }
     }
   }
 }
