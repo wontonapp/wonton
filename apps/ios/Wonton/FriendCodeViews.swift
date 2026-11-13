@@ -23,7 +23,7 @@ struct FriendScannerView: View {
                 Button {
                     submit(pastedCode)
                 } label: {
-                    Text(.friendsAddSubmit).frame(maxWidth: .infinity)
+                    Text(.Friends3.friendsAddSubmit).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(pastedCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

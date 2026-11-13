@@ -45,7 +45,7 @@ struct PeersScannerView: View {
     /// 扫不到时的退路：粘贴对方的配对码，提交方式和扫到的一样。
     private var pasteSection: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
-            TextField(String(localized: .peersPasteCode), text: $pastedCode, axis: .vertical)
+            TextField(String(localized: .Peers0.peersPasteCode), text: $pastedCode, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(pastedCode.isEmpty ? nil : .caption.monospaced())
                 .textInputAutocapitalization(.never)
