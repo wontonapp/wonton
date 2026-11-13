@@ -4,7 +4,8 @@
 //! 另在 `#if DEBUG` 里。开着时 `new_ui_fake` 仍然建一个正常的 `ClientCore`（没有后端），再把塞进订阅的
 //! ViewModel 换成写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。
 //!
-//! 只够渲染首屏：一台“家里”的服务器、一个 Bot 私聊、引导已经走完。时间线、媒体和操作后的新状态不在里面，
+//! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个没有网页的已装应用（点开是详情页）、
+//! 商店入口、引导已经走完。时间线、媒体、商店列表和操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
 use std::sync::Arc;
@@ -12,11 +13,12 @@ use std::sync::atomic::Ordering;
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError, DeviceNetwork,
-    DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel, MessageSummary,
-    OnboardingStep, OnboardingViewModel, PagesViewModel, PushStatus, RecoveryNextStep,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
-    ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabRef,
+    AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError,
+    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
+    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
+    PagesViewModel, PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus,
+    RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName,
+    ServerRow, ServersViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabRef,
 };
 
 use super::ClientCore;
@@ -42,7 +44,7 @@ impl ClientCore {
         let views = crate::scope::Views {
             home: watch::Sender::new(fake_home(current.home.borrow().clone())),
             chat: watch::Sender::new(fake_chat(current.chat.borrow().clone())),
-            plugins: watch::Sender::new(current.plugins.borrow().clone()),
+            plugins: watch::Sender::new(fake_plugins(current.plugins.borrow().clone())),
             pages: watch::Sender::new(fake_pages(current.pages.borrow().clone())),
             transfers: watch::Sender::new(current.transfers.borrow().clone()),
             onboarding: watch::Sender::new(fake_onboarding(current.onboarding.borrow().clone())),
@@ -141,6 +143,47 @@ fn fake_chat(mut chat: ChatViewModel) -> ChatViewModel {
     chat
 }
 
+/// 应用网格上有东西可点：商店入口，和一个没有网页也没有 Bot 的应用（点图标进它的详情页）。
+fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
+    plugins.actions = vec![AppsAction::Store, AppsAction::AddSource];
+    plugins.installed = Some(InstalledPlugins {
+        plugins: vec![InstalledPlugin {
+            id: "app.example.notes".into(),
+            title: "Notes".into(),
+            summary: String::new(),
+            version: "1.0.0".into(),
+            revision: "1".into(),
+            kind: PluginKind::App,
+            runtime: Default::default(),
+            icon: None,
+            trust: PluginTrust::Official,
+            source: None,
+            provider: None,
+            via_index: None,
+            written_by: None,
+            status: PluginState::Stopped,
+            web_url: None,
+            link_url: None,
+            cross_origin_isolated: false,
+            declares_tools: false,
+            tabs: Vec::new(),
+            chat: None,
+            bot_user_id: None,
+            family: false,
+            upgrade: None,
+            removable: true,
+            notices: Vec::new(),
+            enabled_root_permissions: Vec::new(),
+            install_progress: None,
+            install_failure: None,
+            tunnel_ports: Vec::new(),
+        }],
+        upgrade_check: None,
+    });
+    plugins.problem = None;
+    plugins
+}
+
 fn fake_pages(mut pages: PagesViewModel) -> PagesViewModel {
     pages.root = TabRef::Chat;
     pages.stack.clear();
@@ -188,10 +231,15 @@ mod tests {
         assert_eq!(core.chat().rooms[0].room_id, ROOM_ID);
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
+        assert_eq!(core.plugins().installed.unwrap().plugins[0].title, "Notes");
         // 作用域的首帧是后台算完才发的：等一会儿，确认它盖不掉假数据。
         std::thread::sleep(std::time::Duration::from_millis(500));
         assert_eq!(core.home().status, HomeStatus::Connected);
         assert_eq!(core.chat().rooms[0].name, "Echo");
+        assert_eq!(
+            core.plugins().actions,
+            [AppsAction::Store, AppsAction::AddSource]
+        );
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
