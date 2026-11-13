@@ -45,6 +45,7 @@ fn plugin(id: &str, origin: &str, isolated: bool) -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: None,
     }
 }
 

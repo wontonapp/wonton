@@ -63,6 +63,10 @@ fn empty_chat() -> ChatViewModel {
 
 impl Rig {
     fn new() -> Self {
+        Self::for_account(false)
+    }
+
+    fn for_account(external: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
         let mut config = default_file(Some("old-server".to_owned()));
@@ -77,8 +81,13 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link =
-            PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
+        let plugins_link = PluginsLink::new(
+            runtime.clone(),
+            home_link.clone(),
+            dir.path(),
+            None,
+            external,
+        );
         let home = watch::Sender::new(home("old-server"));
         let initial = plugins("old-content");
         let plugins = PluginSnapshots {
@@ -118,6 +127,7 @@ impl Rig {
                 bot_pin_consents: Vec::new(),
                 pins_problem: None,
                 media_prompt: None,
+                widget: None,
                 bots: Vec::new(),
             }),
             writing: Mutex::new(()),
@@ -129,6 +139,7 @@ impl Rig {
             layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
+            widgets: Default::default(),
         };
         tabs.recompute();
         Self {
@@ -232,6 +243,7 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
         install_progress: None,
         install_failure: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: None,
     }
 }
 

@@ -88,6 +88,7 @@ pub(super) fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
         | TabRef::UiResource { plugin_id, .. } => Some(plugin_id),
+        // widget 页重新加载要换一个驱动（新的 widget ID、新地址），只在主人点重新加载时做（`PagesLink::reload`）。
         TabRef::Bot { bot, .. } => Some(&bot.plugin_id),
         _ => None,
     }

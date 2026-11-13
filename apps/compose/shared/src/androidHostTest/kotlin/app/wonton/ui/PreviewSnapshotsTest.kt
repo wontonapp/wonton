@@ -4,6 +4,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import org.junit.Rule
 import org.junit.Test
+import java.util.TimeZone
 
 /**
  * 参考图在 `src/androidHostTest/snapshots`，直接进 git。只画预览自己带的固定数据，不连核心、不加载 .so。
@@ -43,7 +44,16 @@ class PreviewSnapshotsTest {
     fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
 
     @Test
-    fun connectionDetailsFlows() = paparazzi.snapshot { ConnectionDetailsFlowsPreview() }
+    fun connectionDetailsFlows() {
+        val previous = TimeZone.getDefault()
+        try {
+            // 时间按系统时区格式化；预览与 CI 的 UTC 基准保持一致。
+            TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
+            paparazzi.snapshot { ConnectionDetailsFlowsPreview() }
+        } finally {
+            TimeZone.setDefault(previous)
+        }
+    }
 
     @Test
     fun shareSheet() = paparazzi.snapshot { ShareSheetPreview() }

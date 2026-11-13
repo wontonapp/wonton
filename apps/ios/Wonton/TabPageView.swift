@@ -108,7 +108,7 @@ struct TabPageView: View {
                         updatePermittedSession(inputs)
                     }, cancel: closePage)
                 } else {
-                    if let webView = session.webView, sourceAvailable {
+                    if let webView = session.webView, sourceAvailable, !tab.isWidget {
                         TabWebView(webView: webView, obscured: obscured())
                             .id(ObjectIdentifier(webView))
                             .ignoresSafeArea(.container)
@@ -233,7 +233,7 @@ private extension TabPageView {
                 $0.id == id && ($0.botUserId != nil || $0.chat != nil)
             }) == true else { return nil }
             return BotRef(pluginId: id, bot: "default")
-        case .chat, .apps, .url, .sharedApp, .uiResource: return nil
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return nil
         }
     }
 
@@ -285,7 +285,7 @@ private extension TabPageView {
             guard pageBotRef != nil else { return false }
             if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
             return true
-        case .chat, .apps, .url, .sharedApp, .uiResource: return false
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return false
         }
     }
 
@@ -347,5 +347,13 @@ private extension TabPageView {
             case let .draftMessage(text): draft(text)
             }
         }
+    }
+}
+
+private extension TabRef {
+    /// widget 页这一版的壳不加载（见 `TabPageStateView`）。
+    var isWidget: Bool {
+        if case .widget = self { return true }
+        return false
     }
 }

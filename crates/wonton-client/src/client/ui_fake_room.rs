@@ -51,6 +51,8 @@ pub(super) fn timeline() -> TimelineUpdate {
         key_notice: None,
         confirmations: Vec::new(),
         side_chat: None,
+        widgets: Vec::new(),
+        call_active: false,
     }
 }
 

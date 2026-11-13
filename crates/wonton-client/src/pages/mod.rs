@@ -49,6 +49,7 @@ mod bot;
 mod panel;
 mod pins;
 mod sync;
+pub(crate) mod widget;
 
 #[cfg(test)]
 mod tests;
@@ -95,6 +96,8 @@ struct PagesState {
     pins_problem: Option<String>,
     /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
     media_prompt: Option<PendingMediaPrompt>,
+    /// 打开的 widget 页（ADR-0096），同一时间只有一个。
+    widget: Option<widget::WidgetPage>,
     /// Bot 和它们的网页就绪状态（chat 的视图镜像过来的，ADR-0052）。
     bots: Vec<BotView>,
 }
@@ -128,6 +131,8 @@ pub(crate) struct PagesLink {
     sync_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 自身的弱引用：`&self` 方法里起往账号数据推的任务要用；构造完才填得上。
     weak: Mutex<std::sync::Weak<PagesLink>>,
+    /// 跑着的 widget 驱动（ADR-0096）。
+    widgets: widget::Sessions,
 }
 
 /// 打开的房间的面板这一对通道：chat 往里喂，tabs 消费。
@@ -143,6 +148,8 @@ pub(crate) struct RoomPanelView {
     pub(crate) panel: Vec<PanelItem>,
     pub(crate) selected: Option<TabRef>,
     pub(crate) blocked: bool,
+    /// 房间顶栏的 widget 入口（ADR-0096）。
+    pub(crate) widgets: Vec<wonton_protocol::RoomWidget>,
 }
 
 impl PagesLink {
@@ -209,6 +216,7 @@ impl PagesLink {
             core_url: home.core_url(),
             pins_problem: None,
             media_prompt: None,
+            widget: None,
             bots: Vec::new(),
         };
         let room_view = watch::Sender::new(None);
@@ -232,6 +240,7 @@ impl PagesLink {
             layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
+            widgets: widget::Sessions::default(),
         });
         *lock(&link.weak) = Arc::downgrade(&link);
         link.recompute();
@@ -432,6 +441,7 @@ impl PagesLink {
             )));
         }
         clear_gone_prompt(&mut state);
+        widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
@@ -463,6 +473,7 @@ impl PagesLink {
         }
         state.problem = None;
         clear_gone_prompt(&mut state);
+        widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         let settings = state.config.layout();
@@ -503,6 +514,7 @@ impl PagesLink {
             }
         }
         clear_gone_prompt(&mut state);
+        widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
@@ -542,9 +554,16 @@ impl PagesLink {
                 panel: room_panel_items(&state, panel, &scope, plugins),
                 selected: state.room_panel_selected.clone(),
                 blocked: state.entry_blocked,
+                widgets: if self.plugins.is_external() {
+                    Vec::new()
+                } else {
+                    widget::entries(room_id.as_str(), plugins)
+                },
             }
         });
+        let widget = widget::open_generation(&state);
         drop(state);
+        self.settle_widget(widget);
         self.room_view.send_if_modified(|current| {
             if current.as_ref().map(|view| &**view) != room_view.as_ref() {
                 *current = room_view.map(Arc::new);

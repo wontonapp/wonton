@@ -366,7 +366,9 @@ pub(super) fn ensure_stack(state: &mut PagesState, plugins: &PluginsViewModel) {
 
 pub(super) fn tab_plugin_id(tab: &TabRef) -> Option<&str> {
     match tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => Some(plugin_id),
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::Widget { plugin_id, .. } => Some(plugin_id),
         _ => None,
     }
 }

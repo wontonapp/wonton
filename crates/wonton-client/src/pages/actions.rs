@@ -5,6 +5,9 @@ use super::*;
 impl PagesLink {
     /// 打开一个页面：根页面一路弹回根，已经在栈里的挪到栈顶，其余压栈。
     pub(crate) fn open_page(&self, tab: TabRef) -> Result<(), CoreError> {
+        if matches!(tab, TabRef::Widget { .. }) {
+            return self.open_widget(tab);
+        }
         self.runtime_change(|state, plugins| {
             if state.root_is(&tab) || tab == TabRef::Apps {
                 state.stack.clear();
@@ -137,6 +140,12 @@ impl PagesLink {
     }
 
     pub(super) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
+        if let PlacedTab::Page {
+            tab: tab @ TabRef::Widget { .. },
+        } = &page
+        {
+            return self.reopen_widget(tab.clone());
+        }
         self.runtime_change(|state, _| {
             if !is_web_page(placed_tab_ref(&page)) || !state_has_page(state, &page) {
                 return Err(invalid(&l10n!(

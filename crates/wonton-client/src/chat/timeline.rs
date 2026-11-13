@@ -177,6 +177,9 @@ struct View {
     sent_unread: u32,
     /// 上一批送出去的加密入口：加密状态变了时入口跟着变才补发一批，没变不重复发。
     notice: Option<KeyNotice>,
+    /// 房间里有没有人在通话（`m.call.member`），和上一批送出去的：变了补发一批（ADR-0096）。
+    call: bool,
+    sent_call: bool,
 }
 
 impl View {
@@ -191,6 +194,7 @@ impl View {
 
     async fn refresh_unread(&mut self, room: &ChatRoom) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
+        self.call = room.call_active();
     }
 }
 
@@ -264,7 +268,10 @@ async fn forward(
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => return,
                     }
-                    if view.scroll == TimelineScroll::Bottom || view.unread == view.sent_unread {
+                    view.call = room.call_active();
+                    let unread_moved =
+                        view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
+                    if !unread_moved && view.call == view.sent_call {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
@@ -406,6 +413,8 @@ async fn start_batch(
         unread: 0,
         sent_unread: 0,
         notice: None,
+        call: false,
+        sent_call: false,
     };
     view.refresh_unread(room).await;
     let position = read_index(room, entries).await;
@@ -731,7 +740,15 @@ fn send(
 ) -> Result<(), ()> {
     view.sent_unread = view.unread;
     view.notice = sender.key_notice(entries);
-    sender.send(entries, diffs, view.status, view.viewport(), anchor)
+    view.sent_call = view.call;
+    sender.send(
+        entries,
+        diffs,
+        view.status,
+        view.viewport(),
+        anchor,
+        view.call,
+    )
 }
 
 /// 本账号已读位置在 `entries` 里的下标：回执指着的事件不在这一批里时为空。

@@ -151,6 +151,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             panel: Vec::new(),
             selected: Some(selected.clone()),
             blocked: true,
+            widgets: Vec::new(),
         }))
     };
     let (sender, mut updates) = mpsc::unbounded_channel();
@@ -170,6 +171,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             BackPagination::Idle,
             TimelineViewport::Bottom,
             None,
+            false,
         )
         .unwrap();
     let update = updates.try_recv().unwrap();
@@ -184,6 +186,7 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
             BackPagination::Idle,
             TimelineViewport::Bottom,
             None,
+            false,
         )
         .unwrap();
     let update = updates.try_recv().unwrap();

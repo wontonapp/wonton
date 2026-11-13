@@ -325,6 +325,9 @@ fn build_page_item(state: &PagesState, stored: &StoredItem, plugins: &PluginsVie
     let placed = PlacedTab::Page {
         tab: stored.tab.clone(),
     };
+    if matches!(stored.tab, TabRef::Widget { .. }) {
+        return super::widget::page(state, &placed, stored, plugins);
+    }
     let plugin = match &stored.tab {
         TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
             .installed
@@ -746,26 +749,13 @@ pub(super) fn stored_item_with_title(
                 layout: TabLayout::Inset,
             }),
         }),
+        TabRef::Widget { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-widget-not-pinnable"
+        ))),
         TabRef::Bot { .. } => bot::stored_item(state, tab, title),
-
-        TabRef::Url { url } => {
-            if !is_https_url(url) {
-                return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
-            }
-            let host = url
-                .parse::<Url>()
-                .ok()
-                .and_then(|parsed| parsed.host_str().map(str::to_owned));
-            Ok(StoredItem {
-                tab: tab.clone(),
-                page: Some(StoredPage {
-                    plugin_title: host.clone().unwrap_or_else(|| url.clone()),
-                    title: title.or(host).unwrap_or_else(|| url.clone()),
-                    icon: TabIcon::Plugin { icon: None },
-                    layout: TabLayout::Inset,
-                }),
-            })
-        }
+        TabRef::Url { url } => stored_url_item(tab, url, title),
         TabRef::PluginPath { plugin_id, path: _ } => {
             let installed = plugins
                 .installed
@@ -830,6 +820,29 @@ pub(super) fn stored_item_with_title(
     }
 }
 
+fn stored_url_item(
+    tab: &TabRef,
+    url: &str,
+    title: Option<String>,
+) -> Result<StoredItem, CoreError> {
+    if !is_https_url(url) {
+        return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
+    }
+    let host = url
+        .parse::<Url>()
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_owned));
+    Ok(StoredItem {
+        tab: tab.clone(),
+        page: Some(StoredPage {
+            plugin_title: host.clone().unwrap_or_else(|| url.to_owned()),
+            title: title.or(host).unwrap_or_else(|| url.to_owned()),
+            icon: TabIcon::Plugin { icon: None },
+            layout: TabLayout::Inset,
+        }),
+    })
+}
+
 /// 这个页面现在能不能打开（栈和面板共用）：插件页要清单里还有、插件网页也还在。
 pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     match tab {
@@ -850,6 +863,7 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
             .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id))
             .is_some_and(|plugin| plugin.web_url.is_some()),
         TabRef::Bot { .. } | TabRef::SharedApp { .. } => true,
+        TabRef::Widget { .. } => super::widget::available(tab, plugins),
         TabRef::Chat | TabRef::Apps => false,
     }
 }
@@ -865,7 +879,8 @@ pub(super) fn plugin_is_running(
     let plugin_id = match tab {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
-        | TabRef::UiResource { plugin_id, .. } => plugin_id,
+        | TabRef::UiResource { plugin_id, .. }
+        | TabRef::Widget { plugin_id, .. } => plugin_id,
         _ => return false,
     };
     plugins
@@ -915,5 +930,6 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
             | TabRef::Bot { .. }
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
+            | TabRef::Widget { .. }
     )
 }

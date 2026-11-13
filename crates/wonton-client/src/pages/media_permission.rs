@@ -108,6 +108,7 @@ impl PagesLink {
         let plugin_id = match placed_tab_ref(page) {
             TabRef::Plugin { plugin_id, .. }
             | TabRef::PluginPath { plugin_id, .. }
+            | TabRef::Widget { plugin_id, .. }
             | TabRef::Bot {
                 bot: wonton_protocol::BotRef { plugin_id, .. },
                 ..

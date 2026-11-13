@@ -762,6 +762,15 @@ async fn more_widget_capabilities_ask_the_owner_again() {
     let (github, _docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", &widget(&[transports])));
     install(&m, SOURCE).await;
+    // App 按已装列表里的声明在房间里打开 widget、批能力。
+    assert_eq!(
+        m.installed_plugin(&id(), &zh()).unwrap().matrix_widget,
+        Some(wonton_protocol::PluginWidget {
+            url: "/room".to_owned(),
+            entry: wonton_protocol::WidgetEntry::Other,
+            capabilities: vec![transports.to_owned()],
+        })
+    );
 
     release(&github, &hello("1.1.0", "", &widget(&[transports])));
     assert_eq!(m.check_upgrades_now().await, None);

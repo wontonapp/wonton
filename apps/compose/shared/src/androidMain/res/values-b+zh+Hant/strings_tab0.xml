@@ -17,4 +17,6 @@
     <string name="tab_exit_fullscreen">退出全螢幕</string>
     <!-- 全屏膠囊選單項:打開應用的詳情頁。 -->
     <string name="tab_menu_details">插件詳情</string>
+    <!-- 房間裡打開的插件頁(Matrix widget)這個版本的 App 還打不開時顯示。 -->
+    <string name="tab_widget_unsupported">這個版本的 App 還打不開這個頁面，更新 App 後再試。</string>
 </resources>

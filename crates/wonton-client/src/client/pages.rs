@@ -43,6 +43,16 @@ impl ClientCore {
         )
     }
 
+    /// widget 页（[`TabRef::Widget`]，ADR-0096）的地址出来、开始加载后订阅：每一项是驱动发给页面的消息包成的脚本，
+    /// 壳原样注入同一个页面的主框架。页面发来的 widget 报文照常经 [`Self::tab_handle_message`] 交进来。
+    /// 不是 widget 页时是输入非法，驱动还没起来（页面没打开、地址还没出来）是未就绪。
+    pub fn subscribe_tab_widget(
+        &self,
+        page: PlacedTab,
+    ) -> Result<std::sync::Arc<bridge::TabWidgetSubscription>, CoreError> {
+        bridge::subscribe(&self.scope().pages, &page)
+    }
+
     /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
     pub fn tab_context_script(
         &self,

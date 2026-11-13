@@ -214,6 +214,13 @@ tabs-fullscreen-only-plugins = 只有插件页面可以全屏。
 tabs-fullscreen-none = 当前没有全屏页面。
 
 tabs-fullscreen-not-current = 退出的页面不是当前全屏页面。
+
+tabs-widget-not-signed-in = 先登录聊天，再从房间里打开它。
+
+tabs-widget-not-declared = 这个插件不能在房间里打开。
+
+tabs-widget-not-pinnable = 在房间里打开的插件不能固定。
+
 tabs-view-not-a-page = 只有插件页面能在这里打开。
 tabs-view-no-page-open = 现在没有打开着的插件页面。
 

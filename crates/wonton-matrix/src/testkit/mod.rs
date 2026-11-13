@@ -3,6 +3,7 @@
 //! 只在 `testkit` 特性下编译，给本 crate 和客户端核心的集成测试共用；App 不启用。
 
 mod admin;
+mod call;
 mod issuer;
 mod keys;
 mod push;

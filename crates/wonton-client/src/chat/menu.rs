@@ -167,8 +167,8 @@ fn is_own_message(item: &TimelineItem) -> bool {
     matches!(&item.content, TimelineContent::Message { message } if message.is_own)
 }
 
-/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）、加密入口，
-/// 和显示在这个房间的确认卡片（ADR-0016）。
+/// 时间线订阅发增量的出口：发给壳之前先应用到菜单上，再带上房间面板的当前视图（ADR-0052）、加密入口、
+/// 显示在这个房间的确认卡片（ADR-0016），以及顶栏的 widget 入口和有没有人在通话（ADR-0096）。
 pub(super) struct Outbox {
     sender: mpsc::UnboundedSender<TimelineUpdate>,
     menus: Arc<Mutex<Menus>>,
@@ -242,6 +242,7 @@ impl Outbox {
         back_pagination: BackPagination,
         viewport: TimelineViewport,
         anchor: Option<String>,
+        call_active: bool,
     ) -> Result<(), ()> {
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
         let room_view = self
@@ -249,9 +250,14 @@ impl Outbox {
             .borrow()
             .clone()
             .filter(|view| view.room_id == self.room_id);
-        let (panel, panel_selected, entry_blocked) = match room_view {
-            Some(view) => (view.panel.clone(), view.selected.clone(), view.blocked),
-            None => (Vec::new(), None, false),
+        let (panel, panel_selected, entry_blocked, widgets) = match room_view {
+            Some(view) => (
+                view.panel.clone(),
+                view.selected.clone(),
+                view.blocked,
+                view.widgets.clone(),
+            ),
+            None => (Vec::new(), None, false, Vec::new()),
         };
         let key_notice = self.key_notice(entries);
         let confirmations = self.confirmations();
@@ -268,6 +274,8 @@ impl Outbox {
                 key_notice,
                 confirmations,
                 side_chat: lock(&self.side_chat).clone(),
+                widgets,
+                call_active,
             })
             .map_err(|_| ())
     }
@@ -467,7 +475,14 @@ mod tests {
         let away = TimelineViewport::Away { new_messages: 3 };
         let send = |diff| {
             outbox
-                .send(&Vector::new(), vec![diff], BackPagination::Idle, away, None)
+                .send(
+                    &Vector::new(),
+                    vec![diff],
+                    BackPagination::Idle,
+                    away,
+                    None,
+                    false,
+                )
                 .unwrap()
         };
         send(TimelineDiff::Reset {
