@@ -14,6 +14,7 @@ mod bots_lifecycle;
 mod by_source;
 pub mod capabilities;
 pub mod check;
+pub(crate) mod check_element_call;
 pub(crate) mod clients_entry;
 mod clients_setup;
 pub mod compat;

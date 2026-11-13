@@ -99,6 +99,7 @@ pub async fn check_package(
     check_icon(package, official, images, &mut report).await;
     check_tab_icons(package, images, &mut report).await;
     check_tab_title_lengths(package, &mut report);
+    super::check_element_call::check(m, &mut report);
     check_screenshots(dir, m, images, &mut report).await;
     if official {
         let required = [
