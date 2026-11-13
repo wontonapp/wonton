@@ -304,7 +304,7 @@ impl PagesLink {
                 Ok(content) => {
                     sync_problem.send_replace(None);
                     if let Ok(panel) = serde_json::from_value::<RoomPanel>(content.0.into()) {
-                        sender.send_replace(Some((room_id, panel)));
+                        publish_written_panel(&sender, &room_id, panel);
                     }
                 }
                 Err(error) => {
@@ -357,6 +357,28 @@ impl PagesLink {
         })
     }
 }
+
+fn publish_written_panel(
+    sender: &watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
+    room_id: &OwnedRoomId,
+    panel: RoomPanel,
+) {
+    // 写入仍要完成，但不能把已经离开的房间重新设成打开状态。
+    sender.send_if_modified(|current| {
+        let Some((open, current_panel)) = current else {
+            return false;
+        };
+        if open != room_id {
+            return false;
+        }
+        *current_panel = panel;
+        true
+    });
+}
+
+#[cfg(test)]
+#[path = "panel_writeback_tests.rs"]
+mod panel_writeback_tests;
 
 fn panel_entries<'a>(
     state: &'a PagesState,
