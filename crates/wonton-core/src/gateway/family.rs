@@ -18,22 +18,6 @@ use super::{Gateway, TunnelPeer, devices, lan, permissions};
 use crate::matrix::ADMIN_LOCALPART;
 use crate::members::{MemberRecord, MembersError, family_username, username_candidate};
 
-/// 订阅家人事件。这个 PR 里只记日志；建私人 Bot、Wonton 私聊、家庭群和移除的收尾订阅这些事件。
-pub fn spawn_member_event_logger(members: Arc<crate::members::Members>) {
-    let mut events = members.subscribe();
-    tokio::spawn(async move {
-        loop {
-            match events.recv().await {
-                Ok(event) => tracing::info!(?event, "家人事件"),
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                    tracing::warn!("家人事件落后了 {n} 条");
-                }
-                Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
-            }
-        }
-    });
-}
-
 fn to_member(record: &MemberRecord) -> Member {
     Member {
         username: record.username.clone(),
@@ -331,7 +315,10 @@ pub async fn remove(
         .members
         .remove(&username, removal.delete_home, removal.keep_bot_data)
     {
-        Ok(record) => Json(to_member(&record)).into_response(),
+        Ok(record) => match super::family_room::synchronize(&gateway, &headers).await {
+            None => Json(to_member(&record)).into_response(),
+            Some(response) => response,
+        },
         Err(e) => members_error(e),
     }
 }

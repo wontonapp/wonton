@@ -177,7 +177,10 @@ pub async fn update(
         Err(response) => return *response,
     };
     match gateway.roles.update(&role_id, &draft) {
-        Ok(role) => Json(def(&gateway, &role)).into_response(),
+        Ok(role) => match super::family_room::synchronize(&gateway, &headers).await {
+            None => Json(def(&gateway, &role)).into_response(),
+            Some(response) => response,
+        },
         Err(e) => roles_error(e, &langs),
     }
 }
@@ -256,7 +259,10 @@ pub async fn assign_member(
     match gateway.members.set_role(&username, &assignment.role_id) {
         Ok(record) => {
             tracing::info!(member = %record.username, role = %assignment.role_id, "换家人的角色");
-            Json(list_of(&gateway)).into_response()
+            match super::family_room::synchronize(&gateway, &headers).await {
+                None => Json(list_of(&gateway)).into_response(),
+                Some(response) => response,
+            }
         }
         Err(crate::members::MembersError::NotFound(_)) => error_response(
             StatusCode::NOT_FOUND,
