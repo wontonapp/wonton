@@ -139,66 +139,6 @@ struct PairingView: View {
         }
     }
 
-    private var pairingForm: some View {
-        VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                scanner
-                #if DEBUG
-                    if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SCAN_INJECTION"] == "1" {
-                        Button(.Pairing.pairingSubmit) { scanned(model.pairingCode) }
-                            .accessibilityIdentifier("pairing-inject-scan")
-                    }
-                #endif
-                Text(.Pairing.pairingInstructions)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.Pairing.pairingPasteLabel)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-                    .accessibilityHidden(true)
-                TextField(
-                    String(localized: .Pairing.pairingPastePlaceholder),
-                    text: $model.pairingCode,
-                    axis: .vertical
-                )
-                    .accessibilityIdentifier("pairing-code")
-                    .accessibilityLabel(String(localized: .Pairing.pairingPasteLabel))
-                    .textFieldStyle(.plain)
-                    .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
-                    .focused($isEditingCode)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .lineLimit(1...5)
-                    .wontonField()
-                if let domain = pairingDomain {
-                    Text(domain)
-                        .wontonText(WontonTheme.typography.body)
-                        .textSelection(.enabled)
-                }
-                Button {
-                    pair(model.pairingCode)
-                } label: {
-                    Text(.Pairing.pairingSubmit).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(WontonButtonStyle())
-                .accessibilityIdentifier("pairing-submit")
-                .disabled(model.pairingCode.isEmpty || isPairing)
-            }
-            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-                Text(.Pairing.pairingDeviceName)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-                    .accessibilityHidden(true)
-                TextField(String(localized: .Pairing.pairingDeviceName), text: $deviceName)
-                    .accessibilityIdentifier("pairing-device-name")
-                    .textFieldStyle(.plain)
-                    .wontonField()
-            }
-        }
-    }
-
     @ViewBuilder private var scanner: some View {
         switch camera {
         case .authorized:
@@ -302,6 +242,67 @@ struct PairingView: View {
         guard camera == .notDetermined else { return }
         _ = await AVCaptureDevice.requestAccess(for: .video)
         camera = .current
+    }
+}
+private extension PairingView {
+    private var pairingForm: some View {
+        VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                scanner
+                #if DEBUG
+                    if ProcessInfo.processInfo.environment["WONTON_UI_TEST_SCAN_INJECTION"] == "1" {
+                        Button(.Pairing.pairingSubmit) { scanned(model.pairingCode) }
+                            .accessibilityIdentifier("pairing-inject-scan")
+                    }
+                #endif
+                Text(.Pairing.pairingInstructions)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.Pairing.pairingPasteLabel)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
+                TextField(
+                    String(localized: .Pairing.pairingPastePlaceholder),
+                    text: $model.pairingCode,
+                    axis: .vertical
+                )
+                    .accessibilityIdentifier("pairing-code")
+                    .accessibilityLabel(String(localized: .Pairing.pairingPasteLabel))
+                    .textFieldStyle(.plain)
+                    .font(model.pairingCode.isEmpty ? nil : .caption.monospaced())
+                    .focused($isEditingCode)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .lineLimit(1...5)
+                    .wontonField()
+                if let domain = pairingDomain {
+                    Text(domain)
+                        .wontonText(WontonTheme.typography.body)
+                        .textSelection(.enabled)
+                }
+                Button {
+                    pair(model.pairingCode)
+                } label: {
+                    Text(.Pairing.pairingSubmit).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle())
+                .accessibilityIdentifier("pairing-submit")
+                .disabled(model.pairingCode.isEmpty || isPairing)
+            }
+            VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
+                Text(.Pairing.pairingDeviceName)
+                    .wontonText(WontonTheme.typography.supporting)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .accessibilityHidden(true)
+                TextField(String(localized: .Pairing.pairingDeviceName), text: $deviceName)
+                    .accessibilityIdentifier("pairing-device-name")
+                    .textFieldStyle(.plain)
+                    .wontonField()
+            }
+        }
     }
 }
 
