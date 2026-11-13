@@ -24,4 +24,16 @@
     <string name="share_save">共有を保存</string>
     <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
     <string name="share_unknown">不明な共有相手</string>
+    <!-- Destination row of the share sheet before a chat is picked; tapping it lists the chats. -->
+    <string name="share_in_choose_chat">チャットを選択</string>
+    <!-- Share sheet notice when the account has no chat that can receive messages yet. -->
+    <string name="share_in_no_chats">送信できるチャットがまだありません</string>
+    <!-- Share sheet notice when chat sign-in failed and will not retry by itself; details follow. -->
+    <string name="share_in_chat_unavailable">チャットを利用できません</string>
+    <!-- Button in the share sheet that hides it and goes to pairing; the share comes back after pairing. -->
+    <string name="share_in_pair">ペアリング</string>
+    <!-- Share sheet notice: more items were shared than one message can carry. Argument: how many were left out. -->
+    <string name="share_in_dropped">一度に 10 件まで。%1$d 件は含まれていません</string>
+    <!-- Problem title when some shared items couldn't be read from the app that shared them. -->
+    <string name="share_in_unreadable_title">読み込めない項目がありました</string>
 </resources>

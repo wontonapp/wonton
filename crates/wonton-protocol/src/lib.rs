@@ -56,6 +56,7 @@ mod server_version;
 mod servers;
 mod session;
 mod settings;
+mod share_in;
 mod share_transport;
 mod sharing;
 mod side_chat;
@@ -301,6 +302,11 @@ pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
 pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
+pub use share_in::{
+    PendingShare, SHARE_INBOX_DIR, SHARE_MANIFEST_FILE, SHARE_MAX_ITEMS, SHARE_READY_FILE,
+    ShareInDestinations, ShareInImage, ShareInItem, ShareInManifest, ShareInManifestError,
+    ShareInManifestItem, ShareInViewModel, is_share_token,
+};
 pub use share_transport::{
     MatrixOpenIdToken, SHARE_ALPN, ShareReply, ShareRequest, SharedPlugins, WONTON_WELL_KNOWN_PATH,
     WontonDiscovery,

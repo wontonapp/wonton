@@ -115,6 +115,8 @@ struct MainView: View {
             SafariView(url: target.url).ignoresSafeArea()
         }
         .onOpenURL(perform: receiveAppURL)
+        .modifier(ShareInPresenter(model: navigation.shareIn, chat: chat, plugins: plugins,
+                                   openRoom: navigation.openSharedRoom))
         .onChange(of: navigation.presentationRevision, initial: true) { _, _ in applyAppNavigation() }
         .onChange(of: pages.viewModel.stack, initial: true) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: pages.viewModel.myAppCandidates) { _, _ in WontonShortcuts.updateAppShortcutParameters() }

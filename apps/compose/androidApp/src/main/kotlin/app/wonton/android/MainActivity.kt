@@ -20,6 +20,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.LocalNotificationPermission
 import app.wonton.ui.NotificationPermission
+import app.wonton.ui.ShareIntake
 import app.wonton.ui.StartupFailure
 import app.wonton.ui.WontonApp
 import app.wonton.ui.completeMatrixOidcCallback
@@ -34,6 +35,8 @@ import java.io.File
 
 class MainActivity : AppCompatActivity() {
     private val requests = IncomingRequests()
+    private val shareIntake = ShareIntake()
+    private var shareInbox: ShareInbox? = null
     private var networkWatcher: NetworkWatcher? = null
     private lateinit var notificationPermission: NotificationPermission
 
@@ -66,7 +69,8 @@ class MainActivity : AppCompatActivity() {
         keepConnectionService(core)
         portMappingService(core)
         refreshMappingNotificationOnGrant(core)
-        if (!takeMatrixCallback(intent)) requests.take(intent)
+        shareInbox = ShareInbox(this, core, shareIntake)
+        takeIntent(intent)
         setContent {
             CompositionLocalProvider(LocalNotificationPermission provides notificationPermission) {
                 WontonApp(
@@ -75,7 +79,7 @@ class MainActivity : AppCompatActivity() {
                     requestedRoom = requests.room,
                     onRoomRequestHandled = requests::roomHandled,
                     requestedLink = requests.link,
-                    requestedAgentText = requests.agentText,
+                    shareIntake = shareIntake,
                     onCardsSettled = { server, cards -> PushNotifications.cancelCards(this, server, cards) },
                 )
             }
@@ -85,7 +89,14 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (!takeMatrixCallback(intent)) requests.take(intent)
+        takeIntent(intent)
+    }
+
+    private fun takeIntent(intent: Intent) {
+        if (takeMatrixCallback(intent)) return
+        requests.take(intent)
+        val inbox = shareInbox ?: return
+        takeShare(intent)?.let { content -> lifecycleScope.launch { inbox.receive(content) } }
     }
 
     /** “保持连接”的前台服务只看 `keep_connection`（ADR-0003 的“设计：保持连接”）：已配对、方式是保持连接时开，

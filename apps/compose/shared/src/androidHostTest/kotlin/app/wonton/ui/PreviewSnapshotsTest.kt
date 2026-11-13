@@ -41,4 +41,10 @@ class PreviewSnapshotsTest {
 
     @Test
     fun coreUpgradeCompatFailed() = paparazzi.snapshot { CoreUpgradeCompatFailedPreview() }
+
+    @Test
+    fun shareSheet() = paparazzi.snapshot { ShareSheetPreview() }
+
+    @Test
+    fun shareSheetNotPaired() = paparazzi.snapshot { ShareSheetNotPairedPreview() }
 }

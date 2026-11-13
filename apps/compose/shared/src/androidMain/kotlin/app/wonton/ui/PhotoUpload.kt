@@ -23,22 +23,24 @@ object PhotoUpload {
     // PNG 无损，Bitmap.compress 不看这个值。
     private const val LOSSLESS = 100
 
-    suspend fun make(context: Context, uri: Uri): Result<ImageUpload> = withContext(Dispatchers.Default) {
-        try {
-            val resolver = context.contentResolver
-            val data = resolver.openInputStream(uri)?.use { it.readBytes() }
-                ?: throw IOException(context.getString(R.string.photo_unreadable))
-            val type = resolver.getType(uri)
-            val upload = if (type == "image/gif") {
-                gif(context, data)
-            } else {
-                reencode(context, data, png = type == "image/png")
+    /** [type] 给了就不再问 `ContentResolver`：分享进来的照片是收件目录里的 `file://`，类型记在清单里。 */
+    suspend fun make(context: Context, uri: Uri, type: String? = null): Result<ImageUpload> =
+        withContext(Dispatchers.Default) {
+            try {
+                val resolver = context.contentResolver
+                val data = resolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: throw IOException(context.getString(R.string.photo_unreadable))
+                val mime = type ?: resolver.getType(uri)
+                val upload = if (mime == "image/gif") {
+                    gif(context, data)
+                } else {
+                    reencode(context, data, png = mime == "image/png")
+                }
+                Result.success(upload)
+            } catch (failure: IOException) {
+                Result.failure(failure)
             }
-            Result.success(upload)
-        } catch (failure: IOException) {
-            Result.failure(failure)
         }
-    }
 
     /** 原样发，保留动画；尺寸取自文件头，不解码。 */
     private fun gif(context: Context, data: ByteArray): ImageUpload {

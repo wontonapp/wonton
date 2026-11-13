@@ -19,6 +19,9 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "6.0"
+    # App 的 bundle ID；分享扩展是 `<它>.share`，App Group 是 `group.<它>`（ADR-0097）。真机用自己的团队签名时只改这一个，
+    # 三个标识跟着变（见 README）；直接改 PRODUCT_BUNDLE_IDENTIFIER 会把扩展的也改成同一个，签不过。
+    WONTON_BUNDLE_ID: app.wonton.ios
 packages:
   WontonClient:
     path: WontonClient
@@ -32,8 +35,16 @@ targets:
     platform: iOS
     sources:
       - Wonton
+      - Shared
     dependencies:
       - package: WontonClient
+      - target: ShareExtension
+    # 数据目录在 App Group 的容器里，分享扩展才放得进收件目录（ADR-0097）。
+    entitlements:
+      path: Wonton/Wonton.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WONTON_BUNDLE_ID)
     # 版本号靠生成工程时写出的 Version.xcconfig（或 xcodebuild 显式传参）。两源皆空时 Release 会落到
     # 0.0.0 或空，编译前在这里挡下；Debug 允许 0.0.0（CI 浅克隆没有 tag）。
     preBuildScripts:
@@ -75,9 +86,10 @@ targets:
           UIColorName: LaunchBackground
           UIImageName: LaunchGlyph
           UIImageRespectsSafeAreaInsets: false
+        WontonAppGroup: group.$(WONTON_BUNDLE_ID)
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.wonton.ios
+        PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID)
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Wonton
         # 文字按含义起名的键写在 String Catalog 里，代码用生成的符号（`Text(.settingsLanguage)`），键写错编译不过；
@@ -86,6 +98,44 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: NO
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        TARGETED_DEVICE_FAMILY: "1"
+
+  # 系统分享面板里的“云吞”（ADR-0097）：只把东西复制进收件目录、打开 App，不链接 Rust 核心。
+  ShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ShareExtension
+      - Shared
+    entitlements:
+      path: ShareExtension/ShareExtension.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.$(WONTON_BUNDLE_ID)
+    info:
+      path: ShareExtension/Info.plist
+      properties:
+        WontonAppGroup: group.$(WONTON_BUNDLE_ID)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            # 和附件区一样一次最多 10 项（wonton-protocol 的 SHARE_MAX_ITEMS）。
+            NSExtensionActivationRule:
+              NSExtensionActivationSupportsImageWithMaxCount: 10
+              NSExtensionActivationSupportsMovieWithMaxCount: 10
+              NSExtensionActivationSupportsFileWithMaxCount: 10
+              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+              NSExtensionActivationSupportsText: true
+    # 版本号不在这里设：和 App 一样取工程级的 Version.xcconfig。扩展的 CFBundleShortVersionString、CFBundleVersion
+    # 必须和 App 的一致，App Store 校验不过。
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(WONTON_BUNDLE_ID).share
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Wonton
+        STRING_CATALOG_GENERATE_SYMBOLS: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
         TARGETED_DEVICE_FAMILY: "1"
 
   WontonTests:

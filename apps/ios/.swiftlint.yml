@@ -2,6 +2,8 @@
 # CI 用 --strict 运行，其余规则的 warning 也会失败。
 included:
   - Wonton
+  - Shared
+  - ShareExtension
   - WontonClient/Package.swift
   - WontonClient/Sources
 

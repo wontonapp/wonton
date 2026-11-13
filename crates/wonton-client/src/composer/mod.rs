@@ -3,11 +3,14 @@
 //! 附件放进附件区就开始上传。点发送后，字、回复对象和附件变成一条待发消息；这一条的附件全部传完、文件授权给房间后，
 //! 由这个房间的发送任务（[`sender`]）把一组事件按顺序交给 matrix-sdk 的发送队列。同一房间的待发消息按点发送的顺序交出。
 
+mod direct;
 mod sender;
 mod state;
 mod store;
 pub(crate) mod uplink;
 mod worker;
+
+pub(crate) use direct::NewItem;
 
 #[cfg(test)]
 mod tests;
@@ -73,6 +76,41 @@ fn attachment_not_found() -> CoreError {
 
 fn outgoing_not_found() -> CoreError {
     invalid(l10n!(CATALOG, language(), "composer-outgoing-not-found"))
+}
+
+fn check_image_type(image: &ImageUpload) -> Result<(), CoreError> {
+    if image.mime_type.starts_with("image/") {
+        return Ok(());
+    }
+    Err(invalid(l10n!(
+        CATALOG,
+        language(),
+        "chat-not-image-type",
+        file_type = image.mime_type.as_str()
+    )))
+}
+
+fn check_file_name(name: &str) -> Result<(), CoreError> {
+    if name.trim().is_empty() {
+        return Err(invalid(l10n!(CATALOG, language(), "files-name-required")));
+    }
+    Ok(())
+}
+
+fn file_item(source: UploadSource, name: String, mime_type: Option<String>) -> Item {
+    Item {
+        id: random_hex(),
+        name,
+        mime_type,
+        size: None,
+        body: Body::File {
+            source,
+            transfer: None,
+            file: None,
+            granted: false,
+        },
+        state: AttachmentState::Uploading { progress: None },
+    }
 }
 
 impl ComposerLink {
@@ -243,16 +281,28 @@ impl ComposerLink {
         room: &str,
         image: ImageUpload,
     ) -> Result<String, CoreError> {
-        if !image.mime_type.starts_with("image/") {
-            return Err(invalid(l10n!(
-                CATALOG,
-                language(),
-                "chat-not-image-type",
-                file_type = image.mime_type.as_str()
-            )));
-        }
+        check_image_type(&image)?;
         self.uplink.check_send(room, None)?;
         self.check_room_has_space(room)?;
+        let item = self.image_item(image)?;
+        self.add(room, item)
+    }
+
+    pub(crate) fn add_file(
+        self: &Arc<Self>,
+        room: &str,
+        source: UploadSource,
+        name: String,
+        mime_type: Option<String>,
+    ) -> Result<String, CoreError> {
+        check_file_name(&name)?;
+        self.uplink.check_send(room, None)?;
+        self.check_room_has_space(room)?;
+        self.add(room, file_item(source, name, mime_type))
+    }
+
+    /// 照片的字节存进附件区目录，返回还没放进任何地方的一项。
+    fn image_item(&self, image: ImageUpload) -> Result<Item, CoreError> {
         let id = random_hex();
         self.disk.save_image(
             &id,
@@ -262,7 +312,7 @@ impl ComposerLink {
                 .as_ref()
                 .map(|thumbnail| thumbnail.data.as_slice()),
         )?;
-        let item = Item {
+        Ok(Item {
             id,
             name: image.filename,
             mime_type: Some(image.mime_type),
@@ -278,36 +328,7 @@ impl ComposerLink {
                 uploaded: None,
             },
             state: AttachmentState::Uploading { progress: None },
-        };
-        self.add(room, item)
-    }
-
-    pub(crate) fn add_file(
-        self: &Arc<Self>,
-        room: &str,
-        source: UploadSource,
-        name: String,
-        mime_type: Option<String>,
-    ) -> Result<String, CoreError> {
-        if name.trim().is_empty() {
-            return Err(invalid(l10n!(CATALOG, language(), "files-name-required")));
-        }
-        self.uplink.check_send(room, None)?;
-        self.check_room_has_space(room)?;
-        let item = Item {
-            id: random_hex(),
-            name,
-            mime_type,
-            size: None,
-            body: Body::File {
-                source,
-                transfer: None,
-                file: None,
-                granted: false,
-            },
-            state: AttachmentState::Uploading { progress: None },
-        };
-        self.add(room, item)
+        })
     }
 
     /// 停下附件的上传、删掉本机存的字节。
