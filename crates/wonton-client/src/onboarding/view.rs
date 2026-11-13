@@ -305,6 +305,7 @@ mod tests {
                 name: "Hermes".to_owned(),
                 is_direct: true,
                 direct_user_id: bot.map(str::to_owned),
+                plugin: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: wonton_protocol::RoomMembership::Joined,

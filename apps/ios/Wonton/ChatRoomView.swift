@@ -82,6 +82,9 @@ private extension ChatRoomView {
             } else if model.noSideChatsRoom == roomId {
                 NoSideChatsHint()
             }
+            if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                AgentPluginStatusBanner(plugin: plugin, model: plugins)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             roomBottomBar

@@ -42,4 +42,5 @@
     <string name="chat_backup_value_enabled">已开启</string>
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">处理中</string>
+    <string name="chat_plugin_stopped">Agent 已停止，启动后才能回复。</string>
 </resources>

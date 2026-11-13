@@ -22,6 +22,7 @@ mod permission;
 pub(super) mod ports;
 mod secret_input;
 mod settings;
+mod start;
 mod takeover;
 #[path = "task.rs"]
 mod task;
@@ -53,6 +54,7 @@ pub use settings::{
     SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
     plugin_settings_preview_path,
 };
+pub use start::{PluginStart, PluginStartState, RoomPlugin};
 pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{

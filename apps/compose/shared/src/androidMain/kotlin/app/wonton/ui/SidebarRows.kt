@@ -42,6 +42,8 @@ import app.wonton.protocol.SidebarOpen
 import app.wonton.protocol.TabRef
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
+import app.wonton.ui.icons.PauseFill
+import app.wonton.ui.icons.WontonIcon
 
 private const val BADGE_MAX = 99
 
@@ -70,7 +72,7 @@ internal fun SidebarAppRow(
         title = app.title,
         selected = choice != null && choice == current,
         interactive = interactive,
-        badgeMark = SidebarAppBadge(app.badge.update, app.badge.problem),
+        badgeMark = SidebarAppBadge(app.badge.update, app.badge.problem, app.badge.stopped),
         onClick = {
             when (val open = app.open) {
                 is SidebarOpen.BotChat -> onGo(SidebarDestination.Plugin(PluginEntry.Chat(open.botUserId)))
@@ -158,6 +160,14 @@ internal fun SidebarRow(
             )
             badgeMark?.let { mark ->
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (mark.stopped) {
+                        Icon(
+                            WontonIcon.PauseFill,
+                            contentDescription = stringResource(R.string.launcher_badge_stopped),
+                            modifier = Modifier.size(WontonTheme.size.iconSmall),
+                            tint = colors.textSecondary.toColor(),
+                        )
+                    }
                     if (mark.update) {
                         val updatableLabel = stringResource(R.string.sidebar_updatable)
                         Box(
@@ -207,5 +217,5 @@ internal fun SidebarRow(
     }
 }
 
-/** 行尾的两个红点来源，分开画（SidebarBadge 的壳侧影子）。 */
-internal data class SidebarAppBadge(val update: Boolean, val problem: Boolean)
+/** 核心给的状态标记独立呈现，不让停止状态遮住更新或问题。 */
+internal data class SidebarAppBadge(val update: Boolean, val problem: Boolean, val stopped: Boolean)
