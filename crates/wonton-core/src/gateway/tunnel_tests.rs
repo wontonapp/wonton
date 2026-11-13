@@ -158,6 +158,7 @@ impl Home {
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let (tunnel, members) = loopback_tunnel_with(dir.path(), lan).await;
+        let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
         let gateway = Gateway::new(
             public,
             profile,
@@ -169,9 +170,11 @@ impl Home {
             tunnel.clone(),
         )
         .with_matrix(matrix)
+        .with_roles(roles.clone())
         .with_friends(friends)
         .with_federation_blocks(blocks);
-        let app = router(Arc::new(gateway));
+        let gateway = Arc::new(gateway);
+        let app = router(gateway.clone());
         let entry = TunnelEntry::spawn(&tunnel, app.clone());
         Self {
             app,

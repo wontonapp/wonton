@@ -41,8 +41,7 @@ fn to_member(record: &MemberRecord) -> Member {
         display_name: record.display_name.clone(),
         email: record.email.clone(),
         status: record.status,
-        // 角色存储还没接上，先都记权限最少的“朋友”，不冒充主人或家人。
-        role_id: "friend".to_owned(),
+        role_id: record.role_id.clone(),
         can_install_plugins: record.can_install_plugins,
         private_bot: record.private_bot.clone(),
         pairing_code_expires_at_ms: record.pairing_code_expires_at_ms,
@@ -94,6 +93,24 @@ pub async fn invite(
             &problem.to_string(),
         );
     }
+    let role = match &invite.role_id {
+        Some(role_id) => match gateway.roles.get(role_id) {
+            Some(role) => role,
+            None => {
+                let message = format!("没有这个角色：{role_id}");
+                return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+            }
+        },
+        None => gateway
+            .roles
+            .get(&gateway.roles.default_invite_role())
+            .expect("默认邀请角色在记录里"),
+    };
+    if invite.private_bot && !role.permissions.private_bot {
+        let message = format!("角色“{}”没有私人 Bot，不能要私人 Bot", role.id);
+        return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+    }
+    let role_id = role.id;
     let _allocating = gateway.plugins.lock_person_names().await;
     let username = match pick_username(&gateway, matrix, &invite, display_name).await {
         Ok(username) => username,
@@ -106,6 +123,7 @@ pub async fn invite(
         display_name: display_name.to_owned(),
         email: None,
         status: MemberStatus::Invited,
+        role_id,
         can_install_plugins: false,
         wants_private_bot,
         private_bot: None,
@@ -212,7 +230,7 @@ fn taken_conflict(name: &str) -> Response {
     )
 }
 
-/// `PUT member_path(username)`：主人改一个家人的设置。
+/// `PUT member_path(username)`：主人改一个家人的设置。能装插件改由角色决定，这里不再写记录。
 pub async fn settings(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -223,22 +241,22 @@ pub async fn settings(
     if let Some(denied) = owner_denied(&gateway, peer, &headers) {
         return denied;
     }
-    let update: MemberSettings = match serde_json::from_slice(&body) {
+    let _: MemberSettings = match serde_json::from_slice(&body) {
         Ok(update) => update,
         Err(e) => {
             let message = format!("请求体不是家人的设置：{e}");
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
-    match gateway
-        .members
-        .set_settings(&username, update.can_install_plugins)
-    {
-        Ok(record) => {
-            tracing::info!(member = %username, can_install = update.can_install_plugins, "改家人的设置");
-            Json(to_member(&record)).into_response()
-        }
-        Err(e) => members_error(e),
+    match gateway.members.get(&username) {
+        None => members_error(MembersError::NotFound(username)),
+        Some(_) => error_response(
+            StatusCode::CONFLICT,
+            "install_apps_from_role",
+            &format!(
+                "能不能装插件已经由角色决定，这个开关不再生效：要装就给 {username} 换一个“装、删、升级应用”放开的角色"
+            ),
+        ),
     }
 }
 
