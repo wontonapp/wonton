@@ -182,3 +182,6 @@ gateway-agent-acp-multi-bot = {$provider} 有几个 Bot，先在详情页绑定�
 gateway-agent-acp-token-missing = {$provider} 还没有提供方令牌，重新安装一次就有了
 gateway-agent-acp-provider-unreachable = Agent 运行时没有接起这条连接：{$detail}
 gateway-agent-acp-busy = 这个应用开着的 Agent 连接已经到上限，稍后再试
+
+gateway-install-rejected = 管理员没有同意，没有{$action}
+gateway-install-expired = 管理员没有在期限内回答，没有{$action}

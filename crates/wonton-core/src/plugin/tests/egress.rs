@@ -103,7 +103,6 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

@@ -171,11 +171,10 @@ pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::MEMBER_SYNC_PATH;
 pub use family::{
-    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
+    BotKeeper, BotRef, FAMILY_ROOM_EVENT, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
     HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
     MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus, NewSharedBot, Role,
     SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_removal_path,
-    plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
@@ -300,8 +299,9 @@ pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
     DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
     OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
-    PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
-    RolesViewModel, TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    PluginAudience, PluginAudienceChoice, PluginAudienceNotice, PluginAudienceView, ROLES_PATH,
+    RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate, RolesViewModel,
+    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;

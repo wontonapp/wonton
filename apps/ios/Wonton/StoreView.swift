@@ -191,7 +191,9 @@ struct StoreView: View {
             return .busy
         }
         guard let version = item.installedVersion else {
-            return .get(enabled: item.blocked == nil) { model.send(.installNow(source: item.source)) }
+            let action = storeInstallAction(item: item)
+            let title = action == .requestAdmin ? String(localized: .Install.installRequestAdmin) : String(localized: .Store.storeGet)
+            return .get(title: title, enabled: action != .blocked) { model.send(.installNow(source: item.source)) }
         }
         if version != item.version {
             return .get(title: String(localized: .Store.storeUpdate)) { model.send(.upgradeNow(pluginId: item.id)) }

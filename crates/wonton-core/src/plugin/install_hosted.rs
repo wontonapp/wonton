@@ -433,7 +433,6 @@ impl PluginManager {
             setup_done_ever: old.is_some_and(|old| old.setup_done_ever),
             written_by: old.and_then(|old| old.written_by.clone()),
             ask_every_update: old.is_some_and(|old| old.ask_every_update),
-            family: old.is_some_and(|old| old.family),
             static_files: package.static_hashes().clone(),
             hosted,
             gpu_vendor: old.and_then(|old| old.gpu_vendor),

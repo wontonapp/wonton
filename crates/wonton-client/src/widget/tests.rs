@@ -206,7 +206,6 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         cross_origin_isolated: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),

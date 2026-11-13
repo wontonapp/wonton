@@ -60,7 +60,7 @@ use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal};
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal, Ticket};
 pub use notifier::DevicePush;
 pub use server::Caller;
 use takeover::Takeovers;
@@ -743,6 +743,8 @@ mod handoff_tests;
 mod help_tests;
 #[cfg(test)]
 mod highest_tool_tests;
+#[cfg(test)]
+mod install_gate_tests;
 #[cfg(test)]
 mod optional_permission_tests;
 #[cfg(test)]

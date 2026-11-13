@@ -71,6 +71,7 @@ async fn staged(m: &super::super::manager::PluginManager, pkg: PluginPackage) ->
 fn request(source: &str, digest: &str, settings: SettingValues) -> InstallRequest {
     InstallRequest {
         scope: None,
+        audience: None,
         source: source.to_owned(),
         digest: digest.to_owned(),
         plan: String::new(),

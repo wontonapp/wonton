@@ -118,7 +118,7 @@ fn choices(approve: &str, reject: &str) -> Vec<CardChoice> {
 pub use crate::plugin::views::permission_text as permission;
 
 /// 权限行：说明加风险醒目，有提示的权限（局域网端口、宿主网络、最高级）在下面带一行醒目的提示（ADR-0036 的三级提示，文字由 [`permission_line`] 给）。
-fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
+pub(super) fn permission_lines(manifest: &Manifest, langs: &Languages) -> Vec<CardLine> {
     let mut lines = Vec::new();
     for permission in &manifest.permissions {
         let line = permission_line(permission, langs);
@@ -278,11 +278,12 @@ fn install_title(requester: &str, manifest: &Manifest, langs: &Languages) -> Str
     )
 }
 
-/// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像，和“以后不再问”的说明。有很高或最高级权限时这些权限每次更新都问，“不再问”不成立，就不写。
+/// Agent 写的插件第一次装（ADR-0033）：未审核、全部权限和镜像；只有允许静默更新才说明以后不再问。
 pub fn agent_install(
     requester: &str,
     package: &PluginPackage,
     secret_inputs: Vec<SecretInput>,
+    quiet_updates: bool,
     langs: &Languages,
 ) -> Draft {
     let manifest = &package.manifest;
@@ -314,7 +315,7 @@ pub fn agent_install(
             Some(CapabilityRisk::VeryHigh) | Some(CapabilityRisk::Highest)
         )
     });
-    if !always_asks {
+    if quiet_updates && !always_asks {
         lines.push(line(l10n::text(
             langs,
             "chat-card-agent-ask-again",

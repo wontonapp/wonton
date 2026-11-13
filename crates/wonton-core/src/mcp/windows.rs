@@ -42,13 +42,14 @@ impl Bus {
         settings: wonton_protocol::SettingValues,
         by: &str,
     ) -> Result<ConfirmationState, AnswerError> {
-        let state = self.confirmations.answer_with_secrets(
+        let state = self.confirmations.answer_with_secrets_by(
             id,
             answer,
             choice_id,
             secrets,
             settings,
             &self.owner_languages(),
+            Some(by),
         )?;
         if answer == Answer::AllowWindow {
             self.window_opened(id, by);

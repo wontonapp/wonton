@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.previewInstallAction
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -60,8 +62,8 @@ internal fun ConfirmInstallButton(
         { if (rootPermissions.isEmpty()) onConfirm() else acknowledging = true },
         Modifier.padding(bottom = LocalWontonBottomInset.current)
             .padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
-        enabled = preview.blocked == null && preview.missingProfile == null &&
-            secretsReady && preview.permissions.all { it.supported },
+        enabled = previewInstallAction(preview) != PluginInstallAction.BLOCKED &&
+            preview.missingProfile == null && secretsReady && preview.permissions.all { it.supported },
     )
     if (acknowledging) {
         WontonDialog(

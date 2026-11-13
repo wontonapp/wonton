@@ -215,6 +215,17 @@ impl Harness {
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
         let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
+        let bus = crate::mcp::Bus::new(
+            manager.clone(),
+            Arc::new(crate::mcp::Confirmations::new(
+                Arc::new(crate::mcp::test_support::Cards::default()),
+                Duration::from_secs(60),
+            )),
+            Arc::new(crate::mcp::audit::Audit::new(
+                dir.path().join("audit.jsonl"),
+            )),
+        );
+        bus.attach_people("wonton-test".to_owned(), members.clone(), roles.clone());
         let gateway = Gateway::new(
             public,
             profile,
@@ -226,7 +237,8 @@ impl Harness {
             tunnel.clone(),
         )
         .with_roles(roles.clone())
-        .with_upgrades(upgrades);
+        .with_upgrades(upgrades)
+        .with_mcp(Some(bus.endpoint()));
         let gateway = Arc::new(gateway);
         let app = router(gateway.clone());
         let entry = TunnelEntry::spawn(&tunnel, app.clone());

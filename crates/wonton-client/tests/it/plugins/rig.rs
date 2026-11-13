@@ -466,7 +466,6 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
@@ -536,6 +535,8 @@ pub fn preview(id: &str) -> InstallPreview {
         devices: None,
         lan_webui: None,
         always_allowed: Vec::new(),
+        audience: None,
+        install_gate: wonton_client::Gate::Allow,
     }
 }
 
@@ -560,6 +561,8 @@ pub fn item(id: &str, title: &str, tags: &[&str]) -> StoreItem {
         security_tier: None,
         high_permissions: false,
         blocked: None,
+        installable: true,
+        install_gate: wonton_client::Gate::Allow,
     }
 }
 

@@ -36,6 +36,10 @@ pub struct InstallPreview {
     /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
     #[serde(default)]
     pub security_tier: Option<SecurityTier>,
+    #[serde(default)]
+    pub audience: Option<crate::PluginAudienceView>,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 可供主人选择的 Bot；只有一个 Bot 时为空，壳不显示范围选择。
     #[serde(default)]
     pub scope_choices: Vec<crate::BotRef>,
@@ -120,7 +124,10 @@ pub struct InstallRequest {
     /// 主人选择的范围；省略时按全局（[`PluginScope::All`]）安装。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<PluginScope>,
-    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可以带上可选项（老客户端会这么做），但它们不算打开；
+    /// 主人选择开放给哪些角色；省略时只保留“全部应用”的角色。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience: Option<crate::PluginAudience>,
+    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可选项只有 enabled_permissions 打开。
     /// 多出预览里没有的项装不上。
     pub grant: Vec<String>,
     /// 主人在预览里打开的可选项（[`PermissionLine::optional`] 的 `permission`），没带就是全关。

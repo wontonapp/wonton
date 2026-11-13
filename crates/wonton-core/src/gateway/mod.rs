@@ -56,6 +56,7 @@ mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod install_gates;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -77,6 +78,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
+mod plugin_audience;
 mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
@@ -752,6 +754,8 @@ mod first_run_tests;
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
+#[cfg(test)]
+mod install_gate_tests;
 #[cfg(test)]
 mod isolation_policy_tests;
 #[cfg(test)]

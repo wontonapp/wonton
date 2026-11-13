@@ -34,11 +34,6 @@ pub const MEMBER_PAIRING_CODE_TTL_SECS: u64 = 24 * 60 * 60;
 /// `POST`：请求体 [`NewSharedBot`]，返回 [`BotRef`]。只有主人能用。
 pub const SHARED_BOTS_PATH: &str = "/_wonton/api/bots";
 
-/// `PUT`：请求体 [`FamilyAccess`]，返回 [`InstalledPlugin`](crate::InstalledPlugin)。只有主人能用。
-pub fn plugin_family_path(plugin_id: &str) -> String {
-    format!("/_wonton/api/plugins/{plugin_id}/family")
-}
-
 /// 家庭群的状态事件类型，状态键为空。核心建群时写，App 凭它给这个房间加家庭的标记。
 pub const FAMILY_ROOM_EVENT: &str = "app.wonton.family";
 
@@ -200,13 +195,6 @@ pub struct NewSharedBot {
     pub plugin_id: String,
     /// 插件里的 Bot 名，同时决定 Matrix 用户名 `<插件 ID 最后一段>-<Bot 名>`。
     pub bot: String,
-}
-
-/// 主人设一个插件给不给家人用。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct FamilyAccess {
-    pub enabled: bool,
 }
 
 /// 网关拒绝 Matrix 或分享请求的类别，写在 [`GATEWAY_REFUSAL_HEADER`] 里。

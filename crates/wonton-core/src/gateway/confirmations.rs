@@ -231,8 +231,8 @@ pub async fn stop_window(
     }
 }
 
-/// 卡片发给谁谁回答（ADR-0045）：主人答没写收件人的，家人答写了他用户名的，别人回 403 `not_yours`。没有这张卡片时
-/// 交给回答本身报 404。
+/// 卡片发给谁谁回答（ADR-0045）：主人和管理员答管理员卡，家人答写了他用户名的，
+/// 别人回 403 `not_yours`。没有这张卡片时交给回答本身报 404。
 fn not_their_card(
     gateway: &Gateway,
     mcp: &crate::mcp::Endpoint,
@@ -244,12 +244,17 @@ fn not_their_card(
         Ok(person) => person,
         Err(response) => return Some(*response),
     };
-    let recipient = mcp.bus.confirmations().recipient(id)?;
-    let theirs = match recipient {
-        None => person.is_owner(),
-        Some(username) => !person.is_owner() && person.username == username,
-    };
-    (!theirs).then(|| error_response(StatusCode::FORBIDDEN, "not_yours", "这张卡片不是发给你的"))
+    // 管理员卡片的收件人名单在开卡时冻结（`recipient` 认不出时是 None），
+    // 能不能答由确认表自己判定，不冒充能答。
+    let recipient = (!person.is_owner()).then_some(person.username.as_str());
+    match mcp.bus.confirmations().may_answer(id, recipient) {
+        Some(true) | None => None,
+        Some(false) => Some(error_response(
+            StatusCode::FORBIDDEN,
+            "not_yours",
+            "这张卡片不是发给你的",
+        )),
+    }
 }
 
 /// 放行时段只在主人的卡片上（ADR-0024）：主人的令牌和设备能答，家人的设备回答回 403 `not_yours`。

@@ -129,7 +129,6 @@ impl Fixture {
                 origin: None,
                 written_by: None,
                 ask_every_update: false,
-                family: false,
                 settings: Default::default(),
                 settings_changed_ms: None,
                 static_files: Default::default(),

@@ -24,4 +24,11 @@
     <string name="install_permissions">Permissions</string>
     <!-- Section title above the release notes in the install preview. -->
     <string name="install_release_notes">What\'s new</string>
+    <string name="install_audience_admin">Administrators</string>
+    <string name="install_audience_family">Family</string>
+    <string name="install_audience_child">Children</string>
+    <string name="install_audience_friend">Friends</string>
+    <string name="install_audience_title">Who can open this app</string>
+    <string name="install_audience_shared_data">This app does not separate accounts. People with access may see and change the same data.</string>
+    <string name="install_request_admin">Ask an administrator to install</string>
 </resources>

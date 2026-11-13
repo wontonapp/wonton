@@ -73,26 +73,16 @@ fn room(fake: &Fake, id: &str, members: &[&str]) {
 }
 
 fn member(s: &Setup, username: &str, can_install_plugins: bool) {
-    s.members
-        .invite(MemberRecord {
-            username: username.to_owned(),
-            user_id: user(username),
-            display_name: username.to_owned(),
-            email: None,
-            status: MemberStatus::Active,
-            // 能不能装插件改成看角色：能装的人给权限最大的管理员模板。
-            role_id: if can_install_plugins {
-                "admin"
-            } else {
-                "friend"
-            }
-            .to_owned(),
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
-        })
-        .unwrap();
+    let mut record = MemberRecord::for_test(username);
+    record.status = MemberStatus::Joined;
+    record.role_id = if can_install_plugins {
+        "admin"
+    } else {
+        "family"
+    }
+    .to_owned();
+    s.members.invite(record).unwrap();
+    s.members.consume_code(username).unwrap();
 }
 
 async fn matrix(s: &Setup) -> Fake {
@@ -106,15 +96,19 @@ async fn matrix(s: &Setup) -> Fake {
     fake
 }
 
-/// 等发给 `recipient`（`None` 是主人）的第一张卡片。
+/// Wait for a visible card using the public list revision, without wall-clock polling.
 async fn pending_for(s: &Setup, recipient: Option<&str>) -> ConfirmationCard {
-    for _ in 0..500 {
-        if let Some(card) = s.bus.confirmations().list(recipient).0.pop() {
-            return card;
+    let mut changes = s.bus.confirmations().subscribe();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(card) = s.bus.confirmations().list(recipient).0.pop() {
+                return card;
+            }
+            changes.changed().await.unwrap();
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("等了 5 秒还没有发给 {recipient:?} 的卡片");
+    })
+    .await
+    .expect("confirmation was not created")
 }
 
 fn requester(bot: &str) -> Option<ConfirmationRequester> {
@@ -286,7 +280,16 @@ async fn plugin_admin_cards_go_to_a_keeper_only_with_the_install_grant() {
         "wonton__uninstall_plugin",
         uninstall("app.example.journal"),
     );
-    let card = s.cards.wait_for(1).await;
+    let card = pending_for(&s, None).await;
+    assert_eq!(card.audience, wonton_protocol::CardAudience::Admins);
+    assert_eq!(
+        s.bus.confirmations().may_answer(&card.id, Some("alice")),
+        Some(false)
+    );
+    assert_eq!(
+        s.bus.confirmations().may_answer(&card.id, Some("bob")),
+        Some(true)
+    );
     assert_eq!(
         card.requester,
         requester("alice"),
@@ -303,11 +306,9 @@ async fn plugin_admin_cards_go_to_a_keeper_only_with_the_install_grant() {
     );
     let card = pending_for(&s, Some("bob")).await;
     assert_eq!(card.origin, Some(origin(&home("bob"))));
-    assert_eq!(
-        *s.cards.recipients.lock().unwrap(),
-        [None, Some("bob".to_owned())],
-        "没授权的发给主人，授权了的推给他自己"
-    );
+    assert_eq!(card.audience, wonton_protocol::CardAudience::Keeper);
+    assert_eq!(s.bus.confirmations().list(Some("alice")).0.len(), 0);
+    assert_eq!(s.bus.confirmations().list(None).0.len(), 0);
     s.answer(&card.id, Answer::Reject).unwrap();
     call.await.unwrap();
 }
