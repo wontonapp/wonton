@@ -39,16 +39,36 @@ struct WontonIconButton: View {
     var tint: Color?
     let action: () -> Void
     @Environment(\.wontonColors) private var colors
+    @Environment(\.wontonGlassControls) private var glassControls
+    @Environment(\.wontonSystemToolbar) private var systemToolbar
 
     var body: some View {
-        Button(action: action) {
-            icon.view()
-                .foregroundStyle(tint ?? Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
+        if #available(iOS 26, *), systemToolbar {
+            Button(action: action) {
+                icon.view().foregroundStyle(tint ?? Color(colors.textPrimary))
+            }
+            .buttonStyle(.automatic)
+            .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+            .accessibilityLabel(label)
+        } else if #available(iOS 26, *), glassControls {
+            Button(action: action) {
+                icon.view().foregroundStyle(tint ?? Color(colors.textPrimary))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+            .accessibilityLabel(label)
+        } else {
+            Button(action: action) {
+                icon.view()
+                    .foregroundStyle(tint ?? Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }
 
@@ -58,16 +78,36 @@ struct WontonIconLink<Value: Hashable>: View {
     let label: String
     let value: Value
     @Environment(\.wontonColors) private var colors
+    @Environment(\.wontonGlassControls) private var glassControls
+    @Environment(\.wontonSystemToolbar) private var systemToolbar
 
     var body: some View {
-        NavigationLink(value: value) {
-            icon.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
+        if #available(iOS 26, *), systemToolbar {
+            NavigationLink(value: value) {
+                icon.view().foregroundStyle(Color(colors.textPrimary))
+            }
+            .buttonStyle(.automatic)
+            .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+            .accessibilityLabel(label)
+        } else if #available(iOS 26, *), glassControls {
+            NavigationLink(value: value) {
+                icon.view().foregroundStyle(Color(colors.textPrimary))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+            .accessibilityLabel(label)
+        } else {
+            NavigationLink(value: value) {
+                icon.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(label)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }
 
@@ -277,7 +317,7 @@ struct WontonRootBar<Trailing: View>: View {
                         HStack(spacing: 0) {
                             if let openSidebar { SidebarButton(action: openSidebar) }
                             Spacer(minLength: 0)
-                            if hasActions { trailing }
+                            if hasActions { trailing.environment(\.wontonGlassControls, true) }
                         }
                     }
                 }
@@ -298,14 +338,26 @@ private struct SidebarButton: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        Button(action: action) {
-            WontonIcon.list.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
-                .contentShape(Rectangle())
+        if #available(iOS 26, *) {
+            Button(action: action) {
+                WontonIcon.list.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+            }
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
+            .accessibilityLabel(String(localized: .Sidebar.sidebarOpen))
+        } else {
+            Button(action: action) {
+                WontonIcon.list.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.target, height: WontonTheme.size.target)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: .Sidebar.sidebarOpen))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(String(localized: .Sidebar.sidebarOpen))
     }
 }
 
@@ -319,6 +371,7 @@ struct WontonPushedBar<Trailing: View>: View {
     var iconLabel = String(localized: .Design.designBack)
     var showsStatus = false
     var showsStatusLine = false
+    var glassControls = false
     /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
     var avatar: AnyView?
     /// 返回键的动作；不传时退出当前导航层。盖在别的页面上的旁聊页（ADR-0093）用它收起自己，不动导航栈。
@@ -350,14 +403,7 @@ struct WontonPushedBar<Trailing: View>: View {
                     }
                 }
                 .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
-                HStack(spacing: 0) {
-                    WontonIconButton(icon: icon, label: iconLabel) {
-                        if let onClose { onClose() } else { dismiss() }
-                    }
-                    Spacer(minLength: 0)
-                    trailing
-                }
-                .padding(.horizontal, WontonTheme.spacing.s4)
+                barButtons
             }
             .frame(minHeight: WontonTheme.size.topBar)
             if let line {
@@ -366,6 +412,26 @@ struct WontonPushedBar<Trailing: View>: View {
                     .padding(.bottom, WontonTheme.spacing.s8)
             }
         }
+    }
+
+    @ViewBuilder private var barButtons: some View {
+        if #available(iOS 26, *), glassControls {
+            GlassEffectContainer(spacing: WontonTheme.spacing.s4) { buttons }
+        } else {
+            buttons
+        }
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 0) {
+            WontonIconButton(icon: icon, label: iconLabel) {
+                if let onClose { onClose() } else { dismiss() }
+            }
+            Spacer(minLength: 0)
+            trailing
+        }
+        .environment(\.wontonGlassControls, glassControls)
+        .padding(.horizontal, WontonTheme.spacing.s4)
     }
 }
 
@@ -376,47 +442,75 @@ extension WontonPushedBar where Trailing == EmptyView {
 }
 
 extension View {
-    /// 用自己的标题栏代替系统导航栏。
-    func wontonPushedScreen(_ title: String, showsStatusLine: Bool = false) -> some View {
-        wontonPushedScreen(title, showsStatusLine: showsStatusLine) { EmptyView() }
+    /// 普通页面可选择系统栏；房间的自绘视口由聊天页面独立决定。
+    func wontonPushedScreen(
+        _ title: String, showsStatusLine: Bool = false, usesSystemToolbar: Bool = false
+    ) -> some View {
+        wontonPushedScreen(
+            title, showsStatusLine: showsStatusLine, usesSystemToolbar: usesSystemToolbar
+        ) { EmptyView() }
     }
 
-    func wontonPushedScreen<Trailing: View>(
+    @ViewBuilder func wontonPushedScreen<Trailing: View>(
         _ title: String,
         avatar: AnyView? = nil,
         showsStatus: Bool = false,
         showsStatusLine: Bool = false,
         onClose: (() -> Void)? = nil,
+        usesSystemToolbar: Bool = false,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        let bar = WontonPushedBar(
-            title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
-            avatar: avatar, onClose: onClose, trailing: trailing
-        )
-        return wontonTopBar { bar }
-            .toolbar(.hidden, for: .navigationBar)
+        if #available(iOS 26, *), usesSystemToolbar {
+            modifier(WontonNativePushedBar(
+                title: title, avatar: avatar, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
+                onClose: onClose, trailing: trailing()
+            ))
             .modifier(WontonCanvas())
+        } else {
+            let bar = WontonPushedBar(
+                title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
+                avatar: avatar, onClose: onClose, trailing: trailing
+            )
+            wontonTopBar { bar }
+                .toolbar(.hidden, for: .navigationBar)
+                .modifier(WontonCanvas())
+        }
     }
 
-    /// 盖在整屏上的页面：标题栏和进入下一层的一样，返回换成关闭。
-    func wontonModalScreen(_ title: String, showsStatus: Bool = false) -> some View {
-        let bar = WontonPushedBar(
-            title: title, icon: .close, iconLabel: String(localized: .Design.designClose),
-            showsStatus: showsStatus
-        ) { EmptyView() }
-        return wontonTopBar { bar }
+    /// 无导航容器的全屏呈现保留自绘栏；已有 NavigationStack 的呈现可选择系统关闭栏。
+    @ViewBuilder func wontonModalScreen(
+        _ title: String, showsStatus: Bool = false, usesSystemToolbar: Bool = false
+    ) -> some View {
+        if #available(iOS 26, *), usesSystemToolbar {
+            modifier(WontonNativePushedBar(
+                title: title, icon: .close, iconLabel: String(localized: .Design.designClose),
+                showsStatus: showsStatus, trailing: EmptyView()
+            ))
             .modifier(WontonCanvas())
+        } else {
+            let bar = WontonPushedBar(
+                title: title, icon: .close, iconLabel: String(localized: .Design.designClose),
+                showsStatus: showsStatus, glassControls: true
+            ) { EmptyView() }
+            wontonTopBar { bar }
+                .modifier(WontonCanvas())
+        }
     }
 
-    /// 根页面：连接状态和操作。
-    func wontonRootScreen<Trailing: View>(
+    /// 根页面不显示页面名，连接状态和导航动作由系统栏承载。
+    @ViewBuilder func wontonRootScreen<Trailing: View>(
         _ title: String, hasActions: Bool, @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
-        return wontonTopBar { bar }
-            .navigationTitle(bar.title)
-            .toolbar(.hidden, for: .navigationBar)
-            .modifier(WontonCanvas())
+        if #available(iOS 26, *) {
+            modifier(WontonNativeRootBar(hasActions: hasActions, trailing: trailing()))
+                .modifier(WontonCanvas())
+        } else {
+            let bar = WontonRootBar(title: title, hasActions: hasActions, trailing: trailing)
+            wontonTopBar { bar }
+                .navigationTitle(bar.title)
+                .toolbar(.hidden, for: .navigationBar)
+                .modifier(WontonCanvas())
+        }
     }
 }
 

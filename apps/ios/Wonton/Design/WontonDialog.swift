@@ -83,7 +83,7 @@ private struct WontonDialogView: View {
         }
         .padding(WontonTheme.spacing.s16)
         .frame(maxWidth: WontonTheme.size.dialogWidth)
-        .background(RoundedRectangle(cornerRadius: WontonTheme.radii.card).fill(Color(colors.surface)))
+        .wontonGlassSurface(in: RoundedRectangle(cornerRadius: WontonTheme.radii.card))
     }
 
     private var texts: some View {

@@ -15,7 +15,7 @@ struct ShareInPresenter: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .wontonSheet(isPresented: presented) { close in
+            .wontonSheet(isPresented: presented, usesSystemPresentation: true) { close in
                 if let share = model.viewModel.pending {
                     ShareInSheetContent(
                         share: share, sending: model.sending,

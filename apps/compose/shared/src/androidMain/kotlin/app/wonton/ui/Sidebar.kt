@@ -510,8 +510,6 @@ private fun SidebarFooter(
                 .background(colors.surface.toColor(), CircleShape)
                 .border(WontonTheme.size.hairline, colors.separator.toColor(), CircleShape)
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
                     enabled = interactive,
                     role = Role.Button,
                     onClick = { onGo(SidebarDestination.Settings) },
@@ -541,8 +539,6 @@ private fun SidebarFooter(
                 .clip(RoundedCornerShape(WontonTheme.radii.pill))
                 .background(colors.primary.toColor())
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
                     enabled = interactive,
                     role = Role.Button,
                     onClick = { onGo(SidebarDestination.NewChat) },

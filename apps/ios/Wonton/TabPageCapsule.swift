@@ -89,16 +89,15 @@ struct TabPageCapsule: View {
             } label: {
                 glyph(.more)
             }
+            .buttonStyle(.plain)
             .accessibilityLabel(TabText.more)
             Rectangle()
-                .fill(ink.opacity(0.2))
+                .fill(Color(colors.separator))
                 .frame(width: WontonTheme.size.hairline, height: WontonTheme.size.iconSmall)
             trailing
         }
         .frame(height: WontonTheme.size.smallButton)
-        // 照微信的透明胶囊：一层淡黑、不模糊，白色图标带一圈淡阴影；不跟页面换深浅。
-        // 浅色页面上看得出灰色的胶囊，深色页面上看得出白色图标。
-        .background(Color.black.opacity(0.2), in: Capsule())
+        .wontonGlassSurface(in: Capsule())
     }
 
     private var trailing: some View {
@@ -111,7 +110,7 @@ struct TabPageCapsule: View {
             .accessibilityIdentifier("pageClose")
     }
 
-    private var ink: Color { .white }
+    private var ink: Color { Color(colors.textPrimary) }
 
     /// 公网网页标出来源网站的域名，和插件页面一眼分开（ADR-0052）。
     private var sourceHost: String? {
@@ -122,7 +121,6 @@ struct TabPageCapsule: View {
     private func glyph(_ icon: WontonIcon) -> some View {
         icon.view(size: WontonTheme.size.iconSmall)
             .foregroundStyle(ink)
-            .shadow(color: .black.opacity(0.4), radius: 1)
             .frame(width: WontonTheme.size.target, height: WontonTheme.size.smallButton)
             .contentShape(Rectangle())
     }
