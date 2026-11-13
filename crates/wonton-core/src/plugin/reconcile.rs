@@ -136,7 +136,13 @@ impl PluginManager {
         self.ensure_bot_web_registration(manifest).await?;
         let network = self.cfg.instance.network(&slug);
         let expected = self.network_reach(manifest);
-        let actual = self.engine.network_reach(&network).await?;
+        let network_recreated = self.recreate_missing_network(manifest).await?;
+        // 刚重建的网络就是按 expected 建的，不用再问一遍 Docker。
+        let actual = if network_recreated {
+            Some(expected)
+        } else {
+            self.engine.network_reach(&network).await?
+        };
         if actual != Some(expected) {
             return Err(InstallError::Conflict(l10n::text(
                 &langs,
@@ -153,9 +159,10 @@ impl PluginManager {
             self.attach_core(&network, core, manifest).await?;
         }
         // 渲染和容器上的摘要对不上（核心升级换了注入的值，或旧容器没有摘要）就照安装的路径重建。全停着的
-        // 插件不在这里动，留给启动流程（见 start.rs）。
-        if !self.recovery_pending(&record.id) {
-            self.recreate_on_drift(package, record, &langs, false, gate)
+        // 插件不在这里动，留给启动流程（见 start.rs）。例外：网络刚重建时容器引用的还是已删除的旧网络，
+        // 必须跟着重建，续建中的也不例外；失败照实往外报，不回退成用旧容器。
+        if network_recreated || !self.recovery_pending(&record.id) {
+            self.recreate_on_drift(package, record, &langs, false, gate, network_recreated)
                 .await?;
         }
         let checked = self.check_containers(package, &langs).await?;
@@ -383,6 +390,50 @@ impl PluginManager {
         Ok(classify(
             running, healthy, stopped, missing, failures, served, langs,
         ))
+    }
+
+    /// 插件的网络不在（开发栈 down、Docker 数据丢了）就按安装的规格重建：核对只核对已存在的网络，
+    /// 少了它启动和核对都过不去，主人不该因此重装。网络在时不动，返回没有重建过；规格对不上由核对
+    /// 照旧报冲突。重建后要把出口容器接回去（安装时是这一步建的端点），不然插件起来了也出不了网，
+    /// 并重新登记地址段（网关据此认出插件的请求）。返回有没有重建过：重建后容器引用的还是旧网络，
+    /// 调用方要按安装的路径重建容器（见 [`Self::recreate_on_drift`]）。
+    pub(super) async fn recreate_missing_network(
+        &self,
+        manifest: &Manifest,
+    ) -> Result<bool, InstallError> {
+        let network = self.cfg.instance.network(&manifest.id.slug());
+        let reach = self.network_reach(manifest);
+        if self.engine.network_reach(&network).await?.is_some() {
+            return Ok(false);
+        }
+        tracing::info!(plugin = %manifest.id, %network, "插件的网络不在，按安装的规格重建");
+        if let Err(error) = self
+            .engine
+            .create_network(&network, &self.cfg.instance.labels(&manifest.id), reach)
+            .await
+        {
+            let error: InstallError = error.into();
+            tracing::error!(
+                plugin = %manifest.id,
+                operation = "reconcile",
+                %network,
+                error_kind = error.kind(),
+                reason = %error,
+                "插件网络重建失败"
+            );
+            return Err(error);
+        }
+        if reach == NetworkReach::Egress {
+            self.attach_relay(&network).await?;
+        }
+        self.register_source(manifest, &network).await?;
+        tracing::info!(
+            plugin = %manifest.id,
+            operation = "reconcile",
+            %network,
+            "插件网络重建完成"
+        );
+        Ok(true)
     }
 
     /// 核对插件密钥：生成的都还在，插件写下的重新收存一次，变了就更新。返回全量密钥（generate 和

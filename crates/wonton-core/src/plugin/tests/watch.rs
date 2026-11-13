@@ -1,14 +1,16 @@
 //! 插件状态跟着容器走：核心跑着的时候容器好了、坏了，状态都如实跟上。
 
+use std::sync::Arc;
+
 use axum::Router;
 use axum::routing::get;
 use serde_json::{Value, json};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
-use super::super::{Health, PluginManager, PluginStatus};
+use super::super::{Health, PluginManager, PluginStatus, docker::Engine};
 use super::egress::serve;
-use super::manager::{manager_in_container, manager_with};
+use super::manager::{manager_in_container, manager_in_instance, manager_with};
 use super::package;
 
 async fn app() -> String {
@@ -99,6 +101,32 @@ async fn the_core_rejoins_the_network_of_a_plugin_that_crashes_without_it() {
 }
 
 #[tokio::test]
+async fn a_missing_plugin_network_is_recreated_and_containers_are_redeployed() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let network = "wonton-app-test";
+    let container = container_name("app-test", "app");
+    let first = manager_with(engine.clone(), &dir);
+    first
+        .install(
+            &package("  app:\n    image: nginx\n", "  permissions: []"),
+            &[],
+            super::langs(),
+        )
+        .await
+        .unwrap();
+    let before = docker.creations(&container);
+    docker.remove(&container);
+    docker.remove_network(network);
+    let restarted = manager_with(engine, &dir);
+    restarted.restore().await.unwrap();
+
+    assert_eq!(restarted.list()[0].status, PluginStatus::Running);
+    assert_eq!(docker.creations(&container), before + 1);
+    assert!(docker.network(network).is_some());
+}
+
+#[tokio::test]
 async fn a_running_plugin_follows_its_container_down_and_back() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -139,6 +167,78 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
     docker.set_state(&container, with_health("healthy"));
     m.watch_containers().await;
     assert_eq!(seen(&m), (PluginStatus::Running, Some(Health::Healthy)));
+}
+
+#[tokio::test]
+async fn an_old_container_watch_cannot_stop_a_reinstalled_plugin() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let source = app().await;
+    let installed = manager.install(&source, &[], super::langs()).await.unwrap();
+    let old_token = manager.watch_token_for_test(&installed.id).unwrap();
+
+    manager
+        .uninstall(&installed.id, false, &super::langs())
+        .await
+        .unwrap();
+    let reinstalled = manager.install(&source, &[], super::langs()).await.unwrap();
+    let new_token = manager.watch_token_for_test(&reinstalled.id).unwrap();
+    assert!(!Arc::ptr_eq(&old_token, &new_token));
+
+    manager.saw_unavailable_for_test(&reinstalled.id, old_token, PluginStatus::Stopped);
+    assert_eq!(manager.list()[0].status, PluginStatus::Running);
+}
+
+/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
+fn busybox() -> String {
+    wonton_test_images::image(
+        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
+    )
+}
+
+// 真实 Docker：开发栈 down（容器和网络都没了）后核心重启，restore 自己把网络和容器重建，不要求重装。
+#[tokio::test]
+#[ignore = "需要 Docker，删掉插件的容器和网络后 restore 能自愈"]
+async fn a_stack_restart_with_lost_network_and_containers_recovers_on_restore() {
+    let engine = Engine::connect().unwrap();
+    engine.check_server().await.unwrap();
+    let image = busybox();
+    crate::test_docker::ensure_image(&engine, &image).await;
+    let names = crate::test_docker::Names::new();
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_in_instance(engine.clone(), &dir, names.name());
+    let source = package(
+        &format!("  app:\n    image: {image}\n    command: ['sleep', 'infinity']\n"),
+        "  permissions: []",
+    );
+    let installed = manager.install(&source, &[], super::langs()).await.unwrap();
+    let slug = installed.id.slug();
+    let network = names.instance().network(&slug);
+    let container = container_name(&slug, "app");
+
+    // 相当于 compose down：先删容器（网络还挂着端点时 Docker 不让删网络），再删网络。
+    engine.remove_container(&container).await.unwrap();
+    engine.remove_network(&network).await.unwrap();
+    assert!(engine.network_reach(&network).await.unwrap().is_none());
+
+    let restarted = manager_in_instance(engine.clone(), &dir, names.name());
+    restarted.restore().await.unwrap();
+    let [view] = <[_; 1]>::try_from(restarted.list()).expect("只有一个插件");
+    assert_eq!(view.status, PluginStatus::Running, "不用重装就该自己回来");
+    assert!(engine.network_reach(&network).await.unwrap().is_some());
+    let running = engine
+        .inspect_container(&container)
+        .await
+        .unwrap()
+        .and_then(|info| info.state)
+        .and_then(|state| state.running);
+    assert_eq!(running, Some(true));
+
+    restarted
+        .uninstall(&installed.id, false, &super::langs())
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

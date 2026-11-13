@@ -91,6 +91,10 @@ impl PluginManager {
     }
 
     async fn watch_one(&self, id: &PluginId) -> Result<(), InstallError> {
+        // 这轮看到的实例：写入前对令牌，轮里被卸载重装、重建换过 Entry 的话，过期结果不再落表。
+        let Some(token) = self.watch_token(id) else {
+            return Ok(());
+        };
         let Some(record) = self.store.load(id)? else {
             return Ok(());
         };
@@ -101,6 +105,9 @@ impl PluginManager {
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), &langs)?;
         package.origin = record.origin.clone();
         let checked = self.check_containers(&package, &langs).await?;
+        if !self.token_is_current(id, &token) {
+            return Ok(());
+        }
         if let Some(recovery) = &record.lifecycle.recovery {
             let observable = recovery.stage == wonton_protocol::PluginRecoveryStage::Reconciling
                 && recovery.category == "unhealthy"
@@ -122,7 +129,7 @@ impl PluginManager {
             })
         };
         self.refresh_bot_web_routes(&package.manifest).await?;
-        self.saw_serving(id, checked.serving().clone());
+        self.saw_serving(id, &token, checked.serving().clone());
         match checked.ready(&langs) {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>
@@ -130,17 +137,18 @@ impl PluginManager {
                 if !record.relays.is_empty() {
                     self.ensure_relays(&package.manifest, &record).await?;
                 }
-                self.saw_running(id, health);
+                self.saw_running(id, &token, health);
                 self.capabilities_installed(&package.manifest, &[], capability_recovered)
                     .await?;
             }
             Ok(ContainersState::Running(_)) => {
-                self.recover(id, &package, &record, capability_recovered)
+                self.recover(id, &package, &record, capability_recovered, &token)
                     .await?;
                 // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
                 self.check_models_once(vec![id.clone()]).await;
             }
             Ok(ContainersState::Stopped) => {
+                // 主人要它在跑而容器全停了：按 #544/#590 记成异常（原因进恢复账本），不伪装成主动停止。
                 let status = if record.lifecycle.desired == PluginDesiredState::Running {
                     PluginStatus::Degraded {
                         reason: self.queue_stopped(id)?,
@@ -148,10 +156,10 @@ impl PluginManager {
                 } else {
                     PluginStatus::Stopped
                 };
-                self.saw_unavailable(id, status);
+                self.saw_unavailable(id, &token, status);
             }
             Err(InstallError::Unhealthy(reason)) => {
-                self.saw_unavailable(id, PluginStatus::Degraded { reason });
+                self.saw_unavailable(id, &token, PluginStatus::Degraded { reason });
                 if capability_recovered {
                     self.capabilities_installed(&package.manifest, &[], true)
                         .await?;
@@ -162,13 +170,44 @@ impl PluginManager {
         Ok(())
     }
 
+    fn watch_token(&self, id: &PluginId) -> Option<Arc<()>> {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .map(|entry| Arc::clone(&entry.watch_token))
+    }
+
+    fn token_is_current(&self, id: &PluginId, token: &Arc<()>) -> bool {
+        self.plugins
+            .read()
+            .expect("插件表锁中毒")
+            .get(id)
+            .is_some_and(|entry| Arc::ptr_eq(&entry.watch_token, token))
+    }
+
+    #[cfg(test)]
+    pub(super) fn watch_token_for_test(&self, id: &PluginId) -> Option<Arc<()>> {
+        self.watch_token(id)
+    }
+
+    #[cfg(test)]
+    pub(super) fn saw_unavailable_for_test(
+        &self,
+        id: &PluginId,
+        token: Arc<()>,
+        status: PluginStatus,
+    ) {
+        self.saw_unavailable(id, &token, status);
+    }
+
     /// 记下插件现在哪些服务能用：插件异常时网关、MCP 和模型按它决定照不照常给路由。
-    fn saw_serving(&self, id: &PluginId, serving: BTreeSet<String>) {
+    fn saw_serving(&self, id: &PluginId, token: &Arc<()>, serving: BTreeSet<String>) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if entry.serving == serving {
+        if !Arc::ptr_eq(&entry.watch_token, token) || entry.serving == serving {
             return;
         }
         entry.serving = serving;
@@ -176,12 +215,15 @@ impl PluginManager {
         self.changed();
     }
 
-    fn saw_running(&self, id: &PluginId, health: Health) {
+    fn saw_running(&self, id: &PluginId, token: &Arc<()>, health: Health) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if entry.status != PluginStatus::Running || !self.follows_containers(id, entry) {
+        if !Arc::ptr_eq(&entry.watch_token, token)
+            || entry.status != PluginStatus::Running
+            || !self.follows_containers(id, entry)
+        {
             return;
         }
         // 这次核对到了状态，没变也算核对过。
@@ -195,12 +237,12 @@ impl PluginManager {
     }
 
     /// 路由留着：容器回来前网关看状态如实回答“没在运行”，回来时再核对一次。
-    fn saw_unavailable(&self, id: &PluginId, status: PluginStatus) {
+    fn saw_unavailable(&self, id: &PluginId, token: &Arc<()>, status: PluginStatus) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return;
         };
-        if !self.follows_containers(id, entry) {
+        if !Arc::ptr_eq(&entry.watch_token, token) || !self.follows_containers(id, entry) {
             return;
         }
         // 这次核对到了状态，没变也算核对过。
@@ -208,7 +250,7 @@ impl PluginManager {
         if entry.status == status {
             return;
         }
-        tracing::info!(plugin = %id, ?status, "插件的容器状态变化");
+        tracing::info!(plugin = %id, operation = "watch", ?status, "插件的容器状态变化");
         entry.status = status;
         entry.health = None;
         entry.follows_containers = true;
@@ -224,16 +266,20 @@ impl PluginManager {
         package: &PluginPackage,
         record: &InstalledRecord,
         capability_recovered: bool,
+        token: &Arc<()>,
     ) -> Result<(), InstallError> {
-        if !self.begin_rebuild(id) {
+        if !self.token_is_current(id, token) || !self.begin_rebuild(id) {
             return Ok(());
         }
         let result = self.reconcile(package, record, Gate::InstallTimeout).await;
         self.lan.end(id);
+        if !self.token_is_current(id, token) {
+            return Ok(());
+        }
         let deployed = match result {
             Ok(Some(deployed)) => deployed,
             Ok(None) => {
-                self.saw_unavailable(id, PluginStatus::Stopped);
+                self.saw_unavailable(id, token, PluginStatus::Stopped);
                 return Ok(());
             }
             Err(e) => {
@@ -242,6 +288,7 @@ impl PluginManager {
                 }
                 self.saw_unavailable(
                     id,
+                    token,
                     PluginStatus::Degraded {
                         reason: e.to_string(),
                     },
@@ -251,7 +298,7 @@ impl PluginManager {
         };
         self.recovery_complete(id)?;
         // 核心启动时模型网关不在，使用方的凭据没对上账。
-        if self.recovered(id, deployed) {
+        if self.recovered(id, deployed, token) {
             for (plugin, error) in self.reconcile_models().await {
                 tracing::error!(%plugin, %error, "模型网关凭据对账失败");
             }
@@ -261,11 +308,15 @@ impl PluginManager {
     }
 
     /// 返回恢复的是不是模型网关。
-    fn recovered(&self, id: &PluginId, deployed: Deployed) -> bool {
+    fn recovered(&self, id: &PluginId, deployed: Deployed, token: &Arc<()>) -> bool {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let Some(entry) = plugins.get_mut(id) else {
             return false;
         };
+        // 核对期间插件被重装或重建过（Entry 换了实例）：过期结果不落表，交给下一轮监视。
+        if !Arc::ptr_eq(&entry.watch_token, token) {
+            return false;
+        }
         let Some(listed) = entry.listed.clone().filter(|_| entry.follows_containers) else {
             return false;
         };
