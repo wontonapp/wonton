@@ -250,7 +250,7 @@ impl PluginManager {
             &plan,
             secret,
             firewalled,
-            grants.device_record,
+            device_record,
         )
         .await?;
         undo.record = Some(manifest.id.clone());
