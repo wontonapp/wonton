@@ -62,37 +62,24 @@ private extension ChatRoomView {
     private var entryBlocked: Bool { pickingForwardRoom || showingRedact || showingConfirmations }
 
     private var roomContent: some View {
-        VStack(spacing: 0) {
-            // 旁聊页顶栏下面是它的状态；主对话顶上是“这个 AI 不支持旁聊”的提示（ADR-0093）。
-            if threadRoot != nil {
-                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
-            } else if model.noSideChatsRoom == roomId {
-                NoSideChatsHint()
-            }
+        Group {
             if let failure = timeline.failure {
                 ProblemView(problem: failure) { timeline.attempt += 1 }
                     .frame(maxHeight: .infinity)
             } else {
                 messages
             }
-            if let notice = timeline.notice {
-                KeyNoticeBanner(notice: notice)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if threadRoot != nil {
+                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
+            } else if model.noSideChatsRoom == roomId {
+                NoSideChatsHint()
             }
-            TransfersStrip(roomId: roomId)
-            RoomConfirmationBanner(cards: timeline.confirmations) {
-                selectedConfirmation = nil
-                showingConfirmations = true
-            }
-            if !isReadOnly {
-                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
-                   model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
-                   !onboarding.viewModel.chatPrompts.isEmpty {
-                    OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
-                        model.appendDraft($0, to: target)
-                    }
-                }
-                ComposerView(model: model, composer: composer, pin: pin)
-            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            roomBottomBar
+                .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
         }
         .modifier(RoomPresentations(presenter: presenter))
         .wontonSheet(isPresented: $showingConfirmations,
@@ -186,6 +173,29 @@ private extension ChatRoomView {
         .onChange(of: covered) { _, isCovered in
             // 盖住拿开时重新报告一次方向：还停着底部，就把盖住时攒下的消息读掉（ADR-0093）。
             if placed, pin.isPinned, !isCovered { reportPosition(true) }
+        }
+    }
+
+    private var roomBottomBar: some View {
+        VStack(spacing: 0) {
+            if let notice = timeline.notice {
+                KeyNoticeBanner(notice: notice)
+            }
+            TransfersStrip(roomId: roomId)
+            RoomConfirmationBanner(cards: timeline.confirmations) {
+                selectedConfirmation = nil
+                showingConfirmations = true
+            }
+            if !isReadOnly {
+                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
+                   model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
+                   !onboarding.viewModel.chatPrompts.isEmpty {
+                    OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
+                        model.appendDraft($0, to: target)
+                    }
+                }
+                ComposerView(model: model, composer: composer, pin: pin)
+            }
         }
     }
 
@@ -305,6 +315,10 @@ private extension ChatRoomView {
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
                 pin.stick()
+            }
+            .onGeometryChange(for: EdgeInsets.self) { $0.safeAreaInsets } action: { _ in
+                // Bar growth changes scroll insets, not the underlapping list's frame.
+                DispatchQueue.main.async { pin.stick() }
             }
             // 停在别处时的“回到底部”：数字是离开底部后到的消息数（ADR-0071）。
             .overlay(alignment: .bottomTrailing) {

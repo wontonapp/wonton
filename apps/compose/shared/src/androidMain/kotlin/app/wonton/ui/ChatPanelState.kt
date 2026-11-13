@@ -1,6 +1,9 @@
 package app.wonton.ui
 
-import androidx.compose.animation.core.Spring
+import android.view.MotionEvent
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.motionEventSpy
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
@@ -20,7 +23,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Velocity
-import androidx.compose.ui.unit.dp
+import app.wonton.ui.design.WontonTheme
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.TabRef
@@ -33,16 +36,10 @@ internal enum class PanelLevel { CLOSED, PEEK, FULL }
 /** 面板从哪一边出来：主聊天页在上（列表到顶后往下拉），房间在下（最新一条之后往上推）。 */
 internal enum class PanelEdge { TOP, BOTTOM }
 
-/** 松手就换级的位置（ADR-0052 的起始值）。 */
-internal val PANEL_PULL_THRESHOLD = 80.dp
-internal val PANEL_PUSH_THRESHOLD = 50.dp
-
 /** 第 1 级主聊天页保留 18%；房间保留约 45%，即面板占约 55%。 */
 internal const val PANEL_MAIN_PEEK_FRACTION = 0.18f
 internal const val PANEL_ROOM_PEEK_FRACTION = 0.45f
 
-/** 松手时预测位置的系数：预测位移 = 位移 + 速度 × 这个秒数。 */
-private const val PROJECT_SECONDS = 0.15f
 private const val SPRING_DAMPING = 0.86f
 private const val SPRING_STIFFNESS = 340f
 
@@ -60,6 +57,7 @@ internal class ChatPanelState(
     /** 聊天页相对自己位置的位移，0 关着，第 1 级是露出的那条之外的高度，第 2 级是整屏。 */
     private var shift by mutableFloatStateOf(0f)
     private var motion: Job? = null
+    private var dragDistance = 0f
     var level by mutableStateOf(PanelLevel.CLOSED)
         private set
     var visible by mutableStateOf(false)
@@ -82,6 +80,7 @@ internal class ChatPanelState(
     var safeBottom = 0f
         private set
     private var density = 1f
+    val dragSlop: Float get() = WontonTheme.gesture.dragSlop * density
 
     /** 开始时收起键盘，由宿主提供（键盘控制在组合里）。 */
     var onBegin: (() -> Unit)? = null
@@ -146,19 +145,32 @@ internal class ChatPanelState(
         motion?.cancel()
         val before = shift
         shift = (before + delta).coerceIn(0f, height)
-        arm(level, shift - base(level))
+        dragDistance += shift - before
+        arm(level, dragDistance)
         return shift - before
     }
 
-    /** 松手：看位置加上速度落到下一级。 */
+    /** Release uses actual travel; speed only qualifies a deliberate minimum-distance flick. */
     fun settle(from: PanelLevel, velocity: Float) {
         if (!visible) return
-        val distance = shift - base(from) + velocity * PROJECT_SECONDS
-        move(target(from, distance))
+        move(target(from, dragDistance, velocity))
+    }
+
+    fun cancelDrag() {
+        if (visible) move(level)
+    }
+
+    fun settleEdge(distance: Float, velocity: Float) {
+        if (commitsGesture(distance, velocity, WontonTheme.gesture.swipeDistance, density)) {
+            move(if (level == PanelLevel.FULL) PanelLevel.PEEK else PanelLevel.CLOSED)
+        } else {
+            cancelDrag()
+        }
     }
 
     /** 直接换级（点露出的那条、胶囊退出、读屏动作）。 */
     fun move(to: PanelLevel) {
+        dragDistance = 0f
         if (!visible) begin()
         val next = if (to == PanelLevel.FULL && pages.isEmpty()) PanelLevel.PEEK else to
         if (next != PanelLevel.CLOSED) visible = true
@@ -178,6 +190,7 @@ internal class ChatPanelState(
     fun reset() {
         motion?.cancel()
         shift = 0f
+        dragDistance = 0f
         level = PanelLevel.CLOSED
         armed = PanelLevel.CLOSED
         visible = false
@@ -199,22 +212,23 @@ internal class ChatPanelState(
         }
     }
 
-    private fun target(from: PanelLevel, distance: Float): PanelLevel {
-        val pull = PANEL_PULL_THRESHOLD.value * density
-        val push = PANEL_PUSH_THRESHOLD.value * density
+    private fun target(from: PanelLevel, distance: Float, velocity: Float = 0f): PanelLevel {
+        val opens = commitsGesture(distance, velocity, WontonTheme.gesture.pullDistance, density)
+        val pushes = commitsGesture(distance, velocity, WontonTheme.gesture.pushDistance, density)
+        val closes = commitsGesture(-distance, -velocity, WontonTheme.gesture.pullDistance, density)
         return when (from) {
-            // 一口气拉得比第 1 级还远直接到第 2 级；空面板没有胶囊能退出，最多到第 1 级。
             PanelLevel.CLOSED -> when {
-                pages.isNotEmpty() && distance > base(PanelLevel.PEEK) + push -> PanelLevel.FULL
-                distance > pull -> PanelLevel.PEEK
+                pages.isNotEmpty() && distance >= base(PanelLevel.PEEK) +
+                    WontonTheme.gesture.pushDistance * density -> PanelLevel.FULL
+                opens -> PanelLevel.PEEK
                 else -> PanelLevel.CLOSED
             }
             PanelLevel.PEEK -> when {
-                distance > push -> PanelLevel.FULL
-                distance < -pull -> PanelLevel.CLOSED
+                pushes -> PanelLevel.FULL
+                closes -> PanelLevel.CLOSED
                 else -> PanelLevel.PEEK
             }
-            PanelLevel.FULL -> if (distance < -pull) PanelLevel.PEEK else PanelLevel.FULL
+            PanelLevel.FULL -> if (closes) PanelLevel.PEEK else PanelLevel.FULL
         }
     }
 
@@ -252,6 +266,7 @@ internal fun rememberChatPanelState(edge: PanelEdge, scope: PanelScope): ChatPan
  * 聊天列表到头后接着拉，把余下的手指距离交给面板（同系统下拉刷新的做法）。只认手指拖动：
  * 惯性滚到头的分量不算，照样留给列表。
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun Modifier.chatPanelPull(
     state: ChatPanelState?,
@@ -259,7 +274,10 @@ internal fun Modifier.chatPanelPull(
     enabled: Boolean,
 ): Modifier {
     if (state == null) return this
-    return nestedScroll(remember(state, enabled) {
+    DisposableEffect(state, enabled) { onDispose { state.cancelDrag() } }
+    return motionEventSpy { event ->
+        if (event.actionMasked == MotionEvent.ACTION_CANCEL) state.cancelDrag()
+    }.nestedScroll(remember(state, enabled) {
         connection(state, atBoundary, enabled)
     })
 }

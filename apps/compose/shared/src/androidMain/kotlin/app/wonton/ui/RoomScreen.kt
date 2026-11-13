@@ -37,6 +37,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -74,7 +75,6 @@ import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
-import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.icons.Compose
 import app.wonton.ui.icons.LockKey
@@ -305,13 +305,13 @@ private fun RoomScreen(
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(
+            RoomSurface(
                 bar = { RoomBar(target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose) },
-            ) {
+            ) { backdrop ->
                 Conversation(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
                     openMenu,
-                    onOpenBackup,
+                    onOpenBackup, backdrop,
                 )
             }
         }
@@ -429,53 +429,62 @@ private fun Conversation(
     onReject: (Problem) -> Unit,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onOpenBackup: () -> Unit,
+    backdrop: RoomBackdrop,
 ) {
-    // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
-    // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
-    // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
-    Column(
-        Modifier.fillMaxSize()
-            .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-            .padding(top = LocalWontonTopInset.current),
-    ) {
-        timeline.sideChat?.let { SideChatHeaderLine(it.state) }
-        if (sideChats.unsupportedHint) NoSideChatsHint()
-        val failure = timeline.failure
-        if (failure != null) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                ProblemView(failure) { timeline.attempt++ }
+    val density = LocalDensity.current
+    var composerHeight by remember { mutableIntStateOf(0) }
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val barInset = LocalWontonTopInset.current
+    val panelVisible = LocalChatPanel.current?.visible == true
+    val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
+    Box(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
+        CompositionLocalProvider(
+            LocalWontonBottomInset provides with(density) { composerHeight.toDp() },
+            LocalWontonTopInset provides barInset + with(density) { headerHeight.toDp() },
+        ) {
+            val failure = timeline.failure
+            if (failure != null) {
+                Box(Modifier.fillMaxSize().padding(top = LocalWontonTopInset.current)) {
+                    ProblemView(failure) { timeline.attempt++ }
+                }
+            } else {
+                Messages(
+                    core, target, sideChats, timeline, composer?.outgoing.orEmpty(),
+                    showsSender = !isDirect,
+                    onAction = onAction,
+                    onOpenMenu = onOpenMenu,
+                    onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
+                    modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
+                )
             }
-        } else {
-            Messages(
-                core,
-                target,
-                sideChats,
-                timeline,
-                composer?.outgoing.orEmpty(),
-                showsSender = !isDirect,
-                onAction = onAction,
-                onOpenMenu = onOpenMenu,
-                onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
-                modifier = Modifier.weight(1f),
-            )
         }
-        timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
-        TransfersStrip(target.roomId, core)
-        RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
-        if (!isReadOnly) {
-            Composer(
-                target = target,
-                draft = draft.text,
-                reply = draft.reply,
-                focusToken = draft.focusToken,
-                composer = composer,
-                core = core,
-                onDraftChange = draft::change,
-                onSent = draft::sent,
-                onReplyCancel = draft::stopReplying,
-                onAction = onAction,
-                onReject = onReject,
-            )
+        Column(Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }) {
+            timeline.sideChat?.let { SideChatHeaderLine(it.state) }
+            if (sideChats.unsupportedHint) NoSideChatsHint()
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .roomBackdrop(backdrop, top = false)
+                .onSizeChanged { composerHeight = it.height },
+        ) {
+            timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
+            TransfersStrip(target.roomId, core)
+            RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+            if (!isReadOnly) {
+                Composer(
+                    target = target,
+                    draft = draft.text,
+                    reply = draft.reply,
+                    focusToken = draft.focusToken,
+                    composer = composer,
+                    core = core,
+                    onDraftChange = draft::change,
+                    onSent = draft::sent,
+                    onReplyCancel = draft::stopReplying,
+                    onAction = onAction,
+                    onReject = onReject,
+                )
+            }
         }
     }
 }
@@ -564,11 +573,10 @@ private fun Messages(
             state = listState,
             reverseLayout = true,
             overscrollEffect = null,
-            // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
             contentPadding = PaddingValues(
                 start = WontonTheme.spacing.pageInset,
                 end = WontonTheme.spacing.pageInset,
-                top = WontonTheme.spacing.s8,
+                top = LocalWontonTopInset.current + WontonTheme.spacing.s8,
                 bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
             ),
             verticalArrangement = Arrangement.spacedBy(JOINED_GAP),

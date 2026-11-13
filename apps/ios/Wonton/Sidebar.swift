@@ -19,12 +19,13 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     @ViewBuilder let panel: Panel
     @State private var drag: CGFloat = 0
     @State private var isDragging = false
+    @GestureState private var gestureActive = false
     @State private var tapCancelled = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let widthRatio: CGFloat = 0.82
-    private let edgeWidth: CGFloat = 20
+    private var edgeWidth: CGFloat { WontonTheme.gesture.edgeWidth }
 
     var body: some View {
         GeometryReader { geometry in
@@ -50,12 +51,18 @@ struct SidebarContainer<Main: View, Panel: View>: View {
                     Color.clear
                         .frame(width: edgeWidth)
                         .contentShape(Rectangle())
-                        .gesture(dragGesture(width: width))
+                        .gesture(dragGesture())
                 }
             }
-            .simultaneousGesture(dragGesture(width: width), including: isOpen ? .all : .subviews)
+            .simultaneousGesture(dragGesture(), including: isOpen ? .all : .subviews)
         }
         .sensoryFeedback(.impact(weight: .light), trigger: isOpen)
+        .onChange(of: gestureActive) { _, active in
+            guard !active, isDragging else { return }
+            isDragging = false
+            set(open: isOpen)
+            clearCancelledTap()
+        }
     }
 
     private func progress(width: CGFloat) -> CGFloat {
@@ -75,8 +82,9 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     }
 
     /// 跟手：松开时按位置和速度决定打开还是弹回去。
-    private func dragGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
+    private func dragGesture() -> some Gesture {
+        DragGesture(minimumDistance: WontonTheme.gesture.dragSlop, coordinateSpace: .global)
+            .updating($gestureActive) { _, active, _ in active = true }
             .onChanged { value in
                 guard abs(value.translation.width) > abs(value.translation.height) || isDragging else { return }
                 isDragging = true
@@ -88,15 +96,23 @@ struct SidebarContainer<Main: View, Panel: View>: View {
             .onEnded { value in
                 guard isDragging else { return }
                 isDragging = false
-                let projected = (isOpen ? width : 0) + value.predictedEndTranslation.width
-                set(open: projected > width / 2)
-                // 抬手时按钮动作和拖动的 onEnded 先后不定：留一小段窗口让被取消的点按落进来；
-                // 窗口过了点按照常。拖动还在走时标记会被 onChanged 立刻置回。
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(350))
-                    tapCancelled = false
-                }
+                let direction: CGFloat = isOpen ? -1 : 1
+                let commits = WontonGesture.commits(
+                    distance: direction * value.translation.width,
+                    velocity: direction * value.velocity.width,
+                    threshold: WontonTheme.gesture.swipeDistance
+                )
+                set(open: commits ? !isOpen : isOpen)
+                clearCancelledTap()
             }
+    }
+
+    private func clearCancelledTap() {
+        // Keep the cancelled tap suppressed through the release event, including native cancellation.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            if !isDragging { tapCancelled = false }
+        }
     }
 
     private func set(open: Bool) {

@@ -95,13 +95,9 @@ private const val PANEL_TUCKED = 0.18f
 private const val PANEL_DIM = 0.3f
 private const val SCRIM_ALPHA = 0.22f
 
-/** 松手时按位置加速度决定开还是弹回：预测位置 = 位移 + 速度 × 这个系数。 */
-private const val PROJECT_FACTOR = 0.15f
 private const val SPRING_DAMPING = 0.86f
 private const val SPRING_STIFFNESS = 270f
 private const val BADGE_MAX = 99
-
-private val EDGE_WIDTH = 20.dp
 
 /** 边缘热区占屏高的比例：系统返回手势的排除区最多认 200dp，2400px 屏上 0.22 ≈ 528px（≈220dp，压到上限内）。 */
 private const val EDGE_ZONE_RATIO = 0.22f
@@ -189,19 +185,22 @@ private fun Modifier.sidebarDrag(
     base: Float,
     isOpen: Boolean,
     panelWidthPx: Float,
+    density: Float,
     scope: CoroutineScope,
     springSpec: SpringSpec<Float>,
     reduceMotion: Boolean,
     onSetOpen: (Boolean) -> Unit,
-): Modifier = pointerInput(base) {
-    val half = panelWidthPx / 2f
+): Modifier = pointerInput(base, density) {
     detectHorizontalDragGestures(
         onDragStart = { gestures.start() },
         onDragEnd = {
-            val projected = base * panelWidthPx + gestures.dragPx +
-                gestures.velocityX() * PROJECT_FACTOR
+            val direction = if (isOpen) -1f else 1f
+            val commit = commitsGesture(
+                gestures.dragPx * direction, gestures.velocityX() * direction,
+                WontonTheme.gesture.swipeDistance, density,
+            )
             gestures.settle(
-                projected > half, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
+                if (commit) !isOpen else isOpen, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
             )
         },
         onDragCancel = {
@@ -236,6 +235,7 @@ internal fun SidebarContainer(
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.surfaceSubtle.toColor())) {
         val panelWidth = maxWidth * PANEL_RATIO
         val panelWidthPx = with(LocalDensity.current) { panelWidth.toPx() }
+        val density = LocalDensity.current.density
         val base = if (isOpen) 1f else 0f
         val progress = gestures.progress(base, panelWidthPx)
 
@@ -279,7 +279,8 @@ internal fun SidebarContainer(
                         .background(Color.Black.copy(alpha = SCRIM_ALPHA * progress))
                         .then(
                             if (isOpen) Modifier.sidebarDrag(
-                                gestures, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
+                                gestures, base, isOpen, panelWidthPx, density,
+                                scope, springSpec, reduceMotion, onSetOpen,
                             ) else Modifier,
                         )
                         .clickable(
@@ -298,9 +299,11 @@ internal fun SidebarContainer(
             Box(
                 Modifier.align(Alignment.CenterStart)
                     .fillMaxHeight(EDGE_ZONE_RATIO)
-                    .width(EDGE_WIDTH)
+                    .width(WontonTheme.gesture.edgeWidth.dp)
                     .systemGestureExclusion()
-                    .sidebarDrag(gestures, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen),
+                    .sidebarDrag(
+                        gestures, base, isOpen, panelWidthPx, density, scope, springSpec, reduceMotion, onSetOpen,
+                    ),
             )
         }
     }
