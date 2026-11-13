@@ -136,7 +136,10 @@ struct PluginDetailView: View {
                         InstalledLanWebui(model: model, id: installed.id, offer: offer) { loaded = .success($0) }
                     }
                     if let installed = detail.installed, !installed.tunnelPorts.isEmpty {
-                        PortMappingSection(installed: installed)
+                        PortMappingSection(
+                            declaredPorts: installed.tunnelPorts,
+                            mapping: model.viewModel.portMappings.first { $0.pluginId == installed.id }
+                        )
                     }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
