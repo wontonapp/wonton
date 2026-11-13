@@ -86,7 +86,12 @@ internal fun AdaptiveChatLayout(
 }
 
 @Composable
-internal fun ExpandedChatPane(nav: AppNavigation, chat: ChatViewModel, home: HomeViewModel, appearance: AppearanceViewModel) {
+internal fun ExpandedChatPane(
+    nav: AppNavigation,
+    chat: ChatViewModel,
+    home: HomeViewModel,
+    appearance: AppearanceViewModel,
+) {
     val panel = rememberChatPanelState(PanelEdge.TOP, PanelScope.Main)
     val draft = LocalTabDraft.current
     SideEffect { panel.feed(nav.pages.viewModel.panel, nav.pages.viewModel.panelSelected) }
@@ -147,7 +152,12 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
 }
 
 @Composable
-internal fun ExpandedChatActions(onNewChat: () -> Unit, onApps: () -> Unit, onStore: () -> Unit, onSettings: () -> Unit) {
+internal fun ExpandedChatActions(
+    onNewChat: () -> Unit,
+    onApps: () -> Unit,
+    onStore: () -> Unit,
+    onSettings: () -> Unit,
+) {
     Row {
         IconButton(onClick = onNewChat) { Icon(WontonIcon.Compose, stringResource(R.string.sidebar_new_chat)) }
         IconButton(onClick = onApps) { Icon(WontonIcon.Apps, stringResource(R.string.sidebar_my_apps)) }
