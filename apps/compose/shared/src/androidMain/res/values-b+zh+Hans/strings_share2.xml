@@ -26,4 +26,6 @@
     <string name="share_problem_unreachable">连不上这位好友的服务器</string>
     <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
     <string name="share_risk">好友会以自己的用户名登录这个应用，应用可能给他建账号、让他看到你的数据。</string>
+    <!-- Share sheet notice when this phone isn't paired with a server yet; the shared items stay in the sheet. -->
+    <string name="share_in_not_paired">配对服务器后才能发送</string>
 </resources>

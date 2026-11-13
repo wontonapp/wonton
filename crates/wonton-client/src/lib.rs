@@ -50,6 +50,7 @@ mod scope;
 mod servers;
 mod session_store;
 mod settings;
+mod share_in;
 mod sharing;
 mod subscription;
 #[cfg(feature = "test-hooks")]
@@ -59,7 +60,7 @@ mod widget;
 pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
 pub use chat::bot_current_avatar;
-pub use client::ClientCore;
+pub use client::{ClientCore, ShareInSubscription};
 pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};

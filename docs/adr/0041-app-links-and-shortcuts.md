@@ -21,6 +21,7 @@ App 里能直接打开的地方是 `AppLink`，写成 `wonton://` 链接。编�
 | `wonton://new-chat` | 发起私聊 |
 | `wonton://agent-chat` | 和默认 Agent 的聊天 |
 | `wonton://settings/peers` | 设置里的“其他服务器”，滚到“请求”（ADR-0050 的配对提醒用） |
+| `wonton://share/<令牌>` | 认领系统分享进来的一次分享，出分享页（ADR-0097 的 iOS 分享扩展用） |
 | `wonton://room/<房间 ID>` | 一个会话（[ADR-0100](0100-system-entry.md) 的小组件和系统搜索用）；房间 ID 按百分号编码，不是 `!` 开头的不认 |
 
 认不出的链接（新版 App 写进系统、旧版读到的，或者被改过的）照常打开 App，不报错。插件和页面的 ID 只认清单里的
