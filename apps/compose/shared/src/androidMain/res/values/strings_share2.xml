@@ -27,4 +27,6 @@
     <string name="share_problem_unreachable">Cannot connect to this friend’s server</string>
     <!-- Prominent warning before sharing an app without declared friend support. Explain account creation and possible access to the owner's data. No arguments. -->
     <string name="share_risk">Your friend will sign in to this app with their own username. The app may create an account for them and let them see your data.</string>
+    <!-- Share sheet notice when this phone isn't paired with a server yet; the shared items stay in the sheet. -->
+    <string name="share_in_not_paired">Pair with your server to send this</string>
 </resources>

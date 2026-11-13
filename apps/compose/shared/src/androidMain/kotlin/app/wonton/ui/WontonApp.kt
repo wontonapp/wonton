@@ -55,7 +55,7 @@ internal fun ServerApp(
     onRoomRequestHandled: () -> Unit,
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
-    requestedAgentText: AgentTextRequest? = null,
+    shareIntake: ShareIntake = remember { ShareIntake() },
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -81,7 +81,6 @@ internal fun ServerApp(
         }
     }
     AppLinkEffect(requestedLink, navigation)
-    AskAgentEffect(requestedAgentText, navigation)
     AppShortcutsEffect(pages)
     WontonTheme(appearance) {
         val proxyRoute = pluginProxyRoute(home, plugins)
@@ -101,6 +100,7 @@ internal fun ServerApp(
             TabMediaPermissions(pages)
             DeviceVerificationDialogs(chatView, navigation, pages.core)
             KeyHandoffHost(chatView, navigation, pages.core)
+            ShareInHost(core, shareIntake, chatView.bots, plugins, navigation::openRoom)
             plugins.rejection?.let { ProblemDialog(it) { plugins.rejection = null } }
         }
     }

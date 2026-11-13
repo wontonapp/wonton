@@ -111,25 +111,9 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
                 settings(SettingsSubpage.PEERS)
                 peersOpenRequests = true
             }
+            // iOS 的分享扩展用它打开 App（ADR-0097）；Android 写好收件目录后直接认领，不经链接。
+            is AppLink.Share -> pages.plugins.reject(rejectionOf { pages.core.claimShare(link.token) })
         }
-    }
-
-    /**
-     * 分享给云吞的一句话（iOS 快捷指令“问 Bot”同）：发给默认 Agent，打开和它的私聊。
-     * 房间在核心建；本地列表还没到就按 await 机制等它出现，发起失败的原因弹在聊天页上。
-     */
-    fun askAgent(text: String, onboarding: OnboardingViewModel) {
-        resetNavigation()
-        pages.send(Action.OpenPage(TabRef.Chat))
-        pages.core.send(Action.DismissChatProblem)
-        val peer = onboarding.primaryBotUserId
-        if (peer == null) {
-            pages.plugins.reject(CoreException.NotReady(context.getString(R.string.problem_no_default_agent)).problem)
-            return
-        }
-        pages.plugins.reject(
-            pages.core.send(Action.AskAgent(text)) ?: chat.openDirectChat(pages.core, peer, acceptInvite = true),
-        )
     }
 
     fun settings(page: SettingsSubpage = SettingsSubpage.MAIN) {
@@ -207,9 +191,6 @@ class AppLinkRequest(val link: AppLink, val onHandled: () -> Unit) {
     }
 }
 
-/** 分享进来的一句话（ACTION_SEND）：发给默认 Agent（Action.AskAgent）。 */
-class AgentTextRequest(val text: String, val onHandled: () -> Unit)
-
 @Composable
 internal fun AppLinkEffect(request: AppLinkRequest?, navigation: AppNavigation) {
     LaunchedEffect(request) {
@@ -242,20 +223,6 @@ private suspend fun onboardingWhenKnown(core: ClientCore): OnboardingViewModel {
             while (view.step == null && view.problem == null) view = subscription.next() ?: break
             view
         }
-    }
-}
-
-/** 分享给云吞的一句话：配对完成才发；没配对或引导没走完时如实忽略。 */
-@Composable
-internal fun AskAgentEffect(request: AgentTextRequest?, navigation: AppNavigation) {
-    LaunchedEffect(request) {
-        if (request == null) return@LaunchedEffect
-        val core = navigation.pages.core
-        if (core.home().status is HomeStatus.NotConfigured) return@LaunchedEffect
-        if (onboardingWhenKnown(core).step == OnboardingStep.FINISHED) {
-            navigation.askAgent(request.text, core.onboarding())
-        }
-        request.onHandled()
     }
 }
 

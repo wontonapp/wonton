@@ -32,6 +32,8 @@ use crate::subscription::{
 };
 use switch::Replay;
 
+pub use share_in::ShareInSubscription;
+
 mod agent_chains;
 mod bot_contacts;
 mod browser;
@@ -44,6 +46,7 @@ mod pages;
 mod plugin_detail;
 mod push_route;
 mod settings;
+mod share_in;
 mod sharing;
 mod switch;
 #[cfg(feature = "test-hooks")]
@@ -82,6 +85,8 @@ pub struct ClientCore {
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
     in_flight_registrations: push_route::InFlightRegistrations,
     matrix_login: Arc<crate::matrix_login::MatrixLogins>,
+    /// 系统分享进来、还没发出去的东西（ADR-0097）：不跟服务器走，换服务器、没配对时都在。
+    share_in: Arc<crate::share_in::ShareInLink>,
     /// 系统入口的快照文件（ADR-0100），换服务器不换。
     widget: crate::widget::WidgetFile,
     /// 测试用的假数据入口（`new_ui_fake`）开着：操作不落到作用域，ViewModel 保持塞进去的假数据。
@@ -631,6 +636,7 @@ impl ClientCore {
         let switching = Arc::new(Mutex::new(()));
         let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
         let servers_for_login = servers.clone();
+        let share_in = Arc::new(crate::share_in::ShareInLink::new(&root));
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
             appearance: AppearanceLink::new(&root),
@@ -648,6 +654,7 @@ impl ClientCore {
             visits,
             in_flight_registrations: Arc::default(),
             matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),
+            share_in,
             #[cfg(feature = "ui-fake")]
             ui_fake: AtomicBool::new(false),
         });

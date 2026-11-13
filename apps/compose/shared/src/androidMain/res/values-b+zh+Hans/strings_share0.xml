@@ -24,4 +24,16 @@
     <string name="share_save">保存分享</string>
     <!-- Recipient label when the saved friend or group is no longer available. No arguments. -->
     <string name="share_unknown">未知接收方</string>
+    <!-- Destination row of the share sheet before a chat is picked; tapping it lists the chats. -->
+    <string name="share_in_choose_chat">选一个聊天</string>
+    <!-- Share sheet notice when the account has no chat that can receive messages yet. -->
+    <string name="share_in_no_chats">还没有能发的聊天</string>
+    <!-- Share sheet notice when chat sign-in failed and will not retry by itself; details follow. -->
+    <string name="share_in_chat_unavailable">聊天用不了</string>
+    <!-- Button in the share sheet that hides it and goes to pairing; the share comes back after pairing. -->
+    <string name="share_in_pair">去配对</string>
+    <!-- Share sheet notice: more items were shared than one message can carry. Argument: how many were left out. -->
+    <string name="share_in_dropped">一次最多 10 项，没带上 %1$d 项</string>
+    <!-- Problem title when some shared items couldn't be read from the app that shared them. -->
+    <string name="share_in_unreadable_title">有的内容读不了</string>
 </resources>

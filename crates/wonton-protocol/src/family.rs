@@ -1,7 +1,7 @@
 //! 家人和多人（ADR-0045）：每人一个账号，Bot 有归属人，同机的 Bot 经联系人互发消息。
 //!
 //! - [`ME_PATH`]：这台设备的人是谁、是不是主人、什么角色、能做什么，每个人都能读自己的。
-//! - [`MEMBERS_PATH`] 和 [`member_path`] 之下：主人邀请、管理、移除家人，给家人出配对码。
+//! - [`MEMBERS_PATH`] 之下：主人邀请、管理、移除家人，给家人出配对码；角色见 [`crate::ROLES_PATH`]。
 //! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。Bot 的联系人在 [`crate::bot_contacts_path`]，归属人管。
 //! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]；跳数到顶另用
 //!   [`HOP_LIMIT_ERRCODE`] 作 `errcode`。
@@ -17,11 +17,6 @@ pub const ME_PATH: &str = "/_wonton/api/me";
 
 /// `GET`：[`MemberList`]。`POST`：请求体 [`MemberInvite`]，返回记成“已邀请”的 [`Member`]。只有主人能用。
 pub const MEMBERS_PATH: &str = "/_wonton/api/members";
-
-/// `PUT`：请求体 [`MemberSettings`]，返回 [`Member`]。
-pub fn member_path(username: &str) -> String {
-    format!("{MEMBERS_PATH}/{username}")
-}
 
 /// `POST`：出一个归这个家人的配对码（[`MemberPairingCode`]），之前出的作废。`DELETE`：作废，不出新的。
 pub fn member_pairing_code_path(username: &str) -> String {
@@ -77,8 +72,6 @@ pub struct Me {
     pub display_name: Option<String>,
     /// 还没填时为空。
     pub email: Option<String>,
-    /// 能装卸、升级插件：主人总是能，家人要主人授权。
-    pub can_install_plugins: bool,
 }
 
 /// 一个人的身份种类，网关按它分主人、家人和好友；能做什么不看它，看角色（ADR-0088）。
@@ -117,8 +110,6 @@ pub struct Member {
     pub status: MemberStatus,
     /// 他的角色（[`RoleDef::id`](crate::RoleDef::id)）。
     pub role_id: String,
-    /// 主人授权了“能装插件”。
-    pub can_install_plugins: bool,
     /// 他的私人 Bot；没建（只加了人，或者默认 Agent 不支持多个 Bot）时为空。
     pub private_bot: Option<BotRef>,
     /// 还有效的配对码什么时候过期（Unix 毫秒）；没有时为空。
@@ -152,13 +143,6 @@ pub struct MemberInvite {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub role_id: Option<String>,
-}
-
-/// 主人改一个家人的设置。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct MemberSettings {
-    pub can_install_plugins: bool,
 }
 
 /// 归一个家人的配对码。
@@ -281,7 +265,6 @@ mod tests {
             "permissions": null,
             "display_name": null,
             "email": null,
-            "can_install_plugins": true,
         });
         let me: Me = serde_json::from_value(owner.clone()).unwrap();
         assert_eq!(serde_json::to_value(&me).unwrap(), owner);
@@ -309,7 +292,6 @@ mod tests {
             },
             "display_name": "爱丽丝",
             "email": null,
-            "can_install_plugins": false,
         });
         let me: Me = serde_json::from_value(member.clone()).unwrap();
         assert_eq!(
@@ -326,7 +308,6 @@ mod tests {
             "username": "alice",
             "is_owner": false,
             "avatar": "ignored",
-            "can_install_plugins": false,
         }))
         .unwrap();
         assert_eq!(me.role_id, None);
