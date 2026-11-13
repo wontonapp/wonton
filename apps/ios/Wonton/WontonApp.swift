@@ -23,7 +23,9 @@ struct WontonApp: App {
                     // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
                     AppLockGate(lock: lock) {
                         #if DEBUG
-                        if QualityPreviews.active {
+                        if AgentRunPreview.active {
+                            AgentRunPreview.root
+                        } else if QualityPreviews.active {
                             QualityPreviews.root
                         } else {
                             MainView(
