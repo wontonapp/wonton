@@ -1,7 +1,8 @@
 //! 核心的出箱（ADR-0061 第 10 节）：长轮询 `GET /agent/outbox` 取要做的项，做完
 //! `POST` 回报。`CancelTurn` 对会话发 `session/cancel`（同会话未决的权限请求一并回
-//! `cancelled`，这是发取消一方的义务），回报结果；`Message` 是发消息那块（ADR-0061
-//! 第 9 节）的项；不认识的项如实回报并跳过，不猜怎么执行。
+//! `cancelled`，这是发取消一方的义务）；`Message` 发进和收件人的私聊（ADR-0061 第 9 节，
+//! [`crate::bridge::outbox`]），出箱项 ID 当 Matrix 事务 ID；不认识的项如实回报并跳过，
+//! 不猜怎么执行。
 //!
 //! 取走的项不回报会留在核心的在途表里，所以每项都回报；回报失败只记日志，不重发。
 
@@ -13,6 +14,7 @@ use wonton_protocol::{
 
 use crate::bridge::Bridge;
 use crate::bridge::chain::agent_endpoint;
+use crate::bridge::outbox::{self, Dm};
 use crate::error::{Detail, Error};
 
 /// 长轮询最多挂 [`AGENT_OUTBOX_WAIT_SECS`] 秒，客户端超时给它留出余量。
@@ -48,9 +50,8 @@ pub(crate) async fn run(bridge: Bridge) {
 async fn handle(bridge: &Bridge, feed: &Feed, item: OutboxItem) {
     let result = match &item.kind {
         OutboxKind::CancelTurn { session, .. } => cancel_turn(bridge, session).await,
-        OutboxKind::Message { .. } => {
-            tracing::warn!(id = %item.id, "出箱的 Message 项还没实现，跳过");
-            skipped()
+        OutboxKind::Message { recipient, body } => {
+            outbox::result_of(bridge.dm.send_to(recipient, &item.id, body).await)
         }
         OutboxKind::Other => {
             tracing::warn!(id = %item.id, "不认识的出箱项，跳过");
@@ -98,6 +99,7 @@ fn skipped() -> OutboxResult {
 struct Feed {
     http: reqwest::Client,
     endpoint: url::Url,
+    matrix_token: String,
 }
 
 impl Feed {
@@ -113,6 +115,8 @@ impl Feed {
                     ))
                 })?,
             endpoint: agent_endpoint(&bridge.config.mcp_url, wonton_protocol::AGENT_OUTBOX_PATH)?,
+            // 出箱的门验 Bot 的 Matrix 令牌（同 /agent/chains）：总线令牌 Agent 自己也有。
+            matrix_token: bridge.config.access_token.clone(),
         })
     }
 
@@ -121,6 +125,7 @@ impl Feed {
         let response = self
             .http
             .get(self.endpoint.clone())
+            .header(wonton_protocol::BOT_TOKEN_HEADER, &self.matrix_token)
             .send()
             .await
             .map_err(unavailable)?;
@@ -137,6 +142,7 @@ impl Feed {
         let response = self
             .http
             .post(self.endpoint.clone())
+            .header(wonton_protocol::BOT_TOKEN_HEADER, &self.matrix_token)
             .json(receipt)
             .send()
             .await

@@ -185,6 +185,7 @@ impl Friends {
                 display_name: display_name.map(str::to_owned),
                 username,
                 status: FriendStatus::Active,
+                role_id: crate::roles::DEFAULT_INVITE_ROLE.to_owned(),
                 access_generation: next_revision(snapshot)?,
                 groups: Vec::new(),
                 group_generations: Default::default(),

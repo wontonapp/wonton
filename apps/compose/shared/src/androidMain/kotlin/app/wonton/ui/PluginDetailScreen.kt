@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -140,8 +143,12 @@ private fun DetailContent(
     val bot = detail.installed?.let { installed ->
         chat.bots.firstOrNull { it.bot.pluginId == installed.id && it.bot.bot == "default" }
     }
+    val scrollState = rememberScrollState()
+    val secretsInView = remember { BringIntoViewRequester() }
+    // 只有主人能填密钥：家人的“去填写”没有落点，不显示。
+    val owner by produceState<Boolean?>(null) { value = runCatching { plugins.core.me().isOwner }.getOrNull() }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+        Modifier.fillMaxSize().verticalScroll(scrollState)
             .wontonContentPadding().padding(WontonTheme.spacing.pageInset),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
@@ -160,6 +167,7 @@ private fun DetailContent(
             )
         }
         detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
+        GoFillSecrets(detail.installed, owner, secretsInView)
         detail.installed?.let { PluginTabPinControls(it) }
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
@@ -167,7 +175,7 @@ private fun DetailContent(
             }
         }
         detail.about?.let { Text(it, style = WontonTheme.typography.body, color = colors.textPrimary.toColor()) }
-        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled) }
+        detail.installed?.let { InstalledDetailSections(detail, plugins, navigation, onToggled, owner, secretsInView) }
         detail.shares?.let { PluginSharesSection(detail.id, it, plugins, onToggled) }
         DetailSections(detail, plugins, onToggled)
         detail.installed?.takeIf { it.removable && !working }?.let { installed ->
@@ -236,12 +244,16 @@ private fun InstalledDetailSections(
     plugins: PluginsState,
     navigation: PluginNavigation,
     onToggled: (PluginDetail) -> Unit,
+    owner: Boolean?,
+    secretsInView: BringIntoViewRequester,
 ) {
     val installed = detail.installed ?: return
     if (detail.hasSettings) {
         SettingsEntry(detail, navigation)
     }
-    SecretSection(detail, plugins, onToggled)
+    Box(Modifier.bringIntoViewRequester(secretsInView)) {
+        SecretSection(detail, owner == true, plugins, onToggled)
+    }
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)

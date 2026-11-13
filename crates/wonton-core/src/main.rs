@@ -26,13 +26,13 @@ use anyhow::{Context, bail};
 use tracing_subscriber::EnvFilter;
 use wonton_core::agent_chain::Chains;
 use wonton_core::agent_chain::settings::AgentSettings;
+use wonton_core::agent_outbox::Outbox;
 use wonton_core::config::Config;
 mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::friends::Friends;
 use wonton_core::gateway::agent_chains::AgentChains;
-use wonton_core::gateway::agent_outbox::Outbox;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
 use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
@@ -57,6 +57,7 @@ use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::preinstall::Backoff;
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
+use wonton_core::roles::Roles;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 use wonton_core::upgrade::compose_images;
@@ -305,6 +306,7 @@ async fn serve() -> anyhow::Result<()> {
 
     let owner_token = owner_token(&cfg)?;
     let members = Arc::new(Members::open(cfg.core_state_dir().join("members.json"))?);
+    let roles = Arc::new(Roles::open(cfg.core_state_dir().join("roles.json"))?);
     let mailpit = open_mailpit(&cfg, &engine, members.clone())?;
     // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
     // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
@@ -377,6 +379,7 @@ async fn serve() -> anyhow::Result<()> {
         owner,
         owner_token,
         members,
+        roles,
         manager.clone(),
         hydra,
         http,
@@ -415,6 +418,7 @@ fn open_gateway(
     owner: Arc<OwnerStore>,
     owner_token: String,
     members: Arc<Members>,
+    roles: Arc<Roles>,
     manager: Arc<PluginManager>,
     hydra: Option<(Hydra, String)>,
     http: HttpClient,
@@ -448,6 +452,7 @@ fn open_gateway(
             http,
             tunnel,
         )
+        .with_roles(roles)
         .with_system_http(system_http)
         .with_matrix(matrix)
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
@@ -681,11 +686,42 @@ fn open_agent_chains(cfg: &Config, bus: &Arc<mcp::Bus>) -> anyhow::Result<Arc<Ag
         settings.limits(),
     )?);
     ledger.on_limit_event(gateway::agent_chains::limit_handler(bus));
-    Ok(Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(Outbox::default()),
-        settings,
-    )))
+    let outbox = Arc::new(Outbox::with_store(
+        cfg.core_state_dir().join("agent-outbox.json"),
+    )?);
+    outbox.on_message_settled(message_settled_audit(bus));
+    Ok(Arc::new(AgentChains::new(ledger, outbox, settings)))
+}
+
+/// 出箱的 Message 项结清时写一行审计：发出的事件 ID、或没做成的类别（ADR-0061 第 9 节）。
+fn message_settled_audit(
+    bus: &Arc<mcp::Bus>,
+) -> Arc<dyn Fn(&wonton_core::agent_outbox::MessageSettled) + Send + Sync> {
+    let audit = bus.audit().clone();
+    Arc::new(move |settled: &wonton_core::agent_outbox::MessageSettled| {
+        let outcome = match &settled.result {
+            wonton_protocol::OutboxResult::Sent { event_id } => format!("已发出，事件 {event_id}"),
+            wonton_protocol::OutboxResult::Failed { category } => {
+                format!("没做成（{category:?}）")
+            }
+        };
+        let arguments = serde_json::json!({
+            "recipient": settled.recipient,
+            "body": settled.body,
+        });
+        audit.record(&mcp::audit::Record {
+            caller: settled.bot.plugin_id.as_str(),
+            tool: wonton_protocol::SEND_MESSAGE_TOOL,
+            arguments: &arguments,
+            decision: mcp::audit::Decision::Allowed,
+            basis: Some(mcp::audit::Grounds {
+                basis: mcp::audit::Basis::Card,
+                held_ms: None,
+            }),
+            outcome: Some(&outcome),
+            files: &[],
+        });
+    })
 }
 
 /// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
