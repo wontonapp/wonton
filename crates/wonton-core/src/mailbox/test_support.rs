@@ -81,19 +81,12 @@ pub(super) async fn home() -> Home {
     let (tunnel, members) = crate::gateway::fakes::loopback_tunnel(dir.path()).await;
     members
         .invite(MemberRecord {
-            username: "alice".into(),
-            user_id: "@alice:test".into(),
             display_name: "Alice".into(),
-            email: None,
-            status: wonton_protocol::MemberStatus::Invited,
-            role_id: "friend".to_owned(),
             wants_private_bot: false,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test("alice")
         })
         .unwrap();
-    members.consume_code("alice").unwrap();
+    members.mark_joined("alice").unwrap();
     let notices = Arc::new(NoticeRoom::new(
         matrix.clone(),
         "owner",

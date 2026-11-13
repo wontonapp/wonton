@@ -48,6 +48,7 @@ mod friends_wiring;
 mod health;
 mod hosted;
 mod isolation;
+mod join_requests;
 mod lan;
 mod link_preview;
 pub mod matrix;
@@ -243,12 +244,14 @@ impl Gateway {
             plugins.data_dir().join("core").join("link-previews"),
             plugins.core_proxy().clone(),
         ));
+        let roles = Arc::new(Roles::initial());
+        tunnel.pairing.attach_roles(roles.clone());
         Self {
             public,
             owner,
             owner_token,
             members,
-            roles: Arc::new(Roles::initial()),
+            roles,
             plugins,
             hydra,
             hydra_public,
@@ -295,6 +298,7 @@ impl Gateway {
     /// 接上角色记录：网关自己只带模板时用 [`Roles::initial`]，生产由启动时装上 `roles.json`。
     #[must_use]
     pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
+        self.tunnel.pairing.attach_roles(roles.clone());
         self.roles = roles;
         self
     }
@@ -403,14 +407,17 @@ impl Gateway {
         };
         // 失败即停：设备记的家人必须在记录里、还没被移除。记录对不上时按认不出处理，不编一个身份放行。
         match self.members.get(&username) {
-            Some(record) if record.status != MemberStatus::Removed => {
+            Some(record)
+                if record.status != MemberStatus::Removed
+                    && !self.members.pending_endpoint(id, &username) =>
+            {
                 Some(Person::member(&record.username))
             }
             _ => {
                 tracing::warn!(
                     device = %id.fmt_short(),
                     member = %username,
-                    "设备的家人不在记录里或已移除，拒绝这台设备的请求"
+                    "设备的家人不在记录里、尚未批准或已移除，拒绝这台设备的请求"
                 );
                 None
             }
@@ -825,6 +832,12 @@ mod health_tests;
 mod isolation_policy_tests;
 #[cfg(test)]
 mod isolation_tests;
+#[cfg(test)]
+mod join_recovery_tests;
+#[cfg(test)]
+mod join_requests_tests;
+#[cfg(test)]
+mod join_role_tests;
 #[cfg(test)]
 mod l10n_tests;
 #[cfg(test)]

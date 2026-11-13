@@ -1,7 +1,7 @@
 //! 家人和多人（ADR-0045）：每人一个账号，Bot 有归属人，同机的 Bot 经联系人互发消息。
 //!
 //! - [`ME_PATH`]：这台设备的人是谁、是不是主人、什么角色、能做什么，每个人都能读自己的。
-//! - [`MEMBERS_PATH`] 之下：主人邀请、管理、移除家人，给家人出配对码；角色见 [`crate::ROLES_PATH`]。
+//! - [`MEMBERS_PATH`] 之下：管理成员权限可邀请、管理、移除成员和出码；邀请时指定角色只收主人。
 //! - [`SHARED_BOTS_PATH`]：主人建共享 Bot。Bot 的联系人在 [`crate::bot_contacts_path`]，归属人管。
 //! - 网关拒绝 Bot 的 Matrix 请求时，在 [`GATEWAY_REFUSAL_HEADER`] 里写 [`GatewayRefusal`]；跳数到顶另用
 //!   [`HOP_LIMIT_ERRCODE`] 作 `errcode`。
@@ -15,7 +15,7 @@ use crate::Permissions;
 /// `GET`：[`Me`]。`PUT`：请求体 [`OwnerProfileUpdate`](crate::OwnerProfileUpdate)，改自己的资料，规则同 ADR-0030，返回 [`Me`]。
 pub const ME_PATH: &str = "/_wonton/api/me";
 
-/// `GET`：[`MemberList`]。`POST`：请求体 [`MemberInvite`]，返回记成“已邀请”的 [`Member`]。只有主人能用。
+/// `GET`：[`MemberList`]。`POST`：请求体 [`MemberInvite`]，返回记成“已邀请”的 [`Member`]。要管理成员权限。
 pub const MEMBERS_PATH: &str = "/_wonton/api/members";
 
 /// `POST`：出一个归这个家人的配对码（[`MemberPairingCode`]），之前出的作废。`DELETE`：作废，不出新的。
