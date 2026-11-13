@@ -97,7 +97,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
                 val url = (link.tab as? TabRef.Plugin)
                     ?.let { tab ->
                         pages.plugins.viewModel.installed?.plugins
-                            ?.firstOrNull { it.id == tab.id }
+                            ?.firstOrNull { it.id == tab.pluginId }
                             ?.takeIf { it.webUrl == null }
                             ?.linkUrl
                     }
