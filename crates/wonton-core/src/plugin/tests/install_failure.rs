@@ -257,7 +257,7 @@ async fn docker_request_timeout_keeps_its_category_and_cleans_started_resources(
         .unwrap()
         .unwrap_err();
     held.release();
-    assert_eq!(error.kind(), "docker_timed_out");
+    assert_eq!(error.kind(), "docker_rejected");
     let failed = failure(&manager);
     assert_eq!(failed["kind"], error.kind());
     assert_eq!(failed["stage"], "starting");

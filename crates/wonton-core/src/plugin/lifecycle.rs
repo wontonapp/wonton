@@ -662,7 +662,8 @@ impl PluginManager {
             }
             self.engine
                 .create_container(&container.name, container.body.clone())
-                .await?;
+                .await
+                .map_err(InstallError::from_create_engine_error)?;
             undo.containers.push(container.name.clone());
             if container.store_dir.is_none() {
                 Box::pin(configs::deliver(&self.engine, container, &plan.labels)).await?;
