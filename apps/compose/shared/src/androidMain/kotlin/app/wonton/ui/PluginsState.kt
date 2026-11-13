@@ -93,6 +93,9 @@ sealed interface PluginEntry {
     data class Chat(val botUserId: String) : PluginEntry
 
     data class Web(val tab: TabRef) : PluginEntry
+
+    /** 外部网页插件：交给系统的 App 内浏览器，不给任何和 App 通信的桥（ADR-0080）。 */
+    data class Browser(val url: String) : PluginEntry
 }
 
 /** 打开它的方式，第一种是点图标时用的。都没有时点开看详情。 */
@@ -100,6 +103,7 @@ val InstalledPlugin.entries: List<PluginEntry>
     get() = buildList {
         val bot = botUserId
         if (kind == PluginKind.AGENT && bot != null) add(PluginEntry.Chat(bot))
+        linkUrl?.let { add(PluginEntry.Browser(it)) }
         tabChoices.firstOrNull()?.let { add(PluginEntry.Web(it.tab)) }
     }
 

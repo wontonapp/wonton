@@ -93,6 +93,9 @@ extension MainView {
         case let .web(tab):
             showsApps = false
             pages.open(tab)
+        case let .browser(url):
+            showsApps = false
+            navigation.safari = SafariTarget(url: url)
         }
     }
 }
