@@ -53,6 +53,14 @@ impl Store {
     fn has_credentials(&self) -> bool {
         !self.credentials.is_empty() || self.env_file.is_some()
     }
+
+    /// 签发快照：只留影响签发的设置。`last_error` 是签发的输出，算进相等会把
+    /// “上一任务收尾写结果”误判成“设置变了”，误杀排队的下一次——修正凭据后
+    /// 得白等一个续期周期。
+    fn issuance_snapshot(mut self) -> Store {
+        self.last_error = None;
+        self
+    }
 }
 
 /// 设置项的失败，接口按类别回 400 或 409。
@@ -406,7 +414,9 @@ impl Domain {
         // 任务会按新设置签。旧任务若按旧快照重新 prepare，会把新设置的准备状态和证书
         // 都写成旧的，续期从此对不上。
         match self.effective() {
-            Ok(current) if current == snapshot => self.issue_locked(&current).await,
+            Ok(current) if current.clone().issuance_snapshot() == snapshot.issuance_snapshot() => {
+                self.issue_locked(&current).await
+            }
             Ok(_) => {
                 tracing::info!("签发任务排队期间设置已变更，跳过这次（按新设置另排的任务负责）");
             }
