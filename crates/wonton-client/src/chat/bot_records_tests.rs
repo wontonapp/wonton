@@ -1,5 +1,5 @@
 use super::*;
-use wonton_protocol::{BotActivityReport, BotWebPage, BotWebView, TabDisplay};
+use wonton_protocol::{BotActivityReport, BotWebPage, BotWebView};
 
 fn facts(name: Option<&str>, user: &str) -> BotActivityFacts {
     BotActivityFacts {
@@ -23,7 +23,6 @@ fn ready(bot: &BotRef, url: &str) -> BotWebView {
         page: BotWebPage {
             bot: bot.clone(),
             url: url.into(),
-            display: TabDisplay::default(),
             cross_origin_isolated: false,
         },
     }

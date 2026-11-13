@@ -123,7 +123,6 @@ fn bot_view(plugin: &str, bot: &str, url: &str, isolated: bool) -> wonton_protoc
             page: wonton_protocol::BotWebPage {
                 bot: bot.clone(),
                 url: url.to_owned(),
-                display: Default::default(),
                 cross_origin_isolated: isolated,
             },
         }),

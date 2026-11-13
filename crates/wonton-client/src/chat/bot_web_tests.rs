@@ -2,9 +2,7 @@ use super::*;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::{Notify, watch};
-use wonton_protocol::{
-    BotActivityFacts, BotView, BotWebPage, ChatViewModel, HomeStatus, TabDisplay,
-};
+use wonton_protocol::{BotActivityFacts, BotView, BotWebPage, ChatViewModel, HomeStatus};
 
 use crate::chat::bot_activity::Activity;
 use crate::chat::bots::{Local, Record};
@@ -49,7 +47,6 @@ fn ready(id: BotRef) -> BotWebView {
         page: BotWebPage {
             url: format!("https://{}.example/", id.bot),
             bot: id,
-            display: TabDisplay::default(),
             cross_origin_isolated: false,
         },
     }
