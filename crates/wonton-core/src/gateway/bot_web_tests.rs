@@ -103,7 +103,6 @@ fn member(h: &Harness) -> iroh::EndpointId {
             email: None,
             role_id: crate::roles::DEFAULT_INVITE_ROLE.to_owned(),
             status: wonton_protocol::MemberStatus::Joined,
-            can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,
