@@ -13,7 +13,7 @@ final class FriendCodeUITests: XCTestCase {
         try UITestBackend.require()
         app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
-        UITestBackend.passPairingCode(to: app)
+        try UITestBackend.passPairingCode(to: app)
         app.launch()
     }
 
@@ -28,7 +28,8 @@ final class FriendCodeUITests: XCTestCase {
     }
 
     func testPastedLinkSendsRequest() throws {
-        let peer = ProcessInfo.processInfo.environment["TEST_RUNNER_PEER"] ?? ""
+        let env = ProcessInfo.processInfo.environment
+        let peer = env["PEER"] ?? env["TEST_RUNNER_PEER"] ?? ""
         try XCTSkipIf(peer.isEmpty, "没给 TEST_RUNNER_PEER")
         openAddFriend()
         tapButton("Scan Their Code", timeout: 10)
