@@ -56,7 +56,8 @@ async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
             tab: identity.clone(),
         })
         .unwrap();
-    let open = rig.tabs.view().stack.last().unwrap();
+    let view = rig.tabs.view();
+    let open = view.stack.last().unwrap();
     assert_eq!(open.tab, identity);
     assert_eq!(
         open.page.url.as_deref(),
