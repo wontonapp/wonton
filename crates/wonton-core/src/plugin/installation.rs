@@ -53,7 +53,7 @@ impl PluginManager {
         let manifest = decision.package.manifest.clone();
         // 保持 install 子树的 future 状态机在堆上：默认 2 MiB 测试线程栈装不下整条线性 await 链
         // （egress_plugin_failures… 的栈溢出）。
-        match Box::pin(self.install_checked_retained(decision, settings, langs)).await {
+        match Box::pin(self.install_checked_retained(&decision, settings, langs)).await {
             Ok((view, undo)) => {
                 if let Err(error) = self.capabilities_installed(&manifest, &[], false).await {
                     let mut failures = Vec::new();
@@ -63,7 +63,12 @@ impl PluginManager {
                     // Keep the cold recovery future out of the normal install stack.
                     failures
                         .extend(Box::pin(self.restore_install_consumers(consumers, langs)).await);
-                    failures.extend(self.rollback_installed(&manifest.id, undo, langs).await);
+                    let mut cause = self.failure_cause(&manifest.id, &error);
+                    cause.cleanup_errors.extend(failures.iter().cloned());
+                    failures.extend(
+                        self.rollback_installed(&manifest.id, undo, &cause, langs)
+                            .await,
+                    );
                     return Err(self.install_rollback_error(error, failures, langs));
                 }
                 self.probe_fresh_consumer(&manifest).await;
@@ -83,6 +88,7 @@ impl PluginManager {
                 if let Err(cleanup) = self.restore_capability_state(before, langs).await {
                     failures.push(cleanup.to_string());
                 }
+                self.append_install_cleanup(&manifest.id, &failures, langs);
                 Err(self.install_rollback_error(error, failures, langs))
             }
         }
@@ -90,7 +96,7 @@ impl PluginManager {
 
     pub(in crate::plugin) async fn install_checked_retained(
         &self,
-        decision: InstallDecision,
+        decision: &InstallDecision,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<(PluginView, Undo), InstallError> {
@@ -105,50 +111,49 @@ impl PluginManager {
         super::install_entry::check_runtime(manifest, langs)?;
         self.check_not_upgrading(langs)?;
         if !super::install_hosted::is_containerless(manifest) {
-            dry_run(&package, langs)?;
+            dry_run(package, langs)?;
         }
-        self.check_icon(&package, langs).await?;
-        super::grant::check_permissions(manifest, &granted, &enabled, langs)?;
+        self.check_icon(package, langs).await?;
+        super::grant::check_permissions(manifest, granted, enabled, langs)?;
         super::capabilities::unsupported_model_dependency(manifest, langs)?;
         if super::install_hosted::is_containerless(manifest) {
-            let view = self
-                .install_containerless(&package, &granted, langs)
-                .await?;
-            return Ok((view, Undo::default()));
+            return self.install_containerless(package, granted, langs).await;
         }
         self.check_hosted_provider(manifest, langs)?;
         self.check_requirements(manifest, langs).await?;
         self.check_egress(manifest, langs).await?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(&enabled));
+        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
         let gpu = self.gpu_grant(manifest, &effective, langs).await?;
-        let lan_webui = lan_webui && switched(&package).is_some();
-        let lan = self.lan_grant(&package, lan_webui, langs).await?;
+        let lan_webui = *lan_webui && switched(package).is_some();
+        let lan = self.lan_grant(package, lan_webui, langs).await?;
         self.reserve(
-            &Listed::new(&package, now_secs(), lan_webui, false, Default::default()),
+            &Listed::new(package, now_secs(), lan_webui, false, Default::default()),
             langs,
         )?;
         let prepared = match targets {
             Some(targets) => {
-                self.prepare_confirmed_dependencies(manifest, &targets, langs)
+                self.prepare_confirmed_dependencies(manifest, targets, langs)
                     .await
             }
             None => self.prepare_dependencies(manifest, langs).await,
         };
         if let Err(error) = prepared {
-            self.plugins
-                .write()
-                .expect("插件表锁中毒")
-                .remove(&manifest.id);
-            self.changed();
+            self.installation_failed(
+                &manifest.id,
+                &error,
+                self.install_stage(&manifest.id),
+                Vec::new(),
+                langs,
+            );
             return Err(error);
         }
         match self
-            .deploy_retained(&package, &granted, &enabled, (gpu, lan), settings, langs)
+            .deploy_retained(package, granted, enabled, (gpu, lan), settings, langs)
             .await
         {
             Ok((deployed, undo)) => {
                 let listed = Listed::new(
-                    &package,
+                    package,
                     now_secs(),
                     lan_webui,
                     deployed.firewalled,
@@ -162,45 +167,36 @@ impl PluginManager {
                     view
                 };
                 if let Err(error) = self.register_capability_provider(manifest) {
-                    let failures = self.rollback_installed(&manifest.id, undo, langs).await;
+                    let cause = self.failure_cause(&manifest.id, &error);
+                    let failures = self
+                        .rollback_installed(&manifest.id, undo, &cause, langs)
+                        .await;
                     return Err(self.install_rollback_error(error, failures, langs));
                 }
                 self.changed();
                 Ok((view, undo))
             }
-            Err(error) => {
-                self.plugins
-                    .write()
-                    .expect("插件表锁中毒")
-                    .remove(&manifest.id);
-                self.changed();
-                Err(error)
-            }
+            Err(error) => Err(error),
         }
     }
 
     pub(in crate::plugin) async fn rollback_installed(
         &self,
         id: &PluginId,
-        undo: Undo,
+        mut undo: Undo,
+        cause: &wonton_protocol::InstallFailure,
         langs: &Languages,
     ) -> Vec<String> {
-        let mut failures = self.rollback(undo, langs).await;
-        if let Err(error) = self.store.remove(id) {
-            failures.push(error.to_string());
-        }
-        if failures.is_empty() {
-            self.plugins.write().expect("插件表锁中毒").remove(id);
-        } else {
-            self.set(
-                id,
-                PluginStatus::Degraded {
-                    reason: failures.join("; "),
-                },
-                Some(None),
-            );
-        }
-        self.changed();
+        let stage = undo.final_stage.unwrap_or_else(|| self.install_stage(id));
+        tracing::warn!(plugin = %id, ?stage, kind = %cause.kind, error = %cause.message,
+            failed_plugin = %cause.failed_plugin_id, cleanup_result = "pending",
+            "Plugin installation failed; starting rollback");
+        undo.keep_bot_data();
+        let failures = self.rollback(undo, langs).await;
+        let mut failure = cause.clone();
+        failure.stage = stage;
+        failure.cleanup_errors.extend(failures.iter().cloned());
+        self.retain_install_failure(id, failure, None, langs);
         failures
     }
 
@@ -256,6 +252,10 @@ impl PluginManager {
                 ],
             )));
         }
+        self.failed_installs
+            .write()
+            .expect("安装结果锁中毒")
+            .remove(&manifest.id);
         plugins.insert(
             manifest.id.clone(),
             Entry::new(listed.clone(), PluginStatus::Installing, None),
@@ -332,6 +332,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         self.check_not_upgrading(langs)?;
+        if self.failed_install(id) {
+            return Ok(());
+        }
         let users = self.hosted_users(id);
         if !users.is_empty() {
             return Err(InstallError::Conflict(l10n::text(
@@ -376,6 +379,9 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
         self.check_uninstall_state(id, langs)?;
+        if self.failed_install(id) {
+            return self.clear_failed_install(id, purge, langs).await;
+        }
         self.check_uninstall_dependencies(removing, approve_connections, langs)?;
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin

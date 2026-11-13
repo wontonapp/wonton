@@ -43,6 +43,7 @@ mod host_facts;
 mod host_name;
 mod host_relay;
 mod host_relay_docker;
+mod install_failure;
 mod install_l10n;
 mod install_progress;
 mod instances;

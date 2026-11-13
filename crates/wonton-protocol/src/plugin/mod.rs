@@ -179,6 +179,9 @@ pub struct InstalledPlugin {
     /// 正在安装或升级时做到了哪一步；其余状态和还没开始部署时为空。
     #[serde(default)]
     pub install_progress: Option<InstallProgress>,
+    /// 上次安装失败的结果；仅保留到重试、卸载或核心重启，不代表插件已安装。
+    #[serde(default)]
+    pub install_failure: Option<InstallFailure>,
     /// 清单 `tunnel.ports` 的端口和协议：App 在 `127.0.0.1` 上同号映射这些端口。只给 App 要的两项，不带清单校验用的
     /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
     #[serde(default)]
@@ -229,6 +232,19 @@ pub struct InstallProgress {
     pub stage: InstallStage,
     /// 这一步完成了多少，0 到 100；算不出来时为空，壳只显示阶段。
     pub percent: Option<u8>,
+}
+
+/// 核心内存中的安装失败结果；错误类别与安装接口一致，不写入已安装记录。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallFailure {
+    pub kind: String,
+    pub message: String,
+    pub stage: InstallStage,
+    /// 批量安装中真正失败的插件；本条目也可能只是被连带回滚。
+    pub failed_plugin_id: String,
+    /// 回滚没有完成的清理；为空表示本次回滚完成，不代表之前保留的数据被删除。
+    pub cleanup_errors: Vec<String>,
 }
 
 /// 安装或升级的阶段。

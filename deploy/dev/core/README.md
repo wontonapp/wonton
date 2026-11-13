@@ -21,6 +21,9 @@ deploy/dev/core/dev.sh down                  # 停止，顺带删掉核心按插
 deploy/dev/core/dev.sh reset                 # 停掉并删除数据、密钥、插件容器、网络和卷
 ```
 
+`install` 请求超时不代表核心已经停止安装；命令保留 curl 的错误输出和退出码，并提示用同一检出的
+`dev.sh status` 查询状态，避免把客户端超时当成安装结果。
+
 `down` 后插件记录和卷都还在，容器没了；再 `up` 时核心只核对、不重建，插件在 `list` 里是 `degraded`。要接着用就
 重新装一次：普通插件先 `uninstall <ID>`（不带 `--purge`，卷和数据留着）再 `install <包>`；系统插件（模型网关
 `ai.usemagpie.magpie`）接口装不了，`uninstall <ID>` 之后重启核心（再 `down` 后 `up`，或 `reset --keep-tunnel-identity`），

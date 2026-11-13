@@ -460,6 +460,7 @@ pub fn installed(id: &str, status: PluginState) -> InstalledPlugin {
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
     }
 }

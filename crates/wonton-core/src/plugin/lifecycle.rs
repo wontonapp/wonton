@@ -101,6 +101,9 @@ pub(super) struct Undo {
     source: Option<PluginId>,
     /// 本次安装在模型网关里签发了凭据的插件，回滚时吊销。
     models: Option<PluginId>,
+    pub(super) record: Option<PluginId>,
+    pub(super) hosted: Vec<(String, PluginId)>,
+    pub(super) final_stage: Option<InstallStage>,
 }
 
 impl PluginManager {
@@ -133,22 +136,19 @@ impl PluginManager {
         ))
         .await
         {
-            Ok(deployed) => Ok((deployed, undo)),
+            Ok(deployed) => {
+                undo.final_stage = Some(self.install_stage(&package.manifest.id));
+                Ok((deployed, undo))
+            }
             Err(error) => {
+                let id = &package.manifest.id;
+                let stage = self.install_stage(id);
+                tracing::warn!(plugin = %id, ?stage, kind = error.kind(), error = %error,
+                    cleanup_result = "pending", "Plugin installation failed; starting rollback");
                 undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
-                if failures.is_empty() {
-                    Err(error)
-                } else {
-                    Err(error.with_note(
-                        langs,
-                        &l10n::text(
-                            langs,
-                            "plugin-install-rollback-unfinished",
-                            &[("failures", l10n::list(langs, &failures).into())],
-                        ),
-                    ))
-                }
+                self.installation_failed(id, &error, stage, failures.clone(), langs);
+                Err(self.install_rollback_error(error, failures, langs))
             }
         }
     }
@@ -218,6 +218,7 @@ impl PluginManager {
             .await;
         self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
             .await?;
+        undo.record = Some(manifest.id.clone());
         Ok(Deployed {
             upstream,
             serving: package

@@ -195,6 +195,9 @@ impl PluginManager {
         id: Option<&PluginId>,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        if let Some(id) = id {
+            self.stage(id, InstallStage::PullingImages);
+        }
         let mirrors = self.registry_mirrors(langs).await?;
         let count = plan.containers.len().max(1) as u64;
         for (index, container) in plan.containers.iter_mut().enumerate() {

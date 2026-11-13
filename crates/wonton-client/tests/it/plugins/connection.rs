@@ -306,6 +306,49 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
     assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
 }
 
+#[tokio::test]
+async fn a_dropped_install_preserves_the_server_failure_category() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    let mut failed = installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "image denied; rollback incomplete".into(),
+        },
+    );
+    failed.install_failure = Some(wonton_protocol::InstallFailure {
+        kind: "image_pull_failed".into(),
+        message: "image denied".into(),
+        stage: wonton_protocol::InstallStage::PullingImages,
+        failed_plugin_id: "app.photos".into(),
+        cleanup_errors: vec!["rollback incomplete".into()],
+    });
+    rig.core.set_lists(vec![vec![failed]]);
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        Canned(502, String::new()),
+    );
+    rig.app
+        .dispatch(Action::InstallPlugin {
+            preview: preview("app.photos"),
+            secrets: Default::default(),
+            settings: Default::default(),
+        })
+        .unwrap();
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    assert_eq!(
+        state,
+        PluginTaskState::Failed {
+            reason: PluginFailure::SourceUnavailable,
+            message: "image denied; rollback incomplete".into(),
+        }
+    );
+    assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+}
+
 /// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。
 #[tokio::test]
 async fn losing_the_network_while_the_request_is_out_waits_at_once() {

@@ -116,7 +116,9 @@ impl PagesLink {
                 // 重新打开：现在装着的、还没加的应用都补进末尾（用户之后还能移除）。
                 if let Some(installed) = &plugins.installed {
                     for plugin in &installed.plugins {
-                        if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
+                        if plugin.install_failure.is_some()
+                            || (plugin.web_url.is_none() && plugin.bot_user_id.is_none())
+                        {
                             continue;
                         }
                         let app = MyAppRef::Plugin {

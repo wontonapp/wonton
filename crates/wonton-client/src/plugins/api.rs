@@ -4,6 +4,7 @@
 #[path = "api_error.rs"]
 mod error;
 use error::core_error;
+pub(crate) use error::failure_kind;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};

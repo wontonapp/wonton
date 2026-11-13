@@ -83,6 +83,18 @@ impl PluginManager {
                     self.listing(&plugins, id, entry, langs),
                 )
             })
+            .chain(
+                self.failed_installs
+                    .read()
+                    .expect("安装结果锁中毒")
+                    .iter()
+                    .map(|(id, failed)| {
+                        (
+                            (true, failed.entry.checked_at),
+                            self.failed_listing(&plugins, id, failed, langs),
+                        )
+                    }),
+            )
             .collect();
         drop(plugins);
         listed.sort_by(|(a, x), (b, y)| a.cmp(b).then_with(|| x.id.cmp(&y.id)));
@@ -98,7 +110,13 @@ impl PluginManager {
     /// 一个已安装的插件；没装时为空。
     pub fn installed_plugin(&self, id: &PluginId, langs: &Languages) -> Option<InstalledPlugin> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        let plugin = self.listing(&plugins, id, plugins.get(id)?, langs);
+        let plugin = match plugins.get(id) {
+            Some(entry) => self.listing(&plugins, id, entry, langs),
+            None => {
+                let failed = self.failed_installs.read().expect("安装结果锁中毒");
+                return Some(self.failed_listing(&plugins, id, failed.get(id)?, langs));
+            }
+        };
         drop(plugins);
         Some(self.with_dependency_status(self.with_bot(plugin), langs))
     }
@@ -109,7 +127,7 @@ impl PluginManager {
         detail.lan_webui = self.with_lan_client(id, detail.lan_webui.take()).await;
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
-            plugins.get(id)?.listed.clone()
+            plugins.get(id).and_then(|entry| entry.listed.clone())
         };
         if let Some(listed) = listed {
             detail.requirements =
@@ -122,7 +140,7 @@ impl PluginManager {
     pub fn installed_detail(&self, id: &PluginId, langs: &Languages) -> Option<PluginDetail> {
         let listed = {
             let plugins = self.plugins.read().expect("插件表锁中毒");
-            plugins.get(id)?.listed.clone()
+            plugins.get(id).and_then(|entry| entry.listed.clone())
         };
         let installed = self.installed_plugin(id, langs)?;
         let Some(listed) = listed else {
@@ -520,7 +538,7 @@ impl PluginManager {
     }
 
     /// 列表里的一项，还没填 Bot。
-    fn listing(
+    pub(super) fn listing(
         &self,
         plugins: &std::collections::BTreeMap<PluginId, Entry>,
         id: &PluginId,
@@ -607,6 +625,7 @@ impl PluginManager {
             notices,
             enabled_root_permissions: Vec::new(),
             install_progress: entry.install_progress.clone(),
+            install_failure: None,
             tunnel_ports: manifest.and_then(|m| m.tunnel.as_ref()).map_or_else(
                 Vec::new,
                 |tunnel| {
@@ -777,14 +796,14 @@ fn settings_form(
 /// 记录读不出来的插件：只有列表里的那些信息。
 fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
     PluginDetail {
-        source: None,
-        provider: None,
-        via_index: None,
+        source: installed.source.clone(),
+        provider: installed.provider.clone(),
+        via_index: installed.via_index.clone(),
         id: installed.id.clone(),
         title: installed.title.clone(),
         summary: installed.summary.clone(),
         about: None,
-        icon: None,
+        icon: installed.icon.clone(),
         screenshots: Vec::new(),
         tags: Vec::new(),
         kind: installed.kind,

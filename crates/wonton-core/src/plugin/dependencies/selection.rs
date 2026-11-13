@@ -193,6 +193,12 @@ impl PluginManager {
         id: &PluginId,
         langs: &Languages,
     ) -> Result<UninstallPreview, InstallError> {
+        if self.failed_install(id) {
+            return Ok(UninstallPreview {
+                id: id.to_string(),
+                unused_providers: Vec::new(),
+            });
+        }
         if !self.is_installed(id) {
             return Err(InstallError::not_installed(langs, id));
         }

@@ -76,7 +76,9 @@ pub(super) fn auto_add_new(
     }
     let mut changed = initialize;
     for plugin in &installed.plugins {
-        if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
+        if plugin.install_failure.is_some()
+            || (plugin.web_url.is_none() && plugin.bot_user_id.is_none())
+        {
             continue;
         }
         if (!initialize
@@ -126,6 +128,7 @@ pub(super) fn update_reload_counters(
             installed
                 .plugins
                 .iter()
+                .filter(|plugin| plugin.install_failure.is_none())
                 .map(|plugin| {
                     (
                         plugin.id.clone(),

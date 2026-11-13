@@ -38,6 +38,9 @@ impl PluginManager {
 
     /// 填上插件的 Bot 和写它的人：读记录要读文件，不在插件表的锁里做。
     pub(super) fn with_bot(&self, mut plugin: InstalledPlugin) -> InstalledPlugin {
+        if plugin.install_failure.is_some() {
+            return plugin;
+        }
         let Ok(id) = PluginId::parse(&plugin.id) else {
             return plugin;
         };

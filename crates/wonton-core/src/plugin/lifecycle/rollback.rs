@@ -34,6 +34,7 @@ impl PluginManager {
             .await;
         self.rollback_networks(&undo, langs, &mut failures).await;
         self.rollback_files(&undo, langs, &mut failures).await;
+        self.rollback_install_record(&undo, &mut failures);
         failures
     }
 
@@ -215,6 +216,19 @@ impl PluginManager {
                 ),
                 restored.map_err(|e| e.to_string()),
             );
+        }
+    }
+
+    fn rollback_install_record(&self, undo: &Undo, failures: &mut Vec<String>) {
+        for (capability, id) in &undo.hosted {
+            if let Err(error) = self.hosted_dirs().remove(capability, id) {
+                failures.push(format!("{capability}/{id}: {error}"));
+            }
+        }
+        if let Some(id) = &undo.record
+            && let Err(error) = self.store.remove(id)
+        {
+            failures.push(error.to_string());
         }
     }
 }

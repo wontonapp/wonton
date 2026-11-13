@@ -34,40 +34,7 @@ pub(super) fn core_error(
     let detail = serde_json::from_slice::<ErrorBody>(body)
         .ok()
         .map(|body| body.error);
-    let reason = match detail.as_ref().map(|detail| detail.kind.as_str()) {
-        Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
-            PluginFailure::Unauthorized
-        }
-        // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
-        Some("changed" | "permission_denied") => PluginFailure::Changed,
-        // 拉不到插件的镜像：镜像仓库连不上、镜像不存在、没有权限等，和取商店信息是同一类来源问题。
-        Some("image_pull_failed") => PluginFailure::SourceUnavailable,
-        Some("record_unusable") => PluginFailure::RecordUnusable,
-        Some("source_unavailable") => PluginFailure::SourceUnavailable,
-        Some("not_found" | "not_installed" | "role_not_found") => PluginFailure::NotFound,
-        Some("role_name_taken" | "role_in_use" | "default_role" | "role_limit" | "removed") => {
-            PluginFailure::Conflict
-        }
-        Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
-        Some("device_unavailable") => PluginFailure::DeviceUnavailable,
-        Some("conflict") => PluginFailure::Conflict,
-        Some("not_ready") => PluginFailure::Upstream,
-        Some("invalid_input") => PluginFailure::Invalid,
-        Some("lan_unavailable") => PluginFailure::LanUnavailable,
-        Some("port_taken") => PluginFailure::LanPortTaken,
-        Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
-        Some("core_upgrading") => PluginFailure::CoreUpgrading,
-        Some("settings_invalid") => PluginFailure::SettingsInvalid,
-        Some("settings_schema_invalid") => PluginFailure::SettingsSchemaInvalid,
-        Some(_) if status >= 500 => PluginFailure::Upstream,
-        Some(_) => PluginFailure::Protocol,
-        None => match status {
-            403 | 502 => PluginFailure::TransportUnavailable,
-            401 => PluginFailure::Unauthorized,
-            500..=599 => PluginFailure::Upstream,
-            _ => PluginFailure::Protocol,
-        },
-    };
+    let reason = failure_kind(detail.as_ref().map(|detail| detail.kind.as_str()), status);
     if reason == PluginFailure::TransportUnavailable {
         return not_connected();
     }
@@ -101,6 +68,43 @@ pub(super) fn core_error(
         message,
         min_version: None,
         settings,
+    }
+}
+
+pub(crate) fn failure_kind(kind: Option<&str>, status: u16) -> PluginFailure {
+    match kind {
+        Some("unauthenticated" | "cross_site" | "permission_required" | "install_not_allowed") => {
+            PluginFailure::Unauthorized
+        }
+        // 授权列表和插件清单对不上，和设备身份无关：重新看预览、确认，重新配对解决不了。
+        Some("changed" | "permission_denied") => PluginFailure::Changed,
+        // 拉不到插件的镜像：镜像仓库连不上、镜像不存在、没有权限等，和取商店信息是同一类来源问题。
+        Some("image_pull_failed") => PluginFailure::SourceUnavailable,
+        Some("record_unusable") => PluginFailure::RecordUnusable,
+        Some("source_unavailable") => PluginFailure::SourceUnavailable,
+        Some("not_found" | "not_installed" | "role_not_found") => PluginFailure::NotFound,
+        Some("role_name_taken" | "role_in_use" | "default_role" | "role_limit" | "removed") => {
+            PluginFailure::Conflict
+        }
+        Some("unsupported" | "gpu_unavailable") => PluginFailure::Unsupported,
+        Some("device_unavailable") => PluginFailure::DeviceUnavailable,
+        Some("conflict") => PluginFailure::Conflict,
+        Some("not_ready") => PluginFailure::Upstream,
+        Some("invalid_input") => PluginFailure::Invalid,
+        Some("lan_unavailable") => PluginFailure::LanUnavailable,
+        Some("port_taken") => PluginFailure::LanPortTaken,
+        Some("egress_proxy_unavailable") => PluginFailure::EgressProxyUnavailable,
+        Some("core_upgrading") => PluginFailure::CoreUpgrading,
+        Some("settings_invalid") => PluginFailure::SettingsInvalid,
+        Some("settings_schema_invalid") => PluginFailure::SettingsSchemaInvalid,
+        Some(_) if status >= 500 => PluginFailure::Upstream,
+        Some(_) => PluginFailure::Protocol,
+        None => match status {
+            403 | 502 => PluginFailure::TransportUnavailable,
+            401 => PluginFailure::Unauthorized,
+            500..=599 => PluginFailure::Upstream,
+            _ => PluginFailure::Protocol,
+        },
     }
 }
 #[cfg(test)]

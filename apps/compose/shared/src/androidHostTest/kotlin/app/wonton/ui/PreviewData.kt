@@ -209,6 +209,7 @@ internal fun previewInstalled() = InstalledPlugins(
             notices = emptyList(),
             enabledRootPermissions = emptyList(),
             installProgress = null,
+            installFailure = null,
             tunnelPorts = emptyList(),
         ),
         InstalledPlugin(
@@ -238,6 +239,7 @@ internal fun previewInstalled() = InstalledPlugins(
             notices = emptyList(),
             enabledRootPermissions = emptyList(),
             installProgress = null,
+            installFailure = null,
             tunnelPorts = emptyList(),
         ),
     ),

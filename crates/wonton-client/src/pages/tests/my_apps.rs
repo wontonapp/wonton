@@ -1,6 +1,7 @@
 //! “我的应用”行的增删与自动加入：单元级的规则钉子（ADR-0095）。
 
 use super::*;
+use wonton_protocol::{InstallFailure, InstallStage};
 
 #[tokio::test]
 async fn newly_installed_apps_append_to_my_apps_and_the_switch_controls_it() {
@@ -134,6 +135,40 @@ async fn first_install_after_an_empty_plugin_snapshot_is_added() {
     rig.plugins.send_replace(plugins("old-content"));
     rig.tabs.recompute();
     assert_eq!(rig.my_app_titles(), ["old-content"]);
+}
+
+#[tokio::test]
+async fn a_failed_install_is_hidden_until_a_successful_retry() {
+    let rig = Rig::new();
+    let mut failed = plugins("old-content");
+    let plugin = &mut failed.installed.as_mut().unwrap().plugins[0];
+    plugin.status = PluginState::Degraded {
+        reason: "image pull failed".to_owned(),
+    };
+    plugin.web_url = None;
+    plugin.install_failure = Some(InstallFailure {
+        kind: "docker".to_owned(),
+        message: "image pull failed".to_owned(),
+        stage: InstallStage::PullingImages,
+        failed_plugin_id: plugin.id.clone(),
+        cleanup_errors: Vec::new(),
+    });
+    rig.plugins.send_replace(failed);
+    rig.tabs.recompute();
+    assert!(rig.my_app_titles().is_empty());
+
+    rig.plugins.send_replace(plugins("old-content"));
+    rig.tabs.recompute();
+    assert_eq!(rig.my_app_titles(), ["old-content"]);
+
+    rig.tabs
+        .dispatch(Action::RemoveMyApp {
+            app: plugin_app("app.shared"),
+        })
+        .unwrap();
+    rig.plugins.send_replace(plugins("old-content"));
+    rig.tabs.recompute();
+    assert!(rig.my_app_titles().is_empty());
 }
 
 #[tokio::test]

@@ -123,6 +123,7 @@ struct Resources {
     start_states: BTreeMap<String, Value>,
     start_error: Option<String>,
     create_error: Option<(String, String)>,
+    remove_error: Option<(String, String)>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
@@ -369,6 +370,11 @@ impl FakeDocker {
     /// 下一次创建指定容器时返回错误；消费后自动恢复正常。
     pub fn fail_next_create(&self, container: &str, message: &str) {
         self.lock().create_error = Some((container.to_owned(), message.to_owned()));
+    }
+
+    pub fn fail_remove(&self, container: &str, message: Option<&str>) {
+        self.lock().remove_error =
+            message.map(|message| (container.to_owned(), message.to_owned()));
     }
 
     /// 容器里执行的命令由 `handler` 回应。

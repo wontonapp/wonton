@@ -56,7 +56,11 @@ async fn a_missing_required_capability_refuses_installation_without_resources() 
         .await
         .unwrap_err();
     assert_eq!(error.kind(), "conflict");
-    assert!(manager.installed(&langs()).plugins.is_empty());
+    let failed = manager.installed_plugin(&id("app.test"), &langs()).unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "conflict"
+    );
     assert!(docker.writes().is_empty());
     assert!(docker.execs().is_empty());
     assert!(!dir.path().join("apps").join("app-test").exists());
@@ -473,7 +477,11 @@ async fn an_agent_acp_provider_never_connects_to_itself_and_requires_another_pro
     assert!(docker.containers().is_empty());
     assert!(docker.writes().is_empty());
     assert!(docker.execs().is_empty());
-    assert!(manager.installed(&langs()).plugins.is_empty());
+    let failed = manager.installed_plugin(&id("app.p"), &langs()).unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "conflict"
+    );
 
     // 先装 Q（provides + wants）：wants 只剩自己，照装、不连。
     manager

@@ -507,44 +507,62 @@ impl PluginsLink {
                 }
                 (_, Some(plugin)) => {
                     missing = 0;
-                    match &plugin.status {
-                        PluginState::Installing
-                        | PluginState::Upgrading
-                        | PluginState::Uninstalling => {}
-                        PluginState::Degraded { reason } => {
-                            // 卸载和升级前它可能就是坏的，请求还没到时也是这样，只有安装能据此算失败。
-                            return match outcome {
-                                Outcome::Running { version: None } => PluginTaskState::Failed {
-                                    reason: PluginFailure::Upstream,
-                                    message: reason.clone(),
-                                },
-                                _ => uncertain(),
-                            };
-                        }
-                        // 容器停止不能证明操作已完成；未知状态也不能算成功。
-                        PluginState::Stopped | PluginState::Unknown => return uncertain(),
-                        // 待配置的插件装上了：任务本身完成了，缺密钥是详情页上的事。
-                        PluginState::Running { .. } | PluginState::NeedsConfiguration => {
-                            match outcome {
-                                Outcome::Running { version } => {
-                                    let done = version
-                                        .as_ref()
-                                        .is_none_or(|version| *version == plugin.version);
-                                    return if done {
-                                        PluginTaskState::Succeeded
-                                    } else {
-                                        uncertain()
-                                    };
-                                }
-                                Outcome::Removed => return uncertain(),
-                            }
-                        }
+                    if let Some(state) = settled_state(plugin, outcome) {
+                        return state;
                     }
                 }
             }
         }
         uncertain()
     }
+}
+
+fn settled_state(
+    plugin: &wonton_protocol::InstalledPlugin,
+    outcome: &Outcome,
+) -> Option<PluginTaskState> {
+    if let Some(state) = install_failure_state(plugin, outcome) {
+        return Some(state);
+    }
+    match &plugin.status {
+        PluginState::Installing | PluginState::Upgrading | PluginState::Uninstalling => None,
+        PluginState::Degraded { reason } => Some(match outcome {
+            // 卸载和升级前它可能就是坏的，请求还没到时也是这样，只有安装能据此算失败。
+            Outcome::Running { version: None } => PluginTaskState::Failed {
+                reason: PluginFailure::Upstream,
+                message: reason.clone(),
+            },
+            _ => uncertain(),
+        }),
+        PluginState::Stopped | PluginState::Unknown => Some(uncertain()),
+        PluginState::Running { .. } | PluginState::NeedsConfiguration => Some(match outcome {
+            Outcome::Running { version }
+                if version
+                    .as_ref()
+                    .is_none_or(|version| *version == plugin.version) =>
+            {
+                PluginTaskState::Succeeded
+            }
+            _ => uncertain(),
+        }),
+    }
+}
+
+fn install_failure_state(
+    plugin: &wonton_protocol::InstalledPlugin,
+    outcome: &Outcome,
+) -> Option<PluginTaskState> {
+    let failure = plugin.install_failure.as_ref()?;
+    Some(match outcome {
+        Outcome::Running { version: None } => PluginTaskState::Failed {
+            reason: super::api::failure_kind(Some(&failure.kind), 500),
+            message: match &plugin.status {
+                PluginState::Degraded { reason } => reason.clone(),
+                _ => failure.message.clone(),
+            },
+        },
+        _ => uncertain(),
+    })
 }
 
 fn uncertain() -> PluginTaskState {
