@@ -32,6 +32,9 @@ pub struct TimelineSubscription {
     cancelled: watch::Sender<bool>,
     scroll: watch::Sender<TimelineScroll>,
     opening: std::sync::Mutex<Option<super::target::TimelineOpening>>,
+    /// 假数据入口的订阅没有转发任务：发送端留在这里（不读它），通道不关，壳就不会以为房间没了。
+    #[cfg(feature = "ui-fake")]
+    _seeded: Option<mpsc::UnboundedSender<TimelineUpdate>>,
 }
 
 /// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
@@ -108,6 +111,23 @@ impl TimelineSubscription {
             cancelled,
             scroll,
             opening: std::sync::Mutex::new(Some(opening)),
+            #[cfg(feature = "ui-fake")]
+            _seeded: None,
+        })
+    }
+
+    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：只有 `first` 这一批，之后一直等到取消。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn seeded(first: TimelineUpdate) -> Arc<Self> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        // 接收端就在下面，发不出去只会是它已经释放。
+        let _ = sender.send(first);
+        Arc::new(Self {
+            updates: Mutex::new(receiver),
+            cancelled: watch::Sender::new(false),
+            scroll: watch::Sender::new(TimelineScroll::Away),
+            opening: std::sync::Mutex::new(None),
+            _seeded: Some(sender),
         })
     }
 

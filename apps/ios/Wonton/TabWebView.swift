@@ -112,8 +112,10 @@ final class TabWebSession: NSObject {
                 try updateContext(webView)
             }
             guard input.connected, input.page.state == .ready,
-                  let proxy = input.proxy, let entry = input.page.url,
-                  let url = URL(string: entry) else { return }
+                  let entry = input.page.url, let url = URL(string: entry) else { return }
+            // 插件页要等家里的代理；公网网页直接连，不经隧道（ADR-0052），没有代理也加载。
+            let proxy = input.proxy
+            guard proxy != nil || !bridged else { return }
             if webView == nil { try create() }
             guard let webView else { return }
             if loadedReload != input.page.reload || loadedEntry != entry || loadedProxy != proxy {

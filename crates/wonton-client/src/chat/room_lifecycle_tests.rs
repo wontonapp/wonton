@@ -57,6 +57,8 @@ fn subscription(opening: TimelineOpening) -> TimelineSubscription {
         cancelled: watch::Sender::new(false),
         scroll: watch::Sender::new(TimelineScroll::Away),
         opening: std::sync::Mutex::new(Some(opening)),
+        #[cfg(feature = "ui-fake")]
+        _seeded: None,
     }
 }
 
