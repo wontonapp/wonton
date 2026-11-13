@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -121,7 +122,7 @@ private fun Mark(run: TimelineContent.AgentRun, colors: ThemeColors) {
                 Icon(WontonIcon.Agent, null, Modifier.size(WontonTheme.size.iconSmall), tint = tint)
             } else {
                 CircularProgressIndicator(
-                    Modifier.size(WontonTheme.size.iconSmall),
+                    Modifier.size(WontonTheme.size.iconSmall).testTag("agentRunSpinner"),
                     color = colors.accentInk.toColor(),
                 )
             }

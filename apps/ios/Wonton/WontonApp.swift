@@ -21,7 +21,9 @@ struct WontonApp: App {
             case let .ready(chat, home, plugins, appearance, navigation):
                 WontonThemeRoot(appearance: appearance.viewModel) {
                     #if DEBUG
-                    if QualityPreviews.active {
+                    if AgentRunPreview.active {
+                        AgentRunPreview.root
+                    } else if QualityPreviews.active {
                         QualityPreviews.root
                     } else {
                         MainView(
