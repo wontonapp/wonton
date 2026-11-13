@@ -427,6 +427,26 @@ async fn another_caller_session_is_not_deduplicated_and_lists_only_its_conversat
 #[tokio::test]
 async fn a_foreign_initiator_cannot_relax_target_tools_by_omitting_the_session_header() {
     let bed = super::handoff_test_support::bed_for_keeper(true, "@owner:test", "alice").await;
+    let people = bed.bus.people.get().unwrap();
+    let role = people
+        .roles
+        .create(&wonton_protocol::RoleDraft {
+            name: "笔记使用者".into(),
+            permissions: wonton_protocol::Permissions {
+                open_apps: wonton_protocol::AppScope::Selected {
+                    plugin_ids: vec!["app.example.notes".into()],
+                },
+                ..wonton_protocol::Permissions::strictest()
+            },
+        })
+        .unwrap();
+    people
+        .members
+        .invite(crate::members::MemberRecord {
+            role_id: role.id,
+            ..crate::members::MemberRecord::for_test("alice")
+        })
+        .unwrap();
     let opened = bed.open("修登录页").await;
     let notes = target_notes(&bed).await;
     bed.manager.tool_policy().set_allow_all(B, true).unwrap();
