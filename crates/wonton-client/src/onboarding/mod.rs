@@ -199,9 +199,9 @@ impl OnboardingLink {
         self.refresh_impl(false);
     }
 
-    /// 本地重置（重看引导）后的那一趟。重置不写服务器，它是之后唯一取资料和服务商的请求；插件变化触发的
-    /// 静默刷新（只取 onboarding）可能后发先至，把这趟按 revision 判旧——onboarding 照旧让给更新的那份，
-    /// 资料、服务商和错误却没有更新的可让，必须落地，否则重看的每一步都没有现值可显示。
+    /// 本地重置（重看引导）后的那趟和普通刷新一样，完整取到的资料、模型设置和错误必须落地。
+    /// 插件变化触发的静默刷新只更新 onboarding，可能先一步增加 revision；它不能让这趟已取到的详情失效。
+    /// 重置后的失败仍由 `after_reset` 单独处理，因为那是之后唯一会取资料和模型设置的请求。
     pub(super) fn refresh_after_local_reset(self: &Arc<Self>) {
         self.refresh_impl(true);
     }
@@ -255,7 +255,7 @@ impl OnboardingLink {
             if !link.operation_is_current(generation, operation) {
                 return;
             }
-            link.received(onboarding, details, revision, after_reset);
+            link.received(onboarding, details, revision);
         });
     }
 
@@ -267,7 +267,6 @@ impl OnboardingLink {
             Result<ModelSettings, ModelSettingsProblem>,
         )>,
         revision: u64,
-        after_reset: bool,
     ) {
         {
             let mut state = lock(&self.state);
@@ -288,9 +287,8 @@ impl OnboardingLink {
                 state.onboarding = Some(onboarding);
                 state.revision += 1;
             }
-            if (current || after_reset)
-                && let Some((owner, model_settings)) = details
-            {
+            // 静默刷新只更新 onboarding；完整刷新已取到的详情仍是这趟请求的结果。
+            if let Some((owner, model_settings)) = details {
                 match owner {
                     Ok(owner) => state.owner = Some(owner),
                     Err(problem) => {

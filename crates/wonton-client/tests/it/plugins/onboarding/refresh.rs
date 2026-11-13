@@ -301,3 +301,41 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
         "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
     );
 }
+
+#[tokio::test]
+async fn a_silent_refresh_does_not_drop_details_from_a_manual_refresh() {
+    let rig = flow_rig(onboarding("profile")).await;
+    rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
+        .await;
+    act(&rig, Action::SkipOnboardingStep);
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Model).await;
+
+    let settings_gets = rig.core.seen(&Method::GET, MODEL_SETTINGS).len();
+    rig.core.hold(Method::GET, MODEL_SETTINGS);
+    rig.core.set_model_settings(model_settings(true));
+    act(&rig, Action::RefreshOnboarding);
+    wait_requests(&rig, Method::GET, MODEL_SETTINGS, settings_gets + 1).await;
+
+    let manual_onboarding_gets = rig.core.seen(&Method::GET, ONBOARDING).len();
+    rig.core.hold(Method::GET, ONBOARDING);
+    rig.core.set_onboarding(install_state("model", true));
+    change_installed(&rig, "app.photos");
+    wait_requests(&rig, Method::GET, ONBOARDING, manual_onboarding_gets + 1).await;
+    rig.core.release(Method::GET, ONBOARDING);
+    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .await;
+
+    rig.core.release(Method::GET, MODEL_SETTINGS);
+    let view = rig
+        .wait_onboarding(|view| {
+            !view.loading
+                && view.model.has_configured_models
+                && view.model.choice == Some(wonton_client::OnboardingModelChoice::Current)
+        })
+        .await;
+    assert_eq!(
+        view.model.settings.unwrap().web_url,
+        "https://example.invalid/models"
+    );
+}
