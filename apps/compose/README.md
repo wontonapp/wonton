@@ -136,6 +136,8 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 
 链接格式遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)，只由核心 `appLinkUrl` / `parseAppLink`
 编解码。`androidApp/.../MainActivity.kt` 接收 VIEW Intent，`shared/.../ui/AppNavigation.kt` 消费一次并打开页面。
+`wonton://tab/apps` 和侧边栏“全部”都发 `OpenPage(Apps)`，网格是否打开由核心 `PagesViewModel.showsApps` 决定；
+壳只保留网格内的商店、详情导航路径，不另存显示开关。返回、成功打开聊天或插件页由核心收起网格。
 未配对或仍在引导时忽略导航；已配对的冷启动等首次状态恢复后再决定。扫码、粘贴与 Debug 配对仍交给 `PairHome`。
 
 系统分享进云吞遵循 [ADR-0097](../../docs/adr/0097-share-in.md)：`MainActivity` 接 `ACTION_SEND`、`ACTION_SEND_MULTIPLE`，

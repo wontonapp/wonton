@@ -65,6 +65,8 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 
 快捷指令、Siri 和 Spotlight 的入口在 `Wonton/Intents/`，共用 App 启动时创建的核心和导航模型。
 `AppNavigation` 与 `MainView+Navigation` 接收系统链接；链接编解码遵循 [ADR-0041](../../docs/adr/0041-app-links-and-shortcuts.md)。
+`wonton://tab/apps` 和侧边栏“全部”都发 `OpenPage(Apps)`，网格是否打开由核心 `PagesViewModel.showsApps` 决定；
+壳只保留网格内的商店、详情导航路径，不另存显示开关。返回、成功打开聊天或插件页由核心收起网格。
 未配对或引导未完成时忽略导航链接，带文字的“问 Bot”明确向 Siri 报错，不发送消息；配对链接的确认边界见
 [ADR-0009](../../docs/adr/0009-identity-pairing-sso.md#接口扫码配对m1)。扫码和粘贴仍走 `PairingView`。
 已配对设备冷启动时先等核心恢复引导状态，再判断是否导航；“问 Bot”在核心接受操作后打开私聊，

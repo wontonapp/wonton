@@ -8,6 +8,7 @@ impl PagesLink {
         self.runtime_change(|state, plugins| {
             if state.root_is(&tab) || tab == TabRef::Apps {
                 state.stack.clear();
+                state.shows_apps = state.paired && tab == TabRef::Apps;
                 return Ok(());
             }
             if !page_available(&tab, plugins) && !matches!(tab, TabRef::Plugin { .. }) {
@@ -21,6 +22,7 @@ impl PagesLink {
                 }
                 Err(error) => return Err(error),
             };
+            state.shows_apps = false;
             if state.stack.last().is_some_and(|open| open.tab == tab) {
                 return Ok(());
             }
@@ -33,6 +35,10 @@ impl PagesLink {
     /// 关掉当前页。
     pub(super) fn close_page(&self) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
+            if state.shows_apps {
+                state.shows_apps = false;
+                return Ok(());
+            }
             if state.stack.pop().is_none() {
                 return Err(invalid(&l10n!(
                     CATALOG,

@@ -102,6 +102,7 @@ impl Rig {
                 problem: None,
                 stack: Vec::new(),
                 paired: true,
+                shows_apps: false,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),

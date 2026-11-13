@@ -67,6 +67,7 @@ struct PagesState {
     stack: Vec<StoredItem>,
     /// 配上了服务器：根页面是聊天；没配对时根是应用网格页（配对页在它上面）。
     paired: bool,
+    shows_apps: bool,
     /// 加载失败和重载计数都按页面实例记：同一页面在栈里和面板里是两份（ADR-0052）。
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
@@ -193,6 +194,7 @@ impl PagesLink {
             problem,
             stack: Vec::new(),
             paired: home_view.server_id.is_some(),
+            shows_apps: false,
             failures: HashMap::new(),
             reloads: HashMap::new(),
             uninstalled: Vec::new(),

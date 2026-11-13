@@ -128,7 +128,7 @@ private fun AppContent(
     val shown = pages.current
     // 栈顶是插件网页时整页归网页；其余都是原生的（聊天根、应用网格）。设置盖在什么上面都算原生。
     val opened = view.stack.lastOrNull()
-    val pluginShown = opened != null && !opened.tab.isNativeRoot()
+    val pluginShown = !view.showsApps && opened != null && !opened.tab.isNativeRoot()
     val native = !pluginShown || nav.settingsOverlay
     val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
@@ -145,8 +145,8 @@ private fun AppContent(
     val onDraft: (String) -> Unit = { text -> draft.text = text; pages.send(Action.OpenPage(TabRef.Chat)) }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
-    val panelActive = !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
-        !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
+    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
+        !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
     } else null
@@ -155,6 +155,7 @@ private fun AppContent(
     }
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
     val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
+    BackHandler(enabled = view.showsApps) { nav.closeApps() }
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
         WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
             val page: @Composable () -> Unit = {
@@ -205,7 +206,6 @@ private fun AppContent(
     }
     if (panel != null && panel.editing) ChatPanelEditor(panel, pages) { panel.editing = false }
     BackHandler(enabled = showsSidebar && !expanded) { showsSidebar = false }
-    BackHandler(enabled = nav.appsPage != null) { nav.closeApps() }
     TabNotices(pages)
 }
 
@@ -244,7 +244,8 @@ private fun NativeTab(
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
-        nav.appsPage != null || home.status is HomeStatus.NotConfigured -> HomeRoute(
+        nav.appsPage != null || pages.viewModel.showsApps || pages.current == TabRef.Apps ||
+            home.status is HomeStatus.NotConfigured -> HomeRoute(
             pages.core, home, pages.plugins, nav.plugins, nav.appsPage ?: HomePage.LAUNCHER,
             { nav.appsPage = it },
             chat.pendingConfirmations, nav::openCardTarget,

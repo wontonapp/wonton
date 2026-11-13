@@ -93,6 +93,10 @@ pub enum TabRef {
 pub struct PagesViewModel {
     /// 不在栈里时露出来的那一页：配对后是聊天，没配对时是应用网格页（配对页也在它上面）。
     pub root: TabRef,
+    /// 配对后的应用网格覆盖层；打开应用或聊天时收起，不改变根页面。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub shows_apps: bool,
     /// 打开着的页面，从底到顶；空就是根页面。最后一个元素是当前页。
     pub stack: Vec<OpenPage>,
     /// 刚被卸载、已从我的应用移除的插件的标题，提示一次，见
@@ -357,6 +361,7 @@ mod tests {
         }];
         round_trip(PagesViewModel {
             root: TabRef::Chat,
+            shows_apps: true,
             stack,
             uninstalled: vec!["相册".into()],
             sync_stale: true,

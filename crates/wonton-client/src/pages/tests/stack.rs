@@ -188,3 +188,46 @@ async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
     let nothing = restarted.dispatch(Action::ClosePage).unwrap_err();
     assert!(matches!(nothing, CoreError::InvalidInput { .. }));
 }
+
+#[tokio::test]
+async fn apps_grid_stays_on_rejection_and_closes_when_a_page_opens() {
+    let rig = Rig::new();
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    let rejected = rig.tabs.dispatch(Action::OpenPage {
+        tab: url_tab("http://example.com/report"),
+    });
+    assert!(matches!(rejected, Err(CoreError::InvalidInput { .. })));
+    assert!(rig.view().shows_apps);
+
+    rig.open(page_tab());
+    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().stack.last().unwrap().tab, page_tab());
+    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    assert_eq!(rig.view().root, TabRef::Chat);
+    assert!(rig.view().stack.is_empty());
+    assert!(!rig.view().shows_apps);
+}
+
+#[tokio::test]
+async fn apps_grid_is_not_carried_between_servers_or_into_pairing() {
+    let rig = Rig::new();
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    rig.home.send_replace(home("new-server"));
+    rig.tabs.recompute();
+    assert_eq!(rig.view().root, TabRef::Chat);
+    assert!(!rig.view().shows_apps);
+
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    let mut unpaired = home("new-server");
+    unpaired.server_id = None;
+    unpaired.status = HomeStatus::NotConfigured;
+    rig.home.send_replace(unpaired);
+    rig.tabs.recompute();
+    assert_eq!(rig.view().root, TabRef::Apps);
+    assert!(!rig.view().shows_apps);
+    rig.open(TabRef::Apps);
+    assert!(!rig.view().shows_apps);
+}
