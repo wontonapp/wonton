@@ -210,6 +210,7 @@ internal fun previewInstalled() = InstalledPlugins(
             enabledRootPermissions = emptyList(),
             installProgress = null,
             tunnelPorts = emptyList(),
+            matrixWidget = null,
         ),
         InstalledPlugin(
             id = "app.neko",
@@ -239,6 +240,7 @@ internal fun previewInstalled() = InstalledPlugins(
             enabledRootPermissions = emptyList(),
             installProgress = null,
             tunnelPorts = emptyList(),
+            matrixWidget = null,
         ),
     ),
     upgradeCheck = null,
