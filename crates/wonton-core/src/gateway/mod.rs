@@ -34,6 +34,7 @@ mod bot_profile;
 mod bots;
 mod capabilities;
 mod capability_settings;
+mod chain_mentions;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -706,6 +707,8 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
 /// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
 /// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
+mod agent_chains_test_support;
+#[cfg(test)]
 mod agent_chains_tests;
 #[cfg(test)]
 mod bot_activity_tests;
@@ -719,6 +722,8 @@ mod bots_tests;
 mod capabilities_tests;
 #[cfg(test)]
 mod capability_uninstall_tests;
+#[cfg(test)]
+mod chain_mentions_tests;
 #[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]

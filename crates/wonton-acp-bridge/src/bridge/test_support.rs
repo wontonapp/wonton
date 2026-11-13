@@ -1,12 +1,13 @@
-//! 桥的行为测试用的替身：内存房间记录所有 Matrix 侧副作用，假卡片接口收下确认请求
-//! 等测试回答，ACP 侧用 `acp::test_support::FakeAgent` 的 Manual 场景驱动。
+//! 桥的行为测试用的替身：内存房间记录所有 Matrix 侧副作用，假核心收确认卡片、
+//! 调用链报告和出箱（`/agent/permissions`、`/agent/chains`、`/agent/outbox`），
+//! ACP 侧用 `acp::test_support::FakeAgent` 的 Manual 场景驱动。
 
 use std::{
     collections::{HashMap, VecDeque},
     future::Future,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::Duration,
 };
@@ -16,10 +17,11 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpListener,
-    sync::{mpsc, oneshot},
+    sync::{mpsc, oneshot, watch},
     task::JoinHandle,
 };
 use wonton_matrix::{Message, MessageBody, OwnedUserId, SendStatus};
+use wonton_protocol::OutboxItem;
 
 use crate::error::Result;
 use crate::room::Room;
@@ -52,6 +54,10 @@ pub enum Effect {
     RunStatus {
         event_id: String,
         thread: Option<String>,
+        content: Value,
+    },
+    /// 一条旁聊结果行（ADR-0093），内容原样。
+    SideChatResult {
         content: Value,
     },
     /// 对状态消息的编辑（`m.replace`），内容原样。
@@ -135,6 +141,7 @@ impl FakeRoom {
                 | Effect::Redact(_)
                 | Effect::State(_)
                 | Effect::RunStatus { .. }
+                | Effect::SideChatResult { .. }
                 | Effect::ReplaceRunStatus { .. } => None,
             })
             .collect()
@@ -280,6 +287,11 @@ impl Room for FakeRoom {
         Ok(())
     }
 
+    async fn send_side_chat_result(&self, content: Value) -> Result<()> {
+        self.record(Effect::SideChatResult { content });
+        Ok(())
+    }
+
     async fn send_run_status(&self, content: Value) -> Result<String> {
         let mut state = self.recorded.lock().unwrap();
         state.statuses += 1;
@@ -362,28 +374,68 @@ impl Room for FakeRoom {
     }
 }
 
-/// 假的核心确认接口：收下请求等测试回答。
-pub struct FakeCards {
+/// 假的核心：确认卡片（`/agent/permissions`）、调用链（`/agent/chains`）和出箱
+/// （`/agent/outbox`）都在 `WONTON_MCP_URL` 这一个地址后面，和真核心同一道门。
+pub struct FakeCore {
     url: String,
+    /// 确认卡片的请求体（按到达顺序）。
     requests: Arc<Mutex<Vec<Value>>>,
+    /// 调用链收到的报告体（Start/End，按到达顺序）。
+    chain_reports: Arc<Mutex<Vec<Value>>>,
+    /// 出箱收到的回报体（按到达顺序）。
+    receipts: Arc<Mutex<Vec<Value>>>,
+    /// 等回答的确认卡片；测试按先来后到回答。
     answers: Arc<Mutex<VecDeque<oneshot::Sender<Value>>>>,
+    /// 下一次调用链报告要回的（状态码，错误体）；空了就回默认的放行。
+    chain_replies: Arc<Mutex<VecDeque<(u16, Value)>>>,
+    /// 等取走的出箱项；`feed` 推进来，长轮询取走。
+    outbox: Arc<Mutex<VecDeque<Value>>>,
+    /// 出箱的版本号：推进项就加一，长轮询挂在它上面（和核心的 `Outbox` 同一个做法）。
+    outbox_revision: Arc<watch::Sender<u64>>,
+    /// 等回答时对端断开的确认长轮询数（停链取消要断开它们）。
+    dropped_permissions: Arc<AtomicUsize>,
     task: JoinHandle<()>,
 }
 
-impl FakeCards {
+impl FakeCore {
     pub async fn start() -> Self {
         let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
             .unwrap();
         let address = listener.local_addr().unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
+        let chain_reports = Arc::new(Mutex::new(Vec::new()));
+        let receipts = Arc::new(Mutex::new(Vec::new()));
         let answers: Arc<Mutex<VecDeque<oneshot::Sender<Value>>>> =
             Arc::new(Mutex::new(VecDeque::new()));
-        let task = tokio::spawn(serve_cards(listener, requests.clone(), answers.clone()));
+        let chain_replies = Arc::new(Mutex::new(VecDeque::new()));
+        let outbox = Arc::new(Mutex::new(VecDeque::new()));
+        let outbox_revision = Arc::new(watch::channel(0).0);
+        let dropped_permissions = Arc::new(AtomicUsize::new(0));
+        let chain_counter = Arc::new(AtomicU64::new(0));
+        let task = tokio::spawn(serve_core(
+            listener,
+            requests.clone(),
+            chain_reports.clone(),
+            receipts.clone(),
+            answers.clone(),
+            dropped_permissions.clone(),
+            chain_replies.clone(),
+            outbox.clone(),
+            outbox_revision.clone(),
+            chain_counter.clone(),
+        ));
         Self {
-            url: format!("http://{address}/mcp"),
+            // 带总线令牌的地址：桥从它推导确认、调用链和出箱的端点。
+            url: format!("http://{address}/mcp/test-bus"),
             requests,
+            chain_reports,
+            receipts,
             answers,
+            chain_replies,
+            outbox,
+            outbox_revision,
+            dropped_permissions,
             task,
         }
     }
@@ -394,6 +446,15 @@ impl FakeCards {
 
     pub fn requests(&self) -> Vec<Value> {
         self.requests.lock().unwrap().clone()
+    }
+
+    /// 调用链收到的报告体（Start/End，按到达顺序）。
+    pub fn chain_reports(&self) -> Vec<Value> {
+        self.chain_reports.lock().unwrap().clone()
+    }
+
+    pub fn receipts(&self) -> Vec<Value> {
+        self.receipts.lock().unwrap().clone()
     }
 
     /// 回答最近一个还没答的卡片。
@@ -412,63 +473,233 @@ impl FakeCards {
         self.answers.lock().unwrap().len()
     }
 
+    /// 等回答时被对端断开的确认长轮询数。
+    pub fn dropped_permissions(&self) -> usize {
+        self.dropped_permissions.load(Ordering::SeqCst)
+    }
+
+    /// 下一次调用链报告回这个（状态码，体）；体是 [`ChainError`] 的 JSON 或任意错误。
+    pub fn push_chain_reply(&self, status: u16, body: Value) {
+        self.chain_replies.lock().unwrap().push_back((status, body));
+    }
+
+    /// 给出箱排一项，长轮询会取走它。
+    pub fn feed(&self, item: OutboxItem) {
+        self.feed_raw(serde_json::to_value(item).unwrap());
+    }
+
+    /// 给出箱排一项原始 JSON（不认识的项的测试用）。
+    pub fn feed_raw(&self, item: Value) {
+        self.outbox.lock().unwrap().push_back(item);
+        self.outbox_revision.send_modify(|revision| *revision += 1);
+    }
+
     pub fn finish(&self) {
         self.task.abort();
     }
 }
 
-async fn serve_cards(
+/// 一次 HTTP 请求：方法、路径、体。测试替身只看这些。
+struct RawRequest {
+    method: String,
+    path: String,
+    body: Vec<u8>,
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn serve_core(
     listener: TcpListener,
-    requests: Arc<Mutex<Vec<Value>>>,
+    card_requests: Arc<Mutex<Vec<Value>>>,
+    chain_reports: Arc<Mutex<Vec<Value>>>,
+    receipts: Arc<Mutex<Vec<Value>>>,
     answers: Arc<Mutex<VecDeque<oneshot::Sender<Value>>>>,
+    dropped: Arc<AtomicUsize>,
+    chain_replies: Arc<Mutex<VecDeque<(u16, Value)>>>,
+    outbox: Arc<Mutex<VecDeque<Value>>>,
+    outbox_revision: Arc<watch::Sender<u64>>,
+    chain_counter: Arc<AtomicU64>,
 ) {
     loop {
-        let Ok((mut stream, _)) = listener.accept().await else {
+        let Ok((stream, _)) = listener.accept().await else {
             return;
         };
-        let requests = requests.clone();
-        let answers = answers.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(&mut stream);
-            let mut content_length = 0;
-            let mut request_line = String::new();
-            if reader.read_line(&mut request_line).await.is_err() {
-                return;
-            }
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line).await.is_err() {
-                    return;
-                }
-                if line == "\r\n" || line.is_empty() {
-                    break;
-                }
-                if let Some((name, value)) = line.split_once(':')
-                    && name.eq_ignore_ascii_case("content-length")
-                {
-                    content_length = value.trim().parse().unwrap_or(0);
-                }
-            }
-            let mut body = vec![0; content_length];
-            if reader.read_exact(&mut body).await.is_err() {
-                return;
-            }
-            if let Ok(request) = serde_json::from_slice::<Value>(&body) {
-                requests.lock().unwrap().push(request);
-            }
-            let (sender, receiver) = oneshot::channel();
-            answers.lock().unwrap().push_back(sender);
-            let Ok(answer) = receiver.await else {
-                return;
-            };
-            let answer = answer.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{answer}",
-                answer.len()
-            );
-            let _ = stream.write_all(response.as_bytes()).await;
-        });
+        tokio::spawn(handle_connection(
+            stream,
+            card_requests.clone(),
+            chain_reports.clone(),
+            receipts.clone(),
+            answers.clone(),
+            dropped.clone(),
+            chain_replies.clone(),
+            outbox.clone(),
+            outbox_revision.clone(),
+            chain_counter.clone(),
+        ));
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_connection(
+    stream: tokio::net::TcpStream,
+    card_requests: Arc<Mutex<Vec<Value>>>,
+    chain_reports: Arc<Mutex<Vec<Value>>>,
+    receipts: Arc<Mutex<Vec<Value>>>,
+    answers: Arc<Mutex<VecDeque<oneshot::Sender<Value>>>>,
+    dropped: Arc<AtomicUsize>,
+    chain_replies: Arc<Mutex<VecDeque<(u16, Value)>>>,
+    outbox: Arc<Mutex<VecDeque<Value>>>,
+    outbox_revision: Arc<watch::Sender<u64>>,
+    chain_counter: Arc<AtomicU64>,
+) {
+    let Some((mut stream, request)) = read_request(stream).await else {
+        return;
+    };
+    if request.path.starts_with("/agent/chains") {
+        serve_chains(
+            &request,
+            &chain_reports,
+            &chain_replies,
+            &chain_counter,
+            &mut stream,
+        )
+        .await;
+    } else if request.path.starts_with("/agent/outbox") && request.method == "GET" {
+        serve_outbox(&outbox, &outbox_revision, &mut stream).await;
+    } else if request.path.starts_with("/agent/outbox") {
+        if let Ok(receipt) = serde_json::from_slice::<Value>(&request.body) {
+            receipts.lock().unwrap().push(receipt);
+        }
+        respond(&mut stream, 200, "{}").await;
+    } else {
+        serve_permission(&request, &card_requests, &answers, &dropped, stream).await;
+    }
+}
+
+async fn serve_chains(
+    request: &RawRequest,
+    reports: &Mutex<Vec<Value>>,
+    replies: &Mutex<VecDeque<(u16, Value)>>,
+    counter: &AtomicU64,
+    stream: &mut tokio::net::TcpStream,
+) {
+    if let Ok(report) = serde_json::from_slice::<Value>(&request.body) {
+        reports.lock().unwrap().push(report);
+    }
+    let reply = replies.lock().unwrap().pop_front();
+    match reply {
+        Some((status, body)) => {
+            respond(stream, status, &body.to_string()).await;
+        }
+        None => {
+            let chain = format!("chain-{}", counter.fetch_add(1, Ordering::SeqCst) + 1);
+            let grant = serde_json::json!({"chain": chain, "layer": 1});
+            respond(stream, 200, &grant.to_string()).await;
+        }
+    }
+}
+
+async fn serve_outbox(
+    outbox: &Mutex<VecDeque<Value>>,
+    revision: &watch::Sender<u64>,
+    stream: &mut tokio::net::TcpStream,
+) {
+    // 先订阅再看队列：中间推进来的项不会漏（和核心的长轮询同一个顺序）。
+    let mut watcher = revision.subscribe();
+    let body = loop {
+        if let Some(item) = outbox.lock().unwrap().pop_front() {
+            break item.to_string();
+        }
+        // 长轮询：推进来就给，挂到超时给 null（和核心的 AGENT_OUTBOX_WAIT_SECS 一个意思）。
+        match tokio::time::timeout(
+            Duration::from_secs(wonton_protocol::AGENT_OUTBOX_WAIT_SECS),
+            watcher.changed(),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            _ => break "null".to_owned(),
+        }
+    };
+    respond(stream, 200, &body).await;
+}
+
+async fn serve_permission(
+    request: &RawRequest,
+    records: &Mutex<Vec<Value>>,
+    answers: &Mutex<VecDeque<oneshot::Sender<Value>>>,
+    dropped: &AtomicUsize,
+    stream: tokio::net::TcpStream,
+) {
+    if let Ok(request) = serde_json::from_slice::<Value>(&request.body) {
+        records.lock().unwrap().push(request);
+    }
+    let (sender, receiver) = oneshot::channel();
+    answers.lock().unwrap().push_back(sender);
+    // 读、写各拿一半：等断开和写响应要交替进行，同一份流借不来。
+    let (mut read_half, mut write_half) = tokio::io::split(stream);
+    let mut eof_buf = [0u8; 1];
+    tokio::select! {
+        answer = receiver => {
+            if let Ok(answer) = answer {
+                respond(&mut write_half, 200, &answer.to_string()).await;
+            }
+        }
+        eof = read_half.read(&mut eof_buf) => {
+            // 客户端在等回答时断开（桥取消了未决的权限请求）：记下来，不再等。
+            if matches!(eof, Ok(0) | Err(_)) {
+                dropped.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }
+}
+
+/// 读一条请求：一行方法行、头（只看 Content-Length）、体。返回流原样，调用方还要写响应。
+async fn read_request(
+    stream: tokio::net::TcpStream,
+) -> Option<(tokio::net::TcpStream, RawRequest)> {
+    let mut reader = BufReader::new(stream);
+    let mut request_line = String::new();
+    reader.read_line(&mut request_line).await.ok()?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next()?.to_owned();
+    let path = parts.next()?.to_owned();
+    let mut content_length = 0usize;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).await.is_err() {
+            return None;
+        }
+        if line == "\r\n" || line.is_empty() {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            content_length = value.trim().parse().unwrap_or(0);
+        }
+    }
+    let mut body = vec![0; content_length];
+    if reader.read_exact(&mut body).await.is_err() {
+        return None;
+    }
+    let stream = reader.into_inner();
+    Some((stream, RawRequest { method, path, body }))
+}
+
+async fn respond<W: tokio::io::AsyncWrite + Unpin>(stream: &mut W, status: u16, body: &str) {
+    let reason = match status {
+        403 => "Forbidden",
+        409 => "Conflict",
+        429 => "Too Many Requests",
+        500 => "Internal Server Error",
+        _ => "OK",
+    };
+    let response = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+    let _ = stream.flush().await;
 }
 
 /// 主人发的一条消息；`thread_root` 是它所属话题的根。

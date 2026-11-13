@@ -4,6 +4,7 @@
 mod attachments;
 mod busy;
 mod cards;
+mod chain;
 mod downtime;
 mod downtime_real;
 mod limits;
@@ -11,6 +12,7 @@ mod mode;
 mod refused;
 mod restore;
 mod run_status;
+mod side_chats;
 mod tasks;
 mod topics;
 mod undecryptable;
@@ -22,7 +24,7 @@ use tempfile::TempDir;
 use tokio::task::JoinHandle;
 use wonton_matrix::{Message, OwnedUserId};
 
-use super::test_support::{FakeCards, FakeRoom, owner_message, owner_message_at, wait_until};
+use super::test_support::{FakeCore, FakeRoom, owner_message, owner_message_at, wait_until};
 use super::*;
 use crate::acp::AcpClient;
 use crate::acp::test_support::{FakeAgent, Scenario, bounded};
@@ -38,11 +40,13 @@ struct Harness {
     _dir: TempDir,
     room: Arc<FakeRoom>,
     agent: FakeAgent,
-    cards: FakeCards,
+    core: FakeCore,
     config: Config,
     acp: Arc<AcpClient>,
     store: Arc<SessionStore>,
     task: Option<JoinHandle<BridgeResult<()>>>,
+    /// 出箱的长轮询任务；停链取消从这里来。
+    feed: Option<JoinHandle<()>>,
 }
 
 impl Harness {
@@ -72,7 +76,7 @@ impl Harness {
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let agent = FakeAgent::start(scenario).await;
-        let cards = FakeCards::start().await;
+        let core = FakeCore::start().await;
         let mut config = Config {
             homeserver: "http://example.org".into(),
             access_token: "token".into(),
@@ -83,7 +87,7 @@ impl Harness {
             bridge_data: dir.path().join("bridge"),
             socket: agent.socket.clone(),
             workspace: "/workspace".into(),
-            mcp_url: cards.url(),
+            mcp_url: core.url(),
             mode: "plan".into(),
             topic_mode: Some("workspace-write".into()),
             health: crate::health::Files::in_dir(dir.path()),
@@ -121,11 +125,12 @@ impl Harness {
             _dir: dir,
             room,
             agent,
-            cards,
+            core,
             config,
             acp,
             store,
             task: None,
+            feed: None,
         };
         harness.spawn_loop().await;
         harness
@@ -144,7 +149,15 @@ impl Harness {
             ),
             bot: BOT.parse().unwrap(),
             locales: Arc::new(Locales::new(Origin::Fixed, BOT.parse().unwrap())),
+            chains: crate::bridge::chain::Client::new(
+                &self.config.mcp_url,
+                &self.config.access_token,
+            )
+            .unwrap(),
+            pending_asks: permissions::PendingAsks::default(),
         };
+        // 出箱和房间循环并行（生产里 run() 就这么起）。
+        self.feed = Some(tokio::spawn(crate::core_feed::run(bridge.clone())));
         let room = self.room.clone();
         let login = Arc::new(LoginService {
             flow: tokio::sync::Mutex::new(LoginFlow::new().0),
@@ -217,7 +230,10 @@ impl Harness {
         if let Some(task) = self.task {
             task.abort();
         }
+        if let Some(feed) = self.feed {
+            feed.abort();
+        }
         self.agent.finish().await;
-        self.cards.finish();
+        self.core.finish();
     }
 }

@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 use wonton_core::plugin::package_files::sha256_hex;
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -7,7 +8,7 @@ const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 fn compose(id: &str, extra: &[&str]) -> String {
     let extra: String = extra.iter().map(|line| format!("    {line}\n")).collect();
     format!(
-        "services:\n  web:\n    image: nginx\n{extra}x-wonton:\n  spec: '0.4'\n  id: app.{id}\n  version: 1.0.0\n  kind: app\n  title: {{en: {id}}}\n  description: {{en: {id}}}\n  permissions: []\n"
+        "services:\n  web:\n    image: nginx\n{extra}x-wonton:\n  spec: '0.4'\n  id: app.{id}\n  version: 1.0.0\n  kind: app\n  title: {{en: {id}}}\n  description: {{en: {id}}}\n  license: MIT\n  permissions: []\n"
     )
 }
 
@@ -23,6 +24,7 @@ fn entry_with_compose(source: &str, compose: String) -> serde_json::Value {
         "commit": COMMIT,
         "files": { COMPOSE_FILE: sha256_hex(compose.as_bytes()) },
         "compose": compose,
+        "license": "MIT",
     })
 }
 
@@ -80,6 +82,33 @@ fn unreadable_entries_fail_too() {
     assert!(!passed);
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert!(problems[0].contains("github:acme/bad"), "{problems:?}");
+}
+
+/// 条目没带 license 时照常通过：线上索引还没有这些字段，缺不缺由生成时的
+/// `plugin check --official` 管，这里只认写了的内容。
+#[test]
+fn an_entry_without_a_license_still_passes_the_index() {
+    let mut bare = entry("bare", "bare", &[]);
+    bare.as_object_mut().unwrap().remove("license");
+    let compose = bare["compose"]
+        .as_str()
+        .unwrap()
+        .replace("  license: MIT\n", "");
+    bare["files"][COMPOSE_FILE] = json!(sha256_hex(compose.as_bytes()));
+    bare["compose"] = json!(compose);
+    let (passed, problems) = checked(vec![bare, entry("fine", "fine", &[])]);
+    assert!(passed, "{problems:?}");
+}
+
+/// 索引里记的许可证和清单对不上：这一项读不懂，列出原因。
+#[test]
+fn a_license_that_does_not_match_the_manifest_fails_the_index() {
+    let mut entry = entry("licensed", "licensed", &[]);
+    entry["license"] = json!("AGPL-3.0-only");
+    let (passed, problems) = checked(vec![entry]);
+    assert!(!passed);
+    assert!(problems[0].contains("license"), "{problems:?}");
+    assert!(problems[0].contains("AGPL-3.0-only"), "{problems:?}");
 }
 
 /// 同一仓库里两个子目录的最后一段相同：tag 前缀会撞，`check-index` 挡下（PR #235 核对意见 ②）。
