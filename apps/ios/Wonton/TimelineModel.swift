@@ -52,7 +52,10 @@ final class TimelineModel {
             failure = error.problem
             return false
         }
+        defer { subscription.cancel() }
+        guard !Task.isCancelled else { return false }
         for await update in subscription.updates() {
+            guard !Task.isCancelled else { break }
             // 翻页由房间的锚点恢复处理；仅保留不改变开头的实时追加和编辑。
             let prepends = update.diffs.contains { diff in
                 switch diff {

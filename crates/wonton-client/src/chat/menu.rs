@@ -244,7 +244,11 @@ impl Outbox {
         anchor: Option<String>,
     ) -> Result<(), ()> {
         let scroll_to_bottom = lock(&self.menus).apply(&diffs);
-        let room_view = self.room_view.borrow().clone();
+        let room_view = self
+            .room_view
+            .borrow()
+            .clone()
+            .filter(|view| view.room_id == self.room_id);
         let (panel, panel_selected, entry_blocked) = match room_view {
             Some(view) => (view.panel.clone(), view.selected.clone(), view.blocked),
             None => (Vec::new(), None, false),

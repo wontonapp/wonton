@@ -112,6 +112,7 @@ pub(crate) struct ChatLink {
     room_panel_out: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
     /// 订阅着的时间线：同一时间只开一个房间，主对话和一个旁聊可以同时开着（[`target`]）。
     open: Mutex<target::OpenTimelines>,
+    opening: tokio::sync::Mutex<()>,
     /// 各房间的旁聊支持声明（ADR-0093 §1），按信任规则核对过。
     side_chat_support: Arc<side_chat::Support>,
     /// 这台设备回答确认卡片的进展，时间线的订阅跟着它更新卡片。
@@ -294,6 +295,7 @@ impl ChatLink {
             session_out,
             room_panel_out,
             open: Mutex::default(),
+            opening: tokio::sync::Mutex::new(()),
             side_chat_support: Arc::default(),
             answers: watch::Sender::default(),
             confirmations: reuse(
@@ -497,6 +499,30 @@ impl ChatLink {
         Ok(())
     }
 
+    pub(crate) fn begin_timeline(
+        self: &Arc<Self>,
+        target: &TimelineTarget,
+    ) -> Result<target::TimelineOpening, CoreError> {
+        let key = TimelineKey::parse(target)?;
+        let mut open = lock(&self.open);
+        let id = open.begin(&key);
+        self.room_panel_out.send_if_modified(|current| {
+            if current
+                .as_ref()
+                .is_some_and(|(room, _)| room == &key.room_id)
+            {
+                return false;
+            }
+            *current = None;
+            true
+        });
+        Ok(target::TimelineOpening {
+            key,
+            id,
+            chat: Arc::downgrade(self),
+        })
+    }
+
     /// 订阅一条时间线（主对话或旁聊）。打开另一个房间会关掉前一个房间的订阅；同一个房间里主对话和一个旁聊
     /// 可以同时开着。
     ///
@@ -504,10 +530,15 @@ impl ChatLink {
     /// 都带上当前值；变了也发一批（增量为空）。
     pub(crate) async fn open_timeline(
         self: &Arc<Self>,
-        target: &TimelineTarget,
+        opening: target::TimelineOpening,
         room_view: watch::Receiver<Option<Arc<crate::pages::RoomPanelView>>>,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
-        let key = TimelineKey::parse(target)?;
+        let key = opening.key.clone();
+        // Matrix 的 opened 订阅是单槽；旧请求的副作用必须先结束，才能让新房间接管。
+        let _opening = self.opening.lock().await;
+        if !lock(&self.open).contains_request(opening.id) {
+            return Err(target::not_subscribed(&key));
+        }
         let session = self.current()?;
         let room_id = key.room_id.clone();
         if *self.bots.foreground.borrow() {
@@ -519,7 +550,14 @@ impl ChatLink {
                 .map_err(|e| core_error(&e))?,
         );
         let menus = Arc::new(Mutex::new(menu::Menus::default()));
-        self.publish_room_panel(&session, &room_id).await;
+        let panel = Self::read_room_panel(&session, &room_id).await;
+        if !opening.publish_panel(panel) {
+            return Err(target::not_subscribed(&key));
+        }
+        let mut open = lock(&self.open);
+        if !open.contains_request(opening.id) {
+            return Err(target::not_subscribed(&key));
+        }
         // 进房间时重新核对一次支持声明：Bot 可能是刚连上才写的（ADR-0093 §1）。
         let support = self.side_chat_support.clone();
         support.refresh(&self.runtime, &session, &room_id);
@@ -541,8 +579,9 @@ impl ChatLink {
                 chat: self.view.subscribe(),
                 support,
             },
+            opening,
         );
-        lock(&self.open).insert(target::OpenTimeline {
+        open.insert(target::OpenTimeline {
             key,
             room,
             menus,
@@ -551,11 +590,9 @@ impl ChatLink {
         Ok(subscription)
     }
 
-    /// 读打开着的房间的面板（房间账号数据），交给 tabs 合成给壳的视图。
-    ///
     /// 读不了时按没有面板开：房间照常打开，主人编辑面板时写不进去，那里会报原因。
-    pub(crate) async fn publish_room_panel(&self, session: &Arc<MatrixSession>, room_id: &RoomId) {
-        let panel = match session.room_panel(room_id).await {
+    async fn read_room_panel(session: &Arc<MatrixSession>, room_id: &RoomId) -> RoomPanel {
+        match session.room_panel(room_id).await {
             Ok(content) => content
                 .and_then(|content| serde_json::from_value(content.0.into()).ok())
                 .unwrap_or_default(),
@@ -563,9 +600,7 @@ impl ChatLink {
                 tracing::warn!("could not read the room panel of {room_id}: {error}");
                 RoomPanel::default()
             }
-        };
-        self.room_panel_out
-            .send_replace(Some((room_id.to_owned(), panel)));
+        }
     }
 
     /// 壳报告列表滚到了哪儿：交给这条时间线现在的订阅。
@@ -703,9 +738,12 @@ impl ChatLink {
     async fn forget_current(&self) {
         self.bots.set_session(None);
         self.session_out.send_replace(None);
-        self.room_panel_out.send_replace(None);
+        {
+            let mut open = lock(&self.open);
+            open.clear();
+            self.room_panel_out.send_replace(None);
+        }
         *lock(&self.verification) = None;
-        lock(&self.open).clear();
         self.side_chat_support.clear();
         self.room_order.clear();
         self.sent.send_replace(Vec::new());

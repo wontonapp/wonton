@@ -31,6 +31,7 @@ pub struct TimelineSubscription {
     updates: Mutex<mpsc::UnboundedReceiver<TimelineUpdate>>,
     cancelled: watch::Sender<bool>,
     scroll: watch::Sender<TimelineScroll>,
+    opening: std::sync::Mutex<Option<super::target::TimelineOpening>>,
 }
 
 /// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
@@ -55,7 +56,11 @@ impl TimelineSubscription {
     /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
     /// 决定解不开的消息旁给什么入口。`confirmations` 是这个房间能显示的确认卡片（ADR-0016），出口按
     /// `origin.room_id` 过滤后随每一批带上，变了也发一批空的。
-    pub(crate) fn start(runtime: &Handle, source: TimelineSource) -> Arc<Self> {
+    pub(crate) fn start(
+        runtime: &Handle,
+        source: TimelineSource,
+        opening: super::target::TimelineOpening,
+    ) -> Arc<Self> {
         let TimelineSource {
             room,
             room_id,
@@ -102,6 +107,7 @@ impl TimelineSubscription {
             updates: Mutex::new(receiver),
             cancelled,
             scroll,
+            opening: std::sync::Mutex::new(Some(opening)),
         })
     }
 
@@ -133,8 +139,13 @@ impl TimelineSubscription {
     /// 取消订阅，语义同 `HomeSubscription::cancel`（Swift 的 Task 取消不会传到 Rust）。
     pub fn cancel(&self) {
         self.cancelled.send_replace(true);
+        drop(super::lock(&self.opening).take());
     }
 }
+
+#[cfg(test)]
+#[path = "room_lifecycle_tests.rs"]
+mod room_lifecycle_tests;
 
 /// 每一批随增量带出去的外壳状态：翻页状态、壳报告的滚动位置、未读数。位置只在壳报告到底时变成
 /// [`TimelineScroll::Bottom`]，未读数从那一刻起不再算数（到底了就是 0）。

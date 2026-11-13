@@ -84,9 +84,36 @@ pub(crate) struct OpenTimeline {
 #[derive(Default)]
 pub(crate) struct OpenTimelines {
     open: Vec<OpenTimeline>,
+    next_id: u64,
+    requests: Vec<(u64, TimelineKey)>,
 }
 
 impl OpenTimelines {
+    pub(crate) fn begin(&mut self, key: &TimelineKey) -> u64 {
+        self.requests.retain(|(_, open)| {
+            open.room_id == key.room_id
+                && open != key
+                && (open.thread_root.is_none() || key.thread_root.is_none())
+        });
+        self.open
+            .retain(|open| self.requests.iter().any(|(_, key)| key == &open.key));
+        self.next_id += 1;
+        self.requests.push((self.next_id, key.clone()));
+        self.next_id
+    }
+
+    pub(crate) fn contains_request(&self, id: u64) -> bool {
+        self.requests.iter().any(|(open, _)| *open == id)
+    }
+
+    pub(crate) fn close(&mut self, id: u64) -> bool {
+        if let Some(index) = self.requests.iter().position(|(open, _)| *open == id) {
+            let (_, key) = self.requests.remove(index);
+            self.open.retain(|open| open.key != key);
+        }
+        self.requests.is_empty()
+    }
+
     /// 记下新打开的一条：换了房间时前一个房间的都关掉；同一个房间里换了旁聊时前一个旁聊关掉，主对话留着。
     pub(crate) fn insert(&mut self, timeline: OpenTimeline) {
         let key = timeline.key.clone();
@@ -115,6 +142,40 @@ impl OpenTimelines {
 
     pub(crate) fn clear(&mut self) {
         self.open.clear();
+        self.requests.clear();
+    }
+}
+
+/// 从发起打开到订阅取消共用同一个编号，旧订阅迟到的关闭不能关掉新订阅。
+pub(crate) struct TimelineOpening {
+    pub(crate) key: TimelineKey,
+    pub(crate) id: u64,
+    pub(crate) chat: Weak<super::ChatLink>,
+}
+
+impl TimelineOpening {
+    pub(crate) fn publish_panel(&self, panel: wonton_protocol::RoomPanel) -> bool {
+        let Some(chat) = self.chat.upgrade() else {
+            return false;
+        };
+        let open = super::lock(&chat.open);
+        if !open.contains_request(self.id) {
+            return false;
+        }
+        chat.room_panel_out
+            .send_replace(Some((self.key.room_id.clone(), panel)));
+        true
+    }
+}
+
+impl Drop for TimelineOpening {
+    fn drop(&mut self) {
+        if let Some(chat) = self.chat.upgrade() {
+            let mut open = super::lock(&chat.open);
+            if open.close(self.id) {
+                chat.room_panel_out.send_replace(None);
+            }
+        }
     }
 }
 
