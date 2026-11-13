@@ -519,6 +519,9 @@ pub struct Manifest {
     pub homepage: Option<String>,
     #[serde(default)]
     pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS）：不在 SPDX 列表里的许可证（`LicenseRef-<名字>`）用它给出处。
+    #[serde(default)]
+    pub license_url: Option<String>,
     /// 插件包里的许可和声明文件。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,

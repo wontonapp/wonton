@@ -64,6 +64,12 @@ pub struct IndexEntry {
     pub files: BTreeMap<String, String>,
     /// `docker-compose.yml` 的原文。
     pub compose: String,
+    /// 清单里的 `license`，给不读 compose 的索引使用方；写了就和清单核对，对不上时这一项读不懂。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
+    /// 清单里的 `license_url`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license_url: Option<String>,
 }
 
 impl IndexEntry {
@@ -78,6 +84,8 @@ impl IndexEntry {
                 .map(|(path, data)| (path, sha256_hex(data)))
                 .collect(),
             compose: package.source.clone(),
+            license: package.manifest.license.clone(),
+            license_url: package.manifest.license_url.clone(),
         };
         check(entry.clone(), &[], &Languages::default())?;
         Ok(entry)
@@ -320,6 +328,25 @@ fn check(entry: IndexEntry, before: &[Listed], langs: &Languages) -> Result<List
         ));
     }
     let manifest = PluginPackage::manifest_of(&entry.compose, langs).map_err(|e| e.to_string())?;
+    // 旧索引没有这几项，读得懂；写了就要和清单一致，对不上说明索引过时或被手改过。
+    for (field, listed, written) in [
+        ("license", &entry.license, &manifest.license),
+        ("license_url", &entry.license_url, &manifest.license_url),
+    ] {
+        if listed
+            .as_ref()
+            .is_some_and(|listed| Some(listed) != written.as_ref())
+        {
+            return Err(text(
+                "plugin-settings-store-index-license-mismatch",
+                &[
+                    ("field", field.into()),
+                    ("index", listed.as_deref().unwrap_or("").into()),
+                    ("manifest", written.as_deref().unwrap_or("").into()),
+                ],
+            ));
+        }
+    }
     if manifest.version != entry.version {
         return Err(text(
             "plugin-settings-store-index-version-mismatch",

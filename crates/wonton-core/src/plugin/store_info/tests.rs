@@ -2,6 +2,7 @@ use super::super::InstallError;
 use super::super::package::{PackageError, PluginPackage};
 use super::super::package_files::{MAX_FILE_BYTES, MAX_PACKAGE_BYTES, PackageFiles};
 use super::super::storefront::index::IndexEntry;
+use super::next_spec;
 use crate::l10n::CATALOG;
 
 /// 校验失败的话按 `langs()`（默认英文）里的词条拼出来，测试不再钉住某一种语言的写法。
@@ -53,15 +54,24 @@ fn store_info_parses() {
     assert_eq!(m.screenshots.unwrap().len(), 2);
     let dual = compose("  license: MIT OR Apache-2.0");
     PluginPackage::parse(&dual, &langs()).unwrap();
+    // 不在 SPDX 列表里的许可证用 LicenseRef，全文地址可选。
+    let eula = compose(
+        "  license: LicenseRef-n8n-Sustainable-Use-License\n  \
+         license_url: https://docs.n8n.io/sustainable-use-license/",
+    );
+    let m = PluginPackage::parse(&eula, &langs()).unwrap().manifest;
+    assert_eq!(
+        m.license.as_deref(),
+        Some("LicenseRef-n8n-Sustainable-Use-License")
+    );
+    assert_eq!(
+        m.license_url.as_deref(),
+        Some("https://docs.n8n.io/sustainable-use-license/")
+    );
+    PluginPackage::parse(&compose("  license: LicenseRef-joplin"), &langs()).unwrap();
 }
 
-/// 比核心新一版的规范号：清单写它时，核心要报“先升级核心”，不能逐项报未知字段。
-fn next_spec() -> String {
-    let super::SpecVersion(major, minor) = super::SPEC_VERSION;
-    super::SpecVersion(major, minor + 1).to_string()
-}
-
-/// 比核心新的清单可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
+/// 比核心新的清单（`next_spec`）可能用了核心不认识的字段：先报规范版本，类别是 unsupported（要升级的是核心）。
 #[test]
 fn newer_spec_is_reported_before_unknown_fields() {
     let newer = next_spec();
@@ -110,6 +120,32 @@ fn a_manifest_without_spec_is_rejected() {
     );
 }
 
+/// 许可证只认 SPDX 表达式或 `LicenseRef-`，`license_url` 要 HTTPS、要伴着 `license` 写。
+#[test]
+fn license_and_license_url_are_checked() {
+    let cases = [
+        ("  license: Apache 2", "SPDX".to_owned()),
+        (
+            "  license_url: https://example.com/eula",
+            message("plugin-settings-store-info-license-url-alone", &[]),
+        ),
+        (
+            "  license: MIT\n  license_url: http://example.com/eula",
+            message(
+                "plugin-settings-store-info-https-url",
+                &[
+                    ("field", "license_url"),
+                    ("value", "http://example.com/eula"),
+                ],
+            ),
+        ),
+    ];
+    for (extra, expected) in cases {
+        let err = parse_err(extra);
+        assert!(err.contains(&expected), "{extra}：{err}");
+    }
+}
+
 #[test]
 fn store_fields_are_checked() {
     let long = "字".repeat(4001);
@@ -124,7 +160,6 @@ fn store_fields_are_checked() {
         .join(", ");
     let cases: Vec<(String, String)> = vec![
         ("  categories: [ai]".to_owned(), "categories".to_owned()),
-        ("  license: Apache 2".to_owned(), "SPDX".to_owned()),
         (
             "  homepage: http://example.com".to_owned(),
             "https://".to_owned(),

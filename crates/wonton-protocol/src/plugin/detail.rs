@@ -51,7 +51,13 @@ pub struct PluginDetail {
     /// 插件仓库的网页，如 `https://github.com/owner/repo`。
     pub repository: Option<String>,
     /// 插件里那个应用的许可证（SPDX 表达式）。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS），非 SPDX 许可证（`LicenseRef-`）用它给出处。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license_url: Option<String>,
     /// GitHub 星数；不是来自 GitHub 的插件为空。
     pub stars: Option<u32>,
     /// 这个版本的更新说明。

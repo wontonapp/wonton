@@ -41,6 +41,12 @@ impl fmt::Display for SpecVersion {
     }
 }
 
+/// 比核心新一版的规范号：测试用它模拟“核心太旧”。
+#[cfg(test)]
+pub(crate) fn next_spec() -> String {
+    SpecVersion(SPEC_VERSION.0, SPEC_VERSION.1 + 1).to_string()
+}
+
 /// 插件包的作者。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -129,6 +135,16 @@ pub fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestEr
                 ],
             ))
         })?;
+    }
+    if let Some(url) = &manifest.license_url {
+        if manifest.license.is_none() {
+            return Err(invalid(l10n::text(
+                langs,
+                "plugin-settings-store-info-license-url-alone",
+                &[],
+            )));
+        }
+        https_url("license_url", url, langs)?;
     }
     for tags in manifest.tags.values() {
         validate_tags(tags, langs)?;
