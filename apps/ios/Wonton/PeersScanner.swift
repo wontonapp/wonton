@@ -58,7 +58,7 @@ struct PeersScannerView: View {
             Button {
                 submit(pastedCode)
             } label: {
-                Text(.peersPasteSubmit).frame(maxWidth: .infinity)
+                Text(.Peers2.peersPasteSubmit).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(pastedCode.isEmpty || submitted)
@@ -75,8 +75,8 @@ struct PeersScannerView: View {
 
     private func scanTitle(_ error: PeerError) -> String {
         switch error {
-        case .codeRevoked: String(localized: .peersErrorCodeRevoked)
-        default: String(localized: .peersErrorCodeInvalid)
+        case .codeRevoked: String(localized: .Peers1.peersErrorCodeRevoked)
+        default: String(localized: .Peers0.peersErrorCodeInvalid)
         }
     }
 }
