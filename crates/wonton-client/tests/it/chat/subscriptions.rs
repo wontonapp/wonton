@@ -64,10 +64,15 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
         .send_text("戳一下长轮询")
         .await
         .expect("戳一下同步");
+    // 注入要等真正被消费（`room_list_sync_expired`）再继续：arm 落在在飞长轮询窗口可能丢失，等消费确认重启才确定发生。
+    wait_for_sync("房间列表重启已经触发", home, || {
+        home.room_list_sync_expired().then_some(())
+    })
+    .await;
     // 叫醒等退避的重启：回到前台本来就不等间隔（`MatrixSession::resume`），测试里逐次注入用得上。
     phone.dispatch(Action::AppForegrounded).unwrap();
     phone
-        .wait_chat("行错标成受邀", |view| {
+        .wait_chat_within_and_sync(home, "行错标成受邀", WAIT, |view| {
             view.rooms
                 .iter()
                 .find(|row| row.room_id == room_id && row.membership == RoomMembership::Invited)
@@ -78,13 +83,17 @@ async fn flicker(phone: &Phone, home: &Home, poke_room: &ChatRoom, room_id: &str
         home.join_was_reported_as_invited(),
         "{label}：改写没有发生，行不是被改错标的"
     );
-    // 错标已经看到：停止改写，下一次重启的应答照原样带回真实状态，行回到已加入。
+    // 错标已经看到：停止改写，下一次重启的应答照原样转发，房间回到已加入。
     home.clear_join_report_as_invited();
     home.expire_room_list_sync();
     poke_room.send_text("再戳一下").await.expect("再戳一下同步");
+    wait_for_sync("房间列表恢复已经触发", home, || {
+        home.room_list_sync_expired().then_some(())
+    })
+    .await;
     phone.dispatch(Action::AppForegrounded).unwrap();
     phone
-        .wait_chat("行回到已加入", |view| {
+        .wait_chat_within_and_sync(home, "行回到已加入", WAIT, |view| {
             view.rooms
                 .iter()
                 .find(|row| row.room_id == room_id && row.membership == RoomMembership::Joined)
