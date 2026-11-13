@@ -5,29 +5,34 @@ import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
 
-/// 一个房间输入框的附件区和点了发送、还没交出去的消息（ADR-0094）。附件进附件区就开始上传，只有发送按钮才发。
+/// 一个时间线输入框的附件区和点了发送、还没交出去的消息（ADR-0094）。附件进附件区就开始上传，只有发送按钮才发。
+/// 附件区只有主对话有（ADR-0093）：旁聊里字和照片直接发，不订阅附件区。
 @MainActor
 @Observable
 final class ComposerModel {
     private(set) var viewModel: ComposerViewModel?
     let roomId: String
+    /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
+    let threadRoot: String?
     @ObservationIgnored private let chat: ChatModel
 
     var core: ClientCore { chat.core }
-    var target: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
+    var target: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: threadRoot) }
     var attachments: [ComposerAttachment] { viewModel?.attachments ?? [] }
     var outgoing: [OutgoingMessage] { viewModel?.outgoing ?? [] }
     var maxAttachments: UInt32 { viewModel?.maxAttachments ?? 0 }
     /// 系统选择器这次还能选几个；附件区满了是 0。
     var remaining: Int { max(0, Int(maxAttachments) - attachments.count) }
 
-    init(chat: ChatModel, roomId: String) {
+    init(chat: ChatModel, roomId: String, threadRoot: String? = nil) {
         self.chat = chat
         self.roomId = roomId
+        self.threadRoot = threadRoot
     }
 
     /// 在视图的 `.task` 里调用；视图消失时订阅随之结束。
     func observe() async {
+        guard threadRoot == nil else { return }
         let subscription: ComposerSubscription
         do {
             subscription = try core.subscribeComposer(target: target)
@@ -54,22 +59,61 @@ final class ComposerModel {
         }
     }
 
+    /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。失败时弹原因，返回空。
+    private func transcode(_ data: Data, _ type: UTType?) async -> ImageUpload? {
+        do {
+            return try await Task.detached(priority: .userInitiated) {
+                try PhotoUpload.make(data: data, type: type)
+            }.value
+        } catch let failure as PhotoUpload.Failure {
+            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .Photo.photoTryAnother)))
+            return nil
+        } catch {
+            reject(error.problem)
+            return nil
+        }
+    }
+
     /// 解码和转码放到后台：大照片在主线程上转码会卡住界面。
     func addImage(_ data: Data, _ type: UTType?) async {
+        guard let upload = await transcode(data, type) else { return }
         let core = core
         let target = target
         do {
-            let upload = try await Task.detached(priority: .userInitiated) {
-                try PhotoUpload.make(data: data, type: type)
-            }.value
             // 核心把字节写进本机的附件区目录，也放到后台。
             _ = try await Task.detached(priority: .userInitiated) {
                 try core.addImageAttachment(target: target, image: upload)
             }.value
-        } catch let failure as PhotoUpload.Failure {
-            reject(Problem(title: String(localized: failure.text), nextStep: String(localized: .Photo.photoTryAnother)))
         } catch {
             reject(error.problem)
+        }
+    }
+
+    /// 旁聊里粘贴的图：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
+    /// 回复对象跟着这张照片发出去。发出去返回真，转码失败弹原因返回假。
+    @discardableResult
+    func sendImage(_ data: Data, _ type: UTType?, replyTo: String?) async -> Bool {
+        guard let upload = await transcode(data, type) else { return false }
+        chat.send(.timeline(action: .sendImage(target: target, image: upload, replyTo: replyTo)))
+        if replyTo != nil { chat.cancelReply(in: target) }
+        return true
+    }
+
+    /// 旁聊里选的照片：转码好直接发进那个旁聊，不进附件区（附件区只有主对话有，ADR-0093）。
+    /// 回复对象跟着第一张发出去的照片走；转码失败的照片跳过，原因弹给主人。
+    func sendPhotos(_ items: [PhotosPickerItem], replyTo: String?) async {
+        var pendingReply = replyTo
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                reject(Problem(
+                    title: String(localized: .Photo.photoUnreadable),
+                    nextStep: String(localized: .Photo.photoTryAnother)
+                ))
+                continue
+            }
+            if await sendImage(data, item.supportedContentTypes.first, replyTo: pendingReply) {
+                pendingReply = nil
+            }
         }
     }
 

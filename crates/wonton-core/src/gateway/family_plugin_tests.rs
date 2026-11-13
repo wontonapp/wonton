@@ -191,7 +191,7 @@ fn write_whoami_record(h: &Harness) {
     .unwrap();
 }
 
-/// 家人装插件的开关：关着回 403 install_not_allowed，打开后能走到和主人一样的路。
+/// 家人装插件的门槛：没“装、删、升级应用”回 403 permission_required，给了（管理员模板）能走到和主人一样的路。
 #[tokio::test]
 async fn installing_plugins_needs_the_owners_grant() {
     let h = Harness::start(None).await;
@@ -211,7 +211,7 @@ async fn installing_plugins_needs_the_owners_grant() {
         .await
         .unwrap();
 
-    // 没授权的家人调装卸升级类：403 install_not_allowed。
+    // 没有“装、删、升级应用”的家人调装卸升级类：403，缺的就是这一项。
     for (method, path, body) in [
         (
             Method::POST,
@@ -235,10 +235,11 @@ async fn installing_plugins_needs_the_owners_grant() {
         );
         assert_eq!(
             reply.error_kind(),
-            Some("install_not_allowed"),
+            Some("permission_required"),
             "{method} {path}: {}",
             reply.text()
         );
+        assert_eq!(reply.json()["missing"], "install_apps");
     }
 
     // 主人授权后能走管理接口，也看得到全部插件。
@@ -329,7 +330,7 @@ async fn a_family_member_with_install_grant_reads_the_store() {
         .unwrap();
     invite_record(&h, false).await;
 
-    // 没授权：403 install_not_allowed（路由表里也过，这里看有索引时的行为）。
+    // 没授权：403 permission_required（路由表里也过，这里看有索引时的行为）。
     let reply = send_as(
         &h.app,
         Some(hers),
@@ -341,7 +342,8 @@ async fn a_family_member_with_install_grant_reads_the_store() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
-    assert_eq!(reply.error_kind(), Some("install_not_allowed"));
+    assert_eq!(reply.error_kind(), Some("permission_required"));
+    assert_eq!(reply.json()["missing"], "install_apps");
 
     // 主人授权后：商店读得到，官方段里有索引里的插件。
     h.members.set_role("mia", "admin").unwrap();

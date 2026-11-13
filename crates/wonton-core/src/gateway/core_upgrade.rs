@@ -1,5 +1,7 @@
 //! 核心一键升级的管理接口（ADR-0025）。只有管理接口能发起，也就是主人的设备；不进 MCP 总线，Bot 发起不了。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::Json;
@@ -10,8 +12,8 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CoreUpgradeCheckRequest, CoreUpgradeRequest};
 
-use super::api::{error_response, languages, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{error_response, languages};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::upgrade::service::{UpgradeError, Upgrades};
@@ -34,7 +36,9 @@ fn upgrades(
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
 ) -> Result<Arc<Upgrades>, Box<Response>> {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) =
+        permissions::require(gateway, peer, headers, PermissionItem::ServerSettings)
+    {
         return Err(Box::new(denied));
     }
     gateway.upgrades.clone().ok_or_else(|| {

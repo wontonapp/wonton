@@ -1,7 +1,6 @@
-//! 插件管理 API（ADR-0017 的“接口：App 和核心”）。接口按人分三层（ADR-0045）：只给主人的（服务器设置、直接安装、
-//! 升级和可选权限开关，[`owner_denied`]），主人授权了的家人也能用的（商店、预览、启动、卸载，[`install_denied`]），
-//! 和每个人自己的（读插件、看详情，[`plugin_denied`] 认出设备后由处理器按人过滤）。响应是 `wonton-protocol` 的类型，
-//! 文字按 `Accept-Language` 挑语言。
+//! 插件管理 API（ADR-0017 的“接口：App 和核心”）。接口按权限项分（ADR-0088，[`super::permissions::require`]）：
+//! 装卸、升级和可选权限开关要“装、删、升级应用”，读插件、看详情和每个人自己的接口只认已配对设备
+//! （[`plugin_denied`] 认出设备后由处理器按人过滤）。响应是 `wonton-protocol` 的类型，文字按 `Accept-Language` 挑语言。
 //!
 //! | 方法 | 路径 | 说明 |
 //! | --- | --- | --- |
@@ -34,12 +33,13 @@ use hyper::{HeaderMap, StatusCode};
 use serde::Deserialize;
 use serde_json::json;
 use wonton_protocol::{
-    AddedTools, InstallRequest, InstallSource, UninstallRequest, UpgradeRequest, UpgradeResult,
+    AddedTools, InstallRequest, InstallSource, PermissionItem, UninstallRequest, UpgradeRequest,
+    UpgradeResult,
 };
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
 use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
-use super::{Gateway, Person, TunnelPeer, isolation, pages};
+use super::{Gateway, Person, TunnelPeer, isolation, pages, permissions};
 
 pub use super::api_switch::set_plugin_permission;
 use crate::l10n;
@@ -180,51 +180,6 @@ pub(crate) fn denied(gateway: &Gateway, headers: &HeaderMap) -> Option<Response>
     }
 }
 
-/// 只给主人的接口（ADR-0045“谁能做什么”）：主人令牌，或者主人名下的设备（经隧道，且不是别的网页发起的）。
-/// 家人的设备回 403 `permission_required`。
-pub(crate) fn owner_denied(
-    gateway: &Gateway,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: &HeaderMap,
-) -> Option<Response> {
-    denied(gateway, headers)?;
-    match gateway.device_person(peer.map(|Extension(peer)| peer)) {
-        Some(person) if person.is_owner() => from_another_page(headers, &gateway.core_origin()),
-        Some(_) => Some(error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "这个接口只有主人能用",
-        )),
-        None => denied(gateway, headers),
-    }
-}
-
-/// 装卸、升级插件的接口：主人，或者“能装插件”打开了的家人。没授权的家人回 403 `install_not_allowed`（ADR-0045）。
-pub(crate) fn install_denied(
-    gateway: &Gateway,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: &HeaderMap,
-) -> Option<Response> {
-    denied(gateway, headers)?;
-    match gateway.device_person(peer.map(|Extension(peer)| peer)) {
-        Some(person) => {
-            if let Some(cross_site) = from_another_page(headers, &gateway.core_origin()) {
-                return Some(cross_site);
-            }
-            if gateway.can_install_plugins(&person) {
-                None
-            } else {
-                Some(error_response(
-                    StatusCode::FORBIDDEN,
-                    "install_not_allowed",
-                    "还没有“能装插件”的授权：请主人打开",
-                ))
-            }
-        }
-        None => denied(gateway, headers),
-    }
-}
-
 /// 插件管理的读接口和每个人自己的接口：主人令牌，或者任何已配对设备（经隧道，且不是别的网页发起的）。
 /// 设备是谁由调用方按人处理：家人的插件列表只列开放了的，设备列表只有自己的。
 pub(crate) fn plugin_denied(
@@ -241,7 +196,7 @@ pub(crate) fn plugin_denied(
 
 /// 设备的请求还要不是别的网页发起的（ADR-0017）：隧道身份随请求自动带上，App 的 WebView 里打开的插件网页
 /// 发的请求也带着它，插件网页不能借它改管理设置。是别的网页发起时给拒绝。
-fn from_another_page(headers: &HeaderMap, origin: &str) -> Option<Response> {
+pub(crate) fn from_another_page(headers: &HeaderMap, origin: &str) -> Option<Response> {
     if isolation::not_from_another_page(headers, origin) {
         return None;
     }
@@ -312,7 +267,10 @@ pub async fn list(
         Err(response) => return *response,
     };
     // 家人的插件列表只列主人开放给家人的；能装插件的家人装卸时和主人看同一份（ADR-0045）。
-    if !person.is_owner() && !gateway.can_install_plugins(&person) {
+    if !gateway
+        .permissions(&person)
+        .allows(PermissionItem::InstallApps)
+    {
         plugins.plugins.retain(|plugin| plugin.family);
     }
     Json(plugins).into_response()
@@ -336,8 +294,9 @@ pub async fn detail(
         Err(response) => return *response,
     };
     // 家人能打开的插件才看得到详情（能装的家人除外，他们要装卸）。
-    if !person.is_owner()
-        && !gateway.can_install_plugins(&person)
+    if !gateway
+        .permissions(&person)
+        .allows(PermissionItem::OpenApps)
         && !gateway.plugins.family_enabled(&id)
     {
         return error_response(
@@ -352,12 +311,17 @@ pub async fn detail(
         .await
     {
         Some(mut detail) => {
-            if !person.is_owner() {
+            if !gateway
+                .permissions(&person)
+                .allows(PermissionItem::InstallApps)
+            {
                 detail.scope = None;
             }
             // Sharing settings are never exposed to family members, including installers.
             detail.shares = None;
-            if person.is_owner()
+            if gateway
+                .permissions(&person)
+                .allows(PermissionItem::ShareApps)
                 && let Some(sharing) = gateway.sharing.as_ref()
             {
                 let offer = gateway.plugins.share_offer(&id);
@@ -383,7 +347,9 @@ pub async fn preview(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -425,7 +391,9 @@ pub async fn install(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -490,7 +458,9 @@ pub async fn preview_upgrade(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -524,7 +494,9 @@ pub async fn upgrade(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -603,7 +575,9 @@ pub async fn uninstall(
     Query(query): Query<UninstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -621,7 +595,9 @@ pub async fn uninstall(
             None => return install_error(&invalid_body(&headers, "expected application/json")),
         }
     };
-    let approve_connections = owner_denied(&gateway, peer, &headers).is_none();
+    // 批准连接重组只有主人能做（ADR-0088：这不是“装、删、升级应用”能换来的）。
+    let approve_connections =
+        permissions::require(&gateway, peer, &headers, PermissionItem::Owner).is_none();
     match gateway
         .plugins
         .uninstall_detached(
