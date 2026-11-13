@@ -150,7 +150,7 @@ private fun PageEffects(
 internal fun PageWebView(
     state: WebPageState, page: TabPage, proxy: ProxySettings?, environment: TabEnvironment,
     script: String, visible: Boolean, openLink: (String) -> Unit, onDraft: (String) -> Unit,
-    profile: String?,
+    profile: String?, modifier: Modifier = Modifier,
 ) {
     val url = page.url?.takeIf { !page.opensInBrowser } ?: return
     proxy ?: return
@@ -158,7 +158,7 @@ internal fun PageWebView(
     PluginWebView(
         url, proxy, page.reload,
         onLoaded = { state.loadFinished(environment) }, onFailed = state::loadFailed,
-        modifier = Modifier, darkTheme = environment.dark,
+        modifier = modifier, darkTheme = environment.dark,
         controller = state.controller, documentStartScript = script,
         onBridgeMessage = { origin, main, message ->
             val reply = state.pages.core.tabHandleMessage(

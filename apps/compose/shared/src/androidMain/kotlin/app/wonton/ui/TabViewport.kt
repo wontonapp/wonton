@@ -49,18 +49,33 @@ internal class TabViewport(
 )
 
 /**
- * 整页:网页铺满整屏不加内边距,系统栏和刘海的留白由页面自己按环境里的 safe area 让;胶囊和状态浮层排在安全区下。
- * 键盘弹出时底部安全区报 0(键盘盖住了导航条);离开栈顶的页保留最后一次的值,不跟着别的页重排。
+ * 整页:网页从状态栏下沿开始排(状态栏区域的点击被系统吃掉,页面够不着,见 [pageEnvironment]);
+ * 胶囊和状态浮层仍排在系统安全区下。键盘弹出时底部安全区报 0(键盘盖住了导航条);
+ * 离开栈顶的页保留最后一次的值,不跟着别的页重排。
  */
 @Composable
-internal fun tabViewport(active: Boolean): TabViewport {
-    val safe = tabSafeInsets()
+internal fun tabViewport(active: Boolean, safe: PaddingValues = tabSafeInsets()): TabViewport {
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var retainedBottom by remember { mutableStateOf(safe.calculateBottomPadding()) }
     SideEffect {
         if (active) retainedBottom = if (keyboard) 0.dp else safe.calculateBottomPadding()
     }
     val chromeTop = safe.calculateTopPadding()
-    return TabViewport(safe, chromeTop, retainedBottom,
-        tabEnvironment(chromeTop, retainedBottom, safe))
+    return TabViewport(safe, chromeTop, retainedBottom, pageEnvironment(safe, retainedBottom))
+}
+
+/**
+ * 整页网页拿到的环境:顶部安全区报 0。Android 的状态栏窗口把顶部一条的点击整个吃掉(ADR-0095 的
+ * “Android 边到边”在触摸上行不通,#379 实测 Immich/Navidrome 顶栏点不到),网页只能从状态栏下沿排;
+ * 顶部安全区照实给的话,按桥适配过安全区的页面会自己再让一次,空出两倍。Home 条还在网页下面,底部照实给。
+ */
+@Composable
+private fun pageEnvironment(safe: PaddingValues, bottom: Dp): TabEnvironment {
+    val direction = LocalLayoutDirection.current
+    return tabEnvironment(0.dp, bottom, PaddingValues(
+        top = 0.dp,
+        start = safe.calculateLeftPadding(direction),
+        end = safe.calculateRightPadding(direction),
+        bottom = safe.calculateBottomPadding(),
+    ))
 }
