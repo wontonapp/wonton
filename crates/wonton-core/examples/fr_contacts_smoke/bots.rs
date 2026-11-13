@@ -63,19 +63,56 @@ impl Bot {
             .call(Method::POST, "/_matrix/client/v3/createRoom", Some(body))
             .await?;
         let room = room["room_id"].as_str().context("room id")?.to_owned();
-        let path = format!("/_matrix/client/v3/rooms/{}/invite", encode(&room));
+        self.invite(&room, invitee).await?;
+        Ok(room)
+    }
+
+    /// 邀请一个用户，联邦没通时隔几秒再发。
+    pub async fn invite(&self, room: &str, user: &str) -> Result<()> {
+        let path = format!("/_matrix/client/v3/rooms/{}/invite", encode(room));
         let mut last = None;
         for _ in 0..12 {
             match self
-                .call(Method::POST, &path, Some(json!({"user_id": invitee})))
+                .call(Method::POST, &path, Some(json!({"user_id": user})))
                 .await
             {
-                Ok(_) => return Ok(room),
+                Ok(_) => return Ok(()),
                 Err(e) => last = Some(e),
             }
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
         Err(last.context("invite")?)
+    }
+
+    /// 建一个不加密的群，把 `invitees` 一次拉进来。
+    pub async fn group(&self, invitees: &[&str]) -> Result<String> {
+        let body = json!({"preset": "private_chat", "is_direct": false});
+        let room = self
+            .call(Method::POST, "/_matrix/client/v3/createRoom", Some(body))
+            .await?;
+        let room = room["room_id"].as_str().context("room id")?.to_owned();
+        for invitee in invitees {
+            self.invite(&room, invitee).await?;
+        }
+        Ok(room)
+    }
+
+    /// 接受房间邀请。
+    pub async fn join(&self, room: &str) -> Result<()> {
+        let path = format!("/_matrix/client/v3/rooms/{}/join", encode(room));
+        self.call(Method::POST, &path, Some(json!({}))).await?;
+        Ok(())
+    }
+
+    /// 还没接受的邀请房间。
+    pub async fn invites(&self) -> Result<Vec<String>> {
+        let sync: Value = self
+            .call(Method::GET, "/_matrix/client/v3/sync?timeout=0", None)
+            .await?;
+        Ok(sync["rooms"]["invite"]
+            .as_object()
+            .map(|rooms| rooms.keys().cloned().collect())
+            .unwrap_or_default())
     }
 
     pub async fn membership(&self, room: &str, user: &str) -> Result<String> {
@@ -92,12 +129,23 @@ impl Bot {
     pub async fn say(&self, room: &str, to: &str, nonce: &str) -> Result<String> {
         let body = format!("{to} 你好，我是 {} {nonce}", self.user_id);
         let content = json!({"msgtype": "m.text", "body": body, "m.mentions": {"user_ids": [to]}});
+        self.put(room, content, nonce).await?;
+        Ok(body)
+    }
+
+    /// 往房间发一条纯文字。
+    pub async fn send_text(&self, room: &str, body: &str) -> Result<()> {
+        let content = json!({"msgtype": "m.text", "body": body});
+        self.put(room, content, &rand_suffix().to_string()).await
+    }
+
+    async fn put(&self, room: &str, content: Value, txn: &str) -> Result<()> {
         let path = format!(
-            "/_matrix/client/v3/rooms/{}/send/m.room.message/{nonce}",
+            "/_matrix/client/v3/rooms/{}/send/m.room.message/{txn}",
             encode(room)
         );
         self.call(Method::PUT, &path, Some(content)).await?;
-        Ok(body)
+        Ok(())
     }
 
     /// 房间里 `sender` 最近发的一条正文里带 `needle` 的消息。
@@ -159,7 +207,7 @@ pub async fn chat(from: &str, to: &str) -> Result<()> {
     speaker.leave(&room).await
 }
 
-fn rand_suffix() -> u64 {
+pub(super) fn rand_suffix() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos() as u64)
