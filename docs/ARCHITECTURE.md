@@ -278,6 +278,8 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
   请求对应聊天里的确认按钮。
 - 模型默认经 magpie。订阅账号只在 Agent 官方程序里登录，不经 magpie（ADR-0034）。
 - 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。
+- 网关的管理接口按 ADR-0088 的权限项判断：每个接口声明要哪一项，主人一律放行，其余按这个家人的角色判断，
+  缺了回 403 `permission_required` 并写明缺的项；角色的管理本身仍在角色之外，只收主人。
 - 核心经隧道的 `GET /_wonton/api/bots/activity?after=<rev>` 长轮询给出各 Bot 的运行、模型请求、工具调用和待确认事实，客户端核心结合 Matrix typing 合成状态（[ADR-0044](adr/0044-bot-profile-and-status-avatars.md)）。
 
 ## 安全模型
