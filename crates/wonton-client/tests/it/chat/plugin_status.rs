@@ -1,7 +1,5 @@
 use super::*;
-use wonton_protocol::{
-    MyAppRef, PluginFailure, PluginHealth, PluginStartState, PluginState, RoomPlugin,
-};
+use wonton_protocol::{PluginFailure, PluginHealth, PluginStartState, PluginState, RoomPlugin};
 
 const ID: &str = "app.agent";
 
@@ -40,7 +38,8 @@ async fn stopped_setup() -> (
     let home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone.signed_in().await;
-    let bot = home.bot("agent", "Agent").await;
+    // accept_the_bots_invite 按显示名 Hermes 认邀请。
+    let bot = home.bot("hermes", "Hermes").await;
     let room = accept_the_bots_invite(&home, &phone, &bot).await;
     let mut plugin = crate::plugins::rig::installed(ID, PluginState::Stopped);
     plugin.kind = wonton_client::PluginKind::Agent;
@@ -57,15 +56,7 @@ async fn stopped_setup() -> (
     .unwrap();
     assert_eq!(stopped.plugin_id, ID);
     assert!(stopped.can_start);
-    phone
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: ID.into(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+    // 装上的 Agent 默认自动加进“我的应用”，不用再手动加。
     wait_until(|| {
         phone
             .plugins()
