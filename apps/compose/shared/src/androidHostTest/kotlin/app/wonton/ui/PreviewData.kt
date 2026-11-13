@@ -40,6 +40,7 @@ import app.wonton.protocol.PushStatus
 import app.wonton.protocol.RecoveryNextStep
 import app.wonton.protocol.RecoveryStatus
 import app.wonton.protocol.RegistryMirrorViewModel
+import app.wonton.protocol.RolesViewModel
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
@@ -198,6 +199,7 @@ internal fun previewPlugins() = PluginsViewModel(
     portMappings = emptyList(),
     ownerSecrets = null,
     mediaGrants = emptyList(),
+    roles = RolesViewModel(loading = false, roles = emptyList(), defaultInviteRole = null, problem = null),
 )
 
 internal fun previewCard() = PendingConfirmation(
