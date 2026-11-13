@@ -33,6 +33,7 @@ struct ChatListView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     notices
+                    confirmationsEntry
                     if model.pendingDraft != nil {
                         Text(TabText.selectChat)
                             .wontonText(WontonTheme.typography.supporting)
@@ -66,7 +67,7 @@ struct ChatListView: View {
                 .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
-                if isEmpty { NoChats() }
+                if isEmpty { NoChats().allowsHitTesting(false) }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
                 if !listOnly {
@@ -76,6 +77,7 @@ struct ChatListView: View {
                 }
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+            .task { await model.confirmations.observe() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.open(.apps) })
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
@@ -91,6 +93,18 @@ struct ChatListView: View {
         } else {
             model.path.append(route)
         }
+    }
+
+    private var confirmationsEntry: some View {
+        NavigationLink(value: ChatRoute.confirmations) {
+            WontonRow(
+                title: String(localized: .Confirmations.confirmationsTitle),
+                value: model.confirmations.pendingCount > 0 ? String(model.confirmations.pendingCount) : nil,
+                showsForward: true
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("confirmations-entry")
     }
 
     private var separator: some View {
@@ -188,6 +202,8 @@ struct ChatDestination: View {
             ChatBackupView(model: model)
         case .startChat:
             StartChatView(model: model)
+        case .confirmations:
+            ConfirmationsPage(model: model.confirmations, chat: model, plugins: plugins)
         }
     }
 }

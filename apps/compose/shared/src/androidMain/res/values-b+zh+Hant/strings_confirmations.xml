@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="confirmations_empty">沒有要你確認的事</string>
+    <plurals name="confirmations_more_cards">
+        <item quantity="other">還有 %1$d 張待確認</item>
+    </plurals>
+    <string name="confirmations_state_failed">沒有成功</string>
+    <string name="confirmations_state_succeeded">已完成</string>
+    <string name="confirmations_state_uncertain">結果不確定</string>
+    <string name="confirmations_title">等你確認</string>
+    <string name="confirmations_remaining">剩餘 %1$s</string>
+</resources>

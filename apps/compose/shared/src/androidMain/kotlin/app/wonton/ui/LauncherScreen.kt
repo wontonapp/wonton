@@ -79,7 +79,7 @@ fun LauncherScreen(
     plugins: PluginsState,
     navigation: PluginNavigation,
     pendingCards: List<PendingConfirmation>,
-    onOpenCardRoom: (String) -> Unit,
+    onOpenCardRoom: (String?) -> Unit,
     onShowStore: () -> Unit,
     onConnection: () -> Unit,
     settingsUpgrade: Boolean,

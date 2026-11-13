@@ -47,13 +47,13 @@ extension MainView {
         appsPath = NavigationPath()
     }
 
-    func openCardRoom(_ roomId: String) {
+    func openCardRoom(_ roomId: String?) {
         showsSettings = false
         closeApps()
         onboardingGateway = nil
         pages.open(.chat)
-        chat.visiting = nil
-        chat.path = [.room(roomId)]
+        chat.resetNavigation()
+        if let roomId { chat.path = [.room(roomId)] } else { chat.openConfirmations() }
     }
 
     func finishOnboarding(_ bot: String?) {

@@ -59,6 +59,7 @@ internal fun ServerApp(
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
     shareIntake: ShareIntake = remember { ShareIntake() },
+    onContactRequests: (List<String>) -> Unit = {},
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -73,6 +74,7 @@ internal fun ServerApp(
     LaunchedEffect(pages) { pages.observe() }
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
+    ContactNotificationsEffect(core, onContactRequests)
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { request ->
             when {
@@ -133,13 +135,18 @@ private fun AppContent(
     val nativeState = rememberSaveableStateHolder()
     val status = connectionBarStatus(home, { pages.send(Action.RetryConnection) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
-        shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
+        val listShown = shown == TabRef.Chat && !nav.settingsOverlay && nav.appsPage == null &&
+            nav.chat.showingConfirmations
+        val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && nav.appsPage == null &&
+            !nav.chat.showingBackup && !nav.chat.startingChat && it.roomId != null &&
+            it.roomId == nav.chat.openRoom
+        !listShown && !roomShown
     }
     val onDraft: (String) -> Unit = { text -> draft.text = text; pages.send(Action.OpenPage(TabRef.Chat)) }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
     val panelActive = !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
-        !nav.chat.showingBackup && !nav.chat.startingChat
+        !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
     } else null
@@ -149,7 +156,7 @@ private fun AppContent(
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
     val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
-        WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openRoom) { bannerTop ->
+        WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
             val page: @Composable () -> Unit = {
                 SidebarContainer(
                     isOpen = showsSidebar && !expanded,
@@ -240,7 +247,7 @@ private fun NativeTab(
         nav.appsPage != null || home.status is HomeStatus.NotConfigured -> HomeRoute(
             pages.core, home, pages.plugins, nav.plugins, nav.appsPage ?: HomePage.LAUNCHER,
             { nav.appsPage = it },
-            chat.pendingConfirmations, nav::openRoom,
+            chat.pendingConfirmations, nav::openCardTarget,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )
@@ -265,7 +272,8 @@ private fun OpenDevWebEffect(url: String?, plugins: PluginsState, pages: PagesSt
 
 @Composable
 private fun WithPendingCards(
-    cards: List<PendingConfirmation>, fullscreen: Boolean, onOpen: (String) -> Unit,
+    cards: List<PendingConfirmation>, fullscreen: Boolean,
+    onOpen: (String?) -> Unit,
     content: @Composable (bannerTop: Dp) -> Unit,
 ) {
     val density = LocalDensity.current
