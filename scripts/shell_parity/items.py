@@ -76,12 +76,16 @@ def output_types(exports: Exports, allow_types: Set[str]) -> List[TypeDef]:
     return [exports.types[name] for name in sorted(seen)]
 
 
-def _enum_items(definition: TypeDef) -> Iterable[Item]:
+def _enum_items(definition: TypeDef, core_fns: Set[str] = frozenset()) -> Iterable[Item]:
     variants = [m for m in definition.members if not (m.catch_all or m.name == CATCH_ALL)]
     if definition.name == ACTION_TYPE:
         for member in variants:
             key = f"{ACTION_TYPE}.{member.name}"
-            yield Item(key, ACTION_TYPE, "action", definition.path, member.line, [f".{lower_camel(member.name)}"], [key])
+            name = lower_camel(member.name)
+            # Kotlin 发操作也可以直接调 ClientCore 的同名函数（core.revokePluginShare()），不写 Action 字面量：
+            # 有这个导出函数时，提到函数名就算用到（#503 核对）。
+            kotlin = [key] + ([name] if name in core_fns else [])
+            yield Item(key, ACTION_TYPE, "action", definition.path, member.line, [f".{name}"], kotlin)
         return
     # 不带数据的分支合起来算一项：Swift 的 switch 要穷尽，每个分支都写出来；Kotlin 的 when 常把几个并进 else。
     # 按分支比会把这种写法差别全报成“只有 iOS 用到”。Kotlin 里提到枚举名就算用到。
@@ -105,8 +109,8 @@ def _record_items(definition: TypeDef) -> Iterable[Item]:
         yield Item(key, definition.name, "field", definition.path, member.line, [f".{name}"], [f".{name}"])
 
 
-def _type_items(definition: TypeDef) -> Iterable[Item]:
-    return _record_items(definition) if definition.kind == "record" else _enum_items(definition)
+def _type_items(definition: TypeDef, core_fns: Set[str] = frozenset()) -> Iterable[Item]:
+    return _record_items(definition) if definition.kind == "record" else _enum_items(definition, core_fns)
 
 
 def _function_items(exports: Exports, allow_types: Set[str]) -> Iterable[Item]:
@@ -120,9 +124,10 @@ def _function_items(exports: Exports, allow_types: Set[str]) -> Iterable[Item]:
 
 def collect_items(exports: Exports, allow_types: Set[str]) -> List[Item]:
     items: List[Item] = []
+    core_fns = {lower_camel(fn.name) for fn in exports.functions}
     action = exports.types.get(ACTION_TYPE)
     if action is not None:
-        items.extend(_type_items(action))
+        items.extend(_type_items(action, core_fns))
     for definition in output_types(exports, allow_types):
         items.extend(_type_items(definition))
     items.extend(_function_items(exports, allow_types))

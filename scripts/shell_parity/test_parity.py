@@ -20,11 +20,19 @@ RUST = """
 pub enum Action {
     PairHome { code: String },
     RefreshHome,
+    RevokePluginShare,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum ServerKind {
+    Wonton,
+    Custom,
 }
 
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct HomeViewModel {
     pub device_name: String,
+    pub tag: String,
     pub web_url: Option<String>,
     pub status: HomeStatus,
 }
@@ -56,6 +64,14 @@ impl ClientCore {
     pub fn home(&self) -> HomeViewModel {
         todo!()
     }
+
+    pub fn server_kind(&self) -> ServerKind {
+        todo!()
+    }
+
+    pub fn revoke_plugin_share(&self, id: String) {
+        todo!()
+    }
 }
 """
 
@@ -73,6 +89,9 @@ struct HomeView: View {
         }
         Button("") { core.dispatch(action: .pairHome(code: "")) }
         Button("") { core.dispatch(action: .refreshHome) }
+        Button("") { core.revokePluginShare("") }
+        let label = DispatchQueue(label: "app.wonton.network")  // .wonton 是字符串撞名，不是 ServerKind
+        Text("\\(model.tag)")           // tag 只在插值里
     }
 }
 """
@@ -89,6 +108,7 @@ fun HomeScreen(viewModel: HomeViewModel) {
         else -> Unit
     }
     Button(onClick = { core.dispatch(Action.PairHome("")) }) {}
+    Button(onClick = { core.revokePluginShare("x") }) {}   // 不写 Action.RevokePluginShare 字面量
 }
 """
 
@@ -135,6 +155,17 @@ class ParityTest(unittest.TestCase):
 
     def test_comments_tests_and_imports_do_not_count(self) -> None:
         self.assertEqual(self.where()["HomeViewModel.web_url"], set())
+
+    def test_string_literals_do_not_count_interpolation_does(self) -> None:
+        used = self.where()
+        # "app.wonton.network" 里的 .wonton 不算 ServerKind 用到（#503：DispatchQueue 标签撞名）
+        self.assertEqual(used["ServerKind"], set())
+        # 插值里的字段是真用到：Swift 的 \(model.tag)
+        self.assertEqual(used["HomeViewModel.tag"], {"iOS"})
+
+    def test_action_used_via_same_name_core_function(self) -> None:
+        # 两壳都直接调 ClientCore.revoke_plugin_share：Kotlin 不写 Action 字面量也算用到（#503 核对）
+        self.assertEqual(self.where()["Action.RevokePluginShare"], {"iOS", "Android"})
 
     def test_catch_all_and_error_types_are_not_items(self) -> None:
         used = self.where()

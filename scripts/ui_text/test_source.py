@@ -157,6 +157,10 @@ class TestSourceLangs(unittest.TestCase):
         ):
             self.assertIsNone(source_lang(path))
 
+    def test_debug_source_set_is_skipped(self):
+        # debug 源集只进 debug 构建（#507：走查 Activity），用户在正式构建里看不到，不算壳用到。
+        self.assertIsNone(source_lang("apps/compose/androidApp/src/debug/kotlin/app/wonton/walkthrough/Foo.kt"))
+
     def test_main_source_sets_are_checked(self):
         for path in (
             "apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/Foo.kt",
