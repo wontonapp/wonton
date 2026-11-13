@@ -32,6 +32,22 @@ final class SnapshotTests: XCTestCase {
         assert(SnapshotFixtures.chatList(core: core), testName: "testChatList", line: #line)
     }
 
+    func testWideChat() throws {
+        let core = try makeCore()
+        let traits = UITraitCollection(traitsFrom: [
+            UITraitCollection(displayScale: 2),
+            UITraitCollection(userInterfaceStyle: .light),
+            UITraitCollection(preferredContentSizeCategory: .large),
+            UITraitCollection(horizontalSizeClass: .regular),
+            UITraitCollection(verticalSizeClass: .regular),
+            UITraitCollection(userInterfaceIdiom: .pad)
+        ])
+        assertSnapshot(
+            of: SnapshotFixtures.wrapped(SnapshotFixtures.wideChat(core: core)),
+            as: .image(drawHierarchyInKeyWindow: true, layout: .fixed(width: 1194, height: 834), traits: traits)
+        )
+    }
+
     func testChatRoom() throws {
         let core = try makeCore()
         assert(SnapshotFixtures.chatRoom(core: core), testName: "testChatRoom", line: #line)

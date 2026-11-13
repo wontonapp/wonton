@@ -99,6 +99,10 @@ kotlin {
                 implementation(libs.compose.runtime)
                 implementation(libs.compose.foundation)
                 implementation(libs.compose.material3)
+                implementation(libs.androidx.window.core)
+                implementation(libs.androidx.adaptive)
+                implementation(libs.androidx.adaptive.layout)
+                implementation(libs.androidx.adaptive.navigation)
                 // Apache-2.0。@Preview 注解，界面预览和截图测试只看它标注的函数。
                 implementation(libs.compose.ui.tooling.preview)
                 // Apache-2.0。服务器行使用 Material 的加号和勾选图标。

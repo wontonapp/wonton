@@ -140,6 +140,8 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
     }
 
     private fun selectChatList(startingChat: Boolean) {
+        settingsOverlay = false
+        closeApps()
         pages.send(Action.OpenPage(TabRef.Chat))
         chat.openRoom = null
         chat.showingBackup = false

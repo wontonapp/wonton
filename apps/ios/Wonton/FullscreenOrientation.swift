@@ -8,7 +8,7 @@ final class FullscreenOrientation: NSObject, UIApplicationDelegate, ObservableOb
     func application(
         _ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
-        fullscreen ? .allButUpsideDown : .portrait
+        UIDevice.current.userInterfaceIdiom == .pad || fullscreen ? .allButUpsideDown : .portrait
     }
 
     func update(fullscreen: Bool, failed: @escaping (Error) -> Void) {
@@ -18,7 +18,7 @@ final class FullscreenOrientation: NSObject, UIApplicationDelegate, ObservableOb
             var controller = scene.keyWindow?.rootViewController
             while let presented = controller?.presentedViewController { controller = presented }
             controller?.setNeedsUpdateOfSupportedInterfaceOrientations()
-            if !fullscreen {
+            if !fullscreen, UIDevice.current.userInterfaceIdiom != .pad {
                 scene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait), errorHandler: failed)
             }
         }

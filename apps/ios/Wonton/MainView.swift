@@ -23,6 +23,11 @@ struct MainView: View {
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
+    @State var showsMyApps = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var usesTwoColumns: Bool {
+        horizontalSizeClass == .regular && isPaired && !home.servers.adding && onboarding.viewModel.step == .finished
+    }
     @State var showsPanel = false
     @State var appsPath = NavigationPath()
     /// 插件页层的路径，和核心的页面栈一一对应；左边缘右滑是系统的交互式返回。
@@ -42,17 +47,9 @@ struct MainView: View {
 
     var body: some View {
         @Bindable var navigation = navigation
-        return SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
-            ZStack {
-                rootContent
-                pageStack
-            }
-            .environment(\.wontonOpenSidebar) { showsSidebar = true }
-        } panel: {
-            SidebarPanel(home: home, plugins: plugins,
-                         current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
-        }
+        return adaptiveContent
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
+        .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
@@ -160,7 +157,7 @@ struct MainView: View {
     }
 
     /// 根页面：配对后是聊天（下拉面板在它上面），没配对是应用网格（配对页也在它上面）。
-    @ViewBuilder private var rootContent: some View {
+    @ViewBuilder var rootContent: some View {
         if home.servers.adding {
             NavigationStack {
                 PairingView(model: home)
@@ -199,6 +196,14 @@ struct MainView: View {
 
     /// 配对后的根页面：聊天列表加下拉面板。
     @ViewBuilder private var chatRoot: some View {
+        if usesTwoColumns {
+            ChatDetailView(model: chat, plugins: plugins)
+        } else {
+            chatListPanel(listOnly: false)
+        }
+    }
+
+    func chatListPanel(listOnly: Bool) -> some View {
         ChatPanelHost(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
             scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
@@ -208,7 +213,7 @@ struct MainView: View {
             remove: { pages.send(.removePanelPage(scope: .main, tab: $0)) },
             move: { pages.send(.movePanelPage(scope: .main, tab: $0, index: UInt32($1))) },
             pullAnchor: nil,
-            content: { ChatListView(model: chat, plugins: plugins) }
+            content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
     }
 
@@ -226,7 +231,7 @@ struct MainView: View {
     }
 
     /// 插件页层：系统的 NavigationStack 供给左边缘右滑的交互式返回；路径空时透明且不挡下面的根页面。
-    @ViewBuilder private var pageStack: some View {
+    @ViewBuilder var pageStack: some View {
         NavigationStack(path: $pagePath) {
             Color.clear
                 .background { PageStackBack() }
