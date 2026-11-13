@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use wonton_protocol::FriendGroup;
 
+/// 旧记录没有角色时算“朋友”：权限最少，不冒充家人。
+fn default_role_id() -> String {
+    crate::roles::DEFAULT_INVITE_ROLE.to_owned()
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FriendsError {
     #[error("friend registry I/O failed at {path}: {source}")]
@@ -42,6 +47,9 @@ pub struct FriendRecord {
     /// Fixed local plugin identity, reserved even when this friend is removed.
     pub username: String,
     pub status: FriendStatus,
+    /// 好友名单里这个人的角色（`roles.json` 的 ID）；旧记录没有时算“朋友”。
+    #[serde(default = "default_role_id")]
+    pub role_id: String,
     /// Revision of the latest activation. Grants and connections must bind this generation;
     /// removing and reaccepting the same person must not revive their previous authorization.
     pub access_generation: u64,

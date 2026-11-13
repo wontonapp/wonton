@@ -107,6 +107,10 @@ pub(super) struct Harness {
     pub tunnel: Tunnel,
     /// 家人记录：和网关里用的是同一份（隧道配对也用它）。
     pub members: Arc<crate::members::Members>,
+    /// 角色记录：和网关里用的是同一份，测试直接往里面塞角色。
+    pub roles: Arc<crate::roles::Roles>,
+    /// 网关本体：角色这类还没有接口、只在记录层验的行为直接调。
+    pub gateway: Arc<Gateway>,
     pub data_dir: std::path::PathBuf,
     /// 隧道入口：配对协议（`wonton/pair/0`）在测试里也能用。
     _entry: crate::tunnel::TunnelEntry,
@@ -207,6 +211,7 @@ impl Harness {
             PluginPackage::manifest_of(WHOAMI, &Languages::from_header(Some("zh-Hans"))).unwrap();
         manager.register_for_test(manifest, PluginStatus::Running, Some(upstream.to_string()));
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
+        let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
         let gateway = Gateway::new(
             public,
             profile,
@@ -217,8 +222,10 @@ impl Harness {
             http.clone(),
             tunnel.clone(),
         )
+        .with_roles(roles.clone())
         .with_upgrades(upgrades);
-        let app = router(Arc::new(gateway));
+        let gateway = Arc::new(gateway);
+        let app = router(gateway.clone());
         let entry = TunnelEntry::spawn(&tunnel, app.clone());
         serve(listener, app.clone()).await;
         Self {
@@ -231,6 +238,8 @@ impl Harness {
             app,
             tunnel,
             members,
+            roles,
+            gateway,
             data_dir: dir.path().to_owned(),
             _entry: entry,
             _dir: dir,
@@ -264,7 +273,8 @@ impl Harness {
             None,
             self.http.clone(),
             self.tunnel.clone(),
-        );
+        )
+        .with_roles(self.roles.clone());
         let app = router(Arc::new(gateway));
         let mut request = hyper::Request::builder()
             .method(Method::GET)

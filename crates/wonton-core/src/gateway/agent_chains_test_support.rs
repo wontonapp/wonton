@@ -18,12 +18,12 @@ use serde_json::{Value, json};
 use tower::ServiceExt;
 
 use super::agent_chains::{AgentAcpCancel, AgentChains};
-use super::agent_outbox::Outbox;
 use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
 use super::{Gateway, TunnelPeer, router};
 use crate::agent_chain::Chains;
 use crate::agent_chain::settings::AgentSettings;
+use crate::agent_outbox::Outbox;
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
 use crate::mcp::Bus;
@@ -290,6 +290,7 @@ pub(crate) fn seed_members(members: &Members) {
                 display_name: username.into(),
                 email: None,
                 status: wonton_protocol::MemberStatus::Joined,
+                role_id: "friend".to_owned(),
                 can_install_plugins: false,
                 wants_private_bot: true,
                 private_bot: None,
@@ -410,7 +411,7 @@ impl Home {
         body["chains"].as_array().unwrap().clone()
     }
 
-    pub(crate) async fn outbox(&self, bus_token: &str) -> Option<Value> {
+    pub(crate) async fn outbox(&self, bus_token: &str, matrix_token: &str) -> Option<Value> {
         let request = hyper::Request::builder()
             .method(Method::GET)
             .uri(format!(
@@ -418,6 +419,7 @@ impl Home {
                 wonton_protocol::AGENT_OUTBOX_PATH
             ))
             .header(header::HOST, format!("{PLUGIN_MCP_HOST}:18480"))
+            .header(wonton_protocol::BOT_TOKEN_HEADER, matrix_token)
             .body(Body::empty())
             .unwrap();
         let mut request = request;
@@ -461,7 +463,12 @@ impl Bot {
 }
 
 impl Home {
-    pub(crate) fn receipt_request(&self, bus_token: &str, body: Value) -> hyper::Request<Body> {
+    pub(crate) fn receipt_request(
+        &self,
+        bus_token: &str,
+        matrix_token: &str,
+        body: Value,
+    ) -> hyper::Request<Body> {
         let mut request = hyper::Request::builder()
             .method(Method::POST)
             .uri(format!(
@@ -469,6 +476,7 @@ impl Home {
                 wonton_protocol::AGENT_OUTBOX_PATH
             ))
             .header(header::HOST, format!("{PLUGIN_MCP_HOST}:18480"))
+            .header(wonton_protocol::BOT_TOKEN_HEADER, matrix_token)
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(body.to_string()))
             .unwrap();

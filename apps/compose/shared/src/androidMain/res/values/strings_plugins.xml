@@ -86,4 +86,6 @@
     <string name="secret_clear">Clear</string>
     <string name="secret_filled">Filled</string>
     <string name="secret_unfilled">Not ready: paste a token first</string>
+    <!-- Button under the missing-keys notice that scrolls to the keys section. -->
+    <string name="secret_go_fill">Fill in</string>
 </resources>

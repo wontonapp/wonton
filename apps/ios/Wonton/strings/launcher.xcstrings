@@ -371,6 +371,36 @@
           }
         }
       }
+    },
+    "launcher.badgeNeedsConfiguration": {
+      "comment": "Accessibility label of the wrench badge on an app icon in the launcher: the app is installed but its required keys are not filled in.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Needs setup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待配置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待設定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "要設定"
+          }
+        }
+      }
     }
   }
 }

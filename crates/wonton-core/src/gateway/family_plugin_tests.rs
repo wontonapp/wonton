@@ -242,20 +242,8 @@ async fn installing_plugins_needs_the_owners_grant() {
     }
 
     // 主人授权后能走管理接口，也看得到全部插件。
-    let reply = send_as(
-        &h.app,
-        None,
-        Method::PUT,
-        CORE,
-        "/_wonton/api/members/mia",
-        &[
-            ("authorization", bearer().as_str()),
-            ("content-type", "application/json"),
-        ],
-        "{\"can_install_plugins\": true}",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    // 换成有“装、删、升级应用”的角色（管理员模板）。
+    h.members.set_role("mia", "admin").unwrap();
 
     // 能装插件的家人看得到全部插件；启动放行。
     assert_listed_after_grant(&h, hers).await;
@@ -270,6 +258,7 @@ async fn invite_record(h: &Harness, can_install: bool) {
             display_name: "Mia".to_owned(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            role_id: if can_install { "admin" } else { "friend" }.to_owned(),
             can_install_plugins: can_install,
             wants_private_bot: true,
             private_bot: None,
@@ -356,20 +345,7 @@ async fn a_family_member_with_install_grant_reads_the_store() {
     assert_eq!(reply.error_kind(), Some("install_not_allowed"));
 
     // 主人授权后：商店读得到，官方段里有索引里的插件。
-    let reply = send_as(
-        &h.app,
-        None,
-        Method::PUT,
-        CORE,
-        "/_wonton/api/members/mia",
-        &[
-            ("authorization", bearer().as_str()),
-            ("content-type", "application/json"),
-        ],
-        "{\"can_install_plugins\": true}",
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    h.members.set_role("mia", "admin").unwrap();
     let reply = send_as(
         &h.app,
         Some(hers),
