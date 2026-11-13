@@ -32,63 +32,23 @@
         }
       }
     },
-    "agentRun.done": {
-      "comment": "Status line when a run finished; only when the bot gave no step count. No arguments.",
+    "agentRun.steps": {
+      "comment": "Small summary line under a finished run; tapping it shows the bot's own summary. Argument: how many steps it took.",
       "extractionState": "manual",
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Done"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完了"
-          }
-        }
-      }
-    },
-    "agentRun.doneSteps": {
-      "comment": "Status line when a run finished. Argument: how many steps it took.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%#@count@ steps · done"
-          },
-          "substitutions": {
-            "count": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "one": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%lld step · done"
-                    }
-                  },
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%lld steps · done"
-                    }
-                  }
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld step"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld steps"
                 }
               }
             }
@@ -97,67 +57,19 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 步 · 完成"
-          },
-          "substitutions": {
-            "count": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%lld 步 · 完成"
-                    }
-                  }
-                }
-              }
-            }
+            "value": "%lld 步"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ 步 · 完成"
-          },
-          "substitutions": {
-            "count": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%lld 步 · 完成"
-                    }
-                  }
-                }
-              }
-            }
+            "value": "%lld 步"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%#@count@ ステップ · 完了"
-          },
-          "substitutions": {
-            "count": {
-              "argNum": 1,
-              "formatSpecifier": "lld",
-              "variations": {
-                "plural": {
-                  "other": {
-                    "stringUnit": {
-                      "state": "translated",
-                      "value": "%lld ステップ · 完了"
-                    }
-                  }
-                }
-              }
-            }
+            "value": "%lld ステップ"
           }
         }
       }

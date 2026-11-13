@@ -73,7 +73,7 @@ def main():
                 if key.endswith("_FILE") and not os.path.isfile(item):
                     out(f"missing input {key}={item}")
                     sys.exit(8)
-            if not entries.get("WONTON_CLIENT_SERVICE"):
+            if not entries.get("WONTON_CLIENT_SERVICE") and entries.get("WONTON_MATRIX_NAME_MODE") != "none":
                 sys.exit(7)
             install = args[args.index("init") + 1]
             os.makedirs(os.path.join(install, "entry"), exist_ok=True)
@@ -208,6 +208,41 @@ class InstallTest(unittest.TestCase):
         log = (self.state / "log").read_text()
         self.assertIn("init", log)
         self.assertFalse((self.install_dir / ".env").exists())
+
+    def test_none_mode_acme_coordinates_are_written_to_the_install_env(self):
+        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "f" * 64
+        ]
+
+        result = self.run_install(
+            entry=False,
+            WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta",
+            WONTON_MATRIX_NAME_MODE="none",
+            WONTON_ACME_DIRECTORY="https://pebble.test/dir",
+            WONTON_ACME_ACCEPT_TERMS="true",
+            WONTON_ACME_RESOLVERS="192.0.2.53:53",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        env = self.env()
+        # none 模式没有 settings.json：坐标写进 .env，核心运行时才拿得到（ADR-0089 第 3 节）。
+        self.assertEqual(env["WONTON_ACME_DIRECTORY"], "https://pebble.test/dir")
+        self.assertEqual(env["WONTON_ACME_ACCEPT_TERMS"], "true")
+        self.assertEqual(env["WONTON_ACME_RESOLVERS"], "192.0.2.53:53")
+
+    def test_none_mode_without_acme_coordinates_stops(self):
+        self.digests["ghcr.io/geraldpeng6/wonton-core:beta"] = [
+            "ghcr.io/geraldpeng6/wonton-core@sha256:" + "1" * 64
+        ]
+
+        result = self.run_install(
+            entry=False,
+            WONTON_CORE_IMAGE="ghcr.io/geraldpeng6/wonton-core:beta",
+            WONTON_MATRIX_NAME_MODE="none",
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WONTON_ACME_DIRECTORY", result.stderr)
 
     def test_rerun_keeps_recorded_entry_inputs(self):
         self.digests["ghcr.io/wontonapp/wonton-core:stable"] = [

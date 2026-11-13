@@ -62,7 +62,7 @@ impl CertificateManager {
         bail!("{error}\n{logs}")
     }
 
-    pub(super) fn container_body(&self, command: Vec<String>) -> Result<ContainerCreateBody> {
+    pub(crate) fn container_body(&self, command: Vec<String>) -> Result<ContainerCreateBody> {
         let host_entry = self.config.host_install_dir.join("entry");
         let acme = std::fs::metadata(self.entry().join("acme"))?;
         let mounts = vec![

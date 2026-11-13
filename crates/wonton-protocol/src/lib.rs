@@ -330,9 +330,9 @@ pub use side_chat::{
 pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
     BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
-    MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,
-    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
-    TimelineUpdate, TimelineViewport,
+    MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
+    RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use verification::{

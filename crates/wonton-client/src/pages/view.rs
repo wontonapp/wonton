@@ -520,17 +520,11 @@ fn compose_page(
         _ => {}
     }
     let Some(plugin) = plugin else {
-        let metadata = stored
-            .page
-            .clone()
-            .expect("plugin tab item must keep its page metadata");
+        let metadata = stored_or_placeholder(stored, None, plugins);
         return page_from_metadata(state, placed, metadata, None, TabState::Loading, plugins);
     };
     let Some(metadata) = metadata_for_plugin(plugin, page_id) else {
-        let metadata = stored
-            .page
-            .clone()
-            .expect("plugin tab item must keep its page metadata");
+        let metadata = stored_or_placeholder(stored, Some(plugin), plugins);
         return page_from_metadata(
             state,
             placed,
@@ -545,6 +539,30 @@ fn compose_page(
     let url = page_url(plugin.web_url.as_deref(), path);
     let state_value = page_state(state, placed, plugin, url.is_some());
     page_from_metadata(state, placed, metadata, url, state_value, plugins)
+}
+
+/// 插件列表没到、或插件不再声明这一页时显示用的元数据。栈和我的应用的行存着一份；面板里的条目只存了名字
+/// （主面板的在 `layout.json`，房间的在别的客户端也能写的账号数据里），没存的按插件现有的信息补，
+/// 列表没到就拿插件 ID 当名字。这里不能 panic：启动和每次开页、关页都要重算视图，算不出来主人就关不掉页面。
+fn stored_or_placeholder(
+    stored: &StoredItem,
+    plugin: Option<&InstalledPlugin>,
+    plugins: &PluginsViewModel,
+) -> StoredPage {
+    stored.page.clone().unwrap_or_else(|| {
+        let plugin_title = plugin_title_of(
+            super::tab_plugin_id(&stored.tab).unwrap_or_default(),
+            plugins,
+        );
+        StoredPage {
+            title: plugin_title.clone(),
+            plugin_title,
+            icon: TabIcon::Plugin {
+                icon: plugin.and_then(|plugin| plugin.icon.clone()),
+            },
+            layout: TabLayout::Inset,
+        }
+    })
 }
 
 fn plugin_title_of(plugin_id: &str, plugins: &PluginsViewModel) -> String {

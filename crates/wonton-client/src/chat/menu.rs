@@ -380,6 +380,8 @@ mod tests {
                     preview: None,
                     actions,
                     group: None,
+                    receipt: None,
+                    starts_time_group: false,
                 },
             },
         };
@@ -465,6 +467,8 @@ mod tests {
                     preview: None,
                     actions: Vec::new(),
                     group: None,
+                    receipt: None,
+                    starts_time_group: false,
                 },
             },
         };

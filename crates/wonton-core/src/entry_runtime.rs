@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, ensure};
+use anyhow::Context;
 use axum::extract::{ConnectInfo, Request, State};
 use axum::middleware::{self, Next};
 use axum::response::Response;
@@ -14,7 +14,6 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::entry_settings::EntrySettings;
 use crate::gateway::Gateway;
 use crate::matrix::NoticeRoom;
-use crate::plugin::docker::Engine;
 
 pub const FRPC_IMAGE: &str =
     "fatedier/frpc:v0.71.1@sha256:7a0a18bc9c83dc106a7e5213a890f521affdf90d595829c56b0ed8481377d50e";
@@ -107,17 +106,15 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
+/// 每小时的家里状态检查，和每 24 小时一次的续期检查。续期只发布证书；入口容器在不在由
+/// [`crate::clients::domain::Domain`] 自己判断。
 pub fn spawn(
+    domain: Arc<crate::clients::domain::Domain>,
     install_dir: &Path,
     data_dir: &Path,
-    engine: Engine,
-    core_container: String,
     notices: Option<Arc<NoticeRoom>>,
-) -> anyhow::Result<()> {
-    let Some(settings) = EntrySettings::load(install_dir)? else {
-        return Ok(());
-    };
-    let install_dir = install_dir.to_owned();
+) {
+    let saved = EntrySettings::load(install_dir).ok().flatten();
     let data_dir = data_dir.to_owned();
     tokio::spawn(async move {
         let mut hourly = tokio::time::interval(Duration::from_secs(3600));
@@ -125,43 +122,15 @@ pub fn spawn(
         let mut hours = 0;
         loop {
             hourly.tick().await;
-            check_home(&settings, &data_dir, &notices, &mut previous).await;
-            if hours % 24 == 0 && !settings.external_certificate {
-                match settings
-                    .certificate(&install_dir, &data_dir, engine.clone())
-                    .await
-                {
-                    Ok(()) => {
-                        let loaded = async {
-                            crate::entry_compose::prepare_permissions(&install_dir)?;
-                            reload_entry(&engine, &core_container).await
-                        }
-                        .await;
-                        if let Err(error) = loaded {
-                            tracing::error!(%error, "入口证书热加载失败");
-                            notify(
-                                &notices,
-                                "entry-certificate-reload-failed",
-                                &[("error", error.to_string().as_str())],
-                            )
-                            .await;
-                        }
-                    }
-                    Err(error) => {
-                        tracing::error!(%error, "入口证书续期失败，保留原证书");
-                        notify(
-                            &notices,
-                            "entry-certificate-renew-failed",
-                            &[("error", error.to_string().as_str())],
-                        )
-                        .await;
-                    }
-                }
+            if let Some(settings) = &saved {
+                check_home(settings, &data_dir, &notices, &mut previous).await;
+            }
+            if hours % 24 == 0 {
+                domain.renew_if_configured();
             }
             hours += 1;
         }
     });
-    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -212,32 +181,6 @@ async fn check_home(
         notify(notices, id, &args).await;
     }
     *previous = Some(state);
-}
-
-async fn reload_entry(engine: &Engine, core: &str) -> anyhow::Result<()> {
-    let info = engine
-        .inspect_container(core)
-        .await?
-        .context("核心容器不存在")?;
-    let labels = info
-        .config
-        .and_then(|c| c.labels)
-        .context("核心缺少 Compose 标签")?;
-    let project = labels
-        .get("com.docker.compose.project")
-        .context("核心缺少 Compose 项目")?;
-    let resources = engine
-        .labeled("com.docker.compose.project", project, |labels| {
-            labels
-                .get("com.docker.compose.service")
-                .is_some_and(|s| s == "entry")
-        })
-        .await?;
-    ensure!(resources.containers.len() == 1, "入口容器数量不对");
-    engine
-        .kill_container(&resources.containers[0], "SIGUSR2")
-        .await?;
-    Ok(())
 }
 
 async fn notify(notices: &Option<Arc<NoticeRoom>>, id: &str, args: &[(&str, &str)]) {

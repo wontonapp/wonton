@@ -107,6 +107,8 @@ struct TabPageCapsule: View {
         } label: { glyph(.leave) }
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.close)
+            // 界面测试按它认胶囊的退出：聊天页上别的“关闭”（提示条）同名。
+            .accessibilityIdentifier("pageClose")
     }
 
     private var ink: Color { .white }

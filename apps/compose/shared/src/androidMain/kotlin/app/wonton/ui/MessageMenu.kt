@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -54,7 +55,6 @@ import app.wonton.protocol.TimelineMessage
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Copy
-import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.Reply
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
@@ -186,7 +186,8 @@ private fun MenuSurface(
                 val (label, icon) = when (action) {
                     is MessageAction.Copy -> copyLabel to WontonIcon.Copy
                     is MessageAction.Reply -> replyLabel to WontonIcon.Reply
-                    MessageAction.Forward -> forwardLabel to WontonIcon.Forward
+                    // 转发是回复的镜像：同一个箭头左右翻过来（`WontonIcon.Forward` 是“进下一层”的尖角，不是转发）。
+                    MessageAction.Forward -> forwardLabel to WontonIcon.Reply
                     MessageAction.Redact -> redactLabel to WontonIcon.Trash
                 }
                 val destructive = action == MessageAction.Redact
@@ -195,7 +196,10 @@ private fun MenuSurface(
                 DropdownMenuItem(
                     text = { Text(label) },
                     // 装饰：菜单项有文字。
-                    leadingIcon = { Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall)) },
+                    leadingIcon = {
+                        val flip = if (action == MessageAction.Forward) Modifier.scale(-1f, 1f) else Modifier
+                        Icon(icon, contentDescription = null, Modifier.size(WontonTheme.size.iconSmall).then(flip))
+                    },
                     colors = if (destructive) {
                         MenuDefaults.itemColors(textColor = danger, leadingIconColor = danger)
                     } else {

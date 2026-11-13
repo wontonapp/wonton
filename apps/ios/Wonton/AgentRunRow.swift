@@ -3,6 +3,7 @@ import WontonClient
 
 /// 时间线里 Agent 一轮运行状态的那一行（ADR-0082）：真的在干活才转圈，要人管的醒目，
 /// 打断了和结果不确定不用失败的红。减弱动态效果时不转圈。
+/// 做完了的一轮只留一行小的步骤摘要，点开是 Bot 自己的总结；没有步数也没有总结的不占地方（`isBlank`）。
 /// 字段就是核心 `TimelineContent.AgentRun` 的字段，用的也是核心的 `AgentRunState`、`AgentRunEnd`
 /// 和选项类型；`step`、`result`、`body`、choice 的 `label` 是 Bot 自己写的文字，原样显示，
 /// 不翻译、不拼句；不认识的 `state` 落到通用样子，按 `body` 显示。
@@ -30,12 +31,22 @@ struct AgentRunRow: View {
     let openCard: (String) -> Void
     /// 对 Bot 自己的提问以主人的身份发反应作答（choices 的 key）。
     let answerChoice: (String) -> Void
+    @State private var showsResult = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.wontonColors) private var colors
 
+    /// 做完了、没有步数也没有总结的一轮没有可写的：时间线不给它留行。
+    nonisolated static func isBlank(state: AgentRunState, steps: UInt32?, result: String?) -> Bool {
+        state == .done && (steps ?? 0) == 0 && (result ?? "").isEmpty
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-            status
+            if state == .done {
+                summary
+            } else {
+                status
+            }
             if state == .working, let progress {
                 ProgressView(value: Double(progress))
                     .progressViewStyle(.linear)
@@ -49,6 +60,49 @@ struct AgentRunRow: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // 读屏和界面测试用的稳定标识，跟着核心的键走，不跟语言走。
         .accessibilityIdentifier(identifier)
+    }
+
+    /// 做完的一轮：一行“N 步”，有总结时能点开；没有步数只有总结时直接写总结。
+    @ViewBuilder private var summary: some View {
+        let total = Int(steps ?? 0)
+        let result = result ?? ""
+        if total > 0 {
+            let line = HStack(spacing: WontonTheme.spacing.s4) {
+                Text(.AgentRun.agentRunSteps(total))
+                if !result.isEmpty {
+                    WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
+                        .rotationEffect(.degrees(showsResult ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
+            }
+            .wontonText(WontonTheme.typography.caption)
+            .foregroundStyle(Color(colors.textSecondary))
+            if result.isEmpty {
+                line
+            } else {
+                Button {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: WontonTheme.motion.reduced)) {
+                        showsResult.toggle()
+                    }
+                } label: {
+                    line.frame(minHeight: WontonTheme.size.chip).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("agentRun-steps")
+                if showsResult {
+                    resultText(result)
+                }
+            }
+        } else if !result.isEmpty {
+            resultText(result)
+        }
+    }
+
+    private func resultText(_ result: String) -> some View {
+        Text(result)
+            .wontonText(WontonTheme.typography.caption)
+            .foregroundStyle(Color(colors.textSecondary))
+            .multilineTextAlignment(.leading)
     }
 
     /// 不认识的状态值：按普通 Bot 提示消息显示 `body`，不画标记和按钮。
@@ -77,7 +131,7 @@ struct AgentRunRow: View {
             mark
             if !text.isEmpty {
                 Text(text)
-                    .wontonText(state == .done ? WontonTheme.typography.caption : WontonTheme.typography.supporting)
+                    .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(ink))
                     .multilineTextAlignment(.leading)
             }
@@ -101,15 +155,12 @@ struct AgentRunRow: View {
         case .waiting:
             WontonIcon.notify.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.accentInk))
-        case .done:
-            WontonIcon.checkCircleFill.view(size: WontonTheme.size.iconSmall)
-                .foregroundStyle(Color(colors.success))
         case .failed:
             failureMark
         case .uncertain:
             WontonIcon.help.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.warning))
-        case .other:
+        case .done, .other:
             EmptyView()
         }
     }
@@ -136,11 +187,6 @@ struct AgentRunRow: View {
             return step ?? ""
         case .waiting:
             return String(localized: .AgentRun.agentRunWaiting)
-        case .done:
-            if let steps {
-                return String(localized: .AgentRun.agentRunDoneSteps(count: Int(steps)))
-            }
-            return String(localized: .AgentRun.agentRunDone)
         case .failed:
             switch end {
             case .cancelled:
@@ -152,6 +198,8 @@ struct AgentRunRow: View {
             }
         case .uncertain:
             return String(localized: .AgentRun.agentRunUncertain)
+        case .done:
+            return ""
         case .other:
             return bodyText
         }
@@ -159,12 +207,10 @@ struct AgentRunRow: View {
 
     private var ink: Rgb {
         switch state {
-        case .working, .other:
+        case .working, .done, .other:
             return colors.textSecondary
         case .waiting:
             return colors.accentInk
-        case .done:
-            return colors.success
         case .failed:
             switch end {
             case .cancelled: return colors.textSecondary
