@@ -13,10 +13,22 @@ mod stack;
 struct Rig {
     tabs: PagesLink,
     home: watch::Sender<HomeViewModel>,
-    plugins: watch::Sender<PluginsViewModel>,
+    plugins: PluginSnapshots,
     /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
     room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
     _dir: tempfile::TempDir,
+}
+
+struct PluginSnapshots {
+    link: Arc<PluginsLink>,
+    home: watch::Receiver<HomeViewModel>,
+}
+
+impl PluginSnapshots {
+    fn send_replace(&self, view: PluginsViewModel) {
+        self.link
+            .replace_view_for_test(self.home.borrow().server_id.clone(), view);
+    }
 }
 
 impl Rig {
@@ -38,14 +50,19 @@ impl Rig {
         let plugins_link =
             PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
         let home = watch::Sender::new(home("old-server"));
-        let plugins = watch::Sender::new(plugins("old-content"));
+        let initial = plugins("old-content");
+        let plugins = PluginSnapshots {
+            link: plugins_link.clone(),
+            home: home.subscribe(),
+        };
+        plugins.send_replace(initial);
         let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
             home_link,
+            plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
-            plugins_view: plugins.subscribe(),
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {

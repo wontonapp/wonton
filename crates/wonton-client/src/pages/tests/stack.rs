@@ -127,3 +127,25 @@ async fn new_list_before_pages_observes_server_change_starts_fresh() {
     rig.open(page_tab());
     assert_eq!(rig.page(&page_tab()).reload, 0);
 }
+
+#[tokio::test]
+async fn switching_servers_does_not_seed_apps_from_the_previous_server() {
+    let rig = Rig::new();
+    rig.add_app(plugin_app("app.shared"));
+    rig.open(page_tab());
+
+    // Home 先发布新身份，插件观察者还没来得及撤掉旧列表。
+    rig.home.send_replace(home("new-server"));
+    rig.tabs.recompute();
+    assert!(rig.my_app_titles().is_empty());
+    rig.plugins.send_replace(PluginsViewModel::default());
+    rig.tabs.recompute();
+    let mut empty = plugins("new-content");
+    empty.installed.as_mut().unwrap().plugins.clear();
+    rig.plugins.send_replace(empty);
+    rig.tabs.recompute();
+
+    assert!(rig.my_app_titles().is_empty());
+    assert!(rig.view().uninstalled.is_empty());
+    assert!(rig.view().stack.is_empty());
+}

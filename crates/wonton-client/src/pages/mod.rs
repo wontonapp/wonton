@@ -318,10 +318,11 @@ impl PagesLink {
         HomeViewModel,
         Option<(OwnedRoomId, RoomPanel)>,
     ) {
-        // 新服务器的列表只能在 home 发布身份后到达；读完列表前不让身份切换。
+        // 持有身份快照时只取同源列表，Home 与插件观察者的发布先后不影响页面归属。
         let home = self.home.borrow();
+        let plugins = self.plugins.view_for_server(home.server_id.as_deref());
         let open_room = self.room_panel.1.borrow().clone();
-        (self.plugins_view.borrow().clone(), home.clone(), open_room)
+        (plugins, home.clone(), open_room)
     }
 
     pub(super) fn recompute(&self) {
