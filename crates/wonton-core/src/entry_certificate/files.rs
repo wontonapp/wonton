@@ -8,7 +8,7 @@ use anyhow::{Context, Result, ensure};
 use rcgen::{CertificateParams, DistinguishedName, KeyPair};
 use serde_json::json;
 
-use super::{AcmeDnsCredentials, CertificateManager, regular_file, validate_url};
+use super::{AcmeDnsCredentials, CertificateManager, regular_file, validate_http_url};
 
 impl CertificateManager {
     pub(super) fn initialize_files(&self, domain: &str) -> Result<()> {
@@ -101,7 +101,7 @@ impl CertificateManager {
             "cannot mix managed acme-dns and custom DNS provider"
         );
         let base_url = acme_dns_url.context("acme-dns URL is required")?;
-        validate_url(base_url)?;
+        validate_http_url(base_url)?;
         ensure!(
             !base_url.contains(['\r', '\n', '\'', '\\']),
             "invalid acme-dns URL for environment file"

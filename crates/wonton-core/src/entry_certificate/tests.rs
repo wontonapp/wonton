@@ -12,6 +12,7 @@ fn manager(dir: &Path) -> CertificateManager {
             directory_url: "https://pebble.test:14000/dir".to_owned(),
             ca_file: None,
             dns_resolvers: vec!["192.0.2.53:53".to_owned()],
+            dns_propagation_disable_ans: false,
             email: None,
             accept_terms: true,
             network: "entry-test-egress".to_owned(),

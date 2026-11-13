@@ -222,6 +222,8 @@ pub struct Engine {
     pub(super) network_detector: Detector,
     /// 语言文件和主人的用户名，按它找主人的语言（[`Self::set_languages`]）；没接上时按默认语言写。
     languages: Option<(std::path::PathBuf, String)>,
+    /// 测试用的建容器记录（`for_test` 才有）：观察签发路径有没有真的试图起容器。
+    pub(crate) creations: Option<Arc<std::sync::Mutex<Vec<String>>>>,
 }
 
 type Result<T> = std::result::Result<T, EngineError>;
@@ -247,14 +249,25 @@ impl Engine {
     pub(crate) fn for_test() -> Self {
         let path = std::env::temp_dir().join(format!("wonton-test-{}.sock", std::process::id()));
         std::fs::write(&path, b"").expect("写测试 socket 占位文件");
-        Self::new(
+        let mut engine = Self::new(
             Docker::connect_with_unix(
                 &format!("unix://{}", path.display()),
                 120,
                 bollard::API_DEFAULT_VERSION,
             )
             .expect("构造 Docker 客户端"),
-        )
+        );
+        engine.creations = Some(Arc::default());
+        engine
+    }
+
+    /// `for_test` 引擎里试过的建容器命令（只记测试路径；生产引擎没有记录）。
+    #[cfg(test)]
+    pub(crate) fn recorded_creations(&self) -> Vec<String> {
+        self.creations
+            .as_ref()
+            .map(|creations| creations.lock().unwrap().clone())
+            .unwrap_or_default()
     }
 
     fn new(docker: Docker) -> Self {
@@ -266,6 +279,7 @@ impl Engine {
             network_pool: NetworkPool::default(),
             network_detector: Detector::Here,
             languages: None,
+            creations: None,
         }
     }
 
@@ -488,6 +502,10 @@ impl Engine {
     }
 
     pub async fn create_container(&self, name: &str, body: ContainerCreateBody) -> Result<()> {
+        if let Some(creations) = &self.creations {
+            let command = body.cmd.clone().unwrap_or_default().join(" ");
+            creations.lock().unwrap().push(command);
+        }
         let options = CreateContainerOptionsBuilder::default().name(name).build();
         let response = self
             .docker

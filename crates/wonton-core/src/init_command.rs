@@ -18,9 +18,14 @@ pub(super) async fn init(args: &[String]) -> anyhow::Result<()> {
     let settings = wonton_core::entry_settings::EntrySettings::select(dir, &data_dir).await?;
     if let Some(settings) = &settings {
         if !dir.join("entry/certs/site.pem").is_file() {
-            settings
-                .certificate(dir, &data_dir, Engine::connect()?)
-                .await?;
+            let domain = wonton_core::clients::domain::Domain::new(
+                dir.to_owned(),
+                data_dir.clone(),
+                Engine::connect()?,
+                String::new(),
+                None,
+            );
+            domain.issue_now().await?;
         }
         wonton_core::entry_compose::write(dir, settings)?;
     }

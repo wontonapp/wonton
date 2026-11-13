@@ -18,6 +18,8 @@ pub struct EntrySettings {
     pub acme_directory: Option<String>,
     pub acme_ca: Option<PathBuf>,
     pub acme_resolvers: Vec<String>,
+    #[serde(default)]
+    pub acme_propagation_disable_ans: bool,
     pub acme_email: Option<String>,
     pub acme_accept_terms: bool,
     pub acme_network: String,
@@ -199,6 +201,8 @@ impl EntrySettings {
             },
             acme_email: setting("WONTON_ACME_EMAIL"),
             acme_accept_terms: setting("WONTON_ACME_ACCEPT_TERMS").as_deref() == Some("true"),
+            acme_propagation_disable_ans: setting("WONTON_ACME_PROPAGATION_DISABLE_ANS").as_deref()
+                == Some("true"),
             acme_network: setting("WONTON_ACME_NETWORK").unwrap_or_else(|| "bridge".into()),
             dns_provider: setting("WONTON_ACME_DNS_PROVIDER"),
             dns_env_file: setting("WONTON_ACME_DNS_ENV_FILE").map(PathBuf::from),
@@ -214,52 +218,6 @@ impl EntrySettings {
                 HomeService::new(url, self.service_ca.as_deref(), key)
             })
             .transpose()
-    }
-
-    pub async fn certificate(
-        &self,
-        dir: &Path,
-        data_dir: &Path,
-        engine: crate::plugin::docker::Engine,
-    ) -> anyhow::Result<()> {
-        if self.external_certificate {
-            ensure!(
-                dir.join("entry/certs/site.pem").is_file(),
-                "自己的证书缺少 entry/certs/site.pem"
-            );
-            return Ok(());
-        }
-        let directory_url = self
-            .acme_directory
-            .clone()
-            .context("没有配置 ACME directory")?;
-        let config = crate::entry_certificate::CertificateConfig {
-            directory_url,
-            ca_file: self.acme_ca.clone(),
-            dns_resolvers: self.acme_resolvers.clone(),
-            email: self.acme_email.clone(),
-            accept_terms: self.acme_accept_terms,
-            network: self.acme_network.clone(),
-            host_install_dir: dir.to_owned(),
-            include_lan: true,
-            lan_acme_dns: self.registration.as_ref().map(|r| r.lan_acme_dns.clone()),
-            dns_provider: self.dns_provider.clone(),
-            dns_env_file: self.dns_env_file.clone(),
-        };
-        let cert =
-            crate::entry_certificate::CertificateManager::new(dir.to_owned(), engine, config)?;
-        let account_uri = cert
-            .prepare(
-                &self.domain,
-                self.registration.as_ref().map(|r| &r.acme_dns),
-                self.registration.as_ref().map(|r| r.acme_dns_url.as_str()),
-            )
-            .await?;
-        if let (Some(service), Some(registration)) = (self.service(data_dir)?, &self.registration) {
-            service.bind_caa(&registration.home, &account_uri).await?;
-            crate::entry_dns::verify_caa(&self.domain, &account_uri, &self.acme_resolvers).await?;
-        }
-        cert.issue(&self.domain).await
     }
 }
 
