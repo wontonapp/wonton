@@ -37,6 +37,7 @@ PREFIXES: Dict[str, str] = {
     # onboarding
     "onboarding": "onboarding",
     "pairing": "pairing",
+    "joining": "joining",
     "install": "install",
     "home": "onboarding",
     "homestatus": "homeStatus",
@@ -134,7 +135,7 @@ GROUP_OF: Dict[str, str] = {
     prefix: group
     for group, prefixes in {
         "chat": "chat chatbackup chatstatus timeline message room bot botprofile transfer composer panel confirmation confirmationcard side agent agentrun",
-        "onboarding": "onboarding pairing install home homestatus launcher",
+        "onboarding": "onboarding pairing joining install home homestatus launcher",
         "plugins": "plugin pluginsources store registry registrymirror tool toolpolicy tab tabs files file viewer photo preview secret sidebar sessions scope takeover port mapping portmapping",
         "peers": "peers friends invite servers connection verification lanclient lanwebui qr qrscanner camera ownerprofile keepalive share contacts handoff matrixlogin",
         "settings": "settings appearance egress notification push shortcuts shortcut",

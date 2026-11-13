@@ -128,3 +128,137 @@ async fn a_plugin_that_is_not_running_is_still_not_found_rather_than_denied() {
         .await;
     assert_eq!(failure_kind(&result), Some("not_found"));
 }
+
+#[tokio::test]
+async fn keeper_role_and_bot_switch_both_gate_tools_without_reopening_the_session() {
+    use wonton_protocol::{AppScope, Gate, Permissions, RoleDraft};
+
+    let s = notes_setup().await;
+    let people = s.bus.people.get().unwrap();
+    let mut draft = RoleDraft {
+        name: "只装不打开".into(),
+        permissions: Permissions {
+            install_apps: Gate::Allow,
+            open_apps: AppScope::Selected {
+                plugin_ids: vec!["app.other".into()],
+            },
+            ..Permissions::strictest()
+        },
+    };
+    let role = people.roles.create(&draft).unwrap();
+    s.members
+        .invite(crate::members::MemberRecord {
+            role_id: role.id.clone(),
+            ..crate::members::MemberRecord::for_test("alice")
+        })
+        .unwrap();
+    let alice = Caller::for_bot(
+        PluginId::parse(AGENT).unwrap(),
+        None,
+        "alice".into(),
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+    );
+    assert!(
+        !tool_names(&s, &alice)
+            .await
+            .iter()
+            .any(|name| name.starts_with("app-example-notes__"))
+    );
+    let denied = s
+        .call_as(
+            &alice,
+            "app-example-notes__search",
+            json!({"name":"private"}),
+        )
+        .await;
+    assert_eq!(failure_kind(&denied), Some("permission_denied"));
+    assert!(s.notes.received_meta.lock().unwrap().is_empty());
+    assert!(s.cards.posted.lock().unwrap().is_empty());
+
+    draft.permissions.open_apps = AppScope::Selected {
+        plugin_ids: vec![NOTES.into()],
+    };
+    people.roles.update(&role.id, &draft).unwrap();
+    assert!(
+        tool_names(&s, &alice)
+            .await
+            .contains(&"app-example-notes__search".into())
+    );
+    let read = s
+        .call_as(
+            &alice,
+            "app-example-notes__search",
+            json!({"name":"allowed"}),
+        )
+        .await;
+    assert!(!failed(&read), "{read:?}");
+    assert_eq!(s.notes.received_meta.lock().unwrap().len(), 1);
+
+    switch(&s, "alice", false);
+    let denied = s
+        .call_as(&alice, "app-example-notes__search", json!({}))
+        .await;
+    assert_eq!(failure_kind(&denied), Some("permission_denied"));
+    assert_eq!(s.notes.received_meta.lock().unwrap().len(), 1);
+    switch(&s, "alice", true);
+    draft.permissions.open_apps = AppScope::Other;
+    people.roles.update(&role.id, &draft).unwrap();
+    let denied = s
+        .call_as(&alice, "app-example-notes__search", json!({}))
+        .await;
+    assert_eq!(failure_kind(&denied), Some("permission_denied"));
+    assert!(
+        !tool_names(&s, &alice)
+            .await
+            .iter()
+            .any(|name| name.starts_with("app-example-notes__"))
+    );
+    assert_eq!(s.notes.received_meta.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn unresolved_keepers_and_missing_roles_do_not_inherit_owner_access() {
+    let s = notes_setup().await;
+    s.members
+        .invite(crate::members::MemberRecord {
+            role_id: "missing".into(),
+            ..crate::members::MemberRecord::for_test("alice")
+        })
+        .unwrap();
+    for keeper in [
+        BotKeeper::Other,
+        BotKeeper::User {
+            username: "missing".into(),
+        },
+        BotKeeper::User {
+            username: "alice".into(),
+        },
+    ] {
+        let caller = Caller::for_bot(PluginId::parse(AGENT).unwrap(), None, "bot".into(), keeper);
+        let result = s
+            .call_as(&caller, "app-example-notes__search", json!({}))
+            .await;
+        assert_eq!(failure_kind(&result), Some("permission_denied"));
+        assert!(
+            !tool_names(&s, &caller)
+                .await
+                .iter()
+                .any(|name| name.starts_with("app-example-notes__"))
+        );
+    }
+    assert!(s.notes.received_meta.lock().unwrap().is_empty());
+    for keeper in [
+        BotKeeper::Household,
+        BotKeeper::User {
+            username: "owner".into(),
+        },
+    ] {
+        let caller = Caller::for_bot(PluginId::parse(AGENT).unwrap(), None, "bot".into(), keeper);
+        let result = s
+            .call_as(&caller, "app-example-notes__search", json!({}))
+            .await;
+        assert!(!failed(&result), "{result:?}");
+    }
+}
