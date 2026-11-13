@@ -17,10 +17,6 @@ impl PluginManager {
             .is_some_and(|record| record.family)
     }
 
-    pub fn family_enabled_checked(&self, id: &PluginId) -> Result<bool, super::store::StoreError> {
-        Ok(self.store.load(id)?.is_some_and(|record| record.family))
-    }
-
     /// 修改插件记录的 `family` 标记，返回改后的插件；不改变角色授权。
     pub fn set_family(
         &self,

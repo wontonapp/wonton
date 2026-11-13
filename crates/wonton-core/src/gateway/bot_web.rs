@@ -105,13 +105,12 @@ pub(super) fn authorize(
         return Err(Box::new(failure(BotWebFailure::Unauthenticated, langs)));
     };
     if !person.is_owner() {
-        let id = crate::plugin::PluginId::parse(&bot.plugin_id)
-            .map_err(|_| Box::new(failure(BotWebFailure::NotFound, langs)))?;
-        let shared = gateway
-            .plugins
-            .family_enabled_checked(&id)
-            .map_err(|error| Box::new(storage_error(&error, langs)))?;
-        if !shared {
+        // 和插件详情页同一把尺：这个人的角色没有开放这个应用，Bot 网页也不给（#518）。
+        if !gateway
+            .permissions(person)
+            .open_apps
+            .allows_plugin(&bot.plugin_id)
+        {
             return Err(Box::new(failure(BotWebFailure::NotShared, langs)));
         }
     }

@@ -177,7 +177,17 @@ async fn family_switch_not_bot_keeper_controls_both_web_and_metadata() {
             assert_failure(&reply, StatusCode::FORBIDDEN, "not_shared");
         }
     }
-    record(&h, true, &source());
+    // #518 起可见性按角色的 open_apps 算：给朋友的角色开放这个应用，family 标记不再管事。
+    let draft = wonton_protocol::RoleDraft {
+        name: "朋友".into(),
+        permissions: wonton_protocol::Permissions {
+            open_apps: wonton_protocol::AppScope::Selected {
+                plugin_ids: vec!["app.whoami".into()],
+            },
+            ..wonton_protocol::Permissions::strictest()
+        },
+    };
+    h.roles.update("friend", &draft).unwrap();
     for name in ["default", "mia"] {
         let reply = send_as(&h.app, Some(device), Method::GET, &host(name), "/", &[], "").await;
         assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
