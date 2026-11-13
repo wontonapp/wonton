@@ -13,6 +13,7 @@ use super::gpu::GpuSpec;
 use super::lan::LanSpec;
 use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
+pub use super::manifest_gpu_images::GpuImages;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
@@ -644,6 +645,7 @@ impl Manifest {
         super::privileges::validate_manifest(self, langs)?;
         super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
+        super::manifest_gpu_images::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
         super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;

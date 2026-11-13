@@ -32,6 +32,7 @@ mod egress_switch;
 mod friend_namespace;
 mod github;
 mod gpu;
+mod gpu_images;
 mod health;
 mod health_gate;
 mod host_check;

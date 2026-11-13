@@ -32,6 +32,7 @@ use crate::l10n::text;
 
 #[path = "package_capability_services.rs"]
 mod capability_services;
+mod gpu_images;
 mod references;
 mod runtime;
 pub mod static_files;
