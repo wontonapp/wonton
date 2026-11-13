@@ -11,9 +11,7 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
 use crate::plugin::fake_docker::FakeDocker;
-use crate::plugin::provides::{
-    CredentialCommands, CustomProviderCommands, ModelApis, ModelsProvider, ProviderCommands,
-};
+use crate::plugin::provides::{CredentialCommands, ModelApis, ModelsProvider};
 
 #[derive(Clone)]
 struct Provider {
@@ -27,7 +25,6 @@ struct Store {
     keys: BTreeMap<String, String>,
     configured: BTreeMap<String, Provider>,
     active: Option<String>,
-    serial: usize,
 }
 
 type Shared = Arc<Mutex<Store>>;
@@ -42,7 +39,18 @@ impl Drop for Server {
 }
 
 pub(super) async fn start(upstream_port: u16) -> super::Target {
-    let shared = Shared::default();
+    let shared = Arc::new(Mutex::new(Store {
+        configured: BTreeMap::from([(
+            "default".into(),
+            Provider {
+                base: format!("http://127.0.0.1:{upstream_port}/v1"),
+                model: "contract-text".into(),
+                key: "contract-key".into(),
+            },
+        )]),
+        active: Some("default".into()),
+        ..Store::default()
+    }));
     let app = Router::new()
         .route(&format!("{BASE}/models"), get(models))
         .route(&format!("{BASE}/chat/completions"), post(chat))
@@ -70,18 +78,8 @@ pub(super) async fn start(upstream_port: u16) -> super::Target {
                 revoke: vec!["credential-delete".into(), "{name}".into()],
                 service: None,
             },
-            providers: Some(ProviderCommands {
-                list: vec!["catalog".into()],
-                save: vec!["persist".into(), "{id}".into()],
-                test: vec!["probe".into(), "{id}".into()],
-                custom: Some(CustomProviderCommands {
-                    save: vec!["persist-custom".into()],
-                    test: vec!["probe-custom".into()],
-                }),
-            }),
         },
         upstream,
-        backend_url: format!("http://127.0.0.1:{upstream_port}/v1"),
         docker,
         engine,
         _guard: Box::new(guard),
@@ -107,83 +105,9 @@ fn command(shared: &Shared, argv: &[String], input: &[u8]) -> (i64, String, Stri
         ["credential-delete", name] => {
             shared.lock().unwrap().keys.remove(*name);
         }
-        ["catalog"] => {
-            let store = shared.lock().unwrap();
-            let mut presets = vec![json!({"id":"offline","title":"Offline provider"})];
-            presets.extend(
-                store
-                    .configured
-                    .keys()
-                    .filter(|id| *id != "offline")
-                    .map(|id| json!({"id":id,"title":id})),
-            );
-            return (0, json!({"presets":presets,"configured":store.configured.keys().collect::<Vec<_>>()} ).to_string(), String::new());
-        }
-        [action @ ("persist-custom" | "probe-custom")] => {
-            let body: Value = serde_json::from_slice(input).unwrap();
-            let provider = Provider {
-                base: body["base_url"].as_str().unwrap().into(),
-                model: body["model"].as_str().unwrap().into(),
-                key: body["key"].as_str().unwrap().into(),
-            };
-            let code = probe(&provider);
-            if *action == "persist-custom" && matches!(code, 0 | 4) {
-                let mut store = shared.lock().unwrap();
-                store.serial += 1;
-                let id = format!("custom-{}", store.serial);
-                store.configured.insert(id.clone(), provider);
-                store.active = Some(id);
-            }
-            return (code, String::new(), String::new());
-        }
-        [action @ ("persist" | "probe"), id] => {
-            let existing = shared.lock().unwrap().configured.get(*id).cloned();
-            if *id == "offline" {
-                if *action == "persist" {
-                    shared.lock().unwrap().configured.insert(
-                        (*id).into(),
-                        Provider {
-                            base: "http://offline.invalid".into(),
-                            model: "offline".into(),
-                            key: text.trim_end().into(),
-                        },
-                    );
-                }
-                return (4, String::new(), String::new());
-            }
-            let Some(mut provider) = existing else {
-                return (2, String::new(), String::new());
-            };
-            provider.key = text.trim_end().into();
-            let code = probe(&provider);
-            if *action == "persist" && matches!(code, 0 | 4) {
-                shared
-                    .lock()
-                    .unwrap()
-                    .configured
-                    .insert((*id).into(), provider);
-            }
-            return (code, String::new(), String::new());
-        }
         _ => return (2, String::new(), String::new()),
     }
     (0, String::new(), String::new())
-}
-
-fn probe(provider: &Provider) -> i64 {
-    tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-        let response = reqwest::Client::builder().no_proxy().build().unwrap()
-            .post(format!("{}/chat/completions", provider.base)).bearer_auth(&provider.key)
-            .json(&json!({"model":provider.model,"messages":[{"role":"user","content":"probe"}],"stream":false}))
-            .send().await;
-        match response.map(|r| r.status()) {
-            Ok(StatusCode::OK) => 0,
-            Ok(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => 3,
-            _ => 4,
-        }
-    })
-    })
 }
 
 fn authorized(shared: &Shared, headers: &HeaderMap) -> bool {

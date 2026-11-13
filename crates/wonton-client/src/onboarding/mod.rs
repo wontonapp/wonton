@@ -19,7 +19,7 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, Me, ModelProviders, ModelSettingsProblem, ONBOARDING_PATH,
+    Action, CoreError, HomeStatus, Me, ModelSettings, ModelSettingsProblem, ONBOARDING_PATH,
     Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
     OnboardingUpdate, OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
 };
@@ -45,7 +45,7 @@ struct LocalState {
     /// 从设置重看已经走完的引导：每一步都能不提交就离开，完成时只存动过的项。
     revisit: bool,
     owner: Option<Me>,
-    providers: Option<ModelProviders>,
+    model_settings: Option<ModelSettings>,
     draft: Draft,
     review: Vec<ReviewEntry>,
     /// 每次进出最后一页加一，旧的预览结果不落到新列出的项上。
@@ -246,9 +246,9 @@ impl OnboardingLink {
                 let step = state.step.unwrap_or(onboarding.step);
                 !matches!(step, OnboardingStep::Finished | OnboardingStep::Other)
             };
-            // 走完了的不取资料和服务商：没有地方显示它们，重看引导时再取。
+            // 走完了的不取资料和模型设置：没有地方显示它，重看引导时再取。
             let details = if in_flow {
-                Some(tokio::join!(api::me(&api), api::providers(&api)))
+                Some(tokio::join!(api::me(&api), api::settings(&api)))
             } else {
                 None
             };
@@ -264,7 +264,7 @@ impl OnboardingLink {
         onboarding: Onboarding,
         details: Option<(
             Result<Me, PluginProblem>,
-            Result<ModelProviders, ModelSettingsProblem>,
+            Result<ModelSettings, ModelSettingsProblem>,
         )>,
         revision: u64,
         after_reset: bool,
@@ -289,7 +289,7 @@ impl OnboardingLink {
                 state.revision += 1;
             }
             if (current || after_reset)
-                && let Some((owner, providers)) = details
+                && let Some((owner, model_settings)) = details
             {
                 match owner {
                     Ok(owner) => state.owner = Some(owner),
@@ -307,10 +307,10 @@ impl OnboardingLink {
                         }
                     }
                 }
-                match providers {
-                    Ok(providers) => state.providers = Some(providers),
+                match model_settings {
+                    Ok(model_settings) => state.model_settings = Some(model_settings),
                     Err(problem) => {
-                        state.providers = None;
+                        state.model_settings = None;
                         state.model_problem = Some(problem);
                     }
                 }

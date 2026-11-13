@@ -265,9 +265,6 @@ plugin-install-prv-models-port = provides.models.port 不能為 0
 plugin-install-prv-models-apis-path = provides.models.apis 的路徑必須以 / 開頭
 plugin-install-prv-models-default-model = provides.models.default_model 不能為空
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field } 必須是非空的 argv，並用 { $placeholder } 指明憑證名稱
-plugin-install-prv-list-argv = provides.models.providers.list 必須是非空的 argv
-plugin-install-prv-provider-argv = provides.models.providers.{ $field } 必須是非空的 argv，並用 { "{{" }id{ "}}" } 指明供應商 ID
-plugin-install-prv-custom-argv = provides.models.providers.custom.{ $field } 必須是非空且不含佔位符的 argv
 
 # ── 代理應用程式的 Cookie 和請求標頭（proxy_auth.rs）────────────────────────
 

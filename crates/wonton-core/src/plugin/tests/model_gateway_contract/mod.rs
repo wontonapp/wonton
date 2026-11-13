@@ -7,11 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
-use wonton_protocol::{CustomModelProvider, SecretString};
 
 use crate::plugin::docker::Engine;
 use crate::plugin::fake_docker::FakeDocker;
-use crate::plugin::model_providers::ProviderAction;
 use crate::plugin::models::ModelsRoute;
 use crate::plugin::names::Instance;
 use crate::plugin::provides::ModelsProvider;
@@ -23,7 +21,6 @@ use super::{env_of_container, langs, package};
 
 mod consumer;
 mod fake;
-mod management;
 mod response_upstream;
 mod responses;
 mod system;
@@ -32,7 +29,6 @@ mod upstream;
 pub(super) struct Target {
     pub spec: ModelsProvider,
     pub upstream: String,
-    pub backend_url: String,
     pub docker: FakeDocker,
     pub engine: Engine,
     pub _guard: Box<dyn Any + Send + Sync>,
@@ -134,21 +130,6 @@ impl Bed {
         }
     }
 
-    fn custom(&self, key: &str) -> CustomModelProvider {
-        CustomModelProvider {
-            base_url: self.target.backend_url.clone(),
-            model: "contract-text".into(),
-            key: SecretString::new(key),
-        }
-    }
-
-    async fn configured(&self) -> Vec<String> {
-        let listed = self.manager.model_providers(&langs()).await.unwrap();
-        assert!(listed.custom);
-        assert_eq!(listed.any_configured, !listed.configured.is_empty());
-        listed.configured.into_iter().map(|p| p.id).collect()
-    }
-
     async fn install(&self, id: &str, bot: bool) -> BTreeMap<String, String> {
         let mut environment = String::from(
             "  client:\n    image: test-only\n    environment:\n      WONTON_MODEL_BASE_URL: ${WONTON_MODEL_BASE_URL}\n      WONTON_MODEL_API_KEY: ${WONTON_MODEL_API_KEY}\n      WONTON_MODEL_DEFAULT: ${WONTON_MODEL_DEFAULT}",
@@ -210,7 +191,6 @@ impl Drop for Bed {
 
 async fn contract(target: Target, upstream: &upstream::Upstream) {
     let bed = Bed::new(target).await;
-    management::configure(&bed).await;
     let first = bed.install("com.example.first", false).await;
     let second = bed.install("com.example.second", false).await;
     let bot = bed.install("com.example.bot", true).await;
@@ -242,7 +222,6 @@ async fn contract(target: Target, upstream: &upstream::Upstream) {
         .unwrap();
     assert_eq!(response.status(), reqwest::StatusCode::UNAUTHORIZED);
     consumer::catalog(&bed, &second).await;
-    management::finish(&bed, &second).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

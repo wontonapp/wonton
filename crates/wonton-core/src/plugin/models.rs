@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use wonton_protocol::ModelSettings;
 
 use super::health_gate::Gate;
 use super::languages::Languages;
@@ -246,6 +247,30 @@ impl PluginManager {
             ProviderState::Ready(route) => Some(*route),
             _ => None,
         }
+    }
+
+    /// 模型设置页需要的网关网页和模型目录状态；目录由通用模型网关接口探测，不依赖插件私有命令。
+    pub(crate) async fn model_settings(
+        &self,
+        langs: &Languages,
+    ) -> Result<ModelSettings, InstallError> {
+        let route = self.provider(langs)?;
+        let (_, catalog) = self.model_probe_catalog(&route, langs).await?;
+        let has_configured_models = catalog
+            .get("data")
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|models| !models.is_empty());
+        Ok(ModelSettings {
+            plugin_id: route.id.to_string(),
+            web_url: self.model_web_url(&route.id),
+            has_configured_models,
+        })
+    }
+
+    /// 网关插件的网页地址，没有网页时为空。
+    pub(crate) fn model_web_url(&self, id: &PluginId) -> Option<String> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins.get(id).and_then(|entry| self.open_url(id, entry))
     }
 
     fn provider(&self, langs: &Languages) -> Result<ModelsRoute, InstallError> {

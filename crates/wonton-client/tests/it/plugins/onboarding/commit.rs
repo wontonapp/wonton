@@ -9,8 +9,8 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, preview};
 use super::{
-    INSTALL, KEY, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig, installed_onboarding,
-    invalid, onboarding, providers, walk_to_review, with_photos,
+    INSTALL, MODEL_SETTINGS, ONBOARDING, PREVIEW, PROFILE, act, at, edit, flow_rig,
+    installed_onboarding, invalid, model_settings, onboarding, walk_to_review, with_photos,
 };
 
 fn body(rig: &Rig, method: &Method, path: &str) -> Vec<serde_json::Value> {
@@ -70,7 +70,7 @@ async fn finish_saves_every_choice_then_installs_in_the_background() {
     assert_eq!(profile.len(), 1);
     assert_eq!(profile[0]["display_name"], "云吞");
     assert!(profile[0]["email"].is_null());
-    assert!(body(&rig, &Method::PUT, KEY).is_empty());
+    assert!(body(&rig, &Method::PUT, MODEL_SETTINGS).is_empty());
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
     assert_eq!(finished[0]["step"], "finished");
@@ -120,12 +120,12 @@ async fn skipping_every_step_only_marks_onboarding_finished() {
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
 }
 
-/// 已经走完引导的服务器，重看从第一步开始：装着两个 Agent（默认 agent.two）、资料和服务商都取到了。
+/// 已经走完引导的服务器，重看从第一步开始：装着两个 Agent（默认 agent.two）、资料和模型设置都取到了。
 async fn revisit_rig() -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(installed_onboarding());
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
-    rig.core.set_providers(providers(true));
+    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
     act(&rig, Action::RestartOnboarding);
@@ -142,7 +142,10 @@ async fn finishing_an_untouched_revisit_changes_nothing() {
     act(&rig, Action::ContinueOnboarding);
     settled(&rig).await;
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty(), "资料没动");
-    assert!(rig.core.seen(&Method::PUT, KEY).is_empty(), "模型没动");
+    assert!(
+        rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty(),
+        "模型没动"
+    );
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty(), "应用没动");
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished.len(), 1);
@@ -177,7 +180,7 @@ async fn finishing_a_revisit_saves_only_the_changed_agent() {
     act(&rig, Action::ContinueOnboarding);
     settled(&rig).await;
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
-    assert!(rig.core.seen(&Method::PUT, KEY).is_empty());
+    assert!(rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty());
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
     let finished = body(&rig, &Method::PUT, ONBOARDING);
     assert_eq!(finished[0]["primary_agent"], "agent.one");
@@ -277,7 +280,7 @@ async fn a_refused_profile_stops_finish_before_anything_else_and_can_be_retried(
         })
         .await;
     assert!(!view.nav.unwrap().can_next);
-    assert!(rig.core.seen(&Method::PUT, KEY).is_empty());
+    assert!(rig.core.seen(&Method::PUT, MODEL_SETTINGS).is_empty());
     assert!(rig.core.seen(&Method::PUT, ONBOARDING).is_empty());
     assert!(rig.core.seen(&Method::POST, INSTALL).is_empty());
 

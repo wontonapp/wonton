@@ -6,35 +6,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    CardLine, PermissionLine, PluginIcon, PluginProblem, PluginState, SecretString, StoreItem,
-    StoreProblem,
+    CardLine, PermissionLine, PluginIcon, PluginProblem, PluginState, StoreItem, StoreProblem,
 };
 
 /// 读写引导状态的接口：`GET` 和 `PUT` 都返回 [`Onboarding`]，`PUT` 的请求体是 [`OnboardingUpdate`]。
 pub const ONBOARDING_PATH: &str = "/_wonton/api/onboarding";
 
-/// 服务商列表的接口：`GET` 返回 [`ModelProviders`]。
-pub const MODEL_PROVIDERS_PATH: &str = "/_wonton/api/models/providers";
-
-/// 保存一个服务商的 key 的接口：`PUT`，请求体是 [`ModelProviderKey`]，成功时没有响应体。错误类别：
-/// `invalid_input` 是服务商拒绝了 key，这时不保留它；`upstream_unavailable` 是连不上服务商，key 已保存；
-/// `models_unavailable` 是模型网关没就绪。
-pub fn model_provider_path(id: &str) -> String {
-    format!("{MODEL_PROVIDERS_PATH}/{id}")
-}
-
-/// 只测试一个服务商的 key、不保存的接口：`POST`，请求体是 [`ModelProviderKey`]，成功时没有响应体。错误类别同
-/// [`model_provider_path`]，只是什么都不保存：`upstream_unavailable` 时 key 也没有保存。
-pub fn model_provider_test_path(id: &str) -> String {
-    format!("{MODEL_PROVIDERS_PATH}/{id}/test")
-}
-
-/// 保存一个 OpenAI 兼容的自定义服务商的接口：`PUT`，请求体是 [`CustomModelProvider`]。成功和错误同
-/// [`model_provider_path`]。模型网关不支持自定义时是 `models_unavailable`，[`ModelProviders::custom`] 为假。
-pub const CUSTOM_MODEL_PROVIDER_PATH: &str = "/_wonton/api/models/custom-provider";
-
-/// 只测试自定义服务商、不保存的接口：`POST`，请求体是 [`CustomModelProvider`]，错误同 [`model_provider_test_path`]。
-pub const CUSTOM_MODEL_PROVIDER_TEST_PATH: &str = "/_wonton/api/models/custom-provider/test";
+/// 模型设置网页接口：`GET` 返回网关网页目标和已配置状态。
+pub const MODEL_SETTINGS_PATH: &str = "/_wonton/api/models/settings";
 
 /// 引导的一步。家里的服务器上只记 `Profile`（还没走完）和 `Finished`：每一步只记下选择，到 `Review` 点完成才一起
 /// 生效（ADR-0038），所以中间的步骤只在客户端核心里。
@@ -121,61 +100,14 @@ pub struct OnboardingNeed {
     pub plugins: Vec<StoreItem>,
 }
 
-/// `GET /_wonton/api/models/providers` 的响应。
+/// `GET /_wonton/api/models/settings` 的响应。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelProviders {
+pub struct ModelSettings {
     pub plugin_id: String,
-    /// 官方索引列出的主流服务商，主人语言推荐的在前，其余的壳收进“更多服务商”。模型网关没有声明 `providers` 时为空；取不到
-    /// 索引时是空列表。这两种都打开 `web_url`。
-    pub providers: Option<Vec<ModelProvider>>,
-    /// 模型网关里已经接了模型，包括不在 `providers` 里的。接模型这一步看它，不看列表里的 `configured`。
-    #[serde(default)]
-    pub any_configured: bool,
     /// 模型网关的网页；网关没有网页时为空。
     pub web_url: Option<String>,
-    /// 模型网关里已经接好的服务商，包括不在 `providers` 里的（如自定义的）。重进引导时接模型这一步显示它们。
-    #[serde(default)]
-    pub configured: Vec<ConfiguredModelProvider>,
-    /// 模型网关能接 OpenAI 兼容的自定义服务商（[`CUSTOM_MODEL_PROVIDER_PATH`]）。
-    #[serde(default)]
-    pub custom: bool,
-}
-
-/// 模型网关里已经接好的一个服务商。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConfiguredModelProvider {
-    pub id: String,
-    /// 网关给的名字；取不到时是 `id`。
-    pub title: String,
-}
-
-/// 模型网关能接的一个服务商。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelProvider {
-    pub id: String,
-    /// 厂商的名字，不分语言。
-    pub title: String,
-    /// 拿 key 的地址；不在推荐清单里的为空。
-    pub key_url: Option<String>,
-    /// 在主人语言的推荐清单里。
-    pub recommended: bool,
-    /// 模型网关里已经有它。
-    pub configured: bool,
-}
-
-/// `PUT /_wonton/api/models/providers/{id}` 和它的测试接口的请求体。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ModelProviderKey {
-    pub key: SecretString,
-}
-
-/// 自定义服务商：OpenAI 兼容接口的地址、key 和模型名。
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CustomModelProvider {
-    /// 如 `https://api.example.com/v1`。
-    pub base_url: String,
-    pub model: String,
-    pub key: SecretString,
+    /// 网关模型目录里至少有一个模型；不表示默认模型可用或请求一定成功。
+    pub has_configured_models: bool,
 }
 
 /// 引导的 ViewModel。步骤的判断都在客户端核心，壳只渲染，操作发回核心。
@@ -494,38 +426,5 @@ mod tests {
         assert_eq!(update.step, Some(OnboardingStep::Model));
         assert_eq!(update.primary_agent, None);
         assert_eq!(update.replaced_agent_asked, None);
-    }
-
-    #[test]
-    fn a_gateway_without_providers_is_not_an_empty_list() {
-        let none: ModelProviders = serde_json::from_value(
-            json!({ "plugin_id": "system.models", "providers": null, "web_url": null }),
-        )
-        .unwrap();
-        let empty: ModelProviders = serde_json::from_value(
-            json!({ "plugin_id": "system.models", "providers": [], "web_url": null }),
-        )
-        .unwrap();
-        assert_ne!(none, empty);
-    }
-
-    #[test]
-    fn a_provider_key_is_redacted_when_logged() {
-        let key = ModelProviderKey {
-            key: SecretString::new("sk-secret"),
-        };
-        assert!(!format!("{key:?}").contains("sk-secret"));
-        assert_eq!(
-            serde_json::to_value(&key).unwrap(),
-            json!({ "key": "sk-secret" })
-        );
-    }
-
-    #[test]
-    fn provider_paths_sit_under_the_list() {
-        assert_eq!(
-            model_provider_path("deepseek"),
-            "/_wonton/api/models/providers/deepseek"
-        );
     }
 }

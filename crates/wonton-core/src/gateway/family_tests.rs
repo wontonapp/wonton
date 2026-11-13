@@ -501,10 +501,7 @@ fn guarded_routes() -> GuardedRoutes {
         ),
         (
             Item::ModelSettings,
-            vec![
-                (Method::GET, "/_wonton/api/models/providers", ""),
-                (Method::PUT, "/_wonton/api/models/providers/magpie", "{}"),
-            ],
+            vec![(Method::GET, "/_wonton/api/models/settings", "")],
         ),
     ]
 }
