@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -23,6 +25,9 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationCard
+import app.wonton.protocol.ConfirmationCategory
+import app.wonton.protocol.ConfirmationTool
+import app.wonton.protocol.ConfirmationToolImpact
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
@@ -41,7 +46,7 @@ import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
 import java.util.Date
 
-/** 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。 */
+/** 核心给出卡片内容和风险类别；壳本地化固定提示，按钮状态仍由核心决定。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
@@ -52,7 +57,6 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
     CardSecureScreen(card, secrets, shown)
-    val tabs = LocalPages.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
         card.lines.forEach { line ->
@@ -62,6 +66,15 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 fontWeight = if (line.emphasis) FontWeight.SemiBold else FontWeight.Normal,
                 color = (if (line.emphasis) colors.danger else colors.textPrimary).toColor(),
             )
+        }
+        (card.category as? ConfirmationCategory.ToolCall)?.let { category ->
+            CardToolSummary(category.tool)
+            key(card.id) {
+                ProblemDetail(
+                    text = "${category.tool.name}\n\n${category.tool.arguments}",
+                    modifier = Modifier.heightIn(min = WontonTheme.size.target),
+                )
+            }
         }
         if (card.secretInputs.isNotEmpty()) {
             SecretInputsSection(
@@ -86,13 +99,13 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
-        // 成功卡片只在已装列表确认插件存在时提供入口；列表未刷新或插件已卸载时不显示。
-        val installed = if (card.state is ConfirmationState.Succeeded) {
-            card.pluginId?.let { id -> tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id } }
-        } else {
-            null
+        // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
+        // 刷新）时如实不显示。
+        if (card.state is ConfirmationState.Succeeded && card.pluginId != null) {
+            val tabs = LocalPages.current
+            val installed = tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == card.pluginId }
+            installed?.let { CardInstalledActions(it, tabs, onAction) }
         }
-        installed?.let { CardInstalledActions(it, tabs, onAction) }
         if (card.choices.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -130,6 +143,40 @@ private fun cardInputsReady(
 
 private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
     settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
+
+@Composable
+private fun CardToolSummary(tool: ConfirmationTool) {
+    val colors = WontonTheme.colors
+    val style = WontonTheme.typography.supporting
+    Text(
+        stringResource(R.string.confirmation_card_tool_source, tool.pluginTitle),
+        style = style,
+        color = colors.textSecondary.toColor(),
+    )
+    val warning = when (val impact = tool.impact) {
+        ConfirmationToolImpact.ReadOnly -> null
+        ConfirmationToolImpact.ChangesData -> stringResource(R.string.confirmation_card_tool_changes_data)
+        is ConfirmationToolImpact.Destructive -> impact.target?.let {
+            stringResource(R.string.confirmation_card_tool_destructive_target, it)
+        } ?: stringResource(R.string.confirmation_card_tool_destructive_unknown)
+        ConfirmationToolImpact.Other -> stringResource(R.string.confirmation_card_tool_unknown_impact)
+    }
+    warning?.let {
+        val tint = if (tool.impact is ConfirmationToolImpact.Destructive) colors.danger else colors.warning
+        Text(
+            it,
+            style = style,
+            color = tint.toColor(),
+        )
+    }
+    if (tool.runsAsRoot) {
+        Text(
+            stringResource(R.string.confirmation_card_tool_root),
+            style = style,
+            color = colors.warning.toColor(),
+        )
+    }
+}
 
 /** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。 */
 @Composable

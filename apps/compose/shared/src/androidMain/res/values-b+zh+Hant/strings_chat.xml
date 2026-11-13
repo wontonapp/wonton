@@ -90,6 +90,14 @@
     <string name="confirmation_card_uncertain_result">結果不確定：%1$s</string>
     <!-- Line on an approval request card: further actions run without asking until the approval window closes. Argument: the closing time, already formatted as a time. -->
     <string name="confirmation_card_window_until">允許至 %1$s</string>
+    <string name="confirmation_card_tool_source">來自 %1$s</string>
+    <string name="confirmation_card_tool_changes_data">這個操作會改動資料</string>
+    <string name="confirmation_card_tool_destructive_target">這個操作可能刪除或覆寫：%1$s</string>
+    <string name="confirmation_card_tool_destructive_unknown">看不到要刪的是哪一項</string>
+    <string name="confirmation_card_tool_unknown_impact">還不清楚這個操作會帶來什麼影響</string>
+    <string name="confirmation_card_tool_root">這個操作會以 root 身分在這台機器上執行</string>
+    <string name="confirmation_card_requests">待確認的請求</string>
+    <string name="confirmation_card_unavailable">這項請求已不在清單裡</string>
     <string name="bot_avatar_pick_state">更換%1$s頭像</string>
     <string name="timeline_sending_progress">傳送中 %1$s</string>
     <string name="timeline_cancel_send">取消傳送</string>
