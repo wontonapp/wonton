@@ -19,7 +19,7 @@ use wonton_protocol::{
 };
 
 use super::PushLink;
-use crate::chat::{LinkTargets, core_account, failure, fetch_card, summary};
+use crate::chat::{LinkTargets, core_account, failure, fetch_card, summary, unread_total};
 use crate::l10n::{CATALOG, language};
 
 /// 等 Matrix 会话就绪最多这么久：推送唤醒的进程要先建好本地代理、从本机恢复会话。
@@ -84,6 +84,8 @@ impl Payload {
             contact_request: Some(request),
             thread_root: None,
             hidden: false,
+            lock_screen_private: false,
+            unread_total: 0,
         })
     }
 
@@ -105,13 +107,31 @@ impl Payload {
             contact_request: None,
             thread_root: None,
             hidden: false,
+            lock_screen_private: false,
+            unread_total: 0,
         }
     }
 }
 
 impl PushLink {
-    /// 不用显示（按推送规则不该响、消息已撤回）时返回 `None`。
+    /// 不用显示（按推送规则不该响、消息已撤回）时返回 `None`。返回前按设置补上锁屏是否隐藏和未读总数。
     pub(crate) async fn resolve(
+        &self,
+        payload: &Payload,
+    ) -> Result<Option<PushNotification>, CoreError> {
+        let resolved = self.resolve_inner(payload).await?;
+        Ok(resolved.map(|notification| self.decorate(notification)))
+    }
+
+    /// 锁屏是否隐藏按类别的设置（ADR-0101 §5），未读总数照房间列表算（§3）。每一路通知都经过这里，
+    /// 各处构造时不用各填一遍、也不会漏。
+    pub(crate) fn decorate(&self, mut notification: PushNotification) -> PushNotification {
+        notification.lock_screen_private = self.lock_screen.borrow().hidden(notification.category);
+        notification.unread_total = unread_total(&self.chat.view());
+        notification
+    }
+
+    async fn resolve_inner(
         &self,
         payload: &Payload,
     ) -> Result<Option<PushNotification>, CoreError> {
@@ -280,6 +300,8 @@ impl PushLink {
             contact_request: None,
             thread_root: None,
             hidden: false,
+            lock_screen_private: false,
+            unread_total: 0,
         };
         let Some((core_url, proxy)) = self.wait_home().await else {
             tracing::info!("push: the home connection isn't ready for a confirmation");
@@ -312,10 +334,18 @@ impl PushLink {
                         id: card.id,
                         expires_at_ms: card.expires_at_ms,
                         origin,
+                        // 表单塞不进通知：要密钥、要设置的卡片点开进 App 填（ADR-0101 §1）。
+                        choices: if card.secret_inputs.is_empty() && card.settings.is_none() {
+                            card.choices.into_iter().take(3).collect()
+                        } else {
+                            Vec::new()
+                        },
                     }),
                     contact_request: None,
                     thread_root,
                     hidden: false,
+                    lock_screen_private: false,
+                    unread_total: 0,
                 })
             }
             // 已经结束的：不弹。
@@ -385,6 +415,9 @@ pub(crate) fn push_notification(
         contact_request: None,
         thread_root,
         hidden: false,
+        // 这两项构造时还不知道：保持连接那一路自己填，推送这一路由 [`PushLink::decorate`] 统一补。
+        lock_screen_private: false,
+        unread_total: 0,
     })
 }
 

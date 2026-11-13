@@ -54,5 +54,7 @@
     <string name="applock_timeout_one_minute">1 分钟后</string>
     <string name="applock_timeout_five_minutes">5 分钟后</string>
     <string name="applock_timeout_fifteen_minutes">15 分钟后</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">锁屏上显示内容</string>
     <string name="settings_my_apps">我的应用</string>
 </resources>

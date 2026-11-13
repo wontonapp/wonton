@@ -30,7 +30,7 @@ use crate::subscription::{
     AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
     HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
     PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
-    TransfersSubscription,
+    TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 
@@ -216,6 +216,16 @@ impl ClientCore {
     /// 订阅聊天状态，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_chat(&self) -> Arc<ChatSubscription> {
         Arc::new(ChatSubscription::new(self.views().chat.subscribe()))
+    }
+
+    /// 当前服务器房间的未读总数；邀请按 1 计，溢出饱和到 u32::MAX。打开 App 不会清零。
+    pub fn unread_total(&self) -> u32 {
+        crate::chat::unread_total(&self.views().chat.borrow())
+    }
+
+    /// 订阅同一份房间事实源的绝对未读总数；切换服务器后跟随新的服务器。
+    pub fn subscribe_unread(&self) -> Arc<UnreadSubscription> {
+        Arc::new(UnreadSubscription::new(self.views().chat.subscribe()))
     }
 
     /// 发起私聊时能直接选的人：已装插件的 Bot 在前，然后是私聊过的人。`query` 不为空时按名字和 ID 筛。

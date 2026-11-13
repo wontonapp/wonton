@@ -91,5 +91,7 @@
     <string name="applock_timeout_one_minute">After 1 minute</string>
     <string name="applock_timeout_five_minutes">After 5 minutes</string>
     <string name="applock_timeout_fifteen_minutes">After 15 minutes</string>
+    <!-- Lock screen content switch in the notification settings, per category (ADR-0101 §5). -->
+    <string name="notification_lock_screen">Show on lock screen</string>
     <string name="settings_my_apps">My apps</string>
 </resources>

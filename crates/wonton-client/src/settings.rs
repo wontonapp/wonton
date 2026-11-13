@@ -4,9 +4,9 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_protocol::{
     AppLockViewModel, ChatViewModel, FriendsState, FriendsViewModel, HomeStatus, HomeViewModel,
-    NotificationCategory, PeersState, PeersViewModel, PluginsViewModel, PushMethod, PushStatus,
-    RecoveryStatus, ServerName, ServersViewModel, SettingsEntry, SettingsSection,
-    SettingsViewModel,
+    NotificationCategory, NotificationCategorySetting, PeersState, PeersViewModel,
+    PluginsViewModel, PushMethod, PushStatus, RecoveryStatus, ServerName, ServersViewModel,
+    SettingsEntry, SettingsSection, SettingsViewModel,
 };
 
 use crate::scope::reuse;
@@ -29,6 +29,7 @@ impl SettingsLink {
         mut servers: watch::Receiver<ServersViewModel>,
         mut method: watch::Receiver<PushMethod>,
         mut app_lock: watch::Receiver<AppLockViewModel>,
+        mut lock_screen: watch::Receiver<crate::lock_screen::Hidden>,
         view: Option<watch::Sender<SettingsViewModel>>,
     ) -> Self {
         let compute = |home: &watch::Receiver<HomeViewModel>,
@@ -38,6 +39,7 @@ impl SettingsLink {
                        friends: &watch::Receiver<FriendsViewModel>,
                        servers: &watch::Receiver<ServersViewModel>,
                        method: &watch::Receiver<PushMethod>,
+                       lock_screen: &watch::Receiver<crate::lock_screen::Hidden>,
                        app_lock: &watch::Receiver<AppLockViewModel>| {
             // 同一个 watch 不能同时借两份：发送方在两次 borrow 之间等写锁时，第二次 borrow 排在它后面，
             // 第一份又不会还，两个线程一起卡死。
@@ -51,6 +53,7 @@ impl SettingsLink {
                 current_name(&servers.borrow()),
                 chat.encryption.recovery,
                 *method.borrow(),
+                &lock_screen.borrow(),
                 &chat.push,
                 plugins.borrow().core_upgrade.is_prompting(),
                 peer_count,
@@ -61,7 +64,15 @@ impl SettingsLink {
         let view = reuse(
             view,
             compute(
-                &home, &chat, &plugins, &peers, &friends, &servers, &method, &app_lock,
+                &home,
+                &chat,
+                &plugins,
+                &peers,
+                &friends,
+                &servers,
+                &method,
+                &lock_screen,
+                &app_lock,
             ),
         );
         let sender = view.clone();
@@ -76,9 +87,18 @@ impl SettingsLink {
                     changed = servers.changed() => if changed.is_err() { break },
                     changed = method.changed() => if changed.is_err() { break },
                     changed = app_lock.changed() => if changed.is_err() { break },
+                    changed = lock_screen.changed() => if changed.is_err() { break },
                 }
                 let next = compute(
-                    &home, &chat, &plugins, &peers, &friends, &servers, &method, &app_lock,
+                    &home,
+                    &chat,
+                    &plugins,
+                    &peers,
+                    &friends,
+                    &servers,
+                    &method,
+                    &lock_screen,
+                    &app_lock,
                 );
                 sender.send_if_modified(|view| {
                     let modified = *view != next;
@@ -128,6 +148,7 @@ fn settings_view(
     name: Option<ServerName>,
     recovery: RecoveryStatus,
     method: PushMethod,
+    lock_screen: &crate::lock_screen::Hidden,
     push: &PushStatus,
     upgrade: bool,
     peers: Option<usize>,
@@ -143,7 +164,13 @@ fn settings_view(
         SettingsEntry::Notifications {
             method,
             push: push.clone(),
-            categories: NotificationCategory::ALL.to_vec(),
+            categories: NotificationCategory::ALL
+                .into_iter()
+                .map(|category| NotificationCategorySetting {
+                    category,
+                    lock_screen_private: lock_screen.hidden(category),
+                })
+                .collect(),
         },
         SettingsEntry::AppLock {
             enabled: app_lock.enabled,
@@ -210,6 +237,7 @@ mod tests {
                 None,
                 RecoveryStatus::Unknown,
                 PushMethod::Keepalive,
+                &crate::lock_screen::Hidden::default(),
                 &PushStatus::NoEndpoint,
                 false,
                 Some(0),
@@ -232,6 +260,7 @@ mod tests {
             None,
             RecoveryStatus::Unknown,
             PushMethod::Keepalive,
+            &crate::lock_screen::Hidden::default(),
             &PushStatus::NoEndpoint,
             false,
             None,
@@ -247,11 +276,13 @@ mod tests {
                 SettingsEntry::Notifications {
                     method: PushMethod::Keepalive,
                     push: PushStatus::NoEndpoint,
-                    categories: vec![
-                        NotificationCategory::Message,
-                        NotificationCategory::Confirmation,
-                        NotificationCategory::PluginNotice
-                    ],
+                    categories: NotificationCategory::ALL
+                        .into_iter()
+                        .map(|category| NotificationCategorySetting {
+                            category,
+                            lock_screen_private: false
+                        })
+                        .collect(),
                 },
                 SettingsEntry::AppLock {
                     enabled: false,
@@ -274,6 +305,7 @@ mod tests {
             }),
             RecoveryStatus::Enabled,
             PushMethod::Keepalive,
+            &crate::lock_screen::Hidden::default(),
             &PushStatus::Registered,
             true,
             None,
@@ -313,6 +345,7 @@ mod tests {
                 None,
                 RecoveryStatus::Unknown,
                 PushMethod::Keepalive,
+                &crate::lock_screen::Hidden::default(),
                 &PushStatus::NoEndpoint,
                 false,
                 None,
@@ -352,6 +385,7 @@ mod tests {
                 None,
                 RecoveryStatus::Unknown,
                 PushMethod::Keepalive,
+                &crate::lock_screen::Hidden::default(),
                 &PushStatus::NoEndpoint,
                 false,
                 peers,
@@ -406,6 +440,8 @@ mod tests {
         let (_friends, friends_rx) = watch::channel(friends_view_model());
         let (_servers, servers_rx) = watch::channel(ServersViewModel::default());
         let (_method, method_rx) = watch::channel(PushMethod::default());
+        let (_lock_screen_tx, lock_screen_rx) =
+            watch::channel(crate::lock_screen::Hidden::default());
         let link = SettingsLink::new(
             &Handle::current(),
             home_rx,
@@ -416,6 +452,7 @@ mod tests {
             servers_rx,
             method_rx,
             app_lock_rx,
+            lock_screen_rx,
             None,
         );
         assert!(entries(&link.view()).contains(&SettingsEntry::AppLock {
@@ -459,6 +496,8 @@ mod tests {
         let (_servers_tx, servers_rx) = watch::channel(ServersViewModel::default());
         let (_method_tx, method_rx) = watch::channel(PushMethod::default());
         let (_app_lock_tx, app_lock_rx) = watch::channel(AppLockViewModel::default());
+        let (_lock_screen_tx, lock_screen_rx) =
+            watch::channel(crate::lock_screen::Hidden::default());
         let link = SettingsLink::new(
             &Handle::current(),
             home_rx,
@@ -469,6 +508,7 @@ mod tests {
             servers_rx,
             method_rx,
             app_lock_rx,
+            lock_screen_rx,
             None,
         );
         let mut updates = link.sender().subscribe();

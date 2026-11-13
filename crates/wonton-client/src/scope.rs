@@ -22,6 +22,7 @@ use crate::composer::{ComposerLink, uplink::LiveUplink};
 use crate::files::FilesLink;
 use crate::friends::FriendsLink;
 use crate::home::{HomeLink, Network, Storage};
+use crate::lock_screen::LockScreenLink;
 use crate::onboarding::OnboardingLink;
 use crate::pages::PagesLink;
 use crate::peers::PeersLink;
@@ -39,6 +40,8 @@ pub(crate) struct Scope {
     pub(crate) chat: Arc<ChatLink>,
     pub(crate) push: Arc<PushLink>,
     pub(crate) push_method: PushMethodLink,
+    /// 锁屏上隐藏内容的类别（ADR-0101 §5）：整机设置，放在设备级的 root。
+    pub(crate) lock_screen: LockScreenLink,
     pub(crate) plugins: Arc<PluginsLink>,
     pub(crate) agent_chains: Arc<AgentChainsLink>,
     pub(crate) pages: Arc<PagesLink>,
@@ -115,6 +118,7 @@ struct Shared<'a> {
     plugins: &'a Arc<PluginsLink>,
     push_method: &'a PushMethodLink,
     app_lock: &'a AppLockLink,
+    lock_screen: &'a LockScreenLink,
     dir: &'a Path,
     views: Option<&'a Views>,
 }
@@ -143,6 +147,7 @@ fn chat_links(
         plugins,
         push_method,
         app_lock: _,
+        lock_screen,
         dir,
         views,
     } = *shared;
@@ -161,6 +166,7 @@ fn chat_links(
         chat.clone(),
         dir,
         push_method.subscribe(),
+        lock_screen.subscribe(),
     );
     let tabs = PagesLink::new(
         handle.clone(),
@@ -207,6 +213,7 @@ fn people_links(
         plugins,
         push_method,
         app_lock,
+        lock_screen,
         dir,
         views,
     } = *shared;
@@ -228,6 +235,7 @@ fn people_links(
         servers,
         push_method.subscribe(),
         app_lock.subscribe(),
+        lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
     Ok((peers, friends, settings))
@@ -259,6 +267,7 @@ impl Scope {
         let device_key = storage.device_key()?.to_bytes();
         // 方式是整机设置（设置页一个开关管所有服务器），放在设备级的 root，不放每台服务器一个的槽位目录。
         let push_method = PushMethodLink::new(root);
+        let lock_screen = LockScreenLink::new(root)?;
         let home = HomeLink::new(
             handle.clone(),
             hub.clone(),
@@ -297,6 +306,7 @@ impl Scope {
             confirmations: views.map(|v| v.confirmations.clone()),
             method: push_method.subscribe(),
             app_lock: app_lock.clone(),
+            lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
             room_panel_out: room_panel.0.clone(),
             external,
@@ -307,7 +317,8 @@ impl Scope {
             home: &home,
             plugins: &plugins,
             push_method: &push_method,
-            app_lock,
+            app_lock: &app_lock,
+            lock_screen: &lock_screen,
             dir,
             views,
         };
@@ -348,6 +359,7 @@ impl Scope {
             chat: links.chat,
             push: links.push,
             push_method,
+            lock_screen,
             plugins,
             agent_chains,
             pages: links.pages,

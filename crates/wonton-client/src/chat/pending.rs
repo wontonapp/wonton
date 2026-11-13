@@ -4,7 +4,7 @@
 //! 跟着家里的连接走，不和 Matrix 会话绑定：卡片不是 Matrix 消息，换登录、重连都不动这份状态；连不上核心时如实
 //! 报问题、留上次的列表，退避重试，`Action::RetryConfirmations` 立即重试。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -24,6 +24,8 @@ use crate::l10n::{CATALOG, language};
 /// 长轮询失败后的退避：连不上一两次多半是抖动，翻倍着退，到上限为止。
 const BACKOFF_START: Duration = Duration::from_secs(2);
 const BACKOFF_MAX: Duration = Duration::from_secs(30);
+/// 短确认只发普通通知；持续等主人一分钟的 Bot 任务才成为进行中通知（ADR-0101 §4）。
+const LONG_WAIT_MS: u64 = 60_000;
 
 /// 长轮询“等你确认”列表。三份产出都从核心的同一份列表加这台设备的回答进展算出来：
 /// - 壳订阅的 [`ConfirmationsViewModel`]：等回答的、结束的、取没取到过、最近一次的问题；
@@ -80,6 +82,8 @@ struct Witnessed {
     finished: HashSet<String>,
     /// 报过成功结果的卡片：重复见到的同一张不再报。
     reported: HashSet<String>,
+    /// 只记录亲眼看到的等待，不从到期时间反推任务何时开始；重启后重新计时。
+    waiting_since: HashMap<String, u64>,
 }
 
 impl Follower {
@@ -125,7 +129,7 @@ impl Follower {
         &mut self,
         task: &mut tokio::task::JoinHandle<Result<ConfirmationList, ChatProblem>>,
     ) -> Option<Result<ConfirmationList, ChatProblem>> {
-        let mut wakeup = next_wakeup(&self.latest);
+        let mut wakeup = next_wakeup(&self.latest, &self.transitions);
         loop {
             tokio::select! {
                 fetched = &mut *task => {
@@ -136,7 +140,7 @@ impl Follower {
                 changed = self.answers.changed() => {
                     changed.ok()?;
                     self.publish().await;
-                    wakeup = next_wakeup(&self.latest);
+                    wakeup = next_wakeup(&self.latest, &self.transitions);
                 }
                 _ = async {
                     match wakeup {
@@ -146,7 +150,7 @@ impl Follower {
                 } => {
                     // 期限到了：重新算显示，卡片在列表里换成“已过期”；剩下的到期接着等。
                     self.publish().await;
-                    wakeup = next_wakeup(&self.latest);
+                    wakeup = next_wakeup(&self.latest, &self.transitions);
                 }
                 _ = self.retry.notified() => {
                     // 正在挂着的请求等它自己回来；退避清零，下一次取列表立即发。
@@ -246,13 +250,17 @@ impl Follower {
 }
 
 /// 等回答的卡片和生效中的时段里，最近的到期还差多久；已经到期的显示刚发布时就算过了，不用再等。
-fn next_wakeup(list: &Option<ConfirmationList>) -> Option<Duration> {
+fn next_wakeup(list: &Option<ConfirmationList>, transitions: &Witnessed) -> Option<Duration> {
     let now = now_ms();
     list.as_ref()?
         .confirmations
         .iter()
         .filter_map(|card| next_wakeup_of_card(card, now))
         .filter(|delay| !delay.is_zero())
+        .chain(transitions.waiting_since.values().filter_map(|started| {
+            let due = started.saturating_add(LONG_WAIT_MS);
+            (due > now).then(|| Duration::from_millis(due - now))
+        }))
         .min()
 }
 
@@ -332,6 +340,22 @@ fn derive(
         );
     }
     pending.sort_by_key(|view| view.card.expires_at_ms);
+    transitions
+        .waiting_since
+        .retain(|id, _| pending.iter().any(|view| view.card.id == *id));
+    for view in &pending {
+        if view.sending.is_none()
+            && matches!(
+                view.card.requester,
+                Some(wonton_protocol::ConfirmationRequester::Bot { .. })
+            )
+        {
+            transitions
+                .waiting_since
+                .entry(view.card.id.clone())
+                .or_insert(now);
+        }
+    }
     // 会话横幅只催能在这里回答、还没在答的：正在发的和认不得它的回答的卡片（比这个 App 新的核心写的）不催主人。
     let chat_pending = pending
         .iter()
@@ -346,6 +370,10 @@ fn derive(
             title: view.card.title.clone(),
             requester: view.card.requester.clone(),
             expires_at_ms: view.card.expires_at_ms,
+            ongoing: transitions
+                .waiting_since
+                .get(&view.card.id)
+                .is_some_and(|started| now.saturating_sub(*started) >= LONG_WAIT_MS),
         })
         .collect();
     let rooms = pending
@@ -381,3 +409,7 @@ fn note_ended(
     chat_settled.push(view.card.id.clone());
     finished.push(view);
 }
+
+#[cfg(test)]
+#[path = "pending_tests.rs"]
+mod pending_tests;

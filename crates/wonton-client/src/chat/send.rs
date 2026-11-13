@@ -7,6 +7,7 @@ use wonton_matrix::OwnedEventId;
 use wonton_protocol::{ChatAccount, CoreError, ImageUpload};
 
 use super::draft::DraftWrite;
+use super::view::core_error;
 use super::{ChatLink, TimelineKey, invalid, onboarding};
 use crate::l10n::{CATALOG, language};
 
@@ -74,6 +75,80 @@ impl ChatLink {
             move || onboarding::record_sent(&sent, sent_room),
         );
         Ok(())
+    }
+
+    /// 冷启动先等会话和目标房间恢复；校验旁聊关系后交给持久待发队列，不改草稿。
+    pub(crate) async fn prepare_push_reply(
+        self: &Arc<Self>,
+        room_id: &str,
+        body: &str,
+        reply_to: Option<&str>,
+        thread_root: Option<&str>,
+    ) -> Result<wonton_matrix::PreparedReply, CoreError> {
+        let body = body.trim().to_owned();
+        if body.is_empty() {
+            return Err(invalid(&l10n!(CATALOG, language(), "chat-empty-message")));
+        }
+        let reply_to = reply_target(reply_to)?;
+        let thread_root = reply_target(thread_root)?;
+        let sending = async {
+            let mut view = self.subscribe();
+            while self.current().is_err() {
+                if let super::ChatAccount::Failed { message, .. } =
+                    &view.borrow_and_update().account
+                {
+                    return Err(CoreError::NotReady {
+                        reason: message.clone(),
+                    });
+                }
+                view.changed().await.map_err(|_| CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "chat-not-signed-in"),
+                })?;
+            }
+            let (session, room_id) = self.send_target(room_id)?;
+            session
+                .prepare_reply(&room_id, &body, reply_to.as_deref(), thread_root.as_deref())
+                .await
+                .map_err(|error| self.convert_op_failure("chat-op-send-text-failed", &error))
+        };
+        let result = tokio::time::timeout(std::time::Duration::from_secs(30), sending)
+            .await
+            .unwrap_or_else(|_| {
+                Err(CoreError::TransportUnavailable {
+                    reason: l10n!(CATALOG, language(), "chat-send-no-response"),
+                })
+            });
+        if let Err(error) = &result {
+            self.view.send_modify(|view| {
+                view.problem = Some(wonton_protocol::ChatProblem {
+                    reason: match error {
+                        CoreError::NotReady { .. } => wonton_protocol::ChatFailure::NotReady,
+                        CoreError::InvalidInput { .. } => {
+                            wonton_protocol::ChatFailure::InvalidInput
+                        }
+                        CoreError::Unauthorized { .. } => {
+                            wonton_protocol::ChatFailure::Unauthorized
+                        }
+                        CoreError::TransportUnavailable { .. } => {
+                            wonton_protocol::ChatFailure::TransportUnavailable
+                        }
+                        _ => wonton_protocol::ChatFailure::Upstream,
+                    },
+                    message: error.to_string(),
+                })
+            });
+        }
+        result
+    }
+
+    /// 操作失败：记进 `problem`（打开 App 看得到），同时把类别交回去给通知。
+    fn convert_op_failure(
+        &self,
+        failure_id: &'static str,
+        error: &wonton_matrix::Error,
+    ) -> CoreError {
+        self.report_op_failure(failure_id, error);
+        core_error(error)
     }
 
     pub(super) fn send_image(

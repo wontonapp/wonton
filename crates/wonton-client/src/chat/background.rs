@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use wonton_matrix::{BackgroundNotification, MatrixSession, UserId};
 use wonton_protocol::{PushContent, PushMethod};
 
+use super::unread_total;
 use crate::push::push_notification;
 
 use super::ChatLink;
@@ -81,7 +82,9 @@ impl ChatLink {
         ) else {
             return;
         };
-        // 锁着就不在通知里写发送者和正文（ADR-0102）。
+        notification.lock_screen_private = self.lock_screen.borrow().hidden(notification.category);
+        notification.unread_total = unread_total(&self.view.borrow());
+        // App 锁着就不在通知里写发送者和正文（ADR-0102）。
         notification.hidden = self.app_lock.is_locked();
         self.view.send_modify(|view| {
             if let Some(shown) = view

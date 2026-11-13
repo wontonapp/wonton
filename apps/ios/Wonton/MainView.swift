@@ -44,9 +44,15 @@ struct MainView: View {
 
     var body: some View {
         @Bindable var navigation = navigation
-        return ZStack {
-            rootContent
-            pageStack
+        return SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
+            ZStack {
+                rootContent
+                pageStack
+            }
+            .environment(\.wontonOpenSidebar) { showsSidebar = true }
+        } panel: {
+            SidebarPanel(home: home, plugins: plugins,
+                         current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
         }
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .overlay { if chat.isOpeningChat { ProgressView() } }
@@ -187,8 +193,7 @@ struct MainView: View {
                             )
                         }
                     }
-                    .environment(\.wontonOpenSidebar) { showsSidebar = true }
-                        .environment(\.wontonOpenApps) { showsApps = true }
+                    .environment(\.wontonOpenApps) { showsApps = true }
                 }
             })
         }

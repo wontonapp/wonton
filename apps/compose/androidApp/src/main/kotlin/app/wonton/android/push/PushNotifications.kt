@@ -4,27 +4,32 @@ import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
+import android.os.Build
 import android.util.Log
 import app.wonton.android.IncomingRequests
-import app.wonton.android.MainActivity
-import app.wonton.android.R
-import app.wonton.protocol.ContactRequestPush
 import app.wonton.protocol.NotificationCategory
-import app.wonton.protocol.PushContent
 import app.wonton.protocol.PushNotification
-import app.wonton.ui.line
 import app.wonton.ui.notificationChannelId
 import app.wonton.ui.notificationTitleRes
 
-/** 新消息的系统通知：同一个房间的通知合并成一条，显示最新的一条消息。确认卡片每张一条，答完或过期就撤下。 */
+/*
+ * 新消息的系统通知（ADR-0003、ADR-0101）：同一个房间的通知合并成一条，显示最新的一条消息；确认卡片每张一条，
+ * 答完或过期就撤下。文字在 [PushTexts]，按钮和点开的意图在 [PushBuilder]，角标在 [UnreadBadge]。
+ */
+
+/** 所有通知和摘要同一个组：启动器把它收成一组，角标也挂在组上。 */
+internal const val GROUP = "wonton"
+
+/** 消息通知的 ID；带标签，一个房间一条。 */
+internal const val NOTIFICATION_ID = 1
+
+/** 未读摘要的 ID。已经占掉的号：2 保持连接、3 端口映射、5 等确认任务。 */
+internal const val SUMMARY_ID = 4
+
 object PushNotifications {
     private const val TAG = "WontonPush"
-    private const val NOTIFICATION_ID = 1
 
     /** 渠道要在发第一条通知前建好；建过再建不会改掉用户在系统设置里改过的选项。 */
     fun createChannels(context: Context) {
@@ -41,50 +46,42 @@ object PushNotifications {
     fun show(
         context: Context,
         notification: PushNotification,
-        tag: String = tag(notification.serverId, notification.roomId, notification.targetId()),
+        tag: String = PushBuilder.tag(notification),
         onlyAlertOnce: Boolean = false,
     ) {
-        if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+        if (!PushNotifications.allowed(context)) {
             Log.w(TAG, "no notification permission, dropping this push")
             return
         }
         createChannels(context)
         val channel = notification.category.notificationChannelId
-        val (title, text) = when {
+        val (title, text) = if (notification.hidden) {
             // App 锁着（ADR-0102）：通知栏里也不写发送者和正文。
-            notification.hidden -> context.getString(R.string.app_name) to context.getString(R.string.push_hidden)
-            else -> notification.contactRequest?.let { contactTexts(context, it) }
-                ?: messageTexts(context, notification)
+            context.getString(R.string.app_name) to context.getString(R.string.push_hidden)
+        } else {
+            notification.contactRequest?.let { PushTexts.contact(context, it) }
+                ?: PushTexts.message(context, notification)
         }
         val card = notification.confirmation
-        val open = PendingIntent.getActivity(
-            context,
-            // Intent data 包含完整目标，哈希碰撞也不会把两台服务器的通知合并。
-            tag.hashCode(),
-            openIntent(context, notification).setData(Uri.parse("wonton://notification$tag")),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        // 锁屏上隐藏敏感内容时显示这一版：不带发送者和正文。
-        val hidden = Notification.Builder(context, channel)
-            .setSmallIcon(android.R.drawable.stat_notify_chat)
-            .setContentTitle(context.getString(R.string.app_name))
-            .setContentText(context.getString(R.string.push_hidden))
-            .build()
         val shown = Notification.Builder(context, channel)
-            .setExtras(android.os.Bundle().apply {
-                putString(IncomingRequests.EXTRA_SERVER, notification.serverId)
-                putString("wonton_card", card?.id)
-            })
+            .setExtras(PushBuilder.extras(notification))
             .setSmallIcon(android.R.drawable.stat_notify_chat)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(Notification.BigTextStyle().bigText(text))
             .setCategory(Notification.CATEGORY_MESSAGE)
-            .setVisibility(Notification.VISIBILITY_PRIVATE)
-            .setPublicVersion(hidden)
-            .setContentIntent(open)
+            .setGroup(GROUP)
+            .setContentIntent(PushBuilder.open(context, notification, tag))
             .setAutoCancel(true)
             .setShowWhen(true)
+        // 锁屏上给不给看内容由主人按类别定（ADR-0101 §5）：关掉时锁屏只写一句占位。
+        if (notification.lockScreenPrivate) {
+            shown.setVisibility(Notification.VISIBILITY_PRIVATE)
+                .setPublicVersion(PushTexts.hidden(context, notification.category))
+        } else {
+            shown.setVisibility(Notification.VISIBILITY_PUBLIC)
+        }
+        PushBuilder.actions(context, notification, tag, title).forEach(shown::addAction)
         if (onlyAlertOnce) {
             // 占位换成正文的回填重弹：同一个通知原地替换，别再响一遍。
             shown.setOnlyAlertOnce(true)
@@ -96,6 +93,7 @@ object PushNotifications {
         }
         context.getSystemService(NotificationManager::class.java)
             .notify(tag, NOTIFICATION_ID, shown.build())
+        UnreadBadge.refresh(context, notification.unreadTotal.coerceAtMost(Int.MAX_VALUE.toUInt()).toInt())
     }
 
     fun cancelCards(context: Context, serverId: String, cards: List<String>) {
@@ -103,68 +101,12 @@ object PushNotifications {
         val settled = cards.toSet()
         manager.activeNotifications.filter { notification ->
             notification.notification.extras.getString(IncomingRequests.EXTRA_SERVER) == serverId &&
-                notification.notification.extras.getString("wonton_card") in settled
+                notification.notification.extras.getString(PushBuilder.EXTRA_CARD) in settled
         }.forEach { manager.cancel(it.tag, NOTIFICATION_ID) }
     }
 
-    /** 消息和邀请：标题是房间名（私聊是发送者），正文是消息摘要。 */
-    private fun messageTexts(context: Context, notification: PushNotification): Pair<String, String> {
-        val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
-        val text = when (val content = notification.content) {
-            is PushContent.Message -> inRoom(context, notification, content.summary.line(context.resources))
-            is PushContent.Invite -> inRoom(context, notification, context.getString(R.string.push_invite))
-            is PushContent.Unavailable -> {
-                Log.i(TAG, "push content unavailable (${content.reason}): ${content.message}")
-                context.getString(R.string.push_unavailable)
-            }
-        }
-        return (notification.roomName ?: sender) to text
-    }
-
-    /** 联系人请求（ADR-0050）：核心只给原值，标题是发请求的一方，正文按有没有归属人写。 */
-    private fun contactTexts(context: Context, request: ContactRequestPush): Pair<String, String> {
-        val title = request.displayName?.takeIf { it.isNotBlank() } ?: request.userId
-        val keeper = request.keeperDisplayName?.takeIf { it.isNotBlank() }
-        val text = if (keeper != null) {
-            context.getString(R.string.push_contact_request_keeper, keeper)
-        } else {
-            context.getString(R.string.push_contact_request)
-        }
-        return title to text
-    }
-
-    /** 点开去哪：联系人请求去被请求的 Bot 的联系人页，其余去房间；发在旁聊里的进那个旁聊。 */
-    private fun openIntent(context: Context, notification: PushNotification): Intent {
-        val intent = Intent(context, MainActivity::class.java)
-            .putExtra(IncomingRequests.EXTRA_SERVER, notification.serverId)
-            .addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
-            )
-        val contact = notification.contactRequest
-        return if (contact != null) {
-            intent.putExtra(IncomingRequests.EXTRA_CONTACTS_PLUGIN, contact.bot.pluginId)
-                .putExtra(IncomingRequests.EXTRA_CONTACTS_BOT, contact.bot.bot)
-        } else {
-            intent.putExtra(IncomingRequests.EXTRA_ROOM, notification.roomId)
-                .putExtra(IncomingRequests.EXTRA_SIDE_CHAT, notification.threadRoot)
-        }
-    }
-
-    /** 通知按什么区分：确认卡片按卡片，联系人请求按 Bot 和对方（核心给的房间为空），消息只按房间。 */
-    private fun PushNotification.targetId(): String? = confirmation?.id ?: contactRequest?.let {
-        "contact:${it.bot.pluginId}:${it.bot.bot}:${it.userId}"
-    }
-
-    /** 群里的消息前面带上发送者；私聊的标题已经是发送者。 */
-    private fun inRoom(context: Context, notification: PushNotification, text: String): String =
-        if (notification.roomName == null) {
-            text
-        } else {
-            val sender = notification.sender ?: context.getString(R.string.push_unknown_sender)
-            context.getString(R.string.push_in_room, sender, text)
-        }
-
-    private fun tag(serverId: String?, roomId: String, cardId: String?): String =
-        Uri.Builder().appendPath(roomId).appendPath(cardId.orEmpty())
-            .appendQueryParameter("server", serverId).build().toString()
+    internal fun allowed(context: Context): Boolean =
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) &&
+            context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
 }
