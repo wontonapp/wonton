@@ -23,7 +23,7 @@ use tokio::{
 use wonton_matrix::{Message, MessageBody, OwnedUserId, SendStatus};
 use wonton_protocol::OutboxItem;
 
-use crate::error::Result;
+use crate::error::{Detail, Error, Result};
 use crate::room::Room;
 
 /// 记录下来的对外副作用。
@@ -85,6 +85,9 @@ pub struct FakeRoom {
     updates: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<Vec<Message>>>>,
     /// 可下载的媒体：句柄 → 字节。没登记的句柄按下载失败处理。
     media: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    /// 状态写入要回的失败：设了之后 set_state 一律返回这个错误（模拟 Bot 对房间没有写
+    /// 状态的 power，403）。
+    state_failure: Arc<Mutex<Option<String>>>,
 }
 
 impl FakeRoom {
@@ -104,12 +107,18 @@ impl FakeRoom {
             recorded,
             updates: Arc::new(tokio::sync::Mutex::new(receiver)),
             media: Arc::new(Mutex::new(HashMap::new())),
+            state_failure: Arc::new(Mutex::new(None)),
         }
     }
 
     /// 登记一个可下载的媒体句柄。
     pub fn serve_media(&self, token: &str, bytes: Vec<u8>) {
         self.media.lock().unwrap().insert(token.to_owned(), bytes);
+    }
+
+    /// 让状态写入一律失败（模拟 Bot 没有写状态的 power，403）。
+    pub fn forbid_state_writes(&self, message: &str) {
+        *self.state_failure.lock().unwrap() = Some(message.to_owned());
     }
 
     pub fn push(&self, messages: Vec<Message>) {
@@ -353,6 +362,13 @@ impl Room for FakeRoom {
     }
 
     async fn set_state(&self, event_type: &str, _state_key: &str, _content: Value) -> Result<()> {
+        let failure = self.state_failure.lock().unwrap().clone();
+        if let Some(message) = failure {
+            // 和 From<MatrixError> 一致：403 落到 Matrix(Data)，message 是服务器给的说明。
+            return Err(Error::Matrix(Detail::data(format!(
+                "M_FORBIDDEN: {message}"
+            ))));
+        }
         self.record(Effect::State(event_type.to_owned()));
         Ok(())
     }

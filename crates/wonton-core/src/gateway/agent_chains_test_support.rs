@@ -290,6 +290,7 @@ pub(crate) fn seed_members(members: &Members) {
                 display_name: username.into(),
                 email: None,
                 status: wonton_protocol::MemberStatus::Joined,
+                role_id: "friend".to_owned(),
                 can_install_plugins: false,
                 wants_private_bot: true,
                 private_bot: None,
