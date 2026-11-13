@@ -4,7 +4,11 @@
 //! 线上类别（[`ChainError`] 等）用 wonton-protocol 已有的；账本自己的类型
 //! （来源、会话信息、停链结果、上限事件）只在核心内部第 2/3/6/8 块之间用，不上线。
 
+mod ancestry;
+#[cfg(test)]
+mod ancestry_tests;
 mod budget;
+mod carrier;
 mod layers;
 pub mod settings;
 mod stop;
@@ -40,6 +44,10 @@ pub struct ChainSessionInfo {
     pub chain: String,
     pub bot: BotRef,
     pub layer: u32,
+    /// Immediate parent session keys for this immutable admission (empty for roots).
+    pub parents: Vec<String>,
+    /// A preissued connection identity, not an executing session.
+    pub connection: bool,
     pub source: ChainSessionSource,
     /// 桥的一轮说话的人；别的来源没有。
     pub sender: Option<String>,
@@ -111,6 +119,9 @@ struct SessionEntry {
     bot: BotRef,
     layer: u32,
     source: ChainSessionSource,
+    path: Arc<ancestry::SessionPath>,
+    /// Preissued connection identity, not an executing caller session.
+    connection: bool,
     /// 桥的一轮说话的人；别的来源没有。
     sender: Option<String>,
     live: bool,
@@ -288,7 +299,7 @@ impl Chains {
                     chain_user,
                     &sender,
                     origin,
-                    bot,
+                    store::ChainBotEntry { bot, layer: 1 },
                     &session,
                     ChainSessionSource::Bridge,
                 ),
@@ -303,88 +314,6 @@ impl Chains {
         if let Some(entry) = state.sessions.get_mut(session) {
             entry.live = false;
         }
-    }
-
-    /// 交接或 `agent_acp` 连接的预检（第 6/3 块在开远端会话/连接前调，省得开了再取消）：
-    /// 检查顺序固定（已停 → 到上限 → 自调 → 绕圈 → 层数），返回目标会落在的层。不改任何状态。
-    pub fn preview_attach(
-        &self,
-        chain_id: &str,
-        target: &BotRef,
-        initiator: Option<&BotRef>,
-    ) -> Result<u32, ChainLedgerError> {
-        self.read(|state| {
-            let chain = state
-                .chains
-                .get(chain_id)
-                .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-            layers::evaluate_attach(chain, target, initiator).map_err(ChainLedgerError::Rejected)
-        })
-    }
-
-    /// 登记 `agent_acp` 连接上或交接开出的会话，返回它的层。登记前重跑全部检查
-    /// （预检和登记之间链可能被并发改动），登记时撞上拒绝就由调用方取消刚开的远端会话。
-    /// 同一对（链、Bot）重复登记按幂等处理（断线重连的 `session/load`），返回原层。
-    pub fn register_session(
-        &self,
-        chain_id: &str,
-        session: &str,
-        bot: BotRef,
-        initiator: Option<&BotRef>,
-        source: ChainSessionSource,
-    ) -> Result<u32, ChainLedgerError> {
-        if source == ChainSessionSource::Bridge {
-            return Err(ChainLedgerError::Invalid(
-                "桥的会话经 start_bridge_turn 登记".into(),
-            ));
-        }
-        self.mutate(|state| {
-            {
-                let chain = state
-                    .chains
-                    .get(chain_id)
-                    .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-                layers::reject_if_closed(chain).map_err(ChainLedgerError::Rejected)?;
-            }
-            if let Some(existing) = state.sessions.get_mut(session) {
-                if existing.chain == chain_id && existing.bot == bot {
-                    // session/load 重连：会话又活了，停链时照样要取消它。
-                    existing.live = true;
-                    return Ok(existing.layer);
-                }
-                return Err(ChainLedgerError::Invalid(format!(
-                    "会话 {session} 已登记在别的链上"
-                )));
-            }
-            let layer = {
-                let chain = state
-                    .chains
-                    .get_mut(chain_id)
-                    .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
-                let layer = layers::evaluate_attach(chain, &bot, initiator)
-                    .map_err(ChainLedgerError::Rejected)?;
-                // evaluate_attach 拦下了绕圈，走到这里的 Bot 一定还不在链上：入列（层序即登记序）。
-                chain.bots.push(store::ChainBotEntry {
-                    bot: bot.clone(),
-                    layer,
-                });
-                layer
-            };
-            state.dirty = true;
-            state.sessions.insert(
-                session.to_owned(),
-                SessionEntry {
-                    chain: chain_id.to_owned(),
-                    bot: bot.clone(),
-                    layer,
-                    source,
-                    sender: None,
-                    live: true,
-                },
-            );
-            stop::bump_activity(state, chain_id);
-            Ok(layer)
-        })
     }
 
     /// 给网页类前端开一条新链（ADR-0061 第 10 节：核心在建连接时发链 ID）：
@@ -402,7 +331,10 @@ impl Chains {
                 user.to_owned(),
                 user,
                 origin,
-                target,
+                store::ChainBotEntry {
+                    bot: target,
+                    layer: 1,
+                },
                 session,
                 ChainSessionSource::AgentAcp,
             )
@@ -563,6 +495,13 @@ impl Chains {
                 bot: entry.bot.clone(),
                 layer: entry.layer,
                 source: entry.source,
+                parents: entry
+                    .path
+                    .parents
+                    .iter()
+                    .map(|parent| parent.session.clone())
+                    .collect(),
+                connection: entry.connection,
                 sender: entry.sender.clone(),
                 live: entry.live,
             })
@@ -582,6 +521,13 @@ impl Chains {
                     bot: entry.bot.clone(),
                     layer: entry.layer,
                     source: entry.source,
+                    parents: entry
+                        .path
+                        .parents
+                        .iter()
+                        .map(|parent| parent.session.clone())
+                        .collect(),
+                    connection: entry.connection,
                     sender: entry.sender.clone(),
                     live: entry.live,
                 })

@@ -276,6 +276,8 @@ Bot 用 `wonton__get_profile`、`wonton__set_profile` 读写自己的资料，�
 - 会说 Matrix 的 Agent 直接接入（Hermes 的 Matrix 平台）。支持 ACP 的 Agent（Codex、Claude Code、
   Gemini CLI、OpenCode 等）通过通用“ACP 桥”插件接入：一个聊天房间对应一个 ACP 会话，ACP 的权限
   请求对应聊天里的确认按钮。
+  `agent_acp` 的跨插件调用由核心在创建会话前核对并重写链载体；载体核对规则见
+  [ADR-0061 第 12 节](adr/0061-agent-runtime-and-frontends.md#12-跨插件传链sessionnew-的-_meta-里带链载体)。
 - 模型默认经 magpie。订阅账号只在 Agent 官方程序里登录，不经 magpie（ADR-0034）。
 - 每个家人有自己的账号、私人 Bot 和私人空间，主人可以建共享 Bot 拉进家庭群；同机的 Bot 之间经联系人互发消息，网关限频率和跳数。见 [ADR-0045](adr/0045-family-members.md)。
 - 网关的管理接口按 ADR-0088 的权限项判断：每个接口声明要哪一项，主人一律放行，其余按这个家人的角色判断，

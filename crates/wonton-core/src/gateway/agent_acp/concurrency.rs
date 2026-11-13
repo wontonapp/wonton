@@ -1,5 +1,5 @@
 //! 每个使用方同时开着的 `agent_acp` 连接数（ADR-0061 第 10 节）：满了回 `busy`。计数在注册表里，
-//! 注册表同时是 [`agent_chains::AgentAcpCancel`] 的实现：停链按连接键找到连接，发 `session/cancel`。
+//! 注册表同时是 [`crate::gateway::agent_chains::AgentAcpCancel`] 的实现：按账本会话键取消对应 ACP 会话。
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -13,7 +13,7 @@ pub struct Registry {
 
 struct State {
     per_consumer: BTreeMap<String, u32>,
-    connections: BTreeMap<String, mpsc::UnboundedSender<()>>,
+    connections: BTreeMap<String, mpsc::UnboundedSender<String>>,
 }
 
 impl Registry {
@@ -32,7 +32,7 @@ impl Registry {
         self: &Arc<Self>,
         consumer: &str,
         connection: &str,
-        cancel: mpsc::UnboundedSender<()>,
+        cancel: mpsc::UnboundedSender<String>,
         limit: u32,
     ) -> Option<Registration> {
         let mut state = self.inner.lock().expect("agent_acp 注册表锁中毒");
@@ -46,6 +46,7 @@ impl Registry {
             registry: self.clone(),
             consumer: consumer.to_owned(),
             connection: connection.to_owned(),
+            sessions: Vec::new(),
         })
     }
 
@@ -55,7 +56,7 @@ impl Registry {
             && let Some(cancel) = state.connections.get(connection)
         {
             // 发不进去（任务已结束）就随它去：链已经停了，连接马上也会被账本记为结束。
-            let _ = cancel.send(());
+            let _ = cancel.send(connection.to_owned());
         }
     }
 }
@@ -65,6 +66,20 @@ pub(super) struct Registration {
     registry: Arc<Registry>,
     consumer: String,
     connection: String,
+    sessions: Vec<String>,
+}
+
+impl Registration {
+    pub(super) fn bind_session(&mut self, session: &str) {
+        let mut state = self.registry.inner.lock().expect("agent_acp 注册表锁中毒");
+        let cancel = state
+            .connections
+            .get(&self.connection)
+            .expect("连接已登记")
+            .clone();
+        state.connections.insert(session.to_owned(), cancel);
+        self.sessions.push(session.to_owned());
+    }
 }
 
 impl Drop for Registration {
@@ -77,6 +92,9 @@ impl Drop for Registration {
                 }
             }
             state.connections.remove(&self.connection);
+            for session in &self.sessions {
+                state.connections.remove(session);
+            }
         }
     }
 }

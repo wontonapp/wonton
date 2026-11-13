@@ -24,8 +24,10 @@ pub(super) fn continue_bridge_round(
             .get(chain_id)
             .ok_or_else(|| ChainLedgerError::UnknownChain(chain_id.to_owned()))?;
         layers::reject_if_closed(chain).map_err(ChainLedgerError::Rejected)?;
-        let layer =
-            layers::bridge_layer(chain, bot, mentioner).map_err(ChainLedgerError::Rejected)?;
+        let layer = match state.sessions.get(session) {
+            Some(entry) if entry.chain == chain_id && entry.bot == *bot => entry.layer,
+            _ => layers::bridge_layer(chain, bot, mentioner).map_err(ChainLedgerError::Rejected)?,
+        };
         (layer, layers::layer_of(chain, bot).is_none())
     };
     // 同一桥会话的重复 start（响应丢了重试）：幂等重发，不重复记轮。
@@ -41,6 +43,10 @@ pub(super) fn continue_bridge_round(
         });
     }
     state.dirty = true;
+    let parents = match state.sessions.get(session) {
+        Some(entry) if entry.chain == chain_id && entry.bot == *bot => entry.path.parents.clone(),
+        _ => super::ancestry::callers(state, chain_id, mentioner, None),
+    };
     {
         let chain = state.chains.get_mut(chain_id).expect("链刚查过");
         budget::count_round(chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
@@ -53,10 +59,13 @@ pub(super) fn continue_bridge_round(
         state,
         chain_id,
         session,
-        bot,
-        layer,
+        store::ChainBotEntry {
+            bot: bot.clone(),
+            layer,
+        },
         ChainSessionSource::Bridge,
         Some(sender),
+        parents,
     )?;
     stop::bump_activity(state, chain_id);
     Ok(ChainTurnGrant {
@@ -65,16 +74,15 @@ pub(super) fn continue_bridge_round(
     })
 }
 
-/// 开一条新链：发起的 Bot 记在第 1 层。桥的轮在开链那刻记一轮（start 就是 prompt 的开始）；
-/// `agent_acp` 的轮等 prompt 来了再记。开链不可能撞上限检查（新链是空的）。
-/// `user` 是链代表的人：说话的人，或点名的 Bot 的归属人（第 8 块）；`sender` 是报里真正的
-/// 说话人——点名的 Bot 说话时两者不同，会话上记的是 `sender`（联邦线按它看这个 Bot 在跟谁说话）。
+/// 开一条新链：首个 Bot 的层由入口核对后给出。桥的轮在开链那刻记一轮（start 就是 prompt 的开始）；
+/// `agent_acp` 的轮等 prompt 来了再记。
+/// `user` 是链代表的人；`sender` 是实际说话人，点名的 Bot 说话时两者不同。
 pub(super) fn open_chain(
     state: &mut LedgerState,
     user: String,
     sender: &str,
     origin: ConfirmationOrigin,
-    bot: BotRef,
+    first: store::ChainBotEntry,
     session: &str,
     source: ChainSessionSource,
 ) -> Result<ChainTurnGrant, ChainLedgerError> {
@@ -103,7 +111,8 @@ pub(super) fn open_chain(
         limit_kind: None,
         limit_events: 0,
     };
-    layers::admit_bot(&mut chain, &bot, 1);
+    let store::ChainBotEntry { bot, layer } = first;
+    layers::admit_bot(&mut chain, &bot, layer);
     if source == ChainSessionSource::Bridge {
         budget::count_round(&mut chain, &mut state.events).map_err(ChainLedgerError::Rejected)?;
     }
@@ -113,15 +122,18 @@ pub(super) fn open_chain(
         state,
         &chain_id,
         session,
-        &bot,
-        1,
+        store::ChainBotEntry {
+            bot: bot.clone(),
+            layer,
+        },
         source,
         sender.as_deref(),
+        Vec::new(),
     )?;
     stop::bump_activity(state, &chain_id);
     Ok(ChainTurnGrant {
         chain: chain_id,
-        layer: 1,
+        layer,
     })
 }
 
@@ -131,16 +143,24 @@ fn bind_session(
     state: &mut LedgerState,
     chain_id: &str,
     session: &str,
-    bot: &BotRef,
-    layer: u32,
+    first: store::ChainBotEntry,
     source: ChainSessionSource,
     sender: Option<&str>,
+    parents: Vec<std::sync::Arc<super::ancestry::SessionPath>>,
 ) -> Result<(), ChainLedgerError> {
+    let store::ChainBotEntry { bot, layer } = first;
     let entry = SessionEntry {
         chain: chain_id.to_owned(),
         bot: bot.clone(),
         layer,
         source,
+        path: std::sync::Arc::new(super::ancestry::SessionPath {
+            session: session.to_owned(),
+            bot: bot.clone(),
+            layer,
+            parents,
+        }),
+        connection: false,
         sender: sender.map(str::to_owned),
         live: true,
     };

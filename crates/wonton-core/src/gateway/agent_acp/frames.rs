@@ -2,8 +2,9 @@
 //! 帧长度上限和桥的一致（`wonton-acp-bridge` 的 `MAX_FRAME_BYTES`）；超限由 tokio-websockets 的
 //! `Limits` 报错，连接按协议错误断开。
 
+use serde::Deserialize;
 use serde_json::Value;
-use wonton_protocol::ChainError;
+use wonton_protocol::{ACP_CHAIN_META_KEY, ChainCarrier, ChainError};
 
 use crate::agent_chain::ChainLedgerError;
 
@@ -13,30 +14,21 @@ pub(super) const MAX_FRAME_BYTES: usize = 32 * 1024 * 1024;
 /// JSON-RPC 服务器错误段里留给核心自用的码；类别在 `message`，[`ChainError`] 原样在 `data`。
 const CHAIN_ERROR_CODE: i64 = -32000;
 
-/// 一帧里核心要看的部分。方法没有的是响应或通知；id 没有的不发应答。
-pub(super) struct RpcFrame {
-    pub(super) id: Option<Value>,
-    pub(super) method: Option<String>,
-    /// 应答结果里的会话 ID（`session/new`、`session/load` 的回包）：登记活会话，停链时逐个取消。
-    pub(super) session_id: Option<String>,
+/// 解析一条文本帧。不是 JSON 对象的帧按协议错误处理（调用方断开）。
+pub(super) fn parse(frame: &str) -> Option<Value> {
+    let value: Value = serde_json::from_str(frame).ok()?;
+    value.is_object().then_some(value)
 }
 
-/// 解析一条文本帧。不是 JSON 对象的帧按协议错误处理（调用方断开）。
-pub(super) fn parse(frame: &str) -> Option<RpcFrame> {
-    let value: Value = serde_json::from_str(frame).ok()?;
-    let object = value.as_object()?;
-    Some(RpcFrame {
-        id: object.get("id").cloned().filter(|id| !id.is_null()),
-        method: object
-            .get("method")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        session_id: object
-            .get("result")
-            .and_then(|result| result.get("sessionId"))
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-    })
+pub(super) fn carrier(frame: &Value) -> Result<Option<ChainCarrier>, ChainLedgerError> {
+    frame["params"]["_meta"]
+        .get(ACP_CHAIN_META_KEY)
+        .map(|value| {
+            ChainCarrier::deserialize(value).map_err(|error| {
+                ChainLedgerError::Invalid(format!("invalid chain carrier: {error}"))
+            })
+        })
+        .transpose()
 }
 
 /// 停链时发给提供方的取消通知（ACP 规范对发 `session/cancel` 一方的要求：未决请求自己回 `cancelled`）。
@@ -59,8 +51,10 @@ pub(super) fn error_reply(id: &Value, error: &ChainLedgerError) -> String {
         ChainLedgerError::AlreadyEnded { .. }
         | ChainLedgerError::NotAtLimit { .. }
         | ChainLedgerError::SessionsLive { .. }
-        | ChainLedgerError::Invalid(_)
         | ChainLedgerError::UnknownCard(_) => ChainError::Other,
+        ChainLedgerError::Invalid(_) => ChainError::InvalidInput {
+            refusal: wonton_protocol::ChainRefusal::Other,
+        },
         ChainLedgerError::Corrupt { .. }
         | ChainLedgerError::Io { .. }
         | ChainLedgerError::Serialize(_) => ChainError::Other,

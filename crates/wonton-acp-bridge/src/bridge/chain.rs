@@ -152,7 +152,7 @@ pub(crate) fn agent_endpoint(mcp_url: &str, path: &str) -> Result<Url, Error> {
 }
 
 /// 一轮开始前领链：拿到链才发 `session/prompt`。被拒（上限、已停等）或核心不可用时
-/// 不发，在房间里按类别说明，返回 `false`。
+/// 不发，在房间里按类别说明，返回 `None`。
 pub(super) async fn begin<R: Room>(
     chains: &Client,
     room: &R,
@@ -160,7 +160,7 @@ pub(super) async fn begin<R: Room>(
     key: &SessionKey,
     trigger: &Job,
     session_id: &str,
-) -> bool {
+) -> Option<ChainTurnGrant> {
     let report = ChainTurnReport::Start {
         session: session_id.to_owned(),
         room: room.room_id(),
@@ -172,20 +172,20 @@ pub(super) async fn begin<R: Room>(
         event_id: trigger.event_id.clone(),
     };
     match chains.start(report).await {
-        Ok(_) => true,
+        Ok(grant) => Some(grant),
         Err(StartFailure::Refused {
             error: ChainError::LimitReached { kind },
             ..
         }) => {
             say(room, key, &limit_text(kind, lang)).await;
-            false
+            None
         }
         Err(StartFailure::Refused {
             error: ChainError::Stopped,
             ..
         }) => {
             say(room, key, &text(lang, "chain-stopped", &[])).await;
-            false
+            None
         }
         Err(StartFailure::Refused { detail, status, .. }) => {
             let detail = detail.unwrap_or_else(|| format!("HTTP {status}"));
@@ -195,11 +195,11 @@ pub(super) async fn begin<R: Room>(
                 &format_error(&Error::ChainRefused(Detail::data(detail)), lang),
             )
             .await;
-            false
+            None
         }
         Err(StartFailure::Unavailable(error)) => {
             let _ = tell(room, key, &format_error(&error, lang)).await;
-            false
+            None
         }
     }
 }

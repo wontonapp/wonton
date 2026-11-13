@@ -305,3 +305,69 @@ async fn every_turn_reports_a_start() {
     .await;
     harness.finish().await;
 }
+
+/// 核心每轮重新领的链传给真正的 ACP 请求，复用会话不复用旧链。
+#[tokio::test]
+async fn every_prompt_carries_its_own_grant_on_the_existing_session() {
+    use serde_json::json;
+    use wonton_protocol::ACP_CHAIN_META_KEY;
+
+    let harness = Harness::start().await;
+    harness
+        .core
+        .push_chain_reply(200, json!({"chain": "first-grant", "layer": 3}));
+    harness.send("$e1", "第一句");
+    let prompts = harness.wait_prompts(1).await;
+    let session = prompts[0].0.clone();
+    let requests = harness.agent.requests().await;
+    let first = requests
+        .iter()
+        .find(|request| request["method"] == "session/prompt")
+        .unwrap();
+    assert_eq!(
+        first["params"]["_meta"][ACP_CHAIN_META_KEY],
+        json!({"id": "first-grant", "depth": 3})
+    );
+    let created = requests
+        .iter()
+        .find(|request| request["method"] == "session/new")
+        .unwrap();
+    assert!(created["params"]["_meta"].get(ACP_CHAIN_META_KEY).is_none());
+
+    harness.respond(&session, "好").await;
+    wait_for(|| {
+        let core = &harness.core;
+        async move {
+            core.chain_reports()
+                .iter()
+                .any(|report| report["phase"] == "end")
+        }
+    })
+    .await;
+    // End 已到达核心，下一条排好的应答只会被第二次 Start 取走。
+    harness
+        .core
+        .push_chain_reply(200, json!({"chain": "next-grant", "layer": 7}));
+    harness.send("$e2", "第二句");
+    let prompts = harness.wait_prompts(1).await;
+    assert_eq!(prompts[0].0, session);
+    let requests = harness.agent.requests().await;
+    let turns: Vec<_> = requests
+        .iter()
+        .filter(|request| request["method"] == "session/prompt")
+        .collect();
+    assert_eq!(turns.len(), 2);
+    assert_eq!(turns[1]["params"]["sessionId"], session);
+    assert_eq!(
+        turns[1]["params"]["_meta"][ACP_CHAIN_META_KEY],
+        json!({"id": "next-grant", "depth": 7})
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request["method"] == "session/new")
+            .count(),
+        1
+    );
+    harness.finish().await;
+}

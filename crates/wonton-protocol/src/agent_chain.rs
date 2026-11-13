@@ -116,14 +116,14 @@ pub struct ChainTurnGrant {
     pub layer: u32,
 }
 
-/// ACP `session/new` 的 `_meta` 里传链的键（ADR-0061 第 12 节），值是 [`ChainCarrier`]。和
-/// [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)、第 9 节的 `app.wonton/task` 用同一个 `app.wonton/` 前缀。
+/// ACP `_meta` 里传链的键（ADR-0061 第 12 节），值是 [`ChainCarrier`]；跨插件用于 `session/new`，桥用于每轮 `session/prompt`。
+/// 和 [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)、第 9 节的 `app.wonton/task` 用同一个 `app.wonton/` 前缀。
 pub const ACP_CHAIN_META_KEY: &str = "app.wonton/chain";
 
-/// 链载体（ADR-0061 第 12 节）：`session/new` 的 `_meta[ACP_CHAIN_META_KEY]`，把链 ID 和已走层数递给
-/// 下一跳，传递方式同 W3C traceparent。核心在发往目标运行时的每个 `session/new` 里注入（`depth` 以核心
-/// 账本算的为准），桥在每轮开头的第一个 `session/new` 里写上 [`ChainTurnGrant`] 的值；编排器类 Agent
-/// 收到后原样带进它再往下的 `session/new`，不认识的 Agent 不带，那一跳当新链。只在核心和网关之间的报文里，
+/// 链载体（ADR-0061 第 12 节）：把链 ID 和调用方层数递给下一跳，传递方式同 W3C traceparent。
+/// 核心在发往目标运行时的每个 `session/new` 里注入，`depth` 以账本算的为准；桥在每轮
+/// `session/prompt` 写入刚领到的 [`ChainTurnGrant`]。编排器类 Agent 把这轮收到的载体带进它
+/// 往下的 `session/new`，不认识的 Agent 不带，那一跳当新链。只在核心、桥和运行时之间传递，
 /// App 壳读不到，不导出 UniFFI。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChainCarrier {
@@ -145,7 +145,7 @@ pub enum ChainError {
     Busy,
     /// 说话人不是这个 Bot 听的人，或目标 Bot 不听链代表的人。
     PermissionDenied,
-    /// 自调（目标 Bot 就是发起的 Bot）或绕圈（链上已有的 Bot 又被调）。绕圈不归 [`ChainError::LimitReached`]，
+    /// 自调（目标 Bot 就是发起的 Bot）或绕圈（目标在调用方会话的祖先路径上）。绕圈不归 [`ChainError::LimitReached`]，
     /// 不能用“再给一份”放开（ADR-0061 第 10 节）。
     InvalidInput { refusal: ChainRefusal },
     /// 比调用方新的核心给的未知类别。
@@ -176,7 +176,7 @@ pub enum ChainLimitKind {
 pub enum ChainRefusal {
     /// 目标 Bot 就是发起的 Bot（ADR-0061 第 9 节）；同一个插件的另一个 Bot 可以。
     SelfCall,
-    /// 链上已有的 Bot（含发起的那个）又被调（A→B→A），一律拒绝。
+    /// 目标在调用方会话的祖先路径上（A→B→A）；同链兄弟和重复交给 B 不算绕圈。
     Loop,
     /// 比调用方新的核心给的未知原因。
     #[serde(other)]

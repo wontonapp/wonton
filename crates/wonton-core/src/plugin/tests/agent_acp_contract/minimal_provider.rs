@@ -131,6 +131,7 @@ async fn serve_frames(on_upgrade: hyper::upgrade::OnUpgrade, recording: Arc<Reco
     };
     let mut ws: WebSocketStream<TokioIo<hyper::upgrade::Upgraded>> =
         ServerBuilder::new().serve(upgraded);
+    let mut sessions = 0u64;
     while let Some(Ok(message)) = ws.next().await {
         if !message.is_text() {
             continue;
@@ -154,15 +155,24 @@ async fn serve_frames(on_upgrade: hyper::upgrade::OnUpgrade, recording: Arc<Reco
             ("initialize", Some(id)) => {
                 reply(&mut ws, id, json!({"protocolVersion": 1})).await;
             }
-            ("session/new" | "session/load", Some(id)) => {
-                reply(&mut ws, id, json!({"sessionId": "s-1"})).await;
+            ("session/new", Some(id)) => {
+                sessions += 1;
+                reply(&mut ws, id, json!({"sessionId": format!("s-{sessions}")})).await;
+            }
+            ("session/load", Some(id)) => {
+                reply(
+                    &mut ws,
+                    id,
+                    json!({"sessionId": frame["params"]["sessionId"]}),
+                )
+                .await;
             }
             ("session/prompt", Some(id)) => {
                 ws.send(Message::text(
                     json!({
                         "jsonrpc": "2.0",
                         "method": "session/update",
-                        "params": {"sessionId": "s-1", "update": {"sessionUpdate": "agent_message_chunk"}},
+                        "params": {"sessionId": frame["params"]["sessionId"], "update": {"sessionUpdate": "agent_message_chunk"}},
                     })
                     .to_string(),
                 ))

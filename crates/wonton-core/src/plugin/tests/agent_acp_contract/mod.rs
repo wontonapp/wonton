@@ -31,6 +31,7 @@ use crate::plugin::manifest::Permission;
 use crate::plugin::upstreams::Endpoint;
 use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, ChainLimits, MemberStatus};
 
+mod carrier;
 mod consumer;
 mod minimal_provider;
 
