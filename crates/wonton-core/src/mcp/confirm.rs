@@ -43,23 +43,56 @@ pub const DEFAULT_WINDOW: Duration = Duration::from_secs(30 * 60);
 /// 把新卡片通知给收件人的设备（ADR-0016 的“推送”）：开卡时发一条推送，之后状态变化只改确认表，
 /// 设备从 [`CONFIRMATIONS_PATH`](wonton_protocol::CONFIRMATIONS_PATH) 的长轮询里知道。卡片不进任何 Matrix 房间。
 pub trait Notifier: Send + Sync {
-    /// 通知 `recipient`（家人的用户名；`None` 是主人）的设备有一张新卡片。他名下没有已配对的设备时报错
+    /// 通知 `recipients` 名下的设备有一张新卡片。他们都没有已配对设备时报错
     /// （没人能答，调用得到 `confirmation_unavailable`）；推送服务暂时不可用不报错，卡片已在确认表里，
     /// App 照常看得到。
     fn post<'a>(
         &'a self,
-        recipient: Option<&'a str>,
+        recipients: &'a Recipients,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<(), String>>;
 }
 
-/// 卡片发给谁、谁发起的、显示在哪个会话。默认（全空）是发给主人、没有发起者和来源会话。
+/// 一张确认卡片的冻结收件人。`Admins` 的用户名列表只含主人以外的管理员，主人隐含在其中。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Recipients {
+    /// 发给 Bot 的归属人；`None` 是主人。
+    Keeper(Option<String>),
+    /// 发给开卡时所有管理员；列表里的管理员之外还包括主人。
+    Admins(Vec<String>),
+}
+
+impl Default for Recipients {
+    fn default() -> Self {
+        Self::Keeper(None)
+    }
+}
+
+impl Recipients {
+    fn includes(&self, recipient: Option<&str>) -> bool {
+        match self {
+            Self::Keeper(keeper) => keeper.as_deref() == recipient,
+            Self::Admins(admins) => {
+                recipient.is_none() || admins.iter().any(|admin| Some(admin.as_str()) == recipient)
+            }
+        }
+    }
+
+    fn keeper(&self) -> Option<String> {
+        match self {
+            Self::Keeper(keeper) => keeper.clone(),
+            Self::Admins(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Audience {
-    /// 回答这张卡片的家人的用户名；`None` 是主人。只有这个人能在列表里看到、能回答。
-    pub recipient: Option<String>,
+    /// 这张卡片的冻结收件人；管理员列表不含主人，主人由 `Admins` 隐含。
+    pub(crate) recipients: Recipients,
     pub requester: Option<ConfirmationRequester>,
     pub origin: Option<ConfirmationOrigin>,
+    pub category: Option<wonton_protocol::ConfirmationCategory>,
 }
 
 /// 没能执行的原因。
@@ -164,10 +197,8 @@ pub struct Chosen {
 
 struct Slot {
     caller: PluginId,
-    /// 见 [`Audience::recipient`]。
-    recipient: Option<String>,
-    /// `None` preserves the single keeper recipient; admin recipients are frozen at creation.
-    admins: Option<Vec<Option<String>>>,
+    /// 这张卡片的冻结收件人。
+    recipients: Recipients,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
     scope: Option<String>,
     /// 见 [`Ticket::window`]。
@@ -182,10 +213,7 @@ struct Slot {
 
 impl Slot {
     fn includes(&self, recipient: Option<&str>) -> bool {
-        match &self.admins {
-            Some(admins) => admins.iter().any(|admin| admin.as_deref() == recipient),
-            None => self.recipient.as_deref() == recipient,
-        }
+        self.recipients.includes(recipient)
     }
 }
 
@@ -258,25 +286,14 @@ impl Confirmations {
         self.ask_as(caller, draft, Audience::default()).await
     }
 
-    /// 同 [`Self::ask`]，卡片发给 `audience` 说的人、带上发起者和来源会话（ADR-0016）。
+    /// 同 [`Self::ask`]，卡片发给 `audience` 的收件人、带上发起者和来源会话（ADR-0016）。
     pub async fn ask_as(
         &self,
         caller: &PluginId,
         draft: Draft,
         audience: Audience,
     ) -> Result<Ticket, Refusal> {
-        self.ask_audience(caller, draft, audience, None).await
-    }
-
-    pub(super) async fn ask_admin_as(
-        &self,
-        caller: &PluginId,
-        draft: Draft,
-        audience: Audience,
-        admins: Vec<Option<String>>,
-    ) -> Result<Ticket, Refusal> {
-        self.ask_audience(caller, draft, audience, Some(admins))
-            .await
+        self.ask_audience(caller, draft, audience).await
     }
 
     async fn ask_audience(
@@ -284,9 +301,8 @@ impl Confirmations {
         caller: &PluginId,
         draft: Draft,
         audience: Audience,
-        admins: Option<Vec<Option<String>>>,
     ) -> Result<Ticket, Refusal> {
-        let (card, answered) = self.open_audience(caller, draft, audience, admins)?;
+        let (card, answered) = self.open_audience(caller, draft, audience)?;
         let chosen = self.deliver(&card, answered).await?;
         match chosen.answer {
             answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {
@@ -326,7 +342,7 @@ impl Confirmations {
         draft: Draft,
         audience: Audience,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
-        self.open_audience(caller, draft, audience, None)
+        self.open_audience(caller, draft, audience)
     }
 
     fn open_audience(
@@ -334,13 +350,13 @@ impl Confirmations {
         caller: &PluginId,
         draft: Draft,
         audience: Audience,
-        admins: Option<Vec<Option<String>>>,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
         let created = SystemTime::now();
         let Audience {
-            recipient,
+            recipients,
             requester,
             origin,
+            category,
         } = audience;
         let card = ConfirmationCard {
             id: random_token(),
@@ -355,13 +371,12 @@ impl Confirmations {
             window: None,
             requester,
             origin,
-            audience: if admins.is_some() {
-                wonton_protocol::CardAudience::Admins
-            } else {
-                wonton_protocol::CardAudience::Keeper
+            audience: match &recipients {
+                Recipients::Keeper(_) => wonton_protocol::CardAudience::Keeper,
+                Recipients::Admins(_) => wonton_protocol::CardAudience::Admins,
             },
             answered_by: None,
-            category: draft.category,
+            category: category.or(draft.category),
         };
         let (waiter, answered) = oneshot::channel();
         let mut table = self.lock();
@@ -376,8 +391,7 @@ impl Confirmations {
         }
         let slot = Slot {
             caller: caller.clone(),
-            recipient,
-            admins,
+            recipients,
             scope: draft.scope,
             released_by: None,
             card: card.clone(),
@@ -416,31 +430,15 @@ impl Confirmations {
         let expires =
             Duration::from_millis(card.expires_at_ms.saturating_sub(now_ms(SystemTime::now())));
         let deadline = tokio::time::Instant::now() + expires;
-        let (recipient, admins) = {
+        let recipients = {
             let table = self.lock();
-            let slot = table.slots.get(&card.id).ok_or(Refusal::Expired)?;
-            (slot.recipient.clone(), slot.admins.clone())
+            table
+                .slots
+                .get(&card.id)
+                .map(|slot| slot.recipients.clone())
+                .ok_or(Refusal::Expired)?
         };
-        let posted = async {
-            let Some(recipients) = admins else {
-                return self.notifier.post(recipient.as_deref(), card).await;
-            };
-            let results = futures_util::future::join_all(
-                recipients
-                    .iter()
-                    .map(|recipient| self.notifier.post(recipient.as_deref(), card)),
-            )
-            .await;
-            if results.iter().any(Result::is_ok) {
-                Ok(())
-            } else {
-                Err(results
-                    .into_iter()
-                    .filter_map(Result::err)
-                    .collect::<Vec<_>>()
-                    .join("; "))
-            }
-        };
+        let posted = self.notifier.post(&recipients, card);
         match tokio::time::timeout_at(deadline, posted).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
@@ -522,20 +520,36 @@ impl Confirmations {
         self.revision.send_modify(|revision| *revision += 1);
     }
 
-    /// Single keeper recipient (`Some(None)` is the owner); admin cards and absent IDs return `None`.
+    /// 单收件人卡片返回收件人；管理员卡片和不存在的 ID 返回 `None`。
     pub fn recipient(&self, id: &str) -> Option<Option<String>> {
-        self.lock()
-            .slots
-            .get(id)
-            .and_then(|slot| slot.admins.is_none().then(|| slot.recipient.clone()))
+        self.lock().slots.get(id).and_then(|slot| {
+            matches!(&slot.recipients, Recipients::Keeper(_)).then(|| slot.recipients.keeper())
+        })
     }
 
-    /// Whether this recipient belongs to the card's frozen audience; absent cards return `None`.
+    /// 判断这个人是否属于卡片创建时冻结的收件人集合；不存在的 ID 返回 `None`。
     pub fn may_answer(&self, id: &str, recipient: Option<&str>) -> Option<bool> {
         self.lock()
             .slots
             .get(id)
             .map(|slot| slot.includes(recipient))
+    }
+
+    /// 回答接口的权限判断：管理员卡片已有其他人回答时，其他管理员不能重复回答。
+    pub fn may_answer_as(
+        &self,
+        id: &str,
+        recipient: Option<&str>,
+        user_id: Option<&str>,
+    ) -> Option<bool> {
+        self.lock().slots.get(id).map(|slot| {
+            slot.includes(recipient)
+                && slot
+                    .card
+                    .answered_by
+                    .as_deref()
+                    .is_none_or(|answered_by| user_id == Some(answered_by))
+        })
     }
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。

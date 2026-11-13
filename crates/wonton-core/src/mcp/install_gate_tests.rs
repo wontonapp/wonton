@@ -483,17 +483,23 @@ struct AdminDevices {
 impl Notifier for AdminDevices {
     fn post<'a>(
         &'a self,
-        recipient: Option<&'a str>,
+        recipients: &'a super::Recipients,
         _card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<(), String>> {
         async move {
-            self.recipients
-                .lock()
-                .unwrap()
-                .push(recipient.map(str::to_owned));
-            self.delivered.notify_one();
-            match recipient {
-                Some("admin") => Ok(()),
+            let names: Vec<Option<String>> = match recipients {
+                super::Recipients::Keeper(person) => vec![person.clone()],
+                super::Recipients::Admins(admins) => std::iter::once(None)
+                    .chain(admins.iter().cloned().map(Some))
+                    .collect(),
+            };
+            for recipient in names {
+                self.recipients.lock().unwrap().push(recipient);
+                self.delivered.notify_one();
+            }
+            // 夹具里主人（None）名下没有设备，管理员都有：管理员名单空了就没人能答。
+            match recipients {
+                super::Recipients::Admins(admins) if !admins.is_empty() => Ok(()),
                 _ => Err("no paired devices".into()),
             }
         }
@@ -599,4 +605,99 @@ async fn one_unreachable_admin_does_not_remove_the_shared_card() {
         bus.ask_plugin_admin("alice".into(), draft()).await,
         Err(Refusal::Unavailable(_))
     ));
+}
+
+/// 摘掉管理成员权限是"新卡片不再发给他，旧卡片他仍能答"：冻结名单在开卡那一刻算好（见 4.8）。
+#[tokio::test]
+async fn stripped_admin_gets_no_new_cards_but_still_answers_frozen_ones() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let s = setup(engine, Duration::from_secs(60)).await;
+    let with_members = role(&s, Gate::Allow, true);
+    let without_members = role(&s, Gate::Allow, false);
+    member(&s, "alice", &with_members, MemberStatus::Joined);
+    member(&s, "bob", &with_members, MemberStatus::Joined);
+    let notifier = Arc::new(AdminDevices::default());
+    let confirmations = Arc::new(Confirmations::new(
+        notifier.clone(),
+        Duration::from_secs(60),
+    ));
+    let bus = Bus::new(
+        s.manager.clone(),
+        confirmations,
+        Arc::new(super::audit::Audit::new(
+            s.dir.path().join("stripped-audit.jsonl"),
+        )),
+    );
+    bus.attach_people(
+        "test".into(),
+        s.members.clone(),
+        s.bus.people.get().unwrap().roles.clone(),
+    );
+
+    // 第一张卡在 alice 还有管理成员权限时开出：主人和两位管理员都收到。
+    let first = {
+        let bus = bus.clone();
+        tokio::spawn(async move { bus.ask_plugin_admin("alice".into(), draft()).await })
+    };
+    let frozen = card(&bus, Some("alice")).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let delivered = notifier.delivered.notified();
+            if notifier.recipients.lock().unwrap().len() == 3 {
+                break;
+            }
+            delivered.await;
+        }
+    })
+    .await
+    .expect("administrator notifications were not delivered");
+    assert_eq!(
+        *notifier.recipients.lock().unwrap(),
+        [None, Some("alice".into()), Some("bob".into())]
+    );
+
+    s.members.set_role("alice", &without_members).unwrap();
+
+    // 新卡片按当下的权限算收件人：不再有 alice。
+    let second = {
+        let bus = bus.clone();
+        tokio::spawn(async move { bus.ask_plugin_admin("bob".into(), draft()).await })
+    };
+    // bob 的列表里还挂着第一张卡，按 ID 挑出新开的那张。
+    let fresh = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let delivered = notifier.delivered.notified();
+            if notifier.recipients.lock().unwrap().len() == 5
+                && let Some(card) = bus
+                    .confirmations()
+                    .list(Some("bob"))
+                    .0
+                    .into_iter()
+                    .find(|card| card.id != frozen.id)
+            {
+                break card;
+            }
+            delivered.await;
+        }
+    })
+    .await
+    .expect("the stripped list did not reach bob");
+    assert_eq!(
+        &notifier.recipients.lock().unwrap()[3..],
+        [None, Some("bob".into())]
+    );
+    assert_eq!(
+        bus.confirmations().may_answer(&fresh.id, Some("alice")),
+        Some(false)
+    );
+
+    // 旧卡片她仍在冻结名单里，照样答得了。
+    assert_eq!(
+        bus.confirmations().may_answer(&frozen.id, Some("alice")),
+        Some(true)
+    );
+    bus.answer_card(&frozen.id, Answer::Approve, None, "alice")
+        .unwrap();
+    first.abort();
+    second.abort();
 }

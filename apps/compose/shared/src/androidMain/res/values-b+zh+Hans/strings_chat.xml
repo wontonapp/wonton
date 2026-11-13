@@ -70,6 +70,8 @@
     <string name="confirmation_card_tool_root">这个操作会以 root 身份在这台机器上运行</string>
     <string name="confirmation_card_requests">待确认的请求</string>
     <string name="confirmation_card_unavailable">这条请求已不在列表里</string>
+    <!-- Status line on an administrators-only approval request already handled by another administrator. Argument: user ID. -->
+    <string name="confirmation_card_answered_by">已由 %1$s 处理</string>
     <string name="timeline_sending_progress">发送中 %1$s</string>
     <string name="timeline_cancel_send">取消发送</string>
     <string name="side_chat">旁聊</string>

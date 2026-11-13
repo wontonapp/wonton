@@ -43,6 +43,10 @@ struct ConfirmationCardView: View {
                 }
                 .disabled(view.card.state != .pending || view.sending != nil)
             }
+            if view.card.audience == .admins, let answeredBy = view.card.answeredBy {
+                Text(.ConfirmationCard.confirmationCardAnsweredBy(answeredBy))
+                    .wontonText(WontonTheme.typography.supporting)
+            }
             state
             if let window = view.window {
                 self.window(window)

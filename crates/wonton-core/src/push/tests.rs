@@ -446,7 +446,7 @@ async fn without_a_paired_device_nobody_can_confirm() {
     // 主人有设备了，发给没有设备的家人的卡片照样没人能答。
     devices.add(SecretKey::generate().public(), None).unwrap();
     let audience = crate::mcp::Audience {
-        recipient: Some("alice".into()),
+        recipients: crate::mcp::Recipients::Keeper(Some("alice".into())),
         ..Default::default()
     };
     let refusal = confirmations

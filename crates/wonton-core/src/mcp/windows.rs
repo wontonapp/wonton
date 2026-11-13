@@ -29,10 +29,12 @@ impl Bus {
             SecretValues::new(),
             Default::default(),
             by,
+            Some(by),
         )
     }
 
-    /// 带密钥的回答卡片（ADR-0064）。
+    /// 带密钥的回答卡片（ADR-0064）。`by` 用于审计和放行时段，`user_id` 写进管理员卡片的 `answered_by`。
+    #[allow(clippy::too_many_arguments)]
     pub fn answer_card_with_secrets(
         self: &Arc<Self>,
         id: &str,
@@ -41,6 +43,7 @@ impl Bus {
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
         by: &str,
+        user_id: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = self.confirmations.answer_with_secrets_by(
             id,
@@ -49,7 +52,7 @@ impl Bus {
             secrets,
             settings,
             &self.owner_languages(),
-            Some(by),
+            user_id,
         )?;
         if answer == Answer::AllowWindow {
             self.window_opened(id, by);

@@ -584,9 +584,10 @@ async fn confirm_main(bus: &Arc<Bus>, context: &BotContext) -> Result<(), ToolFa
     });
     // 主面板是主人的：卡片发给主人。
     let audience = super::Audience {
-        recipient: None,
+        recipients: super::Recipients::Keeper(None),
         requester: Some(requester),
         origin,
+        category: None,
     };
     let asked = bus
         .confirmations

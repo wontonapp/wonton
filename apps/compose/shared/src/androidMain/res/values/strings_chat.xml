@@ -84,6 +84,8 @@
     <string name="confirmation_card_tool_root">This runs as root on this machine</string>
     <string name="confirmation_card_requests">Requests to confirm</string>
     <string name="confirmation_card_unavailable">This request is no longer available</string>
+    <!-- Status line on an administrators-only approval request already handled by another administrator. Argument: user ID. -->
+    <string name="confirmation_card_answered_by">Handled by %1$s</string>
     <!-- Content description of a state picture in the bot profile. Argument: the state name. -->
     <!-- Footer of a message still uploading its attachments. Argument: percent done, already formatted. -->
     <string name="timeline_sending_progress">Sending %1$s</string>
