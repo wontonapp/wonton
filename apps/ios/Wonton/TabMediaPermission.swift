@@ -87,51 +87,6 @@ final class TabMediaRequests {
     }
 }
 
-extension TabWebSession: WKUIDelegate {
-    /// 网页要摄像头/麦克风（getUserMedia）：先问核心（按插件记决定），按回答放行或拒绝；
-    /// 放行还要系统运行时权限。其他 UI 代理方法走 WebKit 的默认。
-    func webView(
-        _ webView: WKWebView,
-        requestMediaCapturePermissionFor initiatedByFrame: WKFrameInfo,
-        type: WKMediaCaptureType,
-        decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
-    ) {
-        NSLog("[media] capture entry type=%d", type == .camera ? 0 : type == .microphone ? 1 : 2)
-        let camera = type == .camera || type == .cameraAndMicrophone
-        let microphone = type == .microphone || type == .cameraAndMicrophone
-        // 源从 WebView 的原生回调取，核心按页面自己的源核对；页面里嵌的其他源核心直接拒。
-        // 核心问不出来（页面关了、源不符、查记录失败）就是拒：如实拒网页并留日志，不静默。
-        let decision: TabMediaPermission?
-        do {
-            decision = try core.tabMediaPermissionRequest(
-                page: placed, origin: Self.originString(initiatedByFrame.securityOrigin),
-                camera: camera, microphone: microphone
-            )
-            let what = if decision == .allow {
-                "allow"
-            } else if decision == .prompt {
-                "prompt"
-            } else {
-                "deny"
-            }
-            NSLog("[media] request ok %@ microphone=%d", what, microphone ? 1 : 0)
-        } catch {
-            decision = nil
-            NSLog("[media] request failed origin=%@ error=%@",
-                  Self.originString(initiatedByFrame.securityOrigin), String(describing: error))
-        }
-        let answer = { (allow: Bool) in decisionHandler(allow ? .grant : .deny) }
-        switch decision {
-        case .allow:
-            TabMediaRequests.shared.systemStep(for: type, answer: answer)
-        case .prompt:
-            TabMediaRequests.shared.asked(for: type, answer: answer)
-        default:
-            answer(false)
-        }
-    }
-}
-
 /// 摄像头/麦克风的询问弹窗和系统层拒绝的提示。整个 App 挂一份：挂在各页的话，
 /// 后台页的那份先弹，弹不出来，用户在别的页就看不到（同 ChatDialogs）。
 struct TabMediaDialogs: ViewModifier {
