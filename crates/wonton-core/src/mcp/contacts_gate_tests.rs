@@ -14,10 +14,10 @@ use super::tests::{failed, text};
 use super::tool_failure_tests::failure_kind;
 use crate::agent_chain::Chains;
 use crate::agent_chain::settings::AgentSettings;
+use crate::agent_outbox::Outbox;
 use crate::contacts::InviteeState;
 use crate::contacts::tests::{Net, Server, ask, bot_request, person_request};
 use crate::gateway::agent_chains::AgentChains;
-use crate::gateway::agent_outbox::Outbox;
 use crate::plugin::PluginId;
 use crate::plugin::docker::Engine;
 

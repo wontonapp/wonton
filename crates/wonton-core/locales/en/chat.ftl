@@ -209,3 +209,7 @@ chat-chain-limit-what = One more adds another default share of rounds and spend.
 chat-chain-limit-grant = One more
 chat-chain-limit-stop = Stop for now
 chat-chain-stopped-card = The chain was stopped; this card is void
+
+# Send-message card (ADR-0061 §9): $recipient is the recipient, $bot is the sending bot.
+chat-send-message-title = Send a message to { $recipient }
+chat-send-message-queued = Approved, waiting for { $bot } to send

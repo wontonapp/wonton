@@ -179,3 +179,7 @@ chat-chain-limit-what = 「もう 1 回分」で往復と利用量の上限を 1
 chat-chain-limit-grant = もう 1 回分
 chat-chain-limit-stop = 止めておく
 chat-chain-stopped-card = 連鎖が止まったため、このカードは無効です
+
+# メッセージ送信カード（ADR-0061 §9）：$recipient は受信者、$bot は送信するボット。
+chat-send-message-title = { $recipient } にメッセージを送る
+chat-send-message-queued = 承認済み。{ $bot } の送信を待っています

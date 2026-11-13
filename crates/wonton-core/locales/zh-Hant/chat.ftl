@@ -174,3 +174,7 @@ chat-chain-limit-what = 「再給一份」把輪數和花費各加一份預設�
 chat-chain-limit-grant = 再給一份
 chat-chain-limit-stop = 先停著
 chat-chain-stopped-card = 鏈被停了，這張卡片作廢
+
+# 傳訊卡片（ADR-0061 第 9 節）：$recipient 是收件人，$bot 是傳訊的 Bot。
+chat-send-message-title = 向 { $recipient } 傳送訊息
+chat-send-message-queued = 已核准，等 { $bot } 傳送

@@ -10,6 +10,7 @@
 pub(crate) mod attachments;
 mod busy;
 pub(crate) mod chain;
+pub(crate) mod outbox;
 mod permissions;
 mod refused;
 mod routing;
@@ -69,6 +70,8 @@ pub(crate) struct Bridge {
     locales: Arc<Locales<Origin>>,
     /// 轮次登记的客户端（ADR-0061 第 10 节）：每轮领链、结束报 End。
     chains: chain::Client,
+    /// 和收件人的私聊（ADR-0061 第 9 节）：出箱 Message 项从这里发。测试换替身。
+    pub(crate) dm: std::sync::Arc<dyn outbox::Dm>,
     /// 桥挂在确认接口上的权限长轮询；会话被取消（停链的 CancelTurn）时断开。
     pub(crate) pending_asks: permissions::PendingAsks,
 }
@@ -347,20 +350,22 @@ pub async fn run() -> Result<()> {
             health.touch_alive();
         }
     });
-    let matrix = MatrixSession::login_with_access_token(
-        &SessionConfig {
-            homeserver_url: config.homeserver.clone(),
-            device_name: "Wonton ACP bridge".into(),
-            store: StoreConfig::Sqlite {
-                path: config.matrix_store.clone(),
-                passphrase: None,
+    let matrix = Arc::new(
+        MatrixSession::login_with_access_token(
+            &SessionConfig {
+                homeserver_url: config.homeserver.clone(),
+                device_name: "Wonton ACP bridge".into(),
+                store: StoreConfig::Sqlite {
+                    path: config.matrix_store.clone(),
+                    passphrase: None,
+                },
+                proxy: None,
             },
-            proxy: None,
-        },
-        &config.access_token,
-    )
-    .await
-    .context("登录 Matrix")?;
+            &config.access_token,
+        )
+        .await
+        .context("登录 Matrix")?,
+    );
     matrix.start_sync().await.context("启动 Matrix 同步")?;
     let bot = matrix.user_id().to_owned();
     let room = Arc::new(
@@ -392,6 +397,8 @@ pub async fn run() -> Result<()> {
         config.owner.clone(),
     ));
     let chains = chain::Client::new(&config.mcp_url, &config.access_token)?;
+    let dm: std::sync::Arc<dyn outbox::Dm> =
+        std::sync::Arc::new(outbox::MatrixDm::new(matrix.clone()));
     let bridge = Bridge {
         config,
         acp,
@@ -400,6 +407,7 @@ pub async fn run() -> Result<()> {
         bot,
         locales,
         chains,
+        dm,
         pending_asks: permissions::PendingAsks::default(),
     };
     // 出箱是全 Bot 一份的：停链的取消轮次从这里来，和房间循环并行。

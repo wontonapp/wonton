@@ -95,8 +95,8 @@ pub async fn request(gateway: &Gateway, mut req: Request) -> Response {
             );
         };
         return match req.method() {
-            &Method::GET => agent_outbox::poll(outbox, &caller, req).await,
-            _ => agent_outbox::receipt(outbox, &caller, req).await,
+            &Method::GET => agent_outbox::poll(gateway, outbox, &caller, req).await,
+            _ => agent_outbox::receipt(gateway, outbox, &caller, req).await,
         };
     }
     req.extensions_mut().insert(caller);

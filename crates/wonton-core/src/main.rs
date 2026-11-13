@@ -26,13 +26,13 @@ use anyhow::{Context, bail};
 use tracing_subscriber::EnvFilter;
 use wonton_core::agent_chain::Chains;
 use wonton_core::agent_chain::settings::AgentSettings;
+use wonton_core::agent_outbox::Outbox;
 use wonton_core::config::Config;
 mod serve;
 use wonton_core::device::Devices;
 use wonton_core::files::{CoreHost, Files, FilesConfig};
 use wonton_core::friends::Friends;
 use wonton_core::gateway::agent_chains::AgentChains;
-use wonton_core::gateway::agent_outbox::Outbox;
 use wonton_core::gateway::{self, Gateway};
 use wonton_core::http::HttpClient;
 use wonton_core::matrix::{FederationBlocks, FederationConfig, Matrix, NoticeRoom};
@@ -682,11 +682,42 @@ fn open_agent_chains(cfg: &Config, bus: &Arc<mcp::Bus>) -> anyhow::Result<Arc<Ag
         settings.limits(),
     )?);
     ledger.on_limit_event(gateway::agent_chains::limit_handler(bus));
-    Ok(Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(Outbox::default()),
-        settings,
-    )))
+    let outbox = Arc::new(Outbox::with_store(
+        cfg.core_state_dir().join("agent-outbox.json"),
+    )?);
+    outbox.on_message_settled(message_settled_audit(bus));
+    Ok(Arc::new(AgentChains::new(ledger, outbox, settings)))
+}
+
+/// 出箱的 Message 项结清时写一行审计：发出的事件 ID、或没做成的类别（ADR-0061 第 9 节）。
+fn message_settled_audit(
+    bus: &Arc<mcp::Bus>,
+) -> Arc<dyn Fn(&wonton_core::agent_outbox::MessageSettled) + Send + Sync> {
+    let audit = bus.audit().clone();
+    Arc::new(move |settled: &wonton_core::agent_outbox::MessageSettled| {
+        let outcome = match &settled.result {
+            wonton_protocol::OutboxResult::Sent { event_id } => format!("已发出，事件 {event_id}"),
+            wonton_protocol::OutboxResult::Failed { category } => {
+                format!("没做成（{category:?}）")
+            }
+        };
+        let arguments = serde_json::json!({
+            "recipient": settled.recipient,
+            "body": settled.body,
+        });
+        audit.record(&mcp::audit::Record {
+            caller: settled.bot.plugin_id.as_str(),
+            tool: wonton_protocol::SEND_MESSAGE_TOOL,
+            arguments: &arguments,
+            decision: mcp::audit::Decision::Allowed,
+            basis: Some(mcp::audit::Grounds {
+                basis: mcp::audit::Basis::Card,
+                held_ms: None,
+            }),
+            outcome: Some(&outcome),
+            files: &[],
+        });
+    })
 }
 
 /// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。

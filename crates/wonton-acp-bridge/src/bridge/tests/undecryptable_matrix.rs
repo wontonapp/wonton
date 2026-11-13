@@ -191,6 +191,7 @@ async fn restarted_bridge(setup: &Setup) -> (MatrixSession, tempfile::TempDir) {
         bot: setup.bot_user.clone(),
         locales: Arc::new(Locales::new(Origin::Fixed, setup.bot_user.clone())),
         chains: crate::bridge::chain::Client::new(&config.mcp_url, &config.access_token).unwrap(),
+        dm: std::sync::Arc::new(crate::bridge::outbox::tests::FakeDm::for_bridge()),
         pending_asks: permissions::PendingAsks::default(),
     };
     let login = Arc::new(LoginService {

@@ -237,14 +237,15 @@ async fn a_cancel_turn_for_an_unknown_session_reports_failure() {
     harness.finish().await;
 }
 
-/// 发消息的项还没实现、不认识的项：如实回报失败并跳过，不猜怎么执行。
+/// 发消息的项真的去投递（测试的私聊没有房间，回报 `no_room`）；不认识的项照实回报
+/// 失败并跳过，不猜怎么执行。
 #[tokio::test]
-async fn message_and_unknown_outbox_items_are_reported_as_skipped() {
+async fn message_items_reach_the_dm_and_unknown_ones_are_skipped() {
     let harness = Harness::start().await;
     harness.core.feed(OutboxItem {
         id: "o-m".into(),
         kind: OutboxKind::Message {
-            recipient: "@mom:example.org".into(),
+            recipient: "mom".into(),
             body: "周末回来吗".into(),
         },
     });
@@ -256,11 +257,15 @@ async fn message_and_unknown_outbox_items_are_reported_as_skipped() {
         let core = &harness.core;
         async move {
             let receipts = core.receipts();
+            let of = |id: &str| {
+                receipts
+                    .iter()
+                    .find(|receipt| receipt["id"] == id)
+                    .map(|receipt| receipt["result"].clone())
+            };
             receipts.len() == 2
-                && receipts.iter().all(|receipt| {
-                    receipt["result"]["result"] == "failed"
-                        && receipt["result"]["category"] == "other"
-                })
+                && of("o-m") == Some(serde_json::json!({"result": "failed", "category": "no_room"}))
+                && of("o-x") == Some(serde_json::json!({"result": "failed", "category": "other"}))
         }
     })
     .await;
