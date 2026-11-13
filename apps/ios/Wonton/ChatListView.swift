@@ -412,7 +412,7 @@ private struct StartChatView: View {
                         ForEach(Array(contacts.enumerated()), id: \.element.userId) { index, contact in
                             if index > 0 { WontonSeparator() }
                             Button {
-                                model.openDirectChat(with: contact.userId)
+                                model.startChat(with: contact)
                             } label: {
                                 WontonRow(title: contact.name, showsForward: true)
                             }
@@ -427,7 +427,8 @@ private struct StartChatView: View {
     }
 }
 
-/// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。
+/// 房间列表预览的一行：正文原样，图片、文件等占位在这里写。旁聊的根、结果行或旁聊里的消息给标题和状态
+/// （ADR-0093 §4）；不回报结果的 AI 没有状态可说，那句提示留在卡片和旁聊页上，预览只给标题。
 private extension MessageSummary {
     var line: String {
         switch self {
@@ -436,7 +437,8 @@ private extension MessageSummary {
         case .image: String(localized: .Message0.messageSummaryImage)
         case .undecryptable: String(localized: .Message0.messageSummaryUndecryptable)
         case .redacted: String(localized: .Message0.messageSummaryRedacted)
-        case let .sideChat(title, _): title
+        case let .sideChat(title, state):
+            state == .untracked ? title : String(localized: .Chat.sideChatResultLine(title, state.text))
         case let .other(kind): String(localized: .Chat0.chatSummaryOther(kind))
         }
     }
