@@ -159,3 +159,26 @@ async fn the_bridge_declares_side_chat_support_on_start() {
     .await;
     harness.finish().await;
 }
+
+#[tokio::test]
+async fn a_failed_support_declaration_does_not_stop_message_processing() {
+    // Bot 对房间没有写状态的 power（403）：声明发不出去，消息照常收。
+    let harness = Harness::start_with_room(|room| {
+        room.forbid_state_writes("M_FORBIDDEN: You don't have permission to post state");
+    })
+    .await;
+    harness.send("$t1", "在线时也要能收到");
+    let prompts = harness.wait_prompts(1).await;
+    let session = prompts[0].0.clone();
+    harness.respond(&session, "收到").await;
+    wait_until(|| harness.room.main_texts().iter().any(|text| text == "收到")).await;
+    // 没有声明：支持声明从未成功写下
+    assert!(
+        !harness
+            .room
+            .effects()
+            .iter()
+            .any(|effect| matches!(effect, Effect::State(kind) if kind == SIDE_CHAT_SUPPORT_EVENT))
+    );
+    harness.finish().await;
+}

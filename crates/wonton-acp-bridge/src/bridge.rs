@@ -547,8 +547,11 @@ async fn run_room<R: Room>(
     let mut commands = Commands::new();
     let (owner, start_lang) = prepare_room(&bridge, room.as_ref(), &bot, &mut commands).await;
     // 桥照 ADR-0093 实现了话题分会话和结果行，在这里声明支持；state_key 是 Bot 自己的
-    // Matrix ID。发不出去就退出重连，不留一个没声明、卡片全按 Untracked 显示的桥。
-    side_chats::declare(room.as_ref(), &bot).await?;
+    // Matrix ID。写声明失败只记日志继续：少了声明 App 把旁聊卡片按 Untracked 显示，收
+    // 发不受影响，和写命令菜单失败一个待遇（Bot 对房间的 power 不够时两者都会被拒）。
+    if let Err(error) = side_chats::declare(room.as_ref(), &bot).await {
+        tracing::warn!(error = %error, "写旁聊支持声明失败");
+    }
     let mut topics = open_topics(bridge.config.bridge_data.join("topics"), room.as_ref()).await?;
     let mut updates = room.updates().await;
     let mut acp_notices = bridge.acp.subscribe();
