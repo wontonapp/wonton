@@ -429,7 +429,6 @@ fn owner_json(name: Option<&str>, email: Option<&str>) -> serde_json::Value {
         "is_owner": true,
         "display_name": name,
         "email": email,
-        "can_install_plugins": true,
     })
 }
 

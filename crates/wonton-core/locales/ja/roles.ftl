@@ -1,0 +1,11 @@
+roles-not-found = 役割 { $role } はありません。
+roles-name-taken = 「{ $name }」という役割はすでにあります。
+roles-in-use = 役割 { $role } を使っている人がいます。先に別の役割に変えてください。
+roles-default = 既定の招待役割は削除できません。先に既定を別の役割にしてください。
+roles-too-many = 役割が上限の { $max } 個に達しています。
+roles-invalid-name = 役割名が規則に合いません：{ $error }
+roles-storage = 役割を保存できません：{ $error }
+roles-member-not-found = メンバー { $username } は存在しません。
+roles-member-removed = { $username } は削除済みです。招待し直す必要があります。
+roles-friend-not-found = 友達一覧に { $user_id } はいません。
+roles-friends-unavailable = このサーバは友達機能が使えません。

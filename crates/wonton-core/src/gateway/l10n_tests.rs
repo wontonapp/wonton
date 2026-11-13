@@ -44,7 +44,6 @@ async fn device_languages_are_recorded_under_the_person() {
             email: None,
             status: MemberStatus::Joined,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,

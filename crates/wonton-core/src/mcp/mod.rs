@@ -94,6 +94,7 @@ pub struct Cards {
 pub struct People {
     pub(crate) server_name: String,
     pub(crate) members: Arc<crate::members::Members>,
+    pub(crate) roles: Arc<crate::roles::Roles>,
 }
 
 pub struct Bus {
@@ -108,7 +109,7 @@ pub struct Bus {
     files: OnceLock<Arc<Files>>,
     /// 帮助文档。它要升级服务给的版本号，所以和文件服务一样后接上（[`Bus::attach_help`]）。
     help: OnceLock<Arc<Help>>,
-    /// 家人记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人用（[`Bus::attach_people`]）。
+    /// 家人记录、角色记录和本服务器的 Matrix 服务器名：`wonton__user_locale` 认人、开卡挑人用（[`Bus::attach_people`]）。
     people: OnceLock<People>,
     /// Matrix 和主人：Bot 钉进主面板的同意卡片要发进 Bot 的房间里（[`Bus::attach_matrix`]）。
     matrix: OnceLock<Cards>,
@@ -179,14 +180,20 @@ impl Bus {
         }
     }
 
-    /// 接上家人记录和本服务器的 Matrix 服务器名（没接 Matrix 的核心是基础域名）。没接上时
-    /// `wonton__user_locale` 如实报错。
-    pub fn attach_people(&self, server_name: String, members: Arc<crate::members::Members>) {
+    /// 接上家人记录、角色记录和本服务器的 Matrix 服务器名（没接 Matrix 的核心是基础域名）。没接上时
+    /// `wonton__user_locale` 如实报错，开卡片按没人有装卸权限算。
+    pub fn attach_people(
+        &self,
+        server_name: String,
+        members: Arc<crate::members::Members>,
+        roles: Arc<crate::roles::Roles>,
+    ) {
         if self
             .people
             .set(People {
                 server_name,
                 members,
+                roles,
             })
             .is_err()
         {

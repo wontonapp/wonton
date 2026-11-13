@@ -133,7 +133,6 @@ async fn only_the_owner_sees_the_installed_scope() {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "admin".to_owned(),
-            can_install_plugins: true,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,

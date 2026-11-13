@@ -87,7 +87,6 @@ pub(super) async fn home() -> Home {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,

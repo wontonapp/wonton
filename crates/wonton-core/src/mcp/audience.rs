@@ -85,14 +85,16 @@ impl Bus {
         }
     }
 
-    /// 主人给这个家人开了“能装插件”，他也还在家里。家人记录没接上时按没授权：卡片发给主人。
+    /// 这个家人还在家里、角色又能装卸应用（ADR-0088）。记录没接上时按没授权：卡片发给主人。
     fn may_install(&self, username: &str) -> bool {
-        self.people
-            .get()
-            .and_then(|people| people.members.get(username))
-            .is_some_and(|record| {
-                record.can_install_plugins && record.status != MemberStatus::Removed
+        self.people.get().is_some_and(|people| {
+            people.members.get(username).is_some_and(|record| {
+                record.status != MemberStatus::Removed
+                    && people.roles.get(&record.role_id).is_some_and(|role| {
+                        role.permissions.install_apps == wonton_protocol::Gate::Allow
+                    })
             })
+        })
     }
 
     /// 卡片的文字用收件人的语言（ADR-0043）。

@@ -6,7 +6,7 @@ use iroh::SecretKey;
 use serde_json::{Value, json};
 
 use super::family_tests::{
-    ME, MEMBERS, home_with_matrix, invite, owner_call, seed_member, send_as,
+    ME, MEMBERS, bearer, home_with_matrix, invite, owner_call, seed_member, send_as,
 };
 use super::tests::{CORE, Harness};
 
@@ -157,37 +157,239 @@ async fn an_unknown_permission_value_reads_as_the_strictest() {
     assert_eq!(reply.error_kind(), Some("install_not_allowed"));
 }
 
-/// 旧的“能装插件”开关不再写记录：回 409 说清楚改由角色决定，人不在时照旧 404。
+/// 分配角色以后，下一次请求 `Me` 就是新角色和它的权限。
 #[tokio::test]
-async fn the_old_install_switch_says_that_roles_decide_now() {
+async fn an_assignment_shows_up_in_the_next_me() {
     let (home, _matrix_state) = home_with_matrix().await;
-    let member = invite(
+    invite(
+        &home,
+        json!({"display_name": "Kid", "private_bot": true, "role_id": "child"}),
+    )
+    .await;
+    let device = home.member_device("kid");
+
+    let reply = assign(&home, "kid", "admin").await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let list: Value = serde_json::from_str(reply.text()).unwrap();
+    let admin = list["roles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|role| role["id"] == "admin")
+        .unwrap();
+    assert_eq!(admin["people"], 1, "人数跟着变");
+
+    let reply = send_as(&home.app, Some(device), Method::GET, CORE, ME, &[], "").await;
+    let me: Value = serde_json::from_str(reply.text()).unwrap();
+    assert_eq!(me["role_id"], "admin");
+    assert_eq!(me["permissions"]["install_apps"], "allow");
+}
+
+/// 给一个家人分配角色，回响应。
+async fn assign(home: &super::tunnel_tests::Home, who: &str, role_id: &str) -> super::tests::Reply {
+    send_as(
+        &home.app,
+        None,
+        Method::PUT,
+        CORE,
+        &wonton_protocol::member_role_path(who),
+        &[
+            ("authorization", bearer().as_str()),
+            ("content-type", "application/json"),
+        ],
+        &format!("{{\"role_id\": \"{role_id}\"}}"),
+    )
+    .await
+}
+
+/// 给不在记录里、或者已经移除的人分配：404 和 409 分开报；角色本身不存在时 404。
+#[tokio::test]
+async fn assigning_refuses_unknown_and_removed_people() {
+    let (home, _matrix_state) = home_with_matrix().await;
+    invite(
         &home,
         json!({"display_name": "Kid", "private_bot": false, "role_id": "child"}),
     )
     .await;
-    assert_eq!(member["role_id"], "child");
-    let (status, reply) = owner_call(
-        &home,
-        Method::PUT,
-        &wonton_protocol::member_path("kid"),
-        json!({"can_install_plugins": true}),
+    let reply = assign(&home, "nobody", "family").await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{}", reply.text());
+
+    home.members.remove("kid", false, true).unwrap();
+    let reply = assign(&home, "kid", "family").await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("removed"));
+
+    let reply = assign(&home, "kid", "nobody").await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("role_not_found"));
+}
+
+/// 主人令牌发一条请求。
+async fn owner(h: &Harness, method: Method, path: &str, body: &str) -> super::tests::Reply {
+    send_as(
+        &h.app,
+        None,
+        method,
+        CORE,
+        path,
+        &[
+            ("authorization", bearer().as_str()),
+            ("content-type", "application/json"),
+        ],
+        body,
+    )
+    .await
+}
+
+/// 建、改走一遍：新建给 ID，重名 409，改名和改权限都生效。
+#[tokio::test]
+async fn roles_are_created_and_renamed_and_names_must_differ() {
+    let h = Harness::start(None).await;
+    let reply = owner(
+        &h,
+        Method::POST,
+        wonton_protocol::ROLES_PATH,
+        "{\"name\": \"客人\", \"permissions\": {}}",
     )
     .await;
-    assert_eq!(status, StatusCode::CONFLICT, "{reply}");
-    assert_eq!(reply["error"]["kind"], "install_apps_from_role", "{reply}");
+    assert_eq!(reply.status, StatusCode::CREATED, "{}", reply.text());
+    let created: Value = serde_json::from_str(reply.text()).unwrap();
+    let id = created["id"].as_str().unwrap().to_owned();
+    assert_eq!(created["people"], 0);
     assert_eq!(
-        home.members.get("kid").unwrap().role_id,
-        "child",
-        "只回错误，不动角色"
+        created["permissions"]["install_apps"], "deny",
+        "没写的项按最严"
     );
 
-    let (status, reply) = owner_call(
-        &home,
-        Method::PUT,
-        &wonton_protocol::member_path("nobody"),
-        json!({"can_install_plugins": true}),
+    let reply = owner(
+        &h,
+        Method::POST,
+        wonton_protocol::ROLES_PATH,
+        "{\"name\": \" 客人 \", \"permissions\": {}}",
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "{reply}");
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("role_name_taken"));
+
+    let reply = owner(
+        &h,
+        Method::PUT,
+        &wonton_protocol::role_path(&id),
+        "{\"name\": \"常客\", \"permissions\": {\"install_apps\": \"allow\"}}",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let updated: Value = serde_json::from_str(reply.text()).unwrap();
+    assert_eq!(updated["name"], "常客");
+    assert_eq!(updated["permissions"]["install_apps"], "allow");
+
+    let reply = owner(
+        &h,
+        Method::PUT,
+        &wonton_protocol::role_path("nobody"),
+        "{\"name\": \"X\", \"permissions\": {}}",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("role_not_found"));
+}
+
+/// 删：默认角色和在用的删不掉，没人在用的删得掉；家人设备的每个接口都是缺“主人”的 403。
+#[tokio::test]
+async fn deleting_roles_checks_default_and_people_and_members_are_refused() {
+    let h = Harness::start(None).await;
+    let spare = h.roles.create(&role_draft("备用")).unwrap();
+    seed_member(&h, "mia", false);
+    h.members.set_role("mia", &spare.id).unwrap();
+
+    let reply = owner(
+        &h,
+        Method::DELETE,
+        &wonton_protocol::role_path("friend"),
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("default_role"));
+
+    let reply = owner(
+        &h,
+        Method::DELETE,
+        &wonton_protocol::role_path(&spare.id),
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("role_in_use"));
+
+    // 家人设备的每个接口都是缺“主人”的 403。
+    let device = SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(device, None, Some("mia".to_owned()), |_| true)
+        .unwrap();
+    for (method, path, body) in [
+        (Method::GET, wonton_protocol::ROLES_PATH.to_owned(), ""),
+        (Method::POST, wonton_protocol::ROLES_PATH.to_owned(), "{}"),
+        (Method::PUT, wonton_protocol::role_path("admin"), "{}"),
+        (Method::DELETE, wonton_protocol::role_path("admin"), ""),
+        (
+            Method::PUT,
+            wonton_protocol::DEFAULT_INVITE_ROLE_PATH.to_owned(),
+            "{}",
+        ),
+        (Method::PUT, wonton_protocol::member_role_path("mia"), "{}"),
+        (
+            Method::PUT,
+            wonton_protocol::friend_role_path("@a:test"),
+            "{}",
+        ),
+    ] {
+        let reply = send_as(&h.app, Some(device), method, CORE, &path, &[], body).await;
+        assert_eq!(
+            reply.status,
+            StatusCode::FORBIDDEN,
+            "{path}: {}",
+            reply.text()
+        );
+        assert_eq!(reply.error_kind(), Some("permission_required"), "{path}");
+        let body: Value = serde_json::from_str(reply.text()).unwrap();
+        assert_eq!(body["missing"], "owner", "{path}");
+    }
+
+    // 没人用的删掉：204。
+    h.members.remove("mia", false, true).unwrap();
+    let reply = owner(
+        &h,
+        Method::DELETE,
+        &wonton_protocol::role_path(&spare.id),
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+}
+
+/// 换默认邀请角色：回全部角色，列表里默认跟着变；角色不存在 404。
+#[tokio::test]
+async fn the_default_invite_role_can_be_changed_through_the_api() {
+    let h = Harness::start(None).await;
+    let reply = owner(
+        &h,
+        Method::PUT,
+        wonton_protocol::DEFAULT_INVITE_ROLE_PATH,
+        "{\"role_id\": \"child\"}",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    let list: Value = serde_json::from_str(reply.text()).unwrap();
+    assert_eq!(list["default_invite_role"], "child");
+
+    let reply = owner(
+        &h,
+        Method::PUT,
+        wonton_protocol::DEFAULT_INVITE_ROLE_PATH,
+        "{\"role_id\": \"nobody\"}",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND, "{}", reply.text());
 }

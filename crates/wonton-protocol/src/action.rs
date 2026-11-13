@@ -651,6 +651,36 @@ pub enum Action {
         user_id: String,
     },
 
+    /// 取全部角色和默认邀请角色；只有主人能用。
+    RefreshRoles,
+    /// 新建角色，名字和权限项见 [`RoleDraft`](crate::RoleDraft)；成功后进角色列表。
+    CreateRole {
+        draft: crate::RoleDraft,
+    },
+    /// 改一个角色的名字和权限项；ID 和模板标记不变。
+    UpdateRole {
+        role_id: String,
+        draft: crate::RoleDraft,
+    },
+    /// 删一个没人用的角色；默认邀请角色和在用的角色删不掉。
+    DeleteRole {
+        role_id: String,
+    },
+    /// 换别的管理员发邀请时新人拿的角色。
+    SetDefaultRole {
+        role_id: String,
+    },
+    /// 给一个家人换角色；主人以外的人发了邀请也一样。
+    AssignMemberRole {
+        username: String,
+        role_id: String,
+    },
+    /// 给好友名单里的一个人换角色，user_id 是完整的 Matrix 用户 ID。
+    AssignFriendRole {
+        user_id: String,
+        role_id: String,
+    },
+
     /// 取当前账号的好友、请求和屏蔽名单；外部 Matrix 账号同样可用。
     RefreshFriends,
     /// 发送带 app.wonton.friend 的标准 Matrix 私聊邀请，user_id 必须为完整 Matrix ID。

@@ -9,8 +9,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{
-    FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval,
-    MemberSettings, MemberStatus,
+    FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
 };
 
 use super::api::{error_response, languages, owner_denied};
@@ -42,7 +41,6 @@ fn to_member(record: &MemberRecord) -> Member {
         email: record.email.clone(),
         status: record.status,
         role_id: record.role_id.clone(),
-        can_install_plugins: record.can_install_plugins,
         private_bot: record.private_bot.clone(),
         pairing_code_expires_at_ms: record.pairing_code_expires_at_ms,
     }
@@ -124,7 +122,6 @@ pub async fn invite(
         email: None,
         status: MemberStatus::Invited,
         role_id,
-        can_install_plugins: false,
         wants_private_bot,
         private_bot: None,
         pairing_code_hash: None,
@@ -228,36 +225,6 @@ fn taken_conflict(name: &str) -> Response {
         "username_taken",
         &format!("{name} 已经有人用了：用户名装好后不能改，换一个"),
     )
-}
-
-/// `PUT member_path(username)`：主人改一个家人的设置。能装插件改由角色决定，这里不再写记录。
-pub async fn settings(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(username): Path<String>,
-    body: Bytes,
-) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
-        return denied;
-    }
-    let _: MemberSettings = match serde_json::from_slice(&body) {
-        Ok(update) => update,
-        Err(e) => {
-            let message = format!("请求体不是家人的设置：{e}");
-            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
-        }
-    };
-    match gateway.members.get(&username) {
-        None => members_error(MembersError::NotFound(username)),
-        Some(_) => error_response(
-            StatusCode::CONFLICT,
-            "install_apps_from_role",
-            &format!(
-                "能不能装插件已经由角色决定，这个开关不再生效：要装就给 {username} 换一个“装、删、升级应用”放开的角色"
-            ),
-        ),
-    }
 }
 
 /// `POST member_pairing_code_path(username)`：出一个归这个家人的配对码，之前出的作废。

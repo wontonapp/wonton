@@ -107,6 +107,7 @@ plugins-core-upgrade-timed-out = 超過時限仍連不上家用伺服器，不�
 plugins-core-upgrade-timed-out-rollback = 超過時限仍連不上家用伺服器，不知道更新的結果。連上後這裡會更新。要退回舊版本，在主機上再執行一次安裝指令，加上 WONTON_CORE_PIN={ $digest }
 
 plugins-core-upgrade-invalid-action = 不是更新伺服器的操作
+plugins-roles-invalid-action = 不是角色頁的操作
 
 plugins-core-upgrade-already-running = 已經在更新了
 

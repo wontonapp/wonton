@@ -167,7 +167,6 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     assert_eq!(me["is_owner"], false);
     assert_eq!(me["user_id"], "@family1:test");
     assert_eq!(me["display_name"], "爱丽丝");
-    assert_eq!(me["can_install_plugins"], false);
 
     let (status, _, body) = phone
         .send(Method::POST, CORE, "/_wonton/matrix/login-token", &[])
@@ -510,11 +509,6 @@ fn permission_required_route_tables() -> Vec<RouteTable> {
         (Method::POST, "/_wonton/api/core/upgrade/check", ""),
         (Method::GET, MEMBERS, ""),
         (Method::POST, MEMBERS, "{}"),
-        (
-            Method::PUT,
-            "/_wonton/api/members/mia",
-            "{\"can_install_plugins\": true}",
-        ),
         (Method::POST, "/_wonton/api/members/mia/pairing-code", "{}"),
         (Method::DELETE, "/_wonton/api/members/mia/pairing-code", ""),
         (Method::POST, "/_wonton/api/members/mia/remove", "{}"),
@@ -621,7 +615,6 @@ pub(super) fn seed_member(h: &Harness, username: &str, can_install: bool) {
             status: wonton_protocol::MemberStatus::Invited,
             // 能装插件改成看角色：直接给权限最大的管理员模板。
             role_id: if can_install { "admin" } else { "friend" }.to_owned(),
-            can_install_plugins: can_install,
             wants_private_bot: true,
             private_bot: None,
             pairing_code_hash: None,
@@ -663,7 +656,6 @@ async fn a_device_whose_member_is_gone_is_rejected() {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: true,
             private_bot: None,
             pairing_code_hash: None,

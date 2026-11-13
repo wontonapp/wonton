@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use wonton_protocol::{
     Answer, BotKeeper, BotRef, ChainLimits, ChainTurnReport, ConfirmationCategory,
-    ConfirmationState, MemberStatus,
+    ConfirmationState,
 };
 
 use super::Caller;
@@ -76,17 +76,8 @@ async fn send_setup() -> Send {
 
 fn member(username: &str, display: &str) -> MemberRecord {
     MemberRecord {
-        username: username.into(),
-        user_id: format!("@{username}:wonton.localhost"),
         display_name: display.into(),
-        email: None,
-        status: MemberStatus::Joined,
-        role_id: "friend".to_owned(),
-        can_install_plugins: false,
-        wants_private_bot: false,
-        private_bot: None,
-        pairing_code_hash: None,
-        pairing_code_expires_at_ms: None,
+        ..MemberRecord::for_test(username)
     }
 }
 

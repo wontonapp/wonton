@@ -250,7 +250,8 @@ pub(super) async fn setup_optional() -> Setup {
         Arc::new(Upstreams::new()),
     );
     let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
-    bus.attach_people("wonton.localhost".into(), members.clone());
+    let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
+    bus.attach_people("wonton.localhost".into(), members.clone(), roles.clone());
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     manager.note_person_languages("owner", Some("zh"));
@@ -294,7 +295,8 @@ pub(super) async fn setup_with(
         Arc::new(upstreams),
     );
     let members = Arc::new(crate::members::Members::open(dir.path().join("members.json")).unwrap());
-    bus.attach_people("wonton.localhost".into(), members.clone());
+    let roles = Arc::new(crate::roles::Roles::open(dir.path().join("roles.json")).unwrap());
+    bus.attach_people("wonton.localhost".into(), members.clone(), roles.clone());
     let title = [("zh".to_owned(), "测试 Bot".to_owned())].into();
     let caller = Caller::new(PluginId::parse("com.example.agent").unwrap(), Some(&title));
     // 主人的语言：生产里由 App 的请求写入，卡片文字按它出中文。
