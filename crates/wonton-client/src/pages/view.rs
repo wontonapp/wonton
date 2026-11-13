@@ -562,7 +562,6 @@ fn stored_or_placeholder(
         }
     })
 }
-
 fn plugin_title_of(plugin_id: &str, plugins: &PluginsViewModel) -> String {
     plugins
         .installed

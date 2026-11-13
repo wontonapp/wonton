@@ -38,7 +38,7 @@ internal fun TabRef.localPluginId(): String? = when (this) {
     else -> null
 }
 
-internal fun TabsState.installedPlugin(tab: TabRef): InstalledPlugin? {
+internal fun PagesState.installedPlugin(tab: TabRef): InstalledPlugin? {
     val id = tab.localPluginId() ?: return null
     return plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id }
 }
