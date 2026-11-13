@@ -177,6 +177,7 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
             install_progress: None,
             install_failure: None,
             tunnel_ports: Vec::new(),
+            matrix_widget: None,
         }],
         upgrade_check: None,
     });
