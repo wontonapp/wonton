@@ -71,10 +71,10 @@ pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AgentChainsSubscription, AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
-    PagesSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TransfersSubscription,
+    AgentChainsSubscription, AppearanceSubscription, BotContactsSubscription, ChatSubscription,
+    ComposerSubscription, ConfirmationsSubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
     WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;

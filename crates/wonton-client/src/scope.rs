@@ -9,9 +9,9 @@ use std::sync::Arc;
 
 use tokio::sync::watch;
 use wonton_protocol::{
-    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError, FriendsViewModel,
-    HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel, PluginsViewModel,
-    RoomPanel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
+    FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
+    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
