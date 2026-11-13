@@ -153,8 +153,8 @@ magpie（同 `deploy/dev/agent`）；上游地址别写 `http://host.docker.inte
 索引里找插件、装卸插件、帮助文档）和在运行的插件声明的工具。帮助文档默认读镜像里的 `/usr/share/wonton/docs`，`WONTON_DOCS` 能换目录。Bot 只能装官方索引里的插件；开发用的核心镜像（Dockerfile 的 `dev`
 阶段）用镜像里的开发索引（`WONTON_STORE_INDEX`，见 [store/README.md](store/README.md)）代替 GitHub 上的官方索引，
 发布的镜像不带。装卸插件和会改数据的工具要主人
-确认：核心在和主人的“Wonton”私聊里发确认卡片，已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体
-`{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
+确认：核心保存确认卡片并通知已配对设备，App 在发起的会话输入栏上方和“等你确认”列表里显示，不往 Matrix 房间发卡片。
+已配对设备经隧道回答（`POST /_wonton/confirmations/{id}`，请求体 `{"answer": "approve"}`），10 分钟没回答就过期（`WONTON_CONFIRMATION_TTL_SECS`）。每次调用记一行审计，在数据目录的 `core/audit.jsonl`。
 没有 App 的主机上用真实的客户端核心回答：`cargo run -p wonton-client --example confirm-card -- <数据目录> <配对码> approve`。
 开发栈还没有配对设备时，用主人令牌经网关批，别干等（插件套件的 `scripts/dev.sh approve` 就是这么做的）：
 `dev.sh api GET /_wonton/api/confirmations` 列出等回答的卡片（`id`、`title`），

@@ -4,15 +4,14 @@ import WontonClient
 /// 有卡片等主人回答时顶在页面最上面，点了去卡片所在的房间。多张时去最早到期的那张。
 struct PendingCardBanner: View {
     let cards: [PendingConfirmation]
-    let open: (String) -> Void
+    let open: (String?) -> Void
 
     @Environment(\.wontonColors) private var colors
     @Environment(OnboardingModel.self) private var onboarding
 
     var body: some View {
         Button {
-            // 没有会话的卡片该去“等你确认”列表；列表页还没有，先不跳。
-            if let room = cards[0].roomId { open(room) }
+            open(cards[0].roomId)
         } label: {
             HStack(spacing: WontonTheme.spacing.s8) {
                 WontonIcon.notify.view(size: WontonTheme.size.iconSmall)
@@ -29,6 +28,7 @@ struct PendingCardBanner: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("pending-confirmations-banner")
         .background(alignment: .bottom) {
             if let border = colors.accentFillBorder {
                 Color(border).frame(height: WontonTheme.size.hairline)

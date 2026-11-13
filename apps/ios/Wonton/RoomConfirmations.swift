@@ -29,6 +29,7 @@ struct RoomConfirmationBanner: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("room-confirmations")
             .background(Color(colors.accentFill))
         }
     }
@@ -58,6 +59,8 @@ struct RoomConfirmationSheet: View {
                             },
                             stopWindow: { action(.stopConfirmationWindow(id: view.card.id)) }
                         )
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("confirmation-expanded-\(view.card.id)")
                         .id(view.card.id)
                         if view.card.id != cards.last?.card.id { Divider() }
                     }

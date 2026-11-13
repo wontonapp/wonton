@@ -9,7 +9,7 @@ struct HomeView: View {
     let settings: SettingsModel
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     let showSettings: () -> Void
     let showServer: () -> Void
     var settingsPresented = false

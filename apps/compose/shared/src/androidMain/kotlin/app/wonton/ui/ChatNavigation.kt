@@ -53,6 +53,13 @@ class ChatNavigation(
     var showingBackup by showingBackup
     var startingChat by startingChat
     var botProfile by mutableStateOf<BotRef?>(null)
+    var showingConfirmations by mutableStateOf(false)
+
+    fun openConfirmations() {
+        reset()
+        showingConfirmations = true
+        selectTab(TabRef.Chat)
+    }
 
     /** 主人在交接页点了“稍后”（ADR-0087）：只在这台 App 里先收起，聊天列表顶上的提醒再打开。 */
     var keyHandoffDeferred by mutableStateOf(false)
@@ -87,6 +94,7 @@ class ChatNavigation(
         returnTab = null
         showingBackup = false
         startingChat = false
+        showingConfirmations = false
     }
 
     /** 打开 [roomId]，[sideChatRoot] 不为空时进这个旁聊。这时还没有同步到它的话，等它出现。 */

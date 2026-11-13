@@ -4,13 +4,16 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (CardChoice, [String: String]) -> Void
+    let answer: (CardChoice, [String: String], [String: SettingValue]) -> Void
     let stopWindow: () -> Void
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
     @State private var showsPages = false
     @State private var secrets: [String: String] = [:]
     @State private var shownSecrets = false
+    @State private var drafts: [String: Draft] = [:]
+    @State private var touched: Set<String> = []
+    @State private var localErrors: [String: String] = [:]
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -32,6 +35,13 @@ struct ConfirmationCardView: View {
                     onShownChange: { shownSecrets = $0 },
                     onChange: { name, value in secrets[name] = value }
                 )
+            }
+            if let form = view.card.settings {
+                ForEach(form.fields, id: \.name) { field in
+                    PluginSettingFieldView(field: field, overlay: nil, drafts: $drafts,
+                        touched: $touched, localErrors: $localErrors)
+                }
+                .disabled(view.card.state != .pending || view.sending != nil)
             }
             state
             if let window = view.window {
@@ -71,6 +81,7 @@ struct ConfirmationCardView: View {
         .fixedSize(horizontal: false, vertical: true)
         // 有密钥、点过“显示”或框里有值、卡片还没答完时，这一块在快照里要盖住。
         .secretSnapshotMask(view.card.state == .pending && hidesValues)
+        .task(id: view.card.id) { initializeSettings() }
     }
 
     /// 有密钥、点过“显示”或框里有值、卡片还没答完。
@@ -199,7 +210,7 @@ struct ConfirmationCardView: View {
     private var buttons: some View {
         ForEach(view.card.choices, id: \.self) { choice in
             Button {
-                answer(choice, secretValues(view.card.secretInputs, secrets))
+                submit(choice)
             } label: {
                 HStack(spacing: WontonTheme.spacing.s8) {
                     if view.sending == choice.answer, view.sendingChoiceId == choice.choiceId { ProgressView() }
@@ -208,7 +219,51 @@ struct ConfirmationCardView: View {
             }
             .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
             .disabled(view.sending != nil || (choice.answer == .approve
-                && missingRequiredSecret(view.card.secretInputs, secrets)))
+                && (missingRequiredSecret(view.card.secretInputs, secrets) || settingsBlocked)))
         }
+    }
+
+    private var settingsBlocked: Bool {
+        (view.card.settings?.fields ?? []).contains {
+            unknownField($0) || $0.problem != nil || missing($0, drafts: drafts, localErrors: localErrors)
+        }
+    }
+
+    private func initializeSettings() {
+        for field in view.card.settings?.fields ?? [] {
+            let current = storedValue(of: field)
+            switch field.kind {
+            case .toggle: drafts[field.name] = .toggle(flag(of: current))
+            case .integer, .decimal, .text:
+                let text: String
+                switch current {
+                case let .integer(number): text = String(number)
+                case let .decimal(value), let .text(value): text = value
+                default: text = ""
+                }
+                drafts[field.name] = .text(text)
+            case .choice(_, true):
+                drafts[field.name] = .multi(PluginSettingFieldView.chosenIndices(of: current, in: field))
+            case .choice, .other: break
+            }
+        }
+    }
+
+    private func submit(_ choice: CardChoice) {
+        var values: [String: SettingValue] = [:]
+        var errors: [String: String] = [:]
+        for field in view.card.settings?.fields ?? [] {
+            values[field.name] = storedValue(of: field)
+            guard touched.contains(field.name), let draft = drafts[field.name] else { continue }
+            switch submitted(field: field, draft: draft, errors: &errors) {
+            case let .set(value): values[field.name] = value
+            case .clear: values[field.name] = field.default
+            case .skip: break
+            case .invalid: break
+            }
+        }
+        localErrors = errors
+        guard choice.answer != .approve || errors.isEmpty else { return }
+        answer(choice, secretValues(view.card.secretInputs, secrets), values)
     }
 }
