@@ -773,6 +773,8 @@ mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
 #[cfg(test)]
+mod matrix_invite_filter_tests;
+#[cfg(test)]
 mod matrix_rtc_docker_tests;
 #[cfg(test)]
 mod matrix_rtc_tests;
