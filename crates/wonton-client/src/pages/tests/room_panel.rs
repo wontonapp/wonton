@@ -115,3 +115,39 @@ async fn room_panel_pages_disappear_with_their_plugin() {
             .is_some_and(|item| item.page.title == "example.com")
     );
 }
+
+#[tokio::test]
+async fn widget_entries_are_only_available_for_home_accounts() {
+    for external in [false, true] {
+        let rig = Rig::for_account(external);
+        let mut installed = plugins("call");
+        installed.installed.as_mut().unwrap().plugins[0].matrix_widget =
+            Some(wonton_protocol::PluginWidget {
+                url: "/room".to_owned(),
+                entry: wonton_protocol::WidgetEntry::VoiceCall,
+                capabilities: Vec::new(),
+            });
+        rig.plugins.send_replace(installed);
+        let room: wonton_matrix::OwnedRoomId = "!call:home.example".parse().unwrap();
+        rig.room_panel
+            .send_replace(Some((room.clone(), RoomPanel::default())));
+        rig.tabs.recompute();
+        let view = rig.tabs.room_view().unwrap();
+        if external {
+            assert!(view.widgets.is_empty());
+        } else {
+            assert_eq!(view.widgets.len(), 1);
+            assert_eq!(
+                view.widgets[0].tab,
+                TabRef::Widget {
+                    plugin_id: "app.shared".to_owned(),
+                    room_id: room.to_string(),
+                }
+            );
+            assert_eq!(
+                view.widgets[0].entry,
+                wonton_protocol::WidgetEntry::VoiceCall
+            );
+        }
+    }
+}

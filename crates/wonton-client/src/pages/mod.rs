@@ -524,7 +524,11 @@ impl PagesLink {
                 panel: room_panel_items(&state, panel, &scope, plugins),
                 selected: state.room_panel_selected.clone(),
                 blocked: state.entry_blocked,
-                widgets: widget::entries(room_id.as_str(), plugins),
+                widgets: if self.plugins.is_external() {
+                    Vec::new()
+                } else {
+                    widget::entries(room_id.as_str(), plugins)
+                },
             }
         });
         let widget = widget::open_generation(&state);

@@ -176,6 +176,10 @@ impl PluginsLink {
         self.view.borrow().clone()
     }
 
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
+    }
+
     /// 派生字段跟着输入重算：可更新的应用和侧边栏都由已安装列表、商店、任务忙闲和核心升级页算出来。
     pub(crate) fn refresh_derived(&self) {
         self.view.send_if_modified(Self::derive);

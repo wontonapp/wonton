@@ -21,6 +21,10 @@ struct Rig {
 
 impl Rig {
     fn new() -> Self {
+        Self::for_account(false)
+    }
+
+    fn for_account(external: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
         let (_, method_rx) = tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
@@ -33,8 +37,13 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link =
-            PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
+        let plugins_link = PluginsLink::new(
+            runtime.clone(),
+            home_link.clone(),
+            dir.path(),
+            None,
+            external,
+        );
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
         let (panel_sender, panel_receiver) = watch::channel(None);

@@ -30,7 +30,7 @@
 
 ## widget 页
 
-`TabRef::Widget { plugin_id, room_id }` 是插件的 Matrix widget 页（[ADR-0096](../../../../../docs/adr/0096-calls-matrixrtc-widget.md)），只经 `Action::OpenPage` 从房间里打开、压入页面栈，不能加入“我的应用”或面板。同一时间只保留一个 widget 页；被其他页面盖住时驱动继续运行，出栈时结束。上面 1–3 步照旧，另加：
+`TabRef::Widget { plugin_id, room_id }` 是插件的 Matrix widget 页（[ADR-0096](../../../../../docs/adr/0096-calls-matrixrtc-widget.md)），只经 `Action::OpenPage` 从房间里打开、压入页面栈，不能加入“我的应用”或面板。同一时间只保留一个 widget 页；离开栈顶就结束驱动并移除该页，不保留已断开的 widget 页面。上面 1–3 步照旧，另加：
 
 - `TabPage.url` 出来、页面开始加载后调用 `subscribe_tab_widget(tab)`，循环 `next()`，把每段脚本原样注入同一个页面的主框架；
   返回空（页面关了、换了房间、退出登录、重新加载）就停，`cancel()` 用于壳自己先拆掉页面时。

@@ -52,10 +52,8 @@ impl PagesLink {
         let mut fresh = false;
         self.runtime_change(|state, plugins| {
             if state.widget.as_ref().is_some_and(|page| page.tab == tab)
-                && let Some(index) = state.stack.iter().position(|item| item.tab == tab)
+                && state.stack.last().is_some_and(|item| item.tab == tab)
             {
-                let item = state.stack.remove(index);
-                state.stack.push(item);
                 return Ok(());
             }
             let item = item(&tab, plugins)?;
@@ -82,7 +80,7 @@ impl PagesLink {
     pub(super) fn reopen_widget(&self, tab: TabRef) -> Result<(), CoreError> {
         let generation = self.widgets.opened.fetch_add(1, Ordering::SeqCst) + 1;
         self.runtime_change(|state, _| {
-            let shown = state.stack.iter().any(|item| item.tab == tab);
+            let shown = state.stack.last().is_some_and(|item| item.tab == tab);
             if !shown {
                 return Err(invalid(&l10n!(
                     CATALOG,
@@ -222,20 +220,18 @@ impl PagesLink {
     }
 }
 
-/// 页面已出栈、或者聊天换到了别的房间，widget 页就算关了；后者把对应页也从栈里移走。
+/// 第一版离开 widget 页就挂断：移走失去栈顶或换了房间的页面，不保留已断开的实例。
 pub(super) fn clear_closed(state: &mut PagesState) {
     let Some(page) = &state.widget else {
         return;
     };
-    let shown = state.stack.iter().any(|item| item.tab == page.tab);
+    let shown = state.stack.last().is_some_and(|item| item.tab == page.tab);
     let elsewhere = match (&page.tab, &state.open_room) {
         (TabRef::Widget { room_id, .. }, Some((open, _))) => open.as_str() != room_id,
         _ => false,
     };
-    if shown && elsewhere {
-        state.stack.retain(|item| item.tab != page.tab);
-    }
     if !shown || elsewhere {
+        state.stack.retain(|item| item.tab != page.tab);
         state.widget = None;
     }
 }

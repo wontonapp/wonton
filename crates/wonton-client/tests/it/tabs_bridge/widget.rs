@@ -74,8 +74,12 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
             .iter()
             .map(|open| &open.tab)
             .collect::<Vec<_>>(),
-        vec![&tab, &other]
+        vec![&other]
     );
+    assert!(matches!(
+        rig.app.dispatch(Action::ReloadTab { page: bar(&tab) }),
+        Err(CoreError::InvalidInput { .. })
+    ));
     rig.app
         .dispatch(Action::OpenPage { tab: tab.clone() })
         .unwrap();
