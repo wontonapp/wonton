@@ -6,15 +6,13 @@ use std::time::Duration;
 
 use rmcp::model::CallToolResult;
 use serde_json::json;
-use wonton_protocol::{BotKeeper, BotRef, ChainLimits, ChainTurnReport};
+use wonton_protocol::{BotKeeper, BotRef, ChainTurnReport};
 
 use super::Caller;
 use super::test_setup::{Setup, setup};
 use super::tests::{failed, text};
 use super::tool_failure_tests::failure_kind;
 use crate::agent_chain::Chains;
-use crate::agent_chain::settings::AgentSettings;
-use crate::agent_outbox::Outbox;
 use crate::contacts::InviteeState;
 use crate::contacts::tests::{Net, Server, ask, bot_request, person_request};
 use crate::gateway::agent_chains::AgentChains;
@@ -75,19 +73,9 @@ const ONLY_CHAT: [&str; 4] = [
 
 /// 总线和一本空账本接上：轮次直接造，不经网关。返回账本。
 fn attach_ledger(s: &Setup) -> Arc<Chains> {
-    let ledger = Arc::new(
-        Chains::open(
-            s.dir.path().join("agent-chains.json"),
-            ChainLimits::default(),
-        )
-        .unwrap(),
-    );
-    s.bus.attach_agent_chains(Arc::new(AgentChains::new(
-        ledger.clone(),
-        Arc::new(Outbox::default()),
-        Arc::new(AgentSettings::open(s.dir.path().join("agent-settings.json")).unwrap()),
-    )));
-    ledger
+    let chains = AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains);
+    s.bus.agent_chains().unwrap().ledger().clone()
 }
 
 /// 桥报这个 Bot 的一轮开始，说话的是 `sender`；`session` 用来结束这一轮。

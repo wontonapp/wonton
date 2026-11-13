@@ -9,7 +9,7 @@ use crate::plugin::{
 };
 use std::sync::Arc;
 use std::time::Duration;
-use wonton_protocol::{BotKeeper, ChainLimits, ChainTurnReport};
+use wonton_protocol::{BotKeeper, ChainTurnReport};
 
 use rmcp::model::CallToolResult;
 use serde_json::Value;
@@ -204,22 +204,7 @@ fn seed_plugins(manager: &PluginManager, declares: bool) {
 }
 
 fn chain_service(dir: &tempfile::TempDir) -> Arc<AgentChains> {
-    let ledger = Arc::new(
-        crate::agent_chain::Chains::open(
-            dir.path().join("agent-chains.json"),
-            ChainLimits::default(),
-        )
-        .unwrap(),
-    );
-    let settings = Arc::new(
-        crate::agent_chain::settings::AgentSettings::open(dir.path().join("agent-settings.json"))
-            .unwrap(),
-    );
-    Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(crate::agent_outbox::Outbox::default()),
-        settings,
-    ))
+    AgentChains::for_test(dir.path()).unwrap()
 }
 
 #[allow(clippy::too_many_arguments)]

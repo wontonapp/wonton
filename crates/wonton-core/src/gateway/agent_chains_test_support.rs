@@ -21,9 +21,6 @@ use super::agent_chains::{AgentAcpCancel, AgentChains};
 use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
 use super::{Gateway, TunnelPeer, router};
-use crate::agent_chain::Chains;
-use crate::agent_chain::settings::AgentSettings;
-use crate::agent_outbox::Outbox;
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
 use crate::mcp::Bus;
@@ -36,7 +33,6 @@ use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginId, PluginManager, PluginPackage, PluginStatus};
-use wonton_protocol::ChainLimits;
 
 pub(crate) const AGENT: &str = "com.example.agent";
 pub(crate) const BUS_ALICE: &str = "bus-alice";
@@ -242,14 +238,10 @@ pub(crate) fn chain_service(
         )),
         Arc::new(crate::mcp::audit::Audit::new(dir.join("audit.jsonl"))),
     );
-    let ledger =
-        Arc::new(Chains::open(dir.join("agent-chains.json"), ChainLimits::default()).unwrap());
-    ledger.on_limit_event(super::agent_chains::limit_handler(&bus));
-    let chains = Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(Outbox::default()),
-        Arc::new(AgentSettings::open(dir.join("agent-settings.json")).unwrap()),
-    ));
+    let chains = AgentChains::for_test(dir).unwrap();
+    chains
+        .ledger()
+        .on_limit_event(super::agent_chains::limit_handler(&bus));
     let acp = Arc::new(FakeAcp {
         cancelled: Default::default(),
     });

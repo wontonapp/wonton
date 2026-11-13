@@ -50,6 +50,22 @@ impl AgentChains {
             acp: std::sync::OnceLock::new(),
         }
     }
+    #[cfg(test)]
+    pub(crate) fn for_test(
+        dir: impl AsRef<std::path::Path>,
+    ) -> Result<Arc<Self>, ChainLedgerError> {
+        let dir = dir.as_ref();
+        let ledger = Arc::new(Chains::open(
+            dir.join("agent-chains.json"),
+            wonton_protocol::ChainLimits::default(),
+        )?);
+        let settings = Arc::new(AgentSettings::open(dir.join("agent-settings.json"))?);
+        Ok(Arc::new(Self::new(
+            ledger,
+            Arc::new(Outbox::default()),
+            settings,
+        )))
+    }
 
     pub fn ledger(&self) -> &Arc<Chains> {
         &self.ledger
