@@ -165,6 +165,7 @@ pub use egress::{
     EgressViewModel, LanWebuiUpdate,
 };
 pub use error::{CoreError, set_core_error_formatter};
+pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
     HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,

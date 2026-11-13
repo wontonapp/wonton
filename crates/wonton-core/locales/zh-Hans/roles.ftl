@@ -9,3 +9,5 @@ roles-member-not-found = 没有这个家人：{ $username }。
 roles-member-removed = { $username } 已经被移除，要重新邀请回来。
 roles-friend-not-found = 好友名单里没有 { $user_id }。
 roles-friends-unavailable = 这台服务器没接好友。
+family-room-name = 家庭群
+family-room-sync-failed = 成员和角色记录已保存，但家庭群没能同步。请管理员重试家庭群同步：{ $error }

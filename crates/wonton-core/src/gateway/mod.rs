@@ -42,6 +42,7 @@ mod core_upgrade;
 mod devices;
 mod entry;
 pub mod family;
+mod family_room;
 mod files;
 mod friends;
 mod friends_wiring;
@@ -168,6 +169,7 @@ pub struct Gateway {
     pub owner: Arc<OwnerStore>,
     owner_token: String,
     pub members: Arc<Members>,
+    family_room_sync: tokio::sync::Mutex<()>,
     /// 角色记录（ADR-0088）：主人以外的人按各自角色判断；主人短路为全部权限。
     pub roles: Arc<Roles>,
     pub plugins: Arc<PluginManager>,
@@ -251,6 +253,7 @@ impl Gateway {
             owner,
             owner_token,
             members,
+            family_room_sync: tokio::sync::Mutex::new(()),
             roles,
             plugins,
             hydra,

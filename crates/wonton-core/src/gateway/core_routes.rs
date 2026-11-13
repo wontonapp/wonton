@@ -406,6 +406,10 @@ fn friend_routes() -> Router<Arc<Gateway>> {
 fn member_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
+            wonton_protocol::FAMILY_ROOM_SYNC_PATH,
+            post(super::family_room::retry),
+        )
+        .route(
             wonton_protocol::MEMBERS_PATH,
             get(family::list).post(family::invite),
         )

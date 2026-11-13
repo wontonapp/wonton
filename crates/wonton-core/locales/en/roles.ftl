@@ -9,3 +9,5 @@ roles-member-not-found = There is no member { $username }.
 roles-member-removed = { $username } was removed; an invite has to bring them back.
 roles-friend-not-found = There is no friend { $user_id }.
 roles-friends-unavailable = Friends aren't available on this server.
+family-room-name = Family
+family-room-sync-failed = The saved member and role records could not be applied to the family chat. An administrator can retry the family chat sync: { $error }
