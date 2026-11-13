@@ -109,6 +109,7 @@ impl Fixture {
         self.manager
             .store
             .save(&InstalledRecord {
+                lifecycle: Default::default(),
                 id: package.manifest.id.clone(),
                 version: "1.0.0".into(),
                 source,

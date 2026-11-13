@@ -577,6 +577,7 @@ mod unread_tests {
             name: String::new(),
             is_direct: false,
             direct_user_id: None,
+            plugin: None,
             is_encrypted: true,
             is_read_only: false,
             membership,

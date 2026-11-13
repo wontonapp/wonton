@@ -122,6 +122,13 @@ impl PluginManager {
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-recovery-owner-stopped",
+                &[],
+            )));
+        }
         let enabled: Vec<EnabledPermission> = requested
             .iter()
             .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
@@ -185,6 +192,13 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(&langs, id))?;
         if let Some(e) = busy(id, &entry.status, &langs) {
             return Err(e);
+        }
+        if self.explicitly_stopped(id)? {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-recovery-owner-stopped",
+                &[],
+            )));
         }
         if !self.lan.begin(id) {
             return Err(InstallError::Conflict(l10n::text(
@@ -407,6 +421,7 @@ impl PluginManager {
             progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
         self.store.save(&InstalledRecord {
+            lifecycle: super::super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
             source: package.source.clone(),

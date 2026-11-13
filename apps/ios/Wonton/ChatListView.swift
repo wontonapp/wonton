@@ -33,6 +33,7 @@ struct ChatListView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     notices
+                    confirmationsEntry
                     if model.pendingDraft != nil {
                         Text(TabText.selectChat)
                             .wontonText(WontonTheme.typography.supporting)
@@ -66,7 +67,7 @@ struct ChatListView: View {
                 .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
-                if isEmpty { NoChats() }
+                if isEmpty { NoChats().allowsHitTesting(false) }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
                 if !listOnly {
@@ -76,6 +77,7 @@ struct ChatListView: View {
                 }
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+            .task { await model.confirmations.observe() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.open(.apps) })
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
@@ -93,6 +95,18 @@ struct ChatListView: View {
         }
     }
 
+    private var confirmationsEntry: some View {
+        NavigationLink(value: ChatRoute.confirmations) {
+            WontonRow(
+                title: String(localized: .Confirmations.confirmationsTitle),
+                value: model.confirmations.pendingCount > 0 ? String(model.confirmations.pendingCount) : nil,
+                showsForward: true
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("confirmations-entry")
+    }
+
     private var separator: some View {
         WontonSeparator().padding(.leading, WontonTheme.size.avatar + WontonTheme.spacing.s12)
     }
@@ -107,17 +121,31 @@ struct ChatListView: View {
         }
     }
 
-    private var newChatButton: some View {
-        NavigationLink(value: ChatRoute.startChat) {
-            WontonIcon.add.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
-                .contentShape(Circle())
+    @ViewBuilder private var newChatButton: some View {
+        if #available(iOS 26, *) {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.onPrimary))
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .tint(Color(colors.primary))
+            .frame(minWidth: WontonTheme.size.floatingActionButton, minHeight: WontonTheme.size.floatingActionButton)
+            .contentShape(Circle())
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
+        } else {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(.Chat1.chatNewChat))
     }
 
     /// 关过的提醒不再挂（本机显示偏好，存壳里）；这次会话里刚关的立即生效。
@@ -188,6 +216,8 @@ struct ChatDestination: View {
             ChatBackupView(model: model)
         case .startChat:
             StartChatView(model: model)
+        case .confirmations:
+            ConfirmationsPage(model: model.confirmations, chat: model, plugins: plugins)
         }
     }
 }
@@ -503,7 +533,7 @@ private struct StartChatView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle))
+        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle), usesSystemToolbar: true)
     }
 }
 

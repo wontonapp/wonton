@@ -48,7 +48,7 @@ struct StoreView: View {
             }
             .refreshable { model.send(.refreshStore(force: true)) }
         }
-        .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true) {
+        .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
                 if model.viewModel.updatable.count > 0 {
                     UpdateAllButton(count: model.viewModel.updatable.count) { showsUpdateAll = true }

@@ -201,6 +201,10 @@ impl Install {
                 "WONTON_DEFAULT_PLUGINS",
                 "WONTON_OIDC_ADMIN_URL",
                 "WONTON_OIDC_PUBLIC_URL",
+                // 两个都指向核心在 clients 网络上的别名；这里的核心只接一张 core 网络（推送路径用不到入口），
+                // 照抄会在启动时解析不到别名而退出。
+                "WONTON_EXCLUDE_LISTEN",
+                "WONTON_ENTRY_LISTEN",
             ],
         );
         args.extend(["-e".into(), format!("WONTON_CORE_CONTAINER={}", self.core)]);

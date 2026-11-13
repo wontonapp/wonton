@@ -9,7 +9,7 @@ struct HomeView: View {
     let settings: SettingsModel
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     let showSettings: () -> Void
     let showServer: () -> Void
     var settingsPresented = false
@@ -104,6 +104,7 @@ struct HomeView: View {
             if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
             plugins.send(.refreshSharedApps(ownerUserId: nil))
         }
+
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
@@ -238,6 +239,7 @@ extension HomeView {
             .wontonActionSheet(
                 isPresented: isShowingMenu,
                 title: menuPlugin?.title,
+                usesSystemPresentation: true,
                 actions: menuPlugin.map(menu(for:)) ?? []
             )
             .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
@@ -360,7 +362,19 @@ private struct LauncherIcon: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder private var badge: some View {
+    private var badge: some View {
+        HStack(spacing: WontonTheme.spacing.s4) {
+            if case .stopped = plugin.status {
+                WontonIcon.pauseFill.view(size: WontonTheme.size.iconSmall)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .background(Circle().fill(Color(colors.canvas)))
+                    .accessibilityLabel(String(localized: .Launcher.launcherBadgeStopped))
+            }
+            problemBadge
+        }
+    }
+
+    @ViewBuilder private var problemBadge: some View {
         if case .degraded = plugin.status {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))

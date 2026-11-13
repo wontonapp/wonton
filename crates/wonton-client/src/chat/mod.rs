@@ -36,6 +36,7 @@ mod menu;
 mod onboarding;
 mod ops;
 mod pending;
+mod plugin_status;
 mod previews;
 mod read_mark;
 pub(crate) mod recovery;

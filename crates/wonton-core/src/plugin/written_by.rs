@@ -36,7 +36,7 @@ impl PluginManager {
         if record.written_by.is_none() {
             record.ask_every_update = false;
         }
-        self.store.save(&record)
+        self.store.save_metadata(&record)
     }
 
     /// 开关“每次都问”：打开后这个 Agent 每次更新都发卡片。不是 Agent 写的插件报 `invalid_input`。
@@ -58,7 +58,7 @@ impl PluginManager {
             )));
         }
         record.ask_every_update = enabled;
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         self.installed_detail(id, langs).ok_or_else(|| {
             InstallError::Storage(l10n::text(
                 langs,

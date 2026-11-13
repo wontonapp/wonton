@@ -64,6 +64,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Download
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Lock
+import app.wonton.ui.icons.PauseFill
 import app.wonton.ui.icons.Store
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WarningCircleFill
@@ -79,7 +80,7 @@ fun LauncherScreen(
     plugins: PluginsState,
     navigation: PluginNavigation,
     pendingCards: List<PendingConfirmation>,
-    onOpenCardRoom: (String) -> Unit,
+    onOpenCardRoom: (String?) -> Unit,
     onShowStore: () -> Unit,
     onConnection: () -> Unit,
     settingsUpgrade: Boolean,
@@ -248,6 +249,15 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
                 }
             }
             Badge(plugin, Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp))
+            if (plugin.status is PluginState.Stopped) {
+                Icon(
+                    WontonIcon.PauseFill,
+                    contentDescription = stringResource(R.string.launcher_badge_stopped),
+                    modifier = Modifier.align(Alignment.BottomEnd).size(WontonTheme.size.iconSmall)
+                        .background(WontonTheme.colors.canvas.toColor(), CircleShape),
+                    tint = WontonTheme.colors.textSecondary.toColor(),
+                )
+            }
             if (plugin.enabledRootPermissions.isNotEmpty()) {
                 IconButton(
                     onClick = { navigation.detail = PluginRoute.Installed(plugin.id) },

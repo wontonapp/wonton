@@ -48,6 +48,8 @@ pub enum OpenedBy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
     pub id: PluginId,
+    #[serde(default)]
+    pub lifecycle: wonton_protocol::PluginLifecycle,
     pub version: String,
     /// 原始 compose 文本。
     pub source: String,
@@ -204,6 +206,7 @@ pub struct RecordFile {
 
 pub struct Store {
     dir: PathBuf,
+    writes: std::sync::Mutex<()>,
     secrets: SecretStore,
     bots: BotStore,
     pins: PinStore,
@@ -221,6 +224,7 @@ impl Store {
         let tool_policy = dir.join("tool-policy");
         create_private_dir(&tool_policy)?;
         Ok(Self {
+            writes: std::sync::Mutex::new(()),
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
             pins: PinStore::new(dir.join("pins")),
@@ -334,7 +338,34 @@ impl Store {
     }
 
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
         write_json(&self.path(&record.id), record)
+    }
+
+    /// 普通设置不能用操作开始时的旧副本覆盖并发保存的停止意图或重试额度。
+    pub(super) fn save_metadata(&self, record: &InstalledRecord) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
+        let path = self.path(&record.id);
+        let mut updated = record.clone();
+        if let Some(current) = self.load(&record.id)? {
+            updated.lifecycle = current.lifecycle;
+        }
+        write_json(&path, &updated)
+    }
+
+    pub(super) fn save_lifecycle(
+        &self,
+        id: &PluginId,
+        lifecycle: wonton_protocol::PluginLifecycle,
+    ) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
+        let path = self.path(id);
+        let mut record = self.load(id)?.ok_or_else(|| StoreError::Io {
+            path: path.clone(),
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        })?;
+        record.lifecycle = lifecycle;
+        write_json(&path, &record)
     }
 
     /// 主人的局域网设置（ADR-0019），在记录目录下的 `lan/choice.json` 里：放进子目录，不和插件记录混在一起。
@@ -610,6 +641,7 @@ mod tests {
 
     fn record(id: &str) -> InstalledRecord {
         InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,

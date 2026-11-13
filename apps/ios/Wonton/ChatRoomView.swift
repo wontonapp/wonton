@@ -50,7 +50,9 @@ struct ChatRoomView: View {
                 RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                               blocked: entryBlocked, pullAnchor: roomPull) {
                     roomContent
-                        .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
+                    #if DEBUG
+                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                    #endif
                 }
             }
         } else {
@@ -79,6 +81,9 @@ private extension ChatRoomView {
                 if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
             } else if model.noSideChatsRoom == roomId {
                 NoSideChatsHint()
+            }
+            if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                AgentPluginStatusBanner(plugin: plugin, model: plugins)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -496,8 +501,8 @@ private struct ScrollToBottomButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             count > 0
-                ? String(format: String(localized: "room.scrollToBottom.count"), "\(count)")
-                : String(localized: "room.scrollToBottom")
+                ? String(localized: .Chat.roomScrollToBottomCount("\(count)"))
+                : String(localized: .Chat.roomScrollToBottom)
         )
         .padding(.trailing, 16)
         .padding(.bottom, 16)

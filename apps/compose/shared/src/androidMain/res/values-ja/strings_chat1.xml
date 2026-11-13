@@ -42,4 +42,5 @@
     <string name="chat_backup_value_enabled">オン</string>
     <!-- Value on the Settings row: backup or recovery is running. -->
     <string name="chat_backup_value_in_progress">処理中</string>
+    <string name="chat_plugin_stopped">このエージェントは停止しています。返信を受け取るには起動してください。</string>
 </resources>

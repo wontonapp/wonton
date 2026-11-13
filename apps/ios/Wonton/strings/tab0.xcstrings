@@ -301,6 +301,156 @@
           }
         }
       }
+    },
+    "tab.media.promptMicrophone": {
+      "comment": "Title of the prompt asking to let a page's app use the microphone. Argument: the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow %@ to use your microphone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 %@ 使用麦克风吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許 %@ 使用麥克風嗎？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にマイクの使用を許可しますか？"
+          }
+        }
+      }
+    },
+    "tab.media.allow": {
+      "comment": "Button to let a page's app use the camera or microphone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可"
+          }
+        }
+      }
+    },
+    "tab.media.systemDeniedTitle": {
+      "comment": "Title saying media capture was refused because the system permission is off.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Camera or microphone unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "摄像头或麦克风用不了"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相機或麥克風用不了"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カメラまたはマイクが使えません"
+          }
+        }
+      }
+    },
+    "tab.media.systemDenied": {
+      "comment": "Said when the page was denied because Wonton lacks the system camera or microphone permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton doesn't have camera or microphone permission in system settings, so the page was denied. You can allow it in system settings."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统设置里没有允许云吞使用摄像头或麦克风，这次不给网页。可以到系统设置里打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統設定裡沒有允許雲吞使用相機或麥克風，這次不給網頁。可以到系統設定裡打開。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システム設定で雲吞にカメラまたはマイクの権限がないため、このページは拒否されました。システム設定で許可できます。"
+          }
+        }
+      }
+    },
+    "tab.media.systemSettings": {
+      "comment": "Button to open the system settings for the camera or microphone permission.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去设置"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "去設定"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を開く"
+          }
+        }
+      }
     }
   }
 }

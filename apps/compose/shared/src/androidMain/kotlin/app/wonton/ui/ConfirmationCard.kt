@@ -90,7 +90,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
         }
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
-        view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
+        view.problem?.let { ProblemRow(it.problem) }
         // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
         // 刷新）时如实不显示。
         if (card.state is ConfirmationState.Succeeded && card.pluginId != null) {
@@ -267,7 +267,7 @@ private fun CardWindow(window: WindowView, onStop: () -> Unit) {
                     enabled = !window.stopping,
                 )
             }
-            window.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
+            window.problem?.let { ProblemRow(it.problem) }
         }
     }
 }

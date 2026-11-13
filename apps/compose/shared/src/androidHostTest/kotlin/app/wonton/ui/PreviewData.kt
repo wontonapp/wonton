@@ -257,6 +257,7 @@ internal fun previewPlugins() = PluginsViewModel(
     refreshing = false,
     problem = null,
     tasks = emptyList(),
+    starts = emptyList(),
     updatable = emptyList(),
     pending = emptyList(),
     confirmation = null,

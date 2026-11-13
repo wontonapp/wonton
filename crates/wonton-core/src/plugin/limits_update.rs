@@ -141,7 +141,7 @@ impl PluginManager {
 
         // 先写记录：哪个容器没改成，主人重试是幂等的，重建也按新值。
         record.limits = limits;
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         self.set_listed_limits(id, limits);
         for (service, container, body) in updates {
             self.engine

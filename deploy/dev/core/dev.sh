@@ -276,6 +276,22 @@ plugin_containers() {
     done
 }
 
+# 核心经 API 建的组件容器（入口、连接器），按标签找；有实例名时只认本栈的。
+component_containers() {
+  local filter=(--filter label=wonton.managed-by=core --filter "label=wonton.core.component=$1")
+  [[ -z "$WONTON_DEV_INSTANCE" ]] || filter+=(--filter "label=wonton.instance=$WONTON_DEV_INSTANCE")
+  docker ps -aq "${filter[@]}" 2>/dev/null
+}
+
+# `compose down` 删不掉还挂在网络上的入口和连接器：先删它们。
+remove_entry_components() {
+  local ids component
+  for component in entry connector; do
+    ids="$(component_containers "$component")"
+    [[ -z "$ids" ]] || docker rm -f $ids >/dev/null 2>&1 || true
+  done
+}
+
 # 跟着看日志：先认核心栈的 compose 服务，再认插件的服务；都没有时列出可选的。
 logs() {
   local service="${1:-core}" name candidates services
@@ -283,6 +299,14 @@ logs() {
   services="$(compose config --services 2>/dev/null)" || true
   if [[ -z "${1:-}" ]] || grep -qxF -- "$service" <<<"$services"; then
     compose logs -f --tail 200 "$service"
+    return
+  fi
+  # 入口和连接器由核心经 API 建，不是 compose 服务也没有插件标签。
+  if [[ "$service" == entry || "$service" == connector ]]; then
+    local -a ids
+    mapfile -t ids < <(component_containers "$service")
+    [[ ${#ids[@]} -gt 0 ]] || die "没有 $service 容器（入口容器由核心按 entry/settings.json 建）"
+    docker logs -f --tail 200 "${ids[@]}"
     return
   fi
   while read -r name; do
@@ -677,8 +701,14 @@ share_smoke_prepare() {
 [[ "${BASH_SOURCE[0]}" == "$0" ]] || return 0
 case "${1:-}" in
   up)
-    # 分流机的入口只放行固定的几个子命令；工作区里有标记时把 up 让给分享冒烟。
-    if [[ -f "$repo/.share-smoke" ]]; then exec bash "$0" share-smoke; fi
+    # 分流机的入口只放行固定的几个子命令；`.share-smoke` 里写着要跑的子命令（`share-smoke`、
+    # `friend <插件包>`），有它就借 up 的 rsync 和回传把 up 让出去。
+    if [[ -f "$repo/.share-smoke" ]]; then
+      # 文件末尾没有换行时 read 也返回 1，别让 set -e 把 up 结束掉。空文件当作 share-smoke（旧写法是“存在即触发”）。
+      read -r -a pending < "$repo/.share-smoke" || true
+      (( ${#pending[@]} )) || pending=(share-smoke)
+      exec bash "$0" "${pending[@]}" "${@:2}"
+    fi
     # 端口冲突在构建之前查出来：compose 要到绑定时才报，那时已经构建完了。
     "$here/port-preflight.sh" "$core" "$WONTON_DEV_PORT" "$WONTON_DEV_TUNNEL_PORT" || exit 1
     case "${DOCKER_HOST:-}" in ssh://* | tcp://*) ;; *) mkdir -p "$WONTON_DEV_DATA" ;; esac
@@ -713,6 +743,7 @@ case "${1:-}" in
       other="$(detect_project || true)"
       [[ -n $other ]] && die "项目 $core 没有容器；这个检出在跑的是：$(tr '\n' ' ' <<<"$other")（带 WONTON_DEV_PROJECT=<项目> 再跑）"
     fi
+    remove_entry_components
     compose down
     # 中继套接字跟着栈走，栈拆了就没用了。
     rm -rf -- "$WONTON_DEV_RELAY"
@@ -724,6 +755,7 @@ case "${1:-}" in
     fi
     ;;
   reset)
+    remove_entry_components
     compose down --volumes
     rm -rf -- "$WONTON_DEV_RELAY"
     if [[ -n "$WONTON_DEV_INSTANCE" ]]; then
@@ -748,6 +780,7 @@ case "${1:-}" in
   clean-data) clean_data ;;
   status)
     compose ps
+    docker ps -a --filter label=wonton.managed-by=core --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -E -- '(^|--)(entry|connector)$' || true
     if docker inspect -f '{{.State.Running}}' "$core" >/dev/null 2>&1; then
       plugins_table || die "取不到插件列表"
     fi

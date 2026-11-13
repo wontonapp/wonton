@@ -12,7 +12,7 @@ fn domain(dir: &Path) -> std::sync::Arc<Domain> {
         dir.to_owned(),
         dir.join("data"),
         Engine::for_test(),
-        "wonton-test-core".into(),
+        crate::plugin::names::Instance::default(),
         None,
     )
 }

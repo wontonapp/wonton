@@ -83,6 +83,7 @@ pub(crate) fn room_row(
         name: room.name,
         is_direct: room.is_direct,
         direct_user_id: room.direct_user_id.map(|user| user.to_string()),
+        plugin: None,
         is_encrypted: room.is_encrypted,
         is_read_only,
         membership: match room.membership {

@@ -10,6 +10,8 @@ mod detail;
 mod forms;
 pub mod hint;
 mod install;
+mod lifecycle;
+pub use lifecycle::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 mod owner_secrets;
 pub mod store;
 mod view_model;
@@ -20,6 +22,7 @@ mod permission;
 pub(super) mod ports;
 mod secret_input;
 mod settings;
+mod start;
 mod takeover;
 #[path = "task.rs"]
 mod task;
@@ -51,6 +54,7 @@ pub use settings::{
     SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
     plugin_settings_preview_path,
 };
+pub use start::{PluginStart, PluginStartState, RoomPlugin};
 pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{

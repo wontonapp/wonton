@@ -172,7 +172,10 @@ impl TestServer {
             .with_env_var("TUWUNEL_REGISTRATION_SHARED_SECRET", &secret)
             // 这个标签登记是哪个测试进程起的：testcontainers 起的名字是随机的，本机多套测试并行时
             // 认不出是谁的容器。
-            .with_label("wonton.test-pid", std::process::id().to_string());
+            .with_label("wonton.test-pid", std::process::id().to_string())
+            // 容器起步预算，不是测试断言的超时：共用的测试机 IO 忙时 Tuwunel 起步会超过
+            // testcontainers 的默认 60 秒，到点容器被强杀、删除还慢，整条测试跟着挂。
+            .with_startup_timeout(Duration::from_secs(180));
         request = match host_network {
             true => request.with_network("host"),
             // Docker Desktop、OrbStack 自带这个名字，Linux 上要显式加。

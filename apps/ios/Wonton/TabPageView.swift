@@ -15,7 +15,7 @@ struct TabPageView: View {
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     private let close: (() -> Void)?
     /// 面板里的那一份（ADR-0052）：整页大小、右上角胶囊、退出回聊天页。
     private let panel: TabPanelMode?
@@ -38,7 +38,7 @@ struct TabPageView: View {
         pages: PagesModel, home: HomeModel, plugins: PluginsModel, chat: ChatModel, appearance: AppearanceModel,
         tab: TabRef, placed: PlacedTab, store: TabWebViewStore, page: TabPage,
         draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
-        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void,
+        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String?) -> Void,
         close: (() -> Void)? = nil, panel: TabPanelMode? = nil, remove: (() -> Void)? = nil,
         keepAlive: Bool = true
     ) {

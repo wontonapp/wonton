@@ -52,15 +52,12 @@ impl Installs {
 
     /// 房间列表或插件状态变了：重算这一组行。
     pub(super) fn refresh(self: &Arc<Self>) {
-        let (installed, tasks) = {
-            let view = self.plugins.view();
-            (view.installed, view.tasks)
-        };
+        let plugins = self.plugins.view();
         let mut settling = lock(&self.settling);
         let now = Instant::now();
         let rows = rows(
-            installed.as_ref(),
-            &tasks,
+            plugins.installed.as_ref(),
+            &plugins.tasks,
             &self.plugins.previews(),
             &self.view.borrow().rooms,
             &mut settling,
@@ -82,8 +79,9 @@ impl Installs {
         }
         // 插件表变得频繁，行没变时别惊动壳：时间线订阅跟着发批次，空转时一秒几千批会把主线程占死。
         self.view.send_if_modified(|view| {
+            let changed = super::plugin_status::refresh(&mut view.rooms, &plugins);
             if view.installing_bots == rows {
-                return false;
+                return changed;
             }
             view.installing_bots = rows;
             true
@@ -432,6 +430,7 @@ mod tests {
             name: bot.into(),
             is_direct: true,
             direct_user_id: Some(bot.into()),
+            plugin: None,
             is_encrypted: true,
             is_read_only: false,
             membership: RoomMembership::Joined,

@@ -421,6 +421,66 @@
           }
         }
       }
+    },
+    "tab.media.promptBoth": {
+      "comment": "Title of the prompt asking to let a page's app use the camera and microphone. Argument: the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow %@ to use your camera and microphone?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许 %@ 使用摄像头和麦克风吗？"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許 %@ 使用相機和麥克風嗎？"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@にカメラとマイクの使用を許可しますか？"
+          }
+        }
+      }
+    },
+    "tab.media.deny": {
+      "comment": "Button to refuse a page's app the camera or microphone.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don't allow"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不允许"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不允許"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可しない"
+          }
+        }
+      }
     }
   }
 }

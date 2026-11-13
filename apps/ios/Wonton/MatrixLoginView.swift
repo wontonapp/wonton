@@ -28,7 +28,7 @@ struct MatrixLoginView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .scrollDismissesKeyboard(.interactively)
-        .wontonPushedScreen(String(localized: .Matrixlogin1.matrixLoginTitle))
+        .wontonPushedScreen(String(localized: .Matrixlogin1.matrixLoginTitle), usesSystemToolbar: true)
         .onChange(of: login?.state, initial: true) { old, state in follow(state, changed: old != state) }
         .onDisappear(perform: leave)
     }

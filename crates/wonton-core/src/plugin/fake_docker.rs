@@ -1,6 +1,6 @@
 //! 测试用的假 Docker Engine API：只实现插件安装、核对、卸载和回滚用到的端点，记下现存的容器、网络和卷
-//! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康，
-//! 测试可以按容器名改成别的状态（已退出、没有健康检查等）。
+//! （连同标签），供测试断言对 Docker 的副作用。容器一经创建默认报告为运行中且健康；显式 stop 和
+//! committed-create 故障会改变状态，测试也可以按容器名指定退出、健康检查等状态。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -122,10 +122,13 @@ struct Resources {
     states: BTreeMap<String, Value>,
     start_states: BTreeMap<String, Value>,
     start_error: Option<String>,
+    stop_error: Option<String>,
     create_error: Option<(String, String)>,
     remove_error: Option<(String, String)>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
+    /// 每个网络最近一次主动接入（`connect`）的别名；创建时带的端点不算。
+    aliases: BTreeMap<String, Vec<String>>,
     /// 网络名 → 容器名 → 它在网络里的端点（Docker 的 `EndpointSettings` 写法）。
     endpoints: BTreeMap<String, BTreeMap<String, Value>>,
     /// exec ID → 这次执行，按创建顺序编号。
@@ -153,6 +156,10 @@ struct Resources {
     /// 下次容器更新时返回 Docker 错误；`None` 恢复正常。
     update_error: Option<String>,
     hold: Option<Hold>,
+    /// 下一个同名容器先创建为 Created，再扣住 HTTP 回答。
+    committed_create: Option<(String, Hold)>,
+    /// 由 stop 或故障注入设置的状态，下次正常 start 可以恢复；set_state 不受影响。
+    restartable: BTreeMap<String, Option<Value>>,
     /// `GET /version`、`/info` 报告的架构；没设时 `x86_64`。
     arch: Option<String>,
     /// 镜像 → 平台列表（`GET /distribution/{镜像}/json`）。没设的镜像报一个 linux/amd64 的单清单。
@@ -280,10 +287,10 @@ impl FakeDocker {
 
     /// 最近一次接入这个网络的容器在网络里的别名。
     pub fn aliases(&self, network: &str) -> Vec<String> {
-        let connection = self.lock().connections.get(network).cloned();
-        let aliases = connection.map(|c| c["EndpointConfig"]["Aliases"].clone());
-        aliases
-            .and_then(|a| serde_json::from_value(a).ok())
+        self.lock()
+            .aliases
+            .get(network)
+            .cloned()
             .unwrap_or_default()
     }
 
@@ -301,6 +308,17 @@ impl FakeDocker {
             released: Arc::new(Semaphore::new(0)),
         };
         self.lock().hold = Some(hold.clone());
+        hold
+    }
+
+    /// 下次创建这个容器时留下真实资源，但在放行前不回答客户端。
+    pub fn hold_committed_create(&self, name: &str) -> Hold {
+        let hold = Hold {
+            call: "POST /containers/create".to_owned(),
+            reached: Arc::new(Notify::new()),
+            released: Arc::new(Semaphore::new(0)),
+        };
+        self.lock().committed_create = Some((name.to_owned(), hold.clone()));
         hold
     }
 
@@ -345,7 +363,9 @@ impl FakeDocker {
     /// 让这个名字的容器（现在的或之后创建的）报告给定的状态，如
     /// `{"Status": "exited", "ExitCode": 0}`。
     pub fn set_state(&self, container: &str, state: Value) {
-        self.lock().states.insert(container.to_owned(), state);
+        let mut docker = self.lock();
+        docker.restartable.remove(container);
+        docker.states.insert(container.to_owned(), state);
     }
 
     /// 容器从 Docker 里不见了（被外部删掉）。
@@ -354,9 +374,15 @@ impl FakeDocker {
         docker.containers.remove(container);
         docker.states.remove(container);
         docker.created.remove(container);
+        docker.restartable.remove(container);
+        docker.archives.remove(container);
         for endpoints in docker.endpoints.values_mut() {
             endpoints.remove(container);
         }
+    }
+
+    pub fn fail_stops(&self, message: Option<&str>) {
+        self.lock().stop_error = message.map(str::to_owned);
     }
 
     pub fn set_start_state(&self, container: &str, state: Value) {
@@ -544,7 +570,30 @@ async fn handle(State(fake): State<FakeDocker>, request: Request) -> Response {
         .await
         .map(|b| b.to_bytes())
         .unwrap_or_default();
-    serve(&fake, &method, &uri, &body)
+    let committed = {
+        let mut docker = fake.lock();
+        let matches = method == Method::POST
+            && api_path(&uri) == "/containers/create"
+            && docker.committed_create.as_ref().is_some_and(|(name, _)| {
+                query_param(uri.query().unwrap_or_default(), "name").as_ref() == Some(name)
+            });
+        matches.then(|| docker.committed_create.take()).flatten()
+    };
+    let response = serve(&fake, &method, &uri, &body);
+    if let Some((name, hold)) = committed
+        && response.status() == StatusCode::CREATED
+    {
+        {
+            let mut docker = fake.lock();
+            docker
+                .states
+                .insert(name.clone(), json!({"Status": "created", "Running": false}));
+            docker.restartable.insert(name, None);
+        }
+        hold.reached.notify_one();
+        hold.released.acquire().await.ok();
+    }
+    response
 }
 
 /// 去掉 bollard 的请求路径可能带的 API 版本前缀（/v1.51/...）。

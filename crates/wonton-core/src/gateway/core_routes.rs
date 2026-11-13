@@ -81,6 +81,7 @@ fn model_provider_routes() -> Router<Arc<Gateway>> {
 /// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。
 fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
+        .merge(plugin_lifecycle_routes())
         .route(
             "/_wonton/api/capabilities",
             get(super::capability_settings::list),
@@ -132,10 +133,6 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             get(super::owner_secrets::value),
         )
         .route(
-            "/_wonton/api/plugins/{id}/start",
-            post(super::plugin_start::start),
-        )
-        .route(
             "/_wonton/api/plugins/{id}/upgrade",
             post(api::upgrade).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
         )
@@ -174,6 +171,22 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             post(store_api::add_store_source).delete(store_api::remove_store_source),
         )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
+}
+
+fn plugin_lifecycle_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            "/_wonton/api/plugins/{id}/start",
+            post(super::plugin_start::start),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/lifecycle",
+            get(super::plugin_start::lifecycle),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/stop",
+            post(super::plugin_start::stop),
+        )
 }
 
 /// 服务器配对的管理接口（ADR-0050）。

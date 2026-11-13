@@ -328,7 +328,7 @@ private struct MessageBubble: View {
                             answer: $0.answer,
                             choiceId: $0.choiceId,
                             secrets: $1,
-                            settings: [:]
+                            settings: $2
                         )
                     )
                 },

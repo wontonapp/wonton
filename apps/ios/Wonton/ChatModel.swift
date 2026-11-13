@@ -18,6 +18,7 @@ enum ChatRoute: Hashable {
     case room(String)
     case chatBackup
     case startChat
+    case confirmations
 }
 
 @MainActor
@@ -52,6 +53,7 @@ final class ChatModel {
 
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
+    @ObservationIgnored private(set) lazy var confirmations = ConfirmationsModel(core: core)
 
     init(core: ClientCore) {
         self.core = core
@@ -223,6 +225,11 @@ final class ChatModel {
     func startNewChat() {
         resetNavigation()
         path = [.startChat]
+    }
+
+    func openConfirmations() {
+        resetNavigation()
+        path = [.confirmations]
     }
 
     /// 从 `origin` 这一页打开和 `peer` 的私聊：已经加入的直接打开；还没有就发起，房间出现后打开，这期间留在原页；

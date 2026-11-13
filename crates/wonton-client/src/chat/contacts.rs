@@ -171,6 +171,7 @@ mod tests {
             name: name.to_owned(),
             is_direct: peer.is_some(),
             direct_user_id: peer.map(str::to_owned),
+            plugin: None,
             is_encrypted: true,
             is_read_only: read_only,
             membership: RoomMembership::Joined,

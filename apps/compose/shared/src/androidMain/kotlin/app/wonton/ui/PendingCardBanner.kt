@@ -41,15 +41,14 @@ internal fun pendingCardsText(cards: List<PendingConfirmation>): String =
 
 /** 有卡片等主人回答时顶在页面最上面，点了去卡片所在的房间。多张时去最早到期的那张。 */
 @Composable
-fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String) -> Unit) {
+fun PendingCardBanner(cards: List<PendingConfirmation>, onOpen: (String?) -> Unit) {
     val colors = WontonTheme.colors
     val text = colors.textOnAccentFill.toColor()
     Column(
         Modifier
             .fillMaxWidth()
             .background(colors.accentFill.toColor())
-            // 没有会话的卡片该去“等你确认”列表；列表页还没有，先不跳。
-            .clickable(role = Role.Button) { cards[0].roomId?.let(onOpen) }
+            .clickable(role = Role.Button) { onOpen(cards[0].roomId) }
             .windowInsetsPadding(WindowInsets.statusBars),
     ) {
         Row(
