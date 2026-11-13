@@ -75,7 +75,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 ### 官方索引
 
-- 一个公开仓库 `geraldpeng6/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
+- 一个公开仓库 `wontonapp/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
   compose 原文。商店列表和 Bot 的搜索直接用索引里的清单，不用逐个去取。格式见插件规范的“官方索引”。
 - 收录就是向这个仓库提 PR，审核后合并。条目由 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
   审核看这些：`wonton-core plugin check --official` 通过（图标、标签、许可证、作者、随包的许可声明齐全，镜像全按摘要固定，长期运行的服务

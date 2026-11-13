@@ -332,7 +332,7 @@ struct KeepAlive(
 );
 
 /// 经 unix 套接字发一个请求。连接只给这一个请求用；响应体读完、连接任务结束。
-async fn unix_send(
+pub(super) async fn unix_send(
     socket: &std::path::Path,
     request: Request<Body>,
     limit: Option<Duration>,

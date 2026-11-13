@@ -69,7 +69,7 @@ impl PluginManager {
                 .iter()
                 .filter(|capability| super::generic(capability))
             {
-                if super::chosen(&state, &providers, &consumer.manifest.id, capability)
+                if super::chosen(&state, &providers, &consumer.manifest.id, capability, None)
                     .is_none_or(|provider| !removing.contains(&provider.id))
                 {
                     continue;

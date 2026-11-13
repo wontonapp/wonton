@@ -52,7 +52,7 @@ impl FakeGitHub {
     /// 官方索引所在的位置放上这份内容。
     pub(super) fn publish_index(&self, index: Vec<u8>) {
         let key = (
-            "geraldpeng6/wonton-store".to_owned(),
+            "wontonapp/wonton-store".to_owned(),
             "main".to_owned(),
             "index.json".to_owned(),
         );

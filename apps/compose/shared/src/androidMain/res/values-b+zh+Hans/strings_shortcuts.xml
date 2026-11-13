@@ -8,5 +8,5 @@
     <string name="shortcuts_update_refused">系统没有接受快捷方式更新，请稍后重新打开云吞。</string>
     <string name="shortcuts_app_uninstalled">这个应用已卸载</string>
     <string name="shortcuts_too_few">系统只允许 %1$d 个快捷方式，不能同时显示“新建聊天”和“问 Bot”。</string>
-    <string name="shortcuts_too_many">系统最多允许 %1$d 个快捷方式，已优先保留“新建聊天”“问 Bot”，应用页面按底栏顺序显示。</string>
+    <string name="shortcuts_too_many">系统最多允许 %1$d 个快捷方式，已优先保留“新建聊天”“问 Bot”，应用页面按“我的应用”的顺序显示。</string>
 </resources>

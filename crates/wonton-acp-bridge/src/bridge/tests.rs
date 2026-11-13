@@ -54,25 +54,31 @@ impl Harness {
         Self::with(|_| {}).await
     }
 
+    /// 起一套运行环境；`tune_room` 在循环启动前改房间（模拟状态写失败这类房间侧故障）。
+    async fn start_with_room(tune_room: impl FnOnce(&FakeRoom)) -> Self {
+        Self::build(|_| {}, Vec::new(), Scenario::Manual, tune_room).await
+    }
+
     /// 起一套运行环境，首屏快照里带上 `backlog`（重启后停机期间看得见的消息）。
     async fn start_with(backlog: Vec<Message>) -> Self {
-        Self::build(|_| {}, backlog, Scenario::Manual).await
+        Self::build(|_| {}, backlog, Scenario::Manual, |_| {}).await
     }
 
     /// 起一套运行环境；`tune` 在启动前改配置（调小空闲、时限等）。
     async fn with(tune: impl FnOnce(&mut Config)) -> Self {
-        Self::build(tune, Vec::new(), Scenario::Manual).await
+        Self::build(tune, Vec::new(), Scenario::Manual, |_| {}).await
     }
 
     /// 同 [`Self::with`]，但换假 Agent 的场景。
     async fn in_scenario(scenario: Scenario, tune: impl FnOnce(&mut Config)) -> Self {
-        Self::build(tune, Vec::new(), scenario).await
+        Self::build(tune, Vec::new(), scenario, |_| {}).await
     }
 
     async fn build(
         tune: impl FnOnce(&mut Config),
         backlog: Vec<Message>,
         scenario: Scenario,
+        tune_room: impl FnOnce(&FakeRoom),
     ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let agent = FakeAgent::start(scenario).await;
@@ -121,6 +127,7 @@ impl Harness {
                 .unwrap(),
         );
         let room = Arc::new(FakeRoom::with_snapshot(config.home_room.as_str(), backlog));
+        tune_room(&room);
         let mut harness = Self {
             _dir: dir,
             room,
@@ -154,6 +161,7 @@ impl Harness {
                 &self.config.access_token,
             )
             .unwrap(),
+            dm: std::sync::Arc::new(crate::bridge::outbox::tests::FakeDm::for_bridge()),
             pending_asks: permissions::PendingAsks::default(),
         };
         // 出箱和房间循环并行（生产里 run() 就这么起）。

@@ -1,21 +1,21 @@
 import SwiftUI
 import WontonClient
 
-/// 全屏插件页右上角的胶囊，会自动藏起来（见 TabPageView）。带栏时用标题栏（TabPageTitleBar）。
+/// 插件页右上角的胶囊：整页上一直在，是看得见的出口（ADR-0095）。
 struct TabPageCapsule: View {
     let page: TabPage
     let tab: TabRef
     let placed: PlacedTab
-    let tabs: TabsModel
+    let pages: PagesModel
     let session: TabWebSession
     let takeover: PageTakeover?
     let details: () -> Void
-    /// 藏起来时不挡点按，点到的是下面的页面。
+    /// 面板收着时不显示（ADR-0052），也不挡点按。
     let shown: Bool
-    /// 碰了胶囊，重新计时再藏。
-    let touched: () -> Void
-    /// 在聊天页的下拉面板里（ADR-0052）：退出按钮关掉面板，菜单多一项“编辑面板”，没有“总是全屏”。
+    /// 在聊天页的下拉面板里（ADR-0052）：退出按钮关掉面板，菜单多一项“编辑面板”。
     let panel: TabPanelMode?
+    /// 关掉这一页（面板外）。
+    let close: () -> Void
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
 
@@ -30,7 +30,6 @@ struct TabPageCapsule: View {
                     .allowsHitTesting(shown)
                     .accessibilityHidden(!shown)
                     .animation(.easeInOut(duration: 0.2), value: shown)
-                    .simultaneousGesture(TapGesture().onEnded(touched))
             }
             .frame(height: WontonTheme.size.target)
             // 胶囊占着右边：连接原因单独一行，短句也不许挤成省略号（#149）。
@@ -67,17 +66,26 @@ struct TabPageCapsule: View {
                     Button(TabText.back) { session.webView?.goBack() }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
-                Button(TabText.reload) { tabs.send(.reloadTab(page: placed)) }
+                Button(TabText.reload) { pages.send(.reloadTab(page: placed)) }
                 if let panel {
                     Button(TabText.editPanel, action: panel.edit)
                 } else {
-                    Toggle(TabText.alwaysFullscreen, isOn: Binding(
-                        get: { page.opensFullscreen },
-                        set: { tabs.send(.setTabDisplay(tab: tab, display: $0 ? .fullscreen : .standard)) }
-                    ))
+                    // 钉住正在看的这页到聊天页的下拉面板（ADR-0052）；插件页再加进“我的应用”。
+                    if let url = session.webView?.url {
+                        Button(TabText.pinToPanel) {
+                            pages.send(.pinCurrentPage(
+                                url: url.absoluteString, title: session.webView?.title,
+                                to: .panel(scope: .main)
+                            ))
+                        }
+                    }
+                    if case .plugin = tab {
+                        Button(TabText.addToMyApps) {
+                            pages.send(.addMyApp(app: .page(tab: tab), title: nil, index: nil))
+                        }
+                        Button(TabText.details, action: details)
+                    }
                 }
-                pin
-                if hasDetails { Button(TabText.details, action: details) }
             } label: {
                 glyph(.more)
             }
@@ -95,7 +103,7 @@ struct TabPageCapsule: View {
 
     private var trailing: some View {
         Button {
-            if let panel { panel.close() } else { tabs.send(.exitFullscreen(tab: tab)) }
+            if let panel { panel.close() } else { close() }
         } label: { glyph(.leave) }
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.close)
@@ -103,30 +111,10 @@ struct TabPageCapsule: View {
 
     private var ink: Color { .white }
 
-    /// 公网网页没有插件详情。
-    private var hasDetails: Bool {
-        switch tab {
-        case .plugin, .pluginPath: true
-        default: false
-        }
-    }
-
     /// 公网网页标出来源网站的域名，和插件页面一眼分开（ADR-0052）。
     private var sourceHost: String? {
         guard case let .url(value) = tab else { return nil }
         return URL(string: value)?.host()
-    }
-
-    /// 钉住正在看的这一页：面板里的钉到底栏，底栏的钉到主面板（ADR-0052）。
-    @ViewBuilder private var pin: some View {
-        if let url = session.webView?.url {
-            Button(panel == nil ? TabText.pinToPanel : TabText.pinToBar) {
-                let target: PinTarget = panel == nil ? .panel(scope: .main) : .bar
-                tabs.send(.pinCurrentPage(
-                    url: url.absoluteString, title: session.webView?.title, to: target, replacing: nil
-                ))
-            }
-        }
     }
 
     private func glyph(_ icon: WontonIcon) -> some View {

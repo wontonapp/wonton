@@ -1,15 +1,15 @@
 use serde_json::{Value, json};
-use wonton_client::{Action, Rgb, TabBridgeAction, TabDisplay, TabPlatform, TabRef, accent_hex};
+use wonton_client::{Action, Rgb, TabBridgeAction, TabPlatform, TabRef, accent_hex};
 
 use super::driver::Driver;
-use super::support::{environment, open_page, selected_page};
+use super::support::{environment, open_page};
 use crate::plugins::rig::Rig;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "需要 Docker，官方 node:22 运行 MCP Apps SDK 2.0.4 的真实桥握手"]
 async fn official_sdk_roundtrip() {
     for platform in [TabPlatform::Ios, TabPlatform::Android] {
-        let (rig, tab) = open_page(TabDisplay::Standard, true).await;
+        let (rig, tab) = open_page(true).await;
         let mut environment = environment();
         environment.platform = platform;
         let mut driver = Driver::start(&rig, &tab, environment);
@@ -22,10 +22,8 @@ async fn official_sdk_roundtrip() {
             json!({"openLinks":{},"message":{"text":{}}})
         );
         let light = driver.command("inspect", Value::Null);
-        assert_eq!(
-            light["css"]["background-color"],
-            accent_hex(rig.app.appearance().light.canvas)
-        );
+        // 铺满时页面自己的背景要露到状态栏下面，桥不能在 <html> 上盖一层底色（ADR-0095）。
+        assert!(light["css"]["background-color"].is_null());
         assert_eq!(light["css"]["color-scheme"], "light");
         assert_eq!(light["css"]["--wonton-inset-top"], "88px");
         assert_eq!(
@@ -38,7 +36,6 @@ async fn official_sdk_roundtrip() {
         );
         let fullscreen = driver.command("requestDisplayMode", json!({"mode":"fullscreen"}));
         assert_eq!(fullscreen["result"]["mode"], "fullscreen");
-        assert!(selected_page(&rig, &tab).fullscreen);
         rig.app
             .dispatch(Action::SetAccentColor {
                 color: Rgb {
@@ -56,10 +53,7 @@ async fn official_sdk_roundtrip() {
         assert_eq!(dark["context"]["theme"], "dark");
         assert_eq!(dark["context"]["displayMode"], "fullscreen");
         assert_eq!(dark["contextChanges"][0], dark["context"]);
-        assert_eq!(
-            dark["css"]["background-color"],
-            accent_hex(rig.app.appearance().dark.canvas)
-        );
+        assert!(dark["css"]["background-color"].is_null());
         assert_eq!(
             dark["css"]["--wonton-accent-fill"],
             accent_hex(rig.app.appearance().dark.accent_fill)
@@ -75,7 +69,6 @@ async fn official_sdk_roundtrip() {
         );
         let inline = driver.command("requestDisplayMode", json!({"mode":"inline"}));
         assert_eq!(inline["result"]["mode"], "inline");
-        assert!(!selected_page(&rig, &tab).fullscreen);
         driver.environment.dark = false;
         driver.update_context();
         assert_eq!(

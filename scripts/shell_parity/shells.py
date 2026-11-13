@@ -16,8 +16,12 @@ from typing import Dict, List, Optional, Set
 WORD_RE = re.compile(r"[A-Z]+[0-9]*(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+[0-9]*|[0-9]+")
 IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
-# 字符串不去掉：插值（Swift 的 \(x.y)、Kotlin 的 ${x.y}）里的字段是真用到。`://` 是网址，不是注释。
+# 插值里的表达式是真用到；`://` 是网址，不是注释。
 LINE_COMMENT_RE = re.compile(r"(?<!:)//[^\n]*")
+# 普通字符串字面量要去掉：里面的 .名字 会撞上成员匹配（"app.wonton.network" 的 .wonton 撞 ServerKind.wonton）；
+# 插值表达式留下（INTERP_KEEP_RE），那才是真用到（#503 核对）。
+STRING_RE = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+INTERP_KEEP_RE = re.compile(r"\\\(([^)]*)\)|\$\{([^}]*)\}")
 MEMBER_RE = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)")
 IMPORT_RE = re.compile(r"^\s*(?:import|package)\b[^\n]*", re.M)
 QUALIFIED_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)")
@@ -78,6 +82,12 @@ def _strip(text: str) -> str:
     return LINE_COMMENT_RE.sub("", text).replace("`", "")
 
 
+def _strip_strings(text: str) -> str:
+    """去掉字符串字面量，插值里的表达式留下（Swift 的 \\(x.y)、Kotlin 的 ${x.y} 里的字段是真用到）：
+    普通字符串里的 .名字 会撞上成员匹配（"app.wonton.network" 的 .wonton 撞 ServerKind 的 .wonton，#503 核对）。"""
+    return STRING_RE.sub(lambda m: " " + " ".join(a or b for a, b in INTERP_KEEP_RE.findall(m.group(0))), text)
+
+
 def _source_files(root: str, base: str, suffix: str) -> List[str]:
     found: List[str] = []
     for directory, dirs, names in os.walk(os.path.join(root, base)):
@@ -90,6 +100,7 @@ def read_source(text: str) -> Source:
     text = _strip(text)
     # import 和 package 行里的包名（androidx.compose.runtime）会撞上同名字段，只拿来看文件提到了哪些类型。
     code = IMPORT_RE.sub("", text)
+    code = _strip_strings(code)
     return Source(
         set(IDENT_RE.findall(code)),
         set(MEMBER_RE.findall(code)),

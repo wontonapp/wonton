@@ -21,8 +21,6 @@ pub struct ManifestTab {
     pub path: String,
     #[serde(default = "default_layout")]
     pub layout: String,
-    #[serde(default = "default_display")]
-    pub display: String,
 }
 
 impl ManifestTab {
@@ -42,10 +40,6 @@ impl ManifestTab {
 
 fn default_layout() -> String {
     "inset".to_owned()
-}
-
-fn default_display() -> String {
-    "standard".to_owned()
 }
 
 pub(super) fn validate(
@@ -91,21 +85,7 @@ pub(super) fn validate(
                     tab.layout
                 ));
             }
-            if !matches!(tab.display.as_str(), "standard" | "fullscreen") {
-                problems.push(format!(
-                    "{field}.display `{}` is not recognized; use standard or fullscreen",
-                    tab.display
-                ));
-            }
         }
-    }
-    if let Some(webui) = webui
-        && !matches!(webui.display.as_str(), "standard" | "fullscreen")
-    {
-        problems.push(format!(
-            "webui.display `{}` is not recognized; use standard or fullscreen",
-            webui.display
-        ));
     }
     if problems.is_empty() {
         Ok(())
@@ -194,14 +174,6 @@ pub(super) fn layout(value: &str) -> Option<wonton_protocol::TabLayout> {
     match value {
         "inset" => Some(wonton_protocol::TabLayout::Inset),
         "edge-to-edge" => Some(wonton_protocol::TabLayout::EdgeToEdge),
-        _ => None,
-    }
-}
-
-pub(super) fn display(value: &str) -> Option<wonton_protocol::TabDisplay> {
-    match value {
-        "standard" => Some(wonton_protocol::TabDisplay::Standard),
-        "fullscreen" => Some(wonton_protocol::TabDisplay::Fullscreen),
         _ => None,
     }
 }

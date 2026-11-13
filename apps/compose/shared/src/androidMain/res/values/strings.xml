@@ -111,4 +111,11 @@
     <string name="confirmations_title">Waiting for you</string>
     <!-- Empty confirmation list after requests have been answered or expired. -->
     <string name="confirmations_empty">Nothing needs your confirmation</string>
+    <string name="myapp_add">Add to My apps</string>
+    <string name="myapp_add_more">Add apps</string>
+    <string name="myapp_auto_add">Add new apps automatically</string>
+    <string name="myapp_problem">Couldn\'t load or save My apps</string>
+    <string name="myapp_remove">Remove from My apps</string>
+    <string name="myapp_sync_stale">Changes not synced yet</string>
+    <string name="myapp_sync_stale_detail">Saved on this device. They sync automatically once connected.</string>
 </resources>

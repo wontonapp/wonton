@@ -89,7 +89,7 @@ async fn optional_consumer_install_while_provider_stopped_or_unready_recovers_ap
             }));
             assert!(matches!(
                 manager
-                    .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+                    .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
                     .await,
                 Err(CapabilityAccessError::Unavailable(_))
             ));
@@ -111,7 +111,7 @@ async fn optional_consumer_install_while_provider_stopped_or_unready_recovers_ap
             assert_eq!(durable_connection(&dir, "app.a-consumer")["ready"], true);
             assert!(
                 manager
-                    .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+                    .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
                     .await
                     .is_ok()
             );
@@ -146,7 +146,7 @@ async fn optional_install_with_failed_signing_recovers_without_rotating_its_pend
         ));
         assert!(matches!(
             manager
-                .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+                .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
                 .await,
             Err(CapabilityAccessError::Unavailable(_))
         ));
@@ -158,7 +158,7 @@ async fn optional_install_with_failed_signing_recovers_without_rotating_its_pend
         assert!(!recovered["URL"].is_empty());
         assert!(
             manager
-                .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+                .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
                 .await
                 .is_ok()
         );
@@ -230,7 +230,7 @@ async fn removing_last_optional_provider_rebuilds_url_and_key_to_empty() {
     ));
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+            .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
@@ -318,7 +318,7 @@ async fn partial_credential_revocation_keeps_connections_unavailable_until_same_
         assert!(durable_connection(&dir, consumer_id)["problem"].is_string());
         assert!(matches!(
             manager
-                .capability_route(&id(consumer_id), "jellyfin", &langs())
+                .capability_route(&id(consumer_id), "jellyfin", &langs(), None)
                 .await,
             Err(CapabilityAccessError::Unavailable(_))
         ));
@@ -329,7 +329,7 @@ async fn partial_credential_revocation_keeps_connections_unavailable_until_same_
     for consumer_id in ["app.a-consumer", "app.b-consumer"] {
         assert!(
             manager
-                .capability_route(&id(consumer_id), "jellyfin", &langs())
+                .capability_route(&id(consumer_id), "jellyfin", &langs(), None)
                 .await
                 .is_ok()
         );
@@ -368,7 +368,7 @@ async fn a_failed_pending_connection_rebuild_retries_with_the_same_key() {
     assert!(failed["problem"].is_string());
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+            .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
@@ -380,7 +380,7 @@ async fn a_failed_pending_connection_rebuild_retries_with_the_same_key() {
     assert_eq!(recovered["rebuild"], false);
     assert!(
         manager
-            .capability_route(&id("app.a-consumer"), "jellyfin", &langs())
+            .capability_route(&id("app.a-consumer"), "jellyfin", &langs(), None)
             .await
             .is_ok()
     );
@@ -424,7 +424,7 @@ async fn a_quiet_consumer_upgrade_does_not_approve_a_previously_denied_high_priv
         .unwrap();
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.ledger", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.ledger", &langs(), None)
             .await,
         Err(CapabilityAccessError::Denied)
     ));

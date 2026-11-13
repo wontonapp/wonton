@@ -19,4 +19,5 @@
     <!-- Action-sheet item that updates the app. Argument: the new version. -->
     <string name="launcher_upgrade_to">升级到 %1$s</string>
     <string name="launcher_badge_degraded">有问题</string>
+    <string name="launcher_badge_needs_configuration">待配置</string>
 </resources>

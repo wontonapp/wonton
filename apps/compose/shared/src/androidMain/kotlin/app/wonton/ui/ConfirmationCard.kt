@@ -26,6 +26,7 @@ import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
+import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.SettingValue
 import app.wonton.protocol.WindowView
 import app.wonton.ui.design.WontonButton
@@ -51,7 +52,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
     CardSecureScreen(card, secrets, shown)
-    val tabs = LocalTabs.current
+    val tabs = LocalPages.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
         card.lines.forEach { line ->
@@ -85,8 +86,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
-        // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
-        // 刷新）时如实不显示。
+        // 成功卡片只在已装列表确认插件存在时提供入口；列表未刷新或插件已卸载时不显示。
         val installed = if (card.state is ConfirmationState.Succeeded) {
             card.pluginId?.let { id -> tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id } }
         } else {
@@ -131,29 +131,29 @@ private fun cardInputsReady(
 private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
     settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
 
-/** 卡片上已装插件的按钮：“打开”到第一项 tab；“放到底栏”走现有固定流程，已固定时不显示。 */
+/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。 */
 @Composable
-private fun CardInstalledActions(installed: InstalledPlugin, tabs: TabsState, onAction: (Action) -> Unit) {
+private fun CardInstalledActions(installed: InstalledPlugin, tabs: PagesState, onAction: (Action) -> Unit) {
     var showsPages by remember(installed.id) { mutableStateOf(false) }
     val choices = installed.tabChoices
-    val pinned = choices.any { choice -> tabs.viewModel.items.any { it.tab == choice.tab } }
+    val added = choices.any { choice -> tabs.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab } }
     if (choices.isEmpty()) return
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
-        WontonButton(stringResource(R.string.tab_open), { onAction(Action.SelectTab(choices[0].tab)) })
-        if (!pinned) {
-            WontonButton(stringResource(R.string.tab_pin_to_bar), {
+        WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
+        if (!added) {
+            WontonButton(stringResource(R.string.myapp_add), {
                 if (choices.size > 1) {
                     showsPages = true
                 } else {
-                    tabs.pin(choices.single().tab, choices.single().title)
+                    tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
                 }
             })
         }
     }
-    if (showsPages) TabPageChoiceSheet(installed) { showsPages = false }
+    if (showsPages) MyAppChoiceSheet(installed) { showsPages = false }
 }
 
 @Composable

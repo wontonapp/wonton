@@ -4,7 +4,7 @@
 use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
-use wonton_protocol::{DeviceNetwork, PlacedTab};
+use wonton_protocol::{DeviceNetwork, PlacedTab, TabRef};
 
 use super::switch::PushInput;
 use super::*;
@@ -142,13 +142,37 @@ impl ClientCore {
             Action::Timeline { action } if super::composer::is_composer_action(&action) => {
                 self.composer_action(&scope, action)
             }
-            action if is_tab_action(&action) => scope.tabs.dispatch(action),
+            action if is_page_action(&action) => scope.pages.dispatch(action),
             other => self.dispatch_plugins_or_chat(&scope, other),
         }
     }
 }
 
-/// 分享相关的操作（含分享页的加载结果），整组交给 `dispatch_sharing`。
+/// 页面和面板自己的操作，整组交给 [`PagesLink`](crate::pages::PagesLink)。
+/// 分享页的加载结果也走这里记状态；来源重探在 sharing 那边做。
+fn is_page_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::OpenPage { .. }
+            | Action::ClosePage
+            | Action::AddMyApp { .. }
+            | Action::RemoveMyApp { .. }
+            | Action::MoveMyApp { .. }
+            | Action::SetAutoAddApps { .. }
+            | Action::AddPanelPage { .. }
+            | Action::RemovePanelPage { .. }
+            | Action::MovePanelPage { .. }
+            | Action::SelectPanelPage { .. }
+            | Action::SetBotPinConsent { .. }
+            | Action::PinCurrentPage { .. }
+            | Action::ReloadTab { .. }
+            | Action::TabLoadFailed { .. }
+            | Action::TabLoadSucceeded { .. }
+            | Action::DismissUninstalledTabs
+            | Action::SetRoomEntryBlocked { .. }
+    )
+}
+
 /// 加设备时交接聊天密钥（ADR-0087）：“添加设备”页开着时，聊天那边自动接上一次新设备的确认请求。
 fn key_handoff_action(scope: &Scope, action: &Action) -> Result<(), CoreError> {
     match action {
@@ -165,23 +189,27 @@ fn key_handoff_action(scope: &Scope, action: &Action) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// 分享相关的操作，整组交给 `dispatch_sharing`。分享页的加载结果也算：先重探来源，
+/// 再转给页面状态。
 fn is_sharing_action(action: &Action) -> bool {
     matches!(
         action,
-        Action::TabLoadFailed {
-            page: PlacedTab::Bar {
-                tab: TabRef::SharedApp { .. },
-            },
-            ..
-        } | Action::TabLoadSucceeded {
-            page: PlacedTab::Bar {
-                tab: TabRef::SharedApp { .. },
-            },
-        } | Action::RefreshSharedApps { .. }
+        Action::RefreshSharedApps { .. }
             | Action::OpenSharedApp { .. }
             | Action::CreatePluginShare { .. }
             | Action::UpdatePluginShare { .. }
             | Action::RevokePluginShare { .. }
+            | Action::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: TabRef::SharedApp { .. },
+                },
+                ..
+            }
+            | Action::TabLoadSucceeded {
+                page: PlacedTab::Page {
+                    tab: TabRef::SharedApp { .. },
+                },
+            }
     )
 }
 
@@ -194,33 +222,6 @@ fn is_matrix_login_action(action: &Action) -> bool {
             | Action::StartMatrixOidc { .. }
             | Action::CompleteMatrixOidc { .. }
             | Action::CancelMatrixLogin { .. }
-    )
-}
-
-/// 底栏和面板自己的操作，整组交给 [`TabsLink`](crate::tabs::TabsLink)。
-fn is_tab_action(action: &Action) -> bool {
-    matches!(
-        action,
-        Action::SelectTab { .. }
-            | Action::CloseTabOverlay
-            | Action::PinTab { .. }
-            | Action::UnpinTab { .. }
-            | Action::AddPanelPage { .. }
-            | Action::RemovePanelPage { .. }
-            | Action::MovePanelPage { .. }
-            | Action::SelectPanelPage { .. }
-            | Action::SetBotPinConsent { .. }
-            | Action::PinCurrentPage { .. }
-            | Action::MoveTab { .. }
-            | Action::SetTabLabels { .. }
-            | Action::SetTabDisplay { .. }
-            | Action::EnterFullscreen { .. }
-            | Action::ExitFullscreen { .. }
-            | Action::ReloadTab { .. }
-            | Action::TabLoadFailed { .. }
-            | Action::TabLoadSucceeded { .. }
-            | Action::DismissUninstalledTabs
-            | Action::SetRoomEntryBlocked { .. }
     )
 }
 

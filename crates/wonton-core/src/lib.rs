@@ -13,6 +13,7 @@ pub mod test_docker;
 mod test_docker_check;
 
 pub mod agent_chain;
+pub mod agent_outbox;
 mod bot_activity;
 pub mod bot_media;
 
@@ -46,6 +47,7 @@ pub mod pairing;
 pub mod peers;
 pub mod plugin;
 pub mod push;
+pub mod roles;
 pub mod secret;
 pub mod share_identity;
 pub mod shares;

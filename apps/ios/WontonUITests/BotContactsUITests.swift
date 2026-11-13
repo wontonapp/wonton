@@ -69,10 +69,12 @@ final class BotContactsUITests: XCTestCase {
     private func reachApps() {
         let sidebar = app.buttons["Sidebar"].firstMatch
         for _ in 0..<8 where !sidebar.waitForExistence(timeout: uiWait) {
+            if UITestBackend.skipKeyHandoff(app) { continue }
             let step = ["Skip", "Done", "Next"].map { app.buttons[$0].firstMatch }.first { $0.exists && $0.isEnabled }
             step?.tap()
         }
         XCTAssertTrue(sidebar.waitForExistence(timeout: networkWait), "没到主界面")
+        UITestBackend.settleKeyHandoff(app)
         sidebar.tap()
         let all = app.buttons["All"].firstMatch
         XCTAssertTrue(all.waitForExistence(timeout: uiWait), "侧栏没有“全部”")

@@ -293,7 +293,7 @@ async fn nested_provider_decisions_wait_for_readiness_and_inject_independent_key
     );
     let route = bed
         .manager
-        .capability_route(&id("app.test"), "x-acme.search", &langs())
+        .capability_route(&id("app.test"), "x-acme.search", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.search"));
@@ -522,7 +522,7 @@ async fn a_failed_consumer_rolls_back_all_new_providers_but_preserves_existing_c
     assert_eq!(connections(&bed), before);
     let route = bed
         .manager
-        .capability_route(&id("app.kept"), "x-acme.search", &langs())
+        .capability_route(&id("app.kept"), "x-acme.search", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.search"));

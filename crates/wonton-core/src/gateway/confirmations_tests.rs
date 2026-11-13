@@ -192,6 +192,7 @@ async fn the_list_and_single_card_belong_to_the_recipient() {
             display_name: "Mia".to_owned(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: true,
             private_bot: None,

@@ -100,4 +100,11 @@
     <string name="confirmations_title">等你確認</string>
     <!-- Empty confirmation list after requests have been answered or expired. -->
     <string name="confirmations_empty">沒有需要確認的事</string>
+    <string name="myapp_add">加進我的應用</string>
+    <string name="myapp_add_more">新增應用</string>
+    <string name="myapp_auto_add">新裝的應用自動加入</string>
+    <string name="myapp_problem">我的應用讀寫出錯</string>
+    <string name="myapp_remove">從我的應用移出</string>
+    <string name="myapp_sync_stale">改動還沒同步上</string>
+    <string name="myapp_sync_stale_detail">本機已存好；連上伺服器後自動同步。</string>
 </resources>

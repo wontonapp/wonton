@@ -99,39 +99,48 @@ fn unknown_web_status_or_failure_never_supplies_a_page() {
 
 #[test]
 fn saved_bot_pages_and_links_preserve_the_exact_bot_in_one_plugin() {
-    use crate::{AppLink, LayoutSettings, TabRef};
+    use crate::{AppLink, LayoutSettings, MyAppEntry, MyAppRef, TabRef};
 
     let settings: LayoutSettings = serde_json::from_value(serde_json::json!({
-        "items": [
-            {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "alice"}},
-            {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "bob"},
-             "path": "/login?mode=account#active"}
+        "my_apps": [
+            {"app": {"type": "page", "tab": {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "alice"}}}},
+            {"app": {"type": "page", "tab": {"type": "bot", "bot": {"plugin_id": "app.agent", "bot": "bob"},
+             "path": "/login?mode=account#active"}}}
         ]
     }))
     .unwrap();
     assert_eq!(
-        settings.items,
+        settings.my_apps,
         vec![
-            TabRef::Bot {
-                bot: bot("app.agent", "alice"),
-                path: None
+            MyAppEntry {
+                app: MyAppRef::Page {
+                    tab: TabRef::Bot {
+                        bot: bot("app.agent", "alice"),
+                        path: None
+                    }
+                },
+                title: None,
             },
-            TabRef::Bot {
-                bot: bot("app.agent", "bob"),
-                path: Some("/login?mode=account#active".into()),
+            MyAppEntry {
+                app: MyAppRef::Page {
+                    tab: TabRef::Bot {
+                        bot: bot("app.agent", "bob"),
+                        path: Some("/login?mode=account#active".into()),
+                    }
+                },
+                title: None,
             },
         ]
     );
-    assert_ne!(settings.items[0], settings.items[1]);
+    assert_ne!(settings.my_apps[0], settings.my_apps[1]);
     let alice = AppLink::parse("wonton://tab/bot/app.agent/alice").unwrap();
-    assert_eq!(
-        alice,
-        AppLink::Tab {
-            tab: settings.items[0].clone()
-        }
-    );
-    let bob = AppLink::Tab {
-        tab: settings.items[1].clone(),
+    let MyAppRef::Page { tab: alice_tab } = settings.my_apps[0].app.clone() else {
+        unreachable!("a bot page is stored as a page row")
     };
+    assert_eq!(alice, AppLink::Tab { tab: alice_tab });
+    let MyAppRef::Page { tab: bob_tab } = settings.my_apps[1].app.clone() else {
+        unreachable!("a bot page is stored as a page row")
+    };
+    let bob = AppLink::Tab { tab: bob_tab };
     assert_eq!(AppLink::parse(&bob.to_url()), Some(bob));
 }
