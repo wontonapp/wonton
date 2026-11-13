@@ -183,6 +183,20 @@ fn check_services(plan: &Deployment, manifest: &Manifest, official: bool, report
             }
         }
     }
+    // 厂商版镜像和通用镜像一样要按摘要固定（ADR-0099）。
+    if official {
+        for (service, vendors) in manifest.gpu.iter().flat_map(|gpu| &gpu.images) {
+            for (vendor, image) in vendors
+                .iter()
+                .filter(|(_, image)| !image.contains("@sha256:"))
+            {
+                list.push(format!(
+                    "service {service} image {image} for {} isn't pinned by digest (write name:tag@sha256:…)",
+                    vendor.key()
+                ));
+            }
+        }
+    }
 }
 
 /// 用请求头认用户的应用，信任的代理地址只写核心的地址（ADR-0023 的“只信任核心的地址”）。出网插件能从宿主连到它，所以官方

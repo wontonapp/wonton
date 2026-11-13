@@ -25,6 +25,7 @@ permission-owner-identity = あなたのユーザー名とメールアドレス�
 permission-network-egress = インターネットとローカルネットワークにアクセスします
 permission-egress-proxy = プロキシを提供します（高権限）
 permission-network-lan = ローカルネットワークにポートを開放します（高権限）
+permission-network-clients = あなたがスイッチを入れると、他のAppがローカルネットワークやインターネットから接続できます
 permission-network-host = ホストのネットワークを使用します（非常に高い権限）
 permission-capability = カーネル機能{ $name }を追加します
 permission-host-pid = ホストのプロセス空間を共有します（最高権限）

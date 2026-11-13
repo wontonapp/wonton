@@ -15,7 +15,7 @@
     <!-- Problem title when the app's page itself fails to load. No arguments. -->
     <string name="tab_load_upstream">Can\'t open the app\'s page</string>
     <!-- Dialog text when apps were uninstalled and their tabs removed. Argument: list of app names. -->
-    <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from the navigation bar</string>
+    <string name="tab_uninstalled_notice">%1$s was uninstalled and removed from My Apps</string>
     <!-- Camera and microphone permission for plugin web pages. Arguments: app title. -->
     <string name="tab_media_prompt_camera">Allow %1$s to use your camera?</string>
     <string name="tab_media_deny">Don\'t allow</string>
@@ -40,4 +40,5 @@
     <string name="tab_menu_back">Back</string>
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">Pin to tab bar</string>
+    <string name="tab_page_close">Close page</string>
 </resources>

@@ -23,6 +23,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod agent_chains;
 #[cfg(target_os = "android")]
 mod android;
 mod appearance;
@@ -39,6 +40,7 @@ mod link;
 mod logging;
 mod matrix_login;
 mod onboarding;
+mod pages;
 mod peers;
 mod plugins;
 mod port_map;
@@ -51,7 +53,6 @@ mod settings;
 mod share_in;
 mod sharing;
 mod subscription;
-mod tabs;
 #[cfg(feature = "test-hooks")]
 pub(crate) mod test_hooks;
 mod widget;
@@ -64,18 +65,19 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
-pub use sharing::discover_share_source;
-pub use subscription::{
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
-    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TabsSubscription, TransfersSubscription, WidgetSnapshotSubscription,
-};
-pub use tabs::bridge::{
+pub use pages::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };
-pub use tabs::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
-pub use tabs::media_permission::TabMediaPermission;
+pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
+pub use pages::media_permission::TabMediaPermission;
+pub use sharing::discover_share_source;
+pub use subscription::{
+    AgentChainsSubscription, AppearanceSubscription, BotContactsSubscription, ChatSubscription,
+    ComposerSubscription, ConfirmationsSubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
+    WidgetSnapshotSubscription,
+};
 pub use widget::read_widget_snapshot;
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
 pub use wonton_protocol::*;

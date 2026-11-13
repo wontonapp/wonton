@@ -95,7 +95,7 @@ struct ShareInSheetContent<Avatar: View>: View {
             Button {
                 if let chosen { send(chosen.roomId, text) }
             } label: {
-                Text(.composerSend).frame(maxWidth: .infinity)
+                Text(.Composer.composerSend).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle())
             .disabled(chosen == nil || sending || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

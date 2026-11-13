@@ -31,5 +31,5 @@
     <!-- Row description in the review step: the agent signs in from chat after setup. -->
     <string name="onboarding_review_sign_in_after_setup">Sign in from chat after setup</string>
     <!-- Dismissable tip after an app installed: it can be pinned to the bottom navigation bar. -->
-    <string name="onboarding_tip_app_installed">You can pin an installed app to the navigation bar.</string>
+    <string name="onboarding_tip_app_installed">Installed apps show up in My Apps in the sidebar.</string>
 </resources>

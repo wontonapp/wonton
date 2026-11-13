@@ -22,7 +22,7 @@ struct ChatRoomView: View {
     /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
     @State private var roomPull = PullAnchor(attachesToAncestor: false, edge: .bottom)
     @Environment(OnboardingModel.self) private var onboarding
-    @Environment(TabsModel.self) private var tabs
+    @Environment(PagesModel.self) private var pages
 
     init(model: ChatModel, plugins: PluginsModel, roomId: String, title: String) {
         self.model = model
@@ -112,7 +112,7 @@ struct ChatRoomView: View {
             if await timeline.observe(pin: pin) {
                 model.path = []
                 model.visiting = nil
-                tabs.select(.chat)
+                pages.open(.chat)
             }
         }
     }

@@ -18,6 +18,7 @@ use crate::config::PLUGIN_MCP_HOST;
 
 use super::ERROR_HEADER;
 use super::agent_chains_test_support::*;
+
 #[tokio::test]
 async fn a_bridge_start_gets_a_chain_and_the_next_sentence_another() {
     let home = start().await;
@@ -286,7 +287,10 @@ async fn the_app_stop_cancels_the_turn_and_withdraws_cards() {
 
     // 链上经 agent_acp 的会话交给了网关取消（第 5 块的接口，这里用替身）；桥的轮次进了出箱。
     assert_eq!(home.acp.cancelled.lock().unwrap().as_slice(), ["s-acp"]);
-    let item = home.outbox(BUS_ALICE).await.expect("出箱有取消");
+    let item = home
+        .outbox(BUS_ALICE, Bot::Alice.matrix())
+        .await
+        .expect("出箱有取消");
     assert_eq!(item["kind"]["type"], "cancel_turn");
     assert_eq!(item["kind"]["chain"], chain.as_str());
     assert_eq!(item["kind"]["session"], "s-1");
@@ -355,8 +359,59 @@ async fn the_outbox_receipt_accepts_taken_items_only() {
     let response = home
         .app
         .clone()
-        .oneshot(home.receipt_request(Bot::Bob.bus(), unknown))
+        .oneshot(home.receipt_request(Bot::Bob.bus(), Bot::Bob.matrix(), unknown))
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+/// 出箱的门：只有总线令牌（Agent 自己读）→ 403；别家 Bot 的 Matrix 令牌 → 403；
+/// 正是这个 Bot 的 Matrix 令牌才取得到。
+#[tokio::test]
+async fn the_outbox_requires_the_bots_matrix_token() {
+    let home = start().await;
+    let get = |bot: Bot, matrix_token: Option<&str>| {
+        let bus = bot.bus();
+        let mut request = hyper::Request::builder()
+            .method(Method::GET)
+            .uri(format!("{}/{bus}", wonton_protocol::AGENT_OUTBOX_PATH))
+            .header(header::HOST, format!("{PLUGIN_MCP_HOST}:18480"))
+            .body(Body::empty())
+            .unwrap();
+        if let Some(token) = matrix_token {
+            request
+                .headers_mut()
+                .insert(wonton_protocol::BOT_TOKEN_HEADER, token.parse().unwrap());
+        }
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:18080".parse::<SocketAddr>().unwrap(),
+        ));
+        request
+    };
+    // 只有总线令牌：Agent 自己也拿得到它，读不了出箱。
+    let response = home
+        .app
+        .clone()
+        .oneshot(get(Bot::Alice, None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 别家 Bot 的 Matrix 令牌。
+    let response = home
+        .app
+        .clone()
+        .oneshot(get(Bot::Alice, Some(Bot::Bob.matrix())))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+
+    // 正是这个 Bot 的 Matrix 令牌。
+    let response = home
+        .app
+        .clone()
+        .oneshot(get(Bot::Alice, Some(Bot::Alice.matrix())))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 }

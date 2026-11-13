@@ -98,7 +98,19 @@ impl PluginPackage {
                 ),
             ));
         }
-        if let Some(provider) = egress
+        self.check_egress_service(egress, langs)?;
+        self.check_capability_services(langs)?;
+        super::gpu_images::check(self, langs)?;
+        self.check_clients_references(langs)
+    }
+
+    /// 出网插件的服务不能设 `network_mode`：出口容器没法和它共享网络。
+    fn check_egress_service(
+        &self,
+        provider: Option<&crate::plugin::provides::EgressProxyProvider>,
+        langs: &Languages,
+    ) -> Result<(), PackageError> {
+        if let Some(provider) = provider
             && self.services[&provider.service]
                 .as_object()
                 .is_some_and(|service| service.contains_key("network_mode"))
@@ -109,7 +121,30 @@ impl PluginPackage {
                 text(langs, "plugin-install-pkg-egress-network-mode", &[]),
             ));
         }
-        self.check_capability_services(langs)?;
         Ok(())
+    }
+
+    /// `clients` 里的服务要在 compose 里；引用了 `WONTON_EXTERNAL_URL` 时要开得出入口。
+    fn check_clients_references(&self, langs: &Languages) -> Result<(), PackageError> {
+        let clients = self.manifest.clients.as_ref();
+        let http = clients
+            .and_then(|c| c.http.as_ref())
+            .map(|http| ("clients.http.service", &http.service));
+        let tcp = clients
+            .and_then(|c| c.tcp.as_ref())
+            .into_iter()
+            .flatten()
+            .map(|entry| ("clients.tcp", &entry.service));
+        for (field, service) in http.into_iter().chain(tcp) {
+            if !self.services.contains_key(service) {
+                return Err(unknown_service_error(langs, field, service.clone()));
+            }
+        }
+        crate::plugin::manifest_clients::validate_external_url(
+            &self.manifest,
+            crate::plugin::manifest_clients::references_external_url(&self.services),
+            langs,
+        )
+        .map_err(PackageError::Manifest)
     }
 }

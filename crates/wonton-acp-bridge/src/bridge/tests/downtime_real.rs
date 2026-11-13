@@ -160,6 +160,7 @@ async fn spawn_bridge(config: &Config) -> (MatrixSession, JoinHandle<BridgeResul
         bot: session.user_id().to_owned(),
         locales: Arc::new(Locales::new(Origin::Fixed, session.user_id().to_owned())),
         chains: crate::bridge::chain::Client::new(&config.mcp_url, &config.access_token).unwrap(),
+        dm: std::sync::Arc::new(crate::bridge::outbox::tests::FakeDm::for_bridge()),
         pending_asks: permissions::PendingAsks::default(),
     };
     let task = tokio::spawn(run_room(bridge, room, false, None, login));

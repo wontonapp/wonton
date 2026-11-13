@@ -29,8 +29,7 @@ fn manifest_error(doc: &Value) -> String {
 
 #[test]
 fn a_static_page_takes_webui_display_fields_and_tabs() {
-    let mut page =
-        doc(json!({"path": "/play", "display": "fullscreen", "cross_origin_isolated": true}));
+    let mut page = doc(json!({"path": "/play", "cross_origin_isolated": true}));
     page["x-wonton"]["tabs"] = json!([{
         "id": "scores", "title": {"zh": "成绩", "en": "Scores"}, "icon": "tabs/scores.svg", "path": "/scores"
     }]);

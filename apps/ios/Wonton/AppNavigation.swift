@@ -12,7 +12,7 @@ final class AppNavigation {
     let chat: ChatModel
     let home: HomeModel
     let plugins: PluginsModel
-    let tabs: TabsModel
+    let pages: PagesModel
     let onboarding: OnboardingModel
     let shareIn: ShareInModel
     private(set) var presentationRevision = 0
@@ -27,7 +27,7 @@ final class AppNavigation {
         self.chat = chat
         self.home = home
         self.plugins = plugins
-        tabs = TabsModel(core: chat.core)
+        pages = PagesModel(core: chat.core)
         onboarding = OnboardingModel(core: chat.core)
         shareIn = ShareInModel(core: chat.core)
         Self.shared = self
@@ -107,7 +107,7 @@ final class AppNavigation {
                 try await work(self)
             } catch {
                 guard !Task.isCancelled, !(error is CancellationError) else { return }
-                tabs.rejection = (error as? IntentProblem).map { Problem(title: $0.message) } ?? error.problem
+                pages.rejection = (error as? IntentProblem).map { Problem(title: $0.message) } ?? error.problem
             }
         }
     }
@@ -135,11 +135,15 @@ final class AppNavigation {
             chat.openRoom(id: roomId)
         case .peers:
             opensPeers = true
-            try select(.settings)
+            opensSettings = true
+            presentationRevision += 1
             chat.resetNavigation()
         case let .share(token):
             // `receive` 已经先接走；这里只为别的入口带来的同一个链接。
             shareIn.claim(token)
+        case .settings:
+            opensSettings = true
+            presentationRevision += 1
         }
     }
 
@@ -203,12 +207,8 @@ final class AppNavigation {
     }
 
     private func select(_ tab: TabRef) throws {
-        if tab == .settings, !chat.core.tabs().items.contains(where: { $0.tab == .settings }) {
-            opensSettings = true
-        } else {
-            try tabs.selectForNavigation(tab)
-            opensSettings = false
-        }
+        try pages.openForNavigation(tab)
+        opensSettings = false
         presentationRevision += 1
     }
 }

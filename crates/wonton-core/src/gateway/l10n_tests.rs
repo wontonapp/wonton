@@ -43,6 +43,7 @@ async fn device_languages_are_recorded_under_the_person() {
             display_name: "爱丽丝".into(),
             email: None,
             status: MemberStatus::Joined,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,

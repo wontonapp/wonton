@@ -140,3 +140,5 @@ browser-unknown-address = このアドレスは期限切れです。Wontonに戻
 browser-not-connected = Wontonは今、自宅のサーバーにつながっていません。Wontonに戻り、つながってからこのページを再読み込みしてください。
 
 browser-bad-request = このページはWontonから開いてください。
+pages-storage-problem = マイアプリを保存できませんでした。次回起動時に前の状態に戻るかもしれません：{ $error }
+pages-file-unreadable = この端末のマイアプリを読み込めないため、デフォルト値を使用しています：{ $reason }

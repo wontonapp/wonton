@@ -6,8 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use wonton_client::{
-    Action, Answer, InstalledPlugin, PluginHealth, PluginKind, PluginState, PluginTrust,
-    PluginsViewModel, TabDisplay,
+    Action, Answer, InstalledPlugin, PluginHealth, PluginKind, PluginState, PluginsViewModel,
 };
 
 use super::support::{Home, Phone, WAIT};
@@ -59,7 +58,7 @@ fn plugin() -> InstalledPlugin {
         kind: PluginKind::App,
         runtime: Default::default(),
         icon: None,
-        trust: PluginTrust::Official,
+        trust: wonton_client::PluginTrust::Official,
         source: None,
         provider: None,
         via_index: None,
@@ -68,7 +67,6 @@ fn plugin() -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: None,
-        web_display: TabDisplay::default(),
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),
