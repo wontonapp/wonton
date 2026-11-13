@@ -50,13 +50,65 @@ final class SnapshotTests: XCTestCase {
         assert(SnapshotFixtures.shareSheet(), testName: "testShareSheet", line: #line)
     }
 
+    // 小组件（ADR-0100）：假快照见 SnapshotFixtures.entrySnapshot；尺寸取 iPhone 上常见的档，
+    // 参考图绑定本工作流的模拟器，重录打 record-snapshots 标签。
+    func testWidgetRecentMedium() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .recent, family: .systemMedium),
+            size: CGSize(width: 329, height: 155), testName: "testWidgetRecentMedium", line: #line
+        )
+    }
+
+    func testWidgetRecentInline() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .recent, family: .accessoryInline),
+            size: CGSize(width: 329, height: 48), testName: "testWidgetRecentInline", line: #line
+        )
+    }
+
+    func testWidgetStatusSmall() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .status, family: .systemSmall),
+            size: CGSize(width: 158, height: 158), testName: "testWidgetStatusSmall", line: #line
+        )
+    }
+
+    func testWidgetStatusRectangular() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .status, family: .accessoryRectangular),
+            size: CGSize(width: 155, height: 110), testName: "testWidgetStatusRectangular", line: #line
+        )
+    }
+
+    func testWidgetAskSmall() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .ask, family: .systemSmall),
+            size: CGSize(width: 158, height: 158), testName: "testWidgetAskSmall", line: #line
+        )
+    }
+
+    func testWidgetAskCircular() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .ask, family: .accessoryCircular),
+            size: CGSize(width: 155, height: 155), testName: "testWidgetAskCircular", line: #line
+        )
+    }
+
+    /// 未配对时只写一句“打开云吞完成配对”，点了进 App（ADR-0100 决策 1）。
+    func testWidgetNotPaired() throws {
+        assert(
+            SnapshotFixtures.widget(kind: .recent, family: .systemMedium, account: .notPaired),
+            size: CGSize(width: 329, height: 155), testName: "testWidgetNotPaired", line: #line
+        )
+    }
+
     /// 逐像素比较；系统字体和矢量图标在同一台模拟器上是确定的，放宽精度要写明原因。
-    private func assert(_ view: some View, testName: String, line: UInt) {
+    private func assert(_ view: some View, size: CGSize = SnapshotFixtures.size, testName: String, line: UInt) {
         assertSnapshot(
             of: SnapshotFixtures.wrapped(view),
             as: .image(
                 drawHierarchyInKeyWindow: true,
-                layout: .fixed(width: SnapshotFixtures.size.width, height: SnapshotFixtures.size.height),
+                layout: .fixed(width: size.width, height: size.height),
                 traits: Self.traits
             ),
             testName: testName,

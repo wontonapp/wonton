@@ -118,6 +118,71 @@ enum SnapshotFixtures {
         }
     }
 
+    // MARK: 系统入口（ADR-0100）的小组件
+
+    /// 小组件的假快照，数据同 Android 的 WidgetSnapshotsTest。更新时刻钉在“1 分钟前”：
+    /// 底部相对时间（`Text(date, style: .relative)`）渲染成“1 minute ago”，参考图不随日期漂移。
+    /// 颜色按 ADR-0026 默认浅色的令牌值写死（扩展侧的 Palette 不链接核心，测试替身照抄协议的 JSON）。
+    static func entrySnapshot(account: EntrySnapshot.Account = .signedIn) -> EntrySnapshot {
+        let palette = EntrySnapshot.Palette(
+            surface: EntrySnapshot.RGB(red: 255, green: 255, blue: 255),
+            textPrimary: EntrySnapshot.RGB(red: 17, green: 17, blue: 17),
+            textSecondary: EntrySnapshot.RGB(red: 94, green: 94, blue: 94),
+            accentFill: EntrySnapshot.RGB(red: 254, green: 235, blue: 234),
+            accentInk: EntrySnapshot.RGB(red: 155, green: 73, blue: 74),
+            accentInkOnFill: EntrySnapshot.RGB(red: 155, green: 73, blue: 74)
+        )
+        return EntrySnapshot(
+            version: 1,
+            updatedAtMs: UInt64((Date.now.addingTimeInterval(-90)).timeIntervalSince1970 * 1_000),
+            account: account,
+            unreadTotal: 5,
+            rooms: [
+                EntrySnapshot.Room(
+                    roomId: "!family:home.example", name: "Family", unreadCount: 3,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Ann", isOwn: false,
+                        body: EntrySnapshot.Preview.Body(type: "text", text: "Dinner at seven?", title: nil, state: nil)
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!hermes:home.example", name: "Hermes", unreadCount: 2,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Hermes", isOwn: false,
+                        body: EntrySnapshot.Preview.Body(type: "text", text: "Here's the summary you asked for.", title: nil, state: nil)
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!research:home.example", name: "Research", unreadCount: 0,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Hermes", isOwn: false,
+                        body: EntrySnapshot.Preview.Body(type: "side_chat", text: nil, title: "Research", state: "done")
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!ann:home.example", name: "Ann", unreadCount: 0,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Me", isOwn: true,
+                        body: EntrySnapshot.Preview.Body(type: "text", text: "See you tomorrow", title: nil, state: nil)
+                    )
+                ),
+                EntrySnapshot.Room(roomId: "!trip:home.example", name: "Trip planning", unreadCount: 0, preview: nil),
+            ],
+            defaultAgent: EntrySnapshot.Agent(name: "Hermes", activity: "working", unreadCount: 2),
+            plugins: [EntrySnapshot.Plugin(pluginId: "immich", title: "Immich")],
+            light: palette,
+            dark: palette
+        )
+    }
+
+    static func widget(
+        kind: EntryWidgetView.Kind,
+        family: EntryWidgetView.Family,
+        account: EntrySnapshot.Account = .signedIn
+    ) -> some View {
+        EntryWidgetView(kind: kind, state: .ready(entrySnapshot(account: account)), family: family)
+    }
+
     private static func row(_ item: TimelineItem, core: ClientCore, showsSender: Bool) -> some View {
         TimelineRow(
             item: item, core: core, showsSender: showsSender,

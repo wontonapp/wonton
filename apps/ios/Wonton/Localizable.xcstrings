@@ -2,6 +2,126 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "Open Wonton": {
+      "comment": "Title of the app intent behind the system entry controls (ADR-0100); AppIntents metadata needs a literal key.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Wonton"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开云吞"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開啟雲吞"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wontonを開く"
+          }
+        }
+      }
+    },
+    "Open plugin": {
+      "comment": "Title of the control configuration intent that opens a plugin (ADR-0100).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open plugin"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开插件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開插件"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラグインを開く"
+          }
+        }
+      }
+    },
+    "Plugin": {
+      "comment": "Type name of the plugin entity and the parameter title in the open-plugin control (ADR-0100).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plugin"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "插件"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラグイン"
+          }
+        }
+      }
+    },
+    "Target": {
+      "comment": "Parameter title of the intent that opens a place in Wonton (ADR-0100).",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目標"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターゲット"
+          }
+        }
+      }
+    },
     "app.launchFailed": {
       "comment": "ContentUnavailableView title when the core couldn't start and the app shows no UI.",
       "extractionState": "manual",
