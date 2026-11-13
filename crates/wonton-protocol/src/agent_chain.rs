@@ -2,7 +2,8 @@
 //!
 //! 桥每轮开始时 `POST` [`AGENT_CHAINS_PATH`]，请求体是 [`ChainTurnReport`]，拿到 [`ChainTurnGrant`] 才发给
 //! Agent；被拒时拿到 [`ChainError`]。核心转发 `agent_acp` 连接和模型请求时注入 [`WONTON_CHAIN_HEADER`]
-//! 和上限头，网关改不了。链代表的人和链上各 Bot 的归属人随时能停整条链；停了之后的一切新请求都是
+//! 和上限头，网关改不了。跳与跳之间经 `session/new` 的 `_meta` 传 [`ChainCarrier`]（ADR-0061 第 12 节）。
+//! 链代表的人和链上各 Bot 的归属人随时能停整条链；停了之后的一切新请求都是
 //! [`ChainError::Stopped`]。
 
 use serde::{Deserialize, Serialize};
@@ -113,6 +114,23 @@ pub struct ChainTurnGrant {
     pub chain: String,
     /// 第几层：人直接对话的编排器或第一个 Agent 是第 1 层（ADR-0061 第 10 节）。
     pub layer: u32,
+}
+
+/// ACP `session/new` 的 `_meta` 里传链的键（ADR-0061 第 12 节），值是 [`ChainCarrier`]。和
+/// [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)、第 9 节的 `app.wonton/task` 用同一个 `app.wonton/` 前缀。
+pub const ACP_CHAIN_META_KEY: &str = "app.wonton/chain";
+
+/// 链载体（ADR-0061 第 12 节）：`session/new` 的 `_meta[ACP_CHAIN_META_KEY]`，把链 ID 和已走层数递给
+/// 下一跳，传递方式同 W3C traceparent。核心在发往目标运行时的每个 `session/new` 里注入（`depth` 以核心
+/// 账本算的为准），桥在每轮开头的第一个 `session/new` 里写上 [`ChainTurnGrant`] 的值；编排器类 Agent
+/// 收到后原样带进它再往下的 `session/new`，不认识的 Agent 不带，那一跳当新链。只在核心和网关之间的报文里，
+/// App 壳读不到，不导出 UniFFI。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChainCarrier {
+    /// 链 ID：核心发的 128 位随机串，同 [`ChainTurnGrant::chain`]。
+    pub id: String,
+    /// 已走层数：带这个载体的会话所在的层，人直接对话的是第 1 层（ADR-0061 第 10 节）。
+    pub depth: u32,
 }
 
 /// 为什么不给链。错误响应体就是这个类型，类别和 ADR-0061 第 1 节的能力契约一致。
@@ -358,6 +376,47 @@ mod tests {
             serde_json::from_value::<ChainTurnGrant>(json!(grant)).unwrap(),
             grant
         );
+    }
+
+    /// 契约：载体在 `_meta` 键下的形状稳定，字段和 [`ChainTurnGrant`] 一一对应。
+    #[test]
+    fn a_chain_carrier_has_a_stable_wire_format() {
+        assert_eq!(ACP_CHAIN_META_KEY, "app.wonton/chain");
+        let carrier = ChainCarrier {
+            id: "c-1".into(),
+            depth: 2,
+        };
+        assert_eq!(json!(carrier), json!({"id": "c-1", "depth": 2}));
+        assert_eq!(
+            serde_json::from_value::<ChainCarrier>(json!(carrier)).unwrap(),
+            carrier
+        );
+        let meta = json!({ "app.wonton/chain": { "id": "c-1", "depth": 2 } });
+        assert_eq!(
+            serde_json::from_value::<ChainCarrier>(meta[ACP_CHAIN_META_KEY].clone()).unwrap(),
+            carrier
+        );
+    }
+
+    /// 契约：带进来的值不合法时解码失败，核心据此回 `invalid_input`（ADR-0061 第 12 节），不猜默认值。
+    #[test]
+    fn a_chain_carrier_rejects_malformed_values() {
+        for bad in [
+            json!({}),
+            json!({"id": "c-1"}),
+            json!({"depth": 2}),
+            json!({"id": 7, "depth": 2}),
+            json!({"id": "c-1", "depth": -1}),
+            json!({"id": "c-1", "depth": "2"}),
+            json!({"id": "c-1", "depth": 1.5}),
+            json!({"id": "c-1", "depth": 4_294_967_296u64}),
+            json!("c-1"),
+        ] {
+            assert!(
+                serde_json::from_value::<ChainCarrier>(bad.clone()).is_err(),
+                "应拒绝不合法的载体：{bad}"
+            );
+        }
     }
 
     /// 契约：错误带各自的原因，不认识的类别落到 `Other`，核心比桥新时桥照样解析。
