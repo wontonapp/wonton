@@ -302,6 +302,7 @@ where
                 plugin_id: Some(id.to_string()),
                 secret_inputs: Vec::new(),
                 settings: None,
+                category: None,
             };
             ask_admin(gateway, peer, headers, draft, run)
         }
@@ -331,6 +332,7 @@ fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
         plugin_id: Some(preview.id.clone()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }
 

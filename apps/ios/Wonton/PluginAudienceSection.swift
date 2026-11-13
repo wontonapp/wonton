@@ -18,7 +18,11 @@ struct PluginAudienceSection: View {
                 .disabled(!enabled || audience.choices[index].required)
             }
             if pluginAudienceNotice(view: audience) == .sharedData {
-                WontonNotice(icon: .warning, title: String(localized: .Install.installAudienceSharedData), isError: false)
+                WontonNotice(
+                    icon: .warning,
+                    title: String(localized: .Install.installAudienceSharedData),
+                    isError: false
+                )
             }
         }
     }
@@ -59,7 +63,11 @@ struct InstalledPluginAudience: View {
                 busy = true
                 Task {
                     do {
-                        updated(try await model.core.updatePluginAudience(action: .setPluginAudience(id: id, audience: selected)))
+                        updated(
+                            try await model.core.updatePluginAudience(
+                                action: .setPluginAudience(id: id, audience: selected)
+                            )
+                        )
                         problem = nil
                     } catch { problem = error.problem }
                     busy = false

@@ -192,7 +192,9 @@ struct StoreView: View {
         }
         guard let version = item.installedVersion else {
             let action = storeInstallAction(item: item)
-            let title = action == .requestAdmin ? String(localized: .Install.installRequestAdmin) : String(localized: .Store.storeGet)
+            let title = action == .requestAdmin
+                ? String(localized: .Install.installRequestAdmin)
+                : String(localized: .Store.storeGet)
             return .get(title: title, enabled: action != .blocked) { model.send(.installNow(source: item.source)) }
         }
         if version != item.version {

@@ -517,6 +517,7 @@ fn draft() -> Draft {
         plugin_id: Some(JOURNAL.into()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
     }
 }
 
