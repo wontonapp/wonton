@@ -5,7 +5,7 @@ mod handler;
 pub(super) mod oidc;
 mod request;
 
-pub(super) use guard::{AccessGuard, StreamAccess, guard_body, guard_request};
+pub(super) use guard::{AccessGuard, StreamAccess, guard_request};
 pub use handler::SharingHandler;
 
 use super::{Gateway, Person, pages};

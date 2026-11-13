@@ -140,6 +140,24 @@ impl PluginPackage {
                 return Err(unknown_service_error(langs, field, service.clone()));
             }
         }
+        if let Some((field, service)) = http
+            && self
+                .manifest
+                .bots
+                .iter()
+                .flat_map(|bots| &bots.services)
+                .any(|bot_service| bot_service == service)
+        {
+            return Err(service_error(
+                langs,
+                service,
+                text(
+                    langs,
+                    "plugin-install-pkg-ref-bot-service",
+                    &[("field", field.into())],
+                ),
+            ));
+        }
         crate::plugin::manifest_clients::validate_external_url(
             &self.manifest,
             crate::plugin::manifest_clients::references_external_url(&self.services),

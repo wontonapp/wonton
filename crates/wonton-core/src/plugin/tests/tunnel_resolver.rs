@@ -123,6 +123,8 @@ impl Fixture {
                 oidc_client_secret: None,
                 installed_at: 1,
                 entry_label: None,
+                clients_entries: Default::default(),
+                setup_done_ever: false,
                 origin: None,
                 written_by: None,
                 ask_every_update: false,

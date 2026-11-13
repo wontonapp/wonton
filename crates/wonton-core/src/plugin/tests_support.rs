@@ -56,10 +56,61 @@ impl PluginManager {
             .insert(id, entry);
     }
 
+    /// 测试用：给登记过的插件设客户端入口的开关和标签。开关和标签都存插件记录（ADR-0021），
+    /// 这里走真的记录写入，再唤醒插件表，入口侧的缓存和连接守卫照生产路径刷新。
+    #[cfg(test)]
+    pub(crate) fn clients_entry_for_test(
+        &self,
+        id: &PluginId,
+        label: &str,
+        lan: bool,
+        public: bool,
+    ) {
+        let mut record = self
+            .store
+            .load(id)
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| minimal_record(id));
+        record.entry_label = Some(label.to_owned());
+        record.clients_entries = crate::clients::state::ClientsEntries { lan, public };
+        self.store.save(&record).expect("写测试记录");
+        self.changed();
+    }
+
+    /// 测试用：给登记过的插件设 `clients.http` 的转发地址。生产路径在部署时经 Docker 解析
+    /// （[`Self::clients_upstream`]），测试直接指到本地的假上游。
+    #[cfg(test)]
+    pub(crate) fn clients_route_for_test(
+        &self,
+        id: &PluginId,
+        http: super::manifest_clients::ClientsHttp,
+        upstream: Option<String>,
+    ) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        let entry = plugins.get_mut(id).expect("先 register_for_test");
+        entry.serving.insert(http.service.clone());
+        entry.clients = Some(super::manager::ClientsRoute {
+            http,
+            upstream: upstream.map(Endpoint::Tcp),
+        });
+        drop(plugins);
+        self.changed();
+    }
+
     /// 测试用：读插件的安装记录。
     #[cfg(test)]
     pub(crate) fn record_for_test(&self, id: &PluginId) -> Option<InstalledRecord> {
         self.store.load(id).ok().flatten()
+    }
+
+    /// 测试用：该插件当前部署代是否记着一次完成的 setup 检查。
+    #[cfg(test)]
+    pub(crate) fn setup_done_cached_for_test(&self, id: &PluginId) -> bool {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        plugins
+            .get(id)
+            .is_some_and(|entry| entry.setup.has_done_for_test())
     }
 
     /// 测试用：给登记过的插件塞密钥值，供主人查看接口的测试。
@@ -111,6 +162,46 @@ impl PluginManager {
             .collect();
         drop(plugins);
         self.changed();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clients_status_for_test(&self, id: &PluginId, status: PluginStatus) {
+        let mut plugins = self.plugins.write().expect("插件表锁中毒");
+        plugins.get_mut(id).expect("先 register_for_test").status = status;
+        drop(plugins);
+        self.changed();
+    }
+}
+
+/// 测试用的最小安装记录：只够 `store.save` 落盘和入口侧按标签查到开关。
+#[cfg(test)]
+fn minimal_record(id: &PluginId) -> InstalledRecord {
+    InstalledRecord {
+        lan_webui: false,
+        relays: Vec::new(),
+        firewalled: false,
+        proxied: false,
+        id: id.clone(),
+        version: "1.0.0".into(),
+        source: "services: {}".into(),
+        files: Default::default(),
+        granted_permissions: vec![],
+        enabled_permissions: Vec::new(),
+        limits: Default::default(),
+        oidc_client_secret: None,
+        installed_at: 0,
+        entry_label: None,
+        clients_entries: Default::default(),
+        setup_done_ever: false,
+        origin: None,
+        written_by: None,
+        ask_every_update: false,
+        family: false,
+        settings: Default::default(),
+        settings_changed_ms: None,
+        static_files: Default::default(),
+        hosted: Vec::new(),
+        gpu_vendor: None,
     }
 }
 

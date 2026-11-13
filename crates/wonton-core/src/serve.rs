@@ -98,10 +98,10 @@ pub(super) async fn run_gateway(
                 wonton_core::entry_runtime::router(gateway.clone()),
             )
         }),
-        matrix_rtc.map(|listener| (listener, gateway::matrix_rtc_alias::router(gateway))),
+        matrix_rtc.map(|listener| (listener, gateway::matrix_rtc_alias::router(gateway.clone()))),
     ));
     // 网关开始接了才核对插件：核对时渲染变了会重建容器，里面的一次性服务要经核心的地址访问核心。
-    start_restored_plugins(cfg, &manager, upgrades_after_serve).await?;
+    start_restored_plugins(cfg, &manager, gateway.notices.clone(), upgrades_after_serve).await?;
     // 隧道跟网关同生命周期：网关结束（收到退出信号）后才关。放在核对之后、网关结束之前关，
     // 核心一启动完隧道就没了，手机配不上也连不回家。
     let served = served.await.context("网关任务退出");
@@ -126,11 +126,15 @@ fn spawn_tunnel(
     )
 }
 
-pub(super) fn spawn_plugin_monitors(manager: &Arc<PluginManager>) {
+pub(super) fn spawn_plugin_monitors(
+    manager: &Arc<PluginManager>,
+    notices: Option<Arc<NoticeRoom>>,
+) {
     manager.spawn_lan_monitor();
     manager.spawn_egress_monitor();
     manager.spawn_upgrade_checks();
     manager.spawn_oom_watch();
     manager.spawn_container_watch();
     manager.spawn_mailpit_watch();
+    manager.spawn_clients_setup_watch(notices);
 }
