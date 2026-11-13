@@ -159,6 +159,7 @@ impl PluginManager {
             homepage: m.homepage.clone(),
             repository: origin.map(Origin::repository_url),
             license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             permissions: super::views_permissions::permission_lines(
@@ -168,6 +169,7 @@ impl PluginManager {
                     .map_or(&[][..], |record| &record.enabled_permissions),
                 langs,
             ),
+            widget_capabilities: super::manifest_widget::capabilities(m),
             requirements: Vec::new(),
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
@@ -186,6 +188,7 @@ impl PluginManager {
                         }),
                 )
                 .chain(cross_origin_isolation_notice(m, langs))
+                .chain(super::manifest_widget::manifest_notices(m, langs))
                 .chain(
                     super::egress::provider::provides_proxy(m)
                         .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
@@ -260,18 +263,7 @@ impl PluginManager {
         installed: Option<&InstalledRecord>,
     ) -> Result<InstallPreview, InstallError> {
         super::install_entry::check_runtime(&package.manifest, langs)?;
-        // 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
-        let schema = super::settings::load(package, langs)?;
-        let settings = match &schema {
-            None => None,
-            Some(schema) => {
-                let mut values: std::collections::BTreeMap<String, serde_json::Value> = installed
-                    .map(|record| record.settings.clone())
-                    .unwrap_or_default();
-                super::settings::value::defaults(schema, &mut values);
-                Some(super::settings::install_form(schema, &values, langs))
-            }
-        };
+        let settings = settings_form(package, installed, langs)?;
         let plan = dry_run(package, langs)?;
         let icon = self.check_icon(package, langs).await?;
         if let Some(icon) = &icon {
@@ -298,6 +290,7 @@ impl PluginManager {
         notices.splice(0..0, opening_notices(m, langs));
         notices.extend(requirement_notices(m, &self.host_facts(langs).await, langs));
         notices.extend(self.host_egress_notice(m, langs));
+        notices.extend(super::manifest_widget::manifest_notices(m, langs));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
         // 不挡安装的问题：探测只试了一个网站。
@@ -328,7 +321,10 @@ impl PluginManager {
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),
             author: author(m),
+            license: m.license.clone(),
+            license_url: m.license_url.clone(),
             permissions: super::views_permissions::permission_lines(m, enabled, langs),
+            widget_capabilities: super::manifest_widget::capabilities(m),
             secret_inputs: super::secret_input::lines(m, &|_| false, false, langs),
             settings,
             notices,
@@ -721,6 +717,22 @@ pub(super) fn author(manifest: &Manifest) -> Option<PluginAuthor> {
     })
 }
 
+/// 设置 Schema 先校验：不合格在动资源之前就报。升级时把装着的值填进新 Schema 的表单。
+fn settings_form(
+    package: &PluginPackage,
+    installed: Option<&InstalledRecord>,
+    langs: &Languages,
+) -> Result<Option<wonton_protocol::SettingsForm>, InstallError> {
+    let Some(schema) = super::settings::load(package, langs)? else {
+        return Ok(None);
+    };
+    let mut values = installed
+        .map(|record| record.settings.clone())
+        .unwrap_or_default();
+    super::settings::value::defaults(&schema, &mut values);
+    Ok(Some(super::settings::install_form(&schema, &values, langs)))
+}
+
 /// 记录读不出来的插件：只有列表里的那些信息。
 fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
     PluginDetail {
@@ -745,9 +757,11 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         homepage: None,
         repository: None,
         license: None,
+        license_url: None,
         stars: None,
         release_notes: None,
         permissions: Vec::new(),
+        widget_capabilities: Vec::new(),
         requirements: Vec::new(),
         secret_inputs: Vec::new(),
         has_web: false,

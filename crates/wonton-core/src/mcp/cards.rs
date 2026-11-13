@@ -18,6 +18,7 @@ use crate::files::share_fs::saving::{SaveTarget, StagedFile};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manifest::{LocalizedText, Manifest};
+use crate::plugin::manifest_widget;
 use crate::plugin::privileges::{self, CapabilityRisk};
 use crate::plugin::store::InstalledRecord;
 use crate::plugin::views::{cross_origin_isolation_notice, permission_line};
@@ -183,6 +184,12 @@ pub fn added_lines(
     {
         lines.extend(cross_origin_isolation_notice(manifest, langs));
     }
+    lines.extend(manifest_widget::notices(
+        manifest_widget::added(old.as_ref(), manifest)
+            .iter()
+            .map(|capability| manifest_widget::level(capability)),
+        langs,
+    ));
     let ports = |m: Option<&Manifest>| {
         m.and_then(|m| m.lan.as_ref())
             .map(|lan| lan.ports.iter().map(|p| p.key()).collect::<BTreeSet<_>>())
@@ -239,6 +246,7 @@ pub fn install(
         lines.push(line(l10n::text(langs, "chat-card-permissions-header", &[])));
         lines.extend(permission_lines(manifest, langs));
     }
+    lines.extend(manifest_widget::manifest_notices(manifest, langs));
     Draft {
         title: install_title(requester, manifest, langs),
         lines,
@@ -294,6 +302,7 @@ pub fn agent_install(
         lines.extend(permission_lines(manifest, langs));
     }
     lines.extend(cross_origin_isolation_notice(manifest, langs));
+    lines.extend(manifest_widget::manifest_notices(manifest, langs));
     let always_asks = manifest.permissions.iter().any(|p| {
         matches!(
             privileges::risk(p),

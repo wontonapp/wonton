@@ -204,6 +204,7 @@ impl PluginManager {
             homepage: m.homepage.clone(),
             repository: origin.map(|o| o.repository_url()),
             license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             permissions: m
@@ -211,6 +212,7 @@ impl PluginManager {
                 .iter()
                 .map(|p| permission_line(p, langs))
                 .collect(),
+            widget_capabilities: crate::plugin::manifest_widget::capabilities(m),
             requirements: requirement_checks(m, &facts, langs),
             secret_inputs: Vec::new(),
             has_web: m.webui.is_some(),
@@ -222,6 +224,7 @@ impl PluginManager {
             }),
             notices: cross_origin_isolation_notice(m, langs)
                 .into_iter()
+                .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
                 .chain(
                     dependencies
                         .as_ref()
@@ -280,6 +283,8 @@ impl PluginManager {
             version: m.version.clone(),
             trust: shown.trust,
             author: author(m),
+            license: m.license.clone(),
+            license_url: m.license_url.clone(),
             stars: shown.stars,
             installed_version,
             security_tier: Some(tier),

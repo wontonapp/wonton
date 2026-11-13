@@ -121,20 +121,6 @@ fn board_line(row: &Row, lang: Lang) -> String {
     }
 }
 
-/// 主对话里那行提示：“话题「整理照片目录」：已完成，改了 3 个文件”。
-pub(crate) fn finish_notice(name: &str, files: usize, lang: Lang) -> String {
-    let name = Arg::from(name);
-    if files == 0 {
-        text(lang, "digest-done", &[("name", name)])
-    } else {
-        text(
-            lang,
-            "digest-done-files",
-            &[("name", name), ("files", Arg::from(files.to_string()))],
-        )
-    }
-}
-
 /// 一轮做完时记进变化记录的文字：“谁做完了什么、改了哪些文件”。
 pub(crate) fn turn_done_text(
     name: &str,

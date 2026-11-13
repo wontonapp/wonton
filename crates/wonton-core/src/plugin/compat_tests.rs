@@ -1,7 +1,7 @@
 use super::*;
 use crate::plugin::package_files::PackageFiles;
 
-const FIELDS: &str = "  spec: '0.13'\n  id: app.example.photos\n  version: 1.0.0\n  kind: app\n  \
+const FIELDS: &str = "  spec: '0.14'\n  id: app.example.photos\n  version: 1.0.0\n  kind: app\n  \
                       title: {en: Example}\n  description: {en: Example}\n  permissions: []\n";
 
 /// `extra` 直接放在 `x-wonton:` 下（两格缩进起），`service` 放在服务 `web` 下（四格缩进起）。
@@ -30,7 +30,7 @@ fn a_readable_package_is_ok() {
 
 #[test]
 fn a_newer_spec_is_reported_before_any_field() {
-    let source = compose("  not_a_field: 1\n", "").replacen("spec: '0.13'", "spec: '0.15'", 1);
+    let source = compose("  not_a_field: 1\n", "").replacen("spec: '0.14'", "spec: '0.15'", 1);
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(
@@ -132,7 +132,7 @@ fn an_unreadable_package_breaks_without_blocking_others() {
 
 #[test]
 fn a_manifest_without_spec_is_other() {
-    let source = compose("", "").replacen("  spec: '0.13'\n", "", 1);
+    let source = compose("", "").replacen("  spec: '0.14'\n", "", 1);
     let verdict = judged(&source);
     assert_eq!(verdict.verdict, Verdict::Breaking);
     assert_eq!(

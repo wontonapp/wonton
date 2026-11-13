@@ -1,12 +1,16 @@
 use std::{collections::HashSet, fmt};
 
-use wonton_matrix::{FileContent, ImageContent, Message, MessageBody, OwnedUserId, UserId};
+use wonton_matrix::{
+    FileContent, ImageContent, Message, MessageBody, OwnedUserId, UserId, root_marker,
+};
 
 /// 一条主人消息：文字、附件，或桥不认识的内容。
 #[derive(Clone)]
 pub struct Incoming {
     /// 这条消息的事件 ID；撤回（如转交登录密钥后）要用它。
     pub event_id: String,
+    /// 说话人（Matrix 用户 ID）：轮次登记报给核心（ADR-0061 第 10 节）。
+    pub sender: String,
     /// 所属话题的根消息事件 ID；在主对话里发的消息是 `None`。
     pub thread_root: Option<String>,
     /// 服务器分配的发送时间（Unix 毫秒）；重启后拿它和已读位置比，分辨停机期间的积压。
@@ -23,6 +27,11 @@ pub enum IncomingContent {
     /// `audio`、`video` 或其余的 `other`。
     Unsupported {
         kind: String,
+    },
+    /// 旁聊的根消息（ADR-0093 §1）：带 `app.wonton.side_chat` 的 `m.notice`。不是输入，
+    /// 桥不回应它，只记下标题给话题取名用。
+    SideChatRoot {
+        title: String,
     },
 }
 
@@ -114,15 +123,20 @@ pub fn new_allowed_messages(
                     IncomingContent::Media(MediaAttachment::from_image(image))
                 }
                 MessageBody::File(file) => IncomingContent::Media(MediaAttachment::from_file(file)),
-                MessageBody::Notice(_) | MessageBody::Other { .. } => {
-                    IncomingContent::Unsupported {
+                MessageBody::Notice(_) => match root_marker(&message.custom) {
+                    Some(root) => IncomingContent::SideChatRoot { title: root.title },
+                    None => IncomingContent::Unsupported {
                         kind: unsupported_kind(&message.body).to_owned(),
-                    }
-                }
+                    },
+                },
+                MessageBody::Other { .. } => IncomingContent::Unsupported {
+                    kind: unsupported_kind(&message.body).to_owned(),
+                },
                 MessageBody::Undecryptable | MessageBody::Redacted => return None,
             };
             Some(Incoming {
                 event_id,
+                sender: message.sender.to_string(),
                 thread_root,
                 timestamp_ms: message.timestamp_ms,
                 content,
@@ -158,6 +172,7 @@ mod tests {
             mentions: mentions.iter().map(|user| user.parse().unwrap()).collect(),
             agent_run: None,
             thread_root: None,
+            thread_replies: None,
             edited: false,
             read_by: Vec::new(),
             reply: None,

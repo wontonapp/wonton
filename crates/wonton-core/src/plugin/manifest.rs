@@ -16,6 +16,7 @@ pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
+pub use super::manifest_widget::{MatrixWidget, WidgetEntry};
 use super::provides::Provides;
 pub use super::requirements::{Arch, GpuNeed, Requirements};
 use super::store_info::Author;
@@ -518,6 +519,9 @@ pub struct Manifest {
     pub homepage: Option<String>,
     #[serde(default)]
     pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS）：不在 SPDX 列表里的许可证（`LicenseRef-<名字>`）用它给出处。
+    #[serde(default)]
+    pub license_url: Option<String>,
     /// 插件包里的许可和声明文件。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
@@ -534,6 +538,10 @@ pub struct Manifest {
     pub webui: Option<WebUi>,
     #[serde(default)]
     pub tabs: Option<Vec<ManifestTab>>,
+    /// 插件网页也是 Matrix widget：能在房间的上下文里打开（ADR-0096）。要和 `webui` 一起声明，不能和
+    /// `webui.cross_origin_isolated` 一起。
+    #[serde(default)]
+    pub matrix_widget: Option<MatrixWidget>,
     /// `runtime: static_web` 的静态文件目录和出网白名单（ADR-0080）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub static_web: Option<StaticWebSpec>,
@@ -643,6 +651,7 @@ impl Manifest {
         super::provides::validate(self, langs)?;
         super::capabilities::validate(self, langs)?;
         super::manifest_static::validate(self)?;
+        super::manifest_widget::validate(self)?;
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {

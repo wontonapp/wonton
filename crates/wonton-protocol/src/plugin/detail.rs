@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginRuntime, PluginScope,
@@ -50,13 +51,22 @@ pub struct PluginDetail {
     /// 插件仓库的网页，如 `https://github.com/owner/repo`。
     pub repository: Option<String>,
     /// 插件里那个应用的许可证（SPDX 表达式）。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS），非 SPDX 许可证（`LicenseRef-`）用它给出处。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license_url: Option<String>,
     /// GitHub 星数；不是来自 GitHub 的插件为空。
     pub stars: Option<u32>,
     /// 这个版本的更新说明。
     pub release_notes: Option<String>,
     /// 安装时要授予的权限。
     pub permissions: Vec<PermissionLine>,
+    /// 这个版本的网页能当 Matrix widget 在房间里做什么（ADR-0096）；不是 widget 时为空。
+    #[serde(default)]
+    pub widget_capabilities: Vec<WidgetCapability>,
     /// 对宿主的要求和这台主机满不满足。
     pub requirements: Vec<RequirementLine>,
     /// 主人要填的密钥和填没填（ADR-0064），按清单里的顺序；装着的版本才列，`input` 项才在里面。没有值。

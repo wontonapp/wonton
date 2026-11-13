@@ -318,7 +318,12 @@ async fn more_permissions_need_a_new_confirmation_and_a_moved_tag_a_new_preview(
     release(&github, &wanting);
     m.check_upgrades_now().await;
     let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
-    assert!(offer.permissions_changed);
+    assert!(
+        offer.permissions_changed,
+        "offered {} installed {}",
+        offer.version,
+        version(&m)
+    );
 
     let preview = m
         .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
@@ -525,58 +530,62 @@ async fn a_bundled_default_plugin_is_offered_from_the_official_index() {
 
 #[tokio::test]
 async fn system_plugins_upgrade_from_the_image_and_say_so_when_they_cannot() {
-    let (docker, engine) = FakeDocker::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let m = Arc::new(manager_with(engine, &dir));
-    let system = dir.path().join("system");
-    fs::create_dir_all(system.join("hello")).unwrap();
-    let write = |version: &str, services: &str| {
-        let compose =
-            hello(version, services, "  permissions: []\n").replace("kind: app", "kind: system");
-        fs::write(system.join("hello/docker-compose.yml"), compose).unwrap();
-    };
-    write("1.0.0", "");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    assert_eq!(version(&m), "1.0.0");
-    let err = m
-        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
-        .await
-        .unwrap_err();
-    assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
+    // 这个 async 块在 debug 构建里很大，2 MiB 的测试线程栈放不下（溢出过一次），放堆上跑。
+    Box::pin(async {
+        let (docker, engine) = FakeDocker::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let m = Arc::new(manager_with(engine, &dir));
+        let system = dir.path().join("system");
+        fs::create_dir_all(system.join("hello")).unwrap();
+        let write = |version: &str, services: &str| {
+            let compose = hello(version, services, "  permissions: []\n")
+                .replace("kind: app", "kind: system");
+            fs::write(system.join("hello/docker-compose.yml"), compose).unwrap();
+        };
+        write("1.0.0", "");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        assert_eq!(version(&m), "1.0.0");
+        let err = m
+            .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), "unsupported", "接口升不了系统插件：{err}");
 
-    let worker = container_name("app-hello", "worker");
-    docker.set_state(
-        &worker,
-        json!({"Status": "exited", "Running": false, "ExitCode": 1}),
-    );
-    write("1.1.0", "  worker:\n    image: worker:1\n");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
-    assert_eq!(plugin.version, "1.0.0");
-    assert!(matches!(plugin.status, PluginState::Running { .. }));
-    assert!(
-        {
-            // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
-            let prefix = super::message(
-                "plugin-settings-upgrade-bundled-failed",
-                &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
-            );
-            let prefix = prefix
-                .strip_suffix(": ")
-                .or_else(|| prefix.strip_suffix("："))
-                .unwrap_or(&prefix);
-            plugin.notices[0].text.contains(prefix)
-        },
-        "{:?}",
-        plugin.notices
-    );
+        let worker = container_name("app-hello", "worker");
+        docker.set_state(
+            &worker,
+            json!({"Status": "exited", "Running": false, "ExitCode": 1}),
+        );
+        write("1.1.0", "  worker:\n    image: worker:1\n");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+        assert_eq!(plugin.version, "1.0.0");
+        assert!(matches!(plugin.status, PluginState::Running { .. }));
+        assert!(
+            {
+                // 原因里有动态的出错详情，钉住前缀就够：版本、还在跑的版本和“下次启动再试”。
+                let prefix = super::message(
+                    "plugin-settings-upgrade-bundled-failed",
+                    &[("version", "1.1.0"), ("from", "1.0.0"), ("error", "")],
+                );
+                let prefix = prefix
+                    .strip_suffix(": ")
+                    .or_else(|| prefix.strip_suffix("："))
+                    .unwrap_or(&prefix);
+                plugin.notices[0].text.contains(prefix)
+            },
+            "{:?}",
+            plugin.notices
+        );
 
-    write("1.2.0", "");
-    m.ensure_system(&system, Backoff::default()).await.unwrap();
-    let plugin = m.installed_plugin(&id(), &zh()).unwrap();
-    assert_eq!(plugin.version, "1.2.0");
-    assert!(plugin.notices.is_empty(), "{:?}", plugin.notices);
-    assert_eq!(image(&docker, &web()), "web:1.2.0");
+        write("1.2.0", "");
+        m.ensure_system(&system, Backoff::default()).await.unwrap();
+        let plugin = m.installed_plugin(&id(), &zh()).unwrap();
+        assert_eq!(plugin.version, "1.2.0");
+        assert!(plugin.notices.is_empty(), "{:?}", plugin.notices);
+        assert_eq!(image(&docker, &web()), "web:1.2.0");
+    })
+    .await;
 }
 
 /// 核心升级后读不懂旧记录（清单新增了必填字段，插件版本号却没变）：接口重装不了系统插件，升级要先读旧包也走不通。
@@ -722,4 +731,76 @@ async fn always_allow_stays_through_an_upgrade_and_the_preview_lists_it() {
         .await
         .unwrap();
     assert!(preview.always_allowed.is_empty());
+}
+
+/// widget 能力变多：新版本的提示要主人重新确认（和权限变多是同一条路），预览里标出多出来的那项。
+#[tokio::test]
+async fn more_widget_capabilities_ask_the_owner_again() {
+    // 网页入口的健康检查真的连这个端口，要有东西听着。
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().fallback(|| async { "ok" }))
+            .await
+            .unwrap();
+    });
+    let widget = |capabilities: &[&str]| {
+        let mut yaml = format!(
+            "  permissions: []\n  webui: {{service: web, port: {port}}}\n  matrix_widget:\n    url: /room\n    capabilities:\n"
+        );
+        for capability in capabilities {
+            yaml.push_str(&format!("      - {capability}\n"));
+        }
+        yaml
+    };
+    let transports = "org.matrix.msc4515.rtc_transports";
+    let messages = "org.matrix.msc2762.receive.event:m.room.message";
+    let (github, _docker, m, _dir) = with_github(false).await;
+    release(&github, &hello("1.0.0", "", &widget(&[transports])));
+    install(&m, SOURCE).await;
+
+    release(&github, &hello("1.1.0", "", &widget(&[transports])));
+    assert_eq!(m.check_upgrades_now().await, None);
+    assert!(
+        !m.installed_plugin(&id(), &zh())
+            .unwrap()
+            .upgrade
+            .unwrap()
+            .permissions_changed,
+        "能力没变不用再确认"
+    );
+
+    release(
+        &github,
+        &hello("1.2.0", "", &widget(&[transports, messages])),
+    );
+    assert_eq!(m.check_upgrades_now().await, None);
+    let offer = m.installed_plugin(&id(), &zh()).unwrap().upgrade.unwrap();
+    assert!(
+        offer.permissions_changed,
+        "offered {} installed {}",
+        offer.version,
+        version(&m)
+    );
+
+    let preview = m
+        .preview_upgrade(&id(), UpgradeTo::Offered, &zh())
+        .await
+        .unwrap();
+    let added: Vec<_> = preview
+        .widget_capabilities
+        .iter()
+        .filter(|capability| capability.added)
+        .collect();
+    assert_eq!(added.len(), 1, "{:?}", preview.widget_capabilities);
+    assert_eq!(added[0].capability, messages);
+    assert_eq!(added[0].level, wonton_protocol::WidgetCapabilityLevel::High);
+    assert!(
+        preview.notices.iter().any(|notice| notice.emphasis),
+        "{:?}",
+        preview.notices
+    );
+
+    upgrade(&m).await.unwrap();
+    assert_eq!(version(&m), "1.2.0");
 }

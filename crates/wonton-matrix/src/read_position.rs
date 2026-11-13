@@ -6,9 +6,13 @@ use tokio::sync::broadcast;
 use crate::ChatRoom;
 
 impl ChatRoom {
-    /// 本账号在这个房间的未读条数，和聊天列表那一行是同一个数。
-    pub fn unread_messages(&self) -> u64 {
-        self.room.num_unread_messages()
+    /// 本账号在这条时间线上的未读条数：主对话按 `main` 回执算（话题回复不算），话题按它自己的话题回执算
+    /// （ADR-0093 §4）。
+    pub async fn unread_messages(&self) -> u64 {
+        match self.thread_root() {
+            Some(root) => self.thread_activity(root).await.unread,
+            None => self.room.num_unread_messages(),
+        }
     }
 
     /// 房间信息（未读数、已读回执）变了时醒一次。所有房间的更新都送到这里，按房间 ID 过滤。

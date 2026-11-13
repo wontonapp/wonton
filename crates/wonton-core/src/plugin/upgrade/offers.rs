@@ -126,11 +126,14 @@ impl Upgrades {
 fn offer_of(manifest: &Manifest, record: &InstalledRecord) -> Offer {
     let granted = &record.granted_permissions;
     let wanted = &manifest.permissions;
+    // 装着的清单读不出来时，这个版本要的能力都算变多了。
+    let installed = PluginPackage::manifest_of(&record.source, &Languages::default()).ok();
     Offer {
         version: manifest.version.clone(),
         release_notes: manifest.release_notes.clone(),
         permissions_changed: wanted.len() != granted.len()
-            || wanted.iter().any(|p| !granted.contains(p)),
+            || wanted.iter().any(|p| !granted.contains(p))
+            || !super::super::manifest_widget::added(installed.as_ref(), manifest).is_empty(),
     }
 }
 

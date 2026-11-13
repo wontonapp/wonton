@@ -29,6 +29,8 @@ pub trait Room: Send + Sync + 'static {
     fn send_thread_text(&self, root: &str, text: &str) -> impl Future<Output = Result<()>> + Send;
     /// 发一条不推送的 `m.notice`。
     fn send_notice(&self, text: &str) -> impl Future<Output = Result<()>> + Send;
+    /// 发一条构造好的旁聊结果行（ADR-0093：内容自带指向话题根的回复关系和自定义字段）。
+    fn send_side_chat_result(&self, content: Value) -> impl Future<Output = Result<()>> + Send;
     /// 发一条构造好的 Agent 进度状态消息（ADR-0082：内容自带话题关系），返回事件 ID。
     fn send_run_status(&self, content: Value) -> impl Future<Output = Result<String>> + Send;
     /// 用 `m.replace` 编辑一条已发出的状态消息（内容里已带 `m.relates_to`）。
@@ -87,6 +89,10 @@ impl<R: Room> Room for std::sync::Arc<R> {
 
     async fn send_notice(&self, text: &str) -> Result<()> {
         (**self).send_notice(text).await
+    }
+
+    async fn send_side_chat_result(&self, content: Value) -> Result<()> {
+        (**self).send_side_chat_result(content).await
     }
 
     async fn send_run_status(&self, content: Value) -> Result<String> {
@@ -171,6 +177,11 @@ impl Room for ChatRoom {
 
     async fn send_notice(&self, text: &str) -> Result<()> {
         Ok(ChatRoom::send_notice(self, text).await?)
+    }
+
+    async fn send_side_chat_result(&self, content: Value) -> Result<()> {
+        ChatRoom::send_message_event(self, content).await?;
+        Ok(())
     }
 
     async fn send_run_status(&self, content: Value) -> Result<String> {

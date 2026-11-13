@@ -97,11 +97,14 @@ impl Topics {
     /// 拿动态拼提示词，再调这里登记“在做什么”。新话题由此入场；活跃话题已满时返回
     /// [`TurnStart::Queued`]，这时不要发提示词，把首条消息留着，等
     /// [`Topics::poll_admission`] 放行后再发。
+    // 参数是同一轮登记的各个面（消息、事件、说话人、附件、语言），合成一个结构再拆开反而绕。
+    #[allow(clippy::too_many_arguments)]
     pub async fn turn_started(
         &mut self,
         key: &SessionKey,
         prompt: &str,
         run: &str,
+        sender: &str,
         media: Option<&crate::bridge::attachments::PreparedAttachment>,
         now: SystemTime,
         lang: Lang,
@@ -127,6 +130,7 @@ impl Topics {
             };
             row.pending_prompt = (!started).then(|| prompt.to_owned());
             row.pending_run = (!started).then(|| run.to_owned());
+            row.pending_sender = (!started).then(|| sender.to_owned());
             row.pending_media = (!started).then(|| media.cloned()).flatten();
             row.last_seen_seq = base;
             started
@@ -152,6 +156,7 @@ impl Topics {
                 last_activity: now,
                 pending_prompt: (!admit).then(|| prompt.to_owned()),
                 pending_run: (!admit).then(|| run.to_owned()),
+                pending_sender: (!admit).then(|| sender.to_owned()),
                 pending_media: (!admit).then(|| media.cloned()).flatten(),
                 is_task: false,
             });
@@ -292,9 +297,9 @@ impl Topics {
     }
 
     /// 一轮结束（ACP prompt 调用返回）时调：记结论、给改文件记录盖章（结束后再保留
-    /// 10 分钟）、状态放回“空闲”。话题会话返回主对话里那行 notice 的文字；主对话
-    /// 返回 `None`（它的结论由话题的下一轮动态带上，不往话题里发）。排队中的话题
-    /// 没跑过轮，接到这个调用时忽略。
+    /// 10 分钟）、状态放回“空闲”。话题会话返回主对话里结果行（ADR-0093）要用的标题；
+    /// 主对话返回 `None`（它的结论由话题的下一轮动态带上，不往话题里发）。排队中的
+    /// 话题没跑过轮，接到这个调用时忽略。
     pub async fn turn_finished(
         &mut self,
         key: &SessionKey,
@@ -326,11 +331,25 @@ impl Topics {
                 false,
             );
         }
-        let notice = key
-            .is_topic()
-            .then(|| digest::finish_notice(&name, files.len(), lang));
+        let title = key.is_topic().then_some(name);
         self.board.persist().await?;
-        Ok(notice)
+        Ok(title)
+    }
+
+    /// 话题第一轮开始时把工作板上的名字定为 ADR-0093 §1 的标题（根消息带标题字段用
+    /// 它，否则取根正文第一行的前 20 个字符）。没有这个会话的行就不动。
+    pub async fn set_name(&mut self, key: &SessionKey, name: &str) -> Result<()> {
+        let changed = match self.board.row_mut(key) {
+            Some(row) if row.name != name => {
+                row.name = name.to_owned();
+                true
+            }
+            _ => false,
+        };
+        if changed {
+            self.board.persist().await?;
+        }
+        Ok(())
     }
 
     /// 编排器发来任务事件时调：任务话题入场（第一次）并登记工作板，不受活跃话题上限管。
@@ -352,6 +371,7 @@ impl Topics {
                 last_activity: stamp(now),
                 pending_prompt: None,
                 pending_run: None,
+                pending_sender: None,
                 pending_media: None,
                 is_task: true,
             });
@@ -449,14 +469,16 @@ impl Topics {
     }
 
     /// 有话题结束之后调（[`Topics::end`] 返回 true、[`Topics::sweep`] 非空）：名额有
-    /// 空就放最老的排队话题进来，返回它的会话键、首条消息和那条消息的事件 ID（状态
-    /// 消息的 `run`）；第 2 步拼上开局说明和动态再发提示词。没有返回值就继续等。
+    /// 空就放最老的排队话题进来，返回它的会话键、首条消息、那条消息的事件 ID（状态
+    /// 消息的 `run`）和说话人（轮次登记报给核心）；第 2 步拼上开局说明和动态再发提示词。
+    /// 没有返回值就继续等。
     pub async fn poll_admission(
         &mut self,
         now: SystemTime,
     ) -> Result<
         Option<(
             SessionKey,
+            String,
             String,
             String,
             Option<crate::bridge::attachments::PreparedAttachment>,

@@ -9,9 +9,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomRow
 import app.wonton.protocol.TabRef
 
 /**
@@ -19,13 +21,33 @@ import app.wonton.protocol.TabRef
  * [selectTab] 和房间一起换，不然中间会闪一下聊天列表。
  */
 class ChatNavigation(
-    openRoom: MutableState<String?>,
+    private val openRoomState: MutableState<String?>,
+    sideChat: MutableState<String?>,
     returnTab: MutableState<TabRef?>,
     showingBackup: MutableState<Boolean>,
     startingChat: MutableState<Boolean>,
     private val selectTab: (TabRef) -> Unit,
 ) {
-    var openRoom by openRoom
+    /** 开着的房间。换房间时旁聊和这个房间的一次性提示一起清掉。 */
+    var openRoom: String?
+        get() = openRoomState.value
+        set(value) {
+            if (value != openRoomState.value) {
+                sideChat = null
+                composingSideChat = false
+                noSideChatsRoom = null
+            }
+            openRoomState.value = value
+        }
+
+    /** 开着的房间里开着的旁聊（根的事件 ID，ADR-0093）；为空是主对话。主对话在它下面照常订阅着。 */
+    var sideChat by sideChat
+
+    /** 进房间就弹开新旁聊的面板：“新建聊天”选了支持旁聊的 AI（ADR-0093 §4）。 */
+    var composingSideChat by mutableStateOf(false)
+
+    /** “新建聊天”选的 AI 不支持旁聊、打开的是主对话：这个房间里提示一句（ADR-0093 §7）。 */
+    var noSideChatsRoom by mutableStateOf<String?>(null)
     private var returnTab by returnTab
     var showingBackup by showingBackup
     var startingChat by startingChat
@@ -40,6 +62,9 @@ class ChatNavigation(
     /** 要打开的房间，同步到了再打开：点通知冷启动时，会话还没恢复。 */
     private var awaitedRoom: String? = null
 
+    /** 和 [awaitedRoom] 一起：通知来自旁聊时，房间打开后进这个旁聊。 */
+    private var awaitedSideChat: String? = null
+
     /** 发起了私聊，房间还没出现。 */
     val isOpeningChat get() = awaitedPeer != null
 
@@ -53,20 +78,49 @@ class ChatNavigation(
     fun reset() {
         awaitedPeer = null
         awaitedRoom = null
+        awaitedSideChat = null
         openRoom = null
         returnTab = null
         showingBackup = false
         startingChat = false
     }
 
-    /** 打开 [roomId]。这时还没有同步到它的话，等它出现。 */
-    fun openWhenJoined(core: ClientCore, roomId: String) {
+    /** 打开 [roomId]，[sideChatRoot] 不为空时进这个旁聊。这时还没有同步到它的话，等它出现。 */
+    fun openWhenJoined(core: ClientCore, roomId: String, sideChatRoot: String? = null) {
         awaitedPeer = null
         openRoom = null
         returnTab = null
         awaitedRoom = roomId
+        awaitedSideChat = sideChatRoot
         onUpdate(core.chat())
         selectTab(TabRef.Chat)
+    }
+
+    /** 进 [roomId] 里的旁聊 [root]；房间已经开着时只换上旁聊，主对话不重新订阅。 */
+    fun openSideChat(roomId: String, root: String) {
+        openRoom = roomId
+        sideChat = root
+        composingSideChat = false
+    }
+
+    /**
+     * “新建聊天”选了 [contact]（ADR-0093 §4）：有能开旁聊的私聊就进去弹开新旁聊的面板；已经有和这个 AI 的私聊、
+     * 但它不支持旁聊，打开主对话并提示一句；其余照旧发起或打开私聊。[isBot] 判断已有私聊的对方是不是 AI。
+     */
+    fun startChatWith(core: ClientCore, contact: ChatContact, isBot: (RoomRow) -> Boolean): Problem? {
+        val sideChatRoom = contact.sideChatRoomId
+        if (sideChatRoom != null) {
+            awaitedPeer = null
+            awaitedRoom = null
+            show(sideChatRoom, TabRef.Chat)
+            composingSideChat = true
+            return null
+        }
+        val rejection = openDirectChat(core, contact.userId)
+        val room = openRoom
+        val row = core.chat().rooms.firstOrNull { it.roomId == room }
+        if (rejection == null && row != null && isBot(row)) noSideChatsRoom = room
+        return rejection
     }
 
     /**
@@ -121,6 +175,8 @@ class ChatNavigation(
         if (awaited != null && viewModel.rooms.any { it.roomId == awaited && it.membership == RoomMembership.JOINED }) {
             awaitedRoom = null
             openRoom = awaited
+            sideChat = awaitedSideChat
+            awaitedSideChat = null
         }
         val peer = awaitedPeer ?: return
         val room = viewModel.rooms.firstOrNull { it.directUserId == peer && it.membership == RoomMembership.JOINED }
@@ -138,8 +194,9 @@ class ChatNavigation(
 @Composable
 fun rememberChatNavigation(selectTab: (TabRef) -> Unit): ChatNavigation {
     val openRoom = rememberSaveable { mutableStateOf<String?>(null) }
+    val sideChat = rememberSaveable { mutableStateOf<String?>(null) }
     val returnTab = remember { mutableStateOf<TabRef?>(null) }
     val showingBackup = rememberSaveable { mutableStateOf(false) }
     val startingChat = rememberSaveable { mutableStateOf(false) }
-    return remember { ChatNavigation(openRoom, returnTab, showingBackup, startingChat, selectTab) }
+    return remember { ChatNavigation(openRoom, sideChat, returnTab, showingBackup, startingChat, selectTab) }
 }

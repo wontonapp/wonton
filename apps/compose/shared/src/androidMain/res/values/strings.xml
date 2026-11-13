@@ -107,4 +107,40 @@
     <string name="widget_updated_at">Updated %1$s</string>
     <!-- Agent status widget's second line. Arguments: the agent's state (e.g. Working), then a time like 14:05 when it was last written. -->
     <string name="widget_status_at">%1$s · %2$s</string>
+    <!-- Title of a side chat page while its title is loading. -->
+    <string name="side_chat">Side chat</string>
+    <!-- Top bar button in a chat with an AI that supports side chats; also the title of the sheet it opens. -->
+    <string name="side_chat_new">New side chat</string>
+    <!-- Placeholder of the first message field when starting a side chat. -->
+    <string name="side_chat_placeholder">What do you want to talk about?</string>
+    <!-- One-line result of a side chat in the main chat. Arguments: side chat title, its state (one of the side_chat_state_* strings). -->
+    <string name="side_chat_result_line">Side chat “%1$s”: %2$s</string>
+    <!-- Side chat state: no result yet. -->
+    <string name="side_chat_state_open">In progress</string>
+    <!-- Side chat state: the AI finished this round. -->
+    <string name="side_chat_state_done">Done</string>
+    <!-- Side chat state: this round failed or was interrupted. -->
+    <string name="side_chat_state_failed">Didn\'t finish</string>
+    <!-- Side chat state: the side chat was closed. -->
+    <string name="side_chat_state_ended">Ended</string>
+    <!-- Side chat state: the AI replied but never reported a result. -->
+    <string name="side_chat_state_result_missing">No result received</string>
+    <!-- Light hint on a side chat whose AI doesn't report results. -->
+    <string name="side_chat_state_untracked">Results won\'t come back to the main chat</string>
+    <!-- Side chat state this app version doesn't know. -->
+    <string name="side_chat_state_other">Unknown status</string>
+    <!-- One-line hint when New chat picked an AI that can't start side chats and the main chat opened instead. -->
+    <string name="side_chat_unsupported">This AI doesn\'t support side chats</string>
+    <!-- Shown when pasting a file inside a side chat. -->
+    <string name="side_chat_no_files">Files can\'t be sent in a side chat. Send them in the main chat.</string>
+    <!-- Card line for a side chat in the main chat. Argument: number of replies. -->
+    <plurals name="side_chat_replies">
+        <item quantity="one">Side chat · %1$d reply</item>
+        <item quantity="other">Side chat · %1$d replies</item>
+    </plurals>
+    <!-- Accessibility label of the unread badge on a side chat card. Argument: unread count. -->
+    <plurals name="side_chat_unread">
+        <item quantity="one">%1$d unread</item>
+        <item quantity="other">%1$d unread</item>
+    </plurals>
 </resources>

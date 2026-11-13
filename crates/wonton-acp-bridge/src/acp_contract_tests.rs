@@ -12,6 +12,7 @@ use agent_client_protocol::schema as acp;
 use super::*;
 use crate::acp::test_support::*;
 use crate::l10n::zh;
+use wonton_protocol::ORIGIN_ROOM_HEADER;
 
 fn as_official<T: DeserializeOwned>(value: &Value) -> T {
     serde_json::from_value(value.clone())
