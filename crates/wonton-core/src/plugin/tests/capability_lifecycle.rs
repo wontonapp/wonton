@@ -145,7 +145,7 @@ async fn restore_recovers_provider_credentials_before_a_required_consumer() {
     ));
     assert_eq!(
         restored
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await
             .ok()
             .unwrap()
@@ -181,7 +181,7 @@ async fn provider_recovery_reissues_keys_once_and_does_not_mutate_consumer_conta
     ));
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
@@ -243,7 +243,7 @@ async fn stopping_an_optional_provider_only_adds_a_hint_without_rebuilding_the_c
     );
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
@@ -278,7 +278,7 @@ async fn late_high_privilege_third_party_provider_waits_for_explicit_owner_conne
         .unwrap();
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), capability, &langs())
+            .capability_route(&id("app.a-consumer"), capability, &langs(), None)
             .await,
         Err(CapabilityAccessError::Denied)
     ));
@@ -287,7 +287,7 @@ async fn late_high_privilege_third_party_provider_waits_for_explicit_owner_conne
     restored.restore().await.unwrap();
     assert!(matches!(
         restored
-            .capability_route(&id("app.a-consumer"), capability, &langs())
+            .capability_route(&id("app.a-consumer"), capability, &langs(), None)
             .await,
         Err(CapabilityAccessError::Denied)
     ));
@@ -305,7 +305,7 @@ async fn late_high_privilege_third_party_provider_waits_for_explicit_owner_conne
         .unwrap();
     assert_eq!(
         restored
-            .capability_route(&id("app.a-consumer"), capability, &langs())
+            .capability_route(&id("app.a-consumer"), capability, &langs(), None)
             .await
             .unwrap()
             .provider,
@@ -334,7 +334,7 @@ async fn consumer_uninstall_revokes_credentials_and_reinstall_gets_a_new_key() {
     assert!(keys.lock().unwrap().is_empty());
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await,
         Err(CapabilityAccessError::Denied)
     ));
@@ -374,7 +374,7 @@ async fn failed_provider_recovery_reports_unavailability_then_reuses_the_durable
     ));
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
@@ -387,7 +387,7 @@ async fn failed_provider_recovery_reports_unavailability_then_reuses_the_durable
     ));
     assert!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await
             .is_ok()
     );
@@ -419,7 +419,7 @@ async fn provider_uninstall_revokes_optional_consumers_keys_before_removing_cont
     ));
     assert!(matches!(
         manager
-            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs())
+            .capability_route(&id("app.a-consumer"), "x-acme.search", &langs(), None)
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
