@@ -67,8 +67,9 @@ async fn official_sdk_roundtrip() {
                 .get("--wonton-accent-fill")
                 .is_none()
         );
+        // 应用一律整页打开（ADR-0095）：要 inline 也照样铺满，宿主如实回报 fullscreen。
         let inline = driver.command("requestDisplayMode", json!({"mode":"inline"}));
-        assert_eq!(inline["result"]["mode"], "inline");
+        assert_eq!(inline["result"]["mode"], "fullscreen");
         driver.environment.dark = false;
         driver.update_context();
         assert_eq!(
