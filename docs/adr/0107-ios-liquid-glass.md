@@ -1,4 +1,4 @@
-# ADR-0105 iOS 26 采用 Liquid Glass，旧系统使用材质，Android 保持 Material
+# ADR-0107 iOS 26 采用 Liquid Glass，旧系统使用材质，Android 保持 Material
 
 - 状态：已接受（2026-11-13）
 - 部分取代：[ADR-0029](0029-platform-material.md) 中“iOS 栏一律自排以保持 17 到 26 外观一致”“不采用 glassEffect”的选择，以及仅用 Material 的 iOS 导航/控制层外观；[ADR-0033](0033-plugin-tabs.md) 的插件出口胶囊淡黑底规定。
