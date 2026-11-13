@@ -10,7 +10,8 @@ use super::super::entry::Health;
 use super::super::entry::PluginStatus;
 use super::super::install_hosted::{effective_status, hosted_capability, provider_in};
 use super::super::install_storage::storage_need;
-use super::super::manifest::{LocalizedText, PluginId, Sso};
+use super::super::manifest::{LocalizedText, Manifest, PluginId, Sso};
+use super::super::manifest_clients::ClientsHttp;
 use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
@@ -26,6 +27,15 @@ pub struct PluginView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<Health>,
     pub url: Option<String>,
+}
+
+/// 客户端入口（ADR-0021）网关转发要的东西：清单的 `clients.http` 原文和解析出的转发地址。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientsRoute {
+    /// 清单的 `clients.http`：开关之外的检查（路径规则、auth、auth_failures）都按它来。
+    pub http: ClientsHttp,
+    /// 核心访问 `clients.http.service` 的地址；服务容器不在（插件没运行）时为空。
+    pub upstream: Option<Endpoint>,
 }
 
 /// 网关查询用的路由信息。
@@ -45,6 +55,8 @@ pub struct Route {
     pub oidc_callback: bool,
     /// 托管插件（ADR-0080）：`upstream` 是提供方，网关还要带上插件 ID、加按清单算的响应头。
     pub hosted: Option<HostedRoute>,
+    /// 声明了 `clients.http` 时的客户端入口（ADR-0021）；没声明时为空。
+    pub clients: Option<ClientsRoute>,
 }
 
 /// 网关转发托管插件的请求要的东西。
@@ -76,6 +88,26 @@ fn oidc_callback(entry: &Entry, path: &str) -> bool {
         .is_some_and(|client| client.redirect_paths.iter().any(|p| p == path))
 }
 
+/// 清单声明了 `clients.http` 就给路由；转发地址用部署时解析的那个，清单变了就当没解析出来，
+/// 等重新部署（ADR-0021 的开关关着不在这里看：开关在插件记录里，入口侧自己查）。
+fn clients_route(manifest: Option<&Manifest>, entry: &Entry) -> Option<ClientsRoute> {
+    let http = manifest?.clients.as_ref()?.http.clone()?;
+    Some(ClientsRoute {
+        upstream: entry
+            .clients
+            .as_ref()
+            .filter(|resolved| resolved.http == http)
+            .filter(|_| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                ) && entry.serving.contains(&http.service)
+            })
+            .and_then(|resolved| resolved.upstream.clone()),
+        http,
+    })
+}
+
 impl PluginManager {
     pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
         let langs = self.owner_languages();
@@ -104,6 +136,7 @@ impl PluginManager {
                             .and_then(|p| p.endpoint),
                     }),
                 }),
+                clients: clients_route(manifest, entry),
             });
         }
         Some(Route {
@@ -123,6 +156,7 @@ impl PluginManager {
             proxy: entry.proxy.clone(),
             oidc_callback: oidc_callback(entry, path),
             hosted: None,
+            clients: clients_route(manifest, entry),
         })
     }
 

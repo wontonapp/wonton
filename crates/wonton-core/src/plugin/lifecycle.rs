@@ -234,6 +234,7 @@ impl PluginManager {
             hosted: self
                 .hosted_upstreams(&package.manifest, &plan.network)
                 .await?,
+            clients: self.clients_upstream(manifest, &plan).await?,
         })
     }
 
@@ -265,6 +266,8 @@ impl PluginManager {
             oidc_client_secret: oidc_secret,
             installed_at: super::manager::now_secs(),
             entry_label: self.install_entry_label(&manifest.id)?,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: package.origin.clone(),
             written_by: None,
             ask_every_update: false,

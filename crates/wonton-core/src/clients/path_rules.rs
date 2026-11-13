@@ -74,27 +74,42 @@ struct Candidate {
     literal: String,
 }
 
+/// 用同一套分段规则规范化声明和候选；保留 `;` 的版本供 allow 判字面路径。
+fn normalized_segments(path: &str, strip: bool) -> impl Iterator<Item = &str> {
+    path.split(['/', '\\'])
+        .map(move |segment| {
+            if strip {
+                strip_params(segment)
+            } else {
+                segment
+            }
+        })
+        .filter(|segment| !segment.is_empty())
+}
+
+fn normalize_path(path: &str, strip: bool) -> String {
+    let mut normalized = String::with_capacity(path.len().max(1));
+    for segment in normalized_segments(path, strip) {
+        normalized.push('/');
+        normalized.extend(segment.chars().flat_map(char::to_lowercase));
+    }
+    if normalized.is_empty() {
+        normalized.push('/');
+    }
+    normalized
+}
+
 /// 三份解码各自 `\` 换成 `/`、去掉段里的 `;`、合并 `//`、转小写，结果以 `/` 开头。
 fn candidates_with_params(raw_path: &str) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = Vec::new();
     for decoding in decodings(raw_path) {
-        let mut stripped = Vec::new();
-        let mut literal = Vec::new();
-        for segment in decoding.split(['/', '\\']) {
-            if segment.is_empty() {
-                continue;
-            }
-            stripped.push(strip_params(segment).to_lowercase());
-            literal.push(segment.to_lowercase());
-        }
         let candidate = Candidate {
-            stripped: format!("/{}", stripped.join("/")),
-            literal: format!("/{}", literal.join("/")),
+            stripped: normalize_path(&decoding, true),
+            literal: normalize_path(&decoding, false),
         };
-        if !candidates
-            .iter()
-            .any(|existing| existing.stripped == candidate.stripped)
-        {
+        if !candidates.iter().any(|existing| {
+            existing.stripped == candidate.stripped && existing.literal == candidate.literal
+        }) {
             candidates.push(candidate);
         }
     }
@@ -103,18 +118,49 @@ fn candidates_with_params(raw_path: &str) -> Vec<Candidate> {
 
 /// 三份规范化后的候选，已去重；`allow` 之外只用这一份。
 pub fn candidates(raw_path: &str) -> Vec<String> {
-    candidates_with_params(raw_path)
-        .into_iter()
-        .map(|candidate| candidate.stripped)
-        .collect()
+    let mut candidates = Vec::new();
+    for decoding in decodings(raw_path) {
+        let candidate = normalize_path(&decoding, true);
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+/// 原始路径及最多两次解码中，字面或去点段后可能触及 `/_wonton` 的请求都归核心。
+/// 不改变普通路径的点段准入策略；大小写、分隔符和路径参数沿用入口匹配规则。
+pub fn is_reserved_path(raw_path: &str) -> bool {
+    decodings(raw_path).iter().any(|decoding| {
+        let mut depth = 0usize;
+        for segment in normalized_segments(decoding, true) {
+            match segment {
+                "." => {}
+                ".." => depth = depth.saturating_sub(1),
+                _ => {
+                    if depth == 0 && segment.eq_ignore_ascii_case("_wonton") {
+                        return true;
+                    }
+                    depth += 1;
+                }
+            }
+        }
+        false
+    })
 }
 
 /// 按整段前缀匹配，不分大小写：`/share` 只匹配 `/share` 和 `/share/...`。清单值都以 `/` 开头（C1 校验），
 /// 这里仍把空值当作根，匹配全部。
 fn matches_prefix(prefix: &str, candidate: &str) -> bool {
-    let prefix = prefix.trim_end_matches('/').to_lowercase();
-    candidate == prefix
-        || (candidate.starts_with(&prefix) && candidate.as_bytes().get(prefix.len()) == Some(&b'/'))
+    let mut candidate = normalized_segments(candidate, false);
+    normalized_segments(prefix, false).all(|segment| {
+        candidate.next().is_some_and(|candidate| {
+            segment
+                .chars()
+                .flat_map(char::to_lowercase)
+                .eq(candidate.chars())
+        })
+    })
 }
 
 fn hits(prefixes: &[String], candidate: &str) -> bool {

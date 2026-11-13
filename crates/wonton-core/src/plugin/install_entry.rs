@@ -31,8 +31,10 @@ impl PluginManager {
         granted: &[Permission],
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_package(PluginPackage::parse(source, &langs)?, granted, langs)
-            .await
+        // 转发层逐层把子 future 放上堆（同 installation.rs 对 install_checked_retained 的做法）：
+        // 每层内嵌约 50 KiB 的安装子树 future，四层转发叠起来会把 2 MiB 的测试线程栈压爆
+        // （egress_plugin_failures… 的栈溢出）。
+        Box::pin(self.install_package(PluginPackage::parse(source, &langs)?, granted, langs)).await
     }
 
     /// 安装插件。`granted` 必须与清单声明的权限完全一致：这就是主人的确认。开关 `lan_webui` 关着。
@@ -42,7 +44,7 @@ impl PluginManager {
         granted: &[Permission],
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_user(package, granted, false, langs).await
+        Box::pin(self.install_user(package, granted, false, langs)).await
     }
 
     /// `lan_webui`：主人看过风险后打开了开关。系统插件只能由安装器预装（见 [`super::system`]）。
@@ -53,8 +55,15 @@ impl PluginManager {
         lan_webui: bool,
         langs: Languages,
     ) -> Result<PluginView, InstallError> {
-        self.install_user_enabled(package, granted, &[], lan_webui, Default::default(), langs)
-            .await
+        Box::pin(self.install_user_enabled(
+            package,
+            granted,
+            &[],
+            lan_webui,
+            Default::default(),
+            langs,
+        ))
+        .await
     }
 
     /// 同 [`Self::install_user`]，另外带上主人打开了的可选权限（ADR-0057）。
@@ -75,8 +84,7 @@ impl PluginManager {
                 &[],
             )));
         }
-        self.install_checked(package, granted, enabled, lan_webui, settings, &langs)
-            .await
+        Box::pin(self.install_checked(package, granted, enabled, lan_webui, settings, &langs)).await
     }
 
     /// 同 [`Self::install_user`]，但在独立的任务里执行（见 [`detached`]）：网关和 MCP 总线都经这里安装。

@@ -9,6 +9,8 @@ mod bots_lifecycle;
 mod by_source;
 pub mod capabilities;
 pub mod check;
+pub(crate) mod clients_entry;
+mod clients_setup;
 pub mod compat;
 pub mod compose;
 pub mod configs;

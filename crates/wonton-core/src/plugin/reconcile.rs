@@ -179,6 +179,19 @@ impl PluginManager {
                 .upsert_client(&client_spec(manifest, &ctx, secret))
                 .await?;
         }
+        let clients = if manifest
+            .clients
+            .as_ref()
+            .is_some_and(|clients| clients.http.is_some())
+        {
+            let lan = self.lan_grant(package, record.lan_webui, &langs).await?;
+            let mut ctx = self.rebuild_context(package, record, lan, None).await?;
+            self.fill_bot_vars(package, &mut ctx, &langs).await?;
+            let plan = super::render::render(package, &ctx, &langs)?;
+            self.clients_upstream(manifest, &plan).await?
+        } else {
+            None
+        };
         Ok(Some(Deployed {
             upstream: self.webui_upstream(manifest, &network).await?,
             serving: checked.serving().clone(),
@@ -189,6 +202,7 @@ impl PluginManager {
             proxy: proxy.map(Arc::new),
             firewalled: record.firewalled,
             hosted: self.hosted_upstreams(manifest, &network).await?,
+            clients,
         }))
     }
 
