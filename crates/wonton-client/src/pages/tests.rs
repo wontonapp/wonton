@@ -23,6 +23,8 @@ impl Rig {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
+        let mut config = default_file(Some("old-server".to_owned()));
+        config.my_apps_initialized = true;
         let (_, method_rx) = tokio::sync::watch::channel(wonton_protocol::PushMethod::default());
         let home_link = HomeLink::new(
             runtime.clone(),
@@ -47,14 +49,14 @@ impl Rig {
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {
-                config: default_file(Some("old-server".to_owned())),
+                config,
                 problem: None,
                 stack: Vec::new(),
                 paired: true,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
-                previous_plugins: HashMap::new(),
+                previous_plugins: None,
                 connected: true,
                 attention: HashSet::new(),
                 panel_selected: None,
@@ -74,6 +76,7 @@ impl Rig {
             room_view: watch::Sender::new(None),
             sync_problem: watch::Sender::new(None),
             dirty: AtomicBool::new(false),
+            layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
         };

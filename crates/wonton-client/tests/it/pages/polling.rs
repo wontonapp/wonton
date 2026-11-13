@@ -126,15 +126,7 @@ async fn a_panel_instance_polls_but_a_disconnected_page_does_not_request_or_redi
     })
     .await;
     let pinned = tab(&plugin.id, Some("home"));
-    rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: plugin.id.clone(),
-            },
-            title: None,
-            index: None,
-        })
-        .unwrap();
+    wait_my_app(&rig, &pinned).await;
     // 面板里再放一份入口（网址入口那一页）：栈里的和面板里的各自计数。
     let panel = tab(&plugin.id, None);
     rig.app

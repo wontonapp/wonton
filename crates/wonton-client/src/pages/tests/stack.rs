@@ -99,7 +99,7 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
     assert_eq!(view.root, TabRef::Chat);
     assert!(panel_tabs(&rig).is_empty());
 
-    rig.add_app(plugin_app("app.shared"));
+    assert_eq!(rig.my_app_titles(), ["new-content"]);
     rig.open(page_tab());
     assert_eq!(rig.page(&page_tab()).reload, 0);
 }

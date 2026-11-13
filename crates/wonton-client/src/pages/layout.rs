@@ -16,6 +16,9 @@ pub(super) const LAYOUT_FILE: &str = "layout.json";
 pub(super) struct LayoutFile {
     pub(super) server_id: Option<String>,
     pub(super) my_apps: Vec<StoredApp>,
+    /// 区分尚未收到首份插件列表和用户有意保留的空列表；只存本机缓存。
+    #[serde(default = "auto_add_default")]
+    pub(super) my_apps_initialized: bool,
     /// 新装的应用自动加到末尾。
     #[serde(default = "auto_add_default")]
     pub(super) auto_add: bool,
@@ -179,6 +182,7 @@ pub(super) fn default_file(server_id: Option<String>) -> LayoutFile {
     LayoutFile {
         server_id,
         my_apps: Vec::new(),
+        my_apps_initialized: false,
         auto_add: true,
         panel: Vec::new(),
     }
@@ -186,6 +190,9 @@ pub(super) fn default_file(server_id: Option<String>) -> LayoutFile {
 
 pub(super) fn normalize_for_server(file: &mut LayoutFile, server_id: Option<String>) {
     let Some(server_id) = server_id else { return };
+    if file.server_id.as_ref() != Some(&server_id) {
+        file.my_apps_initialized = false;
+    }
     if file.server_id.as_ref().is_some_and(|old| old != &server_id) {
         // 插件和插件里的页面绑在上一台服务器上；公网网页和服务器无关，留着。
         file.my_apps
@@ -235,6 +242,7 @@ pub(super) fn adopt_layout(file: &mut LayoutFile, settings: LayoutSettings) -> R
     *file = LayoutFile {
         server_id: file.server_id.clone(),
         my_apps,
+        my_apps_initialized: true,
         auto_add: settings.auto_add,
         panel: settings.panel,
     };

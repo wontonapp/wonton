@@ -69,7 +69,7 @@ struct PagesState {
     failures: HashMap<PlacedTab, (TabLoadFailure, Option<u16>)>,
     reloads: HashMap<PlacedTab, u64>,
     uninstalled: Vec<String>,
-    previous_plugins: HashMap<String, PreviousPlugin>,
+    previous_plugins: Option<HashMap<String, PreviousPlugin>>,
     connected: bool,
     /// 面板页要求关注（红点），翻到就清。按实例记。
     attention: HashSet<PlacedTab>,
@@ -116,6 +116,8 @@ pub(crate) struct PagesLink {
     sync_problem: watch::Sender<Option<String>>,
     /// 本机改了还没写上账号数据：登录后推，服务器来的变化也让位。
     dirty: AtomicBool,
+    /// 先读取账号偏好，再允许把自动推导的默认入口写回，避免新设备冲掉旧设备的选择。
+    layout_ready: AtomicBool,
     /// 账号数据的同步任务；换了会话就换掉旧的。
     sync_task: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// 自身的弱引用：`&self` 方法里起往账号数据推的任务要用；构造完才填得上。
@@ -151,17 +153,21 @@ impl PagesLink {
         let _home_link = home.clone();
         let (config, mut problem) = match read_file(&path) {
             Ok(config) => (config, None),
-            Err(reason) => (
-                default_file(home_view.server_id.clone()),
-                Some(PagesProblem {
-                    message: l10n!(
-                        CATALOG,
-                        language(),
-                        "pages-file-unreadable",
-                        reason = reason
-                    ),
-                }),
-            ),
+            Err(reason) => {
+                let mut config = default_file(home_view.server_id.clone());
+                config.my_apps_initialized = true;
+                (
+                    config,
+                    Some(PagesProblem {
+                        message: l10n!(
+                            CATALOG,
+                            language(),
+                            "pages-file-unreadable",
+                            reason = reason
+                        ),
+                    }),
+                )
+            }
         };
         let server_changed =
             home_view.server_id.is_some() && config.server_id != home_view.server_id;
@@ -181,7 +187,7 @@ impl PagesLink {
             failures: HashMap::new(),
             reloads: HashMap::new(),
             uninstalled: Vec::new(),
-            previous_plugins: HashMap::new(),
+            previous_plugins: None,
             connected: matches!(home_view.status, HomeStatus::Connected),
             attention: HashSet::new(),
             panel_selected: None,
@@ -212,6 +218,7 @@ impl PagesLink {
             room_view,
             sync_problem,
             dirty: AtomicBool::new(false),
+            layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
         });
@@ -351,7 +358,9 @@ impl PagesLink {
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
             let settings = state.config.layout();
             let session = self.session.borrow().clone();
-            if let Some(session) = session {
+            if let Some(session) = session
+                && self.layout_ready.load(Ordering::SeqCst)
+            {
                 self.dirty.store(true, Ordering::SeqCst);
                 let weak = lock(&self.weak).clone();
                 self.runtime.spawn(async move {
@@ -443,9 +452,11 @@ impl PagesLink {
         *lock(&self.state) = state;
         self.publish(view, &plugins);
         // 本机落了盘，接着写账号数据；写不上不回滚，原因进 problem（失败即停，不说成功）。
+        self.dirty.store(true, Ordering::SeqCst);
         let session = self.session.borrow().clone();
-        if let Some(session) = session {
-            self.dirty.store(true, Ordering::SeqCst);
+        if let Some(session) = session
+            && self.layout_ready.load(Ordering::SeqCst)
+        {
             let weak = lock(&self.weak).clone();
             self.runtime.spawn(async move {
                 if let Some(link) = weak.upgrade() {
