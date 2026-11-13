@@ -395,11 +395,13 @@ final class TabWebSession: NSObject, WKUIDelegate {
 
     /// 网页要摄像头/麦克风（getUserMedia）：先问核心（按插件记决定），按回答放行或拒绝；
     /// 放行还要系统运行时权限。其他 UI 代理方法走 WebKit 的默认。
-    /// 实现放在类主体：放扩展里时运行时不注册成可选协议方法（responds(to:)=0），
-    /// WebKit 就走自己的兜底权限弹窗，绕过核心的逐插件确认。
+    /// 实现放在类主体；签名按 iOS 26 SDK 的 requestMediaCapturePermissionForOrigin:
+    /// （旧请求方法的 WKFrameInfo 版本已从协议里删掉，签名对不上时可选协议不报错，
+    /// WebKit 直接走自己的兜底权限弹窗，绕过核心的逐插件确认）。
     func webView(
         _ webView: WKWebView,
-        requestMediaCapturePermissionFor initiatedByFrame: WKFrameInfo,
+        requestMediaCapturePermissionForOrigin origin: WKSecurityOrigin,
+        initiatedByFrame frame: WKFrameInfo,
         type: WKMediaCaptureType,
         decisionHandler: @escaping @MainActor (WKPermissionDecision) -> Void
     ) {
@@ -411,7 +413,7 @@ final class TabWebSession: NSObject, WKUIDelegate {
         let decision: TabMediaPermission?
         do {
             decision = try core.tabMediaPermissionRequest(
-                page: placed, origin: Self.originString(initiatedByFrame.securityOrigin),
+                page: placed, origin: Self.originString(origin),
                 camera: camera, microphone: microphone
             )
             let what = if decision == .allow {
@@ -425,7 +427,7 @@ final class TabWebSession: NSObject, WKUIDelegate {
         } catch {
             decision = nil
             NSLog("[media] request failed origin=%@ error=%@",
-                  Self.originString(initiatedByFrame.securityOrigin), String(describing: error))
+                  Self.originString(origin), String(describing: error))
         }
         let answer = { (allow: Bool) in decisionHandler(allow ? .grant : .deny) }
         switch decision {
