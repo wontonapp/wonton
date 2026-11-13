@@ -23,6 +23,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod agent_chains;
 #[cfg(target_os = "android")]
 mod android;
 mod appearance;
@@ -65,10 +66,11 @@ pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
 pub use sharing::discover_share_source;
 pub use subscription::{
-    AppearanceSubscription, BotContactsSubscription, ChatSubscription, ComposerSubscription,
-    ConfirmationsSubscription, FriendsSubscription, HomeSubscription, OnboardingSubscription,
-    PeersSubscription, PluginsSubscription, ServersSubscription, SessionListSubscription,
-    SettingsSubscription, TabsSubscription, TransfersSubscription, WidgetSnapshotSubscription,
+    AgentChainsSubscription, AppearanceSubscription, BotContactsSubscription, ChatSubscription,
+    ComposerSubscription, ConfirmationsSubscription, FriendsSubscription, HomeSubscription,
+    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
+    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
+    WidgetSnapshotSubscription,
 };
 pub use tabs::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
