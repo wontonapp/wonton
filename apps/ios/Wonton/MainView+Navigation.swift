@@ -60,11 +60,11 @@ extension MainView {
         if let bot { chat.openDirectChat(with: bot) }
     }
 
-    func openOnboardingGateway(_ url: URL) {
-        // 两个核心接口的根地址可能分别带和不带末尾斜杠。
-        let gateway = url.appendingPathComponent("")
-        guard let plugin = plugins.viewModel.installed?.plugins.first(where: {
-            $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
+    func openOnboardingGateway(_ settings: ModelSettingsPage) {
+        let gateway = URL(string: settings.webUrl)?.appendingPathComponent("")
+        guard let gateway, let plugin = plugins.viewModel.installed?.plugins.first(where: {
+            $0.id == settings.pluginId
+                && $0.webUrl.flatMap(URL.init(string:))?.appendingPathComponent("") == gateway
         }),
               let choice = plugin.tabChoices.first else {
             onboarding.rejection = Problem(

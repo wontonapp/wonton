@@ -97,10 +97,6 @@ private extension OnboardingReviewDetail {
         case let .email(email): email
         case .setAsDefault: String(localized: .Onboarding5.onboardingReviewSetDefault)
         case .keepCurrent: String(localized: .Onboarding2.onboardingReviewKeepCurrent)
-        case let .model(model): model
-        case let .unreachable(model):
-            model.map { String(localized: .Onboarding2.onboardingReviewUnreachableModel($0)) }
-                ?? String(localized: .Onboarding3.onboardingReviewUnreachable)
         case .signInAfterSetup: String(localized: .Onboarding1.onboardingReviewSignInAfterSetup)
         case .unchanged: String(localized: .Onboarding4.onboardingReviewUnchanged)
         }
@@ -123,7 +119,6 @@ private extension OnboardingItemProblem {
     var onboardingProblem: Problem {
         switch self {
         case let .plugin(problem): problem.problem
-        case let .model(problem): problem.onboardingProblem
         }
     }
 }

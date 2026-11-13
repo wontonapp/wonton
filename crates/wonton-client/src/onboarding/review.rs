@@ -1,15 +1,15 @@
-//! 最后一页（ADR-0038）：列出所有选择和要装的插件的权限；点完成后依次保存资料、模型和“走完了”，再在后台装 Agent 和
-//! 应用。点完成之前这里只取安装预览，不改任何东西。
+//! 最后一页（ADR-0038）：列出选择和插件权限；点完成后保存资料和“走完了”，再在后台装 Agent 和应用。
+//! 模型网页自己的保存不属于引导提交；点完成之前这里只取安装预览。
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, InstallPreview, ModelProviderFailure, Onboarding, OnboardingCommit,
-    OnboardingItemProblem, OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem,
-    OnboardingReviewKind, OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon,
-    PluginProblem, PluginTask, PluginTaskState, normalized_email,
+    CoreError, InstallPreview, Onboarding, OnboardingCommit, OnboardingItemProblem,
+    OnboardingItemState, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
+    OnboardingStep, OnboardingUpdate, PluginFailure, PluginIcon, PluginProblem, PluginTask,
+    PluginTaskState, normalized_email,
 };
 
 use super::draft::ModelDraft;
@@ -180,7 +180,7 @@ fn agent_entry(state: &LocalState, onboarding: &Onboarding) -> ReviewEntry {
 
 fn model_entry(state: &LocalState) -> ReviewEntry {
     match state.draft.model(state.providers.as_ref()) {
-        Some(model) => model_choice_entry(model, state),
+        Some(model) => model_choice_entry(model),
         None => ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new()),
     }
 }
@@ -197,33 +197,9 @@ fn prepare(entry: &mut ReviewEntry, source: Option<String>, blocked: Option<Stri
 }
 
 /// 接模型这一步记下的选择对应的行；“用现在的”不动模型，也照常列出来。
-fn model_choice_entry(model: &ModelDraft, state: &LocalState) -> ReviewEntry {
+fn model_choice_entry(model: &ModelDraft) -> ReviewEntry {
     let (titles, detail) = match model {
-        ModelDraft::Current => {
-            let titles = state
-                .providers
-                .iter()
-                .flat_map(|providers| &providers.configured)
-                .map(|provider| provider.title.clone())
-                .collect();
-            (titles, Some(OnboardingReviewDetail::KeepCurrent))
-        }
-        ModelDraft::Tested {
-            input,
-            title,
-            reachable,
-        } => {
-            let model = match input {
-                wonton_protocol::ModelProviderInput::Custom { model, .. } => Some(model.clone()),
-                wonton_protocol::ModelProviderInput::Preset { .. } => None,
-            };
-            let detail = if *reachable {
-                model.map(|model| OnboardingReviewDetail::Model { model })
-            } else {
-                Some(OnboardingReviewDetail::Unreachable { model })
-            };
-            (vec![title.clone()], detail)
-        }
+        ModelDraft::Current => (Vec::new(), Some(OnboardingReviewDetail::KeepCurrent)),
         ModelDraft::Login { title, .. } => (
             vec![title.clone()],
             Some(OnboardingReviewDetail::SignInAfterSetup),
@@ -442,7 +418,7 @@ impl OnboardingLink {
         }
     }
 
-    /// 点完成，或者重试停下来的资料、模型：从没做完的那一项接着做。
+    /// 点完成，或者重试停下来的资料：从没做完的那一项接着做。
     pub(super) fn commit(self: &Arc<Self>) -> Result<(), CoreError> {
         {
             let mut state = lock(&self.state);
@@ -460,9 +436,7 @@ impl OnboardingLink {
         let link = self.clone();
         let generation = self.generation();
         self.runtime.spawn(async move {
-            let saved = link.save_profile(generation).await
-                && link.save_model(generation).await
-                && link.finish(generation).await;
+            let saved = link.save_profile(generation).await && link.finish(generation).await;
             if !saved {
                 if link.generation() == generation {
                     lock(&link.state).commit = OnboardingCommit::NotStarted;
@@ -537,46 +511,6 @@ impl OnboardingLink {
                 false
             }
         }
-    }
-
-    async fn save_model(&self, generation: u64) -> bool {
-        if !self.pending(MODEL) {
-            return true;
-        }
-        let input = {
-            let state = lock(&self.state);
-            match state.draft.model(state.providers.as_ref()) {
-                Some(ModelDraft::Tested { input, .. }) => Some(input.clone()),
-                _ => None,
-            }
-        };
-        let Some(input) = input else {
-            self.set_entry(MODEL, OnboardingItemState::Done);
-            return true;
-        };
-        self.set_entry(MODEL, OnboardingItemState::Running);
-        let result = match self.plugins.api() {
-            Ok(api) => api::save_provider(&api, input).await,
-            Err(problem) => Err(super::provider_problem(problem)),
-        };
-        if self.generation() != generation {
-            return false;
-        }
-        match result {
-            // 连不上服务商时 key 已经保存（ADR-0034），测试时已经告诉过主人。
-            Ok(()) => {}
-            Err(problem) if problem.reason == ModelProviderFailure::ProviderUnreachable => {}
-            Err(problem) => {
-                let failed = OnboardingItemState::Failed {
-                    problem: OnboardingItemProblem::Model { problem },
-                };
-                self.set_entry(MODEL, failed);
-                return false;
-            }
-        }
-        lock(&self.state).draft.model = None;
-        self.set_entry(MODEL, OnboardingItemState::Done);
-        true
     }
 
     async fn finish(&self, generation: u64) -> bool {
@@ -687,7 +621,7 @@ impl OnboardingLink {
             )));
         }
         let Some(source) = source else {
-            // 资料和模型：点完成之后停在它们上，从它们接着做。
+            // 资料保存失败，从没做完的提交接着做。
             self.set_entry(id, OnboardingItemState::Ready);
             return self.commit();
         };

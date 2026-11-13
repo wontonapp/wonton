@@ -202,13 +202,6 @@ impl OnboardingLink {
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
-                if state.testing {
-                    return Err(invalid(&l10n!(
-                        CATALOG,
-                        language(),
-                        "onboarding-steps-testing"
-                    )));
-                }
                 if state.draft.model(state.providers.as_ref()).is_none() {
                     return Err(invalid(&l10n!(
                         CATALOG,
@@ -253,8 +246,6 @@ impl OnboardingLink {
                 OnboardingStep::Model
             }
             OnboardingStep::Model => {
-                // 测试的结果看 testing，清掉后到了也不落下。
-                state.testing = false;
                 state.model_problem = None;
                 state.draft.model = Some(ModelDraft::Skipped);
                 OnboardingStep::Apps
@@ -284,10 +275,7 @@ impl OnboardingLink {
         let step = Self::flow_step(&state)?;
         let mut target = match step {
             OnboardingStep::Agent => OnboardingStep::Profile,
-            OnboardingStep::Model => {
-                state.testing = false;
-                OnboardingStep::Agent
-            }
+            OnboardingStep::Model => OnboardingStep::Agent,
             OnboardingStep::Apps => OnboardingStep::Model,
             OnboardingStep::Review => {
                 // 旧预览的结果按 review_generation 丢掉。
@@ -355,7 +343,6 @@ impl OnboardingLink {
             state.review.clear();
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
-            state.testing = false;
             state.step = view::first_visible(&state.unavailable).or(Some(OnboardingStep::Profile));
         }
         self.refresh_after_local_reset();
@@ -373,7 +360,6 @@ impl OnboardingLink {
             state.review.clear();
             state.review_generation += 1;
             state.commit = OnboardingCommit::NotStarted;
-            state.testing = false;
             state.model_problem = None;
             state.step = None;
         }

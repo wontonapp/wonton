@@ -6,7 +6,7 @@ struct OnboardingGate<Content: View>: View {
     let plugins: PluginsModel
     let isPaired: Bool
     let finished: (String?) -> Void
-    let openGateway: (URL) -> Void
+    let openGateway: (ModelSettingsPage) -> Void
     /// 重看引导的关闭：不提交回设置；首次引导不用。
     var close: (() -> Void)?
     @ViewBuilder let content: Content
