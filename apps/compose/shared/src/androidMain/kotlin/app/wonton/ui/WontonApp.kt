@@ -237,8 +237,9 @@ private fun NativeTab(
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
-        nav.appsPage != null -> HomeRoute(
-            pages.core, home, pages.plugins, nav.plugins, nav.appsPage, { nav.appsPage = it },
+        nav.appsPage != null || home.status is HomeStatus.NotConfigured -> HomeRoute(
+            pages.core, home, pages.plugins, nav.plugins, nav.appsPage ?: HomePage.LAUNCHER,
+            { nav.appsPage = it },
             chat.pendingConfirmations, nav::openRoom,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
