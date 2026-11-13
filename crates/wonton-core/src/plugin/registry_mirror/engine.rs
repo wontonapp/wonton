@@ -30,6 +30,9 @@ impl Engine {
         policy: PullPolicy,
         accelerated: &[String],
     ) -> Result<String> {
+        if let Some(creations) = &self.creations {
+            creations.lock().unwrap().push(format!("ensure {image}"));
+        }
         self.ensure_image_with_progress(image, policy, accelerated, &mut |_layer: LayerProgress<
             '_,
         >| {})

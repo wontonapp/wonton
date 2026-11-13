@@ -160,6 +160,11 @@ gateway-web-storage-undeclared = 这个应用不存数据
 gateway-web-storage-cross-site = 只有这个应用自己的页面能改它的数据
 gateway-web-storage-not-ready = 替这个应用存数据的应用没有在运行，请稍后再试
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = 请求少了 X-Wonton-Clients 头
+clients-unauthenticated = 只有主人已配对的设备能改这些设置
+clients-unavailable = 核心没有跑在装好的容器里，域名设置用不了
+clients-domain-read-failed = 域名设置读不了：{ $error }
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。

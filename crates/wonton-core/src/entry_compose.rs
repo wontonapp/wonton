@@ -21,13 +21,10 @@ pub fn render(
         "tuwunel:/var/lib/tuwunel",
         "${WONTON_INSTALL_DIR}/secrets/tuwunel:/etc/tuwunel:ro"
     ]);
-    let Some(settings) = settings else {
-        return Ok(serde_json::to_string_pretty(&compose)?);
-    };
-    let meta = std::fs::metadata(install_dir.join("entry/certs/site.pem"))?;
-    let uid = meta.uid();
-    let gid = meta.gid();
-    let user = format!("{uid}:{gid}");
+    // “不要名字”的安装现在没有入口容器（C5 才有），但运行时签发已经在：核心经 PUT 收设置后写
+    // `entry/`（CSR、ACME 账号、dns.env），lego 容器按宿主路径绑挂 `entry/acme` 和 `entry/requests/`。
+    // 核心容器里必须看得到同一个宿主目录，不然签发的产物只落进容器可写层，lego 拿不到 CSR；CA 文件
+    // 在 `entry-input/` 里，核心也要读。挂载本身不依赖 settings，提前返回会把这一步整个跳掉。
     compose["services"]["core"]["volumes"]
         .as_array_mut()
         .context("core volumes 不是列表")?
@@ -40,6 +37,13 @@ pub fn render(
         .push(json!(
             "${WONTON_INSTALL_DIR}/entry-input:${WONTON_INSTALL_DIR}/entry-input:ro"
         ));
+    let Some(settings) = settings else {
+        return Ok(serde_json::to_string_pretty(&compose)?);
+    };
+    let meta = std::fs::metadata(install_dir.join("entry/certs/site.pem"))?;
+    let uid = meta.uid();
+    let gid = meta.gid();
+    let user = format!("{uid}:{gid}");
     compose["services"]["core"]["networks"]["clients"] =
         json!({"aliases":["entry-gateway.wonton.internal"]});
     // 配了解析器时核心和 lego 都用它：入口的 ACME 目录、acme-dns 和 CAA 都靠这些名字。
@@ -209,6 +213,7 @@ mod tests {
             acme_directory: None,
             acme_ca: None,
             acme_resolvers: Vec::new(),
+            acme_propagation_disable_ans: false,
             acme_email: None,
             acme_accept_terms: false,
             acme_network: "bridge".to_owned(),
@@ -220,6 +225,57 @@ mod tests {
 
     fn tuwenel(rendered: &str) -> Value {
         serde_json::from_str::<Value>(rendered).unwrap()["services"]["tuwunel"].clone()
+    }
+
+    fn core_volumes(rendered: &str) -> Vec<String> {
+        let volumes =
+            &serde_json::from_str::<Value>(rendered).unwrap()["services"]["core"]["volumes"];
+        // render 写的是字符串卷；断言只关心这两个挂载在不在，对象形式也按字符串比对。
+        volumes
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|volume| match volume.as_str() {
+                Some(text) => text.to_owned(),
+                None => volume.to_string(),
+            })
+            .collect()
+    }
+
+    /// “不要名字”的安装也要能运行时签发：核心容器要挂 `entry/`（写 CSR、ACME 状态给 lego 按宿主
+    /// 路径绑挂）和 `entry-input/`（读 CA）。两种模式挂载一致，签发路径才只有一条。
+    #[test]
+    fn core_mounts_entry_paths_in_every_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("entry/certs")).unwrap();
+        std::fs::write(dir.path().join("entry/certs/site.pem"), "pem").unwrap();
+        for rendered in [
+            render(crate::install::COMPOSE, None, dir.path()).unwrap(),
+            render(crate::install::COMPOSE, Some(&settings()), dir.path()).unwrap(),
+        ] {
+            let volumes = core_volumes(&rendered);
+            assert!(
+                volumes.contains(
+                    &"${WONTON_INSTALL_DIR}/entry:${WONTON_INSTALL_DIR}/entry".to_owned()
+                ),
+                "core 没挂 entry：{volumes:?}"
+            );
+            assert!(
+                volumes.contains(
+                    &"${WONTON_INSTALL_DIR}/entry-input:${WONTON_INSTALL_DIR}/entry-input:ro"
+                        .to_owned()
+                ),
+                "core 没挂 entry-input：{volumes:?}"
+            );
+            assert_eq!(
+                volumes
+                    .iter()
+                    .filter(|volume| volume.starts_with("${WONTON_INSTALL_DIR}/entry"))
+                    .count(),
+                2,
+                "entry 挂载重复了：{volumes:?}"
+            );
+        }
     }
 
     /// 内部名（`entry.wonton.internal`、插件别名）只有 Docker 的 127.0.0.11 认识；真实解析器

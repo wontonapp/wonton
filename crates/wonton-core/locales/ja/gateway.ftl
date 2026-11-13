@@ -160,6 +160,11 @@ gateway-web-storage-undeclared = このアプリはデータを保存しませ�
 gateway-web-storage-cross-site = このアプリのデータを変更できるのは、このアプリ自身のページだけです
 gateway-web-storage-not-ready = このアプリのデータを保存しているアプリが実行されていません。しばらくしてからもう一度お試しください
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = リクエストに X-Wonton-Clients ヘッダーがありません
+clients-unauthenticated = これを変更できるのはオーナーのペアリング済み端末だけです
+clients-unavailable = コアがコンテナで実行されていないため、ドメイン設定は使えません
+clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。

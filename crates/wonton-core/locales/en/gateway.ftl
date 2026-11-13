@@ -160,6 +160,11 @@ gateway-web-storage-undeclared = This app doesn't store data
 gateway-web-storage-cross-site = Only this app's own pages can change its data
 gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = The request is missing the X-Wonton-Clients header
+clients-unauthenticated = Only the owner's paired devices can change this
+clients-unavailable = The core isn't running in its container, so domain settings are unavailable
+clients-domain-read-failed = Couldn't read the domain settings: { $error }
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.

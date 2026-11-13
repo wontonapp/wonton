@@ -372,7 +372,8 @@ async fn serve() -> anyhow::Result<()> {
     let sharing = sharing_registries.service(peers.clone(), forwarder.clone())?;
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
-    spawn_entry_runtime(&cfg, &engine, &notices)?;
+    let clients = open_clients(&cfg, &engine, &notices)?;
+    spawn_entry_runtime(&cfg, &clients, &notices);
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -410,6 +411,7 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks,
         sharing,
         contacts,
+        clients,
         agent_chains,
     );
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
@@ -449,6 +451,7 @@ fn open_gateway(
     federation_blocks: Option<Arc<FederationBlocks>>,
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
+    clients: Option<Arc<wonton_core::clients::domain::Domain>>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     let agent_acp = gateway::agent_acp::Registry::new();
@@ -485,7 +488,8 @@ fn open_gateway(
         .with_agent_chains(Some(agent_chains))
         .with_agent_acp(Some(agent_acp))
         .with_federation_blocks(federation_blocks)
-        .with_sharing(Some(sharing)),
+        .with_sharing(Some(sharing))
+        .with_clients(clients),
     );
     if let Some(mcp) = &gateway.mcp {
         mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
@@ -742,22 +746,33 @@ fn message_settled_audit(
     })
 }
 
-/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口。
-fn spawn_entry_runtime(
+/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口和自己的域名。
+fn open_clients(
     cfg: &Config,
     engine: &Engine,
     notices: &Option<Arc<NoticeRoom>>,
-) -> anyhow::Result<()> {
-    if let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) {
-        wonton_core::entry_runtime::spawn(
-            dir,
-            &cfg.data_dir,
-            engine.clone(),
-            container.clone(),
-            notices.clone(),
-        )?;
+) -> anyhow::Result<Option<Arc<wonton_core::clients::domain::Domain>>> {
+    let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) else {
+        return Ok(None);
+    };
+    Ok(Some(wonton_core::clients::domain::Domain::new(
+        dir.clone(),
+        cfg.data_dir.clone(),
+        engine.clone(),
+        container.clone(),
+        notices.clone(),
+    )))
+}
+
+/// 用安装脚本装的核心才管入口。
+fn spawn_entry_runtime(
+    cfg: &Config,
+    clients: &Option<Arc<wonton_core::clients::domain::Domain>>,
+    notices: &Option<Arc<NoticeRoom>>,
+) {
+    if let (Some(dir), Some(clients)) = (&cfg.install_dir, clients) {
+        wonton_core::entry_runtime::spawn(clients.clone(), dir, &cfg.data_dir, notices.clone());
     }
-    Ok(())
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {

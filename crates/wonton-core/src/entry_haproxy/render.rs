@@ -92,7 +92,7 @@ fn frontend(
     proxy_header: bool,
 ) {
     out.push_str(&format!(
-        "frontend {name}\n  bind {bind} ssl crt-list {crt_list} strict-sni\n"
+        "frontend {name}\n  bind {bind} ssl crt-list {crt_list} strict-sni expose-fd listeners\n"
     ));
     // 先按 TCP 层的真实来源认对端：这时的 src 还是对端地址，PROXY 头还没解析。
     out.push_str(&format!(
@@ -168,7 +168,7 @@ fn response_rules(out: &mut String) {
 /// 已配对的云吞之间：联邦服务器名固定，把 `Host` 归一成它。
 fn paired_frontend(out: &mut String, suffix: &str) {
     out.push_str(&format!(
-        "frontend paired\n  bind {PAIRED_BIND} ssl crt {CERT_FILE} strict-sni\n  acl correct_sni ssl_fc_sni -i {suffix}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {suffix} {suffix}:443 {suffix}:8448 }}\n  http-request set-header Host {suffix}\n  default_backend gateway\n\n"
+        "frontend paired\n  bind {PAIRED_BIND} ssl crt {CERT_FILE} strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i {suffix}\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless {{ hdr(host),lower -i {suffix} {suffix}:443 {suffix}:8448 }}\n  http-request set-header Host {suffix}\n  default_backend gateway\n\n"
     ));
 }
 
