@@ -59,10 +59,10 @@ async fn oidc_login_and_consent_use_the_core_session() {
     assert_eq!(claims["email"], "owner@wonton.internal");
     assert_eq!(claims["email_verified"], true);
     assert_eq!(claims["preferred_username"], "owner");
-    assert_eq!(claims["groups"], json!(["owner"]));
+    assert_eq!(claims["groups"], json!(["user", "plugin_admin"]));
 }
 
-/// 声明了 `oidc.admin_groups` 的客户端拿到 `["owner", …]`，没声明的客户端只有 `["owner"]`。
+/// 声明了 `oidc.admin_groups` 的客户端在 `plugin_admin` 之外拿到那些组，没声明的只有能力组。
 /// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 #[tokio::test]
 async fn consent_gives_admin_groups_to_the_declaring_client_only() {
@@ -111,11 +111,11 @@ async fn consent_gives_admin_groups_to_the_declaring_client_only() {
     let accepted = accepted.lock().unwrap();
     assert_eq!(
         accepted[0]["session"]["id_token"]["groups"],
-        json!(["owner", "admin", "app.admin"])
+        json!(["user", "plugin_admin", "admin", "app.admin"])
     );
     assert_eq!(
         accepted[1]["session"]["id_token"]["groups"],
-        json!(["owner"])
+        json!(["user", "plugin_admin"])
     );
 }
 

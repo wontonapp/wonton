@@ -586,6 +586,18 @@ impl Gateway {
             .get(&record.role_id)
             .map_or_else(Permissions::strictest, |role| role.permissions)
     }
+    /// 这个人是否在指定应用里具备插件管理员能力。应用未对他开放时，管理员范围也不生效。
+    pub(crate) fn plugin_admin(&self, person: &Person, plugin_id: &str) -> bool {
+        if person.is_owner() {
+            return true;
+        }
+        if person.role == Role::Friend {
+            return false;
+        }
+        let permissions = self.permissions(person);
+        permissions.open_apps.allows_plugin(plugin_id)
+            && permissions.plugin_admin.allows_plugin(plugin_id)
+    }
 
     /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
     #[cfg_attr(not(test), allow(dead_code))]
@@ -802,6 +814,8 @@ mod pairing_tests;
 mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
+#[cfg(test)]
+mod plugin_capability_tests;
 #[cfg(test)]
 mod plugin_forms_tests;
 #[cfg(test)]
