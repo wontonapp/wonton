@@ -67,7 +67,6 @@ fun WontonApp(
                         core, devWebUrl, ready?.takeIf { it.serverId == serverId }, onRoomRequestHandled,
                         onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
                         requestedLink = requestedLink,
-                        requestedAgentText = requestedAgentText,
                         shareIntake = shareIntake,
                     )
                 }
