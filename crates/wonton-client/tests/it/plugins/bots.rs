@@ -34,10 +34,10 @@ async fn only_recorded_bots_appear_and_failed_activity_clears_their_capabilities
     })
     .await;
     wait_request(&rig).await;
-    assert!(
-        rig.app.chat().bots.is_empty(),
-        "Installed default IDs do not establish BotRef names"
-    );
+    // 已装插件的默认 Bot 直接按安装记录出现在列表里（活动报告还没到，先不显示状态）。
+    let installed_view = wait(&rig, |bots| bots.len() == 1).await;
+    assert_eq!(installed_view[0].user_id, "@installed-default:home");
+    assert_eq!(installed_view[0].activity, None);
     rig.core.release(Method::GET, ACTIVITY);
     let view = wait(&rig, |bots| {
         bots.len() == 1 && bots[0].activity == Some(BotActivity::Idle)
