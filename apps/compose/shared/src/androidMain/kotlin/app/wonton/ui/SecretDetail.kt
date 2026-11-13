@@ -4,10 +4,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.material3.Text
@@ -16,9 +16,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginDetail
+import app.wonton.protocol.PluginState
 import app.wonton.protocol.SecretInput
 import app.wonton.protocol.SecretInputState
+import app.wonton.ui.design.WontonButton
+import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
@@ -29,15 +33,37 @@ import kotlinx.coroutines.launch
 
 /** 要填的密钥：只有主人看得到这一节；点开可改，可选项可以清空。改完核心会重建用到它的服务。 */
 @Composable
-internal fun SecretSection(detail: PluginDetail, plugins: PluginsState, onUpdated: (PluginDetail) -> Unit) {
+internal fun SecretSection(
+    detail: PluginDetail,
+    owner: Boolean,
+    plugins: PluginsState,
+    onUpdated: (PluginDetail) -> Unit,
+) {
     if (detail.secretInputs.isEmpty()) return
-    val owner by produceState<Boolean?>(null) { value = runCatching { plugins.core.me().isOwner }.getOrNull() }
-    if (owner != true) return
+    if (!owner) return
     DetailSection(stringResource(R.string.secret_section_title)) {
         detail.secretInputs.forEachIndexed { index, item ->
             SecretRow(detail.id, item, plugins, onUpdated)
             if (index < detail.secretInputs.lastIndex) WontonSeparator()
         }
+    }
+}
+
+/** 缺必填密钥时的「去填写」：滚到密钥一节；密钥只有主人能填，家人的入口没有落点，不显示。 */
+@Composable
+internal fun GoFillSecrets(
+    installed: InstalledPlugin?,
+    owner: Boolean?,
+    secretsInView: BringIntoViewRequester,
+) {
+    if (installed?.status is PluginState.NeedsConfiguration && owner == true) {
+        val scope = rememberCoroutineScope()
+        WontonButton(
+            stringResource(R.string.secret_go_fill),
+            { scope.launch { secretsInView.bringIntoView() } },
+            Modifier.fillMaxWidth(),
+            WontonButtonKind.SECONDARY,
+        )
     }
 }
 

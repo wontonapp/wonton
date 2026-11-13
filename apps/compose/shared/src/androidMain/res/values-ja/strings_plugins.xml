@@ -86,4 +86,5 @@
     <string name="secret_clear">クリア</string>
     <string name="secret_filled">入力済み</string>
     <string name="secret_unfilled">未準備：トークンを先に入力してください</string>
+    <string name="secret_go_fill">入力する</string>
 </resources>

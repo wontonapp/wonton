@@ -5,8 +5,8 @@ import WontonClient
 struct SecretSection: View {
     let detail: PluginDetail
     let model: PluginsModel
+    let isOwner: Bool
     let updated: (PluginDetail) -> Void
-    @State private var isOwner = false
 
     var body: some View {
         if isOwner, !detail.secretInputs.isEmpty {
@@ -17,9 +17,6 @@ struct SecretSection: View {
                         SecretRow(pluginId: detail.id, input: input, model: model, updated: updated)
                     }
                 }
-            }
-            .task {
-                isOwner = (try? await model.core.me())?.isOwner == true
             }
         }
     }
