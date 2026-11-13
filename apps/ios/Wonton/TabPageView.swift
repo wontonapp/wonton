@@ -99,26 +99,27 @@ struct TabPageView: View {
             let safe = geometry.safeAreaInsets
             let inputs = inputs(safe: safe)
             ZStack {
-                if let webView = session.webView, sourceAvailable {
-                    TabWebView(webView: webView, obscured: obscured())
-                        .id(ObjectIdentifier(webView))
-                        .ignoresSafeArea(.container)
-                }
-                TabPageStateView(
-                    page: page, session: session, connected: connected,
-                    shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
-                    details: { showsDetails = true },
-                    remove: {
-                        if let remove {
-                            remove()
-                        } else if let close {
-                            close()
-                        } else {
-                            pages.send(.closePage)
-                        }
+                if blocksBotPage {
+                    ProblemView(problem: Problem(title: blockedBotText), retry: session.retry)
+                } else if requiresDisclosure {
+                    BotWebDisclosure(url: page.url, proceed: {
+                        disclosedURL = page.url
+                        disclosedProxy = home.viewModel.proxy
+                        updatePermittedSession(inputs)
+                    }, cancel: closePage)
+                } else {
+                    if let webView = session.webView, sourceAvailable {
+                        TabWebView(webView: webView, obscured: obscured())
+                            .id(ObjectIdentifier(webView))
+                            .ignoresSafeArea(.container)
                     }
-                )
-                .ignoresSafeArea(.container)
+                    TabPageStateView(
+                        page: page, session: session, connected: connected,
+                        shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
+                        details: { showsDetails = true }, remove: closePage
+                    )
+                    .ignoresSafeArea(.container)
+                }
                 chrome(safe: safe)
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
@@ -130,7 +131,9 @@ struct TabPageView: View {
                     )
                 }
             }
-            .task(id: inputs) { updateSession(inputs) }
+            .task(id: inputs) { updatePermittedSession(inputs) }
+            .onChange(of: blocksBotPage) { updatePermittedSession(inputs) }
+            .onChange(of: requiresDisclosure) { updatePermittedSession(inputs) }
             .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
             .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
         }
@@ -155,6 +158,16 @@ struct TabPageView: View {
             Spacer(minLength: 0)
         }
         .ignoresSafeArea(.container)
+    }
+
+    private func closePage() {
+        if let remove {
+            remove()
+        } else if let close {
+            close()
+        } else {
+            pages.send(.closePage)
+        }
     }
 
     /// 面板拉开、翻到这一页只发一次“被看到了”，重新翻回来再发。
@@ -239,7 +252,7 @@ private extension TabPageView {
 
     private var blockedBotText: String {
         if let web = pageBot?.web, case let .unavailable(reason) = web { return reason.profileText }
-        return String(localized: .botProfileWebUnknown)
+        return String(localized: .BotProfile1.botProfileWebUnknown)
     }
 
     private func updatePermittedSession(_ inputs: TabWebInputs) {
@@ -315,7 +328,7 @@ private extension TabPageView {
 
     private func revive(_ inputs: TabWebInputs) {
         session = store.session(for: placed, core: pages.core)
-        updateSession(inputs)
+        updatePermittedSession(inputs)
     }
 
     private func updateSession(_ inputs: TabWebInputs) {

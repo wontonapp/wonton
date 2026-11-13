@@ -17,7 +17,7 @@ struct BotProfileView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
-                DetailSection(title: String(localized: .botProfileIdentity)) {
+                DetailSection(title: String(localized: .BotProfile0.botProfileIdentity)) {
                     VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                         Text(botRef.pluginId).accessibilityIdentifier("botProfilePluginId")
                         Text(botRef.bot).accessibilityIdentifier("botProfileBotId")
@@ -38,12 +38,12 @@ struct BotProfileView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(bot?.name ?? String(localized: .botProfileTitle), showsStatusLine: true)
+        .wontonPushedScreen(bot?.name ?? String(localized: .BotProfile0.botProfileTitle), showsStatusLine: true)
         .accessibilityIdentifier("botProfile")
     }
 
     private func readOnlyProfile(_ bot: BotView) -> some View {
-        DetailSection(title: String(localized: .botProfileTitle)) {
+        DetailSection(title: String(localized: .BotProfile0.botProfileTitle)) {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
                 HStack(spacing: WontonTheme.spacing.s16) {
                     BotAvatarView(
@@ -54,7 +54,7 @@ struct BotProfileView: View {
                         .wontonText(WontonTheme.typography.itemTitle)
                         .accessibilityIdentifier("botProfileName")
                 }
-                Text(.botProfileReadOnly)
+                Text(.BotProfile0.botProfileReadOnly)
                     .wontonText(WontonTheme.typography.supporting)
                     .foregroundStyle(Color(colors.textSecondary))
                     .accessibilityIdentifier("botProfileReadOnly")
@@ -77,14 +77,14 @@ private struct BotWebSection: View {
     }
 
     var body: some View {
-        DetailSection(title: String(localized: .botProfileWebTitle)) {
+        DetailSection(title: String(localized: .BotProfile1.botProfileWebTitle)) {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
                 if let page {
                     Text(page.url)
                         .wontonText(WontonTheme.typography.supporting)
                         .textSelection(.enabled)
                         .accessibilityIdentifier("botProfileWebAddress")
-                    Button(String(localized: .botProfileWebOpen)) {
+                    Button(String(localized: .BotProfile0.botProfileWebOpen)) {
                         willOpenWeb()
                         pages.open(.bot(bot: botRef, path: nil))
                     }
@@ -101,10 +101,10 @@ private struct BotWebSection: View {
     }
 
     private var unavailableText: String {
-        guard let bot, bot.bot == botRef else { return String(localized: .botProfileWebUnknown) }
+        guard let bot, bot.bot == botRef else { return String(localized: .BotProfile1.botProfileWebUnknown) }
         switch bot.web {
         case let .unavailable(reason): return reason.profileText
-        case .ready, .other, nil: return String(localized: .botProfileWebUnknown)
+        case .ready, .other, nil: return String(localized: .BotProfile1.botProfileWebUnknown)
         }
     }
 }
@@ -112,13 +112,13 @@ private struct BotWebSection: View {
 extension BotWebFailure {
     var profileText: String {
         switch self {
-        case .unauthenticated: String(localized: .botProfileWebUnauthenticated)
-        case .notShared: String(localized: .botProfileWebNotShared)
-        case .permissionDenied: String(localized: .botProfileWebPermissionDenied)
-        case .notFound: String(localized: .botProfileWebNotFound)
-        case .noWebui: String(localized: .botProfileWebNoWebui)
-        case .notReady: String(localized: .botProfileWebNotReady)
-        case .other: String(localized: .botProfileWebUnknown)
+        case .unauthenticated: String(localized: .BotProfile0.botProfileWebUnauthenticated)
+        case .notShared: String(localized: .BotProfile0.botProfileWebNotShared)
+        case .permissionDenied: String(localized: .BotProfile1.botProfileWebPermissionDenied)
+        case .notFound: String(localized: .BotProfile1.botProfileWebNotFound)
+        case .noWebui: String(localized: .BotProfile0.botProfileWebNoWebui)
+        case .notReady: String(localized: .BotProfile0.botProfileWebNotReady)
+        case .other: String(localized: .BotProfile1.botProfileWebUnknown)
         }
     }
 }

@@ -656,7 +656,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginHealth => health::request(&gateway, req).await,
         HostKind::PluginNotify => notify::request(&gateway, req).await,
         HostKind::FileHooks => files::hook_request(&gateway, req).await,
-        HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
+        HostKind::Plugin(slug) => plugin_web::request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
         HostKind::Unknown => {
             let langs = api::languages(req.headers());
@@ -695,107 +695,6 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
     }
 }
 
-/// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
-/// 页面发起的请求和导航。`sso: proxy` 的插件这时加上代登录凭据（`proxy_sso`）。然后转发给插件，并过滤插件
-/// 响应里的 `Set-Cookie` 和会交出凭据的头。
-async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
-    let host = gateway.public.plugin_host(slug);
-    // Bot 网页按 `bot--<插件>-<Bot>` 的标签路由，走 bot_web 自己的会话与凭据（ADR-0044）。
-    if slug.starts_with(wonton_protocol::BOT_WEB_LABEL_PREFIX) {
-        return plugin_web::request(gateway, slug, req).await;
-    }
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    let Some(route) = gateway.plugins.route(slug, req.uri().path()) else {
-        return pages::error(
-            StatusCode::NOT_FOUND,
-            "not_installed",
-            &l10n::text(
-                &langs,
-                "gateway-no-app-for-host",
-                &[("host", host.as_str().into())],
-            ),
-            &langs,
-            format,
-        );
-    };
-    // 这个插件自己网络里的容器访问它自己的网页地址：不要会话，转给它自己的上游，也不代表任何人（ADR-0063）。
-    // 认来源用网关认出调用方的同一张表（按来源地址落在哪个插件网络里）。
-    let from_itself = client_addr(&req)
-        .and_then(|addr| gateway.plugins.source(addr.ip()))
-        .is_some_and(|source| source.id == route.id);
-    if from_itself {
-        return plugin_web::self_request(gateway, &route, req).await;
-    }
-    if req.uri().path() == "/_wonton/session" {
-        return sso::redeem(gateway, &host, &req);
-    }
-    let origin = gateway.public.origin(&host);
-    let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
-    // 登记 OIDC 回调表单（精确路径、urlencoded、来源限签发方/本插件/缺失）无会话可达，身份由应用校验（ADR-0078）。
-    let callback = plugin_web::oidc_callback_post(&route, &req, &gateway.public, &origin);
-    let person = gateway.plugin_person(&host, &req);
-    if !credentials && !callback {
-        return request_guards::unauthenticated(gateway, &host, &req, false);
-    }
-    let person = match person {
-        Some(person) => Some(person),
-        None if callback => None,
-        None => return request_guards::unauthenticated(gateway, &host, &req, true),
-    };
-    if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
-        return denied;
-    }
-    // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
-    if let Some(hosted) = &route.hosted
-        && web_storage::is_data_path(req.uri().path())
-    {
-        return web_storage::forward(gateway, &route, hosted, req, &origin, &langs, format).await;
-    }
-    let upstream = match plugin_web::upstream(&route, &langs, format) {
-        Ok(upstream) => upstream,
-        Err(response) => return *response,
-    };
-    if let Some(hosted) = &route.hosted {
-        return hosted::forward(gateway, &route, &upstream, hosted, req, &langs, format).await;
-    }
-    if let Some(person) = &person
-        && let Err(response) = proxy_sso::attach_credentials(
-            gateway,
-            &route,
-            person,
-            req.headers_mut(),
-            &langs,
-            format,
-        )
-    {
-        return *response;
-    }
-    let fwd = proxy::Forwarded {
-        client: client_addr(&req),
-        scheme: &gateway.public.scheme,
-    };
-    let target = proxy::Target {
-        endpoint: &upstream,
-        name: route.id.as_str(),
-    };
-    let mut response =
-        match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
-            Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs, format),
-        };
-    isolation::sanitize_set_cookies(response.headers_mut());
-    if let Some(auth) = &route.proxy {
-        proxy_sso::scrub(response.headers_mut(), auth);
-    }
-    if route.cross_origin_isolated {
-        proxy::add_document_isolation_policy(&mut response);
-    }
-    response
-}
-
-/// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
-/// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod agent_chains_test_support;
 #[cfg(test)]

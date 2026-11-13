@@ -1,4 +1,5 @@
 import SwiftUI
+import WontonClient
 
 /// Shared by Bot and default-Bot tab entries before the existing WebKit container is allowed to load.
 struct BotWebDisclosure: View {
@@ -10,11 +11,11 @@ struct BotWebDisclosure: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
-                Text(.botProfileWebDisclosureTitle)
+                Text(.BotProfile0.botProfileWebDisclosureTitle)
                     .wontonText(WontonTheme.typography.itemTitle)
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("botWebDisclosureTitle")
-                Text(.botProfileWebDisclosureMessage)
+                Text(.BotProfile1.botProfileWebDisclosureMessage)
                     .wontonText(WontonTheme.typography.body)
                     .foregroundStyle(Color(colors.textSecondary))
                     .accessibilityIdentifier("botWebDisclosureMessage")
@@ -24,10 +25,10 @@ struct BotWebDisclosure: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("botWebDisclosureAddress")
                 }
-                Button(String(localized: .botProfileWebOpen), action: proceed)
+                Button(String(localized: .BotProfile0.botProfileWebOpen), action: proceed)
                     .buttonStyle(WontonButtonStyle(kind: .primary))
                     .accessibilityIdentifier("botWebDisclosureContinue")
-                Button(String(localized: .commonCancel), action: cancel)
+                Button(String(localized: .Common.commonCancel), action: cancel)
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
                     .accessibilityIdentifier("botWebDisclosureCancel")
             }

@@ -130,7 +130,7 @@ pub(super) async fn request(gateway: &Gateway, label: &str, req: Request) -> Res
     plugin_request_path(gateway, label, &host, &langs, format, req).await
 }
 
-/// 插件网页（不是 Bot 网页）的转发：会话、家人开关、代登录和目标服务都在这里判。
+/// 非 Bot 插件网页的转发，沿用角色授权及受限回调例外。
 async fn plugin_request_path(
     gateway: &Gateway,
     label: &str,
@@ -172,21 +172,8 @@ async fn plugin_request_path(
         None if callback => None,
         None => return request_guards::unauthenticated(gateway, host, &req, true),
     };
-    // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
-    // 家人这一侧没有别的门槛。
-    if person.as_ref().is_some_and(|p| !p.is_owner()) && !gateway.plugins.family_enabled(&route.id)
-    {
-        return pages::error(
-            StatusCode::FORBIDDEN,
-            "not_shared",
-            &l10n::text(
-                langs,
-                "gateway-plugin-not-shared",
-                &[("id", route.id.as_str().into())],
-            ),
-            langs,
-            format,
-        );
+    if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
+        return denied;
     }
     // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
     if let Some(hosted) = &route.hosted
