@@ -32,6 +32,8 @@ struct OnboardingChatPrompts: View {
             }
             .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
+        // 界面测试按它让开这一排：从这里起手的上推归这排自己的横滚，不拖消息列表。
+        .accessibilityIdentifier("onboardingPrompts")
     }
 }
 
