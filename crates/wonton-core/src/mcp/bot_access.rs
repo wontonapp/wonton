@@ -1,7 +1,7 @@
-//! 按 Bot 放行插件的工具（ADR-0066 第 5 节）：主人对某个 Bot 单独关掉的插件，这个 Bot 在 `tools/list` 里看不到，
-//! `tools/call` 回 `permission_denied`。没有 Bot 记录的调用方（按来源地址认的工具插件）不受影响。
-//!
-//! 插件范围（全局或指定的 Bot）只有“全局”一种在生效，所以没单独关掉的 Bot 都能用。
+//! 插件工具同时受归属人的 `open_apps`（ADR-0088）和单 Bot 开关（ADR-0066）限制。
+//! 共享 Bot 按主人；没有 Bot 身份的工具插件不走这层归属人授权。
+
+use wonton_protocol::{BotKeeper, MemberStatus};
 
 use super::server::Caller;
 use super::{Bus, ToolFailure};
@@ -13,6 +13,25 @@ impl Bus {
         let Some(bot) = &caller.bot else {
             return Ok(());
         };
+        let allowed = match &bot.keeper {
+            BotKeeper::User { username } if username == self.plugins.owner_name() => true,
+            BotKeeper::User { username } => self.people.get().is_some_and(|people| {
+                people.members.get(username).is_some_and(|member| {
+                    member.status != MemberStatus::Removed
+                        && people.roles.get(&member.role_id).is_some_and(|role| {
+                            role.permissions.open_apps.allows_plugin(target.as_str())
+                        })
+                })
+            }),
+            BotKeeper::Household => true,
+            BotKeeper::Other => false,
+        };
+        if !allowed {
+            return Err(ToolFailure::new(
+                "permission_denied",
+                format!("这个 Bot 的归属人不能打开应用 {target}"),
+            ));
+        }
         let policy = self.plugins.tool_policy();
         match policy.is_bot_off(caller.id.as_str(), &bot.bot, target.as_str()) {
             Ok(false) => Ok(()),

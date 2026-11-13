@@ -5,6 +5,8 @@ struct ChatRoomView: View {
     let model: ChatModel
     let plugins: PluginsModel
     let roomId: String
+    /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。旁聊页盖在主对话上（全屏盖层），主对话继续订阅。
+    let threadRoot: String?
     let title: String
     @State private var timeline: TimelineModel
     @State private var composer: ComposerModel
@@ -24,29 +26,47 @@ struct ChatRoomView: View {
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(PagesModel.self) private var pages
 
-    init(model: ChatModel, plugins: PluginsModel, roomId: String, title: String) {
+    init(model: ChatModel, plugins: PluginsModel, roomId: String, threadRoot: String? = nil, title: String) {
         self.model = model
         self.plugins = plugins
         self.roomId = roomId
+        self.threadRoot = threadRoot
         self.title = title
-        _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId))
-        _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId))
+        _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId, threadRoot: threadRoot))
+        _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId, threadRoot: threadRoot))
         _presenter = State(initialValue: RoomPresenter(files: model.files))
     }
 
     var body: some View {
-        RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
-                      blocked: entryBlocked, pullAnchor: roomPull) {
+        if threadRoot == nil {
+            // 旁聊页全屏盖在这条主对话上（ADR-0093）：盖层的机制在 SideChatCover。
+            SideChatCover(model: model, plugins: plugins, roomId: roomId, title: title) {
+                RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
+                              blocked: entryBlocked, pullAnchor: roomPull) {
+                    roomContent
+                        .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
+                }
+            }
+        } else {
+            // 旁聊页没有房间的面板（ADR-0093）：不挂面板宿主，也没有上推入口。
             roomContent
-                .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
         }
     }
+}
 
+@MainActor
+private extension ChatRoomView {
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
     private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
 
     private var roomContent: some View {
         VStack(spacing: 0) {
+            // 旁聊页顶栏下面是它的状态；主对话顶上是“这个 AI 不支持旁聊”的提示（ADR-0093）。
+            if threadRoot != nil {
+                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
+            } else if model.noSideChatsRoom == roomId {
+                NoSideChatsHint()
+            }
             if let failure = timeline.failure {
                 ProblemView(problem: failure) { timeline.attempt += 1 }
                     .frame(maxHeight: .infinity)
@@ -58,11 +78,11 @@ struct ChatRoomView: View {
             }
             TransfersStrip(roomId: roomId)
             if !isReadOnly {
-                if let bot = onboarding.viewModel.primaryBotUserId,
+                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
                    model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
                    !onboarding.viewModel.chatPrompts.isEmpty {
                     OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
-                        model.appendDraft($0, to: roomId)
+                        model.appendDraft($0, to: target)
                     }
                 }
                 ComposerView(model: model, composer: composer, pin: pin)
@@ -86,17 +106,30 @@ struct ChatRoomView: View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)),
                 WontonDialogAction(title: String(localized: .Message1.messageRedact), kind: .danger) {
-                    if let item = redactItem { sendTimeline(.redactMessage(target: mainTimeline, itemId: item)) }
+                    if let item = redactItem { sendTimeline(.redactMessage(target: target, itemId: item)) }
                 }
             ],
             afterDismiss: { redactItem = nil }
         )
         .environment(model.files)
         .environment(presenter)
-        // 和 Bot 的私聊：顶栏是它的头像和 Matrix 名字，不写状态文字（ADR-0044）。
-        .wontonPushedScreen(
-            bot?.name ?? title, avatar: barAvatar, showsStatus: true, showsStatusLine: true
-        ) { EmptyView() }
+        // 开新旁聊的面板（ADR-0093 §6）。
+        .modifier(NewSideChatSheet(model: model, roomId: roomId))
+        // 盖层见 body 里的 SideChatCover：这里不另做系统呈现，免得和收起的“开新旁聊”面板撞在同一个呈现时机上。
+        .modifier(RoomTopBar(
+            title: bot?.name ?? title,
+            avatar: barAvatar,
+            sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
+            close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
+        ) {
+            if supportsSideChats {
+                WontonIconButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
+                    model.composingSideChat = roomId
+                }
+            } else {
+                EmptyView()
+            }
+        })
         // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
         .navigationDestination(for: ChatRoute.self) { route in
             if case .chatBackup = route { ChatBackupView(model: model) }
@@ -104,19 +137,50 @@ struct ChatRoomView: View {
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .onChange(of: entryBlocked, initial: true) { _, blocked in
-            model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+            // 旁聊页没有面板，不报（ADR-0093）。
+            if threadRoot == nil {
+                model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+            }
         }
-        .task(id: roomId) { await model.loadDraft(roomId) }
-        .task(id: roomId) { await composer.observe() }
+        .task(id: model.draftKey(target)) { await model.loadDraft(target) }
+        .task(id: model.draftKey(target)) { await composer.observe() }
         .task(id: timeline.attempt) {
             if await timeline.observe(pin: pin) {
-                model.path = []
-                model.visiting = nil
-                pages.open(.chat)
+                if threadRoot != nil {
+                    // 旁聊没了：只收起旁聊，主对话还在。
+                    model.closeSideChat(in: roomId)
+                } else {
+                    model.path = []
+                    model.visiting = nil
+                    pages.open(.chat)
+                }
             }
+        }
+        .onDisappear {
+            if threadRoot == nil {
+                // 房间关了，开着的旁聊跟着关（换房间、路径被换掉时没有别的收口）。
+                model.sideChats[roomId] = nil
+                if model.noSideChatsRoom == roomId {
+                    model.noSideChatsRoom = nil
+                }
+            } else if model.sideChats[roomId] == threadRoot {
+                // 旁聊页收起时同步关掉：改回主对话就不再算“旁聊开着”。
+                model.closeSideChat(in: roomId)
+            }
+        }
+        .onChange(of: covered) { _, isCovered in
+            // 盖住拿开时重新报告一次方向：还停着底部，就把盖住时攒下的消息读掉（ADR-0093）。
+            if placed, pin.isPinned, !isCovered { reportPosition(true) }
         }
     }
 
+    /// 这条时间线：主对话或一个旁聊（ADR-0093）。
+    private var target: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: threadRoot) }
+}
+
+/// 消息列表、落点摆放和位置报告（ADR-0071）。
+@MainActor
+private extension ChatRoomView {
     private var messages: some View {
         ScrollViewReader { scroller in
             // 不用 ScrollView + LazyVStack：行高相差悬殊时（一行和六十行）它的内容高度全靠估算，同样的数据几毫秒内差出几千点，
@@ -133,7 +197,7 @@ struct ChatRoomView: View {
                                 guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
                                 if timeline.isLoaded, timeline.backPagination == .idle {
                                     pageAnchor = oldestEvent
-                                    sendTimeline(.paginateBackwards(target: mainTimeline))
+                                    sendTimeline(.paginateBackwards(target: target))
                                 }
                             }
                             .onDisappear { pageAnchor = nil }
@@ -153,10 +217,10 @@ struct ChatRoomView: View {
                     TimelineRow(
                         item: item, core: model.core, showsSender: !isDirect,
                         joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { sendTimeline(.retrySend(target: mainTimeline, itemId: item.id)) },
-                        cancel: { sendTimeline(.cancelSend(target: mainTimeline, itemId: item.id)) },
+                        retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
+                        cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
                         cardAction: { model.send($0) },
-                        reply: { model.startReply(.ready(message: $0), in: roomId) },
+                        reply: { model.startReply(.ready(message: $0), in: target) },
                         forward: {
                             forwarding = item.id
                             pickingForwardRoom = true
@@ -172,12 +236,13 @@ struct ChatRoomView: View {
                         },
                         answerChoice: { key in
                             model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
-                        }
+                        },
+                        onOpenSideChat: { model.openSideChat($0, in: roomId) }
                     )
                     .id(item.id)
                     .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
                     .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
-                        model.startReply(.ready(message: quote), in: roomId)
+                        model.startReply(.ready(message: quote), in: target)
                     })
                 }
                 // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
@@ -256,15 +321,14 @@ struct ChatRoomView: View {
     }
 
     private func reportPosition(_ pinned: Bool) {
-        sendTimeline(.setTimelineScroll(target: mainTimeline, scroll: pinned ? .bottom : .away))
-        if pinned { sendTimeline(.markRead(target: mainTimeline)) }
+        sendTimeline(.setTimelineScroll(target: target, scroll: pinned ? .bottom : .away))
+        // 旁聊页盖着这条主对话时不标已读（ADR-0093）：主人看不见，别替他把新消息读掉。
+        if pinned, !covered { sendTimeline(.markRead(target: target)) }
     }
 }
 
 @MainActor
 private extension ChatRoomView {
-    var mainTimeline: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: nil) }
-
     func sendTimeline(_ action: TimelineAction) { model.send(.timeline(action: action)) }
 
     var isDirect: Bool {
@@ -421,5 +485,27 @@ private extension ChatRoomView {
             default: true
             }
         }?.id
+    }
+}
+
+/// 主对话和旁聊页的顶栏（ADR-0093 §6）：主对话带 Bot 头像和开旁聊的按钮；旁聊页的标题是旁聊的标题，还没
+/// 到就先叫“旁聊”，不写状态行、没有头像和按钮。
+private struct RoomTopBar<Trailing: View>: ViewModifier {
+    let title: String
+    let avatar: AnyView?
+    /// 旁聊页的标题；主对话为空。
+    let sideChatTitle: String?
+    /// 旁聊页返回键的动作：收起旁聊，不动导航栈。
+    let close: (() -> Void)?
+    @ViewBuilder let trailing: () -> Trailing
+
+    func body(content: Content) -> some View {
+        if let sideChatTitle {
+            content.wontonPushedScreen(sideChatTitle, showsStatus: true, onClose: close) { EmptyView() }
+        } else {
+            content.wontonPushedScreen(
+                title, avatar: avatar, showsStatus: true, showsStatusLine: true, trailing: trailing
+            )
+        }
     }
 }

@@ -6,10 +6,11 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
+use wonton_protocol::PermissionItem;
 use wonton_protocol::{CapabilityDefaultChoice, ConsumerCapabilityChoice};
 
-use super::api::{install_denied, install_error, languages, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{install_error, languages};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::{InstallError, PluginId};
@@ -19,7 +20,9 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     match gateway.plugins.capability_settings(&languages(&headers)) {
@@ -35,7 +38,9 @@ pub async fn set_default(
     Path(capability): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -63,7 +68,9 @@ pub async fn set_consumer(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -90,7 +97,9 @@ pub async fn uninstall_preview(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match plugin_id(&id) {

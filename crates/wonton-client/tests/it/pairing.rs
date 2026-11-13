@@ -1,6 +1,7 @@
 //! 扫码配对和添加设备的行为测试：只经导出给原生壳的接口驱动。服务端是只走回环地址的隧道入口，配对的处理方按发出去的
 //! 码决定登记还是拒绝，登记就是把设备加进隧道的白名单；经隧道来的 HTTP 请求由一个模拟的核心回答。
 
+mod joining;
 mod reset;
 mod stuck_bind;
 
@@ -20,7 +21,7 @@ use wonton_client::{
     Action, ClientCore, CoreError, DeviceInvite, HomeFailure, HomeStatus, HomeViewModel, Network,
     PairingFailure, PairingStage, PairingStatus, SecretString,
 };
-use wonton_protocol::{AdminScope, AiLevel, AppScope, Gate, JoinOutcome, Permissions, RoleDef};
+use wonton_protocol::{JoinOutcome, RoleDef};
 use wonton_tunnel::pair::{
     PairHandler, PairProtocol, PairResponse, PairingCode, PairingSecret, RejectReason, SECRET_LEN,
 };
@@ -573,65 +574,6 @@ async fn a_rejected_code_says_what_to_do_next() {
     }
     // 拒绝之后换一个好码照样能配上。
     phone.pair(&home.code(None)).unwrap();
-    phone.wait_for(paired).await;
-}
-
-/// 加入别人家的码：等批如实报出角色、码被用过说要换码，管理员同意后用同一个码重试能配上。
-#[tokio::test]
-async fn a_joining_code_waits_for_approval_and_the_same_code_pairs_once_approved() {
-    let home = Home::start().await;
-    let dir = tempfile::tempdir().unwrap();
-    let phone = Phone::open(dir.path());
-    let role = RoleDef {
-        id: "child".to_owned(),
-        name: "孩子".to_owned(),
-        template: None,
-        permissions: Permissions {
-            open_apps: AppScope::Other,
-            plugin_admin: AdminScope::NoApps,
-            install_apps: Gate::AskAdmin,
-            model_settings: false,
-            server_settings: false,
-            manage_members: false,
-            add_friends: Gate::Deny,
-            share_apps: false,
-            ai: AiLevel::ReadOnly,
-            privileged_tools: false,
-            private_bot: true,
-            shared_bots: false,
-            lend_own_bot: false,
-        },
-        people: 0,
-    };
-    let code = home.join_code(JoinOutcome::Pending, Some(role.clone()));
-    phone.pair(&code).unwrap();
-    let (failure, message) = phone.pairing_failure().await;
-    assert_eq!(failure, PairingFailure::PendingApproval, "{message}");
-    assert!(message.contains("孩子"), "{message}");
-    assert_eq!(
-        phone.home().status,
-        HomeStatus::NotConfigured,
-        "等批时还不存连接信息"
-    );
-
-    // 同一台设备再交同一个码还是等批；换成被别的设备用过的码就报换码。
-    phone.pair(&code).unwrap();
-    let (failure, message) = phone.pairing_failure().await;
-    assert_eq!(failure, PairingFailure::PendingApproval, "{message}");
-    let used = home.join_code(JoinOutcome::CodeUsed, None);
-    phone.pair(&used).unwrap();
-    let (failure, message) = phone.pairing_failure().await;
-    assert_eq!(failure, PairingFailure::Rejected, "{message}");
-
-    // 管理员同意了：同一个码再交，服务端直接登记设备、回 Paired。
-    let secret = PairingCode::parse(&code)
-        .unwrap()
-        .secret
-        .expose()
-        .to_owned();
-    home.codes.joins.lock().unwrap().remove(&secret);
-    home.codes.codes.lock().unwrap().insert(secret, None);
-    phone.pair(&code).unwrap();
     phone.wait_for(paired).await;
 }
 

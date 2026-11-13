@@ -96,7 +96,7 @@ pub(super) async fn invite(home: &Home, invite: Value) -> Value {
 }
 
 /// 给家人出码，返回配对码（直连地址换成服务端真实绑定的地址，回环里才连得上）。
-async fn member_code(home: &Home, username: &str) -> PairingCode {
+pub(super) async fn member_code(home: &Home, username: &str) -> PairingCode {
     let path = wonton_protocol::member_pairing_code_path(username);
     let (status, body) = owner_call(
         home,
@@ -120,11 +120,38 @@ fn reject_reason(response: PairResponse) -> Option<RejectReason> {
 }
 
 /// 用归家人的码配一台真设备（真实隧道，同 `pairing_tests` 的扫码）。
-async fn pair_member_phone(home: &Home, code: &PairingCode) -> (SecretKey, Phone) {
+pub(super) async fn pair_member_phone(home: &Home, code: &PairingCode) -> (SecretKey, Phone) {
     let key = SecretKey::generate();
     let endpoint = loopback_endpoint(key.clone()).await;
     let response = pair(&endpoint, code, "家人的手机").await.unwrap();
-    assert_eq!(reject_reason(response), None, "家人的码应当配上");
+    assert!(
+        matches!(
+            response,
+            PairResponse::Joining {
+                outcome: wonton_protocol::JoinOutcome::Pending,
+                ..
+            }
+        ),
+        "{response:?}"
+    );
+    let requests = home.members.join_requests();
+    let request = requests
+        .iter()
+        .find(|request| request.device_name == "家人的手机")
+        .unwrap();
+    let (status, body) = owner_call(
+        home,
+        Method::POST,
+        &wonton_protocol::join_request_approve_path(&request.id),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{body}");
+    assert_eq!(
+        pair(&endpoint, code, "家人的手机").await.unwrap(),
+        PairResponse::Paired
+    );
+    endpoint.close().await;
     let phone = Phone::start(key.clone(), home).await;
     (key, phone)
 }
@@ -175,7 +202,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     let token: super::matrix::LoginToken = serde_json::from_str(&body).unwrap();
     assert_eq!(token.user_id, "@family1:test", "登录令牌是这个家人的账号");
 
-    // 家人只看到自己的设备；主人看到她“已加入”，码已清掉。
+    // 家人只看到自己的设备；批准后成员为“已加入”。
     let (status, _, body) = phone.get(CORE, "/_wonton/api/devices").await;
     assert_eq!(status, StatusCode::OK, "{body}");
     let devices: Value = serde_json::from_str(&body).unwrap();
@@ -184,11 +211,6 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
 
     let her = member_record(&home, "family1").await;
     assert_eq!(her["status"], "joined", "配上后主人看到已加入");
-    assert_eq!(
-        her["pairing_code_expires_at_ms"],
-        Value::Null,
-        "码用掉后清掉"
-    );
 
     // 家人改自己的资料；主人的名单跟着更新。
     let request = phone
@@ -254,7 +276,13 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     assert_eq!(reject_reason(response), None);
     let again = loopback_endpoint(SecretKey::generate()).await;
     let rejected = pair(&again, &second, "再用").await.unwrap();
-    assert_eq!(reject_reason(rejected), Some(RejectReason::Used));
+    assert!(matches!(
+        rejected,
+        PairResponse::Joining {
+            outcome: wonton_protocol::JoinOutcome::CodeUsed,
+            role: None
+        }
+    ));
 
     // 作废以后不能用。
     invite(
@@ -368,9 +396,118 @@ async fn usernames_come_from_display_names_and_collisions_are_conflicts() {
     }
 }
 
-/// 只给主人的路由，挨个过一遍：家人的设备回 403 `permission_required`，没有身份回 401。
+/// 按权限项分层的路由表：每一项下，没有这一项的家人拿到的都是 403 和缺的那一项。
+type GuardedRoutes = Vec<(
+    wonton_protocol::PermissionItem,
+    Vec<(Method, &'static str, &'static str)>,
+)>;
+
+fn guarded_routes() -> GuardedRoutes {
+    use wonton_protocol::PermissionItem as Item;
+    let install: Vec<(Method, &str, &str)> = vec![
+        (
+            Method::POST,
+            "/_wonton/api/plugins/preview",
+            r#"{"source":"github:o/r"}"#,
+        ),
+        (Method::POST, "/_wonton/api/plugins", "{}"),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
+        (
+            Method::POST,
+            "/_wonton/api/plugins/app.whoami/upgrade",
+            "{}",
+        ),
+        (Method::DELETE, "/_wonton/api/plugins/app.whoami", ""),
+        (Method::GET, "/_wonton/api/store", ""),
+        (
+            Method::GET,
+            "/_wonton/api/store/plugin?source=github:o/r",
+            "",
+        ),
+        (
+            Method::GET,
+            "/_wonton/api/store/plugin?source=github:o/r",
+            "",
+        ),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
+            "{\"enabled\": true}",
+        ),
+        (
+            Method::GET,
+            "/_wonton/api/plugins/app.whoami/tool-policy",
+            "",
+        ),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/tool-policy/always/hermes",
+            "",
+        ),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/secrets", ""),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/secrets/admin_password",
+            "{\"value\": \"x\"}",
+        ),
+        (Method::PUT, "/_wonton/api/plugins/app.whoami/takeover", ""),
+        (Method::PUT, "/_wonton/api/bots/app.whoami/profile", "{}"),
+        (
+            Method::PUT,
+            "/_wonton/api/plugins/app.whoami/scope",
+            "{\"type\":\"all\"}",
+        ),
+        (
+            Method::GET,
+            "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
+            "",
+        ),
+    ];
+    let server: Vec<(Method, &str, &str)> = vec![
+        (Method::GET, "/_wonton/api/egress-proxy", ""),
+        (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
+        (Method::GET, "/_wonton/api/registry-mirror", ""),
+        (Method::POST, "/_wonton/api/registry-mirror/test", "{}"),
+        (Method::GET, "/_wonton/api/lan", ""),
+        (Method::GET, "/_wonton/api/onboarding", ""),
+        (Method::POST, "/_wonton/api/core/upgrade/check", ""),
+        (Method::POST, "/_wonton/api/bots", "{}"),
+        (Method::GET, "/_wonton/api/storage", ""),
+        (Method::POST, "/_wonton/api/store/sources", "{}"),
+        (Method::DELETE, "/_wonton/api/store/sources?address=x", ""),
+        (Method::GET, "/_wonton/api/peers", ""),
+        (Method::POST, "/_wonton/api/peers/requests/r1/approve", ""),
+    ];
+    vec![
+        (Item::ServerSettings, server),
+        (
+            Item::ManageMembers,
+            vec![
+                (Method::GET, MEMBERS, ""),
+                (Method::POST, MEMBERS, "{}"),
+                (Method::POST, "/_wonton/api/members/mia/pairing-code", "{}"),
+                (Method::POST, "/_wonton/api/members/mia/remove", "{}"),
+                (
+                    Method::PUT,
+                    "/_wonton/api/plugins/app.whoami/family",
+                    "{\"enabled\": true}",
+                ),
+            ],
+        ),
+        (Item::InstallApps, install),
+        (
+            Item::ModelSettings,
+            vec![
+                (Method::GET, "/_wonton/api/models/providers", ""),
+                (Method::PUT, "/_wonton/api/models/providers/magpie", "{}"),
+            ],
+        ),
+    ]
+}
+
+/// 每一项：没有这一项的家人是 403 并带上缺的项，没有身份是 401；换成管理员模板就放行，角色接口仍只给主人。
 #[tokio::test]
-async fn permission_required_routes_reject_member_devices_with_permission_required() {
+async fn routes_ask_for_their_permission_item() {
     let h = Harness::start(None).await;
     let member = SecretKey::generate().public();
     seed_member(&h, "mia", false);
@@ -379,21 +516,17 @@ async fn permission_required_routes_reject_member_devices_with_permission_requir
         .add_if(member, None, Some("mia".to_owned()), |_| true)
         .unwrap();
 
-    for (kind, routes) in permission_required_route_tables() {
+    for (item, routes) in guarded_routes() {
         for (method, path, body) in routes {
             let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
             assert_eq!(
                 reply.status,
                 StatusCode::FORBIDDEN,
-                "{method} {path}: {}",
+                "{item:?} {method} {path}: {}",
                 reply.text()
             );
-            assert_eq!(
-                reply.error_kind(),
-                Some(kind),
-                "{method} {path}: {}",
-                reply.text()
-            );
+            assert_eq!(reply.error_kind(), Some("permission_required"));
+            assert_eq!(reply.json()["missing"], json!(item), "{path}");
             // 同一条路由没有身份时是 401。
             let anonymous = send_as(&h.app, None, method.clone(), CORE, path, &[], body).await;
             assert_eq!(
@@ -405,6 +538,35 @@ async fn permission_required_routes_reject_member_devices_with_permission_requir
             assert_eq!(anonymous.error_kind(), Some("unauthenticated"));
         }
     }
+
+    // 管理员模板：成员、设备、服务器设置都放行；角色接口仍然只给主人。
+    h.members.set_role("mia", "admin").unwrap();
+    for (method, path, body) in [
+        (Method::GET, MEMBERS, ""),
+        (Method::GET, "/_wonton/api/devices", ""),
+        (Method::GET, "/_wonton/api/storage", ""),
+        (Method::POST, "/_wonton/api/store/sources", "{}"),
+    ] {
+        let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
+        assert_ne!(
+            reply.status,
+            StatusCode::FORBIDDEN,
+            "管理员 {method} {path}: {}",
+            reply.text()
+        );
+    }
+    let reply = send_as(
+        &h.app,
+        Some(member),
+        Method::GET,
+        CORE,
+        wonton_protocol::ROLES_PATH,
+        &[],
+        "",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
+    assert_eq!(reply.json()["missing"], json!("owner"));
 
     // 登记设备只认主人令牌（ADR-0009）：家人的设备也是 401 unauthenticated，不是 permission_required。
     let reply = send_as(
@@ -421,8 +583,9 @@ async fn permission_required_routes_reject_member_devices_with_permission_requir
     assert_eq!(reply.error_kind(), Some("unauthenticated"));
 }
 
+/// 有“装、删、升级应用”就能连权限项一起改（ADR-0088 把插件的设置和权限都归这一项）。
 #[tokio::test]
-async fn install_authorization_does_not_allow_changing_plugin_permissions() {
+async fn installers_can_change_plugin_permissions() {
     let h = Harness::start(None).await;
     let member = SecretKey::generate().public();
     seed_member(&h, "mia", true);
@@ -479,146 +642,21 @@ async fn install_authorization_does_not_allow_changing_plugin_permissions() {
             body,
         )
         .await;
-        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{method} {path}");
-        assert_eq!(
-            reply.error_kind(),
-            Some("permission_required"),
-            "{}",
+        assert_ne!(
+            reply.status,
+            StatusCode::FORBIDDEN,
+            "{method} {path}: {}",
             reply.text()
         );
     }
-}
-
-/// 路由表的一层：`kind` 是没授权的家人拿到的错误码。
-type RouteTable = (&'static str, Vec<(Method, &'static str, &'static str)>);
-
-/// 分层的路由表：`kind` 是没授权的家人会拿到的错误码。
-fn permission_required_route_tables() -> Vec<RouteTable> {
-    let mut permission_required: Vec<(Method, &str, &str)> = vec![
-        (Method::GET, "/_wonton/api/egress-proxy", ""),
-        (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
-        (Method::GET, "/_wonton/api/registry-mirror", ""),
-        (Method::PUT, "/_wonton/api/registry-mirror", "{}"),
-        (Method::POST, "/_wonton/api/registry-mirror/test", "{}"),
-        (Method::GET, "/_wonton/api/lan", ""),
-        (Method::PUT, "/_wonton/api/lan", "\"all\""),
-        (Method::GET, "/_wonton/api/onboarding", ""),
-        (Method::PUT, "/_wonton/api/onboarding", "{}"),
-        (Method::GET, "/_wonton/api/core/upgrade", ""),
-        (Method::POST, "/_wonton/api/core/upgrade", ""),
-        (Method::POST, "/_wonton/api/core/upgrade/check", ""),
-        (Method::GET, MEMBERS, ""),
-        (Method::POST, MEMBERS, "{}"),
-        (Method::POST, "/_wonton/api/members/mia/pairing-code", "{}"),
-        (Method::DELETE, "/_wonton/api/members/mia/pairing-code", ""),
-        (Method::POST, "/_wonton/api/members/mia/remove", "{}"),
-        (Method::POST, "/_wonton/api/bots", "{}"),
-        (
-            Method::PUT,
-            "/_wonton/api/plugins/app.whoami/family",
-            "{\"enabled\": true}",
-        ),
-        (
-            Method::PUT,
-            "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
-            "{\"enabled\": true}",
-        ),
-        (Method::POST, "/_wonton/api/plugins", "{}"),
-        (
-            Method::POST,
-            "/_wonton/api/plugins/app.whoami/upgrade",
-            "{}",
-        ),
-        (Method::GET, "/_wonton/api/storage", ""),
-        (Method::POST, "/_wonton/api/store/sources", "{}"),
-        (Method::DELETE, "/_wonton/api/store/sources?address=x", ""),
-        (Method::POST, "/_wonton/api/pairing-codes/first", "{}"),
-        (Method::GET, wonton_protocol::MODEL_PROVIDERS_PATH, ""),
-        (Method::PUT, "/_wonton/api/models/providers/magpie", "{}"),
-        (
-            Method::POST,
-            "/_wonton/api/models/providers/magpie/test",
-            "{}",
-        ),
-        (
-            Method::GET,
-            "/_wonton/api/plugins/app.whoami/tool-policy",
-            "",
-        ),
-        (Method::GET, "/_wonton/api/plugins/app.whoami/secrets", ""),
-        (
-            Method::GET,
-            "/_wonton/api/plugins/app.whoami/secrets/admin_password",
-            "",
-        ),
-        (
-            Method::PUT,
-            "/_wonton/api/plugins/app.whoami/secrets/admin_password",
-            "{\"value\": \"x\"}",
-        ),
-        (
-            Method::PUT,
-            "/_wonton/api/plugins/app.whoami/tool-policy/always/hermes",
-            "",
-        ),
-        (Method::PUT, "/_wonton/api/plugins/app.whoami/takeover", ""),
-        (Method::PUT, "/_wonton/api/bots/app.whoami/profile", "{}"),
-        (Method::GET, "/_wonton/api/peers", ""),
-        (Method::POST, "/_wonton/api/peers", "{}"),
-        (Method::GET, "/_wonton/api/peers/code", ""),
-        (Method::POST, "/_wonton/api/peers/code/reset", ""),
-        (Method::POST, "/_wonton/api/peers/requests/r1/approve", ""),
-        (Method::POST, "/_wonton/api/peers/requests/r1/reject", ""),
-        (Method::DELETE, "/_wonton/api/peers/rejected/r1", ""),
-        (Method::DELETE, "/_wonton/api/peers/other.example", ""),
-    ];
-    permission_required.extend(super::plugin_forms_tests::permission_required_routes());
-    vec![
-        ("permission_required", permission_required),
-        install_not_allowed_routes(),
-    ]
-}
-
-fn install_not_allowed_routes() -> RouteTable {
-    // 商店、预览、启动和卸载是另一层：没授权的家人是 install_not_allowed，不是 permission_required。
-    let install_routes: Vec<(Method, &str, &str)> = vec![
-        (
-            Method::POST,
-            "/_wonton/api/plugins/preview",
-            "{\"source\": \"github:o/r\"}",
-        ),
-        (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
-        (Method::DELETE, "/_wonton/api/plugins/app.whoami", ""),
-        (
-            Method::POST,
-            "/_wonton/api/plugins/app.whoami/upgrade/preview",
-            "",
-        ),
-        (Method::GET, "/_wonton/api/store", ""),
-        (
-            Method::GET,
-            "/_wonton/api/store/plugin?source=github:o/r",
-            "",
-        ),
-    ];
-    ("install_not_allowed", install_routes)
 }
 
 /// 直接记一个家人（邀请流程带 Matrix 查重，在别的测试里过）。
 pub(super) fn seed_member(h: &Harness, username: &str, can_install: bool) {
     h.members
         .invite(MemberRecord {
-            username: username.to_owned(),
-            user_id: format!("@{username}:test"),
-            display_name: username.to_owned(),
-            email: None,
-            status: wonton_protocol::MemberStatus::Invited,
-            // 能装插件改成看角色：直接给权限最大的管理员模板。
             role_id: if can_install { "admin" } else { "friend" }.to_owned(),
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test(username)
         })
         .unwrap();
 }
@@ -650,16 +688,8 @@ async fn a_device_whose_member_is_gone_is_rejected() {
     let hers = SecretKey::generate().public();
     h.members
         .invite(MemberRecord {
-            username: "mia".to_owned(),
-            user_id: "@mia:test".to_owned(),
             display_name: "Mia".to_owned(),
-            email: None,
-            status: wonton_protocol::MemberStatus::Invited,
-            role_id: "friend".to_owned(),
-            wants_private_bot: true,
-            private_bot: None,
-            pairing_code_hash: None,
-            pairing_code_expires_at_ms: None,
+            ..MemberRecord::for_test("mia")
         })
         .unwrap();
     h.tunnel
@@ -756,7 +786,6 @@ async fn a_member_sees_and_revokes_only_her_own_devices() {
     assert!(h.tunnel.devices.contains(&owners), "别人的设备还在");
 }
 
-/// 家人的插件列表只列开放了的；网页和详情由“家人能用”的开关管。
 #[tokio::test]
 async fn member_issued_codes_follow_the_issuer_and_bot_names_are_taken() {
     let (home, _state) = home_with_matrix().await;

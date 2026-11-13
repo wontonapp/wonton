@@ -182,6 +182,37 @@ impl Default for Permissions {
 }
 
 impl Permissions {
+    /// 这一项放不放行。“能打开哪些应用”只看有没有一个应用；“在哪些应用里当管理员”同理。
+    pub fn allows(&self, item: PermissionItem) -> bool {
+        match item {
+            // 主人不在角色里，角色的权限项上永远为假。
+            PermissionItem::Owner => false,
+            PermissionItem::OpenApps => match &self.open_apps {
+                AppScope::All => true,
+                AppScope::Selected { plugin_ids } => !plugin_ids.is_empty(),
+                AppScope::Other => false,
+            },
+            PermissionItem::PluginAdmin => match &self.plugin_admin {
+                AdminScope::AllOpenable => true,
+                AdminScope::Selected { plugin_ids } => !plugin_ids.is_empty(),
+                // 一个应用都打不开时不可能是这些应用的管理员。
+                AdminScope::NoApps | AdminScope::Other => false,
+            },
+            PermissionItem::InstallApps => self.install_apps == Gate::Allow,
+            PermissionItem::ModelSettings => self.model_settings,
+            PermissionItem::ServerSettings => self.server_settings,
+            PermissionItem::ManageMembers => self.manage_members,
+            PermissionItem::AddFriends => self.add_friends == Gate::Allow,
+            PermissionItem::ShareApps => self.share_apps,
+            PermissionItem::Ai => self.ai != AiLevel::Other,
+            PermissionItem::PrivilegedTools => self.privileged_tools,
+            PermissionItem::PrivateBot => self.private_bot,
+            PermissionItem::SharedBots => self.shared_bots,
+            PermissionItem::LendOwnBot => self.lend_own_bot,
+            PermissionItem::Other => false,
+        }
+    }
+
     /// 主人的全部权限：主人有角色之外的一切（ADR-0088）。
     pub fn owner() -> Self {
         Self {
@@ -236,6 +267,16 @@ pub enum AppScope {
     /// 按“一个都没有”处理。
     #[serde(other)]
     Other,
+}
+
+impl AppScope {
+    pub fn allows_plugin(&self, plugin_id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Selected { plugin_ids } => plugin_ids.iter().any(|id| id == plugin_id),
+            Self::Other => false,
+        }
+    }
 }
 
 /// 在哪些应用里当管理员。

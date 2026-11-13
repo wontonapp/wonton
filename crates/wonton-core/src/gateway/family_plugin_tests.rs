@@ -1,4 +1,4 @@
-//! 家人和插件：开放给家人（`plugin_family_path`）、确认卡片归属、OIDC 声明按当前人（ADR-0045）。
+//! 家人和插件：按角色开放应用（ADR-0088）、确认卡片归属、OIDC 声明按当前人（ADR-0045）。
 //! 共用的搭建在 [`super::family_tests`]。
 
 use std::sync::{Arc, Mutex};
@@ -16,22 +16,94 @@ use crate::plugin::languages::Languages;
 use crate::plugin::storefront::index;
 
 #[tokio::test]
-async fn the_family_switch_gates_the_list_the_webui_and_the_detail() {
+async fn selected_apps_limit_lists_details_and_webui_even_for_installers() {
     let h = Harness::start(None).await;
-    let hers = SecretKey::generate().public();
+    let device = SecretKey::generate().public();
     invite_record(&h, false).await;
     h.tunnel
         .devices
-        .add_if(hers, None, Some("mia".to_owned()), |_| true)
+        .add_if(device, None, Some("mia".into()), |_| true)
         .unwrap();
+    let other = WHOAMI.replace("app.whoami", "app.other");
+    h.manager.register_for_test(
+        PluginPackage::manifest_of(&other, &Languages::default()).unwrap(),
+        crate::plugin::PluginStatus::Running,
+        Some(h.upstream.to_string()),
+    );
+    let draft = wonton_protocol::RoleDraft {
+        name: "选中的应用".into(),
+        permissions: wonton_protocol::Permissions {
+            open_apps: wonton_protocol::AppScope::Selected {
+                plugin_ids: vec!["app.whoami".into()],
+            },
+            install_apps: wonton_protocol::Gate::Allow,
+            ..wonton_protocol::Permissions::strictest()
+        },
+    };
+    let role = h.roles.create(&draft).unwrap();
+    h.members.set_role("mia", &role.id).unwrap();
+    let reply = send_as(
+        &h.app,
+        Some(device),
+        Method::GET,
+        CORE,
+        "/_wonton/api/plugins",
+        &[],
+        "",
+    )
+    .await;
+    let ids: Vec<_> = reply.json()["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|plugin| plugin["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(ids, ["app.whoami"]);
+    assert_opened(&h, device).await;
+    let hits = h.hits.load(std::sync::atomic::Ordering::SeqCst);
+    for (host, path) in [
+        (CORE, "/_wonton/api/plugins/app.other"),
+        ("app-other.wonton.localhost", "/hello"),
+    ] {
+        let reply = send_as(&h.app, Some(device), Method::GET, host, path, &[], "").await;
+        assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
+        assert_eq!(reply.error_kind(), Some("not_shared"));
+    }
+    assert_eq!(h.hits.load(std::sync::atomic::Ordering::SeqCst), hits);
+    let mut draft = draft;
+    draft.permissions.open_apps = wonton_protocol::AppScope::Other;
+    h.roles.update(&role.id, &draft).unwrap();
+    assert_gated(&h, device, Some("not_shared")).await;
+    let owner = send_as(
+        &h.app,
+        None,
+        Method::GET,
+        CORE,
+        "/_wonton/api/plugins",
+        &[("authorization", bearer().as_str())],
+        "",
+    )
+    .await;
+    let mut owner_ids: Vec<_> = owner.json()["plugins"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|plugin| plugin["id"].as_str().unwrap().to_owned())
+        .collect();
+    owner_ids.sort();
+    assert_eq!(owner_ids, ["app.other", "app.whoami"]);
+}
 
-    // 开关默认关：列表里没有，详情和网页都进不去。
-    assert_gated(&h, hers, Some("not_shared")).await;
-
-    // 家人的开关测试需要插件记录（register_for_test 只填内存表）。
+#[tokio::test]
+async fn role_changes_override_the_family_switch_and_recheck_existing_web_sessions() {
+    let h = Harness::start(None).await;
+    let device = SecretKey::generate().public();
+    invite_record(&h, false).await;
+    h.tunnel
+        .devices
+        .add_if(device, None, Some("mia".into()), |_| true)
+        .unwrap();
     write_whoami_record(&h);
-
-    // 主人打开开关：列表、详情、网页都放行，网页的请求转发到插件。
     let reply = send_as(
         &h.app,
         None,
@@ -42,29 +114,37 @@ async fn the_family_switch_gates_the_list_the_webui_and_the_detail() {
             ("authorization", bearer().as_str()),
             ("content-type", "application/json"),
         ],
-        "{\"enabled\": true}",
+        r#"{"enabled":true}"#,
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
-    assert_eq!(reply.json()["family"], true);
-
-    let reply = send_as(
-        &h.app,
-        Some(hers),
-        Method::GET,
-        CORE,
-        "/_wonton/api/plugins",
-        &[],
-        "",
-    )
-    .await;
-    assert_eq!(
-        reply.json()["plugins"].as_array().unwrap().len(),
-        1,
-        "{}",
-        reply.text()
+    assert_gated(&h, device, Some("not_shared")).await;
+    let sid = h.gateway.sessions.create_app(
+        &super::Person {
+            username: "mia".into(),
+            role: wonton_protocol::Role::Member,
+        },
+        PLUGIN,
     );
-    assert_opened(&h, hers).await;
+    let cookie = format!("{}={sid}", super::APP_COOKIE);
+    let mut draft = wonton_protocol::RoleDraft {
+        name: "朋友".into(),
+        permissions: wonton_protocol::Permissions {
+            open_apps: wonton_protocol::AppScope::All,
+            ..wonton_protocol::Permissions::strictest()
+        },
+    };
+    h.roles.update("friend", &draft).unwrap();
+    let reply = h.get(PLUGIN, "/hello?x=1", &[("cookie", &cookie)]).await;
+    assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+    assert_eq!(reply.json()["path"], "/hello?x=1");
+    draft.permissions.open_apps = wonton_protocol::AppScope::Selected { plugin_ids: vec![] };
+    h.roles.update("friend", &draft).unwrap();
+    let hits = h.hits.load(std::sync::atomic::Ordering::SeqCst);
+    let reply = h.get(PLUGIN, "/hello", &[("cookie", &cookie)]).await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
+    assert_eq!(reply.error_kind(), Some("not_shared"));
+    assert_eq!(h.hits.load(std::sync::atomic::Ordering::SeqCst), hits);
 }
 
 /// 详情和网页放行，网页的请求转发到插件。
@@ -95,7 +175,7 @@ async fn assert_opened(h: &Harness, hers: iroh::EndpointId) {
     assert_eq!(reply.json()["headers"]["host"], format!("{PLUGIN}:{PORT}"));
 }
 
-/// 开关关着：列表为空，详情和网页都回 403，错误码是 `kind`。
+/// 角色没开放应用：列表为空，详情和网页都回 403，错误码是 `kind`。
 async fn assert_gated(h: &Harness, hers: iroh::EndpointId, kind: Option<&'static str>) {
     let reply = send_as(
         &h.app,
@@ -191,7 +271,7 @@ fn write_whoami_record(h: &Harness) {
     .unwrap();
 }
 
-/// 家人装插件的开关：关着回 403 install_not_allowed，打开后能走到和主人一样的路。
+/// 家人装插件的门槛：没“装、删、升级应用”回 403 permission_required，给了（管理员模板）能走到和主人一样的路。
 #[tokio::test]
 async fn installing_plugins_needs_the_owners_grant() {
     let h = Harness::start(None).await;
@@ -211,7 +291,7 @@ async fn installing_plugins_needs_the_owners_grant() {
         .await
         .unwrap();
 
-    // 没授权的家人调装卸升级类：403 install_not_allowed。
+    // 没有“装、删、升级应用”的家人调装卸升级类：403，缺的就是这一项。
     for (method, path, body) in [
         (
             Method::POST,
@@ -235,10 +315,11 @@ async fn installing_plugins_needs_the_owners_grant() {
         );
         assert_eq!(
             reply.error_kind(),
-            Some("install_not_allowed"),
+            Some("permission_required"),
             "{method} {path}: {}",
             reply.text()
         );
+        assert_eq!(reply.json()["missing"], "install_apps");
     }
 
     // 主人授权后能走管理接口，也看得到全部插件。
@@ -329,7 +410,7 @@ async fn a_family_member_with_install_grant_reads_the_store() {
         .unwrap();
     invite_record(&h, false).await;
 
-    // 没授权：403 install_not_allowed（路由表里也过，这里看有索引时的行为）。
+    // 没授权：403 permission_required（路由表里也过，这里看有索引时的行为）。
     let reply = send_as(
         &h.app,
         Some(hers),
@@ -341,7 +422,8 @@ async fn a_family_member_with_install_grant_reads_the_store() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::FORBIDDEN, "{}", reply.text());
-    assert_eq!(reply.error_kind(), Some("install_not_allowed"));
+    assert_eq!(reply.error_kind(), Some("permission_required"));
+    assert_eq!(reply.json()["missing"], "install_apps");
 
     // 主人授权后：商店读得到，官方段里有索引里的插件。
     h.members.set_role("mia", "admin").unwrap();

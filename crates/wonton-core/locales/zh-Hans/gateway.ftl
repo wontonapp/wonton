@@ -120,6 +120,7 @@ gateway-pair-code-used = 这个配对码已经用过了，请换一个新码
 gateway-pair-code-expired = 配对码过期了，请换一个新码
 gateway-pair-first-used = 这台服务器已经有配对的设备，首次配对码不能再用；请在服务器上执行 sudo wonton pair 另发一个配对码
 gateway-pair-register-failed = 服务器登记设备失败：{ $error }
+gateway-pair-role-unavailable = 这个邀请的角色不可用，请管理员重新邀请。
 
 # 主人在 App 里查看应用的密钥。
 gateway-owner-secrets-plugin-not-installed = 应用 { $id } 没有安装

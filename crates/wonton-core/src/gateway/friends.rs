@@ -80,15 +80,13 @@ fn person_denied(
     }
 }
 
-/// 核心存的名单是主人的（ADR-0051）；家人的好友在客户端本机，写接口只给主人。
-fn owner_denied(person: &super::Person) -> Option<Response> {
-    (!person.is_owner()).then(|| {
-        error_response(
-            StatusCode::FORBIDDEN,
-            "permission_required",
-            "核心里的好友名单只有主人能改",
-        )
-    })
+/// 核心存的名单（ADR-0051）按“加好友”这一项判断；屏蔽服务器是服务器设置。
+fn friend_guard(
+    gateway: &super::Gateway,
+    person: &super::Person,
+    item: wonton_protocol::PermissionItem,
+) -> Option<Response> {
+    super::permissions::require_person(gateway, person, item)
 }
 
 fn parse<T: serde::de::DeserializeOwned>(body: &[u8]) -> Result<T, Box<Response>> {
@@ -212,7 +210,11 @@ pub async fn accept(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::AddFriends,
+    ) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -255,7 +257,11 @@ pub async fn remove(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::AddFriends,
+    ) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -286,7 +292,11 @@ pub async fn set_groups(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::AddFriends,
+    ) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -320,7 +330,11 @@ pub async fn save_group(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::AddFriends,
+    ) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -350,7 +364,11 @@ pub async fn remove_group(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::AddFriends,
+    ) {
         return denied;
     }
     let Some(friends) = gateway.friends() else {
@@ -398,7 +416,11 @@ async fn set_block(
         Ok(person) => person,
         Err(denied) => return denied,
     };
-    if let Some(denied) = owner_denied(&person) {
+    if let Some(denied) = friend_guard(
+        &gateway,
+        &person,
+        wonton_protocol::PermissionItem::ServerSettings,
+    ) {
         return denied;
     }
     let Some(blocks) = &gateway.federation_blocks else {

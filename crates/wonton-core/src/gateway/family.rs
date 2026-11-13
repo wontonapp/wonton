@@ -1,5 +1,6 @@
-//! 家人的管理接口（ADR-0045）：邀请、设置、出码、移除，和插件的“家人能用”开关。都只给主人；共享 Bot 的
-//! 建号是后续任务，先如实报没有就绪。
+//! 成员管理（ADR-0088）：管理成员权限可邀请、出码、移除；指定邀请角色只收主人。
+
+use wonton_protocol::PermissionItem;
 
 use std::sync::Arc;
 
@@ -12,8 +13,8 @@ use wonton_protocol::{
     FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
 };
 
-use super::api::{error_response, languages, owner_denied};
-use super::{Gateway, TunnelPeer, devices, lan};
+use super::api::{error_response, languages};
+use super::{Gateway, TunnelPeer, devices, lan, permissions};
 use crate::matrix::ADMIN_LOCALPART;
 use crate::members::{MemberRecord, MembersError, family_username, username_candidate};
 
@@ -52,7 +53,9 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let members: Vec<Member> = gateway.members.list().iter().map(to_member).collect();
@@ -66,14 +69,27 @@ pub async fn invite(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
-    let invite: MemberInvite = match serde_json::from_slice(&body) {
-        Ok(invite) => invite,
+    let body: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(body) => body,
         Err(e) => {
             let message = format!("请求体不是邀请：{e}");
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+        }
+    };
+    if body.get("role_id").is_some()
+        && let Some(denied) = permissions::require(&gateway, peer, &headers, PermissionItem::Owner)
+    {
+        return denied;
+    }
+    let invite: MemberInvite = match serde_json::from_value(body) {
+        Ok(invite) => invite,
+        Err(error) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &error.to_string());
         }
     };
     let Some(matrix) = &gateway.matrix else {
@@ -235,7 +251,9 @@ pub async fn pairing_code(
     Path(username): Path<String>,
     body: String,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let langs = languages(&headers);
@@ -269,7 +287,9 @@ pub async fn void_pairing_code(
     headers: HeaderMap,
     Path(username): Path<String>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     match gateway.members.void_pairing_code(&username) {
@@ -287,7 +307,9 @@ pub async fn remove(
     Path(username): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let removal: MemberRemoval = match serde_json::from_slice(&body) {
@@ -314,7 +336,7 @@ pub async fn remove(
     }
 }
 
-/// `PUT plugin_family_path(id)`：主人设一个插件给不给家人用。
+/// `PUT plugin_family_path(id)`：更新插件记录的 `family` 标记，不改变角色授权。
 pub async fn set_plugin_family(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -322,7 +344,9 @@ pub async fn set_plugin_family(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
+    {
         return denied;
     }
     let Ok(id) = crate::plugin::PluginId::parse(&id) else {
@@ -347,12 +371,15 @@ pub async fn set_plugin_family(
     }
 }
 
-fn members_error(e: MembersError) -> Response {
+pub(super) fn members_error(e: MembersError) -> Response {
     match e {
         MembersError::NotFound(_) => {
             error_response(StatusCode::NOT_FOUND, "not_found", &e.to_string())
         }
         MembersError::Removed(_) => error_response(StatusCode::CONFLICT, "removed", &e.to_string()),
+        MembersError::DeviceRegistered => {
+            error_response(StatusCode::CONFLICT, "device_registration", &e.to_string())
+        }
         e => {
             tracing::error!(error = %e, "家人记录存不下");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "storage", &e.to_string())
