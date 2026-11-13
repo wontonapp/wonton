@@ -82,7 +82,7 @@ internal fun ChatPanelTopPull(state: ChatPanelState) {
     Box(
         Modifier.fillMaxWidth()
             .offset(y = top)
-            .height(48.dp)
+            .height(WontonTheme.gesture.pageEdgeZone.dp)
             .pointerInput(state) {
                 val tracker = VelocityTracker()
                 detectDragGestures(
@@ -141,10 +141,22 @@ internal fun ChatPanelEdge(state: ChatPanelState, enabled: Boolean) {
     }
 }
 
-/** 面板网页上的触摸：第 1 级左右拖翻页，主页面上滚到顶后继续往下拉进第 2 级；其余交给网页。
+/**
+ * 面板网页上的下拉是不是从起手区开始（ADR-0052）：[downY] 是手指按下的位置，[visibleTop] 是网页露出来的顶边，同一个坐标系。
+ *
+ * 网页的滚动位置说明不了手指下面是什么：全屏的固定浮层（音乐播放器）、自己滚动的容器都让 `scrollY` 一直是 0，
+ * 只凭“滚到顶了”就接手，页面里任何一处的下拉都成了拖面板。所以按起手的位置分：顶边附近归面板，里面归网页。
+ */
+internal fun pagePullStartsInZone(downY: Float, visibleTop: Float, density: Float): Boolean =
+    downY <= visibleTop + WontonTheme.gesture.pageEdgeZone * density
+
+/** 面板网页上的触摸：第 1 级左右拖翻页，主页面上滚到顶后从顶边附近继续往下拉进第 2 级；其余交给网页。
  *  实例按页面记住，回调由页面在每次重组时更新：拖动中途换实例会丢掉已经记下的手势。 */
 internal class PanelPageTouch(private val state: ChatPanelState) {
     var atTop: () -> Boolean = { state.controller?.view?.scrollY?.let { it <= 0 } ?: true }
+
+    /** 网页露出来的顶边在 WebView 里的位置（px）：铺满的页面上面一截在状态栏下面。 */
+    var visibleTop: () -> Float = { 0f }
     var width: () -> Float = { 1f }
 
     /** 手指按下时的页位：翻页从这里算绝对位移，中途丢几个移动事件也不跟丢。 */
@@ -214,7 +226,8 @@ internal class PanelPageTouch(private val state: ChatPanelState) {
             if (abs(dx) < slop && abs(dy) < slop) return
             mode = when {
                 abs(dx) > abs(dy) && state.pages.size > 1 -> Mode.FLIP
-                state.edge == PanelEdge.TOP && atTop() && dy > 0f -> Mode.PULL
+                state.edge == PanelEdge.TOP && atTop() && dy > 0f &&
+                    pagePullStartsInZone(start.y, visibleTop(), state.density) -> Mode.PULL
                 else -> Mode.NONE
             }
             if (mode == Mode.NONE) return

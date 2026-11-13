@@ -75,6 +75,7 @@ enum WontonGesture {
     static let dragSlop: CGFloat = 8
     static let edgeWidth: CGFloat = 24
     static let timeReveal: CGFloat = 64
+    static let pageEdgeZone: CGFloat = 48
 }
 
 enum WontonMotion {

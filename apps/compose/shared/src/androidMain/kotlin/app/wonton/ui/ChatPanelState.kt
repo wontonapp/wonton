@@ -79,7 +79,8 @@ internal class ChatPanelState(
         private set
     var safeBottom = 0f
         private set
-    private var density = 1f
+    var density = 1f
+        private set
     val dragSlop: Float get() = WontonTheme.gesture.dragSlop * density
 
     /** 开始时收起键盘，由宿主提供（键盘控制在组合里）。 */

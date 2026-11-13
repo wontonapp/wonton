@@ -89,6 +89,8 @@ dragSlop = 8
 edgeWidth = 24
 # 左滑整列消息露出时间时，最多挪开这么远。
 timeReveal = 64
+# 面板网页上能拖动面板的起手区：从网页露出的那条边往里这么高（ADR-0052）。
+pageEdgeZone = 48
 
 # ADR-0033：公开变量只增不改名。颜色引用 ThemeColors，字体引用 AppearanceViewModel。
 # --wonton-* 只注入根元素；--wonton-inset-* 由运行时环境提供。

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 #[cfg(feature = "ui-fake")]
 use std::sync::RwLockReadGuard;
 #[cfg(feature = "ui-fake")]
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
@@ -57,6 +57,8 @@ mod test_support;
 mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_room;
 mod widget;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -260,6 +262,11 @@ impl ClientCore {
         &self,
         target: TimelineTarget,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
+        // 假数据入口（`new_ui_fake`）没有后端：时间线也是写死的一批。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(TimelineSubscription::seeded(ui_fake_room::timeline()));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
         let room_view = scope.pages.subscribe_room_view();
