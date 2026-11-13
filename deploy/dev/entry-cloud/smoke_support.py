@@ -152,7 +152,10 @@ class Home:
         # 核心在云网络上取一个固定地址：隧道绑在它上面，也把它宣告给对端，解析器不参与。
         address = str(ipaddress.ip_network(self.cloud["subnet"]).network_address + (30 if self.label == "a" else 31))
         for service in ["core", "connector", "tuwunel"]:
-            spec = compose["services"][service]
+            # C5 起入口和连接器由核心按设置建，旧核心的 compose 里还有 connector：没有就跳过。
+            spec = compose["services"].get(service)
+            if spec is None:
+                continue
             # 先测试解析器（联邦名字），再 Docker 的 127.0.0.11（内部别名）；区外名字是 REFUSED 会回退。
             spec["dns"] = [self.cloud["resolver"], "127.0.0.11"]
             spec["networks"] = spec.get("networks") or {}
@@ -167,7 +170,7 @@ class Home:
         core["group_add"] = [str(os.stat("/var/run/docker.sock").st_gid)]
         core["environment"].update({"WONTON_TUNNEL_BIND": address,
                                     "WONTON_ANNOUNCE_ADDRESSES": address,
-                                    "WONTON_SYSTEM_PLUGINS": "", "WONTON_DEFAULT_PLUGINS": "", "RUST_LOG": "wonton_core::peers=debug,wonton_tunnel=debug,iroh=debug"})
+                                    "WONTON_SYSTEM_PLUGINS": "", "WONTON_DEFAULT_PLUGINS": "", "RUST_LOG": "wonton_core=debug,wonton_tunnel=debug,iroh=debug"})
         core["volumes"].append(f"{self.binary}:/usr/local/bin/wonton-core:ro")
         core["ports"] = [f"127.0.0.1:{self.port}:{self.port}", f"127.0.0.1:{self.udp}:{self.udp}/udp"]
         private(self.install / "compose.yaml", json.dumps(compose))
@@ -184,8 +187,53 @@ class Home:
             compose_logs = self.compose("logs", "--no-color", "--tail", "120", check=False)
             print(compose_logs.stdout + compose_logs.stderr, flush=True)
             raise
+        self.attach_connector()
         self.token = (self.data / "core/owner-token").read_text().strip()
         assert not json.loads((self.data / "core/peers.json").read_text()).get("peers", [])
+
+    def component_container(self, component):
+        """核心经 Docker API 建的组件容器（C5 起入口和连接器不在 compose 里），按组件和实例标签找。"""
+        found = run("docker", "ps", "-aq", "--filter", f"label=wonton.core.component={component}",
+                    "--filter", f"label=wonton.instance=frentry{self.label}", check=False)
+        ids = found.stdout.split()
+        return ids[0] if ids else None
+
+    def attach_connector(self):
+        """连接器由核心建、只接 edge 和 relay：云栈的测试网络和解析器在 compose 里没有机会注入。
+
+        核心每隔一阵会对账，容器停着会被当成需要重建、换成新 id，所以每一步之后都重新取一次、以 inspect
+        的网络为准；连不上中继时 frpc 会退出重起，restart 中的容器没有网络沙箱（connect 报 "network sandbox
+        ... not found"），先停再连才稳。解析器核心已写进创建请求，这里的 append 只是兜底。
+        """
+        network = self.cloud["network"]
+
+        def attached():
+            connector = self.component_container("connector")
+            if connector is None:
+                return False
+            networks = run("docker", "inspect", "-f",
+                           "{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}",
+                           connector, check=False).stdout.split()
+            return network in networks
+
+        # 对账循环（30 秒起）撞上"停着等接网"的窗口就会重建连接器、冲掉刚接的云网络：先停核心（对账随进程停），
+        # 接完网再起。组件容器 restart=unless-stopped，核心停着它们照跑。
+        # 对账失败会按退避重试，连接器可能晚几拍才建出来：等它存在（核心运行着重试才有机会），再停核心动手。
+        wait_for("connector created", lambda: self.component_container("connector") is not None,
+                 seconds=240)
+        run("docker", "stop", "-t", "30", self.core, check=False)
+        try:
+            connector = self.component_container("connector")
+            assert connector, "等到了核心把连接器建出来"
+            run("docker", "stop", "-t", "30", connector, check=False)
+            run("docker", "network", "connect", network, connector, check=False)
+            run("docker", "start", connector, check=False)
+        finally:
+            run("docker", "start", self.core, check=False)
+        wait_for("connector attached", attached, seconds=180)
+        connector = self.component_container("connector")
+        run("docker", "exec", "-u", "0", connector, "sh", "-c",
+            f"printf 'nameserver {self.cloud['resolver']}\n' >> /etc/resolv.conf", check=False)
 
     def api(self, path, body=None):
         headers = {"Authorization": "Bearer " + self.token, "Host": f"wonton.localhost:{self.port}"}
@@ -231,6 +279,11 @@ class Home:
             return
         run("docker", "rm", "--force", self.phone, check=False)
         if self.started:
+            # 入口和连接器是核心建的、不带 compose 标签：先删，否则它们挂着的网络 compose 删不掉。
+            for component in ("entry", "connector"):
+                container = self.component_container(component)
+                if container:
+                    run("docker", "rm", "--force", container, check=False)
             self.compose("down", "--volumes", "--remove-orphans")
         if self.acquired:
             run(SLOT, "release", self.project)

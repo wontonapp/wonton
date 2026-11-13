@@ -11,6 +11,7 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::entry_containers::EntryContainers;
 use crate::entry_settings::EntrySettings;
 use crate::gateway::Gateway;
 use crate::matrix::NoticeRoom;
@@ -106,32 +107,93 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
-/// 每小时的家里状态检查，和每 24 小时一次的续期检查。续期只发布证书；入口容器在不在由
-/// [`crate::clients::domain::Domain`] 自己判断。
+/// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
+/// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
 pub fn spawn(
+    containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
-    install_dir: &Path,
-    data_dir: &Path,
     notices: Option<Arc<NoticeRoom>>,
 ) {
-    let saved = EntrySettings::load(install_dir).ok().flatten();
-    let data_dir = data_dir.to_owned();
     tokio::spawn(async move {
-        let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         let mut previous = None;
         let mut hours = 0;
+        let mut retry = Duration::from_secs(RETRY_MIN);
+        // 上一次对账的成败：None=还没对过。失败进通知、恢复时再发一条（复用家名状态的转移+notify 模式）。
+        let mut reconciled: Option<bool> = None;
+        let mut hourly = tokio::time::interval(Duration::from_secs(3600));
         loop {
-            hourly.tick().await;
-            if let Some(settings) = &saved {
-                check_home(settings, &data_dir, &notices, &mut previous).await;
+            // 对账按退避间隔跑，家名和证书按小时跑；第一次对账等一会儿，起来先服务再对账。
+            tokio::select! {
+                _ = tokio::time::sleep(retry) => {
+                    retry = reconcile_entry(&containers, &notices, &mut reconciled)
+                        .await
+                        .unwrap_or(retry * 2)
+                        .min(Duration::from_secs(RETRY_MAX));
+                }
+                _ = hourly.tick() => {
+                    match EntrySettings::load(containers.install_dir()) {
+                        Ok(Some(settings)) => {
+                            check_home(&settings, containers.data_dir(), &notices, &mut previous).await;
+                            if hours % 24 == 0 {
+                                domain.renew_if_configured();
+                            }
+                            hours += 1;
+                        }
+                        // 没有设置就没有家名和证书可查；读不了是不确定，记下来别无声跳过。
+                        Ok(None) => continue,
+                        Err(error) => {
+                            tracing::warn!(%error, "入口设置读不了，这一小时跳过家名检查和证书续期");
+                            continue;
+                        }
+                    }
+                }
             }
-            if hours % 24 == 0 {
-                domain.renew_if_configured();
-            }
-            hours += 1;
         }
     });
 }
+
+/// 对一次账，返回下一次的退避间隔：成功时回到最短，失败时翻倍（调用方封顶到 [`RETRY_MAX`]）。
+/// 失败进入和恢复退出各发一条通知——对账持续失败时公网入口和联邦 TLS 整个不可用，主人得知道。
+async fn reconcile_entry(
+    containers: &EntryContainers,
+    notices: &Option<Arc<NoticeRoom>>,
+    reconciled: &mut Option<bool>,
+) -> Option<Duration> {
+    let settings = match EntrySettings::load(containers.install_dir()) {
+        Ok(settings) => settings,
+        Err(error) => {
+            tracing::warn!(%error, "入口设置读不了");
+            return None;
+        }
+    };
+    match containers.reconcile(settings.as_ref()).await {
+        Ok(()) => {
+            if *reconciled == Some(false) {
+                notify(notices, "entry-reconcile-recovered", &[]).await;
+            }
+            *reconciled = Some(true);
+            Some(Duration::from_secs(RETRY_MIN))
+        }
+        Err(error) => {
+            if *reconciled != Some(false) {
+                notify(
+                    notices,
+                    "entry-reconcile-failed",
+                    &[("error", error.to_string().as_str())],
+                )
+                .await;
+            }
+            *reconciled = Some(false);
+            // 核心照常服务；入口的状态在下一次对账成功时恢复。
+            tracing::warn!(category = error.category(), %error, "入口容器没对上，稍后重试");
+            None
+        }
+    }
+}
+
+/// 对账失败后的第一次重试间隔和上限；调用方把翻倍的结果封到这里。
+const RETRY_MIN: u64 = 30;
+const RETRY_MAX: u64 = 600;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NameState {

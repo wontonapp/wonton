@@ -110,9 +110,12 @@ async fn open_peers_and_federation(
         },
     )
     .context("读取服务器配对记录")?;
-    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。
-    let upstream = federation_addrs::upstream(cfg).await?;
-    let protocol = FederationProtocol::new(peers.server_allowlist().clone(), upstream);
+    // 联邦转发：入站协议挂在隧道的 endpoint 上，出站是给 Tuwunel 用的 CONNECT 代理。上游地址按连接现
+    // 解析（入口容器运行时会被对账重建，启动时钉死 SocketAddr 会在重建后断流）。
+    let protocol = FederationProtocol::new(
+        peers.server_allowlist().clone(),
+        cfg.matrix_federation_addr.clone(),
+    );
     let lookup = peers.clone();
     let listen = federation_addrs::listen(&cfg.federation_listen).await?;
     let forwarder = FederationForwarder::bind(
@@ -127,7 +130,7 @@ async fn open_peers_and_federation(
     .with_context(|| format!("联邦转发组件监听 {}", cfg.federation_listen))?;
     tracing::info!(
         listen = %forwarder.listen_addr(),
-        upstream = %upstream,
+        upstream = %cfg.matrix_federation_addr,
         "联邦转发已启动"
     );
     peers.attach_forwarder(forwarder.watch_status());
@@ -365,6 +368,10 @@ async fn serve() -> anyhow::Result<()> {
     let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
+    // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
+    // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
+    // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。
+    let entry = start_entry_runtime(&cfg, &engine).await;
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
@@ -373,7 +380,9 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let clients = open_clients(&cfg, &engine, &notices)?;
-    spawn_entry_runtime(&cfg, &clients, &notices);
+    if let (Some(containers), Some(clients)) = (entry, &clients) {
+        wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
+    }
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -746,33 +755,52 @@ fn message_settled_audit(
     })
 }
 
-/// 用安装脚本装的核心（有安装目录和自己的容器名）才管入口和自己的域名。
+/// 用安装脚本装的核心（有安装目录）才管入口和自己的域名。
 fn open_clients(
     cfg: &Config,
     engine: &Engine,
     notices: &Option<Arc<NoticeRoom>>,
 ) -> anyhow::Result<Option<Arc<wonton_core::clients::domain::Domain>>> {
-    let (Some(dir), Some(container)) = (&cfg.install_dir, &cfg.core_container) else {
+    let Some(dir) = &cfg.install_dir else {
         return Ok(None);
     };
     Ok(Some(wonton_core::clients::domain::Domain::new(
         dir.clone(),
         cfg.data_dir.clone(),
         engine.clone(),
-        container.clone(),
+        cfg.instance.clone(),
         notices.clone(),
     )))
 }
 
-/// 用安装脚本装的核心才管入口。
-fn spawn_entry_runtime(
+/// 用安装脚本装的核心（有安装目录）才管入口；核心不在容器里时由入口自己报 `core_not_in_container`。
+/// 对账现在做一次：后面要解析入口地址的启动步骤等在这里。
+async fn start_entry_runtime(
     cfg: &Config,
-    clients: &Option<Arc<wonton_core::clients::domain::Domain>>,
-    notices: &Option<Arc<NoticeRoom>>,
-) {
-    if let (Some(dir), Some(clients)) = (&cfg.install_dir, clients) {
-        wonton_core::entry_runtime::spawn(clients.clone(), dir, &cfg.data_dir, notices.clone());
+    engine: &Engine,
+) -> Option<wonton_core::entry_containers::EntryContainers> {
+    let dir = cfg.install_dir.as_ref()?;
+    let containers = wonton_core::entry_containers::EntryContainers::new(
+        engine.clone(),
+        dir.clone(),
+        cfg.data_dir.clone(),
+        cfg.instance.clone(),
+        cfg.core_container.clone(),
+    );
+    // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
+    // 带退避重试；只有确实没有设置（Ok(None)）才按"不要"对账。
+    match wonton_core::entry_settings::EntrySettings::load(dir) {
+        Err(error) => {
+            tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
+        }
+        Ok(settings) => {
+            if let Err(error) = containers.reconcile(settings.as_ref()).await {
+                // 入口的循环会带退避重试，这里不挡住核心启动。
+                tracing::warn!(category = error.category(), %error, "入口容器没对上");
+            }
+        }
     }
+    Some(containers)
 }
 
 fn open_push(cfg: &Config, tunnel: &Tunnel, manager: &PluginManager) -> anyhow::Result<Push> {
