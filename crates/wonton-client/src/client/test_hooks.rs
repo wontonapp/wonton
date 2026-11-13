@@ -108,4 +108,16 @@ impl ClientCore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((bind, first_retry));
     }
+
+    /// 替掉冷启动的建连时限和之后的建连时限，免得测试等满生产的 30 秒和 12 秒。
+    #[doc(hidden)]
+    pub fn test_set_cold_allowance(&self, cold_dial: Duration, warm_dial: Duration) {
+        *self
+            .scope()
+            .home
+            .test_hooks
+            .cold_allowance
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((cold_dial, warm_dial));
+    }
 }
