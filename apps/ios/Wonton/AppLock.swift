@@ -61,8 +61,7 @@ struct AppLockGate<Content: View>: View {
         .task(id: Attempt(scenePhase: scenePhase, locked: lock.viewModel.locked)) {
             guard scenePhase == .active, lock.viewModel.locked else { return }
             if case .passed = await SystemAuth.authenticate(
-                reason: String(localized: .Settings.appLockVerifyReason))
-            {
+                reason: String(localized: .Settings.appLockVerifyReason)) {
                 lock.unlock()
             }
         }
@@ -120,8 +119,7 @@ private struct AppLockScreen: View {
     private func authenticate() {
         Task {
             if case .passed = await SystemAuth.authenticate(
-                reason: String(localized: .Settings.appLockVerifyReason))
-            {
+                reason: String(localized: .Settings.appLockVerifyReason)) {
                 lock.unlock()
             }
         }
