@@ -149,3 +149,17 @@ gateway-web-storage-cross-site = 只有这个应用自己的页面能改它的�
 gateway-web-storage-not-ready = 替这个应用存数据的应用没有在运行，请稍后再试
 
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
+
+# agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。
+gateway-agent-acp-websocket-only = 这个入口只收 WebSocket 连接
+gateway-agent-acp-path = agent_acp 只有 /acp 一个入口
+gateway-agent-acp-initiator-bot-required = 连接要用 X-Wonton-Bot 写明发起调用的 Bot
+gateway-agent-acp-initiator-bot-unrecognized = {$bot} 不是这个应用自己的 Bot
+gateway-agent-acp-on-behalf-of = 连接要用 X-Wonton-On-Behalf-Of 写明替谁说话
+gateway-agent-acp-adopter-not-listened = {$bot} 不听这个连接自报的说话人
+gateway-agent-acp-target-not-listened = {$bot} 不听这个人
+gateway-agent-acp-no-bot = {$provider} 还没有可用的 Bot，先把 Bot 建好
+gateway-agent-acp-multi-bot = {$provider} 有几个 Bot，先在详情页绑定要用哪个
+gateway-agent-acp-token-missing = {$provider} 还没有提供方令牌，重新安装一次就有了
+gateway-agent-acp-provider-unreachable = Agent 运行时没有接起这条连接：{$detail}
+gateway-agent-acp-busy = 这个应用开着的 Agent 连接已经到上限，稍后再试

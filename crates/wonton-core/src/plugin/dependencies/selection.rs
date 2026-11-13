@@ -276,6 +276,14 @@ impl PluginManager {
                 }
             }
             state.defaults.retain(|_, id| !id.is_empty());
+            state
+                .provider_tokens
+                .retain(|key, _| !key.ends_with(&format!("/{id}")));
+            for removed in removing {
+                state
+                    .provider_tokens
+                    .retain(|key, _| !key.ends_with(&format!("/{removed}")));
+            }
         })?;
         let state = self.dependencies.load()?;
         let mut rebuilt = BTreeSet::new();
@@ -351,6 +359,15 @@ impl PluginManager {
                 }
             }
             state.defaults.retain(|_, id| !id.is_empty());
+            // 只删这个插件不再提供的能力的令牌；别的提供方的令牌不动。
+            state
+                .provider_tokens
+                .retain(|key, _| match key.split_once('/') {
+                    Some((capability, provider)) => {
+                        provider != manifest.id.as_str() || service(manifest, capability).is_some()
+                    }
+                    None => true,
+                });
             for (consumer, capability) in &affected {
                 if let Some(provider) = providers.iter().find(|p| {
                     service(&p.listed.manifest, capability).is_some()

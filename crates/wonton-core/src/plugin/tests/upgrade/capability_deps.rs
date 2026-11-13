@@ -300,7 +300,8 @@ async fn a_failed_upgrade_revokes_new_dependency_keys_and_connection_approval() 
     assert!(keys.lock().unwrap().is_empty());
     assert_eq!(version(&m), "1.0.0");
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None)
+            .await,
         Err(CapabilityAccessError::Denied)
     ));
     docker.fail_pulls(None);
@@ -378,7 +379,8 @@ async fn partial_dependency_preparation_failure_revokes_the_connection_already_a
     assert!(keys.lock().unwrap().is_empty());
     assert_eq!(version(&m), "1.0.0");
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None)
+            .await,
         Err(CapabilityAccessError::Denied)
     ));
     assert!(
@@ -415,7 +417,8 @@ async fn a_successful_consumer_upgrade_revokes_a_dependency_it_no_longer_declare
     assert_eq!(version(&m), "1.1.0");
     assert!(keys.lock().unwrap().is_empty());
     assert!(matches!(
-        m.capability_route(&id(), "x-acme.search", &zh(), None).await,
+        m.capability_route(&id(), "x-acme.search", &zh(), None)
+            .await,
         Err(CapabilityAccessError::Denied)
     ));
 }

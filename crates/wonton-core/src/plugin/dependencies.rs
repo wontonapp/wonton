@@ -24,6 +24,7 @@ mod preflight;
 pub(crate) mod preview;
 pub(crate) use install::DependencyInstall;
 mod lifecycle;
+mod provider_token;
 mod rollback;
 mod selection;
 mod store;
@@ -205,7 +206,8 @@ impl PluginManager {
                 };
                 self.dependencies
                     .inspect(|state| {
-                        let Some(provider) = chosen(state, &providers, consumer, capability, bot) else {
+                        let Some(provider) = chosen(state, &providers, consumer, capability, bot)
+                        else {
                             // 必需能力还没获准连接是权限问题（gateway-capability-permission 的文案）；
                             // 可选能力没有提供方是可用性问题，主人随时可以再装一个。
                             if required {

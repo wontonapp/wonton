@@ -395,8 +395,8 @@ impl PluginManager {
         let providers = self.capability_providers();
         let state = self.dependencies.load()?;
         for capability in manifest.requires.iter().filter(|c| super::generic(c)) {
-            let provider = chosen(&state, &providers, &manifest.id, capability, None)
-                .ok_or_else(|| {
+            let provider =
+                chosen(&state, &providers, &manifest.id, capability, None).ok_or_else(|| {
                     InstallError::Conflict(
                         self.capability_missing_other(manifest, capability, langs),
                     )

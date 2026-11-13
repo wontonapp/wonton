@@ -12,6 +12,19 @@ use crate::plugin::dependencies::CapabilityAccessError;
 pub(super) async fn request(gateway: &Gateway, capability: &str, mut req: Request) -> Response {
     let langs = api::languages(req.headers());
     let format = pages::Format::of(req.headers());
+    // agent_acp 不走字节管道：核心终结 /acp 的 WebSocket，逐帧转发（见 gateway::agent_acp）。
+    // 能力的契约只有 /acp，别的路径没有。
+    if capability == crate::plugin::capabilities::AGENT_ACP.name {
+        return if req.uri().path() == "/acp" {
+            super::agent_acp::request(gateway, req).await
+        } else {
+            api::error_response(
+                StatusCode::NOT_FOUND,
+                "invalid_input",
+                &l10n::text(&langs, "gateway-agent-acp-path", &[]),
+            )
+        };
+    }
     let Some(source) = client_addr(&req).and_then(|addr| gateway.plugins.source(addr.ip())) else {
         return api::error_response(
             StatusCode::FORBIDDEN,

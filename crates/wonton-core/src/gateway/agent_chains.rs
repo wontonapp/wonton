@@ -102,6 +102,12 @@ impl Gateway {
         self
     }
 
+    /// 接上 `agent_acp` 的连接注册表：并发计数和停链取消这才可用。
+    pub fn with_agent_acp(mut self, registry: Option<Arc<super::agent_acp::Registry>>) -> Self {
+        self.agent_acp = registry;
+        self
+    }
+
     /// 这个 Bot 听的人里有没有 `sender`（ADR-0045 的名单）：归属人本人、已成立的联系人，或者同一个归属人的
     /// 另一个 Bot（ADR-0083 第 4 节）。认不出这个 Bot 时是假。
     pub(crate) fn bot_listens_to(&self, bot: &BotRef, sender: &str) -> bool {

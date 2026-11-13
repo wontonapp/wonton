@@ -540,6 +540,60 @@ async fn removing_the_only_other_agent_acp_provider_is_blocked_while_required() 
     );
 }
 
+/// 一个提供方升级成不再提供、或被卸载时，别的提供方的令牌一个都不能动（ADR-0061 第 3 节）。
+#[tokio::test]
+async fn a_provider_losing_the_capability_or_leaving_keeps_the_others_tokens() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    // upgrade_upload 的接收者是 &Arc<Self>，一开始就包成 Arc。
+    let manager = Arc::new(manager_with(engine, &dir));
+    manager
+        .install(&agent_acp_plugin("app.p", "wants"), &[], langs())
+        .await
+        .unwrap();
+    manager
+        .install(&agent_acp_plugin("app.q", "wants"), &[], langs())
+        .await
+        .unwrap();
+    let p_token = manager.provider_token("agent_acp", &id("app.p")).unwrap();
+    let q_token = manager.provider_token("agent_acp", &id("app.q")).unwrap();
+    assert_ne!(p_token, q_token);
+
+    // Q 整个卸掉（不再提供）：它的令牌一起删，P 的不动。
+    manager
+        .uninstall(&id("app.q"), false, &langs())
+        .await
+        .unwrap();
+    assert_eq!(manager.provider_token("agent_acp", &id("app.q")), None);
+    assert_eq!(
+        manager.provider_token("agent_acp", &id("app.p")).unwrap(),
+        p_token
+    );
+
+    // P 升级成不再提供：走真实升级（install 覆盖旧版本，安装记录和插件表一起换，然后 prune）。
+    // P 的令牌删掉；受影响的使用方重建也不再拿 P 当提供方。
+    let consumer_only = package(
+        "  api:\n    image: nginx\n    environment:\n      URL: ${WONTON_AGENT_ACP_URL}",
+        "  permissions: []\n  wants: [agent_acp]",
+    )
+    .replace("spec: '0.5'", "spec: '0.11'")
+    .replace("id: app.test", "id: app.p")
+    .replace("version: 1.0.0", "version: 1.1.0");
+    manager
+        .upgrade_upload(
+            &id("app.p"),
+            PluginPackage::parse(&consumer_only, &langs()).unwrap(),
+            vec![],
+            vec![],
+            false,
+            &Default::default(),
+            &langs(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(manager.provider_token("agent_acp", &id("app.p")), None);
+}
+
 /// 编排器清单装上时的连接确认按高权限能力走（ADR-0061 第 7 节）：预览里出现强调的连接提示。
 #[tokio::test]
 async fn installing_an_agent_acp_consumer_confirms_the_connection_as_high_privilege() {

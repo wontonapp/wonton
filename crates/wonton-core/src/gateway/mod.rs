@@ -19,6 +19,7 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
+pub mod agent_acp;
 pub mod agent_chains;
 mod agent_chains_api;
 pub mod agent_outbox;
@@ -204,6 +205,8 @@ pub struct Gateway {
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
+    /// `agent_acp` 的活连接注册表（ADR-0061 第 5 块）：并发计数和停链取消。
+    pub(crate) agent_acp: Option<Arc<agent_acp::Registry>>,
 }
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
@@ -271,6 +274,7 @@ impl Gateway {
             app_calls: Arc::default(),
             sessions: session::SessionStore::default(),
             agent_chains: None,
+            agent_acp: None,
         }
     }
 
