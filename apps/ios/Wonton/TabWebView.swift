@@ -34,9 +34,14 @@ final class TabWebViewStore {
     }
 
     /// 整页和面板里的同一个页面各一份（ADR-0052）：不在这一份里的释放掉。
-    func retain(_ placed: Set<PlacedTab>) {
+    /// `open` 是核心那边开着的页面；留着但不在里面的是关掉后保活的，见 `TabWebSession.parked`。
+    /// 面板的页面一直在核心的面板列表里，不传。
+    func retain(_ placed: Set<PlacedTab>, open: Set<PlacedTab>? = nil) {
         for key in Array(sessions.keys) where !placed.contains(key) {
             sessions.removeValue(forKey: key)?.dispose()
+        }
+        if let open {
+            for (key, session) in sessions { session.park(!open.contains(key)) }
         }
         generation += 1
     }
@@ -89,6 +94,11 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var lastConnection: String?
     @ObservationIgnored var documentScript: String?
     @ObservationIgnored private var lastTextScale: CGFloat?
+    /// 页面关掉后保活着（`PagesModel.keepAlive`）：核心的栈里没有这一页，这时拿它去问核心只会得到
+    /// “页面没有打开”，记成 `problem` 以后重开不重载就一直盖在网页上。停着的时候 WebKit 的回调不问核心，
+    /// 欠下的在重开后的第一次 `update` 里补。
+    @ObservationIgnored private(set) var parked = false
+    @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
@@ -111,7 +121,13 @@ final class TabWebSession: NSObject {
         do {
             if let webView {
                 try configure(webView)
-                try updateContext(webView)
+                if missedFinish {
+                    missedFinish = false
+                    try core.dispatch(action: .tabLoadSucceeded(page: placed))
+                    try updateContext(webView, force: true)
+                } else {
+                    try updateContext(webView)
+                }
             }
             guard input.connected, input.page.state == .ready,
                   let entry = input.page.url, let url = URL(string: entry) else { return }
@@ -236,9 +252,17 @@ final class TabWebSession: NSObject {
 
     func evaluate(_ script: String, in view: WKWebView) {
         view.evaluateJavaScript(script) { [weak self, weak view] _, error in
-            guard let self, self.webView === view, let error else { return }
+            guard let self, self.webView === view, let error, !Self.resultUnsupported(error) else { return }
             self.problem = error.problem
         }
+    }
+
+    /// 这些脚本只为副作用，结果用不上：WebKit 说“结果类型不支持”（WKErrorDomain 5）不算页面出错，不记成 `problem`。
+    /// Paperless 的面板页刚加载完时实测会报（iOS 26.5），给脚本补 `undefined` 当完成值也照样报；记成出错的话
+    /// 一张好好的网页上会盖着“出了点问题”。
+    static func resultUnsupported(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == WKErrorDomain && error.code == WKError.javaScriptResultTypeIsUnsupported.rawValue
     }
 
     /// 公网网页没有桥：不注入脚本和变量，不装消息处理。
@@ -281,6 +305,10 @@ final class TabWebSession: NSObject {
         } catch { problem = error.problem }
     }
 
+    func park(_ value: Bool) {
+        parked = value
+    }
+
     func rebuild() {
         guard let input, let action else { return }
         recoveryURL = webView?.url
@@ -295,6 +323,9 @@ final class TabWebSession: NSObject {
         lastContext = nil
         lastConnection = nil
         lastTextScale = nil
+        missedFinish = false
+        // 停着的页面没有地方显示，核心也不认它：留到重开时由页面视图的 `update` 重建。
+        guard !parked else { return }
         update(input, action: action)
     }
 
