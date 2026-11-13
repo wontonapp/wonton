@@ -775,7 +775,6 @@ async fn a_member_sees_and_revokes_only_her_own_devices() {
     assert!(h.tunnel.devices.contains(&owners), "别人的设备还在");
 }
 
-/// 家人的插件列表只列开放了的；网页和详情由“家人能用”的开关管。
 #[tokio::test]
 async fn member_issued_codes_follow_the_issuer_and_bot_names_are_taken() {
     let (home, _state) = home_with_matrix().await;

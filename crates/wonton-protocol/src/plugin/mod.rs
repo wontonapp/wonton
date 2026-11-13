@@ -164,7 +164,7 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
-    /// 主人开放给家人了（ADR-0045）。家人的设备只拿到开放了的插件。
+    /// 插件记录里的 `family` 标记；可见性由当前角色的 `open_apps` 决定。
     #[serde(default)]
     pub family: bool,
     /// 能升级到的版本；没有新版本时为空。

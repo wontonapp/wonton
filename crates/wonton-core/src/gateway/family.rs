@@ -326,7 +326,7 @@ pub async fn remove(
     }
 }
 
-/// `PUT plugin_family_path(id)`：主人设一个插件给不给家人用。
+/// `PUT plugin_family_path(id)`：更新插件记录的 `family` 标记，不改变角色授权。
 pub async fn set_plugin_family(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
