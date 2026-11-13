@@ -113,6 +113,7 @@ struct SidebarPanel: View {
     let plugins: PluginsModel
     let current: TabRef
     let navigate: (SidebarDestination) -> Void
+    var appsOnly = false
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonSidebarTapCancelled) private var tapCancelled
@@ -125,30 +126,36 @@ struct SidebarPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, WontonTheme.spacing.s24)
-                .padding(.top, WontonTheme.spacing.s16)
-                .padding(.bottom, WontonTheme.spacing.s24)
+            if !appsOnly {
+                header
+                    .padding(.horizontal, WontonTheme.spacing.s24)
+                    .padding(.top, WontonTheme.spacing.s16)
+                    .padding(.bottom, WontonTheme.spacing.s24)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                    SidebarRow(title: TabText.chat, selected: current == .chat) {
-                        (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
-                    } action: { openDestination(.chat) }
-                    SidebarRow(
-                        title: String(localized: .Store.storeTitle),
-                        badge: Int(sidebar.updates),
-                        selected: false
-                    ) {
-                        WontonIcon.store.view()
-                    } action: { openDestination(.store) }
+                    if !appsOnly {
+                        SidebarRow(title: TabText.chat, selected: current == .chat) {
+                            (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
+                        } action: { openDestination(.chat) }
+                        SidebarRow(
+                            title: String(localized: .Store.storeTitle),
+                            badge: Int(sidebar.updates),
+                            selected: false
+                        ) {
+                            WontonIcon.store.view()
+                        } action: { openDestination(.store) }
+                    }
                     myApps
                 }
                 .padding(.horizontal, WontonTheme.spacing.s12)
             }
             .scrollIndicators(.hidden)
-            footer
-                .padding(.horizontal, WontonTheme.spacing.s16)
-                .padding(.vertical, WontonTheme.spacing.s12)
+            if !appsOnly {
+                footer
+                    .padding(.horizontal, WontonTheme.spacing.s16)
+                    .padding(.vertical, WontonTheme.spacing.s12)
+            }
         }
         .task {
             plugins.refresh(.refreshPlugins)

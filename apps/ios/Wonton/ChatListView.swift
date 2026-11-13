@@ -4,6 +4,7 @@ import WontonClient
 struct ChatListView: View {
     @Bindable var model: ChatModel
     let plugins: PluginsModel
+    var listOnly = false
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonOpenApps) private var openApps
@@ -14,7 +15,21 @@ struct ChatListView: View {
     private let reminderDismissals = BackupReminderDismissals()
 
     var body: some View {
-        NavigationStack(path: $model.path) {
+        Group {
+            if listOnly {
+                list
+            } else {
+                NavigationStack(path: $model.path) {
+                    list
+                        .navigationDestination(for: ChatRoute.self) { route in
+                            ChatDestination(model: model, plugins: plugins, route: route)
+                        }
+                }
+            }
+        }
+    }
+
+    private var list: some View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     notices
@@ -38,10 +53,12 @@ struct ChatListView: View {
                         if row.membership == .invited {
                             InviteRow(row: row, model: model)
                         } else {
-                            NavigationLink(value: ChatRoute.room(row.roomId)) {
-                                RoomRowView(row: row, model: model, plugins: plugins)
+                            let selected = listOnly && model.path.last == .room(row.roomId) && !pages.showsPluginPage
+                            Button { select(.room(row.roomId)) } label: {
+                                RoomRowView(row: row, model: model, plugins: plugins, selected: selected)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
                         }
                     }
                 }
@@ -51,29 +68,27 @@ struct ChatListView: View {
                 if isEmpty { NoChats() }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                newChatButton
-                    .padding(.trailing, WontonTheme.spacing.s16)
-                    .padding(.bottom, WontonTheme.spacing.s12)
+                if !listOnly {
+                    newChatButton
+                        .padding(.trailing, WontonTheme.spacing.s16)
+                        .padding(.bottom, WontonTheme.spacing.s12)
+                }
             }
             .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
             .environment(\.goToInstalledApps, { pages.open(.apps) })
-            .navigationDestination(for: ChatRoute.self) { route in
-                switch route {
-                case let .room(roomId):
-                    // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
-                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, title: model.title(of: roomId))
-                        .id(roomId)
-                case .chatBackup:
-                    ChatBackupView(model: model)
-                case .startChat:
-                    StartChatView(model: model)
-                }
-            }
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
                 // 换一类提醒（保存↔输入）时重新看关没关过；核心清掉提醒后也落回未关。
                 locallyDismissed = false
             }
+    }
+
+    private func select(_ route: ChatRoute) {
+        if listOnly {
+            pages.open(.chat)
+            model.path = [route]
+        } else {
+            model.path.append(route)
         }
     }
 
@@ -125,7 +140,7 @@ struct ChatListView: View {
                                 Button { model.keyHandoffDeferred = false } label: { reminderTitle(reminder) }
                                     .buttonStyle(.plain)
                             } else {
-                                NavigationLink(value: ChatRoute.chatBackup) { reminderTitle(reminder) }
+                                Button { select(.chatBackup) } label: { reminderTitle(reminder) }
                                     .buttonStyle(.plain)
                             }
                             WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
@@ -156,6 +171,41 @@ struct ChatListView: View {
         return true
     }
 
+}
+
+struct ChatDestination: View {
+    let model: ChatModel
+    let plugins: PluginsModel
+    let route: ChatRoute
+
+    var body: some View {
+        switch route {
+        case let .room(roomId):
+            ChatRoomView(model: model, plugins: plugins, roomId: roomId, title: model.title(of: roomId))
+                .id(roomId)
+        case .chatBackup:
+            ChatBackupView(model: model)
+        case .startChat:
+            StartChatView(model: model)
+        }
+    }
+}
+
+struct ChatDetailView: View {
+    @Bindable var model: ChatModel
+    let plugins: PluginsModel
+
+    var body: some View {
+        NavigationStack(path: $model.path) {
+            Text(TabText.chat)
+                .wontonText(WontonTheme.typography.itemTitle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+                .navigationDestination(for: ChatRoute.self) { route in
+                    ChatDestination(model: model, plugins: plugins, route: route)
+                }
+        }
+    }
 }
 
 /// 聊天操作的结果。只在底栏之上挂一份：挂在各页的话，后台页的那份先弹，弹不出来，用户在别的页就看不到。
@@ -279,6 +329,7 @@ private struct RoomRowView: View {
     let row: RoomRow
     let model: ChatModel
     let plugins: PluginsModel
+    var selected = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -289,7 +340,7 @@ private struct RoomRowView: View {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         Text(row.name)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(colors.textPrimary))
+                            .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.textPrimary))
                             .lineLimit(1)
                         if row.isEncrypted {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
@@ -329,6 +380,7 @@ private struct RoomRowView: View {
         .padding(.horizontal, WontonTheme.spacing.s16)
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
+        .background(selected ? Color(colors.accentFill) : Color.clear)
         .contentShape(Rectangle())
     }
 
