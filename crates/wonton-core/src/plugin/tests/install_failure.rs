@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
-use tracing::instrument::WithSubscriber;
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::{Layer, Registry};
 
@@ -62,8 +61,34 @@ fn failure(manager: &super::super::PluginManager) -> Value {
     serde_json::to_value(plugin).unwrap()["install_failure"].clone()
 }
 
-#[tokio::test]
-async fn health_timeout_without_container_logs_records_the_cause_and_stage() {
+#[test]
+fn health_timeout_without_container_logs_records_the_cause_and_stage() {
+    const CHILD: &str = "WONTON_ROLLBACK_LOG_TEST";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "plugin::tests::install_failure::health_timeout_without_container_logs_records_the_cause_and_stage", "--nocapture"])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    // Callsite interest is process-wide; a scoped subscriber races parallel tests that first register the same event.
+    let events = Events::default();
+    tracing::subscriber::set_global_default(Registry::default().with(events.clone())).unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(assert_health_timeout_logged(events));
+}
+
+async fn assert_health_timeout_logged(events: Events) {
     let (docker, engine) = FakeDocker::start().await;
     docker.set_state(
         "wonton-app-test--app",
@@ -74,13 +99,10 @@ async fn health_timeout_without_container_logs_records_the_cause_and_stage() {
     let dir = tempfile::tempdir().unwrap();
     let mut manager = manager_with(engine, &dir);
     manager.cfg.install_timeout = Duration::ZERO;
-    let events = Events::default();
-    let subscriber = Registry::default().with(events.clone());
-    let error = manager
-        .install(&source(), &[], langs())
-        .with_subscriber(subscriber)
-        .await
-        .unwrap_err();
+    let error = manager.install(&source(), &[], langs()).await.unwrap_err();
+    assert_eq!(error.kind(), "unhealthy", "{error}");
+    let failed = failure(&manager);
+    assert_eq!(failed["stage"], "waiting_for_bot");
     let recorded = events.0.lock().unwrap();
     assert!(
         recorded.iter().any(|(level, fields)| {
@@ -97,10 +119,9 @@ async fn health_timeout_without_container_logs_records_the_cause_and_stage() {
                     .is_some_and(|value| value.contains("wonton-app-test--app"))
                 && fields.contains_key("cleanup_errors")
         }),
-        "missing structured failure event: {recorded:?}"
+        "missing structured failure event for {error}: {recorded:?}"
     );
     drop(recorded);
-    let failed = failure(&manager);
     assert_eq!(failed["kind"], error.kind());
     assert_eq!(failed["message"], error.to_string());
     assert_eq!(failed["stage"], "waiting_for_bot");
