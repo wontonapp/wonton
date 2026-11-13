@@ -724,14 +724,6 @@ pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String>
     (url.origin() == base.origin()).then(|| url.to_string())
 }
 
-pub(super) fn stored_item_for_tab(
-    state: &PagesState,
-    tab: &TabRef,
-    plugins: &PluginsViewModel,
-) -> Result<StoredItem, CoreError> {
-    stored_item_with_title(state, tab, plugins, None)
-}
-
 /// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
 pub(super) fn stored_item_with_title(
     state: &PagesState,

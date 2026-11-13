@@ -146,6 +146,7 @@ pub(crate) struct RoomPanelView {
 }
 
 impl PagesLink {
+    #[allow(clippy::too_many_arguments)] // 链路和会话通道都是调用方已有的，逐个传入只是接线。
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
