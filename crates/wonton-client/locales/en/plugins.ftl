@@ -232,3 +232,10 @@ tabs-widget-not-pinnable = Apps opened inside a room can't be pinned.
 
 tabs-view-not-a-page = Only app pages can be opened here.
 tabs-view-no-page-open = No app page is open right now.
+
+# 出错页默认收起的"详情"（ADR-0032）：核心按 App 语言写，错误码收在里面。
+tabs-load-details-transport = The page reloads by itself once your home server is reachable again.
+
+tabs-load-details-not-ready = The app's page wasn't ready yet (HTTP {$code}).
+
+tabs-load-details-upstream = The app's page returned an error (HTTP {$code}).

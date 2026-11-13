@@ -80,6 +80,13 @@ pub struct PushNotification {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub thread_root: Option<String>,
+    /// 锁屏上是否隐藏这条通知的内容（ADR-0101 §5，主人在设置里按类别关的）。壳据此设系统的可见性；
+    /// 系统自己的“显示预览”设成隐藏时它优先。
+    #[serde(default)]
+    pub lock_screen_private: bool,
+    /// 所有房间未读消息的总数（邀请按 1 计），壳写到启动器角标上。已经读到最新时为 0。
+    #[serde(default)]
+    pub unread_total: u32,
 }
 
 /// 通知的类别。Android 每个类别一个通知渠道，主人在系统设置里分别开关；iOS 当作通知的分类。
@@ -113,6 +120,11 @@ pub struct PushConfirmation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub origin: Option<crate::ConfirmationOrigin>,
+    /// 通知上能直接点的按钮（ADR-0101 §1）：和卡片上是同一组，最多 3 个。要填密钥或设置的卡片为空，
+    /// 点通知进 App 填。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = []))]
+    pub choices: Vec<crate::CardChoice>,
 }
 
 /// 通知的正文。核心只给类别和原文，通知上的文字（图片、文件的占位，邀请，取不到时的说明）由壳按系统语言写。
@@ -196,11 +208,40 @@ mod tests {
                     room_id: "!bot:home.example".into(),
                     thread_id: None,
                 }),
+                choices: vec![
+                    crate::CardChoice {
+                        answer: crate::Answer::Approve,
+                        label: "允许".into(),
+                        choice_id: Some("go".into()),
+                    },
+                    crate::CardChoice {
+                        answer: crate::Answer::Reject,
+                        label: "拒绝".into(),
+                        choice_id: None,
+                    },
+                ],
             }),
             contact_request: None,
             thread_root: None,
+            lock_screen_private: true,
+            unread_total: 3,
         };
         assert_eq!(round_trip(&notification), notification);
+        // 字段都是后加的：老核心的推送里没有时按“显示内容、没有按钮、未读数 0”读。
+        let mut without = serde_json::to_value(&notification).unwrap();
+        without
+            .as_object_mut()
+            .unwrap()
+            .remove("lock_screen_private");
+        without.as_object_mut().unwrap().remove("unread_total");
+        without["confirmation"]
+            .as_object_mut()
+            .unwrap()
+            .remove("choices");
+        let read: PushNotification = serde_json::from_value(without).unwrap();
+        assert!(!read.lock_screen_private);
+        assert_eq!(read.unread_total, 0);
+        assert!(read.confirmation.unwrap().choices.is_empty());
     }
 
     fn round_trip<T: Serialize + DeserializeOwned>(value: &T) -> T {

@@ -3,7 +3,7 @@
 
 use wonton_protocol::{AgentChainStatus, BotRef, ChainError, ChainLimitKind, ChainRefusal};
 
-use super::store::{self, StoredChain};
+use super::store::StoredChain;
 
 pub(super) fn layer_of(chain: &StoredChain, bot: &BotRef) -> Option<u32> {
     chain
@@ -11,11 +11,6 @@ pub(super) fn layer_of(chain: &StoredChain, bot: &BotRef) -> Option<u32> {
         .iter()
         .find(|entry| &entry.bot == bot)
         .map(|entry| entry.layer)
-}
-
-/// 链上的最高层；空链不会出现（开链就登记发起的 Bot），防御性返回 0。
-fn top_layer(chain: &StoredChain) -> u32 {
-    chain.bots.last().map_or(0, |entry| entry.layer)
 }
 
 /// 链已停或已到上限时，一切新登记（开轮、交接、连接）都拒。
@@ -27,27 +22,6 @@ pub(super) fn reject_if_closed(chain: &StoredChain) -> Result<(), ChainError> {
         }),
         _ => Ok(()),
     }
-}
-
-/// 把 `target` 加进链（交接、`agent_acp` 连接）要过的全部检查，返回它的层。
-/// `initiator` 是发起的 Bot；网页前端直连时没有，自调检查随之跳过。
-pub(super) fn evaluate_attach(
-    chain: &StoredChain,
-    target: &BotRef,
-    initiator: Option<&BotRef>,
-) -> Result<u32, ChainError> {
-    reject_if_closed(chain)?;
-    if initiator == Some(target) {
-        return Err(ChainError::InvalidInput {
-            refusal: ChainRefusal::SelfCall,
-        });
-    }
-    if layer_of(chain, target).is_some() {
-        return Err(ChainError::InvalidInput {
-            refusal: ChainRefusal::Loop,
-        });
-    }
-    depth_check(chain, top_layer(chain) + 1)
 }
 
 /// 桥的一轮续到已有的链：Bot 已在链上就用自己的层（点名叫回沿用原层）；
@@ -68,24 +42,31 @@ pub(super) fn bridge_layer(
     }
 }
 
-/// 链上添一个 Bot，按层序入列：被点名的 Bot 用点名者的层进链，可能比已在链上的层小，
-/// `top_layer` 取末位靠的就是列保持层序。同层排在一起，后登记的在后。
+/// Keep one summary row per Bot at its minimum admitted layer. Session layers, not these
+/// presentation rows, determine recursion depth.
 pub(super) fn admit_bot(chain: &mut StoredChain, bot: &BotRef, layer: u32) {
+    if let Some(position) = chain.bots.iter().position(|entry| &entry.bot == bot) {
+        if chain.bots[position].layer <= layer {
+            return;
+        }
+        chain.bots.remove(position);
+    }
     let position = chain.bots.partition_point(|entry| entry.layer <= layer);
     chain.bots.insert(
         position,
-        store::ChainBotEntry {
+        super::store::ChainBotEntry {
             bot: bot.clone(),
             layer,
         },
     );
 }
 
-fn depth_check(chain: &StoredChain, layer: u32) -> Result<u32, ChainError> {
-    if layer > chain.limits.max_depth {
+pub(super) fn next_layer(top: u32, depth: u32, max: u32) -> Result<u32, ChainError> {
+    let previous = top.max(depth);
+    if previous >= max {
         return Err(ChainError::LimitReached {
             kind: ChainLimitKind::Depth,
         });
     }
-    Ok(layer)
+    Ok(previous + 1)
 }

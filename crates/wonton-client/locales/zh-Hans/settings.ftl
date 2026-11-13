@@ -62,3 +62,6 @@ push-home-unreachable = 连不上家里的服务器：{ $reason }
 push-session-timeout = { $seconds } 秒内没能登录 Matrix
 
 push-room-key-missing = 还没收到这条消息的房间密钥
+
+# $path is the private device file; $reason is the underlying storage error.
+notification-lock-screen-storage-failed = 读写不了锁屏内容设置 { $path }：{ $reason }

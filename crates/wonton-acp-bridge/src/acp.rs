@@ -16,7 +16,7 @@ use tokio::{
 };
 
 use wonton_l10n::Lang;
-use wonton_protocol::ConfirmationOrigin;
+use wonton_protocol::{ACP_CHAIN_META_KEY, ChainCarrier, ConfirmationOrigin};
 
 use crate::{
     config::MAX_FRAME_BYTES,
@@ -456,6 +456,7 @@ impl AcpClient {
         &self,
         session_id: &str,
         prompt: Vec<Value>,
+        carrier: Option<ChainCarrier>,
         max_output: usize,
         timeout: Duration,
         lang: Lang,
@@ -489,10 +490,11 @@ impl AcpClient {
             .cloned()
             .unwrap_or_default();
         tracing::debug!(session_id, blocks = prompt.len(), "发送 ACP prompt");
-        let response = self.request(
-            "session/prompt",
-            json!({"sessionId": session_id, "prompt": prompt}),
-        );
+        let mut params = json!({"sessionId": session_id, "prompt": prompt});
+        if let Some(carrier) = carrier {
+            params["_meta"] = json!({(ACP_CHAIN_META_KEY): carrier});
+        }
+        let response = self.request("session/prompt", params);
         tokio::pin!(response);
         let timer = tokio::time::sleep(timeout);
         tokio::pin!(timer);

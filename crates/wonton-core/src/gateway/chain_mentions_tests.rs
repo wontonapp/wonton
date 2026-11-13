@@ -199,11 +199,11 @@ async fn the_mentioned_outsider_joins_at_the_mentioners_layer() {
     let grant: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(grant["chain"], chain.as_str());
     assert_eq!(grant["layer"], 2, "层同点名者");
-    // 链上的层序保持：之后再来一跳查的是最高层 + 1，不是列末位 + 1。
+    // 下一跳从仍在运行的 A2 会话派出，不从已结束的 A1 或同链最高层推算。
     let next = home
         .chains
         .ledger()
-        .preview_attach(&chain, &bot_ref("bob"), Some(&bot_ref("alice")))
+        .preview_attach_from_session("s-a2", &bot_ref("bob"))
         .unwrap();
     assert_eq!(next, 3);
 }

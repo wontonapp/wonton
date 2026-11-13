@@ -269,6 +269,16 @@ pub enum AppScope {
     Other,
 }
 
+impl AppScope {
+    pub fn allows_plugin(&self, plugin_id: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Selected { plugin_ids } => plugin_ids.iter().any(|id| id == plugin_id),
+            Self::Other => false,
+        }
+    }
+}
+
 /// 在哪些应用里当管理员。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

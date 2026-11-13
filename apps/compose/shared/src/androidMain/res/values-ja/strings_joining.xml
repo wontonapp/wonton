@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="joining_failure_rejected">管理者が参加リクエストを断りました</string>
+    <string name="joining_failure_code_used">この招待コードは使用済みです</string>
+    <string name="joining_next_invite">管理者に新しい招待コードを発行してもらってください。</string>
+</resources>

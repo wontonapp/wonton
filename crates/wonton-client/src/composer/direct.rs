@@ -82,6 +82,7 @@ impl ComposerLink {
                     group,
                     body: body.trim().to_owned(),
                     reply_to: None,
+                    prepared_reply: None,
                     items: built,
                     timestamp_ms: now_ms(),
                     handed: 0,

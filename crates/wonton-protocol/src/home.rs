@@ -98,6 +98,10 @@ pub enum PairingFailure {
     Closed,
     /// 这是加入别人家的码：管理员还没同意。管理员同意后用同一个码再试一次；`message` 里写的是加入后的角色。
     PendingApproval,
+    /// 管理员拒绝加入请求，需要管理员重新邀请。
+    JoinRejected,
+    /// 邀请码已由其他设备使用或已经作废，需要重新邀请。
+    CodeUsed,
     /// 连不上服务器：手机和服务器之间不通，或者服务器没在运行。
     TransportUnavailable,
     /// 服务器出错了，稍后再试；原因在 `message` 里。

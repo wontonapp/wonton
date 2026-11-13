@@ -2,8 +2,15 @@ package app.wonton.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -32,8 +39,14 @@ internal fun PageLayers(
         // Widget 的驱动订阅尚未接入，不能加载为普通网页。
         val loadable = connection.supported && connection.authorized && state.tab !is TabRef.Widget
         if (state.started && loadable && script != null) {
+            // 状态栏区域的点击被系统吃掉（#379），网页从状态栏下沿排；胶囊和状态浮层不受影响，
+            // 仍按系统安全区排在网页上面。视频全屏（customView）铺满整屏，不吃这条内边距。
             PageWebView(state, page, connection.proxy, environment, script, active && !state.covers(page),
-                openLink, onDraft, connection.profile)
+                openLink, onDraft, connection.profile,
+                modifier = Modifier.windowInsetsPadding(
+                    WindowInsets.systemBars.union(WindowInsets.displayCutout)
+                        .only(WindowInsetsSides.Top)),
+            )
         }
         if (active) {
             state.controller.customView?.let { video ->

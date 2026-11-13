@@ -646,13 +646,15 @@ async fn failures_are_kept_per_instance() {
     let view = rig.view();
     let stack = rig.page(&page_tab());
     assert_eq!(stack.state, TabState::Ready);
-    assert_eq!(
+    // 详情由核心写，不为文案写断言：只断言有。
+    assert!(matches!(
         view.panel[0].page.state,
         TabState::LoadFailed {
             failure: wonton_protocol::TabLoadFailure::Upstream,
-            status: Some(503)
+            status: Some(503),
+            details: Some(_)
         }
-    );
+    ));
 
     rig.tabs
         .dispatch(Action::ReloadTab {
@@ -684,13 +686,14 @@ async fn url_page_load_failure_is_upstream() {
             status: None,
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         rig.view().panel[0].page.state,
         TabState::LoadFailed {
             failure: wonton_protocol::TabLoadFailure::Upstream,
-            status: None
+            status: None,
+            details: None
         }
-    );
+    ));
 
     rig.tabs
         .dispatch(Action::TabLoadFailed {
@@ -701,13 +704,14 @@ async fn url_page_load_failure_is_upstream() {
             status: Some(503),
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         rig.view().panel[0].page.state,
         TabState::LoadFailed {
             failure: wonton_protocol::TabLoadFailure::Upstream,
-            status: Some(503)
+            status: Some(503),
+            details: Some(_)
         }
-    );
+    ));
 
     rig.tabs
         .dispatch(Action::TabLoadSucceeded {

@@ -1,5 +1,4 @@
-//! 家人的管理接口（ADR-0045）：邀请、设置、出码、移除，和插件的“家人能用”开关。都只给主人；共享 Bot 的
-//! 建号是后续任务，先如实报没有就绪。
+//! 成员管理（ADR-0088）：管理成员权限可邀请、出码、移除；指定邀请角色只收主人。
 
 use wonton_protocol::PermissionItem;
 
@@ -75,11 +74,22 @@ pub async fn invite(
     {
         return denied;
     }
-    let invite: MemberInvite = match serde_json::from_slice(&body) {
-        Ok(invite) => invite,
+    let body: serde_json::Value = match serde_json::from_slice(&body) {
+        Ok(body) => body,
         Err(e) => {
             let message = format!("请求体不是邀请：{e}");
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
+        }
+    };
+    if body.get("role_id").is_some()
+        && let Some(denied) = permissions::require(&gateway, peer, &headers, PermissionItem::Owner)
+    {
+        return denied;
+    }
+    let invite: MemberInvite = match serde_json::from_value(body) {
+        Ok(invite) => invite,
+        Err(error) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &error.to_string());
         }
     };
     let Some(matrix) = &gateway.matrix else {
@@ -326,7 +336,7 @@ pub async fn remove(
     }
 }
 
-/// `PUT plugin_family_path(id)`：主人设一个插件给不给家人用。
+/// `PUT plugin_family_path(id)`：更新插件记录的 `family` 标记，不改变角色授权。
 pub async fn set_plugin_family(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -361,12 +371,15 @@ pub async fn set_plugin_family(
     }
 }
 
-fn members_error(e: MembersError) -> Response {
+pub(super) fn members_error(e: MembersError) -> Response {
     match e {
         MembersError::NotFound(_) => {
             error_response(StatusCode::NOT_FOUND, "not_found", &e.to_string())
         }
         MembersError::Removed(_) => error_response(StatusCode::CONFLICT, "removed", &e.to_string()),
+        MembersError::DeviceRegistered => {
+            error_response(StatusCode::CONFLICT, "device_registration", &e.to_string())
+        }
         e => {
             tracing::error!(error = %e, "家人记录存不下");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "storage", &e.to_string())

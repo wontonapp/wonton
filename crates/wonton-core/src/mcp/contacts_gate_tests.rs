@@ -27,6 +27,14 @@ const BOB: &str = "@hermes-bob:b.test";
 async fn home(net: &Arc<Net>) -> (Setup, Server) {
     let s = setup(Engine::unreachable_for_test(), Duration::from_secs(60)).await;
     let home = Server::start(net, "a.test");
+    for username in ["alice", "carol", "dave"] {
+        s.members
+            .invite(crate::members::MemberRecord {
+                role_id: "admin".into(),
+                ..crate::members::MemberRecord::for_test(username)
+            })
+            .unwrap();
+    }
     s.bus.attach_contacts(home.contacts.clone());
     (s, home)
 }

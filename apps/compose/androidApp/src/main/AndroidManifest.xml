@@ -11,8 +11,10 @@
          FOREGROUND_SERVICE：后台不被挂起，隧道和 Matrix 同步照常。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- 推送唤醒后，取消息期间不让手机睡回去。 -->
+    <!-- 推送唤醒后，取消息期间不让手机睡回去；通知上的动作也用它等到发送结果（ADR-0101）。 -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- 等主人确认的任务的常驻通知在 Android 16 起申请成为 Live Update（ADR-0101 §4）。普通权限，不用运行时申请。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -96,6 +98,10 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <!-- 通知上的“回复”“允许/拒绝”（ADR-0101）：广播拉起进程里的核心去发。 -->
+        <receiver
+            android:name=".push.PushActionReceiver"
+            android:exported="false" />
         <!-- UnifiedPush 分发器转来的推送和推送地址，由连接库经它交给 App。 -->
         <service
             android:name=".push.WontonPushService"

@@ -73,3 +73,6 @@ push-session-timeout = { $seconds ->
 }
 
 push-room-key-missing = The room key for this message hasn't arrived yet.
+
+# $path is the private device file; $reason is the underlying storage error.
+notification-lock-screen-storage-failed = Can't read or save lock screen settings { $path }: { $reason }
