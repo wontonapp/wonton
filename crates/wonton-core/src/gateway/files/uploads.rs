@@ -407,10 +407,14 @@ async fn resume_upload(
             }
             size
         }
-        UploadState::Finished { size } if method == Method::HEAD => {
-            return Ok(finished_response(size));
+        UploadState::Finished { size } => {
+            caller.files.authorize(&id, &caller.who, langs)?;
+            return if method == Method::HEAD {
+                Ok(finished_response(size))
+            } else {
+                Err(already_finished(langs, &id))
+            };
         }
-        UploadState::Finished { .. } => return Err(already_finished(langs, &id)),
         UploadState::Unknown => {
             return Err(Failure::new(
                 FileFailure::FileUnknown,
@@ -430,8 +434,14 @@ async fn resume_upload(
             }
         };
         return match caller.files.settle_lost_upload(turn).await? {
-            UploadState::Finished { size } if method == Method::HEAD => Ok(finished_response(size)),
-            UploadState::Finished { .. } => Err(already_finished(langs, &id)),
+            UploadState::Finished { size } => {
+                caller.files.authorize(&id, &caller.who, langs)?;
+                if method == Method::HEAD {
+                    Ok(finished_response(size))
+                } else {
+                    Err(already_finished(langs, &id))
+                }
+            }
             // 客户端要取消，这个上传已经取消掉了。
             _ if method == Method::DELETE => Ok(cancelled_response()),
             _ => Err(Failure::new(

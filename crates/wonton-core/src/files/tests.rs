@@ -425,10 +425,10 @@ async fn deleting_only_touches_uploaded_files() {
         .delete(&id, "phone".to_owned(), &any_langs())
         .await
         .unwrap();
-    assert!(!f.shares_dir.join("transfers/b.txt").exists());
+    assert!(!f.home_dir().join("transfers/b.txt").exists());
 
     let id = f.uploaded("c.txt", b"mine");
-    let path = f.shares_dir.join("transfers/c.txt");
+    let path = f.home_dir().join("transfers/c.txt");
     std::fs::remove_file(&path).unwrap();
     std::fs::write(&path, b"replaced by the owner").unwrap();
     assert_eq!(
@@ -443,7 +443,7 @@ async fn deleting_only_touches_uploaded_files() {
     );
 
     let id = f.uploaded("d.txt", b"mine");
-    std::fs::remove_file(f.shares_dir.join("transfers/d.txt")).unwrap();
+    std::fs::remove_file(f.home_dir().join("transfers/d.txt")).unwrap();
     f.files
         .delete(&id, "phone".to_owned(), &any_langs())
         .await
@@ -451,26 +451,12 @@ async fn deleting_only_touches_uploaded_files() {
 }
 
 #[tokio::test]
-async fn opening_creates_the_transfers_share_and_refuses_a_symlink() {
+async fn opening_does_not_create_a_shared_transfer_directory() {
     let f = Fixture::new();
-    assert!(f.shares_dir.join("transfers").is_dir());
-    let dir = tempfile::tempdir().unwrap();
-    let shares = dir.path().join("shares");
-    std::fs::create_dir(&shares).unwrap();
-    std::os::unix::fs::symlink(dir.path(), shares.join("transfers")).unwrap();
-    let config = super::FilesConfig {
-        dir: dir.path().join("files"),
-        shares_dir: shares,
-        owner: f.owner,
-    };
-    let opened = super::Files::open(
-        &config,
-        f.host.clone(),
-        crate::http::HttpClient::new(),
-        std::sync::Arc::new(crate::mcp::audit::Audit::new(dir.path().join("audit"))),
-        std::sync::Arc::new(crate::plugin::image_worker::ImageWorker::in_process()),
-    );
-    assert!(matches!(opened, Err(super::OpenError::Dir(_))));
+    assert!(!f.shares_dir.join("transfers").exists());
+    let home = crate::private_home::ensure(f.dir.path(), "alice", f.owner).unwrap();
+    std::os::unix::fs::symlink(f.dir.path(), home.join("transfers")).unwrap();
+    assert!(f.files.home_shares("alice", true).is_err());
 }
 
 pub(super) fn plugin_record(f: &Fixture, name: &str) -> super::record::FileRecord {
@@ -560,7 +546,7 @@ async fn a_delete_whose_request_went_away_still_finishes_and_is_audited() {
     })
     .await
     .expect("请求断了也要写审计");
-    assert!(!f.shares_dir.join("transfers/a.txt").exists());
+    assert!(!f.home_dir().join("transfers/a.txt").exists());
     assert_eq!(
         kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
         FileFailure::FileUnknown
@@ -573,10 +559,10 @@ async fn a_delete_that_is_not_confirmed_on_disk_says_so_in_the_audit() {
     let f = Fixture::new();
     let id = f.uploaded("a.txt", b"mine");
     super::share_fs::tests::DIR_SYNC_FAILS.set(Some("a.txt".to_owned()));
-    let outcome = f.files.delete_now(&id, &any_langs());
+    let outcome = f.files.delete_now(&id, &Accessor::Owner, &any_langs());
     super::share_fs::tests::DIR_SYNC_FAILS.set(None);
     assert_eq!(outcome.unwrap(), super::DELETED_UNSYNCED);
-    assert!(!f.shares_dir.join("transfers/a.txt").exists());
+    assert!(!f.home_dir().join("transfers/a.txt").exists());
     assert_eq!(
         kind(f.files.authorize(&id, &Accessor::Owner, &any_langs())),
         FileFailure::FileUnknown
@@ -589,7 +575,8 @@ async fn a_delete_that_fails_keeps_the_record() {
     let f = Fixture::new();
     let elsewhere = f.put("elsewhere/a.txt", b"content");
     // 路径上的 `sub` 换成了软链接：打开时一定被拒绝，以 root 运行也一样。`transfers` 本身没事，别的步骤都走得通。
-    let transfers = f.shares_dir.join(super::TRANSFERS);
+    let transfers = f.home_dir().join(super::TRANSFERS);
+    std::fs::create_dir_all(&transfers).unwrap();
     std::os::unix::fs::symlink(elsewhere.parent().unwrap(), transfers.join("sub")).unwrap();
     let origin = Origin::Upload {
         reference: ShareRef {
@@ -601,6 +588,7 @@ async fn a_delete_that_fails_keeps_the_record() {
             size: 7,
             modified_ns: 0,
         },
+        username: "owner".into(),
     };
     let id = f.save("a.txt", origin, [Accessor::Owner].into());
     assert_eq!(
@@ -618,7 +606,7 @@ async fn a_delete_that_fails_keeps_the_record() {
 async fn a_restart_finds_the_file_a_crashed_delete_left_hidden() {
     let f = Fixture::new();
     let id = f.uploaded("a.txt", b"content");
-    let transfers = f.shares_dir.join(super::TRANSFERS);
+    let transfers = f.home_dir().join(super::TRANSFERS);
     // 崩溃在改名之后。
     let hidden = transfers.join(".wonton-trash/0/a.txt");
     std::fs::rename(transfers.join("a.txt"), &hidden).unwrap();

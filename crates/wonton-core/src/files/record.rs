@@ -23,11 +23,12 @@ pub const BOT_TTL_SECS: u64 = 24 * 3600;
 /// 过期的记录再留这么久：Bot 这时用旧编号，得到的是 `file_expired` 而不是 `file_unknown`。
 const EXPIRED_KEEP_SECS: u64 = 24 * 3600;
 
-/// 文件服务的一个访问者。M1 是主人和 Bot，M2 加家人。
+/// A person or Bot in a file's explicit access set; Owner is the actual server owner.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum Accessor {
     Owner,
+    User(String),
     Bot(String),
 }
 
@@ -35,6 +36,7 @@ impl fmt::Display for Accessor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Owner => f.write_str("owner"),
+            Self::User(name) => write!(f, "user:{name}"),
             Self::Bot(name) => write!(f, "bot:{name}"),
         }
     }
@@ -44,6 +46,10 @@ impl FromStr for Accessor {
     type Err = String;
 
     fn from_str(text: &str) -> Result<Self, String> {
+        if let Some(username) = text.strip_prefix("user:") {
+            crate::private_home::path(std::path::Path::new(""), username)?;
+            return Ok(Self::User(username.to_owned()));
+        }
         match (text, text.strip_prefix("bot:")) {
             ("owner", _) => Ok(Self::Owner),
             (_, Some(name)) if !name.is_empty() => Ok(Self::Bot(name.to_owned())),
@@ -79,10 +85,11 @@ pub enum Origin {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         internal_url: Option<String>,
     },
-    /// 设备上传的文件，放进了共享文件夹 `transfers`。`placed` 是传完时的样子，`DELETE` 核对它。
+    /// Device upload in core/home/<username>/transfers; placed is the deletion snapshot.
     Upload {
         reference: ShareRef,
         placed: Snapshot,
+        username: String,
     },
 }
 
@@ -302,7 +309,7 @@ impl Registry {
                 return (None, None);
             };
             let mut record = record.clone();
-            if accessor == Accessor::Owner {
+            if !matches!(accessor, Accessor::Bot(_)) {
                 record.expires_at = None;
             }
             record.access.insert(accessor);
@@ -345,6 +352,24 @@ impl Registry {
         let _queue = self.writes.lock().expect("编号记录写队列中毒");
         remove_file(&self.path(id))?;
         self.records.write().expect("编号记录锁中毒").remove(id);
+        Ok(())
+    }
+
+    pub(super) fn remove_home_uploads(&self, username: &str) -> Result<(), RegistryError> {
+        let _queue = self.writes.lock().expect("编号记录写队列中毒");
+        let ids: Vec<FileId> = self
+            .records
+            .read()
+            .expect("编号记录锁中毒")
+            .by_id
+            .values()
+            .filter(|record| matches!(&record.origin, Origin::Upload { username: owner, .. } if owner == username))
+            .map(|record| record.id.clone())
+            .collect();
+        for id in ids {
+            remove_file(&self.path(&id))?;
+            self.records.write().expect("编号记录锁中毒").remove(&id);
+        }
         Ok(())
     }
 

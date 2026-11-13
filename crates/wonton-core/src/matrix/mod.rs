@@ -6,6 +6,7 @@
 mod admin;
 mod api;
 mod bot;
+mod bot_home;
 mod bot_profile;
 mod contact_api;
 mod family_room;

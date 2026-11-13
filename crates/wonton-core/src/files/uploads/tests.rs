@@ -103,7 +103,7 @@ async fn an_upload_without_progress_is_cleared_with_its_temporary_copy() {
     let data = f.uploads_dir().join(id.as_str());
     fs::write(&data, "he").unwrap();
     let temp = f
-        .shares_dir
+        .home_dir()
         .join(TRANSFERS)
         .join(format!("{UPLOAD_TEMP_PREFIX}{id}"));
     fs::create_dir_all(temp.parent().unwrap()).unwrap();
@@ -132,7 +132,7 @@ pub(super) async fn placed_without_record(
     fs::write(&data, content).unwrap();
     let pending = f.files.uploads.load_pending(&id).unwrap().unwrap();
     f.files.place_marked(&pending, &any_langs()).unwrap();
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     assert!(transfers.join("a.txt").exists());
     (
         id.clone(),
@@ -143,7 +143,7 @@ pub(super) async fn placed_without_record(
 
 async fn assert_nothing_left(f: &Fixture, id: &FileId, data: &Path, temp: &Path) {
     assert!(
-        !f.shares_dir.join(TRANSFERS).join("a.txt").exists(),
+        !f.home_dir().join(TRANSFERS).join("a.txt").exists(),
         "公开的文件"
     );
     assert!(!temp.exists(), "临时文件");
@@ -160,7 +160,7 @@ async fn assert_nothing_left(f: &Fixture, id: &FileId, data: &Path, temp: &Path)
 }
 
 fn visible_transfers(f: &Fixture) -> Vec<String> {
-    fs::read_dir(f.shares_dir.join(TRANSFERS))
+    fs::read_dir(f.home_dir().join(TRANSFERS))
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect()
@@ -208,7 +208,7 @@ async fn a_stale_upload_leaves_no_public_file_without_a_record() {
 async fn abandoning_leaves_what_the_owner_put_on_the_name_alone() {
     let f = Fixture::new();
     let (id, data, temp) = placed_without_record(&f, "hello").await;
-    let public = f.shares_dir.join(TRANSFERS).join("a.txt");
+    let public = f.home_dir().join(TRANSFERS).join("a.txt");
     fs::remove_file(&public).unwrap();
     fs::write(&public, "the owner's").unwrap();
     fs::remove_file(&data).unwrap();
@@ -247,7 +247,7 @@ async fn a_file_the_owner_renamed_and_edited_survives_abandoning() {
     for how in ABANDON {
         let f = Fixture::new();
         let (id, data, temp) = placed_without_record(&f, "hello").await;
-        let transfers = f.shares_dir.join(TRANSFERS);
+        let transfers = f.home_dir().join(TRANSFERS);
         fs::rename(transfers.join("a.txt"), transfers.join("vacation.jpg")).unwrap();
         fs::write(transfers.join("vacation.jpg"), "hello, with EXIF").unwrap();
         fs::remove_file(&data).unwrap();
@@ -279,7 +279,7 @@ async fn a_file_only_renamed_or_only_edited_is_the_owners_too() {
     for how in ABANDON {
         let f = Fixture::new();
         let (id, data, _) = placed_without_record(&f, "hello").await;
-        let transfers = f.shares_dir.join(TRANSFERS);
+        let transfers = f.home_dir().join(TRANSFERS);
         fs::rename(transfers.join("a.txt"), transfers.join("b.txt")).unwrap();
         fs::remove_file(&data).unwrap();
         abandon(&f, &id, how).await;
@@ -294,7 +294,7 @@ async fn a_file_only_renamed_or_only_edited_is_the_owners_too() {
 
         let f = Fixture::new();
         let (id, data, _) = placed_without_record(&f, "hello").await;
-        let transfers = f.shares_dir.join(TRANSFERS);
+        let transfers = f.home_dir().join(TRANSFERS);
         fs::write(transfers.join("a.txt"), "edited").unwrap();
         fs::remove_file(&data).unwrap();
         abandon(&f, &id, how).await;
@@ -319,14 +319,15 @@ async fn the_name_and_look_are_written_before_the_link() {
         .await
         .unwrap();
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::create_dir_all(&transfers).unwrap();
     fs::write(transfers.join("a.txt"), "the owner's").unwrap();
 
     let mut seen = Vec::new();
     let (name, placed) = f
         .files
-        .shares
+        .home_shares("owner", false)
+        .unwrap()
         .place_upload(
             &f.files.uploads.dir,
             id.as_str(),
@@ -387,7 +388,7 @@ async fn a_crash_before_the_link_leaves_nothing_to_settle() {
         },
     });
     write_json(&f.files.uploads.pending_path(&id), &pending).unwrap();
-    let public = f.shares_dir.join(TRANSFERS).join("a.txt");
+    let public = f.home_dir().join(TRANSFERS).join("a.txt");
     fs::create_dir_all(public.parent().unwrap()).unwrap();
     fs::write(&public, "the owner's").unwrap();
 
@@ -408,7 +409,7 @@ async fn abandoning_keeps_a_file_that_has_a_record() {
     let (id, data, temp) = placed_but_not_cleaned_up(&f, "hello").await;
     fs::remove_file(&data).unwrap();
     f.files.sweep(now_secs() + 2 * STALE_SECS).await;
-    assert!(f.shares_dir.join(TRANSFERS).join("a.txt").exists());
+    assert!(f.home_dir().join(TRANSFERS).join("a.txt").exists());
     assert!(!temp.exists());
     assert_eq!(
         f.files.upload_state(&id).await.unwrap(),
@@ -478,7 +479,7 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
     f.files
         .blocking(move |files| {
             let pending = files.uploads.load_pending(&task)?.unwrap();
-            let (name, placed) = files.shares.place_upload(
+            let (name, placed) = files.home_shares(&pending.username, false)?.place_upload(
                 &files.uploads.dir,
                 task.as_str(),
                 pending.size,
@@ -502,6 +503,7 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
                         path: vec![name],
                     },
                     placed,
+                    username: pending.username.clone(),
                 },
                 access: [Accessor::Owner].into(),
                 owner_granted: Default::default(),
@@ -513,7 +515,7 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
         })
         .await
         .unwrap();
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     (
         id.clone(),
         data,
@@ -526,7 +528,7 @@ async fn placed_but_not_cleaned_up(f: &Fixture, content: &str) -> (FileId, PathB
 async fn a_deleted_upload_does_not_come_back_with_the_next_sweep() {
     let f = Fixture::new();
     let (id, data, temp) = placed_but_not_cleaned_up(&f, "hello").await;
-    let visible = f.shares_dir.join(TRANSFERS).join("a.txt");
+    let visible = f.home_dir().join(TRANSFERS).join("a.txt");
     assert!(visible.exists());
 
     f.files
@@ -550,7 +552,7 @@ async fn a_deleted_upload_does_not_come_back_with_the_next_sweep() {
 async fn a_temporary_file_that_cannot_be_removed_keeps_its_pending_record() {
     let f = Fixture::new();
     let (id, data, temp) = placed_but_not_cleaned_up(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     let aside = f.dir.path().join("transfers-aside");
     fs::rename(&transfers, &aside).unwrap();
     std::os::unix::fs::symlink(&aside, &transfers).unwrap();
@@ -575,7 +577,8 @@ async fn a_temporary_file_that_cannot_be_removed_keeps_its_pending_record() {
 #[tokio::test]
 async fn a_sweep_removes_temporary_files_nobody_is_waiting_for() {
     let f = Fixture::new();
-    let transfers = f.shares_dir.join(TRANSFERS);
+    f.files.home_shares("owner", true).unwrap();
+    let transfers = f.home_dir().join(TRANSFERS);
     let orphan = transfers.join(format!("{UPLOAD_TEMP_PREFIX}{}", new_id()));
     fs::write(&orphan, "left behind").unwrap();
     // 还有待完成记录的：可能正要放。
@@ -620,9 +623,9 @@ async fn nothing_is_linked_until_the_name_and_look_are_durable() {
     fs::write(f.uploads_dir().join(id.as_str()), "hello").unwrap();
     fail_dir_sync(f.dir.path().join("files/pending"), 1);
     assert!(f.files.finish_upload(&id, &any_langs()).await.is_err());
-    assert!(!f.shares_dir.join(TRANSFERS).join("a.txt").exists());
+    assert!(!f.home_dir().join(TRANSFERS).join("a.txt").exists());
     assert!(f.files.finish_upload(&id, &any_langs()).await.is_ok());
-    assert!(f.shares_dir.join(TRANSFERS).join("a.txt").exists());
+    assert!(f.home_dir().join(TRANSFERS).join("a.txt").exists());
 }
 
 /// 主人改过的文件留着，补的记录没落盘时待完成记录不能删：断电后记录没了，文件就再也没人管。
@@ -630,7 +633,7 @@ async fn nothing_is_linked_until_the_name_and_look_are_durable() {
 async fn a_kept_file_keeps_its_pending_record_until_the_record_is_durable() {
     let f = Fixture::new();
     let (id, _data, _temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::write(transfers.join("a.txt"), "edited by the owner").unwrap();
     let pending = f.dir.path().join(format!("files/pending/{id}.json"));
     fail_dir_sync(f.dir.path().join("files/records"), 2);
@@ -693,7 +696,7 @@ async fn a_stuck_clean_up_holds_up_no_other_upload() {
 async fn a_lost_upload_whose_file_was_kept_reads_as_finished() {
     let f = Fixture::new();
     let (id, _data, _temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::write(transfers.join("a.txt"), "edited by the owner").unwrap();
     let turn = f.files.upload_turn(&id).await;
     assert_eq!(
@@ -709,7 +712,7 @@ async fn a_name_found_in_the_directory_is_cleaned_for_display() {
     const TRICKY: &str = "report\u{202e}fdp.exe";
     let f = Fixture::new();
     let (id, _data, _temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::rename(transfers.join("a.txt"), transfers.join(TRICKY)).unwrap();
     let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
     assert_eq!(record.name, "reportfdp.exe");
@@ -717,12 +720,18 @@ async fn a_name_found_in_the_directory_is_cleaned_for_display() {
         panic!("{record:?}");
     };
     assert_eq!(reference.path, [TRICKY]);
-    assert!(f.files.shares.open(reference).is_ok());
+    assert!(
+        f.files
+            .origin_shares(&record.origin)
+            .unwrap()
+            .open(reference)
+            .is_ok()
+    );
 
     // 作废时留下的也一样。
     let f = Fixture::new();
     let (id, _data, _temp) = placed_without_record(&f, "hello").await;
-    let transfers = f.shares_dir.join(TRANSFERS);
+    let transfers = f.home_dir().join(TRANSFERS);
     fs::rename(transfers.join("a.txt"), transfers.join(TRICKY)).unwrap();
     abandon(&f, &id, "取消").await;
     let Lookup::Found(record) = f.files.registry.get(&id, now_secs()) else {
@@ -782,12 +791,12 @@ async fn a_failed_placement_forgets_the_temporary_inode() {
     let record = f.files.finish_upload(&id, &any_langs()).await.unwrap();
     assert_eq!(record.name, "a.txt");
     assert_eq!(
-        fs::read_to_string(f.shares_dir.join(TRANSFERS).join("a.txt")).unwrap(),
+        fs::read_to_string(f.home_dir().join(TRANSFERS).join("a.txt")).unwrap(),
         "hello"
     );
     assert!(f.files.uploads.load_pending(&id).unwrap().is_none());
     assert!(
-        !f.shares_dir
+        !f.home_dir()
             .join(TRANSFERS)
             .join(format!("{UPLOAD_TEMP_PREFIX}{id}"))
             .exists()

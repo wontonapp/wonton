@@ -261,3 +261,18 @@ impl From<StoreError> for InstallError {
         Self::Storage(e.to_string())
     }
 }
+
+impl From<crate::private_home::HomeError> for InstallError {
+    fn from(error: crate::private_home::HomeError) -> Self {
+        match &error {
+            // 没有权限动私人空间的目录：对外是“权限缺失”，不是笼统的存储错误（EPERM/EACCES 的处理）。
+            crate::private_home::HomeError::Chown { .. }
+            | crate::private_home::HomeError::Permission { .. } => {
+                Self::PermissionNotGranted(error.to_string())
+            }
+            crate::private_home::HomeError::Io { .. }
+            | crate::private_home::HomeError::NotDirectory { .. }
+            | crate::private_home::HomeError::Invalid(_) => Self::Storage(error.to_string()),
+        }
+    }
+}

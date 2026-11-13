@@ -11,3 +11,4 @@ roles-friend-not-found = 友達一覧に { $user_id } はいません。
 roles-friends-unavailable = このサーバは友達機能が使えません。
 family-room-name = 家族グループ
 family-room-sync-failed = メンバーと役割の記録は保存されましたが、家族グループに反映できませんでした。管理者が家族グループの同期を再実行してください：{ $error }
+family-private-sync-failed = メンバーの記録は保存されましたが、チャット、個人用Botまたはファイル領域を同期できませんでした。管理者がメンバーの同期を再実行してください：{ $error }
