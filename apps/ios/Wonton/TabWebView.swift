@@ -158,7 +158,8 @@ final class TabWebSession: NSObject {
         view.navigationDelegate = self
         if bridged {
             view.uiDelegate = self
-            NSLog("[media] create bridged uiDelegate=session")
+            let captures = responds(to: #selector(WKUIDelegate.webView(_:requestMediaCapturePermissionFor:initiatedByFrame:type:decisionHandler:)))
+            NSLog("[media] create bridged uiDelegate=session responds=%d", captures ? 1 : 0)
         } else {
             NSLog("[media] create unbridged (public page), no uiDelegate")
         }
