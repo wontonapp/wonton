@@ -9,7 +9,7 @@ use wonton_protocol::{
 };
 
 use super::panel_view::main_panel;
-use super::{PagesState, StoredApp, StoredItem, StoredPage, invalid};
+use super::{PagesState, StoredApp, StoredItem, StoredPage, bot, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
@@ -469,6 +469,7 @@ fn compose_page(
     pin: Option<&wonton_protocol::BotPanelPin>,
 ) -> TabPage {
     match &stored.tab {
+        TabRef::Bot { .. } => return bot::build_page(state, placed, stored, plugins),
         // 插件里的某一页和公网网页：网址核心直接拼，插件不在了还能用缓存的标题显示。
         TabRef::PluginPath { plugin_id, path } => {
             let url = plugin.and_then(|plugin| page_url(plugin.web_url.as_deref(), Some(path)));
@@ -564,7 +565,6 @@ fn stored_or_placeholder(
         }
     })
 }
-
 fn plugin_title_of(plugin_id: &str, plugins: &PluginsViewModel) -> String {
     plugins
         .installed
@@ -641,7 +641,7 @@ pub(super) fn page_state(
 
 /// 出错页默认收起的"详情"：核心按 App 语言写，HTTP 错误码收在里面（ADR-0032）。没拿到响应
 /// 就没有错误码可写，交回空，壳保持只显示错误码的原样。
-fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
+pub(super) fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
     match (failure, status) {
         (TabLoadFailure::Transport, _) => {
             Some(l10n!(CATALOG, language(), "tabs-load-details-transport"))
@@ -727,15 +727,9 @@ pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String>
     (url.origin() == base.origin()).then(|| url.to_string())
 }
 
-pub(super) fn stored_item_for_tab(
-    tab: &TabRef,
-    plugins: &PluginsViewModel,
-) -> Result<StoredItem, CoreError> {
-    stored_item_with_title(tab, plugins, None)
-}
-
 /// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
 pub(super) fn stored_item_with_title(
+    state: &PagesState,
     tab: &TabRef,
     plugins: &PluginsViewModel,
     title: Option<String>,
@@ -759,15 +753,7 @@ pub(super) fn stored_item_with_title(
             language(),
             "tabs-widget-not-pinnable"
         ))),
-        TabRef::Bot { bot, .. } => Ok(StoredItem {
-            tab: tab.clone(),
-            page: Some(StoredPage {
-                plugin_title: bot.bot.clone(),
-                title: bot.bot.clone(),
-                icon: TabIcon::Plugin { icon: None },
-                layout: TabLayout::Inset,
-            }),
-        }),
+        TabRef::Bot { .. } => bot::stored_item(state, tab, title),
         TabRef::Url { url } => stored_url_item(tab, url, title),
         TabRef::PluginPath { plugin_id, path: _ } => {
             let installed = plugins
@@ -881,7 +867,14 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     }
 }
 
-pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
+pub(super) fn plugin_is_running(
+    state: &PagesState,
+    tab: &TabRef,
+    plugins: &PluginsViewModel,
+) -> bool {
+    if let TabRef::Bot { bot, .. } = tab {
+        return bot::ready_page(state, bot).is_some();
+    }
     let plugin_id = match tab {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
@@ -897,6 +890,13 @@ pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> boo
 }
 
 pub(super) fn item_title(item: &StoredItem) -> String {
+    if let TabRef::Bot { bot, .. } = &item.tab {
+        return item
+            .page
+            .as_ref()
+            .map(|page| page.plugin_title.clone())
+            .unwrap_or_else(|| bot.bot.clone());
+    }
     item.page
         .as_ref()
         .expect("plugin tab item must keep its page metadata")
@@ -926,9 +926,9 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
         TabRef::Plugin { .. }
             | TabRef::PluginPath { .. }
             | TabRef::UiResource { .. }
+            | TabRef::Bot { .. }
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
-            | TabRef::Bot { .. }
             | TabRef::Widget { .. }
     )
 }

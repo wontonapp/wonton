@@ -26,18 +26,21 @@ import app.wonton.protocol.TabRef
 /**
  * 一页的层：网页铺满整屏（状态栏、导航条、刘海底下都是网页，安全区经环境交给页面自己让），
  * 上面只浮胶囊和状态浮层。来源页和本机页各用自己的一套代理与凭据。
+ * Bot 页没放行或还在等登录确认时不建网页（[admitted]），改由 [disclosure] 说明。
  */
 @Composable
 internal fun PageLayers(
     state: WebPageState, page: TabPage, pages: PagesState, connection: SharedPageConnection,
     appearance: AppearanceViewModel, viewport: TabViewport, active: Boolean, takeover: PageTakeover?,
     bannerTop: Dp, onDetails: (String) -> Unit, onDraft: (String) -> Unit, openLink: (String) -> Unit,
+    admitted: Boolean = true, disclosure: @Composable () -> Unit = {},
 ) {
     val environment = viewport.environment
     val script = remember(page.url, appearance, environment) { state.script(environment, document = true) }
     Box(Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding()) {
-        // Widget 的驱动订阅尚未接入，不能加载为普通网页。
-        val loadable = connection.supported && connection.authorized && state.tab !is TabRef.Widget
+        // Widget 的驱动订阅尚未接入，不能加载为普通网页；Bot 页面还需先通过 admission。
+        val loadable = connection.supported && connection.authorized && admitted &&
+            state.tab !is TabRef.Widget
         if (state.started && loadable && script != null) {
             // 状态栏区域的点击被系统吃掉（#379），网页从状态栏下沿排；胶囊和状态浮层不受影响，
             // 仍按系统安全区排在网页上面。视频全屏（customView）铺满整屏，不吃这条内边距。
@@ -48,6 +51,7 @@ internal fun PageLayers(
                         .only(WindowInsetsSides.Top)),
             )
         }
+        disclosure()
         if (active) {
             state.controller.customView?.let { video ->
                 AndroidView(factory = { video }, modifier = Modifier.fillMaxSize())

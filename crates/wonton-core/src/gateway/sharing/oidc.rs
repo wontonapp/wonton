@@ -229,7 +229,7 @@ pub(in crate::gateway) fn person(
             .person(peer)
             .map(Some);
     }
-    Ok(gateway.core_person(req.extensions().get().copied(), req.headers()))
+    Ok(crate::gateway::bot_web::core_person(gateway, req))
 }
 
 pub(in crate::gateway) fn authorize_challenge(

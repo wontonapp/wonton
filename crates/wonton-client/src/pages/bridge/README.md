@@ -36,7 +36,7 @@
   返回空（页面关了、换了房间、退出登录、重新加载）就停，`cancel()` 用于壳自己先拆掉页面时。
 - 页面发来的 widget 报文照常交给 `tab_handle_message`，`reply_script` 为空，应答从订阅回来。
 
-## 每 Bot 网页接口
+## 每 Bot 网页
 
 每 Bot 页面身份使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降成
 `TabRef::Plugin` 或 `TabRef::Url`。`path: None` 打开对应 Bot 的 `BotView.web.Ready.page.url`；
@@ -50,8 +50,6 @@ URL，断连或身份变化时清空。桥的来源判定仍按 `TabPage.url` �
 
 Bot 页沿用上述 WebView 容器、文档／消息／上下文接口、`--wonton-*` 和既有媒体授权接口，后者同样通过
 `TabRef`／`PlacedTab` 取得该精确页面 origin；不能另建壳层 WebView，也不能按公网网页跳过桥或令牌注入。
-这是接口约定，不是运行时入口接线或端到端验证结论；接口阶段不暴露 Bot 页面，未支持的客户端明确拒绝，
-不能转开其他页面。
 
 ## 验证
 

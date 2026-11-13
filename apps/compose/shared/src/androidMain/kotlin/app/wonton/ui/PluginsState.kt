@@ -51,7 +51,9 @@ class PluginsState(val core: ClientCore) {
 
     /** 在主界面里一直收集，切到别的页面时也接着更新。 */
     suspend fun observe() {
-        core.pluginsUpdates().collect { next -> viewModel = next }
+        core.pluginsUpdates().collect { next ->
+            viewModel = next
+        }
     }
 
     fun send(action: Action) {

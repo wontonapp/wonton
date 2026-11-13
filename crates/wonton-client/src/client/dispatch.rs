@@ -114,11 +114,9 @@ impl ClientCore {
             | Action::BackOnboardingStep
             | Action::ToggleOnboardingNeed { .. }
             | Action::EditOnboardingProfile { .. }
-            | Action::TestModelProvider { .. }
             | Action::UseCurrentModel
             | Action::ChooseModelLogin { .. }
             | Action::RetryOnboardingItem { .. }
-            | Action::DismissModelProviderProblem
             | Action::SetPrimaryAgent { .. }
             | Action::DismissReplacedAgentOffer
             | Action::DismissOnboardingTip { .. }) => scope.onboarding.dispatch(action),

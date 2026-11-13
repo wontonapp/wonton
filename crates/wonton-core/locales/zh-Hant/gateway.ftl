@@ -43,6 +43,8 @@ gateway-plugin-not-shared = 應用程式 { $id } 沒有開放給家人
 gateway-proxy-sso-failed = 拿不到應用程式 { $id } 的代登入憑證：{ $error }
 gateway-cross-site-login = 閘道不認其他網頁發出的跨站請求的登入狀態，請從應用程式自己的頁面操作
 gateway-login-required = 需要先登入 Wonton
+gateway-bot-web-permission = 外掛程式網路裡的應用程式不能開啟 Bot 網頁或使用瀏覽器登入
+gateway-bot-web-storage = 無法讀取 Bot 網頁記錄，請檢查伺服器儲存空間後重試
 
 # 上游（身分提供者端點、模型閘道）出錯時顯示的名稱。
 gateway-name-oidc = 身分提供者

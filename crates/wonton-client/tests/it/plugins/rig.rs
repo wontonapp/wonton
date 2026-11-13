@@ -22,6 +22,9 @@ use wonton_client::{
 };
 use wonton_tunnel::{Allowlist, TunnelServer};
 
+#[path = "bot_activity_support.rs"]
+mod bot_activity;
+
 pub const WAIT: Duration = Duration::from_secs(20);
 /// 兜底预算，不是节奏：繁忙时建连实测 16s+（登录令牌两次超时重连），单次建连限时 12s，
 /// 失败后按退避重试；取 60s，超过就是真的连不上。
@@ -77,6 +80,7 @@ pub struct CoreState {
     /// 带延迟的预设回应：发出早的请求把它取走，睡完才回，制造“发得早、回得晚”。
     canned_delayed: Mutex<HashMap<(Method, String), DelayedCanned>>,
     seen: Mutex<Vec<Seen>>,
+    bot_activity: bot_activity::Activity,
 }
 
 #[derive(Clone, Debug)]
@@ -271,16 +275,7 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             || parts.headers.contains_key("sec-fetch-site"),
         body: String::from_utf8_lossy(&body).into_owned(),
     });
-    let held = core
-        .holds
-        .lock()
-        .unwrap()
-        .get(&(parts.method.clone(), parts.uri.path().to_owned()))
-        .cloned();
-    if let Some(held) = held {
-        let mut released = held.subscribe();
-        released.wait_for(|held| !*held).await.ok();
-    }
+    wait_for_release(&core, &parts.method, parts.uri.path()).await;
     if path == IMAGE {
         return (StatusCode::OK, vec![0x89, 0x50]).into_response();
     }
@@ -308,6 +303,9 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             .status(status)
             .body(Body::from(body))
             .unwrap();
+    }
+    if let Some(response) = bot_activity::respond(&core, &parts.method, &parts.uri).await {
+        return response;
     }
     if let Some(response) = onboarding_routes(&core, &parts.method, parts.uri.path(), &body).await {
         return response;
@@ -340,6 +338,19 @@ pub async fn fake_core(State(core): State<Arc<CoreState>>, request: Request) -> 
             let Canned(status, body) = core_error(404, "not_found", "没有这个");
             (StatusCode::from_u16(status).unwrap(), body).into_response()
         }
+    }
+}
+
+async fn wait_for_release(core: &CoreState, method: &Method, path: &str) {
+    let held = core
+        .holds
+        .lock()
+        .unwrap()
+        .get(&(method.clone(), path.to_owned()))
+        .cloned();
+    if let Some(held) = held {
+        let mut released = held.subscribe();
+        released.wait_for(|held| !*held).await.ok();
     }
 }
 

@@ -69,6 +69,7 @@ impl PluginManager {
         let route = self.provider_route(langs)?;
         let Some(commands) = route.spec.providers.as_ref() else {
             return Ok(ModelProviders {
+                plugin_id: route.id.to_string(),
                 providers: None,
                 any_configured: false,
                 web_url: self.model_web_url(&route.id),
@@ -82,6 +83,7 @@ impl PluginManager {
         let configured = configured_providers(&listed);
         let providers = merge_providers(listed, index.onboarding.as_ref(), langs);
         Ok(ModelProviders {
+            plugin_id: route.id.to_string(),
             providers: Some(providers),
             any_configured,
             web_url: self.model_web_url(&route.id),

@@ -112,8 +112,10 @@ final class TabWebSession: NSObject {
                 try updateContext(webView)
             }
             guard input.connected, input.page.state == .ready,
-                  let proxy = input.proxy, let entry = input.page.url,
-                  let url = URL(string: entry) else { return }
+                  let entry = input.page.url, let url = URL(string: entry) else { return }
+            // 插件页要等家里的代理；公网网页直接连，不经隧道（ADR-0052），没有代理也加载。
+            let proxy = input.proxy
+            guard proxy != nil || !bridged else { return }
             if webView == nil { try create() }
             guard let webView else { return }
             if loadedReload != input.page.reload || loadedEntry != entry || loadedProxy != proxy {
@@ -297,6 +299,20 @@ final class TabWebSession: NSObject {
         lastConnection = nil
         lastTextScale = nil
         update(input, action: action)
+    }
+
+    /// Remove a previously loaded page when exact Bot metadata or pre-open consent no longer permits it.
+    func withhold() {
+        dispose()
+        input = nil
+        ready = false
+        hasContent = false
+        canGoBack = false
+        loadedReload = nil
+        loadedEntry = nil
+        loadedProxy = nil
+        recoveryURL = nil
+        navigationURL = nil
     }
 
     func dispose() {

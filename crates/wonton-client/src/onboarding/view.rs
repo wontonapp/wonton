@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 
 use wonton_protocol::{
-    ChatViewModel, Onboarding, OnboardingAgent, OnboardingAgentRow, OnboardingCommit,
-    OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep, OnboardingViewModel,
-    PluginState, ReplacedAgent, StepNav,
+    ChatViewModel, ModelSettingsPage, Onboarding, OnboardingAgent, OnboardingAgentRow,
+    OnboardingCommit, OnboardingModelStep, OnboardingNeedRow, OnboardingReview, OnboardingStep,
+    OnboardingViewModel, PluginState, ReplacedAgent, StepNav,
 };
 
 use super::{LocalState, review, storage};
@@ -91,13 +91,21 @@ pub(super) fn render(
         Vec::new()
     };
     let model = OnboardingModelStep {
-        providers: state.providers.clone(),
+        settings: state.providers.as_ref().and_then(|providers| {
+            providers.web_url.as_ref().map(|web_url| ModelSettingsPage {
+                plugin_id: providers.plugin_id.clone(),
+                web_url: web_url.clone(),
+            })
+        }),
+        has_configured_models: state
+            .providers
+            .as_ref()
+            .is_some_and(|providers| !providers.configured.is_empty()),
         logins: selected_agent.map_or_else(Vec::new, |agent| agent.logins.clone()),
         choice: state
             .draft
             .model(state.providers.as_ref())
             .and_then(|model| model.choice()),
-        testing: state.testing,
         problem: state.model_problem.clone(),
     };
     let needs = need_rows(state, onboarding);
@@ -188,9 +196,7 @@ fn navigation(
     let can_next = match step {
         OnboardingStep::Profile | OnboardingStep::Apps => true,
         OnboardingStep::Agent => selected.is_some_and(installable),
-        OnboardingStep::Model => {
-            !state.testing && state.draft.model(state.providers.as_ref()).is_some()
-        }
+        OnboardingStep::Model => state.draft.model(state.providers.as_ref()).is_some(),
         OnboardingStep::Review => match state.commit {
             OnboardingCommit::NotStarted => review::can_commit(&state.review),
             OnboardingCommit::Running => false,

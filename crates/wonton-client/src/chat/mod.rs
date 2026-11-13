@@ -16,7 +16,9 @@ mod background;
 mod bot_activity;
 mod bot_poll;
 mod bot_profile;
+mod bot_records;
 mod bot_typing;
+mod bot_web;
 mod bots;
 mod confirmation;
 mod connect;
@@ -49,12 +51,13 @@ mod storage;
 mod target;
 mod timeline;
 mod timeline_previews;
+mod util;
 mod verification;
 mod view;
 
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures_util::StreamExt;
@@ -87,8 +90,10 @@ use crate::scope::reuse;
 use confirmation::Answers;
 use draft::DraftWrite;
 use layout::Layouts;
+
 pub(crate) use storage::{ChatStorage, StoredSession};
 pub(crate) use target::TimelineKey;
+use util::{invalid, lock};
 use view::core_error;
 
 /// 向前翻页一次最多加载的事件数。
@@ -834,22 +839,10 @@ async fn open_chat_room(session: &MatrixSession, key: &TimelineKey) -> Result<Ch
     }
 }
 
-fn invalid(reason: &str) -> CoreError {
-    CoreError::InvalidInput {
-        reason: reason.to_owned(),
-    }
-}
-
 /// 核心账号：和登录的账号 `own_user` 在同一台服务器上。通知房间（核心发插件通知、邮件的私聊）以它认，
 /// 别人发的同样结构的内容是普通消息。
 pub(crate) fn core_account(own_user: &UserId) -> OwnedUserId {
     format!("@{CORE_LOCALPART}:{}", own_user.server_name())
         .parse()
         .expect("the account's server name with the fixed core localpart is still a valid user ID")
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

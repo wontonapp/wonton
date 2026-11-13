@@ -17,6 +17,9 @@ pub(super) async fn follow(
     mut foreground: watch::Receiver<bool>,
 ) {
     let mut after = None;
+    let Some(link) = bots.upgrade() else { return };
+    let mut session = link.session.subscribe();
+    drop(link);
     loop {
         let Some(link) = bots.upgrade() else { return };
         if !link.can_poll() {
@@ -26,10 +29,13 @@ pub(super) async fn follow(
             tokio::select! {
                 result = home.changed() => if result.is_err() { return },
                 result = foreground.changed() => if result.is_err() { return },
+                result = session.changed() => if result.is_err() { return },
             }
             continue;
         }
         let target = link.home.view();
+        let epoch = link.epoch.load(std::sync::atomic::Ordering::SeqCst);
+        let generation = lock(&link.local).web_generation;
         let request = fetch(link.clone(), after);
         tokio::pin!(request);
         let result = loop {
@@ -49,6 +55,10 @@ pub(super) async fn follow(
                     if result.is_err() { return; }
                     break None;
                 },
+                result = session.changed() => {
+                    if result.is_err() { return; }
+                    break None;
+                },
             }
         };
         match result {
@@ -57,13 +67,14 @@ pub(super) async fn follow(
                 if !link.can_poll()
                     || current.server_id != target.server_id
                     || current.proxy != target.proxy
+                    || link.epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch
                 {
                     link.clear_activity();
                     after = None;
                     continue;
                 }
                 after = Some(report.rev);
-                apply(&link, report);
+                apply(&link, report, epoch, generation);
             }
             Some(Err(error)) => {
                 tracing::info!(?error, "Cannot poll Bot activity");
@@ -76,6 +87,7 @@ pub(super) async fn follow(
                         () = tokio::time::sleep_until(retry_at) => break,
                         result = home.changed() => if result.is_err() { return },
                         result = foreground.changed() => if result.is_err() { return },
+                        result = session.changed() => if result.is_err() { return },
                     }
                     let Some(link) = bots.upgrade() else { return };
                     if !link.can_poll() {
@@ -111,26 +123,15 @@ async fn due(deadline: Option<Instant>) {
     }
 }
 
-fn apply(bots: &Arc<Bots>, report: BotActivityReport) {
+fn apply(bots: &Arc<Bots>, report: BotActivityReport, epoch: u64, generation: u64) {
     let mut local = lock(&bots.local);
-    let mut refresh = Vec::new();
-    for (id, record) in &mut local.records {
-        let facts = report
-            .bots
-            .iter()
-            .find(|fact| fact.plugin_id == *id && fact.user_id == record.user_id);
-        if let Some(facts) = facts
-            && record.profile_rev != Some(facts.profile_rev)
-        {
-            record.profile_rev = Some(facts.profile_rev);
-            refresh.push(id.clone());
-        }
-        record.facts = facts.cloned();
+    if bots.epoch.load(std::sync::atomic::Ordering::SeqCst) != epoch
+        || local.web_generation != generation
+        || !bots.can_poll()
+    {
+        return;
     }
     local.report = Some(report);
     drop(local);
-    bots.update_activity();
-    for id in refresh {
-        bots.refresh(&id);
-    }
+    bots.reconcile();
 }

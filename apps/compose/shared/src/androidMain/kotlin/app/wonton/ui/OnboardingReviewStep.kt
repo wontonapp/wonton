@@ -112,9 +112,6 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
                 is OnboardingItemProblem.Plugin -> OnboardingProblem(
                     problem.problem.onboardingTitle(), problem.problem.message, retry,
                 )
-                is OnboardingItemProblem.Model -> OnboardingProblem(
-                    problem.problem.onboardingTitle(), problem.problem.message, retry,
-                )
             }
         }
     }
@@ -126,10 +123,6 @@ private fun OnboardingReviewDetail.line(): String = when (this) {
     is OnboardingReviewDetail.Email -> email
     is OnboardingReviewDetail.SetAsDefault -> stringResource(R.string.onboarding_review_set_default)
     is OnboardingReviewDetail.KeepCurrent -> stringResource(R.string.onboarding_review_keep_current)
-    is OnboardingReviewDetail.Model -> model
-    is OnboardingReviewDetail.Unreachable -> model
-        ?.let { stringResource(R.string.onboarding_review_unreachable_model, it) }
-        ?: stringResource(R.string.onboarding_review_unreachable)
     is OnboardingReviewDetail.SignInAfterSetup -> stringResource(R.string.onboarding_review_sign_in_after_setup)
     is OnboardingReviewDetail.Unchanged -> stringResource(R.string.onboarding_review_unchanged)
 }

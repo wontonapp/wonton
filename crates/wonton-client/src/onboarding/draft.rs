@@ -1,13 +1,13 @@
-//! 每一步记下的选择（ADR-0038）：只在内存里，点完成之前不发任何保存请求。没改过的步骤取家里服务器上现在的设置，所以
-//! 重进引导时每一步显示的是现在的选择。
+//! 资料、Agent 和应用的选择只在内存里，点完成才保存。模型网页不属于草稿；这里只记沿用配置或官方登录。
+//! 没改过的步骤取家里服务器上的设置。
 
 use std::collections::HashSet;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    MAX_DISPLAY_NAME_CHARS, Me, ModelProviderInput, ModelProviders, Onboarding, OnboardingAgent,
-    OnboardingModelChoice, OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, SecretString,
-    check_display_name, check_email_change, normalized_email,
+    MAX_DISPLAY_NAME_CHARS, Me, ModelProviders, Onboarding, OnboardingAgent, OnboardingModelChoice,
+    OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, check_display_name,
+    check_email_change, normalized_email,
 };
 
 use super::view::installable;
@@ -38,16 +38,7 @@ pub(super) enum AgentChoice {
 
 pub(super) enum ModelDraft {
     Current,
-    /// 测过的服务商（列表里的或自定义的），key 只留在这里，点完成时保存。
-    Tested {
-        input: ModelProviderInput,
-        title: String,
-        reachable: bool,
-    },
-    Login {
-        id: String,
-        title: String,
-    },
+    Login { id: String, title: String },
     Skipped,
 }
 
@@ -137,13 +128,11 @@ impl Draft {
     }
 
     pub fn model<'a>(&'a self, providers: Option<&ModelProviders>) -> Option<&'a ModelDraft> {
+        let configured = providers.is_some_and(|providers| !providers.configured.is_empty());
         match &self.model {
-            Some(ModelDraft::Skipped) => None,
-            Some(model) => Some(model),
-            None if providers.is_some_and(|providers| !providers.configured.is_empty()) => {
-                Some(&ModelDraft::Current)
-            }
-            None => None,
+            Some(ModelDraft::Current) | None if configured => Some(&ModelDraft::Current),
+            Some(ModelDraft::Current | ModelDraft::Skipped) | None => None,
+            Some(model @ ModelDraft::Login { .. }) => Some(model),
         }
     }
 
@@ -169,61 +158,12 @@ impl ModelDraft {
     pub fn choice(&self) -> Option<OnboardingModelChoice> {
         Some(match self {
             Self::Current => OnboardingModelChoice::Current,
-            Self::Tested {
-                input: ModelProviderInput::Preset { id, .. },
-                title,
-                reachable,
-            } => OnboardingModelChoice::Provider {
-                id: id.clone(),
-                title: title.clone(),
-                reachable: *reachable,
-            },
-            Self::Tested {
-                input:
-                    ModelProviderInput::Custom {
-                        base_url, model, ..
-                    },
-                reachable,
-                ..
-            } => OnboardingModelChoice::Custom {
-                base_url: base_url.clone(),
-                model: model.clone(),
-                reachable: *reachable,
-            },
             Self::Login { id, title } => OnboardingModelChoice::Login {
                 id: id.clone(),
                 title: title.clone(),
             },
             Self::Skipped => return None,
         })
-    }
-}
-
-/// 去掉首尾空白再测：粘贴常带换行，核心会把它当成 key 的内容拒绝。
-pub(super) fn trimmed(input: ModelProviderInput) -> ModelProviderInput {
-    let key = |key: SecretString| SecretString::new(key.expose().trim().to_owned());
-    match input {
-        ModelProviderInput::Preset { id, key: secret } => ModelProviderInput::Preset {
-            id,
-            key: key(secret),
-        },
-        ModelProviderInput::Custom {
-            base_url,
-            model,
-            key: secret,
-        } => ModelProviderInput::Custom {
-            base_url: base_url.trim().to_owned(),
-            model: model.trim().to_owned(),
-            key: key(secret),
-        },
-    }
-}
-
-pub(super) fn key_is_empty(input: &ModelProviderInput) -> bool {
-    match input {
-        ModelProviderInput::Preset { key, .. } | ModelProviderInput::Custom { key, .. } => {
-            key.expose().is_empty()
-        }
     }
 }
 

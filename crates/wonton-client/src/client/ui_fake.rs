@@ -7,7 +7,8 @@
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个没有网页的已装应用（点开是详情页）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、主面板里钉着的一页、商店入口、引导已经走完。
 //! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈，壳的出口才有东西可测；
-//! 没有隧道，网页本身加载不出来。时间线、媒体、商店列表和别的操作后的新状态不在里面，
+//! 没有隧道，插件的网页本身加载不出来；房间的时间线和面板里那张加载得出来的本机网页在 `ui_fake_room.rs`。
+//! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
 use std::sync::Arc;
@@ -315,6 +316,8 @@ fn fake_pages(mut pages: PagesViewModel) -> PagesViewModel {
             movable: true,
         })
         .into_iter()
+        // 第二页是加载得出来的本机网页，面板手势的走屏翻到它。
+        .chain(super::ui_fake_room::panel())
         .collect();
     pages.panel_selected = None;
     pages
@@ -408,7 +411,7 @@ mod tests {
             Err(CoreError::InvalidInput { .. })
         ));
         // 面板里钉着的那一页一直在，不跟着栈变。
-        assert_eq!(core.pages().panel.len(), 1);
+        assert_eq!(core.pages().panel.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

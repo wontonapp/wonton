@@ -43,6 +43,8 @@ gateway-plugin-not-shared = アプリ{ $id }は家族に共有されていませ
 gateway-proxy-sso-failed = アプリ{ $id }の代行ログイン資格情報を取得できません：{ $error }
 gateway-cross-site-login = ゲートウェイは、他のサイトからのリクエストに付いたログイン状態を信頼しません。アプリ自身のページから操作してください
 gateway-login-required = まずWontonにログインしてください
+gateway-bot-web-permission = プラグインネットワーク内のアプリはBotのWebページを開いたり、ブラウザーのログインを利用したりできません
+gateway-bot-web-storage = BotのWebページの記録を読み取れません。サーバーのストレージを確認してから、もう一度お試しください
 
 # 上流（IDプロバイダーのエンドポイント、モデルゲートウェイ）のエラーに表示する名前。
 gateway-name-oidc = IDプロバイダー

@@ -104,6 +104,7 @@ impl PluginManager {
                 })
             })
         };
+        self.refresh_bot_web_routes(&package.manifest).await?;
         self.saw_serving(id, checked.serving().clone());
         match checked.ready(&langs) {
             Ok(ContainersState::Running(health))

@@ -173,7 +173,7 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
 
     rig.core.release(Method::GET, PROVIDERS);
     let ready = rig
-        .wait_onboarding(|view| !view.loading && view.model.providers.is_some())
+        .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
         .await;
     assert!(ready.nav.unwrap().can_skip);
     // Drain synchronously: watch may otherwise merge a stale frame with the next good frame.
@@ -204,6 +204,6 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
         "a completed load was published as loading again"
     );
     assert!(!finished.loading, "{finished:?}");
-    assert!(finished.model.providers.is_some());
+    assert!(finished.model.settings.is_some());
     assert!(finished.nav.unwrap().can_skip);
 }

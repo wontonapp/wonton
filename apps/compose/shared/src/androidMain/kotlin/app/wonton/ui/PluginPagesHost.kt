@@ -85,7 +85,12 @@ private fun PluginPageContainer(
     active: Boolean, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
 ) {
     val tab = open.tab
-    val page = open.page
+    val sourcePage = open.page
+    val plugin = pages.installedPlugin(tab)
+    val access = botWebPageAccess(tab, sourcePage.url, plugin, rememberChat(pages.core).bots)
+    val page = if (access.allowed) sourcePage else sourcePage.copy(url = null, state = TabState.Unknown)
+    var loginAcknowledged by remember(page.url) { mutableStateOf(false) }
+    val awaitingLogin = access.disclosure && !loginAcknowledged
     val connection = sharedPageConnection(tab, pages, home)
     val state = remember { WebPageState(PlacedTab.Page(tab), pages) }
     val viewport = tabViewport(active)
@@ -94,8 +99,11 @@ private fun PluginPageContainer(
     PageEffects(state, page, connection.connected, active, appearance, environment)
     BackHandler(active) { state.back() }
     val takeover = pageTakeover(tab, pages, active)
+    val disclosure = @Composable {
+        BotPageDisclosure(page, active, awaitingLogin, pages, onContinue = { loginAcknowledged = true })
+    }
     PageLayers(state, page, pages, connection, appearance, viewport, active, takeover, bannerTop,
-        onDetails, onDraft, openLink)
+        onDetails, onDraft, openLink, admitted = access.allowed && !awaitingLogin, disclosure = disclosure)
 }
 
 /** 胶囊上方的一条短状态:连接提示由壳给,升级中由这里说。 */
