@@ -18,8 +18,8 @@ use crate::http::HttpClient;
 use crate::members::MemberRecord;
 use crate::plugin::PluginId;
 
-const ME: &str = wonton_protocol::ME_PATH;
-const MEMBERS: &str = wonton_protocol::MEMBERS_PATH;
+pub(super) const ME: &str = wonton_protocol::ME_PATH;
+pub(super) const MEMBERS: &str = wonton_protocol::MEMBERS_PATH;
 
 /// 家人测试的端口：经隧道时不监听，只用来拼地址（同 `tunnel_tests`）。
 pub(super) const PORT: u16 = 18480;
@@ -54,7 +54,12 @@ pub(super) async fn send_as(
 }
 
 /// 主人令牌的进程内调用，回状态码和 JSON。
-async fn owner_call(home: &Home, method: Method, path: &str, body: Value) -> (StatusCode, Value) {
+pub(super) async fn owner_call(
+    home: &Home,
+    method: Method,
+    path: &str,
+    body: Value,
+) -> (StatusCode, Value) {
     let request = hyper::Request::builder()
         .method(method)
         .uri(path)
@@ -73,7 +78,7 @@ async fn owner_call(home: &Home, method: Method, path: &str, body: Value) -> (St
 }
 
 /// 起一个接了假 Tuwunel 的家（邀请要查 Matrix 上的账号）。
-async fn home_with_matrix() -> (Home, tempfile::TempDir) {
+pub(super) async fn home_with_matrix() -> (Home, tempfile::TempDir) {
     let (_, config) = crate::matrix::fake::start().await;
     let state = tempfile::tempdir().unwrap();
     let matrix = crate::matrix::Matrix::connect(&config, state.path(), HttpClient::new())
@@ -84,7 +89,7 @@ async fn home_with_matrix() -> (Home, tempfile::TempDir) {
 }
 
 /// 邀请一个家人，返回核心记下的成员。
-async fn invite(home: &Home, invite: Value) -> Value {
+pub(super) async fn invite(home: &Home, invite: Value) -> Value {
     let (status, member) = owner_call(home, Method::POST, MEMBERS, invite).await;
     assert_eq!(status, StatusCode::CREATED, "{member}");
     member
@@ -141,7 +146,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     let (home, _matrix_state) = home_with_matrix().await;
     let member = invite(
         &home,
-        json!({"display_name": "爱丽丝", "private_bot": true}),
+        json!({"display_name": "爱丽丝", "private_bot": true, "role_id": "family"}),
     )
     .await;
     assert_eq!(
@@ -228,7 +233,11 @@ async fn the_owner_token_reads_and_saves_the_owner_profile() {
 #[tokio::test]
 async fn member_pairing_codes_are_single_use_and_voidable() {
     let (home, _matrix_state) = home_with_matrix().await;
-    invite(&home, json!({"display_name": "Mia", "private_bot": true})).await;
+    invite(
+        &home,
+        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+    )
+    .await;
     // 再出一个，旧的作废。
     let first = member_code(&home, "mia").await;
     let second = member_code(&home, "mia").await;
@@ -249,7 +258,11 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     assert_eq!(reject_reason(rejected), Some(RejectReason::Used));
 
     // 作废以后不能用。
-    invite(&home, json!({"display_name": "Bob", "private_bot": true})).await;
+    invite(
+        &home,
+        json!({"display_name": "Bob", "private_bot": true, "role_id": "family"}),
+    )
+    .await;
     let code = member_code(&home, "bob").await;
     let (status, _) = owner_call(
         &home,
@@ -267,7 +280,11 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
 #[tokio::test]
 async fn removing_a_member_revokes_her_devices_and_keeps_the_username_taken() {
     let (home, _matrix_state) = home_with_matrix().await;
-    invite(&home, json!({"display_name": "Mia", "private_bot": true})).await;
+    invite(
+        &home,
+        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+    )
+    .await;
     let code = member_code(&home, "mia").await;
     let (_, phone) = pair_member_phone(&home, &code).await;
     let (status, _, _) = phone.get(CORE, ME).await;
@@ -293,7 +310,7 @@ async fn removing_a_member_revokes_her_devices_and_keeps_the_username_taken() {
         &home,
         Method::POST,
         MEMBERS,
-        json!({"display_name": "另一个人", "username": "mia", "private_bot": true}),
+        json!({"display_name": "另一个人", "username": "mia", "private_bot": true, "role_id": "family"}),
     )
     .await;
     assert_eq!(status, StatusCode::CONFLICT, "{body}");
@@ -303,37 +320,45 @@ async fn removing_a_member_revokes_her_devices_and_keeps_the_username_taken() {
 #[tokio::test]
 async fn usernames_come_from_display_names_and_collisions_are_conflicts() {
     let (home, _matrix_state) = home_with_matrix().await;
-    let alice = invite(&home, json!({"display_name": "Alice", "private_bot": true})).await;
+    let alice = invite(
+        &home,
+        json!({"display_name": "Alice", "private_bot": true, "role_id": "family"}),
+    )
+    .await;
     assert_eq!(alice["username"], "alice", "ASCII 显示名转小写");
 
     let again = invite(
         &home,
-        json!({"display_name": "Alice!", "private_bot": true}),
+        json!({"display_name": "Alice!", "private_bot": true, "role_id": "family"}),
     )
     .await;
     assert_eq!(again["username"], "family1", "清理出来被占时用 family<n>");
 
-    let third = invite(&home, json!({"display_name": "张三", "private_bot": true})).await;
+    let third = invite(
+        &home,
+        json!({"display_name": "张三", "private_bot": true, "role_id": "family"}),
+    )
+    .await;
     assert_eq!(third["username"], "family2", "非 ASCII 显示名用 family<n>");
 
     for (invite, status, kind) in [
         (
-            json!({"display_name": "X", "username": "Bad Name", "private_bot": true}),
+            json!({"display_name": "X", "username": "Bad Name", "private_bot": true, "role_id": "family"}),
             StatusCode::BAD_REQUEST,
             "invalid_input",
         ),
         (
-            json!({"display_name": "X", "username": "owner", "private_bot": true}),
+            json!({"display_name": "X", "username": "owner", "private_bot": true, "role_id": "family"}),
             StatusCode::CONFLICT,
             "username_taken",
         ),
         (
-            json!({"display_name": "X", "username": "wonton-core", "private_bot": true}),
+            json!({"display_name": "X", "username": "wonton-core", "private_bot": true, "role_id": "family"}),
             StatusCode::CONFLICT,
             "username_taken",
         ),
         (
-            json!({"display_name": "X", "username": "alice", "private_bot": true}),
+            json!({"display_name": "X", "username": "alice", "private_bot": true, "role_id": "family"}),
             StatusCode::CONFLICT,
             "username_taken",
         ),
@@ -586,7 +611,7 @@ fn install_not_allowed_routes() -> RouteTable {
 }
 
 /// 直接记一个家人（邀请流程带 Matrix 查重，在别的测试里过）。
-fn seed_member(h: &Harness, username: &str, can_install: bool) {
+pub(super) fn seed_member(h: &Harness, username: &str, can_install: bool) {
     h.members
         .invite(MemberRecord {
             username: username.to_owned(),
@@ -594,6 +619,8 @@ fn seed_member(h: &Harness, username: &str, can_install: bool) {
             display_name: username.to_owned(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            // 能装插件改成看角色：直接给权限最大的管理员模板。
+            role_id: if can_install { "admin" } else { "friend" }.to_owned(),
             can_install_plugins: can_install,
             wants_private_bot: true,
             private_bot: None,
@@ -607,7 +634,7 @@ fn seed_member(h: &Harness, username: &str, can_install: bool) {
 async fn seed_member_via_home(home: &Home, display_name: &str) -> Value {
     invite(
         home,
-        json!({"display_name": display_name, "private_bot": true}),
+        json!({"display_name": display_name, "private_bot": true, "role_id": "family"}),
     )
     .await
 }
@@ -635,6 +662,7 @@ async fn a_device_whose_member_is_gone_is_rejected() {
             display_name: "Mia".to_owned(),
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: true,
             private_bot: None,
@@ -797,7 +825,7 @@ async fn member_issued_codes_follow_the_issuer_and_bot_names_are_taken() {
             ("authorization", bearer().as_str()),
             ("content-type", "application/json"),
         ],
-        "{\"display_name\": \"X\", \"username\": \"hermes-alice\", \"private_bot\": true}",
+        "{\"display_name\": \"X\", \"username\": \"hermes-alice\", \"private_bot\": true, \"role_id\": \"family\"}",
     )
     .await;
     assert_eq!(reply.status, StatusCode::CONFLICT, "{}", reply.text());

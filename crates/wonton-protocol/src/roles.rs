@@ -172,6 +172,48 @@ pub struct Permissions {
     pub lend_own_bot: bool,
 }
 
+impl Permissions {
+    /// 主人的全部权限：主人有角色之外的一切（ADR-0088）。
+    pub fn owner() -> Self {
+        Self {
+            open_apps: AppScope::All,
+            plugin_admin: AdminScope::AllOpenable,
+            install_apps: Gate::Allow,
+            model_settings: true,
+            server_settings: true,
+            manage_members: true,
+            add_friends: Gate::Allow,
+            share_apps: true,
+            ai: AiLevel::SelfConfirms,
+            privileged_tools: true,
+            private_bot: true,
+            shared_bots: true,
+            lend_own_bot: true,
+        }
+    }
+
+    /// 一项都不给的取值。记录或角色读不到、取值不认识时按它算（ADR-0088“最严的处理”）。
+    pub fn strictest() -> Self {
+        Self {
+            open_apps: AppScope::Selected {
+                plugin_ids: Vec::new(),
+            },
+            plugin_admin: AdminScope::NoApps,
+            install_apps: Gate::Deny,
+            model_settings: false,
+            server_settings: false,
+            manage_members: false,
+            add_friends: Gate::Deny,
+            share_apps: false,
+            ai: AiLevel::ReadOnly,
+            privileged_tools: false,
+            private_bot: false,
+            shared_bots: false,
+            lend_own_bot: false,
+        }
+    }
+}
+
 /// 能打开哪些应用。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

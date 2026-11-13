@@ -100,3 +100,49 @@ fn role_and_request_paths_nest_under_their_owners() {
         "/_wonton/api/plugins/app.snake/audience"
     );
 }
+
+/// 主人的权限在每一项上都不少于任何角色；最严的取值在每一项上不多于朋友模板。
+#[test]
+fn the_owner_has_more_of_everything_and_the_strictest_never_more_than_the_friend_template() {
+    let rank = |gate: Gate| match gate {
+        Gate::Deny | Gate::Other => 0,
+        Gate::AskAdmin => 1,
+        Gate::Allow => 2,
+    };
+    let level = |ai: AiLevel| match ai {
+        AiLevel::ReadOnly | AiLevel::Other => 0,
+        AiLevel::AdminApprovesDeletes => 1,
+        AiLevel::SelfConfirms => 2,
+    };
+    let friend = friend_template();
+    let owner = Permissions::owner();
+    let strictest = Permissions::strictest();
+    for (owner, friend, strictest) in [(&owner, &friend, &strictest)] {
+        assert!(
+            owner.install_apps == Gate::Allow
+                && rank(owner.install_apps) > rank(friend.install_apps)
+        );
+        assert!(rank(strictest.install_apps) <= rank(friend.install_apps));
+        assert!(
+            owner.add_friends == Gate::Allow && rank(owner.add_friends) > rank(friend.add_friends)
+        );
+        assert!(rank(strictest.add_friends) <= rank(friend.add_friends));
+        assert!(level(owner.ai) > level(friend.ai) && level(strictest.ai) <= level(friend.ai));
+        for (owner, friend) in [
+            (owner.model_settings, friend.model_settings),
+            (owner.server_settings, friend.server_settings),
+            (owner.manage_members, friend.manage_members),
+            (owner.share_apps, friend.share_apps),
+            (owner.privileged_tools, friend.privileged_tools),
+            (owner.private_bot, friend.private_bot),
+            (owner.shared_bots, friend.shared_bots),
+            (owner.lend_own_bot, friend.lend_own_bot),
+        ] {
+            assert!(owner || !friend, "主人缺了一项朋友有的权限");
+        }
+        assert!(owner.open_apps == AppScope::All);
+        assert!(strictest.open_apps != AppScope::All);
+        assert!(owner.plugin_admin == AdminScope::AllOpenable);
+        assert!(strictest.plugin_admin != AdminScope::AllOpenable);
+    }
+}

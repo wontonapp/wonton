@@ -80,6 +80,13 @@ fn member(s: &Setup, username: &str, can_install_plugins: bool) {
             display_name: username.to_owned(),
             email: None,
             status: MemberStatus::Active,
+            // 能不能装插件改成看角色：能装的人给权限最大的管理员模板。
+            role_id: if can_install_plugins {
+                "admin"
+            } else {
+                "friend"
+            }
+            .to_owned(),
             can_install_plugins,
             wants_private_bot: true,
             private_bot: None,

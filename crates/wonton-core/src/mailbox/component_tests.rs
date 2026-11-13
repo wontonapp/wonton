@@ -47,6 +47,7 @@ fn invite(members: &Members, name: &str) {
             display_name: name.into(),
             email: None,
             status: MemberStatus::Invited,
+            role_id: "friend".to_owned(),
             can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,

@@ -57,6 +57,7 @@ use wonton_core::plugin::names::Instance;
 use wonton_core::plugin::preinstall::Backoff;
 use wonton_core::plugin::store::Store;
 use wonton_core::push::Push;
+use wonton_core::roles::Roles;
 use wonton_core::secret;
 use wonton_core::tunnel::{self, Tunnel, TunnelEntry};
 use wonton_core::upgrade::compose_images;
@@ -305,6 +306,7 @@ async fn serve() -> anyhow::Result<()> {
 
     let owner_token = owner_token(&cfg)?;
     let members = Arc::new(Members::open(cfg.core_state_dir().join("members.json"))?);
+    let roles = Arc::new(Roles::open(cfg.core_state_dir().join("roles.json"))?);
     let mailpit = open_mailpit(&cfg, &engine, members.clone())?;
     // 监听先建起来：核心启动时核对插件，渲染变了会重建容器，里面的一次性服务（比如登记 OIDC 源）要经核心
     // 的地址访问核心。网关这时还没开始接，连接先进内核的队列等着。
@@ -377,6 +379,7 @@ async fn serve() -> anyhow::Result<()> {
         owner,
         owner_token,
         members,
+        roles,
         manager.clone(),
         hydra,
         http,
@@ -415,6 +418,7 @@ fn open_gateway(
     owner: Arc<OwnerStore>,
     owner_token: String,
     members: Arc<Members>,
+    roles: Arc<Roles>,
     manager: Arc<PluginManager>,
     hydra: Option<(Hydra, String)>,
     http: HttpClient,
@@ -445,6 +449,7 @@ fn open_gateway(
             http,
             tunnel,
         )
+        .with_roles(roles)
         .with_system_http(system_http)
         .with_matrix(matrix)
         .with_send_limiter(Arc::new(gateway::SendLimiter::new(cfg.send_limits.clone())))
