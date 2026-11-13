@@ -16,13 +16,14 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
         })
         .unwrap();
     let transport = rig.app.pages();
-    assert_eq!(
+    assert!(matches!(
         item(&transport, &page_tab).state,
         TabState::LoadFailed {
             failure: TabLoadFailure::Transport,
             status: None,
+            details: Some(_)
         }
-    );
+    ));
     rig.app
         .dispatch(Action::TabLoadFailed {
             page: PlacedTab::Page {
@@ -32,13 +33,14 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
         })
         .unwrap();
     let upstream = rig.app.pages();
-    assert_eq!(
+    assert!(matches!(
         item(&upstream, &page_tab).state,
         TabState::LoadFailed {
             failure: TabLoadFailure::Upstream,
             status: Some(502),
+            details: Some(_)
         }
-    );
+    ));
 
     rig.core.set_lists(vec![vec![web_plugin(
         plugin_id,
@@ -55,13 +57,14 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
             status: Some(503),
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         item(&rig.app.pages(), &page_tab).state,
         TabState::LoadFailed {
             failure: TabLoadFailure::PluginNotReady,
             status: Some(503),
+            details: Some(_)
         }
-    );
+    ));
 
     rig.core.set_lists(vec![vec![plugin]]);
     rig.app.dispatch(Action::RefreshPlugins).unwrap();
@@ -91,13 +94,14 @@ async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
             status: Some(502),
         })
         .unwrap();
-    assert_eq!(
+    assert!(matches!(
         item(&rig.app.pages(), &page_tab).state,
         TabState::LoadFailed {
             failure: TabLoadFailure::Upstream,
             status: Some(502),
+            details: Some(_)
         }
-    );
+    ));
 
     // 按返回回到成功的历史页：壳报告加载成功，失败状态清掉，reload 计数不动。
     let before = item(&rig.app.pages(), &page_tab).reload;
