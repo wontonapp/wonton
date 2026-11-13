@@ -18,6 +18,11 @@ fn icon() -> PluginIcon {
 #[tokio::test]
 async fn candidates_list_every_page_with_its_plugin_icon_until_added() {
     let rig = Rig::new().await;
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    rig.app
+        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .unwrap();
     let running = || PluginState::Running {
         health: PluginHealth::Healthy,
     };
@@ -27,7 +32,7 @@ async fn candidates_list_every_page_with_its_plugin_icon_until_added() {
     // 没有网页的插件没有页面可加。
     let headless = installed("app.headless", running());
     rig.core.set_lists(vec![vec![rss, photos, headless]]);
-    rig.connected().await;
+    rig.app.dispatch(Action::RefreshPlugins).unwrap();
     let view = wait_pages(&rig, |view| view.my_app_candidates.len() > 1).await;
     let rss_page = |id: &str| TabCandidate {
         tab: tab("app.rss", Some(id)),

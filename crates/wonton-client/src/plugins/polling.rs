@@ -111,6 +111,8 @@ impl PluginsLink {
         let outcome = result.map(|installed| {
             if seq > self.applied_seq.load(Ordering::SeqCst) {
                 self.applied_seq.store(seq, Ordering::SeqCst);
+                let mut installed_server = lock(&self.installed_server);
+                *installed_server = server.clone();
                 self.view.send_modify(|view| {
                     view.installed = Some(installed);
                     Self::derive(view);
