@@ -11,9 +11,9 @@ use wonton_protocol::{
     Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
     FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
     FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PeersViewModel, PluginDetail, PluginImage,
-    PluginsViewModel, RoomTransfers, SecretString, ServersViewModel, SessionListViewModel,
-    SettingsViewModel, StoreItem, TabRef, TabsViewModel, TimelineTarget, TransfersViewModel,
+    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
+    PluginImage, PluginsViewModel, RoomTransfers, SecretString, ServersViewModel,
+    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
 };
 
 use crate::appearance::AppearanceLink;
@@ -26,11 +26,12 @@ use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
     AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PeersSubscription, PluginsSubscription, ServersSubscription,
-    SessionListSubscription, SettingsSubscription, TabsSubscription, TransfersSubscription,
+    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
+    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
 };
 use switch::Replay;
 
+mod agent_chains;
 mod bot_contacts;
 mod browser;
 mod composer;
@@ -38,12 +39,12 @@ mod confirmations;
 mod dispatch;
 mod limits;
 mod media;
+mod pages;
 mod plugin_detail;
 mod push_route;
 mod settings;
 mod sharing;
 mod switch;
-mod tabs;
 #[cfg(feature = "test-hooks")]
 mod test_hooks;
 mod test_support;
@@ -97,13 +98,13 @@ impl ClientCore {
     }
 
     /// 当前的底栏和插件页面，用于首帧渲染。
-    pub fn tabs(&self) -> TabsViewModel {
-        self.views().tabs.borrow().clone()
+    pub fn pages(&self) -> PagesViewModel {
+        self.views().pages.borrow().clone()
     }
 
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
-    pub fn subscribe_tabs(&self) -> Arc<TabsSubscription> {
-        Arc::new(TabsSubscription::new(self.views().tabs.subscribe()))
+    pub fn subscribe_pages(&self) -> Arc<PagesSubscription> {
+        Arc::new(PagesSubscription::new(self.views().pages.subscribe()))
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -220,7 +221,7 @@ impl ClientCore {
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let scope = self.scope();
         let chat = scope.chat.clone();
-        let room_view = scope.tabs.subscribe_room_view();
+        let room_view = scope.pages.subscribe_room_view();
         scope
             .run(async move { chat.open_timeline(&target, room_view).await })
             .await
@@ -674,10 +675,6 @@ impl ClientCore {
             Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
             Action::SetPortMapping { plugin_id, enabled } => {
                 scope.plugins.set_port_mapping(plugin_id, enabled)
-            }
-            Action::SetVisiblePlugin { plugin_id } => {
-                scope.plugins.set_visible_plugin(plugin_id);
-                Ok(())
             }
             Action::RefreshStore { force } => {
                 scope.plugins.refresh_store(force);

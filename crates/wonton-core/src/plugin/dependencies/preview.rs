@@ -92,7 +92,7 @@ impl PluginManager {
             .requires
             .iter()
             .filter(|c| generic(c))
-            .filter(|c| chosen(&state, &providers, &manifest.id, c).is_none())
+            .filter(|c| chosen(&state, &providers, &manifest.id, c, None).is_none())
             .collect();
         let candidates = if missing.is_empty() {
             Vec::new()
@@ -152,7 +152,7 @@ impl PluginManager {
             });
         }
         for capability in manifest.wants.iter().filter(|c| generic(c)) {
-            if chosen(&state, &providers, &manifest.id, capability).is_none() {
+            if chosen(&state, &providers, &manifest.id, capability, None).is_none() {
                 preview.missing_wants.push(MissingCapability {
                     capability: capability.clone(),
                     third_party: crate::plugin::capabilities::is_third_party(capability),
@@ -161,7 +161,7 @@ impl PluginManager {
             }
         }
         for capability in super::declarations(manifest) {
-            if let Some(provider) = chosen(&state, &providers, &manifest.id, capability)
+            if let Some(provider) = chosen(&state, &providers, &manifest.id, capability, None)
                 .filter(|p| high(&p.listed.manifest, capability))
             {
                 preview.notices.push(connection_notice(
@@ -191,7 +191,7 @@ impl PluginManager {
                         generic(c)
                             && service(provider, c).is_some()
                             && high(provider, c)
-                            && chosen(&state, &providers, &consumer.manifest.id, c)
+                            && chosen(&state, &providers, &consumer.manifest.id, c, None)
                                 .is_none_or(|p| p.id == provider.id)
                             && super::connection(&state, &consumer.manifest.id, &provider.id, c)
                                 .is_none()

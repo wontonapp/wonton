@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ProxySettings, TabDisplay, TabState};
+use crate::{ProxySettings, TabState};
 
 /// 应用页可显示的入口；未列出的入口不显示，外部 Matrix 槽位不列 Store 或 AddSource。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,7 +116,6 @@ pub struct SharedPlugin {
     pub title: String,
     /// 分享方给出的插件网页地址，和主人自己看到的同一个；只能属于该插件的网页主机，由分享连接的本地代理打开。
     pub web_url: String,
-    pub display: TabDisplay,
     /// 沿用插件页面状态，但不据此授予“启动”等主人操作。
     pub state: TabState,
 }

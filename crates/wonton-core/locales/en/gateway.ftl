@@ -149,3 +149,17 @@ gateway-web-storage-cross-site = Only this app's own pages can change its data
 gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later
 
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
+
+# agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.
+gateway-agent-acp-websocket-only = This entry only accepts WebSocket connections
+gateway-agent-acp-path = agent_acp only serves /acp
+gateway-agent-acp-initiator-bot-required = The connection must name the calling bot with X-Wonton-Bot
+gateway-agent-acp-initiator-bot-unrecognized = {$bot} is not a bot of this app
+gateway-agent-acp-on-behalf-of = The connection must say who it speaks for with X-Wonton-On-Behalf-Of
+gateway-agent-acp-adopter-not-listened = {$bot} does not listen to the person this connection claims to speak for
+gateway-agent-acp-target-not-listened = {$bot} does not listen to this person
+gateway-agent-acp-no-bot = {$provider} has no usable bot yet; set up a bot first
+gateway-agent-acp-multi-bot = {$provider} has several bots; pick one on its detail page first
+gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinstall it to get one
+gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
+gateway-agent-acp-busy = This app already has the maximum number of concurrent agent connections; try again later

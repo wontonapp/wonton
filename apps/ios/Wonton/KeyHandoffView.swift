@@ -52,6 +52,7 @@ struct KeyHandoffView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("key-handoff-skip")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(WontonTheme.spacing.pageInset)

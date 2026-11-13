@@ -36,7 +36,7 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
     let address = a.codes.direct_addrs[0];
     let old_slot = phone.servers().servers[0].id.clone();
     phone
-        .dispatch(Action::SetTabLabels { visible: false })
+        .dispatch(Action::SetAutoAddApps { enabled: false })
         .unwrap();
     phone
         .dispatch(Action::RenameServer {
@@ -44,7 +44,11 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
             name: "Home".into(),
         })
         .unwrap();
-    let old_tabs = dir.path().join("servers").join(&old_slot).join("tabs.json");
+    let old_tabs = dir
+        .path()
+        .join("servers")
+        .join(&old_slot)
+        .join("layout.json");
     let old_data = std::fs::read(&old_tabs).unwrap();
     a.server.shutdown().await;
     let b = Home::start_at(address).await;
@@ -66,7 +70,7 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
             .unwrap()
             .current
     );
-    assert!(phone.tabs().labels, "B must not inherit A's settings");
+    assert!(phone.pages().auto_add, "B must not inherit A's settings");
     assert_eq!(std::fs::read(&old_tabs).unwrap(), old_data);
     drop(phone);
     let phone = Phone::open(dir.path());
@@ -77,11 +81,11 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
         })
         .await;
     assert_eq!(phone.servers(), servers);
-    assert!(phone.tabs().labels);
+    assert!(phone.pages().auto_add);
     phone
         .dispatch(Action::SwitchServer { id: old_slot })
         .unwrap();
-    assert!(!phone.tabs().labels, "A's settings remain usable");
+    assert!(!phone.pages().auto_add, "A's settings remain usable");
     old_identity_stays_unreachable(&phone, &a_id).await;
 }
 
@@ -146,7 +150,7 @@ async fn pairing_the_same_identity_directly_uses_a_fresh_slot_and_keeps_its_name
         })
         .unwrap();
     phone
-        .dispatch(Action::SetTabLabels { visible: false })
+        .dispatch(Action::SetAutoAddApps { enabled: false })
         .unwrap();
 
     paired(&phone, &home).await;
@@ -159,7 +163,7 @@ async fn pairing_the_same_identity_directly_uses_a_fresh_slot_and_keeps_its_name
             name: "Home".into()
         }
     );
-    assert!(phone.tabs().labels);
+    assert!(phone.pages().auto_add);
     tokio::time::timeout(WAIT, async {
         while dir.path().join("servers").join(&old).exists() {
             tokio::time::sleep(Duration::from_millis(10)).await;
@@ -204,7 +208,7 @@ async fn failed_pairing_in_an_added_slot_can_return_to_the_unchanged_server() {
     paired(&phone, &home).await;
     let before = phone.servers();
     phone
-        .dispatch(Action::SetTabLabels { visible: false })
+        .dispatch(Action::SetAutoAddApps { enabled: false })
         .unwrap();
     phone.dispatch(Action::AddServer).unwrap();
     phone.pair(&home.code(Some(RejectReason::Expired))).unwrap();
@@ -217,5 +221,5 @@ async fn failed_pairing_in_an_added_slot_can_return_to_the_unchanged_server() {
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
     assert_eq!(phone.servers(), before);
-    assert!(!phone.tabs().labels);
+    assert!(!phone.pages().auto_add);
 }

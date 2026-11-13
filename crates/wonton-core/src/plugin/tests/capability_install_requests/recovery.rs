@@ -113,7 +113,7 @@ async fn a_failed_optional_rebuild_restores_existing_config_and_reports_revoke_f
     }
     let route = bed
         .manager
-        .capability_route(&id("app.optional"), "x-acme.search", &langs())
+        .capability_route(&id("app.optional"), "x-acme.search", &langs(), None)
         .await
         .unwrap();
     assert_eq!(route.provider, id("app.search"));

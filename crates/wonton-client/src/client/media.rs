@@ -1,6 +1,6 @@
 use super::ClientCore;
-use crate::tabs::media;
-use crate::tabs::media::{PageMediaAction, PageMediaState};
+use crate::pages::media;
+use crate::pages::media::{PageMediaAction, PageMediaState};
 
 #[uniffi::export]
 impl ClientCore {

@@ -5,18 +5,14 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use wonton_protocol::{
-    CoreError, InstallPreview, InstalledPlugin, PluginKind, PluginProblem, PluginState, PluginTask,
-    PluginTaskState, PluginsViewModel, SecretValues, SidebarApp, SidebarOpen, SidebarViewModel,
-    StoreConfirmation, StoreItem, TabRef, UpdatablePlugin,
+    CoreError, InstallPreview, InstalledPlugin, PluginProblem, PluginState, PluginTask,
+    PluginTaskState, PluginsViewModel, SecretValues, StoreConfirmation, StoreItem, UpdatablePlugin,
 };
 
 use super::PluginsLink;
 use super::api::SOURCE_TIMEOUT;
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
-
-/// 侧边栏“我的应用”最多列几个；多的只见“全部应用”（主人 2026-11-09 定）。
-const APP_LIMIT: usize = 8;
 
 /// 这份预览要不要主人看过才能装或升级。规则和确认页一致（ADR-0017），只是决定从壳挪进了核心：
 /// 装不了、缺资料、要用设备、有核心不支持的权限、缺 `requires` 要一起装、widget 能力变多；安装时高风险权限、
@@ -76,54 +72,8 @@ fn updatable_of(plugin: &InstalledPlugin, version: &str) -> UpdatablePlugin {
     }
 }
 
-/// 侧边栏的内容：“我的应用”按已安装列表的顺序，最多 8 个，角标数字同一批。
-pub(super) fn sidebar(view: &PluginsViewModel) -> SidebarViewModel {
-    let installed = view.installed.iter().flat_map(|list| &list.plugins);
-    let mut apps: Vec<SidebarApp> = installed
-        .filter_map(|plugin| {
-            let open = open_entry(plugin)?;
-            Some(SidebarApp {
-                update: view
-                    .updatable
-                    .iter()
-                    .any(|updatable| updatable.plugin_id == plugin.id),
-                open,
-                plugin_id: plugin.id.clone(),
-                title: plugin.title.clone(),
-                icon: plugin.icon.clone(),
-            })
-        })
-        .collect();
-    let more_apps = apps.len() > APP_LIMIT;
-    apps.truncate(APP_LIMIT);
-    SidebarViewModel {
-        updates: view.updatable.len() as u32,
-        apps,
-        more_apps,
-        settings_badge: view.core_upgrade.is_prompting(),
-    }
-}
-
+/// “我的应用”之外还有能加的应用：小标题旁的“全部”和最后一行都进“全部应用”。
 /// 点了一行“我的应用”打开什么：和 Bot 的私聊在前，插件网页在后；两个都没有的点不开，不进侧边栏。
-fn open_entry(plugin: &InstalledPlugin) -> Option<SidebarOpen> {
-    if plugin.kind == PluginKind::Agent
-        && let Some(bot_user_id) = &plugin.bot_user_id
-    {
-        return Some(SidebarOpen::BotChat {
-            bot_user_id: bot_user_id.clone(),
-        });
-    }
-    let page = plugin.tabs.first().map(|tab| tab.id.clone());
-    let tab = TabRef::Plugin {
-        plugin_id: plugin.id.clone(),
-        page,
-    };
-    plugin
-        .web_url
-        .is_some()
-        .then_some(SidebarOpen::Page { tab })
-}
-
 fn is_busy(plugin: &InstalledPlugin) -> bool {
     matches!(
         plugin.status,
@@ -390,7 +340,7 @@ fn confirmation_preview(confirmation: &StoreConfirmation) -> &InstallPreview {
 #[cfg(test)]
 mod tests {
     use wonton_protocol::{
-        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice,
+        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice, PluginKind,
         WidgetCapability, WidgetCapabilityLevel,
     };
 

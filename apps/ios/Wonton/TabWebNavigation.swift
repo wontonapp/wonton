@@ -32,7 +32,7 @@ extension TabWebSession: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         ready = true
         hasContent = true
-        // 不透明时 WebKit 才在页面之外（底栏、Home 条后面）画页面自己的背景色；透明时露出的是 App 底色，
+        // 不透明时 WebKit 才在页面之外（回弹露出的那块）画页面自己的背景色；透明时露出的是 App 底色，
         // 内容在容器里滚、只有一屏高的页面底下就是一条白（iOS 26.5 实测）。
         webView.isOpaque = true
         recoveryURL = nil

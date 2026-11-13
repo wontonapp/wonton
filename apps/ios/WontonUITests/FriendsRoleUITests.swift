@@ -44,17 +44,14 @@ final class FriendsRoleUITests: XCTestCase {
     }
 
     private func tabButton(_ labels: [String]) -> XCUIElement? {
-        let height = app.windows.firstMatch.frame.height
-        for label in labels {
-            for element in app.buttons.matching(identifier: label).allElementsBoundByIndex
-            where element.frame.minY > height * 0.7 { return element }
-        }
-        return nil
+        // 底栏没了：入口在侧边栏，开抽屉找那一行（ADR-0095）。
+        UITestSidebar.row(app, labels: labels)
     }
 
     private func passOnboarding() {
         for _ in 0..<60 {
-            if tabButton(["Chats", "Apps"]) != nil { return }
+            if UITestBackend.skipKeyHandoff(app) { continue }
+            if UITestSidebar.waitForMain(app, timeout: 1) { return }
             if let skip = waitAnyButton(["Skip"], timeout: 2), skip.isEnabled { skip.tap(); continue }
             if let done = waitAnyButton(["Done"], timeout: 2), done.isEnabled { done.tap(); continue }
             if let next = waitAnyButton(["Next"], timeout: 2), next.isEnabled { next.tap(); continue }
@@ -87,10 +84,11 @@ final class FriendsRoleUITests: XCTestCase {
     }
 
     func testRole() throws {
-        _ = waitAnyButton(["Chats", "Apps", "Skip"], timeout: 90)
+        continueAfterFailure = false
+        _ = waitAnyButton(["Sidebar", "侧边栏", "Skip", "跳过"], timeout: 90)
         passOnboarding()
-        XCTAssertNotNil(tabButton(["Chats"]), "没进主界面")
-        tabButton(["Chats"])?.tap()
+        UITestBackend.settleKeyHandoff(app)
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), "没进主界面")
         openFriends()
         shot("00-list")
 

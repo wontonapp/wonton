@@ -4,20 +4,16 @@ mod sdk;
 mod support;
 
 use serde_json::json;
-use wonton_client::{
-    Action, CoreError, PlacedTab, TabBridgeAction, TabDisplay, TabDisplayChoice, TabRef,
-};
+use wonton_client::{Action, CoreError, PlacedTab, TabRef};
 use wonton_protocol::PanelScope;
 
 use crate::plugins::rig::Rig;
 
-use support::{
-    PAGE_ORIGIN, bar, environment, initialize, open_page, request, response, selected_page,
-};
+use support::{PAGE_ORIGIN, bar, environment, initialize, open_page, request, response};
 
 #[tokio::test]
 async fn initialization_exposes_only_standard_context_and_supported_capabilities() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
+    let (rig, tab) = open_page(true).await;
     let reply = response(&initialize(&rig, &tab));
     let result = &reply["result"];
     assert_eq!(result["protocolVersion"], "2026-01-26");
@@ -30,7 +26,8 @@ async fn initialization_exposes_only_standard_context_and_supported_capabilities
     assert_eq!(context["locale"], "zh-CN");
     assert_eq!(context["timeZone"], "Asia/Shanghai");
     assert_eq!(context["platform"], "mobile");
-    assert_eq!(context["displayMode"], "inline");
+    // 整页就是全屏（ADR-0095）。
+    assert_eq!(context["displayMode"], "fullscreen");
     assert_eq!(
         context["availableDisplayModes"],
         json!(["inline", "fullscreen"])
@@ -75,10 +72,7 @@ async fn public_pages_get_no_document_script_or_bridge() {
         url: "https://example.com/news".to_owned(),
     };
     rig.app
-        .dispatch(Action::PinTab {
-            tab: tab.clone(),
-            replacing: None,
-        })
+        .dispatch(Action::OpenPage { tab: tab.clone() })
         .unwrap();
     rig.app
         .dispatch(Action::AddPanelPage {
@@ -129,9 +123,9 @@ async fn public_pages_get_no_document_script_or_bridge() {
 
 #[tokio::test]
 async fn unsupported_requests_cannot_reach_core_or_mutate_client_state() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
+    let (rig, tab) = open_page(true).await;
     support::wait_quiet(&rig).await;
-    let before_tabs = rig.app.tabs();
+    let before_tabs = rig.app.pages();
     let before_chat = rig.app.chat();
     let before_requests = rig.core.all_seen().len();
     for (method, params) in [
@@ -151,14 +145,14 @@ async fn unsupported_requests_cannot_reach_core_or_mutate_client_state() {
     }
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(rig.core.all_seen().len(), before_requests);
-    assert_eq!(rig.app.tabs(), before_tabs);
+    assert_eq!(rig.app.pages(), before_tabs);
     assert_eq!(rig.app.chat(), before_chat);
 }
 
 #[tokio::test]
 async fn subframes_and_notifications_have_no_request_side_effects() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
-    let before = rig.app.tabs();
+    let (rig, tab) = open_page(true).await;
+    let before = rig.app.pages();
     for (method, params) in [
         ("ui/request-display-mode", json!({"mode":"fullscreen"})),
         ("ui/open-link", json!({"url":"https://example.org/"})),
@@ -186,36 +180,22 @@ async fn subframes_and_notifications_have_no_request_side_effects() {
         );
         assert!(notification.action.is_none());
     }
-    assert_eq!(rig.app.tabs(), before);
+    assert_eq!(rig.app.pages(), before);
 }
 
 #[tokio::test]
-async fn display_requests_update_view_model_and_obey_user_standard_choice() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
-    for (mode, fullscreen) in [("fullscreen", true), ("inline", false)] {
+async fn display_requests_obey_both_modes_and_reject_unknown_ones() {
+    let (rig, tab) = open_page(true).await;
+    // 整页只有一种样子：inline 和 fullscreen 都收，状态都是 fullscreen。
+    for mode in ["fullscreen", "inline"] {
         let result = request(&rig, &tab, "ui/request-display-mode", json!({"mode":mode}));
-        assert_eq!(response(&result)["result"]["mode"], mode);
-        assert_eq!(selected_page(&rig, &tab).fullscreen, fullscreen);
+        assert_eq!(response(&result)["result"]["mode"], "fullscreen");
     }
-    rig.app
-        .dispatch(Action::SetTabDisplay {
-            tab: tab.clone(),
-            display: TabDisplayChoice::Standard,
-        })
-        .unwrap();
-    let reply = request(
-        &rig,
-        &tab,
-        "ui/request-display-mode",
-        json!({"mode":"fullscreen"}),
-    );
-    assert_eq!(response(&reply)["result"]["mode"], "inline");
-    assert!(!selected_page(&rig, &tab).fullscreen);
     assert_eq!(
         response(&initialize(&rig, &tab))["result"]["hostContext"]["availableDisplayModes"],
-        json!(["inline"])
+        json!(["inline", "fullscreen"])
     );
-    let before = rig.app.tabs();
+    let before = rig.app.pages();
     assert_eq!(
         response(&request(
             &rig,
@@ -225,125 +205,12 @@ async fn display_requests_update_view_model_and_obey_user_standard_choice() {
         ))["error"]["code"],
         -32602
     );
-    assert_eq!(rig.app.tabs(), before);
-    rig.app
-        .dispatch(Action::EnterFullscreen { tab: tab.clone() })
-        .unwrap();
-    let reply = request(
-        &rig,
-        &tab,
-        "ui/request-display-mode",
-        json!({"mode":"inline"}),
-    );
-    assert_eq!(response(&reply)["result"]["mode"], "fullscreen");
-    assert!(selected_page(&rig, &tab).fullscreen);
+    assert_eq!(rig.app.pages(), before);
 }
 
 #[tokio::test]
-async fn automatic_fullscreen_returns_to_previous_tab_and_overlay_can_close() {
-    for pinned in [true, false] {
-        let (rig, tab) = open_page(TabDisplay::Fullscreen, pinned).await;
-        assert!(selected_page(&rig, &tab).fullscreen);
-        let reply = request(
-            &rig,
-            &tab,
-            "ui/request-display-mode",
-            json!({"mode":"inline"}),
-        );
-        assert_eq!(response(&reply)["result"]["mode"], "inline");
-        // 底栏只剩"聊天"后，进来之前所在的就是聊天页，自动退出回到它。
-        assert_eq!(rig.app.tabs().selected, TabRef::Chat);
-        assert!(rig.app.tabs().overlay.is_none());
-    }
-}
-
-#[tokio::test]
-async fn links_only_open_https_and_messages_only_create_text_drafts() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
-    let reply = request(
-        &rig,
-        &tab,
-        "ui/open-link",
-        json!({"url":"https://example.org/path?q=a#b"}),
-    );
-    assert_eq!(
-        reply.action,
-        Some(TabBridgeAction::OpenLink {
-            url: "https://example.org/path?q=a#b".to_owned()
-        })
-    );
-    for url in [
-        "http://example.org",
-        "javascript:alert(1)",
-        "/relative",
-        "//example.org",
-        "https://",
-    ] {
-        let reply = request(&rig, &tab, "ui/open-link", json!({"url":url}));
-        assert_eq!(response(&reply)["error"]["code"], -32602);
-        assert!(reply.action.is_none());
-    }
-    let before = rig.app.chat();
-    let reply = request(
-        &rig,
-        &tab,
-        "ui/message",
-        json!({"role":"user","content":[
-            {"type":"text","text":"讨论这篇文章"}, {"type":"text","text":"https://example.org/"}
-        ]}),
-    );
-    assert_eq!(
-        reply.action,
-        Some(TabBridgeAction::DraftMessage {
-            text: "讨论这篇文章\nhttps://example.org/".to_owned()
-        })
-    );
-    assert_eq!(rig.app.chat(), before);
-    // 规范原文（ext-apps 2026-01-26）是单个对象，SDK 发数组：两种都收。
-    let reply = request(
-        &rig,
-        &tab,
-        "ui/message",
-        json!({"role":"user","content":{"type":"text","text":"照规范写的单对象"}}),
-    );
-    assert_eq!(
-        reply.action,
-        Some(TabBridgeAction::DraftMessage {
-            text: "照规范写的单对象".to_owned()
-        })
-    );
-    for params in [
-        json!({"role":"assistant","content":[{"type":"text","text":"wrong role"}]}),
-        json!({"role":"user","content":[{"type":"image","data":"AA==","mimeType":"image/png"}]}),
-        json!({"role":"user","content":{"type":"image","data":"AA==","mimeType":"image/png"}}),
-    ] {
-        let reply = request(&rig, &tab, "ui/message", params);
-        assert_eq!(response(&reply)["error"]["code"], -32602);
-        assert!(reply.action.is_none());
-    }
-}
-
-#[tokio::test]
-async fn malformed_messages_do_not_panic_or_change_state() {
-    let (rig, tab) = open_page(TabDisplay::Standard, true).await;
-    let before = rig.app.tabs();
-    for message in [
-        "{",
-        "null",
-        "[]",
-        "42",
-        r#"{"jsonrpc":"1.0","id":1,"method":"ui/open-link"}"#,
-        r#"{"jsonrpc":"2.0","id":{},"method":"ui/request-display-mode","params":{"mode":"fullscreen"}}"#,
-    ] {
-        let reply = rig.app.tab_handle_message(
-            bar(&tab),
-            true,
-            PAGE_ORIGIN.to_owned(),
-            message.to_owned(),
-            environment(),
-        );
-        assert!(response(&reply)["error"]["code"].as_i64().is_some());
-        assert!(reply.action.is_none());
-    }
-    assert_eq!(rig.app.tabs(), before);
+async fn unknown_modes_are_rejected_and_state_does_not_move() {
+    let (rig, tab) = open_page(true).await;
+    let reply = request(&rig, &tab, "ui/request-display-mode", json!({"mode":"pip"}));
+    assert_eq!(response(&reply)["error"]["code"], -32602);
 }

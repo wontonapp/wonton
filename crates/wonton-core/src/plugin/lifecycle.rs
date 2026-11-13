@@ -467,6 +467,7 @@ impl PluginManager {
         let capabilities = {
             let mut vars = self.dependency_vars(manifest)?;
             vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
+            vars.extend(self.agent_acp_provider_vars(manifest)?);
             vars
         };
         self.prepare_hosted_roots(manifest, langs)?;
