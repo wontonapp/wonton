@@ -409,7 +409,20 @@ impl EntryContainers {
         let same_options = found.as_ref().is_some_and(|info| same_options(info, &body));
         let recreate = !current || !running || !same_options || previous_version;
         if found.is_some() && recreate {
+            // 安全换法：新容器先建在临时名下、接好网、起起来，都成了再把旧的删掉、临时名改成正式名。
+            // 直接删旧建新，创建一失败（端口被占）就把能用的入口拆成了没有。
+            let staging = format!("{name}-new");
+            self.engine.remove_container(&staging).await?;
+            self.engine.create_container(&staging, body).await?;
+            for (network, endpoint) in &side.endpoints {
+                self.engine
+                    .connect_network_at(network, &staging, endpoint.clone())
+                    .await?;
+            }
+            self.engine.start_container(&staging).await?;
             self.engine.remove_container(&name).await?;
+            self.engine.rename_container(&staging, &name).await?;
+            return Ok(());
         }
         if recreate {
             self.engine.create_container(&name, body).await?;

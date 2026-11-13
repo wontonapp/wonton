@@ -316,7 +316,11 @@ async fn previous_compose_containers_are_adopted() {
     rig.reconcile(Some(&settings())).await.unwrap();
     let created = rig.created("wonton-entry");
     assert_eq!(created["Labels"]["wonton.core.component"], "entry");
-    assert_eq!(rig.docker.creations("wonton-entry"), 1);
+    // 临时名下的创建 + 认领重建的创建：认领后重建了一次。
+    assert_eq!(
+        rig.docker.creations("wonton-entry") + rig.docker.creations("wonton-entry-new"),
+        1
+    );
 }
 
 /// 换发布端口要重建：只管“镜像没变就什么都不做”会让改了端口一直是旧的。
@@ -327,10 +331,52 @@ async fn a_changed_publish_port_recreates_the_connector() {
     containers.reconcile(Some(&settings())).await.unwrap();
     let containers = containers.with_binding("127.0.0.1", "18444");
     containers.reconcile(Some(&settings())).await.unwrap();
-    assert_eq!(rig.docker.creations("wonton-connector"), 2);
+    // 第一次建在正式名下，重建建在临时名下再改名：两笔创建加起来还是两次。
+    assert_eq!(
+        rig.docker.creations("wonton-connector") + rig.docker.creations("wonton-connector-new"),
+        2
+    );
     assert_eq!(
         rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
         json!([{"HostIp": "127.0.0.1", "HostPort": "18444"}])
+    );
+}
+
+/// 创建失败（端口被占、Docker 出错）时旧容器原地不动：不能把能用的入口拆成没有。
+#[tokio::test]
+async fn a_failed_recreate_keeps_the_old_container() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    let containers = rig.containers.with_binding("127.0.0.1", "18443");
+    rig.docker
+        .fail_next_create("wonton-connector-new", "bind: address already in use");
+    let error = containers.reconcile(Some(&settings())).await.unwrap_err();
+    assert_eq!(error.category(), "conflict");
+    // 旧容器还在、还在跑：创建失败发生在临时名下，正式名上的没动。
+    assert!(
+        rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
+    );
+    assert_eq!(
+        rig.docker.created("wonton-connector").unwrap_or_default()["HostConfig"]["PortBindings"]["8443/tcp"],
+        json!([{"HostIp": "127.0.0.1", "HostPort": "8443"}])
+    );
+}
+
+/// 拉不到镜像时不动正在跑的容器，错误归 source_unavailable。
+#[tokio::test]
+async fn a_failed_pull_keeps_the_running_container() {
+    let rig = Rig::new().await;
+    rig.reconcile(Some(&settings())).await.unwrap();
+    rig.docker.fail_pulls(Some("toomanyrequests"));
+    let error = rig.reconcile(Some(&settings())).await.unwrap_err();
+    assert_eq!(error.category(), "source_unavailable");
+    assert!(rig.docker.containers().contains(&"wonton-entry".to_owned()));
+    assert!(
+        rig.docker
+            .containers()
+            .contains(&"wonton-connector".to_owned())
     );
 }
 

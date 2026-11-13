@@ -9,6 +9,38 @@ use super::networks::{endpoint_settings, published, running, state_name};
 use super::update::update_container;
 use super::{FakeExec, Resources, archive_of, gone, json_reply, labeled, labels_of, query_param};
 
+/// 改名 = 把这个容器在每张按名字存的表里的记录搬过去（端点、创建记录、状态、输出、创建计数）。
+/// 计数跟着容器走：旧名下已有的（临时名被复用时）加上带过来的。
+fn rename(docker: &mut Resources, name: &str, to: &str) {
+    let labels = docker.containers.remove(name).expect("刚查过存在");
+    // 创建记录按名字存：改名后 inspect 新名字要能读到同一份参数。
+    let body = docker.created.remove(name);
+    let states = docker.states.remove(name);
+    let outputs = docker.outputs.remove(name);
+    let creations = docker.creation_count.remove(name);
+    let mut endpoints_all = std::mem::take(&mut docker.endpoints);
+    for endpoints in endpoints_all.values_mut() {
+        if endpoints.contains_key(name) {
+            let endpoint = endpoints.remove(name).expect("刚查过存在");
+            endpoints.insert(to.to_owned(), endpoint);
+        }
+    }
+    docker.endpoints = endpoints_all;
+    if let Some(body) = body {
+        docker.created.insert(to.to_owned(), body);
+    }
+    if let Some(state) = states {
+        docker.states.insert(to.to_owned(), state);
+    }
+    if let Some(output) = outputs {
+        docker.outputs.insert(to.to_owned(), output);
+    }
+    if let Some(count) = creations {
+        *docker.creation_count.entry(to.to_owned()).or_default() += count;
+    }
+    docker.containers.insert(to.to_owned(), labels);
+}
+
 pub(super) fn containers(
     docker: &mut Resources,
     method: &Method,
@@ -31,6 +63,18 @@ pub(super) fn containers(
             create(docker, &name, body)
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
+        (&Method::POST, [name, "rename"]) => {
+            let to = query_param(query, "name").unwrap_or_default();
+            if !exists(name) {
+                gone(true)
+            } else if exists(to.as_str()) {
+                let message = format!("Conflict. The container name \"/{to}\" is already in use");
+                json_reply(StatusCode::CONFLICT, json!({"message": message}))
+            } else {
+                rename(docker, name, &to);
+                StatusCode::OK.into_response()
+            }
+        }
         (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
         (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
