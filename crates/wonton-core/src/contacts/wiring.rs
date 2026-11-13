@@ -151,6 +151,8 @@ pub fn start(state_dir: &Path, wiring: Wiring) -> Result<Arc<Contacts>, StoreErr
             owner_username: wiring.owner.username().to_owned(),
             rebuilds: Arc::default(),
         }),
+        // 有名字（送的名字或自己的域名）开放联邦（ADR-0051）；随机私用名保留 ADR-0050。
+        open_federation: !crate::matrix::federation_config::is_private(&own_server),
     };
     let contacts = Contacts::open(state_dir.join("contacts.json"), &own_server, ports)?;
     let source = Arc::downgrade(&contacts);
