@@ -31,6 +31,7 @@ use crate::subscription::{
 };
 use switch::Replay;
 
+mod agent_chains;
 mod bot_contacts;
 mod browser;
 mod composer;
