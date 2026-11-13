@@ -75,7 +75,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
 
 ### 官方索引
 
-- 一个公开仓库 `geraldpeng6/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
+- 一个公开仓库 `wontonapp/wonton-store` 里的 `index.json`。每个插件一项：来源、版本、提交、插件包每个文件的 sha256，加上
   compose 原文。商店列表和 Bot 的搜索直接用索引里的清单，不用逐个去取。格式见插件规范的“官方索引”。
 - 收录就是向这个仓库提 PR，审核后合并。条目由 `wonton-core plugin index-entry github:<owner>/<repo>@<tag>` 生成，不手写。
   审核看这些：`wonton-core plugin check --official` 通过（图标、标签、许可证、作者、随包的许可声明齐全，镜像全按摘要固定，长期运行的服务
@@ -160,7 +160,7 @@ magpie 的做法（`internal/plugin` 的 `github.go`、`market.go`、`dist.go`�
   安装接口。要装某个私有仓库的某个 tag，开发工具在开发者的机器上用开发者自己的 git 凭据导出插件包再上传。这样装上的都算
   本地来源，不检查升级。
 - 仓库公开、打上 topic 和 tag 以后，就能从 `github:` 来源安装，也会出现在社区列表里。
-- 开发套件是公开的模板仓库 `geraldpeng6/wonton-plugin-template`，不需要主仓库：
+- 开发套件是公开的模板仓库 `wontonapp/wonton-plugin-template`，不需要主仓库：
   - 校验：发布的核心镜像带 `wonton-core plugin check <目录>`，和安装时同一套解析和校验，再加上商店信息的检查，并输出插件包
     摘要；`--official` 按官方索引的要求检查。
   - 开发环境：用发布的核心镜像在本机起一套核心、身份提供方和 Matrix 服务器，和正式安装是同一份 compose。数据放在插件目录
