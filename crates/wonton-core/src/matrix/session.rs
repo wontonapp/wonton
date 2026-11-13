@@ -60,6 +60,18 @@ impl<'a> Session<'a> {
         }
     }
 
+    /// 整份写一个全局账号数据事件。
+    pub async fn put_account_data(&self, event: &str, content: &Value) -> Result<(), MatrixError> {
+        let path = format!(
+            "/_matrix/client/v3/user/{}/account_data/{}",
+            encode(&self.user_id),
+            encode(event)
+        );
+        self.json(Method::PUT, &path, Some(content), "写账号数据")
+            .await
+            .map(|_| ())
+    }
+
     /// 一个房间账号数据事件的内容；没设过时是 `None`。
     pub async fn room_account_data(
         &self,

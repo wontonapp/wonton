@@ -17,7 +17,8 @@
 //! | DELETE | `/_wonton/api/federation-blocks/{server_name}` | 撤销拉黑 |
 //!
 //! 个人屏蔽（MSC4155）是每个 Matrix 账号自己的账号数据，不在这里：客户端直接读写信箱里的
-//! `m.ignored_user_list`，只有整台服务器的黑名单要核心写进 Tuwunel 的配置。
+//! `m.ignored_user_list`，只有整台服务器的黑名单要核心写进 Tuwunel 的配置。新账号的默认值（过滤开着、名单为空）
+//! 由核心在发登录令牌之前写，见 [`crate::matrix::invite_filter`]。
 
 use std::sync::Arc;
 
