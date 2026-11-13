@@ -15,7 +15,8 @@ impl Files {
                 .home_changes
                 .write()
                 .expect("home changes lock poisoned");
-            crate::private_home::remove(&files.data_dir, &username).map_err(Failure::internal)?;
+            crate::private_home::remove(&files.data_dir, &username)
+                .map_err(|e| Failure::internal(e.to_string()))?;
             files.registry.remove_home_uploads(&username)?;
             Ok(())
         })
@@ -59,10 +60,10 @@ impl Files {
     pub(super) fn home_shares(&self, username: &str, create: bool) -> Result<Shares, Failure> {
         let path = if create {
             crate::private_home::ensure(&self.data_dir, username, self.owner)
+                .map_err(|e| Failure::internal(e.to_string()))?
         } else {
-            crate::private_home::path(&self.data_dir, username)
-        }
-        .map_err(Failure::internal)?;
+            crate::private_home::path(&self.data_dir, username).map_err(Failure::internal)?
+        };
         let shares = self.shares.at_root(path.clone());
         if create {
             hostdir::ensure_owned_dir(&path.join(TRANSFERS), self.owner)

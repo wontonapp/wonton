@@ -65,6 +65,12 @@ struct Bed {
 
 impl Bed {
     async fn start() -> Self {
+        Self::start_custom(None, true).await
+    }
+
+    /// `owner` 传 Some 时用它当数据属主（测别人属主的行为）；`files` 传 false 时不装 Files 服务：
+    /// 装服务会以数据属主建 core/files，非 root 下 chown 给别的用户必 EPERM，恰是被测行为。
+    async fn start_custom(owner: Option<crate::plugin::hostdir::Owner>, files: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let (docker, engine) = FakeDocker::start().await;
         let (fake, config) = fake::start().await;
@@ -74,7 +80,19 @@ impl Bed {
                 .unwrap(),
         );
         let (tunnel, members) = loopback_tunnel(dir.path()).await;
-        let gateway = Self::gateway(dir.path(), engine.clone(), matrix.clone(), tunnel, members);
+        let ids = fs::metadata(dir.path()).unwrap();
+        let gateway = Self::gateway(
+            dir.path(),
+            engine.clone(),
+            matrix.clone(),
+            tunnel,
+            members,
+            owner.unwrap_or(crate::plugin::hostdir::Owner {
+                uid: ids.uid(),
+                gid: ids.gid(),
+            }),
+            files,
+        );
         fs::write(
             dir.path().join("core/onboarding.json"),
             json!({
@@ -108,6 +126,8 @@ impl Bed {
         matrix: Arc<Matrix>,
         tunnel: Tunnel,
         members: Arc<Members>,
+        data_owner: crate::plugin::hostdir::Owner,
+        files: bool,
     ) -> Arc<Gateway> {
         let profile = OwnerStore::for_test(dir, &owner());
         let public = PublicUrls {
@@ -115,7 +135,6 @@ impl Bed {
             base_domain: CORE.into(),
             port: 18480,
         };
-        let metadata = fs::metadata(dir).unwrap();
         let config = LifecycleConfig {
             public: public.clone(),
             data_dir: dir.to_owned(),
@@ -124,8 +143,8 @@ impl Bed {
             relay_dir: dir.join("relay"),
             core_container: None,
             tz: "UTC".into(),
-            puid: metadata.uid(),
-            pgid: metadata.gid(),
+            puid: data_owner.uid,
+            pgid: data_owner.gid,
             install_timeout: Duration::from_secs(5),
             owner: "owner".into(),
             profile: profile.clone(),
@@ -156,8 +175,8 @@ impl Bed {
         )
         .with_roles(Arc::new(Roles::open(dir.join("roles.json")).unwrap()))
         .with_matrix(Some(matrix));
-        let files = files::service(&gateway);
-        Arc::new(gateway.with_files(Some(files)))
+        let files = files.then(|| files::service(&gateway));
+        Arc::new(gateway.with_files(files))
     }
 
     async fn call(&self, method: Method, path: &str, body: Value) -> Reply {
@@ -236,12 +255,18 @@ impl Bed {
 
     async fn reopen(&mut self) {
         let members = Arc::new(Members::open(self.dir.path().join("members.json")).unwrap());
+        let ids = fs::metadata(self.dir.path()).unwrap();
         self.gateway = Self::gateway(
             self.dir.path(),
             self.engine.clone(),
             self.matrix.clone(),
             self.gateway.tunnel.clone(),
             members,
+            crate::plugin::hostdir::Owner {
+                uid: ids.uid(),
+                gid: ids.gid(),
+            },
+            true,
         );
         self.gateway.plugins.restore().await.unwrap();
     }
@@ -334,6 +359,96 @@ async fn directory_failure_is_visible_and_retry_resumes_the_saved_approval() {
             .private_bot
             .is_none()
     );
+}
+
+/// 改属主被拒（EPERM/EACCES）不是笼统的存储错误：对外是“权限缺失”，详情写清目录和要求的属主。
+/// 目标属主取当前进程的下一个 uid：非 root（CI runner、开发机都是）改属主被拒，正好走 EPERM；
+/// root 下 chown 会成功，那批断言不适用，按 hostdir 属主测试的同一处理改为断言批准完成。
+#[tokio::test]
+async fn a_home_whose_ownership_cannot_be_fixed_is_reported_as_missing_permission() {
+    let bed = Bed::start().await;
+    let ids = fs::metadata(bed.dir.path()).unwrap();
+    let foreign = crate::plugin::hostdir::Owner {
+        uid: ids.uid() + 1,
+        gid: ids.gid(),
+    };
+    let members = Arc::new(Members::open(bed.dir.path().join("members.json")).unwrap());
+    let gateway = Bed::gateway(
+        bed.dir.path(),
+        bed.engine.clone(),
+        bed.matrix.clone(),
+        bed.gateway.tunnel.clone(),
+        members,
+        foreign,
+        false,
+    );
+    let id = {
+        gateway
+            .members
+            .invite(MemberRecord {
+                role_id: "family".into(),
+                wants_private_bot: false,
+                ..MemberRecord::for_test("alice")
+            })
+            .unwrap();
+        let code = gateway.members.issue_pairing_code("alice").unwrap();
+        let device = SecretKey::generate().public();
+        gateway
+            .members
+            .request_join(
+                code.secret.expose(),
+                device,
+                "Phone",
+                &gateway.tunnel.devices,
+            )
+            .unwrap();
+        gateway
+            .members
+            .join_requests()
+            .iter()
+            .find(|request| request.username == "alice")
+            .unwrap()
+            .id
+            .clone()
+    };
+    let reply = send_as(
+        &router(gateway.clone()),
+        None,
+        Method::POST,
+        CORE,
+        &wonton_protocol::join_request_approve_path(&id),
+        &[
+            ("authorization", &bearer()),
+            ("content-type", "application/json"),
+        ],
+        "",
+    )
+    .await;
+    if reply.status == StatusCode::NO_CONTENT {
+        // root 下改属主会成功：家目录按配置交给属主，批准照常完成。
+        assert!(bed.home("alice").is_dir());
+    } else {
+        assert_eq!(
+            reply.status,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{}",
+            reply.text()
+        );
+        assert_eq!(
+            reply.error_kind(),
+            Some("permission_denied"),
+            "{}",
+            reply.text()
+        );
+        assert!(reply.text().contains("core/home/alice"), "{}", reply.text());
+        assert!(
+            reply
+                .text()
+                .contains(&format!("{}:{}", foreign.uid, foreign.gid)),
+            "{}",
+            reply.text()
+        );
+    }
 }
 
 #[tokio::test]

@@ -62,8 +62,7 @@ impl Gateway {
         let owner = self.plugins.private_home_owner();
         tokio::task::spawn_blocking(move || private_home::ensure(&data_dir, &username, owner))
             .await
-            .map_err(storage)?
-            .map_err(InstallError::Storage)?;
+            .map_err(storage)??;
         if !member.wants_private_bot {
             return Ok(());
         }

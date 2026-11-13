@@ -68,8 +68,7 @@ impl PluginManager {
                 .ok_or_else(|| self.home_denied())?;
             matches!(role.permissions.ai, AiLevel::ReadOnly | AiLevel::Other)
         };
-        let path = crate::private_home::ensure(&self.cfg.data_dir, username, self.owner())
-            .map_err(InstallError::Storage)?;
+        let path = crate::private_home::ensure(&self.cfg.data_dir, username, self.owner())?;
         Ok(HomeMount {
             path,
             read_only: !write || ai_read_only,
