@@ -339,7 +339,7 @@ fn choices(bus: &Bus, langs: &Languages) -> Vec<CardChoice> {
     vec![
         CardChoice {
             answer: Answer::Approve,
-            label: crate::l10n::text(langs, "chat-card-approve", &[]),
+            label: crate::l10n::text(langs, "chat-choice-allow", &[]),
             choice_id: None,
         },
         CardChoice {
@@ -349,7 +349,7 @@ fn choices(bus: &Bus, langs: &Languages) -> Vec<CardChoice> {
         },
         CardChoice {
             answer: Answer::Reject,
-            label: crate::l10n::text(langs, "chat-card-reject", &[]),
+            label: crate::l10n::text(langs, "chat-choice-deny", &[]),
             choice_id: None,
         },
     ]
