@@ -53,10 +53,6 @@ pub(super) async fn ask(
         bot: context.from.clone(),
         user_id: from_account.user_id,
     });
-    audience.category = Some(ConfirmationCategory::HandOffConsent {
-        target_bot: target.clone(),
-        from: context.from.clone(),
-    });
     let langs = bus.languages_for(audience.recipient.as_deref());
     let draft = draft(bus, caller, context, &langs);
     let (card, answered) = bus
@@ -143,5 +139,9 @@ fn draft(
         plugin_id: Some(target.plugin_id.clone()),
         secret_inputs: Vec::new(),
         settings: None,
+        category: Some(ConfirmationCategory::HandOffConsent {
+            target_bot: target.clone(),
+            from: context.from.clone(),
+        }),
     }
 }
