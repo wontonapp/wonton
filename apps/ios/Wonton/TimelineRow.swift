@@ -22,6 +22,8 @@ struct TimelineRow: View {
     var openCard: (String) -> Void = { _ in }
     /// 回答 Agent 自己的提问（`choices` 的 key），以主人的身份发反应。
     var answerChoice: (String) -> Void = { _ in }
+    /// 进旁聊（参数是根的事件 ID）：旁聊卡片和结果行都用它（ADR-0093）。
+    var onOpenSideChat: (String) -> Void = { _ in }
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -30,7 +32,8 @@ struct TimelineRow: View {
             MessageBubble(
                 message: message, core: core, showsSender: showsSender && !joinsPrevious,
                 joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
-                cardAction: cardAction, reply: reply, forward: forward, redact: redact
+                cardAction: cardAction, reply: reply, forward: forward, redact: redact,
+                openSideChat: onOpenSideChat
             )
         case let .notice(text):
             note(Text(text))
@@ -66,12 +69,10 @@ struct TimelineRow: View {
                 edge
             }
         case let .sideChat(card):
-            // 旁聊根消息（ADR-0093）：完整的样子在实现 PR 里做，先按普通提示显示标题。
-            // 核心还没产生这种条目；标题是事件里的数据，不是界面文案，过 ui-text 检查。
-            note(Text(card.title))
-        case let .sideChatResult(_, title, _):
-            // 旁聊结果行（ADR-0093）：同上，先按普通提示显示标题。
-            note(Text(title))
+            // 旁聊根消息（ADR-0093）：画成卡片，点了进那个旁聊。
+            SideChatCardView(card: card) { onOpenSideChat(card.rootEventId) }
+        case let .sideChatResult(rootEventId, title, state):
+            SideChatResultLine(title: title, state: state) { onOpenSideChat(rootEventId) }
         case .timelineStart:
             note(Text(.Chat.timelineStart))
         }
@@ -110,6 +111,8 @@ private struct MessageBubble: View {
     let reply: (QuotedMessage) -> Void
     let forward: () -> Void
     let redact: () -> Void
+    /// 挂在这条消息上的旁聊卡片点了就进那个旁聊（ADR-0093）。
+    let openSideChat: (String) -> Void
     @State private var isChoosingFailed = false
     @Environment(\.wontonColors) private var colors
 
@@ -145,6 +148,10 @@ private struct MessageBubble: View {
                             menuItem(action)
                         }
                     }
+                // 有回复的普通消息下面挂着旁聊的卡片（ADR-0093 §6）。
+                if let card = message.sideChat {
+                    SideChatCardView(card: card) { openSideChat(card.rootEventId) }
+                }
             }
             if !message.isOwn { Spacer(minLength: WontonTheme.spacing.s48) }
         }

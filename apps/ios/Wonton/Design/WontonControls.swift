@@ -321,6 +321,8 @@ struct WontonPushedBar<Trailing: View>: View {
     var showsStatusLine = false
     /// 标题旁的头像（Bot 聊天的顶栏，ADR-0044）。
     var avatar: AnyView?
+    /// 返回键的动作；不传时退出当前导航层。盖在别的页面上的旁聊页（ADR-0093）用它收起自己，不动导航栈。
+    var onClose: (() -> Void)?
     @ViewBuilder let trailing: Trailing
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
@@ -349,7 +351,9 @@ struct WontonPushedBar<Trailing: View>: View {
                 }
                 .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
                 HStack(spacing: 0) {
-                    WontonIconButton(icon: icon, label: iconLabel) { dismiss() }
+                    WontonIconButton(icon: icon, label: iconLabel) {
+                        if let onClose { onClose() } else { dismiss() }
+                    }
                     Spacer(minLength: 0)
                     trailing
                 }
@@ -382,11 +386,12 @@ extension View {
         avatar: AnyView? = nil,
         showsStatus: Bool = false,
         showsStatusLine: Bool = false,
+        onClose: (() -> Void)? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let bar = WontonPushedBar(
             title: title, showsStatus: showsStatus, showsStatusLine: showsStatusLine,
-            avatar: avatar, trailing: trailing
+            avatar: avatar, onClose: onClose, trailing: trailing
         )
         return wontonTopBar { bar }
             .toolbar(.hidden, for: .navigationBar)
