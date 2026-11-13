@@ -87,7 +87,6 @@ fn member(s: &Setup, username: &str, can_install_plugins: bool) {
                 "friend"
             }
             .to_owned(),
-            can_install_plugins,
             wants_private_bot: true,
             private_bot: None,
             pairing_code_hash: None,

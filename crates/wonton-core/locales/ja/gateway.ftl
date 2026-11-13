@@ -120,6 +120,7 @@ gateway-pair-code-used = このペアリングコードは既に使用済みで�
 gateway-pair-code-expired = ペアリングコードの有効期限が切れています。新しいコードを発行してください
 gateway-pair-first-used = このサーバーには既にペアリング済みのデバイスがあるため、初回ペアリングコードは再利用できません。サーバー上でsudo wonton pairを実行して新しいコードを発行してください
 gateway-pair-register-failed = サーバーがデバイスを登録できませんでした：{ $error }
+gateway-pair-role-unavailable = この招待のロールを利用できません。管理者に再度招待してもらってください。
 
 # オーナーがAppでプラグインのキーを確認する。
 gateway-owner-secrets-plugin-not-installed = アプリ{ $id }はインストールされていません

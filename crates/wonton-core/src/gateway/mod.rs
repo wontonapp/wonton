@@ -48,6 +48,7 @@ mod friends_wiring;
 mod health;
 mod hosted;
 mod isolation;
+mod join_requests;
 mod lan;
 mod link_preview;
 pub mod matrix;
@@ -66,6 +67,7 @@ mod pages;
 mod panel_pins;
 mod peers;
 pub mod people_limits;
+pub(crate) mod permissions;
 mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
@@ -76,6 +78,7 @@ mod push;
 mod pushers;
 mod registry_mirror;
 mod request_guards;
+mod roles;
 mod room_rules;
 pub(crate) mod send_limits;
 pub mod sharing;
@@ -101,7 +104,7 @@ use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
 use hyper::{HeaderMap, Method, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
-use wonton_protocol::{Gate, MemberStatus, Permissions, Role};
+use wonton_protocol::{MemberStatus, Permissions, Role};
 
 use crate::roles::RolesError;
 
@@ -198,7 +201,7 @@ pub struct Gateway {
     pub tusd: Option<String>,
     pub upgrades: Option<Arc<crate::upgrade::service::Upgrades>>,
     pub peers: Option<Arc<crate::peers::Peers>>,
-    friends: Option<Arc<Friends>>,
+    pub(crate) friends: Option<Arc<Friends>>,
     /// Bot 的联系人（ADR-0045、ADR-0050）；没接 Matrix 的核心没有。
     contacts: Option<Arc<crate::contacts::Contacts>>,
     pub(crate) federation_blocks: Option<Arc<FederationBlocks>>,
@@ -241,12 +244,14 @@ impl Gateway {
             plugins.data_dir().join("core").join("link-previews"),
             plugins.core_proxy().clone(),
         ));
+        let roles = Arc::new(Roles::initial());
+        tunnel.pairing.attach_roles(roles.clone());
         Self {
             public,
             owner,
             owner_token,
             members,
-            roles: Arc::new(Roles::initial()),
+            roles,
             plugins,
             hydra,
             hydra_public,
@@ -293,6 +298,7 @@ impl Gateway {
     /// 接上角色记录：网关自己只带模板时用 [`Roles::initial`]，生产由启动时装上 `roles.json`。
     #[must_use]
     pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
+        self.tunnel.pairing.attach_roles(roles.clone());
         self.roles = roles;
         self
     }
@@ -401,14 +407,17 @@ impl Gateway {
         };
         // 失败即停：设备记的家人必须在记录里、还没被移除。记录对不上时按认不出处理，不编一个身份放行。
         match self.members.get(&username) {
-            Some(record) if record.status != MemberStatus::Removed => {
+            Some(record)
+                if record.status != MemberStatus::Removed
+                    && !self.members.pending_endpoint(id, &username) =>
+            {
                 Some(Person::member(&record.username))
             }
             _ => {
                 tracing::warn!(
                     device = %id.fmt_short(),
                     member = %username,
-                    "设备的家人不在记录里或已移除，拒绝这台设备的请求"
+                    "设备的家人不在记录里、尚未批准或已移除，拒绝这台设备的请求"
                 );
                 None
             }
@@ -501,7 +510,6 @@ impl Gateway {
                 permissions: None,
                 display_name: profile.display_name,
                 email: profile.email,
-                can_install_plugins: true,
             })
         } else {
             let record = self
@@ -529,7 +537,6 @@ impl Gateway {
                 role_id: Some(record.role_id),
                 display_name: Some(record.display_name),
                 email: record.email,
-                can_install_plugins: record.can_install_plugins,
             })
         }
     }
@@ -549,11 +556,6 @@ impl Gateway {
         self.roles
             .get(&record.role_id)
             .map_or_else(Permissions::strictest, |role| role.permissions)
-    }
-
-    /// 这个人能不能装卸、升级插件：主人总是能，家人看角色里的“装、删、升级应用”。
-    pub(crate) fn can_install_plugins(&self, person: &Person) -> bool {
-        self.permissions(person).install_apps == Gate::Allow
     }
 
     /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
@@ -710,21 +712,8 @@ async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Resp
         None if callback => None,
         None => return request_guards::unauthenticated(gateway, &host, &req, true),
     };
-    // 插件对家人只看“家人能用”开关：主人开放了才放行（ADR-0045）。核心不查 setup_done（ADR-0021），
-    // 家人这一侧没有别的门槛。
-    if person.as_ref().is_some_and(|p| !p.is_owner()) && !gateway.plugins.family_enabled(&route.id)
-    {
-        return pages::error(
-            StatusCode::FORBIDDEN,
-            "not_shared",
-            &l10n::text(
-                &langs,
-                "gateway-plugin-not-shared",
-                &[("id", route.id.as_str().into())],
-            ),
-            &langs,
-            format,
-        );
+    if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
+        return denied;
     }
     // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
     if let Some(hosted) = &route.hosted
@@ -830,6 +819,12 @@ mod health_tests;
 mod isolation_policy_tests;
 #[cfg(test)]
 mod isolation_tests;
+#[cfg(test)]
+mod join_recovery_tests;
+#[cfg(test)]
+mod join_requests_tests;
+#[cfg(test)]
+mod join_role_tests;
 #[cfg(test)]
 mod l10n_tests;
 #[cfg(test)]

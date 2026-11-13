@@ -16,8 +16,8 @@ use crate::l10n;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
-    isolation, matrix, me, model_providers, onboarding, pages, peers, push, same_origin_path,
-    settings_api, sso, store_api, tool_policy, with_cookie,
+    isolation, matrix, me, model_providers, onboarding, pages, peers, push, roles,
+    same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
 /// 确认卡片，和主人对确认的放宽（ADR-0016、ADR-0024）。
@@ -237,6 +237,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
             put(push::register).delete(push::unregister),
         )
         .merge(plugin_routes())
+        .merge(role_routes())
         .route(
             &wonton_protocol::bot_profile_path("{id}"),
             put(super::bot_profile::save),
@@ -408,7 +409,18 @@ fn member_routes() -> Router<Arc<Gateway>> {
             wonton_protocol::MEMBERS_PATH,
             get(family::list).post(family::invite),
         )
-        .route("/_wonton/api/members/{username}", put(family::settings))
+        .route(
+            wonton_protocol::JOIN_REQUESTS_PATH,
+            get(super::join_requests::list),
+        )
+        .route(
+            &wonton_protocol::join_request_approve_path("{id}"),
+            post(super::join_requests::approve),
+        )
+        .route(
+            &wonton_protocol::join_request_reject_path("{id}"),
+            post(super::join_requests::reject),
+        )
         .route(
             "/_wonton/api/members/{username}/pairing-code",
             post(family::pairing_code).delete(family::void_pairing_code),
@@ -420,6 +432,31 @@ fn member_routes() -> Router<Arc<Gateway>> {
         .route(
             "/_wonton/api/plugins/{id}/family",
             put(family::set_plugin_family),
+        )
+}
+
+/// 角色和分配（ADR-0088）：建、改、删、给成员和好友分配、设默认邀请角色，都只收主人。
+fn role_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            wonton_protocol::ROLES_PATH,
+            get(roles::list).post(roles::create),
+        )
+        .route(
+            &wonton_protocol::role_path("{role_id}"),
+            put(roles::update).delete(roles::delete),
+        )
+        .route(
+            wonton_protocol::DEFAULT_INVITE_ROLE_PATH,
+            put(roles::set_default),
+        )
+        .route(
+            &wonton_protocol::member_role_path("{username}"),
+            put(roles::assign_member),
+        )
+        .route(
+            &wonton_protocol::friend_role_path("{user_id}"),
+            put(roles::assign_friend),
         )
 }
 

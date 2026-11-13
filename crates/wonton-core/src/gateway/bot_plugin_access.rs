@@ -1,6 +1,8 @@
 //! 主人对单个 Bot 开关一个插件的工具（ADR-0066 第 5 节）。只给主人：和插件范围一样是 `owner_only`。总线据此过滤
 //! 这个 Bot 的 `tools/list`、拦它的 `tools/call`（`crate::mcp` 的 `bot_access`）。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -10,9 +12,9 @@ use axum::{Extension, Json};
 use hyper::{HeaderMap, Method, StatusCode};
 use wonton_protocol::{AccessSource, BotPluginAccess, BotPluginAccessUpdate};
 
-use super::api::{error_response, install_error, languages, owner_denied};
+use super::api::{error_response, install_error, languages};
 use super::api_body::invalid_body;
-use super::{Gateway, TunnelPeer};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::bots::check_bot_name;
 use crate::plugin::tool_policy::PolicyUnavailable;
@@ -96,7 +98,9 @@ pub(super) async fn bot_access(
     Path(path): Path<(String, String, String)>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let update = if method == Method::PUT {

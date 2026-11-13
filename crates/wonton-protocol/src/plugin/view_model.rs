@@ -35,6 +35,9 @@ pub struct PluginsViewModel {
     /// [`Action::UpgradePlugin`]），或者关掉（ [`Action::DismissStoreConfirmation`]）。"全部更新"排队时一次一条。
     #[serde(default)]
     pub confirmation: Option<StoreConfirmation>,
+    /// 角色页（ADR-0088）：主人建、改、删角色，给成员和好友分配，设默认邀请角色。
+    #[serde(default)]
+    pub roles: crate::RolesViewModel,
     /// 出网代理的设置页。
     pub egress: EgressViewModel,
     /// Docker Hub 镜像加速的设置页。

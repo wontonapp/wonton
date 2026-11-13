@@ -18,4 +18,8 @@
     <string name="share_title">Share with friends</string>
     <!-- Expiration choice that grants access until the end of today. No arguments. -->
     <string name="share_today">Today</string>
+    <!-- Screen-reader label of the remove button on a shared item in the share sheet. Argument: the item's name. -->
+    <string name="share_in_remove_item">Remove %1$s</string>
+    <!-- Next step under the problem above. -->
+    <string name="share_in_unreadable_next_step">Share them again from the other app.</string>
 </resources>

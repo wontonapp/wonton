@@ -24,16 +24,20 @@ use wonton_protocol::{
 };
 
 use super::Gateway;
-use super::api::{error_response, install_denied, install_error, languages, owner_denied, text1};
+use super::api::{error_response, install_error, languages, text1};
+use super::permissions;
 use crate::l10n;
 use crate::plugin::{InstallError, PluginId};
+use wonton_protocol::PermissionItem;
 
 pub async fn storage(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<super::TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     match gateway.plugins.storage_usage() {
@@ -51,7 +55,9 @@ pub async fn lan(
     peer: Option<Extension<super::TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     match gateway.plugins.lan_settings(&languages(&headers)).await {
@@ -66,7 +72,9 @@ pub async fn set_lan(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let choice = match serde_json::from_slice::<LanChoice>(&body) {
@@ -96,7 +104,9 @@ pub async fn egress_proxy(
     peer: Option<Extension<super::TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     match gateway.plugins.egress_settings(&languages(&headers)) {
@@ -112,7 +122,9 @@ pub async fn set_egress_proxy(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ServerSettings)
+    {
         return denied;
     }
     let update = match serde_json::from_slice::<EgressProxyUpdate>(&body) {
@@ -136,7 +148,9 @@ pub async fn set_lan_webui(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -168,7 +182,9 @@ pub async fn set_limits(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -197,7 +213,9 @@ pub async fn set_ask_every_update(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -233,7 +251,9 @@ pub async fn revoke_save_grant(
     Path(id): Path<String>,
     Query(query): Query<SaveGrantQuery>,
 ) -> Response {
-    if let Some(denied) = install_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -257,7 +277,7 @@ pub async fn revoke_save_grant(
     }
 }
 
-/// 填写或清空一项密钥（ADR-0064）。只有主人能改；改完返回详情，用到这个变量的服务会重建。
+/// 填写或清空一项密钥（ADR-0064）。要装卸权限；改完返回详情，用到这个变量的服务会重建。
 pub async fn set_secret_input(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<super::TunnelPeer>>,
@@ -265,7 +285,9 @@ pub async fn set_secret_input(
     Path((id, name)): Path<(String, String)>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {

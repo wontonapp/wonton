@@ -349,7 +349,7 @@ async fn start_job<R: Room>(
     let blocks = prompt_blocks(context, prefix, &batch).await?;
     // 领链（ADR-0061 第 10 节）：拿到链才发给 Agent；被拒或核心不可用就在房间里
     // 按类别说明，不开轮，也不发已读回执。
-    if !chain::begin(
+    let Some(grant) = chain::begin(
         &context.bridge.chains,
         context.room.as_ref(),
         context.lang,
@@ -358,11 +358,11 @@ async fn start_job<R: Room>(
         &session_id,
     )
     .await
-    {
+    else {
         let _ = topics.turn_finished(&key, "", now(), context.lang).await;
         return Ok(());
-    }
-    launch_prompt(context, state, &key, &session_id, blocks, last).await;
+    };
+    launch_prompt(context, state, &key, &session_id, blocks, last, grant).await;
     Ok(())
 }
 
@@ -375,6 +375,7 @@ async fn launch_prompt<R: Room>(
     session_id: &str,
     blocks: Vec<serde_json::Value>,
     trigger: &Job,
+    grant: wonton_protocol::ChainTurnGrant,
 ) {
     state.sessions.state(key).active = true;
     state.last_activity = Instant::now();
@@ -399,6 +400,10 @@ async fn launch_prompt<R: Room>(
             .prompt(
                 &session_id,
                 blocks,
+                Some(wonton_protocol::ChainCarrier {
+                    id: grant.chain,
+                    depth: grant.layer,
+                }),
                 limits.max_output_bytes,
                 limits.turn_timeout,
                 lang,

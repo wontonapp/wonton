@@ -10,6 +10,8 @@
 //! 密钥的值和恢复密钥同类（[`SecretString`]，`Debug` 打码）：响应带 `Cache-Control: no-store`，
 //! App 点开时才取、拿到即显示，不缓存。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -19,8 +21,8 @@ use hyper::header::{CACHE_CONTROL, HeaderValue};
 use hyper::{HeaderMap, StatusCode};
 use serde::Serialize;
 
-use super::api::{acted_by, error_response, languages, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{acted_by, error_response, languages};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, SecretValue, ViewableSecrets};
@@ -76,7 +78,9 @@ pub async fn list(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {
@@ -105,7 +109,9 @@ pub async fn value(
     headers: HeaderMap,
     Path((id, name)): Path<(String, String)>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match PluginId::parse(&id) {

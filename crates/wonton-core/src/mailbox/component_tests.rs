@@ -48,7 +48,6 @@ fn invite(members: &Members, name: &str) {
             email: None,
             status: MemberStatus::Invited,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,
@@ -144,7 +143,7 @@ async fn failed_restart_remains_pending_and_preserves_database_and_password() {
             .iter()
             .any(|call| call == "DELETE /containers/mail")
     );
-    members.consume_code("bob").unwrap();
+    members.mark_joined("bob").unwrap();
     component.refresh_recipients().await.unwrap();
     assert!(
         fs::read_to_string(component.config_dir.join("runtime.env"))

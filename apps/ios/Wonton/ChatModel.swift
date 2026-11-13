@@ -34,6 +34,12 @@ final class ChatModel {
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
     var visiting: VisitingRoom?
+    /// 开着的旁聊：房间 ID → 旁聊根的事件 ID。一个房间同时最多一个（ADR-0093）。
+    var sideChats: [String: String] = [:]
+    /// 正在写第一句的房间：开新旁聊的面板开着。
+    var composingSideChat: String?
+    /// 新建聊天选的 AI 不支持旁聊、打开的是主对话的房间（ADR-0093 §7）。
+    var noSideChatsRoom: String?
     /// 刚发起了和这个用户的私聊，房间出现后打开。
     private var awaitedPeer: String?
     /// 链接要打开的房间；还需要加入或等同步。
@@ -75,57 +81,67 @@ final class ChatModel {
     func receiveDraft(_ text: String) {
         if case let .room(roomId) = path.last,
            viewModel.rooms.first(where: { $0.roomId == roomId })?.isReadOnly == false {
-            appendDraft(text, to: roomId)
+            appendDraft(text, to: TimelineTarget(roomId: roomId, threadRoot: nil))
         } else {
             pendingDraft = [pendingDraft, text].compactMap { $0 }.joined(separator: "\n")
             path = []
         }
     }
 
-    func acceptPendingDraft(in roomId: String) {
+    /// 草稿和回复按时间线分开存（ADR-0093）：主时间线是房间 ID，旁聊是房间 ID 加根事件 ID。
+    func draftKey(_ target: TimelineTarget) -> String {
+        guard let root = target.threadRoot else { return target.roomId }
+        return "\(target.roomId)|\(root)"
+    }
+
+    func acceptPendingDraft(in target: TimelineTarget) {
         guard let text = pendingDraft else { return }
         pendingDraft = nil
-        appendDraft(text, to: roomId)
+        appendDraft(text, to: target)
     }
 
-    func appendDraft(_ text: String, to roomId: String) {
-        let existing = drafts[roomId, default: ""]
-        drafts[roomId] = existing.isEmpty ? text : existing + "\n" + text
-        saveDraft(roomId)
+    func appendDraft(_ text: String, to target: TimelineTarget) {
+        let key = draftKey(target)
+        let existing = drafts[key, default: ""]
+        drafts[key] = existing.isEmpty ? text : existing + "\n" + text
+        saveDraft(target)
     }
 
-    /// 草稿在核心里，按房间存，退出房间、重启 App 都还在。进房间时读回来，打完字写回去。
-    func loadDraft(_ roomId: String) async {
+    /// 草稿在核心里，按时间线存（主对话和每个旁聊各一份），退出房间、重启 App 都还在。进时间线时读回来，
+    /// 打完字写回去。
+    func loadDraft(_ target: TimelineTarget) async {
         // `try?` 会把错误和“没有草稿”都折成 nil，这里要分开。
         let stored: ComposerDraft?
         do {
-            stored = try await core.draft(target: TimelineTarget(roomId: roomId, threadRoot: nil))
+            stored = try await core.draft(target: target)
         } catch {
             return
         }
+        let key = draftKey(target)
         // 读回来之前已经打了字、已经点了回复就不盖掉。
-        if drafts[roomId, default: ""].isEmpty { drafts[roomId] = stored?.body ?? "" }
-        if replies[roomId] == nil { replies[roomId] = stored?.reply }
+        if drafts[key, default: ""].isEmpty { drafts[key] = stored?.body ?? "" }
+        if replies[key] == nil { replies[key] = stored?.reply }
     }
 
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
-    func saveDraft(_ roomId: String) {
+    func saveDraft(_ target: TimelineTarget) {
+        let key = draftKey(target)
         send(.timeline(action: TimelineAction.setDraft(
-            target: TimelineTarget(roomId: roomId, threadRoot: nil),
-            body: drafts[roomId, default: ""], replyTo: replies[roomId]?.eventId
+            target: target,
+            body: drafts[key, default: ""], replyTo: replies[key]?.eventId
         )))
     }
 
     /// 回复按钮或右滑进入回复状态（ADR-0073）。
-    func startReply(_ quote: ReplyQuote, in roomId: String) {
-        replies[roomId] = quote
-        saveDraft(roomId)
+    func startReply(_ quote: ReplyQuote, in target: TimelineTarget) {
+        replies[draftKey(target)] = quote
+        saveDraft(target)
         replyFocusRevision += 1
     }
 
-    func cancelReply(in roomId: String) {
-        replies[roomId] = nil
-        saveDraft(roomId)
+    func cancelReply(in target: TimelineTarget) {
+        replies[draftKey(target)] = nil
+        saveDraft(target)
     }
 
     /// 转发到另一个房间，随后打开它。
@@ -144,6 +160,33 @@ final class ChatModel {
             self.visiting = VisitingRoom(tab: visiting.tab, roomId: roomId)
         } else if path.last != .room(roomId) {
             path = [.room(roomId)]
+        }
+    }
+
+    /// 进 [roomId] 里的旁聊 [root]（ADR-0093）：主对话留在下面继续订阅，不重新订阅。
+    func openSideChat(_ root: String, in roomId: String) {
+        sideChats[roomId] = root
+        composingSideChat = nil
+    }
+
+    func closeSideChat(in roomId: String) {
+        sideChats[roomId] = nil
+    }
+
+    /// “新建聊天”选了 [contact]（ADR-0093 §4）：有能开旁聊的私聊就进去弹开新旁聊的面板；已经有和这个 AI
+    /// 的私聊、但它不支持旁聊（能开旁聊的私聊在 `sideChatRoomId` 里），打开主对话并提示一句；其余照旧发起
+    /// 或打开私聊。
+    func startChat(with contact: ChatContact) {
+        if let room = contact.sideChatRoomId,
+           viewModel.rooms.contains(where: { $0.roomId == room && $0.membership == .joined }) {
+            show(room, from: .chat)
+            composingSideChat = room
+            return
+        }
+        openDirectChat(with: contact.userId)
+        if let opened = viewModel.rooms.first(where: { $0.directUserId == contact.userId && $0.membership == .joined }),
+           viewModel.bots.contains(where: { $0.userId == opened.directUserId }) {
+            noSideChatsRoom = opened.roomId
         }
     }
 
@@ -172,6 +215,9 @@ final class ChatModel {
         openingFailed = false
         visiting = nil
         path = []
+        sideChats = [:]
+        composingSideChat = nil
+        noSideChatsRoom = nil
     }
 
     func startNewChat() {

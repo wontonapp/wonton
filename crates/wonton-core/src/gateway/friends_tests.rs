@@ -181,7 +181,6 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
             email: None,
             status: wonton_protocol::MemberStatus::Invited,
             role_id: "friend".to_owned(),
-            can_install_plugins: false,
             wants_private_bot: false,
             private_bot: None,
             pairing_code_hash: None,
@@ -199,7 +198,7 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
     // 家人的好友在客户端本机，核心名单是主人的，不给他们看。
     assert!(body["friends"].as_array().unwrap().is_empty(), "{body}");
 
-    // 写接口只给主人：接受、删、分组、建组、删组都对家人回 permission_required。
+    // 写接口要“加好友”：接受、删、分组、建组、删组都对没有这一项的家人回缺的项。
     let writes = [
         (Method::PUT, "/_wonton/api/friends/@eve:e.test".to_owned()),
         (
@@ -222,10 +221,7 @@ async fn a_family_member_reads_an_empty_core_list_and_cannot_write_it() {
         };
         let (status, reply) = call(&home, Some(member), method.clone(), &path, body).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "{method} {path}: {reply}");
-        assert_eq!(
-            reply["error"]["kind"], "permission_required",
-            "{method} {path}: {reply}"
-        );
+        assert_eq!(reply["missing"], "add_friends", "{method} {path}: {reply}");
     }
 
     // 主人照常写，名单不变。

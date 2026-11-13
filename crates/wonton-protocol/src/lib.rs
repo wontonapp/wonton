@@ -56,6 +56,7 @@ mod server_version;
 mod servers;
 mod session;
 mod settings;
+mod share_in;
 mod share_transport;
 mod sharing;
 mod side_chat;
@@ -167,9 +168,9 @@ pub use error::{CoreError, set_core_error_formatter};
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
     HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
-    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberSettings, MemberStatus,
-    NewSharedBot, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
-    member_path, member_removal_path, plugin_family_path,
+    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus, NewSharedBot, Role,
+    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_removal_path,
+    plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
@@ -293,7 +294,7 @@ pub use roles::{
     DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
     OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
     PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
-    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    RolesViewModel, TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;
@@ -301,6 +302,11 @@ pub use server_version::{is_older, minimum_server_version};
 pub use servers::{ServerKind, ServerName, ServerRow, ServersViewModel};
 pub use session::{SessionListViewModel, SessionRow};
 pub use settings::{SettingsEntry, SettingsSection, SettingsViewModel};
+pub use share_in::{
+    PendingShare, SHARE_INBOX_DIR, SHARE_MANIFEST_FILE, SHARE_MAX_ITEMS, SHARE_READY_FILE,
+    ShareInDestinations, ShareInImage, ShareInItem, ShareInManifest, ShareInManifestError,
+    ShareInManifestItem, ShareInViewModel, is_share_token,
+};
 pub use share_transport::{
     MatrixOpenIdToken, SHARE_ALPN, ShareReply, ShareRequest, SharedPlugins, WONTON_WELL_KNOWN_PATH,
     WontonDiscovery,
