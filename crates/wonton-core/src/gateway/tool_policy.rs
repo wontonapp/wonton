@@ -1,6 +1,8 @@
 //! 主人放宽确认的接口（ADR-0024）。只给主人（ADR-0045）：卡片都发给主人，放宽也是主人的设置。Agent 和插件都在
 //! 插件网络里，两样身份都没有，打开不了。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -8,8 +10,8 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, Method, StatusCode};
 
-use super::api::{acted_by, error_response, install_error, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{acted_by, error_response, install_error};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::mcp::{Endpoint, PolicyChange};
 use crate::plugin::{InstallError, PluginId};
@@ -28,7 +30,8 @@ fn granted<'a>(
     id: &str,
 ) -> Result<Granted<'a>, Box<Response>> {
     let by = acted_by(gateway, peer.as_ref(), headers);
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) = permissions::require(gateway, peer, headers, PermissionItem::InstallApps)
+    {
         return Err(Box::new(denied));
     }
     let Some(mcp) = &gateway.mcp else {

@@ -1,5 +1,7 @@
 //! 模型网关服务商 API：列出、测试和保存预设或自定义服务商。
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -10,8 +12,8 @@ use hyper::{HeaderMap, StatusCode};
 use serde::de::DeserializeOwned;
 use wonton_protocol::{CustomModelProvider, ModelProviderKey};
 
-use super::api::{install_error, languages, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{install_error, languages};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::l10n;
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::InstallError;
@@ -22,7 +24,9 @@ pub async fn list(
     peer: Option<Extension<TunnelPeer>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::ModelSettings)
+    {
         return denied;
     }
     match gateway.plugins.model_providers(&languages(&headers)).await {
@@ -59,7 +63,9 @@ async fn preset(
     body: &[u8],
     action: ProviderAction,
 ) -> Response {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) =
+        permissions::require(gateway, peer, headers, PermissionItem::ModelSettings)
+    {
         return denied;
     }
     let langs = languages(headers);
@@ -100,7 +106,9 @@ async fn custom(
     body: &[u8],
     action: ProviderAction,
 ) -> Response {
-    if let Some(denied) = owner_denied(gateway, peer, headers) {
+    if let Some(denied) =
+        permissions::require(gateway, peer, headers, PermissionItem::ModelSettings)
+    {
         return denied;
     }
     let langs = languages(headers);

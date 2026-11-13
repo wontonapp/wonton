@@ -6,6 +6,8 @@
 //! | POST | `/_wonton/api/plugins/{id}/settings/preview` | 请求体 `PluginSettingsUpdate`，只校验、不保存 |
 //! | PUT | `/_wonton/api/plugins/{id}/settings` | 同请求体，保存并重建用到的服务 |
 
+use wonton_protocol::PermissionItem;
+
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -14,8 +16,8 @@ use axum::{Extension, Json};
 use hyper::HeaderMap;
 use wonton_protocol::PluginSettingsUpdate;
 
-use super::api::{error_response, install_error, languages, owner_denied};
-use super::{Gateway, TunnelPeer};
+use super::api::{error_response, install_error, languages};
+use super::{Gateway, TunnelPeer, permissions};
 use crate::plugin::PluginId;
 
 #[allow(clippy::result_large_err)] // 网关的错误响应直接回给 HTTP 层。
@@ -47,7 +49,9 @@ pub async fn get(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match plugin_id(&id) {
@@ -72,7 +76,9 @@ pub async fn preview(
     Path(id): Path<String>,
     body: axum::body::Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match plugin_id(&id) {
@@ -101,7 +107,9 @@ pub async fn set(
     Path(id): Path<String>,
     body: axum::body::Bytes,
 ) -> Response {
-    if let Some(denied) = owner_denied(&gateway, peer, &headers) {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
         return denied;
     }
     let id = match plugin_id(&id) {
