@@ -52,6 +52,14 @@ pub struct InstallPreview {
     #[serde(default)]
     pub written_by: Option<PluginWriter>,
     pub author: Option<PluginAuthor>,
+    /// 应用的许可证原文（SPDX 表达式）；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license: Option<String>,
+    /// 许可证全文的地址（HTTPS），非 SPDX 许可证（`LicenseRef-`）用它给出处；清单没写时为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub license_url: Option<String>,
     /// 要授予的全部权限；主人确认的就是这些。
     pub permissions: Vec<PermissionLine>,
     /// 插件的网页能当 Matrix widget 在房间里做什么（ADR-0096）；不是 widget 时为空。按级别醒目显示，
