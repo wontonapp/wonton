@@ -246,6 +246,10 @@ fn wire_format_is_stable() {
         serde_json::to_value(PluginState::Stopped).unwrap(),
         json!({"state": "stopped"})
     );
+    assert_eq!(
+        serde_json::to_value(PluginState::NeedsConfiguration).unwrap(),
+        json!({"state": "needs_configuration"})
+    );
     assert_eq!(round_trip(&PluginState::Stopped), PluginState::Stopped);
     assert_eq!(
         serde_json::to_value(PluginState::Degraded { reason: "x".into() }).unwrap(),

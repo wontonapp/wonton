@@ -343,6 +343,7 @@ private struct PairingProgress: View {
         case .rejected: String(localized: .Pairing.pairingFailureRejected)
         case .expired: String(localized: .Pairing.pairingFailureExpired)
         case .closed: String(localized: .Pairing.pairingFailureClosed)
+        case .pendingApproval: String(localized: .Pairing.pairingFailurePending)
         case .transportUnavailable: String(localized: .Pairing.pairingFailureTransport)
         case .upstream: String(localized: .Pairing.pairingFailureUpstream)
         case .protocol: String(localized: .Pairing.pairingFailureProtocol)
@@ -354,22 +355,23 @@ private struct PairingProgress: View {
         switch reason {
         case .rejected, .expired: String(localized: .Pairing.pairingNextStepNewCode)
         case .closed: String(localized: .Pairing.pairingNextStepClosed)
+        case .pendingApproval: String(localized: .Pairing.pairingNextStepPending)
         case .transportUnavailable: String(localized: .Pairing.pairingHintTransport)
         case .protocol: String(localized: .Pairing.pairingHintProtocol)
         case .upstream: nil
         }
     }
 
-    /// 核心按 App 语言写的诊断收进详情；码无效的几类已说明下一步，不再重复。
+    /// 核心按 App 语言写的诊断收进详情；码无效的几类已说明下一步，不再重复。等批的详情里写着加入后的角色。
     private static func detail(_ reason: PairingFailure, _ message: String) -> String? {
         switch reason {
         case .rejected, .expired, .closed: nil
-        case .transportUnavailable, .upstream, .protocol: message
+        case .pendingApproval, .transportUnavailable, .upstream, .protocol: message
         }
     }
 
-    /// 连不上和服务器出错可能是暂时的，同一个码可以再试；其余原因要换码或者更新。
+    /// 连不上和服务器出错可能是暂时的，同一个码可以再试；等批的在同意后重试同一个码。其余原因要换码或者更新。
     private static func canRetrySameCode(_ reason: PairingFailure) -> Bool {
-        reason == .transportUnavailable || reason == .upstream
+        reason == .transportUnavailable || reason == .upstream || reason == .pendingApproval
     }
 }

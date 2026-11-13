@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
-import app.wonton.protocol.Role
 import app.wonton.protocol.SecretInput
 import app.wonton.protocol.SecretInputState
 import app.wonton.ui.design.WontonSeparator
@@ -32,8 +31,8 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun SecretSection(detail: PluginDetail, plugins: PluginsState, onUpdated: (PluginDetail) -> Unit) {
     if (detail.secretInputs.isEmpty()) return
-    val me by produceState<Role?>(null) { value = runCatching { plugins.core.me().role }.getOrNull() }
-    if (me != Role.OWNER) return
+    val owner by produceState<Boolean?>(null) { value = runCatching { plugins.core.me().isOwner }.getOrNull() }
+    if (owner != true) return
     DetailSection(stringResource(R.string.secret_section_title)) {
         detail.secretInputs.forEachIndexed { index, item ->
             SecretRow(detail.id, item, plugins, onUpdated)

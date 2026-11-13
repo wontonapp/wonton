@@ -194,6 +194,9 @@ pub enum PluginState {
     Running {
         health: PluginHealth,
     },
+    /// 装着，但清单里必填的用户填写密钥还没填（ADR-0064）：网页照常，MCP 工具报未就绪并点名缺哪项。
+    /// 填齐后核心重建容器，回到 `running`。
+    NeedsConfiguration,
     /// 所有常驻服务的容器都已退出或尚未启动，不包括一次性服务。
     Stopped,
     Upgrading,

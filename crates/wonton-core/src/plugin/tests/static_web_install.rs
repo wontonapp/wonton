@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use serde_json::{Value, json};
+use wonton_protocol::PluginState;
 
 use super::super::PluginPackage;
 use super::super::fake_docker::FakeDocker;
@@ -138,6 +139,37 @@ async fn a_static_page_lives_in_the_hosted_directory_for_its_whole_life() {
         .await
         .unwrap();
     assert!(!site(&dir).exists());
+}
+
+#[tokio::test]
+async fn a_static_page_tracks_its_providers_availability() {
+    let (docker, _dir, manager) = with_provider().await;
+    manager
+        .install_package(snake("1.0.0", &[("index.html", "x")]), &[], super::langs())
+        .await
+        .unwrap();
+    let status = || {
+        manager
+            .installed_plugin(&id(SNAKE), &super::langs())
+            .unwrap()
+            .status
+    };
+    assert!(matches!(status(), PluginState::Running { .. }));
+
+    let service = container_name("app-wonton-static-host", "static");
+    docker.set_state(
+        &service,
+        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
+    );
+    manager.watch_containers().await;
+    assert!(matches!(status(), PluginState::Degraded { .. }));
+
+    docker.set_state(
+        &service,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    manager.watch_containers().await;
+    assert!(matches!(status(), PluginState::Running { .. }));
 }
 
 // 卸提供方会让它托管的网页打不开：先卸那些网页。
