@@ -97,6 +97,8 @@ mod tests {
             origin: None,
             audience: Default::default(),
             answered_by: None,
+            permissions: Vec::new(),
+            devices: Vec::new(),
         }
     }
 
