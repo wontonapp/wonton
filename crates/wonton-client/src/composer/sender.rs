@@ -47,6 +47,9 @@ pub(super) async fn run(link: Weak<ComposerLink>, room: String, notify: Arc<Noti
 
 /// 这一组要交出去的事件：照片按顺序；只有照片时字是最后一张的说明文字；有文件时字和全部链接合成最后一条文字。
 pub(super) fn parts(outgoing: &Outgoing) -> Vec<Part> {
+    if let Some(reply) = &outgoing.prepared_reply {
+        return vec![Part::Reply(reply.clone())];
+    }
     let mut parts = Vec::new();
     let mut files: Vec<FileId> = Vec::new();
     for item in &outgoing.items {

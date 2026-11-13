@@ -14,6 +14,7 @@ import androidx.core.app.ServiceCompat
 import app.wonton.android.MainActivity
 import app.wonton.android.R
 import app.wonton.android.WontonApplication
+import app.wonton.android.push.followSystemNotifications
 import app.wonton.android.push.PushNotifications
 import app.wonton.client.ClientCore
 import app.wonton.protocol.ConnectionNotice
@@ -67,6 +68,7 @@ class KeepaliveService : Service() {
             scope = updates
             updates.launch { showNewMessages(core) }
             updates.launch { followConnection(core) }
+            updates.followSystemNotifications(this, core)
         }
         return START_NOT_STICKY
     }
@@ -128,7 +130,6 @@ class KeepaliveService : Service() {
                     PushNotifications.show(
                         context,
                         notification,
-                        tag = notification.eventId,
                         onlyAlertOnce = posted != null,
                     )
                 }
