@@ -110,6 +110,7 @@ fn reject_reason(response: PairResponse) -> Option<RejectReason> {
     match response {
         PairResponse::Paired => None,
         PairResponse::Rejected { reason, .. } => Some(reason),
+        PairResponse::Joining { .. } => None,
     }
 }
 
@@ -158,7 +159,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     assert_eq!(status, StatusCode::OK, "{body}");
     let me: Value = serde_json::from_str(&body).unwrap();
     assert_eq!(me["username"], "family1");
-    assert_eq!(me["role"], "member");
+    assert_eq!(me["is_owner"], false);
     assert_eq!(me["user_id"], "@family1:test");
     assert_eq!(me["display_name"], "爱丽丝");
     assert_eq!(me["can_install_plugins"], false);
@@ -214,7 +215,7 @@ async fn the_owner_token_reads_and_saves_the_owner_profile() {
     let home = Home::start(None).await;
     let (status, me) = owner_call(&home, Method::GET, ME, Value::Null).await;
     assert_eq!(status, StatusCode::OK, "{me}");
-    assert_eq!(me["role"], "owner");
+    assert_eq!(me["is_owner"], true);
 
     let profile = json!({"display_name": "Owner", "email": "changed@example.com"});
     let (status, me) = owner_call(&home, Method::PUT, ME, profile).await;
