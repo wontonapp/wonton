@@ -195,7 +195,7 @@ def get(url):
     with opener.open(url, timeout=60) as response:
         return response.read()
 
-index = json.loads(get("https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json"))
+index = json.loads(get("https://raw.githubusercontent.com/wontonapp/wonton-store/main/index.json"))
 (store / "index.json").write_bytes(json.dumps(index, ensure_ascii=False, indent=1).encode())
 docs = index["docs"]
 jobs = [(docs["source"].removeprefix("github:"), docs["commit"], path, sha) for path, sha in docs["files"].items()]

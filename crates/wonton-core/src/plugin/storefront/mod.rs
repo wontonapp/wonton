@@ -1,6 +1,6 @@
 //! 商店（ADR-0017）：官方索引和 GitHub 上的社区插件，各自缓存，取不到时给上次的结果并如实说明。
 //!
-//! - 官方索引：设了 `WONTON_STORE_INDEX` 就每次读那个本地目录；否则从 GitHub 取 `geraldpeng6/wonton-store` 的
+//! - 官方索引：设了 `WONTON_STORE_INDEX` 就每次读那个本地目录；否则从 GitHub 取 `wontonapp/wonton-store` 的
 //!   `index.json`，6 小时一次，raw 不通时走 API。取到的存一份到磁盘，核心重启后取不到时也有列表。
 //! - 社区插件：搜 topic `wonton-plugin` 的公开仓库，10 分钟一次；主人可以关掉（`WONTON_STORE_COMMUNITY=off`）。
 //! - App 要求刷新（`?refresh=true`）时不等缓存过期，但离上次去取不到一分钟就不再取：GitHub 的搜索 API 不带令牌时
@@ -28,7 +28,7 @@ pub use community::{Community, Listing};
 use index::{Files, Index, IndexError};
 
 /// 官方索引所在的仓库。
-const STORE_REPO: (&str, &str) = ("geraldpeng6", "wonton-store");
+const STORE_REPO: (&str, &str) = ("wontonapp", "wonton-store");
 pub(in crate::plugin) const OFFICIAL_TTL: Duration = Duration::from_secs(6 * 3600);
 pub(in crate::plugin) const COMMUNITY_TTL: Duration = Duration::from_secs(10 * 60);
 /// 两次去来源取之间至少隔这么久，App 要求刷新也一样。

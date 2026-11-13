@@ -32,7 +32,7 @@ trap 'rm -rf "$work"' EXIT
 index="$work/index"
 mkdir "$work/manifests"
 git init -q "$work/store"
-git -C "$work/store" fetch -q --depth 1 https://github.com/geraldpeng6/wonton-store.git "$store_commit"
+git -C "$work/store" fetch -q --depth 1 https://github.com/wontonapp/wonton-store.git "$store_commit"
 git -C "$work/store" checkout -q FETCH_HEAD
 onboarding="$work/store/onboarding.json"
 cargo build -q --manifest-path "$repo/Cargo.toml" -p wonton-core

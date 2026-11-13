@@ -141,7 +141,7 @@ jobs:
         shell: bash
         run: |
           curl -fsSL --retry 5 -o "$RUNNER_TEMP/index.json" \
-            https://raw.githubusercontent.com/geraldpeng6/wonton-store/main/index.json
+            https://raw.githubusercontent.com/wontonapp/wonton-store/main/index.json
           cargo build --workspace --locked --bin wonton-core
           target/debug/wonton-core plugin check-index "$RUNNER_TEMP/index.json"
       - name: 测试假数据入口（feature ui-fake）
