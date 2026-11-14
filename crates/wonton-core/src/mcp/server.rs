@@ -33,6 +33,8 @@ pub struct Caller {
     /// 核对过归属的 ACP 会话；交接去重和父会话路径用它，不以房间或链 ID 代替。
     pub session: Option<String>,
     pub request_id: Option<rmcp::model::RequestId>,
+    /// 这次请求已按当前记录解析出的 AI 动手封顶（[`Bus::ai_cap`]）；内部入口直接构造的 `Caller` 留空，由总线再算。
+    pub ai_level: Option<wonton_protocol::AiLevel>,
 }
 
 /// 令牌认出的 Bot。
@@ -60,6 +62,7 @@ impl Caller {
             chain: None,
             session: None,
             request_id: None,
+            ai_level: None,
         }
     }
 
@@ -150,7 +153,8 @@ impl ServerHandler for Handler {
         _request: Option<PaginatedRequestParams>,
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let caller = caller(&ctx)?;
+        let mut caller = caller(&ctx)?;
+        caller.ai_level = Some(self.bus.ai_cap(&caller));
         Ok(ListToolsResult::with_all_items(
             self.bus.tools(&caller).await,
         ))
@@ -169,6 +173,7 @@ impl ServerHandler for Handler {
             caller.chain = Some(chain);
             caller.session = Some(session);
         }
+        caller.ai_level = Some(self.bus.ai_cap(&caller));
         caller.request_id = Some(ctx.id.clone());
         let cancelled = ctx.ct.clone().cancelled_owned();
         Ok(self.bus.call(&caller, request, cancelled).await.into())

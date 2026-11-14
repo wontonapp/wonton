@@ -232,8 +232,8 @@ async fn a_family_bots_tool_card_goes_to_its_keeper_only() {
         [Some("alice".to_owned())],
         "只推给她，不推给主人"
     );
-    // 放行时段按插件记，家人的卡片不给这个选项。
-    assert!(card.choices.iter().all(|c| c.answer != Answer::AllowWindow));
+    // 她的角色“改动自己确认”，自己的 Bot 的卡片可以放宽；时段只管她的 Bot（risky::window_scope），不连主人的。
+    assert!(card.choices.iter().any(|c| c.answer == Answer::AllowWindow));
     s.answer(&card.id, Answer::Approve).unwrap();
     call.await.unwrap();
 }

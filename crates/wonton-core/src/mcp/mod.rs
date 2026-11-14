@@ -46,7 +46,7 @@ use rmcp::service::{Peer, RoleServer};
 use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
 use rmcp::transport::streamable_http_server::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::Value;
-use wonton_protocol::{ConfirmationState, FileFailure, SecretValues};
+use wonton_protocol::{AiLevel, ConfirmationState, FileFailure, SecretValues};
 
 use crate::bot_activity::Guard;
 use crate::config::PLUGIN_MCP_HOST;
@@ -396,11 +396,12 @@ impl Bus {
     /// 调用方能看到的工具：核心自己的，加上所有在运行、对它放行（[`Bus::bot_access`]）的插件的。并发地问，一个插件卡住
     /// 挡不住别的（每个插件有期限，见 [`Upstreams::tools`]）。列不出工具的插件记一条警告后跳过，它的工具这时本来也调不通。
     ///
-    /// 必填密钥还没填的插件不连：直接把原因记进工具的 `tools_problem`，省掉一次必然失败的握手。
+    /// 封顶“只读”的（ADR-0088 第 5 节）只列只读的插件工具；核心安装等工具各按自己的权限项管，`save_file` 另按 AI 级别管。
     async fn tools(&self, caller: &Caller) -> Vec<Tool> {
         if self.remote_contact_blocked(caller) {
             return contacts_gate::tools();
         }
+        let cap = self.ai_cap(caller);
         let mut servers = self.plugins.mcp_servers();
         servers.retain(|server| self.bot_access(caller, &server.id).is_ok());
         let listed = servers.iter().map(|server| async {
@@ -422,6 +423,14 @@ impl Bus {
                 })),
                 Err(e) => tracing::warn!(caller = %caller.id, error = %e, "插件的工具暂时不可用"),
             }
+        }
+        if cap == AiLevel::ReadOnly {
+            let save = naming::join(naming::CORE, save_tools::SAVE);
+            tools.retain(|tool| {
+                tool.name != save
+                    && (naming::split(&tool.name).is_some_and(|(owner, _)| owner == naming::CORE)
+                        || risky::classify(tool) == AiLevel::ReadOnly)
+            });
         }
         tools
     }
@@ -524,6 +533,35 @@ impl Bus {
         })
     }
 
+    /// 一次插件工具调用的确认决定：封顶不够直接拒（失败即停），会删、会覆盖的调用在“删除要管理员批”的封顶下
+    /// 把卡片交给管理员（ADR-0088 第 5 节），其余按 ADR-0024。
+    fn plugin_decision(
+        &self,
+        caller: &Caller,
+        server: &McpServer,
+        definition: &Tool,
+    ) -> Result<risky::ToolDecision, ToolFailure> {
+        let cap = self.ai_cap(caller);
+        let tool_level = risky::classify(definition);
+        if risky::capped(cap, tool_level) {
+            return Err(ToolFailure::new(
+                "permission_denied",
+                "这次的 AI 动手级别是只读，这个工具会改或删数据，没有执行",
+            ));
+        }
+        let highest = self.plugins.requires_root_confirmation(&server.id);
+        let subject = if cap == AiLevel::AdminApprovesDeletes && tool_level == AiLevel::SelfConfirms
+        {
+            Subject::ToolDelete
+        } else {
+            Subject::Tool
+        };
+        let relaxed = cap == AiLevel::SelfConfirms && handoff::allows_relaxation(self, caller);
+        Ok(risky::ToolDecision::new(
+            definition, cap, highest, subject, relaxed,
+        ))
+    }
+
     async fn call_plugin(
         self: &Arc<Self>,
         caller: &Caller,
@@ -537,23 +575,20 @@ impl Bus {
             Ok(definition) => definition,
             Err(result) => return *result,
         };
-        let read_only = definition
-            .annotations
-            .as_ref()
-            .and_then(|a| a.read_only_hint)
-            == Some(true);
-        let highest = self.plugins.requires_root_confirmation(&server.id);
-        let every_time = highest || risky::deletes(&definition);
-        let relaxed = handoff::allows_relaxation(self, caller);
+        let decision = match self.plugin_decision(caller, server, &definition) {
+            Ok(decision) => decision,
+            Err(failure) => return self.deny(caller, name, &args, &failure),
+        };
         let policy = self.plugins.tool_policy();
         let clearance = || {
-            relaxed
+            decision
+                .relaxed
                 .then(|| policy.clearance(caller.id.as_str(), server.id.as_str(), tool))
                 .flatten()
         };
-        let not_sensitive = if every_time {
+        let not_sensitive = if decision.every_time {
             None
-        } else if read_only {
+        } else if decision.read_only {
             Some(Basis::PluginReadOnly)
         } else {
             clearance()
@@ -573,12 +608,15 @@ impl Bus {
                 Err(result) => return *result,
             };
             // 停住期间主人可能改了放宽，时段也可能到期，所以放在停住之后判定。每次都问的工具全部不放宽。
-            let cleared = if every_time || !relaxed {
+            let cleared = if decision.every_time || !decision.relaxed {
                 None
             } else {
                 clearance().map(Basis::from).or_else(|| {
                     self.confirmations
-                        .allow_in_window(&caller.id, server.id.as_str())
+                        .allow_in_window(
+                            &caller.id,
+                            &risky::window_scope(caller, server.id.as_str()),
+                        )
                         .map(Basis::Window)
                 })
             };
@@ -604,7 +642,7 @@ impl Bus {
                 _ => outcome.result,
             };
         }
-        let draft = self.tool_card(caller, server, &definition, &args, highest);
+        let draft = self.tool_card(caller, server, &definition, &args, decision);
         // 不传 `cancelled`：确认过的调用不跟着 Agent 走，它断开了照样执行，结果在卡片上（ADR-0016）。
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>,
@@ -626,7 +664,7 @@ impl Bus {
             args,
             (draft, activity),
             run,
-            (held_ms, Subject::Tool),
+            (held_ms, decision.subject),
         )
         .await
     }
@@ -723,6 +761,8 @@ mod agent_install_isolation_tests;
 mod agent_install_tests;
 #[cfg(test)]
 mod agent_permission_tests;
+#[cfg(test)]
+mod ai_level_tests;
 #[cfg(test)]
 mod authoring_tests;
 #[cfg(test)]

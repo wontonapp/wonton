@@ -7,7 +7,7 @@ use hyper::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 use wonton_protocol::{
-    BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, Gate, MemberStatus,
+    AiLevel, BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, Gate, MemberStatus,
     ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER,
 };
 
@@ -24,6 +24,8 @@ const MAX_ID: usize = 255;
 pub(super) enum Subject {
     /// 调插件的工具、Agent 自己的工具：发给 Bot 的归属人。
     Tool,
+    /// 会删、会覆盖的工具调用，在“删除要管理员批”的封顶下：发给所有管理员（ADR-0088 第 5 节）。
+    ToolDelete,
     /// 装卸、升级插件，开关插件的权限：按归属人的 install_apps 决定。
     PluginAdmin,
 }
@@ -79,13 +81,148 @@ impl Bus {
             return None;
         }
         match subject {
-            Subject::Tool => Some(username.clone()),
+            Subject::Tool | Subject::ToolDelete => Some(username.clone()),
             Subject::PluginAdmin => self.may_install(username).then(|| username.clone()),
         }
     }
 
     fn may_install(&self, username: &str) -> bool {
         matches!(self.install_gate_for(username), Gate::Allow)
+    }
+
+    /// 一个人的 AI 动手级别（ADR-0088 第 5 节“谁让 Bot 做的事，按谁的角色封顶”）：主人不受角色约束，
+    /// 其余按角色；人查不到、角色查不到、取值不认识时按最严并记日志，不按最松的放行。
+    pub(crate) fn person_ai(&self, username: &str) -> AiLevel {
+        if username == self.plugins.owner_name() {
+            return AiLevel::SelfConfirms;
+        }
+        let level = self
+            .people
+            .get()
+            .and_then(|people| {
+                let member = people.members.get(username)?;
+                if !matches!(member.status, MemberStatus::Invited | MemberStatus::Joined) {
+                    return None;
+                }
+                people
+                    .roles
+                    .get(&member.role_id)
+                    .map(|role| role.permissions.ai)
+            })
+            .unwrap_or_else(|| {
+                tracing::warn!(person = username, "认不出这个人的角色，AI 动手按只读封顶");
+                AiLevel::ReadOnly
+            });
+        strict_ai(level)
+    }
+
+    /// 共享 Bot 没有进行中的轮次时的封顶：能用人（角色“用共享 Bot”为“能”）里最低的级别，主人算在内。
+    pub(crate) fn shared_bot_ai(&self) -> AiLevel {
+        let Some(people) = self.people.get() else {
+            tracing::warn!("没有家人角色记录，共享 Bot 的 AI 动手按只读封顶");
+            return AiLevel::ReadOnly;
+        };
+        let mut floor = AiLevel::SelfConfirms;
+        for member in people.members.list() {
+            if !matches!(member.status, MemberStatus::Invited | MemberStatus::Joined) {
+                continue;
+            }
+            let Some(role) = people.roles.get(&member.role_id) else {
+                tracing::warn!(
+                    person = member.username.as_str(),
+                    "认不出这个人的角色，AI 动手按只读封顶"
+                );
+                floor = AiLevel::ReadOnly;
+                continue;
+            };
+            if role.permissions.shared_bots {
+                floor = lower(floor, strict_ai(role.permissions.ai));
+            }
+        }
+        floor
+    }
+
+    /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的桥轮次时按轮次里级别最低的人算，
+    /// 没有时私人 Bot 按归属人、共享 Bot 按能用人里最低的。没有 Bot 的工具插件按主人的自动化算。
+    pub(crate) fn ai_cap(&self, caller: &Caller) -> AiLevel {
+        if let Some(level) = caller.ai_level {
+            return strict_ai(level);
+        }
+        let Some(bot) = &caller.bot else {
+            return AiLevel::SelfConfirms;
+        };
+        match &bot.keeper {
+            BotKeeper::User { username } => {
+                let turns = self.live_turn_ais(caller);
+                match turns.into_iter().reduce(lower) {
+                    Some(lowest) => lowest,
+                    None => self.person_ai(username),
+                }
+            }
+            BotKeeper::Household => {
+                let turns = self.live_turn_ais(caller);
+                match turns.into_iter().reduce(lower) {
+                    Some(lowest) => lowest,
+                    None => self.shared_bot_ai(),
+                }
+            }
+            BotKeeper::Other => {
+                tracing::warn!(
+                    plugin = caller.id.as_str(),
+                    "认不出 Bot 的归属人，AI 动手按只读封顶"
+                );
+                AiLevel::ReadOnly
+            }
+        }
+    }
+
+    /// 进行中的桥轮次各自代表的级别。说话的人认不出时按最严，不用链代表的人替代（ChainSessionInfo 的 `sender`
+    /// 是这条轮次的说话人；认不清时不能按更松的链身份放行）。
+    fn live_turn_ais(&self, caller: &Caller) -> Vec<AiLevel> {
+        let Some(chains) = self.agent_chains.get() else {
+            return Vec::new();
+        };
+        let ledger = chains.ledger();
+        let Some(bot) = caller.bot.as_ref().map(|identity| BotRef {
+            plugin_id: caller.id.to_string(),
+            bot: identity.bot.clone(),
+        }) else {
+            return Vec::new();
+        };
+        ledger
+            .live_bridge_turns(&bot)
+            .into_iter()
+            .map(|turn| {
+                let Some(username) = localpart(&turn.sender) else {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        sender = turn.sender.as_str(),
+                        "认不出这轮说话的人，AI 动手按只读封顶"
+                    );
+                    return AiLevel::ReadOnly;
+                };
+                self.person_ai_option(username).unwrap_or_else(|| {
+                    tracing::warn!(
+                        plugin = caller.id.as_str(),
+                        sender = turn.sender.as_str(),
+                        "认不出这轮说话的人，AI 动手按只读封顶"
+                    );
+                    AiLevel::ReadOnly
+                })
+            })
+            .collect()
+    }
+
+    fn person_ai_option(&self, username: &str) -> Option<AiLevel> {
+        let known = username == self.plugins.owner_name()
+            || self
+                .people
+                .get()
+                .and_then(|people| people.members.get(username))
+                .is_some_and(|member| {
+                    matches!(member.status, MemberStatus::Invited | MemberStatus::Joined)
+                });
+        known.then(|| self.person_ai(username))
     }
 
     fn install_gate_for(&self, username: &str) -> Gate {
@@ -170,20 +307,25 @@ impl Bus {
         self.confirmations.ask_as(&caller, draft, audience).await
     }
 
-    /// 卡片的文字用收件人的语言（ADR-0043）。
+    /// 卡片的文字用谁的语言（ADR-0043）：发给管理员的（会删工具的、安装的）按主人的语言，其余发给谁按谁的。
     pub(super) fn card_languages(&self, caller: &Caller, subject: Subject) -> Languages {
-        self.languages_for(self.recipient(caller, subject).as_deref())
+        let recipient = match subject {
+            Subject::ToolDelete => None,
+            _ => self.recipient(caller, subject),
+        };
+        self.languages_for(recipient.as_deref())
     }
 
     /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何 Matrix 房间，推送发到冻结收件人的设备。
     pub(super) async fn audience(&self, caller: &Caller, subject: Subject) -> Audience {
         let recipient = self.recipient(caller, subject);
-        let recipients = if subject == Subject::PluginAdmin
-            && self.plugin_install_gate(caller) == Gate::AskAdmin
-        {
-            Recipients::Admins(self.plugin_admins())
-        } else {
-            Recipients::Keeper(recipient.clone())
+        let recipients = match subject {
+            // 会删、会覆盖的工具调用按封顶发管理员，谁先答算谁的（ADR-0088 第 5 节）。
+            Subject::ToolDelete => Recipients::Admins(self.plugin_admins()),
+            Subject::PluginAdmin if self.plugin_install_gate(caller) == Gate::AskAdmin => {
+                Recipients::Admins(self.plugin_admins())
+            }
+            _ => Recipients::Keeper(recipient.clone()),
         };
         let bot = caller.bot.as_ref().and_then(|bot| {
             let account = self.plugins.bot_account(&caller.id, &bot.bot)?;
@@ -311,6 +453,31 @@ impl Bus {
             Err("not_shared: the bot and the recipient are not both in this room".to_owned())
         }
     }
+}
+
+/// Matrix 用户 ID（`@localpart:服务器名`）里的用户名；不是这个写法返回 `None`，让查角色时按认不出处理。
+fn localpart(user_id: &str) -> Option<&str> {
+    let rest = user_id.strip_prefix('@')?;
+    let (localpart, server) = rest.split_once(':')?;
+    (!localpart.is_empty() && !server.is_empty()).then_some(localpart)
+}
+
+/// 认不出的取值按最严算（ADR-0088 第 2 节）。
+fn strict_ai(level: AiLevel) -> AiLevel {
+    match level {
+        AiLevel::Other => AiLevel::ReadOnly,
+        level => level,
+    }
+}
+
+/// 两级里低的那个：封顶取进行中的轮次和能用人里最低的级别。
+fn lower(a: AiLevel, b: AiLevel) -> AiLevel {
+    let rank = |level: AiLevel| match level {
+        AiLevel::ReadOnly | AiLevel::Other => 0,
+        AiLevel::AdminApprovesDeletes => 1,
+        AiLevel::SelfConfirms => 2,
+    };
+    if rank(a) <= rank(b) { a } else { b }
 }
 
 #[cfg(test)]

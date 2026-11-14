@@ -436,6 +436,7 @@ async fn a_foreign_initiator_cannot_relax_target_tools_by_omitting_the_session_h
                 open_apps: wonton_protocol::AppScope::Selected {
                     plugin_ids: vec!["app.example.notes".into()],
                 },
+                ai: wonton_protocol::AiLevel::SelfConfirms,
                 ..wonton_protocol::Permissions::strictest()
             },
         })
