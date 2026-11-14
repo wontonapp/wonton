@@ -75,6 +75,32 @@ final class PanelGestureUITests: XCTestCase {
         XCTAssertTrue(waitLevel("peek", timeout: 5), "收起后再拉不开")
         XCTAssertTrue(page.waitForExistence(timeout: 20) && capsuleHittable, "再拉开后网页或胶囊不在可访问树里")
     }
+
+    /// 面板里的网页在放声音（网页播放器）：收起面板不打断它，过一阵再拉开，声音一直在放。
+    /// 收起的面板不在界面上，网页得留着接着跑。
+    func testClosingThePanelKeepsPageAudioPlaying() {
+        launch()
+        openMainPanel()
+        app.webViews.buttons["Fixture play"].tap()
+        XCTAssertTrue(wait(15) { (self.pageAudio?.seconds ?? 0) >= 1 && self.pageAudio?.playing == true },
+                      "网页的声音没放起来：\(audioStatus.label)")
+        guard let before = pageAudio else { return XCTFail("读不到网页的播放状态") }
+
+        panel.buttons.matching(identifier: "pageClose").allElementsBoundByIndex.first { $0.isHittable }?.tap()
+        XCTAssertTrue(wait(5) { !self.panel.exists }, "点胶囊的关闭没收起面板")
+        Thread.sleep(forTimeInterval: 10)
+
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        low.press(forDuration: 0.05, thenDragTo: low.withOffset(CGVector(dx: 0, dy: 160)),
+                  withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertTrue(waitLevel("peek", timeout: 5) && audioStatus.waitForExistence(timeout: 10), "收起后再拉不开")
+        // 收起的 10 秒里声音停过的话，播放位置最多只多出收起前后那两三秒。
+        XCTAssertTrue(wait(5) { (self.pageAudio?.seconds ?? 0) >= before.seconds + 9 },
+                      "面板收起的时候网页的声音停了：收起前 \(before)，再拉开 \(audioStatus.label)")
+        XCTAssertEqual(pageAudio?.playing, true, "再拉开时网页的声音没在放：\(audioStatus.label)")
+        XCTAssertEqual(pageAudio?.pauses, before.pauses, "面板收起的时候网页的声音被暂停过：\(audioStatus.label)")
+        shot("31-still-playing")
+    }
 }
 
 extension PanelGestureUITests {
@@ -109,6 +135,24 @@ extension PanelGestureUITests {
 
     /// 假数据网页上的那层浮层。
     private var page: XCUIElement { app.webViews.staticTexts["Fixture player"] }
+
+    /// 假数据网页自己报的播放状态，如 `Fixture audio playing 12 pauses 0`。
+    private var audioStatus: XCUIElement {
+        app.webViews.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture audio")).firstMatch
+    }
+
+    private struct PageAudio {
+        let playing: Bool
+        let seconds: Int
+        let pauses: Int
+    }
+
+    private var pageAudio: PageAudio? {
+        guard audioStatus.exists else { return nil }
+        let words = audioStatus.label.split(separator: " ")
+        guard words.count == 6, let seconds = Int(words[3]), let pauses = Int(words[5]) else { return nil }
+        return PageAudio(playing: words[2] == "playing", seconds: seconds, pauses: pauses)
+    }
 
     /// 网页露出来的顶边：主面板的网页框从屏幕顶上开始，状态栏那一截不算（`launch` 里按顶栏按钮的位置记下）。
     private var pageTop: CGFloat { max(app.webViews.firstMatch.frame.minY, safeTop) }

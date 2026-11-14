@@ -20,18 +20,10 @@ final class ChatPanelUITests: XCTestCase {
         pull(.down)
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "列表到顶后往下拉没有面板")
         shot("02-peek")
-        XCTAssertFalse(capsule.exists, "第 1 级就有胶囊")
+        XCTAssertFalse(capsule.exists, "空面板就有胶囊")
         XCTAssertTrue(app.buttons["panelAdd"].exists, "空面板没有添加页面的加号")
 
-        pullStrip(.down)
-        XCTAssertTrue(waitFull(), "再往下推没有到第 2 级")
-        shot("03-full")
-        capsule.tap()
-        XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
-        shot("04-closed")
-
-        pull(.down)
-        XCTAssertTrue(app.buttons["panelAdd"].waitForExistence(timeout: 5), "空面板加号没出来")
+        // 空面板最多到第 1 级（ADR-0052）：先加一页网址，才推得到整页。
         app.buttons["panelAdd"].tap()
         let field = app.textFields["https://"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "编辑面板没有网址输入框")
@@ -40,12 +32,20 @@ final class ChatPanelUITests: XCTestCase {
         tapAnyButton(["Add URL", "添加网址", "新增網址", "URL を追加"], timeout: 5, required: true)
         tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
         XCTAssertFalse(app.buttons["panelAdd"].waitForExistence(timeout: 2), "加了网址后还是空面板")
-        shot("05-page")
+        shot("03-page")
 
         XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "面板网页没加载出来")
         pullPageDown()
         XCTAssertTrue(waitFull(), "页面滚到顶后接着拉没到第 2 级")
-        shot("06-page-full")
+        shot("04-page-full")
+        capsule.tap()
+        XCTAssertTrue(waitGone(capsule) && waitGone(panel), "胶囊退出后面板还开着")
+        shot("05-closed")
+
+        pull(.down)
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 10), "收起后再拉开，面板里的网页不在")
+        XCTAssertTrue(capsule.exists, "收起后再拉开没有胶囊")
+        shot("06-reopened")
     }
 
     /// 整页的面板和插件页共用胶囊：胶囊一直在，切到后台再回来也在，不能困在页面里（盲测 P0，ADR-0095）。
