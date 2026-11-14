@@ -118,7 +118,7 @@ Claude Code 的程序不打进我们发布的镜像：插件在第一次启动�
 }
 ```
 
-- `agents`、`needs[].plugins` 只能写同一份索引里的插件，`update.sh` 检查，写错了生成失败。所以 Hermes 也要进官方索引：主人卸掉之后，能从引导和商店装回来。
+- `agents`、`needs[].plugins` 只能写同一份索引里的插件，`agents` 引用的插件须是 Agent。`update.sh` 和 `plugin check-index` 检查引导字段和引用，写错了生成失败。所以 Hermes 也要进官方索引：主人卸掉之后，能从引导和商店装回来。
 - 模型服务商与推荐由 magpie 原生网页管理，不在 `onboarding` 中定义 `providers`、`more_providers` 或 `key_url`，避免索引和网关各维护一套模型入口。
 - 需求不带图标：图标是 App 打包的白名单（ADR-0026），不发 App 就加不了新的。
 
