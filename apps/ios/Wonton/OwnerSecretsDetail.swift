@@ -56,7 +56,9 @@ struct OwnerSecretsDetail: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(.isHeader)
-        .accessibilityValue(String(localized: group == nil ? .Appearance0.appearanceCollapsed : .Appearance1.appearanceExpanded))
+        .accessibilityValue(
+            String(localized: group == nil ? .Appearance0.appearanceCollapsed : .Appearance1.appearanceExpanded)
+        )
     }
 
     @ViewBuilder private func contents(_ group: OwnerSecretsView) -> some View {
