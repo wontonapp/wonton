@@ -5,14 +5,18 @@ import android.os.Build
 import android.view.KeyEvent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import app.wonton.protocol.Action
+import app.wonton.protocol.TabRef
+import app.wonton.ui.send
+import org.junit.Assert.assertNull
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -32,6 +36,14 @@ class MainNavigationTest {
 
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(permissions).around(compose)
+
+    /** 假核心跟着进程活到整个类跑完：上一条停在应用网格（或中途失败）时，这一条仍从聊天根页面开始。 */
+    @Before
+    fun startFromChatRoot() {
+        val core = (compose.activity.application as WontonApplication).core.getOrThrow()
+        assertNull(core.send(Action.OpenPage(TabRef.Chat)))
+        assertChatRoot()
+    }
 
     @Test
     fun testAppsSystemBackReturnsToChat() {
@@ -54,7 +66,7 @@ class MainNavigationTest {
     @Test
     fun testAppsStoreEntryAndPluginDetail() {
         openApps()
-        compose.onAllNodesWithText("Store").onFirst().performClick()
+        compose.onNodeWithText("Store").performClick()
         compose.onNodeWithContentDescription("Add source").assertIsDisplayed()
         pressBack()
         compose.onNodeWithText("Notes").assertIsDisplayed()
@@ -81,7 +93,9 @@ class MainNavigationTest {
 
     @Test
     fun testSettingsFromSidebar() {
-        openFromSidebar("Settings")
+        // 侧边栏的设置是只有图标的圆钮，没有文字。
+        openSidebar()
+        compose.onNodeWithTag("sidebar-settings").performClick()
         compose.onNodeWithText("Appearance").assertIsDisplayed()
         compose.onNodeWithText("Appearance").performClick()
         compose.onNodeWithContentDescription("Back").assertIsDisplayed()
@@ -106,7 +120,8 @@ class MainNavigationTest {
         pressBack()
         assertChatRoot()
 
-        compose.onNodeWithText("New chat").performClick()
+        // 聊天列表的新聊天是右下角只有图标的悬浮按钮。
+        compose.onNodeWithContentDescription("New chat").performClick()
         compose.onNodeWithText("Start a direct chat").assertIsDisplayed()
         pressBack()
         assertChatRoot()
