@@ -9,12 +9,6 @@ pub(in crate::plugin) const URL_SECRET_COMPONENT: &percent_encoding::AsciiSet =
         .remove(b'_')
         .remove(b'~');
 
-#[derive(Clone, Copy)]
-pub(in crate::plugin) enum InputSecretEncoding {
-    Header,
-    UrlComponent,
-}
-
 /// Remote templates cannot use generated credentials or a caller's identity.
 pub(in crate::plugin) fn validate_input_template(
     manifest: &Manifest,
@@ -83,30 +77,22 @@ pub(in crate::plugin) fn render_input_template_with(
     Ok(value)
 }
 
-/// Values never enter an error: even a failed HTTP-header parse can contain a credential.
-pub(in crate::plugin) fn render_input_template(
+pub(in crate::plugin) fn render_input_url(
     manifest: &Manifest,
     secrets: &Secrets,
     template: &str,
-    encoding: InputSecretEncoding,
     langs: &Languages,
 ) -> Result<String, String> {
-    let value = render_input_template_with(manifest, template, langs, |name, output| {
-        let value = input_value(secrets, name, langs)?;
-        match encoding {
-            InputSecretEncoding::Header => output.push_str(value),
-            InputSecretEncoding::UrlComponent => output.extend(
-                percent_encoding::utf8_percent_encode(value, URL_SECRET_COMPONENT),
-            ),
-        }
+    render_input_template_with(manifest, template, langs, |name, output| {
+        output.extend(percent_encoding::utf8_percent_encode(
+            input_value(secrets, name, langs)?,
+            URL_SECRET_COMPONENT,
+        ));
         Ok(())
-    })?;
-    if matches!(encoding, InputSecretEncoding::Header) {
-        check_header(&value, langs)?;
-    }
-    Ok(value)
+    })
 }
 
+/// Values never enter an error: even a failed HTTP-header parse can contain a credential.
 pub(in crate::plugin) fn render_input_header(
     manifest: &Manifest,
     secrets: &Secrets,

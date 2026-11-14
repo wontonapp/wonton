@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use super::*;
 use crate::plugin::install_error::InstallError;
 use crate::plugin::package::{PackageError, PluginPackage};
-use crate::plugin::proxy_auth::{InputSecretEncoding, McpHeaders, render_input_template};
+use crate::plugin::proxy_auth::{McpHeaders, render_input_header, render_input_url};
 use crate::plugin::secrets::Secrets;
 
 fn document() -> Value {
@@ -295,11 +295,10 @@ fn remote_mcp_renders_url_components_and_header_values_without_leaking_errors() 
     let manifest = parse(&doc).unwrap().manifest;
     let langs = Languages::default();
     let mut secrets = Secrets::from([("token".to_owned(), b"private/&?=#+ %\r\n".to_vec())]);
-    let url = render_input_template(
+    let url = render_input_url(
         &manifest,
         &secrets,
         "https://mcp.example.com/{secret:token}?token={secret:token}&fixed=yes",
-        InputSecretEncoding::UrlComponent,
         &langs,
     )
     .unwrap();
@@ -313,49 +312,18 @@ fn remote_mcp_renders_url_components_and_header_values_without_leaking_errors() 
             ("fixed".to_owned(), "yes".to_owned())
         ]
     );
-    let error = render_input_template(
-        &manifest,
-        &secrets,
-        "Bearer {secret:token}",
-        InputSecretEncoding::Header,
-        &langs,
-    )
-    .unwrap_err();
+    let error =
+        render_input_header(&manifest, &secrets, "Bearer {secret:token}", &langs).unwrap_err();
     assert!(!error.contains("private"));
     secrets.insert("token".into(), b"private-valid-token".to_vec());
     assert_eq!(
-        render_input_template(
-            &manifest,
-            &secrets,
-            "Bearer {secret:token}",
-            InputSecretEncoding::Header,
-            &langs
-        )
-        .unwrap(),
-        "Bearer private-valid-token"
+        render_input_header(&manifest, &secrets, "Bearer {secret:token}", &langs).unwrap(),
+        Some("Bearer private-valid-token".to_owned())
     );
     secrets.insert("token".into(), vec![0xff]);
-    assert!(
-        render_input_template(
-            &manifest,
-            &secrets,
-            "{secret:token}",
-            InputSecretEncoding::UrlComponent,
-            &langs
-        )
-        .is_err()
-    );
+    assert!(render_input_url(&manifest, &secrets, "{secret:token}", &langs).is_err());
     secrets.clear();
-    assert!(
-        render_input_template(
-            &manifest,
-            &secrets,
-            "{secret:token}",
-            InputSecretEncoding::Header,
-            &langs
-        )
-        .is_err()
-    );
+    assert!(render_input_header(&manifest, &secrets, "{secret:token}", &langs).is_err());
 }
 
 #[test]

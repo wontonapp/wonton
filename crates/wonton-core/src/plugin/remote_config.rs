@@ -13,7 +13,7 @@ use super::manager::PluginManager;
 use super::manifest::{Manifest, PluginId};
 use super::manifest_remote::RemoteAuth;
 use super::mcp_server::{McpServer, ToolLimits};
-use super::proxy_auth::{self, InputSecretEncoding, McpHeaders};
+use super::proxy_auth::{self, McpHeaders};
 use super::remote_redaction::Redaction;
 use super::secrets::Secrets;
 
@@ -34,13 +34,7 @@ impl Config {
         langs: &Languages,
     ) -> Result<Self, String> {
         let remote = manifest.remote_mcp.as_ref().expect("远端形态已经校验");
-        let url = proxy_auth::render_input_template(
-            manifest,
-            secrets,
-            &remote.url,
-            InputSecretEncoding::UrlComponent,
-            langs,
-        )?;
+        let url = proxy_auth::render_input_url(manifest, secrets, &remote.url, langs)?;
         let url = super::remote_validate::parse_expanded_url(&url, langs)?.to_string();
         let mut headers = BTreeMap::new();
         for (name, template) in &remote.headers {

@@ -36,7 +36,7 @@ impl Redaction {
             return None;
         }
         let mut patterns: Vec<_> = patterns.into_iter().collect();
-        patterns.sort_unstable_by(|a, b| b.0.len().cmp(&a.0.len()));
+        patterns.sort_unstable_by_key(|(needle, _)| std::cmp::Reverse(needle.len()));
         Some(Self(patterns.into()))
     }
 
