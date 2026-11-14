@@ -163,6 +163,9 @@ struct PluginDetailView: View {
                             mapping: model.viewModel.portMappings.first { $0.pluginId == installed.id }
                         )
                     }
+                    if detail.installed != nil, !detail.devices.isEmpty {
+                        PluginGrantedDevicesSection(devices: detail.devices)
+                    }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }

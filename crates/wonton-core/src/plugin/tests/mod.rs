@@ -25,6 +25,7 @@ mod check;
 mod clients_manifest_package;
 mod configs;
 mod configs_docker;
+mod device_detail;
 mod device_host;
 mod device_recovery;
 mod devices;

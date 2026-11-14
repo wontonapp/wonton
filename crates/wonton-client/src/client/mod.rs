@@ -60,6 +60,8 @@ mod ui_fake;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_devices;
 #[cfg(feature = "ui-fake")]
+mod ui_fake_plugin_detail;
+#[cfg(feature = "ui-fake")]
 mod ui_fake_room;
 mod widget;
 
