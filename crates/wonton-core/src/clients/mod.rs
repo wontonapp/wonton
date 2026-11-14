@@ -5,6 +5,8 @@
 pub mod domain;
 #[cfg(test)]
 mod domain_docker_tests;
+pub mod gateway_auth;
+pub mod passwords;
 pub mod path_rules;
 #[cfg(test)]
 mod path_rules_tests;

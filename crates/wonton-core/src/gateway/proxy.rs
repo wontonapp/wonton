@@ -58,30 +58,43 @@ pub struct Forwarded<'a> {
     pub scheme: &'a str,
 }
 
-/// 转发途中可以撤销的访问：share 收回（[`super::sharing::guard`]）和客户端入口的开关关闭
+/// 转发途中可以撤销的访问：share 收回和客户端入口的开关关闭
 /// （ADR-0021，[`crate::clients::state`]）共用一个形状——置位就断，已升级的连接立即断。
 #[derive(Clone)]
 pub(crate) enum Cancel {
     Share(super::sharing::AccessGuard),
     /// 入口开关：`true` 是已关。
     Entry(watch::Receiver<bool>),
+    /// 两个独立的 watch 守卫；任一置位都撤销。
+    Both {
+        entry: watch::Receiver<bool>,
+        password: watch::Receiver<bool>,
+    },
 }
 
 impl Cancel {
     pub(super) async fn cancelled(&self) {
         match self {
             Self::Share(guard) => guard.cancelled().await,
-            Self::Entry(receiver) => {
-                let mut receiver = receiver.clone();
-                if *receiver.borrow_and_update() {
-                    return;
-                }
-                while receiver.changed().await.is_ok() {
-                    if *receiver.borrow_and_update() {
-                        return;
-                    }
+            Self::Entry(receiver) => wait_for_revoke(receiver).await,
+            Self::Both { entry, password } => {
+                tokio::select! {
+                    _ = wait_for_revoke(entry) => {},
+                    _ = wait_for_revoke(password) => {},
                 }
             }
+        }
+    }
+}
+
+async fn wait_for_revoke(receiver: &watch::Receiver<bool>) {
+    let mut receiver = receiver.clone();
+    if *receiver.borrow_and_update() {
+        return;
+    }
+    while receiver.changed().await.is_ok() {
+        if *receiver.borrow_and_update() {
+            return;
         }
     }
 }
@@ -271,14 +284,27 @@ async fn forward_with_limit(
     Ok(Response::from_parts(parts, body).into_response())
 }
 
-/// 检查之后、发出去之前访问被撤销：share 收回和入口开关关闭各自如实回一个响应。
+/// 检查之后、发出去之前访问被撤销：按最具体的撤销原因返回响应。
 fn revoked_response(cancel: &Cancel, langs: &Languages, format: pages::Format) -> Response {
     match cancel {
         Cancel::Share(_) => {
             super::sharing::refused(wonton_protocol::GatewayRefusal::ShareRevoked, langs, format)
         }
-        // 开关在检查之后、转发之前关上了：如实回「已关」，不带插件的一个字节。
-        Cancel::Entry(_) => pages::error(
+        Cancel::Both { entry, .. } if *entry.borrow() => pages::error(
+            StatusCode::FORBIDDEN,
+            "entry_closed",
+            &l10n::text(langs, "gateway-entry-closed", &[]),
+            langs,
+            format,
+        ),
+        Cancel::Both { password, .. } if *password.borrow() => pages::error(
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
+            &l10n::text(langs, "gateway-entry-auth-revoked", &[]),
+            langs,
+            format,
+        ),
+        Cancel::Entry(_) | Cancel::Both { .. } => pages::error(
             StatusCode::FORBIDDEN,
             "entry_closed",
             &l10n::text(langs, "gateway-entry-closed", &[]),
