@@ -171,6 +171,7 @@ async fn answering_shows_progress_then_the_result() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: vec!["serial:0:/dev/serial/by-id/test".to_owned()],
         })
         .unwrap();
     wait_confirmations(&phone, "正在发", |view| {
@@ -198,9 +199,16 @@ async fn answering_shows_progress_then_the_result() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: vec!["serial:0:/dev/serial/by-id/test".to_owned()],
         })
         .unwrap();
-    assert_eq!(home.confirmation_answers().len(), 1);
+    assert_eq!(
+        home.confirmation_answers(),
+        [(
+            "install".to_owned(),
+            json!({"answer": "approve", "secrets": {}, "settings": {}, "devices": ["serial:0:/dev/serial/by-id/test"]}),
+        )]
+    );
 
     // 核心的列表更新：卡片挪进结束的。
     home.set_confirmations(
@@ -261,6 +269,7 @@ async fn a_refused_answer_shows_why() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
     let view = wait_confirmations(&phone, "核心不收", |view| {
@@ -433,6 +442,7 @@ async fn an_answer_that_does_not_land_says_why_and_stays_clickable() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
     let view = wait_confirmations(&phone, "没答上", |view| {
@@ -459,6 +469,7 @@ async fn an_answer_that_does_not_land_says_why_and_stays_clickable() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
     wait_confirmations(&phone, "再点一次答上了", |view| {
@@ -497,6 +508,7 @@ async fn an_unknown_answer_is_rejected_before_sending() {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         }),
         Err(CoreError::InvalidInput { .. })
     ));

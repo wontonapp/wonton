@@ -36,6 +36,7 @@ permission-devices-gpu = 使用 GPU（高权限）
 permission-device = 访问宿主设备 { $path }（高权限）
 permission-devices-serial = 访问宿主串口设备（高权限）
 permission-devices-usb = 访问宿主 USB 设备（高权限）
+permission-devices-disk = 读写勾选的整块硬盘（很高权限）
 permission-docker-socket = 控制 Docker（最高权限）
 
 # 高权限下面带的长说明。
@@ -45,6 +46,8 @@ permission-notice-highest-risk = 这个应用能控制整台主机：读写所�
 permission-notice-network-lan = 局域网里的设备可以直接连接应用开放的端口，不经 Wonton 登录；身份验证由应用自己负责。
 permission-notice-device = 这个应用可以访问宿主设备 { $path }。
 permission-notice-devices = 这个应用可以访问你交给它的宿主设备。
+permission-notice-devices-disk = 这个插件能读写你勾选的硬盘上的全部数据。
+permission-notice-devices-usb = 这个插件能访问这台主机上所有 USB 设备，包括 U 盘和读卡器。
 
 # 应用详情里的提示。
 plugin-firewall-notice = 本机防火墙可能挡住了外来连接，局域网设备可能连不进来

@@ -119,6 +119,8 @@ fn retryable(e: &InstallError) -> bool {
         | InstallError::Changed(_)
         // 本机没有可用的显卡：装驱动、插显卡都要主人动手，下次启动再试。
         | InstallError::GpuUnavailable(_)
+        // 设备不在：插上就好，下次启动再试。
+        | InstallError::DeviceUnavailable(_)
         // 同名的网络或卷不是本插件的：也要主人动手。
         | InstallError::NameTaken(_)
         // 端口被占着，要主人先停掉占着它的那个。
@@ -219,6 +221,7 @@ impl PluginManager {
                     &manifest.permissions,
                     &[],
                     false,
+                    &[],
                     Default::default(),
                     &self.owner_languages(),
                 )

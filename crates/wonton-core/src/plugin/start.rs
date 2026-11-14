@@ -277,6 +277,7 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
+        let devices = self.recovery_devices(&package.manifest, &record)?;
         self.start_dependency_providers(&package.manifest, langs, gate == Gate::StartPeriod)
             .await?;
         if super::install_hosted::is_containerless(&package.manifest) {
@@ -292,7 +293,7 @@ impl PluginManager {
         }
         let checked = self.check_containers(&package, langs).await?;
         // 有容器不在：先照安装的路径重建再启动（见本文件头），不看别的核对结果——重建会把它们一起修好。
-        let state = if replacement || checked.has_missing() {
+        let state = if replacement || checked.has_missing() || !devices.unavailable.is_empty() {
             ContainersState::Stopped
         } else {
             checked.ready(langs)?
@@ -342,7 +343,9 @@ impl PluginManager {
             .ok_or_else(|| {
                 InstallError::Unhealthy(l10n::text(langs, "plugin-install-resident-stopped", &[]))
             })?;
-        if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui) {
+        if let (Some(upstream), Some(webui)) = (&deployed.upstream, &package.manifest.webui)
+            && deployed.serving.contains(&webui.service)
+        {
             health::wait_webui(&self.http, upstream, &webui.path, deadline, langs).await?;
         }
         Ok(Started {
@@ -407,6 +410,9 @@ impl PluginManager {
         let one_shot = package.one_shot_services();
         let bot_services = super::bot_services::bot_services(&package.manifest);
         let bots = self.bot_names(&package.manifest.id);
+        let blocked = self
+            .recovery_devices(&package.manifest, record)?
+            .blocked_services(package, langs)?;
         // 要启动的容器：Bot 服务的按 Bot 一组，其余全插件一份；启动顺序不变。
         let name_of = |service: &str, bot: Option<&str>| match bot {
             Some(bot) => self.cfg.instance.bot_container(&slug, service, bot),
@@ -414,7 +420,7 @@ impl PluginManager {
         };
         let mut group: Vec<(&str, Option<&str>)> = Vec::new();
         for service in &order {
-            if one_shot.contains(service.as_str()) {
+            if one_shot.contains(service.as_str()) || blocked.contains(service.as_str()) {
                 continue;
             }
             if bot_services.contains(service.as_str()) && !bots.is_empty() {

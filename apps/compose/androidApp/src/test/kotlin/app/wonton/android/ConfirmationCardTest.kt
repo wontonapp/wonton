@@ -73,6 +73,8 @@ class ConfirmationCardTest {
             origin = null,
             audience = CardAudience.KEEPER,
             answeredBy = null,
+            permissions = emptyList(),
+            devices = emptyList(),
         ),
         sending = null,
         sendingChoiceId = null,
@@ -117,7 +119,11 @@ class ConfirmationCardTest {
         compose.onNodeWithText(arguments, substring = true).assertDoesNotExist()
         compose.onNodeWithText("Continue").performClick()
         assertEquals(
-            listOf(Action.AnswerConfirmation("first", Answer.APPROVE, "approve-once", emptyMap(), emptyMap())),
+            listOf(
+                Action.AnswerConfirmation(
+                    "first", Answer.APPROVE, "approve-once", emptyMap(), emptyMap(), emptyList(),
+                ),
+            ),
             actions,
         )
     }

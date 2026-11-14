@@ -109,6 +109,7 @@ async fn data_survives_upgrades_and_plain_uninstalls_but_not_a_purge() {
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )

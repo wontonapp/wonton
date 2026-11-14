@@ -129,7 +129,18 @@ impl PluginManager {
             })
         };
         self.refresh_bot_web_routes(&package.manifest).await?;
-        self.saw_serving(id, &token, checked.serving().clone());
+        let devices = self.recovery_devices(&package.manifest, &record)?;
+        let blocked = devices.blocked_services(&package, &langs)?;
+        self.saw_serving(
+            id,
+            &token,
+            checked.serving().difference(&blocked).cloned().collect(),
+        );
+        if !blocked.is_empty() {
+            return self
+                .recover(id, &package, &record, capability_recovered, &token)
+                .await;
+        }
         match checked.ready(&langs) {
             Ok(ContainersState::Running(health))
                 if self.status_of(id) == Some(PluginStatus::Running) =>

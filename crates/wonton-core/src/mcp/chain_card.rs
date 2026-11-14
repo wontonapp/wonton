@@ -200,6 +200,8 @@ fn draft(row: &AgentChainRow, kind: ChainLimitKind, langs: &Languages) -> Draft 
             chain: row.chain.clone(),
             kind,
         }),
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 

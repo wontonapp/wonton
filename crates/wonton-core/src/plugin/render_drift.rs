@@ -79,7 +79,10 @@ impl PluginManager {
         gate: Gate,
         force: bool,
     ) -> Result<bool, InstallError> {
-        let (ctx, plan) = self.rebuild_plan(package, record, langs).await?;
+        let (ctx, mut plan) = self.rebuild_plan(package, record, langs).await?;
+        if let Some(devices) = &ctx.devices {
+            devices.retain_available(&mut plan);
+        }
         let drift = self.drift_of(&plan).await?;
         if !force && (!drift.drifted || (drift.running == 0 && !when_stopped)) {
             return Ok(false);

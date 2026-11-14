@@ -555,7 +555,8 @@ impl ChatLink {
                 choice_id,
                 secrets,
                 settings,
-            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
+                devices,
+            } => self.answer_confirmation(id, answer, choice_id, secrets, settings, devices),
             Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
             Action::RetryConfirmations => {
                 self.retry_confirmations.notify_one();
@@ -574,8 +575,9 @@ impl ChatLink {
         choice_id: Option<String>,
         secrets: wonton_protocol::SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
     ) -> Result<(), CoreError> {
-        let answer = self.prepare_answer(id, answer, choice_id, secrets, settings)?;
+        let answer = self.prepare_answer(id, answer, choice_id, secrets, settings, devices)?;
         let Some(answer) = answer else {
             return Ok(());
         };
@@ -620,6 +622,7 @@ impl ChatLink {
                 id.clone(),
                 answer,
                 choice_id,
+                Default::default(),
                 Default::default(),
                 Default::default(),
             )? {
@@ -692,6 +695,7 @@ impl ChatLink {
         choice_id: Option<String>,
         secrets: wonton_protocol::SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
     ) -> Result<Option<PreparedAnswer>, CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
@@ -717,6 +721,7 @@ impl ChatLink {
                 choice_id,
                 secrets,
                 settings,
+                devices,
             },
         }))
     }

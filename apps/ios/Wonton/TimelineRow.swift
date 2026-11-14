@@ -328,7 +328,8 @@ private struct MessageBubble: View {
                             answer: $0.answer,
                             choiceId: $0.choiceId,
                             secrets: $1,
-                            settings: $2
+                            settings: $2,
+                            devices: view.card.devices.filter(\.chosen).map(\.id)
                         )
                     )
                 },

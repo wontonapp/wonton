@@ -239,6 +239,10 @@ fn blocked_categories_fall_back_to_other() {
         json!("capability_dropped")
     );
     assert_eq!(
+        serde_json::to_value(BlockedCategory::DeviceUnavailable).unwrap(),
+        json!("device_unavailable")
+    );
+    assert_eq!(
         serde_json::from_value::<BlockedCategory>(json!("provider_migrating")).unwrap(),
         BlockedCategory::Other
     );
@@ -247,4 +251,16 @@ fn blocked_categories_fall_back_to_other() {
         ..preview()
     };
     assert_eq!(round_trip(&preview), preview);
+}
+
+/// 旧核心给的设备项没有类别、系统盘标记和选中状态：按不认识的类、没标、没选读。
+#[test]
+fn devices_from_older_cores_default_the_new_fields() {
+    let device: PluginDevice = serde_json::from_value(json!({
+        "id": "usb-1", "name": "Zigbee 棒", "target": "/dev/zigbee",
+        "service": "zigbee2mqtt", "optional": false
+    }))
+    .unwrap();
+    assert_eq!(device.kind, PluginDeviceKind::Other);
+    assert!(!device.system && !device.chosen);
 }

@@ -757,6 +757,8 @@ mod tests {
                 card: ConfirmationCard {
                     secret_inputs: Vec::new(),
                     settings: None,
+                    permissions: Vec::new(),
+                    devices: Vec::new(),
                     requester: None,
                     origin: None,
                     audience: crate::CardAudience::Keeper,

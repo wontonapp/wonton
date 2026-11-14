@@ -49,6 +49,7 @@ pub fn permission_text(permission: &Permission, langs: &Languages) -> String {
         Permission::DevicesGpu => l10n::text(langs, "permission-devices-gpu", &[]),
         Permission::DevicesSerial => l10n::text(langs, "permission-devices-serial", &[]),
         Permission::DevicesUsb => l10n::text(langs, "permission-devices-usb", &[]),
+        Permission::DevicesDisk => l10n::text(langs, "permission-devices-disk", &[]),
         Permission::Device { path } => l10n::text(
             langs,
             "permission-device",
@@ -66,7 +67,7 @@ pub(super) fn permission_risk(permission: &Permission) -> Option<PermissionRisk>
         | Permission::DevicesSerial
         | Permission::DevicesUsb
         | Permission::Device { .. } => Some(PermissionRisk::High),
-        Permission::NetworkHost => Some(PermissionRisk::VeryHigh),
+        Permission::NetworkHost | Permission::DevicesDisk => Some(PermissionRisk::VeryHigh),
         Permission::Capability { name } => Some(match super::privileges::capability_risk(name) {
             super::privileges::CapabilityRisk::High => PermissionRisk::High,
             super::privileges::CapabilityRisk::VeryHigh => PermissionRisk::VeryHigh,
@@ -101,9 +102,9 @@ fn permission_notice(permission: &Permission, langs: &Languages) -> Option<Strin
             "permission-notice-device",
             &[("path", path.as_str().into())],
         ),
-        Permission::DevicesSerial | Permission::DevicesUsb => {
-            l10n::text(langs, "permission-notice-devices", &[])
-        }
+        Permission::DevicesSerial => l10n::text(langs, "permission-notice-devices", &[]),
+        Permission::DevicesUsb => l10n::text(langs, "permission-notice-devices-usb", &[]),
+        Permission::DevicesDisk => l10n::text(langs, "permission-notice-devices-disk", &[]),
         _ => return None,
     };
     Some(text)

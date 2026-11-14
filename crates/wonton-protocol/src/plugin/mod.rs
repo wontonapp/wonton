@@ -42,6 +42,7 @@ pub use owner_secrets::{
 };
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
+    PluginDeviceKind,
 };
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,

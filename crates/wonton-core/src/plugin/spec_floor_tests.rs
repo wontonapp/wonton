@@ -418,3 +418,15 @@ fn external_url_needs_spec_0_14() {
     );
     assert!(problems(&document("0.14", manifest, service)).is_empty());
 }
+
+#[test]
+fn devices_and_the_disk_permission_require_0_14() {
+    for manifest in [
+        json!({"devices": {"serial": [{"service": "z", "target": "/dev/z"}]}}),
+        json!({"permissions": ["devices.disk"]}),
+    ] {
+        let found = problems(&document("0.13", manifest.clone(), plain()));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(problems(&document("0.14", manifest, plain())).is_empty());
+    }
+}

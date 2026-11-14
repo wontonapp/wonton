@@ -163,7 +163,7 @@ async fn raw_provider_failure_reports_failed_existing_consumer_recovery_without_
     });
     let error = bed
         .manager
-        .install_checked(package, &[], &[], false, Default::default(), &langs())
+        .install_checked(package, &[], &[], false, &[], Default::default(), &langs())
         .await
         .unwrap_err()
         .to_string();

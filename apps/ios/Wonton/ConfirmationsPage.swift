@@ -12,7 +12,8 @@ struct ConfirmationsPage: View {
             view: model.viewModel, bots: chat.viewModel.bots, plugins: plugins,
             answer: { card, choice, secrets, settings in
                 chat.send(.answerConfirmation(id: card.card.id, answer: choice.answer,
-                    choiceId: choice.choiceId, secrets: secrets, settings: settings))
+                    choiceId: choice.choiceId, secrets: secrets, settings: settings,
+                    devices: card.card.devices.filter(\.chosen).map(\.id)))
             },
             stopWindow: { chat.send(.stopConfirmationWindow(id: $0.card.id)) },
             retry: { chat.send(.retryConfirmations) },

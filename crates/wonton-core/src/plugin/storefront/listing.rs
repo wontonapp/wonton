@@ -190,6 +190,7 @@ impl PluginManager {
             icon: icon.map(|i| i.paths()),
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
+            problems: installed.as_ref().map_or_else(Vec::new, |_| Vec::new()),
             kind: kind(m.kind),
             runtime: m.runtime.into(),
             security_tier: Some(crate::plugin::security_tier::security_tier(m)),

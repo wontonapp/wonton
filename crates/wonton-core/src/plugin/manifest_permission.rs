@@ -53,6 +53,7 @@ pub enum Permission {
     DevicesSerial,
     /// 宿主 USB 设备，路径由主人选（ADR-0036）。
     DevicesUsb,
+    DevicesDisk,
     Device {
         path: String,
     },
@@ -75,6 +76,7 @@ impl Permission {
                 | Self::DevicesGpu
                 | Self::DevicesSerial
                 | Self::DevicesUsb
+                | Self::DevicesDisk
                 | Self::Device { .. }
                 | Self::DockerSocket
         )
@@ -113,6 +115,7 @@ impl FromStr for Permission {
             "devices.gpu" => Some(Self::DevicesGpu),
             "devices.serial" => Some(Self::DevicesSerial),
             "devices.usb" => Some(Self::DevicesUsb),
+            "devices.disk" => Some(Self::DevicesDisk),
             "docker.socket" => Some(Self::DockerSocket),
             _ => None,
         };
@@ -185,6 +188,7 @@ impl fmt::Display for Permission {
             Self::DevicesGpu => f.write_str("devices.gpu"),
             Self::DevicesSerial => f.write_str("devices.serial"),
             Self::DevicesUsb => f.write_str("devices.usb"),
+            Self::DevicesDisk => f.write_str("devices.disk"),
             Self::Device { path } => write!(f, "devices.{path}"),
             Self::DockerSocket => f.write_str("docker.socket"),
             Self::NetworkHost => f.write_str("network.host"),

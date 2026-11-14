@@ -42,6 +42,10 @@ pub struct Draft {
     /// 卡片要主人填的设置（ADR-0077）；没有设置的应用为空。
     pub settings: Option<SettingsForm>,
     pub category: Option<wonton_protocol::ConfirmationCategory>,
+    /// Raw permission categories and risks disclosed before execution.
+    pub permissions: Vec<wonton_protocol::PermissionLine>,
+    /// Host device choices; IDs are submitted explicitly by the owner.
+    pub devices: Vec<wonton_protocol::PluginDevice>,
 }
 
 impl Draft {
@@ -263,6 +267,8 @@ pub fn install(
         secret_inputs,
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -334,6 +340,8 @@ pub fn agent_install(
         secret_inputs,
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -389,6 +397,8 @@ pub fn agent_update(
         secret_inputs,
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -451,6 +461,13 @@ pub fn highest_confirm(package: &PluginPackage, langs: &Languages) -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: package
+            .manifest
+            .permissions
+            .iter()
+            .map(|p| permission_line(p, langs))
+            .collect(),
+        devices: Vec::new(),
     }
 }
 
@@ -497,6 +514,8 @@ pub fn uninstall(
                 runs_as_root: false,
             },
         }),
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -529,6 +548,8 @@ pub fn pin_main(title: String, note: String, allow: &str, deny: &str) -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -576,6 +597,8 @@ pub fn agent_permission(
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
@@ -667,5 +690,7 @@ pub fn save_file(
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }

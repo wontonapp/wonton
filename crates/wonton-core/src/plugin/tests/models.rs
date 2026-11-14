@@ -143,6 +143,7 @@ impl Bed {
                 &[],
                 &[],
                 false,
+                &[],
                 Default::default(),
                 &super::langs(),
             )
@@ -432,6 +433,7 @@ async fn a_rebuild_keeps_the_recorded_vars_even_when_the_gateway_is_gone() {
             &[],
             &[],
             false,
+            &[],
             Default::default(),
             &super::langs(),
         )
@@ -519,6 +521,7 @@ async fn only_one_gateway_can_be_installed() {
             &[],
             &[],
             false,
+            &[],
             Default::default(),
             &super::langs(),
         )

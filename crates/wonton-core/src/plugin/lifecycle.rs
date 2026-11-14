@@ -25,23 +25,30 @@ use super::manifest::{Manifest, Permission, PluginId, Sso};
 use super::models::ModelsRoute;
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;
-use super::proxy_auth::ProxyAuth;
 use super::render::{Deployment, InstallContext, render};
-use super::secrets::{self, Secrets};
-use super::store::{EnabledPermission, InstalledRecord};
+use super::secrets::Secrets;
+use super::store::EnabledPermission;
 use super::upstreams::Endpoint;
-use super::upstreams::{McpTarget, uses_sso};
+use super::upstreams::McpTarget;
 use super::vars::{OidcVars, OwnerVars};
 use crate::config::PublicUrls;
 use crate::l10n;
 use crate::matrix::ProvisionedBot;
 use crate::oidc::Hydra;
-use crate::secret::random_token;
 
 mod oidc_client;
+mod prepare;
 pub(super) mod rollback;
 pub(super) mod volumes;
 pub(super) use oidc_client::{client_spec, client_spec_at};
+
+/// 安装时按主机的探测结果算出来的东西：显卡、局域网端口和设备（ADR-0018、ADR-0019、ADR-0036）。
+pub(super) struct Grants {
+    pub gpu: Option<GpuGrant>,
+    pub lan: Option<LanGrant>,
+    pub devices: super::device::DeviceGrant,
+    pub device_record: Vec<super::store::InstalledDevice>,
+}
 
 /// 插件管理器需要的那部分核心配置。
 #[derive(Debug, Clone)]
@@ -129,7 +136,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<(Deployed, Undo), InstallError> {
@@ -168,15 +175,24 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         undo: &mut Undo,
         langs: &Languages,
     ) -> Result<Deployed, InstallError> {
         let manifest = &package.manifest;
         let (mut ctx, secret, mut secrets, proxy) = self
-            .prepare_install(package, enabled, (gpu, lan), settings, undo, langs)
+            .prepare_install(
+                package,
+                enabled,
+                (grants.gpu, grants.lan),
+                settings,
+                undo,
+                langs,
+            )
             .await?;
+        ctx.devices = Some(grants.devices);
+        let device_record = grants.device_record;
         let mut plan = render(package, &ctx, langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), langs)
             .await?;
@@ -226,8 +242,17 @@ impl PluginManager {
         let firewalled = self
             .host_webui_firewalled(manifest, &plan.relays, &plan.network)
             .await;
-        self.save_installed(package, granted, enabled, &ctx, &plan, secret, firewalled)
-            .await?;
+        self.save_installed(
+            package,
+            granted,
+            enabled,
+            &ctx,
+            &plan,
+            secret,
+            firewalled,
+            device_record,
+        )
+        .await?;
         undo.record = Some(manifest.id.clone());
         self.refresh_bot_web_routes(&package.manifest).await?;
         Ok(Deployed {
@@ -261,9 +286,10 @@ impl PluginManager {
         plan: &Deployment,
         oidc_secret: Option<String>,
         firewalled: bool,
+        devices: Vec<super::store::InstalledDevice>,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
-        self.store.save(&InstalledRecord {
+        self.store.save(&super::store::InstalledRecord {
             lifecycle: super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
@@ -271,6 +297,7 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             enabled_permissions: enabled.to_vec(),
+            devices,
             limits: Default::default(),
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -334,26 +361,6 @@ impl PluginManager {
             undo.lan_network = Some(network);
         }
         Ok(())
-    }
-
-    /// 容器起来之后收存插件写下的密钥（`collect` 项），变了就保存。Bot 服务上的按 Bot 各一份。
-    /// 读出插件的密钥（上次不删数据卸载时保留的也在），给还没有值的 `generate` 项生成并保存。
-    pub(super) fn prepare_secrets(
-        &self,
-        manifest: &Manifest,
-        undo: &mut Undo,
-    ) -> Result<Secrets, InstallError> {
-        if manifest.secrets.is_empty() {
-            return Ok(Secrets::new());
-        }
-        let store = self.store.secrets();
-        let before = store.load(&manifest.id)?;
-        let mut secrets = before.clone().unwrap_or_default();
-        undo.secrets_before = Some((manifest.id.clone(), before));
-        if secrets::generate_missing(manifest, &mut secrets) {
-            store.save(&manifest.id, &secrets)?;
-        }
-        Ok(secrets)
     }
 
     /// 注入给 SSO 插件的端点：签发方和后台端点在插件网络里，授权端点给浏览器（ADR-0063）。
@@ -468,6 +475,7 @@ impl PluginManager {
                 )
             }),
             secrets: generated,
+            devices: None,
             tz: self.cfg.tz.clone(),
             puid: self.cfg.puid,
             pgid: self.cfg.pgid,
@@ -563,38 +571,6 @@ impl PluginManager {
             undo.app_dir_created = Some(ctx.app_data.clone());
         }
         hostdir::prepare(&ctx.app_data, self.owner(), dirs).map_err(|e| storage(&e))
-    }
-
-    /// 安装的前半段：清残留、备密钥、定权限和上下文，再定默认 Bot 和模型网关凭据。
-    async fn prepare_install(
-        &self,
-        package: &PluginPackage,
-        enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
-        settings: std::collections::BTreeMap<String, serde_json::Value>,
-        undo: &mut Undo,
-        langs: &Languages,
-    ) -> Result<(InstallContext, Option<String>, Secrets, Option<ProxyAuth>), InstallError> {
-        let manifest = &package.manifest;
-        self.stage(&manifest.id, InstallStage::Preparing);
-        self.clear_leftovers(&manifest.id).await?;
-        let secret = uses_sso(manifest).then(random_token);
-        let secrets = self.prepare_secrets(manifest, undo)?;
-        let generated =
-            secrets::generated_values(manifest, &secrets, langs).map_err(InstallError::Storage)?;
-        let proxy =
-            ProxyAuth::resolve(manifest, &generated, langs).map_err(InstallError::Storage)?;
-        let effective = manifest.effective_permissions(&super::store::permission_set(enabled));
-        let mut ctx = self
-            .install_context(manifest, secret.as_deref(), generated, &effective, langs)
-            .await?;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
-        ctx.settings = settings;
-        self.check_network_names(&ctx).await?;
-        // 默认 Bot、模型网关变量和留着的其它 Bot 都在这步准备好（见 `bot_web_install`）。
-        self.prepare_install_bots(package, &mut ctx, undo).await?;
-        Ok((ctx, secret, secrets, proxy))
     }
 
     /// 网络建好才知道的变量：核心在网络里的地址、网关，以及宿主网络的服务要用的出口容器地址（ADR-0023）。

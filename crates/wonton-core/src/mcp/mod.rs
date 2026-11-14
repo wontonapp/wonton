@@ -689,7 +689,8 @@ impl Bus {
         let (agent, server, tool) = (caller.clone(), server.clone(), tool.to_owned());
         let run = move |bus: Arc<Bus>,
                         _secrets: SecretValues,
-                        _settings: wonton_protocol::SettingValues| async move {
+                        _settings: wonton_protocol::SettingValues,
+                        _devices: Vec<String>| async move {
             forward(
                 &bus,
                 &agent,
@@ -813,6 +814,8 @@ mod bot_access_tests;
 mod capability_install_tests;
 #[cfg(test)]
 mod contacts_gate_tests;
+#[cfg(test)]
+mod device_card_tests;
 #[cfg(test)]
 mod file_block_tests;
 #[cfg(test)]

@@ -408,7 +408,11 @@ async fn every_nested_decision_is_validated_before_any_provider_or_secret_is_ins
                     "{decision:?}: {error}"
                 );
             }
-            InvalidDecision::UnknownDevice | InvalidDecision::UnknownScope => {
+            // 设备选择现在按设备校验：认不出的 ID 是输入错误，不再整体不支持（ADR-0036）。
+            InvalidDecision::UnknownDevice => {
+                assert_eq!(error.kind(), "invalid_input", "{decision:?}: {error}");
+            }
+            InvalidDecision::UnknownScope => {
                 assert_eq!(error.kind(), "unsupported", "{decision:?}: {error}");
             }
             _ => assert_eq!(error.kind(), "invalid_input", "{decision:?}: {error}"),

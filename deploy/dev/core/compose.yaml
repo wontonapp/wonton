@@ -63,6 +63,8 @@ services:
       WONTON_ACME_PROPAGATION_DISABLE_ANS: ${WONTON_DEV_ACME_PROPAGATION_DISABLE_ANS:-}
       WONTON_ACME_NETWORK: ${WONTON_DEV_ACME_NETWORK:-}
       WONTON_ACME_ACCEPT_TERMS: ${WONTON_DEV_ACME_ACCEPT_TERMS:-false}
+      # 宿主的 udev 数据库挂在下面的 /host/udev：设备插件自动发现用（ADR-0036）。
+      WONTON_HOST_UDEV: /host/udev
       # 出网代理（ADR-0023）：开发环境没有安装脚本，要用时自己设 WONTON_EGRESS_PROXY。核心自己访问外网也用它。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
@@ -114,6 +116,13 @@ services:
       - type: bind
         source: /dev
         target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
+      # 设备插件要读 udev 数据库（Zigbee2MQTT 列适配器、smartctl 认盘）：由核心只读转挂进它们的容器。
+      - type: bind
+        source: /run/udev
+        target: /host/udev
         read_only: true
         bind:
           recursive: disabled

@@ -34,7 +34,9 @@ pub(super) fn containers(
             create(docker, &name, body)
         }
         (&Method::POST, [name, "update"]) if exists(name) => update_container(docker, name, raw),
-        (&Method::POST, [name, "start"]) if exists(name) => start_container(docker, name),
+        (&Method::POST, [name, "start" | "restart"]) if exists(name) => {
+            start_container(docker, name)
+        }
         (&Method::POST, [name, "stop"]) if exists(name) => {
             if let Some(message) = &docker.stop_error {
                 return Some(json_reply(

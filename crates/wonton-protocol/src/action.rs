@@ -176,6 +176,8 @@ pub enum Action {
         /// 装插件、升级插件的卡片上填的设置（ADR-0077）；别的卡片是空表。
         #[serde(default)]
         settings: crate::SettingValues,
+        #[serde(default)]
+        devices: Vec<String>,
     },
     /// 主人点了卡片上放行时段的“停止”：只拦后面的调用，已经发给插件的不撤回（ADR-0024）。进展和结果在
     /// [`ConfirmationView::window`](crate::ConfirmationView::window)。已经在发时什么都不做，家里的服务器还没连上时返回

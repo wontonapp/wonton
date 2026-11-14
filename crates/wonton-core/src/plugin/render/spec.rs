@@ -20,6 +20,7 @@ use super::list;
 use super::{ContainerPlan, InstallContext, LABEL_BOT, LABEL_SERVICE, RenderError, service_err};
 
 pub(super) struct ContainerOptions<'a> {
+    pub manifest: &'a super::super::manifest::Manifest,
     pub requirements: Option<&'a Requirements>,
     pub network: &'a str,
     pub aliases: Vec<String>,
@@ -27,6 +28,8 @@ pub(super) struct ContainerOptions<'a> {
     pub gpu: Option<&'a GpuGrant>,
     /// Bot 服务的服务名：依赖它们的 Bot 容器要指到同一个 Bot 的那份。
     pub bot_services: &'a BTreeSet<&'a str>,
+    /// 主人选的设备（ADR-0036）。
+    pub devices: Option<&'a super::super::device::DeviceGrant>,
 }
 
 /// `endpoint` 是插件网络和服务在其中的别名；`gpu` 是这个服务拿到的显卡（清单的 `gpu.services` 里的服务才有）。
@@ -202,11 +205,16 @@ fn host_config(
         langs,
     )
     .map_err(|message| service_err(langs, name, message))?;
+    super::super::privileges::apply(service, &mut host, langs)
+        .map_err(|message| service_err(langs, name, message))?;
     if let Some(grant) = options.gpu {
         grant.apply(&mut host);
     }
-    super::super::privileges::apply(service, &mut host, langs)
-        .map_err(|message| service_err(langs, name, message))?;
+    if let Some(devices) = options.manifest.devices.as_ref()
+        && let Some(grant) = options.devices
+    {
+        super::super::device::apply(devices, grant, &ctx.granted, name, &mut host);
+    }
     Ok(host)
 }
 

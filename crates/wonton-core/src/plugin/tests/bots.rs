@@ -223,6 +223,7 @@ fn install_contexts_print_no_tokens_or_secrets() {
         install_limit: crate::config::DEFAULT_INSTALL_TIMEOUT,
         extra_hosts: Vec::new(),
         gpu: None,
+        devices: None,
         lan: None,
         egress: None,
         core_address: None,

@@ -295,6 +295,7 @@ pub struct BotServices {
     pub services: Vec<String>,
 }
 
+pub use super::manifest_device::{DeviceClass, DeviceSlot, ManifestDevices};
 pub use super::manifest_permission::{Access, Permission};
 pub use super::secret_spec::{
     CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
@@ -375,6 +376,9 @@ pub struct Manifest {
     /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
     #[serde(default)]
     pub gpu: Option<GpuSpec>,
+    /// 由主人选的宿主设备（串口、USB、硬盘，ADR-0036）：见规范“设备”。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub devices: Option<ManifestDevices>,
     /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
     #[serde(default)]
     pub lan: Option<LanSpec>,
@@ -455,6 +459,7 @@ impl Manifest {
         super::privileges::validate_optional(self, langs)?;
         super::gpu::validate(self, langs)?;
         super::manifest_gpu_images::validate(self, langs)?;
+        super::device::validate(self, langs)?;
         super::requirements::validate(self, langs)?;
         super::install_notes::validate_install_timeout(self)?;
         super::lan::validate(self, langs)?;

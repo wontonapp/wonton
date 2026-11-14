@@ -202,6 +202,7 @@ fn minimal_record(id: &PluginId) -> InstalledRecord {
         static_files: Default::default(),
         hosted: Vec::new(),
         gpu_vendor: None,
+        devices: Vec::new(),
     }
 }
 

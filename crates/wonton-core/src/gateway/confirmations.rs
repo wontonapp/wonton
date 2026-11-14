@@ -206,6 +206,7 @@ pub async fn answer(
         answer.choice_id.as_deref(),
         answer.secrets,
         answer.settings,
+        answer.devices,
         &by,
         Some(&answerer_user_id),
     ) {

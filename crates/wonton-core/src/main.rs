@@ -242,6 +242,12 @@ fn check_host_dev(cfg: &Config) -> anyhow::Result<()> {
             dev.display()
         );
     }
+    // udev 数据库不是每个宿主都有（没装 udev 的最小系统），缺了照常启动。
+    if let Some(udev) = &cfg.host_udev
+        && !udev.is_dir()
+    {
+        tracing::warn!(path = %udev.display(), "WONTON_HOST_UDEV 指向的不是目录，设备插件的自动发现可能用不了");
+    }
     Ok(())
 }
 
@@ -666,7 +672,7 @@ fn open_plugin_manager(
         images,
     )
     .with_matrix(matrix)
-    .with_host(HostPaths::new(cfg.host_dev.clone()))
+    .with_host(HostPaths::new(cfg.host_dev.clone(), cfg.host_udev.clone()))
     .with_lan(Lan::from_config(cfg))
     .with_egress(
         Egress::new(cfg.egress_proxy.clone(), cfg.egress_proxy_detected.clone())

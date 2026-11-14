@@ -45,6 +45,7 @@ impl Host {
 
     fn paths(&self) -> HostPaths {
         HostPaths {
+            udev: None,
             dev: Some(self.path("dev")),
             sys: self.path("sys"),
             proc: self.path("proc"),
@@ -158,6 +159,7 @@ fn a_render_card_without_the_host_dev_mounted_is_unknown() {
         &["renderD128"],
     );
     let paths = HostPaths {
+        udev: None,
         dev: None,
         ..host.paths()
     };
