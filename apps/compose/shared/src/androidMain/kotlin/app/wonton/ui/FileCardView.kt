@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.FileAction
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.FileCard
 import app.wonton.protocol.FileCardAction
@@ -114,7 +115,7 @@ private fun ReadyCard(info: FileInfo, core: ClientCore) {
             FileCardAction.Play -> playing = true
             FileCardAction.Download -> {
                 opensWhenDone = true
-                files.onAction(Action.DownloadFile(info.id))
+                files.onAction(Action.Files(FileAction.DownloadFile(info.id)))
             }
             is FileCardAction.Open -> openWithSystem(context, action.path, info.mimeType)?.let(files.onReject) ?: Unit
             FileCardAction.Wait -> Unit

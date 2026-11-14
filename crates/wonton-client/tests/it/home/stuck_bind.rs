@@ -69,7 +69,11 @@ async fn retry_sets_up_the_connection_at_once_instead_of_waiting_out_the_backoff
     phone.wait_for(unreachable).await;
 
     gate.open();
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;

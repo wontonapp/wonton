@@ -218,17 +218,21 @@ impl App {
     pub fn connect(&self, home: &MapHome) {
         home.allow(self);
         self.core
-            .dispatch(Action::ConnectHome {
-                ticket: home.ticket(),
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome {
+                    ticket: home.ticket(),
+                },
             })
             .unwrap();
     }
 
     pub fn map(&self, enabled: bool) {
         self.core
-            .dispatch(Action::SetPortMapping {
-                plugin_id: PLUGIN.into(),
-                enabled,
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::SetPortMapping {
+                    plugin_id: PLUGIN.into(),
+                    enabled,
+                },
             })
             .unwrap();
     }
@@ -239,8 +243,10 @@ impl App {
     pub async fn show(&self, plugin: Option<&str>) {
         let Some(id) = plugin else {
             self.core
-                .dispatch(Action::OpenPage {
-                    tab: wonton_client::TabRef::Chat,
+                .dispatch(Action::Pages {
+                    action: wonton_protocol::PageAction::OpenPage {
+                        tab: wonton_client::TabRef::Chat,
+                    },
                 })
                 .unwrap();
             return;
@@ -254,17 +260,21 @@ impl App {
         let app = wonton_client::MyAppRef::Plugin {
             plugin_id: id.to_owned(),
         };
-        let _ = self.core.dispatch(Action::AddMyApp {
-            app,
-            title: None,
-            index: None,
+        let _ = self.core.dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddMyApp {
+                app,
+                title: None,
+                index: None,
+            },
         });
         let deadline = Instant::now() + WAIT;
         loop {
-            let opened = self.core.dispatch(Action::OpenPage {
-                tab: wonton_client::TabRef::Plugin {
-                    plugin_id: id.to_owned(),
-                    page: None,
+            let opened = self.core.dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::OpenPage {
+                    tab: wonton_client::TabRef::Plugin {
+                        plugin_id: id.to_owned(),
+                        page: None,
+                    },
                 },
             });
             match opened {

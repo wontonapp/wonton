@@ -30,12 +30,12 @@ pub struct PluginsViewModel {
     /// 有新版本可升级的应用：商店页更新图标的角标、"全部更新"弹窗和侧边栏的红点都是它。顺序同已安装列表。
     #[serde(default)]
     pub updatable: Vec<UpdatablePlugin>,
-    /// 主人点了一键装、一键升级（ [`Action::InstallNow`](crate::Action::InstallNow) 一类）、核心正在取预览的插件 ID：
+    /// 主人点了一键装、一键升级（ [`PluginAction::InstallNow`](crate::PluginAction::InstallNow) 一类）、核心正在取预览的插件 ID：
     /// 行尾按钮转圈。取完要么开始（进 [`PluginsViewModel::tasks`]），要么要主人拿主意（进 [`PluginsViewModel::confirmation`]）。
     #[serde(default)]
     pub pending: Vec<String>,
-    /// 核心取好预览、要主人拿主意的一键操作：壳照着打开确认页，主人在页上点安装或升级（ [`Action::InstallPlugin`]、
-    /// [`Action::UpgradePlugin`]），或者关掉（ [`Action::DismissStoreConfirmation`]）。"全部更新"排队时一次一条。
+    /// 核心取好预览、要主人拿主意的一键操作：壳照着打开确认页，主人在页上点安装或升级（[`PluginAction::InstallPlugin`](crate::PluginAction::InstallPlugin)、
+    /// [`PluginAction::UpgradePlugin`](crate::PluginAction::UpgradePlugin)），或者关掉（[`PluginAction::DismissStoreConfirmation`](crate::PluginAction::DismissStoreConfirmation)）。
     #[serde(default)]
     pub confirmation: Option<StoreConfirmation>,
     /// 角色页（ADR-0088）：主人建、改、删角色，给成员和好友分配，设默认邀请角色。

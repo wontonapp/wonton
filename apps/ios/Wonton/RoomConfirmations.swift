@@ -52,12 +52,12 @@ struct RoomConfirmationSheet: View {
                         ConfirmationCardView(
                             view: view,
                             answer: { choice, secrets, settings, devices in
-                                action(.answerConfirmation(
+                                action(.chat(action: .answerConfirmation(
                                     id: view.card.id, answer: choice.answer, choiceId: choice.choiceId,
                                     secrets: secrets, settings: settings, devices: devices
-                                ))
+                                )))
                             },
-                            stopWindow: { action(.stopConfirmationWindow(id: view.card.id)) }
+                            stopWindow: { action(.chat(action: .stopConfirmationWindow(id: view.card.id))) }
                         )
                         .accessibilityElement(children: .contain)
                         .accessibilityIdentifier("confirmation-expanded-\(view.card.id)")

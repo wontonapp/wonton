@@ -10,7 +10,7 @@ struct OnboardingReviewStep: View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
             ForEach(review.items, id: \.id) { item in
                 OnboardingReviewRow(item: item, plugins: plugins) {
-                    send(.retryOnboardingItem(id: item.id))
+                    send(.onboarding(action: .retryOnboardingItem(id: item.id)))
                 }
             }
         }

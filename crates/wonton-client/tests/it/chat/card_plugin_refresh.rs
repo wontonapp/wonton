@@ -131,7 +131,11 @@ async fn connected(phone: &Phone, home: &Home, installed: Vec<InstalledPlugin>) 
     // 只要确认列表和已装列表（假核心 HTTP），不需要 Matrix：挡掉登录，省掉同步空转。
     home.fail_login_tokens(usize::MAX);
     phone.connect(home);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_for(phone, "连上后的第一次取列表", |view| {
         view.installed.is_some().then_some(())
     })
@@ -141,13 +145,15 @@ async fn connected(phone: &Phone, home: &Home, installed: Vec<InstalledPlugin>) 
 
 fn approve(phone: &Phone, id: &str) {
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: id.to_owned(),
-            answer: Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
-            devices: Vec::new(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: id.to_owned(),
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
 }
@@ -205,7 +211,11 @@ async fn listed_plugins_do_not_refetch_and_missing_ones_only_fetch_once() {
 
     // 卸载后（列表里没有了）：另一张成功卡片恰好补取一次，旧卡片不重试、不循环。
     home.set_installed_plugins(vec![]);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_for(&phone, "卸载后的列表", |view| {
         view.installed
             .as_ref()

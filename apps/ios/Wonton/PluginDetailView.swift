@@ -245,7 +245,7 @@ struct PluginDetailView: View {
                 // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
                 let busy = isWorking || model.viewModel.pending.contains(installed.id)
                 return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
-                    model.send(.upgradeNow(pluginId: installed.id))
+                    model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
                 }
             }
             guard let entry = installed.entries.first else { return nil }
@@ -541,10 +541,10 @@ extension View {
             ),
             actions: [
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallKeepData)) {
-                    model.send(.uninstallPlugin(id: id, deleteData: false))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
                 },
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
-                    model.send(.uninstallPlugin(id: id, deleteData: true))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
                 },
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]

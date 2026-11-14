@@ -37,11 +37,13 @@ async fn official_sdk_roundtrip() {
         let fullscreen = driver.command("requestDisplayMode", json!({"mode":"fullscreen"}));
         assert_eq!(fullscreen["result"]["mode"], "fullscreen");
         rig.app
-            .dispatch(Action::SetAccentColor {
-                color: Rgb {
-                    red: 30,
-                    green: 120,
-                    blue: 210,
+            .dispatch(Action::Settings {
+                action: wonton_protocol::SettingsAction::SetAccentColor {
+                    color: Rgb {
+                        red: 30,
+                        green: 120,
+                        blue: 210,
+                    },
                 },
             })
             .unwrap();

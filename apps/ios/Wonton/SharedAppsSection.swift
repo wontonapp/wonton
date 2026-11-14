@@ -6,7 +6,7 @@ struct SharedAppsSection: View {
 
     var body: some View {
         DetailSection(title: String(localized: .Share1.shareReceived)) {
-            Button(.Share1.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: nil)) }
+            Button(.Share1.shareRefresh) { model.send(.sharing(action: .refreshSharedApps(ownerUserId: nil))) }
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
             if model.viewModel.sharedApps == nil { ProgressView() }
             ForEach(model.viewModel.sharedApps?.sources ?? [], id: \.ownerUserId) { source in
@@ -16,12 +16,16 @@ struct SharedAppsSection: View {
                     if let name = source.ownerDisplayName, !name.isEmpty {
                         Text(source.ownerUserId).wontonText(WontonTheme.typography.caption)
                     }
-                    Button(.Share1.shareRefresh) { model.send(.refreshSharedApps(ownerUserId: source.ownerUserId)) }
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    Button(.Share1.shareRefresh) {
+                        model.send(.sharing(action: .refreshSharedApps(ownerUserId: source.ownerUserId)))
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
                     sourceState(source)
                     ForEach(source.apps, id: \.plugin.pluginId) { row in
                         Button(row.plugin.title) {
-                            model.send(.openSharedApp(ownerUserId: source.ownerUserId, pluginId: row.plugin.pluginId))
+                            model.send(.sharing(action: .openSharedApp(
+                                ownerUserId: source.ownerUserId, pluginId: row.plugin.pluginId
+                            )))
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
                         if let problem = row.problem { ProblemNotice(problem: problem.problem) }
@@ -36,10 +40,12 @@ struct SharedAppsSection: View {
         case .loading: ProgressView()
         case .ready: EmptyView()
         case let .failed(problem):
-            ProblemRow(problem: problem.problem) { model.send(.refreshSharedApps(ownerUserId: source.ownerUserId)) }
+            ProblemRow(problem: problem.problem) {
+                model.send(.sharing(action: .refreshSharedApps(ownerUserId: source.ownerUserId)))
+            }
         case .other:
             ProblemRow(problem: Problem(title: String(localized: .Share0.shareProblemOther))) {
-                model.send(.refreshSharedApps(ownerUserId: source.ownerUserId))
+                model.send(.sharing(action: .refreshSharedApps(ownerUserId: source.ownerUserId)))
             }
         }
     }

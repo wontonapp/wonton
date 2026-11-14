@@ -105,7 +105,11 @@ async fn pause_selecting_publish(
     let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
     rig.core.hold(Method::GET, ONBOARDING);
     rig.core.set_lists(vec![vec![running("agent.one")]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_requests(rig, Method::GET, ONBOARDING, gets + 1).await;
     pause.listen();
     rig.core.release(Method::GET, ONBOARDING);
@@ -156,7 +160,11 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
         .await;
     // 第二次取状态卡在模型设置上：onboarding 已经有了，loading 还没结束。
     rig.core.hold(Method::GET, MODEL_SETTINGS);
-    rig.app.dispatch(Action::RefreshOnboarding).unwrap();
+    rig.app
+        .dispatch(Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+        })
+        .unwrap();
     wait_requests(&rig, Method::GET, MODEL_SETTINGS, 2).await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
@@ -188,7 +196,11 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     // follow_plugins handles changes serially: the next GET proves the paused publish returned.
     rig.core.hold(Method::GET, ONBOARDING);
     rig.core.set_lists(vec![vec![running("agent.two")]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 2).await;
     let finished = rig.app.onboarding();
     rig.core.release(Method::GET, ONBOARDING);

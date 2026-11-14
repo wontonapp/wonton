@@ -14,9 +14,9 @@ use std::time::Duration;
 use wonton_protocol::TimelineTarget;
 
 use wonton_client::{
-    Action, Answer, ChatAccount, ChatSync, ClientCore, ConfirmationState, ConfirmationView,
-    MessageContent, Network, SecretString, TimelineContent, TimelineDiff, TimelineItem,
-    TimelineSubscription,
+    Action, Answer, ChatAccount, ChatAction, ChatSync, ClientCore, ConfirmationState,
+    ConfirmationView, MessageContent, Network, SecretString, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineSubscription,
 };
 
 /// 从开始等卡片到执行完。官方索引里的插件要拉镜像，给足时间。
@@ -56,9 +56,11 @@ async fn main() -> ExitCode {
 async fn run(dir: &str, code: &str, answer: Answer) -> Result<ConfirmationState, String> {
     let core = ClientCore::with_network(dir, Network::DirectOnly).map_err(|e| e.to_string())?;
     if code != "-" {
-        core.dispatch(Action::PairHome {
-            code: SecretString::new(code.to_owned()),
-            device_name: "confirm-card".to_owned(),
+        core.dispatch(Action::Home {
+            action: wonton_client::HomeAction::PairHome {
+                code: SecretString::new(code.to_owned()),
+                device_name: "confirm-card".to_owned(),
+            },
         })
         .map_err(|e| e.to_string())?;
     }
@@ -83,13 +85,15 @@ async fn run(dir: &str, code: &str, answer: Answer) -> Result<ConfirmationState,
     let labels: Vec<_> = view.card.choices.iter().map(|c| c.label.as_str()).collect();
     println!("按钮：{}", labels.join(" / "));
     let id = view.card.id;
-    core.dispatch(Action::AnswerConfirmation {
-        id: id.clone(),
-        answer,
-        choice_id: None,
-        secrets: Default::default(),
-        settings: Default::default(),
-        devices: Vec::new(),
+    core.dispatch(Action::Chat {
+        action: ChatAction::AnswerConfirmation {
+            id: id.clone(),
+            answer,
+            choice_id: None,
+            secrets: Default::default(),
+            settings: Default::default(),
+            devices: Vec::new(),
+        },
     })
     .map_err(|e| e.to_string())?;
     let view = next_view(&timeline, &mut items, |view| {

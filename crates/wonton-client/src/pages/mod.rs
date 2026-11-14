@@ -14,8 +14,8 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
-    Action, BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel,
-    LayoutSettings, MAX_PANEL_PAGES, MyAppRef, PagesProblem, PagesViewModel, PanelEntry, PanelItem,
+    BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
+    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesProblem, PagesViewModel, PanelEntry, PanelItem,
     PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
     TabLoadFailure, TabRef,
 };
@@ -260,42 +260,40 @@ impl PagesLink {
     }
 
     /// 页面栈和插件页面自己的操作。
-    pub(crate) fn dispatch(&self, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(&self, action: PageAction) -> Result<(), CoreError> {
         match action {
-            Action::OpenPage { tab } => self.open_page(tab),
-            Action::ClosePage => self.close_page(),
-            Action::AddMyApp { app, title, index } => self.add_my_app(app, title, index),
-            Action::RemoveMyApp { app } => self.remove_my_app(&app),
-            Action::MoveMyApp { app, index } => self.move_my_app(&app, index),
-            Action::SetAutoAddApps { enabled } => self.set_auto_add(enabled),
-            Action::SetBotPinConsent {
+            PageAction::OpenPage { tab } => self.open_page(tab),
+            PageAction::ClosePage => self.close_page(),
+            PageAction::AddMyApp { app, title, index } => self.add_my_app(app, title, index),
+            PageAction::RemoveMyApp { app } => self.remove_my_app(&app),
+            PageAction::MoveMyApp { app, index } => self.move_my_app(&app, index),
+            PageAction::SetAutoAddApps { enabled } => self.set_auto_add(enabled),
+            PageAction::SetBotPinConsent {
                 plugin_id,
                 bot,
                 allowed,
             } => self.set_bot_consent(plugin_id, bot, allowed),
-            Action::RetryMyAppSync => {
-                // 重试对账；没有会话时是空操作，提示行原样留着，等重连后自动对账。
+            PageAction::RetryMyAppSync => {
                 let weak = lock(&self.weak).clone();
                 if let Some(link) = weak.upgrade() {
                     link.restart_sync();
                 }
                 Ok(())
             }
-            Action::ReloadTab { page } => self.reload(page),
-            Action::TabLoadFailed { page, status } => self.load_failed(page, status),
-            Action::TabLoadSucceeded { page } => self.load_succeeded(page),
-            Action::AddPanelPage { scope, tab } => self.add_panel_page(scope, tab, None),
-            Action::RemovePanelPage { scope, tab } => self.remove_panel_page(scope, tab),
-            Action::MovePanelPage { scope, tab, index } => self.move_panel_page(scope, tab, index),
-            Action::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
-            Action::PinCurrentPage { url, title, to } => self.pin_current_page(&url, title, to),
-            Action::SetRoomEntryBlocked { room_id, blocked } => {
+            PageAction::ReloadTab { page } => self.reload(page),
+            PageAction::TabLoadFailed { page, status } => self.load_failed(page, status),
+            PageAction::TabLoadSucceeded { page } => self.load_succeeded(page),
+            PageAction::AddPanelPage { scope, tab } => self.add_panel_page(scope, tab, None),
+            PageAction::RemovePanelPage { scope, tab } => self.remove_panel_page(scope, tab),
+            PageAction::MovePanelPage { scope, tab, index } => {
+                self.move_panel_page(scope, tab, index)
+            }
+            PageAction::SelectPanelPage { scope, tab } => self.select_panel_page(scope, tab),
+            PageAction::PinCurrentPage { url, title, to } => self.pin_current_page(&url, title, to),
+            PageAction::SetRoomEntryBlocked { room_id, blocked } => {
                 self.set_room_entry_blocked(&room_id, blocked)
             }
-            Action::DismissUninstalledTabs => self.dismiss_uninstalled(),
-            _ => Err(CoreError::InvalidInput {
-                reason: "不是页面操作".to_owned(),
-            }),
+            PageAction::DismissUninstalledTabs => self.dismiss_uninstalled(),
         }
     }
 

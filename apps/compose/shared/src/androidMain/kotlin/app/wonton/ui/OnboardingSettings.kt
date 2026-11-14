@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
+import app.wonton.protocol.OnboardingAction
 import app.wonton.ui.design.StepOptionRow
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
@@ -26,12 +27,12 @@ internal fun DefaultAgentSelection(onDismiss: () -> Unit) {
                         description = agent.connection(),
                         selected = agent.selected,
                         blocked = agent.blocked,
-                        onSelect = { context.send(Action.SetPrimaryAgent(agent.id)) },
+                        onSelect = { context.send(Action.Onboarding(OnboardingAction.SetPrimaryAgent(agent.id))) },
                     )
                 }
                 if (context.view.agents.isEmpty()) {
                     OnboardingProblem(stringResource(R.string.onboarding_agent_empty), null) {
-                        context.send(Action.RefreshOnboarding)
+                        context.send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
                     }
                 }
             }

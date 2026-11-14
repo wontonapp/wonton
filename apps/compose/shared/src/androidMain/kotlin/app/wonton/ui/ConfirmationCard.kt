@@ -22,6 +22,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationCard
@@ -100,7 +102,11 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 )
             }
         CardState(card.state)
-        view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
+        view.window?.let { window ->
+            CardWindow(window) {
+                onAction(Action.Chat(ChatAction.StopConfirmationWindow(card.id)))
+            }
+        }
         view.problem?.let { ProblemRow(it.problem) }
         // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
         // 刷新）时如实不显示。
@@ -117,14 +123,14 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                         secretsReady = cardInputsReady(card, secrets, settings, cardDevices),
                     ) {
                         onAction(
-                            Action.AnswerConfirmation(
+                            Action.Chat(ChatAction.AnswerConfirmation(
                                 card.id,
                                 choice.answer,
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
                                 cardSettingsValues(settings),
                                 cardDevices.chosenIds,
-                            ),
+                            ))
                         )
                     }
                 }
@@ -206,13 +212,20 @@ private fun CardInstalledActions(card: ConfirmationCard, onAction: (Action) -> U
             horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
-            WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
+            WontonButton(
+                stringResource(R.string.tab_open),
+                { onAction(Action.Pages(PageAction.OpenPage(choices[0].tab))) },
+            )
             if (!added) {
                 WontonButton(stringResource(R.string.myapp_add), {
                     if (choices.size > 1) {
                         showsPages = true
                     } else {
-                        tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
+                        tabs.send(
+                            Action.Pages(
+                                PageAction.AddMyApp(MyAppRef.Page(choices.single().tab), null, null),
+                            ),
+                        )
                     }
                 })
             }

@@ -8,7 +8,7 @@
 底；每次进房间、换房间回来、杀掉 App 再进都直接跳到最新一条，上次看到哪不留痕（#745 第 3 项）。
 
 时间线里已经有已读标记（`TimelineContent::ReadMarker`，Matrix 的已读位置，SDK 的 `__read_marker`），Android 在最新一条出现时
-就发 `Action::MarkRoomRead`。缺的是“离开底部以后来了几条”和“进房间该停在哪”这两件判断。
+就发 `TimelineAction::MarkRead`。缺的是“离开底部以后来了几条”和“进房间该停在哪”这两件判断。
 
 它们是同一件事的两面，都要按条目种类、顺序和已读位置算。放在壳里要 Android 和 iOS 各写一遍，两边一漂移，数字和落点就不一样
 （ADR-0005 的厚核心）。
@@ -17,7 +17,7 @@
 
 ### 核心算，壳报告和渲染
 
-- 壳报告列表在不在底部：`Action::SetTimelineScroll { room_id, scroll }`，`scroll` 是 `TimelineScroll::Bottom` 或
+- 壳报告列表在不在底部：`TimelineAction::SetTimelineScroll { target, scroll }`，`scroll` 是 `TimelineScroll::Bottom` 或
   `TimelineScroll::Away`。跨过底部时发，不每一帧发。
 - 核心在每一批 `TimelineUpdate` 里给出 `viewport: TimelineViewport`：`Bottom`，或 `Away { new_messages }`。
   `new_messages` 是房间的未读数，和聊天列表那一行同一个数（SDK 的 `num_unread_messages`）。
@@ -47,7 +47,7 @@
 
 ### 已读回执
 
-只在真的贴着最新一条时发 `Action::MarkRoomRead`（新消息到了、点了按钮滚回底部）。翻在别处时新消息不标已读，
+只在真的贴着最新一条时发 `TimelineAction::MarkRead`（新消息到了、点了按钮滚回底部）。翻在别处时新消息不标已读，
 重进就停在已读位置。
 
 已读位置直接取 SDK 跟踪的本账号已读回执，核心不另存一份；订阅重建（重进房间、重启核心）时也是同一份。

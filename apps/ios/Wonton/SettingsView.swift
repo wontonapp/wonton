@@ -21,7 +21,7 @@ struct SettingsTab: View {
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
-        .task { try? chat.core.dispatch(action: .refreshFriends) }
+        .task { try? chat.core.dispatch(action: .friends(action: .refreshFriends)) }
         .wontonDialog(problem: home.rejection, isPresented: Binding(
             get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
         ))
@@ -94,7 +94,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = onboarding.rejection ?? onboarding.viewModel.problem?.problem {
-                    ProblemRow(problem: problem) { onboarding.send(.refreshOnboarding) }
+                    ProblemRow(problem: problem) { onboarding.send(.onboarding(action: .refreshOnboarding)) }
                 }
                 ForEach(Array(model.viewModel.sections.enumerated()), id: \.offset) { _, section in
                     WontonGroup {
@@ -168,7 +168,7 @@ struct SettingsView: View {
                 )
             }
         case .restartOnboarding:
-            Button { onboarding.send(.restartOnboarding) } label: {
+            Button { onboarding.send(.onboarding(action: .restartOnboarding)) } label: {
                 WontonRow(title: String(localized: .Settings.settingsRestartOnboarding))
             }
         case .about:

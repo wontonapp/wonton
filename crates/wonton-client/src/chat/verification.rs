@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::Instant;
 use wonton_matrix::{Error, MatrixSession, SelfVerification};
 use wonton_protocol::{
-    Action, ChatAccount, ChatProblem, CoreError, DeviceVerification, VerificationCancel,
+    ChatAccount, ChatAction, ChatProblem, CoreError, DeviceVerification, VerificationCancel,
     VerificationFlow, VerificationStage,
 };
 
@@ -80,14 +80,14 @@ impl ChatLink {
         }
     }
 
-    /// 设备确认的几个 `Action`。
-    pub(super) fn verification_action(&self, action: Action) -> Result<(), CoreError> {
+    /// 设备确认的几个 `ChatAction`。
+    pub(super) fn verification_action(&self, action: ChatAction) -> Result<(), CoreError> {
         let (flow_id, operation) = match action {
-            Action::StartDeviceVerification => return self.start_verification(),
-            Action::AcceptDeviceVerification { flow_id } => (flow_id, Operation::Accept),
-            Action::ConfirmVerification { flow_id } => (flow_id, Operation::Confirm),
-            Action::DenyVerification { flow_id } => (flow_id, Operation::Mismatch),
-            Action::CancelDeviceVerification { flow_id } => (flow_id, Operation::Cancel),
+            ChatAction::StartDeviceVerification => return self.start_verification(),
+            ChatAction::AcceptDeviceVerification { flow_id } => (flow_id, Operation::Accept),
+            ChatAction::ConfirmVerification { flow_id } => (flow_id, Operation::Confirm),
+            ChatAction::DenyVerification { flow_id } => (flow_id, Operation::Mismatch),
+            ChatAction::CancelDeviceVerification { flow_id } => (flow_id, Operation::Cancel),
             _ => unreachable!("dispatch only routes device-verification actions here"),
         };
         self.verification_operation(flow_id, operation)

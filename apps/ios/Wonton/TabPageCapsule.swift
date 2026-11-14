@@ -69,7 +69,7 @@ struct TabPageCapsule: View {
                     Button(TabText.back) { session.webView?.goBack() }
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
-                Button(TabText.reload) { pages.send(.reloadTab(page: placed)) }
+                Button(TabText.reload) { pages.send(.pages(action: .reloadTab(page: placed))) }
                 if let panel {
                     Button(TabText.editPanel, action: panel.edit)
                 } else {
@@ -77,15 +77,15 @@ struct TabPageCapsule: View {
                     // widget 页只能从房间里打开，不能钉进面板（ADR-0096）。
                     if let url = session.webView?.url, !tab.isWidget {
                         Button(TabText.pinToPanel) {
-                            pages.send(.pinCurrentPage(
+                            pages.send(.pages(action: .pinCurrentPage(
                                 url: url.absoluteString, title: session.webView?.title,
                                 to: .panel(scope: .main)
-                            ))
+                            )))
                         }
                     }
                     if case .plugin = tab {
                         Button(TabText.addToMyApps) {
-                            pages.send(.addMyApp(app: .page(tab: tab), title: nil, index: nil))
+                            pages.send(.pages(action: .addMyApp(app: .page(tab: tab), title: nil, index: nil)))
                         }
                         Button(TabText.details, action: details)
                     }

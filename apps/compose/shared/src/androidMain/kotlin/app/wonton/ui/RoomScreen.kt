@@ -46,6 +46,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
@@ -291,19 +293,7 @@ private fun RoomScreen(
     val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
-    val panel = LocalChatPanel.current
-    // 在组合里读一遍，面板数据变了才会重组，下面的 SideEffect 才会跟着跑。
-    val panelPages = timeline.panel
-    val panelSelected = timeline.panelSelected
-    val entryBlocked = timeline.entryBlocked
-    SideEffect {
-        panel?.feed(panelPages, panelSelected)
-        panel?.blocked = entryBlocked
-    }
-    DisposableEffect(panel, draft) {
-        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
-        onDispose { panel?.draftSink = null }
-    }
+    RoomPanelEffects(timeline, draft)
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
@@ -311,7 +301,9 @@ private fun RoomScreen(
     val messageOverlay = menu != null || forwarding != null || redacting != null
     val covers = messageOverlay || timeline.openedConfirmation != null
     if (target.threadRoot == null) {
-        LaunchedEffect(covers, target.roomId) { onAction(Action.SetRoomEntryBlocked(target.roomId, covers)) }
+        LaunchedEffect(covers, target.roomId) {
+            onAction(Action.Pages(PageAction.SetRoomEntryBlocked(target.roomId, covers)))
+        }
     }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
@@ -321,7 +313,7 @@ private fun RoomScreen(
                     RoomBar(
                         target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose,
                         onOpenBotProfile = { onOpenBotProfile(it) },
-                        call = timeline.call, onOpenWidget = { onAction(Action.OpenPage(it.tab)) },
+                        call = timeline.call, onOpenWidget = { onAction(Action.Pages(PageAction.OpenPage(it.tab))) },
                     )
                 },
             ) { backdrop ->
@@ -385,6 +377,22 @@ private fun RoomScreen(
                 onDismiss = { sideChats.onComposingChange(false) },
             )
         }
+    }
+}
+
+@Composable
+private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
+    val panel = LocalChatPanel.current
+    val panelPages = timeline.panel
+    val panelSelected = timeline.panelSelected
+    val entryBlocked = timeline.entryBlocked
+    SideEffect {
+        panel?.feed(panelPages, panelSelected)
+        panel?.blocked = entryBlocked
+    }
+    DisposableEffect(panel, draft) {
+        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
+        onDispose { panel?.draftSink = null }
     }
 }
 
@@ -641,7 +649,7 @@ private fun Messages(
                         onReply = onReply,
                         onOpenAgentCard = openCard,
                         onAnswerAgentChoice = { key ->
-                            onAction(Action.AnswerAgentChoice(target.roomId, item.id, key))
+                            onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
                         },
                         onOpenSideChat = sideChats.onOpen,
                     )

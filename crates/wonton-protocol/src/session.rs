@@ -23,8 +23,8 @@ mod tests {
     use super::*;
     use crate::{
         Action, ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, CoreError,
-        DeviceInvite, DeviceNetwork, HomeFailure, HomePath, HomeStatus, HomeViewModel,
-        PairingFailure, PairingStatus, ProxySettings, SecretString,
+        DeviceInvite, DeviceNetwork, HomeAction, HomeFailure, HomePath, HomeStatus, HomeViewModel,
+        PairingFailure, PairingStatus, ProxySettings, SecretString, SessionAction,
     };
 
     /// 契约：ViewModel、操作和错误都能经 JSON 往返，供将来的 Web 端经 WebSocket 收发。
@@ -37,8 +37,10 @@ mod tests {
                 is_selected: true,
             }],
         };
-        let action = Action::SelectSession {
-            session_id: "session-1".into(),
+        let action = Action::Session {
+            action: SessionAction::SelectSession {
+                session_id: "session-1".into(),
+            },
         };
         let error = CoreError::InvalidInput {
             reason: "会话不存在".into(),
@@ -47,7 +49,10 @@ mod tests {
         assert_eq!(round_trip(&view_model), view_model);
         assert_eq!(round_trip(&action), action);
         assert_eq!(round_trip(&error), error);
+    }
 
+    #[test]
+    fn home_view_round_trips_and_redacts_secrets() {
         let home = HomeViewModel {
             device_id: "ab".repeat(32),
             server_id: Some("cd".repeat(32)),
@@ -102,38 +107,60 @@ mod tests {
             just_recovered: true,
         };
         assert_eq!(round_trip(&home), home);
-        for action in [
-            Action::ConnectHome {
-                ticket: "{}".into(),
-            },
-            Action::PairHome {
-                code: SecretString::new("wonton://pair?v=0"),
-                device_name: "phone".into(),
-            },
-            Action::CancelPairing,
-            Action::InviteDevice,
-            Action::AppForegrounded,
-            Action::AppBackgrounded,
-            Action::NetworkChanged {
-                network: DeviceNetwork::None,
-            },
-            Action::RetryConnection,
-        ] {
-            assert_eq!(round_trip(&action), action);
-        }
         assert!(
             !format!("{home:?}").contains("secret"),
             "Debug 不能输出代理密码和给新设备的配对码"
         );
     }
 
+    #[test]
+    fn home_actions_round_trip_through_json() {
+        for action in [
+            Action::Home {
+                action: HomeAction::ConnectHome {
+                    ticket: "{}".into(),
+                },
+            },
+            Action::Home {
+                action: HomeAction::PairHome {
+                    code: SecretString::new("wonton://pair?v=0"),
+                    device_name: "phone".into(),
+                },
+            },
+            Action::Home {
+                action: HomeAction::CancelPairing,
+            },
+            Action::Home {
+                action: HomeAction::InviteDevice,
+            },
+            Action::Home {
+                action: HomeAction::AppForegrounded,
+            },
+            Action::Home {
+                action: HomeAction::AppBackgrounded,
+            },
+            Action::Home {
+                action: HomeAction::NetworkChanged {
+                    network: DeviceNetwork::None,
+                },
+            },
+            Action::Home {
+                action: HomeAction::RetryConnection,
+            },
+        ] {
+            assert_eq!(round_trip(&action), action);
+        }
+    }
+
     /// 配对码里有一次性的配对密钥：操作打进日志时只能看到打码后的样子。
     #[test]
     fn pairing_codes_are_redacted_in_debug_output() {
         let secret = "00112233445566778899aabbccddeeff";
-        let action = Action::PairHome {
-            code: SecretString::new(format!("wonton://pair?v=0&secret={secret}")),
-            device_name: "phone".into(),
+        let action = Action::Home {
+            action: HomeAction::PairHome {
+                code: SecretString::new(format!("wonton://pair?v=0&secret={secret}")),
+                device_name: "phone".into(),
+            },
         };
         let printed = format!("{action:?}");
         assert!(!printed.contains(secret), "{printed}");

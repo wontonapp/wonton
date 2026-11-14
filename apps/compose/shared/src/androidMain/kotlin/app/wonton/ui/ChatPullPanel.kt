@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -101,7 +104,7 @@ internal fun ChatPanelHost(
     }
     LaunchedEffect(panel.visible, panel.selection) {
         if (panel.visible) {
-            panel.selection?.let { tabs.send(app.wonton.protocol.Action.SelectPanelPage(panel.scope, it)) }
+            panel.selection?.let { tabs.send(Action.Pages(PageAction.SelectPanelPage(panel.scope, it))) }
         }
     }
     LaunchedEffect(panel.pages.isEmpty()) {

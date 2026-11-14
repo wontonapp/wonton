@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.fragment.app.FragmentActivity
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.DeviceVerification
 import app.wonton.protocol.EncryptionStatus
@@ -80,7 +81,7 @@ fun ChatBackupScreen(
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
         ) {
             encryption.recoveryKey?.let { saved ->
-                RecoveryKey(saved, onConfirm = { onAction(Action.ConfirmRecoveryKeySaved) })
+                RecoveryKey(saved, onConfirm = { onAction(Action.Chat(ChatAction.ConfirmRecoveryKeySaved)) })
             }
             Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 Text(
@@ -130,7 +131,7 @@ private fun ResetBackup(onAction: (Action) -> Unit) {
                 WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
                 WontonDialogAction(stringResource(R.string.chat_backup_reset_confirm), WontonButtonKind.DANGER) {
                     dismiss()
-                    onAction(Action.ResetRecovery)
+                    onAction(Action.Chat(ChatAction.ResetRecovery))
                 },
             ),
         )
@@ -160,7 +161,7 @@ private fun NextStep(
         RecoveryNextStep.SHOW_FLOW -> if (encryption.verificationFlow == null) {
             WontonButton(
                 stringResource(R.string.verification_verify_with_other_device),
-                { onAction(Action.StartDeviceVerification) },
+                { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
                 Modifier.fillMaxWidth(),
             )
         } else if (showKeyEntry) {
@@ -185,7 +186,7 @@ private fun VerificationChoices(onAction: (Action) -> Unit, onUseRecoveryKey: ()
     ) {
         WontonButton(
             stringResource(R.string.verification_verify_with_other_device),
-            { onAction(Action.StartDeviceVerification) },
+            { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
             Modifier.weight(1f),
         )
         WontonButton(
@@ -216,7 +217,7 @@ private fun RecoveryKeyEntry(key: String, onKeyChange: (String) -> Unit, onActio
         WontonButton(
             stringResource(R.string.chat_backup_recover),
             {
-                onAction(Action.RecoverEncryption(key))
+                onAction(Action.Chat(ChatAction.RecoverEncryption(key)))
                 onKeyChange("")
             },
             Modifier.fillMaxWidth(),

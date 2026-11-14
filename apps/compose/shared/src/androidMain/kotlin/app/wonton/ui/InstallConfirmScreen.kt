@@ -27,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.InstallPreview
@@ -119,9 +120,9 @@ fun InstallConfirmScreen(
                     secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
                 ) {
                     val action = if (isUpgrade) {
-                        Action.UpgradePlugin(chosen, sent, emptyMap())
+                        Action.Plugins(PluginAction.UpgradePlugin(chosen, sent, emptyMap()))
                     } else {
-                        Action.InstallPlugin(chosen, sent, emptyMap())
+                        Action.Plugins(PluginAction.InstallPlugin(chosen, sent, emptyMap()))
                     }
                     previousTask = plugins.viewModel.tasks.firstOrNull { it.id == chosen.id }
                     rejection = plugins.core.send(action)

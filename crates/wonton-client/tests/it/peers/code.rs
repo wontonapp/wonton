@@ -19,7 +19,11 @@ async fn showing_the_code_gets_it_and_hiding_clears_it() {
             serde_json::to_string(&code).unwrap(),
         ),
     );
-    rig.app.dispatch(Action::ShowPeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ShowPeerCode,
+        })
+        .unwrap();
     let view = wait_peers(&rig, |view| view.code.is_some()).await;
     assert_eq!(
         view.code.unwrap().code.expose(),
@@ -28,13 +32,21 @@ async fn showing_the_code_gets_it_and_hiding_clears_it() {
     assert_eq!(rig.core.seen(&Method::GET, &peer_code_path()).len(), 1);
 
     // 列表刷新不带码：码留着。
-    rig.app.dispatch(Action::RefreshPeers).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::RefreshPeers,
+        })
+        .unwrap();
     wait_peers(&rig, |view| view.state == PeersState::Ready).await;
     assert!(rig.app.peers().code.is_some(), "刷新不该把码清掉");
 
     // 关掉出码页：码清掉，不再打接口。
     let before = rig.core.seen(&Method::GET, &peer_code_path()).len();
-    rig.app.dispatch(Action::HidePeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::HidePeerCode,
+        })
+        .unwrap();
     wait_peers(&rig, |view| view.code.is_none()).await;
     assert_eq!(rig.core.seen(&Method::GET, &peer_code_path()).len(), before);
 }
@@ -67,10 +79,18 @@ async fn resetting_the_code_shows_the_new_one() {
             serde_json::to_string(&second).unwrap(),
         ),
     );
-    rig.app.dispatch(Action::ShowPeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ShowPeerCode,
+        })
+        .unwrap();
     wait_peers(&rig, |view| view.code.is_some()).await;
 
-    rig.app.dispatch(Action::ResetPeerCode).unwrap();
+    rig.app
+        .dispatch(Action::Peers {
+            action: wonton_protocol::PeerAction::ResetPeerCode,
+        })
+        .unwrap();
     // 重置会先亮出新码，再重新取列表（先拨 Loading、取完才回 Ready）：等这两个条件一起成立。
     let view = wait_peers(&rig, |view| {
         view.state == PeersState::Ready

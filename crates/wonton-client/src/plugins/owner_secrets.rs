@@ -5,8 +5,8 @@ use std::sync::atomic::Ordering;
 use tokio::task::AbortHandle;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure,
-    OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PluginFailure, PluginProblem,
+    CoreError, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure, OwnerSecretProblem,
+    OwnerSecretView, OwnerSecretsView, PluginAction, PluginFailure, PluginProblem,
 };
 
 use super::api::CoreApiError;
@@ -36,17 +36,17 @@ impl Local {
 impl PluginsLink {
     pub(crate) fn dispatch_owner_secrets(
         self: &Arc<Self>,
-        action: Action,
+        action: PluginAction,
     ) -> Result<(), CoreError> {
         match action {
-            Action::ListOwnerSecrets { plugin_id } => self.list_owner_secrets(plugin_id),
-            Action::ShowOwnerSecret { plugin_id, name } => {
+            PluginAction::ListOwnerSecrets { plugin_id } => self.list_owner_secrets(plugin_id),
+            PluginAction::ShowOwnerSecret { plugin_id, name } => {
                 return self.show_owner_secret(plugin_id, name);
             }
-            Action::HideOwnerSecret { plugin_id, name } => {
+            PluginAction::HideOwnerSecret { plugin_id, name } => {
                 self.hide_owner_secret(&plugin_id, &name)
             }
-            Action::DismissOwnerSecrets { plugin_id } => {
+            PluginAction::DismissOwnerSecrets { plugin_id } => {
                 let mut local = lock(&self.owner_secrets);
                 if self
                     .view

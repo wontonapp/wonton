@@ -8,6 +8,7 @@ use wonton_client::{
     Action, CoreError, FileCard, FileCardAction, FileCardActions, FileFailure, FileInfo,
     FileProblem, FileSource, TransferAction, TransferState, UploadSource,
 };
+use wonton_protocol::FileAction;
 
 const MIB: usize = 1024 * 1024;
 
@@ -27,7 +28,9 @@ async fn actions_of(world: &World, file: &wonton_client::FileId) -> FileCardActi
 async fn download(world: &World, file: &wonton_client::FileId) -> wonton_client::Transfer {
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     world
         .wait_transfer(|t| t.file.as_ref() == Some(file) && t.state == TransferState::Done)
@@ -57,7 +60,9 @@ async fn audio_and_video_play_and_can_open_elsewhere() {
     world.core.lock().hold_download_after = Some(MIB);
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     let during = actions_of(&world, &file).await;
     assert_eq!(during.tap, FileCardAction::Play, "下载的时候也能放");
@@ -124,9 +129,11 @@ async fn a_downloaded_file_still_has_a_card_without_the_connection() {
     let record = download(&world, &cleared).await;
     world
         .phone()
-        .dispatch(Action::DismissTransfer {
-            id: record.id,
-            delete_local_file: false,
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DismissTransfer {
+                id: record.id,
+                delete_local_file: false,
+            },
         })
         .unwrap();
 
@@ -174,7 +181,9 @@ async fn a_downloaded_file_that_changed_at_home_is_downloaded_again() {
 
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     world
         .wait_transfer(|t| t.file.as_ref() == Some(&file) && t.state == TransferState::Done)
@@ -209,7 +218,9 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
     world.core.lock().hold_download_after = Some(MIB);
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     let part = world.downloaded(&file, "a.mov.part");
     world
@@ -226,7 +237,9 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
         .clone();
     world
         .phone()
-        .dispatch(Action::CancelTransfer { id })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::CancelTransfer { id },
+        })
         .unwrap();
     world.wait_until(|| !folder(&file).exists()).await;
 
@@ -238,9 +251,11 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
     let id = world.phone().transfers().downloaded[0].id.clone();
     world
         .phone()
-        .dispatch(Action::DismissTransfer {
-            id,
-            delete_local_file: true,
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DismissTransfer {
+                id,
+                delete_local_file: true,
+            },
         })
         .unwrap();
     world.wait_until(|| !folder(&file).exists()).await;
@@ -255,7 +270,9 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
         .insert(file.to_string(), Served::new("new.mov", b"abcdef", "v2"));
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     world
         .wait_transfer(|t| t.file.as_ref() == Some(&file) && t.state == TransferState::Done)
@@ -279,7 +296,9 @@ async fn a_failed_download_can_be_tried_again() {
     world.core.lock().files.clear();
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     world
         .wait_transfer(|t| matches!(t.state, TransferState::Failed { .. }))
@@ -319,20 +338,24 @@ async fn each_transfer_says_which_buttons_it_has() {
     world.core.lock().hold_download_after = Some(MIB);
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: held })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: held },
+        })
         .unwrap();
     let running = world.phone().transfers().active.pop().unwrap();
     assert_eq!(running.actions, [TransferAction::Cancel]);
 }
 
 fn room_upload(source: &Path) -> Action {
-    Action::UploadFile {
-        source: UploadSource::Path {
-            path: source.to_str().unwrap().to_owned(),
+    Action::Files {
+        action: wonton_protocol::FileAction::UploadFile {
+            source: UploadSource::Path {
+                path: source.to_str().unwrap().to_owned(),
+            },
+            name: "a.mp4".to_owned(),
+            mime_type: None,
+            room: Some("!bot:home".to_owned()),
         },
-        name: "a.mp4".to_owned(),
-        mime_type: None,
-        room: Some("!bot:home".to_owned()),
     }
 }
 
@@ -371,8 +394,10 @@ async fn a_link_that_was_not_sent_is_marked_and_only_the_link_is_resent() {
     world.core.lock().uploads.clear();
     world
         .phone()
-        .dispatch(Action::ResendFileLink {
-            id: after_restart.id.clone(),
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink {
+                id: after_restart.id.clone(),
+            },
         })
         .unwrap();
     world.wait_core(|core| core.grants.len() == 2).await;
@@ -403,9 +428,11 @@ async fn a_failed_grant_also_keeps_the_upload() {
     // 这样清掉不碰服务器上的文件，也不碰手机上的原文件。
     world
         .phone()
-        .dispatch(Action::DismissTransfer {
-            id: transfer.id,
-            delete_local_file: false,
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DismissTransfer {
+                id: transfer.id,
+                delete_local_file: false,
+            },
         })
         .unwrap();
     assert!(source.exists());
@@ -424,8 +451,10 @@ async fn stopping_after_the_bytes_are_up_leaves_the_file_on_the_server() {
         .await;
     world
         .phone()
-        .dispatch(Action::CancelTransfer {
-            id: transfer.id.clone(),
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::CancelTransfer {
+                id: transfer.id.clone(),
+            },
         })
         .unwrap();
     assert!(world.phone().transfers().all().next().is_none());
@@ -443,8 +472,10 @@ async fn only_a_link_that_was_not_sent_can_be_resent() {
     let done = download(&world, &file).await;
     world
         .phone()
-        .dispatch(Action::ResendFileLink {
-            id: done.id.clone(),
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink {
+                id: done.id.clone(),
+            },
         })
         .unwrap();
     assert_eq!(world.phone().transfers().downloaded, [done], "什么都不做");
@@ -457,9 +488,11 @@ async fn dismissing_only_the_record_keeps_the_file_openable() {
     let done = download(&world, &file).await;
     world
         .phone()
-        .dispatch(Action::DismissTransfer {
-            id: done.id,
-            delete_local_file: false,
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DismissTransfer {
+                id: done.id,
+                delete_local_file: false,
+            },
         })
         .unwrap();
     assert_eq!(world.phone().transfers().downloaded, []);
@@ -475,9 +508,11 @@ async fn dismissing_with_the_file_frees_the_phone() {
     let done = download(&world, &file).await;
     world
         .phone()
-        .dispatch(Action::DismissTransfer {
-            id: done.id,
-            delete_local_file: true,
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DismissTransfer {
+                id: done.id,
+                delete_local_file: true,
+            },
         })
         .unwrap();
     assert_eq!(world.phone().transfers().downloaded, []);
@@ -496,13 +531,15 @@ async fn the_original_of_an_upload_is_not_ours_to_delete() {
     let source = world.write("a.mp4", b"abc");
     world
         .phone()
-        .dispatch(Action::UploadFile {
-            source: UploadSource::Path {
-                path: source.to_str().unwrap().to_owned(),
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::UploadFile {
+                source: UploadSource::Path {
+                    path: source.to_str().unwrap().to_owned(),
+                },
+                name: "a.mp4".to_owned(),
+                mime_type: None,
+                room: None,
             },
-            name: "a.mp4".to_owned(),
-            mime_type: None,
-            room: None,
         })
         .unwrap();
     let done = world
@@ -513,9 +550,11 @@ async fn the_original_of_an_upload_is_not_ours_to_delete() {
         std::slice::from_ref(&done)
     );
     assert!(matches!(
-        world.phone().dispatch(Action::DismissTransfer {
-            id: done.id,
-            delete_local_file: true,
+        world.phone().dispatch(Action::Files {
+            action: FileAction::DismissTransfer {
+                id: done.id,
+                delete_local_file: true,
+            }
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -530,13 +569,15 @@ async fn finished_downloads_stay_until_the_owner_clears_them() {
     for _ in 0..52 {
         world
             .phone()
-            .dispatch(Action::UploadFile {
-                source: UploadSource::Path {
-                    path: source.to_str().unwrap().to_owned(),
+            .dispatch(Action::Files {
+                action: wonton_protocol::FileAction::UploadFile {
+                    source: UploadSource::Path {
+                        path: source.to_str().unwrap().to_owned(),
+                    },
+                    name: "a.mp4".to_owned(),
+                    mime_type: None,
+                    room: None,
                 },
-                name: "a.mp4".to_owned(),
-                mime_type: None,
-                room: None,
             })
             .unwrap();
         world

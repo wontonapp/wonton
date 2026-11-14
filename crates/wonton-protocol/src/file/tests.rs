@@ -3,7 +3,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use super::*;
-use crate::{Action, RoomRow};
+use crate::{Action, FileAction, RoomRow};
 
 const ID: &str = "aaaqeayeaudaocajbifqydiob4";
 const OTHER_ID: &str = "77777777777777777777777774";
@@ -428,40 +428,60 @@ fn what_is_stored_on_the_phone_keeps_its_spelling() {
 #[test]
 fn file_actions_round_trip_through_json() {
     for action in [
-        Action::UploadFile {
-            source: UploadSource::Opaque {
-                handle: "content://media/external/images/1".into(),
+        Action::Files {
+            action: FileAction::UploadFile {
+                source: UploadSource::Opaque {
+                    handle: "content://media/external/images/1".into(),
+                },
+                name: "a.jpg".into(),
+                mime_type: Some("image/jpeg".into()),
+                room: Some("!room:home.example".into()),
             },
-            name: "a.jpg".into(),
-            mime_type: Some("image/jpeg".into()),
-            room: Some("!room:home.example".into()),
         },
-        Action::UploadFile {
-            source: UploadSource::Path {
-                path: "/tmp/a.mov".into(),
+        Action::Files {
+            action: FileAction::UploadFile {
+                source: UploadSource::Path {
+                    path: "/tmp/a.mov".into(),
+                },
+                name: "a.mov".into(),
+                mime_type: None,
+                room: None,
             },
-            name: "a.mov".into(),
-            mime_type: None,
-            room: None,
         },
-        Action::DownloadFile { id: id() },
-        Action::CancelTransfer {
-            id: "local-1".into(),
+        Action::Files {
+            action: FileAction::DownloadFile { id: id() },
         },
-        Action::DismissTransfer {
-            id: "local-1".into(),
-            delete_local_file: true,
+        Action::Files {
+            action: FileAction::CancelTransfer {
+                id: "local-1".into(),
+            },
         },
-        Action::ResendFileLink {
-            id: "local-1".into(),
+        Action::Files {
+            action: FileAction::DismissTransfer {
+                id: "local-1".into(),
+                delete_local_file: true,
+            },
         },
-        Action::DeleteFile { id: id() },
-        Action::SendFileToDevices { id: id() },
-        Action::GrantFileToRoom {
-            id: id(),
-            room: "!room:home.example".into(),
+        Action::Files {
+            action: FileAction::ResendFileLink {
+                id: "local-1".into(),
+            },
         },
-        Action::DismissFileProblem,
+        Action::Files {
+            action: FileAction::DeleteFile { id: id() },
+        },
+        Action::Files {
+            action: FileAction::SendFileToDevices { id: id() },
+        },
+        Action::Files {
+            action: FileAction::GrantFileToRoom {
+                id: id(),
+                room: "!room:home.example".into(),
+            },
+        },
+        Action::Files {
+            action: FileAction::DismissFileProblem,
+        },
     ] {
         assert_eq!(round_trip(&action), action);
     }

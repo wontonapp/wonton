@@ -1,7 +1,7 @@
 use serde_json::json;
 
 use super::*;
-use crate::Action;
+use crate::{Action, BotContactAction};
 
 fn bot() -> BotRef {
     BotRef {
@@ -92,26 +92,38 @@ fn contact_types_round_trip_through_json() {
 
     let user_id = "@hermes-sam:def67890.wonton".to_owned();
     for action in [
-        Action::RefreshBotContacts { bot: bot() },
-        Action::RequestBotContact {
-            bot: bot(),
-            user_id: user_id.clone(),
+        Action::BotContacts {
+            action: BotContactAction::RefreshBotContacts { bot: bot() },
         },
-        Action::RequestPersonContact {
-            bot: bot(),
-            user_id: "@sam:def67890.wonton".into(),
+        Action::BotContacts {
+            action: BotContactAction::RequestBotContact {
+                bot: bot(),
+                user_id: user_id.clone(),
+            },
         },
-        Action::ApproveBotContact {
-            bot: bot(),
-            user_id: user_id.clone(),
+        Action::BotContacts {
+            action: BotContactAction::RequestPersonContact {
+                bot: bot(),
+                user_id: "@sam:def67890.wonton".into(),
+            },
         },
-        Action::RejectBotContact {
-            bot: bot(),
-            user_id: user_id.clone(),
+        Action::BotContacts {
+            action: BotContactAction::ApproveBotContact {
+                bot: bot(),
+                user_id: user_id.clone(),
+            },
         },
-        Action::RemoveBotContact {
-            bot: bot(),
-            user_id,
+        Action::BotContacts {
+            action: BotContactAction::RejectBotContact {
+                bot: bot(),
+                user_id: user_id.clone(),
+            },
+        },
+        Action::BotContacts {
+            action: BotContactAction::RemoveBotContact {
+                bot: bot(),
+                user_id,
+            },
         },
     ] {
         let json = serde_json::to_string(&action).unwrap();

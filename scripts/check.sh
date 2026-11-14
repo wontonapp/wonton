@@ -46,6 +46,7 @@ bash scripts/check-conflict-markers.sh
 bash scripts/check-bundled-plugin-versions.sh
 
 bash scripts/check-uniffi-comments.sh
+bash scripts/check-uniffi-enum-sizes.sh
 
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings

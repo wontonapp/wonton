@@ -98,7 +98,7 @@ impl ClientCore {
     }
 
     /// 把一个文件放进附件区，马上经文件服务（tus）开始上传，返回附件的标识。`source`、`name`、`mime_type` 同
-    /// [`Action::UploadFile`](wonton_protocol::Action::UploadFile)。名字为空、附件区满了时返回 `InvalidInput`。
+    /// [`FileAction::UploadFile`](wonton_protocol::FileAction::UploadFile)。名字为空、附件区满了时返回 `InvalidInput`。
     pub fn add_file_attachment(
         &self,
         target: TimelineTarget,

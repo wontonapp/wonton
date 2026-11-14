@@ -127,7 +127,9 @@ async fn the_widget_gets_only_granted_capabilities_and_talks_to_the_room() {
     assert_eq!(entry.widgets[0].entry, WidgetEntry::VideoCall);
 
     phone
-        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     let url = until_pages(&phone, "widget 页的地址出来", |view| {
         view.stack
@@ -205,7 +207,11 @@ async fn the_widget_gets_only_granted_capabilities_and_talks_to_the_room() {
     widget_to_bot(&mut page, &bot).await;
     bot_to_widget(&mut page, &bot, &device).await;
 
-    phone.dispatch(Action::ClosePage).unwrap();
+    phone
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
     page.ended().await;
 }
 

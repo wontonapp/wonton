@@ -50,7 +50,7 @@ pub struct TimelineUpdate {
     pub panel_selected: Option<crate::TabRef>,
     /// 房间里另有东西开着（长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、斜杠命令列表）：
     /// 上推拉面板的入口不响应。壳只读它，不自己合成；状态由
-    /// [`Action::SetRoomEntryBlocked`](crate::Action::SetRoomEntryBlocked) 报告，换房间后按没盖算。
+    /// [`PageAction::SetRoomEntryBlocked`](crate::PageAction::SetRoomEntryBlocked) 报告，换房间后按没盖算。
     #[serde(default)]
     pub entry_blocked: bool,
     /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
@@ -199,7 +199,7 @@ pub enum TimelineContent {
         /// 是那张卡片：点条目打开它。
         card_id: Option<String>,
         /// Bot 自己发的待回答选项（`choices`），只在等待回答时有；点了一个经
-        /// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发反应。
+        /// [`ChatAction::AnswerAgentChoice`](crate::ChatAction::AnswerAgentChoice) 以主人的身份发反应。
         choices: Vec<AgentRunChoice>,
         /// 发这条状态的 Bot 的显示名，没有设置时是用户 ID。壳在 `choices` 区标明是谁在问。
         sender_name: String,

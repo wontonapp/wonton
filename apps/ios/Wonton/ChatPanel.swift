@@ -436,10 +436,12 @@ extension ChatPanelHost {
             items: items,
             candidates: editorCandidates,
             plugins: plugins,
-            add: { pages.send(.addPanelPage(scope: scope, tab: $0)) },
+            add: { pages.send(.pages(action: .addPanelPage(scope: scope, tab: $0))) },
             remove: { remove($0) },
-            move: { tab, index in pages.send(.movePanelPage(scope: scope, tab: tab, index: UInt32(index))) },
-            addURL: { pages.send(.addPanelPage(scope: scope, tab: .url(url: $0))) }
+            move: { tab, index in
+                pages.send(.pages(action: .movePanelPage(scope: scope, tab: tab, index: UInt32(index))))
+            },
+            addURL: { pages.send(.pages(action: .addPanelPage(scope: scope, tab: .url(url: $0)))) }
         )
     }
 }
@@ -579,9 +581,9 @@ struct RoomPanelHost<Content: View>: View {
                 appearance: deps.appearance, scope: scope, edge: .bottom, items: panel, selected: selected,
                 blocked: blocked, draft: deps.draft, open: deps.open, pendingCards: deps.pendingCards,
                 openCardRoom: deps.openCardRoom,
-                select: { deps.pages.send(.selectPanelPage(scope: scope, tab: $0)) },
-                remove: { deps.pages.send(.removePanelPage(scope: scope, tab: $0)) },
-                move: { deps.pages.send(.movePanelPage(scope: scope, tab: $0, index: UInt32($1))) },
+                select: { deps.pages.send(.pages(action: .selectPanelPage(scope: scope, tab: $0))) },
+                remove: { deps.pages.send(.pages(action: .removePanelPage(scope: scope, tab: $0))) },
+                move: { deps.pages.send(.pages(action: .movePanelPage(scope: scope, tab: $0, index: UInt32($1)))) },
                 pullAnchor: pullAnchor,
                 content: { content() }
             )

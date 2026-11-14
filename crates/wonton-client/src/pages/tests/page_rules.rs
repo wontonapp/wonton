@@ -7,7 +7,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
     let rig = Rig::new();
     // 插件网站里以 // 开头的路径：还是这个插件的一页，网址不跳到别的主机。
     rig.tabs
-        .dispatch(Action::PinCurrentPage {
+        .dispatch(PageAction::PinCurrentPage {
             url: "http://app.shared.wonton.localhost//evil.example/login".to_owned(),
             title: None,
             to: PinTarget::Panel {
@@ -32,7 +32,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
         path: "/deep/../report?day=1".to_owned(),
     };
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: accepted.clone(),
         })
@@ -44,7 +44,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
     for outside in ["https://evil.example/x", "http://evil.example/x"] {
         let error = rig
             .tabs
-            .dispatch(Action::AddPanelPage {
+            .dispatch(PageAction::AddPanelPage {
                 scope: main_scope(),
                 tab: TabRef::PluginPath {
                     plugin_id: "app.shared".to_owned(),
@@ -56,7 +56,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
     }
     // 我的应用的页面行同一份规矩。
     rig.tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: MyAppRef::Page {
                 tab: TabRef::PluginPath {
                     plugin_id: "app.shared".to_owned(),
@@ -69,7 +69,7 @@ async fn plugin_paths_stay_on_the_plugin_site() {
         .expect("// path stays on the plugin site");
     let error = rig
         .tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: MyAppRef::Page {
                 tab: TabRef::PluginPath {
                     plugin_id: "app.shared".to_owned(),
@@ -93,7 +93,7 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
     let public = url_tab("https://example.com/report");
     for tab in [inner.clone(), public.clone()] {
         rig.tabs
-            .dispatch(Action::AddPanelPage {
+            .dispatch(PageAction::AddPanelPage {
                 scope: main_scope(),
                 tab,
             })
@@ -106,7 +106,7 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
         tab: inner,
     };
     rig.tabs
-        .dispatch(Action::TabLoadFailed {
+        .dispatch(PageAction::TabLoadFailed {
             page: placed_inner.clone(),
             status: Some(404),
         })
@@ -120,7 +120,7 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
         }
     ));
     rig.tabs
-        .dispatch(Action::ReloadTab {
+        .dispatch(PageAction::ReloadTab {
             page: placed_inner.clone(),
         })
         .unwrap();
@@ -133,7 +133,7 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
         tab: public,
     };
     rig.tabs
-        .dispatch(Action::TabLoadFailed {
+        .dispatch(PageAction::TabLoadFailed {
             page: placed_public.clone(),
             status: None,
         })
@@ -147,7 +147,7 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
         }
     ));
     rig.tabs
-        .dispatch(Action::ReloadTab {
+        .dispatch(PageAction::ReloadTab {
             page: placed_public.clone(),
         })
         .unwrap();
@@ -196,7 +196,7 @@ async fn room_panel_entries_from_other_clients_are_checked_when_built() {
 async fn panel_pages_wait_for_the_plugin_list_without_blocking_other_pages() {
     let rig = Rig::new();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -210,7 +210,7 @@ async fn panel_pages_wait_for_the_plugin_list_without_blocking_other_pages() {
     assert_eq!(view.panel[0].page.state, TabState::Loading);
     assert_eq!(view.panel[0].page.url, None);
 
-    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    rig.tabs.dispatch(PageAction::ClosePage).unwrap();
     assert!(rig.view().stack.is_empty());
 
     rig.plugins.send_replace(plugins("new-content"));
@@ -242,7 +242,7 @@ async fn room_panel_entry_for_an_undeclared_page_says_removed() {
     assert_eq!(view.panel[0].page.state, TabState::PageRemoved);
     assert_eq!(view.panel[0].page.url, None);
 
-    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    rig.tabs.dispatch(PageAction::ClosePage).unwrap();
     assert!(rig.view().stack.is_empty());
 }
 

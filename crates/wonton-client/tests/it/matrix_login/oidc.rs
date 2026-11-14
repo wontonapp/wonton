@@ -136,20 +136,24 @@ async fn unrecognized() -> impl IntoResponse {
 }
 
 fn oidc(login_id: &str, redirect: &str) -> Action {
-    Action::StartMatrixOidc {
-        login: MatrixOidcLogin {
-            login_id: login_id.to_owned(),
-            redirect_uri: redirect.to_owned(),
-            device_name: "测试手机".to_owned(),
+    Action::Home {
+        action: wonton_protocol::HomeAction::StartMatrixOidc {
+            login: MatrixOidcLogin {
+                login_id: login_id.to_owned(),
+                redirect_uri: redirect.to_owned(),
+                device_name: "测试手机".to_owned(),
+            },
         },
     }
 }
 
 fn callback(login_id: &str, url: String) -> Action {
-    Action::CompleteMatrixOidc {
-        callback: MatrixOidcCallback {
-            login_id: login_id.to_owned(),
-            callback_url: SecretString::new(url),
+    Action::Home {
+        action: wonton_protocol::HomeAction::CompleteMatrixOidc {
+            callback: MatrixOidcCallback {
+                login_id: login_id.to_owned(),
+                callback_url: SecretString::new(url),
+            },
         },
     }
 }
@@ -286,8 +290,10 @@ async fn mismatched_callbacks_are_rejected() {
     assert_eq!(core.servers().servers, before);
 
     let (cancelled, query) = awaiting(&core, &server).await;
-    core.dispatch(Action::CancelMatrixLogin {
-        login_id: cancelled.clone(),
+    core.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::CancelMatrixLogin {
+            login_id: cancelled.clone(),
+        },
     })
     .unwrap();
     let late = callback(
@@ -350,7 +356,12 @@ async fn cancelling_or_failing_from_a_thread_without_a_runtime_does_not_crash() 
     let core = open(dir.path());
 
     let (login_id, _) = awaiting(&core, &server).await;
-    on_plain_thread(&core, Action::CancelMatrixLogin { login_id });
+    on_plain_thread(
+        &core,
+        Action::Home {
+            action: wonton_protocol::HomeAction::CancelMatrixLogin { login_id },
+        },
+    );
     assert_eq!(
         core.servers().matrix_login.unwrap().state,
         MatrixLoginState::Cancelled

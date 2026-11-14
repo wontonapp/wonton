@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
@@ -182,7 +183,7 @@ fun ChatRoute(
         }
     }
 
-    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
+    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
@@ -509,9 +510,13 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
             color = WontonTheme.colors.textPrimary.toColor(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            WontonButton(stringResource(R.string.chat_invite_accept), { onAction(Action.JoinRoom(row.roomId)) })
             WontonButton(
-                stringResource(R.string.chat_invite_decline), { onAction(Action.LeaveRoom(row.roomId)) },
+                stringResource(R.string.chat_invite_accept),
+                { onAction(Action.Chat(ChatAction.JoinRoom(row.roomId))) },
+            )
+            WontonButton(
+                stringResource(R.string.chat_invite_decline),
+                { onAction(Action.Chat(ChatAction.LeaveRoom(row.roomId))) },
                 kind = WontonButtonKind.SECONDARY,
             )
         }

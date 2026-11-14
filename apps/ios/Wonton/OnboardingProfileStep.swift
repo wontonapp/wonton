@@ -19,11 +19,11 @@ struct OnboardingProfileStepView: View {
             OwnerProfileFields(
                 name: Binding(get: { name }, set: {
                     name = $0
-                    send(.editOnboardingProfile(displayName: name, email: email))
+                    send(.onboarding(action: .editOnboardingProfile(displayName: name, email: email)))
                 }),
                 email: Binding(get: { email }, set: {
                     email = $0
-                    send(.editOnboardingProfile(displayName: name, email: email))
+                    send(.onboarding(action: .editOnboardingProfile(displayName: name, email: email)))
                 }),
                 nameProblem: profile.displayNameProblem, emailProblem: profile.emailProblem
             )

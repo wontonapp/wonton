@@ -42,7 +42,7 @@ struct PeersView: View {
                 .onChange(of: model.viewModel.requests.count) { scrollToRequests(proxy) }
                 .onChange(of: model.viewModel.state) { _, state in
                     guard case let .failed(error, _) = state else { return }
-                    if error == .requestNotFound { model.send(.refreshPeers) }
+                    if error == .requestNotFound { model.send(.peers(action: .refreshPeers)) }
                 }
                 .wontonActionSheet(
                     isPresented: $showsAdd, usesSystemPresentation: true, actions: addActions
@@ -55,7 +55,7 @@ struct PeersView: View {
                     title: String(localized: .Peers1.peersShowCodeTitle),
                     usesSystemPresentation: true
                 ) { _ in
-                    PeersCodePanel(viewModel: model.viewModel) { model.send(.resetPeerCode) }
+                    PeersCodePanel(viewModel: model.viewModel) { model.send(.peers(action: .resetPeerCode)) }
                 }
                 .fullScreenCover(isPresented: $showsScanner) {
                     NavigationStack {
@@ -68,7 +68,7 @@ struct PeersView: View {
                 .friendsRejectionDialog(model: friends)
                 .onDisappear {
                     // 离开页面必须让核心停下取码：出码页开着时它每 3 秒取一次列表。
-                    model.send(.hidePeerCode)
+                    model.send(.peers(action: .hidePeerCode))
                 }
                 .onChange(of: model.viewModel.state) { _, state in
                     // 出码的请求失败了：码不会来了，收回请求，失败原因在页面上说。
@@ -124,8 +124,8 @@ struct PeersView: View {
                     ForEach(friends.viewModel.incoming, id: \.roomId) { request in
                         FriendRequestRowView(
                             request: request,
-                            accept: { friends.send(.approveFriendRequest(roomId: request.roomId)) },
-                            decline: { friends.send(.rejectFriendRequest(roomId: request.roomId)) }
+                            accept: { friends.send(.friends(action: .approveFriendRequest(roomId: request.roomId))) },
+                            decline: { friends.send(.friends(action: .rejectFriendRequest(roomId: request.roomId))) }
                         )
                         .listRowBackground(Color(colors.surfaceSubtle))
                         .listRowSeparatorTint(Color(colors.separator))
@@ -140,8 +140,8 @@ struct PeersView: View {
                     ForEach(model.viewModel.requests, id: \.id) { request in
                         PeerRequestRowView(
                             request: request,
-                            approve: { model.send(.approvePeerRequest(id: request.id)) },
-                            reject: { model.send(.rejectPeerRequest(id: request.id)) }
+                            approve: { model.send(.peers(action: .approvePeerRequest(id: request.id))) },
+                            reject: { model.send(.peers(action: .rejectPeerRequest(id: request.id))) }
                         )
                         .listRowBackground(Color(colors.surfaceSubtle))
                         .listRowSeparatorTint(Color(colors.separator))
@@ -168,7 +168,7 @@ struct PeersView: View {
                     if showsRejected {
                         ForEach(model.viewModel.rejected, id: \.id) { row in
                             RejectedRequestRowView(row: row) {
-                                model.send(.unrejectPeerRequest(id: row.id))
+                                model.send(.peers(action: .unrejectPeerRequest(id: row.id)))
                             }
                             .listRowBackground(Color(colors.surfaceSubtle))
                             .listRowSeparatorTint(Color(colors.separator))
@@ -212,7 +212,7 @@ private extension PeersView {
         wantsCode = false
         Task { @MainActor in
             wantsCode = true
-            model.send(.showPeerCode)
+            model.send(.peers(action: .showPeerCode))
         }
     }
 
@@ -220,13 +220,13 @@ private extension PeersView {
     private func hideCode() {
         guard wantsCode else { return }
         wantsCode = false
-        model.send(.hidePeerCode)
+        model.send(.peers(action: .hidePeerCode))
     }
 
     /// 取消自己发出、对方还没处理的请求和清掉被拒的记录，直接做（和 Android 一致）；移除配对两边都会停，才要确认。
     private func requestRemove(_ row: PeerRow) {
         if row.status == .awaitingApproval || row.status == .declined {
-            model.send(.removePeer(serverName: row.serverName))
+            model.send(.peers(action: .removePeer(serverName: row.serverName)))
         } else {
             removing = row
         }
@@ -237,7 +237,7 @@ private extension PeersView {
         if model.failedScan {
             showsScanner = true
         } else {
-            model.send(.refreshPeers)
+            model.send(.peers(action: .refreshPeers))
         }
     }
 
@@ -287,7 +287,7 @@ final class PeersModel {
 
     /// 进页面时取一次列表，之后跟着核心的推送走；页面消失时订阅结束。
     func observe() async {
-        send(.refreshPeers)
+        send(.peers(action: .refreshPeers))
         for await viewModel in core.subscribePeers().updates() {
             // Loading 只来自取列表：出现它说明上一次扫码已经处理完，重试回到刷新。
             if case .loading = viewModel.state { failedScan = false }
@@ -296,7 +296,7 @@ final class PeersModel {
     }
 
     func send(_ action: Action) {
-        if case .scanPeerCode = action { failedScan = true }
+        if case .peers(action: .scanPeerCode) = action { failedScan = true }
         do {
             try core.dispatch(action: action)
         } catch {
@@ -306,7 +306,7 @@ final class PeersModel {
 
     /// 下拉刷新：等核心把状态从 Loading 换走，圈才收起来。
     func refresh() async {
-        send(.refreshPeers)
+        send(.peers(action: .refreshPeers))
         guard rejection == nil else { return }
         for await viewModel in core.subscribePeers().updates() {
             if case .loading = viewModel.state { continue }
@@ -393,7 +393,7 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
-                    if let row { model.send(.removePeer(serverName: row.serverName)) }
+                    if let row { model.send(.peers(action: .removePeer(serverName: row.serverName))) }
                     removing.wrappedValue = nil
                 }
             ]

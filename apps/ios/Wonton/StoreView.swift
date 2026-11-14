@@ -31,8 +31,10 @@ struct StoreView: View {
                     }
                     if let store = model.viewModel.store {
                         if let problem = model.viewModel.problem {
-                            ProblemRow(problem: problem.problem) { model.send(.refreshStore(force: true)) }
-                                .padding(WontonTheme.spacing.pageInset)
+                            ProblemRow(problem: problem.problem) {
+                                model.send(.plugins(action: .refreshStore(force: true)))
+                            }
+                            .padding(WontonTheme.spacing.pageInset)
                         }
                         if query.isEmpty {
                             listing(store)
@@ -46,7 +48,7 @@ struct StoreView: View {
             .overlay {
                 if model.viewModel.store == nil { placeholder }
             }
-            .refreshable { model.send(.refreshStore(force: true)) }
+            .refreshable { model.send(.plugins(action: .refreshStore(force: true))) }
         }
         .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
@@ -62,7 +64,7 @@ struct StoreView: View {
             isPresented: $showsUpdateAll,
             titleVisibility: .visible
         ) {
-            Button(String(localized: .Store.storeUpdateAll)) { model.send(.upgradeAll) }
+            Button(String(localized: .Store.storeUpdateAll)) { model.send(.plugins(action: .upgradeAll)) }
             Button(String(localized: .Common.commonCancel), role: .cancel) {}
         }
         .fullScreenCover(isPresented: $isAddingSource, onDismiss: {
@@ -71,15 +73,15 @@ struct StoreView: View {
         }, content: {
             AddSourceView(model: model) { chosen = $0 }
         })
-        .task { model.refresh(.refreshStore(force: false)) }
+        .task { model.refresh(.plugins(action: .refreshStore(force: false))) }
     }
 
     /// 还没取到商店：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = model.viewModel.problem {
-            ProblemView(problem: problem.problem) { model.send(.refreshStore(force: true)) }
+            ProblemView(problem: problem.problem) { model.send(.plugins(action: .refreshStore(force: true))) }
         } else if let rejection = model.refreshRejection {
-            ProblemView(problem: rejection.problem) { model.send(.refreshStore(force: true)) }
+            ProblemView(problem: rejection.problem) { model.send(.plugins(action: .refreshStore(force: true))) }
         } else {
             ListSkeleton(iconSize: WontonTheme.size.storeIcon)
         }
@@ -105,7 +107,7 @@ struct StoreView: View {
                 if let problem = source.section.problem {
                     ProblemRow(
                         problem: problem.problem.titled(from: source.provider),
-                        retry: problem.canRetry ? { model.send(.refreshStore(force: true)) } : nil
+                        retry: problem.canRetry ? { model.send(.plugins(action: .refreshStore(force: true))) } : nil
                     )
                     .padding(.horizontal, WontonTheme.spacing.pageInset)
                     .padding(.vertical, WontonTheme.spacing.s8)
@@ -143,7 +145,7 @@ struct StoreView: View {
             if let problem = content.problem {
                 ProblemRow(
                     problem: problem.problem,
-                    retry: problem.canRetry ? { model.send(.refreshStore(force: true)) } : nil
+                    retry: problem.canRetry ? { model.send(.plugins(action: .refreshStore(force: true))) } : nil
                 )
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
@@ -195,10 +197,14 @@ struct StoreView: View {
             let title = action == .requestAdmin
                 ? String(localized: .Install.installRequestAdmin)
                 : String(localized: .Store.storeGet)
-            return .get(title: title, enabled: action != .blocked) { model.send(.installNow(source: item.source)) }
+            return .get(title: title, enabled: action != .blocked) {
+                model.send(.plugins(action: .installNow(source: item.source)))
+            }
         }
         if version != item.version {
-            return .get(title: String(localized: .Store.storeUpdate)) { model.send(.upgradeNow(pluginId: item.id)) }
+            return .get(title: String(localized: .Store.storeUpdate)) {
+                model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
+            }
         }
         let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
@@ -308,9 +314,9 @@ private struct StoreItemRow: View {
     /// 再点一次“获取”或“更新”。
     private func retry() {
         if item.installedVersion == nil {
-            model.send(.installNow(source: item.source))
+            model.send(.plugins(action: .installNow(source: item.source)))
         } else {
-            model.send(.upgradeNow(pluginId: item.id))
+            model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
         }
     }
 
@@ -377,7 +383,7 @@ struct TaskRow: View {
                 ProgressView()
             } else if showsDismiss {
                 WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
-                    model.send(.dismissPluginTask(id: task.id))
+                    model.send(.plugins(action: .dismissPluginTask(id: task.id)))
                 }
             }
         }

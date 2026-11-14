@@ -143,7 +143,11 @@ async fn coming_back_to_the_foreground_keeps_the_open_room_alive() {
     chat.both_send().await;
 
     chat.home.set_matrix_down(false);
-    chat.phone.dispatch(Action::AppForegrounded).unwrap();
+    chat.phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
 
     chat.caught_up().await;
 }
@@ -272,7 +276,11 @@ async fn an_open_room_gets_its_earlier_messages_back_after_the_sync_starts_over(
     }
     chat.home.expire_room_list_sync();
     chat.home.set_matrix_down(false);
-    chat.phone.dispatch(Action::AppForegrounded).unwrap();
+    chat.phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(40);
     while !chat.home.room_list_sync_expired() {
         assert!(

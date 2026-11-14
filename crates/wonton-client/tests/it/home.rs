@@ -40,8 +40,10 @@ async fn invalid_connection_info_is_rejected_and_changes_nothing() {
     let phone = Phone::open(dir.path());
     let before = phone.home();
     for ticket in ["", "{}", "not json"] {
-        let result = phone.dispatch(Action::ConnectHome {
-            ticket: ticket.into(),
+        let result = phone.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket.into(),
+            },
         });
         assert!(
             matches!(result, Err(CoreError::InvalidInput { .. })),
@@ -86,8 +88,10 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
     let home = Home::start(&[phone.device_id()]).await;
     phone.connect(&home);
     phone
-        .dispatch(Action::NetworkChanged {
-            network: DeviceNetwork::Wifi,
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
         })
         .unwrap();
     let before = phone
@@ -108,8 +112,10 @@ async fn sustained_traffic_does_not_publish_a_home_view_for_each_request() {
             assert_eq!((status, body.as_str()), (200, "/traffic"));
             // 同一网络的重复通知要求重算，但状态、路径类型和提示都没有变。
             phone
-                .dispatch(Action::NetworkChanged {
-                    network: DeviceNetwork::Wifi,
+                .dispatch(Action::Home {
+                    action: wonton_protocol::HomeAction::NetworkChanged {
+                        network: DeviceNetwork::Wifi,
+                    },
                 })
                 .unwrap();
         }
@@ -312,7 +318,11 @@ async fn coming_back_to_the_foreground_reconnects() {
     // 只留最新值，重连得快时那一下断开会被合并掉，机器忙的时候测试就等不到它。看的是重启后的服务端确实收到了一条新
     // 连接，这个不会被合并掉。
     home.restart().await;
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     home.wait_for_a_connection(&phone).await;
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
@@ -334,7 +344,11 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
     let proxy = view.proxy.unwrap();
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
 
     // App 挂起期间服务端放弃了连接，关闭帧到不了手机：手机仍以为连着，iroh 要 30 秒空闲超时才发现。后台不是
     // 死水：挂起检测自己也会计时查一次，机器一卡它就先把界面挪成“连接中”，所以这里不断言还停在“已连接”。
@@ -344,7 +358,11 @@ async fn coming_back_after_the_server_dropped_the_connection_takes_seconds() {
     // 时限），按因果断言：定时检查已停、App 刚回前台，重启后的服务端上出现的新连接只可能是这次换的——空闲
     // 超时只会判死、不会自己拨号，“重试”也不动活着的连接。看服务端自己数出来的连接数，不看 App 侧记的断开
     // 次数：那是 App 的账，换连接的写法一变就可能不涨；等界面说“已连接”且路径在，再发一条请求走通。
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     home.wait_for_a_connection(&phone).await;
     phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.path.is_some())
@@ -387,8 +405,10 @@ async fn a_network_change_replaces_a_dead_connection_without_waiting_for_the_nex
     // 变化这条路径换的——空闲超时只会判死、不会自己拨号。
     home.drop_connections_silently().await;
     phone
-        .dispatch(Action::NetworkChanged {
-            network: DeviceNetwork::Wifi,
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
         })
         .unwrap();
     home.wait_for_a_connection(&phone).await;
@@ -411,11 +431,17 @@ async fn keep_connection_replaces_a_dropped_connection_while_backgrounded() {
 
     // 已配对、方式是保持连接：keep_connection 变真，退到后台核心也照样保活。
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::Keepalive,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::Keepalive,
+            },
         })
         .unwrap();
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     phone.wait_for(|view| view.keep_connection).await;
 
     home.drop_connections_silently().await;
@@ -438,12 +464,18 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
 
     // 后台暂停的前提是收新消息走 UnifiedPush（ADR-0003）：保持连接是默认方式，退到后台也照常探测和重连。
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     phone.wait_for(|view| !view.keep_connection).await;
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     home.drop_connections_silently().await;
     // 比定时检查的间隔加限时都长。
     tokio::time::sleep(Duration::from_secs(14)).await;
@@ -461,7 +493,11 @@ async fn in_the_background_the_core_leaves_the_connection_alone() {
     // 回到前台，等这一轮检查走完再发请求：它还活着的连接会确认一次，已经判死的会换新的再确认。请求早于
     // 这一轮发出的话，可能正赶上旧连接被收走（502），那不是这个测试要断言的事。
     let confirmed = phone.home().details.last_connected_at_ms;
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     phone
         .wait_for(|view| view.details.last_connected_at_ms > confirmed)
         .await;
@@ -474,7 +510,11 @@ async fn background_requests_keep_the_connection_when_backgrounded_before_connec
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     phone.connect(&home);
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
@@ -484,8 +524,16 @@ async fn background_requests_keep_the_connection_when_backgrounded_before_connec
     let connections = opened.get();
 
     // resume 还在执行时再次进后台，不能被旧的前台任务断流或覆盖最终后台状态。
-    phone.dispatch(Action::AppForegrounded).unwrap();
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     // 进程没有被挂起，正常计时超过恢复阈值也不应换连接，后台请求仍可继续使用原代理。
     for _ in 0..5 {
         tokio::time::sleep(Duration::from_secs(1)).await;
@@ -494,7 +542,11 @@ async fn background_requests_keep_the_connection_when_backgrounded_before_connec
     }
     assert_eq!(opened.get(), connections, "后台正常请求不应换连接");
 
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     let (status, body) = get(&proxy, WEB_URL, "/foreground", true).await;
     assert_eq!((status, body.as_str()), (200, "/foreground"));
     assert_eq!(opened.get(), connections, "健康连接回前台不应被替换");
@@ -518,7 +570,11 @@ async fn an_outage_comes_and_goes_in_plain_words() {
     assert!(view.details.last_connected_at_ms.is_some(), "{view:?}");
 
     home.start_again(port).await;
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
@@ -543,7 +599,11 @@ async fn a_recovered_connection_announces_itself_for_four_seconds() {
     assert!(!down.just_recovered, "{down:?}");
 
     home.start_again(port).await;
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     let recovered = phone
         .wait_for(|view| view.status == HomeStatus::Connected && view.just_recovered)
         .await;
@@ -584,7 +644,11 @@ async fn a_new_outage_does_not_inherit_the_previous_failure() {
 
     // 再连上：旧失败原文留在详情里（排查信息不因连上丢掉），但状态不带出来。
     home.start_again(port).await;
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
@@ -631,7 +695,11 @@ async fn switching_to_an_unreachable_server_says_so_after_the_first_failure() {
                     == Some(a.server().endpoint().id().to_string().as_str())
         })
         .await;
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone
         .wait_for(|view| view.status == HomeStatus::NotConfigured)
         .await;
@@ -644,7 +712,9 @@ async fn switching_to_an_unreachable_server_says_so_after_the_first_failure() {
         })
         .await;
     phone
-        .dispatch(Action::SwitchServer { id: "1".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer { id: "1".into() },
+        })
         .unwrap();
     phone
         .wait_for(|view| {
@@ -656,7 +726,9 @@ async fn switching_to_an_unreachable_server_says_so_after_the_first_failure() {
 
     b.stop().await;
     phone
-        .dispatch(Action::SwitchServer { id: "2".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer { id: "2".into() },
+        })
         .unwrap();
     // 旧行为要等满 30 秒才换说法；第一次失败就试（对死端口要等到 12 秒的建连限时，上限留出余量但仍小于 30 秒）。
     let view = tokio::time::timeout(Duration::from_secs(20), phone.wait_for(first_unreachable))
@@ -684,7 +756,11 @@ async fn retrying_reaches_a_device_paired_after_it_was_rejected() {
         .await;
 
     home.allowlist.allow(phone.device_id());
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
 
     let view = phone
         .wait_for(|view| view.status == HomeStatus::Connected)

@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use axum::http::Method;
 use wonton_client::{Action, CoreError, OwnerSecretFailure, OwnerSecretsView};
+use wonton_protocol::{HomeAction, PluginAction};
 
 use super::rig::{Canned, Rig, WAIT, core_error};
 
@@ -9,8 +10,8 @@ const ID: &str = "app.secrets.demo";
 const LIST: &str = "/_wonton/api/plugins/app.secrets.demo/secrets";
 const VALUE: &str = "/_wonton/api/plugins/app.secrets.demo/secrets/admin_password";
 
-fn act(rig: &Rig, action: Action) {
-    rig.app.dispatch(action).unwrap();
+fn act(rig: &Rig, action: PluginAction) {
+    rig.app.dispatch(Action::Plugins { action }).unwrap();
 }
 
 fn list(rig: &Rig) {
@@ -24,7 +25,7 @@ fn list(rig: &Rig) {
     );
     act(
         rig,
-        Action::ListOwnerSecrets {
+        PluginAction::ListOwnerSecrets {
             plugin_id: ID.into(),
         },
     );
@@ -33,7 +34,7 @@ fn list(rig: &Rig) {
 fn show(rig: &Rig) {
     act(
         rig,
-        Action::ShowOwnerSecret {
+        PluginAction::ShowOwnerSecret {
             plugin_id: ID.into(),
             name: "admin_password".into(),
         },
@@ -89,7 +90,7 @@ async fn disclosure_fetches_only_on_demand_and_reopening_never_reuses_values() {
     );
     act(
         &rig,
-        Action::HideOwnerSecret {
+        PluginAction::HideOwnerSecret {
             plugin_id: ID.into(),
             name: "admin_password".into(),
         },
@@ -116,7 +117,7 @@ async fn disclosure_fetches_only_on_demand_and_reopening_never_reuses_values() {
 
     act(
         &rig,
-        Action::DismissOwnerSecrets {
+        PluginAction::DismissOwnerSecrets {
             plugin_id: ID.into(),
         },
     );
@@ -125,9 +126,11 @@ async fn disclosure_fetches_only_on_demand_and_reopening_never_reuses_values() {
     assert!(settled(&rig).await.secrets[0].value.is_none());
     assert_eq!(rig.core.seen(&Method::GET, LIST).len(), 2);
     assert_eq!(rig.core.seen(&Method::GET, VALUE).len(), 2);
-    let error = rig.app.dispatch(Action::ShowOwnerSecret {
-        plugin_id: ID.into(),
-        name: "hidden_key".into(),
+    let error = rig.app.dispatch(Action::Plugins {
+        action: PluginAction::ShowOwnerSecret {
+            plugin_id: ID.into(),
+            name: "hidden_key".into(),
+        },
     });
     assert!(matches!(error, Err(CoreError::InvalidInput { .. })));
     assert!(
@@ -151,7 +154,7 @@ async fn a_hidden_inflight_value_cannot_reappear_or_satisfy_the_next_disclosure(
     arrived(&rig, VALUE, 1).await;
     act(
         &rig,
-        Action::HideOwnerSecret {
+        PluginAction::HideOwnerSecret {
             plugin_id: ID.into(),
             name: "admin_password".into(),
         },
@@ -168,7 +171,11 @@ async fn a_hidden_inflight_value_cannot_reappear_or_satisfy_the_next_disclosure(
     rig.core.release(Method::GET, VALUE);
     let shown = settled(&rig).await;
     assert_eq!(shown.secrets[0].value.as_ref().unwrap().expose(), "fresh");
-    act(&rig, Action::AppBackgrounded);
+    rig.app
+        .dispatch(Action::Home {
+            action: HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     assert!(rig.app.plugins().owner_secrets.is_none());
 }
 
@@ -181,7 +188,7 @@ async fn dismissal_and_relaunch_forget_pending_lists_and_displayed_values() {
     arrived(&rig, LIST, 1).await;
     act(
         &rig,
-        Action::DismissOwnerSecrets {
+        PluginAction::DismissOwnerSecrets {
             plugin_id: ID.into(),
         },
     );
@@ -268,7 +275,7 @@ async fn errors_preserve_server_categories_and_never_retain_a_previous_value() {
     );
     act(
         &rig,
-        Action::ListOwnerSecrets {
+        PluginAction::ListOwnerSecrets {
             plugin_id: ID.into(),
         },
     );

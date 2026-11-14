@@ -1,9 +1,8 @@
 use super::ClientCore;
 use wonton_protocol::{
-    Action, CoreError, FriendsViewModel, HomeStatus, PlacedTab, PluginDetail, PluginsViewModel,
-    ShareGrantUpdate, SharedAppsState, TabRef,
+    CoreError, FriendsViewModel, HomeStatus, PlacedTab, PluginDetail, PluginsViewModel,
+    ShareGrantUpdate, SharedAppsState, SharingAction, TabRef,
 };
-
 #[uniffi::export]
 impl ClientCore {
     /// Active owner-side friends and groups, including their effective shared plugins.
@@ -46,11 +45,13 @@ impl ClientCore {
     pub(super) fn dispatch_sharing(
         &self,
         scope: &crate::scope::Scope,
-        action: Action,
+        action: SharingAction,
     ) -> Result<(), CoreError> {
         match action {
-            Action::RefreshSharedApps { owner_user_id } => scope.shared_apps.refresh(owner_user_id),
-            Action::OpenSharedApp {
+            SharingAction::RefreshSharedApps { owner_user_id } => {
+                scope.shared_apps.refresh(owner_user_id)
+            }
+            SharingAction::OpenSharedApp {
                 owner_user_id,
                 plugin_id,
             } => {
@@ -60,26 +61,16 @@ impl ClientCore {
                 })?;
                 scope.shared_apps.probe(owner_user_id, plugin_id);
             }
-            Action::CreatePluginShare { grant } => scope.plugins.dispatch_share(None, grant),
-            Action::UpdatePluginShare { id, grant } => {
+            SharingAction::CreatePluginShare { grant } => scope.plugins.dispatch_share(None, grant),
+            SharingAction::UpdatePluginShare { id, grant } => {
                 scope.plugins.dispatch_share(Some(id), grant)
             }
-            Action::RevokePluginShare { id } => scope.plugins.dispatch_revoke_share(id),
-            Action::TabLoadFailed { page, status } => {
-                self.shared_page_failed(scope, page, status)?
-            }
-            Action::TabLoadSucceeded { page } => self.shared_page_loaded(scope, page)?,
-            _ => {
-                return Err(CoreError::InvalidInput {
-                    reason: "invalid sharing action".into(),
-                });
-            }
+            SharingAction::RevokePluginShare { id } => scope.plugins.dispatch_revoke_share(id),
         }
         Ok(())
     }
 
-    /// 分享页加载失败：先按来源重探，再记进标签状态。
-    fn shared_page_failed(
+    pub(super) fn shared_page_failed(
         &self,
         scope: &crate::scope::Scope,
         page: PlacedTab,
@@ -91,8 +82,7 @@ impl ClientCore {
         scope.pages.load_failed(page, status)
     }
 
-    /// 分享页加载成功：同样重探来源，失败/成功分开记。
-    fn shared_page_loaded(
+    pub(super) fn shared_page_loaded(
         &self,
         scope: &crate::scope::Scope,
         page: PlacedTab,

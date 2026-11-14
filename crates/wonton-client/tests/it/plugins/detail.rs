@@ -107,9 +107,11 @@ async fn an_uncertain_uninstall_that_removed_the_plugin_closes_the_page() {
     rig.core
         .answer(Method::DELETE, PATH, Canned(502, String::new()));
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: ID.to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: ID.to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig
@@ -146,9 +148,11 @@ async fn an_uncertain_uninstall_waits_out_a_dropped_connection_before_closing() 
     rig.core
         .answer(Method::DELETE, PATH, Canned(502, String::new()));
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: ID.to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: ID.to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig
@@ -180,9 +184,11 @@ async fn a_finished_uninstall_closes_without_reading_the_detail_again() {
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some()).await;
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: ID.to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: ID.to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     rig.task(ID, |state| *state == PluginTaskState::Succeeded)
@@ -210,9 +216,11 @@ async fn a_failed_uninstall_reloads_the_detail() {
         core_error(500, "upstream", "Docker 出错"),
     );
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: ID.to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: ID.to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig
@@ -270,10 +278,12 @@ async fn a_finished_upgrade_reloads_the_detail() {
         Canned(200, "{}".to_owned()),
     );
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let task = rig

@@ -165,9 +165,9 @@ struct InstallConfirmView: View {
         let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
-            action = .upgradePlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .plugins(action: .upgradePlugin(preview: preview, secrets: secrets, settings: [:]))
         } else {
-            action = .installPlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .plugins(action: .installPlugin(preview: preview, secrets: secrets, settings: [:]))
         }
         do {
             try model.core.dispatch(action: action)

@@ -25,7 +25,7 @@ struct RegistryMirrorSettingsView: View {
                     ProgressView().padding(.trailing, WontonTheme.spacing.s12)
                 } else {
                     Button(String(localized: .Common.commonSave)) {
-                        model.send(.saveRegistryMirror(mirror: enabled ? draft : ""))
+                        model.send(.plugins(action: .saveRegistryMirror(mirror: enabled ? draft : "")))
                     }
                     .wontonBarAction()
                     .disabled(mirror.settings == nil ||
@@ -33,7 +33,7 @@ struct RegistryMirrorSettingsView: View {
                     .padding(.trailing, WontonTheme.spacing.s12)
                 }
             }
-            .onAppear { model.send(.refreshRegistryMirror) }
+            .onAppear { model.send(.plugins(action: .refreshRegistryMirror)) }
             .onChange(of: mirror.settings, initial: true) { _, settings in
                 synchronize(settings)
             }
@@ -43,7 +43,7 @@ struct RegistryMirrorSettingsView: View {
         if let settings = mirror.settings {
             form(settings)
         } else if let problem = mirror.loadProblem {
-            ProblemView(problem: problem.problem) { model.send(.refreshRegistryMirror) }
+            ProblemView(problem: problem.problem) { model.send(.plugins(action: .refreshRegistryMirror)) }
         } else {
             LoadingView()
         }
@@ -59,9 +59,11 @@ struct RegistryMirrorSettingsView: View {
                 }
                 if let problem = mirror.loadProblem {
                     ProblemNotice(problem: problem.problem)
-                    Button(String(localized: .Common.commonRetry)) { model.send(.refreshRegistryMirror) }
-                        .buttonStyle(WontonButtonStyle(kind: .secondary))
-                        .disabled(mirror.loading)
+                    Button(String(localized: .Common.commonRetry)) {
+                        model.send(.plugins(action: .refreshRegistryMirror))
+                    }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    .disabled(mirror.loading)
                 }
                 if let problem = mirror.saveProblem {
                     ProblemNotice(problem: problem.reason == .invalid
@@ -123,7 +125,7 @@ struct RegistryMirrorSettingsView: View {
     }
 
     private var testButton: some View {
-        Button { model.send(.testRegistryMirrors) } label: {
+        Button { model.send(.plugins(action: .testRegistryMirrors)) } label: {
             HStack(spacing: WontonTheme.spacing.s8) {
                 if mirror.testing { ProgressView().controlSize(.small) }
                 Text(.RegistryMirror.registryMirrorTest)

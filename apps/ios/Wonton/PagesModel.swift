@@ -36,12 +36,12 @@ final class PagesModel {
 
     /// 打开一个页面：已经是栈顶就回到根（再点一次侧边栏的“聊天”是回列表）。
     func open(_ tab: TabRef) {
-        send(.openPage(tab: tab))
+        send(.pages(action: .openPage(tab: tab)))
     }
 
     /// 系统入口必须把核心拒绝抛给 Intent，而不是只在 App 内显示弹窗。
     func openForNavigation(_ tab: TabRef) throws {
-        try core.dispatch(action: .openPage(tab: tab))
+        try core.dispatch(action: .pages(action: .openPage(tab: tab)))
         update(core.pages())
         rejection = nil
     }
@@ -57,7 +57,7 @@ final class PagesModel {
 
     /// 关掉当前页（系统返回、胶囊的退出）。
     func closeCurrent() {
-        send(.closePage)
+        send(.pages(action: .closePage))
     }
 
     /// 主界面把最近用过的页面报给模型，WebView 实例按“栈上的都留 + 最近关掉的留几个”保留。

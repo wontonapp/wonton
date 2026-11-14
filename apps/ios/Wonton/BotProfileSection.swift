@@ -56,7 +56,7 @@ struct BotProfileSection: View {
                     stateGrid(bot, isBusy: isBusy(bot))
                     if let failure = bot.problem {
                         ProblemNotice(problem: failure.reason.problem(detail: failure.detail)) {
-                            dispatch(.dismissBotProfileProblem(pluginId: pluginId))
+                            dispatch(.bot(action: .dismissBotProfileProblem(pluginId: pluginId)))
                         }
                     }
                     if let localProblem {
@@ -161,7 +161,7 @@ struct BotProfileSection: View {
             return
         }
         pending = .name
-        dispatch(.setBotName(pluginId: pluginId, name: draftName))
+        dispatch(.bot(action: .setBotName(pluginId: pluginId, name: draftName)))
     }
 
     /// 进展和失败都记在 `BotView.saving`、`BotView.problem` 里（核心立即拒绝时也会先写 problem），这里吞掉
@@ -202,7 +202,7 @@ private extension BotProfileSection {
             .accessibilityIdentifier("botProfileChooseStatic")
             if bot.avatar != nil {
                 Button(String(localized: .BotProfile1.botProfilePickRemove)) {
-                    dispatch(.clearBotAvatar(pluginId: pluginId, state: nil))
+                    dispatch(.bot(action: .clearBotAvatar(pluginId: pluginId, state: nil)))
                     pending = .staticRemove
                 }
                 .buttonStyle(WontonSmallButtonStyle())
@@ -293,7 +293,7 @@ private extension BotProfileSection {
             WontonSheetAction(title: String(localized: .BotProfile1.botProfilePickRemove), icon: .trash,
                 isDanger: true) {
                 if let state = sheetSlot?.state {
-                    dispatch(.clearBotAvatar(pluginId: pluginId, state: state))
+                    dispatch(.bot(action: .clearBotAvatar(pluginId: pluginId, state: state)))
                     pending = .stateRemove(state)
                 }
                 sheetSlot = nil
@@ -312,7 +312,7 @@ private extension BotProfileSection {
             let upload = try await AvatarTranscode.upload(from: item, slot: slot, core: plugins.core) { value in
                 Task { @MainActor in processingProgress = value }
             }
-            dispatch(.setBotAvatar(pluginId: pluginId, state: slot.state, upload: upload))
+            dispatch(.bot(action: .setBotAvatar(pluginId: pluginId, state: slot.state, upload: upload)))
             if let state = slot.state {
                 pending = .stateSet(state)
             } else {

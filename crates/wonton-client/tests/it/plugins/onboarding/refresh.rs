@@ -52,14 +52,29 @@ async fn assert_stays(rig: &Rig, expected: &OnboardingViewModel) {
 
 fn change_installed(rig: &Rig, id: &str) {
     rig.core.set_lists(vec![vec![running(id)]]);
-    act(rig, Action::RefreshPlugins);
+    act(
+        rig,
+        Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        },
+    );
 }
 
 /// 填了名字、停在接模型这一步。
 async fn at_model(rig: &Rig) {
     edit(rig, "云吞", "");
-    act(rig, Action::ContinueOnboarding);
-    act(rig, Action::ContinueOnboarding);
+    act(
+        rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
+    act(
+        rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(rig, OnboardingStep::Model).await;
 }
 
@@ -73,10 +88,12 @@ async fn a_finished_task_refreshes_rows_even_when_installed_list_is_unchanged() 
     let installed = rig.app.plugins().installed;
     rig.core.hold(Method::POST, PLUGINS);
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     wait_requests(&rig, Method::POST, PLUGINS, 1).await;
@@ -152,7 +169,12 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
         MODEL_SETTINGS,
         core_error(503, "models_unavailable", "gateway stopped"),
     );
-    act(&rig, Action::RefreshOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+        },
+    );
     let before = rig
         .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)
         .await;
@@ -185,8 +207,10 @@ async fn a_silent_response_cannot_rewind_a_settings_save() {
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
     act(
         &rig,
-        Action::SetPrimaryAgent {
-            id: "agent.one".to_owned(),
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::SetPrimaryAgent {
+                id: "agent.one".to_owned(),
+            },
         },
     );
     let saved = rig
@@ -220,10 +244,12 @@ async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
     rig.core.hold(Method::POST, PLUGINS);
     act(
         &rig,
-        Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         },
     );
     rig.core.release(Method::POST, PLUGINS);
@@ -238,13 +264,33 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
     state["agents"][0]["status"] = serde_json::json!({ "state": "running", "health": "healthy" });
     let rig = flow_rig(state.clone()).await;
     edit(&rig, "云吞", "");
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(&rig, OnboardingStep::Agent).await;
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(&rig, OnboardingStep::Model).await;
-    act(&rig, Action::SkipOnboardingStep);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
+        },
+    );
     at(&rig, OnboardingStep::Apps).await;
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(&rig, OnboardingStep::Review).await;
 
     // 旧请求扣在假核心上，回应是点完成之前的状态（primary_agent 还是空）。
@@ -252,11 +298,21 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
         .answer(Method::GET, ONBOARDING, Canned(200, state.to_string()));
     rig.core.hold(Method::GET, ONBOARDING);
     let gets = rig.core.seen(&Method::GET, ONBOARDING).len();
-    act(&rig, Action::RefreshOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+        },
+    );
     wait_requests(&rig, Method::GET, ONBOARDING, gets + 1).await;
 
     // 点完成：finish 的回应先落地，走完了和默认 Agent 都比旧请求的新。
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     rig.wait_onboarding(|view| {
         view.review.commit == OnboardingCommit::Done
             && view.primary_bot_user_id.as_deref() == Some("@agent:home")
@@ -281,7 +337,12 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
 
     rig.core.hold(Method::GET, MODEL_SETTINGS);
     let fetches = rig.core.seen(&Method::GET, MODEL_SETTINGS).len();
-    act(&rig, Action::RestartOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RestartOnboarding,
+        },
+    );
     wait_requests(&rig, Method::GET, MODEL_SETTINGS, fetches + 1).await;
 
     rig.core.set_onboarding(install_state("finished", true));
@@ -307,14 +368,29 @@ async fn a_silent_refresh_does_not_drop_details_from_a_manual_refresh() {
     let rig = flow_rig(onboarding("profile")).await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
-    act(&rig, Action::SkipOnboardingStep);
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::SkipOnboardingStep,
+        },
+    );
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(&rig, OnboardingStep::Model).await;
 
     let settings_gets = rig.core.seen(&Method::GET, MODEL_SETTINGS).len();
     rig.core.hold(Method::GET, MODEL_SETTINGS);
     rig.core.set_model_settings(model_settings(true));
-    act(&rig, Action::RefreshOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::RefreshOnboarding,
+        },
+    );
     wait_requests(&rig, Method::GET, MODEL_SETTINGS, settings_gets + 1).await;
 
     let manual_onboarding_gets = rig.core.seen(&Method::GET, ONBOARDING).len();

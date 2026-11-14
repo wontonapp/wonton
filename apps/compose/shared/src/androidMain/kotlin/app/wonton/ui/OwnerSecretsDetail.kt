@@ -33,6 +33,7 @@ import app.wonton.protocol.OwnerSecretFailure
 import app.wonton.protocol.OwnerSecretProblem
 import app.wonton.protocol.OwnerSecretView
 import app.wonton.protocol.OwnerSecretsView
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginFailure
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator
@@ -69,7 +70,7 @@ internal fun OwnerSecretsSection(pluginId: String, plugins: PluginsState) {
 @Composable
 private fun OwnerSecretsGroup(pluginId: String, plugins: PluginsState) {
     DisposableEffect(plugins, pluginId) {
-        onDispose { plugins.send(Action.DismissOwnerSecrets(pluginId)) }
+        onDispose { plugins.send(Action.Plugins(PluginAction.DismissOwnerSecrets(pluginId))) }
     }
     val view = plugins.viewModel.ownerSecrets?.takeIf { it.pluginId == pluginId }
     if (view?.secrets?.any { it.expanded && it.value != null } == true) SecureScreen()
@@ -80,7 +81,10 @@ private fun OwnerSecretsGroup(pluginId: String, plugins: PluginsState) {
             Modifier.padding(horizontal = WontonTheme.spacing.s16),
         ) {
             plugins.send(
-                if (view == null) Action.ListOwnerSecrets(pluginId) else Action.DismissOwnerSecrets(pluginId),
+                Action.Plugins(
+                    if (view == null) PluginAction.ListOwnerSecrets(pluginId)
+                    else PluginAction.DismissOwnerSecrets(pluginId),
+                ),
             )
         }
         if (view != null) {
@@ -101,7 +105,7 @@ private fun OwnerSecretsContent(view: OwnerSecretsView, plugins: PluginsState) {
     when {
         view.loading -> OwnerSecretLoading()
         problem != null -> ProblemRow(problem.ownerSecretProblem()) {
-            plugins.send(Action.ListOwnerSecrets(view.pluginId))
+            plugins.send(Action.Plugins(PluginAction.ListOwnerSecrets(view.pluginId)))
         }
         view.secrets.isEmpty() -> Text(
             stringResource(R.string.owner_secrets_empty),
@@ -129,15 +133,17 @@ private fun OwnerSecretRow(pluginId: String, item: OwnerSecretView, plugins: Plu
             ),
         ) {
             plugins.send(
-                if (item.expanded) Action.HideOwnerSecret(pluginId, item.name)
-                else Action.ShowOwnerSecret(pluginId, item.name),
+                Action.Plugins(
+                    if (item.expanded) PluginAction.HideOwnerSecret(pluginId, item.name)
+                    else PluginAction.ShowOwnerSecret(pluginId, item.name),
+                ),
             )
         }
         if (item.expanded) {
             when {
                 item.loading -> OwnerSecretLoading()
                 problem != null -> ProblemRow(problem.ownerSecretProblem()) {
-                    plugins.send(Action.ShowOwnerSecret(pluginId, item.name))
+                    plugins.send(Action.Plugins(PluginAction.ShowOwnerSecret(pluginId, item.name)))
                 }
                 else -> item.value?.let { value ->
                     // Selection would bypass the sensitive clipboard flag; copying goes through the button only.

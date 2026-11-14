@@ -105,15 +105,4 @@ impl ClientCore {
     ) -> Result<TabMediaPermission, CoreError> {
         self.scope().pages.decide_media_permission(allow)
     }
-
-    /// 插件详情页的开关：`true` 是允许，`false` 是改回没问过（清掉，下次再问）。
-    /// 拒绝只在询问弹窗里产生，开关给不出拒绝。不经 [`Action`](wonton_protocol::Action)：
-    /// 那个枚举的 uniffi 元数据已贴着上限，加变体会编不过。
-    pub fn set_plugin_media_permission(
-        &self,
-        plugin_id: String,
-        allow: bool,
-    ) -> Result<(), CoreError> {
-        self.scope().plugins.set_media_permission(plugin_id, allow)
-    }
 }

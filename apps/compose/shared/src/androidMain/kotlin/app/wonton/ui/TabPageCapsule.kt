@@ -27,6 +27,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.DpSize
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.MyAppRef
 import app.wonton.protocol.TabRef
@@ -115,7 +116,7 @@ private fun CapsuleMenu(
             DropdownMenuItem(text = { Text(stringResource(R.string.myapp_add)) },
                 onClick = {
                     close()
-                    tabs.send(Action.AddMyApp(MyAppRef.Page(tab), null, null))
+                    tabs.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(tab), null, null)))
                 })
             DropdownMenuItem(text = { Text(stringResource(R.string.tab_menu_details)) },
                 onClick = { close(); onDetails(tab.pluginId) })

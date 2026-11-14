@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingViewModel
 import app.wonton.protocol.StepNav
 import app.wonton.ui.design.StepCardFrame
@@ -35,9 +36,9 @@ internal fun OnboardingProfileStep(
         title = view.title(),
         primaryText = stringResource(R.string.onboarding_next),
         primaryBusy = view.loading,
-        onBack = { send(Action.BackOnboardingStep) },
-        onSkip = { send(Action.SkipOnboardingStep) },
-        onPrimary = { send(Action.ContinueOnboarding) },
+        onBack = { send(Action.Onboarding(OnboardingAction.BackOnboardingStep)) },
+        onSkip = { send(Action.Onboarding(OnboardingAction.SkipOnboardingStep)) },
+        onPrimary = { send(Action.Onboarding(OnboardingAction.ContinueOnboarding)) },
         onClose = onboarding.close,
         modifier = modifier,
     ) {
@@ -49,19 +50,19 @@ internal fun OnboardingProfileStep(
                 val problem = view.problem
                 when {
                     problem != null -> OnboardingProblem(problem.onboardingTitle(), problem.message) {
-                        send(Action.RefreshOnboarding)
+                        send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
                     }
                     else -> {
                         OwnerProfileFields(
                             name = name,
                             onName = {
                                 name = it
-                                send(Action.EditOnboardingProfile(name, email))
+                                send(Action.Onboarding(OnboardingAction.EditOnboardingProfile(name, email)))
                             },
                             email = email,
                             onEmail = {
                                 email = it
-                                send(Action.EditOnboardingProfile(name, email))
+                                send(Action.Onboarding(OnboardingAction.EditOnboardingProfile(name, email)))
                             },
                             nameProblem = view.profile.displayNameProblem,
                             emailProblem = view.profile.emailProblem,

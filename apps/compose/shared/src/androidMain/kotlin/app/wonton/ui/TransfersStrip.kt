@@ -29,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDecoration
 import app.wonton.client.ClientCore
+import app.wonton.protocol.FileAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.Transfer
 import app.wonton.protocol.TransferAction
@@ -171,21 +172,21 @@ private fun TransferButton(transfer: Transfer, action: TransferAction) {
         TransferAction.CANCEL -> WontonIconButton(
             WontonIcon.Close,
             stringResource(R.string.common_cancel),
-            { files.onAction(Action.CancelTransfer(transfer.id)) },
+            { files.onAction(Action.Files(FileAction.CancelTransfer(transfer.id))) },
         )
         TransferAction.DISMISS -> WontonIconButton(
             WontonIcon.Close,
             stringResource(R.string.transfer_clear),
-            { files.onAction(Action.DismissTransfer(transfer.id, false)) },
+            { files.onAction(Action.Files(FileAction.DismissTransfer(transfer.id, false))) },
         )
         TransferAction.DISMISS_DOWNLOADED ->
             WontonIconButton(WontonIcon.Trash, stringResource(R.string.transfer_clean_up), { confirming = true })
         TransferAction.RESEND_LINK -> TextAction(
             stringResource(R.string.transfer_resend_link),
-        ) { files.onAction(Action.ResendFileLink(transfer.id)) }
+        ) { files.onAction(Action.Files(FileAction.ResendFileLink(transfer.id))) }
         TransferAction.STOP_SENDING -> TextAction(
             stringResource(R.string.transfer_stop_sending),
-        ) { files.onAction(Action.CancelTransfer(transfer.id)) }
+        ) { files.onAction(Action.Files(FileAction.CancelTransfer(transfer.id))) }
         TransferAction.OPEN -> WontonIconButton(WontonIcon.Eye, stringResource(R.string.transfer_open), {
             path?.let { openWithSystem(context, it, null)?.let(files.onReject) }
         })
@@ -219,7 +220,7 @@ private fun DismissDownloadedDialog(transfer: Transfer, onClose: () -> Unit) {
     val files = LocalFiles.current
     val dismiss = { deleteLocalFile: Boolean ->
         onClose()
-        files.onAction(Action.DismissTransfer(transfer.id, deleteLocalFile))
+        files.onAction(Action.Files(FileAction.DismissTransfer(transfer.id, deleteLocalFile)))
     }
     WontonDialog(
         stringResource(R.string.transfer_cleanup_title, transfer.name),

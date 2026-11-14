@@ -53,8 +53,8 @@ struct WontonApp: App {
                 .onChange(of: scenePhase) { old, phase in
                     // 挂起期间服务端可能已经放弃了连接、网络也可能变了，让核心检查并重连。离开后台就发，不等
                     // .active（实测晚约 0.4 秒）：核心要赶在网页恢复后的第一个请求之前开始检查。
-                    if old == .background, phase != .background { home.send(.appForegrounded) }
-                    if phase == .background { home.send(.appBackgrounded) }
+                    if old == .background, phase != .background { home.send(.home(action: .appForegrounded)) }
+                    if phase == .background { home.send(.home(action: .appBackgrounded)) }
                 }
             case let .failed(reason):
                 WontonThemeRoot(appearance: defaultAppearance()) {
@@ -110,7 +110,7 @@ private enum Launch {
         // 核心在收到 `setLanguages` 之前按英文写“详情”。主界面 `.task` 要等第一帧之后才跑，配对页的
         // 第一帧和 DEBUG 的配对码那条都在它前面，所以在这里发。iOS 改 App 语言会重启 App，启动一次就够。
         do {
-            try core.dispatch(action: .setLanguages(languages: AppLanguage.preferred))
+            try core.dispatch(action: .settings(action: .setLanguages(languages: AppLanguage.preferred)))
         } catch {
             return .failed(String(localized: .appCoreLaunchFailed(String(describing: error))))
         }
@@ -120,7 +120,7 @@ private enum Launch {
         // 开发时由 `xcrun simctl launch` / `devicectl` 传入配对码（`dev.sh pair` 的输出），模拟器上不用扫码。
         if let code = ProcessInfo.processInfo.environment["WONTON_DEV_PAIRING_CODE"] {
             do {
-                try core.dispatch(action: .pairHome(code: code, deviceName: UIDevice.current.name))
+                try core.dispatch(action: .home(action: .pairHome(code: code, deviceName: UIDevice.current.name)))
             } catch {
                 return .failed(String(localized: .appDevCodeRejected(String(describing: error))))
             }

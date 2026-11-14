@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.runtime.compositionLocalOf
 import app.wonton.client.ClientCore
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.MatrixTarget
 import app.wonton.protocol.RichLink
@@ -38,7 +39,7 @@ class AndroidLinkOpener(
         when (val kind = link.kind) {
             is RichLinkKind.External, RichLinkKind.Other -> customTab(link.url)
             is RichLinkKind.Plugin ->
-                core.send(Action.OpenPage(TabRef.Plugin(kind.pluginId, null)))?.let(onReject)
+                core.send(Action.Pages(PageAction.OpenPage(TabRef.Plugin(kind.pluginId, null))) )?.let(onReject)
             is RichLinkKind.Matrix -> when (val target = kind.target) {
                 is MatrixTarget.User -> navigation.openDirectChat(core, target.userId)?.let(onReject)
                 is MatrixTarget.Room -> scope.launch {

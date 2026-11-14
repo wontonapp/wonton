@@ -43,6 +43,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.SharingAction
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppsAction
 import app.wonton.protocol.HomeViewModel
@@ -87,8 +90,8 @@ fun LauncherScreen(
     onSettings: (() -> Unit)? = null,
 ) {
     LaunchedEffect(plugins) {
-        if (AppsAction.STORE in plugins.viewModel.actions) plugins.refresh(Action.RefreshPlugins)
-        plugins.refresh(Action.RefreshSharedApps(null))
+        if (AppsAction.STORE in plugins.viewModel.actions) plugins.refresh(Action.Plugins(PluginAction.RefreshPlugins))
+        plugins.refresh(Action.Sharing(SharingAction.RefreshSharedApps(null)))
     }
     WontonScreen(
         bar = {
@@ -104,8 +107,8 @@ fun LauncherScreen(
             PullToRefreshBox(
                 isRefreshing = plugins.viewModel.refreshing,
                 onRefresh = {
-                    if (hasStore) plugins.send(Action.RefreshPlugins)
-                    plugins.send(Action.RefreshSharedApps(null))
+                    if (hasStore) plugins.send(Action.Plugins(PluginAction.RefreshPlugins))
+                    plugins.send(Action.Sharing(SharingAction.RefreshSharedApps(null)))
                 },
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) {
@@ -124,12 +127,12 @@ fun LauncherScreen(
                     }
                     plugins.viewModel.problem?.let { problem ->
                         item(key = "problem", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(problem.problem) { plugins.send(Action.RefreshPlugins) }
+                            ProblemRow(problem.problem) { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
                         }
                     }
                     installed?.upgradeCheck?.let { check ->
                         item(key = "check", span = { GridItemSpan(maxLineSpan) }) {
-                            ProblemRow(check.problem) { plugins.send(Action.RefreshPlugins) }
+                            ProblemRow(check.problem) { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
                         }
                     }
                     if (installed?.plugins?.isEmpty() == true && hasStore) {
@@ -169,7 +172,7 @@ private fun NoPlugins(onShowStore: () -> Unit) {
 private fun LauncherPlaceholder(plugins: PluginsState) {
     val problem = plugins.viewModel.problem
     val rejection = plugins.refreshRejection
-    val retry = { plugins.send(Action.RefreshPlugins) }
+    val retry = { plugins.send(Action.Plugins(PluginAction.RefreshPlugins)) }
     when {
         problem != null -> ProblemView(problem.problem, retry)
         rejection != null -> ProblemView(rejection.problem, retry)
@@ -284,8 +287,13 @@ private fun LauncherIcon(plugin: InstalledPlugin, plugins: PluginsState, navigat
     if (showingMenu) LauncherMenu(plugin, plugins, navigation, onAdd = {
         val mine = pages.plugins.viewModel.sidebar.apps.mapNotNull { it.tab }.toSet()
         val choices = plugin.tabChoices.filter { choice -> choice.tab !in mine }
-        if (choices.size == 1) pages.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
-        else if (choices.isNotEmpty()) choosingPage = true
+        if (choices.size == 1) {
+            pages.send(
+                Action.Pages(
+                    PageAction.AddMyApp(MyAppRef.Page(choices.single().tab), null, null),
+                ),
+            )
+        } else if (choices.isNotEmpty()) choosingPage = true
     }) { showingMenu = false }
     if (choosingPage) MyAppChoiceSheet(plugin) { choosingPage = false }
 }
@@ -340,7 +348,7 @@ private fun LauncherMenu(
         plugin.upgrade?.let { upgrade ->
             add(
                 WontonSheetAction(stringResource(R.string.launcher_upgrade_to, upgrade.version), WontonIcon.Download) {
-                    plugins.send(Action.UpgradeNow(pluginId = plugin.id))
+                    plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = plugin.id)))
                 },
             )
         }

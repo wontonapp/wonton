@@ -46,13 +46,15 @@ impl Room {
     }
 
     fn upload(&self, path: &std::path::Path) -> Action {
-        Action::UploadFile {
-            source: UploadSource::Path {
-                path: path.to_str().unwrap().to_owned(),
+        Action::Files {
+            action: wonton_protocol::FileAction::UploadFile {
+                source: UploadSource::Path {
+                    path: path.to_str().unwrap().to_owned(),
+                },
+                name: name_of(path),
+                mime_type: Some("text/plain".to_owned()),
+                room: Some(self.room.clone()),
             },
-            name: name_of(path),
-            mime_type: Some("text/plain".to_owned()),
-            room: Some(self.room.clone()),
         }
     }
 
@@ -170,8 +172,10 @@ async fn a_link_that_cannot_go_out_stops_within_a_minute() {
 
     room.home.fail_sends(false);
     room.phone
-        .dispatch(Action::ResendFileLink {
-            id: stuck.id.clone(),
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink {
+                id: stuck.id.clone(),
+            },
         })
         .unwrap();
     let done = wait_transfer_within(

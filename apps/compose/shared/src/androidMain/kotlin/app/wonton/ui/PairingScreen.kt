@@ -37,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.PairingFailure
 import app.wonton.protocol.PairingStage
 import app.wonton.protocol.PairingStatus
@@ -90,7 +91,7 @@ fun PairingScreen(
         // 收起键盘，让配对结果和操作保持可见。
         focus.clearFocus()
         lastCode = code
-        refusal = core.send(Action.PairHome(code, deviceName))?.pairingRefusal()
+        refusal = core.send(Action.Home(HomeAction.PairHome(code, deviceName)))?.pairingRefusal()
         submitted = refusal == null
         status = core.home().pairing
     }
@@ -101,7 +102,7 @@ fun PairingScreen(
         pastedCode = ""
         scanRecognized = false
         submitted = false
-        core.send(Action.DismissPairingFailure)
+        core.send(Action.Home(HomeAction.DismissPairingFailure))
         status = core.home().pairing
         Unit
     }
@@ -130,7 +131,7 @@ fun PairingScreen(
             val progress = status as? PairingStatus.InProgress
             if (progress != null) {
                 PairingProgress(progress, scanRecognized, onCancel = {
-                    core.send(Action.CancelPairing)
+                    core.send(Action.Home(HomeAction.CancelPairing))
                     submitted = false
                     status = core.home().pairing
                     scanRecognized = false

@@ -84,7 +84,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{Action, PluginsViewModel};
+    use crate::{Action, PluginAction, PluginsViewModel};
 
     #[test]
     fn future_mapping_and_transport_categories_do_not_break_the_plugin_view() {
@@ -114,13 +114,18 @@ mod tests {
 
     #[test]
     fn mapping_action_keeps_plugin_and_requested_switch() {
-        let value = json!({"type": "set_port_mapping", "plugin_id": "app.remote", "enabled": true});
+        let value = json!({
+            "domain": "plugins",
+            "action": {"type": "set_port_mapping", "plugin_id": "app.remote", "enabled": true}
+        });
         let action: Action = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(
             action,
-            Action::SetPortMapping {
-                plugin_id: "app.remote".into(),
-                enabled: true
+            Action::Plugins {
+                action: PluginAction::SetPortMapping {
+                    plugin_id: "app.remote".into(),
+                    enabled: true,
+                }
             }
         );
         assert_eq!(serde_json::to_value(action).unwrap(), value);

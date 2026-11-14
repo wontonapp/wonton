@@ -13,7 +13,7 @@
 //! 时取回消息在本机解密（ADR-0003 的“设计：加密推送”）。文件见 `files` 模块：传输列表、卡片和给播放器的地址（ADR-0020）。会话列表还是 M0 验证 UniFFI 用的示例，
 //! 只放在内存里。
 //!
-//! 引导卡片由 [`OnboardingViewModel::nav`] 控制按钮；账号登录仍直接发 [`Action::ContinueOnboarding`]。
+//! 引导卡片由 [`OnboardingViewModel::nav`] 控制按钮；账号登录仍直接发 [`OnboardingAction::ContinueOnboarding`]。
 //! 上一步不撤销已保存的资料、默认 Agent、key 或安装，也保留本机选项；已配置模型时，反向导航跳回 Agent，
 //! 不把主人送回 Apps。插件安装完成会静默更新推荐行，保存 key 和已有错误不受影响（ADR-0034、ADR-0038）。
 //! 后台通知不倒退已发布的引导状态；新操作接替旧操作的忙碌标记，失败后仍能返回或跳过。

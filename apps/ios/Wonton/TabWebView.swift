@@ -128,7 +128,7 @@ final class TabWebSession: NSObject {
                 try configure(webView)
                 if missedFinish {
                     missedFinish = false
-                    try core.dispatch(action: .tabLoadSucceeded(page: placed))
+                    try core.dispatch(action: .pages(action: .tabLoadSucceeded(page: placed)))
                     try updateContext(webView, force: true)
                 } else {
                     try updateContext(webView)
@@ -305,11 +305,11 @@ final class TabWebSession: NSObject {
         problem = nil
         do {
             if case let .sharedApp(ownerUserId, _) = tab {
-                try core.dispatch(action: .refreshSharedApps(ownerUserId: ownerUserId))
+                try core.dispatch(action: .sharing(action: .refreshSharedApps(ownerUserId: ownerUserId)))
             } else {
-                try core.dispatch(action: .refreshPlugins)
+                try core.dispatch(action: .plugins(action: .refreshPlugins))
             }
-            try core.dispatch(action: .reloadTab(page: placed))
+            try core.dispatch(action: .pages(action: .reloadTab(page: placed)))
         } catch { problem = error.problem }
     }
 

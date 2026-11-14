@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotContactAction
 import app.wonton.protocol.BotContact
 import app.wonton.protocol.BotContactFailure
 import app.wonton.protocol.BotContactsState
@@ -71,7 +72,7 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
     var approvingRemote by remember { mutableStateOf<BotContact?>(null) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val send = { action: Action -> rejection = core.send(action) }
-    LaunchedEffect(core, bot) { send(Action.RefreshBotContacts(bot)) }
+    LaunchedEffect(core, bot) { send(Action.BotContacts(BotContactAction.RefreshBotContacts(bot))) }
     WontonScreen(bar = {
         WontonPushedBar(stringResource(R.string.contacts_title), onBack, actions = {
             WontonIconButton(WontonIcon.Add, stringResource(R.string.contacts_add), { adding = true })
@@ -83,20 +84,24 @@ internal fun BotContactsPage(core: ClientCore, bot: BotRef, onBack: () -> Unit) 
     if (adding) {
         AddContactSheet(onDismiss = { adding = false }) { userId, person ->
             send(
-                if (person) Action.RequestPersonContact(bot, userId) else Action.RequestBotContact(bot, userId),
+                if (person) {
+                    Action.BotContacts(BotContactAction.RequestPersonContact(bot, userId))
+                } else {
+                    Action.BotContacts(BotContactAction.RequestBotContact(bot, userId))
+                },
             )
         }
     }
     removing?.let { contact ->
         RemoveContactDialog(contact, onDismiss = { removing = null }) {
             removing = null
-            send(Action.RemoveBotContact(bot, contact.userId))
+            send(Action.BotContacts(BotContactAction.RemoveBotContact(bot, contact.userId)))
         }
     }
     approvingRemote?.let { contact ->
         ApproveRemoteContactDialog(contact, onDismiss = { approvingRemote = null }) {
             approvingRemote = null
-            send(Action.ApproveBotContact(bot, contact.userId))
+            send(Action.BotContacts(BotContactAction.ApproveBotContact(bot, contact.userId)))
         }
     }
     rejection?.let { ProblemDialog(it) { rejection = null } }
@@ -121,7 +126,7 @@ fun BotContactsContent(
     val contacts = if (current) view.contacts else emptyList()
     val failed = (view.state as? BotContactsState.Failed)?.takeIf { current }
     val notices = BotContactNotices(failed, view.actionFailure?.takeIf { current }) {
-        onAction(Action.RefreshBotContacts(bot))
+        onAction(Action.BotContacts(BotContactAction.RefreshBotContacts(bot)))
     }
     when {
         contacts.isNotEmpty() -> BotContactList(contacts, notices, onAction, bot, onRemove, onApproveRemote)
@@ -162,12 +167,12 @@ private fun BotContactList(
                 contact,
                 onApprove = {
                     if (contact.remote == null) {
-                        onAction(Action.ApproveBotContact(bot, contact.userId))
+                        onAction(Action.BotContacts(BotContactAction.ApproveBotContact(bot, contact.userId)))
                     } else {
                         onApproveRemote(contact)
                     }
                 },
-                onReject = { onAction(Action.RejectBotContact(bot, contact.userId)) },
+                onReject = { onAction(Action.BotContacts(BotContactAction.RejectBotContact(bot, contact.userId))) },
             )
         }
         ContactSection(R.string.contacts_active_title, active) { contact ->
@@ -175,7 +180,13 @@ private fun BotContactList(
         }
         ContactSection(R.string.contacts_sent_title, sent) { contact ->
             // 撤销请求、清掉被拒或查无此人的行都不用确认：对方那边什么都没成立。
-            SentContactRow(contact) { onAction(Action.RemoveBotContact(bot, contact.userId)) }
+            SentContactRow(contact) {
+                onAction(
+                    Action.BotContacts(
+                        BotContactAction.RemoveBotContact(bot, contact.userId),
+                    ),
+                )
+            }
         }
     }
 }

@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
@@ -97,7 +98,7 @@ private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss
                 text = { Text(stringResource(R.string.myapp_remove)) },
                 onClick = {
                     onDismiss()
-                    pages.send(Action.RemoveMyApp(MyAppRef.Page(choice.tab)))
+                    pages.send(Action.Pages(PageAction.RemoveMyApp(MyAppRef.Page(choice.tab))))
                 },
             )
         } else {
@@ -105,7 +106,7 @@ private fun MyAppMenuItems(plugin: InstalledPlugin, pages: PagesState, onDismiss
                 text = { Text(stringResource(R.string.myapp_add)) },
                 onClick = {
                     onDismiss()
-                    pages.send(Action.AddMyApp(MyAppRef.Page(choice.tab), null, null))
+                    pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(choice.tab), null, null)))
                 },
             )
         }
