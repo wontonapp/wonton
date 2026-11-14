@@ -31,7 +31,9 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
     rig.wait_for(|view| view.installed.is_some()).await;
 
     rig.app
-        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     let view = rig.app.pages();
     let opened = view.stack.last().expect("widget 页压到栈顶");
@@ -51,21 +53,29 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
         Err(CoreError::NotReady { .. })
     ));
 
-    let pinned = rig.app.dispatch(Action::AddMyApp {
-        app: wonton_client::MyAppRef::Page { tab: tab.clone() },
-        title: None,
-        index: None,
+    let pinned = rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::AddMyApp {
+            app: wonton_client::MyAppRef::Page { tab: tab.clone() },
+            title: None,
+            index: None,
+        },
     });
     assert!(
         matches!(pinned, Err(CoreError::InvalidInput { .. })),
         "{pinned:?}"
     );
 
+    assert_widget_stack(&rig, &tab);
+}
+
+fn assert_widget_stack(rig: &Rig, tab: &TabRef) {
     let other = TabRef::Url {
         url: "https://example.com/other".to_owned(),
     };
     rig.app
-        .dispatch(Action::OpenPage { tab: other.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: other.clone() },
+        })
         .unwrap();
     assert_eq!(
         rig.app
@@ -77,11 +87,15 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
         vec![&other]
     );
     assert!(matches!(
-        rig.app.dispatch(Action::ReloadTab { page: bar(&tab) }),
+        rig.app.dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ReloadTab { page: bar(tab) },
+        }),
         Err(CoreError::InvalidInput { .. })
     ));
     rig.app
-        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     assert_eq!(
         rig.app
@@ -90,15 +104,17 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
             .iter()
             .map(|open| &open.tab)
             .collect::<Vec<_>>(),
-        vec![&other, &tab]
+        vec![&other, tab]
     );
     let second = TabRef::Widget {
         plugin_id: "app.call".to_owned(),
         room_id: "!second:wonton.localhost".to_owned(),
     };
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: second.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: second.clone(),
+            },
         })
         .unwrap();
     assert_eq!(
@@ -110,7 +126,11 @@ async fn a_widget_without_a_chat_session_says_so_and_cannot_be_pinned() {
             .collect::<Vec<_>>(),
         vec![&other, &second]
     );
-    rig.app.dispatch(Action::ClosePage).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
     assert_eq!(
         rig.app
             .pages()

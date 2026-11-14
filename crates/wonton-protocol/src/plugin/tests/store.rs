@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::*;
-use crate::{Action, EgressViewModel, PluginState, StoreConfirmation, TabRef, UpdatablePlugin};
+use crate::{
+    Action, EgressViewModel, PluginAction, PluginState, StoreConfirmation, TabRef, UpdatablePlugin,
+};
 
 fn round_trip<T>(value: &T) -> T
 where
@@ -209,23 +211,33 @@ fn sidebar_view_model_round_trip() {
 
 fn wire_format_is_stable() {
     for action in [
-        Action::InstallNow {
-            source: "github:owner/repo".into(),
+        Action::Plugins {
+            action: PluginAction::InstallNow {
+                source: "github:owner/repo".into(),
+            },
         },
-        Action::UpgradeNow {
-            plugin_id: "app.memos".into(),
+        Action::Plugins {
+            action: PluginAction::UpgradeNow {
+                plugin_id: "app.memos".into(),
+            },
         },
-        Action::UpgradeAll,
-        Action::DismissStoreConfirmation,
+        Action::Plugins {
+            action: PluginAction::UpgradeAll,
+        },
+        Action::Plugins {
+            action: PluginAction::DismissStoreConfirmation,
+        },
     ] {
         assert_eq!(round_trip(&action), action);
     }
     assert_eq!(
-        serde_json::to_value(Action::UpgradeNow {
-            plugin_id: "app.memos".into()
+        serde_json::to_value(Action::Plugins {
+            action: PluginAction::UpgradeNow {
+                plugin_id: "app.memos".into(),
+            }
         })
         .unwrap(),
-        json!({"type": "upgrade_now", "plugin_id": "app.memos"})
+        json!({"domain": "plugins", "action": {"type": "upgrade_now", "plugin_id": "app.memos"}})
     );
     assert_eq!(
         serde_json::to_value(installed()).unwrap()["revision"],

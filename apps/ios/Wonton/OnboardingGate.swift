@@ -44,7 +44,7 @@ struct OnboardingGate<Content: View>: View {
             VStack(spacing: WontonTheme.spacing.s8) {
                 Spacer(minLength: 0)
                 ProblemView(problem: model.rejection ?? model.viewModel.problem!.problem) {
-                    model.send(.refreshOnboarding)
+                    model.send(.onboarding(action: .refreshOnboarding))
                 }
                 Button(String(localized: .Onboarding2.onboardingSkipAnyway)) { model.skipsUnavailableGate = true }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))

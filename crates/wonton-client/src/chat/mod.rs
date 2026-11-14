@@ -72,10 +72,10 @@ use wonton_matrix::{
     ChatRoom, Error, MatrixSession, OwnedRoomId, OwnedUserId, RoomId, SyncStatus, UserId,
 };
 use wonton_protocol::{
-    Action, CORE_LOCALPART, ChatAccount, ChatFailure, ChatSync, ChatViewModel, ConfirmationView,
-    ConfirmationsViewModel, CoreError, DeviceVerification, EncryptionStatus, MediaHandle,
-    PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomPanel, TimelineAction,
-    TimelineScroll, TimelineTarget,
+    CORE_LOCALPART, ChatAccount, ChatAction, ChatFailure, ChatSync, ChatViewModel,
+    ConfirmationView, ConfirmationsViewModel, CoreError, DeviceVerification, EncryptionStatus,
+    MediaHandle, PushMethod, PushStatus, RecoveryNextStep, RecoveryStatus, RoomPanel,
+    TimelineAction, TimelineScroll, TimelineTarget,
 };
 
 pub use bots::bot_current_avatar;
@@ -128,7 +128,7 @@ pub(crate) struct ChatLink {
     confirmations: watch::Sender<ConfirmationsViewModel>,
     /// 会话里能显示的卡片（等回答的，加上这个进程里看着结束的），按 `origin.room_id` 由时间线的出口过滤。
     room_cards: watch::Sender<Arc<Vec<ConfirmationView>>>,
-    /// `Action::RetryConfirmations` 放行长轮询的退避等待。
+    /// `ChatAction::RetryConfirmations` 放行长轮询的退避等待。
     retry_confirmations: Arc<tokio::sync::Notify>,
     /// 本会话里亲眼看到从没结束变成成功的插件 ID：插件列表多半还是旧的，补取的逻辑在插件那头。
     card_success: CardSuccess,
@@ -381,51 +381,54 @@ impl ChatLink {
     }
 
     /// 处理聊天操作。参数不合法、还没登录时直接返回错误；网络操作在后台执行，失败放进 `problem`。
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: ChatAction) -> Result<(), CoreError> {
         match action {
-            Action::DismissChatProblem => {
+            ChatAction::DismissChatProblem => {
                 self.view.send_modify(|view| view.problem = None);
                 Ok(())
             }
-            Action::JoinRoom { room_id } => {
+            ChatAction::JoinRoom { room_id } => {
                 let (session, room_id) = self.target(&room_id)?;
                 self.spawn_op("chat-op-join-failed", async move {
                     session.join_room(&room_id).await
                 });
                 Ok(())
             }
-            Action::LeaveRoom { room_id } => {
+            ChatAction::LeaveRoom { room_id } => {
                 let (session, room_id) = self.target(&room_id)?;
                 self.spawn_op("chat-op-leave-failed", async move {
                     session.leave_room(&room_id).await
                 });
                 Ok(())
             }
-            Action::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
-            Action::Timeline { action } => self.timeline_action(action),
-            Action::AnswerAgentChoice {
+            ChatAction::StartDirectChat { user_id } => self.start_direct_chat(&user_id),
+            ChatAction::AnswerAgentChoice {
                 room_id,
                 item_id,
                 key,
             } => self.answer_agent_choice(&room_id, &item_id, &key),
-            Action::ResetRecovery => self.reset_recovery(),
-            Action::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
-            Action::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
-            action @ (Action::StartDeviceVerification
-            | Action::AcceptDeviceVerification { .. }
-            | Action::ConfirmVerification { .. }
-            | Action::DenyVerification { .. }
-            | Action::CancelDeviceVerification { .. }) => self.verification_action(action),
-            action @ (Action::AnswerConfirmation { .. }
-            | Action::StopConfirmationWindow { .. }
-            | Action::RetryConfirmations) => self.confirmation_action(action),
-            Action::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
-            _ => Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action"))),
+            ChatAction::ResetRecovery => self.reset_recovery(),
+            ChatAction::ConfirmRecoveryKeySaved => self.confirm_recovery_key_saved(),
+            ChatAction::RecoverEncryption { recovery_key } => self.recover(&recovery_key),
+            action @ (ChatAction::StartDeviceVerification
+            | ChatAction::AcceptDeviceVerification { .. }
+            | ChatAction::ConfirmVerification { .. }
+            | ChatAction::DenyVerification { .. }
+            | ChatAction::CancelDeviceVerification { .. }) => self.verification_action(action),
+            action @ (ChatAction::AnswerConfirmation { .. }
+            | ChatAction::StopConfirmationWindow { .. }
+            | ChatAction::RetryConfirmations) => self.confirmation_action(action),
+            ChatAction::SetChatLayout { target, choice } => self.set_chat_layout(target, choice),
+            ChatAction::AskAgent { .. } | ChatAction::SkipKeyHandoff => {
+                Err(invalid(&l10n!(CATALOG, language(), "chat-invalid-action")))
+            }
         }
     }
 
-    /// 按时间线（主对话或旁聊，ADR-0093 §5）分发的操作：实现和主对话共用，按 [`TimelineKey`] 分开记。
-    fn timeline_action(self: &Arc<Self>, action: TimelineAction) -> Result<(), CoreError> {
+    pub(crate) fn timeline_action(
+        self: &Arc<Self>,
+        action: TimelineAction,
+    ) -> Result<(), CoreError> {
         match action {
             TimelineAction::SendText {
                 target,

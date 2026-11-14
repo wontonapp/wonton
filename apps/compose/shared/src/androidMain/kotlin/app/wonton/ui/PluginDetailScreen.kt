@@ -44,6 +44,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
@@ -349,7 +350,7 @@ private fun detailAction(
     return when {
         installed?.upgrade != null -> DetailAction(
             context.getString(R.string.install_action_upgrade), !busy,
-        ) { plugins.send(Action.UpgradeNow(pluginId = installed.id)) }
+        ) { plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = installed.id)))}
         installed != null -> entry?.let {
             DetailAction(context.getString(R.string.store_open), !installed.isBusy) { navigation.open(it) }
         }

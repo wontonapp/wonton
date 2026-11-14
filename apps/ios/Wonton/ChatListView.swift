@@ -250,7 +250,7 @@ struct ChatDialogs: ViewModifier {
             .wontonDialog(
                 problem: model.viewModel.problem?.problem,
                 isPresented: isShowingProblem,
-                onDismiss: { model.send(.dismissChatProblem) }
+                onDismiss: { model.send(.chat(action: .dismissChatProblem)) }
             )
     }
 
@@ -261,7 +261,7 @@ struct ChatDialogs: ViewModifier {
     private var isShowingProblem: Binding<Bool> {
         Binding(
             get: { model.viewModel.problem != nil },
-            set: { if !$0 { model.send(.dismissChatProblem) } }
+            set: { if !$0 { model.send(.chat(action: .dismissChatProblem)) } }
         )
     }
 }
@@ -490,9 +490,9 @@ private struct InviteRow: View {
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.Chat0.chatInviteAccept) { model.send(.joinRoom(roomId: row.roomId)) }
+                Button(.Chat0.chatInviteAccept) { model.send(.chat(action: .joinRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button(.Chat1.chatInviteDecline) { model.send(.leaveRoom(roomId: row.roomId)) }
+                Button(.Chat1.chatInviteDecline) { model.send(.chat(action: .leaveRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }

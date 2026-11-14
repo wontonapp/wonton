@@ -70,7 +70,7 @@ struct PeersScannerView: View {
         submitted = true
         scanProblem = nil
         // 成功后核心自己刷新列表，列表上多一行“等对方同意”；码不能用时留在这里说。
-        model.send(.scanPeerCode(code: code))
+        model.send(.peers(action: .scanPeerCode(code: code)))
     }
 
     private func scanTitle(_ error: PeerError) -> String {

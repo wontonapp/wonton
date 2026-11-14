@@ -103,7 +103,7 @@ struct PluginStartStatusView: View {
     private func startButton(_ title: String) -> some View {
         Button(title) {
             do {
-                try model.core.dispatch(action: .startPlugin(pluginId: pluginId))
+                try model.core.dispatch(action: .plugins(action: .startPlugin(pluginId: pluginId)))
                 rejection = nil
             } catch { rejection = error.problem }
         }

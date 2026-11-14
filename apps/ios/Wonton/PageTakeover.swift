@@ -12,11 +12,11 @@ struct PageTakeover {
     }
 
     func start() {
-        send(.startTakeover(id: pluginId))
+        send(.plugins(action: .startTakeover(id: pluginId)))
     }
 
     func end() {
-        send(.endTakeover(id: pluginId))
+        send(.plugins(action: .endTakeover(id: pluginId)))
     }
 }
 

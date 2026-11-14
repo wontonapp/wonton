@@ -10,13 +10,15 @@ use wonton_client::{Action, Transfer, TransferAction, TransferState, UploadSourc
 const MIB: usize = 1024 * 1024;
 
 fn upload(source: &std::path::Path, room: Option<&str>) -> Action {
-    Action::UploadFile {
-        source: UploadSource::Path {
-            path: source.to_str().unwrap().to_owned(),
+    Action::Files {
+        action: wonton_protocol::FileAction::UploadFile {
+            source: UploadSource::Path {
+                path: source.to_str().unwrap().to_owned(),
+            },
+            name: "a.mp4".to_owned(),
+            mime_type: None,
+            room: room.map(str::to_owned),
         },
-        name: "a.mp4".to_owned(),
-        mime_type: None,
-        room: room.map(str::to_owned),
     }
 }
 
@@ -35,7 +37,12 @@ async fn services_come_back(world: &World) -> Transfer {
         core.patches_down = false;
         core.patches_down_unread = false;
     }
-    world.phone().dispatch(Action::AppForegrounded).unwrap();
+    world
+        .phone()
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     let done = world
         .wait_transfer(|t| t.state == TransferState::Done)
         .await;
@@ -110,7 +117,9 @@ async fn a_download_waits_out_the_services_when_asking_the_name() {
     world.core.lock().services_down = true;
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     paused_by_the_services(&world).await;
 
@@ -130,7 +139,9 @@ async fn a_download_waits_out_the_services_when_fetching_the_content() {
     let part = world.downloaded(&file, "a.mov.part");
     world
         .phone()
-        .dispatch(Action::DownloadFile { id: file.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+        })
         .unwrap();
     world
         .wait_until(|| part.metadata().is_ok_and(|meta| meta.len() == MIB as u64))
@@ -185,7 +196,9 @@ async fn stopping_while_the_link_is_on_its_way_leaves_the_file_on_the_server() {
         .await;
     world
         .phone()
-        .dispatch(Action::CancelTransfer { id: transfer.id })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::CancelTransfer { id: transfer.id },
+        })
         .unwrap();
     assert!(world.phone().transfers().all().next().is_none());
     let core = world.core.lock();
@@ -211,11 +224,15 @@ async fn resending_a_link_twice_rapidly_is_not_an_error() {
     let id = transfer.id.clone();
     world
         .phone()
-        .dispatch(Action::ResendFileLink { id: id.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink { id: id.clone() },
+        })
         .unwrap();
     world
         .phone()
-        .dispatch(Action::ResendFileLink { id: id.clone() })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink { id: id.clone() },
+        })
         .unwrap();
     world.wait_core(|core| core.grants.len() == 2).await;
     assert_eq!(world.core.lock().patches.len(), 1, "字节不重传");
@@ -226,7 +243,9 @@ async fn resending_a_link_twice_rapidly_is_not_an_error() {
         .await;
     world
         .phone()
-        .dispatch(Action::ResendFileLink { id: again.id })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink { id: again.id },
+        })
         .unwrap();
     world.wait_core(|core| core.grants.len() == 3).await;
 }
@@ -247,7 +266,9 @@ async fn resending_a_finished_transfer_does_nothing() {
 
     world
         .phone()
-        .dispatch(Action::ResendFileLink { id: transfer.id })
+        .dispatch(Action::Files {
+            action: wonton_protocol::FileAction::ResendFileLink { id: transfer.id },
+        })
         .unwrap();
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(world.core.lock().patches.len(), 1, "字节不重传");

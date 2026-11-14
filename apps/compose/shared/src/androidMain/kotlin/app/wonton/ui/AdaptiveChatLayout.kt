@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.window.core.layout.WindowSizeClass
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackupReminder
 import app.wonton.protocol.ChatViewModel
@@ -97,7 +98,7 @@ internal fun ExpandedChatPane(
     SideEffect { panel.feed(nav.pages.viewModel.panel, nav.pages.viewModel.panelSelected) }
     CompositionLocalProvider(LocalChatPanel provides panel) {
         ChatPanelHost(panel, nav.pages, home, appearance,
-            onDraft = { text -> draft.text = text; nav.pages.send(Action.OpenPage(TabRef.Chat)) },
+            onDraft = { text -> draft.text = text; nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))) },
             onDetails = nav::detail) {
             ExpandedChatList(nav, chat)
         }
@@ -133,7 +134,7 @@ internal fun ExpandedChatList(nav: AppNavigation, chat: ChatViewModel) {
                     } else {
                         nav.settingsOverlay = false
                         nav.closeApps()
-                        nav.pages.send(Action.OpenPage(TabRef.Chat))
+                        nav.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
                         nav.chat.openRoom = null
                         nav.chat.showingBackup = true
                     }

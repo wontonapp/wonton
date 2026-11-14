@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreUpgradeCheck
 import app.wonton.protocol.CoreUpgradeOffer
@@ -58,7 +59,7 @@ private val SPINNER_STROKE = 2.dp
 @Composable
 fun CoreUpgradePage(plugins: PluginsState, onBack: () -> Unit) {
     val upgrade = plugins.viewModel.coreUpgrade
-    LaunchedEffect(Unit) { plugins.refresh(Action.RefreshCoreUpgrade(false)) }
+    LaunchedEffect(Unit) { plugins.refresh(Action.Plugins(PluginAction.RefreshCoreUpgrade(false))) }
     WontonScreen(bar = { WontonPushedBar(stringResource(R.string.core_upgrade_title), onBack) }) {
         val status = upgrade.status
         val problem = upgrade.problem
@@ -66,7 +67,7 @@ fun CoreUpgradePage(plugins: PluginsState, onBack: () -> Unit) {
             status != null -> CoreUpgradeContent(plugins, status)
             problem != null -> ProblemView(
                 Problem(titleRes = failureTitle(problem.reason), detail = problem.message),
-            ) { plugins.send(Action.RefreshCoreUpgrade(true)) }
+            ) { plugins.send(Action.Plugins(PluginAction.RefreshCoreUpgrade(true))) }
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         }
     }
@@ -112,7 +113,7 @@ private fun CheckSection(plugins: PluginsState, check: CoreUpgradeCheck) {
             WontonButton(
                 if (upgrade.refreshing) stringResource(R.string.core_upgrade_checking)
                 else stringResource(R.string.core_upgrade_check_for_update),
-                onClick = { plugins.send(Action.RefreshCoreUpgrade(true)) },
+                onClick = { plugins.send(Action.Plugins(PluginAction.RefreshCoreUpgrade(true))) },
                 modifier = Modifier.fillMaxWidth(),
                 kind = WontonButtonKind.SECONDARY,
                 enabled = !upgrade.refreshing,
@@ -150,12 +151,12 @@ private fun OfferCard(plugins: PluginsState, offer: CoreUpgradeOffer, skipped: B
             compat = offer.compat,
             apps = offer.compat.breakingApps(plugins.viewModel.installed),
             refreshing = plugins.viewModel.coreUpgrade.refreshing,
-            onRetry = { plugins.send(Action.RefreshCoreUpgrade(true)) },
+            onRetry = { plugins.send(Action.Plugins(PluginAction.RefreshCoreUpgrade(true))) },
             icon = { PluginIconImage(it, WontonTheme.size.taskIcon, plugins) },
         )
         if (confirming) {
             FullWidthButton(stringResource(R.string.core_upgrade_confirm_upgrade)) {
-                plugins.send(Action.StartCoreUpgrade(offer.digest))
+                plugins.send(Action.Plugins(PluginAction.StartCoreUpgrade(offer.digest)))
             }
             FullWidthButton(stringResource(R.string.core_upgrade_decline_upgrade), WontonButtonKind.SECONDARY) {
                 confirming = false
@@ -164,7 +165,7 @@ private fun OfferCard(plugins: PluginsState, offer: CoreUpgradeOffer, skipped: B
             FullWidthButton(stringResource(R.string.core_upgrade_upgrade)) { confirming = true }
             if (!skipped) {
                 FullWidthButton(stringResource(R.string.core_upgrade_skip_version), WontonButtonKind.SECONDARY) {
-                    plugins.send(Action.SkipCoreUpgrade(offer.digest))
+                    plugins.send(Action.Plugins(PluginAction.SkipCoreUpgrade(offer.digest)))
                 }
             }
         }
@@ -218,12 +219,12 @@ private fun StageCard(plugins: PluginsState, stage: CoreUpgradeStage, target: Co
         }
         if (stage is CoreUpgradeStage.InProgress && stage.canCancel) {
             FullWidthButton(stringResource(R.string.core_upgrade_cancel_upgrade), WontonButtonKind.DANGER) {
-                plugins.send(Action.CancelCoreUpgrade)
+                plugins.send(Action.Plugins(PluginAction.CancelCoreUpgrade))
             }
         }
         if (stage is CoreUpgradeStage.Uncertain) {
             FullWidthButton(stringResource(R.string.core_upgrade_check_again), WontonButtonKind.SECONDARY) {
-                plugins.send(Action.RefreshCoreUpgrade(false))
+            plugins.send(Action.Plugins(PluginAction.RefreshCoreUpgrade(false)))
             }
         }
     }

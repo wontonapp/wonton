@@ -58,12 +58,16 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     let mut broken = endpoint();
     broken.p256dh = "not-a-key".to_owned();
     assert!(matches!(
-        phone.dispatch(Action::SetPushEndpoint { endpoint: broken }),
+        phone.dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint { endpoint: broken }
+        }),
         Err(CoreError::InvalidInput { .. })
     ));
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     phone
@@ -129,8 +133,10 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
     woken.signed_in().await;
     woken.use_unified_push().await;
     woken
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     woken
@@ -139,8 +145,10 @@ async fn a_bot_reply_wakes_a_killed_app_and_shows_the_decrypted_text() {
         })
         .await;
     woken
-        .dispatch(Action::PushUnavailable {
-            message: "分发器注销了本 App".to_owned(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::PushUnavailable {
+                message: "分发器注销了本 App".to_owned(),
+            },
         })
         .unwrap();
     assert_eq!(
@@ -199,8 +207,10 @@ async fn direct_chats_the_owner_starts_are_encrypted() {
     let bot = home.bot("hermes", "Hermes").await;
 
     phone
-        .dispatch(Action::StartDirectChat {
-            user_id: bot.user_id().to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StartDirectChat {
+                user_id: bot.user_id().to_string(),
+            },
         })
         .unwrap();
     let room = phone
@@ -243,8 +253,10 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     phone.signed_in().await;
     phone.use_unified_push().await;
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     let registered =
@@ -253,7 +265,11 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     let bot = a.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&a, &phone, &bot).await;
 
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone.connect(&b);
     let (_, on_b) = phone.signed_in().await;
     phone.wait_chat("B 上推送已登记", registered).await;
@@ -287,7 +303,9 @@ async fn a_push_from_a_server_you_are_not_on_is_fetched_from_that_server() {
     assert_eq!(a.login_tokens(), 1, "临时连 A 用的是原来的会话");
 
     phone
-        .dispatch(Action::RemoveServer { id: "1".into() })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RemoveServer { id: "1".into() },
+        })
         .unwrap();
     let notification = phone
         .resolve_push(payload)
@@ -323,12 +341,18 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
     phone.signed_in().await;
     phone.use_unified_push().await;
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     phone.wait_chat("A 上推送已登记", registered).await;
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone.connect(&b);
     phone.signed_in().await;
     phone.wait_chat("B 上推送已登记", registered).await;
@@ -337,8 +361,10 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
     moved.url = "https://ntfy.example/upWonton456?up=1".to_owned();
     phone.use_unified_push().await;
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: moved.clone(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: moved.clone(),
+            },
         })
         .unwrap();
     phone.wait_chat("B 上用新地址登记", registered).await;
@@ -362,7 +388,9 @@ async fn a_new_push_endpoint_is_registered_on_the_other_servers_too() {
     let on_b = b.push_requests().len();
     phone.use_unified_push().await;
     phone
-        .dispatch(Action::SetPushEndpoint { endpoint: moved })
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint { endpoint: moved },
+        })
         .unwrap();
     phone.wait_chat("B 再登记一遍", registered).await;
     assert!(b.push_requests().len() > on_b);
@@ -405,12 +433,18 @@ async fn a_repeated_endpoint_while_another_server_is_still_registering_is_not_re
     phone.signed_in().await;
     phone.use_unified_push().await;
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     phone.wait_chat("A 上推送已登记", registered).await;
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone.connect(&b);
     phone.signed_in().await;
     phone.wait_chat("B 上推送已登记", registered).await;
@@ -426,8 +460,10 @@ async fn a_repeated_endpoint_while_another_server_is_still_registering_is_not_re
             .count()
     };
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: moved.clone(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: moved.clone(),
+            },
         })
         .unwrap();
     assert!(
@@ -438,8 +474,10 @@ async fn a_repeated_endpoint_while_another_server_is_still_registering_is_not_re
     // 窗口里壳再给一遍同一个地址。放行让挂起的登记走完：重复的登记跟第一次共用同一把登记锁，
     // 它的 PUT 只会出现在放行之后，所以断言放在放行后、给第二次 PUT 一个有界的机会再数。
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: moved.clone(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: moved.clone(),
+            },
         })
         .unwrap();
     a.hold_push_registrations(false);

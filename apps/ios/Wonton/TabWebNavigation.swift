@@ -52,7 +52,7 @@ extension TabWebSession: WKNavigationDelegate {
             missedFinish = true
         } else {
             do {
-                try core.dispatch(action: .tabLoadSucceeded(page: placed))
+                try core.dispatch(action: .pages(action: .tabLoadSucceeded(page: placed)))
                 try updateContext(webView, force: true)
             } catch { problem = error.problem }
         }
@@ -182,7 +182,7 @@ extension TabWebSession: WKNavigationDelegate {
             return
         }
         do {
-            try core.dispatch(action: .tabLoadFailed(page: placed, status: status))
+            try core.dispatch(action: .pages(action: .tabLoadFailed(page: placed, status: status)))
         } catch { problem = error.problem }
     }
 }

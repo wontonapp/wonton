@@ -7,6 +7,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.SharingAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.SharedAppRow
 import app.wonton.protocol.SharedAppsSource
@@ -23,8 +24,11 @@ internal fun SharedAppsSection(view: SharedAppsViewModel?, plugins: PluginsState
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap)) {
         Text(stringResource(R.string.share_received), style = WontonTheme.typography.sectionTitle,
             color = WontonTheme.colors.textPrimary.toColor())
-        WontonButton(stringResource(R.string.share_refresh), { plugins.send(Action.RefreshSharedApps(null)) },
-            kind = WontonButtonKind.SECONDARY)
+        WontonButton(
+            stringResource(R.string.share_refresh),
+            { plugins.send(Action.Sharing(SharingAction.RefreshSharedApps(null))) },
+            kind = WontonButtonKind.SECONDARY,
+        )
         if (view == null) LoadingView()
         view?.sources?.forEach { source -> SharedSourceSection(source, plugins) }
     }
@@ -32,7 +36,7 @@ internal fun SharedAppsSection(view: SharedAppsViewModel?, plugins: PluginsState
 
 @Composable
 private fun SharedSourceSection(source: SharedAppsSource, plugins: PluginsState) {
-    val refresh = { plugins.send(Action.RefreshSharedApps(source.ownerUserId)) }
+    val refresh = { plugins.send(Action.Sharing(SharingAction.RefreshSharedApps(source.ownerUserId))) }
     DetailSection(source.ownerDisplayName ?: source.ownerUserId) {
         if (source.ownerDisplayName != null) Text(source.ownerUserId,
             style = WontonTheme.typography.supporting, color = WontonTheme.colors.textSecondary.toColor())
@@ -49,7 +53,7 @@ private fun SharedSourceSection(source: SharedAppsSource, plugins: PluginsState)
 
 @Composable
 private fun SharedAppEntry(source: SharedAppsSource, row: SharedAppRow, plugins: PluginsState) {
-    val open = { plugins.send(Action.OpenSharedApp(source.ownerUserId, row.plugin.pluginId)) }
+    val open = { plugins.send(Action.Sharing(SharingAction.OpenSharedApp(source.ownerUserId, row.plugin.pluginId))) }
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(row.plugin.title, style = WontonTheme.typography.itemTitle,
             color = WontonTheme.colors.textPrimary.toColor())

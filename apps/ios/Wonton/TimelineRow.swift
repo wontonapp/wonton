@@ -323,17 +323,17 @@ private struct MessageBubble: View {
                 view: view,
                 answer: {
                     cardAction(
-                        .answerConfirmation(
+                        .chat(action: .answerConfirmation(
                             id: view.card.id,
                             answer: $0.answer,
                             choiceId: $0.choiceId,
                             secrets: $1,
                             settings: $2,
                             devices: $3
-                        )
+                        ))
                     )
                 },
-                stopWindow: { cardAction(.stopConfirmationWindow(id: view.card.id)) }
+                stopWindow: { cardAction(.chat(action: .stopConfirmationWindow(id: view.card.id))) }
             )
         case .undecryptable:
             Label {

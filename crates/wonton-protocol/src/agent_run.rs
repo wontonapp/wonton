@@ -110,7 +110,7 @@ impl<'de> Deserialize<'de> for AgentRunEnd {
 }
 
 /// Bot 自己发的待回答选项（MSC4564 的 `choices`）：主人点了才经
-/// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发 `m.annotation` 反应，
+/// [`ChatAction::AnswerAgentChoice`](crate::ChatAction::AnswerAgentChoice) 以主人的身份发 `m.annotation`
 /// 不自动作答。它答的是 Agent 自己的问题，不经核心，也不是 Wonton 的确认。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -182,17 +182,17 @@ mod tests {
     /// 契约：以反应回答的操作能经 JSON 往返，壳发回的键和状态行对得上。
     #[test]
     fn answer_choice_action_round_trips_through_json() {
-        let action = crate::Action::AnswerAgentChoice {
-            room_id: "!room:home.example".into(),
-            item_id: "item-1".into(),
-            key: "allow".into(),
+        let action = crate::Action::Chat {
+            action: crate::ChatAction::AnswerAgentChoice {
+                room_id: "!room:home.example".into(),
+                item_id: "item-1".into(),
+                key: "allow".into(),
+            },
         };
         assert_eq!(
             serde_json::from_value::<crate::Action>(serde_json::json!({
-                "type": "answer_agent_choice",
-                "room_id": "!room:home.example",
-                "item_id": "item-1",
-                "key": "allow"
+                "domain": "chat",
+                "action": {"type": "answer_agent_choice", "room_id": "!room:home.example", "item_id": "item-1", "key": "allow"}
             }))
             .unwrap(),
             action

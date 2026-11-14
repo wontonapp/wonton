@@ -49,15 +49,19 @@ pub async fn open_page(pinned: bool) -> (Rig, TabRef) {
     };
     if !pinned {
         rig.app
-            .dispatch(Action::RemoveMyApp {
-                app: wonton_protocol::MyAppRef::Plugin {
-                    plugin_id: "app.feed".to_owned(),
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::RemoveMyApp {
+                    app: wonton_protocol::MyAppRef::Plugin {
+                        plugin_id: "app.feed".to_owned(),
+                    },
                 },
             })
             .unwrap();
     }
     rig.app
-        .dispatch(Action::OpenPage { tab: tab.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     (rig, tab)
 }

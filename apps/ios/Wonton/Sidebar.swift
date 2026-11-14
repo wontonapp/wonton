@@ -184,8 +184,8 @@ struct SidebarPanel: View {
             }
         }
         .task {
-            plugins.refresh(.refreshPlugins)
-            plugins.refresh(.refreshStore(force: false))
+            plugins.refresh(.plugins(action: .refreshPlugins))
+            plugins.refresh(.plugins(action: .refreshStore(force: false)))
         }
     }
 
@@ -241,7 +241,7 @@ struct SidebarPanel: View {
                 Text(TabText.syncStale)
                     .wontonText(WontonTheme.typography.supporting)
                 Spacer(minLength: 0)
-                Button(TabText.syncStaleRetry) { pages.send(.retryMyAppSync) }
+                Button(TabText.syncStaleRetry) { pages.send(.pages(action: .retryMyAppSync)) }
                     .buttonStyle(WontonSmallButtonStyle())
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
@@ -266,9 +266,9 @@ struct SidebarPanel: View {
             let added = mine.contains(choice.tab)
             Button {
                 if added {
-                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
                 } else {
-                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                 }
             } label: {
                 Label(

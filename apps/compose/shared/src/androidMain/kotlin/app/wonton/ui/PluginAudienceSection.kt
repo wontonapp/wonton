@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.client.pluginAudienceNotice
 import app.wonton.client.selectedPluginAudience
 import app.wonton.protocol.Action
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginAudienceNotice
 import app.wonton.protocol.PluginAudienceView
@@ -80,7 +81,9 @@ internal fun InstalledPluginAudience(
             busy = true
             scope.launch {
                 try {
-                    onUpdated(plugins.core.updatePluginAudience(Action.SetPluginAudience(id, selected)))
+                    onUpdated(
+                        plugins.core.updatePluginAudience(id, selected),
+                    )
                     problem = null
                 } catch (failure: CoreException) {
                     problem = failure.problem

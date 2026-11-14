@@ -55,8 +55,10 @@ impl Phone {
     }
 
     pub(crate) fn connect(&self, home: &Home) {
-        self.dispatch(Action::ConnectHome {
-            ticket: home.ticket(),
+        self.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: home.ticket(),
+            },
         })
         .unwrap();
     }

@@ -14,7 +14,11 @@ fn reload(view: &PagesViewModel, page_tab: &TabRef) -> u64 {
 async fn refresh_page(rig: &Rig, page_tab: &TabRef, mut plugin: InstalledPlugin, marker: &str) {
     plugin.tabs[0].title = marker.to_owned();
     rig.core.set_lists(vec![vec![plugin]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(rig, |view| item(view, page_tab).title == marker).await;
 }
 
@@ -24,9 +28,11 @@ async fn same_version_content_change_reloads_stack_and_panel_instances_once() {
     assert_eq!(reload(&rig.app.pages(), &pinned), 0);
     // 同一个页面在栈里和面板里是两份实例：都重新加载，各记各的计数。
     rig.app
-        .dispatch(Action::AddPanelPage {
-            scope: main_scope(),
-            tab: pinned.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddPanelPage {
+                scope: main_scope(),
+                tab: pinned.clone(),
+            },
         })
         .unwrap();
     let before = rig.app.pages();
@@ -88,8 +94,10 @@ async fn first_appearance_and_another_servers_revision_do_not_reload() {
     })
     .await;
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: pinned.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: pinned.clone(),
+            },
         })
         .unwrap();
     let other_page = wait_pages(&rig, |view| item(view, &pinned).title == "other-server").await;

@@ -19,7 +19,7 @@ pub struct ServersViewModel {
     /// 已配对的 Wonton 和已登录的 Matrix 账号，按添加的顺序。
     pub servers: Vec<ServerRow>,
     /// 正在添加 Wonton：当前连的是一个还没配对的新位置，壳显示配对页，配对页上可以
-    /// [`Action::CancelAddServer`](crate::Action::CancelAddServer) 回到原来那台。
+    /// [`HomeAction::CancelAddServer`](crate::HomeAction::CancelAddServer) 回到原来那台。
     pub adding: bool,
     /// 外部 Matrix 登录进展；由同一个服务器列表订阅传递，不替换当前槽位的 ViewModel。
     pub matrix_login: Option<MatrixLoginViewModel>,
@@ -63,7 +63,7 @@ pub enum ServerKind {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Action;
+    use crate::{Action, HomeAction};
 
     /// 契约：ViewModel 和切换服务器的操作都能经 JSON 往返。
     #[test]
@@ -99,14 +99,24 @@ mod tests {
             view
         );
         for action in [
-            Action::AddServer,
-            Action::CancelAddServer,
-            Action::SwitchServer { id: "b2".into() },
-            Action::RenameServer {
-                id: "b2".into(),
-                name: "办公室".into(),
+            Action::Home {
+                action: HomeAction::AddServer,
             },
-            Action::RemoveServer { id: "b2".into() },
+            Action::Home {
+                action: HomeAction::CancelAddServer,
+            },
+            Action::Home {
+                action: HomeAction::SwitchServer { id: "b2".into() },
+            },
+            Action::Home {
+                action: HomeAction::RenameServer {
+                    id: "b2".into(),
+                    name: "办公室".into(),
+                },
+            },
+            Action::Home {
+                action: HomeAction::RemoveServer { id: "b2".into() },
+            },
         ] {
             let json = serde_json::to_string(&action).unwrap();
             assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);

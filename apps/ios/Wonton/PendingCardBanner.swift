@@ -37,7 +37,7 @@ struct PendingCardBanner: View {
         .background(Color(colors.accentFill), ignoresSafeAreaEdges: .top)
         if onboarding.viewModel.tips.confirmationCard {
             OnboardingTipView(text: String(localized: .Onboarding1.onboardingTipConfirmationCard)) {
-                onboarding.send(.dismissOnboardingTip(tip: .confirmationCard))
+                onboarding.send(.onboarding(action: .dismissOnboardingTip(tip: .confirmationCard)))
             }
         }
     }

@@ -63,7 +63,7 @@ iroh 自己已经做好的部分不重复：一条连接上同时维护多条路
 ### 2. 保活
 
 - 不改 iroh 的心跳和空闲时限。探测（5 秒一次，限时 8 秒）在前台跑；壳报告有理由在后台保持时（插件页在放声音，含暂停后 60 秒；或者收新消息的方式选了保持连接，ADR-0003）也在后台跑。
-- 新增 `Action::AppBackgrounded`：核心停止探测和自动重连。连接不主动关：后台音乐和正在传的文件还在用它，系统冻结进程时自然
+- `HomeAction::AppBackgrounded`：核心停止探测和自动重连。连接不主动关：后台音乐和正在传的文件还在用它，系统冻结进程时自然
   停下。
 - 冻结醒来后的第一批请求不能赌连接还活着：挂起检测跟着 App 的可见性走（`AppBackgrounded` 起计时），不看合成的后台状态——
   保持连接（ADR-0003）的前台服务减少被冻结的可能，但不豁免；网页媒体在放同理。每秒记录 `Instant` 和 `SystemTime`；任一时钟的
@@ -111,7 +111,7 @@ iroh 自己已经做好的部分不重复：一条连接上同时维护多条路
 
 ### 3. 网络变化
 
-- 新增 `Action::NetworkChanged { network }`，`network` 取 `none`、`wifi`、`cellular`、`other`。iOS 用 `NWPathMonitor`，
+- `HomeAction::NetworkChanged { network }` 的 `network` 取 `none`、`wifi`、`cellular`、`other`。iOS 用 `NWPathMonitor`，
   Android 用 `ConnectivityManager.registerDefaultNetworkCallback`，每次变化都报，壳不做判断。
 - 核心收到后：调 `network_change`，清零退避，取消进行中的建连并立刻重来；现有连接限时 4 秒确认，让 iroh 有机会迁移路径，
   不一上来就断流；确认不通就马上换新连接，不等下一次探测。还没连上的话，2 秒和 5 秒时各换一次握手：初始包同时发给所有候选地址，服务端按先到的那份认路径，那个地址

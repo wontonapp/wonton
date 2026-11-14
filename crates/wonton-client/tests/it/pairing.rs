@@ -281,9 +281,11 @@ impl Phone {
     }
 
     fn pair(&self, code: &str) -> Result<(), CoreError> {
-        self.dispatch(Action::PairHome {
-            code: SecretString::new(code),
-            device_name: "Alice 的 iPhone".to_owned(),
+        self.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::PairHome {
+                code: SecretString::new(code),
+                device_name: "Alice 的 iPhone".to_owned(),
+            },
         })
     }
 
@@ -362,7 +364,11 @@ async fn unreachable_pairing_stops_before_cleanup_and_retry_starts_again() {
     assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     assert!(phone.home().server_id.is_none());
-    phone.dispatch(Action::DismissPairingFailure).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::DismissPairingFailure,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     phone.pair(&code).unwrap();
@@ -401,12 +407,18 @@ async fn an_unreachable_server_stays_connecting_and_the_wait_grows() {
             )
         })
         .await;
-    phone.dispatch(Action::CancelPairing).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelPairing,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     assert!(
         matches!(
-            phone.dispatch(Action::CancelPairing),
+            phone.dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::CancelPairing
+            }),
             Err(CoreError::InvalidInput { .. })
         ),
         "没有正在进行的配对时取消该报输入错误"
@@ -435,7 +447,11 @@ async fn cancelling_a_slow_pairing_returns_to_the_form_and_a_retry_pairs() {
             )
         })
         .await;
-    phone.dispatch(Action::CancelPairing).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelPairing,
+        })
+        .unwrap();
     assert!(phone.home().pairing.is_none());
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     // 取消不是配上：核心不给 Paired，壳的“配上了”只看这个类别，取消回到没有进展。
@@ -578,7 +594,11 @@ async fn a_rejected_code_says_what_to_do_next() {
             HomeStatus::NotConfigured,
             "配不上就不存连接信息"
         );
-        phone.dispatch(Action::DismissPairingFailure).unwrap();
+        phone
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::DismissPairingFailure,
+            })
+            .unwrap();
         assert!(phone.home().pairing.is_none());
         phone.pair(&code).unwrap();
         let (rescanned, message) = phone.pairing_failure().await;
@@ -616,7 +636,9 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     let phone = Phone::open(dir.path());
     assert!(
         matches!(
-            phone.dispatch(Action::InviteDevice),
+            phone.dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::InviteDevice
+            }),
             Err(CoreError::NotReady { .. })
         ),
         "还没配对时不能添加设备"
@@ -624,7 +646,11 @@ async fn a_paired_phone_gets_a_code_that_adds_another_device() {
     phone.pair(&home.code(None)).unwrap();
     phone.wait_for(paired).await;
 
-    phone.dispatch(Action::InviteDevice).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::InviteDevice,
+        })
+        .unwrap();
     let view = phone
         .wait_for(|view| matches!(view.invite, Some(DeviceInvite::Ready { .. })))
         .await;
@@ -674,7 +700,11 @@ async fn a_refused_invite_says_why() {
         (404, HomeFailure::Protocol),
     ] {
         *home.codes.refuse.lock().unwrap() = Some(status);
-        phone.dispatch(Action::InviteDevice).unwrap();
+        phone
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::InviteDevice,
+            })
+            .unwrap();
         let view = phone
             .wait_for(|view| matches!(view.invite, Some(DeviceInvite::Failed { .. })))
             .await;

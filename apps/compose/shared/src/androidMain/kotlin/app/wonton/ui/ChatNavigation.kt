@@ -9,6 +9,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatViewModel
@@ -160,13 +161,13 @@ class ChatNavigation(
         if (joined != null) {
             show(joined.roomId, from)
         } else if (acceptInvite && invited != null) {
-            rejection = core.send(Action.JoinRoom(invited.roomId))
+            rejection = core.send(Action.Chat(ChatAction.JoinRoom(invited.roomId)))
             if (rejection == null) {
                 awaitedPeer = userId
                 awaitedFrom = from
             }
         } else if (rooms.isEmpty()) {
-            rejection = core.send(Action.StartDirectChat(userId))
+            rejection = core.send(Action.Chat(ChatAction.StartDirectChat(userId)))
             if (rejection == null) {
                 awaitedPeer = userId
                 awaitedFrom = from

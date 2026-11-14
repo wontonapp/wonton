@@ -189,7 +189,7 @@ POST /_wonton/confirmations/{id}
 
 `TimelineUpdate` 多一个 `panel: Option<StepCardView>`：这个房间现在该开着面板的那张问题卡片，壳不用自己从条目里找。
 
-操作只有一个 `Action::StepCard { id, op }`，`op` 是选、输入、上一步、下一步、跳过。最后的提交还是 `Action::AnswerConfirmation`，客户端核心带上草稿。
+选、输入、上一步、下一步、跳过用一个按卡片 ID 定位的操作；领域包装按 [ADR-0106](0106-action-domain-enums.md) 确定。最后的提交还是 `Action::Chat { action: ChatAction::AnswerConfirmation { .. } }`，客户端核心带上草稿。
 
 外观按 ADR-0026、ADR-0029：两端共用的自绘组件，只用现有令牌和 Phosphor 图标，不加新颜色。外框（`StepCardFrame`）和选项行（`StepOptionRow`）和引导共用，内容区是插槽，能放进面板、时间线和全屏页。步数只显示“2/3”，不加步骤名和说明。读屏读出第几步、共几步和选中状态。Agent 写的文字一律按纯文本显示，不解析 Markdown，链接不可点。
 

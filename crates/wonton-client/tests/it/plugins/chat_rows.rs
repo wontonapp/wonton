@@ -33,7 +33,11 @@ async fn an_installing_bot_shows_its_stage_from_the_plugin_list() {
     });
     rig.core.set_lists(vec![vec![installing]]);
     let chats = rig.app.subscribe_chat();
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
 
     let shown = row(&rig, &chats, |row| row.plugin_id == "app.hermes").await;
     assert_eq!(shown.title, "标题 app.hermes");
@@ -58,10 +62,12 @@ async fn a_failed_install_leaves_a_retry_row_until_dismissed() {
     );
     let chats = rig.app.subscribe_chat();
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
 
@@ -83,8 +89,10 @@ async fn a_failed_install_leaves_a_retry_row_until_dismissed() {
     );
 
     rig.app
-        .dispatch(Action::DismissPluginTask {
-            id: "app.hermes".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: "app.hermes".to_owned(),
+            },
         })
         .unwrap();
     tokio::time::timeout(WAIT, async {

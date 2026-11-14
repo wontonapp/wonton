@@ -22,6 +22,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.PanelScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -134,7 +135,7 @@ private fun AutoAddRow(autoAdd: Boolean) {
         Text(title, Modifier.weight(1f), style = WontonTheme.typography.body,
             color = WontonTheme.colors.textPrimary.toColor())
         Box(Modifier.semantics { contentDescription = title }) {
-            WontonSwitch(autoAdd, { pages.send(Action.SetAutoAddApps(it)) })
+            WontonSwitch(autoAdd, { pages.send(Action.Pages(PageAction.SetAutoAddApps(it))) })
         }
     }
 }
@@ -173,7 +174,9 @@ private fun CurrentAppsGroup(apps: List<SidebarApp>, list: LazyListState) {
                         },
                         onDragCancel = { dragging = null },
                         onDragEnd = {
-                            if (destination != index) pages.send(Action.MoveMyApp(appRef, destination.toUInt()))
+                            if (destination != index) {
+                                pages.send(Action.Pages(PageAction.MoveMyApp(appRef, destination.toUInt())))
+                            }
                             dragging = null
                         },
                         onDrag = { change, amount ->
@@ -218,10 +221,10 @@ private fun MyAppSettingsRow(
             .semantics(mergeDescendants = true) {
                 customActions = buildList {
                     if (index > 0) add(CustomAccessibilityAction(moveUp) {
-                        pages.send(Action.MoveMyApp(appRef, (index - 1).toUInt())); true
+                        pages.send(Action.Pages(PageAction.MoveMyApp(appRef, (index - 1).toUInt()))); true
                     })
                     if (index < count - 1) add(CustomAccessibilityAction(moveDown) {
-                        pages.send(Action.MoveMyApp(appRef, (index + 1).toUInt())); true
+                        pages.send(Action.Pages(PageAction.MoveMyApp(appRef, (index + 1).toUInt()))); true
                     })
                 }
             }.padding(start = WontonTheme.spacing.s16, end = WontonTheme.spacing.s8),
@@ -238,7 +241,7 @@ private fun MyAppSettingsRow(
         Text(app.title, Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
             style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
         WontonIconButton(WontonIcon.Trash, stringResource(R.string.myapp_remove),
-            { pages.send(Action.RemoveMyApp(appRef)) }, tint = colors.danger.toColor())
+            { pages.send(Action.Pages(PageAction.RemoveMyApp(appRef))) }, tint = colors.danger.toColor())
     }
 }
 
@@ -287,7 +290,7 @@ private fun MyAppCandidateRow(candidate: TabCandidate) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
             .clickable(role = Role.Button) {
-                pages.send(Action.AddMyApp(MyAppRef.Page(candidate.tab), null, null))
+                pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(candidate.tab), null, null)))
             }
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,

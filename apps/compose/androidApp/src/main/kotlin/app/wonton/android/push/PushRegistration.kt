@@ -5,6 +5,7 @@ import androidx.lifecycle.lifecycleScope
 import app.wonton.android.R
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.PushAction
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PushMethod
 import app.wonton.ui.NotificationPermission
@@ -43,7 +44,7 @@ class PushRegistration(
                 if (granted) {
                     register()
                 } else if (core.settings().pushMethod == PushMethod.UNIFIED_PUSH) {
-                    core.send(Action.PushUnavailable(activity.getString(R.string.push_no_permission)))
+                    core.send(Action.Push(PushAction.PushUnavailable(activity.getString(R.string.push_no_permission))))
                 }
             }
         }
@@ -55,7 +56,7 @@ class PushRegistration(
             if (found) {
                 UnifiedPush.register(activity, messageForDistributor = "Wonton")
             } else {
-                core.send(Action.PushUnavailable(activity.getString(R.string.push_no_distributor)))
+                core.send(Action.Push(PushAction.PushUnavailable(activity.getString(R.string.push_no_distributor))))
             }
         }
     }

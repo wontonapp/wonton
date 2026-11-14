@@ -23,7 +23,7 @@ pub struct HomeViewModel {
     pub web_url: Option<String>,
     /// 扫码配对的进展；没在配对时为空，配上后停在 [`PairingStatus::Paired`] 直到下一次配对或重置连接信息。
     pub pairing: Option<PairingStatus>,
-    /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
+    /// “添加设备”的进展和给新设备扫的码（[`HomeAction::InviteDevice`](crate::HomeAction::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
     /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
     pub keep_connection: bool,
@@ -68,7 +68,7 @@ pub enum PairingStage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PairingStatus {
     /// 正在连服务器、出示配对码。`elapsed_ms` 是这一次已经进行的时间，核心按秒推进；壳按它决定何时补
-    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`crate::Action::CancelPairing`]，
+    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`HomeAction::CancelPairing`](crate::HomeAction::CancelPairing)，
     /// 进行中的每一步都能取消：本机只是放弃这一次尝试，服务端按设备幂等登记，同一个码再配对仍能配上。
     InProgress {
         elapsed_ms: u64,
@@ -116,7 +116,7 @@ pub enum PairingFailure {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HomeStatus {
-    /// 还没有连接信息，等 [`Action::ConnectHome`](crate::Action::ConnectHome)。
+    /// 还没有连接信息，等 [`HomeAction::ConnectHome`](crate::HomeAction::ConnectHome)。
     NotConfigured,
     /// 正在建立连接，或者连上了但服务端还没确认本设备。
     Connecting,

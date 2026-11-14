@@ -22,13 +22,17 @@ fn accepted() -> Canned {
 
 fn start(rig: &Rig, id: &str) {
     rig.app
-        .dispatch(Action::StartTakeover { id: id.to_owned() })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartTakeover { id: id.to_owned() },
+        })
         .unwrap();
 }
 
 fn end(rig: &Rig, id: &str) {
     rig.app
-        .dispatch(Action::EndTakeover { id: id.to_owned() })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::EndTakeover { id: id.to_owned() },
+        })
         .unwrap();
 }
 
@@ -151,7 +155,11 @@ async fn going_to_the_background_hands_back() {
 
     start(&rig, ID);
     operating(&rig).await;
-    rig.app.dispatch(Action::AppBackgrounded).unwrap();
+    rig.app
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     gone(&rig, PATH).await;
 }
 
@@ -228,7 +236,11 @@ async fn the_core_refusing_a_renewal_ends_it_at_once() {
     ));
 
     // 主人离开页面才清掉；断了的不算在操作，也就没有什么可交还。
-    rig.app.dispatch(Action::AppBackgrounded).unwrap();
+    rig.app
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     assert!(rig.app.plugins().takeover.is_some());
     end(&rig, ID);
     assert!(rig.app.plugins().takeover.is_none());

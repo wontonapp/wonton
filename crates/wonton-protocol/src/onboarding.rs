@@ -134,7 +134,7 @@ pub struct OnboardingViewModel {
     /// 输入框上方可点的问题，点了放进输入框当草稿；发过第一条消息后为空。
     pub chat_prompts: Vec<String>,
     /// 默认 Agent 能聊之后，问一次要不要卸掉被换下来的 Agent。卸载走原有流程，回答后发
-    /// [`Action::DismissReplacedAgentOffer`](crate::Action::DismissReplacedAgentOffer)。
+    /// [`OnboardingAction::DismissReplacedAgentOffer`](crate::OnboardingAction::DismissReplacedAgentOffer)。
     pub replaced_agent: Option<ReplacedAgent>,
     pub tips: OnboardingTips,
     /// 服务器太旧，引导整段打不开（连引导接口都没有）：[`Self::step`] 为空，壳只在引导该出现的地方留一条
@@ -169,7 +169,7 @@ pub struct StepNav {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingProfileStep {
-    /// 先是家里的服务器上记着的，主人改了以后是改后的（[`Action::EditOnboardingProfile`](crate::Action::EditOnboardingProfile)）。
+    /// 先是家里的服务器上记着的，主人改了以后是改后的（[`OnboardingAction::EditOnboardingProfile`](crate::OnboardingAction::EditOnboardingProfile)）。
     pub display_name: String,
     pub email: String,
     /// 点下一步时名字不合规则的原因。
@@ -201,7 +201,7 @@ pub struct OnboardingModelStep {
     pub settings: Option<ModelSettingsPage>,
     /// 网关已有模型配置，不表示上游可达或凭据有效，也不因打开网页变为真。
     pub has_configured_models: bool,
-    /// 选中的 Agent 的账号登录。选了发 [`Action::ChooseModelLogin`](crate::Action::ChooseModelLogin)，登录链接由 Agent
+    /// 选中的 Agent 的账号登录。选了发 [`OnboardingAction::ChooseModelLogin`](crate::OnboardingAction::ChooseModelLogin)，登录链接由 Agent
     /// 发进聊天。
     pub logins: Vec<AgentLogin>,
     /// 沿用网关配置或选择官方登录；网页自己的保存动作不属于引导草稿。
@@ -264,7 +264,7 @@ pub struct OnboardingNeedRow {
     pub plugins: Vec<StoreItem>,
 }
 
-/// 最后一页：列出所有选择和应用要的权限。点完成（[`Action::ContinueOnboarding`](crate::Action::ContinueOnboarding)）
+/// 最后一页：列出所有选择和应用要的权限。点完成（[`OnboardingAction::ContinueOnboarding`](crate::OnboardingAction::ContinueOnboarding)）
 /// 算主人确认了这些权限，资料和默认 Agent 依次保存，Agent 和应用在后台安装，每一项的进展都在这里。
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
@@ -291,7 +291,7 @@ pub enum OnboardingCommit {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OnboardingReviewItem {
-    /// 重试时带回（[`Action::RetryOnboardingItem`](crate::Action::RetryOnboardingItem)）。Agent 和应用是插件 ID。
+    /// 重试时带回（[`OnboardingAction::RetryOnboardingItem`](crate::OnboardingAction::RetryOnboardingItem)）。Agent 和应用是插件 ID。
     pub id: String,
     pub kind: OnboardingReviewKind,
     /// 资料是填的名字，Agent 和应用是插件名，模型是官方登录名；沿用配置时不复制网关里的服务商列表。

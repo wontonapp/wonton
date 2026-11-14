@@ -202,7 +202,7 @@ struct ConfirmationCardView: View {
     }
 
     private func add(_ tab: TabRef) {
-        pages.send(.addMyApp(app: .page(tab: tab), title: nil, index: nil))
+        pages.send(.pages(action: .addMyApp(app: .page(tab: tab), title: nil, index: nil)))
     }
 
     private func note(_ text: String, icon: WontonIcon, color: Rgb) -> some View {

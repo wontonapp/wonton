@@ -53,16 +53,18 @@ async fn retry_replaces_a_live_transport_that_no_longer_answers_requests() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     phone.stop_periodic_checks();
-    phone.dispatch(Action::ConnectHome {
-        ticket: format!(
-            r#"{{"server":{{"endpoint_id":"{}","direct_addrs":["{}"]}},"base_domain":"wonton.localhost"}}"#,
-            endpoint.id(), endpoint.bound_sockets()[0]
-        ),
-    }).unwrap();
+    phone.dispatch(Action::Home { action: wonton_protocol::HomeAction::ConnectHome { ticket: format!(
+        r#"{{"server":{{"endpoint_id":"{}","direct_addrs":["{}"]}},"base_domain":"wonton.localhost"}}"#,
+        endpoint.id(), endpoint.bound_sockets()[0]
+    ), } }).unwrap();
     let before = phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     let recovered = tokio::time::timeout(
         Duration::from_secs(15),
         phone.wait_for(|view| {

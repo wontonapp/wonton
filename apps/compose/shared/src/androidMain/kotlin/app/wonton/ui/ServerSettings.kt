@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
@@ -20,7 +21,7 @@ internal fun ServerSettingsPage(
     val back = { onPage(SettingsSubpage.SERVER) }
     when (page) {
         SettingsSubpage.SERVER -> ConnectionPage(
-            home, plugins, onRetry = { plugins.send(Action.RetryConnection) }, onNavigate = onPage,
+            home, plugins, onRetry = { plugins.send(Action.Home(HomeAction.RetryConnection)) }, onNavigate = onPage,
         )
         SettingsSubpage.CONNECTION_DETAILS -> ConnectionDetailsPage(home, plugins.viewModel.installed, back)
         SettingsSubpage.EGRESS -> EgressPage(plugins, back)

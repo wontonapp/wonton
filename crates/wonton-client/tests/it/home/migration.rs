@@ -110,8 +110,10 @@ async fn later_direct_path_survives_restart(empty_report: bool) {
         "base_domain": "wonton.localhost", "web_url": WEB_URL,
     });
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: ticket.to_string(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: ticket.to_string(),
+            },
         })
         .unwrap();
     phone

@@ -398,13 +398,15 @@ async fn waiting_carries_the_pending_card_until_it_is_answered() {
     assert_eq!(card_id, "card-1");
 
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "card-1".to_owned(),
-            answer: Answer::Reject,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
-            devices: Vec::new(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "card-1".to_owned(),
+                answer: Answer::Reject,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
     timeline
@@ -475,10 +477,12 @@ async fn choices_answer_with_a_reaction_only_when_tapped() {
     assert!(!annotation_of_status().await, "没点不发反应");
 
     phone
-        .dispatch(Action::AnswerAgentChoice {
-            room_id: room.to_string(),
-            item_id: entry,
-            key: "allow".to_owned(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerAgentChoice {
+                room_id: room.to_string(),
+                item_id: entry,
+                key: "allow".to_owned(),
+            },
         })
         .unwrap();
     // 点了：Bot 那边看到主人发的反应。

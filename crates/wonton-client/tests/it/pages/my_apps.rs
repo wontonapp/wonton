@@ -63,14 +63,18 @@ async fn restarting_preserves_my_apps_order_and_removals() {
         plugin_id: id.to_owned(),
     };
     rig.app
-        .dispatch(Action::RemoveMyApp {
-            app: app_ref("app.photos"),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::RemoveMyApp {
+                app: app_ref("app.photos"),
+            },
         })
         .unwrap();
     rig.app
-        .dispatch(Action::MoveMyApp {
-            app: app_ref("app.files"),
-            index: 0,
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::MoveMyApp {
+                app: app_ref("app.files"),
+                index: 0,
+            },
         })
         .unwrap();
     rig.reopen();
@@ -87,7 +91,9 @@ async fn restarting_preserves_my_apps_order_and_removals() {
     );
     for id in ["app.files", "app.notes"] {
         rig.app
-            .dispatch(Action::RemoveMyApp { app: app_ref(id) })
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::RemoveMyApp { app: app_ref(id) },
+            })
             .unwrap();
     }
     rig.reopen();

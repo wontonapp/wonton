@@ -108,7 +108,7 @@ pub struct RejectedPeerRow {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PeerScan {
-    /// 扫来或粘贴的码（`wonton://peer?…`），带对方的请求令牌，和扫码配对一样打码（[`Action::PairHome`](crate::Action::PairHome)）。
+    /// 扫来或粘贴的码（`wonton://peer?…`），带对方的请求令牌，和扫码配对一样打码（[`HomeAction::PairHome`](crate::HomeAction::PairHome)）。
     pub code: SecretString,
 }
 
@@ -243,8 +243,8 @@ pub struct PeersViewModel {
     pub requests: Vec<PeerRequestRow>,
     /// 主人拒绝过的请求，能撤销。
     pub rejected: Vec<RejectedPeerRow>,
-    /// 出码页开着（[`Action::ShowPeerCode`](crate::Action::ShowPeerCode) 之后、
-    /// [`Action::HidePeerCode`](crate::Action::HidePeerCode) 之前）时是本机的码，壳画成二维码、放进分享。
+    /// 出码页开着（[`PeerAction::ShowPeerCode`](crate::PeerAction::ShowPeerCode) 之后、
+    /// [`PeerAction::HidePeerCode`](crate::PeerAction::HidePeerCode) 之前）时是本机的码，壳画成二维码、放进分享。
     pub code: Option<PeerCode>,
 }
 
@@ -266,7 +266,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{Action, SettingsEntry};
+    use crate::{Action, PeerAction, SettingsEntry};
 
     fn row() -> PeerRow {
         PeerRow {
@@ -361,18 +361,36 @@ mod tests {
         );
 
         for action in [
-            Action::RefreshPeers,
-            Action::ShowPeerCode,
-            Action::HidePeerCode,
-            Action::ResetPeerCode,
-            Action::ScanPeerCode {
-                code: SecretString::new("wonton://peer?t=request-token"),
+            Action::Peers {
+                action: PeerAction::RefreshPeers,
             },
-            Action::ApprovePeerRequest { id: "r1".into() },
-            Action::RejectPeerRequest { id: "r1".into() },
-            Action::UnrejectPeerRequest { id: "r0".into() },
-            Action::RemovePeer {
-                server_name: "abc12345.wonton".into(),
+            Action::Peers {
+                action: PeerAction::ShowPeerCode,
+            },
+            Action::Peers {
+                action: PeerAction::HidePeerCode,
+            },
+            Action::Peers {
+                action: PeerAction::ResetPeerCode,
+            },
+            Action::Peers {
+                action: PeerAction::ScanPeerCode {
+                    code: SecretString::new("wonton://peer?t=request-token"),
+                },
+            },
+            Action::Peers {
+                action: PeerAction::ApprovePeerRequest { id: "r1".into() },
+            },
+            Action::Peers {
+                action: PeerAction::RejectPeerRequest { id: "r1".into() },
+            },
+            Action::Peers {
+                action: PeerAction::UnrejectPeerRequest { id: "r0".into() },
+            },
+            Action::Peers {
+                action: PeerAction::RemovePeer {
+                    server_name: "abc12345.wonton".into(),
+                },
             },
         ] {
             let json = serde_json::to_string(&action).unwrap();

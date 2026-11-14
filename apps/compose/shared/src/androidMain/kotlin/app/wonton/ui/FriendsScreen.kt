@@ -21,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendBlockTarget
 import app.wonton.protocol.FriendGroup
@@ -58,14 +59,14 @@ internal fun FriendsPage(core: ClientCore, onBack: () -> Unit) {
     var removingGroup by remember { mutableStateOf<FriendGroup?>(null) }
     var blockingServer by remember { mutableStateOf(false) }
     val send = { action: Action -> rejection = core.send(action) }
-    LaunchedEffect(core) { send(Action.RefreshFriends) }
+    LaunchedEffect(core) { send(Action.Friends(FriendsAction.RefreshFriends)) }
     if (scanning) {
         FriendScanPage(
             onBack = { scanning = false },
             // 扫到什么就交什么，解析在核心里。
             onSubmit = {
                 scanning = false
-                send(Action.AddFriend(it))
+                send(Action.Friends(FriendsAction.AddFriend(it)))
             },
         )
     } else {
@@ -164,7 +165,7 @@ private fun FriendContent(
         hasRows -> FriendList(
             friends,
             failed = state as? FriendsState.Failed,
-            onRetry = { send(Action.RefreshFriends) },
+            onRetry = { send(Action.Friends(FriendsAction.RefreshFriends)) },
             onAction = send,
             onAdd = onAdd,
             onMenu = onMenu,
@@ -173,7 +174,9 @@ private fun FriendContent(
             onDeleteGroup = onDeleteGroup,
             onBlockServer = onBlockServer,
         )
-        state is FriendsState.Failed -> ProblemView(state.problem()) { send(Action.RefreshFriends) }
+        state is FriendsState.Failed -> ProblemView(state.problem()) {
+            send(Action.Friends(FriendsAction.RefreshFriends))
+        }
         state == FriendsState.Loading -> LoadingView()
         else -> FriendEmpty(onAdd)
     }
@@ -209,7 +212,7 @@ private fun FriendOverlays(
             friends.myLink,
             onScan,
             onShowMyCode,
-            { send(Action.AddFriend(it)) },
+            { send(Action.Friends(FriendsAction.AddFriend(it))) },
             { setAdding(false) },
         )
     }
@@ -224,7 +227,14 @@ private fun FriendOverlays(
                     stringResource(R.string.friends_block_user), WontonIcon.Blocked,
                 ) {
                     setMenus(null)
-                    send(Action.BlockFriend(FriendBlockTarget.User(row.userId), FriendBlockScope.INVITATIONS))
+                    send(
+                        Action.Friends(
+                            FriendsAction.BlockFriend(
+                                FriendBlockTarget.User(row.userId),
+                                FriendBlockScope.INVITATIONS,
+                            ),
+                        ),
+                    )
                 },
                 app.wonton.ui.design.WontonSheetAction(
                     stringResource(R.string.friends_remove_friend), WontonIcon.Trash, isDanger = true,
@@ -238,7 +248,11 @@ private fun FriendOverlays(
         )
     }
     choosingGroups?.let { row ->
-        ChooseGroupsSheet(row, friends.groups, { send(Action.SetFriendGroups(row.userId, it.toList())) }) {
+        ChooseGroupsSheet(
+            row,
+            friends.groups,
+            { send(Action.Friends(FriendsAction.SetFriendGroups(row.userId, it.toList()))) },
+        ) {
             setChoosingGroups(null)
         }
     }
@@ -251,7 +265,7 @@ private fun FriendOverlays(
                 WontonDialogAction(stringResource(R.string.common_cancel)) { setRemoving(null) },
                 WontonDialogAction(stringResource(R.string.friends_remove_friend), WontonButtonKind.DANGER) {
                     setRemoving(null)
-                    send(Action.RemoveFriend(row.userId))
+                    send(Action.Friends(FriendsAction.RemoveFriend(row.userId)))
                 },
             ),
         )
@@ -259,13 +273,13 @@ private fun FriendOverlays(
     if (creatingGroup) {
         GroupNameDialog(stringResource(R.string.friends_group_create_title), "", { setCreatingGroup(false) }) {
             setCreatingGroup(false)
-            send(Action.SaveFriendGroup(null, it))
+            send(Action.Friends(FriendsAction.SaveFriendGroup(null, it)))
         }
     }
     renamingGroup?.let { group ->
         GroupNameDialog(group.name, group.name, { setRenamingGroup(null) }) {
             setRenamingGroup(null)
-            send(Action.SaveFriendGroup(group.id, it))
+            send(Action.Friends(FriendsAction.SaveFriendGroup(group.id, it)))
         }
     }
     removingGroup?.let { group ->
@@ -277,7 +291,7 @@ private fun FriendOverlays(
                 WontonDialogAction(stringResource(R.string.common_cancel)) { setRemovingGroup(null) },
                 WontonDialogAction(stringResource(R.string.common_delete), WontonButtonKind.DANGER) {
                     setRemovingGroup(null)
-                    send(Action.RemoveFriendGroup(group.id))
+                    send(Action.Friends(FriendsAction.RemoveFriendGroup(group.id)))
                 },
             ),
         )
@@ -285,7 +299,7 @@ private fun FriendOverlays(
     if (blockingServer) {
         BlockServerDialog({ setBlockingServer(false) }) {
             setBlockingServer(false)
-            send(Action.BlockFriend(FriendBlockTarget.Server(it), FriendBlockScope.FEDERATION))
+            send(Action.Friends(FriendsAction.BlockFriend(FriendBlockTarget.Server(it), FriendBlockScope.FEDERATION)))
         }
     }
     rejection?.let { ProblemDialog(it, clearRejection) }

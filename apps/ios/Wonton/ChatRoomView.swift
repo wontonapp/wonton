@@ -165,7 +165,7 @@ private extension ChatRoomView {
         .onChange(of: entryBlocked, initial: true) { _, blocked in
             // 旁聊页没有面板，不报（ADR-0093）。
             if threadRoot == nil {
-                model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+                model.send(.pages(action: .setRoomEntryBlocked(roomId: roomId, blocked: blocked)))
             }
         }
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
@@ -286,7 +286,7 @@ private extension ChatRoomView {
                                 showingConfirmations = true
                             },
                             answerChoice: { key in
-                                model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
+                                model.send(.chat(action: .answerAgentChoice(roomId: roomId, itemId: item.id, key: key)))
                             },
                             onOpenSideChat: { model.openSideChat($0, in: roomId) }
                         )

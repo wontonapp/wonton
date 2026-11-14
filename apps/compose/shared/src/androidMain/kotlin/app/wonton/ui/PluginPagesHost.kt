@@ -27,6 +27,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import app.wonton.client.TabBridgeAction
 import app.wonton.client.TabEnvironment
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.CoreException
@@ -238,7 +239,9 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     fun resume() {
         when (lifecycle.resume()) {
             KeepAlivePageLifecycle.ResumeAction.NONE -> Unit
-            KeepAlivePageLifecycle.ResumeAction.LOAD_SUCCEEDED -> pages.send(Action.TabLoadSucceeded(place))
+            KeepAlivePageLifecycle.ResumeAction.LOAD_SUCCEEDED -> {
+                pages.send(Action.Pages(PageAction.TabLoadSucceeded(place)))
+            }
             KeepAlivePageLifecycle.ResumeAction.RELOAD -> {
                 failed = false
                 loaded = false
@@ -267,7 +270,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     /** 返回：视频全屏 → 网页历史 → 关掉当前页（核心弹栈）。 */
     fun back() {
         if (controller.closeCustomView() || controller.goBack()) return
-        pages.send(Action.ClosePage)
+        pages.send(Action.Pages(PageAction.ClosePage))
     }
 
     fun loadStarted() { loaded = false; failed = false }
@@ -276,7 +279,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
         loaded = true
         failed = false
         if (lifecycle.loadFinished()) {
-            pages.send(Action.TabLoadSucceeded(place))
+            pages.send(Action.Pages(PageAction.TabLoadSucceeded(place)))
             script(environment)?.let { controller.evaluateJavascript(it) }
             controller.evaluateJavascript(pages.core.tabConnectionScript(tab))
         }
@@ -284,7 +287,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
 
     fun loadFailed(status: Int?) {
         failed = true
-        if (lifecycle.loadFailed()) pages.send(Action.TabLoadFailed(place, status?.toUShort()))
+        if (lifecycle.loadFailed()) pages.send(Action.Pages(PageAction.TabLoadFailed(place, status?.toUShort())))
     }
 }
 

@@ -35,11 +35,11 @@ const ROOM_ID: &AsciiSet = &NON_ALPHANUMERIC
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AppLink {
-    /// 打开一个页面，压进栈（[`Action::OpenPage`](crate::Action::OpenPage)）。
+    /// 打开一个页面，压进栈（[`PageAction::OpenPage`](crate::PageAction::OpenPage)）。
     Tab { tab: TabRef },
     /// 新会话：打开“发起私聊”。
     NewChat,
-    /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`Action::AskAgent`](crate::Action::AskAgent)。
+    /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`ChatAction::AskAgent`](crate::ChatAction::AskAgent)。
     AgentChat,
     /// 打开设置。
     Settings,
@@ -236,12 +236,14 @@ fn decode_room_id(encoded: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Action;
+    use crate::{Action, ChatAction};
 
     #[test]
     fn asking_the_agent_round_trips_through_json() {
-        let action = Action::AskAgent {
-            text: "明天几点下雨？".into(),
+        let action = Action::Chat {
+            action: ChatAction::AskAgent {
+                text: "明天几点下雨？".into(),
+            },
         };
         let json = serde_json::to_string(&action).unwrap();
         assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);

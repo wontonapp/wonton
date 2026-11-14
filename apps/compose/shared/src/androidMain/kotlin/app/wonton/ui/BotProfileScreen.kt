@@ -13,7 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotAction
 import app.wonton.protocol.BotActivity
 import app.wonton.protocol.BotRef
 import app.wonton.protocol.BotView
@@ -101,7 +103,9 @@ private fun BotWebSection(identity: BotRef, web: BotWebView?, onAction: (Action)
             Text(ready.url, Modifier.testTag("bot-web-address"), style = WontonTheme.typography.body,
                 color = WontonTheme.colors.textPrimary.toColor())
             WontonButton(
-                stringResource(R.string.bot_web_open), { onAction(Action.OpenPage(TabRef.Bot(identity, null))) },
+                stringResource(R.string.bot_web_open), {
+                    onAction(Action.Pages(PageAction.OpenPage(TabRef.Bot(identity, null))))
+                },
                 Modifier.fillMaxWidth().testTag("bot-web-open"),
             )
         } else {

@@ -12,6 +12,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.VerificationFlow
@@ -59,10 +60,10 @@ private fun VerificationDialog(flow: VerificationFlow, onAction: (Action) -> Uni
                 onDismiss = {},
                 actions = listOf(
                     WontonDialogAction(stringResource(R.string.verification_accept)) {
-                        onAction(Action.AcceptDeviceVerification(flow.flowId))
+                        onAction(Action.Chat(ChatAction.AcceptDeviceVerification(flow.flowId)))
                     },
                     WontonDialogAction(stringResource(R.string.verification_deny)) {
-                        onAction(Action.CancelDeviceVerification(flow.flowId))
+                        onAction(Action.Chat(ChatAction.CancelDeviceVerification(flow.flowId)))
                     },
                 ),
             )
@@ -87,10 +88,10 @@ private fun VerificationDialog(flow: VerificationFlow, onAction: (Action) -> Uni
             onDismiss,
             listOf(
                 WontonDialogAction(stringResource(R.string.verification_same), WontonButtonKind.PRIMARY) {
-                    onAction(Action.ConfirmVerification(flow.flowId))
+                    onAction(Action.Chat(ChatAction.ConfirmVerification(flow.flowId)))
                 },
                 WontonDialogAction(stringResource(R.string.verification_different)) {
-                    onAction(Action.DenyVerification(flow.flowId))
+                    onAction(Action.Chat(ChatAction.DenyVerification(flow.flowId)))
                 },
                 cancelAction(flow, onAction),
             ),
@@ -126,7 +127,7 @@ private fun VerificationStage.waitingTextRes(): Int = when (this) {
 @Composable
 private fun cancelAction(flow: VerificationFlow, onAction: (Action) -> Unit) = WontonDialogAction(
     stringResource(R.string.common_cancel),
-) { onAction(Action.CancelDeviceVerification(flow.flowId)) }
+) { onAction(Action.Chat(ChatAction.CancelDeviceVerification(flow.flowId))) }
 
 @Composable
 private fun okAction(onDismiss: () -> Unit) = WontonDialogAction(

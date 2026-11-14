@@ -46,7 +46,11 @@ async fn stopped_setup() -> (
     plugin.bot_user_id = Some(bot.user_id().to_string());
     plugin.chat = Some(Default::default());
     home.set_installed_plugins(vec![plugin.clone()]);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let stopped = room_plugin(&phone, room.as_str(), |plugin| {
         plugin
             .as_ref()
@@ -76,8 +80,10 @@ async fn start_and_observe_failure(home: &Home, phone: &Phone, room: &str) {
         serde_json::json!({"error": {"kind": "upstream", "message": "unhealthy"}}),
     );
     phone
-        .dispatch(Action::StartPlugin {
-            plugin_id: ID.into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartPlugin {
+                plugin_id: ID.into(),
+            },
         })
         .unwrap();
     let starting = room_plugin(phone, room, |plugin| {
@@ -92,10 +98,12 @@ async fn start_and_observe_failure(home: &Home, phone: &Phone, room: &str) {
     wait_until(|| home.plugin_starts().len() == 1).await;
     assert_eq!(home.plugin_starts()[0], (ID.into(), serde_json::json!({})));
     assert!(matches!(
-        phone.dispatch(Action::StartPlugin {
-            plugin_id: ID.into()
+        phone.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartPlugin {
+                plugin_id: ID.into()
+            }
         }),
-        Err(wonton_client::CoreError::NotReady { .. })
+        Err(wonton_client::CoreError::InvalidInput { .. })
     ));
     home.hold_plugin_starts(false);
     let failed = room_plugin(phone, room, |plugin| {
@@ -103,7 +111,11 @@ async fn start_and_observe_failure(home: &Home, phone: &Phone, room: &str) {
     }).await.unwrap();
     assert!(failed.can_start);
     let before = home.installed_requests();
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_until(|| home.installed_requests() > before).await;
     let refreshed = room_plugin(phone, room, |plugin| plugin.as_ref() == Some(&failed)).await;
     assert_eq!(refreshed, Some(failed));
@@ -120,12 +132,20 @@ async fn recover_externally(
         health: PluginHealth::Healthy,
     };
     home.set_installed_plugins(vec![running]);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     room_plugin(phone, room, Option::is_none).await;
     assert!(phone.plugins().starts.is_empty());
 
     home.set_installed_plugins(vec![stopped.clone()]);
-    phone.dispatch(Action::RefreshPlugins).unwrap();
+    phone
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let reset = room_plugin(phone, room, |plugin| {
         plugin
             .as_ref()
@@ -150,8 +170,10 @@ async fn stopped_agent_can_start_retry_and_return_to_running_in_the_same_room() 
     home.answer_plugin_start(200, serde_json::to_value(&plugin).unwrap());
     home.set_installed_plugins(vec![plugin]);
     phone
-        .dispatch(Action::StartPlugin {
-            plugin_id: ID.into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartPlugin {
+                plugin_id: ID.into(),
+            },
         })
         .unwrap();
     wait_until(|| home.plugin_starts().len() == 2 && phone.plugins().starts.is_empty()).await;

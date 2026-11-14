@@ -45,10 +45,12 @@ async fn install_serializes_chosen_roles_and_preserves_required_roles() {
     let mut shown = preview("app.photos");
     shown.audience = Some(audience());
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     assert_eq!(
@@ -140,10 +142,7 @@ async fn audience_api_updates_then_returns_refreshed_detail() {
     );
     let updated = rig
         .app
-        .update_plugin_audience(Action::SetPluginAudience {
-            id: "app.photos".into(),
-            audience: selected.clone(),
-        })
+        .update_plugin_audience("app.photos".into(), selected.clone())
         .await
         .unwrap();
     assert_eq!(updated.audience, detail.audience);

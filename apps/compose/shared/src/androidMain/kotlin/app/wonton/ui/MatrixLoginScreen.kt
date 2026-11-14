@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.MatrixLoginFailure
 import app.wonton.protocol.MatrixLoginMethod
@@ -73,7 +74,7 @@ internal fun MatrixLoginScreen(
 ) {
     val active = login?.takeUnless { it.state.isTerminal }
     val cancel = {
-        active?.let { core.send(Action.CancelMatrixLogin(it.loginId)) }
+        active?.let { core.send(Action.Home(HomeAction.CancelMatrixLogin(it.loginId))) }
         onDismiss()
         Unit
     }
@@ -155,14 +156,12 @@ private fun MatrixLoginReady(login: MatrixLoginViewModel, core: ClientCore, refu
                 {
                     refuse(
                         core.send(
-                            Action.StartMatrixOidc(
-                                MatrixOidcLogin(
-                                    login.loginId,
-                                    // 核心接受的回调地址，壳不另写一份；MainActivity 按它认深链。
-                                    login.oidcRedirectUri,
-                                    defaultDeviceName(context),
-                                ),
-                            ),
+                            Action.Home(HomeAction.StartMatrixOidc(MatrixOidcLogin(
+                                login.loginId,
+                                // 核心接受的回调地址，壳不另写一份；MainActivity 按它认深链。
+                                login.oidcRedirectUri,
+                                defaultDeviceName(context),
+                            ),)),
                         ),
                     )
                 },
@@ -191,8 +190,10 @@ private fun MatrixPasswordForm(login: MatrixLoginViewModel, core: ClientCore, re
         focus.clearFocus()
         refuse(
             core.send(
-                Action.SubmitMatrixPassword(
-                    MatrixPasswordLogin(login.loginId, userId.trim(), password, defaultDeviceName(context)),
+                Action.Home(
+                    HomeAction.SubmitMatrixPassword(
+                        MatrixPasswordLogin(login.loginId, userId.trim(), password, defaultDeviceName(context)),
+                    ),
                 ),
             ),
         )
@@ -252,7 +253,7 @@ private fun MatrixLoginFailed(
         WontonButton(
             stringResource(R.string.common_retry),
             {
-                refuse(core.send(Action.StartMatrixLogin(homeserver)))
+                refuse(core.send(Action.Home(HomeAction.StartMatrixLogin(homeserver))))
             },
             Modifier.fillMaxWidth(),
         )
@@ -266,7 +267,7 @@ private fun MatrixLoginUnknown(homeserver: String, core: ClientCore, refuse: (Pr
         WontonNotice(WontonIcon.Warning, stringResource(R.string.matrix_login_unknown_state))
         WontonButton(
             stringResource(R.string.common_retry),
-            { refuse(core.send(Action.StartMatrixLogin(homeserver))) },
+            { refuse(core.send(Action.Home(HomeAction.StartMatrixLogin(homeserver)))) },
             Modifier.fillMaxWidth(),
         )
     }
@@ -294,7 +295,7 @@ private fun MatrixLoginStart(server: String, onServerChange: (String) -> Unit, c
     val focus = LocalFocusManager.current
     val start = {
         focus.clearFocus()
-        refusal = core.send(Action.StartMatrixLogin(server.trim().takeIf { it.isNotEmpty() }))
+        refusal = core.send(Action.Home(HomeAction.StartMatrixLogin(server.trim().takeIf { it.isNotEmpty() })))
         Unit
     }
     Column(

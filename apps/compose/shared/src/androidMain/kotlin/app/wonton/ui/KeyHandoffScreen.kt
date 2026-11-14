@@ -29,6 +29,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.KeyHandoff
@@ -65,7 +67,7 @@ internal fun KeyHandoffHost(chat: ChatViewModel, navigation: AppNavigation, core
             core,
             onLater = { navigation.chat.keyHandoffDeferred = true },
             onNoOtherDevice = {
-                navigation.pages.send(Action.OpenPage(TabRef.Chat))
+                navigation.pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
                 navigation.chat.showingBackup = true
             },
         )
@@ -100,7 +102,7 @@ internal fun KeyHandoffScreen(
                 stringResource(R.string.handoff_no_other_device),
                 Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
                     .clickable {
-                        refusal = core.send(Action.SkipKeyHandoff)
+                        refusal = core.send(Action.Chat(ChatAction.SkipKeyHandoff))
                         if (refusal == null) onNoOtherDevice()
                     }
                     .padding(vertical = WontonTheme.spacing.s12),
@@ -125,7 +127,7 @@ private fun HandoffProgress(chat: ChatViewModel, onAction: (Action) -> Unit, onL
             Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
                 WontonButton(
                     stringResource(R.string.handoff_try_again),
-                    { onAction(Action.StartDeviceVerification) },
+                    { onAction(Action.Chat(ChatAction.StartDeviceVerification)) },
                     Modifier.weight(1f),
                 )
                 WontonButton(

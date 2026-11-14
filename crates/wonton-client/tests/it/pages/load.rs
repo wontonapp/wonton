@@ -8,11 +8,13 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
     let plugin_id = "app.failures";
     let page_id = "failure";
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: None,
             },
-            status: None,
         })
         .unwrap();
     let transport = rig.app.pages();
@@ -25,11 +27,13 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
         }
     ));
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: Some(502),
             },
-            status: Some(502),
         })
         .unwrap();
     let upstream = rig.app.pages();
@@ -47,14 +51,20 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
         PluginState::Installing,
         vec![page(page_id)],
     )]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_plugin_status(&rig, plugin_id, PluginState::Installing).await;
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: Some(503),
             },
-            status: Some(503),
         })
         .unwrap();
     assert!(matches!(
@@ -67,13 +77,19 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
     ));
 
     rig.core.set_lists(vec![vec![plugin]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| item(view, &page_tab).state == TabState::Ready).await;
     let before = item(&rig.app.pages(), &page_tab).reload;
     rig.app
-        .dispatch(Action::ReloadTab {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ReloadTab {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
             },
         })
         .unwrap();
@@ -87,11 +103,13 @@ async fn tab_load_failures_have_specific_causes_and_reload() {
 async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
     let (rig, page_tab, _) = connected_page_rig("app.recovery", "recovery").await;
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: Some(502),
             },
-            status: Some(502),
         })
         .unwrap();
     assert!(matches!(
@@ -106,9 +124,11 @@ async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
     // 按返回回到成功的历史页：壳报告加载成功，失败状态清掉，reload 计数不动。
     let before = item(&rig.app.pages(), &page_tab).reload;
     rig.app
-        .dispatch(Action::TabLoadSucceeded {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadSucceeded {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
             },
         })
         .unwrap();
@@ -119,9 +139,11 @@ async fn tab_load_succeeded_clears_failure_without_counting_a_reload() {
 
     // 没有失败记录时再发：不报错，状态不变。
     rig.app
-        .dispatch(Action::TabLoadSucceeded {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadSucceeded {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
             },
         })
         .unwrap();

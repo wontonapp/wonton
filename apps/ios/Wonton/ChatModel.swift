@@ -255,11 +255,11 @@ final class ChatModel {
         let invitation = rooms.first { $0.membership == .invited }
         guard rooms.isEmpty || (acceptingInvitation && invitation != nil) else { return true }
         do {
-            if acceptingInvitation { try core.dispatch(action: .dismissChatProblem) }
+            if acceptingInvitation { try core.dispatch(action: .chat(action: .dismissChatProblem)) }
             if let invitation, acceptingInvitation {
-                try core.dispatch(action: .joinRoom(roomId: invitation.roomId))
+                try core.dispatch(action: .chat(action: .joinRoom(roomId: invitation.roomId)))
             } else {
-                try core.dispatch(action: .startDirectChat(userId: userId))
+                try core.dispatch(action: .chat(action: .startDirectChat(userId: userId)))
             }
             awaitedPeer = userId
             awaitedFrom = origin
@@ -284,7 +284,7 @@ final class ChatModel {
             return
         }
         do {
-            try core.dispatch(action: .joinRoom(roomId: id))
+            try core.dispatch(action: .chat(action: .joinRoom(roomId: id)))
             awaitedRoom = id
         } catch {
             rejection = error.problem

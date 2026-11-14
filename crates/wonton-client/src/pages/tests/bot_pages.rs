@@ -52,7 +52,7 @@ async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
     publish(&rig, vec![other, family.clone()]);
     let identity = tab(&family, None);
     rig.tabs
-        .dispatch(Action::OpenPage {
+        .dispatch(PageAction::OpenPage {
             tab: identity.clone(),
         })
         .unwrap();
@@ -64,7 +64,7 @@ async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
         Some("https://bot--family-app-shared-12345678.example/start")
     );
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: PanelScope::Main,
             tab: identity.clone(),
         })
@@ -91,7 +91,7 @@ async fn exact_bot_ready_metadata_drives_stack_panel_and_bridge() {
     // 已核实的页面身份之外的路径不收：绝对网址不能当 Bot 页的路径。
     assert!(
         rig.tabs
-            .dispatch(Action::OpenPage {
+            .dispatch(PageAction::OpenPage {
                 tab: tab(&family, Some("/new"))
             })
             .is_err()
@@ -115,7 +115,7 @@ async fn pin_current_page_keeps_default_and_nondefault_bot_identity_and_paths() 
         ),
     ] {
         rig.tabs
-            .dispatch(Action::PinCurrentPage {
+            .dispatch(PageAction::PinCurrentPage {
                 url: url.into(),
                 title: None,
                 to: PinTarget::Panel {
@@ -129,7 +129,7 @@ async fn pin_current_page_keeps_default_and_nondefault_bot_identity_and_paths() 
         );
     }
     rig.tabs
-        .dispatch(Action::OpenPage {
+        .dispatch(PageAction::OpenPage {
             tab: tab(&default, None),
         })
         .unwrap();
@@ -139,7 +139,7 @@ async fn pin_current_page_keeps_default_and_nondefault_bot_identity_and_paths() 
     // 资料撤回后，同一网址不再钉成 Bot 页（也没有普通插件页可退）。
     assert!(
         rig.tabs
-            .dispatch(Action::PinCurrentPage {
+            .dispatch(PageAction::PinCurrentPage {
                 url: "http://app.shared.wonton.localhost/new".into(),
                 title: None,
                 to: PinTarget::Panel {
@@ -161,7 +161,7 @@ async fn mismatched_page_identity_unknown_and_disconnected_bot_never_borrow_plug
     let family = bot("family", "https://bot--family-app-shared-12345678.example/");
     publish(&rig, vec![family.clone()]);
     rig.tabs
-        .dispatch(Action::OpenPage {
+        .dispatch(PageAction::OpenPage {
             tab: tab(&family, None),
         })
         .unwrap();
@@ -200,7 +200,7 @@ async fn bot_room_panels_keep_identity_but_reject_outside_or_absolute_paths() {
     ] {
         assert!(
             rig.tabs
-                .dispatch(Action::OpenPage {
+                .dispatch(PageAction::OpenPage {
                     tab: tab(&family, Some(path)),
                 })
                 .is_err()
@@ -234,7 +234,7 @@ async fn explicit_no_bot_webui_preserves_ordinary_plugin_current_page_pinning() 
     });
     publish(&rig, vec![default]);
     rig.tabs
-        .dispatch(Action::PinCurrentPage {
+        .dispatch(PageAction::PinCurrentPage {
             url: "http://app.shared.wonton.localhost/report".into(),
             title: None,
             to: PinTarget::Panel {

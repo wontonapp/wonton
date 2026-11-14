@@ -16,7 +16,7 @@ use url::Url;
 use wonton_l10n::l10n;
 use wonton_matrix::{OwnedUserId, PendingLogin};
 use wonton_protocol::{
-    Action, CoreError, MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState,
+    CoreError, HomeAction, MatrixAccount, MatrixLoginFailure, MatrixLoginMethod, MatrixLoginState,
     MatrixLoginViewModel, MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
 };
 
@@ -100,13 +100,13 @@ impl MatrixLogins {
         let _ = self.switch.set(switch);
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: HomeAction) -> Result<(), CoreError> {
         match action {
-            Action::StartMatrixLogin { homeserver } => self.start(homeserver),
-            Action::SubmitMatrixPassword { login } => self.submit_password(login),
-            Action::StartMatrixOidc { login } => self.start_oidc(login),
-            Action::CompleteMatrixOidc { callback } => self.complete_oidc(&callback),
-            Action::CancelMatrixLogin { login_id } => self.cancel(&login_id),
+            HomeAction::StartMatrixLogin { homeserver } => self.start(homeserver),
+            HomeAction::SubmitMatrixPassword { login } => self.submit_password(login),
+            HomeAction::StartMatrixOidc { login } => self.start_oidc(login),
+            HomeAction::CompleteMatrixOidc { callback } => self.complete_oidc(&callback),
+            HomeAction::CancelMatrixLogin { login_id } => self.cancel(&login_id),
             _ => Err(invalid("servers-invalid-action")),
         }
     }

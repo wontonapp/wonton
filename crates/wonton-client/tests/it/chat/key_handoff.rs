@@ -30,7 +30,11 @@ async fn old_phone(home: &Home, phone: &Phone, backup: bool) {
                 .then_some(())
             })
             .await;
-        phone.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+        phone
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+            })
+            .unwrap();
     } else {
         phone
             .wait_chat("旧手机已验证、没有备份", |view| {
@@ -41,13 +45,21 @@ async fn old_phone(home: &Home, phone: &Phone, backup: bool) {
             })
             .await;
         home.reject_backup_creation(false);
-        phone.dispatch(Action::DismissChatProblem).unwrap();
+        phone
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::DismissChatProblem,
+            })
+            .unwrap();
     }
 }
 
 /// 旧手机打开“添加设备”，拿到给新手机扫的码。
 async fn invite(phone: &Phone) -> String {
-    phone.dispatch(Action::InviteDevice).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::InviteDevice,
+        })
+        .unwrap();
     let subscription = phone.subscribe_home();
     let waiting = async {
         loop {
@@ -82,9 +94,11 @@ async fn renewed_invite(phone: &Phone, previous: &str) -> String {
 
 fn pair(phone: &Phone, code: String) {
     phone
-        .dispatch(Action::PairHome {
-            code: SecretString::new(code),
-            device_name: "new-phone".to_owned(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::PairHome {
+                code: SecretString::new(code),
+                device_name: "new-phone".to_owned(),
+            },
         })
         .unwrap();
 }
@@ -204,6 +218,18 @@ fn message_text(content: &TimelineContent) -> Option<&str> {
     }
 }
 
+fn confirm_handoff(old: &Phone, new: &Phone, flow_id: &str) {
+    for phone in [old, new] {
+        phone
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::ConfirmVerification {
+                    flow_id: flow_id.to_owned(),
+                },
+            })
+            .unwrap();
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recovery_key() {
@@ -257,13 +283,7 @@ async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recov
         .await;
     assert_eq!(timeline.notice, None::<KeyNotice>);
 
-    for phone in [&old, &new] {
-        phone
-            .dispatch(Action::ConfirmVerification {
-                flow_id: flow_id.clone(),
-            })
-            .unwrap();
-    }
+    confirm_handoff(&old, &new, &flow_id);
     new.wait_chat_within("新手机拿齐密钥、交接结束", WAIT * 2, |view| {
         (view.encryption.verification == DeviceVerification::Verified
             && view.encryption.recovery == RecoveryStatus::Enabled
@@ -294,7 +314,10 @@ async fn a_paired_phone_gets_the_keys_from_the_add_device_page_without_the_recov
     recorder.assert_never_asked_for_the_recovery_key();
 
     // 关掉“添加设备”页：旧手机那一方的情况跟着页走。
-    old.dispatch(Action::CloseDeviceInvite).unwrap();
+    old.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::CloseDeviceInvite,
+    })
+    .unwrap();
     assert_eq!(old.home().invite, None);
     assert_eq!(old.chat().encryption.key_handoff, None);
 
@@ -362,14 +385,19 @@ async fn an_unanswered_request_is_reported_after_a_minute_and_a_mismatch_hands_o
     );
 
     let used = invite(&old).await;
-    new.dispatch(Action::StartDeviceVerification).unwrap();
+    new.dispatch(Action::Chat {
+        action: wonton_protocol::ChatAction::StartDeviceVerification,
+    })
+    .unwrap();
     let flow_id = both_compare(&old, &new).await;
     assert_ne!(flow_id, first.flow_id);
     // 两台设备几乎同时点“不一样”：后点的这一台落在已经结束的流程上，也按完成算，不弹“没准备好”。
     for phone in [&old, &new] {
         phone
-            .dispatch(Action::DenyVerification {
-                flow_id: flow_id.clone(),
+            .dispatch(Action::Chat {
+                action: wonton_protocol::ChatAction::DenyVerification {
+                    flow_id: flow_id.clone(),
+                },
             })
             .unwrap();
     }
@@ -395,8 +423,14 @@ async fn an_unanswered_request_is_reported_after_a_minute_and_a_mismatch_hands_o
     assert_ne!(renewed, used);
 
     // 重开“添加设备”页：上一轮的确认结果不留在顶上。
-    old.dispatch(Action::CloseDeviceInvite).unwrap();
-    old.dispatch(Action::InviteDevice).unwrap();
+    old.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::CloseDeviceInvite,
+    })
+    .unwrap();
+    old.dispatch(Action::Home {
+        action: wonton_protocol::HomeAction::InviteDevice,
+    })
+    .unwrap();
     assert_eq!(old.chat().encryption.verification_flow, None);
 }
 
@@ -442,8 +476,10 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
     pair(&new, code);
     new.signed_in().await;
     let flow_id = both_compare(&old, &new).await;
-    old.dispatch(Action::CancelDeviceVerification {
-        flow_id: flow_id.clone(),
+    old.dispatch(Action::Chat {
+        action: wonton_protocol::ChatAction::CancelDeviceVerification {
+            flow_id: flow_id.clone(),
+        },
     })
     .unwrap();
     flow_at(&new, "新手机看到对方取消", |flow, _| {
@@ -456,7 +492,10 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
     .await;
     assert_without_keys(&new);
 
-    new.dispatch(Action::SkipKeyHandoff).unwrap();
+    new.dispatch(Action::Chat {
+        action: wonton_protocol::ChatAction::SkipKeyHandoff,
+    })
+    .unwrap();
     new.wait_chat("交接结束，回到恢复密钥", |view| {
         (view.encryption.key_handoff.is_none()
             && view.encryption.verification_flow.is_none()
@@ -469,7 +508,9 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
     })
     .await;
     assert!(matches!(
-        new.dispatch(Action::SkipKeyHandoff),
+        new.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::SkipKeyHandoff
+        }),
         Err(wonton_client::CoreError::InvalidInput { .. })
     ));
 

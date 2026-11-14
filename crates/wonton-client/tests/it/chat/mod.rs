@@ -92,7 +92,11 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
             text(item, "你好，主人")
         })
         .await;
-    phone.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    phone
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     assert_eq!(phone.chat().encryption.recovery_key, None);
     drop(timeline);
     drop(phone);
@@ -317,8 +321,10 @@ async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession)
         Some(bot.user_id().as_str())
     );
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     let joined = phone

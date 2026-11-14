@@ -53,12 +53,12 @@ final class HomeModel {
     }
 
     func dismissPairingFailure() {
-        send(.dismissPairingFailure)
+        send(.home(action: .dismissPairingFailure))
         viewModel = core.home()
     }
 
     func cancelPairing() {
-        send(.cancelPairing)
+        send(.home(action: .cancelPairing))
         viewModel = core.home()
     }
 
@@ -69,7 +69,7 @@ final class HomeModel {
         // 配对正在进行时不接新的码。
         if case .inProgress = current.pairing { return false }
         pairingCode = url.absoluteString
-        if case .failed? = current.pairing { send(.dismissPairingFailure) }
+        if case .failed? = current.pairing { send(.home(action: .dismissPairingFailure)) }
         return true
     }
 
@@ -93,7 +93,9 @@ final class HomeModel {
               // 从 App 外面打开的 `scheme:/path` 到这里成了 `scheme:///path`（空主机），是同一个地址。
               (received.host ?? "") == (redirect.host ?? ""), received.path == redirect.path
         else { return false }
-        send(.completeMatrixOidc(callback: MatrixOidcCallback(loginId: login.loginId, callbackUrl: url.absoluteString)))
+        send(.home(action: .completeMatrixOidc(
+            callback: MatrixOidcCallback(loginId: login.loginId, callbackUrl: url.absoluteString)
+        )))
         return true
     }
 
@@ -101,7 +103,7 @@ final class HomeModel {
     func pair(code: String, deviceName: String) -> Problem? {
         defer { viewModel = core.home() }
         do {
-            try core.dispatch(action: .pairHome(code: code, deviceName: deviceName))
+            try core.dispatch(action: .home(action: .pairHome(code: code, deviceName: deviceName)))
             return nil
         } catch {
             return Problem(title: error.problem.title, detail: String(describing: error))

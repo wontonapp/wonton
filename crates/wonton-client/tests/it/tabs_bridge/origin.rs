@@ -28,7 +28,9 @@ async fn missing_page_url_ignores_messages_until_plugin_list_arrives() {
     rig.reopen();
     // 重启后栈是空的：重新打开这一页，列表没读到前按存的元数据如实说加载中。
     rig.app
-        .dispatch(wonton_client::Action::OpenPage { tab: tab.clone() })
+        .dispatch(wonton_client::Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: tab.clone() },
+        })
         .unwrap();
     let loading = selected_page(&rig, &tab);
     assert_eq!(loading.state, TabState::Loading);

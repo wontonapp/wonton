@@ -18,8 +18,18 @@ RUST = """
 #[derive(Clone)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 pub enum Action {
+    Home { action: HomeAction },
+    Sharing { action: SharingAction },
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum HomeAction {
     PairHome { code: String },
     RefreshHome,
+}
+
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+pub enum SharingAction {
     RevokePluginShare,
 }
 
@@ -87,8 +97,8 @@ struct HomeView: View {
         case .failed: EmptyView()
         case .unknown: EmptyView()
         }
-        Button("") { core.dispatch(action: .pairHome(code: "")) }
-        Button("") { core.dispatch(action: .refreshHome) }
+        Button("") { core.dispatch(action: .home(action: .pairHome(code: ""))) }
+        Button("") { core.dispatch(action: .home(action: .refreshHome)) }
         Button("") { core.revokePluginShare("") }
         let label = DispatchQueue(label: "app.wonton.network")  // .wonton 是字符串撞名，不是 ServerKind
         Text("\\(model.tag)")           // tag 只在插值里
@@ -107,8 +117,8 @@ fun HomeScreen(viewModel: HomeViewModel) {
         is HomeStatus.Connected -> Text("${status.latencyMs}")
         else -> Unit
     }
-    Button(onClick = { core.dispatch(Action.PairHome("")) }) {}
-    Button(onClick = { core.revokePluginShare("x") }) {}   // 不写 Action.RevokePluginShare 字面量
+    Button(onClick = { core.dispatch(Action.Home(HomeAction.PairHome(""))) }) {}
+    Button(onClick = { core.revokePluginShare("x") }) {}   // 不写 SharingAction.RevokePluginShare 字面量
 }
 """
 
@@ -146,8 +156,8 @@ class ParityTest(unittest.TestCase):
     def test_one_shell_items(self) -> None:
         used = self.where()
         self.assertEqual(used["HomeViewModel.device_name"], {"iOS", "Android"})
-        self.assertEqual(used["Action.PairHome"], {"iOS", "Android"})
-        self.assertEqual(used["Action.RefreshHome"], {"iOS"})
+        self.assertEqual(used["HomeAction.PairHome"], {"iOS", "Android"})
+        self.assertEqual(used["HomeAction.RefreshHome"], {"iOS"})
         self.assertEqual(used["HomeStatus.Connected"], {"iOS", "Android"})
         # Kotlin 把不带数据的分支并进 else，Swift 逐个写出：整个枚举算一项，Kotlin 提到枚举名就算用到。
         self.assertEqual(used["HomeStatus"], {"iOS", "Android"})
@@ -165,7 +175,7 @@ class ParityTest(unittest.TestCase):
 
     def test_action_used_via_same_name_core_function(self) -> None:
         # 两壳都直接调 ClientCore.revoke_plugin_share：Kotlin 不写 Action 字面量也算用到（#503 核对）
-        self.assertEqual(self.where()["Action.RevokePluginShare"], {"iOS", "Android"})
+        self.assertEqual(self.where()["SharingAction.RevokePluginShare"], {"iOS", "Android"})
 
     def test_catch_all_and_error_types_are_not_items(self) -> None:
         used = self.where()

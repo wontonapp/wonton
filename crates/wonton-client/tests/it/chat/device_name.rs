@@ -14,9 +14,11 @@ async fn the_name_typed_while_pairing_becomes_the_matrix_device_name() {
     let phone = Phone::open(dir.path());
     let home = Home::start(&[phone.device_id()]).await;
     phone
-        .dispatch(Action::PairHome {
-            code: SecretString::new(home.pairing_code()),
-            device_name: "fileapp-iphone".to_owned(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::PairHome {
+                code: SecretString::new(home.pairing_code()),
+                device_name: "fileapp-iphone".to_owned(),
+            },
         })
         .unwrap();
     let (_, device_id) = phone.signed_in().await;

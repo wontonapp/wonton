@@ -191,7 +191,7 @@ struct ConnectionView: View {
                     WontonRow(title: String(localized: .Egress.egressPathHomeServer), value: view.details.server.text)
                 }
                 if let retrying = view.notice?.retrying {
-                    RetryButton(retrying: retrying) { model.send(.retryConnection) }
+                    RetryButton(retrying: retrying) { model.send(.home(action: .retryConnection)) }
                 }
                 WontonGroup {
                     NavigationLink(value: SettingsRoute.connectionDetails) {

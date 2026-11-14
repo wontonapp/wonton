@@ -99,7 +99,7 @@ struct MainView: View {
         .task { await chat.files.observe() }
         .task { await settings.observe() }
         .task {
-            for await network in DeviceNetwork.changes() { home.send(.networkChanged(network: network)) }
+            for await network in DeviceNetwork.changes() { home.send(.home(action: .networkChanged(network: network))) }
         }
         .environment(pages)
         .environment(onboarding)
@@ -225,9 +225,9 @@ struct MainView: View {
             scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
             blocked: false, draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            select: { pages.send(.selectPanelPage(scope: .main, tab: $0)) },
-            remove: { pages.send(.removePanelPage(scope: .main, tab: $0)) },
-            move: { pages.send(.movePanelPage(scope: .main, tab: $0, index: UInt32($1))) },
+            select: { pages.send(.pages(action: .selectPanelPage(scope: .main, tab: $0))) },
+            remove: { pages.send(.pages(action: .removePanelPage(scope: .main, tab: $0))) },
+            move: { pages.send(.pages(action: .movePanelPage(scope: .main, tab: $0, index: UInt32($1)))) },
             pullAnchor: nil,
             content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
@@ -264,7 +264,9 @@ extension MainView {
                 Text(pages.viewModel.uninstalled.map(TabText.uninstalled).joined(separator: "\n"))
                     .wontonText(WontonTheme.typography.supporting)
                 Spacer(minLength: 0)
-                WontonIconButton(icon: .close, label: TabText.close) { pages.send(.dismissUninstalledTabs) }
+                WontonIconButton(icon: .close, label: TabText.close) {
+                    pages.send(.pages(action: .dismissUninstalledTabs))
+                }
             }
             .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
@@ -273,7 +275,7 @@ extension MainView {
     /// 连接状态条：拆出计算属性，整条 body 的类型检查超时（Swift 编译器限制）。
     fileprivate var barStatus: WontonBarStatus {
         WontonBarStatus(home: home.viewModel, recovered: home.viewModel.justRecovered) {
-            ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
+            ConnectionLine(notice: $0, retry: { home.send(.home(action: .retryConnection)) }, open: showServerRoute)
         }
     }
 }

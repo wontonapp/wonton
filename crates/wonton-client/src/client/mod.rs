@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex, RwLock};
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact,
-    ChatViewModel, ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId,
-    FileInfo, FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview,
-    LanChoice, LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate,
-    PagesViewModel, PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers,
-    SecretString, ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem,
-    TimelineTarget, TransfersViewModel,
+    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact, ChatViewModel,
+    ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
+    FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview, LanChoice,
+    LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PagesViewModel,
+    PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers, SecretString,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
+    TransfersViewModel,
 };
 
 use crate::app_lock::AppLockLink;
@@ -340,12 +340,6 @@ impl ClientCore {
     /// 当前的新用户引导状态，用于首帧渲染。
     pub fn onboarding(&self) -> OnboardingViewModel {
         self.views().onboarding.borrow().clone()
-    }
-
-    /// 关掉从设置进去的重看引导：这次记下的选择全部丢弃，什么都不保存，壳回到设置。
-    /// 没在重看时调用没有效果。
-    pub fn close_onboarding(&self) {
-        self.scope().onboarding.close();
     }
 
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
@@ -708,108 +702,6 @@ impl ClientCore {
         core.matrix_login.bind(switch);
         core.attach(&scope);
         Ok(core)
-    }
-
-    /// `dispatch` 的后半：插件的操作，其余都是聊天的。分开放是因为函数长度有上限。
-    fn dispatch_plugins_or_chat(&self, scope: &Scope, action: Action) -> Result<(), CoreError> {
-        match action {
-            Action::SetBotName { plugin_id, name } => scope.chat.set_bot_name(plugin_id, name),
-            Action::SetBotAvatar {
-                plugin_id,
-                state,
-                upload,
-            } => scope.chat.set_bot_avatar(plugin_id, state, upload),
-            Action::ClearBotAvatar { plugin_id, state } => {
-                scope.chat.clear_bot_avatar(plugin_id, state)
-            }
-            Action::DismissBotProfileProblem { plugin_id } => {
-                scope.chat.dismiss_bot_profile_problem(&plugin_id);
-                Ok(())
-            }
-            Action::SetLanguages { languages } => {
-                crate::l10n::set_languages(&languages);
-                scope.set_languages(&languages);
-                self.replay().languages = Some(languages);
-                Ok(())
-            }
-            Action::RefreshPlugins => {
-                scope.plugins.refresh_installed();
-                Ok(())
-            }
-            action @ (Action::ListOwnerSecrets { .. }
-            | Action::ShowOwnerSecret { .. }
-            | Action::HideOwnerSecret { .. }
-            | Action::DismissOwnerSecrets { .. }) => scope.plugins.dispatch_owner_secrets(action),
-            Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
-            Action::SetPortMapping { plugin_id, enabled } => {
-                scope.plugins.set_port_mapping(plugin_id, enabled)
-            }
-            Action::RefreshStore { force } => {
-                scope.plugins.refresh_store(force);
-                Ok(())
-            }
-            Action::InstallPlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.install(preview, secrets, settings),
-            Action::UpgradePlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.upgrade(preview, secrets, settings),
-            Action::InstallNow { source } => scope.plugins.install_now(source),
-            Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
-            Action::UpgradeAll => scope.plugins.upgrade_all(),
-            Action::DismissStoreConfirmation => {
-                scope.plugins.dismiss_confirmation();
-                Ok(())
-            }
-            Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
-            Action::SetPluginAudience { id, audience } => {
-                scope.plugins.set_plugin_audience(id, audience)
-            }
-            Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
-            Action::StartTakeover { id } => {
-                scope.plugins.start_takeover(id);
-                Ok(())
-            }
-            Action::EndTakeover { id } => {
-                scope.plugins.end_takeover(&id);
-                Ok(())
-            }
-            Action::RefreshRegistryMirror => {
-                scope.plugins.refresh_registry_mirror();
-                Ok(())
-            }
-            Action::SaveRegistryMirror { mirror } => scope.plugins.save_registry_mirror(mirror),
-            Action::TestRegistryMirrors => scope.plugins.test_registry_mirrors(),
-            Action::RefreshEgressProxy => {
-                scope.plugins.refresh_egress();
-                Ok(())
-            }
-            Action::SaveEgressProxy {
-                address,
-                direct_cidrs,
-                use_plugin,
-            } => scope
-                .plugins
-                .save_egress(&address, &direct_cidrs, use_plugin),
-            Action::ConfirmEgressProxy => scope.plugins.confirm_egress(),
-            Action::DismissEgressConfirmation => {
-                scope.plugins.dismiss_egress_confirmation();
-                Ok(())
-            }
-            Action::AskAgent { text } => {
-                let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
-                    CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
-                    }
-                })?;
-                scope.chat.ask(&bot, &text)
-            }
-            chat => scope.chat.dispatch(chat),
-        }
     }
 
     fn update_sessions(

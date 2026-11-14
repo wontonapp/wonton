@@ -30,7 +30,7 @@
 
 ## widget 页
 
-`TabRef::Widget { plugin_id, room_id }` 是插件的 Matrix widget 页（[ADR-0096](../../../../../docs/adr/0096-calls-matrixrtc-widget.md)），只经 `Action::OpenPage` 从房间里打开、压入页面栈，不能加入“我的应用”或面板。同一时间只保留一个 widget 页；离开栈顶就结束驱动并移除该页，不保留已断开的 widget 页面。上面 1–3 步照旧，另加：
+`TabRef::Widget { plugin_id, room_id }` 是插件的 Matrix widget 页（[ADR-0096](../../../../../docs/adr/0096-calls-matrixrtc-widget.md)），只经 `Action::Pages { action: PageAction::OpenPage { .. } }` 从房间里打开、压入页面栈，不能加入“我的应用”或面板。同一时间只保留一个 widget 页；离开栈顶就结束驱动并移除该页，不保留已断开的 widget 页面。上面 1–3 步照旧，另加：
 
 - `TabPage.url` 出来、页面开始加载后调用 `subscribe_tab_widget(tab)`，循环 `next()`，把每段脚本原样注入同一个页面的主框架；
   返回空（页面关了、换了房间、退出登录、重新加载）就停，`cancel()` 用于壳自己先拆掉页面时。
@@ -40,7 +40,7 @@
 
 每 Bot 页面身份使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降成
 `TabRef::Plugin` 或 `TabRef::Url`。`path: None` 打开对应 Bot 的 `BotView.web.Ready.page.url`；
-`Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开沿用 `Action::OpenPage`，加入沿用
+`Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开沿用 `PageAction::OpenPage`，加入沿用
 `AddMyApp`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份和路径。
 
 实现时把聊天已有的 `BotView` watch 通道接入 `PagesLink`，Bot 网页状态变化时重算 `PagesViewModel` 的

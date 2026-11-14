@@ -1,6 +1,6 @@
 """“ViewModel 项”的定义：壳要渲染的字段和分支、壳要发的操作、壳要调的核心函数。
 
-- 操作：`Action` 的每个分支（壳经 `ClientCore::dispatch` 发）。分支里的参数不算：Kotlin 常按位置传参，名字不出现。
+- 操作：`Action` 包装的领域枚举的每个分支（壳经 `ClientCore::dispatch` 发）。参数不算：Kotlin 常按位置传参。
 - 函数：导出的对象方法、命名构造函数和自由函数。主构造函数 `new` 在壳里写成类型名，不算。
 - 输出：从导出函数的返回类型（各个 ViewModel、订阅推的批次等）出发，顺着字段和分支里的类型能走到的
   结构体和枚举；结构体的每个字段是一项；枚举里带数据的分支各是一项，不带数据的分支合起来是一项。只作为操作参数的结构体是输入，不算。
@@ -76,17 +76,18 @@ def output_types(exports: Exports, allow_types: Set[str]) -> List[TypeDef]:
     return [exports.types[name] for name in sorted(seen)]
 
 
+def _action_items(definition: TypeDef, core_fns: Set[str]) -> Iterable[Item]:
+    for member in definition.members:
+        if member.catch_all or member.name == CATCH_ALL:
+            continue
+        key = f"{definition.name}.{member.name}"
+        name = lower_camel(member.name)
+        kotlin = [key] + ([name] if name in core_fns else [])
+        yield Item(key, definition.name, "action", definition.path, member.line, [f".{name}"], kotlin)
+
+
 def _enum_items(definition: TypeDef, core_fns: Set[str] = frozenset()) -> Iterable[Item]:
     variants = [m for m in definition.members if not (m.catch_all or m.name == CATCH_ALL)]
-    if definition.name == ACTION_TYPE:
-        for member in variants:
-            key = f"{ACTION_TYPE}.{member.name}"
-            name = lower_camel(member.name)
-            # Kotlin 发操作也可以直接调 ClientCore 的同名函数（core.revokePluginShare()），不写 Action 字面量：
-            # 有这个导出函数时，提到函数名就算用到（#503 核对）。
-            kotlin = [key] + ([name] if name in core_fns else [])
-            yield Item(key, ACTION_TYPE, "action", definition.path, member.line, [f".{name}"], kotlin)
-        return
     # 不带数据的分支合起来算一项：Swift 的 switch 要穷尽，每个分支都写出来；Kotlin 的 when 常把几个并进 else。
     # 按分支比会把这种写法差别全报成“只有 iOS 用到”。Kotlin 里提到枚举名就算用到。
     plain = [f".{lower_camel(m.name)}" for m in variants if not m.has_data]
@@ -127,7 +128,11 @@ def collect_items(exports: Exports, allow_types: Set[str]) -> List[Item]:
     core_fns = {lower_camel(fn.name) for fn in exports.functions}
     action = exports.types.get(ACTION_TYPE)
     if action is not None:
-        items.extend(_type_items(action, core_fns))
+        domains = {ref for member in action.members for ref in member.refs}
+        for name in sorted(domains - allow_types):
+            definition = exports.types.get(name)
+            if definition is not None and definition.kind == "enum":
+                items.extend(_action_items(definition, core_fns))
     for definition in output_types(exports, allow_types):
         items.extend(_type_items(definition))
     items.extend(_function_items(exports, allow_types))

@@ -7,6 +7,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginFailure
 import app.wonton.protocol.PluginTakeover
@@ -21,9 +22,9 @@ import app.wonton.ui.icons.WontonIcon
 class PageTakeover(private val pluginId: String, current: PluginTakeover?, private val send: (Action) -> Unit) {
     val state: TakeoverState? = current?.takeIf { it.id == pluginId }?.state
 
-    fun start() = send(Action.StartTakeover(pluginId))
+    fun start() = send(Action.Plugins(PluginAction.StartTakeover(pluginId)))
 
-    fun end() = send(Action.EndTakeover(pluginId))
+    fun end() = send(Action.Plugins(PluginAction.EndTakeover(pluginId)))
 }
 
 @Composable

@@ -126,7 +126,9 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
     assert!(futures_util::poll!(&mut reconnecting).is_pending());
     unreachable(&rig);
     rig.app
-        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
         .unwrap();
     reconnecting.await;
     let view = stage(&rig.app, |stage| {
@@ -145,7 +147,9 @@ async fn a_lost_connection_is_reconnecting_until_the_limit_then_uncertain_until_
         }),
     );
     rig.app
-        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
         .unwrap();
     let view = stage(&rig.app, |stage| {
         matches!(stage, CoreUpgradeStage::RolledBack { .. })
@@ -194,7 +198,9 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
 
     unreachable(&rig);
     rig.app
-        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
         .unwrap();
     // 等待者取到重连阶段才算数；后续报告只能在这之后取代快照。
     let seen = waiting.await.expect("观察者任务没有结束").core_upgrade;
@@ -206,7 +212,9 @@ async fn a_waiting_observer_sees_reconnecting_before_a_later_report_replaces_it(
         }),
     );
     rig.app
-        .dispatch(Action::RefreshCoreUpgrade { manual: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+        })
         .unwrap();
     let later = async {
         loop {
@@ -328,7 +336,9 @@ async fn only_an_explicit_report_counts_as_success() {
     for (status, wanted) in cases {
         reports(&rig, &status);
         rig.app
-            .dispatch(Action::RefreshCoreUpgrade { manual: false })
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: false },
+            })
             .unwrap();
         // 上一轮的结果可能和这一轮一样是“不确定”，要等这一轮的状态到了再看。
         rig.wait_for(|view| {
@@ -412,8 +422,10 @@ async fn upgrading_sends_the_confirmed_digest_and_can_be_cancelled_only_while_pu
     reports(&rig, &pulling);
     rig.core.answer_always(Method::POST, PATH, ok(&pulling));
     rig.app
-        .dispatch(Action::StartCoreUpgrade {
-            digest: NEW.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartCoreUpgrade {
+                digest: NEW.to_owned(),
+            },
         })
         .unwrap();
     let view = stage(&rig.app, |stage| {
@@ -435,7 +447,11 @@ async fn upgrading_sends_the_confirmed_digest_and_can_be_cancelled_only_while_pu
         PATH,
         core_error(409, "too_late", "已经开始动东西了"),
     );
-    rig.app.dispatch(Action::CancelCoreUpgrade).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::CancelCoreUpgrade,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| view.core_upgrade.problem.is_some())
         .await;
@@ -471,8 +487,10 @@ async fn a_refused_upgrade_keeps_the_reason_and_shows_the_new_version() {
         core_error(409, "changed", "渠道上的版本变了"),
     );
     rig.app
-        .dispatch(Action::StartCoreUpgrade {
-            digest: OLD.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::StartCoreUpgrade {
+                digest: OLD.to_owned(),
+            },
         })
         .unwrap();
     let view = rig
@@ -491,8 +509,10 @@ async fn a_skipped_version_stays_skipped_until_the_channel_moves_on() {
     rig.wait_for(|view| view.core_upgrade.offer.is_some()).await;
 
     rig.app
-        .dispatch(Action::SkipCoreUpgrade {
-            digest: NEW.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SkipCoreUpgrade {
+                digest: NEW.to_owned(),
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().core_upgrade.offer_skipped);
@@ -506,7 +526,9 @@ async fn a_skipped_version_stays_skipped_until_the_channel_moves_on() {
 
     reports(&rig, &idle(offer("sha256:newer")));
     rig.app
-        .dispatch(Action::RefreshCoreUpgrade { manual: true })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshCoreUpgrade { manual: true },
+        })
         .unwrap();
     let view = rig
         .wait_for(|view| {
@@ -550,8 +572,10 @@ async fn a_new_version_marks_the_server_setting_and_the_settings_tab_until_skipp
     }
 
     rig.app
-        .dispatch(Action::SkipCoreUpgrade {
-            digest: NEW.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SkipCoreUpgrade {
+                digest: NEW.to_owned(),
+            },
         })
         .unwrap();
     while marked(&rig) != (Some((HomeStatus::Connected, false)), Some(false)) {

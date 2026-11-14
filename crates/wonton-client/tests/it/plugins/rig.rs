@@ -676,7 +676,11 @@ impl Rig {
     }
 
     pub fn connect_to(&self, ticket: String) {
-        self.app.dispatch(Action::ConnectHome { ticket }).unwrap();
+        self.app
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome { ticket },
+            })
+            .unwrap();
     }
 
     #[allow(dead_code)]

@@ -1,5 +1,5 @@
 //! 链的动作：停链、改上限、改使用方并发（ADR-0061 第 10 节）。请求走本地代理，核心凭隧道身份认出这台
-//! 已配对设备；动作不重试，点没点成由壳看结果再定。错误按 [`CoreError`] 的类别分回给壳。
+//! 已配对设备；动作不重试，异步失败按 [`CoreError`] 的类别发布到链列表。
 
 use std::time::Duration;
 
@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    AGENT_LIMITS_PATH, AGENT_SETTINGS_PATH, AgentChainAction, AgentChainRow, AgentConcurrency,
+    AGENT_LIMITS_PATH, AGENT_SETTINGS_PATH, AgentAction, AgentChainRow, AgentConcurrency,
     AgentSettingsViewModel, CoreError, ProxySettings, agent_chain_stop_path,
     agent_consumer_concurrency_path,
 };
@@ -32,23 +32,23 @@ pub(crate) enum Effect {
 pub(crate) async fn perform(
     core_url: &Url,
     proxy: &ProxySettings,
-    action: &AgentChainAction,
+    action: &AgentAction,
 ) -> Result<Effect, CoreError> {
     let client = client(proxy, ACTION_TIMEOUT).map_err(|error| client_error(&error.to_string()))?;
     match action {
-        AgentChainAction::StopChain { chain } => {
+        AgentAction::StopChain { chain } => {
             let url = url(core_url, &agent_chain_stop_path(chain));
             let (status, body) = send(&client, Method::POST, url, None).await?;
             Ok(Effect::Stopped(parse(status, &body)?))
         }
-        AgentChainAction::SetAgentLimits { limits } => {
+        AgentAction::SetAgentLimits { limits } => {
             let url = url(core_url, AGENT_LIMITS_PATH);
             let body = serde_json::to_vec(limits).expect("the limits always serialize to JSON");
             let (status, response) = send(&client, Method::PUT, url, Some(body)).await?;
             let _: AgentSettingsViewModel = parse(status, &response)?;
             Ok(Effect::Done)
         }
-        AgentChainAction::SetConsumerAgentConcurrency {
+        AgentAction::SetConsumerAgentConcurrency {
             plugin_id,
             concurrency,
         } => {

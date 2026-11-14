@@ -2,6 +2,7 @@ package app.wonton.ui
 
 import androidx.annotation.StringRes
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.MatrixLoginFailure
 import app.wonton.protocol.MatrixLoginState
@@ -36,7 +37,7 @@ private fun String.toCallbackUri(): URI? = try {
 fun ClientCore.completeMatrixOidcCallback(callbackUrl: String): Boolean {
     val login = servers().matrixLogin
     if (login == null || !isMatrixLoginCallback(callbackUrl, login.oidcRedirectUri)) return false
-    send(Action.CompleteMatrixOidc(MatrixOidcCallback(login.loginId, callbackUrl)))
+    send(Action.Home(HomeAction.CompleteMatrixOidc(MatrixOidcCallback(login.loginId, callbackUrl))))
     return true
 }
 

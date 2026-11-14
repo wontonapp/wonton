@@ -726,8 +726,10 @@ impl Phone {
     }
 
     pub fn connect(&self, home: &Home) {
-        self.dispatch(Action::ConnectHome {
-            ticket: home.ticket(),
+        self.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: home.ticket(),
+            },
         })
         .unwrap();
     }
@@ -828,8 +830,10 @@ impl Phone {
 
     /// 这些测试登记推送端点，走的是 UnifiedPush：默认方式是保持连接（ADR-0003），先切过去才登记得了。
     pub async fn use_unified_push(&self) {
-        self.dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        self.dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     }

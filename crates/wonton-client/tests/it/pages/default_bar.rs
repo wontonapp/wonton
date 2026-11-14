@@ -59,43 +59,65 @@ async fn sidebar_and_deep_link_open_the_apps_grid_over_chat() {
         },
         vec![page("home")],
     )]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some("home"));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     assert_eq!(rig.app.pages().stack.len(), 1);
 
     // 侧边栏“全部”发同一个 OpenPage(Apps) 操作。
     rig.app
-        .dispatch(Action::OpenPage { tab: TabRef::Apps })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Apps },
+        })
         .unwrap();
     assert!(rig.app.pages().stack.is_empty());
     assert_eq!(rig.app.pages().root, TabRef::Chat);
     assert!(rig.app.pages().shows_apps);
     // 插件刷新不吞掉网格的打开请求。
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     assert_eq!(rig.app.pages().root, TabRef::Chat);
     assert!(rig.app.pages().shows_apps);
 
-    rig.app.dispatch(Action::ClosePage).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
     assert!(!rig.app.pages().shows_apps);
     let wonton_protocol::AppLink::Tab { tab } =
         wonton_client::parse_app_link("wonton://tab/apps".to_owned()).unwrap()
     else {
         panic!("expected a page link");
     };
-    rig.app.dispatch(Action::OpenPage { tab }).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab },
+        })
+        .unwrap();
     let linked = rig.app.pages();
     assert_eq!(linked.root, TabRef::Chat);
     assert!(linked.stack.is_empty());
     assert!(linked.shows_apps);
 
     rig.app
-        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+        })
         .unwrap();
     assert!(!rig.app.pages().shows_apps);
 }

@@ -70,7 +70,7 @@ pub enum FileCard {
 pub enum FileCardAction {
     /// 用 `file_stream_url` 的地址放进 App 自己的播放器，边下边播。
     Play,
-    /// 发 [`Action::DownloadFile`](crate::Action::DownloadFile)，下完交给系统打开。
+    /// 发 [`FileAction::DownloadFile`](crate::FileAction::DownloadFile)，下完交给系统打开。
     Download,
     /// 文件已经在手机上，把 `path` 交给系统打开。
     Open { path: String },
@@ -260,15 +260,15 @@ pub struct Transfer {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum TransferAction {
-    /// 发 [`Action::CancelTransfer`](crate::Action::CancelTransfer)。
+    /// 发 [`FileAction::CancelTransfer`](crate::FileAction::CancelTransfer)。
     Cancel,
-    /// 发 `delete_local_file` 为假的 [`Action::DismissTransfer`](crate::Action::DismissTransfer)。
+    /// 发 `delete_local_file` 为假的 [`FileAction::DismissTransfer`](crate::FileAction::DismissTransfer)。
     Dismiss,
-    /// 先问主人只清记录，还是连手机上的文件一起删，再发 [`Action::DismissTransfer`](crate::Action::DismissTransfer)。
+    /// 先问主人只清记录，还是连手机上的文件一起删，再发 [`FileAction::DismissTransfer`](crate::FileAction::DismissTransfer)。
     DismissDownloaded,
-    /// 发 [`Action::ResendFileLink`](crate::Action::ResendFileLink)。
+    /// 发 [`FileAction::ResendFileLink`](crate::FileAction::ResendFileLink)。
     ResendLink,
-    /// 字节已经传完，只差发链接时的“不发了”：发 [`Action::CancelTransfer`](crate::Action::CancelTransfer)。文件留在服务器上，
+    /// 字节已经传完，只差发链接时的“不发了”：发 [`FileAction::CancelTransfer`](crate::FileAction::CancelTransfer)。文件留在服务器上，
     /// 不是删了。
     StopSending,
     /// 把 [`Transfer::destination`] 交给系统打开。
@@ -294,7 +294,7 @@ pub enum TransferState {
     Paused,
     Done,
     /// 文件已经传完，在服务器上；授权或发进房间这一步没成。不自动再试：用
-    /// [`Action::ResendFileLink`](crate::Action::ResendFileLink) 只重发链接，不用重传文件。
+    /// [`FileAction::ResendFileLink`](crate::FileAction::ResendFileLink) 只重发链接，不用重传文件。
     LinkNotSent {
         reason: FileFailure,
         message: String,
@@ -316,7 +316,7 @@ pub struct TransfersViewModel {
     /// 上传完的。不占主人的地方，只留最近的一些。
     pub uploaded: Vec<Transfer>,
     /// 最近一次不落在某条传输上的文件操作为什么失败，壳显示后用
-    /// [`Action::DismissFileProblem`](crate::Action::DismissFileProblem) 清掉。
+    /// [`FileAction::DismissFileProblem`](crate::FileAction::DismissFileProblem) 清掉。
     pub problem: Option<FileProblem>,
 }
 

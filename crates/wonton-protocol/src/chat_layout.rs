@@ -107,7 +107,7 @@ pub struct BotChatSettings {
     pub choice: ChatLayoutChoice,
 }
 
-/// [`Action::SetChatLayout`](crate::Action::SetChatLayout) 改哪一份。
+/// [`ChatAction::SetChatLayout`](crate::ChatAction::SetChatLayout) 改哪一份。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
