@@ -57,9 +57,13 @@ internal fun PluginPagesHost(
     val stack = pages.viewModel.stack.filter { it.tab != TabRef.Chat && it.tab != TabRef.Apps }
     val closed = remember { ClosedPages() }
     val kept = remember(stack) { closed.update(stack) }
+    val openTabs = stack.mapTo(HashSet()) { it.tab }
     for (open in kept + stack) {
         key(open.tab) {
-            PluginPageContainer(open, pages, home, appearance, open.tab == active, onDetails, onDraft, bannerTop)
+            PluginPageContainer(
+                open, pages, home, appearance, parked = open.tab !in openTabs,
+                active = open.tab == active, onDetails, onDraft, bannerTop,
+            )
         }
     }
 }
@@ -82,7 +86,7 @@ private class ClosedPages {
 @Composable
 private fun PluginPageContainer(
     open: OpenPage, pages: PagesState, home: HomeViewModel, appearance: AppearanceViewModel,
-    active: Boolean, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
+    parked: Boolean, active: Boolean, onDetails: (String) -> Unit, onDraft: (String) -> Unit, bannerTop: Dp,
 ) {
     val tab = open.tab
     val sourcePage = open.page
@@ -95,14 +99,18 @@ private fun PluginPageContainer(
     val state = remember { WebPageState(PlacedTab.Page(tab), pages) }
     val viewport = tabViewport(active)
     val environment = viewport.environment
+    state.park(parked)
+    LaunchedEffect(parked) {
+        if (!parked) state.resume()
+    }
     val openLink = externalLinkOpener { state.problem = it }
-    PageEffects(state, page, connection.connected, active, appearance, environment)
+    PageEffects(state, page, connection.connected, active, parked, appearance, environment)
     BackHandler(active) { state.back() }
     val takeover = pageTakeover(tab, pages, active)
     val disclosure = @Composable {
         BotPageDisclosure(page, active, awaitingLogin, pages, onContinue = { loginAcknowledged = true })
     }
-    PageLayers(state, page, pages, connection, appearance, viewport, active, takeover, bannerTop,
+    PageLayers(state, page, pages, connection, appearance, viewport, active, parked, takeover, bannerTop,
         onDetails, onDraft, openLink, admitted = access.allowed && !awaitingLogin, disclosure = disclosure)
 }
 
@@ -136,21 +144,23 @@ internal fun PageStatusOverlay(
 
 @Composable
 private fun PageEffects(
-    state: WebPageState, page: TabPage, connected: Boolean, active: Boolean,
+    state: WebPageState, page: TabPage, connected: Boolean, active: Boolean, parked: Boolean,
     appearance: AppearanceViewModel, environment: TabEnvironment,
 ) {
     val fontScale = LocalDensity.current.fontScale
-    LaunchedEffect(active, connected, page.state) {
-        if (active && connected && page.state is TabState.Ready) state.started = true
+    LaunchedEffect(active, connected, page.state, parked) {
+        if (!parked && active && connected) {
+            if (page.state is TabState.Ready) state.started = true
+        }
     }
     LaunchedEffect(state.controller.customView, active) {
         if (state.controller.customView != null && !active) state.controller.closeCustomView()
     }
-    LaunchedEffect(appearance, environment, fontScale) {
-        if (state.started) state.script(environment)?.let { state.controller.evaluateJavascript(it) }
+    LaunchedEffect(appearance, environment, fontScale, parked) {
+        if (!parked && state.started) state.script(environment)?.let { state.controller.evaluateJavascript(it) }
     }
-    LaunchedEffect(connected) {
-        state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
+    LaunchedEffect(connected, parked) {
+        if (!parked) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
     }
 }
 
@@ -164,20 +174,22 @@ internal fun PageWebView(
     proxy ?: return
     state.controller.permissionHandler = state.media::handle
     PluginWebView(
-        url, proxy, page.reload,
+        url, proxy, page.reload + state.reloadGeneration,
         onLoaded = { state.loadFinished(environment) }, onFailed = state::loadFailed,
         modifier = modifier, darkTheme = environment.dark,
         controller = state.controller, documentStartScript = script,
         onBridgeMessage = { origin, main, message ->
-            val reply = state.pages.core.tabHandleMessage(
-                state.place, main, origin.toString(), message, environment,
-            )
-            reply.replyScript?.let { state.controller.evaluateJavascript(it) }
-            if (reply.initialized) state.loaded = true
-            when (val action = reply.action) {
-                is TabBridgeAction.OpenLink -> openLink(action.url)
-                is TabBridgeAction.DraftMessage -> onDraft(action.text)
-                null -> Unit
+            if (!state.parked) {
+                val reply = state.pages.core.tabHandleMessage(
+                    state.place, main, origin.toString(), message, environment,
+                )
+                reply.replyScript?.let { state.controller.evaluateJavascript(it) }
+                if (reply.initialized) state.loaded = true
+                when (val action = reply.action) {
+                    is TabBridgeAction.OpenLink -> openLink(action.url)
+                    is TabBridgeAction.DraftMessage -> onDraft(action.text)
+                    null -> Unit
+                }
             }
         },
         onOpenLink = openLink, onRendererGone = state::loadStarted, onLoadStarted = state::loadStarted,
@@ -207,10 +219,33 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     /** 网页要摄像头/麦克风时的处置；接在控制器上，页面销毁跟着失效。 */
     val media = TabMediaPermissionFlow(pages, place)
     val capsule = PageCapsuleState()
+    private val lifecycle = KeepAlivePageLifecycle()
     var loaded by mutableStateOf(false)
     var failed by mutableStateOf(false)
     var started by mutableStateOf(false)
     var problem by mutableStateOf<Problem?>(null)
+    var reloadGeneration by mutableStateOf(0uL)
+    var documentScript: String? = null
+        private set
+
+    val parked: Boolean get() = lifecycle.parked
+
+    fun park(value: Boolean) {
+        lifecycle.setParked(value)
+    }
+
+    fun resume() {
+        when (lifecycle.resume()) {
+            KeepAlivePageLifecycle.ResumeAction.NONE -> Unit
+            KeepAlivePageLifecycle.ResumeAction.LOAD_SUCCEEDED -> pages.send(Action.TabLoadSucceeded(place))
+            KeepAlivePageLifecycle.ResumeAction.RELOAD -> {
+                failed = false
+                loaded = false
+                problem = null
+                reloadGeneration++
+            }
+        }
+    }
 
     fun covers(page: TabPage): Boolean {
         val available = page.state is TabState.Ready || page.state is TabState.Upgrading
@@ -219,7 +254,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
 
     fun script(environment: TabEnvironment, document: Boolean = false): String? = try {
         if (document) {
-            pages.core.tabDocumentScript(place, environment)
+            pages.core.tabDocumentScript(place, environment).also { documentScript = it }
         } else {
             pages.core.tabContextScript(place, environment)
         }
@@ -239,14 +274,16 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     fun loadFinished(environment: TabEnvironment) {
         loaded = true
         failed = false
-        pages.send(Action.TabLoadSucceeded(place))
-        script(environment)?.let { controller.evaluateJavascript(it) }
-        controller.evaluateJavascript(pages.core.tabConnectionScript(tab))
+        if (lifecycle.loadFinished()) {
+            pages.send(Action.TabLoadSucceeded(place))
+            script(environment)?.let { controller.evaluateJavascript(it) }
+            controller.evaluateJavascript(pages.core.tabConnectionScript(tab))
+        }
     }
 
     fun loadFailed(status: Int?) {
         failed = true
-        pages.send(Action.TabLoadFailed(place, status?.toUShort()))
+        if (lifecycle.loadFailed()) pages.send(Action.TabLoadFailed(place, status?.toUShort()))
     }
 }
 

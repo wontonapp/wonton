@@ -31,12 +31,15 @@ import app.wonton.protocol.TabRef
 @Composable
 internal fun PageLayers(
     state: WebPageState, page: TabPage, pages: PagesState, connection: SharedPageConnection,
-    appearance: AppearanceViewModel, viewport: TabViewport, active: Boolean, takeover: PageTakeover?,
+    appearance: AppearanceViewModel, viewport: TabViewport, active: Boolean, parked: Boolean,
+    takeover: PageTakeover?,
     bannerTop: Dp, onDetails: (String) -> Unit, onDraft: (String) -> Unit, openLink: (String) -> Unit,
     admitted: Boolean = true, disclosure: @Composable () -> Unit = {},
 ) {
     val environment = viewport.environment
-    val script = remember(page.url, appearance, environment) { state.script(environment, document = true) }
+    val script = remember(page.url, appearance, environment, parked) {
+        if (parked) state.documentScript else state.script(environment, document = true)
+    }
     Box(Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding()) {
         // Widget 的驱动订阅尚未接入，不能加载为普通网页；Bot 页面还需先通过 admission。
         val loadable = connection.supported && connection.authorized && admitted &&
