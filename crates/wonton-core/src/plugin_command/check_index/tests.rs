@@ -35,9 +35,15 @@ fn capability_entry(id: &str, declarations: &str) -> serde_json::Value {
 
 /// 跑一遍 `run`：返回退出码对不对，和它打印出来的问题。
 fn checked(plugins: Vec<serde_json::Value>) -> (bool, Vec<String>) {
-    let json =
-        serde_json::to_string_pretty(&serde_json::json!({ "format": 1, "plugins": plugins }))
-            .unwrap();
+    checked_index(json!({
+        "format": 1,
+        "plugins": plugins,
+        "onboarding": {"agents": [], "needs": [], "prompts": []}
+    }))
+}
+
+fn checked_index(index: serde_json::Value) -> (bool, Vec<String>) {
+    let json = serde_json::to_string_pretty(&index).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("index.json");
     std::fs::write(&path, &json).unwrap();
@@ -170,4 +176,75 @@ fn every_required_capability_needs_a_provider_but_one_plugin_can_provide_several
         ),
     ]);
     assert!(passed, "{problems:?}");
+}
+
+fn onboarding_index() -> serde_json::Value {
+    let agent =
+        compose("agent", &[]).replace("kind: app\n", "kind: agent\n  agent: {protocol: acp}\n");
+    json!({
+        "format": 1,
+        "plugins": [
+            entry_with_compose("agent", agent),
+            entry("photos", "photos", &[])
+        ],
+        "onboarding": {
+            "agents": ["app.agent"],
+            "needs": [{"id": "photos", "title": {"en": "Photos"}, "plugins": ["app.photos"]}],
+            "prompts": [{"en": "What can you do?"}]
+        }
+    })
+}
+
+#[test]
+fn onboarding_catalog_with_resolvable_recommendations_passes() {
+    let (passed, problems) = checked_index(onboarding_index());
+    assert!(passed, "{problems:?}");
+}
+
+#[test]
+fn onboarding_missing_or_malformed_catalog_fails() {
+    let mut cases = Vec::new();
+    let mut absent = onboarding_index();
+    absent.as_object_mut().unwrap().remove("onboarding");
+    cases.push(absent);
+    let mut null = onboarding_index();
+    null["onboarding"] = serde_json::Value::Null;
+    cases.push(null);
+    for field in ["agents", "needs", "prompts"] {
+        let mut missing = onboarding_index();
+        missing["onboarding"].as_object_mut().unwrap().remove(field);
+        cases.push(missing);
+    }
+    let mut wrong_type = onboarding_index();
+    wrong_type["onboarding"]["needs"][0]["plugins"] = json!("app.photos");
+    cases.push(wrong_type);
+    let mut wrong_prompts = onboarding_index();
+    wrong_prompts["onboarding"]["prompts"] = json!("not a list");
+    cases.push(wrong_prompts);
+    for index in cases {
+        let (passed, problems) = checked_index(index);
+        assert!(!passed, "{problems:?}");
+    }
+}
+
+#[test]
+fn onboarding_invalid_plugin_references_fail() {
+    let mut missing_agent = onboarding_index();
+    missing_agent["onboarding"]["agents"] = json!(["app.missing-agent"]);
+    let mut wrong_kind = onboarding_index();
+    wrong_kind["onboarding"]["agents"] = json!(["app.photos"]);
+    let mut missing_app = onboarding_index();
+    missing_app["onboarding"]["needs"][0]["plugins"] = json!(["app.missing-photos"]);
+    for (index, id) in [
+        (missing_agent, "app.missing-agent"),
+        (wrong_kind, "app.photos"),
+        (missing_app, "app.missing-photos"),
+    ] {
+        let (passed, problems) = checked_index(index);
+        assert!(!passed, "{id}: {problems:?}");
+        assert!(
+            problems.iter().any(|problem| problem.contains(id)),
+            "{problems:?}"
+        );
+    }
 }
