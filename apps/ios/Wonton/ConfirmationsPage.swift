@@ -10,10 +10,9 @@ struct ConfirmationsPage: View {
     var body: some View {
         ConfirmationsListView(
             view: model.viewModel, bots: chat.viewModel.bots, plugins: plugins,
-            answer: { card, choice, secrets, settings in
+            answer: { card, choice, secrets, settings, devices in
                 chat.send(.answerConfirmation(id: card.card.id, answer: choice.answer,
-                    choiceId: choice.choiceId, secrets: secrets, settings: settings,
-                    devices: card.card.devices.filter(\.chosen).map(\.id)))
+                    choiceId: choice.choiceId, secrets: secrets, settings: settings, devices: devices))
             },
             stopWindow: { chat.send(.stopConfirmationWindow(id: $0.card.id)) },
             retry: { chat.send(.retryConfirmations) },

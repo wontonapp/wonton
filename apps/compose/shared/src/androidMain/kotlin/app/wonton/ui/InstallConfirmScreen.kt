@@ -1,7 +1,9 @@
 package app.wonton.ui
 
 import app.wonton.client.PluginInstallAction
+import app.wonton.client.deviceChoices
 import app.wonton.client.previewInstallAction
+import app.wonton.client.toggleDevice
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,10 +60,8 @@ fun InstallConfirmScreen(
     val isUpgrade = confirmation.isUpgrade
     var attempt by remember { mutableIntStateOf(0) }
     var rejection by remember { mutableStateOf<Problem?>(null) }
-    var lanWebui by remember { mutableStateOf(false) }
-    var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val choices = remember(confirmation) { InstallChoices() }
     var secrets by remember(confirmation) { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var audience by remember(confirmation) { mutableStateOf<app.wonton.protocol.PluginAudienceView?>(null) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
@@ -69,11 +69,7 @@ fun InstallConfirmScreen(
         value = null
         value = try {
             Result.success(
-                loadInstallPreview(plugins, confirmation).also { preview ->
-                    lanWebui = preview.lanWebui?.enabled ?: false
-                    enabled = preview.permissions.filter { it.optional && it.enabled }.map { it.permission }.toSet()
-                    audience = preview.audience
-                },
+                loadInstallPreview(plugins, confirmation).also { preview -> choices.reset(preview) },
             )
         } catch (failure: CoreException) {
             Result.failure(failure)
@@ -106,21 +102,14 @@ fun InstallConfirmScreen(
                     onRetry = { attempt++ },
                     preview = preview,
                     plugins = plugins,
-                    lanWebui = lanWebui,
-                    enabled = enabled,
+                    choices = choices,
                     onFillProfile = { fillingProfile = true },
-                    onLanWebui = { lanWebui = it },
-                    onOptional = { permission, on ->
-                        enabled = if (on) enabled + permission else enabled - permission
-                    },
                     secrets = secrets,
                     onSecret = { name, value -> secrets = secrets + (name to value) },
-                    audience = audience,
-                    onAudience = { audience = it },
                 )
             }
             preview?.let { current ->
-                val chosen = current.withPermissionChoices(lanWebui, enabled).copy(audience = audience)
+                val chosen = choices.applyTo(current)
                 val sent = secretValues(chosen.secretInputs, secrets)
                 ConfirmInstallButton(
                     chosen,
@@ -168,15 +157,10 @@ private fun PreviewResult(
     onRetry: () -> Unit,
     preview: InstallPreview?,
     plugins: PluginsState,
-    lanWebui: Boolean,
-    enabled: Set<String>,
+    choices: InstallChoices,
     onFillProfile: () -> Unit,
-    onLanWebui: (Boolean) -> Unit,
-    onOptional: (String, Boolean) -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
-    audience: app.wonton.protocol.PluginAudienceView?,
-    onAudience: (app.wonton.protocol.PluginAudienceView) -> Unit,
 ) {
     when {
         result == null -> LoadingView()
@@ -184,15 +168,10 @@ private fun PreviewResult(
         preview != null -> PreviewContent(
             preview,
             plugins,
-            lanWebui,
-            enabled,
+            choices,
             onFillProfile = onFillProfile,
-            onLanWebui = onLanWebui,
-            onOptional = onOptional,
             secrets = secrets,
             onSecret = onSecret,
-            audience = audience,
-            onAudience = onAudience,
         )
     }
 }
@@ -289,15 +268,10 @@ fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit)
 private fun PreviewContent(
     preview: InstallPreview,
     plugins: PluginsState,
-    lanWebui: Boolean,
-    enabled: Set<String>,
+    choices: InstallChoices,
     onFillProfile: () -> Unit,
-    onLanWebui: (Boolean) -> Unit,
-    onOptional: (String, Boolean) -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
-    audience: app.wonton.protocol.PluginAudienceView?,
-    onAudience: (app.wonton.protocol.PluginAudienceView) -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -333,15 +307,18 @@ private fun PreviewContent(
             }
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
-        audience?.let { PluginAudienceSection(it, onChange = onAudience) }
-        InstallPermissionChoices(preview.permissions, enabled, onOptional, preview.widgetCapabilities)
+        choices.audience?.let { PluginAudienceSection(it, onChange = { changed -> choices.audience = changed }) }
+        InstallPermissionChoices(preview.permissions, choices.enabled, choices::setOptional, preview.widgetCapabilities)
+        deviceChoices(choices.devices, choices.applyTo(preview).permissions)?.let { section ->
+            DeviceChoicesSection(section) { id -> choices.devices = toggleDevice(choices.devices, id) }
+        }
         if (preview.secretInputs.isNotEmpty()) {
             DetailSection(stringResource(R.string.secret_section_title)) {
                 SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)
             }
         }
         AlwaysAllowed(preview, plugins)
-        preview.lanWebui?.let { LanWebuiToggle(it, lanWebui, enabled = true, onLanWebui) }
+        preview.lanWebui?.let { LanWebuiToggle(it, choices.lanWebui, enabled = true) { on -> choices.lanWebui = on } }
         preview.releaseNotes?.let { notes ->
             DetailSection(stringResource(R.string.install_release_notes)) {
                 Text(notes, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())

@@ -4,7 +4,8 @@ import WontonClient
 /// 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。
 struct ConfirmationCardView: View {
     let view: ConfirmationView
-    let answer: (CardChoice, [String: String], [String: SettingValue]) -> Void
+    /// 按钮、密钥、设置，和主人选中的设备 ID（ADR-0036）。
+    let answer: (CardChoice, [String: String], [String: SettingValue], [String]) -> Void
     let stopWindow: () -> Void
     @Environment(PagesModel.self) private var pages
     @Environment(PluginsModel.self) private var plugins
@@ -14,6 +15,8 @@ struct ConfirmationCardView: View {
     @State private var drafts: [String: Draft] = [:]
     @State private var touched: Set<String> = []
     @State private var localErrors: [String: String] = [:]
+    /// 主人点选过的设备；没点过时是卡片给的。
+    @State private var pickedDevices: [PluginDevice]?
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -43,6 +46,7 @@ struct ConfirmationCardView: View {
                 }
                 .disabled(view.card.state != .pending || view.sending != nil)
             }
+            deviceChoicesView
             answeredByLine
             state
             if let window = view.window {
@@ -222,13 +226,7 @@ struct ConfirmationCardView: View {
             }
             .buttonStyle(WontonButtonStyle(kind: choice.answer == .approve ? .primary : .secondary))
             .disabled(view.sending != nil || (choice.answer == .approve
-                && (missingRequiredSecret(view.card.secretInputs, secrets) || settingsBlocked)))
-        }
-    }
-
-    private var settingsBlocked: Bool {
-        (view.card.settings?.fields ?? []).contains {
-            unknownField($0) || $0.problem != nil || missing($0, drafts: drafts, localErrors: localErrors)
+                && inputsBlocked))
         }
     }
 
@@ -267,11 +265,44 @@ struct ConfirmationCardView: View {
         }
         localErrors = errors
         guard choice.answer != .approve || errors.isEmpty else { return }
-        answer(choice, secretValues(view.card.secretInputs, secrets), values)
+        answer(choice, secretValues(view.card.secretInputs, secrets), values, chosenDevices)
     }
 }
 
 extension ConfirmationCardView {
+    private var devices: [PluginDevice] { pickedDevices ?? view.card.devices }
+
+    /// 卡片上的“设备”一节。卡片没带设备项时没有：最高风险的第二张卡片只带权限项，沿用第一张的选择。
+    private var deviceSection: DeviceChoices? {
+        devices.isEmpty ? nil : deviceChoices(devices: devices, permissions: view.card.permissions)
+    }
+
+    /// 等回答的卡片上能点选的“设备”一节（ADR-0036）。
+    @ViewBuilder private var deviceChoicesView: some View {
+        if view.card.state == .pending, let choices = deviceSection {
+            DeviceChoicesSection(choices: choices) { id in
+                pickedDevices = toggleDevice(devices: devices, id: id)
+            }
+            .disabled(view.sending != nil)
+        }
+    }
+
+    /// 随回答发回去的设备 ID。
+    private var chosenDevices: [String] {
+        deviceSection == nil ? [] : chosenDeviceIds(devices: devices, permissions: view.card.permissions)
+    }
+
+    private var settingsBlocked: Bool {
+        (view.card.settings?.fields ?? []).contains {
+            unknownField($0) || $0.problem != nil || missing($0, drafts: drafts, localErrors: localErrors)
+        }
+    }
+
+    /// 缺必填密钥、设置没填对或必选的串口没选时，不能同意。
+    private var inputsBlocked: Bool {
+        missingRequiredSecret(view.card.secretInputs, secrets) || settingsBlocked || deviceSection?.ready == false
+    }
+
     /// 管理员卡片已被别的管理员答过时，显示是谁处理的。
     @ViewBuilder var answeredByLine: some View {
         if view.card.audience == .admins, let answeredBy = view.card.answeredBy {

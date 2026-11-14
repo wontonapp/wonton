@@ -37,15 +37,12 @@ enum Outcome {
 }
 
 impl PluginsLink {
-    /// 主人在预览里选中的设备 ID（ADR-0036）；没选为空，升级时为空就沿用装着的。
+    /// 主人在预览里选中的设备 ID（ADR-0036）；没选为空，升级时为空就沿用装着的。可选权限关着的那一类不带。
     fn chosen_devices(preview: &InstallPreview) -> Vec<String> {
-        preview
-            .devices
-            .iter()
-            .flatten()
-            .filter(|device| device.chosen)
-            .map(|device| device.id.clone())
-            .collect()
+        crate::chosen_device_ids(
+            preview.devices.clone().unwrap_or_default(),
+            preview.permissions.clone(),
+        )
     }
 
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
