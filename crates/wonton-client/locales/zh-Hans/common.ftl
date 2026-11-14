@@ -148,3 +148,5 @@ app-lock-read-failed = 读不了 App 锁设置文件 { $path }：{ $reason }
 app-lock-corrupt = App 锁设置文件 { $path } 坏了：{ $reason }
 pages-storage-problem = 我的应用存不下，下次启动可能恢复旧状态：{ $error }
 pages-file-unreadable = 这台设备上的我的应用读不了，先用默认值：{ $reason }
+# 只给主人查看生成的插件密钥；用户填写和插件收集的密钥绝不返回。
+plugins-owner-secret-not-listed = 这项密钥不在已展开的列表里：{ $name }

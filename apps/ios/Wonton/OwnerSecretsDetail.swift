@@ -154,7 +154,7 @@ private extension OwnerSecretProblem {
         case .transportUnavailable: .problemTransportUnavailableTitle
         case .unauthenticated: .problemUnauthorizedTitle
         case .crossSite: .ownerSecretsProblemCrossSite
-        case .ownerOnly: .ownerSecretsProblemOwnerOnly
+        case .permissionRequired: .ownerSecretsProblemOwnerOnly
         case .notInstalled: .ownerSecretsProblemNotInstalled
         case .notFound: .ownerSecretsProblemNotFound
         case .notReady: .ownerSecretsProblemNotReady

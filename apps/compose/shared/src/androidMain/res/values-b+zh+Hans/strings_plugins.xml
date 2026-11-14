@@ -87,15 +87,4 @@
     <string name="secret_filled">已填写</string>
     <string name="secret_unfilled">未就绪：要先填令牌</string>
     <string name="secret_go_fill">去填写</string>
-    <string name="owner_secrets_title">生成的密钥</string>
-    <string name="owner_secrets_empty">这个应用没有可查看的生成密钥。</string>
-    <string name="owner_secrets_show">显示</string>
-    <string name="owner_secrets_hide">隐藏</string>
-    <string name="owner_secrets_problem_cross_site">服务器出于安全原因阻止了这次请求。请关闭此页后重试。</string>
-    <string name="owner_secrets_problem_owner_only">只有主人能查看这些密钥。</string>
-    <string name="owner_secrets_problem_not_installed">这个应用已卸载。请返回应用列表。</string>
-    <string name="owner_secrets_problem_not_found">这项密钥已不可用。请收起并重新展开此分组以刷新列表。</string>
-    <string name="owner_secrets_problem_not_ready">这项密钥还没准备好。请等应用启动完成后重试。</string>
-    <string name="owner_secrets_problem_protocol">云吞无法读取服务器的回复。请更新云吞或家里的服务器后重试。</string>
-    <string name="owner_secrets_problem_other">无法加载密钥。请重试。</string>
 </resources>

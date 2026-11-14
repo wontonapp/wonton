@@ -273,7 +273,7 @@ fn problem(error: CoreApiError) -> OwnerSecretProblem {
             let reason = match kind.as_deref() {
                 Some("unauthenticated") => OwnerSecretFailure::Unauthenticated,
                 Some("cross_site") => OwnerSecretFailure::CrossSite,
-                Some("owner_only") => OwnerSecretFailure::OwnerOnly,
+                Some("permission_required") => OwnerSecretFailure::PermissionRequired,
                 Some("not_installed") => OwnerSecretFailure::NotInstalled,
                 Some("not_found") => OwnerSecretFailure::NotFound,
                 Some("not_ready") => OwnerSecretFailure::NotReady,

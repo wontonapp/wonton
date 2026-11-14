@@ -245,7 +245,11 @@ async fn errors_preserve_server_categories_and_never_retain_a_previous_value() {
     for (status, kind, expected) in [
         (401, "unauthenticated", OwnerSecretFailure::Unauthenticated),
         (403, "cross_site", OwnerSecretFailure::CrossSite),
-        (403, "owner_only", OwnerSecretFailure::OwnerOnly),
+        (
+            403,
+            "permission_required",
+            OwnerSecretFailure::PermissionRequired,
+        ),
         (404, "not_installed", OwnerSecretFailure::NotInstalled),
         (404, "not_found", OwnerSecretFailure::NotFound),
         (503, "not_ready", OwnerSecretFailure::NotReady),
@@ -257,8 +261,11 @@ async fn errors_preserve_server_categories_and_never_retain_a_previous_value() {
         assert!(group.secrets[0].value.is_none());
         assert_eq!(group.secrets[0].problem.as_ref().unwrap().reason, expected);
     }
-    rig.core
-        .answer(Method::GET, LIST, core_error(403, "owner_only", "detail"));
+    rig.core.answer(
+        Method::GET,
+        LIST,
+        core_error(403, "permission_required", "detail"),
+    );
     act(
         &rig,
         Action::ListOwnerSecrets {
@@ -269,6 +276,6 @@ async fn errors_preserve_server_categories_and_never_retain_a_previous_value() {
     assert!(denied.secrets.is_empty());
     assert_eq!(
         denied.problem.unwrap().reason,
-        OwnerSecretFailure::OwnerOnly
+        OwnerSecretFailure::PermissionRequired
     );
 }

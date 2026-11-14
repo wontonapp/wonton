@@ -230,5 +230,3 @@ tabs-load-details-transport = 连不上家里的服务器。连上后，页面�
 tabs-load-details-not-ready = 页面加载时应用还没就绪（HTTP { $code }）。
 
 tabs-load-details-upstream = 应用的网页返回了错误（HTTP { $code }）。
-# 只给主人查看生成的插件密钥；用户填写和插件收集的密钥绝不返回。
-plugins-owner-secret-not-listed = 这项密钥不在已展开的列表里：{ $name }

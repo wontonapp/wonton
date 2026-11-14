@@ -239,5 +239,3 @@ tabs-load-details-transport = The page reloads by itself once your home server i
 tabs-load-details-not-ready = The app's page wasn't ready yet (HTTP {$code}).
 
 tabs-load-details-upstream = The app's page returned an error (HTTP {$code}).
-# Owner-only generated plugin keys; input and collected secrets are never returned.
-plugins-owner-secret-not-listed = This key is not in the open list: { $name }

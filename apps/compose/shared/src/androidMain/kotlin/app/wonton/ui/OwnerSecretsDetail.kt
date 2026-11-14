@@ -223,7 +223,7 @@ private fun OwnerSecretProblem.ownerSecretProblem(): Problem = when (reason) {
     else -> Problem(
         titleRes = when (reason) {
             OwnerSecretFailure.CROSS_SITE -> R.string.owner_secrets_problem_cross_site
-            OwnerSecretFailure.OWNER_ONLY -> R.string.owner_secrets_problem_owner_only
+            OwnerSecretFailure.PERMISSION_REQUIRED -> R.string.owner_secrets_problem_owner_only
             OwnerSecretFailure.NOT_INSTALLED -> R.string.owner_secrets_problem_not_installed
             OwnerSecretFailure.NOT_FOUND -> R.string.owner_secrets_problem_not_found
             OwnerSecretFailure.NOT_READY -> R.string.owner_secrets_problem_not_ready

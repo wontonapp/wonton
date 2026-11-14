@@ -230,5 +230,3 @@ tabs-load-details-transport = 連不上家用伺服器。連上後，頁面會�
 tabs-load-details-not-ready = 頁面載入時 App 還沒就緒（HTTP {$code}）。
 
 tabs-load-details-upstream = App 的網頁回傳了錯誤（HTTP {$code}）。
-# 僅給主人查看產生的外掛金鑰；使用者填寫和外掛收集的金鑰絕不返回。
-plugins-owner-secret-not-listed = 這項金鑰不在已展開的清單中：{ $name }
