@@ -202,8 +202,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 正在用这个插件提供的托管能力的插件：卸载提供方时照 ADR-0053 拦下。
-    pub(super) fn hosted_users(&self, id: &PluginId) -> Vec<String> {
+    /// 正在用这个插件提供的托管能力、且不在本批卸载里的插件（ADR-0053）。
+    pub(super) fn hosted_users(&self, id: &PluginId, removing: &[PluginId]) -> Vec<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let Some(provides) = plugins
             .get(id)
@@ -215,7 +215,7 @@ impl PluginManager {
         let langs = self.owner_languages();
         plugins
             .iter()
-            .filter(|(other, _)| *other != id)
+            .filter(|(other, _)| *other != id && !removing.contains(other))
             .filter_map(|(_, entry)| {
                 let listed = entry.listed.as_ref()?;
                 required_hosted(&listed.manifest)

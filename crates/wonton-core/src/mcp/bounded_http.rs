@@ -50,6 +50,7 @@ pub(super) struct BoundedHttp {
     pub http: reqwest::Client,
     /// 一个响应最多这么多字节。
     pub limit: usize,
+    pub diagnostics: super::diagnostics::Diagnostics,
 }
 
 /// 超过上限时传输层知道多少：收到过的字节（`read`，收到即算，不一定读完）、插件声明的大小（`declared`，这时一个字节没读）。
@@ -122,6 +123,98 @@ fn too_large(
 }
 
 impl BoundedHttp {
+    async fn send_message(
+        &self,
+        uri: Arc<str>,
+        message: ClientJsonRpcMessage,
+        session_id: Option<Arc<str>>,
+        auth_header: Option<String>,
+        custom_headers: HashMap<HeaderName, HeaderValue>,
+    ) -> Result<StreamableHttpPostResponse, HttpError> {
+        let accept = format!("{EVENT_STREAM_MIME_TYPE}, {JSON_MIME_TYPE}");
+        let mut request = self.http.post(uri.as_ref()).header(ACCEPT, accept);
+        if let Some(token) = auth_header {
+            request = request.bearer_auth(token);
+        }
+        for (name, value) in custom_headers {
+            request = request.header(name, value);
+        }
+        let had_session = session_id.is_some();
+        if let Some(session) = session_id {
+            request = request.header(HEADER_SESSION_ID, session.as_ref());
+        }
+        let response = request.json(&message).send().await?;
+        let status = response.status();
+        if matches!(
+            status,
+            reqwest::StatusCode::ACCEPTED | reqwest::StatusCode::NO_CONTENT
+        ) {
+            return Ok(StreamableHttpPostResponse::Accepted);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND && had_session {
+            return Err(StreamableHttpError::SessionExpired);
+        }
+        let session = response
+            .headers()
+            .get(HEADER_SESSION_ID)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let content_type = response
+            .headers()
+            .get(CONTENT_TYPE)
+            .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned());
+        let expects_reply = matches!(message, ClientJsonRpcMessage::Request(_));
+        let limit = self.limit_for(&message);
+        // 规范要求回 202，有的服务回空的 200。
+        if status.is_success() && !expects_reply && response.content_length() == Some(0) {
+            return Ok(StreamableHttpPostResponse::Accepted);
+        }
+        if !status.is_success() {
+            return self.error_status(response, &message, session).await;
+        }
+        match content_type.as_deref() {
+            Some(kind) if kind.starts_with(EVENT_STREAM_MIME_TYPE) => {
+                let events = self.events(response, request_id(&message), limit);
+                Ok(StreamableHttpPostResponse::Sse(events, session))
+            }
+            Some(kind) if kind.starts_with(JSON_MIME_TYPE) => {
+                match self.read_body(response, limit).await? {
+                    Body::Complete(body) => {
+                        match serde_json::from_slice::<ServerJsonRpcMessage>(&body) {
+                            Ok(parsed)
+                                if request_id(&message)
+                                    .is_some_and(|id| !answers(&parsed, &id)) =>
+                            {
+                                let why = format!(
+                                    "reply does not answer this request: {}",
+                                    self.diagnostics.words(&body, MAX_ERROR_WORDS)
+                                );
+                                not_mcp(&message, session, why)
+                            }
+                            Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session)),
+                            Err(_) if !expects_reply => Ok(StreamableHttpPostResponse::Accepted),
+                            Err(e) => not_mcp(
+                                &message,
+                                session,
+                                format!(
+                                    "can't parse the response: {e}: {}",
+                                    self.diagnostics.words(&body, MAX_ERROR_WORDS)
+                                ),
+                            ),
+                        }
+                    }
+                    Body::TooLarge { read, declared } => {
+                        too_large(limit, &message, session, Some(read), declared)
+                    }
+                }
+            }
+            other => {
+                let why = format!("unexpected Content-Type: {other:?}");
+                not_mcp(&message, session, why)
+            }
+        }
+    }
+
     fn limit_for(&self, message: &ClientJsonRpcMessage) -> usize {
         match message {
             JsonRpcMessage::Request(request)
@@ -181,7 +274,10 @@ impl BoundedHttp {
         {
             return Ok(StreamableHttpPostResponse::Json(error, session));
         }
-        let mut why = format!("HTTP {status}: {}", words(&body));
+        let mut why = format!(
+            "HTTP {status}: {}",
+            self.diagnostics.words(&body, MAX_ERROR_WORDS)
+        );
         if matches!(
             status,
             reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
@@ -266,11 +362,6 @@ fn same_id(request: &RequestId, reply: &RequestId) -> bool {
     }
 }
 
-/// 响应体的开头，给错误消息用。
-fn words(body: &[u8]) -> Cow<'_, str> {
-    String::from_utf8_lossy(&body[..body.len().min(MAX_ERROR_WORDS)])
-}
-
 /// 回答不是 MCP：归到这个请求头上（带 id 的回答只回到发起它的调用）。通知没人等回答，算传输错误。
 fn not_mcp(
     message: &ClientJsonRpcMessage,
@@ -308,83 +399,10 @@ impl StreamableHttpClient for BoundedHttp {
         auth_header: Option<String>,
         custom_headers: HashMap<HeaderName, HeaderValue>,
     ) -> Result<StreamableHttpPostResponse, HttpError> {
-        let accept = format!("{EVENT_STREAM_MIME_TYPE}, {JSON_MIME_TYPE}");
-        let mut request = self.http.post(uri.as_ref()).header(ACCEPT, accept);
-        if let Some(token) = auth_header {
-            request = request.bearer_auth(token);
-        }
-        for (name, value) in custom_headers {
-            request = request.header(name, value);
-        }
-        let had_session = session_id.is_some();
-        if let Some(session) = session_id {
-            request = request.header(HEADER_SESSION_ID, session.as_ref());
-        }
-        let response = request.json(&message).send().await?;
-        let status = response.status();
-        if matches!(
-            status,
-            reqwest::StatusCode::ACCEPTED | reqwest::StatusCode::NO_CONTENT
-        ) {
-            return Ok(StreamableHttpPostResponse::Accepted);
-        }
-        if status == reqwest::StatusCode::NOT_FOUND && had_session {
-            return Err(StreamableHttpError::SessionExpired);
-        }
-        let session = response
-            .headers()
-            .get(HEADER_SESSION_ID)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
-        let content_type = response
-            .headers()
-            .get(CONTENT_TYPE)
-            .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned());
-        let expects_reply = matches!(message, ClientJsonRpcMessage::Request(_));
-        let limit = self.limit_for(&message);
-        // 规范要求回 202，有的服务回空的 200。
-        if status.is_success() && !expects_reply && response.content_length() == Some(0) {
-            return Ok(StreamableHttpPostResponse::Accepted);
-        }
-        if !status.is_success() {
-            return self.error_status(response, &message, session).await;
-        }
-        match content_type.as_deref() {
-            Some(kind) if kind.starts_with(EVENT_STREAM_MIME_TYPE) => {
-                let events = self.events(response, request_id(&message), limit);
-                Ok(StreamableHttpPostResponse::Sse(events, session))
-            }
-            Some(kind) if kind.starts_with(JSON_MIME_TYPE) => {
-                match self.read_body(response, limit).await? {
-                    Body::Complete(body) => {
-                        match serde_json::from_slice::<ServerJsonRpcMessage>(&body) {
-                            Ok(parsed)
-                                if request_id(&message)
-                                    .is_some_and(|id| !answers(&parsed, &id)) =>
-                            {
-                                let why =
-                                    format!("reply does not answer this request: {}", words(&body));
-                                not_mcp(&message, session, why)
-                            }
-                            Ok(parsed) => Ok(StreamableHttpPostResponse::Json(parsed, session)),
-                            Err(_) if !expects_reply => Ok(StreamableHttpPostResponse::Accepted),
-                            Err(e) => not_mcp(
-                                &message,
-                                session,
-                                format!("can't parse the response: {e}: {}", words(&body)),
-                            ),
-                        }
-                    }
-                    Body::TooLarge { read, declared } => {
-                        too_large(limit, &message, session, Some(read), declared)
-                    }
-                }
-            }
-            other => {
-                let why = format!("unexpected Content-Type: {other:?}");
-                not_mcp(&message, session, why)
-            }
-        }
+        self.diagnostics.post(
+            self.send_message(uri, message, session_id, auth_header, custom_headers)
+                .await,
+        )
     }
 
     async fn delete_session(
@@ -397,6 +415,7 @@ impl StreamableHttpClient for BoundedHttp {
         self.http
             .delete_session(uri, session_id, auth_header, custom_headers)
             .await
+            .map_err(|error| self.diagnostics.error(error))
     }
 
     /// 服务器主动发消息的长连接：rmcp 按事件限制大小。
@@ -418,5 +437,7 @@ impl StreamableHttpClient for BoundedHttp {
                 self.limit,
             )
             .await
+            .map(|events| self.diagnostics.events(events))
+            .map_err(|error| self.diagnostics.error(error))
     }
 }

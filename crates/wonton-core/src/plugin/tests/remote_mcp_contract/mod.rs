@@ -6,11 +6,16 @@ use std::time::Duration;
 use rmcp::model::CallToolRequestParams;
 use serde_json::json;
 use tracing::instrument::WithSubscriber;
+use tracing_subscriber::prelude::*;
 use wonton_protocol::{PluginHintCategory, PluginState};
 
 use crate::plugin::tests::langs;
 
+mod diagnostics;
 pub(crate) mod fixture;
+mod inputs;
+mod uninstall;
+mod upgrade;
 use fixture::{Bed, PROVIDER, REMOTE, SECRET, TEMPLATE, id, remote};
 
 #[tokio::test]
@@ -216,23 +221,38 @@ impl std::io::Write for LogWriter {
     }
 }
 
+type CapturedLogs = Arc<Mutex<Vec<u8>>>;
+
+fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send + Sync) {
+    let logs = Arc::new(Mutex::new(Vec::new()));
+    let writer = logs.clone();
+    // Callsite interest is global; these captures belong to individual futures.
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || LogWriter(writer.clone()))
+            .with_filter(tracing_subscriber::filter::dynamic_filter_fn(|_, _| true)),
+    );
+    (logs, subscriber)
+}
+
 #[tokio::test]
 async fn expanded_remote_url_never_enters_errors_details_or_logs() {
     let bed = Bed::new(true).await;
-    let logs = Arc::new(Mutex::new(Vec::new()));
-    let writer = logs.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .without_time()
-        .with_ansi(false)
-        .with_max_level(tracing::Level::TRACE)
-        .with_writer(move || LogWriter(writer.clone()))
-        .finish();
     *bed.fake.outcome.lock().unwrap() = "secret_rejected".into();
+    // Exercise the failure callsites before this future's subscriber exists.
+    assert_eq!(
+        bed.install("header").await.unwrap_err().kind(),
+        "invalid_input"
+    );
+    let (logs, subscriber) = capture_logs();
     let error = bed
         .install("header")
         .with_subscriber(subscriber)
         .await
         .unwrap_err();
+    assert_eq!(error.kind(), "invalid_input");
     let details = error.to_string();
     let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
     for output in [details.as_str(), logs.as_str()] {

@@ -91,7 +91,7 @@ impl PluginManager {
             "remote_error" => "remote-install-remote-error",
             _ => return Err(connector_failed(langs)),
         };
-        let detail = config.redact(&result.detail, &remote.url, &secrets);
+        let detail = config.redact(&result.detail);
         let reason = l10n::text(langs, key, &[]);
         let message = l10n::text(
             langs,

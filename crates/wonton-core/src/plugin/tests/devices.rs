@@ -345,6 +345,7 @@ async fn upgrades_keep_the_chosen_devices_and_uninstall_releases_them() {
         false,
         &[],
         Default::default(),
+        &Default::default(),
     )
     .await
     .unwrap();
@@ -504,6 +505,7 @@ async fn missing_selected_disk_prevents_upgrade_without_discarding_other_choices
             false,
             &[],
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap_err();
@@ -562,6 +564,7 @@ async fn nvme_upgrade_refreshes_controller_and_deduplicates_disks_shared_by_serv
             false,
             &[],
             Default::default(),
+            &Default::default(),
         )
         .await
         .unwrap();
