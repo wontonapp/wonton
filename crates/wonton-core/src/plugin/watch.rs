@@ -142,8 +142,8 @@ impl PluginManager {
                     .await?;
             }
             Ok(ContainersState::Running(_)) => {
-                self.recover(id, &package, &record, capability_recovered, &token)
-                    .await?;
+                // recover 里走的是重建/启动整条链，future 大，Box::pin 切断栈深度（见 #434）。
+                Box::pin(self.recover(id, &package, &record, capability_recovered, &token)).await?;
                 // 容器刚恢复，和刚启动一样补一轮一次性探测（见 model_health 的计费节奏）。
                 self.check_models_once(vec![id.clone()]).await;
             }

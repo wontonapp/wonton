@@ -115,6 +115,34 @@ impl Containers {
 }
 
 impl PluginManager {
+    /// 网络缺了就照安装规格重建，返回是否重建过；网络在但地址段对不上就整体报错——那不是漂移，是配错。
+    async fn ensure_network_reach(&self, manifest: &Manifest) -> Result<bool, InstallError> {
+        let slug = manifest.id.slug();
+        let langs = self.owner_languages();
+        let network = self.cfg.instance.network(&slug);
+        let expected = self.network_reach(manifest);
+        // 重建分支的 future 大（含建网络、起容器的整条安装路径），Box::pin 切断栈深度（见 #434）。
+        let network_recreated = Box::pin(self.recreate_missing_network(manifest)).await?;
+        // 刚重建的网络就是按 expected 建的，不用再问一遍 Docker。
+        let actual = if network_recreated {
+            Some(expected)
+        } else {
+            self.engine.network_reach(&network).await?
+        };
+        if actual != Some(expected) {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-install-network-mismatch",
+                &[
+                    ("network", network.into()),
+                    ("actual", describe_reach(actual, &langs).into()),
+                    ("expected", describe_reach(Some(expected), &langs).into()),
+                ],
+            )));
+        }
+        Ok(network_recreated)
+    }
+
     /// 核心重启后核对插件：一次性服务已以 0 退出，长期运行的容器在运行、健康检查没有失败；核心在插件
     /// 网络里、OIDC 客户端已登记、插件密钥都在，并重新收存一次插件写下的密钥。`None` 表示常驻服务全部停止。
     ///
@@ -134,26 +162,8 @@ impl PluginManager {
         let slug = manifest.id.slug();
         let langs = self.owner_languages();
         self.ensure_bot_web_registration(manifest).await?;
+        let network_recreated = self.ensure_network_reach(manifest).await?;
         let network = self.cfg.instance.network(&slug);
-        let expected = self.network_reach(manifest);
-        let network_recreated = self.recreate_missing_network(manifest).await?;
-        // 刚重建的网络就是按 expected 建的，不用再问一遍 Docker。
-        let actual = if network_recreated {
-            Some(expected)
-        } else {
-            self.engine.network_reach(&network).await?
-        };
-        if actual != Some(expected) {
-            return Err(InstallError::Conflict(l10n::text(
-                &langs,
-                "plugin-install-network-mismatch",
-                &[
-                    ("network", network.into()),
-                    ("actual", describe_reach(actual, &langs).into()),
-                    ("expected", describe_reach(Some(expected), &langs).into()),
-                ],
-            )));
-        }
         // 先接核心再看容器：靠核心的内部别名才起得来的插件，核心不接回去就一直崩，先看容器的话两边互相等。
         if let Some(core) = &self.cfg.core_container {
             self.attach_core(&network, core, manifest).await?;
@@ -162,8 +172,15 @@ impl PluginManager {
         // 插件不在这里动，留给启动流程（见 start.rs）。例外：网络刚重建时容器引用的还是已删除的旧网络，
         // 必须跟着重建，续建中的也不例外；失败照实往外报，不回退成用旧容器。
         if network_recreated || !self.recovery_pending(&record.id) {
-            self.recreate_on_drift(package, record, &langs, false, gate, network_recreated)
-                .await?;
+            Box::pin(self.recreate_on_drift(
+                package,
+                record,
+                &langs,
+                false,
+                gate,
+                network_recreated,
+            ))
+            .await?;
         }
         let checked = self.check_containers(package, &langs).await?;
         self.refresh_bot_web_routes(manifest).await?;
