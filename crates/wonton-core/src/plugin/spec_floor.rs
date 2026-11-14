@@ -50,7 +50,8 @@ const V0_13: SpecVersion = SpecVersion::new(0, 13);
 const V0_14: SpecVersion = SpecVersion::new(0, 14);
 const V0_15: SpecVersion = SpecVersion::new(0, 15);
 
-/// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加。
+/// 0.6 以后才有的写法。新加清单字段时在这里加一行，规范的“各版本新增的字段”同步加；漏改时
+/// spec_floor_tests 里照规范手抄的期望清单测试会红。
 const TABLE: &[(SpecVersion, Added)] = &[
     (V0_7, Added::Field(&["webui", "cross_origin_isolated"])),
     (V0_7, Added::Field(&["webui", "oidc", "post_logout_paths"])),
@@ -74,6 +75,8 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_8, Added::Field(&["secrets", "*", "show_owner"])),
     (V0_8, Added::Field(&["secrets", "*", "input"])),
     (V0_9, Added::ProxyRole),
+    (V0_9, Added::Variable("WONTON_BOT_NAME")),
+    (V0_9, Added::Variable("WONTON_BOT_DATA")),
     (V0_10, Added::Field(&["runtime"])),
     (V0_10, Added::Field(&["agent", "skills", "mount"])),
     (V0_11, Added::Field(&["tunnel", "ports"])),
@@ -84,6 +87,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_11, Added::Variable("WONTON_SMTP_HOST")),
     (V0_11, Added::Variable("WONTON_SMTP_PORT")),
     (V0_11, Added::Variable("WONTON_MAIL_FROM")),
+    (V0_12, Added::Field(&["settings"])),
     (V0_12, Added::Value("runtime", "static_web")),
     (V0_12, Added::Value("runtime", "link")),
     (V0_12, Added::Field(&["static_web"])),
@@ -112,6 +116,11 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_14, Added::Permission("devices.disk")),
     (V0_15, Added::Field(&["remote_mcp"])),
     (V0_15, Added::AutomaticWebuiHealth),
+    (V0_15, Added::Field(&["provides", "agent_acp"])),
+    (V0_15, Added::ValueAt(&["requires"], "agent_acp")),
+    (V0_15, Added::ValueAt(&["wants"], "agent_acp")),
+    (V0_15, Added::Variable("WONTON_AGENT_ACP_URL")),
+    (V0_15, Added::Variable("WONTON_BOT_AI_LEVEL")),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -205,7 +214,9 @@ fn places(
             .into_iter()
             .flat_map(|provides| provides.iter())
             .filter(|(name, value)| {
-                !matches!(name.as_str(), "models" | "egress_proxy") && !value.is_null()
+                // `agent_acp` 有自己的 0.15 行，不按通用能力的 0.11 报。
+                !matches!(name.as_str(), "models" | "egress_proxy" | "agent_acp")
+                    && !value.is_null()
             })
             .map(|(name, _)| format!("x-wonton.provides.{name}"))
             .collect(),
@@ -309,8 +320,14 @@ fn walk_at(
     found: &mut Vec<String>,
 ) {
     let Some((key, rest)) = path.split_first() else {
+        // `wanted` 也认数组里的成员（`requires: [agent_acp]` 的下限写在数组上）。
         let matched = match wanted {
-            Some(wanted) => value.as_str() == Some(wanted),
+            Some(wanted) => {
+                value.as_str() == Some(wanted)
+                    || value
+                        .as_array()
+                        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(wanted)))
+            }
             None => !value.is_null(),
         };
         if matched {
