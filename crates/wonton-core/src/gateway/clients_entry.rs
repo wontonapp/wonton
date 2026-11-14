@@ -112,7 +112,7 @@ pub(super) async fn dispatch(
             format,
         );
     };
-    if !resolved.switches.of(kind) {
+    if !resolved.switches.of(kind) || (kind == Kind::Public && !gateway.public_access_enabled()) {
         return pages::error(
             StatusCode::FORBIDDEN,
             "entry_closed",

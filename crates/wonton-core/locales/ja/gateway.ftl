@@ -190,3 +190,13 @@ gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限
 
 gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
 gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした
+clients-switch-container = コアがコンテナ内で動作していないため、入口ネットワークを利用できません
+clients-switch-domain = 入口を開く前にドメインと有効な証明書を設定してください
+clients-switch-lan = LAN 転送コンテナの準備ができていないため、LAN 入口は利用できません
+clients-switch-setup = 先にアプリのウェブページで初回登録を完了してください
+clients-switch-app-unavailable = アプリが動作していないため、初回登録の状態を確認できません
+clients-switch-credentials = アプリがまだパスワードを正常に発行していません
+clients-switch-ingress = 公開入口の種類が設定されていません
+clients-switch-kind = 入口には lan または public を指定してください
+clients-switch-uninstalled = クライアントアプリはアンインストールされています
+clients-switch-failed = クライアント入口の設定を適用できませんでした：{ $error }

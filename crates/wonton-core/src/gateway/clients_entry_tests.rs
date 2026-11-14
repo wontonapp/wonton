@@ -270,6 +270,7 @@ fn gateway(h: &Harness) -> Gateway {
         HttpClient::new(),
         tunnel,
     )
+    .with_public_access(true)
 }
 
 /// 假插件后端：记录收到的请求；`/auth/` 开头回 401，`/spoof` 自己带计数头，`/ws` 支持协议升级。

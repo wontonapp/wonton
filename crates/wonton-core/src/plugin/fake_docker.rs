@@ -125,6 +125,8 @@ struct Resources {
     stop_error: Option<String>,
     create_error: Option<(String, String)>,
     remove_error: Option<(String, String)>,
+    kill_error: Option<(String, String)>,
+    signals: BTreeMap<String, u32>,
     /// 网络名 → 最近一次把容器接入它的请求（`EndpointConfig.Aliases` 等）。
     connections: BTreeMap<String, Value>,
     /// 每个网络最近一次主动接入（`connect`）的别名；创建时带的端点不算。
@@ -396,6 +398,10 @@ impl FakeDocker {
     /// 下一次创建指定容器时返回错误；消费后自动恢复正常。
     pub fn fail_next_create(&self, container: &str, message: &str) {
         self.lock().create_error = Some((container.to_owned(), message.to_owned()));
+    }
+
+    pub fn fail_next_kill(&self, container: &str, message: &str) {
+        self.lock().kill_error = Some((container.to_owned(), message.to_owned()));
     }
 
     pub fn fail_remove(&self, container: &str, message: Option<&str>) {

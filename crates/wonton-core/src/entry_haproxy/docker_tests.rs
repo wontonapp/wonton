@@ -105,7 +105,7 @@ fn owned(args: &[String]) -> Vec<&str> {
     args.iter().map(String::as_str).collect()
 }
 
-const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] und=%[req.hdr(X_Remote_User)]\"\n";
+const BACKEND_CONFIG: &str = "global\ndefaults\n  mode http\n  timeout connect 5s\n  timeout client 60s\n  timeout server 60s\nfrontend b\n  bind [::]:8484\n  http-request set-var(txn.fail) str(1) if { req.hdr(x-fail) -m found }\n  http-after-response set-header X-Wonton-Auth-Failure 1 if { var(txn.fail) -m found }\n  http-request return status 200 content-type text/plain lf-string \"entry=%[req.hdr(X-Wonton-Entry)] real=%[req.hdr(X-Real-IP)] fwd=%[req.hdr(X-Forwarded-For)] host=%[req.hdr(Host)] und=%[req.hdr(X_Remote_User)]\"\n";
 
 /// 连接器：PROXY v2 模式下带 `send-proxy-v2`；头信任模式（Cloudflare）是普通 TCP 转发，不带 PROXY 头。
 fn connector_config(proxy: bool) -> String {
@@ -573,8 +573,9 @@ fn entry_container_enforces_both_frontends() {
     );
     assert_eq!(status, 421);
     let host = format!("Host: {name}:8443");
-    let (status, _, _, _) = chain.request(&name, From::A, &chain.connector4, &["-H", &host]);
+    let (status, _, body, _) = chain.request(&name, From::A, &chain.connector4, &["-H", &host]);
     assert_eq!(status, 200);
+    assert!(body.contains(&format!("host={name}:8443")), "{body}");
 
     // 不经过连接器（没有 PROXY 头）进不到 HTTP。
     let entry4 = chain.entry4.clone();

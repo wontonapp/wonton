@@ -426,6 +426,30 @@ impl Store {
         write_json(&dir.join("choice.json"), choice)
     }
 
+    /// 保留数据时只保留标签，不保留已卸载插件记录或开关。
+    pub(crate) fn retained_entry_labels(&self) -> Result<BTreeMap<String, String>, StoreError> {
+        Ok(read_json(&self.dir.join("entry-labels").join("retained.json"))?.unwrap_or_default())
+    }
+
+    pub(crate) fn retain_entry_label(
+        &self,
+        id: &PluginId,
+        label: Option<&str>,
+    ) -> Result<(), StoreError> {
+        let dir = self.dir.join("entry-labels");
+        create_private_dir(&dir)?;
+        let mut labels = self.retained_entry_labels()?;
+        match label {
+            Some(label) => {
+                labels.insert(id.to_string(), label.to_owned());
+            }
+            None => {
+                labels.remove(&id.to_string());
+            }
+        }
+        write_json(&dir.join("retained.json"), &labels)
+    }
+
     pub fn remove(&self, id: &PluginId) -> Result<(), StoreError> {
         remove_file(&self.path(id))
     }

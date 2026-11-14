@@ -190,3 +190,13 @@ gateway-agent-acp-busy = This app already has the maximum number of concurrent a
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
 gateway-install-expired = No administrator answered in time; the { $action } was not done
+clients-switch-container = The core is not running in a container, so the entry network is unavailable
+clients-switch-domain = Configure a domain and a valid certificate before opening this entry
+clients-switch-lan = LAN access is unavailable because the LAN forwarder is not ready
+clients-switch-setup = Complete the app's initial registration on its website first
+clients-switch-app-unavailable = The app is not running, so its setup cannot be checked
+clients-switch-credentials = The app has not issued a password successfully
+clients-switch-ingress = No public entry type is configured
+clients-switch-kind = The entry must be lan or public
+clients-switch-uninstalled = The client app has been uninstalled
+clients-switch-failed = Could not apply the client entry setting: { $error }

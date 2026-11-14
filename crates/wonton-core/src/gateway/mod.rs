@@ -43,6 +43,7 @@ mod clients_api;
 mod clients_domain;
 mod clients_entry;
 mod clients_passwords;
+mod clients_switches;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
@@ -108,6 +109,7 @@ mod tool_policy;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
@@ -228,6 +230,14 @@ pub struct Gateway {
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
     /// 自己的域名和证书（ADR-0089）；核心没跑在装好的容器里时是空。
     pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
+    /// 客户端开关写入和入口配置刷新串行化，避免并发请求互相覆盖。
+    pub(crate) clients_apply: tokio::sync::Mutex<()>,
+    /// 启动流程创建的入口容器；客户端开关使用同一个实例应用模型。
+    pub(crate) entry: Option<crate::entry_containers::EntryContainers>,
+    /// 公网访问总开关，默认关闭；插件开关保留但模型不生成公网标签。
+    pub(crate) public_access: Arc<AtomicBool>,
+    /// C12 入口种类配置完成与否；C7 只读取，连接器由后续 PR 接入。
+    pub(crate) public_ingress_configured: bool,
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
@@ -306,6 +316,10 @@ impl Gateway {
             link_previews,
             app_calls: Arc::default(),
             domain: None,
+            clients_apply: tokio::sync::Mutex::new(()),
+            entry: None,
+            public_access: Arc::new(AtomicBool::new(false)),
+            public_ingress_configured: false,
             sessions: session::SessionStore::default(),
             agent_chains: None,
             agent_acp: None,
@@ -316,6 +330,27 @@ impl Gateway {
     pub fn with_clients(mut self, domain: Option<Arc<crate::clients::domain::Domain>>) -> Self {
         self.domain = domain;
         self
+    }
+    #[must_use]
+    pub fn with_entry(mut self, entry: Option<crate::entry_containers::EntryContainers>) -> Self {
+        self.entry = entry;
+        self
+    }
+
+    #[must_use]
+    pub fn with_public_access(self, enabled: bool) -> Self {
+        self.public_access.store(enabled, Ordering::Relaxed);
+        self
+    }
+
+    #[must_use]
+    pub fn with_public_ingress_configured(mut self, configured: bool) -> Self {
+        self.public_ingress_configured = configured;
+        self
+    }
+
+    pub(crate) fn public_access_enabled(&self) -> bool {
+        self.public_access.load(Ordering::Relaxed)
     }
 
     #[must_use]

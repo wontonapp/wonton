@@ -190,7 +190,7 @@ fn manager(dir: &tempfile::TempDir) -> PluginManager {
 }
 
 /// 一个服务、把数据放在应用数据目录里的插件。
-fn app(id: &str) -> String {
+pub(super) fn app(id: &str) -> String {
     package(
         "  web:\n    image: nginx\n    volumes: ['${WONTON_APP_DATA}/data:/data']",
         "  permissions: []",
