@@ -166,6 +166,7 @@ struct PluginDetailView: View {
                         }
                     }
                     if let installed = detail.installed {
+                        OwnerSecretsDetail(model: model, pluginId: installed.id)
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
                     }
                     if let installed = detail.installed, installed.writtenBy != nil {

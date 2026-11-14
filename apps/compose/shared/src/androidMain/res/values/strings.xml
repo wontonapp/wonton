@@ -114,4 +114,15 @@
     <string name="myapp_remove">Remove from My apps</string>
     <string name="myapp_sync_stale">Changes not synced yet</string>
     <string name="myapp_sync_stale_detail">Saved on this device. They sync automatically once connected.</string>
+    <string name="owner_secrets_title">Generated keys</string>
+    <string name="owner_secrets_empty">This app has no generated keys to show.</string>
+    <string name="owner_secrets_show">Show</string>
+    <string name="owner_secrets_hide">Hide</string>
+    <string name="owner_secrets_problem_cross_site">The server blocked this request for your security. Close this page and try again.</string>
+    <string name="owner_secrets_problem_owner_only">Only the home owner can view these keys.</string>
+    <string name="owner_secrets_problem_not_installed">This app is no longer installed. Return to the apps list.</string>
+    <string name="owner_secrets_problem_not_found">This key is no longer available. Close and reopen this group to refresh the list.</string>
+    <string name="owner_secrets_problem_not_ready">This key isn\'t ready yet. Try again after the app finishes starting.</string>
+    <string name="owner_secrets_problem_protocol">Wonton couldn\'t read the server\'s response. Update Wonton or your home server and try again.</string>
+    <string name="owner_secrets_problem_other">Couldn\'t load the keys. Try again.</string>
 </resources>
