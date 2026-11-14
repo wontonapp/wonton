@@ -25,10 +25,10 @@ internal fun TimelineItem.flushesWith(next: TimelineItem?): Boolean {
     val mine = message
     val theirs = next?.message
     val group = mine?.group
-    return group != null && theirs != null && theirs.group?.id == group.id &&
-        mine?.senderId == theirs.senderId && !theirs.startsTimeGroup && mine?.receipt == null &&
-        theirs.reply == null && (mine?.body as? MessageContent.Image)?.image?.caption == null &&
-        theirs.body is MessageContent.Image
+    val image = mine?.body as? MessageContent.Image
+    return group != null && image != null && theirs != null && theirs.group?.id == group.id &&
+        mine.senderId == theirs.senderId && !theirs.startsTimeGroup && mine.receipt == null &&
+        theirs.reply == null && image.image.caption == null && theirs.body is MessageContent.Image
 }
 
 internal val TimelineItem.message
