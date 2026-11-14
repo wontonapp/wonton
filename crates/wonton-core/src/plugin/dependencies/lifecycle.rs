@@ -25,7 +25,7 @@ impl PluginManager {
             };
             if self.store.load(&manifest.id)?.is_some()
                 && high(&provider.listed.manifest, capability)
-                && connection(&state, &manifest.id, &provider.id, capability).is_none()
+                && connection(&state, &manifest.id, &provider.id, capability, None).is_none()
             {
                 if required {
                     return Err(InstallError::Conflict(
@@ -75,7 +75,10 @@ impl PluginManager {
                         .selected
                         .entry(manifest.id.to_string())
                         .or_default()
-                        .insert(capability.clone(), id.clone());
+                        .insert(
+                            capability.clone(),
+                            super::binding::Binding::Plugin(id.clone()),
+                        );
                 }
             })?;
         }
@@ -90,7 +93,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         match self
-            .connect_capability(&manifest.id, provider, capability, langs)
+            .connect_capability(&manifest.id, provider, capability, langs, None)
             .await
         {
             Err(error)
@@ -137,59 +140,15 @@ impl PluginManager {
         let langs = self.owner_languages();
         let mut failure: Option<InstallError> = None;
         for consumer in self.capability_consumers() {
-            let state = self.dependencies.load()?;
-            let vars_before = self.dependency_vars(&consumer.manifest)?;
-            for capability in declarations(&consumer.manifest) {
-                let Some(provider) =
-                    chosen(&state, &providers, &consumer.manifest.id, capability, None)
-                else {
-                    continue;
-                };
-                let existing = connection(&state, &consumer.manifest.id, &provider.id, capability);
-                let approved = existing.is_some()
-                    || (provider.id == manifest.id
-                        && (!high(&provider.listed.manifest, capability)
-                            || connect_plugins.contains(&consumer.manifest.id.to_string())));
-                if !approved
-                    || !matches!(
-                        provider.status,
-                        PluginStatus::Running | PluginStatus::Degraded { .. }
-                    )
-                    || !service(&provider.listed.manifest, capability)
-                        .is_some_and(|s| provider.serving.contains(&s.service))
-                {
-                    continue;
-                }
-                if (force && provider.id == manifest.id)
-                    || existing.is_none_or(|c| !c.ready || c.problem.is_some())
-                {
-                    match self
-                        .connect_capability(&consumer.manifest.id, provider, capability, &langs)
-                        .await
-                    {
-                        Ok(()) => {}
-                        Err(error)
-                            if consumer.manifest.id != manifest.id
-                                || consumer.manifest.requires.contains(capability)
-                                || matches!(error, InstallError::Storage(_)) =>
-                        {
-                            failure = Some(match failure {
-                                Some(previous) => error.with_note(&langs, &previous.to_string()),
-                                None => error,
-                            });
-                        }
-                        Err(_) => {}
-                    }
-                }
-            }
-            if (vars_before != self.dependency_vars(&consumer.manifest)?
-                || state
-                    .connections
-                    .iter()
-                    .any(|c| c.consumer == consumer.manifest.id.as_str() && c.rebuild))
-                && let Err(error) = self
-                    .rebuild_connected_consumer(&consumer.manifest, &state, &langs)
-                    .await
+            // 恢复包含各 Bot 的重建状态机，不能把整棵状态机叠进安装或巡检的调用栈。
+            if let Err(error) = Box::pin(self.recover_capability_consumer(
+                &consumer.manifest,
+                manifest,
+                connect_plugins,
+                force,
+                &langs,
+            ))
+            .await
             {
                 failure = Some(match failure {
                     Some(previous) => error.with_note(&langs, &previous.to_string()),
@@ -198,6 +157,119 @@ impl PluginManager {
             }
         }
         self.changed();
+        failure.map_or(Ok(()), Err)
+    }
+
+    async fn recover_capability_consumer(
+        &self,
+        manifest: &Manifest,
+        installed: &Manifest,
+        connect_plugins: &[String],
+        force: bool,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let providers = self.capability_providers();
+        let before = self.dependencies.load()?;
+        let vars_before = self.dependency_vars(manifest, None)?;
+        let bots = self.store.bots().load(&manifest.id)?;
+        let bot_vars_before = bots
+            .bots
+            .keys()
+            .map(|bot| Ok((bot.clone(), self.dependency_vars(manifest, Some(bot))?)))
+            .collect::<Result<BTreeMap<_, _>, InstallError>>()?;
+        let mut failure: Option<InstallError> = None;
+        for capability in declarations(manifest) {
+            let Some(provider) = chosen(&before, &providers, &manifest.id, capability, None) else {
+                continue;
+            };
+            let existing = connection(&before, &manifest.id, &provider.id, capability, None);
+            let approved = existing.is_some()
+                || (provider.id == installed.id
+                    && (!high(&provider.listed.manifest, capability)
+                        || connect_plugins.contains(&manifest.id.to_string())));
+            if !approved
+                || !matches!(
+                    provider.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                )
+                || !service(&provider.listed.manifest, capability)
+                    .is_some_and(|s| provider.serving.contains(&s.service))
+            {
+                continue;
+            }
+            if ((force && provider.id == installed.id)
+                || existing.is_none_or(|c| !c.ready || c.problem.is_some()))
+                && let Err(error) = self
+                    .connect_capability(&manifest.id, provider, capability, langs, None)
+                    .await
+                && (manifest.id != installed.id
+                    || manifest.requires.contains(capability)
+                    || matches!(error, InstallError::Storage(_)))
+            {
+                failure = Some(match failure {
+                    Some(previous) => error.with_note(langs, &previous.to_string()),
+                    None => error,
+                });
+            }
+        }
+        for bot in bots.bots.keys() {
+            if let Err(error) = self.prepare_bot_dependencies(manifest, bot, langs).await {
+                failure = Some(match failure {
+                    Some(previous) => error.with_note(langs, &previous.to_string()),
+                    None => error,
+                });
+            }
+        }
+        let rebuilt = self
+            .rebuild_changed_capability_scopes(
+                manifest,
+                &before,
+                vars_before,
+                bot_vars_before,
+                langs,
+            )
+            .await;
+        match (failure, rebuilt) {
+            (Some(error), Err(cleanup)) => Err(error.with_note(langs, &cleanup.to_string())),
+            (Some(error), _) | (None, Err(error)) => Err(error),
+            (None, Ok(())) => Ok(()),
+        }
+    }
+
+    async fn rebuild_changed_capability_scopes(
+        &self,
+        manifest: &Manifest,
+        before: &super::State,
+        vars_before: BTreeMap<String, String>,
+        bot_vars_before: BTreeMap<String, BTreeMap<String, String>>,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let pending = self.dependencies.load()?;
+        if vars_before != self.dependency_vars(manifest, None)?
+            || pending.connections.iter().any(|c| {
+                c.consumer == manifest.id.as_str() && c.consumer_bot.is_none() && c.rebuild
+            })
+        {
+            return self
+                .rebuild_connected_consumer(manifest, before, langs)
+                .await;
+        }
+        let mut failure: Option<InstallError> = None;
+        for (bot, vars) in bot_vars_before {
+            if (vars != self.dependency_vars(manifest, Some(&bot))?
+                || pending.connections.iter().any(|c| {
+                    c.consumer == manifest.id.as_str()
+                        && c.consumer_bot.as_deref() == Some(bot.as_str())
+                        && c.rebuild
+                }))
+                && let Err(error) = self.rebuild_capability_bot(&manifest.id, &bot, langs).await
+            {
+                failure = Some(match failure {
+                    Some(previous) => error.with_note(langs, &previous.to_string()),
+                    None => error,
+                });
+            }
+        }
         failure.map_or(Ok(()), Err)
     }
 
@@ -229,12 +301,10 @@ impl PluginManager {
                 match &result {
                     Ok(()) => c.rebuild = false,
                     Err(error) => {
-                        c.ready = before.connections.iter().any(|previous| {
-                            previous.consumer == c.consumer
-                                && previous.provider == c.provider
-                                && previous.capability == c.capability
-                                && previous.ready
-                        });
+                        c.ready = before
+                            .connections
+                            .iter()
+                            .any(|previous| previous.same_pair(c) && previous.ready);
                         c.problem = Some(error.to_string());
                     }
                 }
@@ -257,6 +327,79 @@ impl PluginManager {
         }
         let result = self.rebuild_capability_consumer_inner(id, langs).await;
         self.lan.end(id);
+        result
+    }
+
+    pub(in crate::plugin) async fn rebuild_capability_bot(
+        &self,
+        id: &PluginId,
+        bot: &str,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let record = self
+            .store
+            .load(id)?
+            .ok_or_else(|| InstallError::not_installed(langs, id))?;
+        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
+            return Ok(());
+        }
+        if let Some(recovery) = self.lifecycle_status(id)?.recovery {
+            return Err(InstallError::UpstreamUnavailable(recovery.reason));
+        }
+        let before = self.dependencies.load()?;
+        let pending = before.connections.iter().any(|c| {
+            c.consumer == id.as_str() && c.consumer_bot.as_deref() == Some(bot) && c.rebuild
+        });
+        if !pending
+            && !matches!(
+                self.status_of(id),
+                Some(PluginStatus::Running | PluginStatus::Degraded { .. })
+            )
+        {
+            return Ok(());
+        }
+        let package = super::super::upgrade::installed_package(&record, langs)?;
+        self.dependencies.change(|state| {
+            for c in state
+                .connections
+                .iter_mut()
+                .filter(|c| c.consumer == id.as_str() && c.consumer_bot.as_deref() == Some(bot))
+            {
+                c.rebuild = true;
+            }
+        })?;
+        let result = if package.manifest.bots.is_none() {
+            self.rebuild_capability_consumer(id, langs).await
+        } else if self.begin_rebuild(id) {
+            let result = self.rebuild_bot(id, bot).await;
+            self.lan.end(id);
+            result
+        } else {
+            Err(InstallError::Conflict(crate::l10n::text(
+                langs,
+                "plugin-install-conflict-rebuilding",
+                &[("id", id.to_string().into())],
+            )))
+        };
+        self.dependencies.change(|state| {
+            for c in state
+                .connections
+                .iter_mut()
+                .filter(|c| c.consumer == id.as_str() && c.consumer_bot.as_deref() == Some(bot))
+            {
+                match &result {
+                    Ok(()) => c.rebuild = false,
+                    Err(error) => {
+                        c.ready = before
+                            .connections
+                            .iter()
+                            .any(|previous| previous.same_pair(c) && previous.ready);
+                        c.problem = Some(error.to_string());
+                    }
+                }
+            }
+        })?;
+        self.changed();
         result
     }
 
@@ -353,7 +496,7 @@ impl PluginManager {
                         None,
                     ),
                     Some(p) => {
-                        let connected = connection(&state, &manifest.id, &p.id, capability);
+                        let connected = connection(&state, &manifest.id, &p.id, capability, None);
                         match connected {
                             None => (PluginHintCategory::ProviderNotConnected, None),
                             Some(c) if c.problem.is_some() => {
@@ -425,7 +568,7 @@ impl PluginManager {
                         self.capability_missing_other(manifest, capability, langs),
                     )
                 })?;
-            if connection(&state, &manifest.id, &provider.id, capability).is_none() {
+            if connection(&state, &manifest.id, &provider.id, capability, None).is_none() {
                 return Err(InstallError::Conflict(
                     self.capability_missing(capability, langs),
                 ));
@@ -459,10 +602,10 @@ impl PluginManager {
                 )));
             }
             let current = self.dependencies.load()?;
-            if connection(&current, &manifest.id, &provider.id, capability)
+            if connection(&current, &manifest.id, &provider.id, capability, None)
                 .is_some_and(|c| c.problem.is_some())
             {
-                self.connect_capability(&manifest.id, provider, capability, langs)
+                self.connect_capability(&manifest.id, provider, capability, langs, None)
                     .await?;
             }
         }

@@ -558,3 +558,79 @@ async fn handoff_consent_survives_restart_without_changing_an_install_plan() {
         .finish(opened["session"].as_str().unwrap())
         .await;
 }
+
+#[tokio::test]
+async fn another_bot_in_the_same_plugin_needs_its_own_handoff_card() {
+    let bed = bed(true, "@owner:test").await;
+    let first = bed.open("first task").await;
+    bed.finish(first["session"].as_str().unwrap(), 0).await;
+    let mut repeated = bed.caller.clone();
+    repeated.request_id = Some(rmcp::model::NumberOrString::Number(2));
+    let opened = success(
+        &tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            bed.call(&repeated, "wonton__hand_off", args("second task")),
+        )
+        .await
+        .unwrap(),
+    );
+    assert_eq!(bed.cards.posted.lock().unwrap().len(), 1);
+    bed.finish(opened["session"].as_str().unwrap(), 1).await;
+    let keeper = wonton_protocol::BotKeeper::User {
+        username: "owner".into(),
+    };
+    bed.manager.bot_records_for_test(
+        &crate::plugin::PluginId::parse(A).unwrap(),
+        &[
+            ("default", "@bot-a:test", keeper.clone(), "token"),
+            ("other", "@bot-a-other:test", keeper.clone(), "other-token"),
+        ],
+    );
+    let other = wonton_protocol::BotRef {
+        plugin_id: A.into(),
+        bot: "other".into(),
+    };
+    let grant = bed
+        .chains
+        .ledger()
+        .start_bridge_turn(
+            other.clone(),
+            wonton_protocol::ChainTurnReport::Start {
+                session: "other-bot-session".into(),
+                room: "!conversation:test".into(),
+                thread: Some("$thread:test".into()),
+                sender: "@owner:test".into(),
+                event_id: "$other:test".into(),
+            },
+            None,
+            "@owner:test".into(),
+        )
+        .unwrap();
+    let mut caller = super::Caller::for_bot(
+        crate::plugin::PluginId::parse(A).unwrap(),
+        None,
+        "other".into(),
+        keeper,
+    );
+    caller.session = Some("other-bot-session".into());
+    caller.chain = Some(grant.chain);
+    caller.request_id = Some(rmcp::model::NumberOrString::Number(1));
+    let pending = bed.spawn(&caller, args("third task"));
+    let card = bed.cards.wait_for(2).await;
+    assert!(
+        matches!(&card.category, Some(ConfirmationCategory::HandOffConsent { from, target_bot })
+        if from == &other && target_bot == &bot(B))
+    );
+    bed.bus
+        .confirmations
+        .answer(&card.id, Answer::Approve, None)
+        .unwrap();
+    let opened = success(
+        &tokio::time::timeout(std::time::Duration::from_secs(2), pending)
+            .await
+            .unwrap()
+            .unwrap(),
+    );
+    assert_eq!(bed.cards.posted.lock().unwrap().len(), 2);
+    bed.finish(opened["session"].as_str().unwrap(), 2).await;
+}

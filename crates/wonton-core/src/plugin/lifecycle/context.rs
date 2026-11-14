@@ -90,7 +90,7 @@ impl PluginManager {
             })?;
         }
         let capabilities = {
-            let mut vars = self.dependency_vars(manifest)?;
+            let mut vars = self.dependency_vars(manifest, None)?;
             vars.extend(self.matrix_rtc_vars(manifest, &self.cfg.apps_dir.join(&slug), langs)?);
             vars.extend(self.agent_acp_provider_vars(manifest)?);
             vars

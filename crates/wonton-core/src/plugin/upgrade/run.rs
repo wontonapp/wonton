@@ -541,6 +541,12 @@ impl PluginManager {
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         if let Some(bot) = new_bot {
+            self.prepare_bot_dependencies(
+                manifest,
+                super::super::bot_services::DEFAULT_BOT,
+                &langs,
+            )
+            .await?;
             self.fill_default_bot_vars(manifest, &bot, &mut ctx)?;
         } else {
             self.fill_bot_vars(package, &mut ctx, &langs).await?;

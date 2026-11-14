@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use serde::{Deserialize, Serialize};
 
 use super::PluginId;
+use super::binding::{Binding, consumer_key};
 use crate::plugin::InstallError;
 use crate::plugin::store::{read_json, write_json};
 
@@ -13,12 +14,34 @@ pub(super) struct Connection {
     pub consumer: String,
     pub provider: String,
     pub capability: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub consumer_bot: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_bot: Option<String>,
     pub key: Option<String>,
     #[serde(default)]
     pub ready: bool,
     #[serde(default)]
     pub rebuild: bool,
     pub problem: Option<String>,
+}
+
+impl Connection {
+    pub(super) fn same_pair(&self, other: &Self) -> bool {
+        self.consumer == other.consumer
+            && self.consumer_bot == other.consumer_bot
+            && self.provider == other.provider
+            && self.provider_bot == other.provider_bot
+            && self.capability == other.capability
+    }
+
+    pub(super) fn credential_name(&self) -> std::borrow::Cow<'_, str> {
+        super::binding::credential_name(
+            &self.consumer,
+            self.consumer_bot.as_deref(),
+            self.provider_bot.as_deref(),
+        )
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,7 +53,7 @@ pub(super) struct HandoffConsent {
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct State {
     pub defaults: BTreeMap<String, String>,
-    pub selected: BTreeMap<String, BTreeMap<String, String>>,
+    pub selected: BTreeMap<String, BTreeMap<String, Binding>>,
     pub providers: Vec<String>,
     pub connections: Vec<Connection>,
     /// 提供方令牌（ADR-0061 第 3 节），键 `<能力>/<插件 ID>`，见 [`super::provider_token`]。
@@ -41,6 +64,51 @@ pub(super) struct State {
 }
 
 impl State {
+    pub(super) fn selection(
+        &self,
+        consumer: &str,
+        bot: Option<&str>,
+        capability: &str,
+    ) -> Option<&Binding> {
+        bot.and_then(|bot| self.selected.get(&consumer_key(consumer, bot)))
+            .and_then(|choices| choices.get(capability))
+            .or_else(|| {
+                self.selected
+                    .get(consumer)
+                    .and_then(|choices| choices.get(capability))
+            })
+    }
+
+    pub(super) fn select(
+        &mut self,
+        consumer: &str,
+        bot: Option<&str>,
+        capability: &str,
+        provider: Option<&str>,
+        provider_bot: Option<&str>,
+    ) {
+        let scope: std::borrow::Cow<'_, str> =
+            bot.map_or_else(|| consumer.into(), |bot| consumer_key(consumer, bot).into());
+        if let Some(provider) = provider {
+            let value = match provider_bot {
+                Some(bot) => Binding::Bot(wonton_protocol::BotRef {
+                    plugin_id: provider.to_owned(),
+                    bot: bot.to_owned(),
+                }),
+                None => Binding::Plugin(provider.to_owned()),
+            };
+            self.selected
+                .entry(scope.into_owned())
+                .or_default()
+                .insert(capability.to_owned(), value);
+        } else if let Some(choices) = self.selected.get_mut(scope.as_ref()) {
+            choices.remove(capability);
+            if choices.is_empty() {
+                self.selected.remove(scope.as_ref());
+            }
+        }
+    }
+
     /// 一个提供方在这项能力上的令牌。
     pub(super) fn provider_token(&self, capability: &str, provider: &PluginId) -> Option<&String> {
         self.provider_tokens

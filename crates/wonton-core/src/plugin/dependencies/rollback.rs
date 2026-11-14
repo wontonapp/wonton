@@ -29,10 +29,7 @@ impl PluginManager {
             .connections
             .iter()
             .filter(|c| {
-                c.consumer == id.as_str()
-                    && !snapshot.0.iter().any(|before| {
-                        before.provider == c.provider && before.capability == c.capability
-                    })
+                c.consumer == id.as_str() && !snapshot.0.iter().any(|before| before.same_pair(c))
             })
             .cloned()
             .collect();
@@ -64,9 +61,16 @@ impl PluginManager {
                 c.consumer != manifest.id.as_str()
                     || declarations(manifest).any(|name| name == &c.capability)
             });
-            if let Some(selected) = state.selected.get_mut(manifest.id.as_str()) {
-                selected
-                    .retain(|name, _| declarations(manifest).any(|capability| capability == name));
+            for (scope, selected) in &mut state.selected {
+                if scope == manifest.id.as_str()
+                    || scope
+                        .strip_prefix(manifest.id.as_str())
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+                {
+                    selected.retain(|name, _| {
+                        declarations(manifest).any(|capability| capability == name)
+                    });
+                }
             }
         })
     }
@@ -86,8 +90,16 @@ impl PluginManager {
             else {
                 continue;
             };
-            self.capability_command(p, &c.capability, commands, false, &c.consumer, None, langs)
-                .await?;
+            self.capability_command(
+                p,
+                &c.capability,
+                commands,
+                false,
+                &c.credential_name(),
+                None,
+                langs,
+            )
+            .await?;
         }
         Ok(())
     }

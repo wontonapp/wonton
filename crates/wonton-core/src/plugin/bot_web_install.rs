@@ -22,6 +22,12 @@ impl PluginManager {
             undo.models = Some(manifest.id.clone());
         }
         if let Some(bot) = &default {
+            self.prepare_bot_dependencies(
+                manifest,
+                super::bot_services::DEFAULT_BOT,
+                &self.owner_languages(),
+            )
+            .await?;
             self.fill_default_bot_vars(manifest, bot, ctx)?;
         }
         if manifest.bots.is_some() {
@@ -34,6 +40,8 @@ impl PluginManager {
                     .await?;
                 undo.extra_bots
                     .push((manifest.id.clone(), name.clone(), bot.clone()));
+                self.prepare_bot_dependencies(manifest, &name, &self.owner_languages())
+                    .await?;
                 let mut runtime = self.stored_bot_runtime(
                     package,
                     &name,

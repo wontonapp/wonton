@@ -16,3 +16,4 @@ plugin-capability-plan-changed = 安裝計畫在預覽後發生變更，請重�
 plugin-capability-choices-unsupported = 這份核心無法套用所選裝置或限定的 Bot 範圍，未變更這些選擇，也未開始安裝。
 plugin-capability-uninstall-selection = 所選提供方仍在使用中，或不在本次可解除安裝的清單中，請重新開啟解除安裝預覽。
 plugin-capability-self-only = 能力 { $capability } 需要別的提供方：應用自己就提供它，請先安裝另一個提供方再裝它
+plugin-capability-bot-missing = 應用程式 { $provider } 中選定的 Bot { $bot } 已無法使用，請重新選擇 Bot。

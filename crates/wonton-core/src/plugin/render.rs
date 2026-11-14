@@ -261,8 +261,10 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .keys()
         .map(|name| (name.clone(), "dry-run".to_owned()))
         .collect();
+    let app_data = root.join("apps").join(&slug);
+    let capabilities = dry_run_capabilities(manifest, &app_data);
     InstallContext {
-        app_data: root.join("apps").join(&slug),
+        app_data,
         homes: super::private_homes::dry_run_homes(manifest),
         hosted_root: root.join("hosted"),
         relay_dir: PathBuf::from(crate::config::DEFAULT_RELAY_DIR),
@@ -291,28 +293,9 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 allowed_users: "@owner:wonton.invalid".into(),
                 home_room: "!dry-run:wonton.invalid".into(),
             }),
-        bots: dry_run_bots(manifest),
-        models: manifest
-            .permissions
-            .contains(&Permission::Models)
-            .then(|| ModelVars {
-                base_url: "http://models.wonton.internal/v1".into(),
-                anthropic_url: Some("http://models.wonton.internal".into()),
-                gemini_url: Some("http://models.wonton.internal".into()),
-                plugin_key: Some("dry-run".into()),
-                bot_keys: manifest
-                    .bots
-                    .as_ref()
-                    .map(|_| {
-                        BTreeMap::from([(
-                            super::bot_services::DEFAULT_BOT.to_owned(),
-                            "dry-run".into(),
-                        )])
-                    })
-                    .unwrap_or_default(),
-                default_model: "dry-run".into(),
-            }),
-        capabilities: dry_run_capabilities(manifest, &root.join("apps").join(&slug)),
+        bots: dry_run_bots(manifest, &capabilities),
+        models: dry_run_models(manifest),
+        capabilities,
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -349,6 +332,29 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
+}
+
+fn dry_run_models(manifest: &Manifest) -> Option<ModelVars> {
+    manifest
+        .permissions
+        .contains(&Permission::Models)
+        .then(|| ModelVars {
+            base_url: "http://models.wonton.internal/v1".into(),
+            anthropic_url: Some("http://models.wonton.internal".into()),
+            gemini_url: Some("http://models.wonton.internal".into()),
+            plugin_key: Some("dry-run".into()),
+            bot_keys: manifest
+                .bots
+                .as_ref()
+                .map(|_| {
+                    BTreeMap::from([(
+                        super::bot_services::DEFAULT_BOT.to_owned(),
+                        "dry-run".into(),
+                    )])
+                })
+                .unwrap_or_default(),
+            default_model: "dry-run".into(),
+        })
 }
 
 fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
@@ -422,11 +428,15 @@ fn dry_run_shares(manifest: &Manifest, root: &Path) -> BTreeMap<String, PathBuf>
 }
 
 /// dry run 里每个 Bot 的占位值：渲染和正式安装走同一条路，多 Bot 的插件每个 Bot 一套。
-fn dry_run_bots(manifest: &Manifest) -> BTreeMap<String, BotVars> {
+fn dry_run_bots(
+    manifest: &Manifest,
+    capabilities: &BTreeMap<String, String>,
+) -> BTreeMap<String, BotVars> {
     if manifest.bots.is_none() || !manifest.permissions.contains(&Permission::MatrixBot) {
         return BTreeMap::new();
     }
     let vars = BotVars {
+        dependencies: capabilities.clone(),
         model_key: manifest
             .permissions
             .contains(&Permission::Models)

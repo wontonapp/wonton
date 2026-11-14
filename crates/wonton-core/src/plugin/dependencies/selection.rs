@@ -37,7 +37,7 @@ impl PluginManager {
                 continue;
             }
             let connected = self
-                .connect_capability(&consumer.manifest.id, provider, capability, langs)
+                .connect_capability(&consumer.manifest.id, provider, capability, langs, None)
                 .await;
             let rebuilt = self
                 .rebuild_capability_consumer(&consumer.manifest.id, langs)
@@ -64,66 +64,8 @@ impl PluginManager {
         choice: ConsumerCapabilityChoice,
         langs: &Languages,
     ) -> Result<(), InstallError> {
-        let _changing = self.dependencies.changing.lock().await;
-        let record = self
-            .store
-            .load(consumer)?
-            .ok_or_else(|| InstallError::not_installed(langs, consumer))?;
-        let package = super::super::upgrade::installed_package(&record, langs)?;
-        if !declarations(&package.manifest).any(|c| c == &choice.capability) {
-            return Err(InstallError::Invalid(
-                self.capability_missing(&choice.capability, langs),
-            ));
-        }
-        // ADR-0061 第 9 节：提供方不能选自己当提供方。
-        if choice.provider.as_deref() == Some(consumer.as_str()) {
-            return Err(InstallError::Invalid(self.capability_missing_other(
-                &package.manifest,
-                &choice.capability,
-                langs,
-            )));
-        }
-        let providers = self.capability_providers();
-        let mut next = self.dependencies.load()?;
-        let entries = next.selected.entry(consumer.to_string()).or_default();
-        match choice.provider {
-            Some(id) => {
-                entries.insert(choice.capability.clone(), id);
-            }
-            None => {
-                entries.remove(&choice.capability);
-            }
-        }
-        let provider = chosen(&next, &providers, consumer, &choice.capability, None);
-        if provider.is_none()
-            && (package.manifest.requires.contains(&choice.capability)
-                || next
-                    .selected
-                    .get(consumer.as_str())
-                    .is_some_and(|s| s.contains_key(&choice.capability)))
-        {
-            return Err(InstallError::Invalid(
-                self.capability_missing(&choice.capability, langs),
-            ));
-        }
-        self.dependencies.change(|state| {
-            state.selected = next.selected;
-        })?;
-        let connected = match provider {
-            Some(provider) => {
-                self.connect_capability(consumer, provider, &choice.capability, langs)
-                    .await
-            }
-            None => Ok(()),
-        };
-        let rebuilt = self.rebuild_capability_consumer(consumer, langs).await;
-        match (connected, rebuilt) {
-            (Err(error), Err(cleanup)) => return Err(error.with_note(langs, &cleanup.to_string())),
-            (Err(error), _) | (_, Err(error)) => return Err(error),
-            _ => {}
-        }
-        self.changed();
-        Ok(())
+        self.set_capability_binding(consumer, None, choice, None, langs)
+            .await
     }
 
     pub(in crate::plugin) fn capability_dependents(
@@ -152,7 +94,7 @@ impl PluginManager {
                                 && service(&p.listed.manifest, capability).is_some()
                                 && (replacement.is_none()
                                     || !high(&p.listed.manifest, capability)
-                                    || connection(&state, &consumer.manifest.id, &p.id, capability)
+                                    || connection(&state, &consumer.manifest.id, &p.id, capability, None)
                                         .is_some())
                         })
                 });
@@ -257,56 +199,33 @@ impl PluginManager {
                             .selected
                             .get(consumer.manifest.id.as_str())
                             .and_then(|s| s.get(*capability))
-                            .or_else(|| before.defaults.get(*capability))
+                            .and_then(super::binding::Binding::provider)
+                            .or_else(|| before.defaults.get(*capability).map(String::as_str))
                             .is_some_and(|p| removing.iter().any(|removed| removed.as_str() == p))
                     })
                     .map(|capability| (consumer.manifest.id.clone(), capability.clone()))
                     .collect::<Vec<_>>()
             })
             .collect();
-        self.dependencies.change(|state| {
-            state
-                .connections
-                .retain(|c| c.consumer != id.as_str() && c.provider != id.as_str());
-            state.handoff_consents.retain(|consent| {
-                !removing.iter().any(|removed| {
-                    consent.from.plugin_id == removed.as_str()
-                        || consent.target.plugin_id == removed.as_str()
-                })
-            });
-            state.selected.remove(id.as_str());
-            for selected in state.selected.values_mut() {
-                selected.retain(|_, p| !removing.iter().any(|removed| removed.as_str() == p));
-            }
-            state.providers.retain(|p| p != id.as_str());
-            for (capability, selected) in &mut state.defaults {
-                if removing.iter().any(|removed| removed.as_str() == selected) {
-                    *selected = providers
-                        .iter()
-                        .find(|p| service(&p.listed.manifest, capability).is_some())
-                        .map_or_else(String::new, |p| p.id.to_string());
-                }
-            }
-            state.defaults.retain(|_, id| !id.is_empty());
-            state
-                .provider_tokens
-                .retain(|key, _| !key.ends_with(&format!("/{id}")));
-            for removed in removing {
-                state
-                    .provider_tokens
-                    .retain(|key, _| !key.ends_with(&format!("/{removed}")));
-            }
-        })?;
+        let mut rebuilt: BTreeSet<_> = before
+            .connections
+            .iter()
+            .filter(|c| {
+                c.consumer_bot.is_some() && removing.iter().any(|id| id.as_str() == c.provider)
+            })
+            .filter_map(|c| PluginId::parse(&c.consumer).ok())
+            .filter(|consumer| !removing.contains(consumer))
+            .collect();
+        self.prune_removed_capability_state(id, removing, &providers)?;
         let state = self.dependencies.load()?;
-        let mut rebuilt = BTreeSet::new();
         let mut failure: Option<InstallError> = None;
         for (consumer, capability) in affected {
             if let Some(provider) = chosen(&state, &providers, &consumer, &capability, None)
                 && (approve_connections
                     || !high(&provider.listed.manifest, &capability)
-                    || connection(&state, &consumer, &provider.id, &capability).is_some())
+                    || connection(&state, &consumer, &provider.id, &capability, None).is_some())
                 && let Err(error) = self
-                    .connect_capability(&consumer, provider, &capability, langs)
+                    .connect_capability(&consumer, provider, &capability, langs, None)
                     .await
             {
                 failure = Some(match failure {
@@ -328,6 +247,55 @@ impl PluginManager {
         failure.map_or(Ok(()), Err)
     }
 
+    fn prune_removed_capability_state(
+        &self,
+        id: &PluginId,
+        removing: &[PluginId],
+        providers: &[super::Provider],
+    ) -> Result<(), InstallError> {
+        self.dependencies.change(|state| {
+            state
+                .connections
+                .retain(|c| c.consumer != id.as_str() && c.provider != id.as_str());
+            state.handoff_consents.retain(|consent| {
+                !removing.iter().any(|id| {
+                    id.as_str() == consent.from.plugin_id || id.as_str() == consent.target.plugin_id
+                })
+            });
+            state.selected.retain(|scope, _| {
+                scope != id.as_str()
+                    && !scope
+                        .strip_prefix(id.as_str())
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+            });
+            for selected in state.selected.values_mut() {
+                selected.retain(|_, p| {
+                    !removing
+                        .iter()
+                        .any(|removed| Some(removed.as_str()) == p.provider())
+                });
+            }
+            state.providers.retain(|p| p != id.as_str());
+            for (capability, selected) in &mut state.defaults {
+                if removing.iter().any(|removed| removed.as_str() == selected) {
+                    *selected = providers
+                        .iter()
+                        .find(|p| service(&p.listed.manifest, capability).is_some())
+                        .map_or_else(String::new, |p| p.id.to_string());
+                }
+            }
+            state.defaults.retain(|_, id| !id.is_empty());
+            state
+                .provider_tokens
+                .retain(|key, _| !key.ends_with(&format!("/{id}")));
+            for removed in removing {
+                state
+                    .provider_tokens
+                    .retain(|key, _| !key.ends_with(&format!("/{removed}")));
+            }
+        })
+    }
+
     pub(in crate::plugin) async fn prune_provider_capabilities(
         &self,
         manifest: &Manifest,
@@ -345,7 +313,8 @@ impl PluginManager {
                             .selected
                             .get(consumer.manifest.id.as_str())
                             .and_then(|s| s.get(*capability))
-                            .or_else(|| before.defaults.get(*capability))
+                            .and_then(super::binding::Binding::provider)
+                            .or_else(|| before.defaults.get(*capability).map(String::as_str))
                             .is_some_and(|p| p == manifest.id.as_str())
                             && service(manifest, capability).is_none()
                     })
@@ -353,13 +322,24 @@ impl PluginManager {
                     .collect::<Vec<_>>()
             })
             .collect();
+        let mut rebuilt: BTreeSet<_> = before
+            .connections
+            .iter()
+            .filter(|c| {
+                c.consumer_bot.is_some()
+                    && c.provider == manifest.id.as_str()
+                    && service(manifest, &c.capability).is_none()
+            })
+            .filter_map(|c| PluginId::parse(&c.consumer).ok())
+            .collect();
         self.dependencies.change(|state| {
             state.connections.retain(|c| {
                 c.provider != manifest.id.as_str() || service(manifest, &c.capability).is_some()
             });
             for selected in state.selected.values_mut() {
                 selected.retain(|capability, id| {
-                    id != manifest.id.as_str() || service(manifest, capability).is_some()
+                    id.provider() != Some(manifest.id.as_str())
+                        || service(manifest, capability).is_some()
                 });
             }
             for (capability, id) in &mut state.defaults {
@@ -384,7 +364,7 @@ impl PluginManager {
                 if let Some(provider) = providers.iter().find(|p| {
                     service(&p.listed.manifest, capability).is_some()
                         && (!high(&p.listed.manifest, capability)
-                            || connection(state, consumer, &p.id, capability).is_some())
+                            || connection(state, consumer, &p.id, capability, None).is_some())
                 }) && chosen(state, &providers, consumer, capability, None)
                     .is_none_or(|selected| selected.id != provider.id)
                 {
@@ -392,18 +372,20 @@ impl PluginManager {
                         .selected
                         .entry(consumer.to_string())
                         .or_default()
-                        .insert(capability.clone(), provider.id.to_string());
+                        .insert(
+                            capability.clone(),
+                            super::binding::Binding::Plugin(provider.id.to_string()),
+                        );
                 }
             }
         })?;
         let state = self.dependencies.load()?;
-        let mut rebuilt = BTreeSet::new();
         for (consumer, capability) in affected {
             if let Some(provider) = chosen(&state, &providers, &consumer, &capability, None)
                 && (!high(&provider.listed.manifest, &capability)
-                    || connection(&state, &consumer, &provider.id, &capability).is_some())
+                    || connection(&state, &consumer, &provider.id, &capability, None).is_some())
             {
-                self.connect_capability(&consumer, provider, &capability, langs)
+                self.connect_capability(&consumer, provider, &capability, langs, None)
                     .await?;
             }
             rebuilt.insert(consumer);

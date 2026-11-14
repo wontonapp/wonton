@@ -253,7 +253,9 @@ impl PluginManager {
                 .as_ref()
                 .map(|d| d.missing_wants.clone())
                 .unwrap_or_default(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
+            capability_providers: self
+                .consumer_capabilities(m, langs, None)
+                .unwrap_or_default(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,

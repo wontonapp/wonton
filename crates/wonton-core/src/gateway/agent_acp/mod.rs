@@ -108,7 +108,7 @@ async fn prepare(
         .capability_route(consumer, AGENT_ACP.name, langs, Some(&initiator))
         .await
         .map_err(|error| route_error(consumer, error, langs))?;
-    let target = identity::target_bot(gateway, &route.provider, langs)?;
+    let target = identity::target_bot(gateway, &route.provider, route.bot.as_ref(), langs)?;
     let user = identity::chain_user(gateway, &initiator, req.headers(), langs)?;
     if !gateway.bot_listens_to(&target, &user) {
         return Err(refused(
