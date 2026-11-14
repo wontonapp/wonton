@@ -2,7 +2,7 @@ name: release
 
 # 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR，同时更新 stable 渠道（ADR-0070）。安装脚本和 App 里的升级
 # 都按 digest 记版本，渠道只是找新版本的入口。只认不带后缀的版本号 tag（v0.2.0），误推的 vfoo、v0.2.0-rc.1 不会发布。
-# 手动触发（只认 main）只发桥镜像，标签 main-<短提交号>，不碰任何渠道：桥和插件一起改名时，插件要先钉上新桥，
+# 手动触发（只认 main）只发桥和远端 MCP 连接器镜像，标签 main-<短提交号>，不碰任何渠道：插件要先钉上新镜像时，
 # 不必为此发一版核心。
 #
 # 双架构用 amd64 和 arm64 两种原生 runner 构建（托管 runner 便宜又快，不在 QEMU 里交叉编译），各自按 digest 推，
@@ -179,3 +179,84 @@ jobs:
         with:
           tags: ${{ steps.meta.outputs.tags }}
           artifact: digests-acp-bridge
+
+  remote-mcp-image:
+    name: 远端 MCP 连接器镜像 ${{ matrix.platform }}
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runs-on: ubuntu-24.04
+          - platform: linux/arm64
+            runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 版本、镜像仓库与基础镜像
+        id: meta
+        run: |
+          mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
+          {
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              echo "version=main-${GITHUB_SHA::7}"
+            else
+              echo "version=${GITHUB_REF_NAME#v}"
+            fi
+            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-remote-mcp"
+            echo "rust=$mirror/rust:1.99.1-slim-trixie"
+            # 发版只读 registry 层缓存，不覆盖 main 的缓存。
+            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:remote-mcp"
+          } >> "$GITHUB_OUTPUT"
+      - id: push
+        uses: ./.github/actions/push-image
+        with:
+          platforms: ${{ matrix.platform }}
+          file: deploy/remote-mcp/Dockerfile
+          version: ${{ steps.meta.outputs.version }}
+          extra-build-args: |-
+            RUST_IMAGE=${{ steps.meta.outputs.rust }}
+          image: ${{ steps.meta.outputs.image }}
+          cache-ref: ${{ steps.meta.outputs.cache }}
+          push-by-digest: "true"
+      - name: 记下本架构的 digest
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p digests
+          echo "$DIGEST" > "digests/${PLATFORM##*/}"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: digests-remote-mcp-${{ strategy.job-index }}
+          path: digests/*
+          retention-days: 1
+
+  remote-mcp-merge:
+    name: 远端 MCP 连接器镜像合 manifest
+    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    needs: remote-mcp-image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: 版本、渠道
+        id: meta
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-remote-mcp"
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "tags=$image:main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            echo "tags=$image:$version,$image:stable" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/merge-image-manifest
+        with:
+          tags: ${{ steps.meta.outputs.tags }}
+          artifact: digests-remote-mcp

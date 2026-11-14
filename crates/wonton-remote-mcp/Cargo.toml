@@ -1,0 +1,38 @@
+[package]
+name = "wonton-remote-mcp"
+description = "远端 MCP HTTP 连接器"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+base64 = { workspace = true }
+# MIT OR Apache-2.0。HTTP 请求体和 SSE 的逐块转发。
+futures-util = { workspace = true }
+getrandom = { workspace = true }
+hyper-util = { workspace = true, features = ["client-legacy", "client-proxy", "tokio"] }
+# MIT OR Apache-2.0。额外禁止访问的核心与 Docker 网段。
+ipnet = { workspace = true }
+reqwest = { workspace = true, features = ["json", "stream", "rustls"] }
+rmcp = { workspace = true, features = ["client"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# MIT OR Apache-2.0。解析探测和旧式 HTTP+SSE 的事件边界。
+sse-stream = { workspace = true }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tower-service = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+url = { workspace = true }
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }
+rcgen = { workspace = true }
+rustls = { workspace = true }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
+
+[lints]
+workspace = true
