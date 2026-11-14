@@ -71,10 +71,10 @@ fun PairingScreen(
 ) {
     val context = LocalContext.current
     var deviceName by rememberSaveable { mutableStateOf(defaultDeviceName(context)) }
-    var pastedCode by remember { mutableStateOf("") }
+    var pastedCode by rememberSaveable { mutableStateOf("") }
     // 核心当场拒绝的原因，比如扫到的不是配对码。
     var refusal by remember { mutableStateOf<Problem?>(null) }
-    var lastCode by remember { mutableStateOf<String?>(null) }
+    var lastCode by rememberSaveable { mutableStateOf<String?>(null) }
     var scanRecognized by remember { mutableStateOf(false) }
     var status by remember(pairing) { mutableStateOf(core.home().pairing) }
     var submitted by remember { mutableStateOf(status is PairingStatus.InProgress) }

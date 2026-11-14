@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -18,6 +19,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -91,6 +93,10 @@ class FirstScreenTest {
             compose.onNodeWithTag("pairing-code").assertExists()
             compose.onNodeWithTag("pairing-submit").performScrollTo().assertIsDisplayed()
         }
+        val typedInput = "restore unsent input"
+        compose.onNodeWithTag("pairing-code").performScrollTo().performTextInput(typedInput)
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithTag("pairing-code").performScrollTo().assertTextEquals(typedInput).performTextClearance()
 
         val code = "wonton://pair?v=0&id=d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a" +
             "&addr=127.0.0.1%3A9&domain=home.example&core=http%3A%2F%2Fhome.example%2F" +
@@ -101,6 +107,11 @@ class FirstScreenTest {
         val failure = core.home().pairing as PairingStatus.Failed
         assertEquals(PairingFailure.TRANSPORT_UNAVAILABLE, failure.reason)
         assertNull(core.home().serverId)
+        compose.activityRule.scenario.recreate()
+        compose.onNodeWithTag("pairing-retry").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+        compose.waitUntil(timeoutMillis = 10_000) { core.home().pairing is PairingStatus.InProgress }
+        compose.waitUntil(timeoutMillis = 90_000) { core.home().pairing is PairingStatus.Failed }
+        assertEquals(PairingFailure.TRANSPORT_UNAVAILABLE, (core.home().pairing as PairingStatus.Failed).reason)
         checkSidebarEntries("unreachable") {
             compose.onNodeWithTag("pairing-retry").performScrollTo().assertIsDisplayed().assertIsEnabled()
             assertEquals(PairingFailure.TRANSPORT_UNAVAILABLE, (core.home().pairing as PairingStatus.Failed).reason)
