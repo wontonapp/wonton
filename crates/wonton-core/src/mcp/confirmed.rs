@@ -125,14 +125,16 @@ impl Bus {
         let task = tokio::spawn(async move {
             // 两张卡片共用创建时冻结的管理员名单。
             let audience = bus.audience(&caller, Subject::PluginAdmin).await;
-            let admins = bus.admin_audience(&caller, Subject::PluginAdmin);
-            let ask = |draft| bus.ask_audience(&caller, draft, audience.clone(), admins.clone());
-            let ticket = match ask(draft).await {
+            let ticket = match bus
+                .confirmations
+                .ask_as(&caller.id, draft, audience.clone())
+                .await
+            {
                 Ok(ticket) => ticket,
                 Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),
             };
             // 第一张批准了还没执行：第二张拒绝或过期时什么都不装，两张卡片都说清楚。
-            let second_ticket = match ask(second).await {
+            let second_ticket = match bus.confirmations.ask_as(&caller.id, second, audience).await {
                 Ok(second) => second,
                 Err(refusal) => {
                     let message = refusal.message();

@@ -7,10 +7,10 @@ use futures_util::FutureExt;
 use futures_util::future::BoxFuture;
 use wonton_protocol::{CardChoice, ConfirmationCard, DeviceConfirmationPush};
 
-use super::confirm::Notifier;
+use super::confirm::{Notifier, Recipients};
 use crate::push::Push;
 
-/// 开卡时给收件人（主人或 Bot 的归属人）名下的每台已配对设备发确认推送。
+/// 开卡时给所有冻结收件人名下的每台已配对设备发确认推送。
 pub struct DevicePush {
     push: Arc<Push>,
 }
@@ -24,17 +24,10 @@ impl DevicePush {
 impl Notifier for DevicePush {
     fn post<'a>(
         &'a self,
-        recipient: Option<&'a str>,
+        recipients: &'a Recipients,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<(), String>> {
         async move {
-            // 名下没有任何已配对设备：没人能答，如实告诉调用方。
-            if !self.push.has_devices(recipient) {
-                return Err(match recipient {
-                    Some(person) => format!("{person} 名下没有已配对的设备，没人能回答确认"),
-                    None => "主人没有已配对的设备，没人能回答确认".to_owned(),
-                });
-            }
             let confirmation = DeviceConfirmationPush {
                 id: card.id.clone(),
                 title: card.title.clone(),
@@ -42,16 +35,32 @@ impl Notifier for DevicePush {
                 origin: card.origin.clone(),
                 choices: button_choices(card),
             };
-            // 推送没发出去不拦卡片：它已在确认表里，App 打开时从列表照样看得到。
-            if let Err(error) = self.push.send_confirmation(recipient, &confirmation).await {
-                tracing::warn!(
-                    confirmation = %card.id,
-                    person = recipient.unwrap_or("owner"),
-                    %error,
-                    "确认推送没发出去，App 靠列表取卡片"
-                );
+            let people: Vec<Option<&str>> = match recipients {
+                Recipients::Keeper(person) => vec![person.as_deref()],
+                Recipients::Admins(admins) => std::iter::once(None)
+                    .chain(admins.iter().map(|admin| Some(admin.as_str())))
+                    .collect(),
+            };
+            let mut paired = false;
+            for person in people {
+                if !self.push.has_devices(person) {
+                    continue;
+                }
+                paired = true;
+                if let Err(error) = self.push.send_confirmation(person, &confirmation).await {
+                    tracing::warn!(
+                        confirmation = %card.id,
+                        person = person.unwrap_or("owner"),
+                        %error,
+                        "确认推送没发出去，App 靠列表取卡片"
+                    );
+                }
             }
-            Ok(())
+            if paired {
+                Ok(())
+            } else {
+                Err("所有收件人都没有已配对的设备，没人能回答确认".to_owned())
+            }
         }
         .boxed()
     }

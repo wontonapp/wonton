@@ -53,7 +53,11 @@ pub(super) async fn ask(
         bot: context.from.clone(),
         user_id: from_account.user_id,
     });
-    let langs = bus.languages_for(audience.recipient.as_deref());
+    let recipient = match &audience.recipients {
+        crate::mcp::Recipients::Keeper(person) => person.as_deref(),
+        crate::mcp::Recipients::Admins(_) => None,
+    };
+    let langs = bus.languages_for(recipient);
     let draft = draft(bus, caller, context, &langs);
     let (card, answered) = bus
         .confirmations

@@ -26,6 +26,7 @@ import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationCard
 import app.wonton.protocol.ConfirmationCategory
+import app.wonton.protocol.CardAudience
 import app.wonton.protocol.ConfirmationTool
 import app.wonton.protocol.ConfirmationToolImpact
 import app.wonton.protocol.ConfirmationState
@@ -88,16 +89,20 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 },
             )
         }
+        card.answeredBy
+            ?.takeIf { card.audience == CardAudience.ADMINS }
+            ?.let { answeredBy ->
+                Text(
+                    stringResource(R.string.confirmation_card_answered_by, answeredBy),
+                    style = WontonTheme.typography.supporting,
+                )
+            }
         CardState(card.state)
         view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
         view.problem?.let { ProblemRow(it.problem) }
         // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
         // 刷新）时如实不显示。
-        if (card.state is ConfirmationState.Succeeded && card.pluginId != null) {
-            val tabs = LocalPages.current
-            val installed = tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == card.pluginId }
-            installed?.let { CardInstalledActions(it, tabs, onAction) }
-        }
+        CardInstalledActions(card, onAction)
         if (card.choices.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -182,26 +187,31 @@ private fun CardToolSummary(tool: ConfirmationTool) {
     }
 }
 
-/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。 */
+/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。卡片成功且插件还在已装列表里才显示。 */
 @Composable
-private fun CardInstalledActions(installed: InstalledPlugin, tabs: PagesState, onAction: (Action) -> Unit) {
+private fun CardInstalledActions(card: ConfirmationCard, onAction: (Action) -> Unit) {
+    if (card.state !is ConfirmationState.Succeeded) return
+    val tabs = LocalPages.current
+    val installed = tabs.plugins.viewModel.installed?.plugins?.firstOrNull { plugin -> plugin.id == card.pluginId }
+        ?: return
     var showsPages by remember(installed.id) { mutableStateOf(false) }
     val choices = installed.tabChoices
     val added = choices.any { choice -> tabs.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab } }
-    if (choices.isEmpty()) return
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-    ) {
-        WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
-        if (!added) {
-            WontonButton(stringResource(R.string.myapp_add), {
-                if (choices.size > 1) {
-                    showsPages = true
-                } else {
-                    tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
-                }
-            })
+    if (choices.isNotEmpty()) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        ) {
+            WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
+            if (!added) {
+                WontonButton(stringResource(R.string.myapp_add), {
+                    if (choices.size > 1) {
+                        showsPages = true
+                    } else {
+                        tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
+                    }
+                })
+            }
         }
     }
     if (showsPages) MyAppChoiceSheet(installed) { showsPages = false }

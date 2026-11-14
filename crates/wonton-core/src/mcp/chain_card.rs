@@ -90,12 +90,13 @@ async fn ask_one(
         caller,
         draft,
         Audience {
-            recipient,
+            recipients: super::Recipients::Keeper(recipient),
             requester: Some(ConfirmationRequester::Bot {
                 bot: row.bots[0].bot.clone(),
                 user_id: bot_user(bus, &row.bots[0].bot),
             }),
             origin: Some(row.origin.clone()),
+            category: None,
         },
     ) {
         Ok(opened) => opened,

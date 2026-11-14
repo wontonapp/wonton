@@ -353,8 +353,7 @@ impl Confirmations {
             // 放行时段只有主人的卡片有（家人的卡片不给这个选项），收件人是主人。
             let slot = Slot {
                 caller,
-                recipient: None,
-                admins: None,
+                recipients: super::Recipients::Keeper(None),
                 scope: Some(entry.plugin.clone()),
                 released_by: None,
                 card: card.clone(),

@@ -60,7 +60,7 @@ use audience::Subject;
 use audit::{Audit, Basis, Decision, Grounds, Record};
 pub use cards::Draft;
 pub use cards::text as card_text;
-pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Refusal, Ticket};
+pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
 pub use notifier::DevicePush;
 pub use server::Caller;
 use takeover::Takeovers;
@@ -711,6 +711,8 @@ impl Bus {
 
 #[cfg(test)]
 mod activity_tests;
+#[cfg(test)]
+mod admin_cards_tests;
 #[cfg(test)]
 mod agent_install_adopt_tests;
 #[cfg(test)]
