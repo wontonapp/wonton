@@ -103,7 +103,7 @@ async fn start_and_observe_failure(home: &Home, phone: &Phone, room: &str) {
                 plugin_id: ID.into()
             }
         }),
-        Err(wonton_client::CoreError::InvalidInput { .. })
+        Err(wonton_client::CoreError::NotReady { .. })
     ));
     home.hold_plugin_starts(false);
     let failed = room_plugin(phone, room, |plugin| {
