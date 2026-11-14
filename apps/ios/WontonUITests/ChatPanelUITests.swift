@@ -27,7 +27,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitFull(), "再往下推没有到第 2 级")
         shot("03-full")
         capsule.tap()
-        XCTAssertTrue(waitClosed(), "胶囊退出后面板还开着")
+        XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
         shot("04-closed")
 
         pull(.down)
@@ -79,7 +79,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(capsule.isHittable && app.frame.contains(capsule.frame), "出口被挤出屏幕或点不到")
         shot("22-after-background")
         capsule.tap()
-        XCTAssertTrue(waitClosed(), "胶囊退出后面板还开着")
+        XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
         shot("23-closed")
     }
 
@@ -96,7 +96,7 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitFull(), "在露出的聊天条上推没有到整页")
         shot("12-room-full")
         capsule.tap()
-        XCTAssertTrue(waitClosed(), "胶囊退出后面板还开着")
+        XCTAssertTrue(waitGone(capsule), "胶囊退出后面板还开着")
     }
 
     func testHomePullRequiresDeliberateGesture() throws {
@@ -106,14 +106,14 @@ final class ChatPanelUITests: XCTestCase {
         let panel = app.otherElements["chatPanel"]
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
         drag(start, dy: 20, velocity: .fast)
-        XCTAssertTrue(waitClosed(), "Tiny fast home pull opened the panel")
+        XCTAssertTrue(waitGone(panel), "Tiny fast home pull opened the panel")
         drag(start, dy: 64, velocity: .slow)
-        XCTAssertTrue(waitClosed(), "Short slow home pull opened the panel")
+        XCTAssertTrue(waitGone(panel), "Short slow home pull opened the panel")
         drag(start, dy: 120, velocity: .slow)
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow home pull did not open")
         shot("polish-home-slow-peek")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94)).tap()
-        XCTAssertTrue(waitClosed())
+        XCTAssertTrue(waitGone(panel))
         drag(start, dy: 64, velocity: XCUIGestureVelocity(rawValue: 1_200))
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast home pull did not open")
     }
@@ -124,14 +124,14 @@ final class ChatPanelUITests: XCTestCase {
         let panel = app.otherElements["chatPanel"]
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.65))
         drag(start, dy: -20, velocity: .fast)
-        XCTAssertTrue(waitClosed(), "Tiny fast room pull opened the panel")
+        XCTAssertTrue(waitGone(panel), "Tiny fast room pull opened the panel")
         drag(start, dy: -64, velocity: .slow)
-        XCTAssertTrue(waitClosed(), "Short slow room pull opened the panel")
+        XCTAssertTrue(waitGone(panel), "Short slow room pull opened the panel")
         drag(start, dy: -120, velocity: .slow)
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "Deliberate slow room pull did not open")
         shot("polish-room-slow-peek")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
-        XCTAssertTrue(waitClosed())
+        XCTAssertTrue(waitGone(panel))
         drag(start, dy: -64, velocity: XCUIGestureVelocity(rawValue: 1_200))
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "Qualified fast room pull did not open")
     }
@@ -469,22 +469,9 @@ extension ChatPanelUITests {
         return false
     }
 
-    /// 面板收起了。按级别值认：面板拉开过以后，收起的面板和里面的胶囊还留在界面树里（开发栈上实测，
-    /// 面板收起时设的辅助功能隐藏不把它们从树里拿掉），等它们消失等不到。
-    private func waitClosed(timeout: TimeInterval = 5) -> Bool {
-        let panel = app.otherElements["chatPanel"]
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !panel.exists || panel.value as? String == "closed" { return true }
-            Thread.sleep(forTimeInterval: 0.3)
-        }
-        return false
-    }
-
+    /// 胶囊的退出按钮。按标识找：聊天页的提示条上也有叫“关闭”的按钮，按名字找会把它当成胶囊还在。
     private var capsule: XCUIElement {
-        app.buttons.matching(NSPredicate(
-            format: "label IN %@", ["Close", "关闭", "關閉", "閉じる"]
-        )).firstMatch
+        app.buttons.matching(identifier: "pageClose").firstMatch
     }
 
     /// 先点收尾的，再点下一步，最后才跳过：最后一步的“跳过”是灰的，“进入聊天”才走得出去。

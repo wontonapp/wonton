@@ -46,6 +46,35 @@ final class PanelGestureUITests: XCTestCase {
         XCTAssertTrue(waitLevel("full", timeout: 1) && capsuleHittable, "点网页按钮把面板关了")
         shot("12-page-button-tapped")
     }
+
+    /// 面板拉开过再收起：收起的面板看不见，旁白也不该摸到它——面板、胶囊的“更多”“关闭”、网页都不在可访问树里。
+    /// 按 `exists` 认：旁白读的是可访问树，点不点得到（`isHittable`）是另一回事。
+    func testClosedPanelLeavesNothingForVoiceOver() {
+        launch()
+        openMainPanel()
+        XCTAssertTrue(capsuleHittable && app.buttons["pageMore"].firstMatch.exists, "第 1 级没有胶囊")
+        let close = panel.buttons.matching(identifier: "pageClose").allElementsBoundByIndex.first { $0.isHittable }
+        close?.tap()
+        // 收起后聊天页回到原位，顶栏按钮回到状态栏下沿。
+        let sidebar = app.buttons.matching(UITestSidebar.button).firstMatch
+        XCTAssertTrue(wait(5) { sidebar.isHittable && abs(sidebar.frame.minY - self.safeTop) < 1 }, "点胶囊的关闭没收起面板")
+        shot("21-closed")
+
+        let any = app.descendants(matching: .any)
+        XCTAssertTrue(wait(3) { !self.panel.exists }, "收起的面板还在可访问树里：\(String(describing: panel.value))")
+        XCTAssertEqual(any.matching(identifier: "pageClose").count, 0, "收起的面板里胶囊的关闭还在可访问树里")
+        XCTAssertEqual(any.matching(identifier: "pageMore").count, 0, "收起的面板里胶囊的更多还在可访问树里")
+        XCTAssertEqual(any.matching(identifier: "panelDots").count, 0, "收起的面板里小圆点还在可访问树里")
+        XCTAssertEqual(app.webViews.count, 0, "收起的面板里网页还在可访问树里\n\(app.debugDescription)")
+        XCTAssertFalse(page.exists, "收起的面板里网页的元素还在可访问树里")
+
+        // 再拉开，旁白又摸得到。
+        let low = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        low.press(forDuration: 0.05, thenDragTo: low.withOffset(CGVector(dx: 0, dy: 160)),
+                  withVelocity: .slow, thenHoldForDuration: 0)
+        XCTAssertTrue(waitLevel("peek", timeout: 5), "收起后再拉不开")
+        XCTAssertTrue(page.waitForExistence(timeout: 20) && capsuleHittable, "再拉开后网页或胶囊不在可访问树里")
+    }
 }
 
 extension PanelGestureUITests {
@@ -102,6 +131,15 @@ extension PanelGestureUITests {
         let deadline = Date().addingTimeInterval(timeout)
         while true {
             if panel.value as? String == level { return true }
+            if Date() >= deadline { return false }
+            Thread.sleep(forTimeInterval: 0.3)
+        }
+    }
+
+    private func wait(_ timeout: TimeInterval, until condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if condition() { return true }
             if Date() >= deadline { return false }
             Thread.sleep(forTimeInterval: 0.3)
         }
