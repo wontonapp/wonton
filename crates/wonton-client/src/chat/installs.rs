@@ -427,6 +427,7 @@ mod tests {
     fn room(bot: &str) -> RoomRow {
         RoomRow {
             layout: ChatLayout::default(),
+            call_active: false,
             room_id: format!("!{bot}:home"),
             name: bot.into(),
             is_direct: true,

@@ -301,6 +301,7 @@ mod tests {
             installing_bots: Vec::new(),
             rooms: vec![RoomRow {
                 layout: Default::default(),
+                call_active: false,
                 room_id: room_id.to_owned(),
                 name: "Hermes".to_owned(),
                 is_direct: true,

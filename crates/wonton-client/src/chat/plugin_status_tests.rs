@@ -52,6 +52,7 @@ fn rooms() -> Vec<RoomRow> {
         side_chats: false,
         unread_count: 0,
         layout: Default::default(),
+        call_active: false,
     }]
 }
 

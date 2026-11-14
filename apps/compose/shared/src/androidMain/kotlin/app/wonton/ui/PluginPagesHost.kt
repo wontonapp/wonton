@@ -75,7 +75,8 @@ private class ClosedPages {
 
     fun update(stack: List<OpenPage>): List<OpenPage> {
         val open = stack.mapTo(HashSet()) { it.tab }
-        val justClosed = last.filter { it.tab !in open }
+        // widget 页不保活：关掉就是挂断，WebView 跟着销毁（ADR-0096）。
+        val justClosed = last.filter { it.tab !in open && it.tab !is TabRef.Widget }
         val leaving = justClosed.mapTo(HashSet()) { it.tab }
         closed = (closed.filter { it.tab !in open && it.tab !in leaving } + justClosed).takeLast(PAGE_KEEP_ALIVE)
         last = stack

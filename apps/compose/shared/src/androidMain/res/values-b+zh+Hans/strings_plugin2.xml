@@ -36,4 +36,6 @@
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">卸载“%1$s”？</string>
     <string name="plugin_screenshot">截图</string>
+    <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
+    <string name="plugin_widget_normal">在房间里打开时，它的网页能读写通话状态这类不含聊天内容的信息，并向通话服务证明是你本人。</string>
 </resources>

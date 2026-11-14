@@ -532,8 +532,18 @@ impl PagesLink {
             .filter(|tab| matches!(tab, TabRef::Plugin { .. } | TabRef::PluginPath { .. }));
         self.plugins.set_active_page(page);
         // 可见插件从栈顶推导：端口映射的自动开关不再靠壳上报（ADR-0072、ADR-0095）。
-        self.plugins
-            .set_visible_plugin(page.and_then(|tab| tab_plugin_id(tab)).map(str::to_owned));
+        // widget 页也算（ADR-0096 第 4 节）：通话的媒体走插件声明的端口，页面在栈顶时映射开着。
+        let visible = view.stack.last().map(|open| &open.tab).filter(|tab| {
+            matches!(
+                tab,
+                TabRef::Plugin { .. } | TabRef::PluginPath { .. } | TabRef::Widget { .. }
+            )
+        });
+        self.plugins.set_visible_plugin(
+            visible
+                .and_then(|tab| tab_plugin_id(tab))
+                .map(str::to_owned),
+        );
         let apps = {
             let state = lock(&self.state);
             state

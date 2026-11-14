@@ -37,7 +37,9 @@ pub(super) fn panel() -> Vec<PanelItem> {
 }
 
 /// 房间的第一批：全部条目，落点在第三条。之后没有别的批次。
-pub(super) fn timeline() -> TimelineUpdate {
+/// 通话中的那个群聊（`ui_fake::CALL_ROOM_ID`）另带顶栏的 widget 入口和“通话中”。
+pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
+    let in_call = room_id == super::ui_fake::CALL_ROOM_ID;
     let items: Vec<TimelineItem> = (0..ITEMS).map(item).collect();
     TimelineUpdate {
         anchor: Some(items[2].id.clone()),
@@ -51,8 +53,12 @@ pub(super) fn timeline() -> TimelineUpdate {
         key_notice: None,
         confirmations: Vec::new(),
         side_chat: None,
-        widgets: Vec::new(),
-        call_active: false,
+        widgets: if in_call {
+            vec![super::ui_fake::call_widget()]
+        } else {
+            Vec::new()
+        },
+        call_active: in_call,
     }
 }
 
@@ -214,7 +220,7 @@ mod tests {
 
     #[test]
     fn timeline_lands_away_from_a_tall_last_message() {
-        let update = timeline();
+        let update = timeline("!ui-fake:home.example");
         let [TimelineDiff::Reset { items }] = update.diffs.as_slice() else {
             panic!("the first batch must be a reset");
         };

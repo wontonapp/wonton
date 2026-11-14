@@ -36,7 +36,7 @@ internal fun PluginPermissionSection(
     plugins: PluginsState,
     onUpdated: (PluginDetail) -> Unit,
 ) {
-    if (detail.permissions.isEmpty()) return
+    if (detail.permissions.isEmpty() && detail.widgetCapabilities.isEmpty()) return
     var changing by remember(detail.id) { mutableStateOf<String?>(null) }
     DetailSection(stringResource(R.string.install_permissions)) {
         detail.permissions.forEach { line ->
@@ -51,6 +51,7 @@ internal fun PluginPermissionSection(
                 }
             }
         }
+        WidgetCapabilityRows(detail.widgetCapabilities)
     }
 }
 

@@ -72,7 +72,8 @@ struct MainView: View {
             // 关掉的页面按关闭先后记着，最多留 4 个（每个 WebView 一份渲染进程，个数是内存折中）。
             let closed = visited.subtracting(stackTabs)
             visited = Set(stackTabs)
-            recentPages.append(contentsOf: closed)
+            // widget 页不保活：关掉就是挂断，WebView 跟着释放（ADR-0096）。
+            recentPages.append(contentsOf: closed.filter { !$0.isWidget })
             recentPages = Array(recentPages.suffix(4))
             visited.formUnion(recentPages)
             pages.setKeepAlive(recentPages)

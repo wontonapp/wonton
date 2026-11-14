@@ -103,6 +103,8 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
     @ObservationIgnored private var mediaPlaying = false
+    /// widget 页（ADR-0096）：驱动发给页面的消息，见 `TabWidgetChannel`。
+    @ObservationIgnored let widgetChannel = TabWidgetChannel()
 
     init(placed: PlacedTab, core: ClientCore, dataStore: WKWebsiteDataStore) {
         self.placed = placed
@@ -145,6 +147,8 @@ final class TabWebSession: NSObject {
                 loadedProxy = proxy
                 recoveryURL = nil
                 webView.load(URLRequest(url: destination))
+                // widget 页每次加载都是一次新的 widget 会话（重新加载换驱动、换地址）：页面开始加载后订阅。
+                if tab.isWidget { try widgetChannel.start(page: placed, core: core, into: self) }
             }
         } catch {
             problem = error.problem
@@ -344,6 +348,7 @@ final class TabWebSession: NSObject {
     }
 
     func dispose() {
+        widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
         webView?.stopLoading()

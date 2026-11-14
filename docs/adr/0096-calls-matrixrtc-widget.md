@@ -147,7 +147,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 - **发起和加入：** 装了声明 `matrix_widget` 的插件、插件在运行时，房间顶栏出现一个按钮，图标按 `entry`。点了全屏打开这个
   插件的 widget 页，带上这个房间。房间里已经有人在通话（核心读房间的 `m.call.member` 状态）时按钮显示“通话中”，点了就是
-  加入。装了几个时出菜单，名字用插件名。
+  加入；聊天列表里这个房间的那一行也带通话中的标记（`RoomRow.call_active`，同一个来源）。装了几个时出菜单，名字用插件名。
 - **来电响铃不在这篇。** 要先有 iOS 推送（APNs，再加 VoIP push 和 CallKit）；Android 照 Element X 用高优先级的来电通知。
   Element Call 照发 MSC4075 的 `m.rtc.notification`，响铃那篇再接。
 - **第一版离开通话页就挂断：** 切走、App 进后台时页面结束，Element Call 退出通话（崩溃、断网由 delayed leave 兜住）。后台继续

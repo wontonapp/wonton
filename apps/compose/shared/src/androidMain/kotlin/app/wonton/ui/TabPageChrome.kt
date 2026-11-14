@@ -29,7 +29,7 @@ internal fun PluginPageChrome(
     tab: TabRef, tabs: PagesState, safe: PaddingValues, bannerTop: Dp, shortStatus: String?,
     capsule: PageCapsuleState, controller: PluginWebViewController, takeover: PageTakeover?,
     onClose: () -> Unit, onReload: () -> Unit, onDetails: (String) -> Unit,
-    onEditPanel: (() -> Unit)? = null,
+    onEditPanel: (() -> Unit)? = null, hint: String? = null,
 ) {
     val status = LocalWontonBarStatus.current
     val colors = WontonTheme.colors
@@ -54,6 +54,7 @@ internal fun PluginPageChrome(
                 }
             }
             takeover?.let { TakeoverNotice(it) }
+            hint?.let { PageHint(it) }
         }
         Box(Modifier.align(Alignment.TopEnd)) {
             PluginPageCapsule(tab, tabs, capsule, controller, takeover, onClose, onReload, onDetails, onEditPanel)

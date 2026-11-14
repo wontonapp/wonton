@@ -32,6 +32,7 @@ struct TabPageView: View {
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
@@ -72,6 +73,10 @@ struct TabPageView: View {
         .onChange(of: panel?.visible) { _, visible in
             if visible == true { seenReady = false; notifySeen() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // 第一版离开通话页就挂断（ADR-0096 第 3 节）：App 退到后台，widget 页跟着关。
+            if phase == .background, tab.isWidget { closePage() }
+        }
         .onAppear { notifySeen(); isVisible = true }
         .onDisappear {
             isVisible = false
@@ -108,7 +113,7 @@ struct TabPageView: View {
                         updatePermittedSession(inputs)
                     }, cancel: closePage)
                 } else {
-                    if let webView = session.webView, sourceAvailable, !tab.isWidget {
+                    if let webView = session.webView, sourceAvailable {
                         TabWebView(webView: webView, obscured: obscured())
                             .id(ObjectIdentifier(webView))
                             .ignoresSafeArea(.container)
@@ -156,9 +161,21 @@ struct TabPageView: View {
                 PendingCardBanner(cards: pendingCards, open: openCardRoom)
             }
             if let takeover { TakeoverNotice(takeover: takeover) }
+            if callRelayed {
+                CallRelayHint()
+                    .padding(.top, WontonTheme.spacing.s8)
+                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
+                    .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
+            }
             Spacer(minLength: 0)
         }
         .ignoresSafeArea(.container)
+    }
+
+    /// widget 页的媒体走插件的端口映射；映射只连上了公共中继时核心给提醒的类别（ADR-0096 第 4 节）。
+    private var callRelayed: Bool {
+        guard case let .widget(pluginId, _) = tab else { return false }
+        return plugins.viewModel.portMappings.first { $0.pluginId == pluginId }?.warning == .publicRelayBandwidth
     }
 
     private func closePage() {
@@ -347,13 +364,5 @@ private extension TabPageView {
             case let .draftMessage(text): draft(text)
             }
         }
-    }
-}
-
-private extension TabRef {
-    /// widget 页这一版的壳不加载（见 `TabPageStateView`）。
-    var isWidget: Bool {
-        if case .widget = self { return true }
-        return false
     }
 }
