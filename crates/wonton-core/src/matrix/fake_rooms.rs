@@ -60,6 +60,12 @@ async fn create_room(
                 .extend(fields.clone());
         }
         for event in body["initial_state"].as_array().into_iter().flatten() {
+            if event["content"]
+                .as_object()
+                .is_some_and(|content| content.is_empty())
+            {
+                continue;
+            }
             events.insert(
                 (
                     event["type"].as_str().unwrap().to_owned(),
