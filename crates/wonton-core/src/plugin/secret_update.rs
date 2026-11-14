@@ -33,13 +33,15 @@ impl PluginManager {
         .await
     }
 
-    async fn set_secret_input_inner(
+    pub(super) async fn set_secret_input_inner(
         &self,
         id: &PluginId,
         name: &str,
         value: Option<&str>,
         langs: &Languages,
     ) -> Result<PluginDetail, InstallError> {
+        // 与升级的暂存、probe、提交/回滚串行；锁顺序固定为 changing → lan.pass。
+        let _changing = self.dependencies.changing.lock().await;
         let _pass = self.lan.pass.lock().await;
         let listed = self.listed(id)?;
         let record = self

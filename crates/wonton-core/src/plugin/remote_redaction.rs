@@ -1,13 +1,28 @@
 //! Redact diagnostic text before the MCP SDK can log or return a remote credential.
 
 use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::cmp::Reverse;
+use std::collections::{BTreeMap, BinaryHeap};
 use std::sync::Arc;
 
 use serde_json::Value;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Redaction(Arc<[(String, Option<String>)]>);
+
+const SECRET_MARKER: &str = "[secret]";
+
+struct Region<'a> {
+    start: usize,
+    end: usize,
+    url: Option<UrlRegion<'a>>,
+}
+
+struct UrlRegion<'a> {
+    start: usize,
+    end: usize,
+    template: &'a str,
+}
 
 impl Redaction {
     pub(crate) fn new<'a>(
@@ -41,27 +56,54 @@ impl Redaction {
     }
 
     pub(crate) fn text<'a>(&self, text: &'a str) -> Cow<'a, str> {
-        let mut next = self.next(text);
-        if next.is_none() {
+        let mut pending = BinaryHeap::new();
+        for (index, (needle, _)) in self.0.iter().enumerate() {
+            if let Some(start) = text.find(needle) {
+                pending.push(Reverse((start, index)));
+            }
+        }
+        if pending.is_empty() {
             return Cow::Borrowed(text);
         }
-        let mut remaining = text;
-        let mut redacted = String::with_capacity(text.len());
-        while let Some((start, (needle, replacement))) = next {
-            redacted.push_str(&remaining[..start]);
-            redacted.push_str(replacement.as_deref().unwrap_or("[secret]"));
-            remaining = &remaining[start + needle.len()..];
-            next = self.next(remaining);
+        let mut output = String::with_capacity(text.len());
+        let mut copied = 0;
+        let mut region: Option<Region<'_>> = None;
+        while let Some(Reverse((start, index))) = pending.pop() {
+            let (needle, template) = &self.0[index];
+            let end = start + needle.len();
+            if let Some(complete) = region.take_if(|current| start >= current.end) {
+                complete.write(text, &mut copied, &mut output);
+            }
+            let current = region.get_or_insert(Region {
+                start,
+                end,
+                url: None,
+            });
+            current.end = current.end.max(end);
+            if let Some(template) = template {
+                let url = current.url.get_or_insert_with(|| UrlRegion {
+                    start,
+                    end,
+                    template,
+                });
+                url.end = url.end.max(end);
+            }
+            // Advance by one character, not the match width: even one secret can overlap itself.
+            let search = start
+                + text[start..]
+                    .chars()
+                    .next()
+                    .expect("nonempty match")
+                    .len_utf8();
+            if let Some(next) = text[search..].find(needle) {
+                pending.push(Reverse((search + next, index)));
+            }
         }
-        redacted.push_str(remaining);
-        Cow::Owned(redacted)
-    }
-
-    fn next<'a>(&'a self, text: &str) -> Option<(usize, &'a (String, Option<String>))> {
-        self.0
-            .iter()
-            .filter_map(|pattern| text.find(&pattern.0).map(|start| (start, pattern)))
-            .min_by_key(|(start, _)| *start)
+        if let Some(complete) = region {
+            complete.write(text, &mut copied, &mut output);
+        }
+        output.push_str(&text[copied..]);
+        Cow::Owned(output)
     }
 
     pub(crate) fn error(&self, error: &mut rmcp::model::ErrorData) {
@@ -102,7 +144,40 @@ impl Redaction {
                     self.json(value);
                 }
             }
-            Value::Null | Value::Bool(_) | Value::Number(_) => {}
+            Value::Number(number) => {
+                let literal = number.to_string();
+                self.scalar(value, &literal);
+            }
+            Value::Bool(boolean) => {
+                let literal = if *boolean { "true" } else { "false" };
+                self.scalar(value, literal);
+            }
+            Value::Null => self.scalar(value, "null"),
         }
+    }
+
+    fn scalar(&self, value: &mut Value, literal: &str) {
+        if let Cow::Owned(redacted) = self.text(literal) {
+            *value = Value::String(redacted);
+        }
+    }
+}
+
+impl Region<'_> {
+    fn write(self, text: &str, copied: &mut usize, output: &mut String) {
+        output.push_str(&text[*copied..self.start]);
+        match self.url {
+            Some(url) => {
+                if self.start < url.start {
+                    output.push_str(SECRET_MARKER);
+                }
+                output.push_str(url.template);
+                if self.end > url.end {
+                    output.push_str(SECRET_MARKER);
+                }
+            }
+            None => output.push_str(SECRET_MARKER),
+        }
+        *copied = self.end;
     }
 }

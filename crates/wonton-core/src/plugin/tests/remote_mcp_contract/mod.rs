@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use rmcp::model::CallToolRequestParams;
 use serde_json::json;
-use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 use wonton_protocol::{PluginHintCategory, PluginState};
 
@@ -14,6 +13,10 @@ use crate::plugin::tests::langs;
 mod diagnostics;
 pub(crate) mod fixture;
 mod inputs;
+mod isolation;
+mod overlap;
+mod scalars;
+mod streaming;
 mod uninstall;
 mod upgrade;
 use fixture::{Bed, PROVIDER, REMOTE, SECRET, TEMPLATE, id, remote};
@@ -226,7 +229,7 @@ type CapturedLogs = Arc<Mutex<Vec<u8>>>;
 fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send + Sync) {
     let logs = Arc::new(Mutex::new(Vec::new()));
     let writer = logs.clone();
-    // Callsite interest is global; these captures belong to individual futures.
+    // Scoped client captures and isolated global SDK captures share dynamic interest.
     let subscriber = tracing_subscriber::registry().with(
         tracing_subscriber::fmt::layer()
             .without_time()
@@ -239,22 +242,31 @@ fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send + Sync) {
 
 #[tokio::test]
 async fn expanded_remote_url_never_enters_errors_details_or_logs() {
+    if !isolation::run_here(
+        "plugin::tests::remote_mcp_contract::expanded_remote_url_never_enters_errors_details_or_logs",
+    ) {
+        return;
+    }
+    let (logs, subscriber) = capture_logs();
+    tracing::subscriber::set_global_default(subscriber).unwrap();
     let bed = Bed::new(true).await;
     *bed.fake.outcome.lock().unwrap() = "secret_rejected".into();
-    // Exercise the failure callsites before this future's subscriber exists.
+    // Warm the same callsites, then require evidence from the following operation.
     assert_eq!(
         bed.install("header").await.unwrap_err().kind(),
         "invalid_input"
     );
-    let (logs, subscriber) = capture_logs();
-    let error = bed
-        .install("header")
-        .with_subscriber(subscriber)
-        .await
-        .unwrap_err();
+    let start = logs.lock().unwrap().len();
+    let error = bed.install("header").await.unwrap_err();
     assert_eq!(error.kind(), "invalid_input");
     let details = error.to_string();
-    let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+    let logs = String::from_utf8(logs.lock().unwrap()[start..].to_vec()).unwrap();
+    assert!(
+        logs.lines().any(|line| {
+            line.contains("wonton_core::plugin::remote_install") && line.contains(TEMPLATE)
+        }),
+        "core probe warning was not captured: {logs}"
+    );
     for output in [details.as_str(), logs.as_str()] {
         assert!(output.contains(TEMPLATE), "{output}");
         assert!(!output.contains(SECRET), "{output}");

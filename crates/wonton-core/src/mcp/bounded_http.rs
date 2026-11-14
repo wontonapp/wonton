@@ -437,7 +437,7 @@ impl StreamableHttpClient for BoundedHttp {
                 self.limit,
             )
             .await
-            .map(|events| self.diagnostics.events(events))
+            .map(|events| self.diagnostics.get_events(events))
             .map_err(|error| self.diagnostics.error(error))
     }
 }

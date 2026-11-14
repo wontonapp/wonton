@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tracing::instrument::WithSubscriber;
 
 use axum::extract::{OriginalUri, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -96,7 +97,9 @@ impl Drop for Server {
 async fn serve(app: axum::Router) -> (String, Server) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let task = tokio::spawn(
+        async move { axum::serve(listener, app).await.unwrap() }.with_current_subscriber(),
+    );
     (addr.to_string(), Server(task))
 }
 
@@ -220,6 +223,26 @@ pub(crate) struct Bed {
 
 impl Bed {
     pub(crate) async fn new(with_provider: bool) -> Self {
+        Self::build(with_provider, |fake, routes| {
+            routes.merge(
+                axum::Router::new()
+                    .route("/_wonton/probe", post(probe))
+                    .with_state(fake),
+            )
+        })
+        .await
+    }
+
+    pub(crate) async fn with_connector(
+        configure: impl FnOnce(Fake, axum::Router) -> axum::Router,
+    ) -> Self {
+        Self::build(true, configure).await
+    }
+
+    async fn build(
+        with_provider: bool,
+        configure: impl FnOnce(Fake, axum::Router) -> axum::Router,
+    ) -> Self {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let rpc_failure: RpcFailure = Arc::default();
         let (remote, remote_server) = serve(
@@ -239,14 +262,11 @@ impl Bed {
             remote,
             http: reqwest::Client::builder().no_proxy().build().unwrap(),
         };
-        let (connector, connector_server) = serve(
-            axum::Router::new()
-                .route("/_wonton/probe", post(probe))
-                .route("/_wonton/plugins/{id}", delete(forget))
-                .route("/mcp", post(forward))
-                .with_state(fake.clone()),
-        )
-        .await;
+        let routes = axum::Router::new()
+            .route("/_wonton/plugins/{id}", delete(forget))
+            .route("/mcp", post(forward))
+            .with_state(fake.clone());
+        let (connector, connector_server) = serve(configure(fake.clone(), routes)).await;
         let provider = provider(connector.parse::<std::net::SocketAddr>().unwrap().port());
         let (docker, engine) = FakeDocker::start().await;
         let data = tempfile::tempdir().unwrap();
@@ -331,15 +351,18 @@ impl Bed {
             tunnel,
         )
         .with_mcp(Some(bus.endpoint()));
-        self.servers.push(Server(tokio::spawn(async move {
-            axum::serve(
-                listener,
-                crate::gateway::router(Arc::new(gateway))
-                    .into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            )
-            .await
-            .unwrap();
-        })));
+        self.servers.push(Server(tokio::spawn(
+            async move {
+                axum::serve(
+                    listener,
+                    crate::gateway::router(Arc::new(gateway))
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await
+                .unwrap();
+            }
+            .with_current_subscriber(),
+        )));
         let http = reqwest::Client::builder()
             .no_proxy()
             .resolve("mcp.wonton.internal", addr)
