@@ -25,8 +25,26 @@ pub(super) fn start_exec(fake: FakeDocker, id: &str, mut request: Request) -> Re
             .expect("读 exec 的标准输入");
         let handler = fake.lock().exec_handler.clone();
         let output_handler = fake.lock().exec_output_handler.clone();
+        let entry_pid = {
+            let resources = fake.lock();
+            let entry = resources
+                .containers
+                .get(&exec.container)
+                .is_some_and(|labels| {
+                    labels.get("wonton.core.component").map(String::as_str) == Some("entry")
+                });
+            (entry
+                && exec
+                    .cmd
+                    .last()
+                    .is_some_and(|command| command.starts_with("printf 'show info")))
+            .then(|| 100 + resources.signals.get(&exec.container).copied().unwrap_or(0))
+        };
         let (code, stdout, stderr) = match output_handler {
             Some(handler) => handler(&exec.container, &exec.cmd, &stdin),
+            None if entry_pid.is_some() => {
+                (0, format!("Pid: {}\n", entry_pid.unwrap()), String::new())
+            }
             None => match handler {
                 Some(handler) => {
                     let (code, stderr) = handler(&exec.container, &exec.cmd, &stdin);

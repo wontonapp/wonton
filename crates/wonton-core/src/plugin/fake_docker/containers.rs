@@ -55,7 +55,22 @@ pub(super) fn containers(
                 .or_insert(previous);
             StatusCode::OK.into_response()
         }
-        (&Method::POST, [name, "kill"]) if exists(name) => gone(true),
+        (&Method::POST, [name, "kill"])
+            if docker
+                .kill_error
+                .as_ref()
+                .is_some_and(|(target, _)| target == name) =>
+        {
+            let (_, message) = docker.kill_error.take().expect("已检查失败条件");
+            json_reply(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                json!({"message": message}),
+            )
+        }
+        (&Method::POST, [name, "kill"]) if exists(name) => {
+            *docker.signals.entry((*name).to_owned()).or_default() += 1;
+            gone(true)
+        }
         (&Method::POST, [name, "start" | "stop"]) => gone(exists(name)),
         (&Method::DELETE, [name])
             if docker

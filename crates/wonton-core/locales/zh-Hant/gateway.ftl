@@ -190,3 +190,13 @@ gateway-agent-acp-busy = 這個應用開著的 Agent 連線已經到上限，稍
 
 gateway-install-rejected = 管理員沒有同意，沒有{$action}
 gateway-install-expired = 管理員沒有在期限內回答，沒有{$action}
+clients-switch-container = 核心沒有在容器裡執行，無法接入入口網路
+clients-switch-domain = 請先設定網域和有效憑證，再開啟入口
+clients-switch-lan = 區域網路入口尚未開放：轉送容器尚未就緒
+clients-switch-setup = 請先在應用網頁完成首次註冊
+clients-switch-app-unavailable = 應用沒有執行，無法檢查首次註冊狀態
+clients-switch-credentials = 應用尚未成功發出密碼
+clients-switch-ingress = 尚未設定公網入口種類
+clients-switch-kind = 入口必須是 lan 或 public
+clients-switch-uninstalled = 客戶端應用已經解除安裝
+clients-switch-failed = 無法套用客戶端入口設定：{ $error }

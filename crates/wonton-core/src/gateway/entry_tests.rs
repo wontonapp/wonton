@@ -28,6 +28,8 @@ use crate::tunnel::Tunnel;
 struct Received {
     method: Method,
     uri: String,
+    host: Option<String>,
+    entry: Option<String>,
     authorization: Option<String>,
     body: Vec<u8>,
 }
@@ -65,6 +67,16 @@ impl Home {
                         recorded.lock().unwrap().push(Received {
                             method: parts.method,
                             uri: parts.uri.to_string(),
+                            host: parts
+                                .headers
+                                .get(header::HOST)
+                                .and_then(|v| v.to_str().ok())
+                                .map(str::to_owned),
+                            entry: parts
+                                .headers
+                                .get("x-wonton-entry")
+                                .and_then(|v| v.to_str().ok())
+                                .map(str::to_owned),
                             authorization: parts
                                 .headers
                                 .get(header::AUTHORIZATION)
@@ -306,6 +318,30 @@ async fn federation_signatures_raw_targets_and_request_bodies_reach_tuwunel_unch
         assert_eq!(received.authorization.as_deref(), Some(authorization));
         assert_eq!(received.body, body.as_bytes());
     }
+}
+
+#[tokio::test]
+async fn paired_federation_host_port_is_accepted_without_leaking_entry_header() {
+    let home = Home::start(true).await;
+    let server = home.gateway.matrix.as_ref().unwrap().server_name();
+    for (entry, status) in [
+        ("public", StatusCode::MISDIRECTED_REQUEST),
+        ("paired", StatusCode::ACCEPTED),
+    ] {
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/_matrix/federation/v1/version")
+            .header(header::HOST, format!("{server}:8448"))
+            .header("x-wonton-entry", entry)
+            .body(Body::empty())
+            .unwrap();
+        let reply = Reply::of(home.app.clone().oneshot(request).await.unwrap()).await;
+        assert_eq!(reply.status, status);
+    }
+    let received = home.received.lock().unwrap();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].host.as_deref(), Some(server));
+    assert!(received[0].entry.is_none());
 }
 
 #[tokio::test]

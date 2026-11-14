@@ -16,7 +16,7 @@ use crate::matrix::Matrix;
 use super::matrix::matrix_error;
 use super::{Gateway, client_addr, proxy};
 
-pub(super) async fn dispatch(gateway: &Gateway, matrix: &Matrix, req: Request) -> Response {
+pub(super) async fn dispatch(gateway: &Gateway, matrix: &Matrix, mut req: Request) -> Response {
     let path = req.uri().path();
     if ambiguous_path(path) {
         return matrix_error(
@@ -52,10 +52,17 @@ pub(super) async fn dispatch(gateway: &Gateway, matrix: &Matrix, req: Request) -
             "这个入口只提供发现文件和 Matrix 联邦接口",
         );
     }
+    if is_paired(&req) {
+        let Ok(host) = HeaderValue::from_str(matrix.server_name()) else {
+            return unavailable();
+        };
+        req.headers_mut().insert(header::HOST, host);
+    }
+    req.headers_mut().remove("x-wonton-entry");
     forward(gateway, matrix.authority(), req).await
 }
 
-/// 服务器名本身（或带默认 443 端口的写法）才是联邦；多余和重复的 Host 头都不认。
+/// 公网只认默认 HTTPS 端口；配对前端验证过 SNI 和 Host 后会标记 `paired`，可使用联邦默认端口。
 pub(super) fn matches_host(req: &Request, server_name: &str) -> bool {
     let mut hosts = req.headers().get_all(header::HOST).iter();
     let Some(host) = hosts.next().and_then(|host| host.to_str().ok()) else {
@@ -67,10 +74,22 @@ pub(super) fn matches_host(req: &Request, server_name: &str) -> bool {
     let Ok(authority) = host.parse::<Authority>() else {
         return false;
     };
+    let paired = is_paired(req);
     authority.as_str().eq_ignore_ascii_case(server_name)
         || (authority.host().eq_ignore_ascii_case(server_name)
-            && authority.port().is_some_and(|port| port.as_str() == "443")
-            && authority.as_str().len() == server_name.len() + 4)
+            && authority.port().is_some_and(|port| {
+                let port = port.as_str();
+                (port == "443" || (paired && port == "8448"))
+                    && authority.as_str().len() == server_name.len() + 1 + port.len()
+            }))
+}
+
+fn is_paired(req: &Request) -> bool {
+    req.headers()
+        .get_all("x-wonton-entry")
+        .iter()
+        .map(|value| value.as_bytes())
+        .eq([b"paired".as_slice()])
 }
 
 fn discovery(gateway: &Gateway, server_name: &str, path: &str) -> Response {

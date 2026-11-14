@@ -454,6 +454,41 @@ impl PluginManager {
                 &[],
             )));
         }
+        let gateway = self.clients_gateway();
+        let _clients = match &gateway {
+            Some(gateway) => Some(gateway.clients_apply.lock().await),
+            None => None,
+        };
+        let _pass = self.lan.pass.lock().await;
+        {
+            let plugins = self.plugins.read().expect("插件表锁中毒");
+            let entry = plugins
+                .get(id)
+                .ok_or_else(|| InstallError::not_installed(langs, id))?;
+            if let Some(error) = busy(id, &entry.status, langs) {
+                return Err(error);
+            }
+            if self.lan.is_rebuilding(id) {
+                return Err(InstallError::Conflict(l10n::text(
+                    langs,
+                    "plugin-install-conflict-lan-rebuilding",
+                    &[("id", id.to_string().into())],
+                )));
+            }
+        }
+        if let Some(gateway) = &gateway {
+            crate::clients::apply::close_for_uninstall(gateway, id)
+                .await
+                .map_err(|error| InstallError::UpstreamUnavailable(error.message))?;
+        } else if self
+            .store
+            .load(id)?
+            .is_some_and(|record| record.clients_entries.lan || record.clients_entries.public)
+        {
+            return Err(InstallError::UpstreamUnavailable(
+                "入口控制未接入，无法确认插件入口已关闭".to_owned(),
+            ));
+        }
         {
             let mut plugins = self.plugins.write().expect("插件表锁中毒");
             let entry = plugins
@@ -474,6 +509,9 @@ impl PluginManager {
             entry.status = PluginStatus::Uninstalling;
             entry.checked_at = now_secs();
         }
+        // 完成入口关闭后记录不可再由开关改变（插件已标为 Uninstalling）。
+        drop(_pass);
+        drop(_clients);
         drop(_changing);
         self.changed();
         tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");

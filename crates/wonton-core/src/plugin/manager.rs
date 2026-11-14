@@ -41,6 +41,8 @@ use crate::l10n;
 use crate::matrix::Matrix;
 
 pub(super) mod busy;
+mod clients;
+pub(crate) use clients::ClientPlugin;
 mod views;
 
 pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
@@ -107,6 +109,7 @@ pub struct PluginManager {
     pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
+    clients_gateway: std::sync::OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
     pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
@@ -207,6 +210,7 @@ impl PluginManager {
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
             clients,
+            clients_gateway: std::sync::OnceLock::new(),
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             lan,

@@ -23,7 +23,10 @@ use crate::plugin::compose::PullPolicy;
 use crate::plugin::core_address::Endpoint;
 use crate::plugin::docker::{Engine, EngineError};
 use crate::plugin::names::{Instance, LABEL_COMPONENT, LABEL_MANAGED_BY};
-use bollard::models::ContainerInspectResponse;
+
+mod options;
+mod reload;
+use options::same_options;
 
 /// 组件的标签值，也是镜像 `wonton.core.components` 里声明的名字。
 pub const ENTRY_COMPONENT: &str = "entry";
@@ -110,14 +113,18 @@ struct Side {
     endpoints: Vec<(String, Endpoint)>,
 }
 
+#[derive(Clone)]
 pub struct EntryContainers {
     engine: Engine,
     install_dir: PathBuf,
     data_dir: PathBuf,
     instance: Instance,
     core_container: Option<String>,
+    /// C8 的局域网转发容器是否已接入。C7 默认关闭，避免生成不可达的局域网前端。
+    lan_forward_available: bool,
     /// 连接器发布的地址和端口；空时看 `WONTON_ENTRY_BIND`/`WONTON_ENTRY_PORT`。
     binding: Option<(String, String)>,
+    operation: std::sync::Arc<tokio::sync::Mutex<Option<crate::entry_haproxy::Model>>>,
 }
 
 impl EntryContainers {
@@ -134,7 +141,9 @@ impl EntryContainers {
             data_dir,
             instance,
             core_container,
+            lan_forward_available: false,
             binding: None,
+            operation: std::sync::Arc::new(tokio::sync::Mutex::new(None)),
         }
     }
 
@@ -142,6 +151,85 @@ impl EntryContainers {
     pub fn with_binding(mut self, bind: &str, port: &str) -> Self {
         self.binding = Some((bind.to_owned(), port.to_owned()));
         self
+    }
+    /// 测试和后续局域网转发实现用：入口容器接入局域网转发网络后才可设为 true。
+    pub fn with_lan_forward_available(mut self, available: bool) -> Self {
+        self.lan_forward_available = available;
+        self
+    }
+
+    pub fn lan_forward_available(&self) -> bool {
+        self.lan_forward_available
+    }
+
+    pub fn core_in_container(&self) -> bool {
+        self.core_container.is_some()
+    }
+
+    /// 根据插件开关重写 HAProxy 模型，并让入口容器热加载。
+    pub async fn apply_clients_model(
+        &self,
+        settings: &EntrySettings,
+        public_access: bool,
+        public_labels: Vec<String>,
+        lan_labels: Vec<String>,
+    ) -> Result<(), EntryError> {
+        let mut applied_model = self.operation.lock().await;
+        if self.core_container.is_none() {
+            return Err(EntryError::CoreNotInContainer);
+        }
+        if public_access && !public_labels.is_empty() && settings.registration.is_some() {
+            return Err(config_error(
+                "应用公网入口",
+                anyhow::anyhow!("家名 frpc 目前只转发联邦域名，不能转发插件子域名"),
+            ));
+        }
+        let core = self.core_container.as_deref().expect("已检查核心容器");
+        let (_, networks) = self.networks(core).await?;
+        let mut model =
+            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
+        model.public_labels = public_access.then_some(public_labels).unwrap_or_default();
+        model.lan_labels = self
+            .lan_forward_available
+            .then_some(lan_labels)
+            .unwrap_or_default();
+        model.lan_forward = self
+            .lan_forward_available
+            .then(|| crate::entry_haproxy::LAN_FORWARD_ADDRESS.to_owned());
+        model.connectors = vec![networks.connector];
+        if applied_model.as_ref() == Some(&model) {
+            return self.reconcile_inner(Some(settings)).await;
+        }
+        let snapshot = crate::entry_compose::ModelSnapshot::read(&self.install_dir)
+            .map_err(|error| config_error("读取旧入口配置", error))?;
+        let applied = async {
+            crate::entry_compose::write_model(&self.install_dir, &model)
+                .map_err(|error| config_error("重写入口配置", error))?;
+            crate::entry_compose::prepare_permissions(&self.install_dir)
+                .map_err(|error| config_error("入口文件权限", error))?;
+            self.reconcile_inner(Some(settings)).await?;
+            self.reload().await
+        }
+        .await;
+        if let Err(error) = applied {
+            *applied_model = None;
+            let mut failures = Vec::new();
+            if let Err(cause) = snapshot.restore(&self.install_dir) {
+                failures.push(format!("恢复配置失败：{cause:#}"));
+            } else if let Err(cause) = self.reload().await {
+                failures.push(format!("重载旧配置失败：{cause}"));
+            }
+            return if failures.is_empty() {
+                Err(error)
+            } else {
+                Err(config_error(
+                    "应用入口配置及回滚",
+                    anyhow::anyhow!("{error}；{}", failures.join("；")),
+                ))
+            };
+        }
+        *applied_model = Some(model);
+        Ok(())
     }
 
     pub fn engine(&self) -> Engine {
@@ -169,6 +257,12 @@ impl EntryContainers {
     /// 按设置对账：缺的建、多的删、镜像换了重建、网络没接上就接上。文件由 `wonton-core init`（或改了开关的
     /// 操作）先写好，这里只读。
     pub async fn reconcile(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
+        let mut applied_model = self.operation.lock().await;
+        *applied_model = None;
+        self.reconcile_inner(settings).await
+    }
+
+    async fn reconcile_inner(&self, settings: Option<&EntrySettings>) -> Result<(), EntryError> {
         let (entry, connector) = match settings {
             Some(settings) => Self::wanted(settings),
             None => (false, false),
@@ -195,9 +289,6 @@ impl EntryContainers {
             }
             let (project, networks) = resolved.as_ref().expect("网络刚取过");
             let settings = settings.expect("要有设置才可能有容器");
-            if networks.connector != CONNECTOR_ADDRESS {
-                self.rewrite_config(settings, &networks.connector)?;
-            }
             let side = self.side(component, networks, settings)?;
             self.ensure(&side, project).await?;
         }
@@ -226,20 +317,7 @@ impl EntryContainers {
 
     /// 证书续期后让 HAProxy 热加载配置（`USR2`：已升级的连接不断，实测）。
     pub async fn reload(&self) -> Result<(), EntryError> {
-        let found = self
-            .engine
-            .labeled(LABEL_MANAGED_BY, "core", |labels| {
-                self.instance.owns(labels)
-                    && labels.get(LABEL_COMPONENT).map(String::as_str) == Some(ENTRY_COMPONENT)
-            })
-            .await?;
-        match found.containers.as_slice() {
-            [name] => {
-                self.engine.kill_container(name, "SIGUSR2").await?;
-                Ok(())
-            }
-            other => Err(EntryError::NotOneEntry(other.len())),
-        }
+        self.reload_checked().await
     }
 
     /// 容器的名字：和插件资源一样带实例名，几套核心共用一台 Docker 时不会撞。
@@ -289,13 +367,15 @@ impl EntryContainers {
                 true,
             )
             .await?
-            .unwrap_or_else(|| crate::entry_haproxy::EDGE_SUBNET.to_owned());
+            .ok_or_else(|| EntryError::NetworkMissing(format!("{} 的子网", networks.edge)))?;
         // 固定地址跟着实际网段走：同一台机器上另起一套云吞时冒烟会把网段改掉（`edge` 的默认网段只能有一份）。
         let base = subnet
             .split('/')
             .next()
             .and_then(|address| address.parse::<std::net::Ipv4Addr>().ok())
-            .unwrap_or_else(|| "10.90.0.0".parse().expect("固定字符串"));
+            .ok_or_else(|| {
+                EntryError::NetworkMissing(format!("{} 的 IPv4 子网 {subnet}", networks.edge))
+            })?;
         let offset = |add: u8| {
             std::net::Ipv4Addr::from(u32::from(base).saturating_add(u32::from(add))).to_string()
         };
@@ -600,22 +680,6 @@ impl EntryContainers {
         })
     }
 
-    /// `edge` 的网段和装机时不一样：按实际地址重写入口配置（连接器地址写在 TLS 前端的对端条件里）。
-    fn rewrite_config(&self, settings: &EntrySettings, connector: &str) -> Result<(), EntryError> {
-        let mut model =
-            crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
-        model.connectors = vec![connector.to_owned()];
-        crate::entry_compose::write_model(&self.install_dir, &model).map_err(|error| {
-            EntryError::Docker(EngineError::Rejected {
-                context: "重写入口配置".to_owned(),
-                message: error.to_string(),
-            })
-        })?;
-        crate::entry_compose::prepare_permissions(&self.install_dir).map_err(|error| {
-            EntryError::Docker(EngineError::NotFound(format!("入口文件权限：{error}")))
-        })
-    }
-
     /// 运行的用户跟证书的属主走：证书可能是主人自己放的（`WONTON_ENTRY_CERTIFICATE=external`）。
     fn user(&self) -> Result<String, EntryError> {
         let path = self.install_dir.join("entry/certs/site.pem");
@@ -645,6 +709,13 @@ impl EntryContainers {
         let bind = bind.trim_start_matches('[').trim_end_matches(']');
         format!("{bind}:{port}")
     }
+}
+
+fn config_error(context: &str, error: anyhow::Error) -> EntryError {
+    EntryError::Docker(EngineError::Rejected {
+        context: context.to_owned(),
+        message: format!("{error:#}"),
+    })
 }
 
 /// 接哪些网络：入口同时接 `clients` 供核心的 8484 用；连接器只在 `edge` 上被入口认，出网走 `relay`。
@@ -688,40 +759,6 @@ fn is_previous_version(labels: &HashMap<String, String>, component: &str, projec
     labels.get("com.docker.compose.project").map(String::as_str) == Some(project)
         && labels.get("com.docker.compose.service").map(String::as_str) == Some(component)
         && labels.get(LABEL_MANAGED_BY).is_none()
-}
-
-/// 运行参数和期望的一样：用户、只读挂载、发布端口、代理变量。不一样就重建（改了端口要生效）。
-fn same_options(info: &ContainerInspectResponse, body: &ContainerCreateBody) -> bool {
-    let config = info.config.as_ref();
-    let host = info.host_config.as_ref();
-    let (Some(config), Some(host)) = (config, host) else {
-        return false;
-    };
-    if config.user != body.user || host.dns != body.host_config.as_ref().and_then(|h| h.dns.clone())
-    {
-        return false;
-    }
-    let wanted_host = body.host_config.as_ref();
-    let binds = |list: Option<&Vec<String>>| list.cloned().unwrap_or_default();
-    if binds(host.binds.as_ref()) != binds(wanted_host.and_then(|h| h.binds.as_ref())) {
-        return false;
-    }
-    let ports =
-        |map: Option<&HashMap<String, Option<Vec<PortBinding>>>>| map.cloned().unwrap_or_default();
-    if ports(host.port_bindings.as_ref())
-        != ports(wanted_host.and_then(|h| h.port_bindings.as_ref()))
-    {
-        return false;
-    }
-    // 容器的环境变量里还有镜像自己的（PATH 之类），只要求我们那几项都在。
-    let have: std::collections::BTreeSet<&str> = config
-        .env
-        .as_ref()
-        .map(|env| env.iter().map(String::as_str).collect())
-        .unwrap_or_default();
-    body.env
-        .as_ref()
-        .is_none_or(|env| env.iter().all(|item| have.contains(item.as_str())))
 }
 
 /// 容器里只读挂的配置文件。

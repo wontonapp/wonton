@@ -374,10 +374,7 @@ async fn serve() -> anyhow::Result<()> {
     let files = serve::open_files(&cfg, host, http.clone(), audit.clone(), images)?;
     bus.attach_files(files.clone());
     files.spawn_sweeper();
-    // 入口容器先对账：把上一版 compose 容器认领掉、按设置把入口建好，主人打开的公网入口和联邦 TLS 前端
-    // 才在服务。失败按类别记日志、照常启动（不挡核心），带退避的重试在入口的运行循环里；入站联邦的
-    // 上游地址按连接现解析，入口容器不在时那条流连不上、核心照常服务。
-    let entry = start_entry_runtime(&cfg, &engine).await;
+    let entry = start_entry_runtime(&cfg, &engine);
     // 服务器配对与联邦转发（ADR-0050）：没接 Matrix 的核心没有它们。
     let (peers, federation, _forwarder) =
         open_peers_and_federation(&cfg, &owner, &tunnel, &notices, &manager).await?;
@@ -386,9 +383,6 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let clients = open_clients(&cfg, &engine, &notices)?;
-    if let (Some(containers), Some(clients)) = (entry, &clients) {
-        wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
-    }
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -417,7 +411,7 @@ async fn serve() -> anyhow::Result<()> {
         matrix,
         push,
         bus,
-        notices,
+        notices.clone(),
         files,
         audit,
         upgrades,
@@ -426,9 +420,17 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks,
         sharing,
         contacts,
-        clients,
+        clients.clone(),
+        entry.clone(),
         agent_chains,
     );
+    manager.attach_clients_gateway(&gateway);
+    if let Err(error) = wonton_core::entry_runtime::reconcile_clients(&gateway).await {
+        tracing::warn!(%error, "启动时客户端入口配置未对上，运行循环会重试");
+    }
+    if let (Some(containers), Some(clients)) = (entry, clients) {
+        wonton_core::entry_runtime::spawn(containers, clients, notices.clone(), gateway.clone());
+    }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,
@@ -467,6 +469,7 @@ fn open_gateway(
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
+    entry: Option<wonton_core::entry_containers::EntryContainers>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     let agent_acp = gateway::agent_acp::Registry::new();
@@ -504,7 +507,8 @@ fn open_gateway(
         .with_agent_acp(Some(agent_acp))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
-        .with_clients(clients),
+        .with_clients(clients)
+        .with_entry(entry),
     );
     if let Some(mcp) = &gateway.mcp {
         mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
@@ -780,8 +784,8 @@ fn open_clients(
 }
 
 /// 用安装脚本装的核心（有安装目录）才管入口；核心不在容器里时由入口自己报 `core_not_in_container`。
-/// 对账现在做一次：后面要解析入口地址的启动步骤等在这里。
-async fn start_entry_runtime(
+/// 网关装配后按持久开关重建模型并对账，不能先启动旧 crt-list。
+fn start_entry_runtime(
     cfg: &Config,
     engine: &Engine,
 ) -> Option<wonton_core::entry_containers::EntryContainers> {
@@ -793,19 +797,6 @@ async fn start_entry_runtime(
         cfg.instance.clone(),
         cfg.core_container.clone(),
     );
-    // 读不了设置（JSON 坏、解析器非法）是"不确定"：不按"无设置"删掉在跑的入口容器，交给运行循环
-    // 带退避重试；只有确实没有设置（Ok(None)）才按"不要"对账。
-    match wonton_core::entry_settings::EntrySettings::load(dir) {
-        Err(error) => {
-            tracing::warn!(%error, "入口设置读不了，现有入口容器不动，运行循环会带退避重试");
-        }
-        Ok(settings) => {
-            if let Err(error) = containers.reconcile(settings.as_ref()).await {
-                // 入口的循环会带退避重试，这里不挡住核心启动。
-                tracing::warn!(category = error.category(), %error, "入口容器没对上");
-            }
-        }
-    }
     Some(containers)
 }
 
