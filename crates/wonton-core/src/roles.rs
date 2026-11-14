@@ -99,6 +99,7 @@ fn templates() -> Vec<RoleRecord> {
         permissions: Permissions {
             install_apps: Gate::AskAdmin,
             add_friends: Gate::Allow,
+            ai: AiLevel::SelfConfirms,
             private_bot: true,
             shared_bots: true,
             lend_own_bot: true,
@@ -441,6 +442,7 @@ mod tests {
         // 模板的取值照 ADR-0088 第 3 节的表。
         assert_eq!(all[0].permissions, Permissions::owner());
         assert_eq!(all[1].permissions.install_apps, Gate::AskAdmin);
+        assert_eq!(all[1].permissions.ai, AiLevel::SelfConfirms);
         assert_eq!(all[2].permissions.ai, AiLevel::AdminApprovesDeletes);
         assert_eq!(all[3].permissions.install_apps, Gate::Deny);
     }
