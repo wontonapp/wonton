@@ -4,6 +4,7 @@ mod headers;
 mod legacy;
 mod network;
 mod probe;
+mod sse;
 
 use std::sync::Arc;
 

@@ -1,14 +1,18 @@
-use std::{collections::BTreeMap, io};
+use std::collections::BTreeMap;
 
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
 use reqwest::{
     Response, StatusCode,
     header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue},
 };
-use serde_json::Value;
-use sse_stream::{Sse, SseStream};
+use serde_json::{Value, json};
+use url::Url;
 
 use super::ProbeResult;
+use crate::{
+    network::Network,
+    sse::{EventError, events},
+};
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
@@ -90,7 +94,13 @@ pub(super) async fn json(response: Response) -> Result<Value, ProbeResult> {
     serde_json::from_slice(&body).map_err(|_| ProbeResult::protocol(status))
 }
 
-pub(super) async fn rpc(response: Response, id: u64) -> Result<Value, ProbeResult> {
+pub(super) async fn rpc(
+    response: Response,
+    id: u64,
+    network: &Network,
+    url: &Url,
+    headers: &HeaderMap,
+) -> Result<Value, ProbeResult> {
     let status = response.status();
     if media_type(&response) != "text/event-stream" {
         return result(json(response).await?, id, status);
@@ -98,23 +108,62 @@ pub(super) async fn rpc(response: Response, id: u64) -> Result<Value, ProbeResul
     let mut stream = Box::pin(events(response));
     while let Some(event) = stream.next().await {
         let event = event.map_err(|error| event_failure(error, status))?;
-        let Some(data) = event.data else { continue };
+        let Some(data) = event.data.filter(|data| !data.is_empty()) else {
+            continue;
+        };
         if !matches!(event.event.as_deref(), None | Some("message")) {
             return Err(ProbeResult::protocol(status));
         }
         let value: Value =
             serde_json::from_str(&data).map_err(|_| ProbeResult::protocol(status))?;
-        // Streamable HTTP permits notifications before the matching response.
-        if value.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
-            && value.get("method").and_then(Value::as_str).is_some()
-            && value.get("result").is_none()
-            && value.get("error").is_none()
-        {
+        if value.get("method").is_some() {
+            server_message(value, network, url, headers, status).await?;
             continue;
         }
         return result(value, id, status);
     }
     Err(ProbeResult::protocol(status))
+}
+
+async fn server_message(
+    value: Value,
+    network: &Network,
+    url: &Url,
+    headers: &HeaderMap,
+    status: StatusCode,
+) -> Result<(), ProbeResult> {
+    let method = value.get("method").and_then(Value::as_str);
+    if value.get("jsonrpc").and_then(Value::as_str) != Some("2.0")
+        || method.is_none()
+        || value.get("result").is_some()
+        || value.get("error").is_some()
+        || value
+            .get("params")
+            .is_some_and(|params| !params.is_object() && !params.is_array())
+    {
+        return Err(ProbeResult::protocol(status));
+    }
+    let Some(id) = value.get("id") else {
+        return Ok(());
+    };
+    if !id.is_string() && !id.is_i64() && !id.is_u64() {
+        return Err(ProbeResult::protocol(status));
+    }
+    let reply = if method == Some("ping") {
+        json!({"jsonrpc":"2.0", "id":id, "result":{}})
+    } else {
+        json!({"jsonrpc":"2.0", "id":id,
+            "error":{"code":-32601,"message":"Method not found"}})
+    };
+    let response = super::post(network, url, headers, reply).await?;
+    if !response.status().is_success() {
+        return Err(ProbeResult::new(
+            "remote_error",
+            Some(response.status()),
+            "Remote rejected server request response",
+        ));
+    }
+    Ok(())
 }
 
 fn result(mut value: Value, id: u64, status: StatusCode) -> Result<Value, ProbeResult> {
@@ -130,25 +179,6 @@ fn result(mut value: Value, id: u64, status: StatusCode) -> Result<Value, ProbeR
         .and_then(|object| object.remove("result"))
         .filter(Value::is_object)
         .ok_or_else(|| ProbeResult::protocol(status))
-}
-
-fn events(response: Response) -> impl futures_util::Stream<Item = Result<Sse, sse_stream::Error>> {
-    let mut received = 0usize;
-    let bytes = response
-        .bytes_stream()
-        .map_err(|_| io::Error::other("Remote body failed"))
-        .and_then(move |chunk| {
-            received = received.saturating_add(chunk.len());
-            std::future::ready(if received > BODY_LIMIT {
-                Err(io::Error::new(
-                    io::ErrorKind::FileTooLarge,
-                    "Remote body exceeded limit",
-                ))
-            } else {
-                Ok(chunk)
-            })
-        });
-    SseStream::from_bytes_stream(bytes)
 }
 
 pub(super) async fn legacy(response: Response) -> Result<bool, ProbeResult> {
@@ -171,19 +201,10 @@ pub(super) async fn legacy(response: Response) -> Result<bool, ProbeResult> {
     Ok(false)
 }
 
-fn event_failure(error: sse_stream::Error, status: StatusCode) -> ProbeResult {
+fn event_failure(error: EventError, status: StatusCode) -> ProbeResult {
     match error {
-        sse_stream::Error::Body(error) => {
-            if error
-                .downcast_ref::<io::Error>()
-                .is_some_and(|error| error.kind() == io::ErrorKind::FileTooLarge)
-            {
-                ProbeResult::protocol(status)
-            } else {
-                body_failure(status)
-            }
-        }
-        _ => ProbeResult::protocol(status),
+        EventError::Transport => body_failure(status),
+        EventError::TooLarge | EventError::Invalid => ProbeResult::protocol(status),
     }
 }
 

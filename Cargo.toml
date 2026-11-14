@@ -25,6 +25,8 @@ fluent-langneg = { version = "0.13.1", features = ["cldr"] }
 # MIT OR Apache-2.0。HTTP 与事件流。
 futures-util = "0.3.34"
 getrandom = "0.4.3"
+# MIT OR Apache-2.0。HTTP 连接与代理隧道阶段的类型化错误。
+hyper-util = "0.1.21"
 iroh = "1.4.1"
 # MIT OR Apache-2.0。网络 CIDR。
 ipnet = "2.12.2"
@@ -54,6 +56,8 @@ thiserror = "2.0.21"
 tokio = "1.54.1"
 # MIT OR Apache-2.0。TLS 服务端测试与隧道。
 tokio-rustls = { version = "0.26.6", default-features = false }
+# MIT。连接 Service 的关联错误类型。
+tower-service = "0.3.3"
 tracing = "0.1.44"
 # Apache-2.0 OR MIT。
 tracing-core = "0.1.36"

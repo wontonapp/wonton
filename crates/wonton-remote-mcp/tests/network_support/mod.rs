@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+pub mod tls;
+
 use std::collections::VecDeque;
 use std::net::{IpAddr, SocketAddr};
 use std::process::{Child, Command, Stdio};

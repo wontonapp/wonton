@@ -1,10 +1,9 @@
+mod registry;
+
 use std::{
     collections::HashMap,
     io,
-    sync::{
-        Arc, Mutex, Weak,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex, Weak},
 };
 
 use axum::{
@@ -17,8 +16,10 @@ use futures_util::{
     StreamExt,
     stream::{self, BoxStream},
 };
+use rmcp::model::InitializeResult;
+use serde::Deserialize;
 use serde_json::Value;
-use sse_stream::{Sse, SseStream};
+use sse_stream::Sse;
 use tokio::sync::{mpsc, oneshot};
 use url::Url;
 
@@ -27,14 +28,37 @@ use crate::{
     headers::RemoteRequest,
     network::{Network, NetworkError},
     network_failure,
+    sse::{self, EventError},
 };
 
+pub(crate) use registry::{Opening, Sessions, cancelled};
+
 type Event = Result<Bytes, io::Error>;
-type Pending = HashMap<String, oneshot::Sender<Event>>;
+type PendingReply = oneshot::Receiver<Reply>;
+
+struct Reply {
+    bytes: Bytes,
+    initialized: bool,
+}
+
+struct Pending {
+    sender: oneshot::Sender<Reply>,
+    initialize: bool,
+}
+
+struct State {
+    closed: bool,
+    reason: &'static str,
+    pending: HashMap<String, Pending>,
+    events: Option<mpsc::Receiver<Event>>,
+    reader: Option<tokio::task::AbortHandle>,
+}
 
 pub(crate) enum OpenError {
     Network(NetworkError),
     Protocol(&'static str),
+    InvalidInput(&'static str),
+    Expired,
 }
 
 impl IntoResponse for OpenError {
@@ -42,44 +66,9 @@ impl IntoResponse for OpenError {
         match self {
             Self::Network(error) => network_failure(error),
             Self::Protocol(detail) => legacy_failure(detail),
+            Self::InvalidInput(detail) => failure(StatusCode::BAD_REQUEST, "invalid_input", detail),
+            Self::Expired => expired(),
         }
-    }
-}
-
-#[derive(Default)]
-pub(crate) struct Sessions(Mutex<HashMap<String, Arc<Session>>>);
-
-impl Sessions {
-    pub fn find(&self, id: &str, context: &RemoteRequest) -> Option<Arc<Session>> {
-        self.0
-            .lock()
-            .expect("sessions lock")
-            .get(id)
-            .filter(|s| s.matches(context))
-            .cloned()
-    }
-
-    pub fn insert(&self, session: Arc<Session>) {
-        self.0
-            .lock()
-            .expect("sessions lock")
-            .insert(session.id.clone(), session);
-    }
-
-    pub fn remove(&self, id: &str) {
-        if let Some(session) = self.0.lock().expect("sessions lock").remove(id) {
-            session.close();
-        }
-    }
-
-    pub fn forget(&self, plugin: &str) {
-        self.0.lock().expect("sessions lock").retain(|_, session| {
-            if session.plugin != plugin {
-                return true;
-            }
-            session.close();
-            false
-        });
     }
 }
 
@@ -89,15 +78,13 @@ pub(crate) struct Session {
     url: Url,
     credentials: HeaderMap,
     endpoint: Url,
-    pending: Mutex<Pending>,
-    events: Mutex<Option<mpsc::Receiver<Event>>>,
-    reader: Mutex<Option<tokio::task::AbortHandle>>,
-    alive: AtomicBool,
+    registry: Weak<Mutex<registry::Registry>>,
+    state: Mutex<State>,
 }
 
 impl Drop for Session {
     fn drop(&mut self) {
-        if let Some(task) = self.reader.get_mut().expect("reader lock").take() {
+        if let Some(task) = self.state.get_mut().expect("session lock").reader.take() {
             task.abort();
         }
     }
@@ -110,17 +97,32 @@ impl Session {
             && credentials(&context.headers) == self.credentials
     }
 
-    fn close(&self) {
-        self.alive.store(false, Ordering::Release);
-        self.pending.lock().expect("pending lock").clear();
-        if let Some(task) = self.reader.lock().expect("reader lock").take() {
-            task.abort();
+    fn is_open(&self) -> bool {
+        !self.state.lock().expect("session lock").closed
+    }
+
+    fn close(&self, reason: &'static str) {
+        let reader = {
+            let mut state = self.state.lock().expect("session lock");
+            if state.closed {
+                return;
+            }
+            state.closed = true;
+            state.reason = reason;
+            state.pending.clear();
+            state.events.take();
+            state.reader.take()
+        };
+        if let Some(reader) = reader {
+            reader.abort();
         }
+        registry::remove_closed(&self.registry, &self.id);
     }
 
     pub async fn open(
         network: &Network,
         context: &RemoteRequest,
+        opening: &Opening,
     ) -> Result<Option<Arc<Self>>, OpenError> {
         let mut headers = context.headers.clone();
         headers.insert("accept", HeaderValue::from_static("text/event-stream"));
@@ -138,12 +140,14 @@ impl Session {
         {
             return Ok(None);
         }
-        let mut events = SseStream::from_bytes_stream(response.bytes_stream()).boxed();
+        let mut events = sse::events(response).boxed();
         let first = tokio::time::timeout(network.config().connect_timeout, async {
             while let Some(event) = events.next().await {
-                let event =
-                    event.map_err(|_| OpenError::Protocol("Invalid legacy event stream"))?;
-                if event.event.is_some() || event.data.is_some() {
+                let event = event
+                    .map_err(|_| OpenError::Protocol("Invalid or oversized legacy event stream"))?;
+                if event.event.is_some()
+                    || event.data.as_deref().is_some_and(|data| !data.is_empty())
+                {
                     return Ok(Some(event));
                 }
             }
@@ -178,75 +182,105 @@ impl Session {
             url: context.url.clone(),
             credentials: credentials(&context.headers),
             endpoint,
-            pending: Mutex::new(HashMap::new()),
-            events: Mutex::new(Some(rx)),
-            reader: Mutex::new(None),
-            alive: AtomicBool::new(true),
+            registry: opening.registry(),
+            state: Mutex::new(State {
+                closed: false,
+                reason: "Legacy session closed",
+                pending: HashMap::new(),
+                events: Some(rx),
+                reader: None,
+            }),
         });
-        let weak = Arc::downgrade(&session);
-        let task = tokio::spawn(read_events(events, weak, tx));
-        *session.reader.lock().expect("reader lock") = Some(task.abort_handle());
+        if !opening.attach(&session) {
+            return Err(OpenError::Expired);
+        }
+        let task = tokio::spawn(read_events(events, Arc::downgrade(&session), tx));
+        {
+            let mut state = session.state.lock().expect("session lock");
+            if state.closed {
+                task.abort();
+            } else {
+                state.reader = Some(task.abort_handle());
+            }
+        }
         Ok(Some(session))
     }
 
-    pub fn events(&self) -> Response {
-        let Some(receiver) = self.events.lock().expect("events lock").take() else {
-            return failure(
-                StatusCode::CONFLICT,
-                "remote_error",
-                "Legacy event stream already has a consumer",
-            );
+    pub fn events(self: &Arc<Self>) -> Response {
+        let receiver = {
+            let mut state = self.state.lock().expect("session lock");
+            if state.closed {
+                return expired();
+            }
+            let Some(receiver) = state.events.take() else {
+                return failure(
+                    StatusCode::CONFLICT,
+                    "remote_error",
+                    "Legacy event stream already has a consumer",
+                );
+            };
+            receiver
         };
-        let stream = stream::unfold(receiver, |mut rx| async {
-            rx.recv().await.map(|event| (event, rx))
-        });
-        sse_response(Body::from_stream(stream), &self.id)
+        let subscription = Subscription {
+            session: self.clone(),
+            receiver,
+            ended: false,
+        };
+        sse_response(Body::from_stream(subscription), &self.id)
+    }
+
+    fn register(
+        self: &Arc<Self>,
+        body: &[u8],
+        initialize: bool,
+    ) -> Result<Option<(PendingReply, PendingGuard)>, OpenError> {
+        let message: Value = serde_json::from_slice(body)
+            .map_err(|_| OpenError::InvalidInput("Legacy transport requires JSON-RPC messages"))?;
+        let id = message
+            .get("id")
+            .filter(|_| message.get("method").is_some())
+            .map(Value::to_string);
+        let mut state = self.state.lock().expect("session lock");
+        if state.closed {
+            return Err(OpenError::Expired);
+        }
+        let Some(id) = id else {
+            if initialize {
+                return Err(OpenError::InvalidInput(
+                    "Legacy initialization requires a request ID",
+                ));
+            }
+            return Ok(None);
+        };
+        if state.pending.contains_key(&id) {
+            return Err(OpenError::InvalidInput(
+                "Duplicate active JSON-RPC request ID",
+            ));
+        }
+        let (sender, receiver) = oneshot::channel();
+        state
+            .pending
+            .insert(id.clone(), Pending { sender, initialize });
+        Ok(Some((
+            receiver,
+            PendingGuard {
+                session: self.clone(),
+                id,
+            },
+        )))
     }
 
     pub async fn post(
         self: &Arc<Self>,
         network: &Network,
-        headers: HeaderMap,
+        mut headers: HeaderMap,
         body: Bytes,
+        opening: Option<Opening>,
     ) -> Response {
-        if !self.alive.load(Ordering::Acquire) {
-            return legacy_failure("Legacy event stream is closed");
-        }
-        let message: Value = match serde_json::from_slice(&body) {
-            Ok(message) => message,
-            Err(_) => {
-                return failure(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_input",
-                    "Legacy transport requires JSON-RPC messages",
-                );
-            }
+        let registration = match self.register(&body, opening.is_some()) {
+            Ok(registration) => registration,
+            Err(error) => return error.into_response(),
         };
-        let id = message
-            .get("id")
-            .filter(|_| message.get("method").is_some())
-            .map(Value::to_string);
-        let mut guard = None;
-        let receiver = if let Some(id) = id {
-            let (sender, receiver) = oneshot::channel();
-            let mut pending = self.pending.lock().expect("pending lock");
-            if pending.contains_key(&id) {
-                return failure(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_input",
-                    "Duplicate active JSON-RPC request ID",
-                );
-            }
-            pending.insert(id.clone(), sender);
-            guard = Some(PendingGuard {
-                session: self.clone(),
-                id,
-            });
-            Some(receiver)
-        } else {
-            None
-        };
-        let mut headers = headers;
         headers.remove("mcp-session-id");
         let response = match network
             .send(Method::POST, &self.endpoint, headers, Some(body.into()))
@@ -258,16 +292,24 @@ impl Session {
         if !response.status().is_success() {
             return crate::forward::response(response);
         }
-        let Some(receiver) = receiver else {
+        let Some((receiver, guard)) = registration else {
             return StatusCode::ACCEPTED.into_response();
         };
         let stream = stream::once(async move {
-            let _guard = guard;
-            receiver.await.unwrap_or_else(|_| {
-                Err(io::Error::other(
-                    "Legacy event stream closed before the response",
-                ))
-            })
+            let guard = guard;
+            let reply = receiver
+                .await
+                .map_err(|_| io::Error::other("Legacy event stream closed before the response"))?;
+            if let Some(opening) = opening {
+                if reply.initialized {
+                    if !opening.publish() {
+                        return Err(io::Error::other("Legacy initialization was cancelled"));
+                    }
+                } else {
+                    guard.session.close("Legacy initialization failed");
+                }
+            }
+            Ok::<_, io::Error>(reply.bytes)
         });
         sse_response(Body::from_stream(stream), &self.id)
     }
@@ -280,10 +322,43 @@ struct PendingGuard {
 impl Drop for PendingGuard {
     fn drop(&mut self) {
         self.session
-            .pending
+            .state
             .lock()
-            .expect("pending lock")
+            .expect("session lock")
+            .pending
             .remove(&self.id);
+    }
+}
+
+struct Subscription {
+    session: Arc<Session>,
+    receiver: mpsc::Receiver<Event>,
+    ended: bool,
+}
+impl futures_util::Stream for Subscription {
+    type Item = Event;
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Event>> {
+        if self.ended {
+            return std::task::Poll::Ready(None);
+        }
+        match self.receiver.poll_recv(cx) {
+            std::task::Poll::Ready(None) => {
+                self.ended = true;
+                let reason = self.session.state.lock().expect("session lock").reason;
+                std::task::Poll::Ready(Some(Err(io::Error::other(reason))))
+            }
+            next => next,
+        }
+    }
+}
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        // Legacy servers cannot replay bytes consumed by the departed HTTP client.
+        // Expire the whole session so rmcp reinitializes on 404 instead of retrying 409.
+        self.session.close("Legacy event consumer disconnected");
     }
 }
 
@@ -302,7 +377,7 @@ fn credentials(headers: &HeaderMap) -> HeaderMap {
 }
 
 async fn read_events(
-    mut events: BoxStream<'static, Result<Sse, sse_stream::Error>>,
+    mut events: BoxStream<'static, Result<Sse, EventError>>,
     weak: Weak<Session>,
     tx: mpsc::Sender<Event>,
 ) {
@@ -310,36 +385,58 @@ async fn read_events(
         let Some(session) = weak.upgrade() else {
             return;
         };
-        let Ok(event) = event else {
-            break;
+        let event = match event {
+            Ok(event) => event,
+            Err(error) => {
+                tracing::warn!(%error, "Legacy event stream rejected");
+                session.close("Invalid or oversized legacy event stream");
+                return;
+            }
         };
-        let Some(data) = event.data.as_deref() else {
+        let Some(data) = event.data.as_deref().filter(|data| !data.is_empty()) else {
             continue;
         };
         let message: Value = match serde_json::from_str(data) {
             Ok(value) => value,
-            Err(_) => break,
+            Err(_) => {
+                session.close("Invalid legacy JSON-RPC event");
+                return;
+            }
         };
         let id = message
             .get("id")
             .filter(|_| message.get("method").is_none())
             .map(Value::to_string);
-        let bytes: Bytes = event.into();
         if let Some(id) = id {
-            if let Some(sender) = session.pending.lock().expect("pending lock").remove(&id) {
-                let _ = sender.send(Ok(bytes));
+            let pending = session
+                .state
+                .lock()
+                .expect("session lock")
+                .pending
+                .remove(&id);
+            if let Some(pending) = pending {
+                let initialized = pending.initialize && valid_initialize(&message);
+                let _ = pending.sender.send(Reply {
+                    bytes: sse::encode(event),
+                    initialized,
+                });
             }
-        } else if tx.send(Ok(bytes)).await.is_err() {
-            break;
+        } else if tx.send(Ok(sse::encode(event))).await.is_err() {
+            session.close("Legacy event consumer disconnected");
+            return;
         }
     }
     if let Some(session) = weak.upgrade() {
-        session.alive.store(false, Ordering::Release);
-        session.pending.lock().expect("pending lock").clear();
+        session.close("Legacy remote event stream ended");
     }
-    let _ = tx
-        .send(Err(io::Error::other("Legacy remote event stream ended")))
-        .await;
+}
+
+fn valid_initialize(message: &Value) -> bool {
+    message.get("jsonrpc").and_then(Value::as_str) == Some("2.0")
+        && message.get("error").is_none()
+        && message
+            .get("result")
+            .is_some_and(|result| InitializeResult::deserialize(result).is_ok())
 }
 
 fn sse_response(body: Body, id: &str) -> Response {
@@ -358,6 +455,17 @@ fn sse_response(body: Body, id: &str) -> Response {
     response
 }
 
+pub(crate) fn expired() -> Response {
+    failure(
+        StatusCode::NOT_FOUND,
+        "remote_error",
+        "Legacy connector session expired",
+    )
+}
 fn legacy_failure(detail: &str) -> Response {
     failure(StatusCode::BAD_GATEWAY, "remote_error", detail)
 }
+
+#[cfg(test)]
+#[path = "legacy_tests.rs"]
+mod legacy_tests;

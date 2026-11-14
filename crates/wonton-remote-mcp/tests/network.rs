@@ -1,4 +1,7 @@
 mod network_support;
+#[cfg(target_os = "linux")]
+#[path = "network_support/tls_cases.rs"]
+mod tls_cases;
 
 use std::net::IpAddr;
 use std::sync::atomic::Ordering;

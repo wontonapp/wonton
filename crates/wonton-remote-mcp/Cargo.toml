@@ -13,6 +13,7 @@ base64 = { workspace = true }
 # MIT OR Apache-2.0。HTTP 请求体和 SSE 的逐块转发。
 futures-util = { workspace = true }
 getrandom = { workspace = true }
+hyper-util = { workspace = true, features = ["client-legacy", "client-proxy", "tokio"] }
 # MIT OR Apache-2.0。额外禁止访问的核心与 Docker 网段。
 ipnet = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream", "rustls"] }
@@ -22,6 +23,7 @@ serde_json = { workspace = true }
 # MIT OR Apache-2.0。解析探测和旧式 HTTP+SSE 的事件边界。
 sse-stream = { workspace = true }
 tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tower-service = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 url = { workspace = true }

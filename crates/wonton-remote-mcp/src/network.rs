@@ -6,6 +6,8 @@ use std::io;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
+use hyper_util::client::legacy::connect::HttpConnector;
+use hyper_util::client::legacy::connect::proxy::Tunnel;
 use reqwest::dns::{Name, Resolve, Resolving};
 use reqwest::header::HeaderMap;
 use reqwest::{Body, Client, Method, Response};
@@ -111,7 +113,7 @@ impl Network {
         request
             .send()
             .await
-            .map_err(|error| classify_request_error(&error, self.config.proxy.is_some()))
+            .map_err(|error| classify_request_error(&error))
     }
 
     fn client(&self, host: &str, addresses: &[IpAddr]) -> Result<Client, NetworkError> {
@@ -147,24 +149,24 @@ impl Network {
     }
 }
 
-fn classify_request_error(error: &reqwest::Error, proxied: bool) -> NetworkError {
+// TunnelError is public but its module is private in hyper-util 0.1.21. Its
+// public Service associated type names the exact wrapper without string parsing.
+type ProxyTunnelError = <Tunnel<HttpConnector> as tower_service::Service<axum::http::Uri>>::Error;
+
+fn classify_request_error(error: &reqwest::Error) -> NetworkError {
     let mut source = error.source();
     while let Some(cause) = source {
-        // rustls reports a rejected certificate/handshake as InvalidData, rather
-        // than a failure to establish the proxy's TCP connection or CONNECT tunnel.
-        if cause
-            .downcast_ref::<io::Error>()
-            .is_some_and(|error| error.kind() == io::ErrorKind::InvalidData)
-        {
-            return NetworkError::Unreachable;
+        // reqwest 0.13.5 connect.rs wraps proxy TCP/TLS and CONNECT failures in
+        // TunnelError. Target TLS starts after Tunnel succeeds (lines 870-876),
+        // so its certificate errors and EOFs do not carry this stage evidence.
+        if cause.is::<ProxyTunnelError>() {
+            return NetworkError::ProxyUnavailable;
         }
         source = cause.source();
     }
-    if proxied && error.is_connect() {
-        NetworkError::ProxyUnavailable
-    } else {
-        NetworkError::Unreachable
-    }
+    // is_connect and I/O kinds describe both TLS phases. Without typed stage
+    // evidence (including an overall deadline), do not blame the proxy.
+    NetworkError::Unreachable
 }
 
 struct RejectDns;

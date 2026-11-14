@@ -207,7 +207,7 @@ async fn initialized(
     response: reqwest::Response,
 ) -> Result<Option<Vec<String>>, ProbeResult> {
     let status = response.status();
-    let value = wire::rpc(response, 1).await?;
+    let value = wire::rpc(response, 1, network, url, headers).await?;
     let initialize: InitializeResult =
         serde_json::from_value(value).map_err(|_| ProbeResult::protocol(status))?;
     let version = initialize.protocol_version;
@@ -251,8 +251,9 @@ async fn initialized(
                 "Remote tools discovery failed",
             ));
         }
-        let tools: ListToolsResult = serde_json::from_value(wire::rpc(response, 2).await?)
-            .map_err(|_| ProbeResult::protocol(status))?;
+        let tools: ListToolsResult =
+            serde_json::from_value(wire::rpc(response, 2, network, url, headers).await?)
+                .map_err(|_| ProbeResult::protocol(status))?;
         Some(
             tools
                 .tools

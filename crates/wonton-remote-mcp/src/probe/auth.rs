@@ -48,13 +48,6 @@ pub(super) async fn classify(
             "Remote server requires request header credentials",
         ));
     }
-    if wire::is_html(&response) {
-        return Ok(ProbeResult::new(
-            "not_mcp",
-            Some(status),
-            "Remote returned HTML",
-        ));
-    }
     if matches!(
         status,
         StatusCode::BAD_REQUEST | StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED
@@ -79,6 +72,13 @@ pub(super) async fn classify(
                 "Remote server uses legacy HTTP+SSE transport",
             ));
         }
+    }
+    if wire::is_html(&response) {
+        return Ok(ProbeResult::new(
+            "not_mcp",
+            Some(status),
+            "Remote returned HTML",
+        ));
     }
     Ok(ProbeResult::new(
         "not_mcp",

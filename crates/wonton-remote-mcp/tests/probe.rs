@@ -1,4 +1,6 @@
 mod probe_support;
+#[path = "probe_support/protocol_tests.rs"]
+mod protocol_tests;
 
 use std::{
     io,

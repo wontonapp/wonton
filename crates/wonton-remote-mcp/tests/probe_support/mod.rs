@@ -10,8 +10,9 @@ use axum::{
     http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
+use futures_util::StreamExt;
 use serde_json::{Value, json};
-use tokio::{net::TcpListener, task::JoinHandle};
+use tokio::{net::TcpListener, sync::oneshot, task::JoinHandle};
 use wonton_remote_mcp::{AddressPolicy, Config};
 
 #[derive(Clone)]
@@ -35,6 +36,9 @@ pub struct Options {
     pub delay_all: Duration,
     pub hanging_body: bool,
     pub hanging_tools_body: bool,
+    pub empty_events: usize,
+    pub server_request: Option<Value>,
+    pub server_reply_status: StatusCode,
 }
 
 impl Default for Options {
@@ -61,6 +65,9 @@ impl Default for Options {
             delay_all: Duration::ZERO,
             hanging_body: false,
             hanging_tools_body: false,
+            empty_events: 0,
+            server_request: None,
+            server_reply_status: StatusCode::ACCEPTED,
         }
     }
 }
@@ -85,6 +92,12 @@ struct RemoteState {
     options: Options,
     received: Arc<Mutex<Vec<Received>>>,
     url: String,
+    reply_gate: Arc<Mutex<Option<ReplyGate>>>,
+}
+
+struct ReplyGate {
+    expected: Value,
+    completed: oneshot::Sender<()>,
 }
 
 pub struct Server {
@@ -108,6 +121,7 @@ impl Server {
             options,
             received: received.clone(),
             url: url.clone(),
+            reply_gate: Arc::new(Mutex::new(None)),
         };
         let router = Router::new().fallback(remote).with_state(state);
         let task = tokio::spawn(async move {
@@ -184,11 +198,14 @@ async fn remote(
         method: method.clone(),
         uri: uri.clone(),
         headers,
-        body,
+        body: body.clone(),
     });
     let options = &state.options;
     if options.delay_method == Some(rpc_method.as_str())
         || (options.delay_method == Some("DELETE") && method == Method::DELETE)
+        || (options.delay_method == Some("server-response")
+            && body.get("id").is_some()
+            && body.get("method").is_none())
     {
         tokio::time::sleep(Duration::from_secs(60)).await;
     }
@@ -207,16 +224,20 @@ async fn remote(
         )
             .into_response();
     }
+    if body.get("id").is_some() && body.get("method").is_none() {
+        return server_reply(&state, &body);
+    }
     match rpc_method.as_str() {
         "notifications/initialized" => options.notification_status.into_response(),
         "tools/list" if options.hanging_tools_body => hanging_response(options.sse),
-        "tools/list" => rpc(options.tools.clone(), options.tools_status, options.sse),
-        "initialize" => initialize_response(options),
+        "tools/list" => rpc(options.tools.clone(), options.tools_status, &state),
+        "initialize" => initialize_response(&state),
         _ => StatusCode::BAD_REQUEST.into_response(),
     }
 }
 
-fn initialize_response(options: &Options) -> Response {
+fn initialize_response(state: &RemoteState) -> Response {
+    let options = &state.options;
     let mut response = if options.hanging_body {
         hanging_response(options.sse)
     } else if options.html {
@@ -234,7 +255,7 @@ fn initialize_response(options: &Options) -> Response {
         };
         (options.status, [("content-type", content_type)], raw).into_response()
     } else {
-        rpc(options.initialize.clone(), options.status, options.sse)
+        rpc(options.initialize.clone(), options.status, state)
     };
     if let Some(challenge) = &options.challenge {
         response
@@ -261,17 +282,21 @@ fn metadata(state: &RemoteState, path: &str) -> Response {
     .into_response()
 }
 
-fn rpc(value: Value, status: StatusCode, sse: bool) -> Response {
-    if sse {
+fn rpc(value: Value, status: StatusCode, state: &RemoteState) -> Response {
+    if state.options.sse {
         // Exercise comments, a notification, CRLF, and multiline data fields.
         let pretty = serde_json::to_string_pretty(&value).unwrap();
         let data = pretty
             .lines()
             .map(|line| format!("data: {line}\r\n"))
             .collect::<String>();
+        let control = "id: cursor-start\r\ndata:\r\n\r\n".repeat(state.options.empty_events);
         let body = format!(
-            ": keepalive\r\n\r\ndata: {{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}}\r\n\r\nevent: message\r\n{data}\r\n"
+            "{control}: keepalive\r\n\r\ndata: {{\"jsonrpc\":\"2.0\",\"method\":\"notifications/tools/list_changed\"}}\r\n\r\nevent: message\r\n{data}\r\n"
         );
+        if let Some(request) = &state.options.server_request {
+            return gated_response(state, request, body, status);
+        }
         (
             status,
             [("content-type", "text/event-stream; charset=utf-8")],
@@ -281,6 +306,55 @@ fn rpc(value: Value, status: StatusCode, sse: bool) -> Response {
     } else {
         (status, Json(value)).into_response()
     }
+}
+
+fn gated_response(
+    state: &RemoteState,
+    request: &Value,
+    body: String,
+    status: StatusCode,
+) -> Response {
+    let expected = if request["method"] == "ping" {
+        json!({"jsonrpc":"2.0","id":request["id"],"result":{}})
+    } else {
+        json!({"jsonrpc":"2.0","id":request["id"],
+            "error":{"code":-32601,"message":"Method not found"}})
+    };
+    let (completed, released) = oneshot::channel();
+    let previous = state.reply_gate.lock().unwrap().replace(ReplyGate {
+        expected,
+        completed,
+    });
+    assert!(
+        previous.is_none(),
+        "Previous RPC result must be released first"
+    );
+    let first = Bytes::from(format!("data: {request}\n\n"));
+    let stream = futures_util::stream::once(async { Ok::<_, std::io::Error>(first) }).chain(
+        futures_util::stream::once(async move {
+            released
+                .await
+                .map_err(|_| std::io::Error::other("Server request was not answered"))?;
+            Ok(Bytes::from(body))
+        }),
+    );
+    Response::builder()
+        .status(status)
+        .header("content-type", "text/event-stream")
+        .body(Body::from_stream(stream))
+        .unwrap()
+}
+
+fn server_reply(state: &RemoteState, body: &Value) -> Response {
+    if !state.options.server_reply_status.is_success() {
+        return (state.options.server_reply_status, "private-reply-secret").into_response();
+    }
+    let mut gate = state.reply_gate.lock().unwrap();
+    if !gate.as_ref().is_some_and(|gate| gate.expected == *body) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let _ = gate.take().unwrap().completed.send(());
+    state.options.server_reply_status.into_response()
 }
 
 fn hanging_response(sse: bool) -> Response {

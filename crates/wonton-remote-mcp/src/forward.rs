@@ -11,7 +11,7 @@ use futures_util::TryStreamExt;
 use crate::{
     Connector, failure,
     headers::{RemoteRequest, response_headers},
-    legacy::Session,
+    legacy::{self, Opening, Session},
     network_failure,
 };
 
@@ -52,7 +52,7 @@ pub(crate) async fn forward(State(connector): State<Arc<Connector>>, request: Re
             Method::POST => match to_bytes(body, usize::MAX).await {
                 Ok(bytes) => {
                     session
-                        .post(&connector.network, context.headers, bytes)
+                        .post(&connector.network, context.headers, bytes, None)
                         .await
                 }
                 Err(_) => failure(
@@ -84,6 +84,21 @@ pub(crate) async fn forward(State(connector): State<Arc<Connector>>, request: Re
 }
 
 async fn initialize(connector: &Connector, context: RemoteRequest, body: Body) -> Response {
+    let opening = connector.legacy.begin(&context.plugin);
+    let cancellation = opening.cancellation();
+    tokio::select! {
+        biased;
+        _ = legacy::cancelled(cancellation) => legacy::expired(),
+        response = initialize_inner(connector, context, body, opening) => response,
+    }
+}
+
+async fn initialize_inner(
+    connector: &Connector,
+    context: RemoteRequest,
+    body: Body,
+    opening: Opening,
+) -> Response {
     let bytes = match to_bytes(body, usize::MAX).await {
         Ok(bytes) => bytes,
         Err(_) => {
@@ -118,18 +133,14 @@ async fn initialize(connector: &Connector, context: RemoteRequest, body: Body) -
     if !try_legacy {
         return response(remote);
     }
-    let session = match Session::open(&connector.network, &context).await {
+    let session = match Session::open(&connector.network, &context, &opening).await {
         Ok(Some(session)) => session,
         Ok(None) => return response(remote),
         Err(error) => return error.into_response(),
     };
-    let result = session
-        .post(&connector.network, context.headers, bytes)
-        .await;
-    if result.status().is_success() {
-        connector.legacy.insert(session);
-    }
-    result
+    session
+        .post(&connector.network, context.headers, bytes, Some(opening))
+        .await
 }
 
 pub(crate) fn response(remote: reqwest::Response) -> Response {

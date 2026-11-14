@@ -41,7 +41,7 @@ getrandom = { workspace = true }
 # MIT。给播放器的回环地址（ADR-0020 的 `file_stream_url`）：核心、wonton-tunnel 的依赖里已有。
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["http1", "server"] }
-hyper-util = { version = "0.1.21", features = ["tokio"] }
+hyper-util = { workspace = true, features = ["tokio"] }
 iroh = { workspace = true }
 # MIT OR Apache-2.0。认出消息文字里没有写成 Markdown 链接的网址。
 linkify = "0.11.0"
