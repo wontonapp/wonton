@@ -46,7 +46,9 @@ impl PluginManager {
         let id = package.manifest.id.clone();
         tracing::info!(plugin = %id, operation = "install", phase = "start", "插件安装开始");
         let result = self
-            .install_checked_guarded(package, granted, enabled, lan_webui, settings, langs)
+            .install_checked_guarded(
+                package, granted, enabled, lan_webui, devices, settings, langs,
+            )
             .await;
         match &result {
             Ok(_) => tracing::info!(
@@ -69,12 +71,15 @@ impl PluginManager {
         result
     }
 
+    // 装决策的完整输入（包、权限、网络、设备、设置、语言）一起进守卫，拆了反而要再造中间结构。
+    #[allow(clippy::too_many_arguments)]
     async fn install_checked_guarded(
         &self,
         package: PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
         lan_webui: bool,
+        devices: &[String],
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
