@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.ProfileStore
@@ -91,6 +92,9 @@ class PluginWebViewController {
         private set
     var customView: View? by mutableStateOf(null)
         private set
+    /** 页面自己的顶栏颜色（[PageThemeColor]）；没有可用的颜色时是 null。 */
+    var pageColor: Color? by mutableStateOf(null)
+        internal set
     private var customViewCallback: WebChromeClient.CustomViewCallback? = null
 
     internal fun onPermissionRequest(request: PermissionRequest) {
@@ -123,6 +127,7 @@ class PluginWebViewController {
         if (view !== owner) return
         view = null
         canGoBack = false
+        pageColor = null
         closeCustomView()
         pendingFileChooser?.onReceiveValue(null)
         pendingFileChooser = null
@@ -320,6 +325,7 @@ private class ThemedPluginWebView(
     private var startScript: String? = null
     private var scriptHandler: androidx.webkit.ScriptHandler? = null
     private val pageMedia = PageMediaPage(this)
+    private val pageColor = PageThemeColor(this) { color -> if (controller.view === this) controller.pageColor = color }
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         controller.touchObserver?.invoke(event)
@@ -332,6 +338,7 @@ private class ThemedPluginWebView(
         scriptHandler?.remove()
         scriptHandler = null
         pageMedia.dispose()
+        pageColor.dispose()
         if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")
         bridgeOrigins = null
         controller.release(this)
@@ -342,6 +349,7 @@ private class ThemedPluginWebView(
         require(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER))
         require(WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
         pageMedia.update(origins)
+        pageColor.update(origins)
         val originsChanged = bridgeOrigins != origins
         if (originsChanged) {
             if (bridgeOrigins != null) WebViewCompat.removeWebMessageListener(this, "wontonBridge")

@@ -5,7 +5,8 @@
 //! 房间走屏的真实顺序）。面板网页由回环地址上的一个小服务给：公网网页那一类（`TabRef::Url`）不经隧道，
 //! 壳直接连它；页面本身能滚，上面盖着一层全屏的固定浮层，右上角一个关闭按钮，照 Navidrome 的手机播放器摆。
 //! 整页的那张（[`corner`]）照 Immich、Actual 这类现成应用摆：顶上、底下各一条固定的栏，右上角一个按钮，
-//! 出口胶囊压不压得到它由界面测试看（ADR-0095“铺满”）。
+//! 出口胶囊压不压得到它由界面测试看（ADR-0095“铺满”）；它声明了 `theme-color`，页面上的按钮能换掉或去掉这个声明，
+//! 壳让出来的顶条跟不跟页面的颜色也由界面测试看。
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener};
@@ -193,23 +194,34 @@ setInterval(report, 500);
 
 /// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
 /// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
-const CORNER: &str = r#"<!doctype html>
+/// `recolor` 换掉声明的 `theme-color` 和顶栏的颜色；给 `null` 就去掉声明，顶栏改成和 `body` 的背景一样。
+const CORNER: &str = r##"<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1{viewport}">
 <title>Corner</title>
+<meta name="theme-color" content="#2a6f97">
 <style>
 html, body { margin: 0; background: #17324d; color: #fff; font: 17px system-ui; }
 #bar { position: fixed; top: 0; left: 0; right: 0; height: 48px; padding-top: env(safe-area-inset-top); background: #2a6f97; }
 #menu { position: fixed; top: env(safe-area-inset-top); right: 0; width: 60px; height: 48px; font-size: 24px; }
 #foot { position: fixed; bottom: 0; left: 0; right: 0; height: 48px; background: #2a6f97; }
 #body { padding: 120px 16px; height: 300vh; }
+#body button { display: block; margin: 16px 0; font: inherit; }
 </style></head>
 <body>
 <div id="bar">Fixture bar</div>
 <button id="menu" aria-label="Fixture corner" onclick="this.setAttribute('aria-label', 'Fixture corner tapped')">≡</button>
-<div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a></div>
+<div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a>
+<button onclick="recolor('#9d4edd')">Fixture recolor</button>
+<button onclick="recolor(null)">Fixture unthemed</button></div>
 <div id="foot">Fixture foot</div>
 <script>
+function recolor(color) {
+  for (const meta of document.querySelectorAll('meta[name=theme-color]')) {
+    if (color) { meta.content = color; } else { meta.remove(); }
+  }
+  document.getElementById('bar').style.background = color || '#17324d';
+}
 function probe() {
   const box = document.createElement('div');
   box.style.cssText = 'position:fixed;top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);visibility:hidden';
@@ -224,7 +236,7 @@ probe();
 addEventListener('resize', probe);
 setInterval(probe, 500);
 </script>
-</body></html>"#;
+</body></html>"##;
 
 fn body(path: &str) -> String {
     match path {

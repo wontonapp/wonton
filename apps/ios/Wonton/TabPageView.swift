@@ -114,8 +114,11 @@ struct TabPageView: View {
                     }, cancel: closePage)
                 } else {
                     if let webView = session.webView, sourceAvailable {
+                        let top = framedTop(safe: safe)
+                        if top > 0 { PageTopStrip(color: session.ready ? session.topColor : nil, height: top) }
                         TabWebView(webView: webView, obscured: obscured(safe: safe))
                             .id(ObjectIdentifier(webView))
+                            .padding(.top, top)
                             .ignoresSafeArea(.container)
                     }
                     TabPageStateView(
@@ -315,44 +318,39 @@ private extension TabPageView {
 
     /// 网页被浮在上面的东西挡住的上下两条。整页铺满整个屏幕（ADR-0095），顶上是状态栏加胶囊那一行：
     /// 页面的背景照样画到屏幕顶，固定在顶上的按钮和滚动到头的位置让到胶囊下面，不然压在胶囊底下点不到。
-    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。
+    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。网页框自己让开的系统上（`framedTop`）没有被挡住的。
     private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
         if let panel {
             return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
         }
+        if PageTopInset.framesWebView { return .zero }
         return UIEdgeInsets(top: safe.top + TabPageCapsule.rowHeight, left: 0, bottom: 0, right: 0)
     }
 
+    /// 整页的网页框顶边到屏幕顶的距离：iOS 26 之前是状态栏加胶囊那一行（见 `PageTopInset`），之后是 0。
+    private func framedTop(safe: EdgeInsets) -> CGFloat {
+        guard panel == nil, PageTopInset.framesWebView else { return 0 }
+        return safe.top + TabPageCapsule.rowHeight
+    }
+
+    /// 整页的顶上一条壳已经替页面让开了（`obscured` 或 `framedTop`），桥的 `--wonton-inset-top` 和
+    /// `safeAreaInsets.top` 报 0：照实给的话，按桥适配过的页面会再让一次。
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
         let bottom = panel?.insetBottom ?? 0
-        let top = panel?.insetTop ?? pageInsetTop(safe: safe)
         return TabWebInputs(
             page: page, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
                 locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: Double(top), insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
+                insetTop: Double(panel?.insetTop ?? 0),
+                insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
                 safeArea: TabSafeArea(
-                    top: Double(pageSafeTop(safe: safe)), right: Double(safe.trailing),
+                    top: Double(panel == nil ? 0 : safe.top), right: Double(safe.trailing),
                     bottom: Double(safe.bottom), left: Double(safe.leading)
                 )
             ), textScale: textScale
         )
-    }
-
-    /// 整页经桥报给页面的顶部让位（`--wonton-inset-top`）。iOS 26 起 WebKit 已经按 `obscured` 把页面的布局
-    /// 让到胶囊下面，再报一份页面会让两次，所以报 0；更早的系统没有这个接口，把状态栏加胶囊那一行报给页面，
-    /// 适配过桥的页面自己让。
-    private func pageInsetTop(safe: EdgeInsets) -> CGFloat {
-        if #available(iOS 26, *) { return 0 }
-        return safe.top + TabPageCapsule.rowHeight
-    }
-
-    /// 桥的 `safeAreaInsets.top`：同 `pageInsetTop`，iOS 26 起整页的顶部安全区已经被 WebKit 让掉。
-    private func pageSafeTop(safe: EdgeInsets) -> CGFloat {
-        if #available(iOS 26, *), panel == nil { return 0 }
-        return safe.top
     }
 
     /// 会话被释放过（`TabWebViewStore.retain` 放掉的）：重新要一份并加载。

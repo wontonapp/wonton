@@ -97,8 +97,10 @@ final class PluginPageUITests: XCTestCase {
                    withVelocity: .fast, thenHoldForDuration: 0)
     }
 
+    /// 按标识认胶囊的退出，不按“关闭”这个名字：聊天页的提示条（如“输入恢复密钥”）的关闭也叫这个名字，
+    /// 页面关掉回到聊天页以后按名字找会找到它，误报“页面还在”。
     private var capsule: XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label IN %@", ["Close", "关闭", "關閉", "閉じる"])).firstMatch
+        app.buttons.matching(identifier: "pageClose").firstMatch
     }
 
     /// 照 ChatPanelUITests 的启动：等配对完成，走完引导，到聊天列表。等待都短于单条测试的 90 秒上限，
