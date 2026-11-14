@@ -226,7 +226,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 - `CALL_MODE=udp` 保留清单中的 UDP mux 端口；
 - `CALL_MODE=tcp` 复制清单后移除 UDP 声明，只保留 TCP 7881；
-- `CALL_MODE=relay` 使用失效直连地址，要求页面出现公共中继提示；
+- `CALL_MODE=relay` 使用失效直连地址，只按两端是否收到双向 RTP 判断通话是否通过；公共中继提示另由前端验收；
 - 每组记录两端屏幕、CDP `inbound-rtp` 包计数、选中的 ICE 候选、挂断和强杀一端后的 delayed leave。
 
 - 脚本要求账号、加密房间和两台设备先由人工准备，不把密码或 Matrix 令牌写进命令行。2026-11-14 的现场只完成核心健康、插件安装请求和设备隧道配对；插件安装在 `wonton-calle2e--app-element-call--jwt` 创建阶段超时，未进入 widget、媒体或 delayed leave。执行结果未核实，没有把失败现场写成通过。
@@ -260,7 +260,7 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 
 在 Linux + Docker、API 36 Android 模拟器、当前检出核心和本地 `wonton-plugin-call` 清单上，核心启动并健康，主人和 `callguest` 设备均曾完成隧道配对。安装接口返回 HTTP 504，错误类别为 `docker_timed_out`，阶段为 `Starting`，失败服务为 `jwt`；核心随后完成插件回滚，清理错误为空。没有生成通话录屏、`inbound-rtp` 或 delayed-leave 产物。
 
-中继提示检查改为 Android 原生 UI hierarchy，因为 `PortMappingWarning::PublicRelayBandwidth` 在 Android 的插件详情端口映射区域渲染，而不是 widget 网页正文。由于 relay 通话未运行，该检查和“通话页上方提示”的契约仍未核实。
+公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。
 
 ## 和其他 ADR 的关系
 

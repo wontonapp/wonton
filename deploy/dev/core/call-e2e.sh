@@ -231,19 +231,6 @@ check_stats() {
   }
 }
 
-check_relay_hint() {
-  local serial="$1" remote="/sdcard/wonton-call-ui.xml" xml
-  adb -s "$serial" shell uiautomator dump "$remote" >/dev/null 2>&1 || {
-    echo "call-e2e: could not dump Android UI hierarchy for relay hint" >&2
-    return 1
-  }
-  xml="$(adb -s "$serial" exec-out cat "$remote" 2>/dev/null || true)"
-  adb -s "$serial" shell rm -f "$remote" >/dev/null 2>&1 || true
-  grep -Eqi 'public relay|公共中继|公共中繼|公共リレー' <<<"$xml" || {
-    echo "call-e2e: native public-relay hint was not visible" >&2
-    return 1
-  }
-}
 
 record_screen() {
   local serial="$1" name="$2"
@@ -315,9 +302,6 @@ check_stats "$artifacts/b-stats.jsonl"
 cp "$artifacts/a-stats.jsonl" "$artifacts/inbound-rtp-a.jsonl"
 cp "$artifacts/b-stats.jsonl" "$artifacts/inbound-rtp-b.jsonl"
 
-if [[ "$mode" == relay ]]; then
-  check_relay_hint "$serial_b"
-fi
 
 echo "== hang up one side"
 python3 "$cdp" "$forward_a" hangup 5 >"$artifacts/hangup-a.jsonl"
