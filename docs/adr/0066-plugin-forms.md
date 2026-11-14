@@ -330,6 +330,7 @@
   核心日志、错误、详情和审计只用清单模板原文。握手和运行期的 HTTP、JSON-RPC、SSE 错误在进入 MCP SDK 前脱敏，
   展开地址换回模板，原文及编码密钥在原始诊断文本中的所有相交区间一并覆盖，不能因错位或自交留下尾部；替换结果不再次参与匹配。
   `error.data` 中的字符串及数值等诊断标量同样脱敏，协议 `code`、`id` 保持原类型和语义；GET 鉴权挑战和 scope 脱敏后保留原分类，GET SSE 的本地事件超限保留类型并终止而不重连，畸形帧不使流任务崩溃。
+  SSE 的原始事件 ID 保留给 SDK 和 `Last-Event-ID` 续传，只有 SDK 日志的 `id`、`last_event_id` 字段在进入日志输出前按存活连接的密钥脱敏；日志级别、发射者和其余诊断上下文不变。
 - **装时握手是 `POST /_wonton/probe`。** JSON 请求体是 `url`、`auth` 和展开后的 `headers` 对象；返回分类 JSON：
   `outcome`、可选 `http_status`、不含密钥的 `detail` 和可选工具名列表 `tools`。`ok` 和 `legacy_sse` 都继续安装。
   旧式 HTTP+SSE 由连接器转发为核心使用的 Streamable HTTP，不因传输旧而拒装。

@@ -13,7 +13,7 @@ use super::bounded_http::HttpError;
 use crate::plugin::remote_redaction::Redaction;
 
 #[derive(Clone, Default)]
-pub(super) struct Diagnostics(pub Option<Redaction>);
+pub(super) struct Diagnostics(Option<Redaction>);
 
 #[derive(serde::Deserialize)]
 struct DiagnosticFrame {
@@ -21,6 +21,13 @@ struct DiagnosticFrame {
 }
 
 impl Diagnostics {
+    pub fn new(redaction: Option<Redaction>) -> Self {
+        if let Some(redaction) = &redaction {
+            super::diagnostic_logs::register(redaction);
+        }
+        Self(redaction)
+    }
+
     pub fn message(&self, mut message: ServerJsonRpcMessage) -> ServerJsonRpcMessage {
         if let Some(redaction) = &self.0
             && let JsonRpcMessage::Error(error) = &mut message

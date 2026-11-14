@@ -11,6 +11,9 @@ use super::capture_logs;
 use super::fixture::{Bed, REMOTE, SECRET};
 use crate::mcp::upstream::Upstreams;
 
+#[path = "event_ids.rs"]
+mod event_ids;
+
 const LIMIT: usize = 1024;
 const WARNING: &str = "sse client event stream terminated with error";
 
@@ -21,6 +24,7 @@ enum Mode {
     Auth(StatusCode),
     Oversize,
     Malformed,
+    EventIds(event_ids::Source),
 }
 
 #[derive(Clone)]
@@ -28,6 +32,8 @@ struct Streaming {
     mode: Mode,
     gets: Arc<Mutex<Vec<HeaderMap>>>,
     posts: Arc<Mutex<Vec<HeaderMap>>>,
+    break_stream: Arc<tokio::sync::Notify>,
+    resume_reply: Arc<Mutex<Option<Value>>>,
 }
 
 #[test]
@@ -58,6 +64,8 @@ async fn connector(mode: Mode) -> (Bed, Streaming) {
         mode,
         gets: Arc::default(),
         posts: Arc::default(),
+        break_stream: Arc::default(),
+        resume_reply: Arc::default(),
     };
     let routes_state = state.clone();
     let bed = Bed::with_connector(move |_, _| {
@@ -85,6 +93,11 @@ async fn rpc(
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
     state.posts.lock().unwrap().push(headers);
+    if matches!(state.mode, Mode::EventIds(event_ids::Source::Post))
+        && body["method"] == "tools/list"
+    {
+        return event_ids::post_stream(&state, &body);
+    }
     let result = match body["method"].as_str().unwrap() {
         "initialize" => json!({"protocolVersion": "2025-11-25", "capabilities": {"tools": {}},
             "serverInfo": {"name": "streaming-connector", "version": "1"}}),
@@ -142,6 +155,7 @@ async fn events(State(state): State<Streaming>, headers: HeaderMap) -> Response 
                 .into_response()
         }
         Mode::Malformed => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+        Mode::EventIds(source) => event_ids::events(state, source).await,
     }
 }
 

@@ -3,12 +3,20 @@
 use std::borrow::Cow;
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use serde_json::Value;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct Redaction(Arc<[(String, Option<String>)]>);
+
+pub(crate) struct WeakRedaction(Weak<[(String, Option<String>)]>);
+
+impl WeakRedaction {
+    pub(crate) fn upgrade(&self) -> Option<Redaction> {
+        self.0.upgrade().map(Redaction)
+    }
+}
 
 const SECRET_MARKER: &str = "[secret]";
 
@@ -25,6 +33,10 @@ struct UrlRegion<'a> {
 }
 
 impl Redaction {
+    pub(crate) fn downgrade(&self) -> WeakRedaction {
+        WeakRedaction(Arc::downgrade(&self.0))
+    }
+
     pub(crate) fn new<'a>(
         url: &str,
         template: &str,
@@ -56,10 +68,25 @@ impl Redaction {
     }
 
     pub(crate) fn text<'a>(&self, text: &'a str) -> Cow<'a, str> {
+        Self::text_all(text, std::iter::once(self))
+    }
+
+    pub(crate) fn text_all<'a, 'r>(
+        text: &'a str,
+        redactions: impl IntoIterator<Item = &'r Self>,
+    ) -> Cow<'a, str> {
         let mut pending = BinaryHeap::new();
-        for (index, (needle, _)) in self.0.iter().enumerate() {
+        for (needle, template) in redactions
+            .into_iter()
+            .flat_map(|redaction| redaction.0.iter())
+        {
             if let Some(start) = text.find(needle) {
-                pending.push(Reverse((start, index)));
+                pending.push(Reverse((
+                    start,
+                    Reverse(needle.len()),
+                    needle.as_str(),
+                    template.as_deref(),
+                )));
             }
         }
         if pending.is_empty() {
@@ -68,8 +95,7 @@ impl Redaction {
         let mut output = String::with_capacity(text.len());
         let mut copied = 0;
         let mut region: Option<Region<'_>> = None;
-        while let Some(Reverse((start, index))) = pending.pop() {
-            let (needle, template) = &self.0[index];
+        while let Some(Reverse((start, _, needle, template))) = pending.pop() {
             let end = start + needle.len();
             if let Some(complete) = region.take_if(|current| start >= current.end) {
                 complete.write(text, &mut copied, &mut output);
@@ -81,7 +107,7 @@ impl Redaction {
             });
             current.end = current.end.max(end);
             if let Some(template) = template {
-                let url = current.url.get_or_insert_with(|| UrlRegion {
+                let url = current.url.get_or_insert(UrlRegion {
                     start,
                     end,
                     template,
@@ -96,7 +122,12 @@ impl Redaction {
                     .expect("nonempty match")
                     .len_utf8();
             if let Some(next) = text[search..].find(needle) {
-                pending.push(Reverse((search + next, index)));
+                pending.push(Reverse((
+                    search + next,
+                    Reverse(needle.len()),
+                    needle,
+                    template,
+                )));
             }
         }
         if let Some(complete) = region {

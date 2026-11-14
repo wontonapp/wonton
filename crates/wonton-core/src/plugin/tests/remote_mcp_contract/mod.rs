@@ -230,13 +230,15 @@ fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send + Sync) {
     let logs = Arc::new(Mutex::new(Vec::new()));
     let writer = logs.clone();
     // Scoped client captures and isolated global SDK captures share dynamic interest.
-    let subscriber = tracing_subscriber::registry().with(
-        tracing_subscriber::fmt::layer()
-            .without_time()
-            .with_ansi(false)
-            .with_writer(move || LogWriter(writer.clone()))
-            .with_filter(tracing_subscriber::filter::dynamic_filter_fn(|_, _| true)),
-    );
+    let subscriber = tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_ansi(false)
+                .with_writer(move || LogWriter(writer.clone()))
+                .with_filter(tracing_subscriber::filter::dynamic_filter_fn(|_, _| true)),
+        )
+        .with(crate::mcp::SdkDiagnostics);
     (logs, subscriber)
 }
 
