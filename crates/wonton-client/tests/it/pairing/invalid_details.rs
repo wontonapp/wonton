@@ -88,6 +88,10 @@ async fn assert_invalid_pairing_and_rejection() {
             action: wonton_protocol::HomeAction::DismissPairingFailure,
         })
         .unwrap();
+    assert_server_rejection(&phone, &log_path).await;
+}
+
+async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
     let home = Home::start().await;
     let token = "relay+example";
     let mut code =
