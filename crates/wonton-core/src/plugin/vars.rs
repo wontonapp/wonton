@@ -10,6 +10,7 @@ use super::manifest::{Manifest, Permission};
 use super::names;
 use super::render::InstallContext;
 use super::secrets::secret_var;
+use wonton_protocol::{AiLevel, BOT_AI_LEVEL_ENV};
 
 /// 注入给 OIDC 客户端的配置。`Debug` 不打印客户端密钥。
 #[derive(Clone, PartialEq, Eq)]
@@ -196,6 +197,13 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         });
         set(egress::URL_VAR, url.to_owned());
     }
+    bot_identity_vars(manifest, ctx, &mut set);
+    vars
+}
+
+/// 接了 Matrix 的插件的 Bot 身份（`WONTON_MATRIX_*`）和 Bot 的 AI 级别。声明了 `bots` 的插件级别按
+/// Bot 各有一套（[`super::bot_services`]），插件级变量里不注入。
+fn bot_identity_vars(manifest: &Manifest, ctx: &InstallContext, mut set: impl FnMut(&str, String)) {
     if let Some(matrix) = &ctx.matrix {
         set("WONTON_MATRIX_HOMESERVER", matrix.homeserver.clone());
         set("WONTON_MATRIX_USER_ID", matrix.user_id.clone());
@@ -203,5 +211,9 @@ pub fn injected_vars(manifest: &Manifest, ctx: &InstallContext) -> Vars {
         set("WONTON_MATRIX_ALLOWED_USERS", matrix.allowed_users.clone());
         set("WONTON_MATRIX_HOME_ROOM", matrix.home_room.clone());
     }
-    vars
+    // 单个 Bot 的插件只有一个默认 Bot，归主人：主人不受角色约束，级别是“改动自己确认”（ADR-0088
+    // 第 1 节）。
+    if manifest.permissions.contains(&Permission::MatrixBot) && manifest.bots.is_none() {
+        set(BOT_AI_LEVEL_ENV, AiLevel::SelfConfirms.as_str().to_owned());
+    }
 }

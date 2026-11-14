@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::BotKeeper;
+use wonton_protocol::{AiLevel, BotKeeper};
 
 use super::languages::Languages;
 use super::manager::{BotReport, InstallError, PluginManager};
@@ -387,6 +387,31 @@ impl PluginManager {
         }
     }
 
+    /// Bot 容器按归属人注入的 AI 级别（ADR-0088 第 5、8 节）：私人 Bot 按归属人的角色，共享 Bot 按
+    /// 能用人里最低的；解析不出按只读并记日志，和总线的封顶同用 [`crate::ai_level`]。归属人是只读
+    /// 级别的私人 Bot，共享文件夹挂载一律只读；共享 Bot 没有归属人，不按人算。
+    pub(super) fn bot_levels(&self, keeper: &BotKeeper) -> (AiLevel, bool) {
+        let roles = self
+            .person_roles
+            .read()
+            .expect("person roles lock poisoned");
+        let records = self
+            .person_members
+            .get()
+            .map(|members| (members.as_ref(), roles.as_ref()));
+        match keeper {
+            BotKeeper::User { username } => {
+                let level = crate::ai_level::person_ai(&self.cfg.owner, records, username);
+                (level, level == AiLevel::ReadOnly)
+            }
+            BotKeeper::Household => (crate::ai_level::shared_bot_ai(records), false),
+            BotKeeper::Other => {
+                tracing::warn!("Bot 没有归属人记录，AI 动手按只读注入");
+                (AiLevel::ReadOnly, false)
+            }
+        }
+    }
+
     /// 注入给一个 Bot 的服务的 `WONTON_MATRIX_*`：经核心在插件网络里的别名访问 Matrix 客户端接口，
     /// `WONTON_MATRIX_ALLOWED_USERS` 是它听的人：归属人和已成立的联系人。
     pub(super) fn matrix_vars(&self, bot: &ProvisionedBot) -> MatrixVars {
@@ -410,6 +435,10 @@ impl PluginManager {
         ctx.matrix = Some(self.matrix_vars(bot));
         // Bot 的变量先放齐（模型凭据、Matrix 身份），总线地址只有申请了 tools 的插件才有。
         if manifest.bots.is_some() {
+            // 默认 Bot 归主人（安装时按主人代登录），级别走归属人的解析。
+            let (ai_level, keeper_read_only) = self.bot_levels(&BotKeeper::User {
+                username: self.cfg.owner.clone(),
+            });
             ctx.bots.insert(
                 super::bot_services::DEFAULT_BOT.to_owned(),
                 super::bot_services::BotVars {
@@ -419,6 +448,8 @@ impl PluginManager {
                         .and_then(|m| m.bot_keys.get(super::bot_services::DEFAULT_BOT).cloned()),
                     matrix: ctx.matrix.clone(),
                     mcp_url: None,
+                    ai_level,
+                    keeper_read_only,
                     ..Default::default()
                 },
             );
