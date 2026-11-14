@@ -114,7 +114,7 @@ struct TabPageView: View {
                     }, cancel: closePage)
                 } else {
                     if let webView = session.webView, sourceAvailable {
-                        TabWebView(webView: webView, obscured: obscured())
+                        TabWebView(webView: webView, obscured: obscured(safe: safe))
                             .id(ObjectIdentifier(webView))
                             .ignoresSafeArea(.container)
                     }
@@ -132,7 +132,7 @@ struct TabPageView: View {
                 if let panel {
                     PanelPagePull(
                         enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
-                        zone: PagePullZone(obscured: obscured()),
+                        zone: PagePullZone(obscured: obscured(safe: safe)),
                         changed: panel.pageChanged, ended: panel.pageEnded, cancelled: panel.pageCancelled
                     )
                 }
@@ -313,16 +313,19 @@ private extension TabPageView {
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
     }
 
-    /// 整页铺满整个屏幕、不替页面让安全区（ADR-0095）：刘海和 Home 条由页面自己按 env(safe-area-inset-*) 或桥给的
-    /// 安全区让。面板里的页面照面板的布局让出上下两条（ADR-0052）。
-    private func obscured() -> UIEdgeInsets {
-        guard let panel else { return .zero }
-        return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+    /// 网页被浮在上面的东西挡住的上下两条。整页铺满整个屏幕（ADR-0095），顶上是状态栏加胶囊那一行：
+    /// 页面的背景照样画到屏幕顶，固定在顶上的按钮和滚动到头的位置让到胶囊下面，不然压在胶囊底下点不到。
+    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。
+    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
+        if let panel {
+            return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+        }
+        return UIEdgeInsets(top: safe.top + TabPageCapsule.rowHeight, left: 0, bottom: 0, right: 0)
     }
 
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
         let bottom = panel?.insetBottom ?? 0
-        let top = panel?.insetTop ?? safe.top
+        let top = panel?.insetTop ?? pageInsetTop(safe: safe)
         return TabWebInputs(
             page: page, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
@@ -331,11 +334,25 @@ private extension TabPageView {
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
                 insetTop: Double(top), insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
                 safeArea: TabSafeArea(
-                    top: Double(safe.top), right: Double(safe.trailing),
+                    top: Double(pageSafeTop(safe: safe)), right: Double(safe.trailing),
                     bottom: Double(safe.bottom), left: Double(safe.leading)
                 )
             ), textScale: textScale
         )
+    }
+
+    /// 整页经桥报给页面的顶部让位（`--wonton-inset-top`）。iOS 26 起 WebKit 已经按 `obscured` 把页面的布局
+    /// 让到胶囊下面，再报一份页面会让两次，所以报 0；更早的系统没有这个接口，把状态栏加胶囊那一行报给页面，
+    /// 适配过桥的页面自己让。
+    private func pageInsetTop(safe: EdgeInsets) -> CGFloat {
+        if #available(iOS 26, *) { return 0 }
+        return safe.top + TabPageCapsule.rowHeight
+    }
+
+    /// 桥的 `safeAreaInsets.top`：同 `pageInsetTop`，iOS 26 起整页的顶部安全区已经被 WebKit 让掉。
+    private func pageSafeTop(safe: EdgeInsets) -> CGFloat {
+        if #available(iOS 26, *), panel == nil { return 0 }
+        return safe.top
     }
 
     /// 会话被释放过（`TabWebViewStore.retain` 放掉的）：重新要一份并加载。

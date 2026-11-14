@@ -366,7 +366,8 @@ final class TabWebSession: NSObject {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 面板挡住的上下两条（ADR-0052）：页面照样画在后面，但固定定位的元素和滚动的终点让开。整页是 0（ADR-0095）。
+    /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `TabPageView.obscured`。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {
