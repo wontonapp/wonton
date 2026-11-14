@@ -149,7 +149,6 @@ mod vars;
 pub mod views;
 mod views_agent_logins;
 mod views_bots;
-mod views_broken;
 mod views_devices;
 mod views_icons;
 mod views_permissions;

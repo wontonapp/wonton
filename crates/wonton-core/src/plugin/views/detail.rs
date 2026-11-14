@@ -41,12 +41,6 @@ impl PluginManager {
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
         let record = self.store.load(id).ok().flatten();
-        // “每次都问”只有 Agent 写的插件才有（ADR-0033）。
-        let ask_every_update = installed.written_by.is_some().then(|| {
-            record
-                .as_ref()
-                .is_some_and(|record| record.ask_every_update)
-        });
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
@@ -87,33 +81,28 @@ impl PluginManager {
             secret_inputs: self.installed_input_states(id, m, langs),
             has_web: m.webui.is_some(),
             has_settings: super::super::settings::enabled(m),
+            // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
+            ask_every_update: installed.written_by.is_some().then(|| {
+                record
+                    .as_ref()
+                    .is_some_and(|record| record.ask_every_update)
+            }),
             installed: Some(installed),
             blocked: None,
-            notices: setup_notice(m, langs)
-                .into_iter()
-                .chain(
-                    listed
-                        .firewalled
-                        .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
-                        .map(|mut notice| {
-                            notice.emphasis = true;
-                            notice
-                        }),
-                )
-                .chain(cross_origin_isolation_notice(m, langs))
-                .chain(super::super::manifest_widget::manifest_notices(m, langs))
-                .chain(self.unfilled_notice(needs_configuration, id, m, langs))
-                .chain(
-                    super::super::egress::provider::provides_proxy(m)
-                        .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
-                )
-                .collect(),
+            notices: self.installed_notices(needs_configuration, id, m, langs, listed.firewalled),
             hints: self
                 .models_hint(id, m)
                 .into_iter()
                 .chain(self.dependency_hints(m, langs))
                 .chain(self.hosted_hint(m))
                 .collect(),
+            // 选中的设备不在了就是一条 device_unavailable，其他问题详情页不背。
+            problems: record
+                .as_ref()
+                .map(|record| {
+                    super::super::device::problems(record, self.host.dev.as_deref(), langs)
+                })
+                .unwrap_or_default(),
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
             capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
@@ -122,11 +111,38 @@ impl PluginManager {
                 .as_ref()
                 .map(|switched| switched.offer(listed.lan_webui, langs)),
             save_grants: self.save_grants(id),
-            // 只有 Agent 写的插件才有这个开关的值（ADR-0033）。
-            ask_every_update,
             limits: Some(listed.limits),
             shares: None,
         })
+    }
+
+    /// 已装详情页的提示条：先放行前的“装好后要做的一步”，再放防火墙、跨域隔离、清单提示、没填的密钥和出网代理。
+    fn installed_notices(
+        &self,
+        needs_configuration: bool,
+        id: &PluginId,
+        m: &Manifest,
+        langs: &Languages,
+        firewalled: bool,
+    ) -> Vec<CardLine> {
+        setup_notice(m, langs)
+            .into_iter()
+            .chain(
+                firewalled
+                    .then(|| line(l10n::text(langs, "plugin-firewall-notice", &[])))
+                    .map(|mut notice| {
+                        notice.emphasis = true;
+                        notice
+                    }),
+            )
+            .chain(cross_origin_isolation_notice(m, langs))
+            .chain(super::super::manifest_widget::manifest_notices(m, langs))
+            .chain(self.unfilled_notice(needs_configuration, id, m, langs))
+            .chain(
+                super::super::egress::provider::provides_proxy(m)
+                    .then(|| line(l10n::text(langs, "plugin-egress-proxy-select", &[]))),
+            )
+            .collect()
     }
 
     /// 详情页顶上那条“还没填哪些密钥”：和状态一样只在运行中给，别的状态有自己的提示。
@@ -217,5 +233,6 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         ask_every_update: None,
         limits: None,
         shares: None,
+        problems: Vec::new(),
     }
 }
