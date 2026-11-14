@@ -480,6 +480,7 @@ pub fn preview(id: &str) -> InstallPreview {
         kind: PluginKind::App,
         runtime: Default::default(),
         security_tier: None,
+        remote: None,
         scope_choices: Vec::new(),
         has_bot: false,
         icon: None,

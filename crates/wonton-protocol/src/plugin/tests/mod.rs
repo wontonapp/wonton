@@ -1,5 +1,6 @@
 mod actions;
 mod forms;
+mod remote_mcp;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -192,6 +193,7 @@ fn preview() -> InstallPreview {
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
         security_tier: Some(SecurityTier::High),
+        remote: None,
         scope_choices: vec![],
         has_bot: false,
         icon: None,
@@ -294,6 +296,7 @@ fn detail() -> PluginDetail {
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
         security_tier: Some(SecurityTier::Standard),
+        remote: None,
         link_url: None,
         scope: None,
         version: "2.1.0".into(),

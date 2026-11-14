@@ -142,6 +142,7 @@ fn request(preview: InstallPreview, token: &str) -> InstallRequest {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     }
 }
 

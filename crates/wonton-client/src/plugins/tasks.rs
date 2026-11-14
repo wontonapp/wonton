@@ -87,6 +87,7 @@ impl PluginsLink {
             lan_webui,
             install_together: Vec::new(),
             connect_plugins: Vec::new(),
+            remote_oauth: None,
         };
         let link = self.clone();
         let id = preview.id;

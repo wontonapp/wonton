@@ -75,6 +75,7 @@ pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     }
 }
 

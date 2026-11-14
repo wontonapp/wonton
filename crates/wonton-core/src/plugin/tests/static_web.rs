@@ -269,6 +269,8 @@ fn hosted_capabilities_need_a_mount_and_others_refuse_one() {
         }
     }
     assert!(rejected(&provider("torrent_client", Some("/srv"))).contains("mount"));
+    // 托管但不挂目录：提供方写了挂载点就是错的。
+    assert!(rejected(&provider("remote_mcp", Some("/srv"))).contains("mount"));
 }
 
 #[test]

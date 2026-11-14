@@ -83,6 +83,7 @@ fn request(source: &str, digest: &str, settings: SettingValues) -> InstallReques
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     }
 }
 

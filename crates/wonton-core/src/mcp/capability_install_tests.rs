@@ -341,6 +341,7 @@ async fn capability_confirmation_does_not_recompute_the_approved_plan() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     b.s.manager.install_source(&request).await.unwrap();
     assert!(b.installed("app.example.extra"));
