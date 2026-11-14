@@ -118,6 +118,9 @@ pub struct PluginManager {
     pub(super) default_bot_plugin: RwLock<Option<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
     pub(super) lan: Lan,
+    #[cfg(test)]
+    pub(super) recovery_metadata_hold:
+        std::sync::Mutex<Option<super::recovery_replace::MetadataHold>>,
     /// 出网插件走哪个代理，见 [`super::egress`]。
     pub(super) egress: Egress,
     /// 宿主主机名（`WONTON_HOST_NAME`）；只在取到时缓存，失败下次安装再取，见 [`super::host_check`]。
@@ -217,6 +220,8 @@ impl PluginManager {
             bundled: RwLock::new(BTreeSet::new()),
             default_bot_plugin: RwLock::new(None),
             lan,
+            #[cfg(test)]
+            recovery_metadata_hold: Default::default(),
             egress: Egress::default(),
             host_name: tokio::sync::OnceCell::new(),
             registry_mirror: Default::default(),

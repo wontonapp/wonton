@@ -39,28 +39,54 @@ impl Rig {
         )
         .await
     }
+
+    async fn reinstall_client(&self) -> String {
+        let container = Instance::default().container(&self.id.slug(), "app");
+        self.h.docker.add_container(&container, self.id.as_str());
+        self.h
+            .manager
+            .uninstall(&self.id, true, &Languages::default())
+            .await
+            .unwrap();
+        self.h
+            .manager
+            .install(
+                CLIENT_APP,
+                &[Permission::NetworkClients],
+                Languages::default(),
+            )
+            .await
+            .unwrap();
+        container
+    }
+
+    fn upgrade_client(&self) -> tokio::task::JoinHandle<Result<(), crate::plugin::InstallError>> {
+        let manager = self.h.manager.clone();
+        let id = self.id.clone();
+        tokio::spawn(async move {
+            let package =
+                PluginPackage::parse(&CLIENT_APP.replace("1.0.0", "1.1.0"), &Languages::default())
+                    .unwrap();
+            manager
+                .upgrade_upload(
+                    &id,
+                    package,
+                    vec![Permission::NetworkClients],
+                    vec![],
+                    false,
+                    &[],
+                    &Default::default(),
+                    &Languages::default(),
+                )
+                .await
+        })
+    }
 }
 
 #[tokio::test]
 async fn upgrade_commit_keeps_successfully_closed_entry_closed() {
     let rig = Rig::start(true, true, true).await;
-    let container = Instance::default().container(&rig.id.slug(), "app");
-    rig.h.docker.add_container(&container, rig.id.as_str());
-    // 从真实安装路径取得升级所需的卷、网络和密钥记录。
-    rig.h
-        .manager
-        .uninstall(&rig.id, true, &Languages::default())
-        .await
-        .unwrap();
-    rig.h
-        .manager
-        .install(
-            CLIENT_APP,
-            &[Permission::NetworkClients],
-            Languages::default(),
-        )
-        .await
-        .unwrap();
+    let container = rig.reinstall_client().await;
     assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
     let old = rig
         .gateway
@@ -73,25 +99,7 @@ async fn upgrade_commit_keeps_successfully_closed_entry_closed() {
         .h
         .docker
         .hold(&format!("DELETE /containers/{container}"));
-    let manager = rig.h.manager.clone();
-    let id = rig.id.clone();
-    let upgrading = tokio::spawn(async move {
-        let package =
-            PluginPackage::parse(&CLIENT_APP.replace("1.0.0", "1.1.0"), &Languages::default())
-                .unwrap();
-        manager
-            .upgrade_upload(
-                &id,
-                package,
-                vec![Permission::NetworkClients],
-                vec![],
-                false,
-                &[],
-                &Default::default(),
-                &Languages::default(),
-            )
-            .await
-    });
+    let upgrading = rig.upgrade_client();
     tokio::time::timeout(Duration::from_secs(10), held.reached())
         .await
         .unwrap();
@@ -200,5 +208,82 @@ async fn setup_loss_returns_closed_switches_on_the_detecting_get() {
     let record = rig.h.manager.record_for_test(&rig.id).unwrap();
     assert!(!record.clients_entries.lan && !record.clients_entries.public);
     assert!(*old.borrow());
+    assert_eq!(rig.entry_request().await.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn rollback_metadata_keeps_entry_closed_after_successful_put() {
+    let rig = Rig::start(true, true, true).await;
+    let container = rig.reinstall_client().await;
+    assert_eq!(rig.switch("public", true).await.status, StatusCode::OK);
+    let revoked = rig
+        .gateway
+        .clients
+        .resolve("client", Kind::Public)
+        .unwrap()
+        .unwrap()
+        .revoked;
+    let (snapshot, resume) = rig.h.manager.hold_recovery_metadata_for_test(&rig.id);
+    rig.h
+        .docker
+        .fail_next_create(&container, "new version rejected");
+    let upgrading = rig.upgrade_client();
+
+    // 停在 back_to_old 已重建旧容器并读出记录之后；关闭必须在旧副本写回之前成功。
+    let stale = tokio::time::timeout(Duration::from_secs(10), snapshot)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stale.clients_entries.public);
+    assert_eq!(stale.version, "1.0.0");
+    assert_eq!(
+        rig.h.manager.route(&rig.id.slug(), "/").unwrap().status,
+        PluginStatus::Upgrading
+    );
+    let closed = tokio::time::timeout(Duration::from_secs(10), rig.switch("public", false))
+        .await
+        .unwrap();
+    assert_eq!(closed.status, StatusCode::OK, "{}", closed.text());
+    assert!(*revoked.borrow());
+    assert!(
+        !rig.h
+            .manager
+            .record_for_test(&rig.id)
+            .unwrap()
+            .clients_entries
+            .public
+    );
+    resume.send(()).unwrap();
+
+    assert!(
+        tokio::time::timeout(Duration::from_secs(10), upgrading)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
+    assert_eq!(
+        rig.h.manager.route(&rig.id.slug(), "/").unwrap().status,
+        PluginStatus::Running
+    );
+    let record = rig.h.manager.record_for_test(&rig.id).unwrap();
+    assert_eq!(record.version, "1.0.0");
+    assert!(!record.clients_entries.public);
+    crate::clients::apply::reconcile(&rig.gateway)
+        .await
+        .unwrap();
+    let listed = rig.list().await;
+    assert_eq!(listed.status, StatusCode::OK, "{}", listed.text());
+    let body = listed.json();
+    assert!(body[0]["public_url"].is_null());
+    let public = body[0]["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["kind"]["kind"] == "public")
+        .unwrap();
+    assert_eq!(public["enabled"], false);
+    assert!(!rig.crt_list("public").contains("client.home.example.test"));
+    assert!(*revoked.borrow());
     assert_eq!(rig.entry_request().await.status, StatusCode::FORBIDDEN);
 }

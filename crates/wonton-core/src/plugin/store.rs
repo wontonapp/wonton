@@ -369,13 +369,16 @@ impl Store {
         write_json(&self.path(&record.id), record)
     }
 
-    /// 普通设置不能用操作开始时的旧副本覆盖并发保存的停止意图或重试额度。
+    /// 普通设置与回滚只提交元数据，不能覆盖独立保存的生命周期或客户端入口状态。
     pub(super) fn save_metadata(&self, record: &InstalledRecord) -> Result<(), StoreError> {
         let _writing = self.writes.lock().expect("插件记录写锁中毒");
         let path = self.path(&record.id);
         let mut updated = record.clone();
         if let Some(current) = self.load(&record.id)? {
             updated.lifecycle = current.lifecycle;
+            updated.entry_label = current.entry_label;
+            updated.clients_entries = current.clients_entries;
+            updated.setup_done_ever = current.setup_done_ever;
         }
         write_json(&path, &updated)
     }
