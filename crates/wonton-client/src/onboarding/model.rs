@@ -18,9 +18,9 @@ impl OnboardingLink {
             )));
         }
         let configured = state
-            .providers
+            .model_settings
             .as_ref()
-            .is_some_and(|providers| !providers.configured.is_empty());
+            .is_some_and(|settings| settings.has_configured_models);
         if !configured {
             return Err(invalid(&l10n!(
                 CATALOG,

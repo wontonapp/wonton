@@ -265,9 +265,6 @@ plugin-install-prv-models-port = provides.models.portを0にはできません
 plugin-install-prv-models-apis-path = provides.models.apisのパスは/で始まる必要があります
 plugin-install-prv-models-default-model = provides.models.default_modelを空にはできません
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field }は空でないargvで、{ $placeholder }で認証情報の名前を示す必要があります
-plugin-install-prv-list-argv = provides.models.providers.listは空でないargvである必要があります
-plugin-install-prv-provider-argv = provides.models.providers.{ $field }は空でないargvで、{ "{{" }id{ "}}" }でプロバイダーIDを示す必要があります
-plugin-install-prv-custom-argv = provides.models.providers.custom.{ $field }は、プレースホルダーを含まない空でないargvである必要があります
 
 # ── プロキシアプリのCookieとヘッダー（proxy_auth.rs）──────────────────────
 

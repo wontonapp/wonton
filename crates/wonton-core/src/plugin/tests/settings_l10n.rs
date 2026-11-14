@@ -14,14 +14,14 @@ fn expected(tag: &str, message: &str) -> String {
     CATALOG.format(lang, message, &[])
 }
 
-/// 没装模型网关时列出服务商：失败原因按请求的语言写。
+/// 没装模型网关时读取模型设置：失败原因按请求的语言写。
 #[tokio::test]
-async fn model_providers_absent_reason_follows_the_requested_language() {
+async fn model_settings_absent_reason_follows_the_requested_language() {
     let (_docker, engine) = super::super::fake_docker::FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     for (header, tag) in [("ja", "ja"), ("fr-FR", "en")] {
-        let error = m.model_providers(&langs(header)).await.unwrap_err();
+        let error = m.model_settings(&langs(header)).await.unwrap_err();
         assert_eq!(
             error.to_string(),
             expected(tag, "plugin-settings-models-gateway-absent"),

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    MAX_DISPLAY_NAME_CHARS, Me, ModelProviders, Onboarding, OnboardingAgent, OnboardingModelChoice,
+    MAX_DISPLAY_NAME_CHARS, Me, ModelSettings, Onboarding, OnboardingAgent, OnboardingModelChoice,
     OnboardingProfileStep, OwnerProfileUpdate, ProfileProblem, check_display_name,
     check_email_change, normalized_email,
 };
@@ -127,8 +127,8 @@ impl Draft {
         (!already_default).then_some(agent)
     }
 
-    pub fn model<'a>(&'a self, providers: Option<&ModelProviders>) -> Option<&'a ModelDraft> {
-        let configured = providers.is_some_and(|providers| !providers.configured.is_empty());
+    pub fn model<'a>(&'a self, settings: Option<&ModelSettings>) -> Option<&'a ModelDraft> {
+        let configured = settings.is_some_and(|settings| settings.has_configured_models);
         match &self.model {
             Some(ModelDraft::Current) | None if configured => Some(&ModelDraft::Current),
             Some(ModelDraft::Current | ModelDraft::Skipped) | None => None,

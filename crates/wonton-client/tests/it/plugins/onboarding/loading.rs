@@ -12,7 +12,7 @@ use wonton_client::{
 };
 
 use super::super::rig::{Rig, WAIT, running};
-use super::{ONBOARDING, PROVIDERS, onboarding, providers, wait_requests};
+use super::{MODEL_SETTINGS, ONBOARDING, model_settings, onboarding, wait_requests};
 
 /// `onboarding()` 里 agent.one 的 Bot：选它当默认 Agent 后，引导发布把它交给聊天，聊天视图随之通知一次。
 const BOT: &str = "@agent:home";
@@ -150,14 +150,14 @@ impl Wake for RecordWake {
 async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("model"));
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_onboarding(|view| view.step.is_some() && !view.loading)
         .await;
-    // 第二次取状态卡在服务商上：onboarding 已经有了，loading 还没结束。
-    rig.core.hold(Method::GET, PROVIDERS);
+    // 第二次取状态卡在模型设置上：onboarding 已经有了，loading 还没结束。
+    rig.core.hold(Method::GET, MODEL_SETTINGS);
     rig.app.dispatch(Action::RefreshOnboarding).unwrap();
-    wait_requests(&rig, Method::GET, PROVIDERS, 2).await;
+    wait_requests(&rig, Method::GET, MODEL_SETTINGS, 2).await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
     let chat = rig.app.subscribe_chat();
@@ -171,7 +171,7 @@ async fn a_delayed_chat_notification_cannot_restore_finished_loading() {
     .unwrap();
     let (release, gets) = pause_selecting_publish(&rig, chat).await;
 
-    rig.core.release(Method::GET, PROVIDERS);
+    rig.core.release(Method::GET, MODEL_SETTINGS);
     let ready = rig
         .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
         .await;

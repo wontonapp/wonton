@@ -55,27 +55,6 @@ pub struct ModelsProvider {
     /// 注入给使用方的 `WONTON_MODEL_DEFAULT`。
     pub default_model: String,
     pub credentials: CredentialCommands,
-    /// 服务商管理命令，在 credentials 容器里执行。
-    #[serde(default)]
-    pub providers: Option<ProviderCommands>,
-}
-
-/// 服务商命令（argv，不经 shell）。预设命令用 `{id}` 指明服务商 ID。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProviderCommands {
-    pub list: Vec<String>,
-    pub save: Vec<String>,
-    pub test: Vec<String>,
-    #[serde(default)]
-    pub custom: Option<CustomProviderCommands>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct CustomProviderCommands {
-    pub save: Vec<String>,
-    pub test: Vec<String>,
 }
 
 /// 网关提供的接口及其基础路径。
@@ -99,9 +78,6 @@ pub struct CredentialCommands {
     #[serde(default)]
     pub service: Option<String>,
 }
-
-/// 服务商命令里的服务商 ID 占位符。
-pub const ID_PLACEHOLDER: &str = "{id}";
 
 /// 凭据命令里的凭据名占位符。
 pub const NAME_PLACEHOLDER: &str = "{name}";
@@ -215,39 +191,6 @@ fn validate_models(models: &ModelsProvider, langs: &Languages) -> Result<(), Man
                     ("placeholder", NAME_PLACEHOLDER.into()),
                 ],
             )));
-        }
-    }
-    if let Some(providers) = &models.providers {
-        validate_provider_commands(providers, langs)?;
-    }
-    Ok(())
-}
-
-fn validate_provider_commands(
-    providers: &ProviderCommands,
-    langs: &Languages,
-) -> Result<(), ManifestError> {
-    if providers.list.is_empty() {
-        return Err(invalid(&text(langs, "plugin-install-prv-list-argv", &[])));
-    }
-    for (field, argv) in [("save", &providers.save), ("test", &providers.test)] {
-        if !argv.iter().any(|arg| arg.contains(ID_PLACEHOLDER)) {
-            return Err(invalid(&text(
-                langs,
-                "plugin-install-prv-provider-argv",
-                &[("field", field.into())],
-            )));
-        }
-    }
-    if let Some(custom) = &providers.custom {
-        for (field, argv) in [("save", &custom.save), ("test", &custom.test)] {
-            if argv.is_empty() || argv.iter().any(|arg| arg.contains(['{', '}'])) {
-                return Err(invalid(&text(
-                    langs,
-                    "plugin-install-prv-custom-argv",
-                    &[("field", field.into())],
-                )));
-            }
         }
     }
     Ok(())

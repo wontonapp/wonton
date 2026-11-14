@@ -293,25 +293,6 @@ plugin-settings-models-list-malformed = 模型网关 { $provider } 的模型列�
 plugin-settings-models-connect-first = 先在“模型设置”接入模型，Bot 才能回话。
 plugin-settings-models-not-ready = 模型网关 { $provider } 未就绪：{ $error }
 plugin-settings-models-command-rejected = 模型网关 { $provider } 拒绝了凭据命令（{ $command }，退出码 { $code }）：{ $stderr }
-plugin-settings-model-action-save = 保存
-plugin-settings-model-action-test = 测试
-plugin-settings-model-disconnected-saved = 服务商连接失败，key 已保存
-plugin-settings-model-disconnected-unsaved = 服务商连接失败，什么都没保存
-plugin-settings-model-no-provider-commands = 模型网关 { $provider } 没有声明服务商命令
-plugin-settings-model-provider-unsupported = 模型网关不支持服务商 { $id }
-plugin-settings-model-custom-unsupported = 模型网关不支持自定义服务商
-plugin-settings-model-custom-encode-failed = 自定义服务商请求编码失败
-plugin-settings-model-command-timeout = 模型网关 { $provider } 命令执行失败或超时
-plugin-settings-model-invalid-endpoint = 服务商地址或模型名不合法
-plugin-settings-model-key-rejected = 服务商拒绝了 key，key 没有保存
-plugin-settings-model-provider-command-failed = 模型网关 { $provider } { $action }服务商失败，退出码 { $code }
-plugin-settings-model-list-failed = 模型网关 { $provider } 列出服务商失败：{ $error }
-plugin-settings-model-list-exit = 模型网关 { $provider } 列出服务商失败，退出码 { $code }
-plugin-settings-model-list-not-json = 模型网关 { $provider } 的服务商列表不是合法 JSON
-plugin-settings-model-key-invalid = key 不能为空、不能有换行，且不能超过 4 KiB
-plugin-settings-model-url-invalid = 服务商地址必须是 http 或 https URL、不能有空白，且不能超过 2 KiB
-plugin-settings-model-name-invalid = 模型名不能为空、不能有空白或控制字符，且不能超过 200 字节
-plugin-settings-model-request-format = 模型服务商请求格式不正确
 
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 

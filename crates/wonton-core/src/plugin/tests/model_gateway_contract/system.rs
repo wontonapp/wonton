@@ -113,7 +113,6 @@ pub(super) async fn start(socket: &Path) -> super::Target {
     super::Target {
         spec,
         upstream,
-        backend_url,
         docker,
         engine,
         _guard: Box::new(guard),

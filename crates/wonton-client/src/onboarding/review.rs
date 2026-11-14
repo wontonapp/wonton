@@ -179,7 +179,7 @@ fn agent_entry(state: &LocalState, onboarding: &Onboarding) -> ReviewEntry {
 }
 
 fn model_entry(state: &LocalState) -> ReviewEntry {
-    match state.draft.model(state.providers.as_ref()) {
+    match state.draft.model(state.model_settings.as_ref()) {
         Some(model) => model_choice_entry(model),
         None => ReviewEntry::unchanged(MODEL, OnboardingReviewKind::Model, Vec::new()),
     }

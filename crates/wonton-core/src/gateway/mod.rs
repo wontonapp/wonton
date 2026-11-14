@@ -67,7 +67,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
-mod model_providers;
+mod model_settings;
 mod models;
 pub(crate) mod notify;
 pub(crate) mod notify_limit;
@@ -784,8 +784,6 @@ mod matrix_rtc_tests;
 mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
-#[cfg(test)]
-mod model_providers_tests;
 #[cfg(test)]
 mod models_tests;
 #[cfg(test)]

@@ -84,7 +84,6 @@ pub mod matrix_rtc_ca;
 mod mcp_server;
 mod member_bots;
 pub(crate) mod model_health;
-pub(crate) mod model_providers;
 pub mod models;
 pub mod mounts;
 pub mod names;

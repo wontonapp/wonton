@@ -91,20 +91,20 @@ pub(super) fn render(
         Vec::new()
     };
     let model = OnboardingModelStep {
-        settings: state.providers.as_ref().and_then(|providers| {
-            providers.web_url.as_ref().map(|web_url| ModelSettingsPage {
-                plugin_id: providers.plugin_id.clone(),
+        settings: state.model_settings.as_ref().and_then(|settings| {
+            settings.web_url.as_ref().map(|web_url| ModelSettingsPage {
+                plugin_id: settings.plugin_id.clone(),
                 web_url: web_url.clone(),
             })
         }),
         has_configured_models: state
-            .providers
+            .model_settings
             .as_ref()
-            .is_some_and(|providers| !providers.configured.is_empty()),
+            .is_some_and(|settings| settings.has_configured_models),
         logins: selected_agent.map_or_else(Vec::new, |agent| agent.logins.clone()),
         choice: state
             .draft
-            .model(state.providers.as_ref())
+            .model(state.model_settings.as_ref())
             .and_then(|model| model.choice()),
         problem: state.model_problem.clone(),
     };
@@ -196,7 +196,7 @@ fn navigation(
     let can_next = match step {
         OnboardingStep::Profile | OnboardingStep::Apps => true,
         OnboardingStep::Agent => selected.is_some_and(installable),
-        OnboardingStep::Model => state.draft.model(state.providers.as_ref()).is_some(),
+        OnboardingStep::Model => state.draft.model(state.model_settings.as_ref()).is_some(),
         OnboardingStep::Review => match state.commit {
             OnboardingCommit::NotStarted => review::can_commit(&state.review),
             OnboardingCommit::Running => false,

@@ -16,7 +16,7 @@ use crate::l10n;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
-    isolation, matrix, me, model_providers, onboarding, pages, peers, plugin_audience, push, roles,
+    isolation, matrix, me, model_settings, onboarding, pages, peers, plugin_audience, push, roles,
     same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
@@ -50,32 +50,6 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
             "/_wonton/api/plugins/{id}/takeover",
             put(tool_policy::takeover).delete(tool_policy::takeover),
         )
-}
-
-/// 密钥请求显式限 8 KiB，鉴权和同源限制与插件管理接口相同。
-fn model_provider_routes() -> Router<Arc<Gateway>> {
-    Router::new()
-        .route(
-            wonton_protocol::MODEL_PROVIDERS_PATH,
-            get(model_providers::list),
-        )
-        .route(
-            "/_wonton/api/models/providers/{id}",
-            put(model_providers::save),
-        )
-        .route(
-            "/_wonton/api/models/providers/{id}/test",
-            post(model_providers::test),
-        )
-        .route(
-            wonton_protocol::CUSTOM_MODEL_PROVIDER_PATH,
-            put(model_providers::custom_save),
-        )
-        .route(
-            wonton_protocol::CUSTOM_MODEL_PROVIDER_TEST_PATH,
-            post(model_providers::custom_test),
-        )
-        .layer(DefaultBodyLimit::max(8 << 10))
 }
 
 /// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。
@@ -244,7 +218,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/oidc/login", get(sso::oidc_login))
         .route("/_wonton/oidc/consent", get(sso::oidc_consent))
         .route("/_wonton/matrix/login-token", post(matrix::login_token))
-        .merge(model_provider_routes())
+        .route(
+            wonton_protocol::MODEL_SETTINGS_PATH,
+            get(model_settings::settings),
+        )
         .route(
             "/_wonton/push/registration",
             put(push::register).delete(push::unregister),

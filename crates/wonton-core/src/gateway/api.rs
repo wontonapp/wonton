@@ -29,7 +29,7 @@
 //! 停止先保存 `stopped` 意图和 `stopping` 日志；Docker 停止失败或超时保留原因并显示降级，不安排自动启动。
 //!
 //! 商店的接口在 [`super::store_api`]，服务器设置和插件资源上限的接口在 [`super::settings_api`]，镜像加速在
-//! [`super::registry_mirror`]，模型服务商在 [`super::model_providers`]，引导在 [`super::onboarding`]。
+//! [`super::registry_mirror`]，模型设置在 [`super::model_settings`]，引导在 [`super::onboarding`]。
 //!
 //! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）；JSON 请求体（`Content-Type: application/json`）按来源预览和安装。
 
