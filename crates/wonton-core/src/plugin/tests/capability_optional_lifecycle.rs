@@ -32,6 +32,7 @@ async fn install_optional_consumer(manager: &Arc<PluginManager>, source: &str, c
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     manager.install_source(&request).await.unwrap();
 }

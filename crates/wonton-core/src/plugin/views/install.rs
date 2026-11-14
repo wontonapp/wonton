@@ -169,6 +169,7 @@ impl PluginManager {
             has_bot: super::super::bots::is_bot(m),
             runtime: m.runtime.into(),
             security_tier: Some(super::super::security_tier::security_tier(m)),
+            remote: super::super::manifest_remote::preview(m),
             scope_choices: self.scope_choices()?,
             icon: icon.map(|i| i.paths()),
             trust: trust(package.origin.as_ref()),

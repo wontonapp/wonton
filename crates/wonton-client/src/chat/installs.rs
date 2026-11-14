@@ -395,6 +395,7 @@ mod tests {
             kind: wonton_protocol::PluginKind::Agent,
             runtime: Default::default(),
             security_tier: None,
+            remote: None,
             scope_choices: Vec::new(),
             has_bot,
             icon: None,

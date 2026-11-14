@@ -13,10 +13,16 @@ mod install;
 mod lifecycle;
 pub use lifecycle::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 mod owner_secrets;
+mod remote_mcp;
 pub mod store;
 mod view_model;
 mod widget;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
+pub use remote_mcp::{
+    RemoteAuth, RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant,
+    RemoteOauthStart, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
+    remote_oauth_start_path,
+};
 pub use view_model::PluginsViewModel;
 mod permission;
 pub(super) mod ports;
@@ -588,6 +594,10 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 连不上远端 MCP 服务器：DNS、TLS、超时、拒连（ADR-0066）。
+    RemoteUnavailable,
+    /// 远端 MCP 服务器回 5xx 或者说了连接器听不懂的话（ADR-0066）。
+    RemoteError,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。

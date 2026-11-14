@@ -689,6 +689,10 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
             CoreError::Upstream { reason }
         }
+        // 远端 MCP 服务器连不上或者回错了：都是家外的一方出事。专门的界面在 App 那一步补。
+        PluginFailure::RemoteUnavailable | PluginFailure::RemoteError => {
+            CoreError::Upstream { reason }
+        }
         PluginFailure::ServerTooOld => CoreError::ServerTooOld {
             reason,
             min_version: problem.min_version,

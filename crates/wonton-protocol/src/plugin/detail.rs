@@ -6,7 +6,8 @@ use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginProblem, PluginRuntime,
-    PluginScope, PluginTrust, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine, SecretInputState, SecurityTier,
+    hint,
 };
 use crate::{CardLine, PluginShares};
 
@@ -35,6 +36,10 @@ pub struct PluginDetail {
     /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
     #[serde(default)]
     pub link_url: Option<String>,
+    /// `runtime: remote_mcp` 的远端服务器和授权状态（ADR-0066）；其他形态为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub remote: Option<RemoteMcpDetail>,
     /// 装卸权限是 Allow 时可见的安装范围。
     #[serde(default)]
     pub scope: Option<PluginScope>,

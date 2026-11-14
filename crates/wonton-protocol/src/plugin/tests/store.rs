@@ -89,9 +89,11 @@ fn one_tap_requests_round_trip() {
                 lan_webui: false,
                 install_together: Vec::new(),
                 connect_plugins: Vec::new(),
+                remote_oauth: None,
             },
         }],
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     assert_eq!(round_trip(&request), request);
     let upgrade = UpgradeRequest {

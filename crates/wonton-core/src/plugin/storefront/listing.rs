@@ -195,6 +195,7 @@ impl PluginManager {
             runtime: m.runtime.into(),
             security_tier: Some(crate::plugin::security_tier::security_tier(m)),
             link_url: m.link.as_ref().map(|link| link.url.clone()),
+            remote: crate::plugin::manifest_remote::detail(m),
             scope: installed
                 .as_ref()
                 .map(|_| wonton_protocol::PluginScope::All),

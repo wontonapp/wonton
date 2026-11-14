@@ -47,6 +47,49 @@ enum Part {
     Secret(String),
 }
 
+/// 远端 MCP 的请求头（`remote_mcp.headers`）：名字合法、不在禁止名单里（`X-Wonton-*` 由核心写，MCP 的协议头由
+/// 传输层写），值是合法头值。返回模板引用的密钥名，只有 `{secret:…}` 能用。
+pub fn validate_header_spec(
+    name: &str,
+    template: &str,
+    langs: &Languages,
+) -> Result<Vec<String>, String> {
+    let lower = name.to_ascii_lowercase();
+    if HeaderName::from_bytes(name.as_bytes()).is_err()
+        || FORBIDDEN_HEADERS.contains(&lower.as_str())
+        || lower.starts_with("x-forwarded-")
+        || lower.starts_with("x-wonton-")
+        || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
+    {
+        return Err(text(
+            langs,
+            "plugin-install-remote-header-forbidden",
+            &[("name", name.into())],
+        ));
+    }
+    let mut secrets = Vec::new();
+    for part in parse(template, langs)? {
+        match part {
+            Part::Secret(secret) => secrets.push(secret),
+            Part::Text(text) if HeaderValue::from_str(&text).is_err() => {
+                return Err(control_chars_error(langs, template));
+            }
+            Part::Text(_) => {}
+            other => {
+                return Err(text(
+                    langs,
+                    "plugin-install-remote-identity-placeholder",
+                    &[
+                        ("placeholder", part_name(&other).into()),
+                        ("template", template.into()),
+                    ],
+                ));
+            }
+        }
+    }
+    Ok(secrets)
+}
+
 /// 解析好的代登录凭据：请求头和 Cookie 的名字及值模板，`{secret:…}` 已经换成核心生成的值。`Debug` 只打印名字。
 #[derive(Clone, PartialEq, Eq)]
 pub struct ProxyAuth {

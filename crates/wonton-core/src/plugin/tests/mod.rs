@@ -63,6 +63,7 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod manifest_remote;
 mod matrix_rtc;
 mod model_gateway_contract;
 mod models;

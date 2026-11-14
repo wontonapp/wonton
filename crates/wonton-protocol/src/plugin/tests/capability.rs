@@ -98,6 +98,7 @@ fn request_without_extras() -> InstallRequest {
         settings: Default::default(),
         install_together: vec![],
         connect_plugins: vec![],
+        remote_oauth: None,
     }
 }
 

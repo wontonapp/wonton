@@ -8,10 +8,15 @@ use crate::plugin::languages::Languages;
 use crate::plugin::{PluginId, PluginPackage};
 
 fn package(runtime: &str) -> String {
+    // 远端形态还要写 `remote_mcp`，否则先死在清单校验上，到不了“这种形态装不上”。
+    let remote = match runtime {
+        "remote_mcp" => "  remote_mcp:\n    url: https://mcp.example.com/mcp\n",
+        _ => "",
+    };
     format!(
         "x-wonton:\n  spec: '0.10'\n  id: app.forms\n  version: 2.0.0\n  kind: app\n  \
          runtime: {runtime}\n  title: {{en: Forms}}\n  description: {{en: Forms}}\n  permissions: []\n  \
-         secrets:\n    api_key:\n      input:\n        title: {{en: API key}}\n"
+         secrets:\n    api_key:\n      input:\n        title: {{en: API key}}\n{remote}"
     )
 }
 

@@ -141,6 +141,21 @@ pub const AGENT_ACP: Capability = Capability {
     hosted: None,
 };
 
+/// 远端 MCP（ADR-0066 第 3 节）：核心不直接外连，交给提供这个能力的连接器；没有包内目录，提供方不写 `mount`。
+pub const REMOTE_MCP: Capability = Capability {
+    name: "remote_mcp",
+    interface: "MCP Streamable HTTP（2025-11-25）。核心发往提供方的每个请求带 `X-Wonton-Plugin`、\
+                `X-Wonton-Remote-Url`、`X-Wonton-Remote-Auth`、`X-Wonton-Remote-Forward`；另有 `/_wonton/probe`、\
+                `/_wonton/oauth/start`、`/_wonton/oauth/finish`、`DELETE /_wonton/plugins/{id}`",
+    credentials: Credentials::None,
+    high_privilege: false,
+    hosted: Some(HostedForm {
+        runtime: Some(Runtime::RemoteMcp),
+        package_dir: None,
+        mount: None,
+    }),
+};
+
 /// MatrixRTC 的 LiveKit 授权服务（ADR-0096）：使用方是任何 MatrixRTC 客户端，经网关 Matrix 对外地址下的
 /// [`MATRIX_RTC_PREFIX`] 到达提供方，所以和出网代理一样不能写在 requires/wants 里，同一时间只有一个提供方。
 pub const MATRIX_RTC: Capability = Capability {
@@ -174,6 +189,7 @@ pub const ALL: &[Capability] = &[
     JELLYFIN,
     STATIC_WEB,
     WEB_STORAGE,
+    REMOTE_MCP,
     MATRIX_RTC,
     PERSONAL_DATA,
     AGENT_ACP,
