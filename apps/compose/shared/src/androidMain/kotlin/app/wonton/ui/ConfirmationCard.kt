@@ -57,6 +57,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     var settings by remember(card.id) { mutableStateOf<Map<String, SettingValue?>>(emptyMap()) }
     var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
+    val cardDevices = remember(card.id, card.devices, card.permissions) { CardDevices(card) }
     CardSecureScreen(card, secrets, shown)
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
@@ -89,6 +90,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 },
             )
         }
+        CardDeviceSection(cardDevices, view)
         card.answeredBy
             ?.takeIf { card.audience == CardAudience.ADMINS }
             ?.let { answeredBy ->
@@ -112,7 +114,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                     ChoiceButton(
                         choice,
                         view,
-                        secretsReady = cardInputsReady(card, secrets, settings),
+                        secretsReady = cardInputsReady(card, secrets, settings, cardDevices),
                     ) {
                         onAction(
                             Action.AnswerConfirmation(
@@ -121,7 +123,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
                                 cardSettingsValues(settings),
-                                card.devices.filter { it.chosen }.map { it.id },
+                                cardDevices.chosenIds,
                             ),
                         )
                     }
@@ -131,13 +133,14 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     }
 }
 
+/** 缺必填密钥、设置没填对或必选的串口没选时，不能同意。 */
 private fun cardInputsReady(
     card: ConfirmationCard,
     secrets: Map<String, String>,
     settings: Map<String, SettingValue?>,
-): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && card.settings?.fields.orEmpty().none {
-    isUnsupported(it, settings) || isMissingRequired(it, settings)
-}
+    devices: CardDevices,
+): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && devices.section?.ready != false &&
+    card.settings?.fields.orEmpty().none { isUnsupported(it, settings) || isMissingRequired(it, settings) }
 
 private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
     settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()

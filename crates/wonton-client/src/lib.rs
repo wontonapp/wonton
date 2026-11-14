@@ -33,6 +33,7 @@ mod browser;
 mod chat;
 mod client;
 mod composer;
+mod device_choices;
 mod files;
 mod friends;
 mod home;
@@ -64,6 +65,9 @@ pub use appearance::{accent_hex, default_appearance, parse_accent};
 pub use chat::TimelineSubscription;
 pub use chat::bot_current_avatar;
 pub use client::{ClientCore, ShareInSubscription};
+pub use device_choices::{
+    DeviceChoices, SerialChoice, chosen_device_ids, device_choices, toggle_device,
+};
 pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};

@@ -51,11 +51,10 @@ struct RoomConfirmationSheet: View {
                     ForEach(cards, id: \.card.id) { view in
                         ConfirmationCardView(
                             view: view,
-                            answer: { choice, secrets, settings in
+                            answer: { choice, secrets, settings, devices in
                                 action(.answerConfirmation(
                                     id: view.card.id, answer: choice.answer, choiceId: choice.choiceId,
-                                    secrets: secrets, settings: settings,
-                                    devices: view.card.devices.filter(\.chosen).map(\.id)
+                                    secrets: secrets, settings: settings, devices: devices
                                 ))
                             },
                             stopWindow: { action(.stopConfirmationWindow(id: view.card.id)) }

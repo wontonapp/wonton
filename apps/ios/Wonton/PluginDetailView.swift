@@ -105,6 +105,12 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
+                    // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
+                    ForEach(Array(detail.problems.enumerated()), id: \.offset) { _, problem in
+                        ProblemRow(problem: problem.problem) {
+                            Task { await load() }
+                        }
+                    }
                     if detail.installed != nil, let audience = detail.audience {
                         if audience.choices.isEmpty {
                             PluginAudienceSection(audience: .constant(audience), enabled: false)

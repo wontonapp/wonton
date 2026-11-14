@@ -7,8 +7,9 @@
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
 //! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
-//! 主面板里钉着的一页、商店入口、引导已经走完。
-//! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
+//! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
+//! 操作里只认开页、关页（`OpenPage`、`ClosePage`）和回答确认卡片：开关页照真核心的规则改页面栈和应用网格的开关，
+//! 壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
@@ -82,7 +83,9 @@ impl ClientCore {
             friends: watch::Sender::new(current.friends.borrow().clone()),
             bot_contacts: watch::Sender::new(current.bot_contacts.borrow().clone()),
             settings: watch::Sender::new(current.settings.borrow().clone()),
-            confirmations: watch::Sender::new(current.confirmations.borrow().clone()),
+            confirmations: watch::Sender::new(super::ui_fake_devices::confirmations(
+                current.confirmations.borrow().clone(),
+            )),
             agent_chains: watch::Sender::new(current.agent_chains.borrow().clone()),
         };
         drop(current);
@@ -93,7 +96,8 @@ impl ClientCore {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = views;
     }
 
-    /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），其余不动 ViewModel。
+    /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），回答确认卡片把它挪到结束的里
+    /// （`ui_fake_devices`），其余不动 ViewModel。
     pub(super) fn dispatch_ui_fake(&self, action: Action) -> Result<(), CoreError> {
         let views = self.views();
         match action {
@@ -131,6 +135,17 @@ impl ClientCore {
                         reason: "no page is open".into(),
                     })
                 }
+            }
+            Action::AnswerConfirmation {
+                id,
+                answer,
+                devices,
+                ..
+            } => {
+                views.confirmations.send_if_modified(|view| {
+                    super::ui_fake_devices::answer(view, &id, answer, &devices)
+                });
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -503,6 +518,39 @@ mod tests {
         core.dispatch(Action::ClosePage).unwrap();
         // 面板里钉着的那一页一直在，不跟着栈变。
         assert_eq!(core.pages().panel.len(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 带设备的安装卡片：同意以后卡片结束，结果里是随回答带上的设备 ID。
+    #[test]
+    fn answering_the_device_card_reports_the_devices_sent() {
+        let dir =
+            std::env::temp_dir().join(format!("wonton-ui-fake-devices-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let card = core.confirmations().pending.remove(0).card;
+        assert!(card.devices.iter().all(|device| !device.chosen));
+        let devices = crate::toggle_device(
+            card.devices,
+            "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into(),
+        );
+        core.dispatch(Action::AnswerConfirmation {
+            id: card.id,
+            answer: wonton_protocol::Answer::Approve,
+            choice_id: None,
+            secrets: Default::default(),
+            settings: Default::default(),
+            devices: crate::chosen_device_ids(devices, card.permissions),
+        })
+        .unwrap();
+        let view = core.confirmations();
+        assert!(view.pending.is_empty());
+        assert_eq!(
+            view.finished[0].card.state,
+            wonton_protocol::ConfirmationState::Succeeded {
+                message: "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into()
+            }
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

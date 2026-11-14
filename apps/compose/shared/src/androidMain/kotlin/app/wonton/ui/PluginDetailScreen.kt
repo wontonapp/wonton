@@ -132,7 +132,7 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
                     val current = if (installedList == null) detail else detail.copy(
                         installed = installedList.plugins.firstOrNull { it.id == detail.id },
                     )
-                    DetailContent(current, task, plugins, navigation) { toggled = it }
+                    DetailContent(current, task, plugins, navigation, onReload = { attempt++ }) { toggled = it }
                 }
             }
         }
@@ -145,6 +145,7 @@ private fun DetailContent(
     task: PluginTask?,
     plugins: PluginsState,
     navigation: PluginNavigation,
+    onReload: () -> Unit,
     onToggled: (PluginDetail) -> Unit,
 ) {
     val colors = WontonTheme.colors
@@ -169,6 +170,8 @@ private fun DetailContent(
         }
         DetailHeader(detail, plugins, detailAction(detail, working, plugins, navigation, LocalContext.current))
         PluginDetailStatus(detail, plugins, working)
+        // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
+        detail.problems.forEach { ProblemRow(it.problem, onRetry = onReload) }
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(
                 it,

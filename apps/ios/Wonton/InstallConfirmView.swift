@@ -13,6 +13,7 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
+    @State private var devices: [PluginDevice] = []
     @State private var audience: PluginAudienceView?
     @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
@@ -75,7 +76,7 @@ struct InstallConfirmView: View {
             }
         case let .success(preview):
             PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled,
-                           audience: $audience, secrets: $secrets) {
+                           devices: $devices, audience: $audience, secrets: $secrets) {
                 isFillingProfile = true
             }
         }
@@ -95,12 +96,13 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
+    /// 装不了（`blocked`）、缺资料、有核心不支持的权限、缺必填密钥或必选的串口没选时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
         return previewInstallAction(preview: preview) != .blocked && preview.missingProfile == nil
             && preview.permissions.allSatisfy(\.supported)
             && !missingRequiredSecret(preview.secretInputs, secrets)
+            && deviceChoices(devices: devices, permissions: preview.permissionLines(enabling: enabled))?.ready != false
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -115,6 +117,7 @@ struct InstallConfirmView: View {
     private func load() async {
         if let preloaded = confirmation.preloaded {
             lanWebui = preloaded.lanWebui?.enabled ?? false
+            devices = preloaded.devices ?? []
             enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
             audience = preloaded.audience
             loaded = .success(preloaded)
@@ -131,6 +134,7 @@ struct InstallConfirmView: View {
             case .store: throw CancellationError()
             }
             lanWebui = preview.lanWebui?.enabled ?? false
+            devices = preview.devices ?? []
             enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
             audience = preview.audience
             loaded = .success(preview)
@@ -156,12 +160,8 @@ struct InstallConfirmView: View {
         var preview = shown
         preview.lanWebui?.enabled = lanWebui
         preview.audience = audience
-        preview.permissions = preview.permissions.map { line in
-            guard line.optional else { return line }
-            var line = line
-            line.enabled = enabled.contains(line.permission)
-            return line
-        }
+        preview.permissions = preview.permissionLines(enabling: enabled)
+        if preview.devices != nil { preview.devices = devices }
         let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
@@ -187,6 +187,7 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
+    @Binding var devices: [PluginDevice]
     @Binding var audience: PluginAudienceView?
     @Binding var secrets: [String: String]
     let fillProfile: () -> Void
@@ -228,6 +229,13 @@ private struct PreviewContent: View {
                             }
                         }
                         WidgetCapabilityRows(capabilities: preview.widgetCapabilities)
+                    }
+                }
+                if let choices = deviceChoices(
+                    devices: devices, permissions: preview.permissionLines(enabling: enabled)
+                ) {
+                    DeviceChoicesSection(choices: choices) { id in
+                        devices = toggleDevice(devices: devices, id: id)
                     }
                 }
                 if !preview.secretInputs.isEmpty {
