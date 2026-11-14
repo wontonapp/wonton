@@ -88,6 +88,8 @@ pub(super) struct Entry {
     pub(super) proxy: Option<Arc<ProxyAuth>>,
     /// 运行中时 MCP 服务的地址。
     pub(super) mcp: Option<McpTarget>,
+    /// 监控任务的实例令牌：卸载后重新安装同一 ID 时，旧任务不能覆盖新状态。
+    pub(super) watch_token: Arc<()>,
     /// 这个异常是容器决定的，容器好了就恢复（见 [`super::watch`]）。
     pub(super) follows_containers: bool,
     /// 提供托管能力时，网关转发托管插件请求的地址（见 [`Deployed::hosted`]）。
@@ -147,6 +149,7 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: Some(listed),
+            watch_token: Arc::new(()),
             follows_containers: false,
             hosted: BTreeMap::new(),
             clients: None,
@@ -211,6 +214,7 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: None,
+            watch_token: Arc::new(()),
             follows_containers: false,
             hosted: BTreeMap::new(),
             clients: None,

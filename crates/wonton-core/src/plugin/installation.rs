@@ -38,6 +38,41 @@ impl PluginManager {
         settings: std::collections::BTreeMap<String, serde_json::Value>,
         langs: &Languages,
     ) -> Result<PluginView, InstallError> {
+        let id = package.manifest.id.clone();
+        tracing::info!(plugin = %id, operation = "install", phase = "start", "插件安装开始");
+        let result = self
+            .install_checked_guarded(package, granted, enabled, lan_webui, settings, langs)
+            .await;
+        match &result {
+            Ok(_) => tracing::info!(
+                plugin = %id,
+                operation = "install",
+                phase = "finish",
+                result = "succeeded",
+                "插件安装完成"
+            ),
+            Err(error) => tracing::error!(
+                plugin = %id,
+                operation = "install",
+                phase = "finish",
+                result = "failed",
+                error_kind = error.kind(),
+                reason = %error,
+                "插件安装失败"
+            ),
+        }
+        result
+    }
+
+    async fn install_checked_guarded(
+        &self,
+        package: PluginPackage,
+        granted: &[Permission],
+        enabled: &[EnabledPermission],
+        lan_webui: bool,
+        settings: std::collections::BTreeMap<String, serde_json::Value>,
+        langs: &Languages,
+    ) -> Result<PluginView, InstallError> {
         let _dependencies = self.dependencies.changing.lock().await;
         let before = self.snapshot_capability_state()?;
         let consumers = self
@@ -415,7 +450,7 @@ impl PluginManager {
         }
         drop(_changing);
         self.changed();
-        tracing::info!(plugin = %id, purge, "开始卸载插件");
+        tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
         let removed = async {
             self.revoke_dependency_keys(id, langs).await?;
             self.teardown(id, purge, langs).await
@@ -430,10 +465,27 @@ impl PluginManager {
                 self.remove_capability_records(id, removing, approve_connections, langs)
                     .await?;
                 self.changed();
-                tracing::info!(plugin = %id, "插件已卸载");
+                tracing::info!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "succeeded",
+                    purge,
+                    "插件卸载完成"
+                );
                 Ok(report)
             }
             Err(e) => {
+                tracing::error!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "failed",
+                    purge,
+                    error_kind = e.kind(),
+                    reason = %e,
+                    "插件卸载未完成"
+                );
                 let reason = l10n::text(
                     langs,
                     "plugin-install-uninstall-unfinished",
