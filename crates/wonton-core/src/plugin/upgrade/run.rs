@@ -834,6 +834,7 @@ impl PluginManager {
             installed.lan_webui,
             &[],
             installed.settings.clone(),
+            &Default::default(),
         ))
         .await
         {

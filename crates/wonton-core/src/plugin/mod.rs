@@ -121,6 +121,7 @@ mod recovery_restore;
 pub mod registry_mirror;
 mod remote_config;
 mod remote_install;
+pub(crate) mod remote_redaction;
 mod remote_validate;
 pub mod render;
 mod render_drift;

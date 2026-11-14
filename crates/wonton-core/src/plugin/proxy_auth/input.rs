@@ -92,20 +92,7 @@ pub(in crate::plugin) fn render_input_template(
     langs: &Languages,
 ) -> Result<String, String> {
     let value = render_input_template_with(manifest, template, langs, |name, output| {
-        let bytes = secrets.get(name).ok_or_else(|| {
-            text(
-                langs,
-                "plugin-settings-secret-missing",
-                &[("name", name.into())],
-            )
-        })?;
-        let value = std::str::from_utf8(bytes).map_err(|_| {
-            text(
-                langs,
-                "plugin-settings-secret-not-text",
-                &[("name", name.into())],
-            )
-        })?;
+        let value = input_value(secrets, name, langs)?;
         match encoding {
             InputSecretEncoding::Header => output.push_str(value),
             InputSecretEncoding::UrlComponent => output.extend(
@@ -114,8 +101,55 @@ pub(in crate::plugin) fn render_input_template(
         }
         Ok(())
     })?;
-    if matches!(encoding, InputSecretEncoding::Header) && HeaderValue::from_str(&value).is_err() {
-        return Err(text(langs, "remote-mcp-header-value-invalid", &[]));
+    if matches!(encoding, InputSecretEncoding::Header) {
+        check_header(&value, langs)?;
     }
     Ok(value)
+}
+
+pub(in crate::plugin) fn render_input_header(
+    manifest: &Manifest,
+    secrets: &Secrets,
+    template: &str,
+    langs: &Languages,
+) -> Result<Option<String>, String> {
+    let mut missing_optional = false;
+    let value = render_input_template_with(manifest, template, langs, |name, output| {
+        if secrets.get(name).is_none()
+            && matches!(manifest.secrets.get(name), Some(SecretSpec::Input(input)) if !input.required)
+        {
+            missing_optional = true;
+            return Ok(());
+        }
+        output.push_str(input_value(secrets, name, langs)?);
+        Ok(())
+    })?;
+    if missing_optional {
+        return Ok(None);
+    }
+    check_header(&value, langs)?;
+    Ok(Some(value))
+}
+
+fn input_value<'a>(secrets: &'a Secrets, name: &str, langs: &Languages) -> Result<&'a str, String> {
+    let bytes = secrets.get(name).ok_or_else(|| {
+        text(
+            langs,
+            "plugin-settings-secret-missing",
+            &[("name", name.into())],
+        )
+    })?;
+    std::str::from_utf8(bytes).map_err(|_| {
+        text(
+            langs,
+            "plugin-settings-secret-not-text",
+            &[("name", name.into())],
+        )
+    })
+}
+
+fn check_header(value: &str, langs: &Languages) -> Result<(), String> {
+    HeaderValue::from_str(value)
+        .map(|_| ())
+        .map_err(|_| text(langs, "remote-mcp-header-value-invalid", &[]))
 }

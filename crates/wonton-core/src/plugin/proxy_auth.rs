@@ -16,8 +16,8 @@ use super::languages::Languages;
 use crate::l10n::text;
 mod input;
 pub(super) use input::{
-    InputSecretEncoding, URL_SECRET_COMPONENT, render_input_template, render_input_template_with,
-    validate_input_template,
+    InputSecretEncoding, URL_SECRET_COMPONENT, render_input_header, render_input_template,
+    render_input_template_with, validate_input_template,
 };
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
@@ -520,7 +520,10 @@ const MCP_PROTOCOL_HEADERS: &[&str] = &["mcp-session-id", "mcp-protocol-version"
 
 /// MCP 上游（`mcp.headers`）的请求头：名字和按插件密钥解析好的值。`Debug` 只打印名字，值不进日志。
 #[derive(Clone, Default, PartialEq, Eq)]
-pub struct McpHeaders(Vec<(HeaderName, HeaderValue)>);
+pub struct McpHeaders(
+    Vec<(HeaderName, HeaderValue)>,
+    Option<super::remote_redaction::Redaction>,
+);
 
 impl std::fmt::Debug for McpHeaders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -544,7 +547,19 @@ impl McpHeaders {
                 Ok((header, value))
             })
             .collect::<Result<Vec<_>, String>>()
-            .map(Self)
+            .map(|headers| Self(headers, None))
+    }
+
+    pub(crate) fn error_redaction(&self) -> Option<super::remote_redaction::Redaction> {
+        self.1.clone()
+    }
+
+    pub(super) fn with_error_redaction(
+        mut self,
+        redaction: Option<super::remote_redaction::Redaction>,
+    ) -> Self {
+        self.1 = redaction;
+        self
     }
 
     /// rmcp 传输层的 `custom_headers`：发往上游的每个请求都带上。
@@ -564,6 +579,7 @@ impl McpHeaders {
                     )
                 })
                 .collect(),
+            None,
         )
     }
 }
@@ -760,7 +776,7 @@ pub fn resolve_mcp_headers(
         value.set_sensitive(true);
         headers.push((name, value));
     }
-    Ok(McpHeaders(headers))
+    Ok(McpHeaders(headers, None))
 }
 
 #[cfg(test)]

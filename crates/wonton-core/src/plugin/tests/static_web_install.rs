@@ -290,7 +290,7 @@ async fn a_failed_static_publication_is_visible_and_retryable_without_becoming_a
     assert_eq!(failure["cleanup_errors"], json!([]));
     assert!(!manager.is_installed(&id(SNAKE)));
     assert!(manager.route("io-github-alice-snake", "/").is_none());
-    assert!(manager.hosted_users(&id(PROVIDER)).is_empty());
+    assert!(manager.hosted_users(&id(PROVIDER), &[]).is_empty());
     std::fs::remove_dir(&blocked).unwrap();
     manager
         .install_package(page, &[], super::langs())

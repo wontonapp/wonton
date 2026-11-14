@@ -18,6 +18,7 @@ mod confirmed;
 mod contacts_gate;
 mod core_tools;
 mod dependencies;
+mod diagnostics;
 mod file_results;
 mod file_tools;
 mod handoff;

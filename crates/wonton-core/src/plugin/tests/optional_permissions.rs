@@ -464,9 +464,17 @@ async fn upgrading_away_the_optional_one_drops_the_mount() {
         )
         .replace("version: 1.0.0", "version: 1.1.0"),
     );
-    m.upgrade_checked(next, &[], &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        next,
+        &[],
+        &[],
+        false,
+        &[],
+        Default::default(),
+        &Default::default(),
+    )
+    .await
+    .unwrap();
     assert!(!has_socket(&docker, "agent"));
     let record = m.store.load(&id()).unwrap().unwrap();
     assert!(record.enabled_permissions.is_empty());

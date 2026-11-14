@@ -200,7 +200,7 @@ fn check_url(manifest: &Manifest, template: &str, langs: &Languages) -> Result<(
         output.push_str("remote-secret");
         Ok(())
     })?;
-    let url = Url::parse(&probe).map_err(|_| invalid())?;
+    let url = parse_expanded_url(&probe, langs)?;
     if url.scheme() != "https"
         || !url.username().is_empty()
         || url.password().is_some()
@@ -218,6 +218,39 @@ fn check_url(manifest: &Manifest, template: &str, langs: &Languages) -> Result<(
         _ => return Err(invalid()),
     }
     Ok(())
+}
+
+pub(super) fn parse_expanded_url(value: &str, langs: &Languages) -> Result<Url, String> {
+    let authority = value.find("://").map_or(0, |start| start + 3);
+    let tail = &value[authority..];
+    if let Some(start) = tail.find(['/', '?', '#'])
+        && tail.as_bytes()[start] == b'/'
+    {
+        let path = tail[start..].split(['?', '#']).next().unwrap_or_default();
+        if path.split('/').any(dot_segment) {
+            return Err(text(langs, "remote-mcp-url-dot-segment", &[]));
+        }
+    }
+    Url::parse(value).map_err(|_| text(langs, "remote-mcp-url-invalid", &[]))
+}
+
+fn dot_segment(mut segment: &str) -> bool {
+    let mut dots = 0;
+    while !segment.is_empty() {
+        let Some(rest) = segment
+            .strip_prefix('.')
+            .or_else(|| segment.strip_prefix("%2e"))
+            .or_else(|| segment.strip_prefix("%2E"))
+        else {
+            return false;
+        };
+        dots += 1;
+        if dots > 2 {
+            return false;
+        }
+        segment = rest;
+    }
+    matches!(dots, 1 | 2)
 }
 
 #[cfg(test)]

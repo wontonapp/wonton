@@ -486,8 +486,6 @@ impl PluginManager {
             )));
         }
         self.check_capability_removal(id, Some(&package.manifest), langs)?;
-        let filled = self.store.secrets().load(id).ok().flatten();
-        self.store_input_values(&package.manifest, &request.secrets, filled.as_ref(), langs)?;
         let settings = upgrade_values(&package, &record, &request.settings, langs)?;
         self.upgrade_detached(
             package,
@@ -496,6 +494,7 @@ impl PluginManager {
             request.lan_webui,
             request.devices.clone(),
             settings,
+            request.secrets.clone(),
         )
         .await?;
         self.staged.remove(&digest);
@@ -525,10 +524,12 @@ impl PluginManager {
             lan_webui || record.lan_webui,
             devices.to_vec(),
             settings,
+            Default::default(),
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)] // 密钥请求必须随独立升级任务一起执行。
     async fn upgrade_detached(
         self: &Arc<Self>,
         package: PluginPackage,
@@ -537,11 +538,14 @@ impl PluginManager {
         lan_webui: bool,
         devices: Vec<String>,
         settings: super::settings::Values,
+        inputs: wonton_protocol::SecretValues,
     ) -> Result<(), InstallError> {
         let this = Arc::clone(self);
         detached(async move {
-            this.upgrade_checked(package, &granted, &requested, lan_webui, &devices, settings)
-                .await
+            this.upgrade_checked(
+                package, &granted, &requested, lan_webui, &devices, settings, &inputs,
+            )
+            .await
         })
         .await
     }

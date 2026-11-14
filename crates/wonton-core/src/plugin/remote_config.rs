@@ -14,6 +14,7 @@ use super::manifest::{Manifest, PluginId};
 use super::manifest_remote::RemoteAuth;
 use super::mcp_server::{McpServer, ToolLimits};
 use super::proxy_auth::{self, InputSecretEncoding, McpHeaders};
+use super::remote_redaction::Redaction;
 use super::secrets::Secrets;
 
 // No Debug: both the URL and forwarded headers can contain input secrets.
@@ -22,6 +23,8 @@ pub(super) struct Config {
     pub url: String,
     pub auth: &'static str,
     pub headers: BTreeMap<String, String>,
+    #[serde(skip)]
+    pub redaction: Option<Redaction>,
 }
 
 impl Config {
@@ -38,20 +41,22 @@ impl Config {
             InputSecretEncoding::UrlComponent,
             langs,
         )?;
-        let url = url::Url::parse(&url)
-            .map_err(|_| crate::l10n::text(langs, "remote-mcp-url-invalid", &[]))?
-            .to_string();
+        let url = super::remote_validate::parse_expanded_url(&url, langs)?.to_string();
         let mut headers = BTreeMap::new();
         for (name, template) in &remote.headers {
-            let value = proxy_auth::render_input_template(
-                manifest,
-                secrets,
-                template,
-                InputSecretEncoding::Header,
-                langs,
-            )?;
+            let Some(value) = proxy_auth::render_input_header(manifest, secrets, template, langs)?
+            else {
+                continue;
+            };
             headers.insert(name.to_ascii_lowercase(), value);
         }
+        let redaction = Redaction::new(
+            url.as_str(),
+            &remote.url,
+            secrets
+                .values()
+                .filter_map(|value| std::str::from_utf8(value).ok()),
+        );
         Ok(Self {
             url,
             auth: match remote.auth {
@@ -60,6 +65,7 @@ impl Config {
                 RemoteAuth::Oauth => "oauth",
             },
             headers,
+            redaction,
         })
     }
 
@@ -71,24 +77,15 @@ impl Config {
             ("x-wonton-remote-auth", self.auth.to_owned()),
             ("x-wonton-remote-forward", forward),
         ])
+        .map(|headers| headers.with_error_redaction(self.redaction.clone()))
     }
 
     /// 连接器的详情不可信，可能把请求地址或密钥原样带回来。
-    pub(super) fn redact(&self, detail: &str, template: &str, secrets: &Secrets) -> String {
-        let mut detail = detail.replace(&self.url, template);
-        for bytes in secrets.values() {
-            let Ok(secret) = std::str::from_utf8(bytes) else {
-                continue;
-            };
-            if secret.is_empty() {
-                continue;
-            }
-            let encoded =
-                percent_encoding::utf8_percent_encode(secret, proxy_auth::URL_SECRET_COMPONENT);
-            detail = detail.replace(encoded.to_string().as_str(), "[secret]");
-            detail = detail.replace(secret, "[secret]");
+    pub(super) fn redact(&self, detail: &str) -> String {
+        match &self.redaction {
+            Some(redaction) => redaction.text(detail).into_owned(),
+            None => detail.to_owned(),
         }
-        detail
     }
 }
 

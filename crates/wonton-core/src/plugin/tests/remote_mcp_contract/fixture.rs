@@ -64,6 +64,15 @@ fn provider(port: u16) -> PluginPackage {
     .unwrap()
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum ErrorReply {
+    Json,
+    Sse,
+    Http,
+}
+
+type RpcFailure = Arc<Mutex<Option<(&'static str, ErrorReply)>>>;
+
 #[derive(Clone)]
 pub(crate) struct Fake {
     pub outcome: Arc<Mutex<String>>,
@@ -72,6 +81,7 @@ pub(crate) struct Fake {
     pub calls: Arc<Mutex<Vec<(String, HeaderMap)>>>,
     pub forgotten: Arc<Mutex<Vec<String>>>,
     pub forget_status: Arc<Mutex<StatusCode>>,
+    pub rpc_failure: RpcFailure,
     remote: String,
     http: reqwest::Client,
 }
@@ -154,12 +164,38 @@ async fn forward(State(state): State<Fake>, headers: HeaderMap, body: String) ->
 }
 
 async fn remote_rpc(
-    State(calls): State<ReceivedRequests>,
+    State((calls, failure)): State<(ReceivedRequests, RpcFailure)>,
     OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
     axum::Json(body): axum::Json<Value>,
 ) -> Response {
+    let method = body["method"].as_str().unwrap();
+    let rejected = *failure.lock().unwrap();
+    let diagnostic = format!(
+        "upstream https://mcp.example.com{uri} Authorization {} operation {method}",
+        headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default(),
+    );
     calls.lock().unwrap().push((uri.to_string(), headers));
+    if let Some((target, reply)) = rejected
+        && method == target
+    {
+        let error = json!({"jsonrpc": "2.0", "id": body["id"], "error": {
+            "code": -32001, "message": diagnostic,
+            "data": {"nested": [diagnostic], "trace_id": "diagnostic-context", "upstream_status": 502}
+        }});
+        return match reply {
+            ErrorReply::Json => (StatusCode::BAD_GATEWAY, axum::Json(error)).into_response(),
+            ErrorReply::Sse => (
+                [("content-type", "text/event-stream")],
+                format!("data: {error}\n\n"),
+            )
+                .into_response(),
+            ErrorReply::Http => (StatusCode::BAD_GATEWAY, diagnostic).into_response(),
+        };
+    }
     let result = match body["method"].as_str().unwrap() {
         "initialize" => json!({"protocolVersion": "2025-11-25", "capabilities": {"tools": {}},
             "serverInfo": {"name": "fake-remote", "version": "1"}}),
@@ -185,10 +221,11 @@ pub(crate) struct Bed {
 impl Bed {
     pub(crate) async fn new(with_provider: bool) -> Self {
         let calls = Arc::new(Mutex::new(Vec::new()));
+        let rpc_failure: RpcFailure = Arc::default();
         let (remote, remote_server) = serve(
             axum::Router::new()
                 .fallback(remote_rpc)
-                .with_state(calls.clone()),
+                .with_state((calls.clone(), rpc_failure.clone())),
         )
         .await;
         let fake = Fake {
@@ -198,6 +235,7 @@ impl Bed {
             calls,
             forgotten: Arc::default(),
             forget_status: Arc::new(Mutex::new(StatusCode::NO_CONTENT)),
+            rpc_failure,
             remote,
             http: reqwest::Client::builder().no_proxy().build().unwrap(),
         };
