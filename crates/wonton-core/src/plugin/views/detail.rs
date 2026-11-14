@@ -8,6 +8,7 @@ use super::super::host_facts::HostFacts;
 use super::super::languages::Languages;
 use super::super::manager::PluginManager;
 use super::super::manifest::{Manifest, PluginId};
+use super::super::store::{InstalledRecord, StoreError};
 use super::text::{author, cross_origin_isolation_notice, line, setup_notice};
 use crate::l10n;
 
@@ -40,7 +41,11 @@ impl PluginManager {
         let needs_configuration = installed.status == PluginState::NeedsConfiguration;
         let m = &listed.manifest;
         let origin = listed.origin.as_ref();
-        let record = self.store.load(id).ok().flatten();
+        let saved = self.store.load(id);
+        let record = saved.as_ref().ok().and_then(Option::as_ref);
+        let devices = record
+            .map(|record| super::super::device::granted(m, record, self.host.dev.as_deref()))
+            .unwrap_or_default();
         Some(PluginDetail {
             source: origin.map(|o| o.repo.clone()),
             provider: origin.map(Origin::provider),
@@ -97,13 +102,8 @@ impl PluginManager {
                 .chain(self.dependency_hints(m, langs))
                 .chain(self.hosted_hint(m))
                 .collect(),
-            // 选中的设备不在了就是一条 device_unavailable，其他问题详情页不背。
-            problems: record
-                .as_ref()
-                .map(|record| {
-                    super::super::device::problems(record, self.host.dev.as_deref(), langs)
-                })
-                .unwrap_or_default(),
+            problems: recorded_device_problems(&saved, &devices, langs),
+            devices,
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
             capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
@@ -236,5 +236,24 @@ fn broken_detail(installed: InstalledPlugin) -> PluginDetail {
         limits: None,
         shares: None,
         problems: Vec::new(),
+        devices: Vec::new(),
     }
+}
+
+fn recorded_device_problems(
+    saved: &Result<Option<InstalledRecord>, StoreError>,
+    devices: &[wonton_protocol::PluginGrantedDevice],
+    langs: &Languages,
+) -> Vec<wonton_protocol::PluginProblem> {
+    let message = match saved {
+        Ok(Some(_)) => return super::super::device::problems(devices, langs),
+        Ok(None) => l10n::text(langs, "plugin-install-record-unusable", &[]),
+        Err(error) => super::super::manager::unreadable_record(error, langs),
+    };
+    vec![wonton_protocol::PluginProblem {
+        reason: wonton_protocol::PluginFailure::RecordUnusable,
+        message,
+        min_version: None,
+        settings: None,
+    }]
 }

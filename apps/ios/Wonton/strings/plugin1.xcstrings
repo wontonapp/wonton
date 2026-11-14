@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "plugin.deviceDisk": {
+      "comment": "Fallback name for an authorized host disk when no device name is supplied. Keep short.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "硬盘"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "硬碟"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ディスク"
+          }
+        }
+      }
+    },
     "plugin.permission.opened.owner": {
       "comment": "When the owner turned this optional permission on. %@ is the date.",
       "extractionState": "manual",

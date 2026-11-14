@@ -48,6 +48,7 @@ fn detail(ask: bool) -> Canned {
         missing_wants: Vec::new(),
         hints: Vec::new(),
         problems: Vec::new(),
+        devices: Vec::new(),
         capability_providers: Vec::new(),
         lan_webui: None,
         save_grants: Vec::new(),

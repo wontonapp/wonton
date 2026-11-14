@@ -96,7 +96,8 @@ pub fn device_choices(
             }
             PluginDeviceKind::Disk if disk_off => {}
             PluginDeviceKind::Disk => disks.push(device),
-            PluginDeviceKind::Other => unknown.push(device),
+            // USB 只按类授权，不接受预览里的单设备选择。
+            PluginDeviceKind::Usb | PluginDeviceKind::Other => unknown.push(device),
         }
     }
     let ready = serial
@@ -133,7 +134,10 @@ pub fn toggle_device(devices: Vec<PluginDevice>, id: String) -> Vec<PluginDevice
                     // 点的是选中着、又不能不选的那个：别的本来就没选中，不动。
                     device.chosen = false;
                 }
-                PluginDeviceKind::Serial | PluginDeviceKind::Disk | PluginDeviceKind::Other => {}
+                PluginDeviceKind::Serial
+                | PluginDeviceKind::Usb
+                | PluginDeviceKind::Disk
+                | PluginDeviceKind::Other => {}
             }
             device
         })
@@ -155,7 +159,7 @@ pub fn chosen_device_ids(
                 && match device.kind {
                     PluginDeviceKind::Serial => !serial_off,
                     PluginDeviceKind::Disk => !disk_off,
-                    PluginDeviceKind::Other => false,
+                    PluginDeviceKind::Usb | PluginDeviceKind::Other => false,
                 }
         })
         .map(|device| device.id)
