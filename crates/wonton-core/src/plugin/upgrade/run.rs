@@ -21,7 +21,7 @@ use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
     now_secs,
 };
-use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
+use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use wonton_protocol::BotKeeper;

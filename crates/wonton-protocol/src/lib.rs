@@ -38,6 +38,7 @@ mod home;
 mod lan;
 mod link;
 mod link_preview;
+pub mod manifest;
 mod matrix_login;
 mod onboarding;
 mod owner;
