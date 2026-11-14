@@ -200,7 +200,7 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
     let mut stream = match peer.open_forward().await {
         Ok(stream) => stream,
         Err(err) => {
-            debug!(server = %name, "federation outbound: cannot reach the peer: {err}");
+            debug!(server = %name, code = err.code(), "federation outbound: cannot reach the peer");
             respond(&mut tcp, BAD_GATEWAY).await;
             return;
         }
@@ -214,7 +214,7 @@ async fn serve_conn(mut tcp: TcpStream, ctx: Arc<ForwarderCtx>, counters: Arc<Co
             respond(&mut tcp, BAD_GATEWAY).await;
         }
         Err(err) => {
-            debug!(server = %name, %err, "federation outbound: the stream did not carry the request");
+            debug!(server = %name, code = err.code(), "federation outbound: the stream did not carry the request");
             stream.abort();
             respond(&mut tcp, BAD_GATEWAY).await;
         }
@@ -245,7 +245,7 @@ async fn relay(mut stream: TunnelStream, tcp: TcpStream) {
         forward::tcp_to_tunnel(&mut tcp_read, &mut stream.send),
         forward::tunnel_to_tcp(&mut stream.recv, &mut tcp_write, None),
     ) {
-        debug!("federation forwarding interrupted: {err}");
+        debug!(error = %err.log_safe(), "federation forwarding interrupted");
         stream.abort();
     }
 }

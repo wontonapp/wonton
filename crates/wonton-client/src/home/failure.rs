@@ -1,6 +1,6 @@
 //! 连接失败的可读说明与原始诊断分开；不从底层错误字符串猜类别或超时。
 
-use std::time::Duration;
+use std::{borrow::Cow, ops::Range, time::Duration};
 
 use wonton_l10n::{Lang, l10n};
 use wonton_protocol::{PairingFailure, PairingStatus};
@@ -40,92 +40,202 @@ pub(super) fn diagnostic(error: &TunnelError, lang: Lang) -> String {
     )
 }
 
-pub(super) fn redact_relays(relays: &[Relay], text: &str) -> String {
-    let mut safe = text.to_owned();
+const REDACTED: &str = "[redacted]";
+const DECODE_WORK_FACTOR: usize = 16;
+
+#[derive(Clone, Copy)]
+struct SourceByte {
+    byte: u8,
+    start: usize,
+    end: usize,
+}
+
+fn add_pattern<'a>(patterns: &mut Vec<Cow<'a, str>>, value: Cow<'a, str>) {
+    if value.is_empty() {
+        return;
+    }
+    if value
+        .bytes()
+        .any(|byte| byte < 0x20 || byte == b'"' || byte == b'\\')
+    {
+        let json = serde_json::to_string(value.as_ref()).expect("secret serializes to JSON");
+        patterns.push(Cow::Owned(json[1..json.len() - 1].to_owned()));
+    }
+    patterns.push(value);
+}
+
+fn sensitive_patterns<'a>(relays: &'a [Relay], secret: Option<&'a str>) -> Vec<Cow<'a, str>> {
+    let mut patterns = Vec::new();
+    if let Some(secret) = secret {
+        add_pattern(&mut patterns, Cow::Borrowed(secret));
+    }
     for relay in relays {
         let url = relay.url.as_str();
         let address = url.split(['?', '#']).next().unwrap_or_default();
-        safe = safe.replace(url, address);
-        if let Some(token) = &relay.token
-            && !token.expose().is_empty()
-        {
-            let token = token.expose();
-            let quoted = serde_json::to_string(token).expect("relay token serializes to JSON");
-            let json = &quoted[1..quoted.len() - 1];
-            let encoded: String = url::form_urlencoded::byte_serialize(token.as_bytes()).collect();
-            let json_encoded: String =
-                url::form_urlencoded::byte_serialize(json.as_bytes()).collect();
-            for secret in [token, json, encoded.as_str(), json_encoded.as_str()] {
-                safe = safe.replace(secret, "[redacted]");
-                safe = safe.replace(&secret.replace('+', "%20"), "[redacted]");
-            }
-            for secret in [token, json] {
-                if let Some(redacted) = redact_encoded(&safe, secret) {
-                    safe = redacted;
+        let suffix = &url[address.len()..];
+        if suffix.len() > 1 {
+            add_pattern(&mut patterns, Cow::Borrowed(suffix));
+        }
+        if let Some(query) = relay.url.query() {
+            add_pattern(&mut patterns, Cow::Borrowed(query));
+            for part in query.split('&') {
+                if let Some((_, value)) = part.split_once('=') {
+                    add_pattern(&mut patterns, Cow::Borrowed(value));
                 }
             }
+            for (_, value) in relay.url.query_pairs() {
+                add_pattern(&mut patterns, value);
+            }
+        }
+        if let Some(fragment) = relay.url.fragment() {
+            add_pattern(&mut patterns, Cow::Borrowed(fragment));
+        }
+        if let Some(token) = &relay.token {
+            add_pattern(&mut patterns, Cow::Borrowed(token.expose()));
         }
     }
-    safe
+    patterns
 }
 
-fn redact_encoded(text: &str, token: &str) -> Option<String> {
-    if !text.contains('%') && !(token.contains(' ') && text.contains('+')) {
-        return None;
-    }
-    let mut result: Option<String> = None;
-    let mut position = 0;
-    let mut copied = 0;
-    while position < text.len() {
-        let length = encoded_prefix(&text.as_bytes()[position..], token.as_bytes());
-        if let Some(end) = length.map(|length| position + length)
-            && text.is_char_boundary(end)
-        {
-            let output = result.get_or_insert_with(|| String::with_capacity(text.len()));
-            output.push_str(&text[copied..position]);
-            output.push_str("[redacted]");
-            copied = end;
-            position = end;
-        } else {
-            position += text[position..].chars().next()?.len_utf8();
+fn byte_matches(actual: u8, expected: u8) -> bool {
+    actual == expected || (actual == b'+' && expected == b' ')
+}
+
+fn mark_plain(text: &[u8], patterns: &[Cow<'_, str>], spans: &mut Vec<Range<usize>>) {
+    for pattern in patterns {
+        let pattern = pattern.as_bytes();
+        for (start, candidate) in text.windows(pattern.len()).enumerate() {
+            if candidate
+                .iter()
+                .zip(pattern)
+                .all(|(&a, &b)| byte_matches(a, b))
+            {
+                spans.push(start..start + pattern.len());
+            }
         }
     }
-    if let Some(output) = &mut result {
-        output.push_str(&text[copied..]);
+}
+
+fn mark_decoded(bytes: &[SourceByte], patterns: &[Cow<'_, str>], spans: &mut Vec<Range<usize>>) {
+    for pattern in patterns {
+        let pattern = pattern.as_bytes();
+        for candidate in bytes.windows(pattern.len()) {
+            if candidate
+                .iter()
+                .zip(pattern)
+                .all(|(a, &b)| byte_matches(a.byte, b))
+            {
+                spans.push(candidate[0].start..candidate[candidate.len() - 1].end);
+            }
+        }
     }
+}
+
+fn hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn decode_layer(bytes: &[SourceByte]) -> Option<Vec<SourceByte>> {
+    let first = bytes.windows(3).position(|part| {
+        part[0].byte == b'%' && hex(part[1].byte).is_some() && hex(part[2].byte).is_some()
+    })?;
+    let mut decoded = Vec::with_capacity(bytes.len() - 2);
+    decoded.extend_from_slice(&bytes[..first]);
+    let mut i = first;
+    while i < bytes.len() {
+        if let [first, high, low, ..] = &bytes[i..]
+            && first.byte == b'%'
+            && let Some(value) = hex(high.byte).zip(hex(low.byte)).map(|(h, l)| h * 16 + l)
+        {
+            decoded.push(SourceByte {
+                byte: value,
+                start: first.start,
+                end: low.end,
+            });
+            i += 3;
+        } else {
+            decoded.push(bytes[i]);
+            i += 1;
+        }
+    }
+    Some(decoded)
+}
+
+fn redact_patterns(text: &str, patterns: &[Cow<'_, str>]) -> String {
+    if patterns.is_empty() {
+        return text.to_owned();
+    }
+    let mut spans = Vec::new();
+    mark_plain(text.as_bytes(), patterns, &mut spans);
+    if text
+        .as_bytes()
+        .windows(3)
+        .any(|part| part[0] == b'%' && hex(part[1]).is_some() && hex(part[2]).is_some())
+    {
+        let mut bytes: Vec<_> = text
+            .bytes()
+            .enumerate()
+            .map(|(i, byte)| SourceByte {
+                byte,
+                start: i,
+                end: i + 1,
+            })
+            .collect();
+        let mut work = 0usize;
+        while let Some(decoded) = decode_layer(&bytes) {
+            work = work.saturating_add(bytes.len());
+            if work > text.len().saturating_mul(DECODE_WORK_FACTOR) {
+                return "[redacted: excessive percent encoding]".to_owned();
+            }
+            mark_decoded(&decoded, patterns, &mut spans);
+            bytes = decoded;
+        }
+    }
+    replace_spans(text, spans)
+}
+
+fn replace_spans(text: &str, mut spans: Vec<Range<usize>>) -> String {
+    if spans.is_empty() {
+        return text.to_owned();
+    }
+    for span in &mut spans {
+        while !text.is_char_boundary(span.start) {
+            span.start -= 1;
+        }
+        while !text.is_char_boundary(span.end) {
+            span.end += 1;
+        }
+    }
+    spans.sort_unstable_by_key(|span| span.start);
+    let mut result = String::with_capacity(text.len());
+    let mut previous = 0;
+    let mut iter = spans.into_iter().peekable();
+    while let Some(mut span) = iter.next() {
+        while iter.peek().is_some_and(|next| next.start <= span.end) {
+            span.end = span.end.max(iter.next().expect("peeked span").end);
+        }
+        result.push_str(&text[previous..span.start]);
+        result.push_str(REDACTED);
+        previous = span.end;
+    }
+    result.push_str(&text[previous..]);
     result
 }
 
-fn encoded_prefix(text: &[u8], token: &[u8]) -> Option<usize> {
-    let mut position = 0;
-    for &expected in token {
-        let first = *text.get(position)?;
-        let escaped = if first == b'%' {
-            let high = text
-                .get(position + 1)
-                .and_then(|byte| char::from(*byte).to_digit(16));
-            let low = text
-                .get(position + 2)
-                .and_then(|byte| char::from(*byte).to_digit(16));
-            high.zip(low).map(|(high, low)| (high * 16 + low) as u8)
-        } else {
-            None
-        };
-        if escaped == Some(expected) {
-            position += 3;
-        } else if first == expected || (first == b'+' && expected == b' ') {
-            position += 1;
-        } else {
-            return None;
-        }
-    }
-    Some(position)
+pub(super) fn redact_relays(relays: &[Relay], text: &str) -> String {
+    redact_patterns(text, &sensitive_patterns(relays, None))
 }
 
 pub(super) fn redact(code: &PairingCode, text: &str) -> String {
-    let secret = code.secret.expose();
-    let safe = redact_relays(&code.relays, text).replace(secret, "[redacted]");
-    redact_encoded(&safe, secret).unwrap_or(safe)
+    redact_patterns(
+        text,
+        &sensitive_patterns(&code.relays, Some(code.secret.expose())),
+    )
 }
 
 pub(super) fn pairing(

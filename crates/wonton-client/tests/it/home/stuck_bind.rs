@@ -82,3 +82,128 @@ async fn retry_sets_up_the_connection_at_once_instead_of_waiting_out_the_backoff
         .wait_for(|view| view.status == HomeStatus::Connected && view.proxy.is_some())
         .await;
 }
+
+/// Pause after dispatch has captured A, switch to B, then resume the language action.
+#[test]
+fn language_refresh_cannot_publish_from_a_replaced_scope() {
+    const CHILD: &str = "WONTON_LANGUAGE_SWITCH_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "home::stuck_bind::language_refresh_cannot_publish_from_a_replaced_scope",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated language test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(language_switch_interleaving());
+}
+
+async fn language_switch_interleaving() {
+    use std::sync::{Arc, Mutex};
+    use wonton_protocol::{HomeAction, SettingsAction};
+
+    struct OpenOnDrop(Gate);
+    impl Drop for OpenOnDrop {
+        fn drop(&mut self) {
+            self.0.open();
+        }
+    }
+
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Arc::new(Phone::open(dir.path()));
+    let a = Home::start(&[phone.device_id()]).await;
+    let b = Home::start(&[phone.device_id()]).await;
+    let bind = OpenOnDrop(Gate::default());
+    phone.test_set_bind_hook(Some(bind.0.hook()));
+    phone.test_set_establish_timing(BIND, NEVER);
+    phone.connect(&a);
+    let failed = phone.wait_for(unreachable).await;
+    assert!(failed.details.diagnostic.is_some());
+    assert!(failed.proxy.is_none());
+    // Wait until follow_pairing has recorded A, so AddServer is a real switch.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let servers = phone.subscribe_servers();
+        while let Some(view) = servers.next().await {
+            if view.servers.iter().any(|row| row.current) {
+                return;
+            }
+        }
+        panic!("server subscription ended");
+    })
+    .await
+    .expect("A was not saved");
+    bind.0.open();
+
+    let paused = OpenOnDrop(Gate::default());
+    let (arrived, arrival) = tokio::sync::oneshot::channel();
+    let arrived = Mutex::new(Some(arrived));
+    let wait = paused.0.hook();
+    phone.test_set_language_refresh_hook(Some(Arc::new(move || {
+        if let Some(arrived) = arrived.lock().unwrap().take() {
+            let _ = arrived.send(());
+        }
+        wait();
+    })));
+    let pending_phone = phone.clone();
+    let pending = tokio::task::spawn_blocking(move || {
+        pending_phone.dispatch(Action::Settings {
+            action: SettingsAction::SetLanguages {
+                languages: vec!["ja".into()],
+            },
+        })
+    });
+    tokio::time::timeout(Duration::from_secs(30), arrival)
+        .await
+        .unwrap()
+        .unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: HomeAction::AddServer,
+        })
+        .unwrap();
+    phone.connect(&b);
+    let server_id = b.server().endpoint().id().to_string();
+    let connected = phone
+        .wait_for(|view| {
+            view.server_id.as_deref() == Some(server_id.as_str())
+                && view.status == HomeStatus::Connected
+                && view.proxy.is_some()
+        })
+        .await;
+    let proxy = connected.proxy.clone().unwrap();
+    let subscription = phone.subscribe_home();
+    phone.test_set_language_refresh_hook(None);
+    paused.0.open();
+    tokio::time::timeout(Duration::from_secs(30), pending)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let subscribed = subscription.next().await.expect("home subscription ended");
+    assert_eq!(subscribed.server_id, connected.server_id);
+    assert_eq!(subscribed.status, HomeStatus::Connected);
+    assert_eq!(subscribed.proxy.as_ref(), Some(&proxy));
+    assert_eq!(subscribed.details.diagnostic, connected.details.diagnostic);
+    let after = phone.home();
+    assert_eq!(after.server_id, connected.server_id);
+    assert_eq!(after.status, HomeStatus::Connected);
+    assert_eq!(after.proxy.as_ref(), Some(&proxy));
+    assert_eq!(after.details.diagnostic, connected.details.diagnostic);
+    let (status, body) = get(&proxy, WEB_URL, "/after-language-switch", true).await;
+    assert_eq!((status, body.as_str()), (200, "/after-language-switch"));
+}

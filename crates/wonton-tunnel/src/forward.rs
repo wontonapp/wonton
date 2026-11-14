@@ -26,6 +26,24 @@ pub(crate) enum PumpError {
     Tunnel(TunnelError),
 }
 
+// QUIC errors may include a peer-controlled close reason; local TCP errors retain their OS detail.
+pub(crate) struct SafeLogError<'a>(&'a PumpError);
+
+impl fmt::Display for SafeLogError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            PumpError::Tcp(err) => write!(f, "local TCP connection failed: {err}"),
+            PumpError::Tunnel(err) => f.write_str(err.code()),
+        }
+    }
+}
+
+impl PumpError {
+    pub(crate) fn log_safe(&self) -> SafeLogError<'_> {
+        SafeLogError(self)
+    }
+}
+
 impl fmt::Display for PumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

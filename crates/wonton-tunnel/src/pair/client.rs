@@ -68,7 +68,10 @@ pub async fn pair_with_timeout(
             debug!(stage, "pairing timed out, confirming with the same code");
         }
         Err(Stop::Unclear(error)) => {
-            debug!(%error, "pairing lost the connection before the reply, confirming again");
+            debug!(
+                code = error.code(),
+                "pairing lost the connection before the reply, confirming again"
+            );
         }
     }
     match exchange(

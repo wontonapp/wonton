@@ -273,8 +273,13 @@ impl ClientCore {
     fn settings_action(&self, scope: &Scope, action: SettingsAction) -> Result<(), CoreError> {
         match action {
             SettingsAction::SetLanguages { languages } => {
+                #[cfg(feature = "test-hooks")]
+                self.test_before_language_refresh();
+                // The dispatch scope may already have been replaced. Take the switch lock
+                // before obtaining the scope, and keep replay in the same ordering.
+                let _switching = switch::lock(&self.switching);
                 crate::l10n::set_languages(&languages);
-                scope.set_languages(&languages);
+                self.scope().set_languages(&languages);
                 self.replay().languages = Some(languages);
                 Ok(())
             }

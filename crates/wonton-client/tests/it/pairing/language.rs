@@ -76,7 +76,108 @@ fn pairing_failure_message_refreshes_after_language_changes() {
         );
         phone.test_set_bind_hook(None);
         assert_setup_failure_refreshes().await;
+        assert_replaced_scope_does_not_overwrite_pairing_failure().await;
     });
+}
+
+async fn assert_replaced_scope_does_not_overwrite_pairing_failure() {
+    use std::sync::{Arc, Mutex};
+
+    let dir = tempfile::tempdir().unwrap();
+    let phone = Arc::new(Phone::open(dir.path()));
+    let a = Home::start().await;
+    let b = Home::start().await;
+    set_language(&phone, "en");
+    phone.pair(&a.code(None)).unwrap();
+    phone.wait_for(super::paired).await;
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let servers = phone.subscribe_servers();
+        while let Some(view) = servers.next().await {
+            if view.servers.iter().any(|row| row.current) {
+                return;
+            }
+        }
+        panic!("server subscription ended");
+    })
+    .await
+    .expect("the first server was not saved");
+    phone.pair("wonton://pair?v=unsupported").unwrap();
+    phone
+        .wait_for(|view| {
+            matches!(
+                view.pairing,
+                Some(PairingStatus::Failed {
+                    reason: PairingFailure::Protocol,
+                    ..
+                })
+            )
+        })
+        .await;
+
+    let gate = AutoGate(Gate::default());
+    let wait = gate.0.hook();
+    let (arrived, arrival) = tokio::sync::oneshot::channel();
+    let arrived = Mutex::new(Some(arrived));
+    phone.test_set_language_refresh_hook(Some(Arc::new(move || {
+        if let Some(arrived) = arrived.lock().unwrap().take() {
+            let _ = arrived.send(());
+        }
+        wait();
+    })));
+    let old_phone = phone.clone();
+    let pending = tokio::task::spawn_blocking(move || set_language(&old_phone, "ja"));
+    tokio::time::timeout(Duration::from_secs(30), arrival)
+        .await
+        .unwrap()
+        .unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
+    phone.pair(&b.code(Some(RejectReason::Expired))).unwrap();
+    let before = phone
+        .wait_for(|view| {
+            matches!(
+                view.pairing,
+                Some(PairingStatus::Failed {
+                    reason: PairingFailure::Expired,
+                    ..
+                })
+            )
+        })
+        .await
+        .pairing
+        .unwrap();
+    phone.test_set_language_refresh_hook(None);
+    gate.0.open();
+    tokio::time::timeout(Duration::from_secs(30), pending)
+        .await
+        .unwrap()
+        .unwrap();
+    let after = phone.home().pairing.unwrap();
+    set_language(&phone, "en");
+    set_language(&phone, "ja");
+    let expected = phone.home().pairing.unwrap();
+    assert_eq!(
+        after, expected,
+        "old scope overwrote the new pairing failure"
+    );
+    let PairingStatus::Failed {
+        reason, diagnostic, ..
+    } = after
+    else {
+        panic!("new pairing failure disappeared");
+    };
+    let PairingStatus::Failed {
+        diagnostic: before_diagnostic,
+        ..
+    } = before
+    else {
+        unreachable!();
+    };
+    assert_eq!(reason, PairingFailure::Expired);
+    assert_eq!(diagnostic, before_diagnostic);
 }
 
 fn set_language(phone: &Phone, tag: &str) {

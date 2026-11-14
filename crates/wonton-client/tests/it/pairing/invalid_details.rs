@@ -101,6 +101,18 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
         token: Some(RelayToken::new(token)),
         tier: 0,
     });
+    code.relays.push(Relay {
+        url: "https://relay.example.com/".parse().unwrap(),
+        token: Some(RelayToken::new("30")),
+        tier: 1,
+    });
+    let query_canary = "query-canary-707";
+    let query_url = format!("https://relay.example.com/?access_token={query_canary}");
+    code.relays.push(Relay {
+        url: query_url.parse().unwrap(),
+        token: None,
+        tier: 2,
+    });
     let issued = code.to_uri();
     let secret = PairingCode::parse(&issued)
         .unwrap()
@@ -113,15 +125,20 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
         secret.as_bytes()[5],
         &secret[6..]
     );
+    let colliding_secret = format!("%{:02x}{}", secret.as_bytes()[0], &secret[1..]);
+    let encoded_url: String = url::form_urlencoded::byte_serialize(query_url.as_bytes()).collect();
     let variants = [
         token,
         "relay%2Bexample",
         "relay%2bexample",
+        "relay%252bexample",
         "%72e%6Cay%2bex%61mple",
         encoded_secret.as_str(),
     ];
-    *home.codes.refusal_message.lock().unwrap() =
-        Some(format!("Expired: {issued} {}", variants.join(" ")));
+    *home.codes.refusal_message.lock().unwrap() = Some(format!(
+        "Expired: {issued} {} {colliding_secret} {encoded_url}",
+        variants.join(" ")
+    ));
     phone.pair(&issued).unwrap();
     let view = phone
         .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
@@ -142,9 +159,20 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
             .is_some_and(|raw| raw.contains("Expired"))
     );
     let diagnostic = diagnostic.unwrap();
+    let log = std::fs::read_to_string(log_path).unwrap();
+    let needles = [&secret[1..], "relay%252bexample", query_canary];
+    let diagnostic_leaks = needles.map(|needle| diagnostic.contains(needle));
+    let log_leaks = needles.map(|needle| log.contains(needle));
+    assert_eq!(
+        diagnostic_leaks, [false; 3],
+        "encoded secret spans leaked in diagnostics"
+    );
+    assert_eq!(
+        log_leaks, [false; 3],
+        "encoded secret spans leaked in the log"
+    );
     assert_redacted(&message, &issued, &secret, &variants);
     assert_redacted(&diagnostic, &issued, &secret, &variants);
-    let log = std::fs::read_to_string(log_path).unwrap();
     assert!(log.contains("the home server rejected pairing"));
     assert_redacted(&log, &issued, &secret, &variants);
 }

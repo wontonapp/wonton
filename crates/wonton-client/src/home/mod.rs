@@ -280,7 +280,10 @@ impl HomeLink {
             };
             let (checked, ()) = tokio::join!(client.probe(NETWORK_CHANGE_DEADLINE), redials);
             if let Err(err) = checked {
-                tracing::info!("tunnel check after a network change failed: {err}");
+                tracing::info!(
+                    code = err.code(),
+                    "tunnel check after a network change failed"
+                );
                 // 探测只断开不重拨，马上换新连接，不等下一次定时检查。
                 if has_network && !*home.background.borrow() {
                     home.check(&client).await;
@@ -306,7 +309,7 @@ impl HomeLink {
                 client.retry_now();
                 match tokio::time::timeout(LONG_OUTAGE, client.revalidate()).await {
                     Ok(Ok(_)) => {}
-                    Ok(Err(err)) => tracing::info!("retry failed: {err}"),
+                    Ok(Err(err)) => tracing::info!(code = err.code(), "retry failed"),
                     Err(_) => tracing::info!(
                         "retry confirmation timed out; automatic reconnect continues"
                     ),
@@ -460,7 +463,7 @@ impl HomeLink {
         // 挂起久了，服务端已经放弃这条连接，手机却收不到关闭帧：限时确认，没有回应就立刻换新连接，
         // 不等 30 秒的空闲超时（见 ADR-0004 的真机实测）。
         if let Err(err) = client.revalidate().await {
-            tracing::info!("tunnel check failed: {err}");
+            tracing::info!(code = err.code(), "tunnel check failed");
         }
         tracing::info!(elapsed = ?started.elapsed(), "STEP revalidate");
         // 这一趟可能撞上刚结束、已经失败的另一次检查（回来的确认、挂起检测自己那次），那样它立刻返回、连接还是
@@ -468,7 +471,7 @@ impl HomeLink {
         if client.status() != TunnelStatus::Connected
             && let Err(err) = client.ping().await
         {
-            tracing::info!("tunnel redial failed: {err}");
+            tracing::info!(code = err.code(), "tunnel redial failed");
         }
         tracing::info!(elapsed = ?started.elapsed(), "STEP redial");
         {
@@ -481,7 +484,13 @@ impl HomeLink {
         self.recount();
         tracing::info!(
             elapsed = ?started.elapsed(),
-            status = %client.status(),
+            status = match client.status() {
+                TunnelStatus::Idle => "idle",
+                TunnelStatus::Connecting => "connecting",
+                TunnelStatus::Connected => "connected",
+                TunnelStatus::Disconnected(_) => "disconnected",
+                TunnelStatus::Closed => "closed",
+            },
             "checked the tunnel after coming back to the foreground"
         );
         // 后台时停下过取地址：地址还是过时就接着取。
@@ -493,7 +502,7 @@ impl HomeLink {
     /// 和服务端做一次往返（必要时重连）。状态由 `follow_connection` 跟着隧道客户端更新。
     async fn check(&self, client: &TunnelClient) {
         if let Err(err) = client.ping().await {
-            tracing::info!("tunnel check failed: {err}");
+            tracing::info!(code = err.code(), "tunnel check failed");
         }
         self.recount();
     }

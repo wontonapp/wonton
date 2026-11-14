@@ -148,3 +148,29 @@ fn pairing_diagnostics_remove_secrets_and_relay_tokens() {
     assert!(diagnostic.contains("192.0.2.10:18482"));
     assert!(diagnostic.contains("relay.example.com"));
 }
+
+#[test]
+fn deeply_encoded_pairing_error_is_explicitly_redacted() {
+    let encoded = format!("%{}2b", "25".repeat(100));
+    let error = TunnelError::TransportUnavailable {
+        reason: format!("peer closed: {encoded}"),
+    };
+    let PairingStatus::Failed {
+        reason,
+        diagnostic: Some(diagnostic),
+        ..
+    } = pairing(
+        &code(),
+        CATALOG.negotiate(&["en"]),
+        Duration::from_secs(1),
+        Duration::from_secs(30),
+        &error,
+        false,
+    )
+    else {
+        panic!("connection failure must retain a diagnostic");
+    };
+    assert_eq!(reason, PairingFailure::TransportUnavailable);
+    assert!(diagnostic.contains("[redacted: excessive percent encoding]"));
+    assert!(!diagnostic.contains(&encoded));
+}

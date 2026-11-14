@@ -16,7 +16,8 @@ use tokio::{
 use wonton_tunnel::{Allowlist, TunnelServer};
 
 use crate::support::{
-    Home, Phone, Timeouts, Upstream, WAIT, loopback_endpoint, parse_response, read_head,
+    Home, Phone, Timeouts, Upstream, WAIT, capture_logs, isolated_log_test, loopback_endpoint,
+    parse_response, read_head,
 };
 
 /// 测试用的上游：`/hold/` 开头的请求一直不回，其余的回 200 后关闭连接。
@@ -296,4 +297,41 @@ async fn a_live_bidirectional_connection_survives_idle_and_half_close() {
     phone.proxy.shutdown().await;
     phone.client.close();
     home.stop().await;
+}
+
+#[tokio::test]
+async fn server_connection_log_omits_peer_close_reason() {
+    const CANARY: &str = "synthetic-close-canary-707";
+    if isolated_log_test("lifecycle::server_connection_log_omits_peer_close_reason") {
+        return;
+    }
+    let logs = capture_logs("wonton_tunnel::server=info");
+    let endpoint = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let phone = loopback_endpoint(SecretKey::generate(), 0, Timeouts::Default).await;
+    let (server, _listener) = TunnelServer::spawn_embedded(endpoint, Allowlist::new([phone.id()]));
+    let conn = timeout(
+        WAIT,
+        phone.connect(server.endpoint().addr(), wonton_tunnel::wire::ALPN),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    timeout(WAIT, logs.wait_for("device connected"))
+        .await
+        .unwrap();
+    conn.close(iroh::endpoint::VarInt::from_u32(42), CANARY.as_bytes());
+    timeout(WAIT, logs.wait_for("device connection ended"))
+        .await
+        .unwrap();
+    let log = logs.text();
+    phone.close().await;
+    server.shutdown().await;
+    assert!(
+        log.contains("peer-closed"),
+        "peer close category missing from server log"
+    );
+    assert!(
+        !log.contains(CANARY),
+        "peer close reason leaked into server log"
+    );
 }
