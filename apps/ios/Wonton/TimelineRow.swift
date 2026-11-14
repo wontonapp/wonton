@@ -9,6 +9,9 @@ struct TimelineRow: View {
     /// 和上一条、下一条是不是同一个人连着发的。
     let joinsPrevious: Bool
     let joinsNext: Bool
+    /// 和上一条、下一条是不是同一次发送里贴着的两张照片（ADR-0094）：贴成一摞，中间不留衬垫。
+    var flushesPrevious: Bool = false
+    var flushesNext: Bool = false
     /// 重发、删除发送失败的这一条。
     let retry: () -> Void
     let cancel: () -> Void
@@ -38,7 +41,9 @@ struct TimelineRow: View {
                 VStack(alignment: .trailing, spacing: WontonTheme.spacing.s4) {
                     MessageBubble(
                         message: message, core: core, showsSender: showsSender && !joinsPrevious,
-                        joinsPrevious: joinsPrevious, joinsNext: joinsNext, retry: retry, cancel: cancel,
+                        joinsPrevious: joinsPrevious, joinsNext: joinsNext,
+                        flushesPrevious: flushesPrevious, flushesNext: flushesNext,
+                        retry: retry, cancel: cancel,
                         cardAction: cardAction, reply: reply, forward: forward, redact: redact,
                         openSideChat: onOpenSideChat
                     )
@@ -135,6 +140,8 @@ private struct MessageBubble: View {
     let showsSender: Bool
     let joinsPrevious: Bool
     let joinsNext: Bool
+    var flushesPrevious: Bool = false
+    var flushesNext: Bool = false
     let retry: () -> Void
     let cancel: () -> Void
     let cardAction: (Action) -> Void
@@ -234,7 +241,9 @@ private struct MessageBubble: View {
     @ViewBuilder private var bubble: some View {
         let body = quoted
             .padding(.horizontal, WontonTheme.spacing.s12)
-            .padding(.vertical, WontonTheme.spacing.s8)
+            // 同一次发送里贴着的照片不留上下衬垫，贴成一摞（ADR-0094）。
+            .padding(.top, flushesPrevious ? 0 : WontonTheme.spacing.s8)
+            .padding(.bottom, flushesNext ? 0 : WontonTheme.spacing.s8)
         if message.isOwn {
             body.accentFill(shape)
         } else {

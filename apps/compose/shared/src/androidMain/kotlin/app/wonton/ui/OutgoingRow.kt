@@ -53,9 +53,12 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
     val colors = WontonTheme.colors
     Row(Modifier.fillMaxWidth().testTag("outgoingMessage")) {
         Spacer(Modifier.weight(1f).widthIn(min = WontonTheme.spacing.s48))
+        // 附件、配文和状态是同一次发送（ADR-0094）：装进同一个气泡，状态提示也画在里面，不看成几次发送。
         Column(
+            Modifier.accentFill(RoundedCornerShape(WontonTheme.radii.bubble))
+                .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
             horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
         ) {
             if (message.attachments.isNotEmpty()) {
                 FlowRow(
@@ -71,8 +74,6 @@ internal fun OutgoingRow(message: OutgoingMessage, roomId: String, core: ClientC
             if (message.body.isNotEmpty()) {
                 Text(
                     message.body,
-                    Modifier.accentFill(RoundedCornerShape(WontonTheme.radii.bubble))
-                        .padding(horizontal = WontonTheme.spacing.s12, vertical = WontonTheme.spacing.s8),
                     style = WontonTheme.typography.body,
                     color = colors.textOnAccentFill.toColor(),
                 )
@@ -101,7 +102,7 @@ private fun OutgoingFooter(message: OutgoingMessage, roomId: String, onAction: (
                     stringResource(R.string.timeline_sending_progress, percent)
                 } ?: stringResource(R.string.timeline_sending),
                 style = style,
-                color = colors.textSecondary.toColor(),
+                color = colors.textOnAccentFill.toColor(),
             )
             is SendState.Failed -> {
                 val danger = colors.danger.toColor()
