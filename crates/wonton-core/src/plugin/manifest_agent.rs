@@ -1,40 +1,8 @@
 //! 插件清单里的 Agent 协议、账号登录声明与校验。
 
-use serde::{Deserialize, Serialize};
+use super::manifest::{Manifest, ManifestError, Permission, PluginKind, is_label, require_locales};
 
-use super::manifest::{
-    LocalizedText, Manifest, ManifestError, Permission, PluginKind, is_label, require_locales,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentProtocol {
-    Matrix,
-    Acp,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentLogin {
-    pub id: String,
-    pub title: LocalizedText,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentSpec {
-    pub protocol: AgentProtocol,
-    #[serde(default)]
-    pub login: Vec<AgentLogin>,
-    #[serde(default)]
-    pub skills: Option<AgentSkills>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentSkills {
-    pub mount: String,
-}
+pub use wonton_protocol::manifest::{AgentLogin, AgentProtocol, AgentSpec};
 
 pub(super) fn validate(manifest: &Manifest) -> Result<(), ManifestError> {
     if manifest.kind == PluginKind::Agent && manifest.agent.is_none() {

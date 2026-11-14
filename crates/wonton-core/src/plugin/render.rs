@@ -20,7 +20,7 @@ use super::hostdir::Owner;
 use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
 use super::languages::Languages;
-use super::manifest::{Access, Manifest, Permission, Sso};
+use super::manifest::{Access, Manifest, ManifestExt, Permission, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};

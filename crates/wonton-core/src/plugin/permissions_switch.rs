@@ -14,7 +14,7 @@ use super::health_gate::Gate;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager, detached};
-use super::manifest::{Permission, PluginId};
+use super::manifest::{ManifestExt, Permission, PluginId};
 use super::package::PluginPackage;
 use super::render::{ContainerPlan, Deployment, InstallContext, render};
 use super::store::{EnabledPermission, InstalledRecord, OpenedBy};

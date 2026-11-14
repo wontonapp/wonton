@@ -3,7 +3,7 @@
 use wonton_protocol::{PermissionRisk, SecurityTier};
 
 use super::capabilities;
-use super::manifest::{Manifest, Runtime};
+use super::manifest::{Manifest, ManifestExt, Runtime};
 use super::views_permissions::permission_risk;
 
 /// 声明了的权限都算，包括默认关的可选权限：档位说的是插件能拿到什么，不是现在开了什么。

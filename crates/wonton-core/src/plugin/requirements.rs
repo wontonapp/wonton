@@ -2,103 +2,11 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
-
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError};
 use crate::l10n::{list, text};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Arch {
-    Amd64,
-    Arm64,
-}
-
-impl Arch {
-    /// 把 Docker 报告的架构名（`x86_64`、`aarch64` 等）归一。
-    pub fn from_docker(arch: &str) -> Option<Self> {
-        match arch {
-            "amd64" | "x86_64" => Some(Self::Amd64),
-            "arm64" | "aarch64" => Some(Self::Arm64),
-            _ => None,
-        }
-    }
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Amd64 => "amd64",
-            Self::Arm64 => "arm64",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GpuNeed {
-    /// 没有符合的显卡就装不了。
-    #[default]
-    Required,
-    /// 照常装；没有符合的显卡时不给设备，插件自己退回 CPU。
-    Optional,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GpuVendor {
-    Amd,
-    Nvidia,
-    Intel,
-    /// 比这个核心新的厂商：解析得出来，校验时提示先升级核心（探不到它，也就选不到）。
-    #[serde(other)]
-    Other,
-}
-
-impl GpuVendor {
-    /// 清单里的写法。
-    pub fn key(self) -> &'static str {
-        match self {
-            Self::Amd => "amd",
-            Self::Nvidia => "nvidia",
-            Self::Intel => "intel",
-            Self::Other => "other",
-        }
-    }
-
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Amd => "AMD",
-            Self::Nvidia => "NVIDIA",
-            Self::Intel => "Intel",
-            Self::Other => "Other",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GpuRequirement {
-    #[serde(default)]
-    pub need: GpuNeed,
-    /// 能用的厂商；空表示哪家都行。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub vendors: Vec<GpuVendor>,
-    /// 显存下限，写法同 [`parse_size`]。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub memory: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Requirements {
-    #[serde(default)]
-    pub arch: Option<Vec<Arch>>,
-    /// 宿主内存下限，写法同 [`parse_size`]。
-    #[serde(default)]
-    pub memory: Option<String>,
-    #[serde(default)]
-    pub gpu: Option<GpuRequirement>,
-}
+pub use wonton_protocol::manifest::{Arch, GpuNeed, GpuRequirement, GpuVendor, Requirements};
 
 /// `512M`、`2G`、`1.5G` 换算成字节（1G = 1024M）。别的写法不算。
 pub fn parse_size(text: &str) -> Option<u64> {

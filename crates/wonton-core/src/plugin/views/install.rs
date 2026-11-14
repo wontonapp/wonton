@@ -13,7 +13,7 @@ use super::super::image_worker::ImageError;
 use super::super::lan::webui;
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager, supported};
-use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
+use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::render::{Deployment, dry_run};
 use super::super::store::{EnabledPermission, InstalledRecord};

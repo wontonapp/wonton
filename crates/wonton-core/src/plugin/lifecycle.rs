@@ -21,7 +21,7 @@ use super::install_notes::note_dropped_capabilities;
 use super::lan::LanGrant;
 use super::languages::Languages;
 use super::manager::{Deployed, Health, InstallError, PluginManager, UninstallReport};
-use super::manifest::{Manifest, Permission, PluginId, Sso};
+use super::manifest::{Manifest, ManifestExt, Permission, PluginId, Sso};
 use super::models::ModelsRoute;
 use super::names::{Instance, LABEL_PLUGIN};
 use super::package::PluginPackage;

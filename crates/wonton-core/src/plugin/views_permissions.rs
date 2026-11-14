@@ -5,7 +5,7 @@ use wonton_protocol::{PermissionLine, PermissionOpened, PermissionRisk, PluginWr
 
 use super::languages::Languages;
 use super::manager::supported;
-use super::manifest::{Access, Manifest, Permission};
+use super::manifest::{Access, Manifest, ManifestExt, Permission};
 use super::store::{EnabledPermission, OpenedBy};
 use crate::l10n;
 

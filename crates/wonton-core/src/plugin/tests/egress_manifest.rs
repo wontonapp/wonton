@@ -1,7 +1,7 @@
 use wonton_protocol::PermissionRisk;
 
 use super::super::languages::Languages;
-use super::super::manifest::{Permission, PluginKind};
+use super::super::manifest::{Permission, PermissionExt, PluginKind};
 use super::super::package::{PackageError, PluginPackage};
 use super::super::views_permissions::permission_line;
 use super::package;

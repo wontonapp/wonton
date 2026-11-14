@@ -5,30 +5,21 @@
 //! 和它们所属的组在宿主的 `/dev` 里，核心在容器里时要由 compose 只读挂载进来（`WONTON_HOST_DEV`）。NVIDIA 的
 //! 设备不由核心列举，交给 Docker 的 `DeviceRequests`（NVIDIA Container Toolkit），核心只确认驱动和运行时都在。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use bollard::models::{DeviceMapping, DeviceRequest, HostConfig};
-use serde::{Deserialize, Serialize};
 use wonton_protocol::CardLine;
 
 use super::host_check;
 use super::languages::Languages;
-use super::manifest::{GpuImages, GpuNeed, Manifest, ManifestError, Permission};
+use super::manifest::{GpuNeed, Manifest, ManifestError, Permission};
 use super::requirements::GpuVendor;
 use crate::l10n::{list, text};
 
-/// 清单的 `gpu`：拿到显卡的服务。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GpuSpec {
-    pub services: Vec<String>,
-    /// 按厂商换的镜像（ADR-0099），键是 `services` 里的服务。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub images: GpuImages,
-}
+pub use wonton_protocol::manifest::GpuSpec;
 
 /// `gpu`、`devices.gpu` 和 `requirements.gpu` 三者要一起出现：只写其中一个说明清单写错了，而不是不要显卡。
 /// 服务名是否存在由 [`super::package`] 对照 compose 检查。

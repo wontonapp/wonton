@@ -1,442 +1,61 @@
-//! 插件清单 `x-wonton` 的类型与校验，字段含义见 `docs/plugin-spec.md`。
-//!
-//! M0 期间类型放在核心里；定稿后迁到 `wonton-protocol`，供客户端共用。
+//! 插件清单的服务端语义校验；类型和 serde 解析由 `wonton-protocol` 提供。
 
-use std::collections::BTreeMap;
-use std::fmt;
-
-use serde::{Deserialize, Serialize};
-use wonton_protocol::{ChatForm, PortProtocol, TunnelSpec};
-
-use super::gpu::GpuSpec;
-use super::lan::LanSpec;
 use super::languages::Languages;
 pub use super::manifest_agent::{AgentLogin, AgentProtocol, AgentSpec};
-use super::manifest_clients::ClientsSpec;
+pub use super::manifest_device::{DeviceClass, DeviceSlot, ManifestDevices};
 pub use super::manifest_gpu_images::GpuImages;
+pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;
+pub use super::manifest_mcp::{McpEndpoint, McpTransport};
+pub use super::manifest_permission::PermissionExt;
+pub use super::manifest_permission::{Access, Permission};
 pub use super::manifest_remote::RemoteMcpSpec;
 pub use super::manifest_static::{LinkSpec, StaticWebSpec};
 use super::manifest_tabs;
 pub use super::manifest_tabs::ManifestTab;
 pub use super::manifest_widget::{MatrixWidget, WidgetEntry};
-use super::provides::Provides;
 pub use super::requirements::{Arch, GpuNeed, Requirements};
-use super::store_info::Author;
-
-/// 插件 ID 的最大长度。网关用它派生子域名，必须放得进一个 DNS 标签。
-pub const MAX_ID_LEN: usize = 63;
-
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
-pub enum ManifestError {
-    #[error(
-        "插件 ID `{0}` 不合法：须为反向域名形式（小写字母、数字、连字符，至少两段，总长不超过 63）"
-    )]
-    InvalidId(String),
-    #[error("版本号 `{0}` 不是语义化版本（如 1.2.3）")]
-    InvalidVersion(String),
-    #[error("`{field}` 至少要写一种语言，写了的语言不能是空的")]
-    MissingLocale { field: &'static str },
-    #[error("权限 `{0}` 不在规范的权限表里")]
-    UnknownPermission(String),
-    #[error("插件按规范 {spec} 写成，这个核心只支持到 {supported}：先升级核心")]
-    NewerSpec { spec: String, supported: String },
-    #[error("{0}")]
-    Invalid(String),
-}
-
-/// 插件 ID：反向域名形式，如 `app.immich.photos`。
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct PluginId(String);
-
-impl PluginId {
-    pub fn parse(value: &str) -> Result<Self, ManifestError> {
-        let segments: Vec<&str> = value.split('.').collect();
-        let valid = value.len() <= MAX_ID_LEN
-            && segments.len() >= 2
-            && segments.iter().all(|segment| is_label(segment));
-        if valid {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(ManifestError::InvalidId(value.to_owned()))
-        }
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// 网关为插件网页分配的子域名标签：把 `.` 换成 `-`。
-    pub fn slug(&self) -> String {
-        self.0.replace('.', "-")
-    }
-}
-
-/// 一段由小写字母和数字组成、可用单个连字符分隔的标签。
-pub(super) fn is_label(segment: &str) -> bool {
-    !segment.is_empty()
-        && segment.split('-').all(|part| {
-            !part.is_empty()
-                && part
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
-        })
-}
-
-impl TryFrom<String> for PluginId {
-    type Error = ManifestError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::parse(&value)
-    }
-}
-
-impl From<PluginId> for String {
-    fn from(id: PluginId) -> Self {
-        id.0
-    }
-}
-
-impl fmt::Display for PluginId {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-/// 多语言文本：语言到文字。App 要的语言没有时的回退见 `Languages`。
-pub type LocalizedText = BTreeMap<String, String>;
-/// 按语言分开的标签。
-pub type LocalizedTags = BTreeMap<String, Vec<String>>;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PluginKind {
-    App,
-    Agent,
-    Channel,
-    Model,
-    System,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Runtime {
-    #[default]
-    Compose,
-    RemoteMcp,
-    Skills,
-    /// 静态网页，交给提供能力 `static_web` 的插件托管（ADR-0080）。
-    StaticWeb,
-    /// 外部网页，只存一个地址（ADR-0080）。
-    Link,
-}
-
-impl Runtime {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Compose => "compose",
-            Self::RemoteMcp => "remote_mcp",
-            Self::Skills => "skills",
-            Self::StaticWeb => "static_web",
-            Self::Link => "link",
-        }
-    }
-}
-
-impl From<Runtime> for wonton_protocol::PluginRuntime {
-    fn from(runtime: Runtime) -> Self {
-        match runtime {
-            Runtime::Compose => Self::Compose,
-            Runtime::RemoteMcp => Self::RemoteMcp,
-            Runtime::Skills => Self::Skills,
-            Runtime::StaticWeb => Self::StaticWeb,
-            Runtime::Link => Self::Link,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Sso {
-    Oidc,
-    /// 网关代登录（插件规范的“网关代登录”）：应用认反向代理传来的用户名或固定密钥，网关在转发给插件网页的
-    /// 请求上代加 `webui.proxy` 声明的请求头和 Cookie。凭据只加在网关认出用户的请求上，也不会回到浏览器
-    /// （网关按值从响应头里剥除）。webui 服务不能跑在宿主网络，安装时按 `super::privileges` 拒绝。
-    Proxy,
-    #[default]
-    None,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TokenAuthMethod {
-    #[default]
-    ClientSecretBasic,
-    ClientSecretPost,
-}
-
-impl TokenAuthMethod {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ClientSecretBasic => "client_secret_basic",
-            Self::ClientSecretPost => "client_secret_post",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OidcClient {
-    /// 应用登录回调的路径（相对插件网页地址），核心据此登记 OIDC 客户端的回调地址。
-    pub redirect_paths: Vec<String>,
-    /// 额外的登出回跳路径，核心始终登记插件根地址和网页入口。
-    #[serde(default)]
-    pub post_logout_paths: Vec<String>,
-    /// 应用在令牌端点出示客户端密钥的方式，默认 `client_secret_basic`。
-    #[serde(default)]
-    pub token_endpoint_auth_method: TokenAuthMethod,
-    /// 这个人是这个应用的管理员时（ADR-0088 的 `plugin_admin`），`groups` 里再加这些组名，应用按组名映射角色。
-    /// 只发给这个客户端，别的插件看不到。
-    #[serde(default)]
-    pub admin_groups: Vec<String>,
-    /// 应用读一个专门的声明认管理员（如 Immich 的 `immich_role`）时，核心按 `plugin_admin` 填它。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub role_claim: Option<RoleClaim>,
-}
-
-/// 清单 `webui.oidc.role_claim`：声明名，和管理员、普通用户各填的值。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RoleClaim {
-    pub name: String,
-    pub admin: String,
-    pub user: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WebUi {
-    /// 容器插件必填；`runtime: static_web` 没有服务，不写（ADR-0080）。
-    #[serde(default)]
-    pub service: String,
-    #[serde(default)]
-    pub port: u16,
-    #[serde(default = "default_web_path")]
-    pub path: String,
-    #[serde(default)]
-    pub sso: Sso,
-    #[serde(default)]
-    pub oidc: Option<OidcClient>,
-    #[serde(default)]
-    pub proxy: Option<ProxyCredentials>,
-    /// 应用按登录的人分开数据（ADR-0088）。没声明的按“全家共用一份”处理：不禁止开放和分享，开放时醒目提示。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub accounts: Option<Accounts>,
-    /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
-    #[serde(default)]
-    pub cross_origin_isolated: bool,
-    /// 核心代探测的健康路径（`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck）。
-    /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub health: Option<String>,
-    /// 应用自己能接待匿名用户（自带房间码或口令），可以给它建访客链接（ADR-0090）。
-    #[serde(default)]
-    pub guests: bool,
-}
-
-/// 清单 `webui.accounts` 的取值。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Accounts {
-    /// 按登录的人分开数据。
-    PerUser,
-}
-
-/// `sso: proxy` 时网关加在转发请求上的请求头和 Cookie：名字 → 值模板。
-///
-/// 身份由网关根据当前经验证的人填入，不接受调用者提供的身份或角色：
-/// `{user}` 是固定、不复用的本机用户名；已有的 `{name}` 是此人的显示名；
-/// `{role}` 是 `owner`、`member` 或 `friend`，对应 [`wonton_protocol::Role`] 的已知值。
-/// `{email}` 和 `{secret:…}` 的约定不变。
-/// 模板变量的解析、校验和渲染由 `super::proxy_auth` 实现。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProxyCredentials {
-    #[serde(default)]
-    pub headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub cookies: BTreeMap<String, String>,
-}
-
-pub(super) fn default_web_path() -> String {
-    "/".to_owned()
-}
-
-pub(super) use super::manifest_mcp::DEFAULT_TOOL_TOTAL_SECONDS;
-pub use super::manifest_mcp::{McpEndpoint, McpTransport};
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BotProfile {
-    #[serde(default)]
-    pub display_name: Option<LocalizedText>,
-    #[serde(default)]
-    pub avatar: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub avatars: Option<BTreeMap<String, String>>,
-    /// 和这个 Bot 的私聊怎么显示（ADR-0060）；没写是气泡。
-    #[serde(default)]
-    pub chat_layout: ChatForm,
-}
-
-/// 一个插件多个 Bot：`services` 里的服务每个 Bot 一份，其余服务全插件一份。M1 只有默认 Bot。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct BotServices {
-    pub services: Vec<String>,
-}
-
-pub use super::manifest_device::{DeviceClass, DeviceSlot, ManifestDevices};
-pub use super::manifest_permission::{Access, Permission};
 pub use super::secret_spec::{
-    CollectSecret, GenerateSecret, InputSecret, MAX_SECRET_BYTES, SecretEncoding, SecretSpec,
-    ShowOwner, is_secret_name,
+    CollectSecret, GenerateSecret, InputSecret, SecretEncoding, SecretSpec, ShowOwner,
 };
+pub use super::secret_spec::{MAX_SECRET_BYTES, is_secret_name};
+use std::collections::BTreeMap;
+pub(super) use wonton_protocol::manifest::is_label;
+pub use wonton_protocol::manifest::{
+    Accounts, BotProfile, BotServices, LocalizedTags, LocalizedText, MAX_ID_LEN, Manifest,
+    ManifestError, OidcClient, OptionalPermission, PluginId, PluginKind, ProxyCredentials,
+    RoleClaim, Runtime, Sso, TokenAuthMethod, WebUi,
+};
+use wonton_protocol::{ChatForm, PortProtocol};
 
-/// `x-wonton` 扩展字段。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Manifest {
-    /// 清单按哪一版规范写成，见 [`super::store_info`]。
-    pub spec: String,
-    pub id: PluginId,
-    pub version: String,
-    pub kind: PluginKind,
-    #[serde(default)]
-    pub runtime: Runtime,
-    pub title: LocalizedText,
-    pub description: LocalizedText,
-    /// 插件包里的 PNG 或 SVG。
-    #[serde(default)]
-    pub icon: Option<String>,
-    /// 仓库里的截图，不算插件包的一部分。
-    #[serde(default)]
-    pub screenshots: Option<Vec<String>>,
-    #[serde(default)]
-    pub author: Option<Author>,
-    #[serde(default)]
-    pub homepage: Option<String>,
-    #[serde(default)]
-    pub license: Option<String>,
-    /// 许可证全文的地址（HTTPS）：不在 SPDX 列表里的许可证（`LicenseRef-<名字>`）用它给出处。
-    #[serde(default)]
-    pub license_url: Option<String>,
-    /// 插件包里的许可和声明文件。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notices: Vec<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub tags: LocalizedTags,
-    #[serde(default)]
-    pub about: Option<LocalizedText>,
-    #[serde(default)]
-    pub release_notes: Option<LocalizedText>,
-    /// 装好后要主人自己做的一步（如把公钥加到某台机器），安装和详情页醒目显示。
-    #[serde(default)]
-    pub setup: Option<LocalizedText>,
-    #[serde(default)]
-    pub webui: Option<WebUi>,
-    #[serde(default)]
-    pub tabs: Option<Vec<ManifestTab>>,
-    /// 插件网页也是 Matrix widget：能在房间的上下文里打开（ADR-0096）。要和 `webui` 一起声明，不能和
-    /// `webui.cross_origin_isolated` 一起。
-    #[serde(default)]
-    pub matrix_widget: Option<MatrixWidget>,
-    /// `runtime: static_web` 的静态文件目录和出网白名单（ADR-0080）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub static_web: Option<StaticWebSpec>,
-    /// `runtime: link` 的地址（ADR-0080）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub link: Option<LinkSpec>,
-    /// `runtime: remote_mcp` 的远端服务器和鉴权方式（ADR-0066）。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub remote_mcp: Option<RemoteMcpSpec>,
-    #[serde(default)]
-    pub mcp: Option<McpEndpoint>,
-    #[serde(default)]
-    pub bot: Option<BotProfile>,
-    #[serde(default)]
-    pub bots: Option<BotServices>,
-    #[serde(default)]
-    pub agent: Option<AgentSpec>,
-    /// 系统插件给其他插件提供的能力，见规范“模型网关”。
-    #[serde(default)]
-    pub provides: Option<Provides>,
-    /// 依赖的能力：索引里没有提供方就装不上（ADR-0053）。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub requires: Vec<String>,
-    /// 可选依赖的能力：有提供方就用，没有照装（ADR-0053）。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub wants: Vec<String>,
-    /// 拿到显卡的服务，见规范“显卡”；要和 `devices.gpu` 权限一起声明。
-    #[serde(default)]
-    pub gpu: Option<GpuSpec>,
-    /// 由主人选的宿主设备（串口、USB、硬盘，ADR-0036）：见规范“设备”。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub devices: Option<ManifestDevices>,
-    /// 在局域网上开放的端口，见规范“局域网”；要和 `network.lan` 权限一起声明。
-    #[serde(default)]
-    pub lan: Option<LanSpec>,
-    /// 第三方原生 App 的入口，见规范“第三方 App 入口”；要和 `network.clients` 权限一起声明。
-    #[serde(default)]
-    pub clients: Option<ClientsSpec>,
-    /// 已配对设备经隧道访问的端口；不发布到宿主网络。
-    #[serde(default)]
-    pub tunnel: Option<TunnelSpec>,
-    /// 插件自己的密钥，见规范“插件密钥”。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub secrets: BTreeMap<String, SecretSpec>,
-    pub permissions: Vec<Permission>,
-    /// 可选、默认关的权限（ADR-0057）：装好以后由主人开关，开着才兑现对应的 compose 字段。
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub optional_permissions: BTreeMap<Permission, OptionalPermission>,
-    #[serde(default)]
-    pub settings: Option<String>,
-    #[serde(default)]
-    pub requirements: Option<Requirements>,
-    /// 安装最多等多久（秒）：安装时要下载大文件（模型等）的插件写长一点，核心按它放宽安装期限。不写用核心的
-    /// 安装期限（默认 300 秒），最多 `install_notes::MAX_INSTALL_TIMEOUT_SECS` 秒。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub install_timeout_secs: Option<u64>,
+/// 核心的权限计算和语义校验，不属于清单的线格式。
+pub trait ManifestExt {
+    fn gets_owner_identity(&self) -> bool;
+    fn all_permissions(&self) -> impl Iterator<Item = &Permission>;
+    fn optional_permission(&self, permission: &Permission) -> Option<&OptionalPermission>;
+    fn effective_permissions(&self, enabled: &[Permission]) -> Vec<Permission>;
+    fn validate(&self, langs: &Languages) -> Result<(), ManifestError>;
 }
 
-/// `optional_permissions` 里的一项。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OptionalPermission {
-    /// 关着时少了什么，给主人看（ADR-0057）。
-    pub off_loss: LocalizedText,
-}
-
-impl Manifest {
+impl ManifestExt for Manifest {
     /// 容器拿不拿得到主人的身份变量。
-    pub fn gets_owner_identity(&self) -> bool {
+    fn gets_owner_identity(&self) -> bool {
         self.permissions.contains(&Permission::OwnerIdentity)
     }
 
     /// 声明过的全部权限：必需的在前，可选的按权限名。校验按它遍历。
-    pub fn all_permissions(&self) -> impl Iterator<Item = &Permission> {
+    fn all_permissions(&self) -> impl Iterator<Item = &Permission> {
         self.permissions
             .iter()
             .chain(self.optional_permissions.keys())
     }
 
     /// 一项权限是不是声明成可选、默认关。
-    pub fn optional_permission(&self, permission: &Permission) -> Option<&OptionalPermission> {
+    fn optional_permission(&self, permission: &Permission) -> Option<&OptionalPermission> {
         self.optional_permissions.get(permission)
     }
 
     /// 生效集：必需权限加上现在开着的可选项。
-    pub fn effective_permissions(&self, enabled: &[Permission]) -> Vec<Permission> {
+    fn effective_permissions(&self, enabled: &[Permission]) -> Vec<Permission> {
         self.permissions
             .iter()
             .chain(
@@ -450,7 +69,7 @@ impl Manifest {
 
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
     /// `langs` 只用于给按语言写的校验错误选语言，文字本身在各自模块里。
-    pub fn validate(&self, langs: &Languages) -> Result<(), ManifestError> {
+    fn validate(&self, langs: &Languages) -> Result<(), ManifestError> {
         if !is_semver(&self.version) {
             return Err(ManifestError::InvalidVersion(self.version.clone()));
         }
