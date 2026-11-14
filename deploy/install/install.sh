@@ -694,6 +694,10 @@ cat <<EOF
 以后加设备：在已配对的 App 里点“添加设备”；设备都丢了：sudo wonton pair
 
 EOF
-# 第一台设备配上前一直显示首次配对码（过期前换新的）；已经有设备时只说明怎么加设备。
-"$install_dir/wonton" pair --first ||
-  echo "提示：终端里出码失败，用局域网网页上的二维码配对" >&2
+# curl | sudo sh 的标准输入是管道，是否现场配对按输出终端判断；自动安装不把一次性码写进日志。
+if [ -t 1 ]; then
+  "$install_dir/wonton" pair --first ||
+    echo "提示：终端里出码失败，用局域网网页上的二维码配对" >&2
+else
+  echo "首次配对：打开上面的局域网状态页扫码，或在服务器终端执行 sudo wonton pair --first。"
+fi

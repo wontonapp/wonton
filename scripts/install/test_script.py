@@ -4,8 +4,10 @@
 假的 docker 只回答脚本要问的几件事；能跑在 CI 上，不需要 Docker。
 """
 
+import errno
 import json
 import os
+import pty
 import shutil
 import subprocess
 import tempfile
@@ -114,12 +116,20 @@ class InstallTest(unittest.TestCase):
         self.ca.write_text("ca\n")
         self.digests = {}
 
+    def write_pairing_command(self):
+        code = "test-only-one-time-pairing-code"
+        self.install_dir.mkdir()
+        path = self.install_dir / "wonton"
+        path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{code}'\n")
+        path.chmod(0o755)
+        return code
+
     def write_fake(self, name, body):
         path = self.bin / name
         path.write_text(body)
         path.chmod(0o755)
 
-    def run_install(self, entry=True, **extra):
+    def run_install(self, entry=True, terminal=False, **extra):
         (self.state / "digests.json").write_text(json.dumps(self.digests))
         (self.state / "log").write_text("")
         env = {
@@ -144,14 +154,38 @@ class InstallTest(unittest.TestCase):
                 "WONTON_ACME_DIRECTORY": "https://pebble.test/dir",
                 "WONTON_ACME_ACCEPT_TERMS": "true",
             })
-        return subprocess.run(
-            ["sh", str(SCRIPT)],
-            env=env,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        master, slave = pty.openpty() if terminal else (None, None)
+        try:
+            result = subprocess.run(
+                ["sh", str(SCRIPT)],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=slave if terminal else subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+            )
+            if terminal:
+                os.close(slave)
+                slave = None
+                output = bytearray()
+                while True:
+                    try:
+                        chunk = os.read(master, 4096)
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                        break
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                result.stdout = output.decode()
+            return result
+        finally:
+            if slave is not None:
+                os.close(slave)
+            if master is not None:
+                os.close(master)
 
     def env(self):
         return dict(
@@ -166,6 +200,26 @@ class InstallTest(unittest.TestCase):
 
     def runs(self):
         return self.calls("run")
+
+    def test_nonterminal_install_completes_without_disclosing_pairing_code(self):
+        code = self.write_pairing_command()
+        reference = "ghcr.io/wontonapp/wonton-core@sha256:" + "a" * 64
+
+        result = self.run_install(WONTON_CORE_IMAGE=reference)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env()["WONTON_CORE_IMAGE"], reference)
+        self.assertNotIn(code, result.stdout + result.stderr)
+
+    def test_terminal_output_starts_pairing_without_terminal_stdin(self):
+        code = self.write_pairing_command()
+        reference = "ghcr.io/wontonapp/wonton-core@sha256:" + "a" * 64
+
+        result = self.run_install(terminal=True, WONTON_CORE_IMAGE=reference)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.env()["WONTON_CORE_IMAGE"], reference)
+        self.assertIn(code, result.stdout)
 
     def test_a_channel_tag_is_resolved_to_its_repository_digest(self):
         digest = "sha256:" + "a" * 64
