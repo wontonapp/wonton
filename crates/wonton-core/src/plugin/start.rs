@@ -450,7 +450,8 @@ impl PluginManager {
                     (name_of(dependency, dep_bot), condition)
                 })
                 .collect();
-            health::wait_for_all(&self.engine, &self.http, &deps, deadline, langs).await?;
+            self.wait_dependencies(Some(&package.manifest), &deps, deadline, langs)
+                .await?;
             let name = name_of(service, *bot);
             self.engine.start_container(&name).await?;
         }

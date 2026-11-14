@@ -167,14 +167,8 @@ impl PluginManager {
         if completed || (!restart && state.running == Some(true)) {
             return Ok(());
         }
-        health::wait_for_all(
-            &self.engine,
-            &self.http,
-            &container.depends_on,
-            deadline,
-            langs,
-        )
-        .await?;
+        self.wait_dependencies(Some(manifest), &container.depends_on, deadline, langs)
+            .await?;
         if restart {
             self.engine
                 .restart_container(&container.name, langs)

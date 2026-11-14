@@ -36,6 +36,8 @@ enum Added {
     NoNewPrivilegesWithoutPermission,
     /// 网页代登录模板里的 `{role}`。
     ProxyRole,
+    /// 没有显式健康路径或有效 compose 健康检查的长期网页服务。
+    AutomaticWebuiHealth,
 }
 
 const V0_7: SpecVersion = SpecVersion::new(0, 7);
@@ -109,6 +111,7 @@ const TABLE: &[(SpecVersion, Added)] = &[
     (V0_14, Added::Field(&["devices"])),
     (V0_14, Added::Permission("devices.disk")),
     (V0_15, Added::Field(&["remote_mcp"])),
+    (V0_15, Added::AutomaticWebuiHealth),
 ];
 
 /// 清单（整份 compose 文档）里用到、但 `spec` 写得太低的写法，一处一条。`spec` 读不出来时不查：解析那一步已经报过。
@@ -233,7 +236,52 @@ fn places(
             )
         }
         Added::NoNewPrivilegesWithoutPermission => Vec::new(),
+        Added::AutomaticWebuiHealth => automatic_webui_health(manifest, services),
         Added::Variable(_) => unreachable!("variable references are scanned together"),
+    }
+}
+
+fn automatic_webui_health(manifest: &Value, services: &[(&String, &Value)]) -> Vec<String> {
+    if manifest["runtime"]
+        .as_str()
+        .is_some_and(|runtime| runtime != "compose")
+        || !manifest["webui"]["health"].is_null()
+    {
+        return Vec::new();
+    }
+    let Some(name) = manifest["webui"]["service"].as_str() else {
+        return Vec::new();
+    };
+    let Some((_, service)) = services
+        .iter()
+        .find(|(service, _)| service.as_str() == name)
+    else {
+        return Vec::new();
+    };
+    let one_shot = service["restart"].as_str() == Some("no")
+        || services.iter().any(|(_, service)| {
+            service["depends_on"][name]["condition"].as_str()
+                == Some("service_completed_successfully")
+        });
+    if one_shot || effective_healthcheck(&service["healthcheck"]) {
+        return Vec::new();
+    }
+    vec![format!(
+        "x-wonton.webui automatic HTTP health probe for services.{name}"
+    )]
+}
+
+fn effective_healthcheck(check: &Value) -> bool {
+    if check["disable"].as_bool() == Some(true) {
+        return false;
+    }
+    match &check["test"] {
+        Value::String(command) => !command.trim().is_empty(),
+        Value::Array(test) => test
+            .first()
+            .and_then(Value::as_str)
+            .is_some_and(|first| !first.trim().is_empty() && first != "NONE"),
+        _ => false,
     }
 }
 

@@ -1,5 +1,4 @@
-//! 清单 `webui.health`：`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck，由核心按这个
-//! 路径探测（2xx/3xx 算健康）。探测和别的健康状态走同一条路：安装要等它通过，之后坏掉如实标为异常。
+//! 核心 HTTP 健康探测：网页服务可省略容器探针，显式健康路径保留；2xx–4xx 算存活。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -111,5 +110,109 @@ async fn a_failing_probe_degrades_the_plugin_and_recovery_clears_it() {
         seen(&m),
         (PluginStatus::Running, Some(Health::Healthy)),
         "3xx 也算健康"
+    );
+}
+
+async fn entry_web(status: Arc<AtomicU16>) -> u16 {
+    serve(
+        Router::new()
+            .route(
+                "/entry",
+                get(move || {
+                    let status = status.clone();
+                    async move { StatusCode::from_u16(status.load(Ordering::SeqCst)).unwrap() }
+                }),
+            )
+            .fallback(|| async { StatusCode::SERVICE_UNAVAILABLE }),
+    )
+    .await
+    .port()
+}
+
+fn automatic_compose(port: u16, extra_services: &str, healthcheck: &str) -> String {
+    package(
+        &format!("  web:\n    image: nginx\n{healthcheck}{extra_services}"),
+        &format!("  webui: {{service: web, port: {port}, path: /entry}}\n  permissions: []"),
+    )
+    .replacen("spec: '0.5'", "spec: '0.15'", 1)
+}
+
+#[tokio::test]
+async fn an_implicit_probe_uses_the_web_path_and_accepts_4xx_after_recovery() {
+    let status = Arc::new(AtomicU16::new(401));
+    let port = entry_web(status.clone()).await;
+    let (_docker, _dir, manager) = install_running().await;
+    let installed = manager
+        .install(&automatic_compose(port, "", ""), &[], super::langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        (installed.status, installed.health),
+        (PluginStatus::Running, Some(Health::Healthy))
+    );
+
+    status.store(503, Ordering::SeqCst);
+    manager.watch_containers().await;
+    let (PluginStatus::Degraded { reason }, health) = seen(&manager) else {
+        panic!("{:?}", seen(&manager));
+    };
+    assert!(
+        reason.contains("/entry") && reason.contains("HTTP 503"),
+        "{reason}"
+    );
+    assert_eq!(health, None);
+
+    status.store(499, Ordering::SeqCst);
+    manager.watch_containers().await;
+    assert_eq!(
+        seen(&manager),
+        (PluginStatus::Running, Some(Health::Healthy))
+    );
+}
+
+#[tokio::test]
+async fn an_implicit_probe_does_not_override_a_container_healthcheck() {
+    let status = Arc::new(AtomicU16::new(200));
+    let port = entry_web(status.clone()).await;
+    let (docker, _dir, manager) = install_running().await;
+    let name = container_name("app-test", "web");
+    docker.set_state(
+        &name,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
+    );
+    let source = automatic_compose(port, "", "    healthcheck:\n      test: [CMD, nginx, -t]\n");
+    manager.install(&source, &[], super::langs()).await.unwrap();
+
+    status.store(503, Ordering::SeqCst);
+    manager.watch_containers().await;
+    assert_eq!(
+        seen(&manager),
+        (PluginStatus::Running, Some(Health::Healthy))
+    );
+
+    docker.set_state(
+        &name,
+        json!({"Status": "running", "Running": true, "Health": {"Status": "starting"}}),
+    );
+    manager.watch_containers().await;
+    assert_eq!(
+        seen(&manager),
+        (PluginStatus::Running, Some(Health::Unknown))
+    );
+}
+
+#[tokio::test]
+async fn an_implicit_probe_satisfies_a_service_healthy_dependency() {
+    let port = entry_web(Arc::new(AtomicU16::new(403))).await;
+    let (_docker, _dir, manager) = install_running().await;
+    let source = automatic_compose(
+        port,
+        "  worker:\n    image: busybox\n    depends_on:\n      web: {condition: service_healthy}\n",
+        "",
+    );
+    let installed = manager.install(&source, &[], super::langs()).await.unwrap();
+    assert_eq!(
+        (installed.status, installed.health),
+        (PluginStatus::Running, Some(Health::Healthy))
     );
 }

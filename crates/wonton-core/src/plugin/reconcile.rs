@@ -279,47 +279,6 @@ impl PluginManager {
         }
     }
 
-    /// `webui.health` 的一次探测：2xx/3xx 之外都算不健康，失败原因带状态码或连不上的原因。
-    async fn probe_webui_health(
-        &self,
-        container: &str,
-        path: &str,
-        endpoint: Option<&super::upstreams::Endpoint>,
-    ) -> Result<(), String> {
-        let langs = self.owner_languages();
-        let Some(endpoint) = endpoint else {
-            return Err(l10n::text(
-                &langs,
-                "plugin-install-container-health-probe-failed",
-                &[
-                    ("container", container.into()),
-                    ("path", path.into()),
-                    ("reason", "no known address".into()),
-                ],
-            ));
-        };
-        match super::upstreams::status(&self.http, endpoint, path, super::upstreams::PROBE_TIMEOUT)
-            .await
-        {
-            Ok(200..=399) => Ok(()),
-            outcome => {
-                let reason = match outcome {
-                    Ok(code) => format!("HTTP {code}"),
-                    Err(e) => e.to_string(),
-                };
-                Err(l10n::text(
-                    &langs,
-                    "plugin-install-container-health-probe-failed",
-                    &[
-                        ("container", container.into()),
-                        ("path", path.into()),
-                        ("reason", reason.into()),
-                    ],
-                ))
-            }
-        }
-    }
-
     /// 看一眼插件的每个容器，不等待。不因为第一个不健康的容器就停下，把每个都看一遍。
     pub(super) async fn check_containers(
         &self,
@@ -336,19 +295,6 @@ impl PluginManager {
         let mut failures = Vec::new();
         let mut missing = Vec::new();
         let mut served = BTreeSet::new();
-        // 声明了 `webui.health` 的网页服务由核心代探测（镜像里没有 shell，写不出 healthcheck）。
-        let probed = match &package.manifest.webui {
-            Some(webui) if webui.health.is_some() => {
-                let network = self.cfg.instance.network(&slug);
-                let endpoint = self.webui_upstream(&package.manifest, &network).await?;
-                Some((
-                    webui.service.clone(),
-                    webui.health.clone().unwrap_or_default(),
-                    endpoint,
-                ))
-            }
-            _ => None,
-        };
         // Bot 服务按 Bot 一组容器，每个都核对；全插件一份的服务照旧一个。
         let instances = |service: &str| -> Vec<String> {
             if bot_services.contains(service) && !bots.is_empty() {
@@ -371,24 +317,15 @@ impl PluginManager {
                     langs,
                 )
                 .await?;
+                let checked = self
+                    .check_webui_health(&package.manifest, service, &name, checked, langs)
+                    .await;
                 match checked {
                     Checked::Completed => {}
-                    Checked::Healthy | Checked::Running => {
+                    Checked::Healthy | Checked::Starting | Checked::Running => {
                         running += 1;
-                        // 探测过的网页服务以代探测为准，其余的只有在跑、不知道健康。
-                        match probed.as_ref().filter(|(web, _, _)| web == service) {
-                            Some((_, path, endpoint)) => {
-                                if let Err(reason) = self
-                                    .probe_webui_health(&name, path, endpoint.as_ref())
-                                    .await
-                                {
-                                    healthy = false;
-                                    serving = false;
-                                    failures.push(reason);
-                                }
-                            }
-                            None if checked == Checked::Running => healthy = false,
-                            None => {}
+                        if checked != Checked::Healthy {
+                            healthy = false;
                         }
                     }
                     Checked::Stopped => {

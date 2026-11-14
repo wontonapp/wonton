@@ -356,21 +356,37 @@ fn host_network_cannot_share_lan_ports() {
 }
 
 #[test]
-fn host_webui_requires_healthcheck() {
-    let missing = package(
-        "  web:\n    image: nginx\n    network_mode: host",
-        "  webui: {service: web, port: 80, sso: none}\n  permissions: [network.host]",
-    );
-    assert!(render_err(&missing).contains(&message(
-        "plugin-install-priv-host-network-healthcheck",
-        &[]
-    )));
+fn host_webui_can_use_core_health_probes_without_a_compose_healthcheck() {
+    for healthcheck in [
+        "",
+        "\n    healthcheck: {disable: true}",
+        "\n    healthcheck: {test: [NONE]}",
+        "\n    healthcheck: {test: ['CMD', 'true']}",
+    ] {
+        let yaml = package(
+            &format!("  web:\n    image: nginx\n    network_mode: host{healthcheck}"),
+            "  webui: {service: web, port: 80, sso: none}\n  permissions: [network.host]",
+        );
+        let plan = dry_run(&PluginPackage::parse(&yaml, &langs()).unwrap(), &langs()).unwrap();
+        assert!(plan.relays.iter().any(|relay| {
+            relay.purpose == super::super::host_relay::Purpose::Webui
+                && relay.service == "web"
+                && relay.port == 80
+        }));
+    }
+}
 
-    let valid = package(
-        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: ['CMD', 'true']}",
+#[test]
+fn host_webui_does_not_make_an_invalid_empty_healthcheck_valid() {
+    let yaml = package(
+        "  web:\n    image: nginx\n    network_mode: host\n    healthcheck: {test: []}",
         "  webui: {service: web, port: 80, sso: none}\n  permissions: [network.host]",
     );
-    dry_run(&PluginPackage::parse(&valid, &langs()).unwrap(), &langs()).unwrap();
+    let package = PluginPackage::parse(&yaml, &langs()).unwrap();
+    assert!(matches!(
+        dry_run(&package, &langs()),
+        Err(RenderError::Service { service, .. }) if service == "web"
+    ));
 }
 
 #[test]

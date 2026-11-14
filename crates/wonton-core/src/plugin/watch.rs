@@ -15,7 +15,7 @@ use super::package::PluginPackage;
 use super::reconcile::ContainersState;
 use super::store::InstalledRecord;
 
-/// 多久看一次。只读容器状态，不进容器、不访问网络。
+/// 容器状态和核心 HTTP 健康探测共用的巡检间隔。
 const INTERVAL: Duration = Duration::from_secs(30);
 
 impl PluginManager {
