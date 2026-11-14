@@ -72,6 +72,7 @@ mod models;
 mod models_route;
 mod network_mode;
 mod network_pool;
+mod nvme_security_tests;
 mod oidc;
 mod optional_permissions;
 mod owner;

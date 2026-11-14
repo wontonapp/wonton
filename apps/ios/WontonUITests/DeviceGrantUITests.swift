@@ -10,7 +10,7 @@ final class DeviceGrantUITests: XCTestCase {
     private let dataSuffix = UUID().uuidString
 
     private static let serial = "serial:0:/dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0-if00-port0"
-    private static let systemDisk = "disk:/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_1TB"
+    private static let systemDisk = "disk:nvme:/dev/disk/by-id/nvme-Samsung_SSD_990_PRO_1TB"
     private static let dataDisk = "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0"
 
     override func setUpWithError() throws {
@@ -47,6 +47,19 @@ final class DeviceGrantUITests: XCTestCase {
         XCTAssertTrue(sent.firstMatch.waitForExistence(timeout: 8), "回答里没带选中的设备\n\(app.debugDescription)")
         XCTAssertFalse(sent.firstMatch.label.contains(Self.systemDisk), "回答里带上了没勾的系统盘")
         shot("answered")
+    }
+
+    func testNvmeSelectionShowsHighestRisk() {
+        launch()
+        tap(button("confirmations-entry"), "确认入口")
+        tap(button("confirmation-row-ui-fake-devices"), "设备卡片")
+        let warning = app.staticTexts["deviceHighestRisk"]
+        XCTAssertFalse(warning.exists)
+        tap(option(Self.systemDisk), "NVMe 硬盘")
+        XCTAssertTrue(warning.waitForExistence(timeout: 8))
+        shot("nvme-highest-risk")
+        tap(option(Self.systemDisk), "取消 NVMe 硬盘")
+        XCTAssertFalse(warning.exists)
     }
 
     // MARK: 助手

@@ -63,9 +63,10 @@ internal fun ConfirmInstallButton(
     val rootPermissions = preview.permissions.filter { line ->
         line.needsRootConfirmation && (!line.optional || line.enabled)
     }
+    val deviceHighestRisk = deviceChoices(preview.devices.orEmpty(), preview.permissions)?.highestRisk == true
     WontonButton(
         title,
-        { if (rootPermissions.isEmpty()) onConfirm() else acknowledging = true },
+        { if (rootPermissions.isEmpty() && !deviceHighestRisk) onConfirm() else acknowledging = true },
         Modifier.padding(bottom = LocalWontonBottomInset.current)
             .padding(WontonTheme.spacing.pageInset).fillMaxWidth(),
         enabled = previewInstallAction(preview) != PluginInstallAction.BLOCKED &&
@@ -84,7 +85,12 @@ internal fun ConfirmInstallButton(
                     onConfirm()
                 },
             ),
-            detail = { rootPermissions.forEach { PermissionRow(it) } },
+            detail = {
+                rootPermissions.forEach { PermissionRow(it) }
+                if (deviceHighestRisk) {
+                    PermissionSupportingText(stringResource(R.string.install_device_nvme_risk))
+                }
+            },
         )
     }
 }

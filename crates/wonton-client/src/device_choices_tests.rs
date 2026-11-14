@@ -102,6 +102,29 @@ fn disks_are_ticked_one_by_one_and_start_unticked() {
 }
 
 #[test]
+fn only_selected_nvme_requires_highest_confirmation() {
+    let mut sata = device("disk:sata", PluginDeviceKind::Disk, "smart");
+    sata.target = "/dev/sda".into();
+    let mut nvme = device("disk:nvme", PluginDeviceKind::Disk, "smart");
+    nvme.target = "/dev/nvme0n1".into();
+    let permissions = vec![permission(DISK)];
+    let devices = toggle_device(vec![sata, nvme], "disk:sata".into());
+    assert!(
+        !device_choices(devices.clone(), permissions.clone())
+            .unwrap()
+            .highest_risk
+    );
+    let devices = toggle_device(devices, "disk:nvme".into());
+    assert!(
+        device_choices(devices.clone(), permissions.clone())
+            .unwrap()
+            .highest_risk
+    );
+    let devices = toggle_device(devices, "disk:nvme".into());
+    assert!(!device_choices(devices, permissions).unwrap().highest_risk);
+}
+
+#[test]
 fn the_section_groups_serial_ports_by_service_and_waits_for_required_ones() {
     let mut devices = two_services();
     devices.push(device("disk:a", PluginDeviceKind::Disk, "smart"));

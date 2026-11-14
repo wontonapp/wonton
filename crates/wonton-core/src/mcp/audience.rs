@@ -277,6 +277,45 @@ impl Bus {
         self.confirmations.ask_as(&caller, draft, audience).await
     }
 
+    pub(crate) async fn ask_plugin_admin_twice(
+        &self,
+        requester: String,
+        mut first: Draft,
+        second: Draft,
+    ) -> Result<(Ticket, Ticket), Refusal> {
+        let caller = crate::plugin::PluginId::parse("app.wonton.core")
+            .expect("core plugin identifier is valid");
+        first.lines.insert(
+            0,
+            wonton_protocol::CardLine {
+                text: requester,
+                emphasis: false,
+            },
+        );
+        let audience = Audience {
+            recipients: Recipients::Admins(self.plugin_admins()),
+            ..Audience::default()
+        };
+        let first = self
+            .confirmations
+            .ask_as(&caller, first, audience.clone())
+            .await?;
+        match self.confirmations.ask_as(&caller, second, audience).await {
+            Ok(second) => Ok((first, second)),
+            Err(refusal) => {
+                self.confirmations
+                    .finish(
+                        first,
+                        wonton_protocol::ConfirmationState::Failed {
+                            message: refusal.message(),
+                        },
+                    )
+                    .await;
+                Err(refusal)
+            }
+        }
+    }
+
     /// 卡片的文字用谁的语言（ADR-0043）：发给管理员的（会删工具的、安装的）按主人的语言，其余发给谁按谁的。
     pub(super) fn card_languages(&self, caller: &Caller, subject: Subject) -> Languages {
         let recipient = match subject {

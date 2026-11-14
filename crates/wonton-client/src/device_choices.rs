@@ -24,6 +24,8 @@ pub struct DeviceChoices {
     pub unknown: Vec<PluginDevice>,
     /// 必选的串口都选了；为假时壳不让确认。
     pub ready: bool,
+    /// 已选磁盘包含 NVMe，需要最高风险确认。
+    pub highest_risk: bool,
 }
 
 /// 一个服务要的串口：`devices` 里选一个；`optional` 为真时可以一个都不选。
@@ -103,11 +105,15 @@ pub fn device_choices(
     let ready = serial
         .iter()
         .all(|group| group.optional || group.devices.iter().any(|device| device.chosen));
+    let highest_risk = disks
+        .iter()
+        .any(|disk| disk.chosen && disk.target.starts_with("/dev/nvme"));
     let choices = DeviceChoices {
         serial_missing: serial.is_empty() && granted(&permissions, SERIAL),
         usb: granted(&permissions, USB),
         disks_missing: disks.is_empty() && granted(&permissions, DISK),
         serial,
+        highest_risk,
         disks,
         unknown,
         ready,
