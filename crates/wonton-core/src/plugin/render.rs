@@ -484,9 +484,15 @@ fn render_service_containers(
             .map(|_| package.bot_service(name, service_vars, variables, langs))
             .transpose()?;
         let service = scoped_service.as_ref().unwrap_or(service);
+        // 归属人“AI 动手”是只读的私人 Bot：共享文件夹一律只读挂载（ADR-0088 第 5 节），
+        // 插件自己声明了写权限的也一样。
+        let forced_shares_read_only = bot
+            .and_then(|bot| ctx.bots.get(bot))
+            .is_some_and(|vars| vars.keeper_read_only);
         let mut mounts = Mounts {
             ctx,
             read_only_shares,
+            forced_shares_read_only,
             named: package.named_volumes(),
             service: name,
             allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),

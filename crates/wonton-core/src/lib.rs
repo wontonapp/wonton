@@ -14,6 +14,7 @@ mod test_docker_check;
 
 pub mod agent_chain;
 pub mod agent_outbox;
+pub(crate) mod ai_level;
 mod bot_activity;
 pub mod bot_media;
 

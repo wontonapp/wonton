@@ -13,6 +13,7 @@ use wonton_protocol::{
 
 use super::confirm::{Audience, Recipients, Refusal, Ticket};
 use super::{Bus, Caller, Draft};
+use crate::ai_level::{lower, strict_ai};
 use crate::matrix::BotAccount;
 use crate::plugin::languages::Languages;
 
@@ -93,53 +94,22 @@ impl Bus {
     /// 一个人的 AI 动手级别（ADR-0088 第 5 节“谁让 Bot 做的事，按谁的角色封顶”）：主人不受角色约束，
     /// 其余按角色；人查不到、角色查不到、取值不认识时按最严并记日志，不按最松的放行。
     pub(crate) fn person_ai(&self, username: &str) -> AiLevel {
-        if username == self.plugins.owner_name() {
-            return AiLevel::SelfConfirms;
-        }
-        let level = self
-            .people
-            .get()
-            .and_then(|people| {
-                let member = people.members.get(username)?;
-                if !matches!(member.status, MemberStatus::Invited | MemberStatus::Joined) {
-                    return None;
-                }
-                people
-                    .roles
-                    .get(&member.role_id)
-                    .map(|role| role.permissions.ai)
-            })
-            .unwrap_or_else(|| {
-                tracing::warn!(person = username, "认不出这个人的角色，AI 动手按只读封顶");
-                AiLevel::ReadOnly
-            });
-        strict_ai(level)
+        crate::ai_level::person_ai(
+            self.plugins.owner_name(),
+            self.people
+                .get()
+                .map(|people| (&*people.members, &*people.roles)),
+            username,
+        )
     }
 
     /// 共享 Bot 没有进行中的轮次时的封顶：能用人（角色“用共享 Bot”为“能”）里最低的级别，主人算在内。
     pub(crate) fn shared_bot_ai(&self) -> AiLevel {
-        let Some(people) = self.people.get() else {
-            tracing::warn!("没有家人角色记录，共享 Bot 的 AI 动手按只读封顶");
-            return AiLevel::ReadOnly;
-        };
-        let mut floor = AiLevel::SelfConfirms;
-        for member in people.members.list() {
-            if !matches!(member.status, MemberStatus::Invited | MemberStatus::Joined) {
-                continue;
-            }
-            let Some(role) = people.roles.get(&member.role_id) else {
-                tracing::warn!(
-                    person = member.username.as_str(),
-                    "认不出这个人的角色，AI 动手按只读封顶"
-                );
-                floor = AiLevel::ReadOnly;
-                continue;
-            };
-            if role.permissions.shared_bots {
-                floor = lower(floor, strict_ai(role.permissions.ai));
-            }
-        }
-        floor
+        crate::ai_level::shared_bot_ai(
+            self.people
+                .get()
+                .map(|people| (&*people.members, &*people.roles)),
+        )
     }
 
     /// 这次调用的封顶（ADR-0088 第 5 节、ADR-0083 第 5 节）：有进行中的桥轮次时按轮次里级别最低的人算，
@@ -460,24 +430,6 @@ fn localpart(user_id: &str) -> Option<&str> {
     let rest = user_id.strip_prefix('@')?;
     let (localpart, server) = rest.split_once(':')?;
     (!localpart.is_empty() && !server.is_empty()).then_some(localpart)
-}
-
-/// 认不出的取值按最严算（ADR-0088 第 2 节）。
-fn strict_ai(level: AiLevel) -> AiLevel {
-    match level {
-        AiLevel::Other => AiLevel::ReadOnly,
-        level => level,
-    }
-}
-
-/// 两级里低的那个：封顶取进行中的轮次和能用人里最低的级别。
-fn lower(a: AiLevel, b: AiLevel) -> AiLevel {
-    let rank = |level: AiLevel| match level {
-        AiLevel::ReadOnly | AiLevel::Other => 0,
-        AiLevel::AdminApprovesDeletes => 1,
-        AiLevel::SelfConfirms => 2,
-    };
-    if rank(a) <= rank(b) { a } else { b }
 }
 
 #[cfg(test)]
