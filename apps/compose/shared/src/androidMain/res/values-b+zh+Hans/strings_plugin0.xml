@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Status of an authorized host device that the core reports unavailable. No arguments. -->
+    <string name="plugin_device_unavailable">不可用</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">能存文件的文件夹</string>
     <string name="plugin_media_title">网页的摄像头和麦克风</string>

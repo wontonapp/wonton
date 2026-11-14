@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Fallback name for an authorized device of an unknown kind. No arguments. -->
+    <string name="plugin_device_other">Other device</string>
     <!-- Note under a setting the app can\'t render because the home server is newer. No arguments. -->
     <string name="plugin_settings_update_app">Update the app to change this</string>
     <!-- Note after saving when the app will restart to apply the new values. No arguments. -->

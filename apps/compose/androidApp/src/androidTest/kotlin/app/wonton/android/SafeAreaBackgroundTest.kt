@@ -9,7 +9,6 @@ import android.graphics.Color
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.view.KeyEvent
 import android.view.WindowInsets
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -83,12 +82,6 @@ class SafeAreaBackgroundTest {
             compose.waitForIdle()
             // The real unpaired My Apps route displays pairing, not a fabricated launcher fixture.
             compose.onNodeWithTag("pairing-submit").assertExists()
-            // The legacy native-root action can show a rejection over the unpaired route.
-            // Check the page canvas, not the separate dialog window's intentional dim layer.
-            if (compose.onAllNodes(isDialog()).fetchSemanticsNodes().isNotEmpty()) {
-                instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
-                compose.waitForIdle()
-            }
             compose.onAllNodes(isDialog()).assertCountEquals(0)
             checkPixels("$prefix-my-apps", colors.canvas)
             compose.onNodeWithTag("sidebar-open").performClick()
