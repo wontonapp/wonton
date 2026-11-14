@@ -1,6 +1,6 @@
 # ADR-0096 音视频通话：MatrixRTC + LiveKit，Element Call 作为 Matrix widget 跑在插件页里
 
-- 状态：提议（2026-11-12）。路线（同 Element X：MatrixRTC + LiveKit + Element Call 网页嵌进 App）由主人 2026-11-08 定
+- 状态：提议（2026-11-12）。本验证 PR 已完成 Android 端可复跑冒烟脚本；正式接受仍待三组真实路径均通过
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
@@ -207,14 +207,35 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCapturePermissionFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
+- **三组 Android 端到端路径**：`deploy/dev/core/call-e2e.sh` 已加入 UDP、TCP 退路和公共中继三种模式，要求两台已配对且登录同一加密房间的设备；本工作树未能取得 194 的任务卡执行通道和完整双设备账号现场，因此三组结果未核实。
+- **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
-- **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成
-  页面自己的 origin 是否够。
+- **Element Call 在顶层 WebView 里的 widget 模式：** 注入脚本拦下它发给自己的消息后，它的收发是否完整；`parentUrl` 设成页面自己的 origin 是否够。
 - **加密房间：** 每人的媒体密钥经加密 to-device 交换，两台 Wonton 设备和一台 Element X 三方互通。
 
 ## 验证结果
+
+### 插件与底座前置
+
+通话插件仓库 `wontonapp/wonton-plugin-call` 的开发栈探针已验证 Element Call 页面、LiveKit `/livekit/sfu` 反代、页面配置和 widget 入口；这不等价于真实 App 通话。Android widget 桥和媒体权限实现已在后续壳工作树中具备，本 PR 只把真实冒烟脚本放进主仓库。
+
+### 本 PR 的可复跑冒烟
+
+`deploy/dev/core/call-e2e.sh`：
+
+- `CALL_MODE=udp` 保留清单中的 UDP mux 端口；
+- `CALL_MODE=tcp` 复制清单后移除 UDP 声明，只保留 TCP 7881；
+- `CALL_MODE=relay` 使用失效直连地址，要求页面出现公共中继提示；
+- 每组记录两端屏幕、CDP `inbound-rtp` 包计数、选中的 ICE 候选、挂断和强杀一端后的 delayed leave。
+
+脚本要求账号、加密房间和两台设备先由人工准备，不把密码或 Matrix 令牌写进命令行。执行结果未核实：本验证工作树无法取得负责人任务卡的远程写入通道，也没有可用的双设备登录现场。
+
+### 已有 Android WebView 媒体前置结果
+
+Android WebView 124、API 35 模拟器、LiveKit v1.13.11 和 livekit-client 2.23.0 的远端媒体前置实验已记录在 ADR-0072：UDP 直连首帧 313 ms、TCP 退路 470 ms、n0 公共中继 6262 ms；三组均收到包，中继码率约 1 Mbit/s。该结果验证了隧道映射和回环 ICE 候选，不验证 MatrixRTC widget、加密房间或双向 App 通话。
+
+### MatrixRTC 服务端与网关验证
 
 Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker：
 

@@ -180,6 +180,32 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 依赖和步骤写在脚本开头。插件作者看好友打开自己的插件时插件拿到什么身份，用
 `dev.sh friend <插件包目录或 compose 文件>`（做法和限制见 `friend-probe.sh` 开头）。
 
+### MatrixRTC 通话冒烟（ADR-0096）
+
+`call-e2e.sh` 在真实 Android 设备／模拟器上跑 Element Call widget、LiveKit 媒体和 delayed leave。它只管理自己声明的开发栈、插件资源和两台传入的 Android 设备；截图、录屏和 CDP 统计写在仓库外的 `~/wonton-dev/research/call-e2e/`。
+
+账号登录和加密房间准备必须先手动完成：两台设备都要能打开同一个加密房间，并且已经配对到这套核心。外部 Matrix 账号的登录涉及浏览器 OIDC 或密码，脚本不把账号和密钥放进命令行，也不伪造登录状态。
+
+先准备两个 Android Debug WebView 设备和带 widget 桥的 Debug APK，再按路径各跑一次：
+
+```bash
+export CALL_PLUGIN=/path/to/wonton-plugin-call
+export CALL_SERIAL_A=127.0.0.1:5561
+export CALL_SERIAL_B=127.0.0.1:5563
+export CALL_ROOM='!room:server.example'
+export CALL_APK=/path/to/androidApp-debug.apk
+export CALL_DIRECT_ADDR=192.0.2.10:18682
+export CALL_SKIP_PAIR=1
+
+CALL_MODE=udp deploy/dev/core/call-e2e.sh
+CALL_MODE=tcp deploy/dev/core/call-e2e.sh
+CALL_MODE=relay CALL_DIRECT_ADDR=198.51.100.10:18682 deploy/dev/core/call-e2e.sh
+```
+
+`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK；`CALL_SKIP_PAIR=1` 只跳过脚本生成新的配对码，不跳过通话、双向 RTP、挂断和 delayed leave 检查。TCP 路径会复制清单并移除 UDP mux 声明，不改插件仓库；relay 路径要求通话页显示公共中继提示。单次运行可用 `CALL_DURATION`、`CALL_ARTIFACT_DIR` 和 `CALL_KEEP_STACK=1` 调整采样、产物目录和现场保留。
+
+脚本依赖 Bash、Python 3、ADB、Docker Compose、`jq` 和 `screenrecord`；不需要安装 Python WebSocket 包。
+
 内部邮箱有单独的一条（ADR-0056），**在目标主机的本机 Docker 上运行**，由调用方申请并释放栈名额：
 
 ```bash
