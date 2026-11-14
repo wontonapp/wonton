@@ -106,7 +106,9 @@ impl PluginManager {
             devices,
             missing_requires: Vec::new(),
             missing_wants: Vec::new(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
+            capability_providers: self
+                .consumer_capabilities(m, langs, None)
+                .unwrap_or_default(),
             lan_webui: listed
                 .lan_switched
                 .as_ref()
