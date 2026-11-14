@@ -88,9 +88,7 @@ impl PluginManager {
     ) -> Result<DependencyPreview, InstallError> {
         let state = self.dependencies.load()?;
         let providers = self.capability_providers();
-        let missing: Vec<_> = manifest
-            .requires
-            .iter()
+        let missing: Vec<_> = super::required(manifest)
             .filter(|c| generic(c))
             .filter(|c| chosen(&state, &providers, &manifest.id, c, None).is_none())
             .collect();
@@ -138,7 +136,7 @@ impl PluginManager {
                 preview.blocked = Some(self.capability_missing_other(manifest, capability, langs));
             }
             preview.missing_requires.push(MissingCapability {
-                capability: capability.clone(),
+                capability: capability.to_owned(),
                 third_party: crate::plugin::capabilities::is_third_party(capability),
                 providers: matches
                     .iter()

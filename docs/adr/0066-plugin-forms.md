@@ -315,10 +315,19 @@
   而容器插件本来就用 compose 里的 `x-wonton`，一条解析路径就够。Agent Plugins 1.0 的包留给第三方包和转换脚本，
   换过去时清单字段不变，只换外壳。
 - **配置随每个请求带给提供方，提供方不读清单。** 核心发往提供方的每个请求带 `X-Wonton-Plugin`（插件 ID）、
-  `X-Wonton-Remote-Url`（服务器的地址）、`X-Wonton-Remote-Auth`（`none`、`header`、`oauth`）、
+  `X-Wonton-Remote-Url`（展开密钥后的服务器地址）、`X-Wonton-Remote-Auth`（`none`、`header`、`oauth`）、
   `X-Wonton-Remote-Forward`（清单 `headers` 填好密钥后的头，JSON 对象做 base64）；`X-Wonton-*` 由核心删掉重写。
   提供方不缓存清单，装、改、卸都不需要重启它。托管形态因此不必有包内目录，`HostedForm.mount` 可空，
   提供 `remote_mcp` 的插件不写 `provides.remote_mcp.mount`。
+- **地址模板只允许在路径和查询里引用 `{secret:<名字>}`，每项必须是已声明的 `input` 密钥。** scheme、主机、端口、
+  用户信息中不允许模板；校验时先用占位值替换模板，再检查 HTTPS、无用户信息、无片段，主机不是 IP 字面量、
+  `localhost`、其子域或单段名。替换时把密钥按 URL 组件百分号编码，不能让密钥改变路径或查询的结构。
+  核心每次请求重新读取密钥，URL 和请求头的新值在下一个请求生效，不重建容器。
+- **展开后的地址只交给连接器握手和总线。** 握手请求体的 `url` 和总线的 `X-Wonton-Remote-Url` 使用展开值；
+  核心日志、错误、详情和审计只用清单模板原文；连接器详情中回显的展开地址换回模板、密钥值移除后再展示，不展示可能带密钥的底层错误原文。
+- **装时握手是 `POST /_wonton/probe`。** JSON 请求体是 `url`、`auth` 和展开后的 `headers` 对象；返回分类 JSON：
+  `outcome`、可选 `http_status`、不含密钥的 `detail` 和可选工具名列表 `tools`。`ok` 和 `legacy_sse` 都继续安装。
+  旧式 HTTP+SSE 由连接器转发为核心使用的 Streamable HTTP，不因传输旧而拒装。
 - **回调页用 wonton-docs 的 Pages 地址（第 3a 节）。** wonton-docs 先转到 wontonapp 组织再用，回调页和 CIMD 文档一起合。
 - **两种新的失败类别：** `remote_unavailable`（连不上：DNS、TLS、超时、拒连）和 `remote_error`（远端回 5xx 或协议错误）。
   不复用 `TransportUnavailable`、`Upstream`，那两个说的是家里的服务器。

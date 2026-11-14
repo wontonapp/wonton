@@ -1,0 +1,12 @@
+remote-install-authorize-first = 請先授權登入這台伺服器，再安裝。
+remote-install-connector-unavailable = 遠端工具連接器沒有正確回應，請啟動它後重試。
+remote-install-needs-oauth = 這台伺服器需要登入授權，但外掛清單沒有宣告。
+remote-install-needs-header = 這台伺服器需要請求標頭密鑰，但外掛清單沒有宣告。
+remote-install-secret-rejected = 伺服器不接受填入的密鑰，請核對後重試。
+remote-install-not-mcp = 這個位址不是 MCP 伺服器。
+remote-install-blocked-address = 這台伺服器解析到了非公網位址，無法連線。
+remote-install-unreachable = 連不上遠端伺服器，請在連線恢復後重試。
+remote-install-proxy-unavailable = 對外連線代理不可用，請檢查代理後重試。
+remote-install-remote-error = 遠端伺服器發生錯誤，請稍後重試。
+remote-install-probe-failed = { $reason } 位址：{ $url }。詳細資訊：{ $detail }
+remote-install-forget-failed = 外掛已解除安裝，但連接器那邊的權杖未刪除。

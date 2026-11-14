@@ -217,10 +217,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         let mut dependents = Vec::new();
         for consumer in self.capability_consumers() {
-            let blocked = consumer
-                .manifest
-                .requires
-                .iter()
+            let blocked = super::required(&consumer.manifest)
                 .filter(|c| super::generic(c))
                 .any(|capability| {
                     chosen(&state, &providers, &consumer.manifest.id, capability, None)
@@ -342,7 +339,7 @@ impl PluginManager {
                             .or_else(|| before.defaults.get(*capability).map(String::as_str))
                             .is_some_and(|p| removing.iter().any(|removed| removed.as_str() == p))
                     })
-                    .map(|capability| (consumer.manifest.id.clone(), capability.clone()))
+                    .map(|capability| (consumer.manifest.id.clone(), capability.to_owned()))
                     .collect::<Vec<_>>()
             })
             .collect();
@@ -444,7 +441,7 @@ impl PluginManager {
                             .is_some_and(|p| p == manifest.id.as_str())
                             && service(manifest, capability).is_none()
                     })
-                    .map(|capability| (consumer.manifest.id.clone(), capability.clone()))
+                    .map(|capability| (consumer.manifest.id.clone(), capability.to_owned()))
                     .collect::<Vec<_>>()
             })
             .collect();

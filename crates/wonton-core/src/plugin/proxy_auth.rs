@@ -14,6 +14,11 @@ use hyper::header::{HeaderName, HeaderValue};
 
 use super::languages::Languages;
 use crate::l10n::text;
+mod input;
+pub(super) use input::{
+    InputSecretEncoding, URL_SECRET_COMPONENT, render_input_template, render_input_template_with,
+    validate_input_template,
+};
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -60,6 +65,7 @@ pub fn validate_header_spec(
         || lower.starts_with("x-forwarded-")
         || lower.starts_with("x-wonton-")
         || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
+        || matches!(lower.as_str(), "content-length" | "last-event-id")
     {
         return Err(text(
             langs,
@@ -524,6 +530,23 @@ impl std::fmt::Debug for McpHeaders {
 }
 
 impl McpHeaders {
+    /// Construction errors identify only the header, never its possibly secret value.
+    pub(super) fn from_sensitive_pairs(
+        pairs: impl IntoIterator<Item = (&'static str, String)>,
+    ) -> Result<Self, String> {
+        pairs
+            .into_iter()
+            .map(|(name, value)| {
+                let header =
+                    HeaderName::from_bytes(name.as_bytes()).map_err(|_| name.to_owned())?;
+                let mut value = HeaderValue::from_str(&value).map_err(|_| name.to_owned())?;
+                value.set_sensitive(true);
+                Ok((header, value))
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map(Self)
+    }
+
     /// rmcp 传输层的 `custom_headers`：发往上游的每个请求都带上。
     pub fn custom_headers(&self) -> HashMap<HeaderName, HeaderValue> {
         self.0.iter().cloned().collect()
