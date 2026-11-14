@@ -145,7 +145,8 @@ adb shell am start -n app.wonton.android/.MainActivity --es wonton_scan_code '<�
 [ADR-0033 的 Android 验证](../../docs/adr/0033-plugin-tabs.md#android-标签页容器)。
 
 声明跨源隔离的插件遵循 [ADR-0033 的跨源隔离规则](../../docs/adr/0033-plugin-tabs.md#跨源隔离)：核心标出
-`TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内只留一行说明和重新打开的按钮。
+`TabPage.opensInBrowser`，App 里不加载，交给系统浏览器（Custom Tabs）打开，页内说明并给回聊天和重新打开。交接时提示
+可尝试系统返回或关闭浏览器页面；面板页只在点击打开时交接。实际返回方式取决于浏览器和系统。
 
 ## App 链接和桌面快捷方式
 

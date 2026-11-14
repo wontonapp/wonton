@@ -14,10 +14,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,11 +103,12 @@ private fun PluginPageContainer(
     val awaitingLogin = access.disclosure && !loginAcknowledged
     val connection = sharedPageConnection(tab, pages, home)
     val state = remember { WebPageState(PlacedTab.Page(tab), pages) }
+    val browserAttempted = rememberSaveable(page.url, page.reload) { mutableStateOf(false) }
     val viewport = tabViewport(active, capsule = pageKeepsCapsule(tab))
     val environment = viewport.environment
     state.park(parked)
     LaunchedEffect(parked) {
-        if (!parked) state.resume()
+        if (parked) browserAttempted.value = false else state.resume()
     }
     val openLink = externalLinkOpener { state.problem = it }
     PageEffects(state, page, connection.connected, active, parked, appearance, environment)
@@ -115,7 +118,8 @@ private fun PluginPageContainer(
         BotPageDisclosure(page, active, awaitingLogin, pages, onContinue = { loginAcknowledged = true })
     }
     PageLayers(state, page, pages, connection, appearance, viewport, active, parked, takeover, bannerTop,
-        onDetails, onDraft, openLink, admitted = access.allowed && !awaitingLogin, disclosure = disclosure)
+        onDetails, onDraft, openLink, browserAttempted, admitted = access.allowed && !awaitingLogin,
+        disclosure = disclosure)
 }
 
 /** 页面顶上浮的一条短状态:连接提示由壳给,升级中由这里说。 */
@@ -128,7 +132,8 @@ internal fun shortStatus(page: TabPage): String? =
 @Composable
 internal fun PageStatusOverlay(
     state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, onDetails: (String) -> Unit, unsupported: String? = null,
+    inset: PaddingValues, onDetails: (String) -> Unit, browserAttempted: MutableState<Boolean>,
+    browserAllowed: Boolean, unsupported: String? = null,
 ) {
     val platformBlocked = !supported || crossOriginBlocked
     if (state.covers(page) || platformBlocked || state.problem != null) {
@@ -140,6 +145,7 @@ internal fun PageStatusOverlay(
             } else {
                 PluginTabStatus(
                     page, tab, state.pages, state.problem, supported, crossOriginBlocked, onDetails, state.place,
+                    browserAttempted, browserAllowed,
                 )
             }
         }

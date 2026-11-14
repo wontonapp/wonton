@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +37,7 @@ import kotlin.math.roundToInt
  * 面板里的一页：网页一直按整页排版（第 1 级只是被聊天页盖住一截，不改大小），
  * 只在第 2 级挂胶囊。公网网页没有桥、没有注入脚本，单独一个网站数据存储（ADR-0052）。
  */
-@Suppress("CyclomaticComplexMethod") // 一页的网页、状态、胶囊和手势都在这，摊平反而要来回跳。
+@Suppress("CyclomaticComplexMethod", "LongMethod") // 一页的网页、状态、胶囊和手势都在这，摊平反而要来回跳。
 @Composable
 internal fun PanelPage(
     item: PanelItem,
@@ -138,7 +139,10 @@ internal fun PanelPage(
         if (panel.level == PanelLevel.PEEK && current && !webView) PeekTouchCatcher(touch)
         BotPageDisclosure(page, active, awaitingLogin, tabs,
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
-        PanelStatusOverlay(state, page, tab, supported, crossOriginBlocked, inset, public, onDetails)
+        PanelStatusOverlay(
+            state, page, tab, supported, crossOriginBlocked, inset, public, onDetails,
+            browserAttempted = remember { mutableStateOf(false) }, browserAllowed = admitted,
+        )
         if (panel.level == PanelLevel.FULL && current) {
             PluginPageChrome(safe, 0.dp, shortStatus(page), takeover) {
                 PluginPageCapsule(tab, tabs, capsule, state.controller, takeover,
@@ -156,10 +160,11 @@ internal fun PanelPage(
 @Composable
 private fun PanelStatusOverlay(
     state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
-    inset: PaddingValues, public: Boolean, onDetails: (String) -> Unit,
+    inset: PaddingValues, public: Boolean, onDetails: (String) -> Unit, browserAttempted: MutableState<Boolean>,
+    browserAllowed: Boolean,
 ) {
     PageStatusOverlay(
-        state, page, tab, supported, crossOriginBlocked, inset, onDetails,
+        state, page, tab, supported, crossOriginBlocked, inset, onDetails, browserAttempted, browserAllowed,
         unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
     )
 }
