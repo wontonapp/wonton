@@ -1,4 +1,6 @@
 //! 升级期间把能力声明、连接授权和凭据作为同一次变更处理。
+//! `dependencies.changing` 从暂存密钥一直持到提交或回滚后的对账，单项密钥更新也持同一把锁。
+//! 保留新凭据只依据本次操作完成提交的证据，不比较内容摘要或来源。
 
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
@@ -25,28 +27,16 @@ impl PluginManager {
         super::super::capabilities::unsupported_model_dependency(&manifest, &langs)?;
         self.check_capability_removal(&manifest.id, Some(&manifest), &langs)?;
         let snapshot = self.snapshot_dependency_connections(&manifest.id)?;
-        let digest = package.digest();
         let store = self.store.secrets();
         let secrets = store.load(&manifest.id)?;
         let changed = store.changed(&manifest.id)?;
         self.store_input_values(&manifest, inputs, secrets.as_ref(), &langs)?;
-        let mut result = self
+        let outcome = self
             .upgrade_declared(package, granted, requested, lan_webui, devices, settings)
             .await;
-        // 容器和安装记录已换好后，出口对账仍可能失败；不能撤掉已生效版本的连接授权。
-        let retained = match &result {
-            Ok(()) => Ok(true),
-            Err(_) => self.upgrade_retained(&manifest.id, &digest, &langs),
-        };
-        let retained = match retained {
-            Ok(retained) => retained,
-            Err(error) => {
-                result = Err(result
-                    .expect_err("只有失败的升级需要检查记录")
-                    .with_note(&langs, &error.to_string()));
-                false
-            }
-        };
+        let result = outcome.result;
+        // 只认本次操作的提交结果；同摘要换来源也可能在 probe 时被拒绝。
+        let retained = outcome.committed;
         if !retained {
             // 探测和部署读取暂存的新值；旧版本留下时，值和时间必须一起退回。
             let restored = match &secrets {
@@ -99,20 +89,6 @@ impl PluginManager {
             }
         }
         result
-    }
-
-    fn upgrade_retained(
-        &self,
-        id: &super::super::manifest::PluginId,
-        digest: &str,
-        langs: &Languages,
-    ) -> Result<bool, InstallError> {
-        Ok(self
-            .store
-            .load(id)?
-            .map(|record| installed_package(&record, langs))
-            .transpose()?
-            .is_some_and(|package| package.digest() == digest))
     }
 
     pub(super) fn upgrade_capability_block(

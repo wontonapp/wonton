@@ -3,6 +3,7 @@
 
 mod adopt;
 mod dependencies;
+mod execute;
 mod offers;
 mod run;
 

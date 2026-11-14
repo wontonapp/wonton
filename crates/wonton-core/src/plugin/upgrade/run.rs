@@ -1,4 +1,4 @@
-//! 执行升级：保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器。
+//! 执行容器升级与回滚：保留数据、插件密钥、Bot 账号和设备、模型凭据、OIDC 客户端，只换容器。
 //!
 //! 先把能失败的都做在旧容器还在跑的时候（渲染、拉镜像、建目录和卷），这些失败了旧版本不受影响。换容器之后失败就退回：用旧记录和旧容器当时的镜像重建旧版本。Bot 的令牌从旧容器读回（见 [`crate::plugin::egress`]），只留在内存里和容器的环境
 //! 变量里，这里绝不签新设备：换设备要重新建加密身份。安装记录最后才写，核心中途退出时记录还是旧版本的。
@@ -12,21 +12,19 @@ use wonton_protocol::InstallStage;
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
 use super::super::health_gate::Gate;
-use super::super::lan::webui::switched;
 use super::super::languages::Languages;
 use super::super::lifecycle::volumes::{VolumeAction, volume_action};
 use super::super::lifecycle::{Grants, Undo, client_spec};
 use super::super::listed::Listed;
 use super::super::manager::{
-    Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
-    now_secs,
+    Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, now_secs,
 };
 use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use wonton_protocol::BotKeeper;
 
-use super::super::render::{Deployment, InstallContext, dry_run, render};
+use super::super::render::{Deployment, InstallContext, render};
 use super::super::secrets::{self, Secrets};
 use super::super::store::{EnabledPermission, InstalledRecord};
 use super::super::upstreams::uses_sso;
@@ -72,7 +70,7 @@ struct Prepared {
     pulled: Deployment,
 }
 
-enum Outcome {
+pub(super) enum Outcome {
     Upgraded(Deployed),
     /// 旧容器没动过：状态放回去。
     Untouched(InstallError),
@@ -82,7 +80,7 @@ enum Outcome {
 }
 
 /// 旧容器之前的样子，旧容器没动过时放回去。
-struct Before {
+pub(super) struct Before {
     status: PluginStatus,
     health: Option<Health>,
 }
@@ -98,101 +96,8 @@ fn pin_images(plan: &mut Deployment, images: &HashMap<String, String>) {
 }
 
 impl PluginManager {
-    /// 检查并升级。`granted` 必须含新版本的全部必需权限：这就是主人的确认；`requested` 是主人勾选的可选项。
-    pub(super) async fn upgrade_declared(
-        &self,
-        package: PluginPackage,
-        granted: &[Permission],
-        requested: &[EnabledPermission],
-        lan_webui: bool,
-        chosen_devices: &[String],
-        settings: super::super::settings::Values,
-    ) -> Result<(), InstallError> {
-        let langs = self.owner_languages();
-        super::super::install_entry::check_runtime(&package.manifest, &langs)?;
-        self.check_not_upgrading(&langs)?;
-        if !super::super::install_hosted::is_containerless(&package.manifest) {
-            dry_run(&package, &langs)?;
-        }
-        self.check_icon(&package, &langs).await?;
-        let manifest = &package.manifest;
-        let id = &manifest.id;
-        // 只有新版本还声明成可选的才留下；以前开着的沿用原来的时间和人（ADR-0057）。
-        let record = self
-            .store
-            .load(id)?
-            .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
-        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
-            return Err(InstallError::Conflict(l10n::text(
-                &langs,
-                "plugin-recovery-owner-stopped",
-                &[],
-            )));
-        }
-        let enabled: Vec<EnabledPermission> = requested
-            .iter()
-            .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
-            .map(|item| {
-                record
-                    .enabled_permissions
-                    .iter()
-                    .find(|old| old.permission == item.permission)
-                    .cloned()
-                    .unwrap_or_else(|| item.clone())
-            })
-            .collect();
-        check_permissions(manifest, granted, &enabled, &langs)?;
-        super::super::capabilities::unsupported_model_dependency(manifest, &langs)?;
-        if super::super::install_hosted::is_containerless(manifest) {
-            return self.upgrade_containerless(package, granted, &langs).await;
-        }
-        self.check_hosted_provider(manifest, &langs)?;
-        self.check_requirements(manifest, &langs).await?;
-        self.check_egress(manifest, &langs).await?;
-        let effective =
-            manifest.effective_permissions(&super::super::store::permission_set(&enabled));
-        let gpu = self.gpu_grant(manifest, &effective, &langs).await?;
-        let lan_webui = lan_webui && switched(&package).is_some();
-        let lan = self.lan_grant(&package, lan_webui, &langs).await?;
-        let (devices, device_record) = self.upgrade_devices(
-            manifest,
-            &effective,
-            &record.devices,
-            chosen_devices,
-            &langs,
-        )?;
-        let before = self.begin_upgrade(id)?;
-        tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
-        // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
-        let outcome = Box::pin(self.upgrade_begun(
-            &package,
-            granted,
-            &enabled,
-            Grants {
-                gpu,
-                lan,
-                devices,
-                device_record,
-            },
-            settings.clone(),
-            &langs,
-        ))
-        .await;
-        self.lan.end(id);
-        let result = self.finish_upgrade(&package, lan_webui, before, outcome);
-        if result.is_ok()
-            && super::super::egress::provider::provides_proxy(manifest)
-            && self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
-        {
-            self.follow_core_proxy();
-            self.reconcile_relay().await?;
-        }
-        self.changed();
-        result
-    }
-
     /// 和卸载一样在插件表的锁里判断：在安装、卸载、升级或者按新地址重建的不碰。
-    fn begin_upgrade(&self, id: &PluginId) -> Result<Before, InstallError> {
+    pub(super) fn begin_upgrade(&self, id: &PluginId) -> Result<Before, InstallError> {
         let langs = self.owner_languages();
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let entry = plugins
@@ -226,7 +131,7 @@ impl PluginManager {
         Ok(before)
     }
 
-    fn finish_upgrade(
+    pub(super) fn finish_upgrade(
         &self,
         package: &PluginPackage,
         lan_webui: bool,
@@ -279,7 +184,7 @@ impl PluginManager {
         }
     }
 
-    async fn upgrade_begun(
+    pub(super) async fn upgrade_begun(
         &self,
         package: &PluginPackage,
         granted: &[Permission],
