@@ -157,7 +157,7 @@ pub fn unsupported_kind(body: &MessageBody) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_matrix::{Message, OwnedUserId, SendStatus};
+    use wonton_matrix::{Message, OwnedUserId, SIDE_CHAT_FIELD, SendStatus};
 
     fn owner_message(event_id: &str, text: &str, mentions: &[&str]) -> Message {
         Message {
@@ -205,6 +205,25 @@ mod tests {
         let mut stranger = owner_message("$stranger:example.org", "hello", &[]);
         stranger.sender = "@stranger:example.org".parse().unwrap();
         assert!(new_allowed_messages(&[stranger], &allowed, &bot, false, &mut seen).is_empty());
+    }
+
+    #[test]
+    fn a_marked_side_chat_root_is_not_an_unsupported_input() {
+        let owner: OwnedUserId = "@owner:example.org".parse().unwrap();
+        let bot: OwnedUserId = "@bot:example.org".parse().unwrap();
+        let mut root = owner_message("$root:example.org", "整理照片", &[]);
+        root.body = MessageBody::Notice("整理照片".into());
+        root.custom.insert(
+            SIDE_CHAT_FIELD.to_owned(),
+            serde_json::json!({"v": 1, "title": "整理照片"}),
+        );
+        let mut seen = HashSet::new();
+        let incoming = new_allowed_messages(&[root], &[owner], &bot, false, &mut seen);
+        assert_eq!(incoming.len(), 1);
+        let IncomingContent::SideChatRoot { title } = &incoming[0].content else {
+            panic!("带旁聊标记的根应被识别为旁聊根，而不是不支持的输入");
+        };
+        assert_eq!(title, "整理照片");
     }
 
     #[test]
