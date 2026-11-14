@@ -104,6 +104,7 @@ fn install_request_remote_oauth_optional() {
         digest: "sha256:remote".into(),
         plan: String::new(),
         scope: None,
+        audience: None,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: SecretValues::default(),

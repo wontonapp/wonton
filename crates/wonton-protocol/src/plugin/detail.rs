@@ -6,7 +6,8 @@ use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
     PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginProblem, PluginRuntime,
-    PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine, SecretInputState, SecurityTier, hint,
+    PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine, SecretInputState, SecurityTier,
+    hint,
 };
 use crate::{CardLine, PluginShares};
 

@@ -9,7 +9,7 @@ use super::super::package::{PackageError, PluginPackage};
 
 fn base() -> Value {
     json!({"x-wonton": {
-        "spec": "0.14", "id": "io.github.alice.mcp", "version": "1.0.0", "kind": "app",
+        "spec": "0.15", "id": "io.github.alice.mcp", "version": "1.0.0", "kind": "app",
         "runtime": "remote_mcp", "title": {"en": "Remote tools"}, "description": {"en": "Remote tools"},
         "permissions": [],
         "remote_mcp": {
