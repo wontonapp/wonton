@@ -377,7 +377,7 @@ async fn oidc_consent_uses_exact_bot_client_and_rechecks_bot_existence() {
     assert_eq!(result.status, StatusCode::SEE_OTHER, "{}", result.text());
     assert_eq!(
         accepted.lock().unwrap()[0]["session"]["id_token"]["groups"],
-        json!(["owner", "admin"])
+        json!(["user", "plugin_admin", "admin"])
     );
     h.manager
         .bot_records_for_test(&PluginId::parse("app.whoami").unwrap(), &[]);

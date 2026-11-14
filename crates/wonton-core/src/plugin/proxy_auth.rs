@@ -7,12 +7,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use hyper::header::{HeaderName, HeaderValue};
-use wonton_protocol::Role;
-
 use super::manifest::{Manifest, ManifestError, SecretSpec, Sso};
 use super::secrets::Secrets;
 use crate::owner::{Owner, internal_email};
+use hyper::header::{HeaderName, HeaderValue};
 
 use super::languages::Languages;
 use crate::l10n::text;
@@ -20,7 +18,8 @@ use crate::l10n::text;
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
 
-/// 不能代加的请求头：Host 和 Cookie 由网关自己处理，转发头由网关重新设置，逐跳头不能转发。
+/// 不能代加的请求头：Host 和 Cookie 由网关自己处理，转发头由网关重新设置，逐跳头不能转发，
+/// 能力头只能由网关按这个人注入（页面自己带的会被删掉，清单也不能声明）。
 const FORBIDDEN_HEADERS: &[&str] = &[
     "host",
     "cookie",
@@ -34,6 +33,7 @@ const FORBIDDEN_HEADERS: &[&str] = &[
     "trailer",
     "transfer-encoding",
     "upgrade",
+    "x-wonton-capabilities",
 ];
 
 /// 值模板里的一段。`Secret` 解析清单时是密钥的名字，网关用的时候是它的值。
@@ -112,9 +112,9 @@ impl ProxyAuth {
     pub fn headers(
         &self,
         owner: &Owner,
-        role: Role,
+        plugin_admin: bool,
     ) -> Result<Vec<(HeaderName, String)>, RenderError> {
-        let role = role_name(role)?;
+        let role = role_name(plugin_admin);
         self.headers
             .iter()
             .map(|(name, parts)| Ok((name.clone(), render(parts, owner, Some(role))?)))
@@ -122,8 +122,12 @@ impl ProxyAuth {
     }
 
     /// 代加的 Cookie：名字和这次请求的值。
-    pub fn cookies(&self, owner: &Owner, role: Role) -> Result<Vec<(&str, String)>, RenderError> {
-        let role = role_name(role)?;
+    pub fn cookies(
+        &self,
+        owner: &Owner,
+        plugin_admin: bool,
+    ) -> Result<Vec<(&str, String)>, RenderError> {
+        let role = role_name(plugin_admin);
         self.cookies
             .iter()
             .map(|(name, parts)| Ok((name.as_str(), render(parts, owner, Some(role))?)))
@@ -162,13 +166,8 @@ pub enum RenderError {
     UnknownRole,
 }
 
-fn role_name(role: Role) -> Result<&'static str, RenderError> {
-    match role {
-        Role::Owner => Ok("owner"),
-        Role::Member => Ok("member"),
-        Role::Friend => Ok("friend"),
-        Role::Other => Err(RenderError::UnknownRole),
-    }
+fn role_name(plugin_admin: bool) -> &'static str {
+    if plugin_admin { "admin" } else { "user" }
 }
 
 fn render(parts: &[Part], owner: &Owner, role: Option<&str>) -> Result<String, RenderError> {
@@ -701,33 +700,6 @@ mod tests {
             fill_template("{user}", &owner, &BTreeMap::new(), &langs).unwrap(),
             "owner"
         );
-    }
-
-    #[test]
-    fn unknown_roles_fail_even_for_secret_only_credentials() {
-        let manifest = manifest(
-            "  webui:\n    service: web\n    port: 80\n    sso: proxy\n    proxy:\n      \
-             headers: {X-Key: '{secret:key}'}\n      cookies: {key: '{secret:key}'}\n  \
-             secrets: {key: {generate: {bytes: 32}}}",
-        );
-        let langs = Languages::default();
-        let generated = BTreeMap::from([("key".into(), "0123456789abcdef0123456789abcdef".into())]);
-        let auth = ProxyAuth::resolve(&manifest, &generated, &langs)
-            .unwrap()
-            .unwrap();
-        let owner = Owner {
-            username: "future".into(),
-            display_name: "Future".into(),
-            email: None,
-        };
-        assert!(matches!(
-            auth.headers(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
-        assert!(matches!(
-            auth.cookies(&owner, Role::Other),
-            Err(RenderError::UnknownRole)
-        ));
     }
 
     #[test]

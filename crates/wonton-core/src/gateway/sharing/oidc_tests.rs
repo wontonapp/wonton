@@ -525,13 +525,14 @@ fn friend_claims_never_include_admin_groups_or_the_owner_email() {
     };
     let claims = crate::oidc::id_token_claims(
         &friend,
-        Role::Friend,
         &["profile".into(), "email".into(), "groups".into()],
+        false,
         &["admin".into(), "owner".into()],
+        None,
         None,
     );
     assert_eq!(claims["preferred_username"], "bob-plugin");
-    assert_eq!(claims["groups"], json!(["friend"]));
+    assert_eq!(claims["groups"], json!(["user"]));
     // 好友的邮箱是按固定用户名派生的内部地址，不套主人的邮箱和组。
     assert_eq!(claims["email"], "bob-plugin@wonton.internal");
     assert_eq!(claims["email_verified"], json!(true));
@@ -631,7 +632,7 @@ async fn login_and_consent_accept_only_the_live_shared_client_as_friend() {
         );
         assert_eq!(
             accepted[1]["session"]["id_token"]["groups"],
-            json!(["friend"])
+            json!(["user"])
         );
     }
     let uri = "/oauth2/auth?client_id=app.whoami&consent_verifier=consent-secret"

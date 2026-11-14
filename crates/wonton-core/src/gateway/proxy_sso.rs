@@ -7,55 +7,67 @@
 //!   `Set-Cookie` 或跳转地址）。响应体网关不改：插件不应把凭据写进页面。
 
 use hyper::header::{COOKIE, HeaderMap, HeaderName, HeaderValue, SET_COOKIE};
-use wonton_protocol::Role;
+use wonton_protocol::CAPABILITIES_HEADER;
 
 use super::isolation::sent_name;
 use super::session::strip_cookies;
 use crate::owner::Owner;
 use crate::plugin::proxy_auth::ProxyAuth;
 
-/// 转发前：换上代加的请求头和 Cookie。值写不进 HTTP 或者模板要了不认识的角色时报错，不转发。
+/// 转发前：换上代加的请求头和 Cookie，并按当前应用能力注入能力头。
 pub fn attach(
     headers: &mut HeaderMap,
     auth: &ProxyAuth,
     owner: &Owner,
-    role: Role,
+    plugin_admin: bool,
 ) -> Result<(), String> {
-    for (name, value) in auth.headers(owner, role).map_err(|e| e.to_string())? {
+    // 页面可以自己发送同名头，但不能借它伪造插件管理员能力。
+    headers.remove(CAPABILITIES_HEADER);
+    for (name, value) in auth
+        .headers(owner, plugin_admin)
+        .map_err(|e| e.to_string())?
+    {
         let value = HeaderValue::from_bytes(value.as_bytes())
             .map_err(|_| format!("代加的请求头 {name} 的值写不进 HTTP"))?;
-        // 同名的（请求头名不分大小写）全部换掉。
         headers.insert(name, value);
     }
-    let cookies = auth.cookies(owner, role).map_err(|e| e.to_string())?;
-    if cookies.is_empty() {
-        return Ok(());
-    }
-    strip_cookies(headers, |name| {
-        cookies
-            .iter()
-            .any(|(declared, _)| declared.as_bytes().eq_ignore_ascii_case(name))
-    });
-    let mut cookie = headers
-        .get(COOKIE)
-        .map(|v| v.as_bytes().to_vec())
-        .unwrap_or_default();
-    for (name, value) in &cookies {
-        if !cookie.is_empty() {
-            cookie.extend_from_slice(b"; ");
+    let cookies = auth
+        .cookies(owner, plugin_admin)
+        .map_err(|e| e.to_string())?;
+    if !cookies.is_empty() {
+        strip_cookies(headers, |name| {
+            cookies
+                .iter()
+                .any(|(declared, _)| declared.as_bytes().eq_ignore_ascii_case(name))
+        });
+        let mut cookie = headers
+            .get(COOKIE)
+            .map(|v| v.as_bytes().to_vec())
+            .unwrap_or_default();
+        for (name, value) in &cookies {
+            if !cookie.is_empty() {
+                cookie.extend_from_slice(b"; ");
+            }
+            cookie.extend_from_slice(name.as_bytes());
+            cookie.push(b'=');
+            cookie.extend_from_slice(value.as_bytes());
         }
-        cookie.extend_from_slice(name.as_bytes());
-        cookie.push(b'=');
-        cookie.extend_from_slice(value.as_bytes());
+        let cookie =
+            HeaderValue::from_bytes(&cookie).map_err(|_| "代加的 Cookie 写不进 HTTP".to_owned())?;
+        headers.insert(COOKIE, cookie);
     }
-    let cookie =
-        HeaderValue::from_bytes(&cookie).map_err(|_| "代加的 Cookie 写不进 HTTP".to_owned())?;
-    headers.insert(COOKIE, cookie);
+    if plugin_admin {
+        headers.insert(
+            CAPABILITIES_HEADER,
+            HeaderValue::from_static("plugin_admin"),
+        );
+    }
     Ok(())
 }
 
 /// 转发前：去掉浏览器发来的同名请求头和 Cookie，不加值。插件自己的容器访问自己的网页地址时用（ADR-0063）。
 pub fn strip(headers: &mut HeaderMap, auth: &ProxyAuth) {
+    headers.remove(CAPABILITIES_HEADER);
     for name in auth.header_names() {
         headers.remove(name);
     }
@@ -90,7 +102,13 @@ pub(super) fn attach_credentials(
             )));
         }
     };
-    attach(headers, auth, &identity, person.role).map_err(|e| {
+    attach(
+        headers,
+        auth,
+        &identity,
+        gateway.plugin_admin(person, route.id.as_str()),
+    )
+    .map_err(|e| {
         Box::new(super::pages::error(
             hyper::StatusCode::INTERNAL_SERVER_ERROR,
             "proxy_credentials",

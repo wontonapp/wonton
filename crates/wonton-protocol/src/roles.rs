@@ -296,6 +296,16 @@ pub enum AdminScope {
     #[serde(other)]
     Other,
 }
+impl AdminScope {
+    /// 只有同时能打开这个应用的人才是这个应用的管理员。
+    pub fn allows_plugin(&self, plugin_id: &str) -> bool {
+        match self {
+            Self::AllOpenable => true,
+            Self::Selected { plugin_ids } => plugin_ids.iter().any(|id| id == plugin_id),
+            Self::NoApps | Self::Other => false,
+        }
+    }
+}
 
 /// 能、要管理员批、不能。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

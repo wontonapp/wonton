@@ -475,7 +475,7 @@ async fn members_cannot_stop_an_allow_window() {
     }
 }
 
-/// 网页的身份给当前这个人：家人的 OIDC 声明是她的用户名和 member 角色，主人的照旧。
+/// 网页的身份给当前这个人：家人的 OIDC 声明是她的用户名和通用的 `user` 组，主人的照旧加能力。
 #[tokio::test]
 async fn oidc_claims_come_from_the_current_person() {
     let accepted = Arc::new(Mutex::new(Vec::new()));
@@ -501,7 +501,7 @@ async fn oidc_claims_come_from_the_current_person() {
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.text());
     let claims = claims_of(&accepted, 0);
     assert_eq!(claims["preferred_username"], "mia");
-    assert_eq!(claims["groups"], json!(["member"]));
+    assert_eq!(claims["groups"], json!(["user"]));
     assert_eq!(claims["email"], "mia@wonton.internal");
     assert_eq!(claims["email_verified"], true);
 
@@ -520,7 +520,7 @@ async fn oidc_claims_come_from_the_current_person() {
     assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.text());
     let claims = claims_of(&accepted, 1);
     assert_eq!(claims["preferred_username"], "owner");
-    assert_eq!(claims["groups"], json!(["owner"]));
+    assert_eq!(claims["groups"], json!(["user", "plugin_admin"]));
     assert_eq!(claims["email"], "owner@wonton.internal");
     assert_eq!(claims["email_verified"], true);
 }

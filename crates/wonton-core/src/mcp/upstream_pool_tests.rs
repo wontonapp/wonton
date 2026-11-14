@@ -159,6 +159,6 @@ async fn a_call_to_a_stopped_plugin_does_not_reuse_the_stale_connection() {
     upstreams.tools(&plugin.server).await.unwrap();
     let server = plugin.stop().await;
     let called =
-        within(upstreams.call(&server, "tool", NO_ARGUMENTS, None, std::future::pending())).await;
+        within(upstreams.call(&server, "tool", NO_ARGUMENTS, std::future::pending())).await;
     assert!(matches!(called, Err(CallError::NotSent(_))), "{called:?}");
 }

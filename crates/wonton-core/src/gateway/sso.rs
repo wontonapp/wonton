@@ -305,7 +305,10 @@ pub async fn oidc_consent(
         );
     }
     let granted = granted_scopes(&request.requested_scope);
-    let groups = gateway.plugins.oidc_admin_groups(&request.client.client_id);
+    let (admin_groups, role_claim) = gateway
+        .plugins
+        .oidc_identity_claims(&request.client.client_id);
+    let plugin_admin = gateway.plugin_admin(&person, &request.client.client_id);
     let identity = match gateway.identity_of(&person) {
         Ok(identity) => identity,
         Err(e) => {
@@ -321,12 +324,13 @@ pub async fn oidc_consent(
     };
     let claims = id_token_claims(
         &identity,
-        person.role,
         &granted,
-        &groups,
+        plugin_admin,
+        &admin_groups,
+        role_claim.as_ref(),
         gateway.plugins.person_locale(&person.username).as_deref(),
     );
-    tracing::info!(client = %request.client.client_id, ?granted, ?groups, person = %person.username, "接受 OIDC 授权");
+    tracing::info!(client = %request.client.client_id, ?granted, plugin_admin, person = %person.username, "接受 OIDC 授权");
     let accepted = oidc::while_active(
         req.extensions().get::<sharing::AccessGuard>().cloned(),
         hydra.accept_consent(&query.consent_challenge, &granted, claims),

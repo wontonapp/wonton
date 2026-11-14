@@ -14,7 +14,7 @@ use tokio::time::{Instant, sleep};
 use crate::config::OidcProviderConfig;
 use crate::http::{HttpClient, HttpError};
 use crate::owner::Owner;
-use wonton_protocol::Role;
+use wonton_protocol::{Capability, OIDC_USER_GROUP};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -332,14 +332,14 @@ pub fn granted_scopes(requested: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// ID 令牌里的用户声明，按授予的 scope 取舍。`groups` 是角色：主人 `["owner"]` 加客户端声明的组
-/// （清单 `oidc.admin_groups`），家人 `["member"]`，好友 `["friend"]`；未知角色不授予任何组。
+/// ID 令牌里的用户声明，按授予的 scope 取舍。插件只看到通用的 `user` 组，以及当前应用的能力。
 /// Hydra 把 `session.id_token` 的声明同时用作 ID 令牌和 userinfo 的内容。
 pub fn id_token_claims(
     owner: &Owner,
-    role: Role,
     granted: &[String],
-    extra_groups: &[String],
+    plugin_admin: bool,
+    admin_groups: &[String],
+    role_claim: Option<&crate::plugin::manifest::RoleClaim>,
     locale: Option<&str>,
 ) -> Value {
     let has = |scope: &str| granted.iter().any(|s| s == scope);
@@ -347,13 +347,11 @@ pub fn id_token_claims(
     if has("profile") {
         claims.insert("name".into(), json!(owner.display_name));
         claims.insert("preferred_username".into(), json!(owner.username));
-        // 这个是登录者本人最近一次请求的第一个语言标签，原样（BCP 47）。还没有记录就不放，不猜。
         if let Some(locale) = locale {
             claims.insert("locale".into(), json!(locale));
         }
     }
     if has("email") {
-        // 一律是固定用户名派生的内部地址，只认人不收信（ADR-0056）；真实邮箱只留在资料里。
         claims.insert(
             "email".into(),
             json!(crate::owner::internal_email(&owner.username)),
@@ -361,17 +359,22 @@ pub fn id_token_claims(
         claims.insert("email_verified".into(), json!(true));
     }
     if has("groups") {
-        let groups: Vec<String> = match role {
-            Role::Owner => {
-                let mut groups = vec!["owner".to_owned()];
-                groups.extend(extra_groups.iter().cloned());
-                groups
-            }
-            Role::Member => vec!["member".to_owned()],
-            Role::Friend => vec!["friend".to_owned()],
-            Role::Other => Vec::new(),
-        };
+        let mut groups = vec![OIDC_USER_GROUP.to_owned()];
+        if plugin_admin {
+            groups.push(Capability::PluginAdmin.as_str().to_owned());
+            groups.extend(admin_groups.iter().cloned());
+        }
         claims.insert("groups".into(), json!(groups));
+    }
+    if let Some(claim) = role_claim {
+        claims.insert(
+            claim.name.clone(),
+            json!(if plugin_admin {
+                &claim.admin
+            } else {
+                &claim.user
+            }),
+        );
     }
     Value::Object(claims)
 }
@@ -381,7 +384,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn claims_follow_granted_scopes() {
+    fn claims_follow_granted_scopes_and_application_capabilities() {
         let owner = Owner {
             username: "owner".into(),
             display_name: "云吞".into(),
@@ -392,66 +395,87 @@ mod tests {
             .into();
         let granted = granted_scopes(&requested);
         assert_eq!(granted, ["openid", "profile", "email", "groups"]);
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
+        let role_claim = crate::plugin::manifest::RoleClaim {
+            name: "immich_role".into(),
+            admin: "admin".into(),
+            user: "user".into(),
+        };
+        let claims = id_token_claims(
+            &owner,
+            &granted,
+            true,
+            &["admin".into(), "media".into()],
+            Some(&role_claim),
+            None,
+        );
         assert_eq!(claims["email"], "owner@wonton.internal");
         assert_eq!(claims["email_verified"], true);
-        assert_eq!(claims["groups"], serde_json::json!(["owner"]));
+        assert_eq!(
+            claims["groups"],
+            json!(["user", "plugin_admin", "admin", "media"])
+        );
+        assert_eq!(claims["immich_role"], "admin");
         assert_eq!(claims["name"], "云吞");
         let changed = Owner {
             email: Some("changed@example.com".into()),
             ..owner.clone()
         };
         assert_eq!(
-            id_token_claims(&changed, Role::Owner, &granted, &[], None),
+            id_token_claims(
+                &changed,
+                &granted,
+                true,
+                &["admin".into(), "media".into()],
+                Some(&role_claim),
+                None,
+            ),
             claims
         );
         let no_email = Owner {
             email: None,
             ..owner
         };
-        let claims = id_token_claims(&no_email, Role::Owner, &granted, &[], None);
+        let claims = id_token_claims(&no_email, &granted, true, &[], Some(&role_claim), None);
         assert_eq!(claims["email"], "owner@wonton.internal");
         assert_eq!(claims["email_verified"], true);
+
         let member = Owner {
             username: "alice".into(),
-            display_name: "爱丽丝".into(),
+            display_name: "Alice".into(),
             email: None,
         };
-        let claims = id_token_claims(&member, Role::Member, &granted, &[], None);
-        assert_eq!(claims["groups"], serde_json::json!(["member"]));
-        assert_eq!(claims["preferred_username"], "alice");
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &profile, &[], None);
-        assert!(claims.get("email").is_none() && claims.get("email_verified").is_none());
-        let email: Vec<String> = ["openid", "email"].map(String::from).into();
-        let claims = id_token_claims(&member, Role::Member, &email, &[], None);
-        assert_eq!(claims["email"], "alice@wonton.internal");
-        assert!(claims.get("name").is_none() && claims.get("preferred_username").is_none());
+        let user = id_token_claims(
+            &member,
+            &granted,
+            false,
+            &["forged".into()],
+            Some(&role_claim),
+            None,
+        );
+        assert_eq!(user["groups"], json!(["user"]));
+        assert_eq!(user["immich_role"], "user");
+        assert_eq!(user["preferred_username"], "alice");
     }
 
     #[test]
     fn locale_is_the_persons_own_and_needs_the_profile_scope() {
         let alice = Owner {
             username: "alice".into(),
-            display_name: "爱丽丝".into(),
+            display_name: "Alice".into(),
             email: None,
         };
         let profile: Vec<String> = ["openid", "profile"].map(String::from).into();
-        let claims = id_token_claims(&alice, Role::Member, &profile, &[], Some("zh-Hant-TW"));
+        let claims = id_token_claims(&alice, &profile, false, &[], None, Some("zh-Hant-TW"));
         assert_eq!(claims["locale"], "zh-Hant-TW", "原样，不收窄");
-        // 没授予 profile 就不发。
         let openid: Vec<String> = vec!["openid".to_owned()];
-        let claims = id_token_claims(&alice, Role::Member, &openid, &[], Some("zh-Hant-TW"));
+        let claims = id_token_claims(&alice, &openid, false, &[], None, Some("zh-Hant-TW"));
         assert!(claims.get("locale").is_none());
-        // 这个人还没有记录时也不发，不猜。
-        let claims = id_token_claims(&alice, Role::Member, &profile, &[], None);
+        let claims = id_token_claims(&alice, &profile, false, &[], None, None);
         assert!(claims.get("locale").is_none());
     }
 
     #[test]
-    fn a_friend_gets_the_internal_mailbox_derived_from_the_fixed_name() {
+    fn friends_get_their_own_internal_mailbox_and_only_user_capability() {
         let friend = Owner {
             username: "friend-0011".into(),
             display_name: "Bob".into(),
@@ -460,76 +484,49 @@ mod tests {
         let granted: Vec<String> = ["openid", "profile", "email", "groups"]
             .map(String::from)
             .into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
-        assert_eq!(claims["email_verified"], true);
-        assert_eq!(claims["groups"], serde_json::json!(["friend"]));
-        // 没授予 email scope 就不发，主人自己的邮箱也不套到好友身上。
-        let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&friend, Role::Friend, &granted, &[], None);
-        assert!(claims.get("email").is_none());
-        let owner = Owner {
-            email: Some("owner@wonton.internal".into()),
-            ..friend
-        };
-        let granted: Vec<String> = ["openid", "email"].map(String::from).into();
-        // 主人也一样：发的是派生内部地址，资料里的真实邮箱不发给插件。
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &[], None);
-        assert_eq!(claims["email"], "friend-0011@wonton.internal");
-    }
-
-    #[test]
-    fn groups_extend_owner_with_the_clients_groups() {
-        let owner = Owner {
-            username: "owner".into(),
-            display_name: "云吞".into(),
-            email: None,
-        };
-        let granted: Vec<String> = ["openid", "groups"].map(String::from).into();
         let claims = id_token_claims(
-            &owner,
-            Role::Owner,
+            &friend,
             &granted,
-            &["admin".into(), "media".into()],
+            false,
+            &["admin".into(), "owner".into()],
+            None,
             None,
         );
-        assert_eq!(claims["groups"], json!(["owner", "admin", "media"]));
-        // 没授予 groups scope 就一个组也不发。
+        assert_eq!(claims["preferred_username"], "friend-0011");
+        assert_eq!(claims["email"], "friend-0011@wonton.internal");
+        assert_eq!(claims["email_verified"], true);
+        assert_eq!(claims["groups"], json!(["user"]));
         let granted: Vec<String> = ["openid"].map(String::from).into();
-        let claims = id_token_claims(&owner, Role::Owner, &granted, &["admin".into()], None);
+        let claims = id_token_claims(&friend, &granted, false, &[], None, None);
         assert!(claims.get("groups").is_none());
-        // 家人不拿客户端声明的组：家人就是 ["member"]（ADR-0045）。
-        let granted: Vec<String> = vec!["groups".to_owned()];
-        let claims = id_token_claims(&owner, Role::Member, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!(["member"]));
-        let claims = id_token_claims(&owner, Role::Friend, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!(["friend"]));
-        let claims = id_token_claims(&owner, Role::Other, &granted, &["admin".into()], None);
-        assert_eq!(claims["groups"], json!([]));
+        assert!(claims.get("email").is_none());
     }
 
     #[test]
-    fn friends_get_their_own_identity_without_admin_groups() {
-        let granted = ["openid", "profile", "groups"].map(String::from);
-        for (username, name) in [("friend_bob", "Bob"), ("friend_eve", "Eve")] {
-            let identity = Owner {
-                username: username.into(),
-                display_name: name.into(),
-                email: None,
-            };
+    fn claims_never_use_family_role_names() {
+        let identity = Owner {
+            username: "person".into(),
+            display_name: "Person".into(),
+            email: None,
+        };
+        let granted = ["openid", "groups"].map(String::from);
+        for plugin_admin in [true, false] {
             let claims = id_token_claims(
                 &identity,
-                Role::Friend,
                 &granted,
-                &["owner".into(), "admin".into()],
+                plugin_admin,
+                &["owner".into(), "member".into(), "friend".into()],
+                None,
                 None,
             );
-            assert_eq!(claims["preferred_username"], username);
-            assert_eq!(claims["name"], name);
-            assert_eq!(claims["groups"], json!(["friend"]));
-            let claims = id_token_claims(&identity, Role::Friend, &[], &["admin".into()], None);
-            assert!(claims.get("groups").is_none());
-            assert!(claims.get("preferred_username").is_none());
+            assert_eq!(
+                claims["groups"],
+                if plugin_admin {
+                    json!(["user", "plugin_admin", "owner", "member", "friend"])
+                } else {
+                    json!(["user"])
+                }
+            );
         }
     }
 

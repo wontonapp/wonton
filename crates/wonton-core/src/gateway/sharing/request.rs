@@ -7,7 +7,7 @@ use axum::{Router, extract::Request, response::Response};
 use hyper::{Method, StatusCode};
 use std::sync::Arc;
 use tower::ServiceExt;
-use wonton_protocol::{GatewayRefusal, Role};
+use wonton_protocol::GatewayRefusal;
 
 pub(super) async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response {
     let langs = api::languages(req.headers());
@@ -83,7 +83,7 @@ async fn plugin(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
         display_name: access.friend.display_name.unwrap_or_default(),
     };
     if let Some(auth) = &route.proxy
-        && proxy_sso::attach(req.headers_mut(), auth, &identity, Role::Friend).is_err()
+        && proxy_sso::attach(req.headers_mut(), auth, &identity, false).is_err()
     {
         return super::super::pages::error(
             StatusCode::FORBIDDEN,
