@@ -112,8 +112,6 @@ private fun ShareGrantRow(
 internal fun shareRecipientName(recipient: ShareRecipient, recipients: FriendsViewModel?): String = when (recipient) {
     is ShareRecipient.Friend -> recipients?.friends?.firstOrNull { it.userId == recipient.userId }
         ?.displayName ?: recipient.userId
-    is ShareRecipient.Group -> recipients?.groups?.firstOrNull { it.id == recipient.groupId }?.name
-        ?: recipient.groupId
     ShareRecipient.Other -> stringResource(R.string.share_unknown)
 }
 
@@ -124,5 +122,5 @@ internal fun shareExpiryText(expiresAtMs: ULong?): String = expiresAtMs?.let {
 
 internal fun FriendsViewModel.recipientChoices(): List<ShareRecipient> =
     if (state is FriendsState.Ready) {
-        friends.map { ShareRecipient.Friend(it.userId) } + groups.map { ShareRecipient.Group(it.id) }
+        friends.map { ShareRecipient.Friend(it.userId) }
     } else emptyList()

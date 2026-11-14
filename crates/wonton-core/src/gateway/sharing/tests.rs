@@ -34,8 +34,10 @@ impl Fixture {
         let friend = friends
             .accept("@alice:example.test", Some("Alice"), now_ms(), |_| false)
             .unwrap();
-        let shares =
-            Arc::new(Shares::open(h.data_dir.join("test-shares.json"), friends.clone()).unwrap());
+        let roles = Arc::new(crate::roles::Roles::initial_for_test());
+        let shares = Arc::new(
+            Shares::open(h.data_dir.join("test-shares.json"), friends.clone(), roles).unwrap(),
+        );
         let identity = Arc::new(IdentityVerifier::new(Arc::new(|_| None)).unwrap());
         let clock = Arc::new(std::sync::atomic::AtomicU64::new(now_ms()));
         let sharing_clock = clock.clone();

@@ -95,10 +95,7 @@ impl ClientCore {
             | Action::CancelFriendRequest { .. }
             | Action::RemoveFriend { .. }
             | Action::BlockFriend { .. }
-            | Action::UnblockFriend { .. }
-            | Action::SaveFriendGroup { .. }
-            | Action::RemoveFriendGroup { .. }
-            | Action::SetFriendGroups { .. }) => scope.friends.dispatch(friends),
+            | Action::UnblockFriend { .. }) => scope.friends.dispatch(friends),
             action @ (Action::AppForegrounded
             | Action::AppBackgrounded
             | Action::NetworkChanged { .. }

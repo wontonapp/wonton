@@ -8,7 +8,7 @@ use reqwest::header::{ACCEPT_LANGUAGE, CONTENT_TYPE};
 use reqwest::{Client, Method};
 use serde::de::DeserializeOwned;
 use url::Url;
-use wonton_protocol::{FriendFailure, FriendGroup, FriendProblem, FriendsList, ProxySettings};
+use wonton_protocol::{FriendFailure, FriendProblem, FriendsList, ProxySettings};
 
 use crate::l10n::text;
 
@@ -204,29 +204,6 @@ impl Api {
         self.call(Method::DELETE, &user_path(user_id), None)
             .await
             .map(drop)
-    }
-
-    pub(super) async fn set_groups(&self, user_id: &str, groups: &[String]) -> Result<(), Failure> {
-        let path = format!("{}/groups", user_path(user_id));
-        let body = serde_json::json!({ "groups": groups });
-        self.call(Method::PUT, &path, Some(&body)).await.map(drop)
-    }
-
-    pub(super) async fn save_group(
-        &self,
-        id: Option<&str>,
-        name: &str,
-    ) -> Result<FriendGroup, Failure> {
-        let body = serde_json::json!({ "id": id, "name": name });
-        let bytes = self
-            .call(Method::POST, "/_wonton/api/friend-groups", Some(&body))
-            .await?;
-        parse(&bytes)
-    }
-
-    pub(super) async fn remove_group(&self, id: &str) -> Result<(), Failure> {
-        let path = format!("/_wonton/api/friend-groups/{id}");
-        self.call(Method::DELETE, &path, None).await.map(drop)
     }
 
     pub(super) async fn set_block(&self, server_name: &str, blocked: bool) -> Result<(), Failure> {

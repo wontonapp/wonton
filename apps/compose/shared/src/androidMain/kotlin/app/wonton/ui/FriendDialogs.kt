@@ -10,13 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,7 +35,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendFailure
-import app.wonton.protocol.FriendGroup
 import app.wonton.protocol.FriendProblem
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
@@ -53,7 +49,6 @@ import app.wonton.ui.design.WontonSheet
 import app.wonton.ui.design.WontonTextField
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
-import app.wonton.ui.icons.Check
 import app.wonton.ui.icons.Expand
 import app.wonton.ui.icons.QrCode
 import app.wonton.ui.icons.WontonIcon
@@ -165,88 +160,6 @@ private fun SheetRow(icon: ImageVector, label: String, onClick: () -> Unit) {
             tint = WontonTheme.colors.textPrimary.toColor(),
         )
         Text(label, style = WontonTheme.typography.body, color = WontonTheme.colors.textPrimary.toColor())
-    }
-}
-
-@Composable
-internal fun GroupNameDialog(
-    title: String,
-    initial: String,
-    onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
-) {
-    var name by rememberSaveable(title) { mutableStateOf(initial) }
-    WontonDialog(
-        title,
-        onDismiss = onDismiss,
-        actions = listOf(
-            WontonDialogAction(stringResource(R.string.common_cancel), onClick = onDismiss),
-            WontonDialogAction(stringResource(R.string.common_save), WontonButtonKind.PRIMARY) {
-                name.trim().takeIf(String::isNotEmpty)?.let(onConfirm)
-            },
-        ),
-        detail = {
-            WontonTextField(
-                name,
-                { name = it },
-                Modifier.fillMaxWidth(),
-                placeholder = stringResource(R.string.friends_group_name_placeholder),
-                label = title,
-            )
-        },
-    )
-}
-
-@Composable
-internal fun ChooseGroupsSheet(
-    row: FriendRow,
-    groups: List<FriendGroup>,
-    onSave: (Set<String>) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var selected by rememberSaveable(row.userId) { mutableStateOf(row.groups.toSet()) }
-    WontonSheet(onDismiss, stringResource(R.string.friends_choose_groups_title, row.name())) { close ->
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
-        ) {
-            WontonGroup {
-                groups.forEachIndexed { index, group ->
-                    if (index > 0) WontonSeparator()
-                    GroupChoiceRow(group.name, group.id in selected) { checked ->
-                        selected = if (checked) selected + group.id else selected - group.id
-                    }
-                }
-            }
-            WontonButton(
-                stringResource(R.string.common_save),
-                { close { onSave(selected) } },
-                Modifier.fillMaxWidth().padding(horizontal = WontonTheme.spacing.pageInset),
-            )
-        }
-    }
-}
-
-@Composable
-private fun GroupChoiceRow(name: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    androidx.compose.foundation.layout.Row(
-        Modifier.fillMaxWidth()
-            .toggleable(checked, role = Role.Checkbox, onValueChange = onCheckedChange)
-            .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
-    ) {
-        Text(
-            name,
-            Modifier.weight(1f),
-            style = WontonTheme.typography.body,
-            color = WontonTheme.colors.textPrimary.toColor(),
-        )
-        if (checked) {
-            Icon(
-                WontonIcon.Check,
-                contentDescription = null,
-                tint = WontonTheme.colors.primary.toColor(),
-            )
-        }
     }
 }
 

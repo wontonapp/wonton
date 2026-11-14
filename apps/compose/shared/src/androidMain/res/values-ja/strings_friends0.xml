@@ -7,14 +7,6 @@
     <string name="friends_requests_title">リクエスト</string>
     <!-- Section heading above the friend list. -->
     <string name="friends_list_title">友だち</string>
-    <!-- Row subtitle when a friend is in no group. -->
-    <string name="friends_no_group">グループなし</string>
-    <!-- Title of the new-group dialog. -->
-    <string name="friends_group_create_title">グループを作成</string>
-    <!-- Title of the rename-group dialog. Argument: the current name. -->
-    <string name="friends_group_rename_title">「%1$s」の名前を変更</string>
-    <!-- Confirmation dialog body: what deleting a group does. -->
-    <string name="friends_group_delete_message">グループの人は友だちのままです。このグループに与えたプラグインのアクセスは取り消されます。</string>
     <!-- Title of the block-a-server dialog. -->
     <string name="friends_block_server_title">サーバーをブロック</string>
     <!-- Placeholder of the server name field; no scheme, no wildcards. -->

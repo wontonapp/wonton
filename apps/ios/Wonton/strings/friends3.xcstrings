@@ -62,36 +62,6 @@
         }
       }
     },
-    "friends.groups.delete.message": {
-      "comment": "Deleting a group revokes the access shared through it, but keeps the friends.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Access shared through this group is revoked. The friends stay."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "会收回经这个组分享的访问，好友保留。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "會收回經這個組分享的存取權，好友保留。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "このグループ経由の共有アクセスは取り消されます。友だちは残ります。"
-          }
-        }
-      }
-    },
     "friends.remove.title": {
       "comment": "Confirmation to remove a friend. Argument: the friend's name or user ID.",
       "extractionState": "manual",

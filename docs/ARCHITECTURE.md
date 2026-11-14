@@ -103,7 +103,7 @@ iPad regular 宽度与 Android expanded 宽度使用“会话列表 + 当前内�
 布局与内容窗口的边界见 [ADR-0103](adr/0103-ipad-and-large-screens.md)。
 
 账号槽位既可以是配对的 Wonton，也可以是外部 Matrix 账号；导航条目和应用页操作由客户端核心给出，
-壳不按槽位种类自行隐藏。好友身份、分组、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
+壳不按槽位种类自行隐藏。好友身份、插件分享和 OpenID 连接的边界见 [ADR-0051](adr/0051-friends-and-plugin-sharing.md)；
 其接口契约在 `wonton-protocol` 的 `friends`、`sharing`、`share_transport`、`matrix_login` 模块。
 
 分享页的身份是 `TabRef::SharedApp { owner_user_id, plugin_id }`，与本机插件及其他来源的同名插件隔离。
@@ -114,13 +114,16 @@ iPad regular 宽度与 Android expanded 宽度使用“会话列表 + 当前内�
 `PluginsViewModel.owner_secrets` 只保留展开中的临时显示状态，不写入缓存；收起、离页、进入后台或换服务器时清除，
 晚到的请求不能重新显示。再次展开重新取列表和值，复制由原生壳使用系统剪贴板完成。
 
-服务端 `friends` 模块持有 `core/friends.json`：Matrix 好友、本机插件用户名、分组及最后打开分享时间。
+服务端 `friends` 模块持有 `core/friends.json`：Matrix 好友、本机插件用户名、各自的角色（ADR-0088）及最后打开分享时间。
 Matrix 邀请流程只在对方同意后调用存储 API；本机账号分配须同时保留好友墓碑里的用户名，避免和插件账号混淆。
-授权消费者先订阅完整快照再校验，连接与授权绑定 `access_generation` 和分组成员代次；删好友再加回、移出组再加回都不能恢复旧连接。
+授权消费者先订阅完整快照再校验，连接与授权绑定 `access_generation`；删好友再加回不能恢复旧连接。
+出站邀请按邀请人的“加好友”权限项在网关的 Matrix 代理处判断：家里人不受限，`AskAdmin` 记管理员卡片并挂住请求，
+同意后按原请求发出，拒绝和过期分别回 403、408（ADR-0088 第 3 节）。
 服务端另有一组分享组件：`friends` 存好友和固定用户名，`shares` 存授权，`share_identity` 按 Matrix 服务器名认人，
 `gateway::sharing` 校验每次请求并在授权失效时拆掉长连接，`wonton-tunnel::sharing` 是 `wonton/share/0` 的两端。
+分享只能发对方角色 `open_apps` 范围里的应用，越界回 400；角色改了，授权立刻按新范围生效，不用重建连接。
 `wonton/share/0` 连接经 OpenID 认证后只拿到授权里的插件；认证前不转发任何网页请求。好友打开网页时由网关按
-`{user}`（固定用户名）、`{name}`、`{role}=friend` 填身份，`sso: oidc` 只发 `groups=["friend"]`。
+`{user}`（固定用户名）、`{name}`、`{role}=user` 填身份，`sso: oidc` 只发 `groups=["user"]`。
 
 ## 主要链路
 

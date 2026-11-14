@@ -1,6 +1,7 @@
 use wonton_protocol::ShareRecipient;
 
 use crate::friends::{FriendRecord, FriendStatus, Snapshot as FriendsSnapshot};
+use crate::roles::Roles;
 
 use super::types::REVOCATION_RETENTION_MS;
 use super::{Access, GatewayRefusal, GrantPermit, Snapshot, StoredGrant};
@@ -8,7 +9,6 @@ use super::{Access, GatewayRefusal, GrantPermit, Snapshot, StoredGrant};
 pub(super) fn recipient_matches(stored: &StoredGrant, friend: &FriendRecord) -> bool {
     match &stored.grant.recipient {
         ShareRecipient::Friend { user_id } => user_id == &friend.user_id,
-        ShareRecipient::Group { group_id } => friend.groups.contains(group_id),
         _ => false,
     }
 }
@@ -16,17 +16,22 @@ pub(super) fn recipient_matches(stored: &StoredGrant, friend: &FriendRecord) -> 
 pub(super) fn generation_matches(stored: &StoredGrant, friend: &FriendRecord) -> bool {
     match &stored.grant.recipient {
         ShareRecipient::Friend { .. } => stored.direct_generation == Some(friend.access_generation),
-        ShareRecipient::Group { .. } => {
-            friend.access_generation <= stored.friend_revision
-                || friend.access_generation == friend.accepted_order
-        }
         _ => false,
     }
+}
+
+/// 好友能看到哪些应用先按他的角色算（ADR-0088 第 4 节）：分享只是把角色范围里的应用临时给到个人。
+/// 角色被删时按没有这个角色处理（最严），不猜。
+pub(super) fn role_allows(roles: &Roles, friend: &FriendRecord, plugin_id: &str) -> bool {
+    roles
+        .get(&friend.role_id)
+        .is_some_and(|role| role.permissions.open_apps.allows_plugin(plugin_id))
 }
 
 pub(super) fn evaluate(
     shares: &Snapshot,
     friends: &FriendsSnapshot,
+    roles: &Roles,
     user_id: &str,
     plugin_id: &str,
     now_ms: u64,
@@ -53,6 +58,8 @@ pub(super) fn evaluate(
             );
         }
     };
+    // 角色把应用挪出范围后，授权还在但对这个好友不再生效：对连接来说这就是“已停止分享”。
+    let in_scope = role_allows(roles, friend, plugin_id);
     let mut permits = Vec::new();
     let mut expiry = Some(0);
     let mut expired = false;
@@ -70,19 +77,13 @@ pub(super) fn evaluate(
             expired = true;
             continue;
         }
-        let group_generation = match &stored.grant.recipient {
-            ShareRecipient::Group { group_id } => {
-                let Some(generation) = friend.group_generations.get(group_id) else {
-                    continue;
-                };
-                Some(*generation)
-            }
-            _ => None,
-        };
+        if !in_scope {
+            revoked = true;
+            continue;
+        }
         permits.push(GrantPermit {
             grant_id: stored.grant.id.clone(),
             generation: stored.generation,
-            group_generation,
         });
         expiry = match (expiry, stored.grant.expires_at_ms) {
             (Some(previous), Some(next)) => Some(previous.max(next)),

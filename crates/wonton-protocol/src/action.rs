@@ -694,7 +694,7 @@ pub enum Action {
     CancelFriendRequest {
         room_id: String,
     },
-    /// 同时收回这个人所有插件访问（包含组授权），不退出私聊。
+    /// 同时收回这个人所有插件访问，不退出私聊。
     RemoveFriend {
         user_id: String,
     },
@@ -705,20 +705,6 @@ pub enum Action {
     UnblockFriend {
         target: FriendBlockTarget,
         scope: FriendBlockScope,
-    },
-    /// 新建组时 id 为空，修改时给现有组 ID；名字去掉首尾空白后不能为空。
-    SaveFriendGroup {
-        id: Option<String>,
-        name: String,
-    },
-    /// 删除组时同时收回该组授权，不删除组内好友。
-    RemoveFriendGroup {
-        id: String,
-    },
-    /// 完整替换好友的分组，不重复包含同一个组 ID。
-    SetFriendGroups {
-        user_id: String,
-        groups: Vec<String>,
     },
     /// 新增授权，只有分享方主人能做；未声明好友识别能力的插件要确认风险。
     CreatePluginShare {

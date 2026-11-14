@@ -316,7 +316,7 @@ async fn serve() -> anyhow::Result<()> {
     let listener = open_listener(cfg.listen).await?;
 
     let upgrades = open_upgrades(&cfg, &engine);
-    let sharing_registries = sharing_start::Registries::open(&cfg)?;
+    let sharing_registries = sharing_start::Registries::open(&cfg, roles.clone())?;
     let (http, system_http, hydra, matrix) =
         serve::open_clients(&cfg, &engine, &sharing_registries).await?;
     let hydra_for_manager = hydra.as_ref().map(|(h, _)| h.clone());

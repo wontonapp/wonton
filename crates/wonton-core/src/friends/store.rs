@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use tokio::sync::watch;
-use wonton_protocol::FriendGroup;
 
 use super::persistence;
-use super::types::{group_name, validate_display_name, validate_groups, validate_user_id};
+use super::types::{validate_display_name, validate_user_id};
 use super::{FriendRecord, FriendStatus, FriendsError, Snapshot};
 
 /// One registry instance per file, shared with `Arc`. Mutations are serialized through persistence
@@ -113,7 +112,7 @@ impl Friends {
     /// local owner/member (including removed)/bot/existing Matrix username. Prepare those facts
     /// before calling, keep their namespace reservation serialized with local account creation,
     /// and never reenter this store from the callback. No dependency on display-name uniqueness.
-    /// Reacceptance keeps this identity's username and first acceptance, but never restores groups.
+    /// Reacceptance keeps this identity's username and first acceptance.
     pub fn accept(
         &self,
         user_id: &str,
@@ -164,8 +163,6 @@ impl Friends {
                 if friend.status == FriendStatus::Removed {
                     friend.access_generation =
                         activation_revision.ok_or(FriendsError::CounterExhausted)?;
-                    friend.groups.clear();
-                    friend.group_generations.clear();
                 }
                 friend.status = FriendStatus::Active;
                 friend.removed_at_ms = None;
@@ -187,8 +184,6 @@ impl Friends {
                 status: FriendStatus::Active,
                 role_id: crate::roles::DEFAULT_INVITE_ROLE.to_owned(),
                 access_generation: next_revision(snapshot)?,
-                groups: Vec::new(),
-                group_generations: Default::default(),
                 accepted_order: next_revision(snapshot)?,
                 accepted_at_ms,
                 removed_at_ms: None,
@@ -199,7 +194,7 @@ impl Friends {
         })
     }
 
-    /// Retain the username tombstone and revoke all group memberships. Repeated removal is a no-op.
+    /// Retain the username tombstone. Repeated removal is a no-op.
     pub fn remove(&self, user_id: &str, removed_at_ms: u64) -> Result<FriendRecord, FriendsError> {
         self.change(|snapshot| {
             let friend = snapshot
@@ -209,8 +204,6 @@ impl Friends {
                 .ok_or_else(|| FriendsError::NotFound(user_id.to_owned()))?;
             friend.status = FriendStatus::Removed;
             friend.removed_at_ms = Some(removed_at_ms);
-            friend.groups.clear();
-            friend.group_generations.clear();
             Ok(friend.clone())
         })
     }
@@ -228,70 +221,6 @@ impl Friends {
         validate_display_name(display_name)?;
         self.update(user_id, |friend| {
             friend.display_name = display_name.map(str::to_owned)
-        })
-    }
-
-    /// Create when `id` is absent; rename an existing group otherwise. IDs never change or get reused.
-    pub fn save_group(&self, id: Option<&str>, name: &str) -> Result<FriendGroup, FriendsError> {
-        let name = group_name(name)?;
-        self.change(|snapshot| {
-            if let Some(id) = id {
-                let group = snapshot
-                    .groups
-                    .iter_mut()
-                    .find(|group| group.id == id)
-                    .ok_or_else(|| FriendsError::GroupNotFound(id.to_owned()))?;
-                group.name = name;
-                return Ok(group.clone());
-            }
-            let group = FriendGroup {
-                id: format!("group-{}", next_revision(snapshot)?),
-                name,
-            };
-            snapshot.groups.push(group.clone());
-            Ok(group)
-        })
-    }
-
-    /// Delete a group and strip it from every friend in the same durable revision.
-    pub fn remove_group(&self, id: &str) -> Result<(), FriendsError> {
-        self.change(|snapshot| {
-            let index = snapshot
-                .groups
-                .iter()
-                .position(|group| group.id == id)
-                .ok_or_else(|| FriendsError::GroupNotFound(id.to_owned()))?;
-            snapshot.groups.remove(index);
-            for friend in &mut snapshot.friends {
-                friend.groups.retain(|group| group != id);
-                friend.group_generations.remove(id);
-            }
-            Ok(())
-        })
-    }
-
-    /// Full replacement. Duplicate/unknown group IDs reject the whole change.
-    pub fn set_groups(
-        &self,
-        user_id: &str,
-        groups: &[String],
-    ) -> Result<FriendRecord, FriendsError> {
-        self.change(|snapshot| {
-            validate_groups(groups, &snapshot.groups)?;
-            let membership_revision = snapshot.revision.checked_add(1);
-            let friend = active_mut(snapshot, user_id)?;
-            friend.group_generations.retain(|id, _| groups.contains(id));
-            for id in groups {
-                if !friend.group_generations.contains_key(id) {
-                    friend.group_generations.insert(
-                        id.clone(),
-                        membership_revision.ok_or(FriendsError::CounterExhausted)?,
-                    );
-                }
-            }
-            friend.groups = groups.to_vec();
-            friend.groups.sort();
-            Ok(friend.clone())
         })
     }
 

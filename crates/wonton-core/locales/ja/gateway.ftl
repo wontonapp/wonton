@@ -184,4 +184,10 @@ gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を
 gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限に達しました。しばらくしてからもう一度お試しください
 
 gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
+
+# 招待側のロールによるフレンド申請の管理（ADR-0088）：カードは管理者へ、承認後に招待を送る。
+gateway-friend-invite-title = フレンド申請が承認待ち
+gateway-friend-invite-to = { $inviter } が { $friend } をフレンドに追加したがっています
+gateway-friend-invite-rejected = 管理者がこのフレンド申請を承認しませんでした
+gateway-friend-invite-expired = 管理者は時間内にこのフレンド申請に答えませんでした
 gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした

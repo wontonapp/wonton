@@ -6,7 +6,7 @@ use wonton_protocol::{
 
 #[uniffi::export]
 impl ClientCore {
-    /// Active owner-side friends and groups, including their effective shared plugins.
+    /// Active owner-side friends, including their effective shared plugins.
     pub async fn share_recipients(&self) -> Result<FriendsViewModel, CoreError> {
         let scope = self.scope();
         let plugins = scope.plugins.clone();

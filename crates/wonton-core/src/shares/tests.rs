@@ -6,6 +6,7 @@ use std::sync::{Arc, Barrier};
 use wonton_protocol::{ShareGrantUpdate, ShareRecipient};
 
 use crate::friends::Friends;
+use crate::roles::Roles;
 
 use super::types::{MAX_REVOCATIONS, REVOCATION_RETENTION_MS};
 use super::{GatewayRefusal::*, PluginOffer, Shares, SharesError, Snapshot};
@@ -16,26 +17,32 @@ const BOB: &str = "@bob:two.example.test";
 struct Rig {
     temp: tempfile::TempDir,
     friends: Arc<Friends>,
+    roles: Arc<Roles>,
     shares: Shares,
     now: Arc<AtomicU64>,
 }
 
 impl Rig {
+    /// “朋友”模板初始不开放任何应用：这里的分享用例先把它开放成全部，
+    /// 角色范围本身的行为在 `gateway/friend_rules_tests.rs` 里测。
     fn new() -> Self {
         let temp = tempfile::tempdir().unwrap();
         let friends = Arc::new(Friends::open(temp.path().join("core/friends.json")).unwrap());
         friends.accept(ALICE, None, 1, |_| false).unwrap();
+        let roles = Arc::new(crate::roles::Roles::initial_for_test());
         let now = Arc::new(AtomicU64::new(100));
         let clock = Arc::clone(&now);
         let shares = Shares::with_clock(
             temp.path().join("core/shares.json"),
             Arc::clone(&friends),
+            Arc::clone(&roles),
             Arc::new(move || clock.load(Ordering::SeqCst)),
         )
         .unwrap();
         Self {
             temp,
             friends,
+            roles,
             shares,
             now,
         }
@@ -46,6 +53,7 @@ impl Rig {
         Shares::with_clock(
             self.temp.path().join("core/shares.json"),
             Arc::clone(&self.friends),
+            Arc::clone(&self.roles),
             Arc::new(move || clock.load(Ordering::SeqCst)),
         )
         .unwrap()
@@ -72,27 +80,11 @@ fn direct(expiry: Option<u64>) -> ShareGrantUpdate {
     }
 }
 
-fn group(id: &str, expiry: Option<u64>) -> ShareGrantUpdate {
-    ShareGrantUpdate {
-        recipient: ShareRecipient::Group {
-            group_id: id.into(),
-        },
-        ..direct(expiry)
-    }
-}
-
 #[test]
-fn overlapping_direct_and_group_grants_use_most_permissive_union_and_exact_expiry() {
+fn direct_grants_use_the_most_permissive_union_and_exact_expiry() {
     let rig = Rig::new();
-    let friends = rig.friends.save_group(None, "Friends").unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
     let early = rig.shares.create(&direct(Some(200)), &offer()).unwrap();
-    let late = rig
-        .shares
-        .create(&group(&friends.id, Some(300)), &offer())
-        .unwrap();
+    let late = rig.shares.create(&direct(Some(300)), &offer()).unwrap();
     assert_eq!(
         rig.shares
             .evaluate(ALICE, "game", 199)
@@ -142,17 +134,9 @@ fn overlapping_direct_and_group_grants_use_most_permissive_union_and_exact_expir
 }
 
 #[test]
-fn friendship_reacceptance_never_revives_direct_or_old_group_grants_after_reopen() {
+fn friendship_reacceptance_never_revives_direct_grants_after_reopen() {
     let rig = Rig::new();
-    let friends = rig.friends.save_group(None, "Friends").unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
     let direct_grant = rig.shares.create(&direct(None), &offer()).unwrap();
-    let group_grant = rig
-        .shares
-        .create(&group(&friends.id, None), &offer())
-        .unwrap();
     let generation = rig
         .shares
         .evaluate(ALICE, "game", 100)
@@ -162,9 +146,6 @@ fn friendship_reacceptance_never_revives_direct_or_old_group_grants_after_reopen
     rig.friends.remove(ALICE, 0).unwrap();
     assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRevoked));
     rig.friends.accept(ALICE, None, 101, |_| false).unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
     assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRevoked));
     let reopened = rig.reopen();
     assert_eq!(reopened.evaluate(ALICE, "game", 100), Err(ShareRevoked));
@@ -182,48 +163,6 @@ fn friendship_reacceptance_never_revives_direct_or_old_group_grants_after_reopen
     );
     reopened.revoke(&direct_grant.id).unwrap();
     assert_eq!(reopened.evaluate(ALICE, "game", 100), Err(ShareRevoked));
-    reopened
-        .update(&group_grant.id, &group(&friends.id, None), &offer())
-        .unwrap();
-    assert!(reopened.evaluate(ALICE, "game", 100).is_ok());
-}
-
-#[test]
-fn group_membership_is_dynamic_and_first_time_new_members_are_not_frozen_out() {
-    let rig = Rig::new();
-    let friends = rig.friends.save_group(None, "Friends").unwrap();
-    rig.shares
-        .create(&group(&friends.id, None), &offer())
-        .unwrap();
-    assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRequired));
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
-    assert!(rig.shares.evaluate(ALICE, "game", 100).is_ok());
-    rig.friends.set_groups(ALICE, &[]).unwrap();
-    assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRequired));
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
-    assert!(rig.shares.evaluate(ALICE, "game", 100).is_ok());
-    rig.friends.accept(BOB, None, 110, |_| false).unwrap();
-    rig.friends
-        .set_groups(BOB, std::slice::from_ref(&friends.id))
-        .unwrap();
-    assert!(rig.shares.evaluate(BOB, "game", 100).is_ok());
-    assert_eq!(
-        rig.shares
-            .plugin_shares(&offer(), 100)
-            .unwrap()
-            .friend_count,
-        2
-    );
-    rig.friends.remove_group(&friends.id).unwrap();
-    assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRequired));
-    assert!(rig.shares.active_plugin_ids(BOB, 100).is_empty());
-    let replacement = rig.friends.save_group(None, "Friends").unwrap();
-    rig.friends.set_groups(ALICE, &[replacement.id]).unwrap();
-    assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRequired));
 }
 
 #[test]
@@ -273,11 +212,6 @@ fn unavailable_plugins_invalid_recipients_and_nonfuture_expiry_reject_without_mu
     assert!(rig.shares.create(&direct(None), &mismatched).is_err());
     assert!(rig.shares.create(&direct(Some(100)), &offer()).is_err());
     assert!(rig.shares.create(&direct(Some(99)), &offer()).is_err());
-    assert!(
-        rig.shares
-            .create(&group("missing", None), &offer())
-            .is_err()
-    );
     let mut unknown = direct(None);
     unknown.recipient = ShareRecipient::Other;
     assert!(rig.shares.create(&unknown, &offer()).is_err());
@@ -299,7 +233,6 @@ fn unavailable_plugins_invalid_recipients_and_nonfuture_expiry_reject_without_mu
 fn uninstall_removes_grants_permanently_and_refusal_precedence_is_deterministic() {
     let rig = Rig::new();
     assert_eq!(rig.shares.evaluate(ALICE, "game", 100), Err(ShareRequired));
-    assert_eq!(rig.shares.evaluate(BOB, "game", 100), Err(ShareRequired));
     let expired = rig.shares.create(&direct(Some(200)), &offer()).unwrap();
     assert_eq!(rig.shares.evaluate(ALICE, "game", 200), Err(ShareExpired));
     let second = rig.shares.create(&direct(None), &offer()).unwrap();
@@ -459,7 +392,7 @@ fn corrupt_storage_is_rejected_without_overwrite_and_replacement_is_private() {
         let bytes = serde_json::to_vec(&invalid).unwrap();
         fs::write(&path, &bytes).unwrap();
         assert!(matches!(
-            Shares::open(&path, Arc::clone(&rig.friends)),
+            Shares::open(&path, Arc::clone(&rig.friends), Arc::clone(&rig.roles)),
             Err(SharesError::Corrupt { .. })
         ));
         assert_eq!(fs::read(&path).unwrap(), bytes);
@@ -477,24 +410,6 @@ fn changing_only_expiry_does_not_falsely_classify_it_as_revoked() {
     assert_eq!(rig.shares.evaluate(ALICE, "game", 200), Err(ShareExpired));
 }
 
-#[test]
-fn group_revocation_is_persisted_for_its_current_members_only() {
-    let rig = Rig::new();
-    rig.friends.accept(BOB, None, 2, |_| false).unwrap();
-    let friends = rig.friends.save_group(None, "Friends").unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
-    let grant = rig
-        .shares
-        .create(&group(&friends.id, None), &offer())
-        .unwrap();
-    rig.shares.revoke(&grant.id).unwrap();
-    let reopened = rig.reopen();
-    assert_eq!(reopened.evaluate(ALICE, "game", 100), Err(ShareRevoked));
-    assert_eq!(reopened.evaluate(BOB, "game", 100), Err(ShareRequired));
-}
-
 #[tokio::test]
 async fn coalesced_revoke_regrant_and_identical_update_never_reuse_permits() {
     let rig = Rig::new();
@@ -506,7 +421,6 @@ async fn coalesced_revoke_regrant_and_identical_update_never_reuse_permits() {
         initial.permits[0].generation,
         rig.shares.snapshot().revision
     );
-    assert_eq!(initial.permits[0].group_generation, None);
     let mut changes = rig.shares.subscribe();
     changes.borrow_and_update();
     rig.shares.revoke(&grant.id).unwrap();
@@ -537,58 +451,4 @@ async fn coalesced_revoke_regrant_and_identical_update_never_reuse_permits() {
         rig.reopen().evaluate(ALICE, "game", 100).unwrap().permits,
         updated.permits
     );
-}
-
-#[tokio::test]
-async fn group_readd_changes_only_its_permit_and_surviving_overlap_preserves_a_connection() {
-    let rig = Rig::new();
-    let friends = rig.friends.save_group(None, "Friends").unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
-    let grouped = rig
-        .shares
-        .create(&group(&friends.id, None), &offer())
-        .unwrap();
-    let direct_grant = rig.shares.create(&direct(None), &offer()).unwrap();
-    let original = rig.shares.evaluate(ALICE, "game", 100).unwrap();
-    let original_group = original
-        .permits
-        .iter()
-        .find(|permit| permit.grant_id == grouped.id)
-        .unwrap();
-    let original_direct = original
-        .permits
-        .iter()
-        .find(|permit| permit.grant_id == direct_grant.id)
-        .unwrap();
-    assert!(original_group.group_generation.is_some());
-    assert_eq!(original_direct.group_generation, None);
-    let mut changes = rig.friends.subscribe();
-    changes.borrow_and_update();
-    rig.friends.set_groups(ALICE, &[]).unwrap();
-    rig.friends
-        .set_groups(ALICE, std::slice::from_ref(&friends.id))
-        .unwrap();
-    changes.changed().await.unwrap();
-    let readded = rig.shares.evaluate(ALICE, "game", 100).unwrap();
-    assert!(!readded.permits.contains(original_group));
-    assert!(readded.permits.contains(original_direct));
-    assert!(
-        original
-            .permits
-            .iter()
-            .any(|permit| readded.permits.contains(permit))
-    );
-    rig.shares.revoke(&direct_grant.id).unwrap();
-    let only_readded_group = rig.shares.evaluate(ALICE, "game", 100).unwrap();
-    assert!(
-        original
-            .permits
-            .iter()
-            .all(|permit| !only_readded_group.permits.contains(permit))
-    );
-    // A new connection is allowed, but the original one has no continuously surviving proof.
-    assert_eq!(only_readded_group.permits.len(), 1);
-    assert_eq!(only_readded_group.permits[0].grant_id, grouped.id);
 }

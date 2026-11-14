@@ -38,13 +38,9 @@ fn relationship_and_invitation_contracts_round_trip() {
         friends: vec![FriendRow {
             user_id: "@alice:example.org".into(),
             display_name: Some("Alice".into()),
-            groups: vec!["players".into()],
+            role_id: "friend".into(),
             shared_plugins: vec!["app.snake".into()],
             last_opened_share_at_ms: Some(1_793_000_000_001),
-        }],
-        groups: vec![FriendGroup {
-            id: "players".into(),
-            name: "Players".into(),
         }],
         incoming: vec![request(FriendRequestKind::Friend)],
         outgoing: vec![request(FriendRequestKind::DirectChat)],
@@ -125,17 +121,6 @@ fn friendship_operations_preserve_targets_and_scope() {
         Action::UnblockFriend {
             target,
             scope: FriendBlockScope::Invitations,
-        },
-        Action::SaveFriendGroup {
-            id: None,
-            name: "Players".into(),
-        },
-        Action::RemoveFriendGroup {
-            id: "players".into(),
-        },
-        Action::SetFriendGroups {
-            user_id: "@bob:matrix.org".into(),
-            groups: vec!["players".into()],
         },
     ] {
         round_trip(&action);

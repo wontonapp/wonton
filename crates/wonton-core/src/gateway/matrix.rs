@@ -89,7 +89,7 @@ pub async fn login_token(
 
 /// `matrix.<base>`：只有已配对设备、只有客户端接口。错误按 Matrix 的格式给出，客户端的 SDK 能照常处理；
 /// 不在这里用 `401`，免得 SDK 当成自己的访问令牌失效。
-pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
+pub async fn client_request(gateway: Arc<Gateway>, req: Request) -> Response {
     if gateway
         .device_user(req.extensions().get().copied())
         .is_none()
@@ -102,8 +102,26 @@ pub async fn client_request(gateway: &Gateway, req: Request) -> Response {
         );
     }
     if super::matrix_rtc::is_prefixed(req.uri().path()) {
-        return super::matrix_rtc::request(gateway, req).await;
+        return super::matrix_rtc::request(&gateway, req).await;
     }
+    // 出站的邀请先过“加好友”这一项（ADR-0088）：AskAdmin 在这里挂住，等卡片答完再继续；
+    // 后台任务要持有网关，所以进来的是 Arc。
+    match super::friend_gate::check(&gateway, req).await {
+        super::friend_gate::Outcome::Pass(req) => deliver_client_request(&gateway, req).await,
+        super::friend_gate::Outcome::Stop(response) => response,
+        super::friend_gate::Outcome::Hold(waited) => waited.await.unwrap_or_else(|_| {
+            matrix_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "M_UNKNOWN",
+                "confirmation_unavailable",
+                "等管理员回答的连接断了",
+            )
+        }),
+    }
+}
+
+/// 门槛之后的共同下游：房间规则、说话计数、每人的邀请和消息频率，然后转发给 Tuwunel。
+pub(super) async fn deliver_client_request(gateway: &Gateway, req: Request) -> Response {
     let req = match room_rules::check(req).await {
         Ok(req) => req,
         Err(refused) => return *refused,

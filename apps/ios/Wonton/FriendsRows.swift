@@ -104,12 +104,10 @@ struct OutgoingFriendRequestRowView: View {
     }
 }
 
-/// 一个好友：名字（没有就用户 ID）、所在分组、分享给他的插件数。
+/// 一个好友：名字（没有就用户 ID）、分享给他的插件数。
 struct FriendRowView: View {
     let row: FriendRow
-    let groupNames: [String]
     let remove: () -> Void
-    let chooseGroups: () -> Void
     let block: () -> Void
     @Environment(\.wontonColors) private var colors
 
@@ -121,8 +119,6 @@ struct FriendRowView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                     .layoutPriority(1)
                 Spacer(minLength: 0)
-                Button(.Friends2.friendsGroups, action: chooseGroups)
-                    .buttonStyle(WontonSmallButtonStyle())
                 Button(action: block) {
                     WontonIcon.blocked.view(size: WontonTheme.size.iconSmall)
                         .foregroundStyle(Color(colors.textSecondary))
@@ -136,41 +132,11 @@ struct FriendRowView: View {
                 .buttonStyle(WontonSmallButtonStyle(kind: .danger))
                 .accessibilityLabel(String(localized: .Friends2.friendsRemove))
             }
-            if groupNames.isEmpty {
-                Text(.Friends1.friendsGroupsEmpty)
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            } else {
-                Text(groupNames.joined(separator: String(localized: .Friends0.friendsGroupsJoin)))
-                    .wontonText(WontonTheme.typography.supporting)
-                    .foregroundStyle(Color(colors.textSecondary))
-            }
             Text(row.sharedPlugins.isEmpty
                  ? String(localized: .Friends1.friendsSharedNone)
                  : String(localized: .Friends1.friendsShared(row.sharedPlugins.count)))
                 .wontonText(WontonTheme.typography.supporting)
                 .foregroundStyle(Color(colors.textSecondary))
-        }
-        .padding(.vertical, WontonTheme.spacing.s12)
-        .frame(minHeight: WontonTheme.size.target, alignment: .leading)
-    }
-}
-
-/// 一个分组：名字，改名在行尾，删除在左滑。
-struct FriendGroupRowView: View {
-    let group: FriendGroup
-    let rename: () -> Void
-    @Environment(\.wontonColors) private var colors
-
-    var body: some View {
-        HStack(spacing: WontonTheme.spacing.s12) {
-            Text(group.name)
-                .wontonText(WontonTheme.typography.body)
-                .foregroundStyle(Color(colors.textPrimary))
-                .layoutPriority(1)
-            Spacer(minLength: 0)
-            Button(.Friends2.friendsGroupsRename, action: rename)
-                .buttonStyle(WontonSmallButtonStyle())
         }
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(minHeight: WontonTheme.size.target, alignment: .leading)

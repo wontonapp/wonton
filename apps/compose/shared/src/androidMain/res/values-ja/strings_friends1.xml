@@ -7,12 +7,6 @@
     <string name="friends_request_cancel">取り消す</string>
     <!-- Empty page: the one sentence above the add button. -->
     <string name="friends_empty">まだ友だちがいません</string>
-    <!-- Row that opens the new-group dialog. -->
-    <string name="friends_group_new">グループを作成</string>
-    <!-- Confirmation dialog title for deleting a group. Argument: the group name. -->
-    <string name="friends_group_delete_title">「%1$s」を削除しますか？</string>
-    <!-- Sheet action on a friend row that opens the group chooser. -->
-    <string name="friends_groups">グループ</string>
     <!-- Sheet action on a friend row: remove the friend. -->
     <string name="friends_remove_friend">友だちを削除</string>
     <!-- Confirmation dialog body: what removing a friend does. -->

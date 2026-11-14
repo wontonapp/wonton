@@ -94,28 +94,6 @@ async fn a_friend_request_can_be_approved_and_removed() {
         home.friends_calls()
     );
 
-    // 分组：建一个、把人放进去。
-    phone
-        .dispatch(Action::SaveFriendGroup {
-            id: None,
-            name: "打游戏的".to_owned(),
-        })
-        .unwrap();
-    let group = until(&phone, "建好分组", |view| view.groups.first().cloned()).await;
-    phone
-        .dispatch(Action::SetFriendGroups {
-            user_id: bob_id.clone(),
-            groups: vec![group.id.clone()],
-        })
-        .unwrap();
-    until(&phone, "分组记上了", |view| {
-        view.friends
-            .iter()
-            .find(|friend| friend.user_id == bob_id && friend.groups == [group.id.clone()])
-            .map(|_| ())
-    })
-    .await;
-
     // 删好友不退出私聊：房间还在会话列表里。
     phone
         .dispatch(Action::RemoveFriend {

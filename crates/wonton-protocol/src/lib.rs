@@ -185,8 +185,8 @@ pub use file::{
 };
 pub use friends::{
     FRIEND_EVENT, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendEvent, FriendFailure,
-    FriendGroup, FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList,
-    FriendsState, FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
+    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList, FriendsState,
+    FriendsViewModel, INVITE_FILTER_EVENT, RemovedFriend,
 };
 pub use home::{
     ConnectionCheck, ConnectionDetails, ConnectionNotice, ConnectionQuality, DeviceInvite,
@@ -296,11 +296,11 @@ pub use registry_mirror::{
 pub use reply::{ComposerDraft, QuotedContent, QuotedMessage, ReplyQuote};
 pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
-    DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
-    OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
-    PluginAudience, PluginAudienceChoice, PluginAudienceNotice, PluginAudienceView, ROLES_PATH,
-    RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate, RolesViewModel,
-    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    DEFAULT_INVITE_ROLE, DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome,
+    JoinRequest, JoinRequestList, OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem,
+    PermissionRequired, Permissions, PluginAudience, PluginAudienceChoice, PluginAudienceNotice,
+    PluginAudienceView, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
+    RolesViewModel, TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;

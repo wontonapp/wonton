@@ -69,7 +69,6 @@ impl FriendsLink {
         let initial = FriendsViewModel {
             state: FriendsState::Loading,
             friends: Vec::new(),
-            groups: Vec::new(),
             incoming: Vec::new(),
             outgoing: Vec::new(),
             blocked: Vec::new(),
@@ -109,9 +108,6 @@ impl FriendsLink {
             Action::RemoveFriend { user_id } => self.remove(user_id),
             Action::BlockFriend { target, scope } => self.block(target, scope),
             Action::UnblockFriend { target, scope } => self.unblock(target, scope),
-            Action::SaveFriendGroup { id, name } => self.save_group(id, name),
-            Action::RemoveFriendGroup { id } => self.remove_group(id),
-            Action::SetFriendGroups { user_id, groups } => self.set_groups(user_id, groups),
             _ => return Err(invalid("friends-invalid-action")),
         }
         Ok(())
@@ -166,10 +162,8 @@ impl FriendsLink {
         let mut friends = Vec::new();
         let mut federation_blocked = Vec::new();
         let mut can_block_federation = false;
-        let groups;
         if self.uses_server() {
             let view = self.server_view(&sync.joined).await?;
-            groups = view.groups;
             can_block_federation = view.can_block_federation;
             federation_blocked = view.blocked_servers;
             for row in view.friends {
@@ -182,7 +176,6 @@ impl FriendsLink {
             }
         } else {
             let local = self.local.lock().expect("friends local lock");
-            groups = local.groups.clone();
             for (user_id, name, invited_at_ms) in sync.joined.drain(..) {
                 if local
                     .removed
@@ -193,7 +186,7 @@ impl FriendsLink {
                 }
                 friends.push(FriendRow {
                     display_name: Some(name),
-                    groups: local.groups_of(&user_id),
+                    role_id: wonton_protocol::DEFAULT_INVITE_ROLE.to_owned(),
                     user_id,
                     shared_plugins: Vec::new(),
                     last_opened_share_at_ms: None,
@@ -221,7 +214,6 @@ impl FriendsLink {
         Ok(FriendsViewModel {
             state: FriendsState::Ready,
             friends,
-            groups,
             incoming: sync.incoming,
             outgoing: sync.outgoing,
             blocked,
@@ -375,7 +367,6 @@ impl FriendsLink {
                 {
                     let mut local = link.local.lock().expect("friends local lock");
                     local.removed.insert(user_id.clone(), now_ms());
-                    local.assigned.remove(&user_id);
                     if let Err(error) = local.save(&link.dir) {
                         return link.fail_text(FriendFailure::Other, error.to_string());
                     }
@@ -451,83 +442,6 @@ impl FriendsLink {
                 }
                 (FriendBlockScope::Federation, _) => link.fail_fixed(FriendFailure::Other),
                 (FriendBlockScope::Other, _) => link.fail_fixed(FriendFailure::Other),
-            }
-        });
-    }
-
-    fn save_group(self: &Arc<Self>, id: Option<String>, name: String) {
-        let link = self.clone();
-        self.spawn(async move {
-            if link.uses_server() {
-                let api = match link.api() {
-                    Ok(api) => api,
-                    Err(failure) => return link.fail_api(failure),
-                };
-                match api.save_group(id.as_deref(), &name).await {
-                    Ok(_) => link.refresh(true),
-                    Err(failure) => link.fail_api(failure),
-                }
-            } else {
-                {
-                    let mut local = link.local.lock().expect("friends local lock");
-                    if let Err(error) = local.save_group(id.as_deref(), &name) {
-                        return link.fail_text(FriendFailure::Other, error);
-                    }
-                    if let Err(error) = local.save(&link.dir) {
-                        return link.fail_text(FriendFailure::Other, error.to_string());
-                    }
-                }
-                link.refresh(true);
-            }
-        });
-    }
-
-    fn remove_group(self: &Arc<Self>, id: String) {
-        let link = self.clone();
-        self.spawn(async move {
-            if link.uses_server() {
-                let api = match link.api() {
-                    Ok(api) => api,
-                    Err(failure) => return link.fail_api(failure),
-                };
-                match api.remove_group(&id).await {
-                    Ok(()) => link.refresh(true),
-                    Err(failure) => link.fail_api(failure),
-                }
-            } else {
-                {
-                    let mut local = link.local.lock().expect("friends local lock");
-                    local.remove_group(&id);
-                    if let Err(error) = local.save(&link.dir) {
-                        return link.fail_text(FriendFailure::Other, error.to_string());
-                    }
-                }
-                link.refresh(true);
-            }
-        });
-    }
-
-    fn set_groups(self: &Arc<Self>, user_id: String, groups: Vec<String>) {
-        let link = self.clone();
-        self.spawn(async move {
-            if link.uses_server() {
-                let api = match link.api() {
-                    Ok(api) => api,
-                    Err(failure) => return link.fail_api(failure),
-                };
-                match api.set_groups(&user_id, &groups).await {
-                    Ok(()) => link.refresh(true),
-                    Err(failure) => link.fail_api(failure),
-                }
-            } else {
-                {
-                    let mut local = link.local.lock().expect("friends local lock");
-                    local.set_groups(&user_id, &groups);
-                    if let Err(error) = local.save(&link.dir) {
-                        return link.fail_text(FriendFailure::Other, error.to_string());
-                    }
-                }
-                link.refresh(true);
             }
         });
     }

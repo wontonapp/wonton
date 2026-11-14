@@ -1,4 +1,4 @@
-//! 应用详情“分享给好友”的对象列表：读核心 `GET /_wonton/api/friends` 存着的好友和分组（ADR-0051）。
+//! 应用详情“分享给好友”的对象列表：读核心 `GET /_wonton/api/friends` 存着的好友（ADR-0051）。
 
 use axum::http::Method;
 use wonton_client::{CoreError, FriendsState};
@@ -13,11 +13,10 @@ fn core_list() -> serde_json::Value {
         "friends": [{
             "user_id": "@alice:example.test",
             "display_name": "Alice",
-            "groups": ["group-2"],
+            "role_id": "friend",
             "shared_plugins": ["app.navidrome"],
             "last_opened_share_at_ms": null
         }],
-        "groups": [{"id": "group-2", "name": "家人"}],
         "blocked_servers": [],
         "removed": [{"user_id": "@bob:example.test", "removed_at_ms": 1}],
         "can_block_federation": true,
@@ -26,7 +25,7 @@ fn core_list() -> serde_json::Value {
 }
 
 #[tokio::test]
-async fn share_recipients_are_the_friends_and_groups_the_core_keeps() {
+async fn share_recipients_are_the_friends_the_core_keeps() {
     let rig = Rig::new().await;
     rig.connected().await;
     rig.core
@@ -37,7 +36,7 @@ async fn share_recipients_are_the_friends_and_groups_the_core_keeps() {
     assert_eq!(recipients.friends.len(), 1);
     assert_eq!(recipients.friends[0].user_id, "@alice:example.test");
     assert_eq!(recipients.friends[0].shared_plugins, vec!["app.navidrome"]);
-    assert_eq!(recipients.groups[0].id, "group-2");
+    assert_eq!(recipients.friends[0].role_id, "friend");
 }
 
 #[tokio::test]

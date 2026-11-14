@@ -7,14 +7,6 @@
     <string name="friends_requests_title">邀請</string>
     <!-- Section heading above the friend list. -->
     <string name="friends_list_title">好友</string>
-    <!-- Row subtitle when a friend is in no group. -->
-    <string name="friends_no_group">沒有群組</string>
-    <!-- Title of the new-group dialog. -->
-    <string name="friends_group_create_title">新增群組</string>
-    <!-- Title of the rename-group dialog. Argument: the current name. -->
-    <string name="friends_group_rename_title">將「%1$s」改名</string>
-    <!-- Confirmation dialog body: what deleting a group does. -->
-    <string name="friends_group_delete_message">群組裡的人還是好友，發給這個群組的外掛權限會收回。</string>
     <!-- Title of the block-a-server dialog. -->
     <string name="friends_block_server_title">封鎖整台伺服器</string>
     <!-- Placeholder of the server name field; no scheme, no wildcards. -->
