@@ -29,6 +29,7 @@ final class TimelineModel {
     var attempt = 0
 
     private let core: ClientCore
+    private var subscription: TimelineSubscription?
     let roomId: String
     /// 旁聊根的事件 ID；空是房间的主时间线（ADR-0093）。
     let threadRoot: String?
@@ -50,6 +51,11 @@ final class TimelineModel {
         } catch {
             failure = error.problem
             return false
+        }
+        self.subscription = subscription
+        defer {
+            subscription.cancel()
+            self.subscription = nil
         }
         for await update in subscription.updates() {
             // 翻页由房间的锚点恢复处理；仅保留不改变开头的实时追加和编辑。
@@ -78,7 +84,14 @@ final class TimelineModel {
             if isLoaded { pin.stick() }
             isLoaded = true
         }
+        if !Task.isCancelled {
+            failure = Problem(title: String(localized: .Problem2.problemTransportUnavailableTitle))
+        }
         return !Task.isCancelled
+    }
+
+    func setScroll(_ scroll: TimelineScroll) {
+        subscription?.setScroll(scroll: scroll)
     }
 
     private func apply(_ diff: TimelineDiff) {

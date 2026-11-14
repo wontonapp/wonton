@@ -22,7 +22,7 @@ mod takeover;
 mod tasks;
 mod tool_policy;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -238,9 +238,9 @@ impl PluginsLink {
         self.ports.set_enabled(plugin_id, enabled)
     }
 
-    /// 屏幕上正显示着哪个插件的页面，`None` 是没有。由页面栈的栈顶推导（ADR-0095），壳不再上报。
-    pub(crate) fn set_visible_plugin(&self, plugin_id: Option<String>) {
-        self.ports.set_visible(plugin_id);
+    /// 主页面栈和内容窗口正在显示的插件；后台暂停自动映射，手动开关不受影响。
+    pub(crate) fn set_visible_plugins(&self, plugins: HashSet<String>) {
+        self.ports.set_visible(plugins);
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {

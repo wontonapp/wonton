@@ -114,11 +114,12 @@
 先把按时间线的操作整组挪进嵌套枚举，嵌套枚举有自己的 32 KiB：
 
 - 新 `TimelineTarget { room_id: String, thread_root: Option<String> }`，`thread_root` 为空是主时间线。
-- 新 `TimelineAction`，由 `Action` 里这 11 个变体原样搬过去、`room_id` 换成 `target: TimelineTarget`：`SendText`、`SendImage`、
+- `TimelineAction` 接收按时间线定位的操作、`room_id` 换成 `target: TimelineTarget`：`SendText`、`SendImage`、
   `ForwardMessage`（目标仍是 `to_room_id` 的主时间线）、`RedactMessage`、`RetrySend`、`CancelSend`、`PaginateBackwards`、
-  `SetTimelineScroll`、`MarkRoomRead`（改名 `MarkRead`）、`SetDraft`、`DismissLinkPreview`（旁聊的输入框也有链接预览）。
+  `MarkRoomRead`（改名 `MarkRead`）、`SetDraft`、`DismissLinkPreview`（旁聊的输入框也有链接预览）。滚动位置由
+  `TimelineSubscription::set_scroll` 直接报告，不能按目标路由，以免同房间的多个窗口互相覆盖。
   搬过去的变体的文档可以写全，#287 只能留一行的那条补回来。
-- `Action` 删掉这 11 个，加一个 `Timeline { action: TimelineAction }`，不带文档注释，说明写在 `TimelineAction` 上（结构体变体：
+- `Action` 不再直接承载这些操作，改用 `Timeline { action: TimelineAction }`（结构体变体：
   `Action` 用 serde 的内部标签 `type`，newtype 变体里再套一个带 `type` 的枚举会撞键）。
 - 实测（2026-11-12，#287 的分支 `feat/link-preview-client` `d805ccb`，`cargo check -p wonton-protocol --features uniffi`）：
   原样只放得下一个单字母的空变体；照上面搬完后 `Action` 空出约 2.9 KB，`TimelineAction` 编译通过。

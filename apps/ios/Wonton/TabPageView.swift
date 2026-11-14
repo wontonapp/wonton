@@ -61,7 +61,7 @@ struct TabPageView: View {
     }
 
     var body: some View {
-        content
+        sceneContent
         // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
         // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
         .ignoresSafeArea(.keyboard)
@@ -84,6 +84,14 @@ struct TabPageView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder private var sceneContent: some View {
+        if case .content = placed {
+            content.modifier(ContentPageScroll(session: session))
+        } else {
+            content
         }
     }
 

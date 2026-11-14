@@ -203,7 +203,10 @@ impl PagesLink {
             }
             match scope {
                 PanelScope::Main => state.panel_selected = Some(tab),
-                PanelScope::Room { .. } => state.room_panel_selected = Some(tab),
+                PanelScope::Room { ref room_id } => {
+                    let room = state.rooms.get_mut(room_id).ok_or_else(not_in_panel)?;
+                    room.selected = Some(tab);
+                }
             }
             Ok(())
         })?;
@@ -257,10 +260,8 @@ impl PagesLink {
         blocked: bool,
     ) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
-            if let Some((open, _)) = &state.open_room
-                && open.as_str() == room_id
-            {
-                state.entry_blocked = blocked;
+            if let Some(room) = state.rooms.get_mut(room_id) {
+                room.blocked = blocked;
             }
             Ok(())
         })
@@ -285,7 +286,7 @@ impl PagesLink {
         let Ok(room_id) = room_id.parse::<OwnedRoomId>() else {
             return Err(invalid(&l10n!(CATALOG, language(), "panel-room-unknown")));
         };
-        let sender = self.room_panel.0.clone();
+        let weak = lock(&self.weak).clone();
         let sync_problem = self.sync_problem.clone();
         self.runtime.spawn(async move {
             let written = session
@@ -303,8 +304,10 @@ impl PagesLink {
             match written {
                 Ok(content) => {
                     sync_problem.send_replace(None);
-                    if let Ok(panel) = serde_json::from_value::<RoomPanel>(content.0.into()) {
-                        sender.send_replace(Some((room_id, panel)));
+                    if let Ok(panel) = serde_json::from_value::<RoomPanel>(content.0.into())
+                        && let Some(link) = weak.upgrade()
+                    {
+                        let _ = link.receive_room_panel(room_id, panel);
                     }
                 }
                 Err(error) => {
@@ -317,11 +320,7 @@ impl PagesLink {
 
     pub(super) fn assert_room_open(&self, room_id: &str) -> Result<(), CoreError> {
         let state = lock(&self.state);
-        if state
-            .open_room
-            .as_ref()
-            .is_some_and(|(open, _)| open.as_str() == room_id)
-        {
+        if state.rooms.contains_key(room_id) {
             return Ok(());
         }
         Err(invalid(&l10n!(CATALOG, language(), "panel-room-not-open")))
@@ -365,10 +364,9 @@ fn panel_entries<'a>(
     match scope {
         PanelScope::Main => Ok(&state.config.panel),
         PanelScope::Room { room_id } => state
-            .open_room
-            .as_ref()
-            .filter(|(open, _)| open.as_str() == room_id)
-            .map(|(_, panel)| &panel.pages)
+            .rooms
+            .get(room_id)
+            .map(|room| &room.panel.pages)
             .ok_or_else(not_in_panel),
     }
 }

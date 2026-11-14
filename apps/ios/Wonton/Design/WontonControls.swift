@@ -248,6 +248,7 @@ struct WontonBarStatus {
 
 extension EnvironmentValues {
     @Entry var wontonBarStatus = WontonBarStatus()
+    @Entry var wontonContentRoot = false
 }
 
 /// 根页面只显示连接状态和操作，页面名交给导航语义。
@@ -327,6 +328,7 @@ struct WontonPushedBar<Trailing: View>: View {
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.wontonContentRoot) private var isContentRoot
 
     private var line: AnyView? { showsStatusLine ? status.line : nil }
 
@@ -351,8 +353,10 @@ struct WontonPushedBar<Trailing: View>: View {
                 }
                 .padding(.horizontal, WontonTheme.size.target + WontonTheme.spacing.s8)
                 HStack(spacing: 0) {
-                    WontonIconButton(icon: icon, label: iconLabel) {
-                        if let onClose { onClose() } else { dismiss() }
+                    if !isContentRoot || onClose != nil {
+                        WontonIconButton(icon: icon, label: iconLabel) {
+                            if let onClose { onClose() } else { dismiss() }
+                        }
                     }
                     Spacer(minLength: 0)
                     trailing

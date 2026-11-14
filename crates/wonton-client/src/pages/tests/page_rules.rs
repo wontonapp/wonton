@@ -156,26 +156,28 @@ async fn failures_and_reload_cover_pages_inside_plugins_and_public_pages() {
 async fn room_panel_entries_from_other_clients_are_checked_when_built() {
     let rig = Rig::new();
     let room: wonton_matrix::OwnedRoomId = "!r:home.example".parse().unwrap();
-    rig.room_panel.send_replace(Some((
-        room,
-        RoomPanel {
-            pages: vec![
-                PanelEntry {
-                    tab: url_tab("http://example.com/a"),
-                    title: None,
-                },
-                PanelEntry {
-                    tab: TabRef::PluginPath {
-                        plugin_id: "app.shared".to_owned(),
-                        path: "https://evil.example/x".to_owned(),
+    rig.tabs
+        .receive_room_panel(
+            room.clone(),
+            RoomPanel {
+                pages: vec![
+                    PanelEntry {
+                        tab: url_tab("http://example.com/a"),
+                        title: None,
                     },
-                    title: None,
-                },
-            ],
-        },
-    )));
+                    PanelEntry {
+                        tab: TabRef::PluginPath {
+                            plugin_id: "app.shared".to_owned(),
+                            path: "https://evil.example/x".to_owned(),
+                        },
+                        title: None,
+                    },
+                ],
+            },
+        )
+        .unwrap();
     rig.tabs.recompute();
-    let view = rig.tabs.room_view.borrow().clone().unwrap();
+    let view = rig.tabs.room_view(room.as_str()).unwrap();
     // 房间面板来自账号数据，绕过入口校验：非 https 的不打开并说清原因，越界路径没有网址。
     assert_eq!(view.panel[0].page.url, None);
     assert_eq!(

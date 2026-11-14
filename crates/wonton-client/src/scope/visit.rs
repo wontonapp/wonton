@@ -62,7 +62,6 @@ impl Visit {
                 confirmations: None,
                 method: push_method.subscribe(),
                 session_out: watch::channel(None).0,
-                room_panel_out: watch::channel(None).0,
                 external: false,
             },
         )?;

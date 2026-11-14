@@ -8,11 +8,9 @@ import app.wonton.protocol.CoreException
 import app.wonton.protocol.FriendsViewModel
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PeersViewModel
-import app.wonton.protocol.TimelineTarget
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.protocol.SettingsViewModel
 import app.wonton.protocol.ServersViewModel
-import app.wonton.protocol.TimelineUpdate
 import app.wonton.protocol.TransfersViewModel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -33,16 +31,6 @@ fun ClientCore.chatUpdates(): Flow<ChatViewModel> = flow {
     }
 }
 
-/**
- * 批次的语义见核心的 `TimelineSubscription`。打不开时流以 [CoreException] 结束；取消和释放同 [chatUpdates]。
- */
-fun ClientCore.timelineUpdates(target: TimelineTarget): Flow<TimelineUpdate> = flow {
-    subscribeTimeline(target).use { subscription ->
-        while (true) {
-            emit(subscription.next() ?: break)
-        }
-    }
-}
 
 /** 把操作发给核心。被拒绝时返回要给人看的问题，供界面提示；成功时返回 null。 */
 fun ClientCore.send(action: Action): Problem? =

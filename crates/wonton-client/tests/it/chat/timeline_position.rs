@@ -98,14 +98,6 @@ impl Chat {
         self.wait_unread(1).await;
         self.phone
             .dispatch(Action::Timeline {
-                action: TimelineAction::SetTimelineScroll {
-                    target: self.target(),
-                    scroll: TimelineScroll::Bottom,
-                },
-            })
-            .unwrap();
-        self.phone
-            .dispatch(Action::Timeline {
                 action: TimelineAction::MarkRead {
                     target: self.target(),
                 },
@@ -311,6 +303,7 @@ async fn reopening_with_unread_stops_at_the_read_marker() {
     timeline
         .until("先来的消息到了", |item| text(item, "先来一条"))
         .await;
+    timeline.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
     for body in ["一", "二", "三"] {
         chat.bot_says(body).await;
@@ -341,6 +334,7 @@ async fn reopening_without_unread_stops_at_the_latest_message() {
     timeline
         .until("消息到了", |item| text(item, "只有这一条"))
         .await;
+    timeline.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
     drop(timeline);
 
@@ -361,6 +355,7 @@ async fn a_restart_still_stops_at_the_read_marker() {
     timeline
         .until("先来的消息到了", |item| text(item, "先来一条"))
         .await;
+    timeline.report_scroll(TimelineScroll::Bottom).await;
     chat.read().await;
     for body in ["一", "二", "三"] {
         chat.bot_says(body).await;

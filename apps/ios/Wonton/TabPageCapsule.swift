@@ -67,6 +67,7 @@ struct TabPageCapsule: View {
                 }
                 if let takeover { TakeoverButton(takeover: takeover) }
                 Button(TabText.reload) { pages.send(.reloadTab(page: placed)) }
+                ContentWindowButton(target: .tab(tab: tab))
                 if let panel {
                     Button(TabText.editPanel, action: panel.edit)
                 } else {

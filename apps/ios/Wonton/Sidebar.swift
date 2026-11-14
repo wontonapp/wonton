@@ -232,6 +232,7 @@ struct SidebarPanel: View {
 
     /// 长按：这一插件的每一页，加进或移出“我的应用”。
     @ViewBuilder private func myAppMenu(_ app: SidebarApp) -> some View {
+        if case let .page(tab) = app.open { ContentWindowButton(target: .tab(tab: tab)) }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.id == app.pluginId }
         let mine = sidebar.apps.compactMap(\.tab)
         ForEach(plugin?.tabChoices ?? []) { choice in

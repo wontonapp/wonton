@@ -1,6 +1,6 @@
 //! 按时间线（主对话或一个旁聊）分开记的东西（ADR-0093 §4、§5）：打开着的时间线、它的消息菜单和订阅。
 //!
-//! 同一时间只开一个房间；同一个房间里主对话和一个旁聊可以同时开着（从主对话点进旁聊，返回时主对话还在）。
+//! 同一目标的窗口共享 Matrix 时间线，每份订阅单独保存滚动位置与消息菜单。
 
 use std::sync::{Arc, Mutex, Weak};
 
@@ -73,33 +73,38 @@ impl TimelineKey {
 /// 打开着的一条时间线。
 pub(crate) struct OpenTimeline {
     pub(crate) key: TimelineKey,
-    pub(crate) room: Arc<ChatRoom>,
+    pub(crate) room: Weak<ChatRoom>,
     /// 这条时间线里每条消息的菜单，转发、撤回只认这里有的。
-    pub(crate) menus: Arc<Mutex<Menus>>,
-    /// 订阅，用来把壳报告的滚动位置送进去。订阅没了（壳重开、页面关掉）就升级不出来。
+    pub(crate) menus: Weak<Mutex<Menus>>,
+    /// 注册表不延长订阅生命周期；取消的订阅不再参与路由或菜单授权。
     pub(crate) subscription: Weak<TimelineSubscription>,
 }
 
-/// 打开着的时间线：同一个房间的主对话和至多一个旁聊。
+/// 所有仍存活的时间线订阅，不限制房间、旁聊或同一目标的订阅数。
 #[derive(Default)]
 pub(crate) struct OpenTimelines {
     open: Vec<OpenTimeline>,
 }
 
 impl OpenTimelines {
-    /// 记下新打开的一条：换了房间时前一个房间的都关掉；同一个房间里换了旁聊时前一个旁聊关掉，主对话留着。
     pub(crate) fn insert(&mut self, timeline: OpenTimeline) {
-        let key = timeline.key.clone();
-        self.open.retain(|open| {
-            open.key.room_id == key.room_id
-                && open.key != key
-                && (open.key.thread_root.is_none() || key.thread_root.is_none())
-        });
+        self.open.retain(OpenTimeline::is_active);
         self.open.push(timeline);
     }
 
     pub(crate) fn get(&self, key: &TimelineKey) -> Option<&OpenTimeline> {
-        self.open.iter().find(|open| &open.key == key)
+        self.open
+            .iter()
+            .find(|open| &open.key == key && open.is_active())
+    }
+
+    pub(crate) fn matching<'a>(
+        &'a self,
+        key: &'a TimelineKey,
+    ) -> impl Iterator<Item = &'a OpenTimeline> {
+        self.open
+            .iter()
+            .filter(move |open| &open.key == key && open.is_active())
     }
 
     /// 这个房间打开着的所有时间线，旁聊在前（刚点进去的那条）。
@@ -107,14 +112,30 @@ impl OpenTimelines {
         let mut rooms: Vec<&OpenTimeline> = self
             .open
             .iter()
-            .filter(|open| &open.key.room_id == room_id)
+            .filter(|open| &open.key.room_id == room_id && open.is_active())
             .collect();
         rooms.sort_by_key(|open| open.key.thread_root.is_none());
-        rooms.into_iter().map(|open| open.room.clone()).collect()
+        rooms
+            .into_iter()
+            .filter_map(|open| open.room.upgrade())
+            .collect()
     }
 
     pub(crate) fn clear(&mut self) {
+        for open in &self.open {
+            if let Some(subscription) = open.subscription.upgrade() {
+                subscription.cancel();
+            }
+        }
         self.open.clear();
+    }
+}
+
+impl OpenTimeline {
+    fn is_active(&self) -> bool {
+        self.subscription
+            .upgrade()
+            .is_some_and(|subscription| subscription.is_active())
     }
 }
 

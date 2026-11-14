@@ -70,6 +70,7 @@ fn public_page() -> CoreError {
 /// 栈、面板和桥都用这一个（ADR-0052：原来查页面的地方有两份，加面板时漏过一次）。
 pub(crate) fn page_of(tabs: &PagesLink, placed: &PlacedTab) -> Result<TabPage, CoreError> {
     match placed {
+        PlacedTab::Content { tab } => tabs.content_page(tab).ok_or_else(page_not_open),
         PlacedTab::Page { tab } => {
             let view = tabs.view();
             view.stack
@@ -82,8 +83,8 @@ pub(crate) fn page_of(tabs: &PagesLink, placed: &PlacedTab) -> Result<TabPage, C
             let view = tabs.view();
             let pages = match scope {
                 PanelScope::Main => view.panel,
-                PanelScope::Room { .. } => tabs
-                    .room_view()
+                PanelScope::Room { room_id } => tabs
+                    .room_view(room_id)
                     .map(|view| view.panel.clone())
                     .unwrap_or_default(),
             };

@@ -138,14 +138,14 @@ pub(super) fn clear_gone_prompt(state: &mut super::PagesState) {
 
 fn page_open(state: &super::PagesState, place: &PlacedTab) -> bool {
     match place {
+        PlacedTab::Content { tab } => state.content.contains_key(tab),
         PlacedTab::Page { tab } => state.stack.iter().any(|item| &item.tab == tab),
         PlacedTab::Panel { scope, tab } => match scope {
             PanelScope::Main => state.config.panel.iter().any(|entry| &entry.tab == tab),
-            PanelScope::Room { room_id } => {
-                state.open_room.as_ref().is_some_and(|(open, panel)| {
-                    open == room_id && panel.pages.iter().any(|entry| &entry.tab == tab)
-                })
-            }
+            PanelScope::Room { room_id } => state
+                .rooms
+                .get(room_id)
+                .is_some_and(|room| room.panel.pages.iter().any(|entry| &entry.tab == tab)),
         },
     }
 }

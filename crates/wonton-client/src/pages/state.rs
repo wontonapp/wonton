@@ -204,12 +204,12 @@ pub(super) fn remove_uninstalled(
         }
     }
     // 打开的房间的面板也拿掉；写回房间账号数据的活儿交给 recompute 收尾（记下是哪几个插件）。
-    if let Some((_, panel)) = &mut state.open_room {
-        panel.pages.retain(|entry| match &entry.tab {
+    for room in state.rooms.values_mut() {
+        room.panel.pages.retain(|entry| match &entry.tab {
             TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
                 let removed = gone(plugin_id);
-                if removed && !state.room_panel_removed.contains(plugin_id) {
-                    state.room_panel_removed.push(plugin_id.clone());
+                if removed && !room.removed.contains(plugin_id) {
+                    room.removed.push(plugin_id.clone());
                 }
                 !removed
             }
@@ -235,7 +235,7 @@ pub(super) fn remove_uninstalled(
             state.panel_selected = None;
         }
     }
-    !removed.is_empty() || !state.room_panel_removed.is_empty()
+    !removed.is_empty() || state.rooms.values().any(|room| !room.removed.is_empty())
 }
 
 /// 面板条目的提示名：用户起的名字，没有时按插件补。
@@ -334,11 +334,12 @@ pub(super) fn ensure_stack(state: &mut PagesState, plugins: &PluginsViewModel) {
     {
         state.panel_selected = None;
     }
-    if let Some(selected) = &state.room_panel_selected
-        && let Some((_, panel)) = &state.open_room
-        && !panel.pages.iter().any(|entry| entry.tab == *selected)
-    {
-        state.room_panel_selected = None;
+    for room in state.rooms.values_mut() {
+        if let Some(selected) = &room.selected
+            && !room.panel.pages.iter().any(|entry| entry.tab == *selected)
+        {
+            room.selected = None;
+        }
     }
 }
 

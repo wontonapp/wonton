@@ -62,7 +62,7 @@ internal fun ScrollEffects(
         if (newest == null) return@LaunchedEffect
         withFrameNanos { }
         if (!placed) {
-            following = placeAnchor(listState, newestFirst, timeline, target, newest, onAction)
+            following = placeAnchor(listState, newestFirst, timeline, newest)
         } else if (timeline.bottomRequest != 0 && timeline.bottomRequest != timeline.handledBottomRequest) {
             listState.scrollToItem(0)
         } else if (following && !listState.isScrollInProgress) {
@@ -80,7 +80,7 @@ internal fun ScrollEffects(
                 // 非手势的插入和行变高不能被当成主人翻走；真正的滚动在交互观察里报告。
                 if (atBottom) {
                     following = true
-                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                    timeline.subscription?.setScroll(TimelineScroll.BOTTOM)
                     if (latest != null && !covered) onAction(markReadAction(target))
                 }
             }
@@ -91,7 +91,7 @@ internal fun ScrollEffects(
             .distinctUntilChanged().collect { (scrolling, atBottom) ->
                 if (placed && scrolling && !atBottom) {
                     following = false
-                    onAction(scrollAction(target, TimelineScroll.AWAY))
+                    timeline.subscription?.setScroll(TimelineScroll.AWAY)
                 }
             }
     }
@@ -104,9 +104,7 @@ private suspend fun placeAnchor(
     listState: LazyListState,
     newestFirst: List<TimelineItem>,
     timeline: TimelineState,
-    target: TimelineTarget,
     newest: String,
-    onAction: (Action) -> Unit,
 ): Boolean {
     val anchor = timeline.anchor
     val index = newestFirst.indexOfFirst { it.id == anchor }
@@ -124,7 +122,7 @@ private suspend fun placeAnchor(
             listState.scrollToItem(index, listState.layoutInfo.viewportSize.height - height)
         }
         if (anchor != newest) {
-            onAction(scrollAction(target, TimelineScroll.AWAY))
+            timeline.subscription?.setScroll(TimelineScroll.AWAY)
         }
     }
     return atLatest || anchor == newest
@@ -157,7 +155,7 @@ internal fun ScrollToBottomButton(
             onClick = {
                 scope.launch {
                     listState.animateScrollToItem(0)
-                    onAction(scrollAction(target, TimelineScroll.BOTTOM))
+                    timeline.subscription?.setScroll(TimelineScroll.BOTTOM)
                     onAction(markReadAction(target))
                 }
             },
@@ -201,8 +199,5 @@ internal fun LazyListState.reachedTop(timeline: TimelineState): Boolean {
     return timeline.loaded && last != null && last >= layoutInfo.totalItemsCount - 1 &&
         timeline.backPagination == BackPagination.IDLE
 }
-
-private fun scrollAction(target: TimelineTarget, scroll: TimelineScroll) =
-    Action.Timeline(TimelineAction.SetTimelineScroll(target, scroll))
 
 private fun markReadAction(target: TimelineTarget) = Action.Timeline(TimelineAction.MarkRead(target))

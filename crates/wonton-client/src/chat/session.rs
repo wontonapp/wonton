@@ -30,7 +30,7 @@ pub(super) async fn watch(chat: Weak<ChatLink>, session: Arc<MatrixSession>) {
                 );
                 chat.bots.set_session(None);
                 chat.session_out.send_replace(None);
-                chat.room_panel_out.send_replace(None);
+                super::lock(&chat.open).clear();
                 if !soft_logout {
                     session.stop_sync().await;
                     if let Err(error) = chat.storage.forget_session() {

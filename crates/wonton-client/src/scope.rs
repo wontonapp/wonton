@@ -11,7 +11,7 @@ use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
     FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
-    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
@@ -30,7 +30,7 @@ use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 pub(crate) use runtime::ScopeRuntime;
 pub(crate) use visit::{Entered, Visits};
-use wonton_matrix::{MatrixSession, OwnedRoomId};
+use wonton_matrix::MatrixSession;
 
 pub(crate) struct Scope {
     pub(crate) slot: String,
@@ -131,8 +131,6 @@ fn chat_links(
     card_success: CardSuccess,
     channels: crate::chat::ChatChannels,
     session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
-    room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
         slot,
@@ -166,7 +164,6 @@ fn chat_links(
         dir,
         views.map(|v| v.pages.clone()),
         session_in,
-        (room_sender, room_receiver),
     );
     let files = FilesLink::new(
         handle.clone(),
@@ -242,9 +239,8 @@ impl Scope {
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
-        // 会话和打开着的房间的面板（ADR-0052）：chat 往里喂，tabs 用来同步账号数据、合成房间面板的视图。
+        // chat 发布会话，页面订阅按房间读取账号数据。
         let session_out = watch::channel(None);
-        let room_panel = watch::channel(None);
         let hub = crate::sharing::hub::bind(handle.clone())?;
         let external = servers.borrow().servers.iter().any(|row| {
             row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
@@ -291,7 +287,6 @@ impl Scope {
             confirmations: views.map(|v| v.confirmations.clone()),
             method: push_method.subscribe(),
             session_out: session_out.0.clone(),
-            room_panel_out: room_panel.0.clone(),
             external,
         };
         let shared = Shared {
@@ -303,14 +298,7 @@ impl Scope {
             dir,
             views,
         };
-        let links = chat_links(
-            &shared,
-            card_success,
-            channels,
-            session_out.1,
-            room_panel.0,
-            room_panel.1,
-        )?;
+        let links = chat_links(&shared, card_success, channels, session_out.1)?;
         let composer = ComposerLink::new(
             handle.clone(),
             Arc::new(LiveUplink {

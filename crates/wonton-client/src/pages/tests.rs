@@ -5,17 +5,16 @@ use wonton_protocol::{
 };
 
 mod bot_pins;
+mod content;
 mod my_apps;
 mod page_rules;
 mod room_panel;
 mod stack;
 
 struct Rig {
-    tabs: PagesLink,
+    tabs: Arc<PagesLink>,
     home: watch::Sender<HomeViewModel>,
     plugins: watch::Sender<PluginsViewModel>,
-    /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
-    room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
     _dir: tempfile::TempDir,
 }
 
@@ -37,7 +36,6 @@ impl Rig {
             PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
         let home = watch::Sender::new(home("old-server"));
         let plugins = watch::Sender::new(plugins("old-content"));
-        let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
@@ -50,6 +48,7 @@ impl Rig {
                 config: default_file(Some("old-server".to_owned())),
                 problem: None,
                 stack: Vec::new(),
+                content: HashMap::new(),
                 paired: true,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
@@ -58,10 +57,7 @@ impl Rig {
                 connected: true,
                 attention: HashSet::new(),
                 panel_selected: None,
-                open_room: None,
-                room_panel_selected: None,
-                entry_blocked: false,
-                room_panel_removed: Vec::new(),
+                rooms: HashMap::new(),
                 bot_pins: Vec::new(),
                 core_url: None,
                 bot_pin_consents: Vec::new(),
@@ -70,19 +66,17 @@ impl Rig {
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
-            room_panel: (panel_sender.clone(), panel_receiver),
-            room_view: watch::Sender::new(None),
             sync_problem: watch::Sender::new(None),
             dirty: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
         };
+        let tabs = Arc::new(tabs);
         tabs.recompute();
         Self {
             tabs,
             home,
             plugins,
-            room_panel: panel_sender,
             _dir: dir,
         }
     }

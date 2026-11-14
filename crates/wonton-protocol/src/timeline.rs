@@ -4,7 +4,7 @@
 //! 自己持有的列表上。第一批总是 [`TimelineDiff::Reset`]，给出当前的全部条目。条目和 matrix-rust-sdk 的时间线
 //! 一一对应（含日期分隔线、已读标记等），下标就是 SDK 的下标；哪些事件进时间线由 `wonton-matrix` 的事件过滤决定。
 //!
-//! 列表该停在哪也由核心说：壳用 [`TimelineAction::SetTimelineScroll`](crate::TimelineAction::SetTimelineScroll) 报告是不是离开了底部，
+//! 列表该停在哪也由核心说：壳通过时间线订阅的 `set_scroll` 报告是不是离开了底部，
 //! 核心在每一批里给出重新算过的位置和新消息数（[`TimelineUpdate::viewport`]），并在第一批给出该停在哪一条
 //! （[`TimelineUpdate::anchor`]）。壳只按这两个值画和滚，不自己数。
 //!
@@ -81,8 +81,7 @@ pub enum KeyNotice {
     Other,
 }
 
-/// 列表该停在哪，方向是核心到壳。核心按已读位置、壳报告的滚动（[`TimelineAction::SetTimelineScroll`](crate::TimelineAction::SetTimelineScroll)）
-/// 和条目算出。
+/// 列表该停在哪，方向是核心到壳。核心按已读位置、各订阅报告的滚动位置和条目算出。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]

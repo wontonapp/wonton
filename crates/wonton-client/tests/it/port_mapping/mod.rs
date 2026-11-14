@@ -256,6 +256,38 @@ async fn showing_a_plugin_page_maps_its_ports_and_leaving_releases_them() {
     assert_eq!(tcp_round_trip(home.tcp, b"again").await, b"again");
 }
 
+#[tokio::test]
+async fn content_windows_keep_ports_until_the_last_page_closes() {
+    let home = MapHome::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let app = App::open(dir.path());
+    app.connect(&home);
+    app.mapping(PortMappingState::Off).await;
+    app.show(Some(PLUGIN)).await;
+    let tab = wonton_client::TabRef::Plugin {
+        plugin_id: PLUGIN.to_owned(),
+        page: None,
+    };
+    let first = app.core.subscribe_content_page(tab.clone()).unwrap();
+    let second = app.core.subscribe_content_page(tab).unwrap();
+    app.show(None).await;
+    app.mapping(PortMappingState::On).await;
+    assert_eq!(
+        tcp_round_trip(home.tcp, b"content only").await,
+        b"content only"
+    );
+    first.cancel();
+    assert_eq!(
+        tcp_round_trip(home.tcp, b"second window").await,
+        b"second window"
+    );
+    drop(second);
+    app.mapping(PortMappingState::Off).await;
+    std::net::TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, home.tcp))).unwrap();
+    let _udp = bind_udp_until_free(home.udp).await;
+    assert!(app.core.pages().stack.is_empty());
+}
+
 /// 手动打开的映射不被页面看不见关掉：再连一次，服务器拒绝的原因照样经还开着的监听报上来。
 #[tokio::test]
 async fn a_manually_opened_mapping_survives_the_page_becoming_invisible() {

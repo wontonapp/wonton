@@ -193,6 +193,7 @@ internal fun pageTakeover(tab: TabRef, pages: PagesState, active: Boolean): Page
 internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
     val tab: TabRef get() = when (place) {
         is PlacedTab.Page -> place.tab
+        is PlacedTab.Content -> place.tab
         is PlacedTab.Panel -> place.tab
     }
     val controller = PluginWebViewController()

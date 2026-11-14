@@ -272,7 +272,11 @@ fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate
 }
 
 /// 栈里的一页：页面元数据按插件或缓存合成。
-fn build_page_item(state: &PagesState, stored: &StoredItem, plugins: &PluginsViewModel) -> TabPage {
+pub(super) fn build_page_item(
+    state: &PagesState,
+    stored: &StoredItem,
+    plugins: &PluginsViewModel,
+) -> TabPage {
     let placed = PlacedTab::Page {
         tab: stored.tab.clone(),
     };
@@ -471,7 +475,12 @@ fn compose_page(
             .page
             .clone()
             .expect("plugin tab item must keep its page metadata");
-        return page_from_metadata(state, placed, metadata, None, TabState::Loading, plugins);
+        let unavailable = if plugins.installed.is_some() {
+            TabState::PageRemoved
+        } else {
+            TabState::Loading
+        };
+        return page_from_metadata(state, placed, metadata, None, unavailable, plugins);
     };
     let Some(metadata) = metadata_for_plugin(plugin, page_id) else {
         let metadata = stored
@@ -799,7 +808,7 @@ pub(super) fn item_title(item: &StoredItem) -> String {
 /// 这个实例指的是哪个页面。PlacedTab 在 protocol 里，这里放个取值的自由函数。
 pub(super) fn placed_tab_ref(placed: &PlacedTab) -> &TabRef {
     match placed {
-        PlacedTab::Page { tab } | PlacedTab::Panel { tab, .. } => tab,
+        PlacedTab::Page { tab } | PlacedTab::Content { tab } | PlacedTab::Panel { tab, .. } => tab,
     }
 }
 

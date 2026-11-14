@@ -218,7 +218,7 @@ impl ClientCore {
     }
 
     /// 订阅一条时间线（主对话或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
-    /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新；同一个房间的主对话和一个旁聊可以同时订阅。
+    /// 可同时订阅多个房间或同一目标；滚动位置按订阅独立，取消一份不影响其他订阅。
     /// 还没登录、房间还没同步到本机时返回 `NotReady`。
     pub async fn subscribe_timeline(
         &self,
@@ -226,9 +226,12 @@ impl ClientCore {
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
         let scope = self.scope();
         let chat = scope.chat.clone();
-        let room_view = scope.pages.subscribe_room_view();
+        let pages = scope.pages.clone();
         scope
-            .run(async move { chat.open_timeline(&target, room_view).await })
+            .run(async move {
+                let room_view = pages.subscribe_room_view(&target.room_id).await?;
+                chat.open_timeline(&target, room_view).await
+            })
             .await
     }
 

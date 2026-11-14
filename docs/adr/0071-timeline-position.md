@@ -17,8 +17,8 @@
 
 ### 核心算，壳报告和渲染
 
-- 壳报告列表在不在底部：`Action::SetTimelineScroll { room_id, scroll }`，`scroll` 是 `TimelineScroll::Bottom` 或
-  `TimelineScroll::Away`。跨过底部时发，不每一帧发。
+- 壳通过本窗口持有的 `TimelineSubscription::set_scroll(scroll)` 报告列表在不在底部，`scroll` 是
+  `TimelineScroll::Bottom` 或 `TimelineScroll::Away`。跨过底部时发，不每一帧发；不按房间路由给别的订阅。
 - 核心在每一批 `TimelineUpdate` 里给出 `viewport: TimelineViewport`：`Bottom`，或 `Away { new_messages }`。
   `new_messages` 是房间的未读数，和聊天列表那一行同一个数（SDK 的 `num_unread_messages`）。
 - 壳画不画按钮只看 `viewport`：`Away` 时在右下角画“回到底部”，`new_messages` 大于 0 时把数字写在按钮上，是 0 时只画箭头。

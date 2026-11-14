@@ -27,9 +27,12 @@ final class ChatModel {
     var rejection: Problem?
     /// 插件网页交给主人的草稿；只在聊天输入框出现，不自动发送。
     var pendingDraft: String?
-    var drafts: [String: String] = [:]
-    /// 每个房间里正在回复的消息；和草稿一起存，换房间、杀 App 再回来还在。
-    var replies: [String: ReplyQuote] = [:]
+    let draftStore: ChatDraftStore
+    var drafts: [String: String] {
+        get { draftStore.bodies }
+        set { draftStore.bodies = newValue }
+    }
+    var replies: [String: ReplyQuote] { draftStore.replies }
     private(set) var replyFocusRevision = 0
     /// 聊天页打开的页面。
     var path: [ChatRoute] = []
@@ -53,15 +56,18 @@ final class ChatModel {
     let core: ClientCore
     @ObservationIgnored private(set) lazy var files = FilesModel(chat: self)
 
-    init(core: ClientCore) {
+    init(core: ClientCore, draftStore: ChatDraftStore? = nil) {
         self.core = core
+        self.draftStore = draftStore ?? ChatDraftStore()
         viewModel = core.chat()
+        self.draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
     }
 
     #if DEBUG
         /// 截图测试拿固定 ViewModel 画界面，不订阅核心推送。
         init(core: ClientCore, viewModel: ChatViewModel) {
             self.core = core
+            draftStore = ChatDraftStore()
             self.viewModel = viewModel
         }
     #endif
@@ -71,6 +77,7 @@ final class ChatModel {
         for await _ in core.subscribeChat().updates() {
             // 系统 Intent 可在订阅消费前改状态，不能用队列中的旧快照覆盖它。
             viewModel = core.chat()
+            draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
             openAwaitedChat()
         }
     }
@@ -101,15 +108,17 @@ final class ChatModel {
     }
 
     func appendDraft(_ text: String, to target: TimelineTarget) {
+        draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
         let key = draftKey(target)
         let existing = drafts[key, default: ""]
         drafts[key] = existing.isEmpty ? text : existing + "\n" + text
         saveDraft(target)
     }
 
-    /// 草稿在核心里，按时间线存（主对话和每个旁聊各一份），退出房间、重启 App 都还在。进时间线时读回来，
-    /// 打完字写回去。
+    /// 草稿在核心里，按时间线存（主对话和每个旁聊各一份），退出房间、重启 App 都还在。
     func loadDraft(_ target: TimelineTarget) async {
+        let server = core.servers().servers.first(where: \.current)?.id
+        draftStore.selectServer(server)
         // `try?` 会把错误和“没有草稿”都折成 nil，这里要分开。
         let stored: ComposerDraft?
         do {
@@ -117,10 +126,8 @@ final class ChatModel {
         } catch {
             return
         }
-        let key = draftKey(target)
-        // 读回来之前已经打了字、已经点了回复就不盖掉。
-        if drafts[key, default: ""].isEmpty { drafts[key] = stored?.body ?? "" }
-        if replies[key] == nil { replies[key] = stored?.reply }
+        guard server == core.servers().servers.first(where: \.current)?.id else { return }
+        draftStore.restore(stored, in: draftKey(target))
     }
 
     /// 每次写草稿都带上正在回复的那条，不带核心会把存着的回复对象清掉。
@@ -134,13 +141,14 @@ final class ChatModel {
 
     /// 回复按钮或右滑进入回复状态（ADR-0073）。
     func startReply(_ quote: ReplyQuote, in target: TimelineTarget) {
-        replies[draftKey(target)] = quote
+        draftStore.selectServer(core.servers().servers.first(where: \.current)?.id)
+        draftStore.setReply(quote, in: draftKey(target))
         saveDraft(target)
         replyFocusRevision += 1
     }
 
     func cancelReply(in target: TimelineTarget) {
-        replies[draftKey(target)] = nil
+        draftStore.setReply(nil, in: draftKey(target))
         saveDraft(target)
     }
 

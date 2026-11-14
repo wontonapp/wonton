@@ -8,6 +8,7 @@ use super::PagesState;
 pub(super) fn state_has_page(state: &PagesState, placed: &PlacedTab) -> bool {
     match placed {
         PlacedTab::Page { tab } => state.stack.iter().any(|item| item.tab == *tab),
+        PlacedTab::Content { tab } => state.content.contains_key(tab),
         PlacedTab::Panel { scope, tab } => {
             panel_pages(state, scope)
                 .is_some_and(|panel| panel.iter().any(|entry| entry.tab == *tab))
@@ -22,20 +23,16 @@ pub(super) fn state_has_page(state: &PagesState, placed: &PlacedTab) -> bool {
 fn panel_pages<'a>(state: &'a PagesState, scope: &PanelScope) -> Option<&'a Vec<PanelEntry>> {
     match scope {
         PanelScope::Main => Some(&state.config.panel),
-        PanelScope::Room { room_id } => state
-            .open_room
-            .as_ref()
-            .filter(|(open, _)| open.as_str() == room_id)
-            .map(|(_, panel)| &panel.pages),
+        PanelScope::Room { room_id } => state.rooms.get(room_id).map(|room| &room.panel.pages),
     }
 }
 
 /// 插件的页面变了或起来了：它放在哪儿的每一份实例都重新加载。
 pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
-    let mut placed = Vec::new();
+    let mut placed = std::collections::HashSet::new();
     let mut consider = |tab: &TabRef, placed_tab: PlacedTab| {
         if tab_ref_plugin_id(tab) == Some(plugin_id) {
-            placed.push(placed_tab);
+            placed.insert(placed_tab);
         }
     };
     for item in &state.stack {
@@ -46,6 +43,9 @@ pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
             },
         );
     }
+    for tab in state.content.keys() {
+        consider(tab, PlacedTab::Page { tab: tab.clone() });
+    }
     for entry in &state.config.panel {
         consider(
             &entry.tab,
@@ -55,8 +55,8 @@ pub(super) fn reload_plugin_pages(state: &mut PagesState, plugin_id: &str) {
             },
         );
     }
-    if let Some((room_id, panel)) = &state.open_room {
-        for entry in &panel.pages {
+    for (room_id, room) in &state.rooms {
+        for entry in &room.panel.pages {
             consider(
                 &entry.tab,
                 PlacedTab::Panel {
@@ -95,4 +95,11 @@ fn tab_ref_plugin_id(tab: &TabRef) -> Option<&str> {
 pub(super) fn increment_reload(state: &mut PagesState, placed: &PlacedTab) {
     let reload = state.reloads.entry(placed.clone()).or_default();
     *reload = reload.saturating_add(1);
+}
+
+pub(super) fn canonical_page(page: PlacedTab) -> PlacedTab {
+    match page {
+        PlacedTab::Content { tab } => PlacedTab::Page { tab },
+        page => page,
+    }
 }

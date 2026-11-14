@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.client.TimelineSubscription
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
@@ -88,6 +89,7 @@ import kotlinx.coroutines.launch
 private const val TAG = "RoomScreen"
 
 internal class TimelineState {
+    var subscription: TimelineSubscription? = null
     val items = mutableStateListOf<TimelineItem>()
     var backPagination by mutableStateOf(BackPagination.IDLE)
 
@@ -172,19 +174,28 @@ internal fun RoomRoute(
     LaunchedEffect(core, target, timeline.attempt) {
         timeline.failure = null
         try {
-            core.timelineUpdates(target).collect { update ->
-                update.diffs.forEach(timeline::apply)
-                timeline.backPagination = update.backPagination
-                timeline.viewport = update.viewport
-                timeline.notice = update.keyNotice
-                update.anchor?.let { timeline.anchor = it }
-                timeline.panel = update.panel
-                timeline.panelSelected = update.panelSelected
-                timeline.entryBlocked = update.entryBlocked
-                timeline.sideChat = update.sideChat
-                if (update.scrollToBottom) timeline.bottomRequest++
-                timeline.revision++
-                timeline.loaded = true
+            core.subscribeTimeline(target).use { subscription ->
+                timeline.subscription = subscription
+                try {
+                    while (true) {
+                        val update = subscription.next() ?: break
+                        update.diffs.forEach(timeline::apply)
+                        timeline.backPagination = update.backPagination
+                        timeline.viewport = update.viewport
+                        timeline.notice = update.keyNotice
+                        update.anchor?.let { timeline.anchor = it }
+                        timeline.panel = update.panel
+                        timeline.panelSelected = update.panelSelected
+                        timeline.entryBlocked = update.entryBlocked
+                        timeline.sideChat = update.sideChat
+                        if (update.scrollToBottom) timeline.bottomRequest++
+                        timeline.revision++
+                        timeline.loaded = true
+                    }
+                } finally {
+                    timeline.subscription = null
+                    subscription.cancel()
+                }
             }
             currentCoroutineContext().ensureActive()
             onClose()

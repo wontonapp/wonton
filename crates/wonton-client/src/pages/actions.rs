@@ -143,6 +143,7 @@ impl PagesLink {
                     "tabs-page-cannot-reload"
                 )));
             }
+            let page = canonical_page(page);
             state.failures.remove(&page);
             increment_reload(state, &page);
             Ok(())
@@ -173,18 +174,36 @@ impl PagesLink {
             } else {
                 TabLoadFailure::Upstream
             };
-            state.failures.insert(page, (failure, status));
+            state
+                .failures
+                .insert(canonical_page(page), (failure, status));
             Ok(())
         })
     }
 
     pub(crate) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
-        // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
-        if !lock(&self.state).failures.contains_key(&page) {
-            return Ok(());
+        {
+            let state = lock(&self.state);
+            if !state_has_page(&state, &page) {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bridge-page-not-open"
+                )));
+            }
+            if !state.failures.contains_key(&canonical_page(page.clone())) {
+                return Ok(());
+            }
         }
         self.runtime_change(|state, _| {
-            state.failures.remove(&page);
+            if !state_has_page(state, &page) {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bridge-page-not-open"
+                )));
+            }
+            state.failures.remove(&canonical_page(page));
             Ok(())
         })
     }

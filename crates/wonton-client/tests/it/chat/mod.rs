@@ -9,6 +9,7 @@ mod ask_agent;
 mod bot_profile;
 pub mod bot_profile_support;
 mod card_plugin_refresh;
+mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
@@ -460,14 +461,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
         thread_root: None,
     };
     let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
-    phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SetTimelineScroll {
-                target: target.clone(),
-                scroll: wonton_client::TimelineScroll::Bottom,
-            },
-        })
-        .unwrap();
+    timeline.set_scroll(wonton_client::TimelineScroll::Bottom);
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::MarkRead { target },

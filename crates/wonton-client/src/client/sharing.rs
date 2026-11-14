@@ -85,7 +85,7 @@ impl ClientCore {
         page: PlacedTab,
         status: Option<u16>,
     ) -> Result<(), CoreError> {
-        if let PlacedTab::Page { tab } = &page {
+        if let PlacedTab::Page { tab } | PlacedTab::Content { tab } = &page {
             self.probe_shared_page(scope, tab);
         }
         scope.pages.load_failed(page, status)
@@ -97,13 +97,13 @@ impl ClientCore {
         scope: &crate::scope::Scope,
         page: PlacedTab,
     ) -> Result<(), CoreError> {
-        if let PlacedTab::Page { tab } = &page {
+        if let PlacedTab::Page { tab } | PlacedTab::Content { tab } = &page {
             self.probe_shared_page(scope, tab);
         }
         scope.pages.load_succeeded(page)
     }
 
-    fn probe_shared_page(&self, scope: &crate::scope::Scope, tab: &TabRef) {
+    pub(super) fn probe_shared_page(&self, scope: &crate::scope::Scope, tab: &TabRef) {
         if let TabRef::SharedApp {
             owner_user_id,
             plugin_id,

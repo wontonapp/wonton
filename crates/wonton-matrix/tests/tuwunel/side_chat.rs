@@ -153,3 +153,31 @@ async fn thread_replies_stay_out_of_the_main_timeline_and_have_their_own_unread(
     )
     .await;
 }
+
+#[tokio::test]
+#[ignore = "需要 Docker，用 --include-ignored 运行"]
+async fn focused_room_watches_release_the_session_after_the_last_room_closes() {
+    let (_server, alice, room_id, root) = a_side_chat_from_bob().await;
+    let alice = std::sync::Arc::new(alice);
+    let weak = std::sync::Arc::downgrade(&alice);
+    let first = alice.watch_main(&room_id).await.unwrap();
+    let second = alice.watch_main(&room_id).await.unwrap();
+    let thread = alice.watch_thread(&room_id, &root).await.unwrap();
+    alice.stop_sync().await;
+    drop(alice);
+    drop(first);
+    assert!(
+        weak.upgrade().is_some(),
+        "another main and thread still own their watches"
+    );
+    drop(second);
+    assert!(weak.upgrade().is_some(), "the thread keeps its room alive");
+    drop(thread);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while weak.upgrade().is_some() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all watches release the session");
+}

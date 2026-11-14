@@ -2,6 +2,46 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "sidebar.openWindow": {
+      "comment": "iPad context-menu action opening a conversation or page in its own window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in New Window" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "新しいウインドウで開く" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在新窗口打开" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "在新視窗打開" } }
+      }
+    },
+    "sidebar.windowClosed": {
+      "comment": "Empty content window after the user closes its page without closing the OS window.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Page closed" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "ページを閉じました" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "页面已关闭" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "頁面已關閉" } }
+      }
+    },
+    "sidebar.windowDifferentServer": {
+      "comment": "A restored content target belongs to another server; do not silently open it with the current account.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Switch to this window’s server in the main window to continue." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "続けるには、メインウインドウでこのウインドウのサーバーに切り替えてください。" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "请在主窗口切回这个窗口所属的服务器后继续。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "請在主視窗切回這個視窗所屬的伺服器後繼續。" } }
+      }
+    },
+    "sidebar.windowUnavailable": {
+      "comment": "The restored content window has no supported conversation or page target.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This window’s content is unavailable." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "このウインドウの内容を開けません。" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "无法打开这个窗口的内容。" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "無法打開這個視窗的內容。" } }
+      }
+    },
     "sidebar.all": {
       "comment": "Button next to the section title: opens the grid of all apps.",
       "extractionState": "manual",

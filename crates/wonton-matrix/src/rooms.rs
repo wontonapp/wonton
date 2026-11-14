@@ -3,8 +3,9 @@
 //! 列表由 matrix-sdk-ui 的 `RoomListService` 维护（和 Element X 一样），排序也用它的：正在发送的在前，
 //! 其余按最近活动，再按名字。
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::pin::pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{Stream, StreamExt, stream};
@@ -73,20 +74,38 @@ impl From<RoomState> for Membership {
     }
 }
 
-/// Sliding Sync 订阅完整时间线的房间。`opened`、`watched`、`joining` 是三份互不相干的需要，并集才是发给
-/// 服务器的名单：只要还有一份要这个房间，它就留在名单里——退订的一方动不到别人还需要的房间，这就是
-/// 引用计数（#370）。
+/// Sliding Sync 订阅取当前打开、常驻 watch、独立时间线引用和加入中的房间并集；
+/// 任一来源仍需要这个房间，就不能由另一来源退订。
 #[derive(Default)]
 pub(crate) struct RoomSubscriptions {
     /// 打开着的房间。
     opened: Option<OwnedRoomId>,
-    /// 一直跟着的房间。
+    /// 桥等调用方显式打开、关闭的常驻 watch；重复打开不增加引用。
     watched: BTreeSet<OwnedRoomId>,
+    /// 每份独立主对话或旁聊由 ChatRoom 的存活引用计数。
+    focused: BTreeMap<OwnedRoomId, usize>,
     /// 加入后同步还标着“受邀”、临时订阅的房间，见 [`MatrixSession::until_joined`]。
     joining: BTreeSet<OwnedRoomId>,
     /// 上一次发给 SDK 的并集。名单没变就不发：SDK 收到订阅变化会取消在飞的同步请求，一次名单没变的
     /// 重发是无害的浪费，一次名单真变大的重发在 Tuwunel 上能把别的在飞请求顶成 `M_UNKNOWN_POS`（#370）。
     applied: BTreeSet<OwnedRoomId>,
+}
+
+/// A focused timeline owns one watch, including while its asynchronous construction is cancelled.
+pub(crate) struct RoomWatch {
+    session: Arc<MatrixSession>,
+    room_id: OwnedRoomId,
+    runtime: tokio::runtime::Handle,
+}
+
+impl Drop for RoomWatch {
+    fn drop(&mut self) {
+        let session = self.session.clone();
+        let room_id = self.room_id.clone();
+        self.runtime.spawn(async move {
+            session.release_focused(&room_id).await;
+        });
+    }
 }
 
 /// 房间列表里的一项。
@@ -349,20 +368,46 @@ impl MatrixSession {
         Ok(room)
     }
 
-    /// 一直跟着一个已加入的房间：不管打开着哪个房间，都同步它的完整时间线。不用了调
-    /// [`unwatch_room`](Self::unwatch_room)。
+    /// 一直跟着一个已加入的房间：不管打开着哪个房间，都同步它的完整时间线。
+    /// 重复调用保持同一份 watch；不再需要时调用 [`unwatch_room`](Self::unwatch_room)。
     pub async fn watch_room(&self, room_id: &RoomId) -> Result<ChatRoom> {
-        let room = self.joined(room_id)?;
+        let room = ChatRoom::open(self.joined(room_id)?).await?;
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.insert(room_id.to_owned());
         self.subscribe(&mut subscriptions, false).await;
-        drop(subscriptions);
-        ChatRoom::open(room).await
+        Ok(room)
+    }
+
+    pub(crate) async fn subscribe_watched(
+        self: &Arc<Self>,
+        room_id: &RoomId,
+    ) -> Result<(Room, RoomWatch)> {
+        let room = self.joined(room_id)?;
+        let mut subscriptions = self.subscriptions.lock().await;
+        *subscriptions.focused.entry(room_id.to_owned()).or_default() += 1;
+        let watch = RoomWatch {
+            session: self.clone(),
+            room_id: room_id.to_owned(),
+            runtime: tokio::runtime::Handle::current(),
+        };
+        self.subscribe(&mut subscriptions, false).await;
+        Ok((room, watch))
     }
 
     pub async fn unwatch_room(&self, room_id: &RoomId) {
         let mut subscriptions = self.subscriptions.lock().await;
         subscriptions.watched.remove(room_id);
+        self.subscribe(&mut subscriptions, false).await;
+    }
+
+    async fn release_focused(&self, room_id: &RoomId) {
+        let mut subscriptions = self.subscriptions.lock().await;
+        if let Some(count) = subscriptions.focused.get_mut(room_id) {
+            *count -= 1;
+            if *count == 0 {
+                subscriptions.focused.remove(room_id);
+            }
+        }
         self.subscribe(&mut subscriptions, false).await;
     }
 
@@ -375,6 +420,7 @@ impl MatrixSession {
             .opened
             .iter()
             .chain(&subscriptions.watched)
+            .chain(subscriptions.focused.keys())
             .chain(&subscriptions.joining)
             .cloned()
             .collect();

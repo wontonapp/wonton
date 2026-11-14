@@ -25,7 +25,7 @@ pub struct Timeline {
     back_pagination: BackPagination,
     /// 最近一批的核心给的位置，壳按它画和滚。
     viewport: TimelineViewport,
-    /// 壳现在报告的位置，发 `SetTimelineScroll` 用。
+    /// 壳现在向本订阅报告的位置。
     scroll: TimelineScroll,
     /// 核心给的加密入口，和壳一样逐批换。
     pub notice: Option<KeyNotice>,
@@ -132,6 +132,14 @@ impl Timeline {
         self.viewport
     }
 
+    pub fn cancel(&self) {
+        self.subscription.cancel();
+    }
+
+    pub async fn is_closed(&self) -> bool {
+        self.subscription.next().await.is_none()
+    }
+
     /// 等下一批，应用它，并把它本身交回去：断言这一批里给的位置和落点。
     pub async fn next(&mut self) -> wonton_client::TimelineUpdate {
         let update = self.subscription.next().await.expect("时间线订阅提前结束");
@@ -143,14 +151,7 @@ impl Timeline {
     /// 队列里可能还有报着旧位置的批次，等到位置真的变成报告的那样为止。
     pub async fn report_scroll(&mut self, scroll: TimelineScroll) {
         self.scroll = scroll;
-        self.core
-            .dispatch(Action::Timeline {
-                action: TimelineAction::SetTimelineScroll {
-                    target: self.target(),
-                    scroll,
-                },
-            })
-            .expect("报告滚动位置");
+        self.subscription.set_scroll(scroll);
         let waiting = async {
             loop {
                 let arrived = match scroll {

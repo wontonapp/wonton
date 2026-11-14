@@ -67,6 +67,8 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
         CFBundleURLTypes:
           - CFBundleURLName: app.wonton.navigation
             CFBundleURLSchemes:

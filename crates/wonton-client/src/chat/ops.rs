@@ -20,8 +20,9 @@ impl ChatLink {
     ) -> Result<(), wonton_protocol::CoreError> {
         let session = self.current()?;
         let subscription = super::lock(&self.open)
-            .get(key)
-            .and_then(|open| open.subscription.upgrade());
+            .matching(key)
+            .filter_map(|open| open.subscription.upgrade())
+            .find(|timeline| timeline.is_at_bottom());
         if subscription
             .as_ref()
             .is_none_or(|timeline| !timeline.is_at_bottom())

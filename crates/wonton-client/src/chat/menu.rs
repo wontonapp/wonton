@@ -282,11 +282,14 @@ impl ChatLink {
         item_id: &str,
         wanted: impl Fn(&MessageAction) -> bool,
     ) -> Result<OwnedEventId, CoreError> {
-        let menus = lock(&self.open)
-            .get(key)
-            .map(|open| open.menus.clone())
-            .ok_or_else(|| super::target::not_subscribed(key))?;
-        let event_id = lock(&menus).event_with(item_id, wanted);
+        let open = lock(&self.open);
+        if open.get(key).is_none() {
+            return Err(super::target::not_subscribed(key));
+        }
+        let event_id = open
+            .matching(key)
+            .filter_map(|timeline| timeline.menus.upgrade())
+            .find_map(|menus| lock(&menus).event_with(item_id, &wanted));
         event_id.ok_or_else(|| {
             invalid(&l10n!(
                 CATALOG,

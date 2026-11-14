@@ -6,7 +6,6 @@ impl PagesLink {
     pub(super) fn spawn_watchers(self: &Arc<Self>) {
         let mut plugins = self.plugins_view.clone();
         let mut home = self.home.clone();
-        let mut room_panel = self.room_panel.1.clone();
         let mut sync_problem = self.sync_problem.subscribe();
         let weak = Arc::downgrade(self);
         self.runtime.spawn(async move {
@@ -14,7 +13,6 @@ impl PagesLink {
                 tokio::select! {
                     changed = plugins.changed() => if changed.is_err() { break },
                     changed = home.changed() => if changed.is_err() { break },
-                    changed = room_panel.changed() => if changed.is_err() { break },
                     changed = sync_problem.changed() => if changed.is_err() { break },
                 }
                 let Some(link) = weak.upgrade() else { break };
@@ -135,7 +133,7 @@ impl PagesLink {
             )));
             return;
         };
-        let (plugins, _, _) = self.inputs();
+        let (plugins, _) = self.inputs();
         let _writing = lock(&self.writing);
         let mut state = lock(&self.state).clone();
         if let Err(reason) = adopt_layout(&mut state.config, settings) {

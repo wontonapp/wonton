@@ -59,6 +59,7 @@ struct ChatListView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
+                            .contextMenu { ContentWindowButton(target: .room(roomId: row.roomId)) }
                         }
                     }
                 }

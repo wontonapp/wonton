@@ -24,6 +24,11 @@ struct SharedAppsSection: View {
                             model.send(.openSharedApp(ownerUserId: source.ownerUserId, pluginId: row.plugin.pluginId))
                         }
                         .buttonStyle(WontonButtonStyle(kind: .secondary))
+                        .contextMenu {
+                            ContentWindowButton(target: .tab(tab: .sharedApp(
+                                ownerUserId: source.ownerUserId, pluginId: row.plugin.pluginId
+                            )))
+                        }
                         if let problem = row.problem { ProblemNotice(problem: problem.problem) }
                     }
                 }

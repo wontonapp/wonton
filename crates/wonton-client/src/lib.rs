@@ -65,6 +65,7 @@ pub use files::{FileOpenError, FileOpener};
 pub use home::Network;
 pub use link::{app_link_url, parse_app_link};
 pub use logging::init_logging;
+pub use pages::ContentPageSubscription;
 pub use pages::bridge::{
     TabBridgeAction, TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea,
 };

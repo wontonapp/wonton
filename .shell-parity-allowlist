@@ -51,3 +51,7 @@ ClientCore.agent_chains | 壳待前端线接
 ClientCore.subscribe_agent_chains | 壳待前端线接
 ClientCore.dispatch_agent_chain | 壳待前端线接
 ClientCore.agent_settings | 壳待前端线接
+
+# 内容窗口只在 iPad 提供；Android 使用系统分屏和宽屏两栏，不开应用内多实例。
+ClientCore.subscribe_content_page | iPad 内容窗口不改变主页面栈，Android 不提供该窗口入口
+ContentPageSubscription | iPad 内容窗口的页面订阅，Android 不提供该窗口入口
