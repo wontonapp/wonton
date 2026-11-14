@@ -125,9 +125,14 @@ final class PluginExitUITests: XCTestCase {
         XCTAssertLessThan(
             top, app.frame.height / 4, "\(name)点关闭后聊天页没回到原位\n\(app.debugDescription)", file: file, line: line
         )
-        // 收起的面板还挂着（iOS 27.1 模拟器实测它和里面的胶囊仍在界面树里），认级别看它的值。
-        let panel = app.otherElements["chatPanel"]
-        XCTAssertEqual(panel.value as? String, "closed", "\(name)点关闭后面板的级别不对", file: file, line: line)
+        // 收起的面板不留在界面树里，旁白摸不到里面的胶囊和网页。
+        let gone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: app.otherElements["chatPanel"]
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [gone], timeout: 5), .completed, "\(name)点关闭后面板还在界面树里", file: file, line: line
+        )
+        XCTAssertEqual(capsule.count, 0, "\(name)点关闭后胶囊还在界面树里", file: file, line: line)
         tap(sidebarButton, "\(name)点关闭后的侧边栏按钮", file: file, line: line)
         XCTAssertTrue(
             waitHittable(text("My Apps")), "\(name)点关闭后聊天页点不动\n\(app.debugDescription)", file: file, line: line

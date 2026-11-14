@@ -210,6 +210,11 @@ struct ChatPanelHost<Content: View>: View {
             level = landed
             drag = 0
             armed = landed
+        } completion: {
+            // 收起停稳后把面板从界面上拿掉，再拉时重新挂上：只标辅助功能隐藏的话，胶囊、小圆点和整张网页都还留在
+            // 界面树里（iOS 27.1 模拟器实测，给 WKWebView 设 accessibilityElementsHidden 也一样）。
+            // 网页在 `webViews` 里留着，不重新加载；Android 一样是收起后不组合面板。
+            if level == .closed, drag == 0 { mounted = false }
         }
     }
 
@@ -322,7 +327,7 @@ extension ChatPanelHost {
         .background(Color(colors.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("chatPanel")
-        // 两级都有胶囊，界面测试按这个值认到了哪一级。
+        // 两级都有胶囊，界面测试按这个值认到了哪一级；收起的动画里还挂着，值是 closed。
         .accessibilityValue(level == .full ? "full" : level == .peek ? "peek" : "closed")
         .accessibilityHidden(level == .closed && drag == 0)
     }
