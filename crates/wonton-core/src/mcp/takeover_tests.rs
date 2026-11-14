@@ -51,7 +51,19 @@ fn failure(result: &CallToolResult) -> Option<&str> {
 }
 
 /// 等一会，确认调用还停着：没发卡片，也没执行。
+/// 等 `caller` 至少有 `n` 个调用停住。
+async fn wait_held(s: &Setup, caller: &PluginId, n: usize) {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while s.bus.takeovers.held_by(caller) < n {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("调用应该停住");
+}
+
 async fn assert_still_held(s: &Setup, call: &tokio::task::JoinHandle<CallToolResult>) {
+    wait_held(s, &s.caller.id, 1).await;
     tokio::time::sleep(Duration::from_millis(150)).await;
     assert!(!call.is_finished(), "调用应该还停着");
     assert_eq!(posted(s), 0, "停住时不发卡片");
@@ -249,7 +261,7 @@ async fn too_many_held_calls_are_refused_and_the_rest_go_to_the_card_limit() {
     let s = start(Duration::from_secs(5)).await;
     s.bus.renew_takeover(&notes(), PHONE);
     let held: Vec<_> = (0..16).map(|i| delete(&s, &format!("n{i}"))).collect();
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    wait_held(&s, &s.caller.id, 16).await;
 
     let result = s.call(DELETE, json!({"name": "over"})).await;
     assert_eq!(failure(&result), Some("owner_operating"));
@@ -263,6 +275,7 @@ async fn too_many_held_calls_are_refused_and_the_rest_go_to_the_card_limit() {
             .with_arguments(json!({"name": "z"}).as_object().cloned().unwrap());
         bus.call(&other, request, std::future::pending()).await
     });
+    wait_held(&s, &PluginId::parse("com.example.other").unwrap(), 1).await;
     assert_still_held(&s, &other).await;
 
     // 交还后一起回到判定：每个调用方最多 3 张等待的卡片（ADR-0016），超过的直接拒绝。
