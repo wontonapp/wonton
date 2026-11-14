@@ -28,7 +28,7 @@ use crate::plugin::docker::Engine;
 use crate::plugin::manifest::Manifest;
 use crate::plugin::manifest::Permission;
 use crate::plugin::upstreams::Endpoint;
-use wonton_protocol::{BotKeeper, ChainError, ChainLimitKind, MemberStatus};
+use wonton_protocol::{BotKeeper, BotRef, ChainError, ChainLimitKind, MemberStatus};
 
 mod carrier;
 mod consumer;
@@ -119,13 +119,18 @@ async fn bed() -> Bed {
         .ensure_provider_token(AGENT_ACP.name, &PluginId::parse(RUNTIME).unwrap())
         .unwrap();
     let (provider_addr, recording) = minimal_provider::serve(token).await;
-    // 核心认（使用方、能力）到测试路由：提供方是刚起的最小提供方。
-    manager.capability_route_for_test(
-        &PluginId::parse(ORCHESTRATOR).unwrap(),
-        AGENT_ACP.name,
-        &PluginId::parse(RUNTIME).unwrap(),
-        Endpoint::Tcp(format!("127.0.0.1:{}", provider_addr.port())),
-    );
+    for bot in ["main", "shared"] {
+        manager.capability_bot_route_for_test(
+            &BotRef {
+                plugin_id: ORCHESTRATOR.into(),
+                bot: bot.into(),
+            },
+            AGENT_ACP.name,
+            &PluginId::parse(RUNTIME).unwrap(),
+            None,
+            Endpoint::Tcp(format!("127.0.0.1:{}", provider_addr.port())),
+        );
+    }
 
     let (bus, _cards, chains, registry) = chain_service(&dir, manager.clone());
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
@@ -468,4 +473,124 @@ fn chain_error_categories_round_trip() {
     assert_eq!(value["kind"], "depth");
     let back: ChainError = serde_json::from_value(value).unwrap();
     assert_eq!(back, error);
+}
+
+fn runtime_bots(bed: &Bed, names: &[&str]) {
+    let records: Vec<_> = names
+        .iter()
+        .map(|name| {
+            (
+                *name,
+                "@bot-runtime:test",
+                BotKeeper::User {
+                    username: "owner".into(),
+                },
+                "bus-runtime",
+            )
+        })
+        .collect();
+    bed.manager
+        .bot_records_for_test(&PluginId::parse(RUNTIME).unwrap(), &records);
+}
+
+fn bind_runtime(bed: &Bed, target: &str) {
+    bed.manager.capability_bot_route_for_test(
+        &BotRef {
+            plugin_id: ORCHESTRATOR.into(),
+            bot: "main".into(),
+        },
+        AGENT_ACP.name,
+        &PluginId::parse(RUNTIME).unwrap(),
+        Some(target),
+        Endpoint::Tcp(bed.provider.to_string()),
+    );
+}
+
+#[tokio::test]
+async fn an_explicit_runtime_bot_is_forwarded_even_with_multiple_provider_bots() {
+    let bed = bed().await;
+    runtime_bots(&bed, &["default", "selected"]);
+    bind_runtime(&bed, "selected");
+    let core = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(core.status, 101);
+    let headers = bed.recording.headers.lock().unwrap();
+    assert_eq!(
+        headers.last().unwrap()["x-wonton-bot"],
+        format!("{RUNTIME}#selected")
+    );
+}
+
+#[tokio::test]
+async fn a_deleted_bound_runtime_bot_is_not_replaced_by_the_remaining_bot() {
+    let bed = bed().await;
+    runtime_bots(&bed, &["default", "selected"]);
+    bind_runtime(&bed, "selected");
+    runtime_bots(&bed, &["default"]);
+    let before = bed.recording.connections();
+    let core = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(core.status, 503);
+    assert_eq!(bed.recording.connections(), before);
+}
+
+#[tokio::test]
+async fn multiple_runtime_bots_without_a_binding_are_unavailable() {
+    let bed = bed().await;
+    runtime_bots(&bed, &["default", "other"]);
+    let before = bed.recording.connections();
+    let core = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(core.status, 503);
+    assert_eq!(bed.recording.connections(), before);
+}
+
+#[tokio::test]
+async fn acp_rejects_unknown_duplicate_and_unconfirmed_caller_bots_before_dialing() {
+    let bed = bed().await;
+    let before = bed.recording.connections();
+    for name in ["unknown", "main, shared"] {
+        let core = connect_via_core(&bed, &consumer_headers(name, OWNER_SPEAKER)).await;
+        assert_eq!(core.status, 403);
+    }
+    let mut headers = consumer_headers("main", OWNER_SPEAKER);
+    headers.push(("X-Wonton-Bot", "shared".into()));
+    assert_eq!(connect_via_core(&bed, &headers).await.status, 403);
+    bed.manager.bot_records_for_test(
+        &PluginId::parse(ORCHESTRATOR).unwrap(),
+        &[(
+            "unconfirmed",
+            "@bot-main:test",
+            BotKeeper::User {
+                username: "owner".into(),
+            },
+            "bus-new",
+        )],
+    );
+    // A plugin-level approval must not authorize this new caller Bot.
+    bed.manager.capability_route_for_test(
+        &PluginId::parse(ORCHESTRATOR).unwrap(),
+        AGENT_ACP.name,
+        &PluginId::parse(RUNTIME).unwrap(),
+        Endpoint::Tcp(bed.provider.to_string()),
+    );
+    let core = connect_via_core(&bed, &consumer_headers("unconfirmed", OWNER_SPEAKER)).await;
+    assert_eq!(core.status, 403);
+    assert_eq!(bed.recording.connections(), before);
+}
+
+#[tokio::test]
+async fn corrupt_initiator_storage_is_unavailable_without_dialing_the_runtime() {
+    let bed = bed().await;
+    let path = bed
+        ._dir
+        .path()
+        .join("plugins/bots")
+        .join(format!("{ORCHESTRATOR}.json"));
+    let saved = std::fs::read(&path).unwrap();
+    std::fs::write(&path, b"{").unwrap();
+    let before = bed.recording.connections();
+    let rejected = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(rejected.status, 503);
+    assert_eq!(bed.recording.connections(), before);
+    std::fs::write(&path, saved).unwrap();
+    let accepted = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(accepted.status, 101);
 }

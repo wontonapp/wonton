@@ -406,3 +406,97 @@ async fn capability_batch_uninstall_only_uses_providers_that_survive_the_whole_r
         }
     }
 }
+
+async fn bot_settings(h: &Harness, method: Method, bot: &str, body: Body) -> Reply {
+    h.send(
+        method,
+        CORE,
+        &format!("/_wonton/api/plugins/{CONSUMER}/bots/{bot}/capabilities"),
+        &[
+            ("authorization", &format!("Bearer {TOKEN}")),
+            ("content-type", "application/json"),
+        ],
+        body,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn capability_owner_api_changes_only_the_bot_named_in_the_path() {
+    let h = installed().await;
+    let second = "app.other-provider";
+    h.manager
+        .install(
+            &package(
+                second,
+                &format!("  provides:\n    {CAPABILITY}: {{service: api, port: 8080}}"),
+            ),
+            &[],
+            Languages::default(),
+        )
+        .await
+        .unwrap();
+    let consumer = PluginId::parse(CONSUMER).unwrap();
+    let keeper = wonton_protocol::BotKeeper::User {
+        username: "owner".into(),
+    };
+    h.manager.bot_records_for_test(
+        &consumer,
+        &[
+            ("default", "@default:test", keeper.clone(), "default-token"),
+            ("other", "@other:test", keeper, "other-token"),
+        ],
+    );
+    let changed = bot_settings(
+        &h,
+        Method::PUT,
+        "default",
+        Body::from(json!({"capability":CAPABILITY,"provider":second}).to_string()),
+    )
+    .await;
+    assert_eq!(changed.status, StatusCode::NO_CONTENT, "{}", changed.text());
+    let settings = bot_settings(&h, Method::GET, "default", Body::empty()).await;
+    assert_eq!(settings.status, StatusCode::OK);
+    let settings: Vec<wonton_protocol::ConsumerCapabilitySetting> =
+        serde_json::from_value(settings.json()).unwrap();
+    assert_eq!(settings[0].selected.as_deref(), Some(second));
+    let other = bot_settings(&h, Method::GET, "other", Body::empty()).await;
+    assert_eq!(other.status, StatusCode::OK);
+    assert!(other.json()[0]["selected"].is_null());
+    for (name, expected) in [("default", second), ("other", PROVIDER)] {
+        let bot = wonton_protocol::BotRef {
+            plugin_id: CONSUMER.into(),
+            bot: name.into(),
+        };
+        assert_eq!(
+            h.manager
+                .capability_route(&consumer, CAPABILITY, &Languages::default(), Some(&bot))
+                .await
+                .unwrap()
+                .provider
+                .as_str(),
+            expected
+        );
+    }
+    let reset = bot_settings(
+        &h,
+        Method::PUT,
+        "default",
+        Body::from(json!({"capability":CAPABILITY,"provider":null}).to_string()),
+    )
+    .await;
+    assert_eq!(reset.status, StatusCode::NO_CONTENT, "{}", reset.text());
+    let bot = wonton_protocol::BotRef {
+        plugin_id: CONSUMER.into(),
+        bot: "default".into(),
+    };
+    assert_eq!(
+        h.manager
+            .capability_route(&consumer, CAPABILITY, &Languages::default(), Some(&bot))
+            .await
+            .unwrap()
+            .provider
+            .as_str(),
+        PROVIDER
+    );
+}

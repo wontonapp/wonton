@@ -274,10 +274,11 @@ async fn next_hop(
         .ensure_provider_token(AGENT_ACP.name, &provider_id)
         .unwrap();
     let (provider, recording) = minimal_provider::serve(token).await;
-    bed.manager.capability_route_for_test(
-        &PluginId::parse(consumer).unwrap(),
+    bed.manager.capability_bot_route_for_test(
+        &bot(consumer, initiator),
         AGENT_ACP.name,
         &provider_id,
+        Some(&target.bot),
         Endpoint::Tcp(format!("127.0.0.1:{}", provider.port())),
     );
     let connected = connect_via_core(bed, &consumer_headers(initiator, OWNER_SPEAKER)).await;
