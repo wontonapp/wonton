@@ -7,9 +7,9 @@ struct PluginGrantedDevicesSection: View {
 
     var body: some View {
         DetailSection(title: String(localized: .Plugin3.pluginGrantedDevices)) {
-            ForEach(Array(devices.enumerated()), id: \.offset) { index, device in
+            ForEach(devices, id: \.grantedDeviceIdentity) { device in
                 row(device)
-                    .accessibilityIdentifier("grantedDevice-\(index)")
+                    .accessibilityIdentifier("grantedDevice-\(device.kind)-\(device.path)")
             }
         }
     }
@@ -66,5 +66,16 @@ struct PluginGrantedDevicesSection: View {
         case .disk: return .disk
         case .other: return .device
         }
+    }
+}
+
+private struct GrantedDeviceIdentity: Hashable {
+    let kind: PluginDeviceKind
+    let path: String
+}
+
+private extension PluginGrantedDevice {
+    var grantedDeviceIdentity: GrantedDeviceIdentity {
+        GrantedDeviceIdentity(kind: kind, path: path)
     }
 }

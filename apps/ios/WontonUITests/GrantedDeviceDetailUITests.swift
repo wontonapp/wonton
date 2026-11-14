@@ -1,3 +1,4 @@
+import WontonClient
 import XCTest
 
 /// Official fake-core layout evidence only; this does not authorize or exercise real hardware.
@@ -5,6 +6,7 @@ import XCTest
 final class GrantedDeviceDetailUITests: XCTestCase {
     private var app: XCUIApplication!
     private static let serialPath = "/dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0-if00-port0"
+    private static let kinds: [PluginDeviceKind] = [.serial, .usb, .disk, .disk, .other]
     private static let paths = [
         serialPath,
         "/dev/bus/usb",
@@ -79,7 +81,8 @@ final class GrantedDeviceDetailUITests: XCTestCase {
     }
 
     private func row(_ index: Int) -> XCUIElement {
-        app.descendants(matching: .any).matching(identifier: "grantedDevice-\(index)").firstMatch
+        let identity = "grantedDevice-\(Self.kinds[index])-\(Self.paths[index])"
+        return app.descendants(matching: .any).matching(identifier: identity).firstMatch
     }
 
     private func assertPathsCollapsed() {

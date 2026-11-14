@@ -19,6 +19,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import app.wonton.protocol.Action
 import app.wonton.protocol.PageAction
+import app.wonton.protocol.PluginDeviceKind
 import app.wonton.protocol.TabRef
 import app.wonton.ui.R
 import app.wonton.ui.send
@@ -64,7 +65,8 @@ class GrantedDeviceDetailTest {
         screenshot("list")
         rowText(0, compose.activity.getString(R.string.plugin_device_unavailable)).assertIsDisplayed()
         screenshot("unavailable")
-        compose.onNodeWithTag("plugin-granted-device-details-0").performScrollTo().performClick()
+        compose.onNodeWithTag("plugin-granted-device-details-${identity(0)}")
+            .performScrollTo().performClick()
         compose.onNodeWithText(PATHS[0], useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         PATHS.drop(1).forEach { compose.onNodeWithText(it, useUnmergedTree = true).assertDoesNotExist() }
         screenshot("expanded-path")
@@ -86,9 +88,11 @@ class GrantedDeviceDetailTest {
     }
 
     private fun rowText(index: Int, value: String) = compose.onNode(
-        hasText(value) and hasAnyAncestor(hasTestTag("plugin-granted-device-$index")),
+        hasText(value) and hasAnyAncestor(hasTestTag("plugin-granted-device-${identity(index)}")),
         useUnmergedTree = true,
     )
+
+    private fun identity(index: Int) = "${KINDS[index].name}-${PATHS[index]}"
 
     private fun assertState(index: Int, resource: Int, expected: Boolean) {
         val node = rowText(index, compose.activity.getString(resource))
@@ -112,6 +116,13 @@ class GrantedDeviceDetailTest {
 
     private companion object {
         const val WAIT_MS = 20_000L
+        val KINDS = listOf(
+            PluginDeviceKind.SERIAL,
+            PluginDeviceKind.USB,
+            PluginDeviceKind.DISK,
+            PluginDeviceKind.DISK,
+            PluginDeviceKind.OTHER,
+        )
         val PATHS = listOf(
             "/dev/serial/by-id/usb-ITead_Sonoff_Zigbee_3.0-if00-port0",
             "/dev/bus/usb",

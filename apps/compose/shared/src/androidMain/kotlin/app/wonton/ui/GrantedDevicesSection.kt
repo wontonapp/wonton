@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -31,18 +32,20 @@ fun GrantedDevicesSection(devices: List<PluginGrantedDevice>) {
             Modifier.fillMaxWidth().testTag("plugin-granted-devices"),
             verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
         ) {
-            devices.forEachIndexed { index, device ->
-                GrantedDeviceRow(device, index)
+            devices.forEach { device ->
+                key(device.kind, device.path) {
+                    GrantedDeviceRow(device)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun GrantedDeviceRow(device: PluginGrantedDevice, index: Int) {
+private fun GrantedDeviceRow(device: PluginGrantedDevice) {
     val colors = WontonTheme.colors
     Row(
-        Modifier.fillMaxWidth().testTag("plugin-granted-device-$index"),
+        Modifier.fillMaxWidth().testTag("plugin-granted-device-${device.kind.name}-${device.path}"),
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
     ) {
         Icon(
@@ -67,7 +70,10 @@ private fun GrantedDeviceRow(device: PluginGrantedDevice, index: Int) {
                 if (!device.available) Tag(stringResource(R.string.plugin_device_unavailable), colors.warning)
                 if (device.system) Tag(stringResource(R.string.install_device_system_disk), colors.danger)
             }
-            ProblemDetail(device.path, modifier = Modifier.testTag("plugin-granted-device-details-$index"))
+            ProblemDetail(
+                device.path,
+                modifier = Modifier.testTag("plugin-granted-device-details-${device.kind.name}-${device.path}"),
+            )
         }
     }
 }
