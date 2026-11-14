@@ -2,7 +2,7 @@
 //!
 //! | 方法 | 地址 | 说明 |
 //! | --- | --- | --- |
-//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址；发令牌前写好新账号默认的邀请过滤（[`crate::matrix::invite_filter`]） |
+//! | POST | `<base>/_wonton/matrix/login-token` | 签一个 Tuwunel 登录用的一次性 JWT，连同 homeserver 地址；发令牌前按“加好友”权限项写好账号的邀请过滤（[`crate::matrix::invite_filter`]） |
 //! | 任意 | `matrix.<base>/_matrix/client/…`、`/_matrix/media/…` | Matrix 客户端接口，转发给 Tuwunel |
 //! | 任意 | `matrix.<base>/_wonton/matrix-rtc/…` | MatrixRTC 授权服务，转给 `matrix_rtc` 的提供方（[`super::matrix_rtc`]） |
 //! | 任意 | `matrix.<base>/_matrix/client/…`（Bot 令牌） | 插件 Bot 的 Matrix 请求，按 Bot 身份转发：核心还在恢复插件、或问不到 Tuwunel 时回带 `Retry-After` 的可重试 503，确实认不出令牌才回 403 |
@@ -69,13 +69,15 @@ pub async fn login_token(
             UNAVAILABLE,
         );
     };
+    let add_friends = gateway.permissions(&person).add_friends;
     let localpart = person.username;
-    // 账号第一次登录时 Tuwunel 才建号，默认的邀请过滤也只能这时候写；写不进去就不发令牌，别让人带着没有过滤的账号上线。
-    if let Err(error) = matrix.ensure_default_invite_filter(&localpart).await {
+    // 账号第一次登录时 Tuwunel 才建号，过滤也只能这时候写；写不进去就不发令牌，别让人带着没过滤的账号上线。
+    // 内容按“加好友”这一项：要管理员批或不能的，家外的邀请在这里就挡住（ADR-0088 第 9 节）。
+    if let Err(error) = matrix.ensure_invite_filter(&localpart, add_friends).await {
         return error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             KIND_UNAVAILABLE,
-            &format!("写默认的邀请过滤失败：{error}"),
+            &format!("写邀请过滤失败：{error}"),
         );
     }
     Json(LoginToken {
@@ -109,7 +111,14 @@ pub async fn client_request(gateway: Arc<Gateway>, req: Request) -> Response {
     // 出站的邀请先过“加好友”这一项（ADR-0088）：AskAdmin 在这里挂住，等卡片答完再继续；
     // 后台任务要持有网关，所以进来的是 Arc。
     match super::friend_gate::check(&gateway, req).await {
-        super::friend_gate::Outcome::Pass(req) => deliver_client_request(&gateway, req).await,
+        super::friend_gate::Outcome::Pass(req) => {
+            // 受限成员的设备不许改邀请过滤的账号数据，核心写的名单才守得住（ADR-0088 第 9 节）。
+            let req = match super::invite_filter_guard::check(&gateway, req) {
+                Ok(req) => req,
+                Err(refused) => return *refused,
+            };
+            deliver_client_request(&gateway, req).await
+        }
         super::friend_gate::Outcome::Stop(response) => response,
         super::friend_gate::Outcome::Hold(waited) => waited.await.unwrap_or_else(|_| {
             matrix_error(

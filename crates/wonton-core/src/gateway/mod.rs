@@ -63,6 +63,7 @@ mod hosted;
 mod install_gate_cards;
 mod install_gate_checks;
 mod install_gates;
+mod invite_filter_guard;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -847,6 +848,8 @@ mod lan_api_tests;
 mod lan_tests;
 #[cfg(test)]
 mod limits_tests;
+#[cfg(test)]
+mod local_friends_tests;
 #[cfg(test)]
 mod matrix_invite_filter_tests;
 #[cfg(test)]

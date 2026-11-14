@@ -1,6 +1,9 @@
-//! 真实 Tuwunel v2.0.0 把默认邀请过滤当回事：默认值写进账号数据、已有的不覆盖，空名单放行一个人，
-//! 名单里加上这个人以后他的邀请被 403 拒掉。Tuwunel 只在 `org.matrix.msc4155.invite_permission_config`
-//! 上读名单（`src/service/users/invite_filter.rs` 的 `LISTS_TYPE`）。
+//! 真实 Tuwunel v2.0.0 把 MSC4155 邀请过滤当回事：默认值写进账号数据、已有的不覆盖；
+//! “加好友”受管的名单写进去以后，本服务器上的人的邀请照常（`allowed_servers` 在
+//! `blocked_servers` 之前求值）、个人屏蔽照样 403。Tuwunel 只在
+//! `org.matrix.msc4155.invite_permission_config` 上读名单（`src/service/users/invite_filter.rs`
+//! 的 `LISTS_TYPE`）；`blocked_servers` 的 `*` 匹配所有服务器名由它自己的单元测试钉住，
+//! 这里没有第二台服务器可联邦。
 
 use std::process::Command;
 
@@ -15,6 +18,7 @@ use super::{Matrix, MatrixError};
 use crate::config::MatrixConfig;
 use crate::http::HttpClient;
 use crate::test_docker::Names;
+use wonton_protocol::Gate;
 
 const TUWUNEL: &str = "ghcr.io/matrix-construct/tuwunel:v2.0.0@sha256:3dde1e9b3503c68218f95415ec3ebff522bd945065ba76019d408543540d1730";
 const CONFIG: &str = include_str!("../../../../deploy/dev/matrix/tuwunel.toml");
@@ -73,8 +77,8 @@ fn tuwunel(names: &mut Names, dir: &std::path::Path) -> MatrixConfig {
 }
 
 #[tokio::test]
-#[ignore = "需要 Docker，起真实 Tuwunel v2.0.0 验证默认邀请过滤写进去、不被覆盖、名单生效"]
-async fn the_default_filter_is_written_and_enforced() {
+#[ignore = "需要 Docker，起真实 Tuwunel v2.0.0 验证邀请过滤按“加好友”权限项写进去并生效"]
+async fn the_invite_filter_follows_the_add_friends_item() {
     let dir = tempfile::tempdir().unwrap();
     let mut names = Names::new();
     let config = tuwunel(&mut names, dir.path());
@@ -83,7 +87,11 @@ async fn the_default_filter_is_written_and_enforced() {
         .unwrap();
     let owner = matrix.user_id("owner");
 
-    matrix.ensure_default_invite_filter("owner").await.unwrap();
+    // 默认：过滤开着、名单为空，临时设备写完就吊销。
+    matrix
+        .ensure_invite_filter("owner", Gate::Allow)
+        .await
+        .unwrap();
     assert_eq!(
         matrix.global_account_data(&owner).await.unwrap()[INVITE_FILTER_TYPE],
         json!({"enabled": true})
@@ -93,7 +101,7 @@ async fn the_default_filter_is_written_and_enforced() {
         "临时设备没吊销"
     );
 
-    // 写过的不覆盖。
+    // 写过的不覆盖：主人自己的屏蔽原样保留。
     let kept = json!({"enabled": true, "blocked_users": ["@spam:elsewhere.test"]});
     let owner_login = matrix.login("owner", "owner").await.unwrap();
     matrix
@@ -101,24 +109,54 @@ async fn the_default_filter_is_written_and_enforced() {
         .put_account_data(INVITE_FILTER_TYPE, &kept)
         .await
         .unwrap();
-    matrix.ensure_default_invite_filter("owner").await.unwrap();
+    matrix
+        .ensure_invite_filter("owner", Gate::Allow)
+        .await
+        .unwrap();
     assert_eq!(
         matrix.global_account_data(&owner).await.unwrap()[INVITE_FILTER_TYPE],
         kept
     );
 
-    // 空名单放行陌生人；名单里加上 bob 以后，他的邀请被 Tuwunel 403 拒掉。
+    // “加好友”受管的角色：放本服务器、挡家外；主人自己写的屏蔽原样保留。
+    matrix
+        .ensure_invite_filter("owner", Gate::Deny)
+        .await
+        .unwrap();
+    assert_eq!(
+        matrix.global_account_data(&owner).await.unwrap()[INVITE_FILTER_TYPE],
+        json!({
+            "enabled": true,
+            "blocked_users": ["@spam:elsewhere.test"],
+            "allowed_servers": [SERVER],
+            "blocked_servers": ["*"],
+        })
+    );
+    assert_eq!(
+        matrix.devices(&owner).await.unwrap(),
+        vec![owner_login.device_id.clone()],
+        "临时设备没吊销，剩下的只有主人自己的那台"
+    );
+
+    // 本服务器上的人的邀请照常到：allowed_servers 在 blocked_servers 之前求值（MSC4155 的顺序）。
     let bob = matrix.login("bob", "bob").await.unwrap();
     let bob_session = matrix.session(&bob);
     let room = bob_session.create_direct_room(&owner).await.unwrap();
     bob_session.invite(&room, &owner).await.unwrap();
 
+    // 主人的客户端在受限内容上叠自己的屏蔽（写的是整份），核心写的名单还在：
+    // bob 的邀请先撞上个人屏蔽，被 Tuwunel 403 拒掉。
     let bob_id = matrix.user_id("bob");
     matrix
         .session(&owner_login)
         .put_account_data(
             INVITE_FILTER_TYPE,
-            &json!({"enabled": true, "blocked_users": [bob_id]}),
+            &json!({
+                "enabled": true,
+                "allowed_servers": [SERVER],
+                "blocked_servers": ["*"],
+                "blocked_users": [bob_id],
+            }),
         )
         .await
         .unwrap();
@@ -132,4 +170,14 @@ async fn the_default_filter_is_written_and_enforced() {
     };
     assert_eq!(status, 403);
     assert!(errcode.ends_with("M_INVITE_BLOCKED"), "{errcode}");
+
+    // 角色放开：核心写的两份名单拿掉，主人自己的屏蔽保留。
+    matrix
+        .ensure_invite_filter("owner", Gate::Allow)
+        .await
+        .unwrap();
+    assert_eq!(
+        matrix.global_account_data(&owner).await.unwrap()[INVITE_FILTER_TYPE],
+        json!({"enabled": true, "blocked_users": [bob_id]})
+    );
 }
