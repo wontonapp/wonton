@@ -575,3 +575,22 @@ async fn acp_rejects_unknown_duplicate_and_unconfirmed_caller_bots_before_dialin
     assert_eq!(core.status, 403);
     assert_eq!(bed.recording.connections(), before);
 }
+
+#[tokio::test]
+async fn corrupt_initiator_storage_is_unavailable_without_dialing_the_runtime() {
+    let bed = bed().await;
+    let path = bed
+        ._dir
+        .path()
+        .join("plugins/bots")
+        .join(format!("{ORCHESTRATOR}.json"));
+    let saved = std::fs::read(&path).unwrap();
+    std::fs::write(&path, b"{").unwrap();
+    let before = bed.recording.connections();
+    let rejected = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(rejected.status, 503);
+    assert_eq!(bed.recording.connections(), before);
+    std::fs::write(&path, saved).unwrap();
+    let accepted = connect_via_core(&bed, &consumer_headers("main", OWNER_SPEAKER)).await;
+    assert_eq!(accepted.status, 101);
+}

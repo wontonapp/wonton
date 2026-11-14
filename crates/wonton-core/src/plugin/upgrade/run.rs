@@ -545,6 +545,7 @@ impl PluginManager {
                 manifest,
                 super::super::bot_services::DEFAULT_BOT,
                 &langs,
+                None,
             )
             .await?;
             self.fill_default_bot_vars(manifest, &bot, &mut ctx)?;

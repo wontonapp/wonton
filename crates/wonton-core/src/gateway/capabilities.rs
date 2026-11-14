@@ -33,28 +33,15 @@ pub(super) async fn request(gateway: &Gateway, capability: &str, mut req: Reques
             &l10n::text(&langs, "gateway-plugin-network-only", &[]),
         );
     };
-    let bot = match caller_bot(gateway, &source.id, req.headers()) {
-        Ok(bot) => bot,
-        Err(()) => {
-            return api::error_response(
-                StatusCode::FORBIDDEN,
-                "permission_denied",
-                &l10n::text(
-                    &langs,
-                    "gateway-capability-permission",
-                    &[
-                        ("id", source.id.to_string().into()),
-                        ("capability", capability.into()),
-                    ],
-                ),
-            );
-        }
+    let route = match caller_bot(gateway, &source.id, req.headers()) {
+        Ok(bot) => gateway
+            .plugins
+            .capability_route(&source.id, capability, &langs, bot.as_ref())
+            .await
+            .map(|route| (bot, route)),
+        Err(error) => Err(error),
     };
-    let route = match gateway
-        .plugins
-        .capability_route(&source.id, capability, &langs, bot.as_ref())
-        .await
-    {
+    let (bot, route) = match route {
         Ok(route) => route,
         Err(CapabilityAccessError::Denied) => {
             return api::error_response(
@@ -99,16 +86,19 @@ pub(super) fn caller_bot(
     gateway: &Gateway,
     consumer: &crate::plugin::PluginId,
     headers: &HeaderMap,
-) -> Result<Option<BotRef>, ()> {
+) -> Result<Option<BotRef>, CapabilityAccessError> {
     let mut values = headers.get_all(WONTON_BOT_HEADER).iter();
     let Some(value) = values.next() else {
         return Ok(None);
     };
     if values.next().is_some() {
-        return Err(());
+        return Err(CapabilityAccessError::Denied);
     }
     let name = value.to_str().unwrap_or_default().trim();
-    let bot = gateway.plugins.capability_caller_bot(consumer, name);
+    let bot = gateway
+        .plugins
+        .capability_caller_bot(consumer, name)
+        .map_err(|error| CapabilityAccessError::Unavailable(error.to_string()))?;
     if bot.is_none()
         && let Some(audit) = &gateway.audit
     {

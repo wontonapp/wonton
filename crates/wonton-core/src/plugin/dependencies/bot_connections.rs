@@ -10,6 +10,7 @@ impl PluginManager {
         manifest: &Manifest,
         bot: &str,
         langs: &Languages,
+        force_provider: Option<&super::PluginId>,
     ) -> Result<(), InstallError> {
         if self.store.bots().retired(&manifest.id, bot)?.is_some() {
             return Ok(());
@@ -47,7 +48,9 @@ impl PluginManager {
                 Some(&caller),
                 target_name,
             );
-            if existing.is_some_and(|connection| connection.ready && connection.problem.is_none()) {
+            if existing.is_some_and(|connection| connection.ready && connection.problem.is_none())
+                && force_provider != Some(&provider.id)
+            {
                 continue;
             }
             if existing.is_none()
@@ -103,7 +106,7 @@ impl PluginManager {
         }
         let caller = consumer_bot
             .map(|name| {
-                self.capability_caller_bot(consumer, name)
+                self.capability_caller_bot(consumer, name)?
                     .ok_or_else(|| self.missing_capability_bot(consumer, name, langs))
             })
             .transpose()?;

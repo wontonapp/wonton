@@ -13,6 +13,9 @@ use super::{env_of_container, langs, package};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 
+mod recovery;
+mod removal;
+
 struct Bed {
     docker: FakeDocker,
     engine: Engine,
@@ -94,6 +97,13 @@ fn bot_provider(capability: &str) -> String {
     format!(
         "{}\n  provides:\n    {capability}: {{service: shared, port: 8080}}\n",
         consumer(capability).replace("id: app.test", "id: app.provider")
+    )
+}
+
+fn credential_bot_provider(capability: &str) -> String {
+    bot_provider(capability).replace(
+        "port: 8080}",
+        "port: 8080, credentials: {issue: [credentials, issue, '{name}'], revoke: [credentials, revoke, '{name}']}}",
     )
 }
 
@@ -328,6 +338,7 @@ async fn deleting_a_bound_provider_bot_requires_new_high_privilege_confirmation(
     assert!(
         manager
             .capability_caller_bot(&id("app.provider"), "default")
+            .unwrap()
             .is_some()
     );
     assert!(matches!(
@@ -361,6 +372,7 @@ async fn removing_the_last_runtime_bot_is_refused_while_a_consumer_requires_it()
     assert!(
         manager
             .capability_caller_bot(&provider, "default")
+            .unwrap()
             .is_some()
     );
     assert_eq!(route(&manager, capability, None).await, provider);
@@ -385,6 +397,7 @@ async fn removing_the_last_bot_preserves_a_required_independent_provider_service
     assert!(
         manager
             .capability_caller_bot(&provider, "default")
+            .unwrap()
             .is_none()
     );
     assert_eq!(route(&manager, capability, None).await, provider);

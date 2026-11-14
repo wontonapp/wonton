@@ -11,6 +11,7 @@ use wonton_protocol::{BotRef, WONTON_ON_BEHALF_OF_HEADER};
 use super::super::{Gateway, api};
 use crate::l10n;
 use crate::plugin::PluginId;
+use crate::plugin::dependencies::CapabilityAccessError;
 
 /// 使用方自报的发起 Bot：路由键（ADR-0053），也是采纳说话人时“编排器的 Bot”。
 /// agent_acp 的连接必须代表一个人，采纳的名单跟着发起 Bot 走，所以这里没有就建不了连接；
@@ -22,10 +23,19 @@ pub(super) fn initiator_bot(
     headers: &HeaderMap,
     langs: &crate::plugin::languages::Languages,
 ) -> Result<BotRef, Response> {
-    super::super::capabilities::caller_bot(gateway, consumer, headers)
-        .ok()
-        .flatten()
-        .ok_or_else(|| refused(langs, "gateway-agent-acp-initiator-bot-required", &[]))
+    match super::super::capabilities::caller_bot(gateway, consumer, headers) {
+        Ok(Some(bot)) => Ok(bot),
+        Ok(None) | Err(CapabilityAccessError::Denied) => Err(refused(
+            langs,
+            "gateway-agent-acp-initiator-bot-required",
+            &[],
+        )),
+        Err(CapabilityAccessError::Unavailable(detail)) => Err(api::error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "dependency_stopped",
+            &detail,
+        )),
+    }
 }
 
 /// 链代表的人：`X-Wonton-On-Behalf-Of` 自报的说话人，只在他是发起 Bot 听的人时采纳
@@ -67,6 +77,13 @@ pub(super) fn target_bot(
         return gateway
             .plugins
             .capability_caller_bot(provider, &selected.bot)
+            .map_err(|error| {
+                api::error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "dependency_stopped",
+                    &error.to_string(),
+                )
+            })?
             .filter(|bot| bot == selected)
             .ok_or_else(|| {
                 unavailable(
@@ -76,13 +93,19 @@ pub(super) fn target_bot(
                 )
             });
     }
-    let names = gateway.plugins.bot_names(provider);
-    match names.as_slice() {
-        [name] => Ok(BotRef {
-            plugin_id: provider.to_string(),
-            bot: name.clone(),
-        }),
-        [] => Err(unavailable(
+    let mut bots = gateway
+        .plugins
+        .active_capability_bots(provider)
+        .map_err(|error| {
+            api::error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "dependency_stopped",
+                &error.to_string(),
+            )
+        })?;
+    match bots.pop() {
+        Some(bot) if bots.is_empty() => Ok(bot),
+        None => Err(unavailable(
             langs,
             "gateway-agent-acp-no-bot",
             &[("provider", provider.as_str().into())],

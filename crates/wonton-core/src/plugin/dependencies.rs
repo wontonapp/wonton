@@ -274,7 +274,7 @@ impl PluginManager {
         bot: &str,
         langs: &Languages,
     ) -> Result<Vec<ConsumerCapabilitySetting>, InstallError> {
-        if self.capability_caller_bot(consumer, bot).is_none() {
+        if self.capability_caller_bot(consumer, bot)?.is_none() {
             return Err(InstallError::NotFound(bot.to_owned()));
         }
         let record = self

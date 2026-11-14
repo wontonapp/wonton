@@ -1,9 +1,9 @@
 use super::{
-    InstallError, Languages, Manifest, PluginId, PluginManager, PluginStatus, chosen, connection,
-    declarations, high, reference, service,
+    InstallError, Languages, Manifest, PluginId, PluginManager, PluginStatus, Provider, State,
+    chosen, connection, connection_to, declarations, high, reference, service,
 };
-use std::collections::BTreeMap;
-use wonton_protocol::{PluginHint, PluginHintCategory};
+use std::collections::{BTreeMap, BTreeSet};
+use wonton_protocol::{BotRef, PluginHint, PluginHintCategory};
 
 impl PluginManager {
     pub(in crate::plugin) async fn prepare_dependencies(
@@ -213,7 +213,10 @@ impl PluginManager {
             }
         }
         for bot in bots.bots.keys() {
-            if let Err(error) = self.prepare_bot_dependencies(manifest, bot, langs).await {
+            if let Err(error) = self
+                .prepare_bot_dependencies(manifest, bot, langs, force.then_some(&installed.id))
+                .await
+            {
                 failure = Some(match failure {
                     Some(previous) => error.with_note(langs, &previous.to_string()),
                     None => error,
@@ -469,8 +472,11 @@ impl PluginManager {
         langs: &Languages,
     ) -> Vec<PluginHint> {
         let providers = self.capability_providers();
-        let state = match self.dependencies.load() {
-            Ok(state) => state,
+        let (state, bots) = match self.dependencies.load().and_then(|state| {
+            self.active_capability_bots(&manifest.id)
+                .map(|bots| (state, bots))
+        }) {
+            Ok(scope) => scope,
             Err(error) => {
                 return declarations(manifest)
                     .map(|capability| PluginHint {
@@ -482,47 +488,113 @@ impl PluginManager {
                     .collect();
             }
         };
-        declarations(manifest)
-            .filter_map(|capability| {
-                let provider = chosen(&state, &providers, &manifest.id, capability, None);
-                let required = manifest.requires.contains(capability);
-                let (category, detail) = match provider {
-                    None => (
-                        if required {
-                            PluginHintCategory::DependencyStopped
-                        } else {
-                            PluginHintCategory::WantsUnsatisfied
-                        },
-                        None,
-                    ),
-                    Some(p) => {
-                        let connected = connection(&state, &manifest.id, &p.id, capability, None);
-                        match connected {
-                            None => (PluginHintCategory::ProviderNotConnected, None),
-                            Some(c) if c.problem.is_some() => {
-                                (PluginHintCategory::DependencyStopped, c.problem.clone())
-                            }
-                            Some(_)
-                                if !matches!(
-                                    p.status,
-                                    PluginStatus::Running | PluginStatus::Degraded { .. }
-                                ) || !service(&p.listed.manifest, capability)
-                                    .is_some_and(|s| p.serving.contains(&s.service)) =>
-                            {
-                                (PluginHintCategory::DependencyStopped, None)
-                            }
-                            Some(_) => return None,
-                        }
-                    }
-                };
-                Some(PluginHint {
-                    category,
-                    detail,
-                    provider: provider.map(|p| reference(p, capability, langs)),
-                    capability: Some(capability.clone()),
-                })
-            })
-            .collect()
+        let mut hints: Vec<PluginHint> = Vec::new();
+        for capability in declarations(manifest) {
+            for bot in std::iter::once(None).chain(bots.iter().map(Some)) {
+                let provider = chosen(&state, &providers, &manifest.id, capability, bot);
+                if let Some(hint) = self
+                    .capability_dependency_hint(&state, manifest, capability, provider, bot, langs)
+                    && !hints.iter().any(|previous| {
+                        previous.category == hint.category
+                            && previous.detail == hint.detail
+                            && previous.capability == hint.capability
+                            && previous.provider.as_ref().map(|p| &p.id)
+                                == hint.provider.as_ref().map(|p| &p.id)
+                    })
+                {
+                    hints.push(hint);
+                }
+            }
+        }
+        hints
+    }
+
+    fn capability_dependency_hint(
+        &self,
+        state: &State,
+        manifest: &Manifest,
+        capability: &str,
+        provider: Option<&Provider>,
+        bot: Option<&BotRef>,
+        langs: &Languages,
+    ) -> Option<PluginHint> {
+        let (category, detail) = match provider {
+            None => (
+                if manifest.requires.iter().any(|name| name == capability) {
+                    PluginHintCategory::DependencyStopped
+                } else {
+                    PluginHintCategory::WantsUnsatisfied
+                },
+                None,
+            ),
+            Some(provider) => match self.capability_dependency_connection(
+                state,
+                &manifest.id,
+                provider,
+                capability,
+                bot,
+                langs,
+            ) {
+                Err(error) => (
+                    PluginHintCategory::DependencyStopped,
+                    Some(error.to_string()),
+                ),
+                Ok(None) => (PluginHintCategory::ProviderNotConnected, None),
+                Ok(Some(c)) if c.problem.is_some() => {
+                    (PluginHintCategory::DependencyStopped, c.problem.clone())
+                }
+                Ok(Some(c))
+                    if !c.ready
+                        || !matches!(
+                            provider.status,
+                            PluginStatus::Running | PluginStatus::Degraded { .. }
+                        )
+                        || !service(&provider.listed.manifest, capability)
+                            .is_some_and(|spec| provider.serving.contains(&spec.service)) =>
+                {
+                    (PluginHintCategory::DependencyStopped, None)
+                }
+                Ok(Some(_)) => return None,
+            },
+        };
+        Some(PluginHint {
+            category,
+            detail,
+            provider: provider.map(|p| reference(p, capability, langs)),
+            capability: Some(capability.to_owned()),
+        })
+    }
+
+    fn capability_dependency_connection<'a>(
+        &self,
+        state: &'a State,
+        consumer: &PluginId,
+        provider: &Provider,
+        capability: &str,
+        bot: Option<&BotRef>,
+        langs: &Languages,
+    ) -> Result<Option<&'a super::Connection>, InstallError> {
+        let target =
+            self.capability_target_bot(state, consumer, &provider.id, capability, bot, langs)?;
+        let target_name = target.as_ref().map(|bot| bot.bot.as_str());
+        Ok(
+            connection_to(state, consumer, &provider.id, capability, bot, target_name).or_else(
+                || {
+                    (bot.is_some() && !high(&provider.listed.manifest, capability))
+                        .then(|| {
+                            connection_to(
+                                state,
+                                consumer,
+                                &provider.id,
+                                capability,
+                                None,
+                                target_name,
+                            )
+                        })
+                        .flatten()
+                },
+            ),
+        )
     }
 
     pub(in crate::plugin) fn dependency_problem(
@@ -559,56 +631,106 @@ impl PluginManager {
         langs: &Languages,
         manual: bool,
     ) -> Result<(), InstallError> {
-        let providers = self.capability_providers();
+        let mut providers = self.capability_providers();
         let state = self.dependencies.load()?;
+        let bots = self.active_capability_bots(&manifest.id)?;
+        let mut checked = BTreeMap::<usize, (bool, BTreeSet<&str>)>::new();
         for capability in manifest.requires.iter().filter(|c| super::generic(c)) {
-            let provider =
-                chosen(&state, &providers, &manifest.id, capability, None).ok_or_else(|| {
-                    InstallError::Conflict(
-                        self.capability_missing_other(manifest, capability, langs),
-                    )
-                })?;
-            if connection(&state, &manifest.id, &provider.id, capability, None).is_none() {
-                return Err(InstallError::Conflict(
-                    self.capability_missing(capability, langs),
-                ));
-            }
-            if !self.explicitly_stopped(&provider.id)?
-                && (manual || !self.recovery_pending(&provider.id))
-                && (provider.status == PluginStatus::Stopped
-                    || (matches!(provider.status, PluginStatus::Degraded { .. })
-                        && !service(&provider.listed.manifest, capability)
-                            .is_some_and(|s| provider.serving.contains(&s.service))))
-            {
-                Box::pin(self.start(&provider.id)).await?;
-            }
-            let current = self.capability_providers();
-            let provider = current
-                .iter()
-                .find(|p| p.id == provider.id)
-                .ok_or_else(|| {
-                    InstallError::Conflict(self.capability_missing(capability, langs))
-                })?;
-            if !matches!(
-                provider.status,
-                PluginStatus::Running | PluginStatus::Degraded { .. }
-            ) || !service(&provider.listed.manifest, capability)
-                .is_some_and(|s| provider.serving.contains(&s.service))
-            {
-                return Err(InstallError::UpstreamUnavailable(self.capability_stopped(
-                    &provider.id,
-                    capability,
-                    langs,
-                )));
-            }
-            let current = self.dependencies.load()?;
-            if connection(&current, &manifest.id, &provider.id, capability, None)
-                .is_some_and(|c| c.problem.is_some())
-            {
-                self.connect_capability(&manifest.id, provider, capability, langs, None)
-                    .await?;
+            for bot in std::iter::once(None).chain(bots.iter().map(Some)) {
+                let provider = chosen(&state, &providers, &manifest.id, capability, bot)
+                    .ok_or_else(|| {
+                        InstallError::Conflict(
+                            self.capability_missing_other(manifest, capability, langs),
+                        )
+                    })?;
+                if self
+                    .capability_dependency_connection(
+                        &state,
+                        &manifest.id,
+                        provider,
+                        capability,
+                        bot,
+                        langs,
+                    )?
+                    .is_none()
+                {
+                    return Err(InstallError::Conflict(
+                        self.capability_missing(capability, langs),
+                    ));
+                }
+                let index = providers
+                    .iter()
+                    .position(|p| p.id == provider.id)
+                    .expect("选中的提供方来自同一列表");
+                let (started, capabilities) = checked.entry(index).or_default();
+                if capabilities.insert(capability.as_str()) {
+                    providers[index] = self
+                        .start_required_capability_provider(
+                            &providers[index],
+                            capability,
+                            langs,
+                            manual,
+                            started,
+                        )
+                        .await?;
+                }
+                let provider = &providers[index];
+                let current = self.dependencies.load()?;
+                if self
+                    .capability_dependency_connection(
+                        &current,
+                        &manifest.id,
+                        provider,
+                        capability,
+                        bot,
+                        langs,
+                    )?
+                    .is_some_and(|c| !c.ready || c.problem.is_some())
+                {
+                    self.connect_capability(&manifest.id, provider, capability, langs, bot)
+                        .await?;
+                }
             }
         }
         Ok(())
+    }
+
+    async fn start_required_capability_provider(
+        &self,
+        provider: &Provider,
+        capability: &str,
+        langs: &Languages,
+        manual: bool,
+        started: &mut bool,
+    ) -> Result<Provider, InstallError> {
+        if !*started
+            && !self.explicitly_stopped(&provider.id)?
+            && (manual || !self.recovery_pending(&provider.id))
+            && (provider.status == PluginStatus::Stopped
+                || (matches!(provider.status, PluginStatus::Degraded { .. })
+                    && !service(&provider.listed.manifest, capability)
+                        .is_some_and(|spec| provider.serving.contains(&spec.service))))
+        {
+            *started = true;
+            Box::pin(self.start(&provider.id)).await?;
+        }
+        let current = self
+            .capability_providers()
+            .into_iter()
+            .find(|p| p.id == provider.id)
+            .ok_or_else(|| InstallError::Conflict(self.capability_missing(capability, langs)))?;
+        if !matches!(
+            current.status,
+            PluginStatus::Running | PluginStatus::Degraded { .. }
+        ) || !service(&current.listed.manifest, capability)
+            .is_some_and(|spec| current.serving.contains(&spec.service))
+        {
+            return Err(InstallError::UpstreamUnavailable(self.capability_stopped(
+                &current.id,
+                capability,
+                langs,
+            )));
+        }
+        Ok(current)
     }
 }

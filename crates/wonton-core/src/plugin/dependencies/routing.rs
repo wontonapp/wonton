@@ -8,15 +8,36 @@ use super::{
 use crate::plugin::capabilities::AGENT_ACP;
 
 impl PluginManager {
-    pub(crate) fn capability_caller_bot(&self, consumer: &PluginId, name: &str) -> Option<BotRef> {
-        if self.store.bots().retired(consumer, name).ok()?.is_some() {
-            return None;
+    pub(crate) fn capability_caller_bot(
+        &self,
+        consumer: &PluginId,
+        name: &str,
+    ) -> Result<Option<BotRef>, InstallError> {
+        if self.store.bots().retired(consumer, name)?.is_some() {
+            return Ok(None);
         }
-        let bots = self.store.bots().load(consumer).ok()?;
-        bots.bots.contains_key(name).then(|| BotRef {
+        let bots = self.store.bots().load(consumer)?;
+        Ok(bots.bots.contains_key(name).then(|| BotRef {
             plugin_id: consumer.to_string(),
             bot: name.to_owned(),
-        })
+        }))
+    }
+
+    pub(crate) fn active_capability_bots(
+        &self,
+        plugin: &PluginId,
+    ) -> Result<Vec<BotRef>, InstallError> {
+        let bots = self.store.bots().load(plugin)?;
+        let mut active = Vec::with_capacity(bots.bots.len());
+        for name in bots.bots.into_keys() {
+            if self.store.bots().retired(plugin, &name)?.is_none() {
+                active.push(BotRef {
+                    plugin_id: plugin.to_string(),
+                    bot: name,
+                });
+            }
+        }
+        Ok(active)
     }
 
     pub(super) fn capability_target_bot(
@@ -30,22 +51,19 @@ impl PluginManager {
     ) -> Result<Option<BotRef>, InstallError> {
         if let Some(name) = selected_binding_bot(state, consumer, capability, bot) {
             return self
-                .capability_caller_bot(provider, name)
+                .capability_caller_bot(provider, name)?
                 .map(Some)
                 .ok_or_else(|| self.missing_capability_bot(provider, name, langs));
         }
         if capability != AGENT_ACP.name || bot.is_none() {
             return Ok(None);
         }
-        let names = self.stored_bot_names(provider)?;
-        match names.as_slice() {
-            [name] => Ok(Some(BotRef {
-                plugin_id: provider.to_string(),
-                bot: name.clone(),
-            })),
+        let mut bots = self.active_capability_bots(provider)?;
+        match bots.len() {
+            1 => Ok(bots.pop()),
             _ => Err(InstallError::UpstreamUnavailable(crate::l10n::text(
                 langs,
-                if names.is_empty() {
+                if bots.is_empty() {
                     "gateway-agent-acp-no-bot"
                 } else {
                     "gateway-agent-acp-multi-bot"
@@ -76,14 +94,22 @@ impl PluginManager {
         bot: Option<&BotRef>,
     ) -> Result<CapabilityRoute, CapabilityAccessError> {
         let _changing = self.dependencies.changing.lock().await;
-        let bot = bot.filter(|bot| {
-            let valid = bot.plugin_id == consumer.as_str()
-                && self.capability_caller_bot(consumer, &bot.bot).is_some();
-            if !valid {
-                tracing::warn!(plugin = %consumer, bot = %bot.bot, "能力调用的 Bot 不在插件记录里，按插件处理");
+        let bot = match bot {
+            Some(bot)
+                if bot.plugin_id == consumer.as_str()
+                    && self
+                        .capability_caller_bot(consumer, &bot.bot)
+                        .map_err(unavailable)?
+                        .is_some() =>
+            {
+                Some(bot)
             }
-            valid
-        });
+            Some(bot) => {
+                tracing::warn!(plugin = %consumer, bot = %bot.bot, "能力调用的 Bot 不在插件记录里，按插件处理");
+                None
+            }
+            None => None,
+        };
         let listed = self
             .plugins
             .read()

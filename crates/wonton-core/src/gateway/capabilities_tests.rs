@@ -436,3 +436,95 @@ async fn capability_websocket_upgrades_keep_authenticated_identity_and_exchange_
     .await
     .unwrap();
 }
+
+#[tokio::test]
+async fn corrupt_bot_storage_never_falls_back_to_the_plugin_provider() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let app = Router::new().fallback(move || {
+        let seen = seen.clone();
+        async move {
+            seen.fetch_add(1, Ordering::SeqCst);
+            "provider"
+        }
+    });
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = Endpoint::Tcp(listener.local_addr().unwrap().to_string());
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let h = Harness::start(None).await;
+    register(&h, "torrent_client", "  wants: [torrent_client]");
+    source(&h);
+    let other = PluginId::parse("app.other").unwrap();
+    h.manager.register_for_test(
+        manifest(
+            other.as_str(),
+            "  provides:\n    torrent_client: {service: api, port: 8080}",
+        ),
+        PluginStatus::Running,
+        None,
+    );
+    h.manager.serving_for_test(&other, &["api"]);
+    let consumer = PluginId::parse("app.consumer").unwrap();
+    h.manager
+        .capability_route_for_test(&consumer, "torrent_client", &other, endpoint.clone());
+    let bot = caller_bot(&h);
+    h.manager
+        .capability_bot_route_for_test(&bot, "torrent_client", &provider(), None, endpoint);
+    assert_eq!(
+        h.manager
+            .capability_route(
+                &consumer,
+                "torrent_client",
+                &Languages::from_header(None),
+                Some(&bot)
+            )
+            .await
+            .unwrap()
+            .provider,
+        provider()
+    );
+    let path = h.data_dir.join("plugins/bots/app.consumer.json");
+    let saved = std::fs::read(&path).unwrap();
+    std::fs::write(&path, b"{").unwrap();
+    let mut req = request(&h, "torrent_client", "/", Body::empty());
+    req.headers_mut()
+        .insert("x-wonton-bot", "default".parse().unwrap());
+    let response = h.http.send(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response.headers()[super::ERROR_HEADER],
+        "dependency_stopped"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(matches!(
+        h.manager
+            .capability_route(
+                &consumer,
+                "torrent_client",
+                &Languages::from_header(None),
+                Some(&bot)
+            )
+            .await,
+        Err(crate::plugin::dependencies::CapabilityAccessError::Unavailable(_))
+    ));
+    std::fs::write(&path, saved).unwrap();
+    let mut req = request(&h, "torrent_client", "/", Body::empty());
+    req.headers_mut()
+        .insert("x-wonton-bot", "default".parse().unwrap());
+    assert_eq!(h.http.send(req).await.unwrap().status(), StatusCode::OK);
+    assert_eq!(
+        h.manager
+            .capability_route(
+                &consumer,
+                "torrent_client",
+                &Languages::from_header(None),
+                Some(&bot)
+            )
+            .await
+            .unwrap()
+            .provider,
+        provider()
+    );
+}

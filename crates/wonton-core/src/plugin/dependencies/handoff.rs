@@ -29,7 +29,11 @@ impl PluginManager {
         }
         let provider =
             PluginId::parse(&target.plugin_id).map_err(|_| CapabilityAccessError::Denied)?;
-        if self.capability_caller_bot(&provider, &target.bot).is_none() {
+        if self
+            .capability_caller_bot(&provider, &target.bot)
+            .map_err(|error| CapabilityAccessError::Unavailable(error.to_string()))?
+            .is_none()
+        {
             return Err(CapabilityAccessError::Unavailable(
                 self.missing_capability_bot(&provider, &target.bot, langs)
                     .to_string(),

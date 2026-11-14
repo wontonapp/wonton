@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
-use wonton_protocol::{ConsumerCapabilityChoice, UninstallPreview};
+use wonton_protocol::{BotRef, ConsumerCapabilityChoice, UninstallPreview};
 
+use super::binding::consumer_key;
 use super::{
-    InstallError, Languages, Manifest, PluginId, PluginManager, chosen, connection, declarations,
-    high, reference, service,
+    InstallError, Languages, Manifest, PluginId, PluginManager, State, chosen, connection,
+    connection_to, declarations, high, reference, service,
 };
 
 impl PluginManager {
@@ -21,11 +22,9 @@ impl PluginManager {
             .find(|p| p.id == *id && service(&p.listed.manifest, capability).is_some())
             .ok_or_else(|| InstallError::Invalid(self.capability_missing(capability, langs)))?;
         let before = self.dependencies.load()?;
-        self.dependencies.change(|state| {
-            state.defaults.insert(capability.to_owned(), id.to_string());
-        })?;
-        let mut failure: Option<InstallError> = None;
-        for consumer in self.capability_consumers() {
+        let consumers = self.capability_consumers();
+        let mut affected = Vec::with_capacity(consumers.len());
+        for consumer in consumers {
             // ADR-0061 第 9 节：提供方自己不能连到自己。
             if consumer.manifest.id == *id
                 || !declarations(&consumer.manifest).any(|c| c == capability)
@@ -36,17 +35,24 @@ impl PluginManager {
             {
                 continue;
             }
-            let connected = self
-                .connect_capability(&consumer.manifest.id, provider, capability, langs, None)
+            let bots = self.default_inheriting_bots(
+                &consumer.manifest,
+                capability,
+                &before,
+                &providers,
+                high(&provider.listed.manifest, capability),
+                langs,
+            )?;
+            affected.push((consumer, bots));
+        }
+        self.dependencies.change(|state| {
+            state.defaults.insert(capability.to_owned(), id.to_string());
+        })?;
+        let mut failure: Option<InstallError> = None;
+        for (consumer, bots) in affected {
+            let result = self
+                .connect_default_consumer(&consumer.manifest, capability, provider, bots, langs)
                 .await;
-            let rebuilt = self
-                .rebuild_capability_consumer(&consumer.manifest.id, langs)
-                .await;
-            let result = match (connected, rebuilt) {
-                (Err(error), Err(cleanup)) => Err(error.with_note(langs, &cleanup.to_string())),
-                (Err(error), _) | (_, Err(error)) => Err(error),
-                _ => Ok(()),
-            };
             if let Err(error) = result {
                 failure = Some(match failure {
                     Some(previous) => error.with_note(langs, &previous.to_string()),
@@ -56,6 +62,98 @@ impl PluginManager {
         }
         self.changed();
         failure.map_or(Ok(()), Err)
+    }
+
+    fn default_inheriting_bots(
+        &self,
+        manifest: &Manifest,
+        capability: &str,
+        before: &State,
+        providers: &[super::Provider],
+        high_provider: bool,
+        langs: &Languages,
+    ) -> Result<Vec<BotRef>, InstallError> {
+        let mut affected = Vec::new();
+        for bot in self.active_capability_bots(&manifest.id)? {
+            if before
+                .selected
+                .get(&consumer_key(manifest.id.as_str(), &bot.bot))
+                .is_some_and(|choices| choices.contains_key(capability))
+            {
+                continue;
+            }
+            if high_provider {
+                let Some(previous) =
+                    chosen(before, providers, &manifest.id, capability, Some(&bot))
+                else {
+                    continue;
+                };
+                if !before.connections.iter().any(|c| {
+                    c.consumer == manifest.id.as_str()
+                        && c.consumer_bot.as_deref() == Some(&bot.bot)
+                        && c.provider == previous.id.as_str()
+                        && c.capability == capability
+                }) {
+                    continue;
+                }
+                let target = match self.capability_target_bot(
+                    before,
+                    &manifest.id,
+                    &previous.id,
+                    capability,
+                    Some(&bot),
+                    langs,
+                ) {
+                    Ok(target) => target,
+                    Err(InstallError::UpstreamUnavailable(_)) => continue,
+                    Err(error) => return Err(error),
+                };
+                if connection_to(
+                    before,
+                    &manifest.id,
+                    &previous.id,
+                    capability,
+                    Some(&bot),
+                    target.as_ref().map(|target| target.bot.as_str()),
+                )
+                .is_none()
+                {
+                    continue;
+                }
+            }
+            affected.push(bot);
+        }
+        Ok(affected)
+    }
+
+    async fn connect_default_consumer(
+        &self,
+        manifest: &Manifest,
+        capability: &str,
+        provider: &super::Provider,
+        bots: Vec<BotRef>,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        let mut connected = self
+            .connect_capability(&manifest.id, provider, capability, langs, None)
+            .await;
+        for bot in bots {
+            if let Err(error) = self
+                .connect_capability(&manifest.id, provider, capability, langs, Some(&bot))
+                .await
+            {
+                connected = Err(match connected {
+                    Err(previous) => previous.with_note(langs, &error.to_string()),
+                    Ok(()) => error,
+                });
+            }
+        }
+        let rebuilt = self.rebuild_capability_consumer(&manifest.id, langs).await;
+        match (connected, rebuilt) {
+            (Err(error), Err(cleanup)) => Err(error.with_note(langs, &cleanup.to_string())),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            (Ok(()), Ok(())) => Ok(()),
+        }
     }
 
     pub async fn set_consumer_capability(

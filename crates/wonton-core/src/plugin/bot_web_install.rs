@@ -26,6 +26,7 @@ impl PluginManager {
                 manifest,
                 super::bot_services::DEFAULT_BOT,
                 &self.owner_languages(),
+                None,
             )
             .await?;
             self.fill_default_bot_vars(manifest, bot, ctx)?;
@@ -40,7 +41,7 @@ impl PluginManager {
                     .await?;
                 undo.extra_bots
                     .push((manifest.id.clone(), name.clone(), bot.clone()));
-                self.prepare_bot_dependencies(manifest, &name, &self.owner_languages())
+                self.prepare_bot_dependencies(manifest, &name, &self.owner_languages(), None)
                     .await?;
                 let mut runtime = self.stored_bot_runtime(
                     package,

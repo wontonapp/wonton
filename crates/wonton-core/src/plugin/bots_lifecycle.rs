@@ -73,9 +73,15 @@ impl PluginManager {
             .await?;
         // 消费者的核对会重新获取分配锁。
         drop(allocating);
-        self.recover_capability_bot_consumers(recovery, &self.owner_languages())
-            .await?;
-        Ok(report)
+        let langs = self.owner_languages();
+        let recovered = self
+            .recover_capability_bot_consumers(recovery, &langs)
+            .await;
+        match (report, recovered) {
+            (Err(error), Err(recovery)) => Err(error.with_note(&langs, &recovery.to_string())),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            (Ok(report), Ok(())) => Ok(report),
+        }
     }
 
     /// 调用方按顺序持有 dependencies.changing、bot_allocation。
@@ -85,7 +91,13 @@ impl PluginManager {
         bot: &str,
         keep_data: bool,
         username: Option<&str>,
-    ) -> Result<(BotReport, super::dependencies::BotRemovalRecovery), InstallError> {
+    ) -> Result<
+        (
+            Result<BotReport, InstallError>,
+            super::dependencies::BotRemovalRecovery,
+        ),
+        InstallError,
+    > {
         check_bot_name(bot).map_err(InstallError::Invalid)?;
         let record = self.store.load(plugin)?;
         if let Some(status) = self.status_of(plugin)
@@ -93,7 +105,7 @@ impl PluginManager {
         {
             return Err(busy);
         }
-        let mut plugin_bots = self.store.bots().load(plugin)?;
+        let plugin_bots = self.store.bots().load(plugin)?;
         let entry = self.store.bots().removal_entry(plugin, bot)?;
         if let (Some(username), Some(entry)) = (username, &entry)
             && entry.keeper
@@ -103,13 +115,29 @@ impl PluginManager {
         {
             return Err(self.home_denied());
         }
-        self.check_capability_bot_removal(plugin, bot, &self.owner_languages())?;
+        let replacements =
+            self.check_capability_bot_removal(plugin, bot, &self.owner_languages())?;
         if let Some(entry) = &entry {
             self.store.bots().retire(plugin, bot, entry)?;
         }
         let recovery = self
-            .forget_capability_bot(plugin, bot, &self.owner_languages())
+            .forget_capability_bot(plugin, bot, replacements, &self.owner_languages())
             .await?;
+        let report = self
+            .remove_bot_resources(plugin, bot, keep_data, record, plugin_bots, entry)
+            .await;
+        Ok((report, recovery))
+    }
+
+    async fn remove_bot_resources(
+        &self,
+        plugin: &PluginId,
+        bot: &str,
+        keep_data: bool,
+        record: Option<InstalledRecord>,
+        mut plugin_bots: super::bots::PluginBots,
+        entry: Option<BotEntry>,
+    ) -> Result<BotReport, InstallError> {
         // 先删容器，再吊销凭据和设备。
         for name in self.bot_containers(plugin, bot).await? {
             self.engine.remove_container(&name).await?;
@@ -169,7 +197,7 @@ impl PluginManager {
         self.tool_policy().forget_bot(plugin.as_str(), bot);
         self.changed();
         tracing::info!(plugin = %plugin, bot, "Bot removed");
-        Ok((report, recovery))
+        Ok(report)
     }
 
     /// 删掉这个 Bot 收存的密钥（`collect.service` 是 Bot 服务时记成 `名字@Bot` 的那些）。
@@ -346,7 +374,7 @@ impl PluginManager {
         entry: &BotEntry,
         langs: &Languages,
     ) -> Result<BotVars, InstallError> {
-        self.prepare_bot_dependencies(&package.manifest, bot, langs)
+        self.prepare_bot_dependencies(&package.manifest, bot, langs, None)
             .await?;
         let mut runtime = self.stored_bot_runtime(package, bot, entry)?;
         let single = package.manifest.bots.is_none();
@@ -473,7 +501,7 @@ impl PluginManager {
         mut runtime: BotVars,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        self.prepare_bot_dependencies(&package.manifest, bot, &langs)
+        self.prepare_bot_dependencies(&package.manifest, bot, &langs, None)
             .await?;
         runtime.dependencies = self.dependency_vars(&package.manifest, Some(bot))?;
         let lan = self.lan_grant(package, record.lan_webui, &langs).await?;
@@ -533,7 +561,7 @@ impl PluginManager {
         mut runtime: BotVars,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
-        self.prepare_bot_dependencies(&package.manifest, bot, &langs)
+        self.prepare_bot_dependencies(&package.manifest, bot, &langs, None)
             .await?;
         runtime.dependencies = self.dependency_vars(&package.manifest, Some(bot))?;
         let lan = self.lan_grant(package, record.lan_webui, &langs).await?;
