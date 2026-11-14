@@ -284,7 +284,6 @@ impl PluginManager {
             origin: package.origin.clone(),
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: ctx.settings.clone().into_iter().collect(),
             settings_changed_ms: None,
             static_files: Default::default(),

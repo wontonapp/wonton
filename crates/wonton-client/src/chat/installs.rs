@@ -356,7 +356,6 @@ mod tests {
             declares_tools: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
-            family: false,
             upgrade: None,
             removable: true,
             notices: Vec::new(),
@@ -420,6 +419,8 @@ mod tests {
             devices: None,
             lan_webui: None,
             always_allowed: Vec::new(),
+            audience: None,
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 

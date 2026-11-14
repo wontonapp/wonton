@@ -22,6 +22,7 @@ async fn install_optional_consumer(manager: &Arc<PluginManager>, source: &str, c
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
+        audience: None,
         scope: None,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),

@@ -332,6 +332,7 @@ async fn capability_confirmation_does_not_recompute_the_approved_plan() {
         digest: preview.digest,
         plan: preview.plan,
         scope: None,
+        audience: None,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
         secrets: SecretValues::new(),

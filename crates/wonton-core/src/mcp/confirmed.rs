@@ -123,12 +123,10 @@ impl Bus {
         let caller = caller.clone();
         let name = name.to_owned();
         let task = tokio::spawn(async move {
-            // 两张卡片发给同一个人、显示在同一个会话。
+            // 两张卡片共用创建时冻结的管理员名单。
             let audience = bus.audience(&caller, Subject::PluginAdmin).await;
-            let ask = |draft| {
-                bus.confirmations
-                    .ask_as(&caller.id, draft, audience.clone())
-            };
+            let admins = bus.admin_audience(&caller, Subject::PluginAdmin);
+            let ask = |draft| bus.ask_audience(&caller, draft, audience.clone(), admins.clone());
             let ticket = match ask(draft).await {
                 Ok(ticket) => ticket,
                 Err(refusal) => return bus.refused(&caller, &name, &args, &refusal, None),

@@ -127,6 +127,7 @@ fn request(preview: InstallPreview, token: &str) -> InstallRequest {
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
+        audience: None,
         scope: None,
         grant: preview
             .permissions

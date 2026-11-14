@@ -172,9 +172,6 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
-    /// 插件记录里的 `family` 标记；可见性由当前角色的 `open_apps` 决定。
-    #[serde(default)]
-    pub family: bool,
     /// 能升级到的版本；没有新版本时为空。
     pub upgrade: Option<UpgradeOffer>,
     /// 主人能卸载它；系统插件不能。
@@ -433,6 +430,11 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 这个人可直接安装；AskAdmin 时为 false，但仍可请求管理员。
+    #[serde(default)]
+    pub installable: bool,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
     /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
     #[serde(default)]

@@ -1,5 +1,7 @@
 //! 商店和详情页的取法：插件还在不在由核心判断（ADR-0017 的客户端核心接口），壳只照结果做。
 
+use crate::l10n::{CATALOG, language};
+use wonton_l10n::l10n;
 use wonton_protocol::{CoreError, PluginDetail, PluginDetailOutcome, PluginDetailRoute};
 
 use super::ClientCore;
@@ -43,6 +45,41 @@ impl ClientCore {
         let plugins = scope.plugins.clone();
         scope
             .run(async move { plugins.detail_after_task(&route).await })
+            .await
+    }
+
+    pub async fn plugin_audience(
+        &self,
+        id: String,
+    ) -> Result<wonton_protocol::PluginAudience, CoreError> {
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move { plugins.plugin_audience(&id).await })
+            .await
+    }
+
+    /// 等待角色授权落盘，再取详情；壳不先乐观改掉服务器给的选择。
+    pub async fn update_plugin_audience(
+        &self,
+        action: wonton_protocol::Action,
+    ) -> Result<PluginDetail, CoreError> {
+        let wonton_protocol::Action::SetPluginAudience { id, audience } = action else {
+            return Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "plugins-roles-invalid-action"),
+            });
+        };
+        let scope = self.scope();
+        let plugins = scope.plugins.clone();
+        scope
+            .run(async move {
+                plugins
+                    .put_plugin_audience(&id, &audience)
+                    .await
+                    .map_err(crate::plugins::api::to_core_error)?;
+                plugins.refresh_installed();
+                plugins.installed_plugin(&id).await
+            })
             .await
     }
 }

@@ -35,9 +35,17 @@ pub struct PluginDetail {
     /// `runtime` 是 [`PluginRuntime::Link`] 时的网页地址，壳原样交给系统的 App 内浏览器；其他形态为空。
     #[serde(default)]
     pub link_url: Option<String>,
-    /// 只有主人能看到的安装范围；家人或未安装时为空。
+    /// 装卸权限是 Allow 时可见的安装范围。
     #[serde(default)]
     pub scope: Option<PluginScope>,
+    /// 主人可修改的角色开放范围；其他人只收到风险类别，不收到角色列表。
+    #[serde(default)]
+    pub audience: Option<crate::PluginAudienceView>,
+    /// 这个人能否直接安装；要管理员批时为 false。
+    #[serde(default)]
+    pub installable: bool,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 详情说的版本。
     pub version: String,
     pub trust: PluginTrust,

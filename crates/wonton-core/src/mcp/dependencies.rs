@@ -56,6 +56,7 @@ fn request(preview: &InstallPreview, langs: &Languages) -> Result<InstallRequest
         digest: preview.digest.clone(),
         plan: preview.plan.clone(),
         scope: None,
+        audience: None,
         grant: preview
             .permissions
             .iter()

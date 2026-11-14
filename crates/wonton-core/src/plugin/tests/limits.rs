@@ -456,7 +456,6 @@ async fn a_bot_plugin_can_change_its_limits() {
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

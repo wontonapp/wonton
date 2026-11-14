@@ -40,7 +40,7 @@ impl PluginsLink {
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
     pub(crate) fn install(
         self: &Arc<Self>,
-        preview: InstallPreview,
+        mut preview: InstallPreview,
         secrets: SecretValues,
         settings: SettingValues,
     ) -> Result<(), CoreError> {
@@ -49,6 +49,10 @@ impl PluginsLink {
         self.remember_preview(&preview);
         let lan_webui = lan_webui_chosen(&preview);
         let enabled_permissions = enabled_permissions(&preview);
+        let audience = preview
+            .audience
+            .take()
+            .and_then(crate::selected_plugin_audience);
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -65,6 +69,7 @@ impl PluginsLink {
             digest: preview.digest,
             plan: preview.plan,
             scope: None,
+            audience,
             grant,
             enabled_permissions,
             secrets,

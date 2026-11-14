@@ -758,6 +758,9 @@ impl ClientCore {
                 Ok(())
             }
             Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
+            Action::SetPluginAudience { id, audience } => {
+                scope.plugins.set_plugin_audience(id, audience)
+            }
             Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
             Action::StartTakeover { id } => {
                 scope.plugins.start_takeover(id);

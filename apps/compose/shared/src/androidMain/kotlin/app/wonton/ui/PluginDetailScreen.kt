@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.detailInstallAction
 import android.content.Context
 import android.icu.text.ListFormatter
 import androidx.compose.foundation.Image
@@ -175,9 +177,7 @@ private fun DetailContent(
                 navigation.checkInstalled,
             )
         }
-        detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
-        GoFillSecrets(detail.installed, owner, secretsInView)
-        detail.installed?.let { MyAppsControls(it) }
+        detail.installed?.InstalledRows(plugins, detail, owner, secretsInView, onToggled)
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }
@@ -349,7 +349,12 @@ private fun detailAction(
         installed != null -> entry?.let {
             DetailAction(context.getString(R.string.store_open), !installed.isBusy) { navigation.open(it) }
         }
-        source != null -> DetailAction(context.getString(R.string.store_get), detail.blocked == null && !working) {
+        source != null -> DetailAction(
+            context.getString(if (detailInstallAction(detail) == PluginInstallAction.REQUEST_ADMIN) {
+                R.string.install_request_admin
+            } else { R.string.store_get }),
+            detailInstallAction(detail) != PluginInstallAction.BLOCKED && !working,
+        ) {
             navigation.confirmation = PluginConfirmation.Install(source)
         }
         else -> null

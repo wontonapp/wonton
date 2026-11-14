@@ -90,9 +90,6 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
-    /// `family` 设置接口保存的标记，不参与 `open_apps` 授权。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub family: bool,
     /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_label: Option<String>,
@@ -661,7 +658,6 @@ mod tests {
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

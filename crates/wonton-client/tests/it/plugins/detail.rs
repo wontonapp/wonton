@@ -12,7 +12,7 @@ const ID: &str = "app.photos";
 const PATH: &str = "/_wonton/api/plugins/app.photos";
 const STORE_PATH: &str = "/_wonton/api/store/plugin";
 
-fn detail() -> PluginDetail {
+pub(super) fn detail() -> PluginDetail {
     PluginDetail {
         source: Some(format!("github:owner/{ID}")),
         id: ID.to_owned(),
@@ -56,6 +56,9 @@ fn detail() -> PluginDetail {
         limits: None,
         ask_every_update: None,
         shares: None,
+        audience: None,
+        installable: true,
+        install_gate: wonton_client::Gate::Allow,
     }
 }
 

@@ -21,7 +21,6 @@ use crate::plugin::manifest::{Manifest, Permission, PluginKind};
 use crate::plugin::render::dry_run;
 use crate::plugin::storefront::index::Listed;
 use crate::plugin::{InstallError, PluginId, PluginPackage};
-use wonton_protocol::ConfirmationState;
 
 const LIST: &str = "list_plugins";
 pub(super) const SEARCH: &str = "search_catalog";
@@ -94,8 +93,7 @@ pub fn definitions() -> Vec<Tool> {
     ];
     tools.push(tool(
         SET_PERMISSION,
-        "打开或关掉一个插件的可选权限（如 docker.socket）。打开每次都要主人点确认卡片，关掉是收权限、可以按你的\
-         放宽直接做。调用前先告诉主人你会发起这项改动，卡片会发到“Wonton”私聊；改没改成以返回的结果为准，照实转告。",
+        "打开或关掉一个插件的可选权限（如 docker.socket）。每次都要按归属人的装卸权限确认。调用前先告诉使用者会发起这项改动，改没改成以返回的结果为准。",
         json!({"type": "object", "properties": {
             "id": id,
             "permission": {"type": "string", "description": "权限写法，如 docker.socket"},
@@ -380,7 +378,7 @@ async fn checked_permission(
     Ok((id, permission, enabled, line, cards::text(&view.title)))
 }
 
-/// 开关一项可选权限（ADR-0057）：打开必发卡片、不能被放宽；关掉按 ADR-0024 的放宽走。
+/// 开关一项可选权限（ADR-0057）：敏感管理操作始终确认。
 async fn set_permission(
     bus: &Arc<Bus>,
     caller: &Caller,
@@ -389,6 +387,9 @@ async fn set_permission(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
+    if let Err(failure) = bus.require_plugin_install(caller) {
+        return bus.deny(caller, name, &value, &failure);
+    }
     let checked = checked_permission(bus, &args).await;
     let (id, permission, enabled, line, title) = match checked {
         Ok(found) => found,
@@ -430,32 +431,6 @@ async fn set_permission(
             }
         }
     };
-    // 关掉是收权限：已放宽的调用不再发卡。
-    if enabled {
-        let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
-        return bus
-            .confirmed(caller, name, value, (draft, activity), run)
-            .await;
-    }
-    let cleared = bus
-        .plugins
-        .tool_policy()
-        .clearance(caller.id.as_str(), naming::CORE, SET_PERMISSION)
-        .is_some();
-    if cleared {
-        let outcome = run(Arc::clone(bus), SecretValues::new(), Default::default()).await;
-        let failed = matches!(outcome.state, ConfirmationState::Failed { .. });
-        bus.audit.record(&Record {
-            caller: caller.id.as_str(),
-            tool: name,
-            arguments: &value,
-            decision: Decision::Allowed,
-            basis: None,
-            outcome: Some(if failed { "failed" } else { "ok" }),
-            files: &[],
-        });
-        return outcome.result;
-    }
     let draft = cards::set_permission(&caller.name, &title, &line, enabled, highest, &langs);
     bus.confirmed(caller, name, value, (draft, activity), run)
         .await
@@ -469,6 +444,9 @@ async fn uninstall(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
+    if let Err(failure) = bus.require_plugin_install(caller) {
+        return bus.deny(caller, name, &value, &failure);
+    }
     let langs = bus.card_languages(caller, Subject::PluginAdmin);
     let checked = required(&args, "id").and_then(|id| {
         let id =

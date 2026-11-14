@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.previewInstallAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -59,6 +61,7 @@ fun InstallConfirmScreen(
     var lanWebui by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf<Set<String>>(emptySet()) }
     var secrets by remember(confirmation) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var audience by remember(confirmation) { mutableStateOf<app.wonton.protocol.PluginAudienceView?>(null) }
     var fillingProfile by remember { mutableStateOf(false) }
     var submittedId by remember(confirmation) { mutableStateOf<String?>(null) }
     var previousTask by remember(confirmation) { mutableStateOf<PluginTask?>(null) }
@@ -69,6 +72,7 @@ fun InstallConfirmScreen(
                 loadInstallPreview(plugins, confirmation).also { preview ->
                     lanWebui = preview.lanWebui?.enabled ?: false
                     enabled = preview.permissions.filter { it.optional && it.enabled }.map { it.permission }.toSet()
+                    audience = preview.audience
                 },
             )
         } catch (failure: CoreException) {
@@ -97,30 +101,32 @@ fun InstallConfirmScreen(
         val preview = result?.getOrNull()
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    result == null -> LoadingView()
-                    result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                    preview != null -> PreviewContent(
-                        preview,
-                        plugins,
-                        lanWebui,
-                        enabled,
-                        onFillProfile = { fillingProfile = true },
-                        onLanWebui = { lanWebui = it },
-                        onOptional = { permission, on ->
-                            enabled = if (on) enabled + permission else enabled - permission
-                        },
-                        secrets = secrets,
-                        onSecret = { name, value -> secrets = secrets + (name to value) },
-                    )
-                }
+                PreviewResult(
+                    result,
+                    onRetry = { attempt++ },
+                    preview = preview,
+                    plugins = plugins,
+                    lanWebui = lanWebui,
+                    enabled = enabled,
+                    onFillProfile = { fillingProfile = true },
+                    onLanWebui = { lanWebui = it },
+                    onOptional = { permission, on ->
+                        enabled = if (on) enabled + permission else enabled - permission
+                    },
+                    secrets = secrets,
+                    onSecret = { name, value -> secrets = secrets + (name to value) },
+                    audience = audience,
+                    onAudience = { audience = it },
+                )
             }
             preview?.let { current ->
-                val chosen = current.withPermissionChoices(lanWebui, enabled)
+                val chosen = current.withPermissionChoices(lanWebui, enabled).copy(audience = audience)
                 val sent = secretValues(chosen.secretInputs, secrets)
                 ConfirmInstallButton(
                     chosen,
-                    title,
+                    if (previewInstallAction(chosen) == PluginInstallAction.REQUEST_ADMIN) {
+                        stringResource(R.string.install_request_admin)
+                    } else { title },
                     secretsReady = !missingRequiredSecret(chosen.secretInputs, secrets),
                 ) {
                     val action = if (isUpgrade) {
@@ -154,6 +160,42 @@ private suspend fun loadInstallPreview(plugins: PluginsState, confirmation: Plug
         is PluginConfirmation.UpgradeUpload -> plugins.core.previewUpgradeUpload(confirmation.id, confirmation.archive)
         is PluginConfirmation.Store -> error("core preview already returned above")
     }
+
+/** 装载、失败和可预览三种状态里画哪一种。 */
+@Composable
+private fun PreviewResult(
+    result: Result<InstallPreview>?,
+    onRetry: () -> Unit,
+    preview: InstallPreview?,
+    plugins: PluginsState,
+    lanWebui: Boolean,
+    enabled: Set<String>,
+    onFillProfile: () -> Unit,
+    onLanWebui: (Boolean) -> Unit,
+    onOptional: (String, Boolean) -> Unit,
+    secrets: Map<String, String>,
+    onSecret: (String, String) -> Unit,
+    audience: app.wonton.protocol.PluginAudienceView?,
+    onAudience: (app.wonton.protocol.PluginAudienceView) -> Unit,
+) {
+    when {
+        result == null -> LoadingView()
+        result.isFailure -> ProblemView(result.failureProblem, onRetry = onRetry)
+        preview != null -> PreviewContent(
+            preview,
+            plugins,
+            lanWebui,
+            enabled,
+            onFillProfile = onFillProfile,
+            onLanWebui = onLanWebui,
+            onOptional = onOptional,
+            secrets = secrets,
+            onSecret = onSecret,
+            audience = audience,
+            onAudience = onAudience,
+        )
+    }
+}
 
 /** 留在安装页等核心任务完成，成功后才提供固定入口。 */
 @Composable
@@ -254,6 +296,8 @@ private fun PreviewContent(
     onOptional: (String, Boolean) -> Unit,
     secrets: Map<String, String>,
     onSecret: (String, String) -> Unit,
+    audience: app.wonton.protocol.PluginAudienceView?,
+    onAudience: (app.wonton.protocol.PluginAudienceView) -> Unit,
 ) {
     val colors = WontonTheme.colors
     Column(
@@ -289,6 +333,7 @@ private fun PreviewContent(
             }
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
+        audience?.let { PluginAudienceSection(it, onChange = onAudience) }
         InstallPermissionChoices(preview.permissions, enabled, onOptional)
         if (preview.secretInputs.isNotEmpty()) {
             DetailSection(stringResource(R.string.secret_section_title)) {

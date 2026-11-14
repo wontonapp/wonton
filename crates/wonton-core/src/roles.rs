@@ -259,6 +259,55 @@ impl Roles {
         Ok(())
     }
 
+    /// 插件的开放范围是角色授权的反向视图，只有一个事实源。
+    pub fn plugin_audience(&self, plugin_id: &str) -> wonton_protocol::PluginAudience {
+        wonton_protocol::PluginAudience {
+            role_ids: self
+                .lock()
+                .roles
+                .iter()
+                .filter(|role| role.permissions.open_apps.allows_plugin(plugin_id))
+                .map(|role| role.id.clone())
+                .collect(),
+        }
+    }
+
+    pub fn check_plugin_audience(
+        &self,
+        audience: &wonton_protocol::PluginAudience,
+    ) -> Result<(), RolesError> {
+        let stored = self.lock();
+        check_audience(&stored.roles, audience)
+    }
+
+    /// 同一次写盘只改这个插件在各角色里的勾选，其他应用与 All 不变。
+    pub fn set_plugin_audience(
+        &self,
+        plugin_id: &str,
+        audience: &wonton_protocol::PluginAudience,
+    ) -> Result<wonton_protocol::PluginAudience, RolesError> {
+        let mut stored = self.lock();
+        check_audience(&stored.roles, audience)?;
+        let mut roles = stored.roles.clone();
+        for role in &mut roles {
+            if let AppScope::Selected { plugin_ids } = &mut role.permissions.open_apps {
+                plugin_ids.retain(|id| id != plugin_id);
+                if audience.role_ids.contains(&role.id) {
+                    plugin_ids.push(plugin_id.to_owned());
+                }
+            }
+        }
+        let result = wonton_protocol::PluginAudience {
+            role_ids: roles
+                .iter()
+                .filter(|role| role.permissions.open_apps.allows_plugin(plugin_id))
+                .map(|role| role.id.clone())
+                .collect(),
+        };
+        self.commit(&mut stored, roles)?;
+        Ok(result)
+    }
+
     fn commit(&self, stored: &mut Stored, roles: Vec<RoleRecord>) -> Result<(), RolesError> {
         let previous = std::mem::replace(&mut stored.roles, roles);
         let state = stored.clone();
@@ -306,6 +355,22 @@ impl Roles {
     fn lock(&self) -> MutexGuard<'_, Stored> {
         self.state.lock().expect("角色记录锁中毒")
     }
+}
+
+fn check_audience(
+    roles: &[RoleRecord],
+    audience: &wonton_protocol::PluginAudience,
+) -> Result<(), RolesError> {
+    for id in &audience.role_ids {
+        let role = roles
+            .iter()
+            .find(|role| &role.id == id)
+            .ok_or_else(|| RolesError::NotFound(id.clone()))?;
+        if role.permissions.open_apps == AppScope::Other {
+            return Err(RolesError::Invalid(format!("角色 {id} 的应用范围不受支持")));
+        }
+    }
+    Ok(())
 }
 
 /// 名字去掉首尾空白后按资料的规则查：不能空、不超过 64 个字、不带控制字符。

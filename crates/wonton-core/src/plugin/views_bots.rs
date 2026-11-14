@@ -69,7 +69,6 @@ impl PluginManager {
                             .collect()
                     })
                     .unwrap_or_default();
-                plugin.family = record.is_some_and(|record| record.family);
             }
             Err(e) => tracing::warn!(plugin = %id, error = %e, "读插件记录失败"),
         }

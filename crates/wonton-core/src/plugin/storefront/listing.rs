@@ -197,6 +197,9 @@ impl PluginManager {
             scope: installed
                 .as_ref()
                 .map(|_| wonton_protocol::PluginScope::All),
+            audience: Some(crate::plugin::audience::view(m)),
+            installable: true,
+            install_gate: wonton_protocol::Gate::Allow,
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
                 Some(Trust::Official) => PluginTrust::Official,
@@ -292,6 +295,8 @@ impl PluginManager {
             security_tier: Some(tier),
             high_permissions: crate::plugin::security_tier::prominent(tier),
             blocked: blocked(m, facts, langs),
+            installable: blocked(m, facts, langs).is_none(),
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 

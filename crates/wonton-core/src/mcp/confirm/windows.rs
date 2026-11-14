@@ -354,6 +354,7 @@ impl Confirmations {
             let slot = Slot {
                 caller,
                 recipient: None,
+                admins: None,
                 scope: Some(entry.plugin.clone()),
                 released_by: None,
                 card: card.clone(),

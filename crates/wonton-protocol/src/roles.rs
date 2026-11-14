@@ -298,12 +298,13 @@ pub enum AdminScope {
 }
 
 /// 能、要管理员批、不能。
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum Gate {
     Allow,
     AskAdmin,
+    #[default]
     Deny,
     /// 按 [`Self::Deny`] 处理。
     #[serde(other)]
@@ -435,6 +436,35 @@ pub struct RolesViewModel {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct PluginAudience {
     pub role_ids: Vec<String>,
+}
+
+/// 安装或设置应用时可勾选的角色；“全部应用”的角色不可取消。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginAudienceChoice {
+    pub id: String,
+    pub name: String,
+    pub template: Option<RoleTemplate>,
+    pub selected: bool,
+    pub required: bool,
+}
+
+/// 开放应用时的风险类别，文字由原生壳本地化。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum PluginAudienceNotice {
+    SharedData,
+    #[serde(other)]
+    Other,
+}
+
+/// 应用开放给哪些角色，以及缺少按人隔离数据时的提示。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginAudienceView {
+    pub choices: Vec<PluginAudienceChoice>,
+    pub notice: Option<PluginAudienceNotice>,
 }
 
 #[cfg(test)]

@@ -52,6 +52,9 @@ fn detail(ask: bool) -> Canned {
         limits: None,
         ask_every_update: Some(ask),
         shares: None,
+        audience: None,
+        installable: true,
+        install_gate: wonton_client::Gate::Allow,
     };
     Canned(200, serde_json::to_string(&detail).unwrap())
 }

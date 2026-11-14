@@ -1,5 +1,6 @@
 //! 插件管理：解析 `x-wonton` 插件包、渲染部署计划、经 Docker API 安装和卸载。
 
+mod audience;
 mod bot_activity;
 mod bot_avatars;
 mod bot_intents;
@@ -30,7 +31,6 @@ pub mod docker_exec;
 mod docker_limits;
 pub mod egress;
 mod entry;
-pub mod family;
 pub mod gallery;
 pub mod github;
 pub mod github_source;

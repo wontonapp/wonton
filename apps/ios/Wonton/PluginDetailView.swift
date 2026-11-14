@@ -105,6 +105,15 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
+                    if detail.installed != nil, let audience = detail.audience {
+                        if audience.choices.isEmpty {
+                            PluginAudienceSection(audience: .constant(audience), enabled: false)
+                        } else {
+                            InstalledPluginAudience(model: model, id: detail.id, view: audience) {
+                                loaded = .success($0)
+                            }
+                        }
+                    }
                     if let installed = detail.installed, !installed.tabChoices.isEmpty {
                         MyAppsSection(plugin: installed)
                     }
@@ -237,7 +246,11 @@ struct PluginDetailView: View {
         }
         guard detail.installed == nil else { return nil }
         guard let source = detail.source else { return nil }
-        return DetailAction(title: String(localized: .Store.storeGet), enabled: detail.blocked == nil && !isWorking) {
+        let action = detailInstallAction(detail: detail)
+        let title = action == .requestAdmin
+            ? String(localized: .Install.installRequestAdmin)
+            : String(localized: .Store.storeGet)
+        return DetailAction(title: title, enabled: action != .blocked && !isWorking) {
             confirmation = .install(source: source)
         }
     }

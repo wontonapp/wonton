@@ -49,7 +49,7 @@ fn list_of(gateway: &Gateway) -> RoleList {
     }
 }
 
-fn roles_error(e: RolesError, langs: &Languages) -> Response {
+pub(crate) fn roles_error(e: RolesError, langs: &Languages) -> Response {
     match e {
         RolesError::NotFound(id) => error_response(
             StatusCode::NOT_FOUND,

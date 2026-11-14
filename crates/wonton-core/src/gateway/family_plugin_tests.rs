@@ -109,12 +109,12 @@ async fn role_changes_override_the_family_switch_and_recheck_existing_web_sessio
         None,
         Method::PUT,
         CORE,
-        "/_wonton/api/plugins/app.whoami/family",
+        "/_wonton/api/plugins/app.whoami/audience",
         &[
             ("authorization", bearer().as_str()),
             ("content-type", "application/json"),
         ],
-        r#"{"enabled":true}"#,
+        r#"{"role_ids": ["admin", "family"]}"#,
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());

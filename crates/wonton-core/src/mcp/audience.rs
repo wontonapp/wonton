@@ -1,15 +1,14 @@
 //! 确认卡片发给谁、谁发起、显示在哪个会话（ADR-0016 第 2 步，ADR-0045 的“卡片发给归属人”）。
 //!
-//! 发给谁按调用方的 Bot 定：私人 Bot 发给归属人，共享 Bot 和没有 Bot 的插件发给主人；装卸插件这类管理插件的卡片，
-//! 归属人得到主人授权“能装插件”才发给他，否则发给主人。来源会话由 Agent 一侧报（[`reported_origin`]），是不可信
-//! 输入：只认发起的 Bot 和收件人都已加入的房间，对不上、查不了时落到 Bot 的主房间；主房间收件人不在时卡片只在列表里。
+//! 私人 Bot 的普通卡片发给归属人，共享 Bot 和没有 Bot 的插件发给主人。装卸按归属人的角色：能装时问本人，
+//! 要管理员批时问创建卡片时的全部管理员。来源会话只认发起的 Bot 和收件人都已加入的房间。
 
 use hyper::HeaderMap;
 use serde::Serialize;
 use serde_json::Value;
 use wonton_protocol::{
-    BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, MemberStatus, ORIGIN_ROOM_HEADER,
-    ORIGIN_THREAD_HEADER,
+    BotKeeper, BotRef, ConfirmationOrigin, ConfirmationRequester, Gate, MemberStatus,
+    ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER,
 };
 
 use super::confirm::{Audience, Refusal, Ticket};
@@ -25,7 +24,7 @@ const MAX_ID: usize = 255;
 pub(super) enum Subject {
     /// 调插件的工具、Agent 自己的工具：发给 Bot 的归属人。
     Tool,
-    /// 装卸、升级插件，开关插件的权限：归属人有“能装插件”才发给他，否则发给主人。
+    /// 装卸、升级插件，开关插件的权限：按归属人的 install_apps 决定。
     PluginAdmin,
 }
 
@@ -85,16 +84,114 @@ impl Bus {
         }
     }
 
-    /// 这个家人还在家里、角色又能装卸应用（ADR-0088）。记录没接上时按没授权：卡片发给主人。
     fn may_install(&self, username: &str) -> bool {
-        self.people.get().is_some_and(|people| {
-            people.members.get(username).is_some_and(|record| {
-                record.status != MemberStatus::Removed
-                    && people.roles.get(&record.role_id).is_some_and(|role| {
-                        role.permissions.install_apps == wonton_protocol::Gate::Allow
-                    })
+        matches!(self.install_gate_for(username), Gate::Allow)
+    }
+
+    fn install_gate_for(&self, username: &str) -> Gate {
+        if username == self.plugins.owner_name() {
+            return Gate::Allow;
+        }
+        self.people
+            .get()
+            .and_then(|people| {
+                let member = people.members.get(username)?;
+                if member.status != MemberStatus::Joined {
+                    return None;
+                }
+                people
+                    .roles
+                    .get(&member.role_id)
+                    .map(|role| role.permissions.install_apps)
             })
-        })
+            .unwrap_or(Gate::Deny)
+    }
+
+    pub(crate) fn plugin_install_gate(&self, caller: &Caller) -> Gate {
+        match caller.bot.as_ref().map(|bot| &bot.keeper) {
+            Some(BotKeeper::User { username }) => self.install_gate_for(username),
+            None | Some(BotKeeper::Household) => Gate::Allow,
+            Some(BotKeeper::Other) => Gate::Deny,
+        }
+    }
+
+    pub(super) fn require_plugin_install(&self, caller: &Caller) -> Result<(), super::ToolFailure> {
+        match self.plugin_install_gate(caller) {
+            Gate::Allow | Gate::AskAdmin => Ok(()),
+            Gate::Deny | Gate::Other => Err(super::ToolFailure::new(
+                "permission_denied",
+                "归属人的角色不允许装、卸载或更改应用",
+            )),
+        }
+    }
+
+    fn plugin_admins(&self) -> Vec<Option<String>> {
+        let mut admins = vec![None];
+        if let Some(people) = self.people.get() {
+            admins.extend(
+                people
+                    .members
+                    .list()
+                    .into_iter()
+                    .filter(|member| {
+                        member.username != self.plugins.owner_name()
+                            && member.status == MemberStatus::Joined
+                            && people
+                                .roles
+                                .get(&member.role_id)
+                                .is_some_and(|role| role.permissions.manage_members)
+                    })
+                    .map(|member| Some(member.username)),
+            );
+        }
+        admins
+    }
+
+    /// Requests an approval from the administrators present when the card is created.
+    pub async fn ask_plugin_admin(
+        &self,
+        requester: String,
+        draft: Draft,
+    ) -> Result<Ticket, Refusal> {
+        let caller = crate::plugin::PluginId::parse("app.wonton.core")
+            .expect("core plugin identifier is valid");
+        let mut draft = draft;
+        draft.lines.insert(
+            0,
+            wonton_protocol::CardLine {
+                text: requester,
+                emphasis: false,
+            },
+        );
+        self.confirmations
+            .ask_admin_as(&caller, draft, Audience::default(), self.plugin_admins())
+            .await
+    }
+
+    pub(super) async fn ask_audience(
+        &self,
+        caller: &Caller,
+        draft: Draft,
+        audience: Audience,
+        admins: Option<Vec<Option<String>>>,
+    ) -> Result<Ticket, Refusal> {
+        match admins {
+            Some(admins) => {
+                self.confirmations
+                    .ask_admin_as(&caller.id, draft, audience, admins)
+                    .await
+            }
+            None => self.confirmations.ask_as(&caller.id, draft, audience).await,
+        }
+    }
+
+    pub(super) fn admin_audience(
+        &self,
+        caller: &Caller,
+        subject: Subject,
+    ) -> Option<Vec<Option<String>>> {
+        (subject == Subject::PluginAdmin && self.plugin_install_gate(caller) == Gate::AskAdmin)
+            .then(|| self.plugin_admins())
     }
 
     /// 卡片的文字用收件人的语言（ADR-0043）。
@@ -146,7 +243,13 @@ impl Bus {
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
         let audience = self.audience(caller, subject).await;
-        self.confirmations.ask_as(&caller.id, draft, audience).await
+        self.ask_audience(
+            caller,
+            draft,
+            audience,
+            self.admin_audience(caller, subject),
+        )
+        .await
     }
 
     /// Bot 的主房间是它和归属人的私聊（共享 Bot 是和主人的）：收件人是这个人时，主房间就是两边都在的房间。

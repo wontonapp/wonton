@@ -21,6 +21,12 @@ use wonton_l10n::l10n;
 fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
     if preview.blocked.is_some()
         || preview.missing_profile.is_some()
+        || preview.install_gate == wonton_protocol::Gate::AskAdmin
+        || (!upgrade
+            && preview
+                .audience
+                .as_ref()
+                .is_some_and(|view| !view.choices.is_empty() || view.notice.is_some()))
         || !preview.always_allowed.is_empty()
         || preview
             .devices
@@ -498,6 +504,8 @@ mod tests {
             devices: None,
             lan_webui: None,
             always_allowed: Vec::new(),
+            audience: None,
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 

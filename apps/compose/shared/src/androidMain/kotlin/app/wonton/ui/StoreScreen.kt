@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.storeInstallAction
 import android.icu.text.CompactDecimalFormat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -435,7 +437,12 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
     return when {
         // 取预览、装、升、卸都在转圈。
         viewModel.hasRunningTask(item.id) || item.id in viewModel.pending -> StoreButton.Busy
-        installed == null -> StoreButton.Get(stringResource(R.string.store_get), item.blocked == null) {
+        installed == null -> StoreButton.Get(
+            stringResource(if (storeInstallAction(item) == PluginInstallAction.REQUEST_ADMIN) {
+                R.string.install_request_admin
+            } else { R.string.store_get }),
+            storeInstallAction(item) != PluginInstallAction.BLOCKED,
+        ) {
             plugins.send(Action.InstallNow(source = item.source))
         }
         installed != item.version -> StoreButton.Get(stringResource(R.string.store_update), enabled = true) {
