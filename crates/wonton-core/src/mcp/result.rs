@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, MetaObject};
 use serde_json::Value;
-use wonton_protocol::{BotKeeper, ConfirmationState};
+use wonton_protocol::ConfirmationState;
 
 use super::audit::AuditedFile;
 use super::server::Caller;
@@ -93,8 +93,8 @@ impl Outcome {
     }
 }
 
-/// 转给插件。私人 Bot 的调用带上替谁办事（`_meta` 的 `app.wonton/user`，ADR-0045）。结果里的文件引用
-/// 换成编号（[`file_results`]）。
+/// 转给插件。私人 Bot 的调用带上替谁办事的用户名和应用能力；共享 Bot 与 App 调用不带身份元数据。
+/// 结果里的文件引用换成编号（[`file_results`]）。
 pub(crate) async fn forward(
     bus: &Arc<Bus>,
     caller: &Caller,
@@ -103,13 +103,10 @@ pub(crate) async fn forward(
     arguments: JsonObject,
     cancelled: impl Future<Output = ()> + Send,
 ) -> Outcome {
-    let on_behalf_of = caller.bot.as_ref().and_then(|bot| match &bot.keeper {
-        BotKeeper::User { username } => Some(username.clone()),
-        BotKeeper::Household | BotKeeper::Other => None,
-    });
+    let identity = bus.tool_call_identity(caller, &server.id);
     let called = bus
         .upstreams
-        .call(server, tool, Some(arguments), on_behalf_of, cancelled)
+        .call_with_identity(server, tool, Some(arguments), identity, cancelled)
         .await;
     match called {
         Ok(result) => {

@@ -10,7 +10,7 @@ use axum::response::IntoResponse;
 use hyper::StatusCode;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use wonton_protocol::{Role, ShareGrantUpdate, ShareRecipient};
+use wonton_protocol::{ShareGrantUpdate, ShareRecipient};
 
 use super::Fixture;
 use crate::gateway::tests::TOKEN;
@@ -111,7 +111,7 @@ fn received(body: &str, name: &str) -> Vec<String> {
 }
 
 #[tokio::test]
-async fn the_friend_is_signed_in_with_its_fixed_name_and_the_friend_role() {
+async fn the_friend_is_signed_in_with_its_fixed_name_and_the_user_role() {
     let f = Fixture::new().await;
     register(&f).await;
     let friend = f.sharing.friends.get(&f.peer.user_id).unwrap();
@@ -124,7 +124,7 @@ async fn the_friend_is_signed_in_with_its_fixed_name_and_the_friend_role() {
     let reply = f.get_with(GAME_HOST, "/", &headers).await;
     assert_eq!(reply.status, StatusCode::OK);
     let body = reply.json().to_string();
-    assert_eq!(received(&body, "x-remote-role"), vec!["friend".to_owned()]);
+    assert_eq!(received(&body, "x-remote-role"), vec!["user".to_owned()]);
     assert_eq!(
         received(&body, "x-remote-user"),
         vec![friend.username.clone()]
@@ -148,7 +148,7 @@ async fn the_friend_is_signed_in_with_its_fixed_name_and_the_friend_role() {
 }
 
 #[tokio::test]
-async fn a_friend_role_never_renders_owner_or_member() {
+async fn a_friend_is_rendered_as_a_regular_user() {
     let langs = Languages::from_header(Some("en"));
     let manifest = PluginPackage::parse(GAME, &langs).unwrap().manifest;
     let generated = BTreeMap::from([("web_key".to_owned(), KEY.to_owned())]);
@@ -160,16 +160,10 @@ async fn a_friend_role_never_renders_owner_or_member() {
         display_name: "Owner".into(),
         email: Some("owner@wonton.internal".into()),
     };
-    for (role, expected) in [
-        (Role::Owner, "owner"),
-        (Role::Member, "member"),
-        (Role::Friend, "friend"),
-    ] {
-        let headers = auth.headers(&owner, role).unwrap();
-        let value = headers
-            .iter()
-            .find(|(name, _)| name.as_str() == "x-remote-role")
-            .unwrap();
-        assert_eq!(value.1, expected);
-    }
+    let headers = auth.headers(&owner, false).unwrap();
+    let value = headers
+        .iter()
+        .find(|(name, _)| name.as_str() == "x-remote-role")
+        .unwrap();
+    assert_eq!(value.1, "user");
 }

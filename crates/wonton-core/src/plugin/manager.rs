@@ -386,14 +386,17 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
-    /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
-    pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
+    /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；
+    /// 插件没登记时返回空值。
+    pub fn oidc_identity_claims(
+        &self,
+        client_id: &str,
+    ) -> (Vec<String>, Option<super::manifest::RoleClaim>) {
         let identity = match self.bot_web_oidc_identity(client_id) {
             Ok(identity) => identity,
             Err(error) => {
                 tracing::warn!(%error, "Cannot read Bot OIDC identity");
-                return Vec::new();
+                return (Vec::new(), None);
             }
         };
         let Ok(id) = PluginId::parse(
@@ -401,7 +404,7 @@ impl PluginManager {
                 .as_ref()
                 .map_or(client_id, |bot| bot.plugin_id.as_str()),
         ) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         self.plugins
             .read()
@@ -410,7 +413,7 @@ impl PluginManager {
             .and_then(|entry| entry.listed.as_ref())
             .and_then(|listed| listed.manifest.webui.as_ref())
             .and_then(|webui| webui.oidc.as_ref())
-            .map(|client| client.admin_groups.clone())
+            .map(|client| (client.admin_groups.clone(), client.role_claim.clone()))
             .unwrap_or_default()
     }
 

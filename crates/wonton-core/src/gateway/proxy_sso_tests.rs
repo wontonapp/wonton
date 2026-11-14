@@ -13,7 +13,7 @@ use hyper::header::{self, HeaderMap};
 use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
-use wonton_protocol::Role;
+use wonton_protocol::CAPABILITIES_HEADER;
 
 use super::session;
 use super::tests::{CORE, Harness, PLUGIN};
@@ -267,11 +267,11 @@ fn role_auth() -> ProxyAuth {
 #[test]
 fn authenticated_people_replace_every_client_supplied_identity() {
     let auth = role_auth();
-    for (username, display_name, role, rendered_role) in [
-        ("owner", "Owner", Role::Owner, "owner"),
-        ("alice", "Alice", Role::Member, "member"),
-        ("friend_bob", "Bob", Role::Friend, "friend"),
-        ("friend_eve", "Eve", Role::Friend, "friend"),
+    for (username, display_name, plugin_admin, rendered_role) in [
+        ("owner", "Owner", true, "admin"),
+        ("alice", "Alice", false, "user"),
+        ("friend_bob", "Bob", false, "user"),
+        ("friend_eve", "Eve", false, "user"),
     ] {
         let identity = Owner {
             username: username.into(),
@@ -288,7 +288,9 @@ fn authenticated_people_replace_every_client_supplied_identity() {
             "vault_role=owner; theme=dark".parse().unwrap(),
         );
         headers.append(header::COOKIE, "VAULT_ROLE=member".parse().unwrap());
-        super::proxy_sso::attach(&mut headers, &auth, &identity, role).unwrap();
+        // 页面自己带的能力头：不是管理员就删掉，管理员由核心重写。
+        headers.append(CAPABILITIES_HEADER, "plugin_admin".parse().unwrap());
+        super::proxy_sso::attach(&mut headers, &auth, &identity, plugin_admin).unwrap();
         for (name, expected) in [
             ("remote-user", username),
             ("remote-name", display_name),
@@ -302,18 +304,10 @@ fn authenticated_people_replace_every_client_supplied_identity() {
             headers[header::COOKIE].as_bytes(),
             format!("theme=dark; vault_role={rendered_role}").as_bytes()
         );
+        if plugin_admin {
+            assert_eq!(headers[CAPABILITIES_HEADER], "plugin_admin");
+        } else {
+            assert!(!headers.contains_key(CAPABILITIES_HEADER));
+        }
     }
-}
-
-#[test]
-fn an_unknown_role_never_attaches_proxy_credentials() {
-    let auth = role_auth();
-    let identity = Owner {
-        username: "future".into(),
-        display_name: "Future".into(),
-        email: None,
-    };
-    let mut headers = HeaderMap::new();
-    assert!(super::proxy_sso::attach(&mut headers, &auth, &identity, Role::Other).is_err());
-    assert!(headers.is_empty());
 }

@@ -143,6 +143,39 @@ pub(super) async fn fake_hydra_scopes(
     scopes: &'static [&'static str],
 ) -> SocketAddr {
     let subject = subject.to_owned();
+    fake_hydra_with(
+        accepted,
+        scopes,
+        Arc::new(move |challenge| {
+            if challenge == "def" {
+                subject.clone()
+            } else {
+                "owner".to_owned()
+            }
+        }),
+    )
+    .await
+}
+
+/// 同 [`fake_hydra_scopes`]，但 consent 的 `subject` 由调用方在共享单元里随时换：同一个人群
+/// 依次登同一个客户端、各自拿到自己声明的测试用。
+pub(super) async fn fake_hydra_subject_follows(
+    accepted: Arc<Mutex<Vec<Value>>>,
+    subject: Arc<Mutex<String>>,
+) -> SocketAddr {
+    fake_hydra_with(
+        accepted,
+        &["openid", "profile", "email", "groups", "admin"],
+        Arc::new(move |_| subject.lock().unwrap().clone()),
+    )
+    .await
+}
+
+async fn fake_hydra_with(
+    accepted: Arc<Mutex<Vec<Value>>>,
+    scopes: &'static [&'static str],
+    subject_of: Arc<dyn Fn(&str) -> String + Send + Sync>,
+) -> SocketAddr {
     let record = |accepted: Arc<Mutex<Vec<Value>>>, redirect: &'static str| {
         move |Json(body): Json<Value>| async move {
             accepted.lock().unwrap().push(body);
@@ -174,12 +207,12 @@ pub(super) async fn fake_hydra_scopes(
                         .get("consent_challenge")
                         .cloned()
                         .unwrap_or_else(|| "app.whoami".to_owned());
-                    let subject =
-                        if challenge.get("consent_challenge").map(String::as_str) == Some("def") {
-                            subject.clone()
-                        } else {
-                            "owner".to_owned()
-                        };
+                    let subject = subject_of(
+                        challenge
+                            .get("consent_challenge")
+                            .map(String::as_str)
+                            .unwrap_or("app.whoami"),
+                    );
                     async move {
                         Json(json!({
                             "subject": subject,
