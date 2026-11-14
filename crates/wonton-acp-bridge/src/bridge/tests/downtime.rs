@@ -73,6 +73,8 @@ async fn backlog_beyond_the_cap_is_listed_not_processed() {
         .collect::<Vec<_>>();
     assert_eq!(steered, expected, "补处理顺序错");
     harness.respond(&prompts[0].0, "好").await;
+    // ACP 回复帧先到，桥的 finished 分支随后才发 notice；先等副作用落地再断言。
+    crate::bridge::test_support::wait_until(|| !notices(&harness).is_empty()).await;
     let notices_before = notices(&harness);
     assert_eq!(notices_before.len(), 1, "notices={notices_before:?}");
     assert!(
