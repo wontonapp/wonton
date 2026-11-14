@@ -101,6 +101,7 @@ mod upgrade_bot;
 mod views;
 mod views_l10n;
 mod watch;
+mod watch_docker;
 mod webui_health;
 mod widget;
 

@@ -8,9 +8,9 @@ use serde_json::{Value, json};
 
 use super::super::fake_docker::FakeDocker;
 use super::super::names::container_name;
-use super::super::{Health, PluginManager, PluginStatus, docker::Engine};
+use super::super::{Health, PluginManager, PluginStatus};
 use super::egress::serve;
-use super::manager::{manager_in_container, manager_in_instance, manager_with};
+use super::manager::{manager_in_container, manager_with};
 use super::package;
 
 async fn app() -> String {
@@ -188,67 +188,6 @@ async fn an_old_container_watch_cannot_stop_a_reinstalled_plugin() {
 
     manager.saw_unavailable_for_test(&reinstalled.id, old_token, PluginStatus::Stopped);
     assert_eq!(manager.list()[0].status, PluginStatus::Running);
-}
-
-/// busybox：本地从 ECR Public 拉；CI 经 `WONTON_TEST_IMAGES` 指到镜像仓库副本（wonton-test-images）。
-fn busybox() -> String {
-    wonton_test_images::image(
-        "public.ecr.aws/docker/library/busybox@sha256:a7dbc319b1438115a207e11930dc4bb3e643dcb3ec0bdd694bb36cd8fad289ec",
-    )
-}
-
-// 真实 Docker：开发栈 down（容器和网络都没了）后核心重启，restore 自己把网络和容器重建，不要求重装。
-#[tokio::test]
-#[ignore = "需要 Docker，删掉插件的容器和网络后 restore 能自愈"]
-async fn a_stack_restart_with_lost_network_and_containers_recovers_on_restore() {
-    let engine = Engine::connect().unwrap();
-    engine.check_server().await.unwrap();
-    let image = busybox();
-    crate::test_docker::ensure_image(&engine, &image).await;
-    let names = crate::test_docker::Names::new();
-    let dir = tempfile::tempdir().unwrap();
-    let manager = manager_in_instance(engine.clone(), &dir, names.name());
-    let source = package(
-        &format!("  app:\n    image: {image}\n    command: ['sleep', 'infinity']\n"),
-        "  permissions: []",
-    );
-    let installed = manager.install(&source, &[], super::langs()).await.unwrap();
-    let slug = installed.id.slug();
-    let network = names.instance().network(&slug);
-    let container = container_name(&slug, "app");
-
-    // 相当于 compose down：先断开并删容器（网络还挂着端点时 Docker 不让删网络），再删网络。Docker 的
-    // 端点清理是异步的，删网络要等它收完端点。
-    engine
-        .disconnect_network(&network, &container)
-        .await
-        .unwrap();
-    engine.remove_container(&container).await.unwrap();
-    for _ in 0..20 {
-        match engine.remove_network(&network).await {
-            Ok(()) => break,
-            Err(_) => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
-        }
-    }
-    assert!(engine.network_reach(&network).await.unwrap().is_none());
-
-    let restarted = manager_in_instance(engine.clone(), &dir, names.name());
-    restarted.restore().await.unwrap();
-    let [view] = <[_; 1]>::try_from(restarted.list()).expect("只有一个插件");
-    assert_eq!(view.status, PluginStatus::Running, "不用重装就该自己回来");
-    assert!(engine.network_reach(&network).await.unwrap().is_some());
-    let running = engine
-        .inspect_container(&container)
-        .await
-        .unwrap()
-        .and_then(|info| info.state)
-        .and_then(|state| state.running);
-    assert_eq!(running, Some(true));
-
-    restarted
-        .uninstall(&installed.id, false, &super::langs())
-        .await
-        .unwrap();
 }
 
 #[tokio::test]
