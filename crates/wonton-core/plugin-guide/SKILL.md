@@ -23,7 +23,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 
 ## 检查的两档
 
-`wonton__check_plugin` 的问题必须清零，提醒可以留着：私用（自己装、Agent 写的，从目录安装）到这一步就够了。要上官方商店，还得通过 `--official` 那一档，比私用多要求：必须提供图标；镜像按摘要固定；长期运行的服务在 compose 里写健康检查；`tags`、`license`、`author`、`notices` 必填；`description`、`tags`、`about`、`release_notes`、`setup` 写了就要 `zh` 和 `en` 都有；代理地址交给核心注入，不写死；用请求头认用户的应用只信核心的代理地址（出网插件做不到就不收）。上架流程见[插件的开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
+`wonton__check_plugin` 的问题必须清零，提醒可以留着：私用（自己装、Agent 写的，从目录安装）到这一步就够了。要上官方商店，还得通过 `--official` 那一档，比私用多要求：必须提供图标；镜像按摘要固定；没有声明为 `webui.service` 的长期服务在 compose 里写健康检查；`tags`、`license`、`author`、`notices` 必填；`description`、`tags`、`about`、`release_notes`、`setup` 写了就要 `zh` 和 `en` 都有；代理地址交给核心注入，不写死；用请求头认用户的应用只信核心的代理地址（出网插件做不到就不收）。上架流程见[插件的开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 ## 不能写的
 
@@ -37,7 +37,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 ## 一定要写的
 
 - `init: true`。否则程序作为 1 号进程不响应停止信号，每次更新都多等 10 秒，这段时间页面打不开。
-- `healthcheck`，带 `start_period` 和 `start_interval`。检查真正可用的地址，只用镜像里有的命令。
+- 非网页长期服务要写 `healthcheck`，带 `start_period` 和 `start_interval`。检查真正可用的地址，只用镜像里有的命令。网页服务可省略：没有有效 compose 健康检查且未写 `webui.health` 时，`spec` 至少写 `"0.15"`，核心探测 `webui.port` 和 `webui.path`（默认 `/`）。已有有效 compose 健康检查继续使用，不会被自动探测替换；显式 `webui.health` 仍可指定探测路径，最低规范版本仍为 `"0.13"`。
 - `user: "${PUID}:${PGID}"`，写数据时用。这样数据目录里的文件归主人，不归 root。
 - 装的时候要下载大文件（模型、词表）就写 `x-wonton.install_timeout_secs`（60 到 1800），默认只等 300 秒。
 
@@ -46,6 +46,7 @@ description: 写一个 Wonton 插件，装到主人的服务器上，让主人�
 - **`configs` 的属主：** `user` 写 `${PUID}:${PGID}` 时按插值后的数字算，默认模式 `0644`，所有用户都能读、属主能写。不用另写 `uid`、`gid`。
 - **环境变量里的 `on`/`off`：** `environment` 里裸写会被 YAML 当成布尔（容器拿到 `true`），要的就是这两个字就加引号。
 - **健康检查和代理：** 只有 `wget` 和 shell 的写法由核心改写成不走代理。`python3 -c` 不改写，用 `urllib.request.build_opener(urllib.request.ProxyHandler({}))` 自己绕开，见 `assets/backend`。
+- **核心网页探测：** 不经网关、不携带主人的身份，2xx–4xx 算活，5xx、连接失败和超时算失败；每 30 秒巡检，请求超时 5 秒。安装要等健康，失败回滚；运行时失败显示为 `Degraded`。`disable: true`、`test: [NONE]` 或空 `test` 不算有效 compose 健康检查。
 - **没有登录的页面：** `sso: none` 又不做登录是可以的，所有请求先经网关校验主人的会话，别人打不开。不要自己加默认密码。
 - **出网：** 要访问外部地址就申请 `network.egress`，这个权限同时能访问主人的局域网，主人确认时看得到。用户填的地址不用替他拦，但不要把抓回来的内容不转义就放进页面。
 - **跨源隔离：** 页面需要 `SharedArrayBuffer` 时，声明 `webui.cross_origin_isolated: true`。网关会加 `Document-Isolation-Policy: isolate-and-credentialless`，COOP/COEP 仍由应用自己发（桌面 Chrome 137+ 认这个头）。Android 的 WebView 给不了跨源隔离，声明了的页面自动在系统浏览器里打开，没有 App 的桥和主题；iOS 照旧在 App 内打开。首次安装会提示主人，从未声明改为声明的更新必须重新确认。

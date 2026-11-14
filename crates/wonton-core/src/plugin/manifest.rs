@@ -235,8 +235,7 @@ pub struct WebUi {
     /// 页面要跨源隔离（如要 `SharedArrayBuffer`）。Android WebView 默认不给，声明了才放宽，见 ADR-0033“跨源隔离”。
     #[serde(default)]
     pub cross_origin_isolated: bool,
-    /// 核心代探测的健康路径（`scratch`、`distroless` 镜像里没有 shell，写不出 compose healthcheck）。
-    /// 装了它的服务不用写 healthcheck，核心周期 GET 这个路径，2xx/3xx 算健康。
+    /// 独立的核心健康探测路径；未写且容器没有健康检查时探测 `path`。2xx–4xx 算存活。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub health: Option<String>,
     /// 应用自己能接待匿名用户（自带房间码或口令），可以给它建访客链接（ADR-0090）。

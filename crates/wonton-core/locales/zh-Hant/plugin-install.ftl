@@ -229,7 +229,6 @@ plugin-install-priv-agent-high-risk = Agent 或 Bot 應用程式不能申請很�
 plugin-install-priv-fixed-device = 固定裝置權限只支援 /dev/net/tun 和 /dev/fuse，不能申請 { $permission }
 plugin-install-priv-host-network-ports = 主機網路服務不能同時宣告 lan.ports；應用程式直接監聽主機網路上的連接埠
 plugin-install-priv-host-network-sso = 主機網路裡的 webui 不能使用 sso: proxy，請改用 oidc 或 none
-plugin-install-priv-host-network-healthcheck = 主機網路裡的 webui 服務必須寫有效的 healthcheck
 plugin-install-priv-host-network-mail = 用主機網路的應用程式不能寄信：寄信按來源網段識別，主機網路寄來的信認不出來源會被丟棄。請改用應用程式網路，或去掉寄信
 plugin-install-priv-cap-invalid = cap_add 裡的能力 `{ $cap }` 不合法
 plugin-install-priv-cap-drop-invalid = cap_drop 裡的能力 `{ $cap }` 不合法

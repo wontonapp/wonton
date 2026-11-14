@@ -155,6 +155,7 @@ mod views_icons;
 mod views_permissions;
 mod views_source;
 mod watch;
+mod webui_health;
 pub mod written_by;
 
 #[cfg(test)]

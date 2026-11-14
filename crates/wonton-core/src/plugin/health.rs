@@ -40,11 +40,11 @@ pub enum HealthError {
     WebUi(String),
 }
 
-/// 清单 `webui.health`：服务自己答健康的方式。镜像里没有 shell 时写不出 compose healthcheck，
-/// 由核心按这个路径探测（和装完时的网页探测同一个地址和时限）。
+/// 核心直连网页服务的探针；默认网页路径只在容器没有健康检查时使用。
 pub struct WebuiHealth {
     pub endpoint: super::upstreams::Endpoint,
     pub path: String,
+    pub fallback: bool,
 }
 
 /// 等待目标状态。
@@ -123,6 +123,7 @@ pub(super) async fn wait_for_all(
     engine: &Engine,
     http: &HttpClient,
     deps: &[(String, DependCondition)],
+    webui: Option<(&str, &WebuiHealth)>,
     deadline: Instant,
     langs: &Languages,
 ) -> Result<(), HealthError> {
@@ -146,7 +147,9 @@ pub(super) async fn wait_for_all(
                 http,
                 dep.name,
                 target,
-                None,
+                webui
+                    .filter(|(name, _)| *name == dep.name)
+                    .map(|(_, probe)| probe),
                 &mut running_since,
                 langs,
             )
@@ -418,7 +421,13 @@ async fn observe(
     );
     // 只有在跑的网页容器才值得探测：别的状态由下面的判定先行处理。
     let webui = match webui_health {
-        Some(webui) if target == Target::Ready && status == ContainerStateStatusEnum::RUNNING => {
+        Some(webui)
+            if matches!(
+                target,
+                Target::Ready | Target::Depend(DependCondition::ServiceHealthy)
+            ) && status == ContainerStateStatusEnum::RUNNING
+                && webui.applies(has_check) =>
+        {
             let outcome = super::upstreams::status(
                 http,
                 &webui.endpoint,
@@ -455,7 +464,7 @@ struct Snapshot {
     exit_code: i64,
     label: String,
     probes: Vec<Probe>,
-    /// 清单 `webui.health` 的请求（`GET <路径>`）和结果，没有探测时为空。
+    /// 核心 HTTP 探针的请求（`GET <路径>`）和结果，没有探测时为空。
     webui: Option<(String, Result<u16, HttpError>)>,
 }
 
@@ -500,11 +509,9 @@ fn verdict(
         return Err(Failure::Unhealthy(probes));
     }
     let running = status == ContainerStateStatusEnum::RUNNING;
-    // 声明了 `webui.health`：以代探测为准，不管容器自己有没有健康检查。
-    if let (Target::Ready, Some((request, outcome))) = (target, webui) {
+    if let Some((request, outcome)) = webui {
         return match outcome {
-            // 2xx/3xx 是健康；其余状态码等于应用自己说没起好，算上游出错。
-            Ok(200..=399) => Ok(Observation::Done(Readiness::Healthy)),
+            Ok(200..=499) => Ok(Observation::Done(Readiness::Healthy)),
             Ok(code) => Ok(Observation::Waiting {
                 state: format!("{label} / {request} → HTTP {code}"),
                 probes,
@@ -564,7 +571,9 @@ pub enum Checked {
     Completed,
     /// 长期运行，健康检查通过。
     Healthy,
-    /// 长期运行，但没有健康检查，或者检查还没通过：只知道它在运行。
+    /// 容器有健康检查，但还在启动；核心的默认网页探测不能抢先把它算健康。
+    Starting,
+    /// 长期运行，但没有健康检查：只知道它在运行。
     Running,
     /// 常驻容器已退出或已创建但未启动。
     Stopped,
@@ -625,6 +634,7 @@ pub async fn check_now(
         )),
         (false, _) => match health {
             Some(HealthStatusEnum::HEALTHY) => Checked::Healthy,
+            Some(HealthStatusEnum::STARTING) => Checked::Starting,
             Some(HealthStatusEnum::UNHEALTHY) => {
                 Checked::Failed(unhealthy_reason(container, last_probe, langs))
             }

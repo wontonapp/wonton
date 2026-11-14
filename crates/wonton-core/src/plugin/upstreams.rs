@@ -87,6 +87,7 @@ pub(super) async fn status(
     let client = reqwest::Client::builder()
         .unix_socket(socket.to_path_buf())
         .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| HttpError::Connect(e.to_string()))?;
     let request = client.get(endpoint.url(path)).send();
