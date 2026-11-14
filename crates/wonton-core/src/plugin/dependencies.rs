@@ -58,11 +58,26 @@ pub(crate) fn generic(name: &str) -> bool {
     name != capabilities::MODELS.name && !capabilities::has_no_consumer(name)
 }
 
-pub(crate) fn declarations(manifest: &Manifest) -> impl Iterator<Item = &String> {
+pub(crate) fn required(manifest: &Manifest) -> impl Iterator<Item = &str> {
+    let implicit = capabilities::ALL.iter().find_map(|capability| {
+        capability.hosted.and_then(|hosted| {
+            (hosted.runtime == Some(manifest.runtime)).then_some(capability.name)
+        })
+    });
     manifest
         .requires
         .iter()
-        .chain(&manifest.wants)
+        .map(String::as_str)
+        .chain(implicit.filter(|name| !manifest.requires.iter().any(|explicit| explicit == name)))
+}
+
+fn requires(manifest: &Manifest, capability: &str) -> bool {
+    required(manifest).any(|name| name == capability)
+}
+
+pub(crate) fn declarations(manifest: &Manifest) -> impl Iterator<Item = &str> {
+    required(manifest)
+        .chain(manifest.wants.iter().map(String::as_str))
         .filter(|name| generic(name))
 }
 
@@ -199,8 +214,7 @@ impl PluginManager {
                 let listed = plugins
                     .get(consumer)
                     .and_then(|entry| entry.listed.as_ref());
-                let required = listed
-                    .is_some_and(|listed| listed.manifest.requires.iter().any(|c| c == capability));
+                let required = listed.is_some_and(|listed| requires(&listed.manifest, capability));
                 let missing = match listed.map(|listed| &listed.manifest) {
                     Some(manifest) => self.capability_missing_other(manifest, capability, langs),
                     None => self.capability_missing(capability, langs),
@@ -313,7 +327,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         Ok(declarations(manifest)
             .map(|capability| ConsumerCapabilitySetting {
-                capability: capability.clone(),
+                capability: capability.to_owned(),
                 third_party: capabilities::is_third_party(capability),
                 // 选提供方时排除自己（ADR-0061 第 9 节）。
                 providers: providers

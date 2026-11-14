@@ -477,13 +477,15 @@ impl PluginManager {
         drop(_changing);
         self.changed();
         tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
+        let remote_warning = self.forget_remote(id, langs).await;
         let removed = async {
             self.revoke_dependency_keys(id, langs).await?;
             self.teardown(id, purge, langs).await
         }
         .await;
         match removed {
-            Ok(report) => {
+            Ok(mut report) => {
+                report.warnings.extend(remote_warning);
                 self.clear_oom(id);
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);

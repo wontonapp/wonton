@@ -63,11 +63,8 @@ impl PluginManager {
                 continue;
             }
             let mut missing = false;
-            for capability in consumer
-                .manifest
-                .requires
-                .iter()
-                .filter(|capability| super::generic(capability))
+            for capability in
+                super::required(&consumer.manifest).filter(|capability| super::generic(capability))
             {
                 if super::chosen(&state, &providers, &consumer.manifest.id, capability, None)
                     .is_none_or(|provider| !removing.contains(&provider.id))
@@ -101,7 +98,7 @@ impl PluginManager {
                                 "provider",
                                 langs.pick_owned(&provider.listed.manifest.title).into(),
                             ),
-                            ("capability", capability.as_str().into()),
+                            ("capability", capability.into()),
                         ],
                     )));
                 }

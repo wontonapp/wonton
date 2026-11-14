@@ -188,7 +188,7 @@ impl PluginManager {
             cross_origin_isolated: manifest
                 .and_then(|m| m.webui.as_ref())
                 .is_some_and(|webui| webui.cross_origin_isolated),
-            declares_tools: manifest.is_some_and(|m| m.mcp.is_some()),
+            declares_tools: manifest.is_some_and(|m| m.mcp.is_some() || m.remote_mcp.is_some()),
             tabs,
             bot_user_id: None,
             upgrade,

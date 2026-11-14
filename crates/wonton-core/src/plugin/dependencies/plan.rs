@@ -142,7 +142,7 @@ impl PluginManager {
         Ok(super::declarations(manifest)
             .filter_map(|capability| {
                 super::chosen(&state, &providers, &manifest.id, capability, None)
-                    .map(|provider| (capability.clone(), provider.id.to_string()))
+                    .map(|provider| (capability.to_owned(), provider.id.to_string()))
             })
             .collect())
     }

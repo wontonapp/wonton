@@ -57,6 +57,10 @@ impl PluginManager {
                 .await
                 .ok_or_else(|| not_installed(id));
         }
+        if package.manifest.remote_mcp.is_some() {
+            super::remote_config::Config::resolve(&package.manifest, &stored, langs)
+                .map_err(InstallError::Invalid)?;
+        }
         if !self.begin_rebuild(id) {
             return Err(InstallError::Conflict(format!(
                 "插件 {id} 正在安装、卸载或重建，等那边做完"
@@ -129,6 +133,9 @@ impl PluginManager {
         name: &str,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        if super::install_hosted::is_containerless(&package.manifest) {
+            return Ok(());
+        }
         let variable = secrets::secret_var(name);
         let plan = self.addresses_for(listed, record.lan_webui, langs).await?;
         let addresses: Vec<_> = plan.bind.iter().map(|bound| bound.ip).collect();

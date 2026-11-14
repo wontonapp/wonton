@@ -1,0 +1,9 @@
+remote-mcp-runtime-mismatch = remote_mcp は runtime: remote_mcp と組み合わせてください。
+remote-mcp-required = runtime: remote_mcp には remote_mcp.url が必要です。
+remote-mcp-field-forbidden = リモート MCP にはコンテナがないため、{ $field } は使用できません。
+remote-mcp-input-only = リモート MCP のシークレット { $name } は input として宣言してください。
+remote-mcp-url-invalid = remote_mcp.url は複数のラベルを持つドメイン名を使った HTTPS URL にしてください。IP アドレス、localhost、ユーザー名とパスワード、フラグメント、空白は使用できません。シークレットのプレースホルダーはパスとクエリにのみ使用できます。
+remote-mcp-headers-required = remote_mcp.auth: header には remote_mcp.headers が1件以上必要です。
+remote-mcp-headers-auth = remote_mcp.headers は auth: header でのみ使用できます。
+remote-mcp-oauth-secrets = remote_mcp.auth: oauth では secrets を宣言できません。
+remote-mcp-header-value-invalid = リモート MCP のヘッダーに HTTP ヘッダーで送信できない文字が含まれています。

@@ -451,6 +451,7 @@ impl Manifest {
     /// 校验 serde 表达不了的规则。服务名是否存在由 [`super::package`] 对照 compose 检查。
     /// `langs` 只用于给按语言写的校验错误选语言，文字本身在各自模块里。
     pub fn validate(&self, langs: &Languages) -> Result<(), ManifestError> {
+        super::manifest_remote::validate(self, langs)?;
         if !is_semver(&self.version) {
             return Err(ManifestError::InvalidVersion(self.version.clone()));
         }
@@ -473,7 +474,6 @@ impl Manifest {
         super::capabilities::validate(self, langs)?;
         super::manifest_static::validate(self)?;
         super::manifest_widget::validate(self)?;
-        super::manifest_remote::validate(self, langs)?;
         super::proxy_auth::validate(self, langs)?;
         super::proxy_auth::validate_mcp_headers(self, langs)?;
         if let Some(webui) = &self.webui {

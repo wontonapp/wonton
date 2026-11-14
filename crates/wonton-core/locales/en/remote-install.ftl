@@ -1,0 +1,12 @@
+remote-install-authorize-first = Authorize this server before installing it.
+remote-install-connector-unavailable = The remote tool connector did not respond correctly. Start it and try again.
+remote-install-needs-oauth = This server requires sign-in, but the manifest does not declare it.
+remote-install-needs-header = This server requires a request-header secret, but the manifest does not declare it.
+remote-install-secret-rejected = The server did not accept the supplied secret. Check it and try again.
+remote-install-not-mcp = This address is not an MCP server.
+remote-install-blocked-address = This server resolves to a non-public address and cannot be connected.
+remote-install-unreachable = The remote server cannot be reached. Try again when the connection is available.
+remote-install-proxy-unavailable = The outbound proxy is unavailable. Check the proxy and try again.
+remote-install-remote-error = The remote server returned an error. Try again later.
+remote-install-probe-failed = { $reason } Address: { $url }. Details: { $detail }
+remote-install-forget-failed = The plugin was removed, but the connector's tokens could not be deleted.

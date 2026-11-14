@@ -101,6 +101,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
     let status = match error {
         InstallError::EgressProxyUnavailable { .. } => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Invalid(_)
+        | InstallError::RemoteInvalid { .. }
         | InstallError::UnsupportedRuntime(_)
         | InstallError::SettingsInvalid(..)
         | InstallError::SettingsSchemaInvalid(..) => StatusCode::BAD_REQUEST,
@@ -122,8 +123,11 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::MatrixUnavailable(_)
         | InstallError::ModelsUnavailable(_)
         | InstallError::ImagesUnavailable(_)
+        | InstallError::RemoteUnavailable(_)
         | InstallError::SourceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
-        InstallError::UpstreamUnavailable(_) => StatusCode::BAD_GATEWAY,
+        InstallError::UpstreamUnavailable(_) | InstallError::RemoteError(_) => {
+            StatusCode::BAD_GATEWAY
+        }
         InstallError::DockerTimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
         InstallError::Docker(_) | InstallError::ImagePull(_) | InstallError::Unhealthy(_) => {
             StatusCode::BAD_GATEWAY
@@ -131,6 +135,12 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
     };
     match error {
+        InstallError::RemoteInvalid { message, secrets } => settings_error(
+            status,
+            "invalid_input",
+            message,
+            json!({"problem": {"secrets": secrets}}),
+        ),
         InstallError::SettingsInvalid(message, fields) => settings_error(
             status,
             "settings_invalid",

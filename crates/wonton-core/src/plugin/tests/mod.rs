@@ -81,6 +81,7 @@ mod private_home;
 mod private_home_docker;
 mod privileges;
 mod rebuild_resume;
+pub(crate) mod remote_mcp_contract;
 mod render_drift;
 mod resources;
 mod runtime;

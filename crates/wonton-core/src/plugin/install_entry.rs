@@ -12,7 +12,7 @@ use crate::l10n;
 pub(super) fn check_runtime(manifest: &Manifest, langs: &Languages) -> Result<(), InstallError> {
     if !matches!(
         manifest.runtime,
-        Runtime::Compose | Runtime::StaticWeb | Runtime::Link
+        Runtime::Compose | Runtime::StaticWeb | Runtime::Link | Runtime::RemoteMcp
     ) {
         return Err(InstallError::UnsupportedRuntime(l10n::text(
             langs,

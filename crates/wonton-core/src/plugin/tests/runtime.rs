@@ -44,7 +44,11 @@ fn runtime_determines_whether_services_are_allowed() {
         for forbidden in [json!({}), services.clone(), Value::Null, json!([])] {
             let mut doc = parsed.clone();
             doc["services"] = forbidden;
-            assert!(matches!(parse(&doc), Err(PackageError::Service { .. })));
+            match parse(&doc) {
+                Err(PackageError::Manifest(_)) if doc["x-wonton"]["runtime"] == "remote_mcp" => {}
+                Err(PackageError::Service { .. }) if doc["x-wonton"]["runtime"] == "skills" => {}
+                result => panic!("{result:?}"),
+            }
         }
     }
     // 远端形态必须写 `remote_mcp`。

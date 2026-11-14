@@ -1,0 +1,12 @@
+remote-install-authorize-first = 请先授权登录这台服务器，再安装。
+remote-install-connector-unavailable = 远端工具连接器没有正确响应，请启动它后重试。
+remote-install-needs-oauth = 这台服务器需要登录授权，但插件清单没有声明。
+remote-install-needs-header = 这台服务器需要请求头密钥，但插件清单没有声明。
+remote-install-secret-rejected = 服务器不接受填的密钥，请核对后重试。
+remote-install-not-mcp = 这个地址不是 MCP 服务器。
+remote-install-blocked-address = 这台服务器解析到了非公网地址，无法连接。
+remote-install-unreachable = 连不上远端服务器，请在连接恢复后重试。
+remote-install-proxy-unavailable = 出网代理不可用，请检查代理后重试。
+remote-install-remote-error = 远端服务器出错了，请稍后重试。
+remote-install-probe-failed = { $reason } 地址：{ $url }。详情：{ $detail }
+remote-install-forget-failed = 插件已卸载，但连接器那边的令牌没删掉。

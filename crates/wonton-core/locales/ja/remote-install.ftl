@@ -1,0 +1,12 @@
+remote-install-authorize-first = インストールする前に、このサーバーへのログインを許可してください。
+remote-install-connector-unavailable = リモートツールのコネクターが正しく応答しませんでした。起動してから再試行してください。
+remote-install-needs-oauth = このサーバーにはログイン認証が必要ですが、マニフェストに宣言されていません。
+remote-install-needs-header = このサーバーにはリクエストヘッダーのシークレットが必要ですが、マニフェストに宣言されていません。
+remote-install-secret-rejected = サーバーが入力されたシークレットを受け入れませんでした。確認して再試行してください。
+remote-install-not-mcp = このアドレスは MCP サーバーではありません。
+remote-install-blocked-address = このサーバーは公開されていないアドレスに解決されるため、接続できません。
+remote-install-unreachable = リモートサーバーに接続できません。接続が復旧してから再試行してください。
+remote-install-proxy-unavailable = 外向きプロキシを利用できません。プロキシを確認して再試行してください。
+remote-install-remote-error = リモートサーバーでエラーが発生しました。後でもう一度お試しください。
+remote-install-probe-failed = { $reason } アドレス：{ $url }。詳細：{ $detail }
+remote-install-forget-failed = プラグインは削除されましたが、コネクターのトークンを削除できませんでした。

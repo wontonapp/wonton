@@ -1,0 +1,9 @@
+remote-mcp-runtime-mismatch = remote_mcp can only be used with runtime: remote_mcp.
+remote-mcp-required = runtime: remote_mcp requires remote_mcp.url.
+remote-mcp-field-forbidden = Remote MCP has no container and cannot use { $field }.
+remote-mcp-input-only = Secret { $name } must be declared as input for remote MCP.
+remote-mcp-url-invalid = remote_mcp.url must be an HTTPS URL with a public-style domain name, no IP address, localhost, credentials, fragment, or whitespace. Secret placeholders are only allowed in its path and query.
+remote-mcp-headers-required = remote_mcp.auth: header requires at least one remote_mcp.headers entry.
+remote-mcp-headers-auth = remote_mcp.headers is only allowed with auth: header.
+remote-mcp-oauth-secrets = remote_mcp.auth: oauth cannot declare secrets.
+remote-mcp-header-value-invalid = A remote MCP header contains characters that cannot be sent in an HTTP header.

@@ -54,7 +54,7 @@ impl PluginManager {
             .iter()
             .filter(|c| {
                 c.consumer == manifest.id.as_str()
-                    && !declarations(manifest).any(|name| name == &c.capability)
+                    && !declarations(manifest).any(|name| name == c.capability)
             })
             .cloned()
             .collect();
@@ -62,7 +62,7 @@ impl PluginManager {
         self.dependencies.change(|state| {
             state.connections.retain(|c| {
                 c.consumer != manifest.id.as_str()
-                    || declarations(manifest).any(|name| name == &c.capability)
+                    || declarations(manifest).any(|name| name == c.capability)
             });
             if let Some(selected) = state.selected.get_mut(manifest.id.as_str()) {
                 selected

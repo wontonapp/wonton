@@ -830,6 +830,8 @@ mod push_tests;
 #[cfg(test)]
 mod registry_mirror_tests;
 #[cfg(test)]
+mod remote_mcp_tests;
+#[cfg(test)]
 mod secret_change_tests;
 #[cfg(test)]
 mod tests;
