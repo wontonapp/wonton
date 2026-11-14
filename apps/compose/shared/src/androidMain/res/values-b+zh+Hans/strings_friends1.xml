@@ -24,7 +24,7 @@
     <!-- Row subtitle for a blocked person. -->
     <string name="friends_block_invitations">已屏蔽邀请</string>
     <!-- Next step under the refused failure. -->
-    <string name="friends_error_forbidden_next">对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。</string>
+    <string name="friends_error_forbidden_next">这次操作未获允许，可查看详情了解更多信息。</string>
     <!-- Section heading on the peers page above the friend requests. -->
     <string name="friends_peers_title">好友请求</string>
 </resources>

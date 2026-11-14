@@ -243,31 +243,31 @@
       }
     },
     "friends.error.forbidden.nextStep": {
-      "comment": "Explains why a friend action was refused.",
+      "comment": "States that the request was not allowed without guessing who or what caused it.",
       "extractionState": "manual",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "They may have blocked you, or their server can't reach your home server yet."
+            "value": "This request was not allowed."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对方可能屏蔽了你，或者对方的服务器还不能和家里的服务器互通。"
+            "value": "这次请求未获允许。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "對方可能封鎖了你，或者對方的伺服器還不能和家裡的伺服器互通。"
+            "value": "這次請求未獲允許。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "相手にブロックされているか、相手のサーバーがまだ自宅のサーバーとつながっていない可能性があります。"
+            "value": "このリクエストは許可されませんでした。"
           }
         }
       }

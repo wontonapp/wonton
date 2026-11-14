@@ -25,7 +25,7 @@
     <!-- Row subtitle for a blocked person. -->
     <string name="friends_block_invitations">Invitations blocked</string>
     <!-- Next step under the refused failure. -->
-    <string name="friends_error_forbidden_next">They may have blocked you, or their server can\'t reach your home server yet.</string>
+    <string name="friends_error_forbidden_next">This operation was not allowed. Check the details for more information.</string>
     <!-- Section heading on the peers page above the friend requests. -->
     <string name="friends_peers_title">Friend requests</string>
 </resources>

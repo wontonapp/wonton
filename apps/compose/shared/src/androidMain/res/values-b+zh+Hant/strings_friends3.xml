@@ -2,8 +2,8 @@
 <resources>
     <!-- Title of the add-friend sheet. -->
     <string name="friends_add_title">加好友</string>
-    <!-- Placeholder of the Matrix ID field; the example is a full Matrix ID. -->
-    <string name="friends_add_placeholder">@bob:example.org</string>
+    <!-- Keep this prompt short; the fictional format example belongs in the wrapping help. -->
+    <string name="friends_add_placeholder">貼上位址或連結</string>
     <!-- Submit button under the Matrix ID field. -->
     <string name="friends_add_submit">傳送邀請</string>
     <!-- Tag on a received request that is a friend request rather than a plain chat invite. -->
@@ -34,6 +34,6 @@
     <string name="friends_error_invalid_user_id">不是 Matrix ID</string>
     <!-- Failure title when the request was already accepted or rejected elsewhere. -->
     <string name="friends_error_request_not_found">這則邀請已經處理過了</string>
-    <!-- Failure title when the server refused the change. -->
-    <string name="friends_error_upstream">伺服器沒有接受</string>
+    <!-- Neutral failure title when the operation could not be completed. -->
+    <string name="friends_error_upstream">暫時無法完成操作，請稍後再試。</string>
 </resources>

@@ -49,9 +49,10 @@ impl Failure {
             Error::Forbidden { errcode, .. } => {
                 (FriendFailure::Forbidden, Some(403), Some(errcode.clone()))
             }
-            Error::NotReady(_) => (FriendFailure::RequestNotFound, None, None),
-            Error::InvalidInput(_) => (FriendFailure::InvalidUserId, None, None),
-            Error::Upstream(_) => (FriendFailure::Upstream, None, None),
+            Error::NotInvited(_) => (FriendFailure::RequestNotFound, None, None),
+            Error::NotReady(_) | Error::InvalidInput(_) | Error::Upstream(_) => {
+                (FriendFailure::Upstream, None, None)
+            }
         };
         Self {
             problem: FriendProblem {

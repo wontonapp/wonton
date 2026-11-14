@@ -133,9 +133,9 @@ impl From<MatrixError> for Error {
             MatrixError::Unauthorized { message, .. } | MatrixError::Forbidden { message, .. } => {
                 Self::Matrix(Detail::data(message))
             }
-            MatrixError::NotReady(message) | MatrixError::Upstream(message) => {
-                Self::Matrix(Detail::data(message))
-            }
+            MatrixError::NotInvited(message)
+            | MatrixError::NotReady(message)
+            | MatrixError::Upstream(message) => Self::Matrix(Detail::data(message)),
         }
     }
 }

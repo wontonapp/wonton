@@ -275,7 +275,7 @@ async fn a_handled_invite_is_not_rejected_again() {
     bob.accept_invite(&room_id).await.expect("接受邀请");
     assert!(matches!(
         bob.reject_invite(&room_id).await,
-        Err(Error::NotReady(_))
+        Err(Error::NotInvited(_))
     ));
 }
 
@@ -379,13 +379,13 @@ async fn a_blocked_user_invite_is_rejected_without_leaving_a_room() {
 
 #[tokio::test]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
-async fn an_unknown_user_is_invalid_input() {
+async fn an_unavailable_profile_does_not_prove_an_invalid_user_id() {
     let server = TestServer::start().await;
     let alice = server.login(&unique("alice"), "Alice 的手机").await;
     let stranger = wonton_matrix::OwnedUserId::try_from("@nobody-exists:wonton.localhost").unwrap();
     assert!(matches!(
         alice.invite_friend(&stranger).await,
-        Err(Error::InvalidInput(_))
+        Err(Error::Upstream(_))
     ));
 }
 

@@ -326,8 +326,11 @@ private extension FriendsView {
 
     private func addForm(_ close: @escaping (@escaping () -> Void) -> Void) -> some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s12) {
+            Text(.Friends3.friendsAddHelp)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
             TextField(String(localized: .Friends2.friendsAddField), text: $newUserId,
-                      prompt: Text(verbatim: "@bob:example.org"))
+                      prompt: Text(.Friends0.friendsAddPlaceholder))
                 .keyboardType(.asciiCapable)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -465,7 +468,7 @@ private extension FriendsView {
             return Problem(title: String(localized: .Problem2.problemTransportUnavailableTitle),
                            nextStep: String(localized: .Problem3.problemTransportUnavailableNextStep), detail: detail)
         case .upstream:
-            return Problem(title: String(localized: .Problem2.problemUpstreamTitle),
+            return Problem(title: String(localized: .Problem1.problemGenericTitle),
                            nextStep: String(localized: .Problem2.problemUpstreamNextStep), detail: detail)
         case .other:
             return Problem(title: String(localized: .Problem1.problemGenericTitle),

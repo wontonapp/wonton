@@ -148,7 +148,9 @@ fn matrix_error(error: &wonton_matrix::Error) -> UplinkError {
         Error::Unauthorized { .. } | Error::Forbidden { .. } => {
             UplinkError::Failed(AttachmentFailure::Rejected, message)
         }
-        Error::Upstream(_) => UplinkError::Failed(AttachmentFailure::Upstream, message),
+        Error::NotInvited(_) | Error::Upstream(_) => {
+            UplinkError::Failed(AttachmentFailure::Upstream, message)
+        }
     }
 }
 
