@@ -249,3 +249,119 @@ async fn the_list_and_single_card_belong_to_the_recipient() {
     assert!(list["confirmations"].as_array().unwrap().is_empty());
     assert!(list["finished"].as_array().unwrap().is_empty());
 }
+
+fn admin_draft() -> crate::mcp::Draft {
+    crate::mcp::Draft {
+        title: "安装应用".into(),
+        lines: Vec::new(),
+        choices: vec![wonton_protocol::CardChoice {
+            answer: wonton_protocol::Answer::Approve,
+            label: "装".into(),
+            choice_id: None,
+        }],
+        scope: None,
+        plugin_id: Some("app.example.notes".into()),
+        secret_inputs: Vec::new(),
+        settings: None,
+        category: None,
+    }
+}
+
+/// 谁先答算谁的（ADR-0088）：第一个管理员经网关答成，另一个管理员再答同一张卡回 409 `not_yours`。
+#[tokio::test]
+async fn a_second_admins_answer_conflicts_with_the_first() {
+    let (home, _agent) = home_with_bot().await;
+    let mut devices = Vec::new();
+    for name in ["alice", "bob"] {
+        let mut record = crate::members::MemberRecord::for_test(name);
+        record.status = wonton_protocol::MemberStatus::Joined;
+        home.members.invite(record).unwrap();
+        home.members.mark_joined(name).unwrap();
+        let device = TunnelPeer(SecretKey::generate().public());
+        home.gateway
+            .tunnel
+            .devices
+            .add_if(device.0, None, Some(name.into()), |_| true)
+            .unwrap()
+            .expect("管理员设备登记得上");
+        devices.push(device);
+    }
+
+    // 直接在确认表里开一张管理员卡，不经安装流程：装机流程的夹具在 install_gate_tests。
+    let bus = home.gateway.mcp.as_ref().unwrap().bus.clone();
+    let ask = {
+        let bus = bus.clone();
+        tokio::spawn(async move {
+            bus.confirmations()
+                .ask_as(
+                    &PluginId::parse("com.example.notes").unwrap(),
+                    admin_draft(),
+                    crate::mcp::Audience {
+                        recipients: crate::mcp::Recipients::Admins(vec![
+                            "alice".into(),
+                            "bob".into(),
+                        ]),
+                        ..Default::default()
+                    },
+                )
+                .await
+        })
+    };
+    let mut changed = bus.confirmations().subscribe();
+    let id = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(card) = bus.confirmations().list(Some("alice")).0.first() {
+                break card.id.clone();
+            }
+            changed.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("管理员卡片开出");
+
+    let answer_as = |home: &Home, device: &TunnelPeer, id: &str| {
+        let gateway = home.gateway.clone();
+        let port = home.addr.port();
+        let device = *device;
+        let id = id.to_owned();
+        let body = serde_json::to_vec(&json!({"answer": "approve"})).unwrap();
+        async move {
+            let request = hyper::Request::builder()
+                .method(Method::POST)
+                .uri(format!(
+                    "http://{CORE}:{port}{path}",
+                    path = wonton_protocol::answer_path(&id)
+                ))
+                .header(header::HOST, format!("{CORE}:{port}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body))
+                .unwrap();
+            let mut request = request;
+            request.extensions_mut().insert(device);
+            let (parts, body) = router(gateway).oneshot(request).await.unwrap().into_parts();
+            let body = body.collect().await.unwrap().to_bytes();
+            (
+                parts.status,
+                parts
+                    .headers
+                    .get(crate::gateway::ERROR_HEADER)
+                    .map(|v| v.to_str().unwrap().to_owned())
+                    .unwrap_or_default(),
+                serde_json::from_slice::<Value>(&body).unwrap_or(Value::Null),
+            )
+        }
+    };
+    let (status, kind, body) = answer_as(&home, &devices[0], &id).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (StatusCode::OK, ""),
+        "第一个管理员答得上：{body}"
+    );
+    let (status, kind, _) = answer_as(&home, &devices[1], &id).await;
+    assert_eq!(
+        (status, kind.as_str()),
+        (StatusCode::CONFLICT, "not_yours"),
+        "第二个管理员再答同一张卡 409"
+    );
+    ask.abort();
+}

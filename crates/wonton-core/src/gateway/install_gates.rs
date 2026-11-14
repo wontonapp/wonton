@@ -32,11 +32,11 @@ pub(crate) enum GateOutcome<R> {
     Stop(Response),
 }
 
-/// 后台等待的结果：拒绝和过期也走它回来，不靠调用方挂住。
 pub(crate) enum Outcome<R> {
     Done(R),
     Rejected,
     Expired,
+    Unavailable(String),
 }
 
 /// 已经在 [`GateOutcome::Wait`] 里的结果怎么收：等到的按结果返回，拒绝按 403、过期按 408，文字按请求的语言。
@@ -52,7 +52,6 @@ pub(crate) async fn settle<R>(
     match gate {
         GateOutcome::Wait(waited) => match waited.await {
             Ok(Outcome::Done(result)) => Ok(result),
-            // 管理员拒绝：缺口还是这一项，文案说清是管理员不肯。
             Ok(Outcome::Rejected) => Err(error_response(
                 StatusCode::FORBIDDEN,
                 PERMISSION_REQUIRED,
@@ -62,7 +61,11 @@ pub(crate) async fn settle<R>(
                     &[("action", action.into())],
                 ),
             )),
-            // 发送端没了：核心在关停，按过期收尾。
+            Ok(Outcome::Unavailable(message)) => Err(error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "confirmation_unavailable",
+                &message,
+            )),
             _ => Err(error_response(
                 StatusCode::REQUEST_TIMEOUT,
                 "confirmation_expired",
@@ -125,6 +128,7 @@ where
         let outcome = match bus.ask_plugin_admin(identity, draft).await {
             Ok(_ticket) => Outcome::Done(run(gateway).await),
             Err(Refusal::Rejected) => Outcome::Rejected,
+            Err(Refusal::Unavailable(message)) => Outcome::Unavailable(message),
             Err(_) => Outcome::Expired,
         };
         let _ = sent.send(outcome);

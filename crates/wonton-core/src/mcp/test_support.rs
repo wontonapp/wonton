@@ -214,7 +214,7 @@ impl Cards {
 impl Notifier for Cards {
     fn post<'a>(
         &'a self,
-        recipient: Option<&'a str>,
+        recipients: &'a super::Recipients,
         card: &'a ConfirmationCard,
     ) -> BoxFuture<'a, Result<(), String>> {
         async move {
@@ -224,10 +224,11 @@ impl Notifier for Cards {
             // 两张表在同一把锁下追加，下标才对得上。
             let mut posted = self.posted.lock().unwrap();
             posted.push(card.clone());
-            self.recipients
-                .lock()
-                .unwrap()
-                .push(recipient.map(str::to_owned));
+            let recipient = match recipients {
+                super::Recipients::Keeper(person) => person.clone(),
+                super::Recipients::Admins(_) => None,
+            };
+            self.recipients.lock().unwrap().push(recipient);
             Ok(())
         }
         .boxed()

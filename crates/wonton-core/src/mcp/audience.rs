@@ -11,7 +11,7 @@ use wonton_protocol::{
     ORIGIN_ROOM_HEADER, ORIGIN_THREAD_HEADER,
 };
 
-use super::confirm::{Audience, Refusal, Ticket};
+use super::confirm::{Audience, Recipients, Refusal, Ticket};
 use super::{Bus, Caller, Draft};
 use crate::matrix::BotAccount;
 use crate::plugin::languages::Languages;
@@ -70,7 +70,7 @@ struct OriginRecord<'a> {
 }
 
 impl Bus {
-    /// 卡片发给谁：家人的用户名；`None` 是主人。
+    /// 卡片普通收件人的用户名；`None` 是主人。管理员卡片另在 [`Self::audience`] 里冻结完整名单。
     pub(super) fn recipient(&self, caller: &Caller, subject: Subject) -> Option<String> {
         let BotKeeper::User { username } = &caller.bot.as_ref()?.keeper else {
             return None;
@@ -125,10 +125,10 @@ impl Bus {
         }
     }
 
-    fn plugin_admins(&self) -> Vec<Option<String>> {
-        let mut admins = vec![None];
-        if let Some(people) = self.people.get() {
-            admins.extend(
+    fn plugin_admins(&self) -> Vec<String> {
+        self.people
+            .get()
+            .map(|people| {
                 people
                     .members
                     .list()
@@ -141,10 +141,10 @@ impl Bus {
                                 .get(&member.role_id)
                                 .is_some_and(|role| role.permissions.manage_members)
                     })
-                    .map(|member| Some(member.username)),
-            );
-        }
-        admins
+                    .map(|member| member.username)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// Requests an approval from the administrators present when the card is created.
@@ -163,35 +163,11 @@ impl Bus {
                 emphasis: false,
             },
         );
-        self.confirmations
-            .ask_admin_as(&caller, draft, Audience::default(), self.plugin_admins())
-            .await
-    }
-
-    pub(super) async fn ask_audience(
-        &self,
-        caller: &Caller,
-        draft: Draft,
-        audience: Audience,
-        admins: Option<Vec<Option<String>>>,
-    ) -> Result<Ticket, Refusal> {
-        match admins {
-            Some(admins) => {
-                self.confirmations
-                    .ask_admin_as(&caller.id, draft, audience, admins)
-                    .await
-            }
-            None => self.confirmations.ask_as(&caller.id, draft, audience).await,
-        }
-    }
-
-    pub(super) fn admin_audience(
-        &self,
-        caller: &Caller,
-        subject: Subject,
-    ) -> Option<Vec<Option<String>>> {
-        (subject == Subject::PluginAdmin && self.plugin_install_gate(caller) == Gate::AskAdmin)
-            .then(|| self.plugin_admins())
+        let audience = Audience {
+            recipients: Recipients::Admins(self.plugin_admins()),
+            ..Audience::default()
+        };
+        self.confirmations.ask_as(&caller, draft, audience).await
     }
 
     /// 卡片的文字用收件人的语言（ADR-0043）。
@@ -199,9 +175,16 @@ impl Bus {
         self.languages_for(self.recipient(caller, subject).as_deref())
     }
 
-    /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何房间，推送发到收件人的设备（ADR-0016）。
+    /// 发卡片要的全部：收件人、发起者和核对过的来源会话。卡片不进任何 Matrix 房间，推送发到冻结收件人的设备。
     pub(super) async fn audience(&self, caller: &Caller, subject: Subject) -> Audience {
         let recipient = self.recipient(caller, subject);
+        let recipients = if subject == Subject::PluginAdmin
+            && self.plugin_install_gate(caller) == Gate::AskAdmin
+        {
+            Recipients::Admins(self.plugin_admins())
+        } else {
+            Recipients::Keeper(recipient.clone())
+        };
         let bot = caller.bot.as_ref().and_then(|bot| {
             let account = self.plugins.bot_account(&caller.id, &bot.bot)?;
             Some((bot, account))
@@ -229,13 +212,14 @@ impl Bus {
             ),
         };
         Audience {
-            recipient,
+            recipients,
             requester: Some(requester),
             origin,
+            category: None,
         }
     }
 
-    /// 请收件人确认（[`Self::audience`]），等到回答或者过期。
+    /// 请冻结收件人确认，等到回答或者过期。
     pub(super) async fn ask_for(
         &self,
         caller: &Caller,
@@ -243,13 +227,7 @@ impl Bus {
         draft: Draft,
     ) -> Result<Ticket, Refusal> {
         let audience = self.audience(caller, subject).await;
-        self.ask_audience(
-            caller,
-            draft,
-            audience,
-            self.admin_audience(caller, subject),
-        )
-        .await
+        self.confirmations.ask_as(&caller.id, draft, audience).await
     }
 
     /// Bot 的主房间是它和归属人的私聊（共享 Bot 是和主人的）：收件人是这个人时，主房间就是两边都在的房间。
