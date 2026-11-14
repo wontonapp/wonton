@@ -183,7 +183,7 @@ pair_device() {
   [[ -n "$code" ]] || { echo "call-e2e: pair produced no code" >&2; exit 1; }
   printf '%s\n' "<redacted>" >"$artifacts/$name-pair-code.txt"
   adb -s "$serial" shell am start -n app.wonton.android/.MainActivity \
-    --es wonton_pairing_code "$code" >/dev/null
+    --es wonton_pairing_code "\"$code\"" >/dev/null
 }
 
 launch_widget() {
@@ -289,19 +289,6 @@ check_stats "$artifacts/b-stats.jsonl"
 cp "$artifacts/a-stats.jsonl" "$artifacts/inbound-rtp-a.jsonl"
 cp "$artifacts/b-stats.jsonl" "$artifacts/inbound-rtp-b.jsonl"
 
-echo "== hang up one side"
-python3 "$cdp" "$forward_a" hangup 5 >"$artifacts/hangup-a.jsonl"
-
-if [[ "${CALL_SKIP_KILL:-0}" != 1 ]]; then
-  echo "== force-stop one side and wait for delayed leave"
-  adb -s "$serial_a" shell am force-stop app.wonton.android
-  python3 "$cdp" "$forward_b" wait-left "${CALL_DELAYED_LEAVE_TIMEOUT:-90}" >"$artifacts/delayed-leave-b.jsonl"
-fi
-
-wait_recordings
-pull_recording "$serial_a" a
-pull_recording "$serial_b" b
-
 if [[ "$mode" == relay ]]; then
   python3 "$cdp" "$forward_b" relay-hint 5 >"$artifacts/relay-hint.jsonl"
   jq -e 'select(.hint == true)' "$artifacts/relay-hint.jsonl" >/dev/null || {
@@ -309,6 +296,27 @@ if [[ "$mode" == relay ]]; then
     exit 1
   }
 fi
+
+echo "== hang up one side"
+python3 "$cdp" "$forward_a" hangup 5 >"$artifacts/hangup-a.jsonl"
+
+if [[ "${CALL_SKIP_KILL:-0}" != 1 ]]; then
+  echo "== rejoin and force-stop one side"
+  launch_widget "$serial_a"
+  launch_widget "$serial_b"
+  python3 "$cdp" "$forward_a" join 60 >"$artifacts/rejoin-a.jsonl" &
+  rejoin_a=$!
+  python3 "$cdp" "$forward_b" join 60 >"$artifacts/rejoin-b.jsonl" &
+  rejoin_b=$!
+  wait "$rejoin_a"
+  wait "$rejoin_b"
+  adb -s "$serial_a" shell am force-stop app.wonton.android
+  python3 "$cdp" "$forward_b" wait-left "${CALL_DELAYED_LEAVE_TIMEOUT:-90}" >"$artifacts/delayed-leave-b.jsonl"
+fi
+
+wait_recordings
+pull_recording "$serial_a" a
+pull_recording "$serial_b" b
 
 cat >"$artifacts/metadata.json" <<EOF
 {
