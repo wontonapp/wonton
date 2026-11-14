@@ -135,9 +135,9 @@ private fun AppContent(
     val nativeState = rememberSaveableStateHolder()
     val status = connectionBarStatus(home, { pages.send(Action.RetryConnection) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
-        val listShown = shown == TabRef.Chat && !nav.settingsOverlay && nav.appsPage == null &&
+        val listShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
             nav.chat.showingConfirmations
-        val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && nav.appsPage == null &&
+        val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
             !nav.chat.showingBackup && !nav.chat.startingChat && it.roomId != null &&
             it.roomId == nav.chat.openRoom
         !listShown && !roomShown
@@ -145,7 +145,7 @@ private fun AppContent(
     val onDraft: (String) -> Unit = { text -> draft.text = text; pages.send(Action.OpenPage(TabRef.Chat)) }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
-    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
+    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
         !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
     val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
@@ -244,9 +244,9 @@ private fun NativeTab(
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
-        nav.appsPage != null || pages.viewModel.showsApps || pages.current == TabRef.Apps ||
+        pages.viewModel.showsApps || pages.current == TabRef.Apps ||
             home.status is HomeStatus.NotConfigured -> HomeRoute(
-            pages.core, home, pages.plugins, nav.plugins, nav.appsPage ?: HomePage.LAUNCHER,
+            pages.core, home, pages.plugins, nav.plugins, nav.appsPage,
             { nav.appsPage = it },
             chat.pendingConfirmations, nav::openCardTarget,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
