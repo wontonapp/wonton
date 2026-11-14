@@ -9,9 +9,11 @@ mod bind;
 mod check;
 mod connection;
 mod establish;
+mod failure;
 mod invite;
 mod link;
 mod pairing;
+mod pairing_code;
 mod quality;
 mod rebuild;
 mod refresh;
@@ -122,7 +124,7 @@ pub(crate) struct HomeLink {
     /// 换掉的旧连接上已经断开过的次数：每条连接的隧道客户端从零数，连接详情要的是这台服务器的。
     carried_disconnects: AtomicU32,
     /// 连接没建起来时最近一次的原因和第几次失败；建起来就清掉。
-    unlinked: std::sync::Mutex<Option<(String, u32)>>,
+    unlinked: std::sync::Mutex<Option<(establish::SetupFailure, u32)>>,
     /// 这台进程连上过没有：只有还没连上过时才发冷启动的握手名额。
     ever_connected: AtomicBool,
     /// 冷启动还剩几次拨号可以慢慢等（见 [`establish::COLD_DIALS`]），连同拨号时限一起交给隧道客户端。
@@ -371,6 +373,10 @@ impl HomeLink {
         self.republish_unlinked();
     }
 
+    pub(crate) fn language_changed(&self) {
+        self.recount();
+    }
+
     fn lock_tracker(&self) -> std::sync::MutexGuard<'_, Tracker> {
         self.tracker
             .lock()
@@ -536,7 +542,14 @@ impl HomeLink {
             quality: quality.quality,
             loss_per_mille: quality.loss_per_mille,
             rtt_ms: quality.rtt_ms,
-            last_failure: stats.last_failure.as_ref().map(ToString::to_string),
+            last_failure: stats
+                .last_failure
+                .as_ref()
+                .map(|error| failure::summary(error, language())),
+            diagnostic: stats
+                .last_failure
+                .as_ref()
+                .map(|error| self.failure_diagnostic(error)),
             addresses_stale: self.addresses_stale.load(Ordering::Relaxed),
             udp_flows: client.udp_flows(),
             udp_buffer_evicted_datagrams: client.udp_buffer_evicted(),
@@ -558,25 +571,7 @@ impl HomeLink {
             let mut details = details;
             let mut path = path;
             if connected && !stats_due {
-                withheld |= details.sent_packets != view.details.sent_packets
-                    || details.lost_packets != view.details.lost_packets
-                    || details.last_connected_at_ms != view.details.last_connected_at_ms
-                    || details.udp_flows != view.details.udp_flows
-                    || details.udp_buffer_evicted_datagrams
-                        != view.details.udp_buffer_evicted_datagrams
-                    || details.loss_per_mille != view.details.loss_per_mille
-                    || details.rtt_ms != view.details.rtt_ms;
-                details.sent_packets = view.details.sent_packets;
-                details.lost_packets = view.details.lost_packets;
-                details.last_connected_at_ms = view.details.last_connected_at_ms;
-                details.udp_flows = view.details.udp_flows.clone();
-                details.udp_buffer_evicted_datagrams = view.details.udp_buffer_evicted_datagrams;
-                details.loss_per_mille = view.details.loss_per_mille;
-                details.rtt_ms = view.details.rtt_ms;
-                if let (Some(new), Some(old)) = (&mut path, &view.path) {
-                    withheld |= new.rtt_ms != old.rtt_ms;
-                    new.rtt_ms = old.rtt_ms;
-                }
+                withheld |= preserve_samples(&mut details, &mut path, view);
             }
             let changed = view.status != status
                 || view.path != path
@@ -607,6 +602,16 @@ impl HomeLink {
         })
     }
 
+    fn failure_diagnostic(&self, error: &TunnelError) -> String {
+        let ticket = self.lock_ticket();
+        match ticket.as_deref().and_then(|text| Ticket::parse(text).ok()) {
+            Some(ticket) => {
+                failure::redact_relays(ticket.relays(), &failure::diagnostic(error, language()))
+            }
+            None => l10n!(CATALOG, language(), "home-diagnostic-unavailable"),
+        }
+    }
+
     /// 这台服务器上断开过几次：换掉的旧连接上的加上现在这条连接上的。
     fn disconnects(&self, current: u32) -> u32 {
         self.carried_disconnects
@@ -628,6 +633,32 @@ impl HomeLink {
 enum Published {
     Superseded,
     Tick(Option<Duration>),
+}
+
+fn preserve_samples(
+    details: &mut ConnectionDetails,
+    path: &mut Option<HomePath>,
+    view: &HomeViewModel,
+) -> bool {
+    let mut withheld = details.sent_packets != view.details.sent_packets
+        || details.lost_packets != view.details.lost_packets
+        || details.last_connected_at_ms != view.details.last_connected_at_ms
+        || details.udp_flows != view.details.udp_flows
+        || details.udp_buffer_evicted_datagrams != view.details.udp_buffer_evicted_datagrams
+        || details.loss_per_mille != view.details.loss_per_mille
+        || details.rtt_ms != view.details.rtt_ms;
+    details.sent_packets = view.details.sent_packets;
+    details.lost_packets = view.details.lost_packets;
+    details.last_connected_at_ms = view.details.last_connected_at_ms;
+    details.udp_flows = view.details.udp_flows.clone();
+    details.udp_buffer_evicted_datagrams = view.details.udp_buffer_evicted_datagrams;
+    details.loss_per_mille = view.details.loss_per_mille;
+    details.rtt_ms = view.details.rtt_ms;
+    if let (Some(new), Some(old)) = (path, &view.path) {
+        withheld |= new.rtt_ms != old.rtt_ms;
+        new.rtt_ms = old.rtt_ms;
+    }
+    withheld
 }
 
 /// 手机连不连得上中继：连得上说明手机能上网，这时家里没有回应，多半是家里的问题。没配中继时无从判断。
@@ -657,7 +688,7 @@ fn status_view(status: &TunnelStatus) -> HomeStatus {
         TunnelStatus::Connected => HomeStatus::Connected,
         TunnelStatus::Disconnected(err) => HomeStatus::Disconnected {
             reason: failure(err),
-            message: err.to_string(),
+            message: failure::summary(err, language()),
         },
         TunnelStatus::Closed => HomeStatus::Disconnected {
             reason: HomeFailure::TransportUnavailable,

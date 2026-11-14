@@ -27,13 +27,21 @@ impl HomeLink {
     ) -> Result<Option<PairingCode>, CoreError> {
         let code = match PairingCode::parse(text) {
             Ok(code) => code,
-            Err(e @ InvalidCode::UnsupportedVersion(_)) => {
-                self.set_pairing(Some(failed(PairingFailure::Protocol, e.to_string())));
+            Err(error @ InvalidCode::UnsupportedVersion(_)) => {
+                let diagnostic = super::pairing_code::diagnostic(&error);
+                tracing::info!(%diagnostic, "pairing code rejected");
+                self.set_pairing(Some(PairingStatus::Failed {
+                    reason: PairingFailure::Protocol,
+                    message: super::pairing_code::summary(&error, language()),
+                    diagnostic: Some(diagnostic),
+                }));
                 return Ok(None);
             }
-            Err(e) => {
+            Err(error) => {
+                let diagnostic = super::pairing_code::diagnostic(&error);
+                tracing::info!(%diagnostic, "pairing code rejected");
                 return Err(CoreError::InvalidInput {
-                    reason: e.to_string(),
+                    reason: super::pairing_code::summary(&error, language()),
                 });
             }
         };
@@ -46,9 +54,11 @@ impl HomeLink {
         }
         // 码里的地址和域名还要能变成一份合法的连接信息：配上以后存不下，码已经用掉了，只能重新发码再扫一遍。
         // 先在这里拒，配对页当场报出是哪一项不对。
-        if let Err(reason) = Ticket::parse(&ticket(&code, device_name)) {
-            tracing::info!(%reason, "the pairing code does not make usable connection info");
-            return Err(CoreError::InvalidInput { reason });
+        if Ticket::parse(&ticket(&code, device_name)).is_err() {
+            tracing::info!("pairing code cannot produce usable connection information");
+            return Err(CoreError::InvalidInput {
+                reason: l10n!(CATALOG, language(), "home-code-invalid"),
+            });
         }
         Ok(Some(code))
     }
@@ -218,20 +228,23 @@ impl HomeLink {
             }
             Err(error) => Err(error),
         };
-        let outcome = match bound {
+        let (outcome, bind_failed) = match bound {
             // 交换按小段计时：每段慢不占别的段；请求可能已经到了服务端时，客户端自己再确认一次。
             Ok(bound) => {
                 let home = self.clone();
-                pair::pair_with_timeout(
-                    endpoint.insert(bound),
-                    &code,
-                    &device_name,
-                    limit,
-                    move || home.pairing_sent(attempt),
+                (
+                    pair::pair_with_timeout(
+                        endpoint.insert(bound),
+                        &code,
+                        &device_name,
+                        limit,
+                        move || home.pairing_sent(attempt),
+                    )
+                    .await,
+                    false,
                 )
-                .await
             }
-            Err(error) => Err(error),
+            Err(error) => (Err(error), true),
         };
         if self.pair_attempt.load(Ordering::SeqCst) != attempt {
             tracing::info!("a newer pairing started, dropping this one's result");
@@ -268,15 +281,19 @@ impl HomeLink {
                 })
             }
             Ok(PairResponse::Rejected { reason, message }) => {
-                tracing::info!(?reason, "the home server rejected pairing: {message}");
-                Some(failed(rejected(reason), message))
+                let diagnostic = super::failure::redact(&code, &message);
+                tracing::info!(?reason, "the home server rejected pairing: {diagnostic}");
+                Some(PairingStatus::Failed {
+                    reason: rejected(reason),
+                    message: super::pairing_code::rejection(reason, lang),
+                    diagnostic: (!diagnostic.is_empty()).then_some(diagnostic),
+                })
             }
             Err(e) => {
                 let elapsed = started.elapsed();
-                let text = detail(&code, lang, elapsed, limit, &e);
-                // 详情原来只进界面：拿 adb 看日志查不出卡在哪一段、试过什么地址、服务端是什么时候登记的。
-                tracing::info!(elapsed = ?elapsed, "pairing failed: {e}; {text}");
-                Some(failed(transport(&e), text))
+                let failure = super::failure::pairing(&code, lang, elapsed, limit, &e, bind_failed);
+                tracing::info!(?elapsed, "pairing failed");
+                Some(failure)
             }
         };
         self.finish_pairing(attempt, status);
@@ -330,7 +347,7 @@ impl HomeLink {
                 CATALOG,
                 lang,
                 "home-pairing-timeout",
-                seconds = deadline.as_secs()
+                seconds = super::failure::seconds(*deadline)
             ),
             Abandoned::Ended => l10n!(CATALOG, lang, "home-pairing-aborted"),
         };
@@ -380,12 +397,7 @@ impl HomeLink {
                 }
                 Err(BindError::TimedOut) => {
                     return Err(TunnelError::TransportUnavailable {
-                        reason: l10n!(
-                            CATALOG,
-                            lang,
-                            "home-pairing-timeout",
-                            seconds = timeout.as_secs()
-                        ),
+                        reason: format!("endpoint binding exceeded {timeout:?}"),
                     });
                 }
             }
@@ -450,28 +462,12 @@ fn ticket(code: &PairingCode, device_name: &str) -> String {
     .to_string()
 }
 
-fn detail(
-    code: &PairingCode,
-    lang: Lang,
-    elapsed: Duration,
-    limit: Duration,
-    error: &TunnelError,
-) -> String {
-    let relays = code.relays.iter().map(|relay| relay.url.as_str());
-    l10n!(
-        CATALOG,
-        lang,
-        "home-pairing-failed-detail",
-        addresses = format!("{:?}", code.direct_addrs),
-        relays = relays.collect::<Vec<_>>().join(", "),
-        milliseconds = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
-        seconds = limit.as_secs(),
-        error = error.to_string()
-    )
-}
-
 fn failed(reason: PairingFailure, message: String) -> PairingStatus {
-    PairingStatus::Failed { reason, message }
+    PairingStatus::Failed {
+        reason,
+        message,
+        diagnostic: None,
+    }
 }
 
 /// 等管理员同意。带上加入后的角色名；模板还没改名时角色名为空，只说在等批。
@@ -499,12 +495,5 @@ fn rejected(reason: RejectReason) -> PairingFailure {
         RejectReason::BadRequest => PairingFailure::Protocol,
         RejectReason::ServerError => PairingFailure::Upstream,
         RejectReason::UnknownCode | RejectReason::Other => PairingFailure::Rejected,
-    }
-}
-
-fn transport(err: &TunnelError) -> PairingFailure {
-    match err {
-        TunnelError::Protocol { .. } | TunnelError::Unauthorized => PairingFailure::Protocol,
-        _ => PairingFailure::TransportUnavailable,
     }
 }

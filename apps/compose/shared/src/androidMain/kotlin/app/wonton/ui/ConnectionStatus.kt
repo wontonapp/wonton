@@ -342,6 +342,9 @@ fun ConnectionDetailsPage(viewModel: HomeViewModel, installed: InstalledPlugins?
                 UdpFlowsGroup(details.udpFlows, details.udpBufferEvictedDatagrams, installed)
             }
             details.lastFailure?.let { WontonGroup { WontonRow(stringResource(R.string.connection_last_failure), it) } }
+            details.diagnostic?.let {
+                ProblemDetail(it, stringResource(R.string.common_diagnostics))
+            }
         }
     }
 }

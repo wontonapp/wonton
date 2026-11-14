@@ -365,6 +365,7 @@ extension Error {
 struct ProblemDetail: View {
     let text: String
     var minimumTargetHeight: CGFloat?
+    var label: LocalizedStringResource = .Common.commonDetails
     @State private var isExpanded = false
     @Environment(\.wontonColors) private var colors
 
@@ -374,7 +375,7 @@ struct ProblemDetail: View {
                 isExpanded.toggle()
             } label: {
                 HStack(spacing: WontonTheme.spacing.s4) {
-                    Text(.Common.commonDetails)
+                    Text(label)
                     WontonIcon.forward.view(size: WontonTheme.size.iconTiny)
                         .rotationEffect(isExpanded ? .degrees(90) : .zero)
                 }

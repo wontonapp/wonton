@@ -81,6 +81,7 @@ mod tests {
                 loss_per_mille: Some(73),
                 rtt_ms: Some(1_240),
                 last_failure: Some("timed out".into()),
+                diagnostic: Some("tunnel transport unavailable: timed out".into()),
                 addresses_stale: true,
                 udp_flows: Vec::new(),
                 udp_buffer_evicted_datagrams: None,
@@ -96,6 +97,7 @@ mod tests {
             pairing: Some(PairingStatus::Failed {
                 reason: PairingFailure::Expired,
                 message: "码过期了".into(),
+                diagnostic: None,
             }),
             invite: Some(DeviceInvite::Ready {
                 code: SecretString::new(

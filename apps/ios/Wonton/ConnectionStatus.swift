@@ -258,6 +258,14 @@ struct ConnectionDetailsView: View {
                         WontonRow(title: String(localized: .Connection0.connectionDetailLastFailure), value: failure)
                     }
                 }
+                if let diagnostic = details.diagnostic, !diagnostic.isEmpty {
+                    ProblemDetail(
+                        text: diagnostic, minimumTargetHeight: WontonTheme.size.target,
+                        label: .Common.commonDiagnostics
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id(diagnostic)
+                }
             }
             .padding(WontonTheme.spacing.pageInset)
         }

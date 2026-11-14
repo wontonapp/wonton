@@ -12,6 +12,8 @@
     <string name="common_delete">Delete</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">Details</string>
+    <!-- Collapsed disclosure for raw troubleshooting information, separate from readable details. -->
+    <string name="common_diagnostics">Diagnostics</string>
     <!-- Button that closes the video player after watching. -->
     <string name="common_done">Done</string>
     <!-- Button that loads the page's data again after it failed. -->

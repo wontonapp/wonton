@@ -44,7 +44,11 @@ async fn a_stuck_bind_is_reported_and_retried_until_the_connection_comes_up() {
         })
         .await;
     assert!(down.details.failed_dials >= 2, "{:?}", down.details);
-    assert!(down.details.last_failure.is_some(), "{:?}", down.details);
+    let message = down.details.last_failure.as_ref().expect("应有失败说明");
+    assert!(message.contains("0.3"), "{message}");
+    let diagnostic = down.details.diagnostic.as_ref().expect("应能查看原始诊断");
+    assert!(diagnostic.contains("300ms"), "{diagnostic}");
+    assert!(!message.contains("endpoint binding"), "{message}");
     assert_eq!(down.proxy, None);
 
     // 绑定好了：不做任何操作，下一轮自己连上，代理能用。

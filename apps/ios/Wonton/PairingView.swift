@@ -372,7 +372,7 @@ private struct PairingProgress: View {
                 }
             }
             .accessibilityIdentifier("pairing-connecting")
-        case let .failed(reason, message):
+        case let .failed(reason, message, diagnostic):
             WontonNotice(
                 icon: .warning,
                 title: Self.title(reason),
@@ -395,6 +395,13 @@ private struct PairingProgress: View {
                 .buttonStyle(WontonButtonStyle(kind: .secondary))
                 if !message.isEmpty {
                     ProblemDetail(text: message, minimumTargetHeight: WontonTheme.size.target)
+                }
+                if let diagnostic, !diagnostic.isEmpty {
+                    ProblemDetail(
+                        text: diagnostic, minimumTargetHeight: WontonTheme.size.target,
+                        label: .Common.commonDiagnostics
+                    )
+                    .id(diagnostic)
                 }
             }
             .accessibilityElement(children: .contain)
