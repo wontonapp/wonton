@@ -18,6 +18,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     allowlist::Allowlist,
+    error::connection_log_code,
     forward,
     wire::{CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED, Request, Status},
 };
@@ -58,7 +59,7 @@ impl FederationProtocol {
         conn: &Connection,
         remote: EndpointId,
         mut allowlist: watch::Receiver<HashSet<EndpointId>>,
-    ) -> String {
+    ) -> &'static str {
         let mut streams = JoinSet::new();
         loop {
             tokio::select! {
@@ -66,12 +67,12 @@ impl FederationProtocol {
                     Ok((send, recv)) => {
                         streams.spawn(serve_stream(send, recv, self.upstream.clone()));
                     }
-                    Err(err) => return err.to_string(),
+                    Err(err) => return connection_log_code(&err),
                 },
                 changed = allowlist.changed() => {
                     if changed.is_err() || !allowlist.borrow_and_update().contains(&remote) {
                         conn.close(CLOSE_UNAUTHORIZED, REASON_UNAUTHORIZED);
-                        return "the peer is no longer in the server list".to_owned();
+                        return "the peer is no longer in the server list";
                     }
                 }
                 // 及时回收结束的流任务，长连接上的 JoinSet 才不会越积越多。
@@ -108,8 +109,8 @@ impl ProtocolHandler for FederationProtocol {
 
 async fn serve_stream(mut send: SendStream, mut recv: RecvStream, upstream: String) {
     let mut kind = [0u8; 1];
-    if let Err(err) = recv.read_exact(&mut kind).await {
-        debug!("the stream ended before the request type: {err}");
+    if recv.read_exact(&mut kind).await.is_err() {
+        debug!("the stream ended before the request type");
         return;
     }
     match Request::from_byte(kind[0]) {
@@ -154,8 +155,8 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
     if let Err(err) = tcp.set_nodelay(true) {
         debug!("failed to set TCP_NODELAY on the upstream connection: {err}");
     }
-    if let Err(err) = send.write_all(&[Status::Ok as u8]).await {
-        debug!("failed to write the status: {err}");
+    if send.write_all(&[Status::Ok as u8]).await.is_err() {
+        debug!("failed to write the status");
         forward::abort(&mut send, &mut recv);
         return;
     }
@@ -165,7 +166,7 @@ async fn forward_to_upstream(mut send: SendStream, mut recv: RecvStream, upstrea
         forward::tcp_to_tunnel(&mut tcp_read, &mut send),
     );
     if let Err(err) = result {
-        debug!("forwarding interrupted: {err}");
+        debug!(error = %err.log_safe(), "forwarding interrupted");
         forward::abort(&mut send, &mut recv);
     }
 }
@@ -175,6 +176,6 @@ async fn reply(send: &mut SendStream, status: Status) {
         Ok(()) => {
             send.finish().ok();
         }
-        Err(err) => debug!("failed to write the status: {err}"),
+        Err(_) => debug!("failed to write the status"),
     }
 }

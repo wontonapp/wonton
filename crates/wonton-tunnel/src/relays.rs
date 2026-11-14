@@ -467,6 +467,10 @@ async fn spawn_probe(map: RelayMap, tls: Option<CaTlsConfig>) -> anyhow::Result<
         .context("绑定中继探针 endpoint")
 }
 
+fn log_relay_url(url: &RelayUrl) -> &str {
+    url.as_str().split(['?', '#']).next().unwrap_or_default()
+}
+
 /// 按当前被撤的档（`wanted` 档 0..n）对齐探针覆盖集合，返回真正连上的中继——恢复信号。没有激活
 /// 回退（wanted == 0）时关掉全部探针。
 async fn probe_signal(
@@ -490,7 +494,7 @@ async fn probe_signal(
                 probe.endpoints.insert(relay.url.clone(), endpoint);
             }
             Err(error) => {
-                tracing::warn!(%error, url = %relay.url, "中继表：恢复探针起不来，这拍不探这台");
+                tracing::warn!(%error, url = %log_relay_url(&relay.url), "中继表：恢复探针起不来，这拍不探这台");
             }
         }
     }
@@ -538,7 +542,7 @@ pub fn spawn_tier_fallback(
             .await;
             match fallback.step(&table, &connected, &reachable_relays, Instant::now(), after) {
                 Some(TierAction::Enable(tier)) => {
-                    tracing::info!(tier, relays = ?table.tier(tier).iter().map(|r| r.url.clone()).collect::<Vec<_>>(), "中继表：这一档全断超阈值，加进下一档");
+                    tracing::info!(tier, relays = ?table.tier(tier).iter().map(|r| log_relay_url(&r.url)).collect::<Vec<_>>(), "中继表：这一档全断超阈值，加进下一档");
                     for relay in table.tier(tier) {
                         // 上游 n0-computer/iroh#4642：insert_relay 换掉已有的项不会重连，令牌不换。
                         // 这里只加新档，地址不会重复；要换令牌得整个重建 endpoint。

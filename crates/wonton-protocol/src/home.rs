@@ -79,8 +79,10 @@ pub enum PairingStatus {
     Paired,
     Failed {
         reason: PairingFailure,
-        /// 原始说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步，不从说明里猜类别。
+        /// 按 App 语言写的失败说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步。
         message: String,
+        /// 原始错误和连接地址，只在用户主动打开的可复制诊断中显示，不含配对密钥。
+        diagnostic: Option<String>,
     },
 }
 
@@ -240,8 +242,10 @@ pub struct ConnectionDetails {
     /// 判定窗口内的往返时间，毫秒；样本不够时为空。
     #[serde(default)]
     pub rtt_ms: Option<u32>,
-    /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
+    /// 最近一次失败的本地化说明；连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<String>,
+    /// 最近一次失败的原始诊断；与本地化说明分开，用户主动打开后才显示并可复制。
+    pub diagnostic: Option<String>,
     /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
     pub addresses_stale: bool,
     /// 当前隧道连接的 UDP 流向；只统计完整应用包，不能与上面的 QUIC 包计数相加。

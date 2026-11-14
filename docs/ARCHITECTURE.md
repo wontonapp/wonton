@@ -92,7 +92,7 @@ flowchart LR
 
 界面文字在两端各自的本地化资源里，语言跟随系统，也能按平台惯例单独设置；客户端核心只给类别和原始值，App 的语言经 `Accept-Language` 带给家里的服务器和插件页（ADR-0043）。服务器把语言按人记下，插件经 OIDC 的 `locale` 声明和核心 MCP 的 `wonton__user_locale` 工具按人取，默认语言由插件自己定。
 
-客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，上游原文和错误码原样嵌入，日志用英文。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
+客户端核心的“详情”用 `crates/wonton-client/locales` 的 Fluent 目录写，按 `SetLanguages` 第一项（App 在用的语言）协商，不支持的退到英文；一次请求用开始时的语言，日志用英文。连接失败的 `HomeStatus.message`、`ConnectionDetails.last_failure` 和配对失败说明只含本地化原因；原始错误及配对连接地址放进各自的可选 `diagnostic`，壳提供独立、默认收起且可复制的诊断入口。配对详情的实际总耗时与每个交换阶段的限时分别用秒表示，不把阶段限时当作整次耗时。其他详情保留上游原文和错误码。`CoreError` 的字段不变，前缀由客户端注册给协议 crate 的格式化函数按语言生成，不增加 UniFFI 类型。客户端和服务器共用 `wonton-l10n`（目录、CLDR 协商、一致性检查），资源和当前语言各自持有。
 
 系统入口（桌面小组件、系统搜索、iOS 控制按钮）不跑客户端核心：核心把当前服务器的最近会话、默认 Agent、联系人和插件投影成
 `wonton-protocol::widget` 的快照，写到数据目录下的 `widget/snapshot.json`（iOS 在 App Group 容器里），入口只读这份文件渲染，

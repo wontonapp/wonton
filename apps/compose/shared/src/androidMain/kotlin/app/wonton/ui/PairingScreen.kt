@@ -291,6 +291,7 @@ fun PairingFailureNotice(
                 modifier = Modifier.fillMaxWidth().testTag("pairing-back"), kind = WontonButtonKind.SECONDARY,
             )
             if (status.message.isNotBlank()) ProblemDetail(status.message)
+            status.diagnostic?.let { ProblemDetail(it, stringResource(R.string.common_diagnostics)) }
         }
     }
 }

@@ -202,7 +202,7 @@ async fn serve_local(
             respond_error(&mut tcp_write, &mut tcp_read, &err).await;
         }
         Err(RelayError::Aborted(err)) => {
-            debug!("forwarding interrupted: {err}");
+            debug!(error = %err.log_safe(), "forwarding interrupted");
             stream.abort();
         }
     }
@@ -245,7 +245,7 @@ async fn relay(
                     if !upload_done {
                         match tokio::time::timeout(LINGER, &mut upload).await {
                             Ok(Ok(())) => {}
-                            Ok(Err(err)) => debug!("response finished; upload drain interrupted: {err}"),
+                            Ok(Err(err)) => debug!(error = %err.log_safe(), "response finished; upload drain interrupted"),
                             Err(_) => debug!("response finished; no longer waiting for client EOF"),
                         }
                     }
@@ -314,7 +314,10 @@ async fn respond_error(
     tcp_read: &mut OwnedReadHalf,
     err: &TunnelError,
 ) {
-    debug!("local proxy is sending an error response: {err}");
+    debug!(
+        code = err.code(),
+        "local proxy is sending an error response"
+    );
     respond(tcp_write, tcp_read, &error_response(err)).await;
 }
 

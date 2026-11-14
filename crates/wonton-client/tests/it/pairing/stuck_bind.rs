@@ -32,6 +32,17 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
         .await
         .unwrap_or_else(|_| panic!("绑定卡住时绑定的时限没触发：{:?}", phone.home()));
     assert_eq!(failure, PairingFailure::TransportUnavailable, "{message}");
+    let Some(PairingStatus::Failed {
+        message,
+        diagnostic,
+        ..
+    }) = phone.home().pairing
+    else {
+        unreachable!()
+    };
+    let diagnostic = diagnostic.expect("绑定失败也要保留诊断");
+    assert!(diagnostic.contains("endpoint binding"), "{diagnostic}");
+    assert!(!message.contains("endpoint binding"), "{message}");
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     gate.open();
 }

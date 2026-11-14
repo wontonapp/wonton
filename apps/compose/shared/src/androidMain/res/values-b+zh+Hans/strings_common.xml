@@ -12,6 +12,8 @@
     <string name="common_delete">删除</string>
     <!-- Collapsed disclosure that shows the raw technical details of a problem when tapped. -->
     <string name="common_details">详情</string>
+    <!-- Collapsed disclosure for raw troubleshooting information, separate from readable details. -->
+    <string name="common_diagnostics">诊断信息</string>
     <!-- Button that closes the video player after watching. -->
     <string name="common_done">完成</string>
     <!-- Button that loads the page's data again after it failed. -->

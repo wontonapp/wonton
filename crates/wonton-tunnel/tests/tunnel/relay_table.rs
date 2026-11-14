@@ -24,7 +24,7 @@ use tokio::net::{TcpListener, TcpStream};
 use wonton_tunnel::relays::{RelayTable, relay_map, spawn_tier_fallback};
 use wonton_tunnel::{Allowlist, PathKind, ProxyAccess, TunnelServer, TunnelStatus};
 
-use crate::support::{Phone, Upstream, WAIT, init_tracing};
+use crate::support::{Phone, Upstream, WAIT, capture_logs, init_tracing, isolated_log_test};
 
 /// 测试里的回退阈值。iroh 第一次连上家中继多半在几百毫秒内，2 秒的阈值足够它先连上第一档。
 const FALLBACK_AFTER: Duration = Duration::from_secs(2);
@@ -348,6 +348,35 @@ async fn a_relay_with_a_shared_token_rejects_endpoints_without_it() -> anyhow::R
     phone.client.close();
     endpoint.close().await;
     server.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn relay_fallback_log_omits_url_query() -> anyhow::Result<()> {
+    const CANARY: &str = "query-canary-707";
+    if isolated_log_test("relay_table::relay_fallback_log_omits_url_query") {
+        return Ok(());
+    }
+    let logs = capture_logs("wonton_tunnel::relays=info");
+    let first = Forwarder::spawn().await?;
+    let second = Forwarder::spawn().await?;
+    let table = RelayTable::parse(&format!(
+        "{};{}?access_token={CANARY}",
+        first.relay_url(),
+        second.relay_url()
+    ))
+    .expect("synthetic relay table should parse");
+    let endpoint = relay_endpoint(SecretKey::generate(), relay_map(table.relays(), 1)).await;
+    let mut fallback = spawn_tier_fallback(endpoint.clone(), table, FALLBACK_AFTER, None);
+    tokio::time::timeout(WAIT, fallback.wait_enabled_tiers(2)).await?;
+    let log = logs.text();
+    endpoint.close().await;
+    assert!(log.contains("中继表：这一档全断超阈值"));
+    assert!(log.contains(&second.front.to_string()));
+    assert!(
+        !log.contains(CANARY),
+        "relay query leaked into fallback log"
+    );
     Ok(())
 }
 
