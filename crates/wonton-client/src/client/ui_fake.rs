@@ -6,9 +6,10 @@
 //!
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
 //! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、
-//! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、主面板里钉着的一页、商店入口、引导已经走完。
+//! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
+//! 主面板里钉着的一页、商店入口、引导已经走完。
 //! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
-//! 没有隧道，插件的网页本身加载不出来；房间的时间线和面板里那张加载得出来的本机网页在 `ui_fake_room.rs`。
+//! 没有隧道，插件的网页本身加载不出来；房间的时间线和加载得出来的本机网页（面板里一张、整页一张）在 `ui_fake_room.rs`。
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
 
@@ -35,11 +36,14 @@ pub(super) const CALL_ROOM_ID: &str = "!ui-fake-call:home.example";
 const CALL_PLUGIN: &str = "app.example.call";
 
 /// 有网页的假应用：标题、ID，和它的页面停在哪个状态。
-const WEB_APPS: [(&str, &str, FakePage); 3] = [
+const WEB_APPS: [(&str, &str, FakePage); 4] = [
     ("Budget", "app.example.budget", FakePage::Loading),
     ("Photos", "app.example.photos", FakePage::Stopped),
     ("Papers", "app.example.papers", FakePage::Failed),
+    ("Corner", CORNER_APP, FakePage::Local),
 ];
+/// 点开是一张加载得出来的本机网页（`ui_fake_room::corner`），整页上有真网页可测。
+const CORNER_APP: &str = "app.example.corner";
 
 #[derive(Clone, Copy)]
 enum FakePage {
@@ -47,6 +51,8 @@ enum FakePage {
     Loading,
     Stopped,
     Failed,
+    /// 没有隧道也加载得出来：打开时换成回环地址上的公网网页那一类（`TabRef::Url`），壳直接连。
+    Local,
 }
 
 #[uniffi::export]
@@ -92,7 +98,7 @@ impl ClientCore {
         let views = self.views();
         match action {
             Action::OpenPage { tab } => {
-                let Some(page) = fake_page(&tab) else {
+                let Some((tab, page)) = fake_open(tab.clone()) else {
                     // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
                     views.pages.send_modify(|pages| {
                         pages.stack.clear();
@@ -151,6 +157,15 @@ pub(super) fn call_widget() -> wonton_protocol::RoomWidget {
     }
 }
 
+/// 打开 `tab` 时压进栈的那一项；`None` 是根页面。
+fn fake_open(tab: TabRef) -> Option<(TabRef, TabPage)> {
+    if tab == web_app_tab(CORNER_APP) {
+        return super::ui_fake_room::corner();
+    }
+    let page = fake_page(&tab)?;
+    Some((tab, page))
+}
+
 fn fake_page(tab: &TabRef) -> Option<TabPage> {
     if *tab == call_widget().tab {
         return Some(TabPage {
@@ -173,7 +188,7 @@ fn fake_page(tab: &TabRef) -> Option<TabPage> {
         url: Some(web_url(plugin_id)),
         layout: TabLayout::default(),
         state: match kind {
-            FakePage::Loading => TabState::Ready,
+            FakePage::Loading | FakePage::Local => TabState::Ready,
             FakePage::Stopped => TabState::Stopped,
             FakePage::Failed => TabState::Failed {
                 reason: "fake failure from the UI test fixture".into(),
@@ -297,7 +312,7 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
     installed.extend(WEB_APPS.iter().map(|(title, id, kind)| {
         let status = match kind {
             FakePage::Stopped => PluginState::Stopped,
-            FakePage::Loading | FakePage::Failed => PluginState::Running {
+            FakePage::Loading | FakePage::Failed | FakePage::Local => PluginState::Running {
                 health: PluginHealth::Healthy,
             },
         };
@@ -424,7 +439,7 @@ mod tests {
         );
         assert!(core.dispatch(Action::RefreshPlugins).is_ok());
         assert_eq!(core.pages().root, TabRef::Chat);
-        assert_eq!(core.plugins().installed.unwrap().plugins.len(), 4);
+        assert_eq!(core.plugins().installed.unwrap().plugins.len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -480,6 +495,12 @@ mod tests {
         open("app.example.budget").unwrap();
         assert!(!core.pages().shows_apps);
         assert_eq!(stack(), [web_app_tab("app.example.budget")]);
+        // 整页打开本机网页的那个应用：压进栈的是加载得出来的那一页。
+        open(CORNER_APP).unwrap();
+        let top = core.pages().stack.pop().unwrap();
+        assert!(matches!(top.tab, TabRef::Url { .. }));
+        assert_eq!(top.page.state, TabState::Ready);
+        core.dispatch(Action::ClosePage).unwrap();
         // 面板里钉着的那一页一直在，不跟着栈变。
         assert_eq!(core.pages().panel.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);

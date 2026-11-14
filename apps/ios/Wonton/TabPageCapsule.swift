@@ -19,6 +19,9 @@ struct TabPageCapsule: View {
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
 
+    /// 胶囊那一行的高度。整页的网页把状态栏加这一行当作被挡住的一条让开（ADR-0095“铺满”）。
+    static var rowHeight: CGFloat { WontonTheme.size.target }
+
     var body: some View {
         VStack(spacing: WontonTheme.spacing.s8) {
             HStack(spacing: WontonTheme.spacing.s8) {
@@ -31,7 +34,7 @@ struct TabPageCapsule: View {
                     .accessibilityHidden(!shown)
                     .animation(.easeInOut(duration: 0.2), value: shown)
             }
-            .frame(height: WontonTheme.size.target)
+            .frame(height: Self.rowHeight)
             // 胶囊占着右边：连接原因单独一行，短句也不许挤成省略号（#149）。
             if let line = status.line {
                 line.padding(WontonTheme.spacing.s12)

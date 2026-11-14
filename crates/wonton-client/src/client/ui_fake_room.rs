@@ -1,8 +1,11 @@
-//! 假数据入口（`ui_fake.rs`）里的房间和面板网页：一条够长的时间线，和一张带全屏固定浮层的本机网页。
+//! 假数据入口（`ui_fake.rs`）里的房间和本机网页：一条够长的时间线，一张带全屏固定浮层的面板网页，
+//! 和一张右上角有固定按钮、整页打开的网页。
 //!
 //! 时间线里有几条比屏幕还高的消息，落点在靠前的一条上（进房间停在别处、点“回到底部”再上推，是开发栈上
 //! 房间走屏的真实顺序）。面板网页由回环地址上的一个小服务给：公网网页那一类（`TabRef::Url`）不经隧道，
 //! 壳直接连它；页面本身能滚，上面盖着一层全屏的固定浮层，右上角一个关闭按钮，照 Navidrome 的手机播放器摆。
+//! 整页的那张（[`corner`]）照 Immich、Actual 这类现成应用摆：顶上、底下各一条固定的栏，右上角一个按钮，
+//! 出口胶囊压不压得到它由界面测试看（ADR-0095“铺满”）。
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener};
@@ -34,6 +37,22 @@ pub(super) fn panel() -> Vec<PanelItem> {
         source: PanelSource::User,
         movable: true,
     }]
+}
+
+/// 整页打开的那张网页：`cover` 为真的那份写了 `viewport-fit=cover`，自己按 `env(safe-area-inset-*)` 让。
+/// 本机端口占不上时没有。
+pub(super) fn corner() -> Option<(TabRef, TabPage)> {
+    let url = format!("{}corner", fixture_url()?);
+    let page = TabPage {
+        title: "Corner".into(),
+        icon: TabIcon::Plugin { icon: None },
+        url: Some(url.clone()),
+        layout: TabLayout::default(),
+        state: TabState::Ready,
+        reload: 0,
+        opens_in_browser: false,
+    };
+    Some((TabRef::Url { url }, page))
 }
 
 /// 房间的第一批：全部条目，落点在第三条。之后没有别的批次。
@@ -172,7 +191,50 @@ setInterval(report, 500);
 </script>
 </body></html>"#;
 
-/// 回环地址上给上面那一页的小服务，进程里只起一次，跟着 App 进程结束。
+/// 整页的那张网页。`{viewport}` 换成有没有 `viewport-fit=cover`；`#probe` 写着是哪一份、页面自己量到的安全区和视口高度，
+/// 界面测试失败时带进报错里。页面比屏幕长，滚下去以后固定的栏还在原位。
+const CORNER: &str = r#"<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1{viewport}">
+<title>Corner</title>
+<style>
+html, body { margin: 0; background: #17324d; color: #fff; font: 17px system-ui; }
+#bar { position: fixed; top: 0; left: 0; right: 0; height: 48px; padding-top: env(safe-area-inset-top); background: #2a6f97; }
+#menu { position: fixed; top: env(safe-area-inset-top); right: 0; width: 60px; height: 48px; font-size: 24px; }
+#foot { position: fixed; bottom: 0; left: 0; right: 0; height: 48px; background: #2a6f97; }
+#body { padding: 120px 16px; height: 300vh; }
+</style></head>
+<body>
+<div id="bar">Fixture bar</div>
+<button id="menu" aria-label="Fixture corner" onclick="this.setAttribute('aria-label', 'Fixture corner tapped')">≡</button>
+<div id="body"><p id="probe">Fixture probe</p><a href="/corner-cover">Fixture cover</a></div>
+<div id="foot">Fixture foot</div>
+<script>
+function probe() {
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;top:env(safe-area-inset-top);bottom:env(safe-area-inset-bottom);visibility:hidden';
+  document.body.appendChild(box);
+  const style = getComputedStyle(box), menu = document.getElementById('menu').getBoundingClientRect();
+  const fit = document.querySelector('meta[name=viewport]').content.includes('cover') ? 'cover' : 'plain';
+  document.getElementById('probe').textContent = 'Fixture probe ' + fit + ' safe ' + style.top + ' ' + style.bottom +
+    ' inner ' + innerHeight + ' client ' + document.documentElement.clientHeight + ' menu ' + Math.round(menu.top);
+  box.remove();
+}
+probe();
+addEventListener('resize', probe);
+setInterval(probe, 500);
+</script>
+</body></html>"#;
+
+fn body(path: &str) -> String {
+    match path {
+        "/corner" => CORNER.replace("{viewport}", ""),
+        "/corner-cover" => CORNER.replace("{viewport}", ", viewport-fit=cover"),
+        _ => PAGE.to_owned(),
+    }
+}
+
+/// 回环地址上给上面几页的小服务，进程里只起一次，跟着 App 进程结束。
 fn fixture_url() -> Option<String> {
     static URL: OnceLock<Option<String>> = OnceLock::new();
     URL.get_or_init(|| {
@@ -182,12 +244,15 @@ fn fixture_url() -> Option<String> {
             .name("ui-fake-page".into())
             .spawn(move || {
                 for mut stream in listener.incoming().flatten() {
-                    // 只有这一页：请求读掉开头就回，不看路径。
-                    let _ = stream.read(&mut [0; 2048]);
+                    // 只看请求行里的路径，别的不读。
+                    let mut request = [0; 2048];
+                    let read = stream.read(&mut request).unwrap_or(0);
+                    let line = String::from_utf8_lossy(&request[..read]);
+                    let body = body(line.split_whitespace().nth(1).unwrap_or("/"));
                     let _ = write!(
                         stream,
-                        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{PAGE}",
-                        PAGE.len()
+                        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
                     );
                 }
             })
@@ -216,6 +281,27 @@ mod tests {
         stream.read_to_string(&mut response).unwrap();
         assert!(response.starts_with("HTTP/1.1 200"));
         assert!(response.contains("Fixture close"));
+    }
+
+    #[test]
+    fn corner_page_is_served_with_and_without_viewport_fit() {
+        let (tab, page) = corner().expect("the loopback fixture page did not start");
+        let url = page.url.clone().unwrap();
+        assert_eq!(tab, TabRef::Url { url: url.clone() });
+        let (address, _) = url.trim_start_matches("http://").split_once('/').unwrap();
+        let get = |path: &str| {
+            let mut stream = std::net::TcpStream::connect(address).unwrap();
+            // 一次写完：服务只读一次就回，分几次写时没读走的那截会让连接被重置。
+            stream
+                .write_all(format!("GET {path} HTTP/1.1\r\nhost: fixture\r\n\r\n").as_bytes())
+                .unwrap();
+            let mut response = String::new();
+            stream.read_to_string(&mut response).unwrap();
+            response
+        };
+        let plain = get("/corner");
+        assert!(plain.contains("Fixture corner") && !plain.contains("viewport-fit=cover"));
+        assert!(get("/corner-cover").contains("viewport-fit=cover"));
     }
 
     #[test]
