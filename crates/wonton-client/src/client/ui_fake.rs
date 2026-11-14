@@ -6,7 +6,7 @@
 //!
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个没有网页的已装应用（点开是详情页）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、主面板里钉着的一页、商店入口、引导已经走完。
-//! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈，壳的出口才有东西可测；
+//! 操作里只认开页和关页（`OpenPage`、`ClosePage`），照真核心的规则改页面栈和应用网格的开关，壳的出口才有东西可测；
 //! 没有隧道，插件的网页本身加载不出来；房间的时间线和面板里那张加载得出来的本机网页在 `ui_fake_room.rs`。
 //! 媒体、商店列表和别的操作后的新状态不在里面，
 //! 要用这些的测试仍然连开发栈（见 `apps/ios/WontonUITests/UITestBackend.swift`）。
@@ -88,13 +88,17 @@ impl ClientCore {
         match action {
             Action::OpenPage { tab } => {
                 let Some(page) = fake_page(&tab) else {
-                    // 根页面（聊天、应用）一路弹回根。
-                    views.pages.send_modify(|pages| pages.stack.clear());
+                    // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
+                    views.pages.send_modify(|pages| {
+                        pages.stack.clear();
+                        pages.shows_apps = tab == TabRef::Apps;
+                    });
                     return Ok(());
                 };
                 views.pages.send_if_modified(|pages| {
+                    let left_apps = std::mem::take(&mut pages.shows_apps);
                     if pages.stack.last().is_some_and(|open| open.tab == tab) {
-                        return false;
+                        return left_apps;
                     }
                     pages.stack.retain(|open| open.tab != tab);
                     pages.stack.push(OpenPage { tab, page });
@@ -105,7 +109,8 @@ impl ClientCore {
             Action::ClosePage => {
                 let mut closed = false;
                 views.pages.send_if_modified(|pages| {
-                    closed = pages.stack.pop().is_some();
+                    // 应用网格开着时关的是它，栈不动。
+                    closed = std::mem::take(&mut pages.shows_apps) || pages.stack.pop().is_some();
                     closed
                 });
                 if closed {
