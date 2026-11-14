@@ -66,7 +66,8 @@ struct Drift {
 }
 
 impl PluginManager {
-    /// 渲染和容器上的摘要对不上就重建全部容器；`when_stopped` 时全停着的插件也重建。返回重建过没有。
+    /// 渲染和容器上的摘要对不上就重建全部容器；`when_stopped` 时全停着的插件也重建；`force` 时不管
+    /// 摘要对不对都重建（网络刚重建过，容器引用的还是旧网络）。返回重建过没有。
     /// 失败照实往外报，不回退成用旧容器。`gate` 是等健康的时限：开机恢复和容器监视串行核对，用固定的
     /// 安装时限，别人触发的重建按插件声明。
     pub(super) async fn recreate_on_drift(
@@ -76,15 +77,42 @@ impl PluginManager {
         langs: &Languages,
         when_stopped: bool,
         gate: Gate,
+        force: bool,
     ) -> Result<bool, InstallError> {
         let (ctx, plan) = self.rebuild_plan(package, record, langs).await?;
         let drift = self.drift_of(&plan).await?;
-        if !drift.drifted || (drift.running == 0 && !when_stopped) {
+        if !force && (!drift.drifted || (drift.running == 0 && !when_stopped)) {
             return Ok(false);
         }
-        tracing::info!(plugin = %package.manifest.id, "插件容器的渲染变了，按安装的路径重建");
-        self.replace_containers(&ctx, plan, gate).await?;
-        Ok(true)
+        tracing::info!(
+            plugin = %package.manifest.id,
+            operation = "reconcile",
+            forced = force,
+            drifted = drift.drifted,
+            "插件容器的渲染变了或网络刚重建，按安装的路径重建"
+        );
+        match self.replace_containers(&ctx, plan, gate).await {
+            Ok(()) => {
+                tracing::info!(
+                    plugin = %package.manifest.id,
+                    operation = "reconcile",
+                    result = "succeeded",
+                    "插件容器重建完成"
+                );
+                Ok(true)
+            }
+            Err(error) => {
+                tracing::error!(
+                    plugin = %package.manifest.id,
+                    operation = "reconcile",
+                    result = "failed",
+                    error_kind = error.kind(),
+                    reason = %error,
+                    "插件容器重建失败"
+                );
+                Err(error)
+            }
+        }
     }
 
     pub(super) async fn recreate_interrupted(

@@ -184,8 +184,8 @@ impl PluginManager {
         {
             return Ok(());
         }
-        self.start_with_gate(id, Gate::InstallTimeout, false)
-            .await?;
+        // start 链（含核对与重建）的 future 很大，内联会把它撑进每个 watch 任务里（栈溢出，见 #434）。
+        Box::pin(self.start_with_gate(id, Gate::InstallTimeout, false)).await?;
         Ok(())
     }
 
