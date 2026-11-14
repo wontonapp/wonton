@@ -302,6 +302,216 @@
         }
       }
     },
+    "install.deviceDisksNone": {
+      "comment": "Shown in the devices section when the app asks for whole disks and the home server lists none to tick.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No disks to choose on this server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器上没有可选的硬盘"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台伺服器上沒有可選的硬碟"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーには選べるディスクがありません"
+          }
+        }
+      }
+    },
+    "install.deviceSerialFor": {
+      "comment": "Label above the serial ports to pick one from. %@ is the name of the app's service that gets the port.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serial port for %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "给 %@ 用的串口"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "給 %@ 用的序列埠"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 用のシリアルポート"
+          }
+        }
+      }
+    },
+    "install.deviceSerialNone": {
+      "comment": "Shown in the devices section when the app asks for a serial port and the home server has none plugged in.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No serial devices on this server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器上没有可选的串口"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台伺服器上沒有可選的序列埠"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーには選べるシリアルポートがありません"
+          }
+        }
+      }
+    },
+    "install.deviceSystemDisk": {
+      "comment": "Warning tag on a disk that holds the home server's system or Wonton's data.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System disk"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统盘"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統碟"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムディスク"
+          }
+        }
+      }
+    },
+    "install.deviceUpdateApp": {
+      "comment": "Shown under a device of a kind this app version does not know, which cannot be picked.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Update the app to choose this device"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 后才能选这个设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更新 App 後才能選這個裝置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このデバイスを選ぶにはアプリを更新してください"
+          }
+        }
+      }
+    },
+    "install.deviceUsbAll": {
+      "comment": "Row in the devices section saying the app gets every USB device on the home server, not one picked device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All USB devices on this server"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这台服务器上的全部 USB 设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這台伺服器上的全部 USB 裝置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このサーバーのすべての USB デバイス"
+          }
+        }
+      }
+    },
+    "install.devices": {
+      "comment": "Section title above the serial ports, USB access, and disks an app asks for, on the install page and on confirmation cards.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Devices"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "裝置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デバイス"
+          }
+        }
+      }
+    },
     "install.fillProfile": {
       "comment": "Button in the install preview when the app needs profile details you haven't filled in yet.",
       "extractionState": "manual",

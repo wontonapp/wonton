@@ -16,6 +16,20 @@
     <string name="install_completion_title">安裝應用程式</string>
     <!-- Problem title when the core couldn't confirm the install result. -->
     <string name="install_completion_uncertain">安裝結果不確定</string>
+    <!-- Shown in the devices section when the app asks for whole disks and the home server lists none to tick. -->
+    <string name="install_device_disks_none">這台伺服器上沒有可選的硬碟</string>
+    <!-- Label above the serial ports to pick one from. %1$s is the name of the app's service that gets the port. -->
+    <string name="install_device_serial_for">給 %1$s 用的序列埠</string>
+    <!-- Shown in the devices section when the app asks for a serial port and the home server has none plugged in. -->
+    <string name="install_device_serial_none">這台伺服器上沒有可選的序列埠</string>
+    <!-- Warning tag on a disk that holds the home server's system or Wonton's data. -->
+    <string name="install_device_system_disk">系統碟</string>
+    <!-- Shown under a device of a kind this app version does not know, which cannot be picked. -->
+    <string name="install_device_update_app">更新 App 後才能選這個裝置</string>
+    <!-- Row in the devices section saying the app gets every USB device on the home server, not one picked device. -->
+    <string name="install_device_usb_all">這台伺服器上的全部 USB 裝置</string>
+    <!-- Section title above the serial ports, USB access, and disks an app asks for, on the install page and on confirmation cards. -->
+    <string name="install_devices">裝置</string>
     <!-- Button that closes the install page. -->
     <string name="install_done">完成</string>
     <!-- Button in the install preview when the app needs profile details you haven't filled in yet. -->

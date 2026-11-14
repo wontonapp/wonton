@@ -7,7 +7,7 @@ struct ConfirmationCardRow: View {
     let view: ConfirmationView
     let bots: [BotView]
     let plugins: PluginsModel
-    let answer: (CardChoice, [String: String], [String: SettingValue]) -> Void
+    let answer: (CardChoice, [String: String], [String: SettingValue], [String]) -> Void
     let stopWindow: () -> Void
 
     @State private var expanded = false

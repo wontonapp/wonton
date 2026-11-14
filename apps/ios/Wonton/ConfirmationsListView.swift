@@ -7,7 +7,7 @@ struct ConfirmationsListView: View {
     let view: ConfirmationsViewModel
     let bots: [BotView]
     let plugins: PluginsModel
-    let answer: (ConfirmationView, CardChoice, [String: String], [String: SettingValue]) -> Void
+    let answer: (ConfirmationView, CardChoice, [String: String], [String: SettingValue], [String]) -> Void
     let stopWindow: (ConfirmationView) -> Void
     let retry: () -> Void
     let approveContact: (PendingContactRequest) -> Void
@@ -72,7 +72,7 @@ struct ConfirmationsListView: View {
                         view: card,
                         bots: bots,
                         plugins: plugins,
-                        answer: { answer(card, $0, $1, $2) },
+                        answer: { answer(card, $0, $1, $2, $3) },
                         stopWindow: { stopWindow(card) }
                     )
                 }
