@@ -6,7 +6,7 @@ use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, Permission, PluginKind, Sso};
+use super::manifest::{Manifest, ManifestError, ManifestExt, Permission, PluginKind, Sso};
 use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";

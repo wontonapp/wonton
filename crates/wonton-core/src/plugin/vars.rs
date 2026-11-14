@@ -32,7 +32,7 @@ impl std::fmt::Debug for OidcVars {
     }
 }
 
-/// 注入给插件的主人身份（[`Manifest::gets_owner_identity`]），和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
+/// 注入给插件的主人身份（[`super::manifest::ManifestExt::gets_owner_identity`]），和 OIDC 声明、代登录的 `{user}`、`{email}` 同值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OwnerVars {
     pub name: String,

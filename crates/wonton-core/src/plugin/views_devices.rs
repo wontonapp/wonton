@@ -5,7 +5,7 @@ use wonton_protocol::{BlockedCategory, CardLine, PluginDevice};
 use super::device;
 use super::languages::Languages;
 use super::manager::{InstallError, PluginManager};
-use super::manifest::{DeviceClass, Manifest};
+use super::manifest::{DeviceClass, Manifest, ManifestExt};
 use super::store::{EnabledPermission, InstalledRecord};
 use super::views::line;
 use crate::l10n;

@@ -1,47 +1,11 @@
 //! 不跑代码的两种形态的清单字段（ADR-0080）：`static_web` 的静态文件目录和出网白名单、`link` 的地址。
 
-use serde::{Deserialize, Serialize};
+pub use wonton_protocol::manifest::{LinkSpec, StaticWebSpec};
 
 use super::manifest::{Manifest, ManifestError, Permission, Runtime};
 
 /// 静态网页出网白名单最多几项。
 pub const MAX_CONNECT: usize = 32;
-
-/// `x-wonton.static_web`。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StaticWebSpec {
-    /// 包里放静态文件的目录。
-    #[serde(default = "default_root")]
-    pub root: String,
-    /// 找不到的路径回这个文件（单页应用）；没写时回 404。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub fallback: Option<String>,
-    /// 页面能连的外部来源：`https://<主机名>` 或 `wss://<主机名>`，主机名可以以 `*.` 开头。
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub connect: Vec<String>,
-}
-
-impl Default for StaticWebSpec {
-    fn default() -> Self {
-        Self {
-            root: default_root(),
-            fallback: None,
-            connect: Vec::new(),
-        }
-    }
-}
-
-fn default_root() -> String {
-    "web".to_owned()
-}
-
-/// `x-wonton.link`。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LinkSpec {
-    pub url: String,
-}
 
 fn invalid(message: String) -> ManifestError {
     ManifestError::Invalid(message)
@@ -100,14 +64,18 @@ fn reject_fields(runtime: &str, fields: &[&str]) -> Result<(), ManifestError> {
     )))
 }
 
-impl Manifest {
+pub(super) trait StaticWebManifestExt {
+    fn imply_static_webui(&mut self);
+}
+
+impl StaticWebManifestExt for Manifest {
     /// 静态网页本身就是网页：没写 `webui` 时按 `{path: /}` 算，App 照样有打开的入口，`tabs` 也有所依。
-    pub(super) fn imply_static_webui(&mut self) {
+    fn imply_static_webui(&mut self) {
         if self.runtime == Runtime::StaticWeb && self.webui.is_none() {
             self.webui = Some(super::manifest::WebUi {
                 service: String::new(),
                 port: 0,
-                path: super::manifest::default_web_path(),
+                path: "/".to_owned(),
                 sso: super::manifest::Sso::None,
                 oidc: None,
                 proxy: None,

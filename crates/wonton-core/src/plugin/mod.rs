@@ -163,7 +163,7 @@ pub(crate) mod fake_docker;
 pub(crate) mod tests;
 
 pub use manager::{Health, InstallError, PluginManager, PluginStatus, PluginView};
-pub use manifest::{Manifest, Permission, PluginId};
+pub use manifest::{Manifest, ManifestExt, Permission, PermissionExt, PluginId};
 pub(crate) use manifest_tabs::validate_path;
 pub use mcp_server::{McpServer, ToolLimits};
 pub use owner_secrets::{SecretValue, ViewableSecrets};

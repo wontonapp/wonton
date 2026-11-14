@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::languages::Languages;
 use super::manager::InstallError;
-use super::manifest::{Manifest, Permission};
+use super::manifest::{Manifest, ManifestExt, Permission};
 use super::store::EnabledPermission;
 use crate::l10n;
 
