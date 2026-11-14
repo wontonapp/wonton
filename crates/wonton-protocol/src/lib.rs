@@ -274,8 +274,8 @@ pub use plugin::{
     SettingsSchemaProblemKind, SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing,
     StoreProblem, StoreSection, TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView,
     UninstallPreview, UninstallRequest, UpgradeOffer, UpgradeRequest, UpgradeResult,
-    WidgetCapability, WidgetCapabilityLevel, WidgetEntry, plugin_scope_path,
-    plugin_settings_path, plugin_settings_preview_path, secret_input_path,
+    WidgetCapability, WidgetCapabilityLevel, WidgetEntry, plugin_scope_path, plugin_settings_path,
+    plugin_settings_preview_path, secret_input_path,
 };
 pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 pub use plugin::{PluginStart, PluginStartState, RoomPlugin};

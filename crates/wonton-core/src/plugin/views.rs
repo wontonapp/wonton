@@ -837,7 +837,6 @@ fn settings_form(
     Ok(Some(super::settings::install_form(&schema, &values, langs)))
 }
 
-
 fn state(status: &PluginStatus, health: Option<Health>) -> PluginState {
     match status {
         PluginStatus::Installing => PluginState::Installing,
