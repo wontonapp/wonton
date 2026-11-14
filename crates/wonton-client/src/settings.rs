@@ -592,7 +592,6 @@ mod tests {
         FriendsViewModel {
             state: FriendsState::Loading,
             friends: Vec::new(),
-            groups: Vec::new(),
             incoming: Vec::new(),
             outgoing: Vec::new(),
             blocked: Vec::new(),

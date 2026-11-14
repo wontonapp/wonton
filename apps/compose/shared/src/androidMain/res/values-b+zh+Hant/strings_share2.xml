@@ -10,8 +10,6 @@
     <string name="share_empty">沒有可選的好友或群組</string>
     <!-- Section title for individual friends in the share recipient picker. No arguments. -->
     <string name="share_friends">好友</string>
-    <!-- Section title for friend groups in the share recipient picker. No arguments. -->
-    <string name="share_groups">群組</string>
     <!-- Expiration choice that grants access for one hour from now. No arguments. -->
     <string name="share_hour">1 小時</string>
     <!-- Identity verification detail when the verified user ID belongs to a different server. No arguments. -->

@@ -87,12 +87,11 @@ impl PluginsLink {
     }
 }
 
-/// 好友页的请求、屏蔽和自己的链接不在核心名单里，这里留空；壳只读 `friends` 和 `groups`。
+/// 好友页的请求、屏蔽和自己的链接不在核心名单里，这里留空；壳只读 `friends`。
 pub(crate) fn recipients(list: FriendsList) -> FriendsViewModel {
     FriendsViewModel {
         state: FriendsState::Ready,
         friends: list.friends,
-        groups: list.groups,
         incoming: Vec::new(),
         outgoing: Vec::new(),
         blocked: Vec::new(),

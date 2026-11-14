@@ -8,14 +8,6 @@
     <string name="friends_requests_title">Requests</string>
     <!-- Section heading above the friend list. -->
     <string name="friends_list_title">Friends</string>
-    <!-- Row subtitle when a friend is in no group. -->
-    <string name="friends_no_group">No group</string>
-    <!-- Title of the new-group dialog. -->
-    <string name="friends_group_create_title">New group</string>
-    <!-- Title of the rename-group dialog. Argument: the current name. -->
-    <string name="friends_group_rename_title">Rename “%1$s”</string>
-    <!-- Confirmation dialog body: what deleting a group does. -->
-    <string name="friends_group_delete_message">Friends in it stay friends. Plugin access given to this group is withdrawn.</string>
     <!-- Title of the block-a-server dialog. -->
     <string name="friends_block_server_title">Block a server</string>
     <!-- Placeholder of the server name field; no scheme, no wildcards. -->

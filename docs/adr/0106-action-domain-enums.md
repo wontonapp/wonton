@@ -90,7 +90,7 @@ Agent 动作由同步 `dispatch` 发起后在后台完成：即时连接错误�
 | `PeerAction` | `RefreshPeers`、`ShowPeerCode`、`HidePeerCode`、`ResetPeerCode`、`ScanPeerCode`、`ApprovePeerRequest`、`RejectPeerRequest`、`UnrejectPeerRequest`、`RemovePeer` |
 | `BotContactAction` | `RefreshBotContacts`、`RequestBotContact`、`RequestPersonContact`、`ApproveBotContact`、`RejectBotContact`、`RemoveBotContact` |
 | `FamilyAction` | `RefreshRoles`、`CreateRole`、`UpdateRole`、`DeleteRole`、`SetDefaultRole`、`AssignMemberRole`、`AssignFriendRole` |
-| `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend`、`SaveFriendGroup`、`RemoveFriendGroup`、`SetFriendGroups` |
+| `FriendsAction` | `RefreshFriends`、`AddFriend`、`ApproveFriendRequest`、`RejectFriendRequest`、`CancelFriendRequest`、`RemoveFriend`、`BlockFriend`、`UnblockFriend` |
 | `SharingAction` | `CreatePluginShare`、`UpdatePluginShare`、`RevokePluginShare`、`RefreshSharedApps`、`OpenSharedApp` |
 | `AgentAction` | `StopChain`、`SetAgentLimits`、`SetConsumerAgentConcurrency`（由原独立 `AgentChainAction` 改名并纳入 `Action::Agent`） |
 

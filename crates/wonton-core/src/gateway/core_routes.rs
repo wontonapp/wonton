@@ -379,15 +379,6 @@ fn friend_routes() -> Router<Arc<Gateway>> {
             put(friends::accept).delete(friends::remove),
         )
         .route(
-            "/_wonton/api/friends/{user_id}/groups",
-            put(friends::set_groups),
-        )
-        .route("/_wonton/api/friend-groups", post(friends::save_group))
-        .route(
-            "/_wonton/api/friend-groups/{id}",
-            delete(friends::remove_group),
-        )
-        .route(
             "/_wonton/api/federation-blocks/{server_name}",
             post(friends::block_server).delete(friends::unblock_server),
         )

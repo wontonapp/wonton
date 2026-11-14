@@ -2,7 +2,7 @@
 //!
 //! `app.wonton.friend` 是 `m.room.create` 内容里的布尔标记（建完不能改）；发邀请时
 //! `is_direct` 为真。普通私聊邀请也进请求列表，由 [`FriendRequestKind`] 区分。
-//! 接受邀请才成为好友；删好友同时收回直接授权及组授权对这个人的访问，私聊不退出。
+//! 接受邀请才成为好友；删好友同时收回分享给这个人的访问，私聊不退出。
 
 use serde::{Deserialize, Serialize};
 
@@ -16,14 +16,13 @@ pub const INVITE_FILTER_EVENT: &str = "org.matrix.msc4155.invite_permission_conf
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendEvent {}
 
-/// 好友与请求页面。分组只属于当前账号，不发给好友；请求不混入聊天列表。
+/// 好友与请求页面。请求不混入聊天列表。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct FriendsViewModel {
     pub state: FriendsState,
     /// 按成为好友的时间排列，用户 ID 唯一。
     pub friends: Vec<FriendRow>,
-    pub groups: Vec<FriendGroup>,
     pub incoming: Vec<FriendRequest>,
     pub outgoing: Vec<FriendRequest>,
     pub blocked: Vec<FriendBlock>,
@@ -57,21 +56,12 @@ pub struct FriendRow {
     pub user_id: String,
     /// Matrix 资料原值；没填时为空，由壳显示用户 ID。
     pub display_name: Option<String>,
-    /// [`FriendGroup::id`]，不能重复。
-    pub groups: Vec<String>,
-    /// 对这个人有效的插件 ID，合并直接和组授权后去重；不包含已到期授权。
+    /// 好友名单里这个人的角色（`roles.json` 的 ID），默认是“朋友”模板。
+    pub role_id: String,
+    /// 对这个人有效的插件 ID；不包含已到期授权。
     pub shared_plugins: Vec<String>,
     /// 主人的服务器观察到的最后一次打开分享的时刻，Unix 毫秒；从未打开或无此信息时为空。
     pub last_opened_share_at_ms: Option<u64>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
-pub struct FriendGroup {
-    /// 核心分配、不因改名而改变的组 ID。
-    pub id: String,
-    /// 用户填写的原值，去掉首尾空白后不能为空。
-    pub name: String,
 }
 
 /// 收到或发出的一条尚未接受的 Matrix 私聊邀请；按邀请时间排列，不自动过期。
@@ -170,7 +160,6 @@ pub enum FriendFailure {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FriendsList {
     pub friends: Vec<FriendRow>,
-    pub groups: Vec<FriendGroup>,
     /// 整台服务器黑名单（Tuwunel 的 `forbidden_remote_server_names`）。
     pub blocked_servers: Vec<String>,
     /// 删过的人：他们的私聊还带着好友标记，但不算好友，除非重新同意或收到新邀请。
