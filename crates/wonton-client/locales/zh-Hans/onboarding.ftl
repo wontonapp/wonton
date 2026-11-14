@@ -57,6 +57,8 @@ home-pairing-aborted = 配对没有完成就中断了，再试一次。
 
 home-pairing-not-pairing = 没有正在进行的配对。
 
+home-pairing-setup-failed = 设备已配对，但无法设置连接。请打开诊断信息查看原因。
+
 # 可读配对详情。$reason 已本地化；elapsed 是实际总耗时，stage 是每个交换阶段的限时，单位均为秒。
 home-pairing-failed-detail = { $reason }本次总耗时 { $elapsed_seconds } 秒，配对交换的每个阶段限时 { $stage_seconds } 秒。
 

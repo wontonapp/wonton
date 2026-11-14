@@ -57,6 +57,8 @@ home-pairing-aborted = Pairing stopped before it finished. Try again.
 
 home-pairing-not-pairing = No pairing is in progress.
 
+home-pairing-setup-failed = The device paired, but its connection couldn't be set up. Open diagnostics for the reason.
+
 # Readable pairing details. $reason is localized; elapsed is total time, stage is the limit for each exchange stage, both in seconds.
 home-pairing-failed-detail = { $reason } Total elapsed: { $elapsed_seconds } seconds. Each pairing exchange stage has a { $stage_seconds }-second limit.
 

@@ -30,11 +30,14 @@ impl HomeLink {
             Err(error @ InvalidCode::UnsupportedVersion(_)) => {
                 let diagnostic = super::pairing_code::diagnostic(&error);
                 tracing::info!(%diagnostic, "pairing code rejected");
-                self.set_pairing(Some(PairingStatus::Failed {
-                    reason: PairingFailure::Protocol,
-                    message: super::pairing_code::summary(&error, language()),
-                    diagnostic: Some(diagnostic),
-                }));
+                self.set_pairing(
+                    PairingStatus::Failed {
+                        reason: PairingFailure::Protocol,
+                        message: String::new(),
+                        diagnostic: Some(diagnostic),
+                    },
+                    PairingText::UnsupportedVersion,
+                );
                 return Ok(None);
             }
             Err(error) => {
@@ -68,17 +71,27 @@ impl HomeLink {
         // 先换代再报“正在配对”：旧一次的看门线程和迟到的结果见到新的一代就不动状态。
         let attempt = self.pair_attempt.fetch_add(1, Ordering::SeqCst) + 1;
         let started = Instant::now();
-        *self
-            .pairing_progress
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(PairingProgress {
-            started,
-            stage: PairingStage::Connecting,
-        });
-        self.set_pairing(Some(PairingStatus::InProgress {
-            elapsed_ms: 0,
-            stage: PairingStage::Connecting,
-        }));
+        {
+            let mut state = self
+                .pairing_state
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if self.pair_attempt.load(Ordering::SeqCst) != attempt {
+                return;
+            }
+            state.progress = Some(PairingProgress {
+                started,
+                stage: PairingStage::Connecting,
+            });
+            state.text = None;
+            state.language = None;
+            self.view.send_modify(|view| {
+                view.pairing = Some(PairingStatus::InProgress {
+                    elapsed_ms: 0,
+                    stage: PairingStage::Connecting,
+                });
+            });
+        }
         let (limit, watchdog) = self.pair_deadlines();
         let (alive, ended) = mpsc::channel::<()>();
         let task = self
@@ -99,6 +112,10 @@ impl HomeLink {
     /// `CancelPairing`：放弃这次正在进行的配对，回到扫码或粘贴；没有正在进行的配对时返回 `InvalidInput`。
     /// 服务器可能已经按交出的码登记了这台设备，同一个码再配对仍能配上（服务端按设备幂等登记）。
     pub(crate) fn cancel_pairing(&self) -> Result<(), CoreError> {
+        let mut state = self
+            .pairing_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let cancelled = self.view.send_if_modified(|view| {
             let in_progress = matches!(view.pairing, Some(PairingStatus::InProgress { .. }));
             if in_progress {
@@ -115,10 +132,10 @@ impl HomeLink {
             });
         }
         // 中止任务：被放弃的配对不该在后台继续连到自己的时限；迟到的看门线程和进度心跳不再认这一次。
-        *self
-            .pairing_progress
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        state.progress = None;
+        state.text = None;
+        state.language = None;
+        drop(state);
         if let Some(task) = self
             .pairing_task
             .lock()
@@ -132,14 +149,12 @@ impl HomeLink {
 
     /// 配对码整段交出：进度翻到“等服务器确认”。只翻还认自己这一次的，不碰后来又起的配对。
     fn pairing_sent(&self, attempt: u64) {
-        if self.pair_attempt.load(Ordering::SeqCst) != attempt {
-            return;
-        }
-        if let Some(progress) = self
-            .pairing_progress
+        let mut state = self
+            .pairing_state
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.pair_attempt.load(Ordering::SeqCst) == attempt
+            && let Some(progress) = state.progress.as_mut()
         {
             progress.stage = PairingStage::Confirming;
         }
@@ -155,9 +170,10 @@ impl HomeLink {
             while let Some(home) = home.upgrade() {
                 heartbeat.tick().await;
                 let snapshot = home
-                    .pairing_progress
+                    .pairing_state
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .progress
                     .clone();
                 let Some(progress) = snapshot else { break };
                 let elapsed_ms =
@@ -253,7 +269,7 @@ impl HomeLink {
             }
             return;
         }
-        let status = match outcome {
+        let (status, text) = match outcome {
             // 管理员同意时服务端直接回 `Paired`；真收到 `Approved` 说明设备已登记，照它接上。
             Ok(PairResponse::Paired)
             | Ok(PairResponse::Joining {
@@ -265,38 +281,49 @@ impl HomeLink {
                     endpoint.close().await;
                 }
                 match self.connect(&ticket(&code, &device_name)) {
-                    // 停在“配上了”给壳当配对结束的类别：取消不会到这一步，壳看到它就离开配对页。
-                    Ok(()) => Some(PairingStatus::Paired),
-                    Err(e) => Some(failed(PairingFailure::Upstream, e.to_string())),
+                    Ok(()) => (Some(PairingStatus::Paired), None),
+                    Err(error) => {
+                        let diagnostic = super::failure::redact(&code, &error.to_string());
+                        let text = PairingText::Setup;
+                        let status = PairingStatus::Failed {
+                            reason: PairingFailure::Upstream,
+                            message: text.render(lang),
+                            diagnostic: Some(diagnostic),
+                        };
+                        (Some(status), Some(text))
+                    }
                 }
             }
             Ok(PairResponse::Joining { outcome, role }) => {
                 tracing::info!(?outcome, "the home server answered the join request");
-                Some(match outcome {
-                    JoinOutcome::Pending | JoinOutcome::Other => pending(lang, role.as_ref()),
-                    JoinOutcome::Rejected => failed(PairingFailure::JoinRejected, String::new()),
-                    JoinOutcome::CodeUsed => failed(PairingFailure::CodeUsed, String::new()),
-                    // 上面那个分支接掉了。
-                    JoinOutcome::Approved => unreachable!("approved is handled above"),
-                })
+                let (status, text) = joining(outcome, role.as_ref(), lang);
+                (Some(status), text)
             }
             Ok(PairResponse::Rejected { reason, message }) => {
                 let diagnostic = super::failure::redact(&code, &message);
                 tracing::info!(?reason, "the home server rejected pairing: {diagnostic}");
-                Some(PairingStatus::Failed {
+                let text = PairingText::Rejected(reason);
+                let status = PairingStatus::Failed {
                     reason: rejected(reason),
-                    message: super::pairing_code::rejection(reason, lang),
+                    message: text.render(lang),
                     diagnostic: (!diagnostic.is_empty()).then_some(diagnostic),
-                })
+                };
+                (Some(status), Some(text))
             }
-            Err(e) => {
+            Err(error) => {
                 let elapsed = started.elapsed();
-                let failure = super::failure::pairing(&code, lang, elapsed, limit, &e, bind_failed);
+                let text = PairingText::Transport {
+                    reason: super::failure::pairing_reason_key(&error, bind_failed),
+                    elapsed,
+                    limit,
+                };
+                let failure =
+                    super::failure::pairing(&code, lang, elapsed, limit, &error, bind_failed);
                 tracing::info!(?elapsed, "pairing failed");
-                Some(failure)
+                (Some(failure), Some(text))
             }
         };
-        self.finish_pairing(attempt, status);
+        self.finish_pairing(attempt, status, text, lang);
         // QUIC draining can take seconds after the exchange deadline; it must not delay the visible result.
         if let Some(endpoint) = endpoint {
             endpoint.close().await;
@@ -304,7 +331,11 @@ impl HomeLink {
     }
 
     pub(crate) fn dismiss_pairing_failure(&self) -> Result<(), CoreError> {
-        self.view.send_if_modified(|view| {
+        let mut state = self
+            .pairing_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let changed = self.view.send_if_modified(|view| {
             if matches!(view.pairing, Some(PairingStatus::Failed { .. })) {
                 view.pairing = None;
                 true
@@ -312,20 +343,72 @@ impl HomeLink {
                 false
             }
         });
+        if changed {
+            state.text = None;
+            state.language = None;
+        }
         Ok(())
     }
 
-    fn set_pairing(&self, status: Option<PairingStatus>) {
-        self.view.send_modify(|view| view.pairing = status);
+    fn set_pairing(&self, mut status: PairingStatus, text: PairingText) {
+        let mut state = self
+            .pairing_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let lang = language();
+        if let PairingStatus::Failed { message, .. } = &mut status {
+            *message = text.render(lang);
+        }
+        state.text = Some(text);
+        state.language = Some(lang);
+        self.view.send_modify(|view| view.pairing = Some(status));
+    }
+
+    pub(super) fn refresh_pairing_language(&self) {
+        let mut state = self
+            .pairing_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let lang = language();
+        if state.language == Some(lang) {
+            return;
+        }
+        let Some(text) = state.text.as_ref() else {
+            return;
+        };
+        self.view.send_if_modified(|view| {
+            let Some(PairingStatus::Failed { message, .. }) = &mut view.pairing else {
+                return false;
+            };
+            let translated = text.render(lang);
+            if *message == translated {
+                false
+            } else {
+                *message = translated;
+                true
+            }
+        });
+        state.language = Some(lang);
     }
 
     /// 这一次配对的结果，后来又起的一次的不写。
-    fn finish_pairing(&self, attempt: u64, status: Option<PairingStatus>) {
-        // 先拿进度的锁再写 ViewModel，和 pair() 的加锁顺序一致：心跳不会和结果互相等。
-        let mut progress = self
-            .pairing_progress
+    fn finish_pairing(
+        &self,
+        attempt: u64,
+        mut status: Option<PairingStatus>,
+        text: Option<PairingText>,
+        rendered_lang: Lang,
+    ) {
+        let mut state = self
+            .pairing_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let lang = language();
+        if lang != rendered_lang
+            && let (Some(PairingStatus::Failed { message, .. }), Some(text)) = (&mut status, &text)
+        {
+            *message = text.render(lang);
+        }
         let changed = self.view.send_if_modified(|view| {
             let current = self.pair_attempt.load(Ordering::SeqCst) == attempt;
             if current {
@@ -334,38 +417,38 @@ impl HomeLink {
             current
         });
         if changed {
-            // 心跳看到进度没了就收工，不再空转。
-            *progress = None;
+            state.progress = None;
+            state.language = text.as_ref().map(|_| lang);
+            state.text = text;
         }
     }
 
     /// 看门线程报的失败：只改还停在“正在配对”的这一次，已经有结果或者又起了一次的不盖掉。
     fn abandon_pairing(&self, attempt: u64, abandoned: &Abandoned) {
-        let lang = language();
-        let message = match abandoned {
-            Abandoned::Timeout(deadline) => l10n!(
-                CATALOG,
-                lang,
-                "home-pairing-timeout",
-                seconds = super::failure::seconds(*deadline)
-            ),
-            Abandoned::Ended => l10n!(CATALOG, lang, "home-pairing-aborted"),
+        let text = match abandoned {
+            Abandoned::Timeout(deadline) => PairingText::Timeout(*deadline),
+            Abandoned::Ended => PairingText::Aborted,
         };
-        let mut progress = self
-            .pairing_progress
+        let mut state = self
+            .pairing_state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let lang = language();
         let changed = self.view.send_if_modified(|view| {
             let stuck = self.pair_attempt.load(Ordering::SeqCst) == attempt
                 && matches!(view.pairing, Some(PairingStatus::InProgress { .. }));
             if stuck {
-                view.pairing = Some(failed(PairingFailure::TransportUnavailable, message));
+                view.pairing = Some(failed(
+                    PairingFailure::TransportUnavailable,
+                    text.render(lang),
+                ));
             }
             stuck
         });
         if changed {
-            // 心跳看到进度没了就收工。
-            *progress = None;
+            state.progress = None;
+            state.language = Some(lang);
+            state.text = Some(text);
             tracing::warn!(?abandoned, "pairing ended without a result");
         }
     }
@@ -431,6 +514,50 @@ const PAIR_BIND_ATTEMPTS: u32 = 2;
 /// 进度心跳的间隔：壳的“还在连接”和取消按它出现，不用更细。
 const PAIR_TICK: Duration = Duration::from_secs(1);
 
+#[derive(Default)]
+pub(super) struct PairingState {
+    progress: Option<PairingProgress>,
+    text: Option<PairingText>,
+    language: Option<Lang>,
+}
+
+enum PairingText {
+    UnsupportedVersion,
+    Rejected(RejectReason),
+    Transport {
+        reason: &'static str,
+        elapsed: Duration,
+        limit: Duration,
+    },
+    Timeout(Duration),
+    Aborted,
+    Pending(Option<String>),
+    Setup,
+}
+
+impl PairingText {
+    fn render(&self, lang: Lang) -> String {
+        match self {
+            Self::UnsupportedVersion => l10n!(CATALOG, lang, "home-code-unsupported-version"),
+            Self::Rejected(reason) => super::pairing_code::rejection(*reason, lang),
+            Self::Transport {
+                reason,
+                elapsed,
+                limit,
+            } => super::failure::pairing_message(reason, *elapsed, *limit, lang),
+            Self::Timeout(deadline) => l10n!(
+                CATALOG,
+                lang,
+                "home-pairing-timeout",
+                seconds = super::failure::seconds(*deadline)
+            ),
+            Self::Aborted => l10n!(CATALOG, lang, "home-pairing-aborted"),
+            Self::Pending(name) => pending_message(lang, name.as_deref()),
+            Self::Setup => l10n!(CATALOG, lang, "home-pairing-setup-failed"),
+        }
+    }
+}
+
 /// 正在进行的配对从什么时候开始、到了哪一步。只存事实；反映进 ViewModel 的是进度心跳。
 #[derive(Clone, Debug)]
 pub(crate) struct PairingProgress {
@@ -470,12 +597,31 @@ fn failed(reason: PairingFailure, message: String) -> PairingStatus {
     }
 }
 
-/// 等管理员同意。带上加入后的角色名；模板还没改名时角色名为空，只说在等批。
-fn pending(lang: Lang, role: Option<&RoleDef>) -> PairingStatus {
-    let name = role
-        .map(|role| role.name.trim())
-        .filter(|name| !name.is_empty());
-    let message = match name {
+fn joining(
+    outcome: JoinOutcome,
+    role: Option<&RoleDef>,
+    lang: Lang,
+) -> (PairingStatus, Option<PairingText>) {
+    match outcome {
+        JoinOutcome::Pending | JoinOutcome::Other => {
+            let name = role
+                .map(|role| role.name.trim())
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned);
+            let text = PairingText::Pending(name);
+            (
+                failed(PairingFailure::PendingApproval, text.render(lang)),
+                Some(text),
+            )
+        }
+        JoinOutcome::Rejected => (failed(PairingFailure::JoinRejected, String::new()), None),
+        JoinOutcome::CodeUsed => (failed(PairingFailure::CodeUsed, String::new()), None),
+        JoinOutcome::Approved => unreachable!("approved is handled above"),
+    }
+}
+
+fn pending_message(lang: Lang, name: Option<&str>) -> String {
+    match name {
         Some(name) => l10n!(
             CATALOG,
             lang,
@@ -483,8 +629,7 @@ fn pending(lang: Lang, role: Option<&RoleDef>) -> PairingStatus {
             role = name
         ),
         None => l10n!(CATALOG, lang, "home-pairing-joining-pending"),
-    };
-    failed(PairingFailure::PendingApproval, message)
+    }
 }
 
 fn rejected(reason: RejectReason) -> PairingFailure {

@@ -3,6 +3,7 @@
 
 mod invalid_details;
 mod joining;
+mod language;
 mod reset;
 mod stuck_bind;
 

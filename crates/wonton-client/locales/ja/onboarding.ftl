@@ -57,6 +57,8 @@ home-pairing-aborted = ペアリングが完了する前に中断しました。
 
 home-pairing-not-pairing = 進行中のペアリングはありません。
 
+home-pairing-setup-failed = デバイスはペアリングされましたが、接続を設定できませんでした。理由は診断情報をご確認ください。
+
 # 読みやすい詳細。$reason は翻訳済み。elapsed は実際の合計時間、stage は交換の各段階の制限時間で、どちらも秒です。
 home-pairing-failed-detail = { $reason }合計経過時間は { $elapsed_seconds } 秒です。ペアリング交換の各段階の制限時間は { $stage_seconds } 秒です。
 

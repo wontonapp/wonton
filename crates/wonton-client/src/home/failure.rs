@@ -15,16 +15,19 @@ pub(super) fn seconds(duration: Duration) -> f64 {
     milliseconds as f64 / 1_000.0
 }
 
-pub(super) fn summary(error: &TunnelError, lang: Lang) -> String {
-    let id = match error {
+fn summary_key(error: &TunnelError) -> &'static str {
+    match error {
         TunnelError::Unauthorized => "home-failure-unauthorized",
         TunnelError::UpstreamUnavailable => "home-failure-upstream",
         TunnelError::Protocol { .. } => "home-failure-protocol",
         TunnelError::Closed => "home-tunnel-closed",
         TunnelError::TransportUnavailable { .. } => "home-failure-transport",
         _ => "home-failure-transport",
-    };
-    l10n!(CATALOG, lang, id)
+    }
+}
+
+pub(super) fn summary(error: &TunnelError, lang: Lang) -> String {
+    l10n!(CATALOG, lang, summary_key(error))
 }
 
 pub(super) fn diagnostic(error: &TunnelError, lang: Lang) -> String {
@@ -56,13 +59,73 @@ pub(super) fn redact_relays(relays: &[Relay], text: &str) -> String {
                 safe = safe.replace(secret, "[redacted]");
                 safe = safe.replace(&secret.replace('+', "%20"), "[redacted]");
             }
+            for secret in [token, json] {
+                if let Some(redacted) = redact_encoded(&safe, secret) {
+                    safe = redacted;
+                }
+            }
         }
     }
     safe
 }
 
+fn redact_encoded(text: &str, token: &str) -> Option<String> {
+    if !text.contains('%') && !(token.contains(' ') && text.contains('+')) {
+        return None;
+    }
+    let mut result: Option<String> = None;
+    let mut position = 0;
+    let mut copied = 0;
+    while position < text.len() {
+        let length = encoded_prefix(&text.as_bytes()[position..], token.as_bytes());
+        if let Some(end) = length.map(|length| position + length)
+            && text.is_char_boundary(end)
+        {
+            let output = result.get_or_insert_with(|| String::with_capacity(text.len()));
+            output.push_str(&text[copied..position]);
+            output.push_str("[redacted]");
+            copied = end;
+            position = end;
+        } else {
+            position += text[position..].chars().next()?.len_utf8();
+        }
+    }
+    if let Some(output) = &mut result {
+        output.push_str(&text[copied..]);
+    }
+    result
+}
+
+fn encoded_prefix(text: &[u8], token: &[u8]) -> Option<usize> {
+    let mut position = 0;
+    for &expected in token {
+        let first = *text.get(position)?;
+        let escaped = if first == b'%' {
+            let high = text
+                .get(position + 1)
+                .and_then(|byte| char::from(*byte).to_digit(16));
+            let low = text
+                .get(position + 2)
+                .and_then(|byte| char::from(*byte).to_digit(16));
+            high.zip(low).map(|(high, low)| (high * 16 + low) as u8)
+        } else {
+            None
+        };
+        if escaped == Some(expected) {
+            position += 3;
+        } else if first == expected || (first == b'+' && expected == b' ') {
+            position += 1;
+        } else {
+            return None;
+        }
+    }
+    Some(position)
+}
+
 pub(super) fn redact(code: &PairingCode, text: &str) -> String {
-    redact_relays(&code.relays, text).replace(code.secret.expose(), "[redacted]")
+    let secret = code.secret.expose();
+    let safe = redact_relays(&code.relays, text).replace(secret, "[redacted]");
+    redact_encoded(&safe, secret).unwrap_or(safe)
 }
 
 pub(super) fn pairing(
@@ -92,18 +155,7 @@ pub(super) fn pairing(
         .join(", ");
     PairingStatus::Failed {
         reason,
-        message: l10n!(
-            CATALOG,
-            lang,
-            "home-pairing-failed-detail",
-            reason = if bind_failed {
-                l10n!(CATALOG, lang, "home-pairing-network-setup-failed")
-            } else {
-                summary(error, lang)
-            },
-            elapsed_seconds = seconds(elapsed),
-            stage_seconds = seconds(limit)
-        ),
+        message: pairing_message(pairing_reason_key(error, bind_failed), elapsed, limit, lang),
         diagnostic: Some(l10n!(
             CATALOG,
             lang,
@@ -113,6 +165,30 @@ pub(super) fn pairing(
             error = redact(code, &diagnostic(error, lang))
         )),
     }
+}
+
+pub(super) fn pairing_reason_key(error: &TunnelError, bind_failed: bool) -> &'static str {
+    if bind_failed {
+        "home-pairing-network-setup-failed"
+    } else {
+        summary_key(error)
+    }
+}
+
+pub(super) fn pairing_message(
+    reason: &'static str,
+    elapsed: Duration,
+    limit: Duration,
+    lang: Lang,
+) -> String {
+    l10n!(
+        CATALOG,
+        lang,
+        "home-pairing-failed-detail",
+        reason = l10n!(CATALOG, lang, reason),
+        elapsed_seconds = seconds(elapsed),
+        stage_seconds = seconds(limit)
+    )
 }
 
 #[cfg(test)]

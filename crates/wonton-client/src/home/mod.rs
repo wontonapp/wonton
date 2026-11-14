@@ -111,8 +111,8 @@ pub(crate) struct HomeLink {
     address_refresh: std::sync::Mutex<Option<JoinHandle<()>>>,
     /// 第几次配对。旧一次的看门线程和迟到的结果只认自己那次，不盖掉后来的配对。
     pair_attempt: AtomicU64,
-    /// 正在进行的配对从什么时候开始、到了哪一步；进度心跳从这里反映进 ViewModel。
-    pairing_progress: std::sync::Mutex<Option<pairing::PairingProgress>>,
+    /// 配对进度与失败说明的语言无关事实，同步更新对应的视图。
+    pairing_state: std::sync::Mutex<pairing::PairingState>,
     /// 上次整个重建 endpoint 的时间。触发点照它限流，网络真断时不跟着失败的检查连环重建。
     endpoint_rebuilt_at: std::sync::Mutex<Option<Instant>>,
     /// 正在跑的配对任务。取消时中止它：被放弃的配对不该在后台继续连到自己的时限。
@@ -189,7 +189,7 @@ impl HomeLink {
             addresses_stale: AtomicBool::new(false),
             address_refresh: std::sync::Mutex::default(),
             pair_attempt: AtomicU64::new(0),
-            pairing_progress: std::sync::Mutex::new(None),
+            pairing_state: std::sync::Mutex::default(),
             endpoint_rebuilt_at: std::sync::Mutex::new(None),
             pairing_task: std::sync::Mutex::new(None),
             establishing: AtomicU64::new(0),
@@ -374,6 +374,7 @@ impl HomeLink {
     }
 
     pub(crate) fn language_changed(&self) {
+        self.refresh_pairing_language();
         self.recount();
     }
 

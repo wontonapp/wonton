@@ -57,6 +57,8 @@ home-pairing-aborted = 配對沒有完成就中斷了，再試一次。
 
 home-pairing-not-pairing = 沒有正在進行的配對。
 
+home-pairing-setup-failed = 裝置已配對，但無法設定連線。請開啟診斷資訊查看原因。
+
 # 可讀配對詳細資訊。$reason 已本地化；elapsed 是實際總耗時，stage 是每個交換階段的時限，單位均為秒。
 home-pairing-failed-detail = { $reason }本次總耗時 { $elapsed_seconds } 秒，配對交換的每個階段時限為 { $stage_seconds } 秒。
 
