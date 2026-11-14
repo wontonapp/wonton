@@ -828,6 +828,19 @@ impl PluginManager {
                 }
             }
             self.store.secrets().remove(id)?;
+            // 专用密码跟密钥库一条规则：删数据才删，保留数据时重装沿用（ADR-0021「在 App 里」）。
+            if let Some(store) = &self.client_passwords {
+                store.remove_plugin(id.as_str()).map_err(|error| {
+                    InstallError::Storage(l10n::text(
+                        langs,
+                        "plugin-install-teardown-delete-failed",
+                        &[
+                            ("dir", crate::clients::passwords::FILE_NAME.into()),
+                            ("error", error.to_string().into()),
+                        ],
+                    ))
+                })?;
+            }
             report.data_removed = true;
         }
         self.remove_hosted(id, purge, langs)?;

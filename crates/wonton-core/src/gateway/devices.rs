@@ -111,9 +111,14 @@ pub async fn add(
     }
 }
 
-/// 吊销一台设备并清它的推送登记和接管时段；设备和移除家人共用（ADR-0045）。
+/// 吊销一台设备并清它的推送登记、接管时段和专用密码；设备和移除家人共用（ADR-0045）。
 pub(super) fn revoke_device(gateway: &Gateway, id: &EndpointId) -> Result<bool, DeviceError> {
     let removed = gateway.tunnel.devices.remove(id)?;
+    // 这台设备建过或看过的专用密码跟着吊销（ADR-0021「在 App 里」）。设备已不在表里时也照做：
+    // 上次吊销在半路失败时，再来一次能把密码清掉。
+    if let Some(store) = &gateway.plugins.client_passwords {
+        store.revoke_for_device(&id.to_string())?;
+    }
     if removed {
         tracing::info!(device = %id.fmt_short(), "吊销设备");
         super::push::forget_device(gateway, id);

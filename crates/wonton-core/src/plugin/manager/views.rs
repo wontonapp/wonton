@@ -38,6 +38,17 @@ pub struct ClientsRoute {
     pub upstream: Option<Endpoint>,
 }
 
+/// App 里显示的第三方客户端入口和网关认证信息。
+#[derive(Debug, Clone)]
+pub struct ClientsView {
+    pub id: PluginId,
+    pub label: String,
+    pub route: ClientsRoute,
+    pub switches: crate::clients::state::ClientsEntries,
+    pub entry_label: Option<String>,
+    pub tcp_names: Vec<String>,
+}
+
 /// 网关查询用的路由信息。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Route {
@@ -158,6 +169,110 @@ impl PluginManager {
             hosted: None,
             clients: clients_route(manifest, entry),
         })
+    }
+
+    pub fn client_views(&self) -> Result<Vec<ClientsView>, super::super::store::StoreError> {
+        let langs = self.owner_languages();
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let mut views = Vec::new();
+        for (id, entry) in plugins.iter() {
+            let Some(listed) = entry.listed.as_ref() else {
+                continue;
+            };
+            let Some(clients) = listed.manifest.clients.as_ref() else {
+                continue;
+            };
+            let Some(http) = clients.http.as_ref() else {
+                continue;
+            };
+            let record = self.store.load(id)?;
+            views.push(ClientsView {
+                id: id.clone(),
+                label: langs.pick_owned(&listed.manifest.title),
+                route: ClientsRoute {
+                    upstream: entry
+                        .clients
+                        .as_ref()
+                        .and_then(|route| route.upstream.clone()),
+                    http: http.clone(),
+                },
+                switches: record
+                    .as_ref()
+                    .map_or_else(Default::default, |record| record.clients_entries),
+                entry_label: record
+                    .as_ref()
+                    .and_then(|record| record.entry_label.clone()),
+                tcp_names: clients
+                    .tcp
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|tcp| tcp.name.clone())
+                    .collect(),
+            });
+        }
+        Ok(views)
+    }
+
+    pub fn client_view(
+        &self,
+        id: &PluginId,
+    ) -> Result<Option<ClientsView>, super::super::store::StoreError> {
+        Ok(self.client_views()?.into_iter().find(|view| view.id == *id))
+    }
+
+    pub fn gateway_auth_headers(
+        &self,
+        id: &PluginId,
+        plugin_admin: bool,
+    ) -> Result<Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>, String> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins.get(id).ok_or_else(|| "插件未安装".to_owned())?;
+        let listed = entry
+            .listed
+            .as_ref()
+            .ok_or_else(|| "插件清单不可用".to_owned())?;
+        let gateway = listed
+            .manifest
+            .clients
+            .as_ref()
+            .and_then(|clients| clients.http.as_ref())
+            .and_then(|http| http.auth.gateway.as_ref())
+            .ok_or_else(|| "插件不是 gateway 密码入口".to_owned())?;
+        let secrets = self
+            .store
+            .secrets()
+            .load(id)
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        let generated = super::super::secrets::generated_values(
+            &listed.manifest,
+            &secrets,
+            &self.owner_languages(),
+        )
+        .map_err(|error| error.to_string())?;
+        let owner = self.cfg.profile.owner();
+        let rendered = super::super::proxy_auth::render_gateway_headers(
+            &gateway.headers,
+            &owner,
+            plugin_admin,
+            &generated,
+            &self.owner_languages(),
+        )
+        .map_err(|error| error.to_string())?;
+        rendered
+            .into_iter()
+            .map(|(name, value)| {
+                let value = hyper::header::HeaderValue::from_str(&value)
+                    .map_err(|error| error.to_string())?;
+                Ok((name, value))
+            })
+            .collect()
+    }
+
+    /// 第三方客户端入口验证 Basic 用的用户名（ADR-0021「接口」）：这批密码都挂在主人名下。
+    pub(crate) fn owner_username(&self) -> String {
+        self.cfg.profile.owner().username
     }
 
     pub(in crate::plugin) fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {

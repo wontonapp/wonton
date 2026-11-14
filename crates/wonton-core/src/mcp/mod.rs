@@ -812,6 +812,8 @@ mod bot_access_tests;
 #[cfg(test)]
 mod capability_install_tests;
 #[cfg(test)]
+mod clients_passwords_isolation_tests;
+#[cfg(test)]
 mod contacts_gate_tests;
 #[cfg(test)]
 mod file_block_tests;

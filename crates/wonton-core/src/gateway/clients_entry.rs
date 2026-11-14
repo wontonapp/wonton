@@ -8,9 +8,11 @@ use axum::extract::Request;
 use axum::response::Response;
 use hyper::StatusCode;
 use hyper::header::{self, HeaderMap, HeaderValue};
+use tokio::sync::watch;
 
 use super::matrix::matrix_error;
 use super::{Gateway, api, pages, proxy, session};
+use crate::clients::gateway_auth::{self, Attempt};
 use crate::clients::path_rules::{self, PathRules};
 use crate::clients::state::Kind;
 use crate::entry_haproxy::model::AUTH_FAILURE_HEADER;
@@ -86,10 +88,10 @@ pub(super) async fn dispatch(
     let format = pages::Format::of(req.headers());
     // 访客链接（C18）还没来；这个前缀是核心的，不问开关、不转发，也不借它探测标签和开关。
     if path_rules::is_reserved_path(req.uri().path()) {
-        return pages::error(
+        return deny(
             StatusCode::NOT_FOUND,
             "not_found",
-            &l10n::text(&langs, "gateway-not-found", &[]),
+            "gateway-not-found",
             &langs,
             format,
         );
@@ -102,10 +104,10 @@ pub(super) async fn dispatch(
     // 入口容器的标记：恰好一个，取值和主机名的形式对得上。放在标签解析之后：不是插件的名字先按
     // 421 拒（和联邦用例对非服务器名的断言一致），是插件的名字才看标记。
     if !entry_header_matches(&req, kind) {
-        return pages::error(
+        return deny(
             StatusCode::BAD_REQUEST,
             "invalid_input",
-            &l10n::text(&langs, "gateway-entry-header-invalid", &[]),
+            "gateway-entry-header-invalid",
             &langs,
             format,
         );
@@ -134,10 +136,10 @@ pub(super) async fn dispatch(
     // 点段在两种入口都拒（ADR-0021「路径怎么匹配」对声明了 public/auth_failures 的入口一致收紧，
     // 局域网的失败计数同样不能被点段绕过）；`public.allow/deny` 仍只限制公网。
     if path_rules::check_dot_segments(&path).is_err() {
-        return pages::error(
+        return deny(
             StatusCode::BAD_REQUEST,
             "invalid_input",
-            &l10n::text(&langs, "gateway-invalid-path", &[]),
+            "gateway-invalid-path",
             &langs,
             format,
         );
@@ -147,18 +149,51 @@ pub(super) async fn dispatch(
     {
         return response;
     }
-    let cancel = proxy::Cancel::Entry(resolved.revoked);
-    let rejected = tokio::select! {
-        biased;
-        _ = cancel.cancelled() => return entry_closed(&langs, format),
-        response = auth_reject(gateway, &route, clients, &langs, format) => response,
-    };
-    if let Some(response) = rejected {
-        return response;
-    }
-
+    let entry_cancel = proxy::Cancel::Entry(resolved.revoked.clone());
     let mut req = req;
+    let pass = tokio::select! {
+        biased;
+        _ = entry_cancel.cancelled() => return entry_closed(&langs, format),
+        result = auth_reject(gateway, &route, clients, &mut req, &langs, format) => match result {
+            Ok(pass) => pass,
+            Err(response) => return response,
+        },
+    };
+    let cancel = pass
+        .as_ref()
+        .map_or(proxy::Cancel::Entry(resolved.revoked.clone()), |pass| {
+            proxy::Cancel::Both {
+                entry: resolved.revoked.clone(),
+                password: pass.revoke.clone(),
+            }
+        });
     strip_entry_headers(req.headers_mut(), route.proxy.as_deref());
+    // 代加的身份头在剥头之后注入：插件声明的同名头已删，这里是唯一来源（ADR-0021「接口」）。
+    if let Some(pass) = &pass {
+        let headers = req.headers_mut();
+        for (name, value) in &pass.headers {
+            headers.insert(name.clone(), value.clone());
+        }
+    }
+    forward_to_plugin(
+        gateway, req, &route, clients, upstream, cancel, &path, &langs, format,
+    )
+    .await
+}
+
+/// 验证已通过：剥头、代加身份、转发并按入口收尾（Cookie 清洗、失败计数）。
+#[allow(clippy::too_many_arguments)]
+async fn forward_to_plugin(
+    gateway: &Gateway,
+    mut req: Request,
+    route: &crate::plugin::manager::Route,
+    clients: &crate::plugin::manager::ClientsRoute,
+    upstream: &crate::plugin::upstreams::Endpoint,
+    cancel: proxy::Cancel,
+    path: &str,
+    langs: &Languages,
+    format: pages::Format,
+) -> Response {
     // 入口容器写的真实来源；解析不出就不写，不编一个。
     let client = req
         .headers()
@@ -177,12 +212,12 @@ pub(super) async fn dispatch(
         name: route.id.as_str(),
     };
     let mut response =
-        match proxy::forward_or(&gateway.upstream_http, target, req, forwarded, &langs).await {
+        match proxy::forward_or(&gateway.upstream_http, target, req, forwarded, langs).await {
             Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs, format),
+            Err(error) => return error.response(route.id.as_str(), langs, format),
         };
     super::isolation::sanitize_set_cookies(response.headers_mut());
-    mark_auth_failure(&mut response, clients, &path);
+    mark_auth_failure(&mut response, clients, path);
     response
 }
 
@@ -197,13 +232,24 @@ fn entry_closed(langs: &Languages, format: pages::Format) -> Response {
 }
 
 fn entry_unavailable(langs: &Languages, format: pages::Format) -> Response {
-    pages::error(
+    deny(
         StatusCode::SERVICE_UNAVAILABLE,
         "plugin_unavailable",
-        &l10n::text(langs, "gateway-entry-state-unavailable", &[]),
+        "gateway-entry-state-unavailable",
         langs,
         format,
     )
+}
+
+/// 入口上的错误页：类别在响应头里，文案四种语言（ADR-0021）。
+fn deny(
+    status: StatusCode,
+    kind: &'static str,
+    key: &str,
+    langs: &Languages,
+    format: pages::Format,
+) -> Response {
+    pages::error(status, kind, &l10n::text(langs, key, &[]), langs, format)
 }
 
 fn plugin_unavailable(route: &Route, langs: &Languages, format: pages::Format) -> Response {
@@ -250,35 +296,27 @@ fn public_rules_reject(
     })
 }
 
-/// `auth` 的验证（ADR-0021「专用密码」、ADR-0022）：`gateway` 和 `credentials` 这个 PR 还没实现；
-/// `app` 先过 `setup_done`，注册没完成 409，查不出 503。
+/// `auth` 的验证（ADR-0021「专用密码」、ADR-0022）：`gateway` 用 Basic/Bearer 对专用密码（C16），
+/// `credentials` 是 C17 还没实现；`app` 先过 `setup_done`，注册没完成 409，查不出 503。
+#[allow(clippy::result_large_err)] // 网关的错误响应直接回给 HTTP 层。
 async fn auth_reject(
     gateway: &Gateway,
     route: &Route,
     clients: &crate::plugin::manager::ClientsRoute,
+    req: &mut Request,
     langs: &Languages,
     format: pages::Format,
-) -> Option<Response> {
-    let unsupported = || {
-        Some(pages::error(
-            StatusCode::NOT_IMPLEMENTED,
-            "unsupported",
-            &l10n::text(langs, "gateway-entry-auth-unsupported", &[]),
-            langs,
-            format,
-        ))
-    };
+) -> Result<Option<EntryPass>, Response> {
     if clients.http.auth.gateway.is_some() {
-        // C16：网关验证（Basic 和 Bearer）。
-        return unsupported();
+        return gateway_authenticate(gateway, route, req, langs, format);
     }
     if clients.http.auth.credentials.is_some() {
         // C17：核心发的专用密码。
-        return unsupported();
+        return Err(unsupported(langs, format));
     }
     if clients.http.auth.app.is_none() {
         // 清单校验保证三种恰好一种；都缺的清单到不了运行时，这里不兜底。
-        return unsupported();
+        return Err(unsupported(langs, format));
     }
     use crate::plugin::clients_entry::SetupCheck;
     match gateway
@@ -286,12 +324,12 @@ async fn auth_reject(
         .clients_setup_done(&route.id, clients, gateway.notices.as_ref())
         .await
     {
-        SetupCheck::Done => None,
-        SetupCheck::Unavailable => Some(plugin_unavailable(route, langs, format)),
-        SetupCheck::Pending => Some(pages::error(
+        SetupCheck::Done => Ok(None),
+        SetupCheck::Unavailable => Err(plugin_unavailable(route, langs, format)),
+        SetupCheck::Pending => Err(deny(
             StatusCode::CONFLICT,
             "setup_pending",
-            &l10n::text(langs, "gateway-entry-setup-pending", &[]),
+            "gateway-entry-setup-pending",
             langs,
             format,
         )),
@@ -300,9 +338,88 @@ async fn auth_reject(
             // P0-4：入口的执行错误不能离开已鉴权的管理面）。主人管理接口还没有读它的视图，
             // 日志是目前的完整来源，PR 里写明。
             tracing::error!(plugin = %route.id, "{stderr}");
-            Some(plugin_unavailable(route, langs, format))
+            Err(plugin_unavailable(route, langs, format))
         }
     }
+}
+
+fn unsupported(langs: &Languages, format: pages::Format) -> Response {
+    pages::error(
+        StatusCode::NOT_IMPLEMENTED,
+        "unsupported",
+        &l10n::text(langs, "gateway-entry-auth-unsupported", &[]),
+        langs,
+        format,
+    )
+}
+
+/// 通过验证后带给转发层的：吊销守卫和按清单模板代加的身份头。
+struct EntryPass {
+    revoke: watch::Receiver<bool>,
+    headers: Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>,
+}
+
+/// `auth: gateway` 的验证（ADR-0021「接口」「防暴力破解」）：只认 Basic（用户名是主人的用户名）
+/// 和 Bearer，密码只在核心里比对。没带凭据的质询是 DAV、Git 客户端的第一步，不算验证失败、
+/// 不加计数头；带了但不对的 401 带 `X-Wonton-Auth-Failure`，由入口容器计数（没有全局失败上限）。
+/// Authorization 在这里删掉，代加的身份头由 [`dispatch`] 在剥头之后注入。
+#[allow(clippy::result_large_err)] // 同上：错误响应直接回给 HTTP 层。
+fn gateway_authenticate(
+    gateway: &Gateway,
+    route: &Route,
+    req: &mut Request,
+    langs: &Languages,
+    format: pages::Format,
+) -> Result<Option<EntryPass>, Response> {
+    let Some(store) = &gateway.plugins.client_passwords else {
+        return Err(plugin_unavailable(route, langs, format));
+    };
+    let username = gateway.plugins.owner_username();
+    match gateway_auth::parse_authorization(req.headers(), &username) {
+        Attempt::Missing => Err(denied(langs, format, false)),
+        Attempt::Invalid => Err(denied(langs, format, true)),
+        Attempt::Password(value) => {
+            let revoke = match store.authenticate(route.id.as_str(), &value) {
+                Ok(Some(revoke)) => revoke,
+                Ok(None) => return Err(denied(langs, format, true)),
+                Err(error) => {
+                    tracing::error!(plugin = %route.id, "读专用密码库失败：{error}");
+                    return Err(plugin_unavailable(route, langs, format));
+                }
+            };
+            // 比对通过也删：密码不离开核心，不冒充别的身份。
+            req.headers_mut().remove(header::AUTHORIZATION);
+            let headers = gateway
+                .plugins
+                .gateway_auth_headers(&route.id, true)
+                .map_err(|error| {
+                    tracing::error!(plugin = %route.id, "代加身份头失败：{error}");
+                    plugin_unavailable(route, langs, format)
+                })?;
+            Ok(Some(EntryPass { revoke, headers }))
+        }
+    }
+}
+
+/// 401 + `WWW-Authenticate: Basic`；`counted` 的还给入口容器带计数头。
+fn denied(langs: &Languages, format: pages::Format, counted: bool) -> Response {
+    let mut response = pages::error(
+        StatusCode::UNAUTHORIZED,
+        "unauthenticated",
+        &l10n::text(langs, "gateway-entry-auth-required", &[]),
+        langs,
+        format,
+    );
+    response.headers_mut().insert(
+        header::WWW_AUTHENTICATE,
+        HeaderValue::from_static("Basic realm=\"wonton\""),
+    );
+    if counted {
+        response
+            .headers_mut()
+            .insert(AUTH_FAILURE_HEADER, HeaderValue::from_static("1"));
+    }
+    response
 }
 
 /// 请求里的身份和 Wonton 的头一个不留：`webui.proxy` 声明的头（按 C3 的规范化名字比较，`X_Remote_User`

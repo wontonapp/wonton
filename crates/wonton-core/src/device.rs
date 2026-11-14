@@ -26,6 +26,8 @@ pub enum DeviceError {
     },
     #[error("设备登记表 {path} 已损坏：{message}")]
     Corrupt { path: PathBuf, message: String },
+    #[error("读写专用密码库失败：{0}")]
+    Passwords(#[from] crate::clients::passwords::PasswordError),
 }
 
 /// 一台已登记的设备。
