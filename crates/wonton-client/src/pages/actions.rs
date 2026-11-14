@@ -9,7 +9,7 @@ impl PagesLink {
             return self.open_widget(tab);
         }
         self.runtime_change(|state, plugins| {
-            if state.root_is(&tab) || tab == TabRef::Apps {
+            if matches!(tab, TabRef::Chat | TabRef::Apps) {
                 state.stack.clear();
                 state.shows_apps = state.paired && tab == TabRef::Apps;
                 return Ok(());

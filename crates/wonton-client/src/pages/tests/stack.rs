@@ -231,3 +231,61 @@ async fn apps_grid_is_not_carried_between_servers_or_into_pairing() {
     rig.open(TabRef::Apps);
     assert!(!rig.view().shows_apps);
 }
+
+#[tokio::test]
+async fn unpaired_chat_returns_to_pairing_without_losing_pairing_failure() {
+    let rig = Rig::new();
+    let failure = wonton_protocol::PairingStatus::Failed {
+        reason: wonton_protocol::PairingFailure::TransportUnavailable,
+        message: "connection failed".to_owned(),
+    };
+    for pairing in [None, Some(failure)] {
+        let mut unpaired = home("old-server");
+        unpaired.server_id = None;
+        unpaired.status = HomeStatus::NotConfigured;
+        unpaired.pairing = pairing.clone();
+        rig.home.send_replace(unpaired);
+        rig.tabs.recompute();
+
+        let page = url_tab("https://example.com/report");
+        rig.open(page.clone());
+        assert_eq!(rig.view().stack.last().unwrap().tab, page);
+        rig.open(TabRef::Chat);
+        let view = rig.view();
+        assert_eq!(view.root, TabRef::Apps);
+        assert!(view.stack.is_empty());
+        assert!(!view.shows_apps);
+        assert_eq!(rig.home.borrow().pairing, pairing);
+
+        rig.open(TabRef::Apps);
+        assert_eq!(rig.view().root, TabRef::Apps);
+        assert!(!rig.view().shows_apps);
+    }
+}
+
+#[tokio::test]
+async fn paired_offline_chat_returns_to_chat_not_pairing() {
+    let rig = Rig::new();
+    let mut offline = home("old-server");
+    offline.status = HomeStatus::Disconnected {
+        reason: HomeFailure::TransportUnavailable,
+        message: "connection failed".to_owned(),
+    };
+    rig.home.send_replace(offline);
+    rig.tabs.recompute();
+
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    rig.open(TabRef::Chat);
+    let view = rig.view();
+    assert_eq!(view.root, TabRef::Chat);
+    assert!(!view.shows_apps);
+    assert!(view.stack.is_empty());
+    assert!(matches!(
+        rig.home.borrow().status,
+        HomeStatus::Disconnected {
+            reason: HomeFailure::TransportUnavailable,
+            ..
+        }
+    ));
+}
