@@ -71,6 +71,7 @@ pub(super) async fn start(socket: &Path) -> super::Target {
         (&vars, guard.files.path()),
         &image,
     );
+    configure_fixture_provider(&container, &backend_url, guard.files.path());
     let upstream = container_address(&container, &network, spec.port);
     wait_for_gateway(&upstream, &spec.apis.openai).await;
     let probe = exec(
@@ -105,6 +106,7 @@ pub(super) async fn start(socket: &Path) -> super::Target {
             );
         }
     }
+    wait_for_default_model(&container).await;
     let (docker, engine) = FakeDocker::start().await;
     docker.on_exec_output(move |name, argv, stdin| {
         assert!(name.ends_with("contract-provider"), "{name}");
@@ -116,6 +118,65 @@ pub(super) async fn start(socket: &Path) -> super::Target {
         docker,
         engine,
         _guard: Box::new(guard),
+    }
+}
+
+/// The contract fixture provisions the gateway through magpie itself; core no longer manages providers.
+fn configure_fixture_provider(container: &str, backend_url: &str, root: &Path) {
+    let state = root.join("config/wonton");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("custom-model"), "contract/contract-text\n").unwrap();
+
+    let added = exec(
+        container,
+        &[
+            "magpie".into(),
+            "provider".into(),
+            "add".into(),
+            "contract".into(),
+            "id=contract".into(),
+            "name=Contract".into(),
+            format!("url={backend_url}"),
+            "models=contract-text".into(),
+            "key=contract-key".into(),
+        ],
+        &[],
+    );
+    assert_eq!(added.0, 0, "adding fixture provider: {}", added.2);
+
+    let mirrored = exec(
+        container,
+        &[
+            "sh".into(),
+            "-c".into(),
+            "mkdir -p /config/wonton && printf 'contract/contract-text\\n' > /config/wonton/custom-model"
+                .into(),
+        ],
+        &[],
+    );
+    assert_eq!(mirrored.0, 0, "writing fixture model state: {}", mirrored.2);
+}
+
+async fn wait_for_default_model(container: &str) {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let output = exec(
+            container,
+            &[
+                "sh".into(),
+                "-c".into(),
+                "curl -sf http://127.0.0.1:3425/v1/models | grep -q contract-text".into(),
+            ],
+            &[],
+        );
+        if output.0 == 0 {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "magpie default model was not configured"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
     }
 }
 
