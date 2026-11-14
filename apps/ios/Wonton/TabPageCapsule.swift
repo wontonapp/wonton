@@ -91,6 +91,7 @@ struct TabPageCapsule: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(TabText.more)
+            .accessibilityIdentifier("pageMore")
             Rectangle()
                 .fill(Color(colors.separator))
                 .frame(width: WontonTheme.size.hairline, height: WontonTheme.size.iconSmall)
