@@ -202,7 +202,7 @@ CALL_MODE=tcp deploy/dev/core/call-e2e.sh
 CALL_MODE=relay CALL_DIRECT_ADDR=198.51.100.10:18682 deploy/dev/core/call-e2e.sh
 ```
 
-`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK；`CALL_SKIP_PAIR=1` 只跳过脚本生成新的配对码，不跳过通话、双向 RTP、挂断和 delayed leave 检查。TCP 路径会复制清单并移除 UDP mux 声明，不改插件仓库；relay 路径要求通话页显示公共中继提示。单次运行可用 `CALL_DURATION`、`CALL_ARTIFACT_DIR` 和 `CALL_KEEP_STACK=1` 调整采样、产物目录和现场保留。
+`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK；`CALL_SKIP_PAIR=1` 只跳过脚本生成新的配对码，不跳过通话、双向 RTP、挂断和 delayed leave 检查。TCP 路径会复制清单并移除 UDP mux 声明，不改插件仓库；relay 路径要求 Android 原生界面显示公共中继提示。单次运行可用 `CALL_DURATION`、`CALL_ARTIFACT_DIR` 和 `CALL_KEEP_STACK=1` 调整采样、产物目录和现场保留。
 
 脚本依赖 Bash、Python 3、ADB、Docker Compose、`jq` 和 `screenrecord`；不需要安装 Python WebSocket 包。
 

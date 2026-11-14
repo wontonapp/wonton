@@ -265,10 +265,6 @@ def action(cdp: Cdp, name: str, seconds: int) -> None:
     elif name == "wait-left":
         wait_text(cdp, r"left|disconnected|离开|已退出|不在通话", seconds)
         return
-    elif name == "relay-hint":
-        text = cdp.evaluate("document.body.innerText") or ""
-        print(json.dumps({"hint": bool(re.search(r"relay|中继|转发", text, re.IGNORECASE)), "text": text[:2000]}, ensure_ascii=False))
-        return
     elif name != "stats":
         raise CdpError(f"unknown action: {name}")
     deadline = time.monotonic() + seconds
@@ -279,7 +275,7 @@ def action(cdp: Cdp, name: str, seconds: int) -> None:
 
 def main() -> int:
     if len(sys.argv) < 2:
-        print(f"usage: {sys.argv[0]} <port> [join|stats|hangup|wait-left|relay-hint] [seconds]", file=sys.stderr)
+        print(f"usage: {sys.argv[0]} <port> [join|stats|hangup|wait-left] [seconds]", file=sys.stderr)
         return 2
     port = int(sys.argv[1])
     name = sys.argv[2] if len(sys.argv) > 2 else "stats"

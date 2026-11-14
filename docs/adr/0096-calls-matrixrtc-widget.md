@@ -207,7 +207,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **三组 Android 端到端路径**：`deploy/dev/core/call-e2e.sh` 已加入 UDP、TCP 退路和公共中继三种模式，要求两台已配对且登录同一加密房间的设备；本工作树未能取得 194 的任务卡执行通道和完整双设备账号现场，因此三组结果未核实。
+- **三组 Android 端到端路径**：`deploy/dev/core/call-e2e.sh` 已加入 UDP、TCP 退路和公共中继三种模式，要求两台已配对且登录同一加密房间的设备。2026-11-14 在 194 的 API 36 模拟器现场，核心已健康且两台设备隧道已配对，但本地 call 插件在创建 `jwt` 容器时返回 504（`docker_timed_out`）并回滚；两台设备也没有完成可用的同一加密 Matrix 会话，因此三组真实通话未核实。
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
@@ -229,7 +229,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 - `CALL_MODE=relay` 使用失效直连地址，要求页面出现公共中继提示；
 - 每组记录两端屏幕、CDP `inbound-rtp` 包计数、选中的 ICE 候选、挂断和强杀一端后的 delayed leave。
 
-脚本要求账号、加密房间和两台设备先由人工准备，不把密码或 Matrix 令牌写进命令行。执行结果未核实：本验证工作树无法取得负责人任务卡的远程写入通道，也没有可用的双设备登录现场。
+- 脚本要求账号、加密房间和两台设备先由人工准备，不把密码或 Matrix 令牌写进命令行。2026-11-14 的现场只完成核心健康、插件安装请求和设备隧道配对；插件安装在 `wonton-calle2e--app-element-call--jwt` 创建阶段超时，未进入 widget、媒体或 delayed leave。执行结果未核实，没有把失败现场写成通过。
 
 ### 已有 Android WebView 媒体前置结果
 
@@ -255,6 +255,12 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
   （`gateway/matrix_rtc_docker_tests.rs`）。
 - 设备门：App 的本地代理按主机放行家里服务器的域名，插件页请求 `matrix.<base>/_wonton/matrix-rtc` 带着隧道身份到网关，
   过得了设备门；预检和 CORS 由授权服务自己答。这条只从代码和网关测试得出，没在真机上跑。
+
+### 本次 Android 现场（2026-11-14）
+
+在 Linux + Docker、API 36 Android 模拟器、当前检出核心和本地 `wonton-plugin-call` 清单上，核心启动并健康，主人和 `callguest` 设备均曾完成隧道配对。安装接口返回 HTTP 504，错误类别为 `docker_timed_out`，阶段为 `Starting`，失败服务为 `jwt`；核心随后完成插件回滚，清理错误为空。没有生成通话录屏、`inbound-rtp` 或 delayed-leave 产物。
+
+中继提示检查改为 Android 原生 UI hierarchy，因为 `PortMappingWarning::PublicRelayBandwidth` 在 Android 的插件详情端口映射区域渲染，而不是 widget 网页正文。由于 relay 通话未运行，该检查和“通话页上方提示”的契约仍未核实。
 
 ## 和其他 ADR 的关系
 

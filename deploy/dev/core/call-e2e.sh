@@ -143,19 +143,31 @@ PY
 }
 
 install_plugin() {
-  local compose result state
+  local compose result state rc stderr
   compose="$(plugin_compose)"
   [[ "$mode" == tcp ]] && compose="$(prepare_tcp_plugin)"
   echo "== install call plugin ($mode)"
   WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
     WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
     WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" uninstall app.element-call --purge >/dev/null 2>&1 || true
+  stderr="$artifacts/install.stderr"
+  set +e
   result="$(WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
     WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
-    WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" install "$compose" --yes)"
+    WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" install "$compose" --yes 2>"$stderr")"
+  rc=$?
+  set -e
   printf '%s\n' "$result" >"$artifacts/install.json"
+  if ((rc != 0)); then
+    echo "call-e2e: plugin install failed (exit $rc); see $artifacts/install.json and $stderr" >&2
+    cat "$stderr" >&2
+    exit "$rc"
+  fi
   state="$(jq -r '.status.state // empty' "$artifacts/install.json")"
-  [[ "$state" == running ]] || { echo "call-e2e: plugin install did not become running: $result" >&2; exit 1; }
+  [[ "$state" == running ]] || {
+    echo "call-e2e: plugin install did not become running: $result" >&2
+    exit 1
+  }
 }
 
 build_apk() {
@@ -215,6 +227,20 @@ check_stats() {
   }
   jq -e 'select(any(.inbound[]?; .kind == "video" and (.packetsReceived // 0) > 0))' "$file" >/dev/null || {
     echo "call-e2e: no inbound video RTP packets in $file" >&2
+    return 1
+  }
+}
+
+check_relay_hint() {
+  local serial="$1" remote="/sdcard/wonton-call-ui.xml" xml
+  adb -s "$serial" shell uiautomator dump "$remote" >/dev/null 2>&1 || {
+    echo "call-e2e: could not dump Android UI hierarchy for relay hint" >&2
+    return 1
+  }
+  xml="$(adb -s "$serial" exec-out cat "$remote" 2>/dev/null || true)"
+  adb -s "$serial" shell rm -f "$remote" >/dev/null 2>&1 || true
+  grep -Eqi 'public relay|公共中继|公共中繼|公共リレー' <<<"$xml" || {
+    echo "call-e2e: native public-relay hint was not visible" >&2
     return 1
   }
 }
@@ -290,11 +316,7 @@ cp "$artifacts/a-stats.jsonl" "$artifacts/inbound-rtp-a.jsonl"
 cp "$artifacts/b-stats.jsonl" "$artifacts/inbound-rtp-b.jsonl"
 
 if [[ "$mode" == relay ]]; then
-  python3 "$cdp" "$forward_b" relay-hint 5 >"$artifacts/relay-hint.jsonl"
-  jq -e 'select(.hint == true)' "$artifacts/relay-hint.jsonl" >/dev/null || {
-    echo "call-e2e: relay path did not show the public-relay hint" >&2
-    exit 1
-  }
+  check_relay_hint "$serial_b"
 fi
 
 echo "== hang up one side"
