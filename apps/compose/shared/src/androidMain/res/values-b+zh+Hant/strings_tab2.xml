@@ -25,4 +25,6 @@
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">放到標籤列</string>
     <string name="tab_page_close">關閉頁面</string>
+    <!-- Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments. -->
+    <string name="tab_call_relay_hint">只連上了公共中繼，畫面可能卡頓。</string>
 </resources>

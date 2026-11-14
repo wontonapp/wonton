@@ -136,6 +136,10 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
         ) {
+            // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
+            if threadRoot == nil, !timeline.widgets.isEmpty {
+                RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }
+            }
             // 和 Bot 的私聊：顶栏进它的资料页（ADR-0044）。
             if let bot {
                 WontonIconButton(icon: .info, label: String(localized: .BotProfile0.botProfileTitle)) {

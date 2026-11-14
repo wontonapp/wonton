@@ -71,7 +71,8 @@ struct TabPageCapsule: View {
                     Button(TabText.editPanel, action: panel.edit)
                 } else {
                     // 钉住正在看的这页到聊天页的下拉面板（ADR-0052）；插件页再加进“我的应用”。
-                    if let url = session.webView?.url {
+                    // widget 页只能从房间里打开，不能钉进面板（ADR-0096）。
+                    if let url = session.webView?.url, !tab.isWidget {
                         Button(TabText.pinToPanel) {
                             pages.send(.pinCurrentPage(
                                 url: url.absoluteString, title: session.webView?.title,

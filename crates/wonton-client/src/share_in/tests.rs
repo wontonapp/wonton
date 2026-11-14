@@ -59,6 +59,7 @@ fn room(id: &str, direct: Option<&str>) -> RoomRow {
         side_chats: false,
         unread_count: 0,
         layout: wonton_protocol::ChatLayout::default(),
+        call_active: false,
     }
 }
 

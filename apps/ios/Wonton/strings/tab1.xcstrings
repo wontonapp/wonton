@@ -391,6 +391,36 @@
           }
         }
       }
+    },
+    "tab.callRelayHint": {
+      "comment": "Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected only through the public relay. Video may stutter."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只连上了公共中继，画面可能卡。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只連上了公共中繼，畫面可能卡頓。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公共リレー経由でしか接続できていません。映像が途切れることがあります。"
+          }
+        }
+      }
     }
   }
 }

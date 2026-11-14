@@ -585,6 +585,7 @@ mod unread_tests {
             side_chats: false,
             unread_count,
             layout: ChatLayout::default(),
+            call_active: false,
         }
     }
 

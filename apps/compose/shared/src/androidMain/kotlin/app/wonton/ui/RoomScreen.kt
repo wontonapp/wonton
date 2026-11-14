@@ -60,6 +60,7 @@ import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
 import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
+import app.wonton.protocol.RoomWidget
 import app.wonton.protocol.SideChatCard
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TimelineContent
@@ -126,6 +127,8 @@ internal class TimelineState {
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
+    /** 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。 */
+    var call by mutableStateOf(RoomCall())
     var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
     var openedConfirmation by mutableStateOf<String?>(null)
 
@@ -188,6 +191,7 @@ internal fun RoomRoute(
                 timeline.panelSelected = update.panelSelected
                 timeline.entryBlocked = update.entryBlocked
                 timeline.sideChat = update.sideChat
+                timeline.call = RoomCall(update.widgets, update.callActive)
                 timeline.confirmations = update.confirmations
                 if (update.scrollToBottom) timeline.bottomRequest++
                 timeline.revision++
@@ -317,6 +321,7 @@ private fun RoomScreen(
                     RoomBar(
                         target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose,
                         onOpenBotProfile = { onOpenBotProfile(it) },
+                        call = timeline.call, onOpenWidget = { onAction(Action.OpenPage(it.tab)) },
                     )
                 },
             ) { backdrop ->
@@ -386,6 +391,7 @@ private fun RoomScreen(
 /**
  * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字；支持旁聊的房间带开旁聊的按钮。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
+ * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
 @Composable
 private fun RoomBar(
@@ -398,6 +404,8 @@ private fun RoomBar(
     header: SideChatCard?,
     onClose: () -> Unit,
     onOpenBotProfile: (BotRef) -> Unit,
+    call: RoomCall,
+    onOpenWidget: (RoomWidget) -> Unit,
 ) {
     if (target.threadRoot != null) {
         WontonPushedBar(header?.title ?: stringResource(R.string.side_chat), onClose, showsStatus = true)
@@ -416,6 +424,7 @@ private fun RoomBar(
         showsStatusLine = true,
         avatar = barAvatar,
         actions = {
+            RoomCallEntry(call, onOpenWidget)
             if (isDirect && bot != null) {
                 Box(Modifier.testTag("bot-profile-open")) {
                     WontonIconButton(

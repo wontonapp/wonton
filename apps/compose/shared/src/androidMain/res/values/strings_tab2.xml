@@ -41,4 +41,6 @@
     <!-- Small button on an approval request card: put the installed app's page into the tab bar. -->
     <string name="tab_pin_to_bar">Pin to tab bar</string>
     <string name="tab_page_close">Close page</string>
+    <!-- Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments. -->
+    <string name="tab_call_relay_hint">Connected only through the public relay. Video may stutter.</string>
 </resources>

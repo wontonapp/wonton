@@ -141,4 +141,10 @@
     <string name="bot_web_login_title">この Bot のウェブページを開く前に</string>
     <string name="bot_web_login_warning">サーバーの所有者は、ここでのログイン状態を確認・管理できます。</string>
     <string name="bot_web_shared_state">家族が同じアプリの状態を閲覧・変更できる場合があります。アカウントの分離はアプリの仕組みに依存し、ログインやデータが利用者ごとに分離される保証はありません。</string>
+    <!-- Accessibility label of the room top bar button that opens the room's video call. No arguments. -->
+    <string name="room_call_video">ビデオ通話</string>
+    <!-- Accessibility label of the room top bar button that opens the room's voice call. No arguments. -->
+    <string name="room_call_voice">音声通話</string>
+    <!-- Short mark on the room top bar button and on the chat list row while someone is in a call in this room; tapping the button joins. Keep it very short. No arguments. -->
+    <string name="room_call_active">通話中</string>
 </resources>

@@ -12,10 +12,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.material3.Text
 import app.wonton.protocol.PermissionLine
 import app.wonton.protocol.PermissionRisk
+import app.wonton.protocol.WidgetCapability
+import app.wonton.protocol.WidgetCapabilityLevel
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
@@ -57,6 +60,43 @@ fun PermissionRow(line: PermissionLine, trailing: @Composable () -> Unit = {}) {
         }
         line.notice?.let { PermissionSupportingText(it) }
         line.offLoss?.let { PermissionSupportingText(it) }
+    }
+}
+
+/**
+ * 插件的网页在房间里当 Matrix widget 时能做什么（ADR-0096）：核心给原始能力串和级别，这里按级别各写一行，
+ * 会碰到聊天内容的那一级醒目显示；原始能力串收在默认收起的“详情”里。
+ */
+@Composable
+internal fun WidgetCapabilityRows(capabilities: List<WidgetCapability>) {
+    // 高的在前。比这个 App 新的级别（OTHER）按高的处理。
+    val (normal, high) = capabilities.partition { it.level == WidgetCapabilityLevel.NORMAL }
+    WidgetCapabilityRow(high, high = true)
+    WidgetCapabilityRow(normal, high = false)
+}
+
+@Composable
+private fun WidgetCapabilityRow(lines: List<WidgetCapability>, high: Boolean) {
+    if (lines.isEmpty()) return
+    val colors = WontonTheme.colors
+    Column(
+        Modifier.testTag(if (high) "widget-capability-high" else "widget-capability-normal"),
+        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s4),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
+            LineIcon(
+                if (high) WontonIcon.WarningFill else WontonIcon.Shield,
+                (if (high) colors.warning else colors.textSecondary).toColor(),
+            )
+            Text(
+                stringResource(if (high) R.string.plugin_widget_high else R.string.plugin_widget_normal),
+                Modifier.weight(1f),
+                style = WontonTheme.typography.body,
+                color = (if (high) colors.warning else colors.textPrimary).toColor(),
+            )
+        }
+        if (lines.any { it.added }) Tag(stringResource(R.string.plugin_permission_added), colors.primary)
+        ProblemDetail(lines.joinToString("\n") { it.capability })
     }
 }
 
