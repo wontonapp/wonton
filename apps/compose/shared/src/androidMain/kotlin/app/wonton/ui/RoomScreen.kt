@@ -635,6 +635,8 @@ private fun Messages(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
                 val joinsNext = newestFirst.getOrNull(index - 1)?.joins(item) == true
+                val flushesPrevious = newestFirst.getOrNull(index + 1)?.flushesWith(next = item) == true
+                val flushesNext = item.flushesWith(next = newestFirst.getOrNull(index - 1))
                 Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
                     TimelineItemView(
                         item,
@@ -652,6 +654,8 @@ private fun Messages(
                             onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
                         },
                         onOpenSideChat = sideChats.onOpen,
+                        flushesPrevious = flushesPrevious,
+                        flushesNext = flushesNext,
                     )
                 }
             }
@@ -675,20 +679,6 @@ private fun Messages(
 }
 
 private val JOINED_GAP = 2.dp
-
-/**
- * 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
- * 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
- */
-private fun TimelineItem.joins(earlier: TimelineItem?): Boolean {
-    val mine = message
-    val theirs = earlier?.message
-    return mine != null && theirs != null &&
-        mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == null
-}
-
-private val TimelineItem.message
-    get() = (content as? TimelineContent.Message)?.message
 
 private val TimelineItem.isBlankAgentRun
     get() = (content as? TimelineContent.AgentRun)?.isBlank == true

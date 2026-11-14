@@ -264,11 +264,14 @@ private extension ChatRoomView {
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
                     let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
+                    let flushesPrevious = index > 0 && timeline.items[index - 1].flushesWith(next: item)
+                    let flushesNext = index + 1 < timeline.items.count && item.flushesWith(next: timeline.items[index + 1])
                     // 做完了又没什么可写的 Agent 状态行不占一行。
                     if !item.isBlankAgentRun {
                         TimelineRow(
                             item: item, core: model.core, showsSender: !isDirect,
                             joinsPrevious: joinsPrevious, joinsNext: joinsNext,
+                            flushesPrevious: flushesPrevious, flushesNext: flushesNext,
                             retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
                             cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
                             cardAction: { model.send($0) },
@@ -440,6 +443,18 @@ private extension TimelineItem {
     func joins(_ earlier: TimelineItem) -> Bool {
         guard case let .message(mine) = content, case let .message(theirs) = earlier.content else { return false }
         return mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == nil
+    }
+
+    /// 这条和紧跟着的 `next` 之间能不能不留衬垫贴成一摞：同一次发送（ADR-0094 的组标记）里挨着的两张照片，
+    /// `next` 不带引用、这条不带说明，中间也没有隔着别的行（`next` 上方的时间、这条下面的已读）。
+    func flushesWith(next: TimelineItem) -> Bool {
+        guard case let .message(mine) = content, case let .message(theirs) = next.content,
+            let group = mine.group, theirs.group?.id == group.id,
+            mine.senderId == theirs.senderId,
+            !theirs.startsTimeGroup, mine.receipt == nil, theirs.reply == nil
+        else { return false }
+        guard case let .image(mineImage) = mine.body, case .image = theirs.body else { return false }
+        return mineImage.caption == nil
     }
 
     var isBlankAgentRun: Bool {
