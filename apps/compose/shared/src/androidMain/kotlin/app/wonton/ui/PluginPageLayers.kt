@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -23,7 +24,7 @@ import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 
 /**
- * 一页的层：网页铺满整屏（状态栏、导航条、刘海底下都是网页，安全区经环境交给页面自己让），
+ * 一页的层：网页从状态栏和胶囊那一行下面铺到屏幕底（导航条底下也是网页，底部安全区经环境交给页面自己让），
  * 上面只浮胶囊和状态浮层。来源页和本机页各用自己的一套代理与凭据。
  * Bot 页没放行或还在等登录确认时不建网页（[admitted]），改由 [disclosure] 说明。
  */
@@ -44,13 +45,15 @@ internal fun PageLayers(
         val loadable = connection.supported && connection.authorized && admitted
         if (state.started && loadable && script != null) {
             if (state.tab is TabRef.Widget) WidgetPageEffects(state, page, pages)
-            // 状态栏区域的点击被系统吃掉（#379），网页从状态栏下沿排；胶囊和状态浮层不受影响，
-            // 仍按系统安全区排在网页上面。视频全屏（customView）铺满整屏，不吃这条内边距。
+            // 状态栏区域的点击被系统吃掉（#379），胶囊又会压住页面固定在右上角的按钮：网页从状态栏和胶囊那一行
+            // 下面排（viewport.webTop）。状态栏那一截用窗口内边距垫，WebView 就不再把它当安全区报给页面。
+            // 视频全屏（customView）铺满整屏，不吃这条内边距。
             PageWebView(state, page, connection.proxy, environment, script, active && !state.covers(page),
                 openLink, onDraft, connection.profile,
                 modifier = Modifier.windowInsetsPadding(
                     WindowInsets.systemBars.union(WindowInsets.displayCutout)
-                        .only(WindowInsetsSides.Top)),
+                        .only(WindowInsetsSides.Top))
+                    .padding(top = viewport.webTop - viewport.chromeTop),
             )
         }
         disclosure()

@@ -39,7 +39,7 @@ pub(super) fn payload(
         .filter(|(name, _)| !name.starts_with("--wonton-"))
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    // 整页铺满整个屏幕（ADR-0095）：不论 `layout`，页面都被状态栏和 Home 条挡着，变量照实给。
+    // 整页铺满整个屏幕（ADR-0095）：不论 `layout`，变量按壳给的环境写。壳已经替页面让开的边报 0。
     let insets = [
         ("top", environment.inset_top),
         ("right", environment.safe_area.right),

@@ -15,13 +15,16 @@ import androidx.compose.ui.unit.dp
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import app.wonton.client.TabEnvironment
+import app.wonton.ui.design.WontonTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
 /**
  * 整页的安全区分摊：`safe` 留给胶囊和浮层，页面环境顶部报 0（Android 状态栏区域吃点击，网页由壳垫下移；
  * 照实报的话按桥适配过安全区的页面会双重让位）、底部照实（Home 条还在网页下面）。
+ * 网页的顶边在状态栏和胶囊那一行下面（胶囊不压页面右上角的固定按钮）。
  * 参考图上半条是状态栏让空区（画布色），下面是网页从状态栏下沿开始；系统栏的值由测试注入，
  * 不依赖运行环境给的真实 insets（JVM 布局渲染里恒为 0）。
  */
@@ -36,10 +39,15 @@ class PageInsetsTest {
     fun pageEnvironmentSplitsInsets() {
         var environment: TabEnvironment? = null
         var overlayTop = 0.dp
+        var webTop = 0.dp
+        var capsuleBottom = 0.dp
         paparazzi.snapshot {
             val viewport = tabViewport(true, PaddingValues(top = 24.dp, bottom = 16.dp))
             environment = viewport.environment
             overlayTop = viewport.safe.calculateTopPadding()
+            webTop = viewport.webTop
+            // 胶囊排在安全区下面一格（PluginPageChrome），高一个 smallButton。
+            capsuleBottom = overlayTop + WontonTheme.spacing.s8 + WontonTheme.size.smallButton
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().height(24.dp))
                 Box(Modifier.fillMaxSize().background(Color(0xFFDADADA)))
@@ -51,5 +59,6 @@ class PageInsetsTest {
         assertEquals(16.0, env.insetBottom, 0.0)
         assertEquals(16.0, env.safeArea.bottom, 0.0)
         assertEquals(24.dp, overlayTop)
+        assertTrue("网页顶边 $webTop 在胶囊下沿 $capsuleBottom 上面", webTop >= capsuleBottom)
     }
 }
