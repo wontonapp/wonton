@@ -43,7 +43,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{ClientsRoute, HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -104,10 +104,11 @@ pub struct PluginManager {
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
     pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
+    pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
-    pub(crate) clients: Arc<crate::clients::state::State>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
+    pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
@@ -177,7 +178,11 @@ impl PluginManager {
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
         let clients = Arc::new(crate::clients::state::State::new(&store));
+        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
+            .map(Arc::new)
+            .ok();
         Self {
+            client_passwords,
             engine,
             store,
             http,

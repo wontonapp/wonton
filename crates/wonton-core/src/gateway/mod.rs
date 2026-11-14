@@ -42,6 +42,7 @@ mod chain_mentions;
 mod clients_api;
 mod clients_domain;
 mod clients_entry;
+mod clients_passwords;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;

@@ -159,6 +159,37 @@ impl ProxyAuth {
     }
 }
 
+/// Render `clients.http.auth.gateway.headers` with the same placeholders as
+/// `webui.proxy.headers`.
+pub fn render_gateway_headers(
+    headers: &BTreeMap<String, String>,
+    owner: &Owner,
+    plugin_admin: bool,
+    generated: &BTreeMap<String, String>,
+    langs: &Languages,
+) -> Result<Vec<(HeaderName, String)>, String> {
+    headers
+        .iter()
+        .map(|(name, template)| {
+            let name =
+                HeaderName::from_bytes(name.as_bytes()).map_err(|error| error.to_string())?;
+            let parts = parse(template, langs)?
+                .into_iter()
+                .map(|part| match part {
+                    Part::Secret(name) => generated
+                        .get(&name)
+                        .map(|value| Part::Secret(value.clone()))
+                        .ok_or_else(|| secret_missing(langs, &name)),
+                    other => Ok(other),
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let value = render(&parts, owner, Some(role_name(plugin_admin)))
+                .map_err(|error| error.to_string())?;
+            Ok((name, value))
+        })
+        .collect()
+}
+
 /// 模板要了不认识请求者角色时，不生成代登录凭据；身份资料本身都已经能取到。
 #[derive(Debug, thiserror::Error)]
 pub enum RenderError {

@@ -14,6 +14,7 @@ pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
         permission,
         Permission::StorageShare { .. }
             | Permission::StorageHome { .. }
+            | Permission::NetworkClients
             | Permission::NetworkEgress
             | Permission::EgressProxy
             | Permission::MatrixBot
