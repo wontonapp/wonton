@@ -8,7 +8,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use hyper::HeaderMap;
 use wonton_protocol::{
-    ClientsFailure, ClientsPlugin, EntryBlock, EntryKind, EntrySwitch, SetEntryRequest,
+    ClientAuthKind, ClientsFailure, ClientsPlugin, EntryBlock, EntryKind, EntrySwitch,
+    SetEntryRequest,
 };
 
 use super::clients_api::{failure, no_store};
@@ -32,13 +33,16 @@ pub(super) fn routes() -> Router<Arc<Gateway>> {
         )
 }
 
-async fn suffix(gateway: &Gateway) -> Result<Option<String>, Response> {
+async fn suffix(gateway: &Gateway) -> Result<Option<String>, apply::ApplyError> {
     match &gateway.domain {
         Some(domain) => domain
             .view()
             .await
             .map(|view| view.suffix)
-            .map_err(|error| failure(ClientsFailure::IngressUnavailable, &format!("{error:#}"))),
+            .map_err(|error| apply::ApplyError {
+                failure: ClientsFailure::IngressUnavailable,
+                message: format!("{error:#}"),
+            }),
         None => Ok(None),
     }
 }
@@ -47,7 +51,7 @@ async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Respon
     let langs = api::languages(&headers);
     let suffix = match suffix(&gateway).await {
         Ok(suffix) => suffix,
-        Err(response) => return response,
+        Err(error) => return failure(error.failure, &error.localized_message(&langs)),
     };
     let clients = match gateway.plugins.client_plugins() {
         Ok(clients) => clients,
@@ -55,9 +59,9 @@ async fn list(State(gateway): State<Arc<Gateway>>, headers: HeaderMap) -> Respon
     };
     let mut views = Vec::with_capacity(clients.len());
     for client in clients {
-        match client_view(&gateway, &langs, &client, suffix.as_deref(), None).await {
+        match client_view(&gateway, &langs, client, suffix.as_deref(), None).await {
             Ok(view) => views.push(view),
-            Err(response) => return response,
+            Err(error) => return failure(error.failure, &error.localized_message(&langs)),
         }
     }
     no_store(Json(views).into_response())
@@ -96,11 +100,11 @@ async fn set_entry(
     };
     let suffix = match suffix(&gateway).await {
         Ok(suffix) => suffix,
-        Err(response) => return response,
+        Err(error) => return failure(error.failure, &error.localized_message(&langs)),
     };
-    match client_view(&gateway, &langs, &client, suffix.as_deref(), blocked).await {
+    match client_view(&gateway, &langs, client, suffix.as_deref(), blocked).await {
         Ok(view) => no_store(Json(view).into_response()),
-        Err(response) => response,
+        Err(error) => failure(error.failure, &error.localized_message(&langs)),
     }
 }
 
@@ -115,22 +119,35 @@ fn parse_kind(entry: &str) -> Option<Kind> {
 async fn client_view(
     gateway: &Gateway,
     langs: &Languages,
-    client: &ClientPlugin,
+    mut client: ClientPlugin,
     suffix: Option<&str>,
     blocked_override: Option<EntryBlock>,
-) -> Result<ClientsPlugin, Response> {
-    let label = client.record.entry_label.as_deref().ok_or_else(|| {
-        failure(
-            ClientsFailure::PluginUnavailable,
-            &format!("客户端插件 {} 没有入口标签", client.id),
-        )
-    })?;
+) -> Result<ClientsPlugin, apply::ApplyError> {
     let blocked = match blocked_override {
         Some(blocked) => Some(blocked),
-        None => apply::block_reason(gateway, client)
-            .await
-            .map_err(|error| failure(error.failure, &error.localized_message(langs)))?,
+        None => apply::block_reason(gateway, &client).await?,
     };
+    // setup 检查可能已持久关闭入口；地址与开关必须来自检查完成后的同一份记录。
+    client.record = gateway
+        .plugins
+        .store()
+        .load(&client.id)
+        .map_err(|error| apply::ApplyError {
+            failure: ClientsFailure::PluginUnavailable,
+            message: format!("读取客户端入口记录 {}: {error}", client.id),
+        })?
+        .ok_or_else(|| apply::ApplyError {
+            failure: ClientsFailure::PluginUnavailable,
+            message: "clients-switch-uninstalled".to_owned(),
+        })?;
+    let label = client
+        .record
+        .entry_label
+        .as_deref()
+        .ok_or_else(|| apply::ApplyError {
+            failure: ClientsFailure::PluginUnavailable,
+            message: format!("客户端插件 {} 没有入口标签", client.id),
+        })?;
     let lan_url = suffix.and_then(|suffix| {
         client
             .record
@@ -147,16 +164,48 @@ async fn client_view(
         label: langs.pick_owned(&client.title),
         lan_url,
         public_url,
-        entries: entry_switches(client),
+        entries: entry_switches(&client),
         auth: client.auth,
         username: client
             .username
             .as_deref()
             .map(|username| username.replace("{user}", gateway.owner.username())),
-        passwords: Vec::new(),
+        passwords: password_summaries(gateway, &client, langs)?,
         public_rules: client.public_rules.clone(),
         blocked,
     })
+}
+
+fn password_summaries(
+    gateway: &Gateway,
+    client: &ClientPlugin,
+    langs: &Languages,
+) -> Result<Vec<wonton_protocol::PasswordSummary>, apply::ApplyError> {
+    if client.auth == ClientAuthKind::App {
+        return Ok(Vec::new());
+    }
+    let unavailable = || apply::ApplyError {
+        failure: ClientsFailure::PluginUnavailable,
+        message: crate::l10n::text(langs, "clients-passwords-unavailable", &[]),
+    };
+    let store = gateway
+        .plugins
+        .client_passwords
+        .as_ref()
+        .ok_or_else(unavailable)?;
+    store
+        .summaries(client.id.as_str(), |id| {
+            let id = id.parse::<iroh::EndpointId>().ok()?;
+            gateway
+                .tunnel
+                .devices
+                .get(&id)
+                .and_then(|device| device.name)
+        })
+        .map_err(|error| {
+            tracing::error!(%error, "专用密码库读取失败");
+            unavailable()
+        })
 }
 
 fn entry_switches(client: &ClientPlugin) -> Vec<EntrySwitch> {

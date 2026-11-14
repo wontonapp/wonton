@@ -420,7 +420,7 @@ impl PluginManager {
         if let Some((_, _, bot)) = &progress.undo.bot {
             progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
-        self.store.save(&InstalledRecord {
+        self.save_upgraded_record(InstalledRecord {
             lifecycle: super::super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
@@ -436,9 +436,9 @@ impl PluginManager {
             proxied: ctx.egress.is_some(),
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
-            entry_label: old.record.entry_label.clone(),
-            clients_entries: old.record.clients_entries,
-            setup_done_ever: old.record.setup_done_ever,
+            entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
@@ -448,7 +448,8 @@ impl PluginManager {
             static_files: Default::default(),
             hosted: Vec::new(),
             gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
-        })?;
+        })
+        .await?;
         self.refresh_bot_web_routes(manifest).await?;
         Ok(Deployed {
             upstream,
@@ -466,6 +467,20 @@ impl PluginManager {
             hosted: self.hosted_upstreams(manifest, &network).await?,
             clients: self.clients_upstream(manifest, &plan).await?,
         })
+    }
+
+    async fn save_upgraded_record(&self, mut record: InstalledRecord) -> Result<(), InstallError> {
+        // 主人关入口不必等升级；提交时在开关共用的锁里保留最新状态，不能写回 read_old 的快照。
+        let _pass = self.lan.pass.lock().await;
+        let current = self
+            .store
+            .load(&record.id)?
+            .ok_or_else(|| InstallError::not_installed(&self.owner_languages(), &record.id))?;
+        record.entry_label = current.entry_label;
+        record.clients_entries = current.clients_entries;
+        record.setup_done_ever = current.setup_done_ever;
+        self.store.save(&record)?;
+        Ok(())
     }
 
     /// 旧容器还在跑时能做的都做了：渲染、凭据、拉镜像、目录和卷。这一步失败时旧版本不受影响。

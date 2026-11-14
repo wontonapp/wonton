@@ -34,11 +34,12 @@ impl PluginManager {
             if clients.http.is_none() && clients.tcp.as_ref().is_none_or(Vec::is_empty) {
                 continue;
             }
-            let record = self
-                .store
-                .load(id)
-                .map_err(|error| format!("读取客户端入口记录 {id}: {error}"))?
-                .ok_or_else(|| format!("客户端入口插件 {id} 没有安装记录"))?;
+            let record = match self.store.load(id) {
+                Ok(Some(record)) => record,
+                Ok(None) if matches!(entry.status, PluginStatus::Installing) => continue,
+                Ok(None) => return Err(format!("客户端入口插件 {id} 没有安装记录")),
+                Err(error) => return Err(format!("读取客户端入口记录 {id}: {error}")),
+            };
             let (http, auth, username, public_rules) = match clients.http.as_ref() {
                 Some(http) => {
                     let auth = if http.auth.gateway.is_some() {

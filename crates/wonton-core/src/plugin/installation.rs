@@ -450,6 +450,55 @@ impl PluginManager {
             return self.clear_failed_install(id, purge, langs).await;
         }
         self.check_uninstall_dependencies(removing, approve_connections, langs)?;
+        self.begin_uninstall(id, langs).await?;
+        self.changed();
+        tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
+        let removed = async {
+            self.revoke_dependency_keys(id, langs).await?;
+            self.teardown(id, purge, langs).await
+        }
+        .await;
+        match removed {
+            Ok(report) => {
+                self.clear_oom(id);
+                self.lan.clear_degraded(id);
+                self.plugins.write().expect("插件表锁中毒").remove(id);
+                self.tool_policy().forget_plugin(id.as_str());
+                self.remove_capability_records(id, removing, approve_connections, langs)
+                    .await?;
+                self.changed();
+                tracing::info!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "succeeded",
+                    purge,
+                    "插件卸载完成"
+                );
+                Ok(report)
+            }
+            Err(e) => {
+                tracing::error!(
+                    plugin = %id,
+                    operation = "uninstall",
+                    phase = "finish",
+                    result = "failed",
+                    purge,
+                    error_kind = e.kind(),
+                    reason = %e,
+                    "插件卸载未完成"
+                );
+                let reason = l10n::text(
+                    langs,
+                    "plugin-install-uninstall-unfinished",
+                    &[("error", e.to_string().into())],
+                );
+                self.set(id, PluginStatus::Degraded { reason }, Some(None));
+                Err(e)
+            }
+        }
+    }
+    async fn begin_uninstall(&self, id: &PluginId, langs: &Languages) -> Result<(), InstallError> {
         let _changing = self.egress.changing.lock().await;
         if self.egress_config()?.source == wonton_protocol::EgressProxySource::Plugin
             && self.egress_provider(langs)?.id == *id
@@ -519,51 +568,6 @@ impl PluginManager {
         drop(_pass);
         drop(_clients);
         drop(_changing);
-        self.changed();
-        tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
-        let removed = async {
-            self.revoke_dependency_keys(id, langs).await?;
-            self.teardown(id, purge, langs).await
-        }
-        .await;
-        match removed {
-            Ok(report) => {
-                self.clear_oom(id);
-                self.lan.clear_degraded(id);
-                self.plugins.write().expect("插件表锁中毒").remove(id);
-                self.tool_policy().forget_plugin(id.as_str());
-                self.remove_capability_records(id, removing, approve_connections, langs)
-                    .await?;
-                self.changed();
-                tracing::info!(
-                    plugin = %id,
-                    operation = "uninstall",
-                    phase = "finish",
-                    result = "succeeded",
-                    purge,
-                    "插件卸载完成"
-                );
-                Ok(report)
-            }
-            Err(e) => {
-                tracing::error!(
-                    plugin = %id,
-                    operation = "uninstall",
-                    phase = "finish",
-                    result = "failed",
-                    purge,
-                    error_kind = e.kind(),
-                    reason = %e,
-                    "插件卸载未完成"
-                );
-                let reason = l10n::text(
-                    langs,
-                    "plugin-install-uninstall-unfinished",
-                    &[("error", e.to_string().into())],
-                );
-                self.set(id, PluginStatus::Degraded { reason }, Some(None));
-                Err(e)
-            }
-        }
+        Ok(())
     }
 }

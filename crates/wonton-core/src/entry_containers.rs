@@ -188,11 +188,16 @@ impl EntryContainers {
         let (_, networks) = self.networks(core).await?;
         let mut model =
             crate::entry_haproxy::Model::federation_only(&settings.domain, &settings.domain);
-        model.public_labels = public_access.then_some(public_labels).unwrap_or_default();
-        model.lan_labels = self
-            .lan_forward_available
-            .then_some(lan_labels)
-            .unwrap_or_default();
+        model.public_labels = if public_access {
+            public_labels
+        } else {
+            Vec::new()
+        };
+        model.lan_labels = if self.lan_forward_available {
+            lan_labels
+        } else {
+            Vec::new()
+        };
         model.lan_forward = self
             .lan_forward_available
             .then(|| crate::entry_haproxy::LAN_FORWARD_ADDRESS.to_owned());

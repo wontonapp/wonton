@@ -13,6 +13,9 @@ use hyper::{Method, StatusCode};
 use serde_json::json;
 use std::sync::Arc;
 
+#[path = "clients_switches_regression_tests.rs"]
+mod clients_switches_regression_tests;
+
 struct Rig {
     h: Harness,
     gateway: Arc<super::Gateway>,

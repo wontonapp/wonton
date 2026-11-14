@@ -94,3 +94,66 @@ async fn retained_label_survives_uninstall_reinstall_and_blocks_collisions() {
         Some("photos")
     );
 }
+
+#[tokio::test]
+async fn failed_reinstall_cleanup_keeps_retained_label() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let first = PluginId::parse("app.first.photos").unwrap();
+    let second = PluginId::parse("app.second.photos").unwrap();
+    let package = super::manager::app(first.as_str());
+    manager
+        .install(&package, &[], super::langs())
+        .await
+        .unwrap();
+    manager
+        .uninstall(&first, false, &super::langs())
+        .await
+        .unwrap();
+
+    let container = "wonton-app-first-photos--web";
+    docker.fail_starts(Some("start rejected"));
+    docker.fail_remove(container, Some("cleanup rejected"));
+    manager
+        .install(&package, &[], super::langs())
+        .await
+        .unwrap_err();
+    let failed = manager.installed_plugin(&first, &super::langs()).unwrap();
+    assert!(!failed.install_failure.unwrap().cleanup_errors.is_empty());
+    assert!(manager.store().load(&first).unwrap().is_none());
+    docker.fail_remove(container, None);
+    docker.fail_starts(None);
+    manager
+        .uninstall(&first, false, &super::langs())
+        .await
+        .unwrap();
+    manager
+        .install(&super::manager::app(second.as_str()), &[], super::langs())
+        .await
+        .unwrap();
+    manager
+        .install(&package, &[], super::langs())
+        .await
+        .unwrap();
+    assert_eq!(
+        manager
+            .store()
+            .load(&first)
+            .unwrap()
+            .unwrap()
+            .entry_label
+            .as_deref(),
+        Some("photos")
+    );
+    assert_eq!(
+        manager
+            .store()
+            .load(&second)
+            .unwrap()
+            .unwrap()
+            .entry_label
+            .as_deref(),
+        Some("photos-2")
+    );
+}
