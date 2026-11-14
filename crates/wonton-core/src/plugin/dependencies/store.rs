@@ -27,6 +27,26 @@ pub(super) struct Connection {
 }
 
 impl Connection {
+    pub(super) fn pending(
+        consumer: &str,
+        consumer_bot: Option<&str>,
+        provider: &str,
+        provider_bot: Option<&str>,
+        capability: &str,
+    ) -> Self {
+        Self {
+            consumer: consumer.to_owned(),
+            consumer_bot: consumer_bot.map(str::to_owned),
+            provider: provider.to_owned(),
+            provider_bot: provider_bot.map(str::to_owned),
+            capability: capability.to_owned(),
+            key: None,
+            ready: false,
+            rebuild: false,
+            problem: None,
+        }
+    }
+
     pub(super) fn same_pair(&self, other: &Self) -> bool {
         self.consumer == other.consumer
             && self.consumer_bot == other.consumer_bot

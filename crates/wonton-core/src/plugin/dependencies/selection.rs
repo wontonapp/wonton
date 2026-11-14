@@ -4,8 +4,8 @@ use wonton_protocol::{BotRef, ConsumerCapabilityChoice, UninstallPreview};
 
 use super::binding::consumer_key;
 use super::{
-    InstallError, Languages, Manifest, PluginId, PluginManager, State, chosen, connection,
-    connection_to, declarations, high, reference, service,
+    Connection, InstallError, Languages, Manifest, PluginId, PluginManager, State, chosen,
+    connection, connection_to, declarations, high, reference, service,
 };
 
 impl PluginManager {
@@ -24,6 +24,7 @@ impl PluginManager {
         let before = self.dependencies.load()?;
         let consumers = self.capability_consumers();
         let mut affected = Vec::with_capacity(consumers.len());
+        let mut pending = Vec::new();
         for consumer in consumers {
             // ADR-0061 第 9 节：提供方自己不能连到自己。
             if consumer.manifest.id == *id
@@ -43,10 +44,23 @@ impl PluginManager {
                 high(&provider.listed.manifest, capability),
                 langs,
             )?;
+            for bot in std::iter::once(None).chain(bots.iter().map(Some)) {
+                if let Some(connection) = self.pending_default_connection(
+                    &before,
+                    &consumer.manifest.id,
+                    capability,
+                    id,
+                    bot,
+                    langs,
+                )? {
+                    pending.push(connection);
+                }
+            }
             affected.push((consumer, bots));
         }
         self.dependencies.change(|state| {
             state.defaults.insert(capability.to_owned(), id.to_string());
+            state.connections.extend(pending);
         })?;
         let mut failure: Option<InstallError> = None;
         for (consumer, bots) in affected {
@@ -62,6 +76,33 @@ impl PluginManager {
         }
         self.changed();
         failure.map_or(Ok(()), Err)
+    }
+
+    fn pending_default_connection(
+        &self,
+        state: &State,
+        consumer: &PluginId,
+        capability: &str,
+        provider: &PluginId,
+        bot: Option<&BotRef>,
+        langs: &Languages,
+    ) -> Result<Option<Connection>, InstallError> {
+        let target =
+            self.capability_target_bot(state, consumer, provider, capability, bot, langs)?;
+        let target_name = target.as_ref().map(|bot| bot.bot.as_str());
+        Ok(
+            connection_to(state, consumer, provider, capability, bot, target_name)
+                .is_none()
+                .then(|| {
+                    Connection::pending(
+                        consumer.as_str(),
+                        bot.map(|bot| bot.bot.as_str()),
+                        provider.as_str(),
+                        target_name,
+                        capability,
+                    )
+                }),
+        )
     }
 
     fn default_inheriting_bots(

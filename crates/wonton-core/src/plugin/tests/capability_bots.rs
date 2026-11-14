@@ -13,6 +13,7 @@ use super::{env_of_container, langs, package};
 use crate::http::HttpClient;
 use crate::matrix::Matrix;
 
+mod faults;
 mod recovery;
 mod removal;
 

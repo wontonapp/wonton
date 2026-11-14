@@ -19,19 +19,19 @@ struct ConsumerRecovery {
 pub(in crate::plugin) struct BotRemovalReplacements(Vec<BotRemovalReplacement>);
 
 struct BotRemovalReplacement {
-    consumer: String,
-    bot: Option<String>,
-    capability: String,
-    binding: Binding,
+    connection: Connection,
+    borrowed_plugin_connection: bool,
 }
 
 impl BotRemovalReplacement {
     fn preserves(&self, connection: &Connection) -> bool {
-        self.consumer == connection.consumer
-            && self.bot == connection.consumer_bot
-            && self.capability == connection.capability
-            && self.binding.provider() == Some(connection.provider.as_str())
-            && self.binding.bot() == connection.provider_bot.as_deref()
+        let planned = &self.connection;
+        planned.consumer == connection.consumer
+            && (planned.consumer_bot == connection.consumer_bot
+                || (self.borrowed_plugin_connection && connection.consumer_bot.is_none()))
+            && planned.capability == connection.capability
+            && planned.provider == connection.provider
+            && planned.provider_bot == connection.provider_bot
     }
 }
 
@@ -73,8 +73,7 @@ impl PluginManager {
                 &state,
                 &providers,
                 &consumer.manifest,
-                (plugin, bot),
-                &replacement,
+                (&replacement, bot),
             )? {
                 Some(choices) => replacements.extend(choices),
                 None => blocked.push(wonton_protocol::CapabilityProviderRef {
@@ -103,95 +102,102 @@ impl PluginManager {
         state: &State,
         providers: &[super::Provider],
         consumer: &Manifest,
-        retiring: (&PluginId, &str),
-        replacement: &Manifest,
+        retiring: (&Manifest, &str),
     ) -> Result<Option<Vec<BotRemovalReplacement>>, InstallError> {
         let bots = self.active_capability_bots(&consumer.id)?;
         let mut choices = Vec::new();
         for capability in consumer.requires.iter().filter(|c| super::generic(c)) {
             for caller in std::iter::once(None).chain(bots.iter().map(Some)) {
                 if !chosen(state, providers, &consumer.id, capability, caller)
-                    .is_some_and(|provider| provider.id == *retiring.0)
-                    || (service(replacement, capability).is_some()
+                    .is_some_and(|provider| provider.id == retiring.0.id)
+                    || (service(retiring.0, capability).is_some()
                         && selected_binding_bot(state, &consumer.id, capability, caller)
                             != Some(retiring.1))
                 {
                     continue;
                 }
-                let candidates = state.connections.iter().filter(|c| {
-                    c.consumer == consumer.id.as_str()
-                        && c.capability == *capability
-                        && (c.consumer_bot.as_deref() == caller.map(|bot| bot.bot.as_str())
-                            || c.consumer_bot.is_none())
-                });
-                let Some(binding) = self.confirmed_bot_replacement(
-                    candidates,
+                let Some(choice) = self.available_bot_replacement(
+                    state,
                     providers,
+                    &consumer.id,
+                    capability,
+                    caller,
                     retiring,
-                    replacement,
-                    caller.is_some(),
                 )?
                 else {
                     return Ok(None);
                 };
-                choices.push(BotRemovalReplacement {
-                    consumer: consumer.id.to_string(),
-                    bot: caller.map(|bot| bot.bot.clone()),
-                    capability: capability.clone(),
-                    binding,
-                });
+                choices.push(choice);
             }
         }
         Ok(Some(choices))
     }
 
-    fn confirmed_bot_replacement<'a>(
+    fn available_bot_replacement(
         &self,
-        candidates: impl Iterator<Item = &'a Connection>,
+        state: &State,
         providers: &[super::Provider],
-        retiring: (&PluginId, &str),
-        replacement: &Manifest,
-        calling_bot: bool,
-    ) -> Result<Option<Binding>, InstallError> {
-        for c in candidates.filter(|c| c.ready && c.problem.is_none()) {
+        consumer: &PluginId,
+        capability: &str,
+        caller: Option<&wonton_protocol::BotRef>,
+        retiring: (&Manifest, &str),
+    ) -> Result<Option<BotRemovalReplacement>, InstallError> {
+        let caller_name = caller.map(|bot| bot.bot.as_str());
+        for c in state.connections.iter().filter(|c| {
+            c.consumer == consumer.as_str()
+                && c.capability == capability
+                && (c.consumer_bot.as_deref() == caller_name || c.consumer_bot.is_none())
+                && c.ready
+                && c.problem.is_none()
+        }) {
             let Some(provider) = providers.iter().find(|p| p.id.as_str() == c.provider) else {
                 continue;
             };
-            if provider.id.as_str() == c.consumer
-                || (provider.id == *retiring.0 && service(replacement, &c.capability).is_none())
-                || !matches!(
-                    provider.status,
-                    PluginStatus::Running | PluginStatus::Degraded { .. }
-                )
-                || !service(&provider.listed.manifest, &c.capability)
-                    .is_some_and(|spec| provider.serving.contains(&spec.service))
-                || (calling_bot
+            if !available_replacement(provider, consumer.as_str(), capability, retiring.0)
+                || (caller.is_some()
                     && c.consumer_bot.is_none()
-                    && high(&provider.listed.manifest, &c.capability))
+                    && high(&provider.listed.manifest, capability))
             {
                 continue;
             }
-            let binding = if let Some(bot) = &c.provider_bot {
-                if (provider.id == *retiring.0 && bot == retiring.1)
+            if let Some(bot) = &c.provider_bot {
+                if (provider.id == retiring.0.id && bot == retiring.1)
                     || self.capability_caller_bot(&provider.id, bot)?.is_none()
                 {
                     continue;
                 }
-                Binding::Bot(wonton_protocol::BotRef {
-                    plugin_id: c.provider.clone(),
-                    bot: bot.clone(),
-                })
-            } else {
-                if c.capability == crate::plugin::capabilities::AGENT_ACP.name
-                    && (calling_bot || self.active_capability_bots(&provider.id)?.is_empty())
-                {
-                    continue;
-                }
-                Binding::Plugin(c.provider.clone())
-            };
-            return Ok(Some(binding));
+            } else if capability == crate::plugin::capabilities::AGENT_ACP.name
+                && (caller.is_some() || self.active_capability_bots(&provider.id)?.is_empty())
+            {
+                continue;
+            }
+            return Ok(Some(BotRemovalReplacement {
+                connection: Connection::pending(
+                    consumer.as_str(),
+                    caller_name,
+                    provider.id.as_str(),
+                    c.provider_bot.as_deref(),
+                    capability,
+                ),
+                borrowed_plugin_connection: caller.is_some() && c.consumer_bot.is_none(),
+            }));
         }
-        Ok(None)
+        Ok(providers
+            .iter()
+            .find(|provider| {
+                available_replacement(provider, consumer.as_str(), capability, retiring.0)
+                    && !high(&provider.listed.manifest, capability)
+            })
+            .map(|provider| BotRemovalReplacement {
+                connection: Connection::pending(
+                    consumer.as_str(),
+                    caller_name,
+                    provider.id.as_str(),
+                    None,
+                    capability,
+                ),
+                borrowed_plugin_connection: false,
+            }))
     }
 
     /// 调用方持有 dependencies.changing 和 bot_allocation。
@@ -201,11 +207,14 @@ impl PluginManager {
         bot: &str,
         replacements: BotRemovalReplacements,
         langs: &Languages,
-    ) -> Result<BotRemovalRecovery, InstallError> {
+    ) -> Result<(Result<(), InstallError>, BotRemovalRecovery), InstallError> {
         let before = self.dependencies.load()?;
         let mut affected = self.capability_bot_removal_scopes(&before, plugin, bot)?;
         for replacement in &replacements.0 {
-            affected.insert((replacement.consumer.clone(), replacement.bot.clone()));
+            affected.insert((
+                replacement.connection.consumer.clone(),
+                replacement.connection.consumer_bot.clone(),
+            ));
         }
         let mut snapshots = Vec::with_capacity(affected.len());
         for (consumer, consumer_bot) in affected {
@@ -221,7 +230,7 @@ impl PluginManager {
                     && c.consumer_bot.as_deref() == consumer_bot.as_deref()
                     && c.provider == plugin.as_str()
                     && c.provider_bot.as_deref() == Some(bot)
-                    && c.ready
+                    && (c.ready || c.rebuild)
             });
             snapshots.push(ConsumerRecovery {
                 consumer,
@@ -231,20 +240,30 @@ impl PluginManager {
                 was_connected,
             });
         }
+        let result = self
+            .disconnect_capability_bot(&before, plugin, bot, replacements, langs)
+            .await;
+        Ok((result, BotRemovalRecovery(snapshots)))
+    }
+
+    async fn disconnect_capability_bot(
+        &self,
+        before: &State,
+        plugin: &PluginId,
+        bot: &str,
+        replacements: BotRemovalReplacements,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
         let providers = self.capability_providers();
-        let invalidated = invalidated_bot_connections(&before, &providers, plugin, bot);
-        let removing = |c: &Connection| {
-            (c.consumer == plugin.as_str() && c.consumer_bot.as_deref() == Some(bot))
-                || (c.provider == plugin.as_str() && c.provider_bot.as_deref() == Some(bot))
-                || (invalidated.iter().any(|(consumer, bot, capability)| {
-                    c.consumer == *consumer && c.consumer_bot == *bot && c.capability == *capability
-                }) && !replacements
-                    .0
-                    .iter()
-                    .any(|replacement| replacement.preserves(c)))
-        };
+        let invalidated = invalidated_bot_connections(before, &providers, plugin, bot);
+        let removing =
+            |c: &Connection| removing_bot_connection(c, plugin, bot, &invalidated, &replacements);
         self.dependencies.change(|state| {
             for c in state.connections.iter_mut().filter(|c| removing(c)) {
+                if c.consumer != plugin.as_str() || c.consumer_bot.as_deref() != Some(bot) {
+                    // 退休后变量已经为空；显式重试仍须保留首次断开前的重建需求。
+                    c.rebuild |= c.ready;
+                }
                 c.ready = false;
                 c.problem = Some(self.capability_stopped(plugin, &c.capability, langs));
             }
@@ -254,27 +273,31 @@ impl PluginManager {
                 .await?;
         }
         self.dependencies.change(|state| {
-            state.connections.retain(|c| !removing(c));
+            state
+                .connections
+                .retain(|c| !removing_bot_connection(c, plugin, bot, &invalidated, &replacements));
             state.selected.remove(&consumer_key(plugin.as_str(), bot));
             for choices in state.selected.values_mut() {
                 choices.retain(|_, binding| !targets_bot(binding, plugin, bot));
             }
             state.selected.retain(|_, choices| !choices.is_empty());
-            for replacement in &replacements.0 {
+            for BotRemovalReplacement { connection, .. } in replacements.0 {
                 state.select(
-                    &replacement.consumer,
-                    replacement.bot.as_deref(),
-                    &replacement.capability,
-                    replacement.binding.provider(),
-                    replacement.binding.bot(),
+                    &connection.consumer,
+                    connection.consumer_bot.as_deref(),
+                    &connection.capability,
+                    Some(&connection.provider),
+                    connection.provider_bot.as_deref(),
                 );
+                if !state.connections.iter().any(|c| c.same_pair(&connection)) {
+                    state.connections.push(connection);
+                }
             }
             state.handoff_consents.retain(|consent| {
                 !(consent.from.plugin_id == plugin.as_str() && consent.from.bot == bot)
                     && !(consent.target.plugin_id == plugin.as_str() && consent.target.bot == bot)
             });
-        })?;
-        Ok(BotRemovalRecovery(snapshots))
+        })
     }
 
     /// 调用方持有 dependencies.changing，不持有 bot_allocation。
@@ -481,4 +504,40 @@ fn combine(
         (Err(error), _) | (_, Err(error)) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
     }
+}
+
+fn available_replacement(
+    provider: &super::Provider,
+    consumer: &str,
+    capability: &str,
+    retiring: &Manifest,
+) -> bool {
+    provider.id.as_str() != consumer
+        && (provider.id != retiring.id || service(retiring, capability).is_some())
+        && matches!(
+            provider.status,
+            PluginStatus::Running | PluginStatus::Degraded { .. }
+        )
+        && service(&provider.listed.manifest, capability)
+            .is_some_and(|spec| provider.serving.contains(&spec.service))
+}
+
+fn removing_bot_connection(
+    connection: &Connection,
+    plugin: &PluginId,
+    bot: &str,
+    invalidated: &BTreeSet<(String, Option<String>, String)>,
+    replacements: &BotRemovalReplacements,
+) -> bool {
+    (connection.consumer == plugin.as_str() && connection.consumer_bot.as_deref() == Some(bot))
+        || (connection.provider == plugin.as_str()
+            && connection.provider_bot.as_deref() == Some(bot))
+        || (invalidated.iter().any(|(consumer, bot, capability)| {
+            connection.consumer == *consumer
+                && connection.consumer_bot == *bot
+                && connection.capability == *capability
+        }) && !replacements
+            .0
+            .iter()
+            .any(|replacement| replacement.preserves(connection)))
 }

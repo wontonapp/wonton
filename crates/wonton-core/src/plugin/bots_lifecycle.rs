@@ -120,12 +120,16 @@ impl PluginManager {
         if let Some(entry) = &entry {
             self.store.bots().retire(plugin, bot, entry)?;
         }
-        let recovery = self
+        let (forgotten, recovery) = self
             .forget_capability_bot(plugin, bot, replacements, &self.owner_languages())
             .await?;
-        let report = self
-            .remove_bot_resources(plugin, bot, keep_data, record, plugin_bots, entry)
-            .await;
+        let report = match forgotten {
+            Ok(()) => {
+                self.remove_bot_resources(plugin, bot, keep_data, record, plugin_bots, entry)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
         Ok((report, recovery))
     }
 
