@@ -59,6 +59,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -254,7 +255,10 @@ internal fun SidebarContainer(
                 .graphicsLayer {
                     alpha = PANEL_DIM + (1f - PANEL_DIM) * progress
                     translationX = -panelWidthPx * PANEL_TUCKED * (1f - progress)
-                },
+                }
+                // 收起停稳后整块盖在主界面底下，看不见也点不到：不留在语义树里，读屏和界面测试摸不到里面的
+                // “设置”“商店”“新聊天”（iOS 同样对旁白隐藏收起的侧边栏）。面板照常组合，滚动位置和编辑态不丢。
+                .then(if (progress > 0f) Modifier else Modifier.clearAndSetSemantics { }),
         ) {
             panel(panelWidth, progress > PANEL_INTERACTIVE_AT)
         }
