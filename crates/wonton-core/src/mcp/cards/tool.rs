@@ -66,5 +66,7 @@ pub fn tool_call(
                 runs_as_root: highest,
             },
         }),
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }

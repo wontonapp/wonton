@@ -93,6 +93,8 @@ pub struct HostPaths {
     /// 宿主的 `/dev` 在核心里的路径。核心在容器里却没挂载它时为 `None`：探测如实报错，不把容器自己的 `/dev`
     /// 当成宿主的。
     pub dev: Option<PathBuf>,
+    /// 宿主的 `/run/udev` 在核心里的路径（`WONTON_HOST_UDEV`）：宿主没有 udev 时为空，设备自动发现少一份数据库。
+    pub udev: Option<PathBuf>,
     /// sysfs。测试里换成假的目录树。
     pub sys: PathBuf,
     /// procfs，同上。
@@ -101,9 +103,10 @@ pub struct HostPaths {
 
 impl HostPaths {
     /// 核心直接跑在宿主上时就是 `/dev`；在容器里时要配置挂载进来的路径（`WONTON_HOST_DEV`）。
-    pub fn new(host_dev: Option<PathBuf>) -> Self {
+    pub fn new(host_dev: Option<PathBuf>, host_udev: Option<PathBuf>) -> Self {
         Self {
             dev: host_dev,
+            udev: host_udev,
             sys: PathBuf::from("/sys"),
             proc: PathBuf::from("/proc"),
         }

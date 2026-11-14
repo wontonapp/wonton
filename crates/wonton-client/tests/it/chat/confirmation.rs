@@ -65,6 +65,7 @@ fn answer(phone: &Phone, id: &str, answer: Answer) {
             choice_id: None,
             secrets: Default::default(),
             settings: Default::default(),
+            devices: Vec::new(),
         })
         .unwrap();
 }

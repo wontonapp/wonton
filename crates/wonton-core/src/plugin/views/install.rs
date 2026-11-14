@@ -124,13 +124,18 @@ impl PluginManager {
         let lan = self.lan_preview(package, langs).await?;
         let egress = self.egress_problem_for(m, langs).await?;
         let dependencies = self.dependency_preview(m, langs).await?;
+        let devices = self.devices_preview(m, enabled, installed, langs).await?;
         let mut blocked = blocked
             .or(dependencies.blocked)
             .or(gpu.blocked)
-            .or(lan.blocked);
+            .or(lan.blocked)
+            .or_else(|| devices.blocked.as_ref().map(|(message, _)| message.clone()));
         if blocked.is_none() {
             blocked = self.blocking_problem(m, &plan, langs, egress.as_ref());
         }
+        let blocked_category = devices.blocked.as_ref().and_then(|(message, category)| {
+            (blocked.as_ref() == Some(message)).then_some(*category)
+        });
         let mut notices = source_notices(package, &plan, langs);
         // 作者写的“装好后要做的一步”排在最前面、醒目显示：主人得先看到它再决定装不装。
         notices.splice(0..0, opening_notices(m, langs));
@@ -139,6 +144,7 @@ impl PluginManager {
         notices.extend(super::super::manifest_widget::manifest_notices(m, langs));
         notices.extend(gpu.notice);
         notices.extend(lan.notices);
+        notices.extend(devices.notices);
         // 不挡安装的问题：探测只试了一个网站。
         let uncertain = egress.filter(|p| !blocks(p));
         notices.extend(uncertain.map(|p| line(p.message)));
@@ -182,10 +188,10 @@ impl PluginManager {
             upgrade_from: None,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
             blocked,
-            blocked_category: None,
+            blocked_category,
             // 协议及客户端保留此字段，以便新客户端继续处理旧核心的资料门禁。
             missing_profile: None,
-            devices: None,
+            devices: Some(devices.items).filter(|items| !items.is_empty()),
             lan_webui: webui::switched(package).map(|switched| switched.offer(false, langs)),
             always_allowed: Vec::new(),
         })

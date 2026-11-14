@@ -53,6 +53,8 @@ internal fun previewToolConfirmation(
         origin = null,
         audience = CardAudience.KEEPER,
         answeredBy = null,
+        permissions = emptyList(),
+        devices = emptyList(),
     ),
     sending = null,
     sendingChoiceId = null,

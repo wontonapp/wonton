@@ -68,6 +68,8 @@ fn draft() -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 #[tokio::test]
@@ -114,6 +116,7 @@ async fn admin_cards_freeze_all_recipients_and_record_the_winning_user_id() {
             None,
             SecretValues::new(),
             Default::default(),
+            Vec::new(),
             &Languages::from_header(None),
             Some("@alice:example.com"),
         )
@@ -191,6 +194,7 @@ async fn a_keeper_card_keeps_the_single_recipient_behavior() {
             None,
             SecretValues::new(),
             Default::default(),
+            Vec::new(),
             &Languages::from_header(None),
             None,
         )

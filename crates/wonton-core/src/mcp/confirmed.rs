@@ -24,7 +24,9 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues, Vec<String>) -> Fut
+            + Send
+            + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         self.confirmed_after_hold(
@@ -49,7 +51,9 @@ impl Bus {
         (held_ms, subject): (Option<u64>, Subject),
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues, Vec<String>) -> Fut
+            + Send
+            + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         drop(activity);
@@ -61,8 +65,13 @@ impl Bus {
             match decision {
                 Ok(ticket) => {
                     let activity = bus.plugins.activity.start_tool(&caller.id);
-                    let outcome =
-                        run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
+                    let outcome = run(
+                        bus.clone(),
+                        ticket.secrets.clone(),
+                        ticket.settings.clone(),
+                        ticket.devices.clone(),
+                    )
+                    .await;
                     drop(activity);
                     // `window` 有值：不是这次调用自己的卡片，是主人先前批准的放行时段。
                     let confirmation = if ticket.window.is_some() {
@@ -103,7 +112,9 @@ impl Bus {
         run: F,
     ) -> CallToolResult
     where
-        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues) -> Fut + Send + 'static,
+        F: FnOnce(Arc<Bus>, SecretValues, wonton_protocol::SettingValues, Vec<String>) -> Fut
+            + Send
+            + 'static,
         Fut: Future<Output = Outcome> + Send,
     {
         let Some(second) = second else {
@@ -150,7 +161,13 @@ impl Bus {
                 }
             };
             let activity = bus.plugins.activity.start_tool(&caller.id);
-            let outcome = run(bus.clone(), ticket.secrets.clone(), ticket.settings.clone()).await;
+            let outcome = run(
+                bus.clone(),
+                ticket.secrets.clone(),
+                ticket.settings.clone(),
+                ticket.devices.clone(),
+            )
+            .await;
             drop(activity);
             let confirmation = if ticket.window.is_some() {
                 "window"

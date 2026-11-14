@@ -175,6 +175,7 @@ pub struct Ticket {
     pub secrets: SecretValues,
     /// 主人在卡片里填的设置（ADR-0077）。
     pub settings: wonton_protocol::SettingValues,
+    pub devices: Vec<String>,
     /// 主人没回答这张卡片，是另一张卡片打开放行时段时一起放行的：那张卡片的 ID。
     pub window: Option<String>,
 }
@@ -193,6 +194,7 @@ pub struct Chosen {
     pub secrets: SecretValues,
     /// 主人在卡片里填的设置（ADR-0077）；别的卡片是空表。
     pub settings: wonton_protocol::SettingValues,
+    pub devices: Vec<String>,
 }
 
 struct Slot {
@@ -319,6 +321,7 @@ impl Confirmations {
                     answer,
                     secrets: chosen.secrets,
                     settings: chosen.settings,
+                    devices: chosen.devices,
                     window,
                 })
             }
@@ -368,6 +371,8 @@ impl Confirmations {
             plugin_id: draft.plugin_id,
             secret_inputs: draft.secret_inputs.clone(),
             settings: draft.settings.clone(),
+            permissions: draft.permissions,
+            devices: draft.devices,
             window: None,
             requester,
             origin,
@@ -565,11 +570,13 @@ impl Confirmations {
             choice_id,
             SecretValues::new(),
             Default::default(),
+            Vec::new(),
             &Languages::from_header(None),
         )
     }
 
     /// 带密钥的回答（ADR-0064）。
+    #[allow(clippy::too_many_arguments)] // Owner answer values are forwarded together without duplicating form state.
     pub fn answer_with_secrets(
         &self,
         id: &str,
@@ -577,9 +584,12 @@ impl Confirmations {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
         langs: &Languages,
     ) -> Result<ConfirmationState, AnswerError> {
-        self.answer_with_secrets_by(id, answer, choice_id, secrets, settings, langs, None)
+        self.answer_with_secrets_by(
+            id, answer, choice_id, secrets, settings, devices, langs, None,
+        )
     }
 
     /// Gateway-authenticated answerer, recorded atomically with the winning answer.
@@ -591,6 +601,7 @@ impl Confirmations {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
         langs: &Languages,
         answered_by: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
@@ -645,6 +656,7 @@ impl Confirmations {
             choice_id: choice_id.map(str::to_owned),
             secrets,
             settings,
+            devices,
         };
         if waiter.send(chosen).is_err() {
             slot.card.state = ConfirmationState::Expired;
@@ -700,6 +712,7 @@ impl Confirmations {
             choice_id: Some(SUPERSEDED.to_owned()),
             secrets: SecretValues::new(),
             settings: Default::default(),
+            devices: Vec::new(),
         });
         self.bump();
         true
@@ -725,6 +738,7 @@ impl Confirmations {
             choice_id: Some(CANCELLED.to_owned()),
             secrets: SecretValues::new(),
             settings: Default::default(),
+            devices: Vec::new(),
         });
         self.bump();
         true

@@ -26,6 +26,7 @@ pub(super) async fn upgrade_ran(
     lan_webui: bool,
     secrets: SecretValues,
     settings: wonton_protocol::SettingValues,
+    devices: Vec<String>,
     writer: Option<PluginWriter>,
 ) -> Outcome {
     let langs = bus.plugins.owner_languages();
@@ -45,7 +46,9 @@ pub(super) async fn upgrade_ran(
     }
     match bus
         .plugins
-        .upgrade_upload(&id, package, granted, enabled, lan_webui, &settings, &langs)
+        .upgrade_upload(
+            &id, package, granted, enabled, lan_webui, &devices, &settings, &langs,
+        )
         .await
     {
         Ok(()) => {

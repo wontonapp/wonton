@@ -169,6 +169,7 @@ async fn bed_with_route(state: RouteState) -> Bed {
             &[],
             &[],
             false,
+            &[],
             Default::default(),
             &langs(),
         )

@@ -147,5 +147,7 @@ fn draft(
             target_bot: target.clone(),
             from: context.from.clone(),
         }),
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }

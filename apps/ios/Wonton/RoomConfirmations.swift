@@ -54,7 +54,8 @@ struct RoomConfirmationSheet: View {
                             answer: { choice, secrets, settings in
                                 action(.answerConfirmation(
                                     id: view.card.id, answer: choice.answer, choiceId: choice.choiceId,
-                                    secrets: secrets, settings: settings
+                                    secrets: secrets, settings: settings,
+                                    devices: view.card.devices.filter(\.chosen).map(\.id)
                                 ))
                             },
                             stopWindow: { action(.stopConfirmationWindow(id: view.card.id)) }

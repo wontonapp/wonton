@@ -403,7 +403,10 @@ async fn set_permission(
     };
     let run = {
         let (id, title, langs) = (id.clone(), title.clone(), langs.clone());
-        move |bus: Arc<Bus>, _secrets: SecretValues, _settings: wonton_protocol::SettingValues| async move {
+        move |bus: Arc<Bus>,
+              _secrets: SecretValues,
+              _settings: wonton_protocol::SettingValues,
+              _devices: Vec<String>| async move {
             match bus
                 .plugins
                 .set_plugin_permission(
@@ -479,7 +482,8 @@ async fn uninstall(
     let draft = cards::uninstall(&caller.name, &title, purge, &value, &langs);
     let run = move |bus: Arc<Bus>,
                     _secrets: SecretValues,
-                    _settings: wonton_protocol::SettingValues| async move {
+                    _settings: wonton_protocol::SettingValues,
+                    _devices: Vec<String>| async move {
         match bus
             .plugins
             .uninstall_detached(

@@ -424,6 +424,7 @@ impl PluginManager {
             .await?;
         ctx.limits = record.limits;
         ctx.settings = record.settings.clone();
+        ctx.devices = Some(self.recovery_devices(manifest, record)?);
         ctx.gpu = self
             .gpu_grant_recorded(
                 manifest,

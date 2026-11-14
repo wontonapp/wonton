@@ -417,6 +417,7 @@ impl PluginManager {
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             limits: Default::default(),
             lan_webui: false,
             relays: Vec::new(),

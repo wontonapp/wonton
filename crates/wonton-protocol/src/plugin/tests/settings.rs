@@ -71,7 +71,7 @@ fn install_previews_and_requests_carry_settings() {
 
 #[test]
 fn confirmation_cards_and_answers_carry_settings() {
-    let card = ConfirmationCard {
+    let mut card = ConfirmationCard {
         id: "c-1".into(),
         state: ConfirmationState::Pending,
         title: "Hermes 想安装 Actual".into(),
@@ -82,6 +82,8 @@ fn confirmation_cards_and_answers_carry_settings() {
         plugin_id: Some("app.actual".into()),
         secret_inputs: Vec::new(),
         settings: Some(form()),
+        permissions: Vec::new(),
+        devices: Vec::new(),
         requester: None,
         origin: None,
         audience: crate::CardAudience::Keeper,
@@ -91,11 +93,41 @@ fn confirmation_cards_and_answers_carry_settings() {
     let back: ConfirmationCard = round_trip(&card);
     assert_eq!(back.settings, card.settings);
 
+    card.permissions = vec![crate::PermissionLine {
+        permission: "devices.usb".into(),
+        text: String::new(),
+        risk: Some(crate::PermissionRisk::VeryHigh),
+        notice: None,
+        supported: true,
+        added: false,
+        optional: false,
+        enabled: false,
+        off_loss: None,
+        opened: None,
+    }];
+    card.devices = vec![crate::PluginDevice {
+        id: "disk:/dev/disk/by-id/test".into(),
+        name: "disk".into(),
+        target: "/dev/sda".into(),
+        service: "smart".into(),
+        optional: true,
+        kind: crate::PluginDeviceKind::Disk,
+        system: true,
+        chosen: true,
+    }];
+    let wire = serde_json::to_value(&card).unwrap();
+    assert_eq!(wire["permissions"][0]["permission"], "devices.usb");
+    assert_eq!(wire["permissions"][0]["risk"], "very_high");
+    assert_eq!(wire["devices"][0]["kind"], "disk");
+    assert_eq!(wire["devices"][0]["system"], true);
+    assert_eq!(wire["devices"][0]["chosen"], true);
+    assert_eq!(round_trip(&card), card);
     let answer = ConfirmationAnswer {
         answer: Answer::Approve,
         choice_id: None,
         secrets: Default::default(),
         settings: [("months".to_owned(), SettingValue::Integer { value: 6 })].into(),
+        devices: Vec::new(),
     };
     assert_eq!(round_trip(&answer).settings, answer.settings);
 

@@ -172,6 +172,7 @@ impl Confirmations {
                 choice_id: None,
                 secrets: SecretValues::new(),
                 settings: Default::default(),
+                devices: Vec::new(),
             };
             if waiter.send(chosen).is_ok() {
                 slot.card.state = ConfirmationState::Running;
@@ -225,6 +226,7 @@ impl Confirmations {
                 choice_id: None,
                 secrets: SecretValues::new(),
                 settings: Default::default(),
+                devices: Vec::new(),
             };
             if waiter.send(chosen).is_ok() {
                 slot.card.state = ConfirmationState::Running;

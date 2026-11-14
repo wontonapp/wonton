@@ -17,6 +17,22 @@ pub(super) struct Proposed {
 }
 
 impl Proposed {
+    pub fn with_devices(&mut self, devices: Vec<String>) {
+        for device in devices {
+            if let Some((id, selection)) = device.split_once('/')
+                && let Some(provider) = self
+                    .request
+                    .install_together
+                    .iter_mut()
+                    .find(|p| p.id == id)
+            {
+                provider.request.devices.push(selection.to_owned());
+            } else {
+                self.request.devices.push(device);
+            }
+        }
+    }
+
     pub fn with_secrets(mut self, secrets: SecretValues) -> InstallRequest {
         for (name, value) in secrets {
             if let Some((id, input)) = name.split_once('/')
@@ -94,6 +110,8 @@ pub(super) async fn propose(
             .await
             .map_err(failure)?;
     }
+    draft.permissions = preview.permissions.clone();
+    draft.devices = preview.devices.clone().unwrap_or_default();
     let mut request = request(&preview, langs)?;
     let mut selected = BTreeSet::new();
     for missing in &preview.missing_requires {
@@ -128,6 +146,13 @@ pub(super) async fn propose(
             return Err(ToolFailure::new("changed", provider.source.clone()));
         }
         disclose_provider(draft, &provider_preview, &provider_request, langs);
+        draft
+            .permissions
+            .extend(provider_preview.permissions.clone());
+        for mut device in provider_preview.devices.clone().unwrap_or_default() {
+            device.id = format!("{}/{}", provider.id, device.id);
+            draft.devices.push(device);
+        }
         for mut input in provider_preview.secret_inputs {
             input.name = format!("{}/{}", provider.id, input.name);
             input.title = format!("{} · {}", provider_preview.title, input.title);
@@ -141,7 +166,10 @@ pub(super) async fn propose(
         {
             let provider_second = cards::highest_confirm(&provider_package, langs);
             match &mut second {
-                Some(second) => second.lines.extend(provider_second.lines),
+                Some(second) => {
+                    second.lines.extend(provider_second.lines);
+                    second.permissions.extend(provider_second.permissions);
+                }
                 None => second = Some(provider_second),
             }
         }

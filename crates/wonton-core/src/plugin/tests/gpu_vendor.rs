@@ -330,9 +330,17 @@ async fn switching_the_optional_permission_selects_and_drops_the_vendor() {
         ),
     );
     let package = PluginPackage::parse(&source, &super::langs()).unwrap();
-    m.install_user_enabled(package, &[], &[], false, Default::default(), super::langs())
-        .await
-        .unwrap();
+    m.install_user_enabled(
+        package,
+        &[],
+        &[],
+        false,
+        &[],
+        Default::default(),
+        super::langs(),
+    )
+    .await
+    .unwrap();
     assert_eq!(image_of(&docker, "comfy"), json!(GENERIC));
 
     let id = PluginId::parse("app.test").unwrap();

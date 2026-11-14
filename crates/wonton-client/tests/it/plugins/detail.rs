@@ -48,6 +48,7 @@ pub(super) fn detail() -> PluginDetail {
         blocked: None,
         notices: Vec::new(),
         hints: Vec::new(),
+        problems: Vec::new(),
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         capability_providers: Vec::new(),

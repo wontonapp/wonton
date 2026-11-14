@@ -12,6 +12,7 @@ use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
 use super::configs::{self, ConfigFile};
 use super::core_address;
+use super::device::DeviceGrant;
 use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::host_relay::HostRelay;
@@ -153,6 +154,8 @@ pub struct InstallContext {
     pub cgroup_parent: Option<String>,
     /// 生效集：主人确认的必需权限加上开着的可选项（ADR-0057）。渲染按它决定可选字段给不给。
     pub granted: Vec<Permission>,
+    /// 主人选的宿主设备（ADR-0036）；没申请设备类权限时为空。
+    pub devices: Option<DeviceGrant>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -185,6 +188,7 @@ impl std::fmt::Debug for InstallContext {
             .field("limits", &self.limits)
             .field("cgroup_parent", &self.cgroup_parent)
             .field("granted", &self.granted)
+            .field("devices", &self.devices)
             .finish()
     }
 }
@@ -336,6 +340,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         host_name: String::new(),
         cgroup_parent: None,
         slug,
+        devices: None,
         granted: manifest.effective_permissions(
             &manifest
                 .optional_permissions
@@ -527,6 +532,8 @@ fn render_service_containers(
             labels,
             gpu,
             bot_services: vars.bot_service_names(),
+            manifest,
+            devices: ctx.devices.as_ref(),
         };
         let mut plan = container_plan(name, service, bot, mounts, ctx, options, langs)?;
         if let Some(grant) = &ctx.lan {

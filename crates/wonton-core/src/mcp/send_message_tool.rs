@@ -318,6 +318,8 @@ fn draft(
             recipient: request.recipient.clone(),
             body: request.body.clone(),
         }),
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 

@@ -348,6 +348,8 @@ async fn an_answer_has_to_match_a_button_on_the_card() {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     };
     let (bus, caller) = (s.bus.clone(), s.caller.id.clone());
     let asked = tokio::spawn(async move { bus.confirmations().ask(&caller, draft).await.is_ok() });
