@@ -156,17 +156,22 @@ impl PluginManager {
             .bots()
             .entry(&package.manifest.id, bot)?
             .ok_or_else(|| InstallError::NotFound(bot.to_owned()))?;
-        let runtime = BotVars {
-            model_key,
-            matrix: Some(self.matrix_vars(provisioned)),
-            mcp_url: Some(format!(
-                "http://{}:{}/mcp/{}",
-                crate::config::PLUGIN_MCP_HOST,
-                self.cfg.gateway_port,
-                entry.bus_token
-            )),
-            app_url: None,
-            oidc: None,
+        let runtime = {
+            let (ai_level, keeper_read_only) = self.bot_levels(keeper);
+            BotVars {
+                model_key,
+                matrix: Some(self.matrix_vars(provisioned)),
+                mcp_url: Some(format!(
+                    "http://{}:{}/mcp/{}",
+                    crate::config::PLUGIN_MCP_HOST,
+                    self.cfg.gateway_port,
+                    entry.bus_token
+                )),
+                app_url: None,
+                oidc: None,
+                ai_level,
+                keeper_read_only,
+            }
         };
         self.start_bot_containers(package, record, bot, runtime)
             .await?;

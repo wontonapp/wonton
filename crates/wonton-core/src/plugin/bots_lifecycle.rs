@@ -409,11 +409,15 @@ impl PluginManager {
             self.store.model_keys().stored_key(&manifest.id, &name)
         })
         .flatten();
+        let (ai_level, keeper_read_only) = self.bot_levels(&entry.keeper);
         Ok(BotVars {
             model_key,
             matrix: Some(self.stored_matrix_vars(entry)?),
             mcp_url: Some(mcp_url(self.cfg.gateway_port, &entry.bus_token)),
-            ..Default::default()
+            app_url: None,
+            oidc: None,
+            ai_level,
+            keeper_read_only,
         })
     }
 
