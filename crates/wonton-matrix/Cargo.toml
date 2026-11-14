@@ -22,7 +22,7 @@ matrix-sdk-ui = "0.19.1"
 # MIT OR Apache-2.0。房间信息更新的通知类型（未读数、已读回执），matrix-sdk 没有在根上重导出。
 matrix-sdk-base = "0.19.1"
 # MIT OR Apache-2.0。
-futures-util = "0.3.34"
+futures-util = { workspace = true }
 # MIT OR Apache-2.0。附件的 MIME 类型，matrix-sdk 的发送接口要求这个类型。
 mime = "0.3.17"
 # 存登录状态，以及把媒体来源编成不透明的句柄。

@@ -22,8 +22,12 @@ bollard = "0.21.1"
 # Apache-2.0 OR MIT。0.13 与 fluent-bundle 共用 unic-langid 类型。
 fluent-bundle = "0.16.0"
 fluent-langneg = { version = "0.13.1", features = ["cldr"] }
+# MIT OR Apache-2.0。HTTP 与事件流。
+futures-util = "0.3.34"
 getrandom = "0.4.3"
 iroh = "1.4.1"
+# MIT OR Apache-2.0。网络 CIDR。
+ipnet = "2.12.2"
 jsonwebtoken = { version = "11.1.0", default-features = false, features = ["use_pem", "aws_lc_rs"] }
 matrix-sdk = "0.19.1"
 # MIT OR Apache-2.0。
@@ -41,11 +45,15 @@ semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = "0.10"
+# MIT OR Apache-2.0。MCP SSE 事件边界。
+sse-stream = "0.2.6"
 # MIT。插件设置按包里的 JSON Schema 校验（ADR-0077）；不取网络和宿主上的引用。
 jsonschema = { version = "0.61.1", default-features = false }
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.54.1"
+# MIT OR Apache-2.0。TLS 服务端测试与隧道。
+tokio-rustls = { version = "0.26.6", default-features = false }
 tracing = "0.1.44"
 # Apache-2.0 OR MIT。
 tracing-core = "0.1.36"
