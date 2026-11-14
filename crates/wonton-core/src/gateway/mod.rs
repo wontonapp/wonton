@@ -55,6 +55,7 @@ pub mod family;
 mod family_private;
 mod family_room;
 mod files;
+mod friend_gate;
 mod friends;
 mod friends_wiring;
 mod health;
@@ -717,7 +718,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
             Err(never) => match never {},
         },
         HostKind::Auth => auth::request(&gateway, req).await,
-        HostKind::Matrix => matrix::client_request(&gateway, req).await,
+        HostKind::Matrix => matrix::client_request(gateway, req).await,
         HostKind::PluginMatrix => matrix::bot_request(&gateway, req).await,
         HostKind::PluginModels => models::request(&gateway, req).await,
         HostKind::PluginCapability(capability) => {
@@ -820,6 +821,8 @@ mod files_upload_failure_tests;
 mod files_upload_tests;
 #[cfg(test)]
 mod first_run_tests;
+#[cfg(test)]
+mod friend_gate_tests;
 #[cfg(test)]
 mod friends_tests;
 #[cfg(test)]

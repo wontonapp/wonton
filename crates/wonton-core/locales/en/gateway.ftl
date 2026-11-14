@@ -188,6 +188,12 @@ gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinsta
 gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
 
 gateway-install-rejected = An administrator declined; the { $action } was not done
+
+# Friend invitations gated by the inviter role (ADR-0088): the card goes to the administrators, the invite is released on approval.
+gateway-friend-invite-title = Friend request awaiting approval
+gateway-friend-invite-to = { $inviter } wants to add { $friend } as a friend
+gateway-friend-invite-rejected = An administrator declined this friend request
+gateway-friend-invite-expired = No administrator answered this friend request in time
 gateway-install-expired = No administrator answered in time; the { $action } was not done
 gateway-install-card-device = Device handed to it: { $device }
 gateway-install-card-secret = Secret filled in by the request: { $title }

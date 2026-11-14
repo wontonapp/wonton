@@ -25,7 +25,6 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendBlockTarget
-import app.wonton.protocol.FriendGroup
 import app.wonton.protocol.FriendRow
 import app.wonton.protocol.FriendsState
 import app.wonton.protocol.FriendsViewModel
@@ -43,7 +42,6 @@ import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.wontonContentPadding
 import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Blocked
-import app.wonton.ui.icons.Folder
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
@@ -56,11 +54,7 @@ internal fun FriendsPage(core: ClientCore, onBack: () -> Unit) {
     var scanning by remember { mutableStateOf(false) }
     var showingMyCode by remember { mutableStateOf(false) }
     var menus by remember { mutableStateOf<FriendRow?>(null) }
-    var choosingGroups by remember { mutableStateOf<FriendRow?>(null) }
     var removing by remember { mutableStateOf<FriendRow?>(null) }
-    var creatingGroup by remember { mutableStateOf(false) }
-    var renamingGroup by remember { mutableStateOf<FriendGroup?>(null) }
-    var removingGroup by remember { mutableStateOf<FriendGroup?>(null) }
     var blockingServer by remember { mutableStateOf(false) }
     val send = { action: Action -> rejection = core.send(action) }
     LaunchedEffect(core) { send(Action.Friends(FriendsAction.RefreshFriends)) }
@@ -84,9 +78,6 @@ internal fun FriendsPage(core: ClientCore, onBack: () -> Unit) {
                 send,
                 { adding = true },
                 { menus = it },
-                { creatingGroup = true },
-                { renamingGroup = it },
-                { removingGroup = it },
                 { blockingServer = true },
             )
         }
@@ -96,11 +87,7 @@ internal fun FriendsPage(core: ClientCore, onBack: () -> Unit) {
         rejection = rejection,
         adding = adding,
         menus = menus,
-        choosingGroups = choosingGroups,
         removing = removing,
-        creatingGroup = creatingGroup,
-        renamingGroup = renamingGroup,
-        removingGroup = removingGroup,
         blockingServer = blockingServer,
         send = send,
         clearRejection = { rejection = null },
@@ -108,11 +95,7 @@ internal fun FriendsPage(core: ClientCore, onBack: () -> Unit) {
         onScan = { scanning = true },
         onShowMyCode = { showingMyCode = true },
         setMenus = { menus = it },
-        setChoosingGroups = { choosingGroups = it },
         setRemoving = { removing = it },
-        setCreatingGroup = { creatingGroup = it },
-        setRenamingGroup = { renamingGroup = it },
-        setRemovingGroup = { removingGroup = it },
         setBlockingServer = { blockingServer = it },
     )
     if (showingMyCode) {
@@ -169,14 +152,11 @@ private fun FriendContent(
     send: (Action) -> Unit,
     onAdd: () -> Unit,
     onMenu: (FriendRow) -> Unit,
-    onNewGroup: () -> Unit,
-    onRenameGroup: (FriendGroup) -> Unit,
-    onDeleteGroup: (FriendGroup) -> Unit,
     onBlockServer: () -> Unit,
 ) {
     val state = friends.state
     val hasRows = friends.incoming.isNotEmpty() || friends.outgoing.isNotEmpty() || friends.friends.isNotEmpty() ||
-        friends.groups.isNotEmpty() || friends.blocks().isNotEmpty()
+        friends.blocks().isNotEmpty()
     when {
         hasRows -> FriendList(
             friends,
@@ -185,9 +165,6 @@ private fun FriendContent(
             onAction = send,
             onAdd = onAdd,
             onMenu = onMenu,
-            onNewGroup = onNewGroup,
-            onRenameGroup = onRenameGroup,
-            onDeleteGroup = onDeleteGroup,
             onBlockServer = onBlockServer,
         )
         state is FriendsState.Failed -> ProblemView(state.problem()) {
@@ -208,11 +185,7 @@ private fun FriendOverlays(
     rejection: Problem?,
     adding: Boolean,
     menus: FriendRow?,
-    choosingGroups: FriendRow?,
     removing: FriendRow?,
-    creatingGroup: Boolean,
-    renamingGroup: FriendGroup?,
-    removingGroup: FriendGroup?,
     blockingServer: Boolean,
     send: (Action) -> Unit,
     clearRejection: () -> Unit,
@@ -220,11 +193,7 @@ private fun FriendOverlays(
     onScan: () -> Unit,
     onShowMyCode: () -> Unit,
     setMenus: (FriendRow?) -> Unit,
-    setChoosingGroups: (FriendRow?) -> Unit,
     setRemoving: (FriendRow?) -> Unit,
-    setCreatingGroup: (Boolean) -> Unit,
-    setRenamingGroup: (FriendGroup?) -> Unit,
-    setRemovingGroup: (FriendGroup?) -> Unit,
     setBlockingServer: (Boolean) -> Unit,
 ) {
     if (adding) {
@@ -239,10 +208,6 @@ private fun FriendOverlays(
     menus?.let { row ->
         WontonActionSheet(
             listOf(
-                app.wonton.ui.design.WontonSheetAction(stringResource(R.string.friends_groups), WontonIcon.Folder) {
-                    setMenus(null)
-                    setChoosingGroups(row)
-                },
                 app.wonton.ui.design.WontonSheetAction(
                     stringResource(R.string.friends_block_user), WontonIcon.Blocked,
                 ) {
@@ -267,15 +232,7 @@ private fun FriendOverlays(
             title = row.name(),
         )
     }
-    choosingGroups?.let { row ->
-        ChooseGroupsSheet(
-            row,
-            friends.groups,
-            { send(Action.Friends(FriendsAction.SetFriendGroups(row.userId, it.toList()))) },
-        ) {
-            setChoosingGroups(null)
-        }
-    }
+
     removing?.let { row ->
         WontonDialog(
             stringResource(R.string.friends_remove_title, row.name()),
@@ -290,32 +247,7 @@ private fun FriendOverlays(
             ),
         )
     }
-    if (creatingGroup) {
-        GroupNameDialog(stringResource(R.string.friends_group_create_title), "", { setCreatingGroup(false) }) {
-            setCreatingGroup(false)
-            send(Action.Friends(FriendsAction.SaveFriendGroup(null, it)))
-        }
-    }
-    renamingGroup?.let { group ->
-        GroupNameDialog(group.name, group.name, { setRenamingGroup(null) }) {
-            setRenamingGroup(null)
-            send(Action.Friends(FriendsAction.SaveFriendGroup(group.id, it)))
-        }
-    }
-    removingGroup?.let { group ->
-        WontonDialog(
-            stringResource(R.string.friends_group_delete_title, group.name),
-            stringResource(R.string.friends_group_delete_message),
-            { setRemovingGroup(null) },
-            listOf(
-                WontonDialogAction(stringResource(R.string.common_cancel)) { setRemovingGroup(null) },
-                WontonDialogAction(stringResource(R.string.common_delete), WontonButtonKind.DANGER) {
-                    setRemovingGroup(null)
-                    send(Action.Friends(FriendsAction.RemoveFriendGroup(group.id)))
-                },
-            ),
-        )
-    }
+
     if (blockingServer) {
         BlockServerDialog({ setBlockingServer(false) }) {
             setBlockingServer(false)

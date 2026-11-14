@@ -54,18 +54,16 @@ fn validate(snapshot: &Snapshot) -> Result<(), String> {
         {
             return Err("invalid grant generation".into());
         }
-        match &grant.recipient {
-            ShareRecipient::Friend { user_id } => {
-                ruma_common::UserId::parse(user_id).map_err(|e| e.to_string())?;
-                if !stored.direct_generation.is_some_and(|generation| {
-                    generation > 0 && generation <= stored.friend_revision
-                }) {
-                    return Err("invalid direct friendship generation".into());
-                }
+        if let ShareRecipient::Friend { user_id } = &grant.recipient {
+            ruma_common::UserId::parse(user_id).map_err(|e| e.to_string())?;
+            if !stored
+                .direct_generation
+                .is_some_and(|generation| generation > 0)
+            {
+                return Err("invalid direct friendship generation".into());
             }
-            ShareRecipient::Group { group_id }
-                if !group_id.is_empty() && stored.direct_generation.is_none() => {}
-            _ => return Err("invalid grant recipient/binding".into()),
+        } else {
+            return Err("invalid grant recipient/binding".into());
         }
     }
     if snapshot.revocations.len() > MAX_REVOCATIONS {

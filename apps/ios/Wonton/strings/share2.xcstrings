@@ -192,36 +192,6 @@
         }
       }
     },
-    "share.groups": {
-      "comment": "Section title for friend groups in the share recipient picker. No arguments.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Groups"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分组"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "群組"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "グループ"
-          }
-        }
-      }
-    },
     "share.hour": {
       "comment": "Expiration choice that grants access for one hour from now. No arguments.",
       "extractionState": "manual",

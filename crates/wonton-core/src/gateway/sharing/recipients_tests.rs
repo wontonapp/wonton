@@ -55,26 +55,15 @@ async fn the_share_section_reads_the_core_friend_list_in_every_state() {
     assert_eq!(first.friends[0].user_id, ALICE);
     assert!(first.friends[0].shared_plugins.is_empty());
 
-    // 直接分享给好友，再经组分享：同一个插件只算一次。
+    // 直接分享给好友。
     share(
         &f,
         ShareRecipient::Friend {
             user_id: ALICE.into(),
         },
     );
-    let group = f.sharing.friends.save_group(None, "家人").unwrap();
-    f.sharing
-        .friends
-        .set_groups(ALICE, std::slice::from_ref(&group.id))
-        .unwrap();
-    share(
-        &f,
-        ShareRecipient::Group {
-            group_id: group.id.clone(),
-        },
-    );
     let shared = list(&f).await;
-    assert_eq!(shared.groups, vec![group]);
+    assert_eq!(shared.friends[0].role_id, "friend");
     assert_eq!(
         shared.friends[0].shared_plugins,
         vec!["app.whoami".to_owned()]

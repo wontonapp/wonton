@@ -31,7 +31,6 @@ pub struct Access {
 pub struct GrantPermit {
     pub grant_id: String,
     pub generation: u64,
-    pub group_generation: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,10 +67,8 @@ pub struct StoredGrant {
     pub grant: ShareGrant,
     /// Committing shares revision on creation or complete replacement, even identical updates.
     pub generation: u64,
-    /// Friends registry revision at create/complete replacement. Reaccepted friends with a newer
-    /// activation cannot inherit this group grant; first-time friends may still join dynamically.
-    pub friend_revision: u64,
-    /// Required exactly for direct grants; compared against the active friendship generation.
+    /// The friend's activation when the grant was made; compared against the active friendship
+    /// generation, so removing and reaccepting the friend never revives the old authorization.
     pub direct_generation: Option<u64>,
 }
 

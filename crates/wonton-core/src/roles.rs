@@ -16,7 +16,7 @@ use wonton_protocol::{
 pub const MAX_ROLES: usize = 64;
 
 /// 默认邀请角色（ADR-0088 第 4 节）：别的管理员发邀请时新人拿它，权限最少，删不掉。
-pub const DEFAULT_INVITE_ROLE: &str = "friend";
+pub use wonton_protocol::DEFAULT_INVITE_ROLE;
 
 /// 一个角色在 `roles.json` 里的写法。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -379,6 +379,28 @@ fn checked_name(name: &str) -> Result<String, RolesError> {
     let name = name.trim();
     check_display_name(name).map_err(|problem| RolesError::Invalid(problem.to_string()))?;
     Ok(name.to_owned())
+}
+
+impl Roles {
+    /// 测试用的模板：默认的“朋友”角色开放全部应用，分享和网关用例不被角色范围挡住。
+    /// 只有测试用，生产走 `open`/`initial`。
+    #[cfg(test)]
+    pub(crate) fn initial_for_test() -> Self {
+        let roles = Self::initial();
+        roles
+            .update(
+                DEFAULT_INVITE_ROLE,
+                &RoleDraft {
+                    name: "Friends".into(),
+                    permissions: Permissions {
+                        open_apps: AppScope::All,
+                        ..Permissions::strictest()
+                    },
+                },
+            )
+            .expect("内置模板的角色可以改");
+        roles
+    }
 }
 
 /// 读回来的记录自检：ID 不重复、默认角色在、个数没超上限。坏在这里就别启动，免得带病运行。

@@ -188,6 +188,12 @@ gateway-agent-acp-token-missing = {$provider} 還沒有提供方權杖，重新�
 gateway-agent-acp-provider-unreachable = Agent 執行時沒有接起這條連線：{$detail}
 
 gateway-install-rejected = 管理員沒有同意，沒有{$action}
+
+# 加好友按邀請人的角色（ADR-0088）：卡片發給管理員，同意後邀請才發出。
+gateway-friend-invite-title = 好友請求待批
+gateway-friend-invite-to = { $inviter } 想加 { $friend } 為好友
+gateway-friend-invite-rejected = 管理員沒有同意這次加好友
+gateway-friend-invite-expired = 沒有管理員在時間內回答這次加好友
 gateway-install-expired = 管理員沒有在期限內回答，沒有{$action}
 gateway-install-card-device = 交給它的裝置：{ $device }
 gateway-install-card-secret = 請求裡填了密鑰：{ $title }
