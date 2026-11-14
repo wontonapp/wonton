@@ -47,7 +47,8 @@ internal fun PageLayers(
             if (state.tab is TabRef.Widget) WidgetPageEffects(state, page, pages)
             // 状态栏区域的点击被系统吃掉（#379），胶囊又会压住页面固定在右上角的按钮：网页从状态栏和胶囊那一行
             // 下面排（viewport.webTop）。状态栏那一截用窗口内边距垫，WebView 就不再把它当安全区报给页面。
-            // 视频全屏（customView）铺满整屏，不吃这条内边距。
+            // 视频全屏（customView）铺满整屏，不吃这条内边距。让出来的这一条涂页面自己的颜色（[PageTopStrip]）。
+            PageTopStrip(state.controller.pageColor.takeIf { active && !state.covers(page) }, viewport.webTop)
             PageWebView(state, page, connection.proxy, environment, script, active && !state.covers(page),
                 openLink, onDraft, connection.profile,
                 modifier = Modifier.windowInsetsPadding(

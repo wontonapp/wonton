@@ -50,8 +50,9 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 停止页的启动操作直接交给核心，失败留在页面上；加载失败的 HTTP 状态放在收起的详情里，不显示上游错误页。
 历史页恢复成功时通知核心清掉加载失败，不触发重载；被取消的错误响应不算加载成功。
 WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期间显示骨架。
-关闭目标由核心决定。网页框、安全区和胶囊见 [ADR-0095](../../docs/adr/0095-no-tab-bar.md) 的“铺满”：网页框整屏，
-iOS 26 起顶上的状态栏加胶囊那一行设成 `obscuredContentInsets`；不取网页的像素，不注入 `viewport-fit=cover`。
+关闭目标由核心决定。网页框、安全区和胶囊见 [ADR-0095](../../docs/adr/0095-no-tab-bar.md) 的“铺满”：iOS 26 起网页框整屏，
+顶上的状态栏加胶囊那一行设成 `obscuredContentInsets`；iOS 17–18 没有这个接口，网页框从这一条下面开始，这一条涂
+WebKit 给的页面颜色（`themeColor`，没有就是 `underPageBackgroundColor`）。不取网页的像素，不注入 `viewport-fit=cover`。
 
 插件端口映射由核心按页面栈顶和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
 壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，

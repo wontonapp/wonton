@@ -100,6 +100,9 @@ final class TabWebSession: NSObject {
     @ObservationIgnored private(set) var parked = false
     @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    /// 页面自己的顶栏颜色，只在网页框让出顶上一条的系统上跟（`PageTopInset.framesWebView`）。
+    var topColor: UIColor?
+    @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
     /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
     @ObservationIgnored private var mediaPlaying = false
@@ -193,6 +196,7 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
+        if PageTopInset.framesWebView, case .page = placed { observeTopColor(of: view) }
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -351,6 +355,8 @@ final class TabWebSession: NSObject {
         widgetChannel.stop()
         setMediaPlaying(false)
         backObservation = nil
+        topColorObservations = []
+        topColor = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
         webView?.uiDelegate = nil
@@ -367,7 +373,7 @@ final class TabWebSession: NSObject {
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
     /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
-    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `TabPageView.obscured`。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `PageTopInset`。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {

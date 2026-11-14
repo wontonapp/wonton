@@ -7,16 +7,14 @@ import XCTest
 ///
 ///     apps/ios/scripts/ui-test.sh <模拟器 UDID> test -only-testing:WontonUITests/PageInsetsUITests
 ///
-/// `obscuredContentInsets` 是 iOS 26 的接口；更早的系统上这一类跳过。
+/// iOS 26 起靠 `obscuredContentInsets`；更早的系统没有这个接口，网页框从这一条下面开始、这一条涂页面的颜色
+/// （`PageTopInset`）。名字带 Framed 的那条用 `WONTON_UI_FRAMED_PAGE` 在任何系统上走旧系统的排法。
 final class PageInsetsUITests: XCTestCase {
     private var app: XCUIApplication!
     private let dataSuffix = UUID().uuidString
 
-    override func setUpWithError() throws {
+    override func setUp() {
         continueAfterFailure = false
-        guard #available(iOS 26, *) else {
-            throw XCTSkip("iOS 26 之前没有 obscuredContentInsets，整页不替没适配的网页让位")
-        }
     }
 
     override func tearDown() {
@@ -84,7 +82,92 @@ final class PageInsetsUITests: XCTestCase {
         assertCornerClear("转回竖屏")
     }
 
+    func testFramedPageClearsTheCapsuleAndStripFollowsThePage() {
+        launch(framed: true)
+        openCorner()
+        assertCornerClear("网页框让出顶条")
+        shot("framed")
+        assertStripContinuesBar("页面声明了 theme-color")
+        let declared = stripColor
+
+        tap(pageButton("Fixture recolor"), "换 theme-color 的按钮")
+        XCTAssertTrue(waitStrip(leaves: declared), "页面换了 theme-color，顶条还是原来的颜色 \(declared)")
+        assertStripContinuesBar("页面换了 theme-color")
+
+        let recolored = stripColor
+        tap(pageButton("Fixture unthemed"), "去掉 theme-color 的按钮")
+        XCTAssertTrue(waitStrip(leaves: recolored), "页面去掉了 theme-color，顶条还是原来的颜色 \(recolored)")
+        assertStripContinuesBar("页面没声明 theme-color，用它的背景色")
+
+        backgroundAndReturn()
+        assertCornerClear("切后台回来")
+        tap(corner, "右上角的固定按钮")
+        XCTAssertTrue(
+            app.webViews.buttons["Fixture corner tapped"].waitForExistence(timeout: 5),
+            "点右上角的固定按钮，网页没收到\n\(app.debugDescription)"
+        )
+    }
+
     // MARK: 助手
+
+    /// 壳让出来的顶条和页面自己的顶栏是一个颜色，连成一片：在胶囊那一行（顶条里）和它下面的页面顶栏里各取一点。
+    private func assertStripContinuesBar(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
+        var strip = stripColor, bar = barColor
+        let deadline = Date().addingTimeInterval(5)
+        while !Self.close(strip, bar), Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.3)
+            strip = stripColor
+            bar = barColor
+        }
+        XCTAssertTrue(Self.close(strip, bar), "\(when)：顶条 \(strip) 和页面的顶栏 \(bar) 不是一个颜色", file: file, line: line)
+    }
+
+    private func waitStrip(leaves old: [Int]) -> Bool {
+        let deadline = Date().addingTimeInterval(5)
+        while Self.close(stripColor, old), Date() < deadline { Thread.sleep(forTimeInterval: 0.3) }
+        return !Self.close(stripColor, old)
+    }
+
+    /// 胶囊那一行里靠左边缘的一点：胶囊靠右（带来源域名时伸过中线），左边只有顶条。
+    private var stripColor: [Int] {
+        guard let close = hittable(capsule) else { return [] }
+        return screenColor(x: 12, y: close.frame.midY)
+    }
+
+    /// 页面顶栏里的一点：网页框紧接在胶囊那一行下面，顶栏高 48，栏里的字靠左、按钮靠右。
+    private var barColor: [Int] {
+        guard let close = hittable(capsule) else { return [] }
+        return screenColor(x: app.frame.midX, y: close.frame.maxY + 24)
+    }
+
+    /// 两个颜色每个通道差不过 12（网页里的颜色过一遍色彩管理，实测和壳画的差到 7）；取不到颜色不算一样。
+    private static func close(_ one: [Int], _ other: [Int]) -> Bool {
+        one.count == 3 && other.count == 3 && zip(one, other).allSatisfy { abs($0 - $1) <= 12 }
+    }
+
+    /// 截屏上一点的 sRGB 颜色；坐标是屏幕上的点（竖屏）。
+    private func screenColor(x: CGFloat, y: CGFloat) -> [Int] {
+        guard let image = XCUIScreen.main.screenshot().image.cgImage,
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return [] }
+        let scale = CGFloat(image.width) / app.frame.width
+        guard let point = image.cropping(to: CGRect(x: x * scale, y: y * scale, width: 1, height: 1)) else {
+            return []
+        }
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let drawn = pixel.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return false }
+            context.draw(point, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        return drawn ? pixel.prefix(3).map { Int($0) } : []
+    }
+
+    private func pageButton(_ label: String) -> XCUIElementQuery {
+        app.webViews.buttons.matching(NSPredicate(format: "label == %@", label))
+    }
 
     /// 固定在右上角的按钮整个在胶囊下面、点得到；底下那条固定的栏还在屏幕里（视口没被多算一截）。
     private func assertCornerClear(_ when: String, file: StaticString = #filePath, line: UInt = #line) {
@@ -130,11 +213,12 @@ final class PageInsetsUITests: XCTestCase {
         return false
     }
 
-    private func launch(arguments: [String] = []) {
+    private func launch(arguments: [String] = [], framed: Bool = false) {
         app = XCUIApplication()
         app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + arguments
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = dataSuffix
         app.launchEnvironment["WONTON_UI_FAKE"] = "1"
+        if framed { app.launchEnvironment["WONTON_UI_FRAMED_PAGE"] = "1" }
         app.launch()
         XCTAssertTrue(waitHittable(sidebarButton, timeout: 20), "没进主界面\n\(app.debugDescription)")
     }
