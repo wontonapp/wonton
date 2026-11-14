@@ -18,7 +18,7 @@ axum = { workspace = true }
 # 安装记录里以 base64 保存插件包里的文件。
 base64 = { workspace = true }
 bollard = { workspace = true }
-futures-util = "0.3.34"
+futures-util = { workspace = true }
 getrandom = { workspace = true }
 # MIT。内部信件只提取文本和链接，不在聊天里渲染 HTML（ADR-0056）。
 html2text = "0.17.4"
@@ -31,7 +31,7 @@ rcgen = { workspace = true }
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", features = ["client", "http1", "server"] }
 # client-proxy：链接预览经主人的代理连对方站点（HTTP CONNECT、SOCKS5，ADR-0065）。
-hyper-util = { version = "0.1.21", features = ["client-legacy", "client-proxy", "http1", "tokio"] }
+hyper-util = { workspace = true, features = ["client-legacy", "client-proxy", "http1", "tokio"] }
 # MIT OR Apache-2.0。链接预览只用它的分词器读网页的 `<head>`（ADR-0065）。
 html5ever = "0.39.0"
 # MIT OR Apache-2.0。链接预览经代理用 DoH 解析域名时编解码 DNS 报文（ADR-0065）。
@@ -41,7 +41,7 @@ encoding_rs = "0.8.42"
 # Apache-2.0 OR ISC OR MIT、MIT OR Apache-2.0、MIT OR Apache-2.0。链接预览自己握 TLS：连的是检查过的 IP，SNI 仍是原域名
 # （ADR-0065）；根证书用系统的，和 reqwest 一样。都已在依赖树里。
 rustls = { workspace = true }
-tokio-rustls = { version = "0.26.6", default-features = false }
+tokio-rustls = { workspace = true }
 rustls-platform-verifier = "0.7.1"
 # Apache-2.0 OR ISC OR MIT。matrix_rtc 提供方的证书包要带上系统根证书（ADR-0096）；已在依赖树里（rustls-platform-verifier 用它）。
 rustls-native-certs = "0.8.5"
@@ -61,7 +61,7 @@ pdf-extract = "0.12.1"
 # MPL-2.0。Mozilla 的 MP4 轨道解析器支持 avc1 和 avc3。
 mp4parse = "0.17.0"
 # 算插件网络里留给核心的地址和出口容器的名单。
-ipnet = { version = "2.12.2", features = ["serde"] }
+ipnet = { workspace = true, features = ["serde"] }
 iroh = { workspace = true, features = ["unstable-net-report"] }
 # MIT。签发 Tuwunel 登录用的 JWT（EdDSA）。
 jsonwebtoken = { workspace = true }
@@ -92,7 +92,7 @@ jsonschema = { workspace = true }
 # MIT OR Apache-2.0。设置项 `pattern` 的校验（ADR-0077）。
 regex = "1.13.1"
 # MIT OR Apache-2.0。rmcp 已经在用：MCP 响应要边读边限制大小，SSE 由总线自己解析（mcp::bounded_http）。
-sse-stream = "0.2.6"
+sse-stream = { workspace = true }
 # 校验 TZ 是 IANA 时区名（Unlicense OR MIT）：核心镜像里不一定有 /usr/share/zoneinfo。
 jiff-tzdb = "0.1"
 serde = { workspace = true }

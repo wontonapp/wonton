@@ -49,7 +49,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 tokio = { workspace = true, features = ["signal", "test-util"] }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 # MIT OR Apache-2.0。隔离分享冒烟中继使用测试 CA 签发的 TLS 证书。
-tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tokio-rustls = { workspace = true, features = ["aws_lc_rs", "tls12"] }
 
 # 对自己的 dev 依赖：集成测试要用 test-hooks，App 不经 dev-dependencies。
 [dev-dependencies.wonton-tunnel]

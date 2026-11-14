@@ -19,7 +19,7 @@ serde_json = { workspace = true }
 # 图片内容块的 base64（ACP image 块）。
 base64 = { workspace = true }
 sha2 = { workspace = true }
-futures-util = "0.3.34"
+futures-util = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 tokio = { workspace = true, features = ["macros", "net", "process", "rt-multi-thread", "signal", "sync", "time", "io-std", "io-util"] }
 tracing = { workspace = true }
