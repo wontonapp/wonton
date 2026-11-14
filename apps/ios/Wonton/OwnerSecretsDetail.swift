@@ -151,14 +151,14 @@ private struct OwnerSecretRow: View {
 private extension OwnerSecretProblem {
     var ownerSecretProblem: Problem {
         let title: LocalizedStringResource = switch reason {
-        case .transportUnavailable: .problemTransportUnavailableTitle
-        case .unauthenticated: .problemUnauthorizedTitle
+        case .transportUnavailable: .Problem2.problemTransportUnavailableTitle
+        case .unauthenticated: .Problem3.problemUnauthorizedTitle
         case .crossSite: .ownerSecretsProblemCrossSite
         case .permissionRequired: .ownerSecretsProblemOwnerOnly
         case .notInstalled: .ownerSecretsProblemNotInstalled
         case .notFound: .ownerSecretsProblemNotFound
         case .notReady: .ownerSecretsProblemNotReady
-        case .upstream: .problemUpstreamTitle
+        case .upstream: .Problem2.problemUpstreamTitle
         case .protocol: .ownerSecretsProblemProtocol
         default: .ownerSecretsProblemOther
         }

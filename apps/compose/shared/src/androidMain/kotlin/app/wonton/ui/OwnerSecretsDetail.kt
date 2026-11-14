@@ -34,7 +34,6 @@ import app.wonton.protocol.OwnerSecretProblem
 import app.wonton.protocol.OwnerSecretView
 import app.wonton.protocol.OwnerSecretsView
 import app.wonton.protocol.PluginFailure
-import app.wonton.protocol.Role
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton
@@ -49,10 +48,10 @@ private const val EXPANDED_ARROW_DEGREES = 90f
 @Composable
 internal fun OwnerSecretsSection(pluginId: String, plugins: PluginsState) {
     var identityAttempt by remember(plugins.core, pluginId) { mutableIntStateOf(0) }
-    val identity by produceState<Result<Role>?>(null, plugins.core, pluginId, identityAttempt) {
+    val identity by produceState<Result<Boolean>?>(null, plugins.core, pluginId, identityAttempt) {
         value = null
         value = try {
-            Result.success(plugins.core.me().role)
+            Result.success(plugins.core.me().isOwner)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: CoreException) {
@@ -63,7 +62,7 @@ internal fun OwnerSecretsSection(pluginId: String, plugins: PluginsState) {
     when {
         result == null -> OwnerSecretLoading()
         result.isFailure -> ProblemRow(result.failureProblem) { identityAttempt++ }
-        result.getOrThrow() == Role.OWNER -> OwnerSecretsGroup(pluginId, plugins)
+        result.getOrThrow() -> OwnerSecretsGroup(pluginId, plugins)
     }
 }
 
