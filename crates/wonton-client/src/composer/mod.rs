@@ -366,18 +366,33 @@ impl ComposerLink {
         saved
     }
 
-    /// 失败的附件从头再传；文件丢掉上次的传输重新开始。
+    /// 失败的附件从头再传；重置附件和所属待发消息必须一起完成，发送任务不能再看到旧的失败。
     fn restart(self: &Arc<Self>, room: &str, id: &str) {
         let mut dropped = None;
+        let mut restarted = false;
         self.record(room, |state| {
             let Some(item) = state.item_mut(room, id) else {
                 return;
             };
+            if !matches!(item.state, AttachmentState::Failed { .. }) {
+                return;
+            }
             if let Body::File { transfer, .. } = &mut item.body {
                 dropped = transfer.take();
             }
             item.state = AttachmentState::Uploading { progress: None };
+            restarted = true;
+            if let Some(outgoing) = state.rooms.get_mut(room).and_then(|room| {
+                room.outgoing
+                    .iter_mut()
+                    .find(|outgoing| outgoing.items.iter().any(|item| item.id == id))
+            }) {
+                outgoing.failure = None;
+            }
         });
+        if !restarted {
+            return;
+        }
         if let Some(transfer) = dropped {
             self.uplink.drop_file(&transfer);
         }
@@ -514,14 +529,14 @@ impl ComposerLink {
                 .map(|item| item.id.clone())
                 .collect::<Vec<_>>()
         };
+        for item in failed_items {
+            self.restart(room, &item);
+        }
         self.record(room, |state| {
             if let Some(outgoing) = state.outgoing_mut(room, id) {
                 outgoing.failure = None;
             }
         });
-        for item in failed_items {
-            self.restart(room, &item);
-        }
         self.kick(room);
         Ok(())
     }
