@@ -16,8 +16,8 @@ use super::languages::Languages;
 use crate::l10n::text;
 mod input;
 pub(super) use input::{
-    InputSecretEncoding, URL_SECRET_COMPONENT, render_input_header, render_input_template,
-    render_input_template_with, validate_input_template,
+    URL_SECRET_COMPONENT, render_input_header, render_input_template_with, render_input_url,
+    validate_input_template,
 };
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
