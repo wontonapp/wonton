@@ -79,6 +79,7 @@ impl PluginsLink {
     pub(crate) fn backgrounded(&self) {
         self.foreground.store(false, Ordering::SeqCst);
         self.poll_changed.notify_one();
+        self.forget_owner_secrets();
         let going = self
             .view
             .borrow()

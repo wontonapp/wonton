@@ -263,6 +263,7 @@ private fun InstalledDetailSections(
     Box(Modifier.bringIntoViewRequester(secretsInView)) {
         SecretSection(detail, owner == true, plugins, onToggled)
     }
+    OwnerSecretsSection(detail.id, plugins)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)

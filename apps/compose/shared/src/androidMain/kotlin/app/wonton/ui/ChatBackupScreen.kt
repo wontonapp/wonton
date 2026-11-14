@@ -406,9 +406,13 @@ private fun AuthUnavailable(codeName: String) {
 }
 
 /** 标为敏感内容后，Android 13 起系统的剪贴板提示不显示原文；12L 及以前按官方文档用同名的字符串键。 */
-private fun copySensitive(context: Context, text: String) {
+internal fun copySensitive(
+    context: Context,
+    text: String,
+    label: String = context.getString(R.string.chat_backup_recovery_key),
+) {
     // 剪贴板的标签会出现在系统的剪贴板界面里。
-    val clip = ClipData.newPlainText(context.getString(R.string.chat_backup_recovery_key), text)
+    val clip = ClipData.newPlainText(label, text)
     val extras = PersistableBundle()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         extras.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)

@@ -734,6 +734,10 @@ impl ClientCore {
                 scope.plugins.refresh_installed();
                 Ok(())
             }
+            action @ (Action::ListOwnerSecrets { .. }
+            | Action::ShowOwnerSecret { .. }
+            | Action::HideOwnerSecret { .. }
+            | Action::DismissOwnerSecrets { .. }) => scope.plugins.dispatch_owner_secrets(action),
             Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
             Action::SetPortMapping { plugin_id, enabled } => {
                 scope.plugins.set_port_mapping(plugin_id, enabled)

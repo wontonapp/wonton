@@ -148,3 +148,5 @@ app-lock-read-failed = 無法讀取 App 鎖設定檔 { $path }：{ $reason }
 app-lock-corrupt = App 鎖設定檔 { $path } 已損壞：{ $reason }
 pages-storage-problem = 我的應用存不下，下次啟動可能恢復舊狀態：{ $error }
 pages-file-unreadable = 這台裝置上的我的應用讀不了，先用預設值：{ $reason }
+# 僅給主人查看產生的外掛金鑰；使用者填寫和外掛收集的金鑰絕不返回。
+plugins-owner-secret-not-listed = 這項金鑰不在已展開的清單中：{ $name }
