@@ -114,6 +114,8 @@ impl Bus {
         let tools = self.upstreams.tools(&server).await?;
         let entry = |tool: rmcp::model::Tool| {
             let read_only = tool.annotations.as_ref().and_then(|a| a.read_only_hint);
+            // 主人标“只读”仍按 ADR-0024 的旧确认规则：只有明确 `destructiveHint: true` 的工具不能标；
+            // PR7 的角色封顶另按 MCP 默认值把没标注解的工具当作会删。
             let access = if read_only == Some(true) {
                 ToolAccess::PluginReadOnly
             } else if !super::risky::deletes(&tool)

@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use rmcp::model::{CallToolResult, ContentBlock, JsonObject, Tool};
 use serde_json::{Value, json};
-use wonton_protocol::{Answer, ConfirmationState, FileFailure};
+use wonton_protocol::{AiLevel, Answer, ConfirmationState, FileFailure};
 
+use super::audience::Subject;
 use super::audit::{Basis, Decision, Record};
 use super::core_tools::tool;
 use super::file_tools::decision;
@@ -68,6 +69,21 @@ pub(super) async fn save(
     args: JsonObject,
     activity: Guard,
 ) -> CallToolResult {
+    // 失败即停：封顶“只读”的存不了共享文件夹（ADR-0088 第 5 节）。
+    if bus.ai_cap(caller) == AiLevel::ReadOnly {
+        let name = naming::join(naming::CORE, SAVE);
+        let value = Value::Object(args.clone());
+        drop(activity);
+        return bus.deny(
+            caller,
+            &name,
+            &value,
+            &ToolFailure::new(
+                "permission_denied",
+                "这次的 AI 动手级别是只读，不能把文件存进共享文件夹，没有执行",
+            ),
+        );
+    }
     let (bus, caller) = (bus.clone(), caller.clone());
     tokio::spawn(async move { run(&bus, &caller, args, activity).await })
         .await
@@ -103,7 +119,12 @@ async fn run(bus: &Arc<Bus>, caller: &Caller, args: JsonObject, activity: Guard)
     let langs = bus.plugins.owner_languages();
     let draft = cards::save_file(&caller.name, &staged.files, &target, &langs);
     drop(activity);
-    let ticket = match bus.confirmations.ask(&caller.id, draft).await {
+    // 封顶“删除要管理员批”时存共享文件夹的卡片发管理员（ADR-0088 第 5 节）；其余照 ADR-0027 发主人。
+    let ticket = match if bus.ai_cap(caller) == AiLevel::AdminApprovesDeletes {
+        bus.ask_for(caller, Subject::ToolDelete, draft).await
+    } else {
+        bus.confirmations.ask(&caller.id, draft).await
+    } {
         Ok(ticket) => ticket,
         Err(refusal) => return bus.refused(caller, &name, &value, &refusal, None),
     };

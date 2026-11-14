@@ -94,12 +94,13 @@ impl Confirmations {
     }
 
     /// 这次调用在放行时段内就算一次，返回打开时段的卡片。是否有效在把调用发给插件之前判定，“停止”只拦后面的调用。
-    pub fn allow_in_window(&self, caller: &PluginId, plugin: &str) -> Option<String> {
+    /// `scope` 是 [`super::risky::window_scope`] 给出的范围：插件加 Bot，同一个插件里各 Bot 的时段互不相干。
+    pub fn allow_in_window(&self, caller: &PluginId, scope: &str) -> Option<String> {
         let now = now_ms(SystemTime::now());
         let mut table = self.lock();
         let id = table
             .windows
-            .get(&(caller.clone(), plugin.to_owned()))?
+            .get(&(caller.clone(), scope.to_owned()))?
             .clone();
         let window = table.slots.get_mut(&id)?.card.window.as_mut()?;
         if window.ended.is_some() || now >= window.expires_at_ms {
@@ -126,14 +127,15 @@ impl Confirmations {
         Some(id)
     }
 
-    /// 这个插件生效中的时段。
+    /// 这个插件生效中的时段：不带 Bot 的和各 Bot 的都算（时段的范围带 Bot，见 [`super::risky::window_scope`]）。
     pub fn active_windows(&self, plugin: &str) -> Vec<ActiveWindow> {
         let now = now_ms(SystemTime::now());
+        let bot_scope = format!("{plugin}#");
         let table = self.lock();
         let active = table
             .windows
             .iter()
-            .filter(|((_, scope), _)| scope == plugin);
+            .filter(|((_, scope), _)| scope == plugin || scope.starts_with(&bot_scope));
         let active = active.filter_map(|((caller, _), id)| {
             let window = table.slots.get(id)?.card.window.as_ref()?;
             (window.ended.is_none() && now < window.expires_at_ms).then(|| ActiveWindow {
