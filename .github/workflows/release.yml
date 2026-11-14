@@ -2,8 +2,8 @@ name: release
 
 # 推 vX.Y.Z 的 tag 时构建核心镜像（amd64、arm64），推到 GHCR，同时更新 stable 渠道（ADR-0070）。安装脚本和 App 里的升级
 # 都按 digest 记版本，渠道只是找新版本的入口。只认不带后缀的版本号 tag（v0.2.0），误推的 vfoo、v0.2.0-rc.1 不会发布。
-# 手动触发（只认 main）只发桥和远端 MCP 连接器镜像，标签 main-<短提交号>，不碰任何渠道：插件要先钉上新镜像时，
-# 不必为此发一版核心。
+# 手动触发（只认 main）只发选中的组件镜像，标签 main-<短提交号>，不碰任何渠道：插件要先钉上新镜像时，
+# 不必为此发一版核心，也不会联发另一个组件。
 #
 # 双架构用 amd64 和 arm64 两种原生 runner 构建（托管 runner 便宜又快，不在 QEMU 里交叉编译），各自按 digest 推，
 # digest 作为 artifact 传给 merge 作业，最后合成多架构 manifest 打上版本和渠道标签。
@@ -12,6 +12,15 @@ on:
     tags:
       - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      component:
+        description: 单独发布的组件（仅 main，不更新 stable）
+        type: choice
+        required: true
+        default: remote-mcp
+        options:
+          - remote-mcp
+          - acp-bridge
 
 permissions:
   contents: read
@@ -98,7 +107,7 @@ jobs:
 
   acp-bridge-image:
     name: ACP bridge 镜像 ${{ matrix.platform }}
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'acp-bridge')
     strategy:
       fail-fast: false
       matrix:
@@ -157,7 +166,7 @@ jobs:
 
   acp-bridge-merge:
     name: ACP bridge 镜像合 manifest
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'acp-bridge')
     needs: acp-bridge-image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -182,7 +191,7 @@ jobs:
 
   remote-mcp-image:
     name: 远端 MCP 连接器镜像 ${{ matrix.platform }}
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'remote-mcp')
     strategy:
       fail-fast: false
       matrix:
@@ -238,7 +247,7 @@ jobs:
 
   remote-mcp-merge:
     name: 远端 MCP 连接器镜像合 manifest
-    if: github.event_name == 'push' || github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'remote-mcp')
     needs: remote-mcp-image
     runs-on: ubuntu-24.04
     timeout-minutes: 10
