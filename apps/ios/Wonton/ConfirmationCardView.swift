@@ -43,10 +43,7 @@ struct ConfirmationCardView: View {
                 }
                 .disabled(view.card.state != .pending || view.sending != nil)
             }
-            if view.card.audience == .admins, let answeredBy = view.card.answeredBy {
-                Text(.ConfirmationCard.confirmationCardAnsweredBy(answeredBy))
-                    .wontonText(WontonTheme.typography.supporting)
-            }
+            answeredByLine
             state
             if let window = view.window {
                 self.window(window)
@@ -271,5 +268,15 @@ struct ConfirmationCardView: View {
         localErrors = errors
         guard choice.answer != .approve || errors.isEmpty else { return }
         answer(choice, secretValues(view.card.secretInputs, secrets), values)
+    }
+}
+
+extension ConfirmationCardView {
+    /// 管理员卡片已被别的管理员答过时，显示是谁处理的。
+    @ViewBuilder var answeredByLine: some View {
+        if view.card.audience == .admins, let answeredBy = view.card.answeredBy {
+            Text(.ConfirmationCard.confirmationCardAnsweredBy(answeredBy))
+                .wontonText(WontonTheme.typography.supporting)
+        }
     }
 }
