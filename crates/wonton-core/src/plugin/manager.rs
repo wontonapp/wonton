@@ -63,6 +63,9 @@ pub struct UninstallReport {
     /// 插件有 Bot 时：吊销了它们的设备，删除数据时还停用了账号。
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub bots: Vec<BotReport>,
+    /// 卸载已完成，但连接器里的令牌未删掉等清理问题。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -242,7 +245,7 @@ impl PluginManager {
         self.activity.changed();
     }
 
-    /// 声明了 `mcp`、MCP 服务现在能用的插件：运行中，或者异常但 MCP 服务自己好着。
+    /// 能用的 MCP 服务：容器按入口服务判断；远端按连接器是否可用判断。
     pub fn mcp_servers(&self) -> Vec<McpServer> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         plugins
@@ -269,6 +272,7 @@ impl PluginManager {
                     tools: mcp.tools.clone(),
                 })
             })
+            .chain(super::remote_config::servers(self, &plugins))
             .collect()
     }
 

@@ -2,7 +2,7 @@
 //! `hosted/web_storage/<插件 ID>/` 建一个属于主人用户的空目录，交给提供方读写。数据和容器插件的应用数据一样：
 //! 升级不动，卸载默认留下，“彻底删除”才删。上限（每插件 64 MiB、1024 个文件、单文件 8 MiB）由提供方执行。
 
-use super::capabilities::{STATIC_WEB, WEB_STORAGE};
+use super::capabilities::{REMOTE_MCP, STATIC_WEB, WEB_STORAGE};
 use super::install_error::InstallError;
 use super::languages::Languages;
 use super::manager::PluginManager;
@@ -33,12 +33,15 @@ pub(super) fn storage_need(manifest: &Manifest) -> Option<StorageNeed> {
     }
 }
 
-/// 插件离不开的托管能力：静态网页的运行形态，加上 `requires` 里的数据存储。提供方停了这些插件就标异常，
+/// 插件离不开的托管能力：运行形态的隐含依赖，加上 `requires` 里的数据存储。提供方停了这些插件就标异常，
 /// 有它们在用时提供方卸不掉。
 pub(super) fn required_hosted(manifest: &Manifest) -> Vec<&'static str> {
     let mut found = Vec::new();
     if manifest.runtime == Runtime::StaticWeb {
         found.push(STATIC_WEB.name);
+    }
+    if manifest.runtime == Runtime::RemoteMcp {
+        found.push(REMOTE_MCP.name);
     }
     if storage_need(manifest) == Some(StorageNeed::Required) {
         found.push(WEB_STORAGE.name);

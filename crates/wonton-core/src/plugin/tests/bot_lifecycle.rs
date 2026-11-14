@@ -416,9 +416,17 @@ async fn network_mode_bot_group_upgrade_preserves_its_identity_and_removes_the_w
         &super::langs(),
     )
     .unwrap();
-    m.upgrade_checked(package, &granted(), &[], false, &[], Default::default())
-        .await
-        .unwrap();
+    m.upgrade_checked(
+        package,
+        &granted(),
+        &[],
+        false,
+        &[],
+        Default::default(),
+        &Default::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(env_map(&target), before);
     assert!(bed.token_valid(&before["TOKEN"]));
     assert_eq!(

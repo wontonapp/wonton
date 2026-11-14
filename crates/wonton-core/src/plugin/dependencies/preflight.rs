@@ -87,12 +87,7 @@ impl PluginManager {
                     .await?,
             );
         }
-        for capability in consumer
-            .decision
-            .package
-            .manifest
-            .requires
-            .iter()
+        for capability in super::required(&consumer.decision.package.manifest)
             .filter(|capability| generic(capability))
         {
             let targets = consumer
@@ -108,7 +103,7 @@ impl PluginManager {
                 .find(|provider| service(&provider.decision.package.manifest, capability).is_some())
                 .ok_or_else(|| selection_error(langs))?;
             targets.insert(
-                capability.clone(),
+                capability.to_owned(),
                 provider.decision.package.manifest.id.to_string(),
             );
         }
@@ -175,6 +170,7 @@ impl PluginManager {
                 &[],
             )));
         }
+        crate::plugin::remote_install::check_oauth(manifest, request.remote_oauth.as_ref(), langs)?;
         if !matches!(request.scope, None | Some(PluginScope::All)) {
             return Err(InstallError::Unsupported(l10n::text(
                 langs,
@@ -220,6 +216,10 @@ impl PluginManager {
                 Some(value.expose()),
                 langs,
             )?;
+        }
+        if manifest.remote_mcp.is_some() {
+            crate::plugin::remote_config::Config::resolve(manifest, &secrets, langs)
+                .map_err(InstallError::Invalid)?;
         }
         let targets = self.confirmed_install_targets(manifest)?;
         let changed_before = store.changed(&manifest.id)?;

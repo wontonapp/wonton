@@ -1,0 +1,10 @@
+remote-mcp-runtime-mismatch = remote_mcp 只能与 runtime: remote_mcp 一起使用。
+remote-mcp-required = runtime: remote_mcp 必须填写 remote_mcp.url。
+remote-mcp-field-forbidden = 远端 MCP 没有容器，用不上 { $field }。
+remote-mcp-input-only = 远端 MCP 的密钥 { $name } 必须声明为 input。
+remote-mcp-url-invalid = remote_mcp.url 必须是 HTTPS 地址并使用多段域名，不能是 IP、localhost，不能带用户名密码、片段或空白。密钥占位符只能写在路径和查询参数里。
+remote-mcp-url-dot-segment = remote_mcp.url 的路径不能包含 . 或 .. 段，替换密钥后也不能形成这些段。请更换密钥或地址，避免这些路径段。
+remote-mcp-headers-required = remote_mcp.auth: header 必须至少填写一项 remote_mcp.headers。
+remote-mcp-headers-auth = 只有 auth: header 可以填写 remote_mcp.headers。
+remote-mcp-oauth-secrets = remote_mcp.auth: oauth 不能声明 secrets。
+remote-mcp-header-value-invalid = 远端 MCP 的请求头含有 HTTP 请求头不能发送的字符。

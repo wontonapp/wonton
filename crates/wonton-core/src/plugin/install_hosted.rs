@@ -1,5 +1,5 @@
-//! 不起容器的两种形态的装、升、卸和恢复（ADR-0080）：`static_web` 把文件放进托管目录、交给提供方；
-//! `link` 只存一条记录。两种都不经渲染和部署，所以和容器插件分开走。
+//! 不起容器的形态的装、升、卸和恢复：静态网页发布文件，远端 MCP 交给连接器，外部网页只存记录。
+//! 这些形态不经容器渲染和部署，安装失败仍走同一条可重试的失败记录路径。
 
 use std::collections::BTreeMap;
 
@@ -42,10 +42,13 @@ pub(crate) struct Provider {
 
 /// 不起容器的形态。
 pub(super) fn is_containerless(manifest: &Manifest) -> bool {
-    matches!(manifest.runtime, Runtime::StaticWeb | Runtime::Link)
+    matches!(
+        manifest.runtime,
+        Runtime::StaticWeb | Runtime::Link | Runtime::RemoteMcp
+    )
 }
 
-/// 托管形态要的能力：`runtime` 的名字就是能力名（ADR-0080 第 2 节）。
+/// 需要发布包内文件的托管能力；没有目录的远端 MCP 不走文件账本。
 pub(super) fn hosted_capability(manifest: &Manifest) -> Option<&'static str> {
     (manifest.runtime == Runtime::StaticWeb).then_some(STATIC_WEB.name)
 }
@@ -199,8 +202,8 @@ impl PluginManager {
         Ok(())
     }
 
-    /// 正在用这个插件提供的托管能力的插件：卸载提供方时照 ADR-0053 拦下。
-    pub(super) fn hosted_users(&self, id: &PluginId) -> Vec<String> {
+    /// 正在用这个插件提供的托管能力、且不在本批卸载里的插件（ADR-0053）。
+    pub(super) fn hosted_users(&self, id: &PluginId, removing: &[PluginId]) -> Vec<String> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
         let Some(provides) = plugins
             .get(id)
@@ -212,7 +215,7 @@ impl PluginManager {
         let langs = self.owner_languages();
         plugins
             .iter()
-            .filter(|(other, _)| *other != id)
+            .filter(|(other, _)| *other != id && !removing.contains(other))
             .filter_map(|(_, entry)| {
                 let listed = entry.listed.as_ref()?;
                 required_hosted(&listed.manifest)
@@ -237,6 +240,7 @@ impl PluginManager {
         {
             return Err(missing_provider(capability, langs));
         }
+        self.probe_remote(&manifest, langs).await?;
         let listed = Listed::new(package, now_secs(), false, false, Default::default());
         self.reserve(&listed, langs)?;
         tracing::info!(plugin = %manifest.id, runtime = manifest.runtime.as_str(), "开始安装插件");
@@ -275,6 +279,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = package.manifest.id.clone();
+        self.probe_remote(&package.manifest, langs).await?;
         let old = self
             .store
             .load(&id)?
@@ -374,6 +379,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let manifest = &package.manifest;
+        self.prepare_dependencies(manifest, langs).await?;
         let mut hosted = Vec::new();
         publication.swapped = match hosted_capability(manifest) {
             Some(capability) => {

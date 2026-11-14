@@ -12,25 +12,31 @@ impl PluginManager {
         approve_connections: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
-        self.check_uninstall_state(id, langs)?;
-        let _changing = self.dependencies.changing.lock().await;
-        let preview = self.uninstall_preview(id, langs)?;
         let mut seen = BTreeSet::new();
         let mut removing = Vec::with_capacity(selected.len() + 1);
         removing.push(id.clone());
         for selected in selected {
-            if !seen.insert(selected.clone())
-                || !preview
-                    .unused_providers
-                    .iter()
-                    .any(|provider| provider.id == selected)
-            {
+            if !seen.insert(selected.clone()) {
                 return Err(selection_error(langs));
             }
             let provider = PluginId::parse(&selected)
                 .map_err(|error| InstallError::Invalid(error.to_string()))?;
-            self.check_uninstall_state(&provider, langs)?;
             removing.push(provider);
+        }
+        self.check_uninstall_state(id, &removing, langs)?;
+        let _changing = self.dependencies.changing.lock().await;
+        let preview = self.uninstall_preview(id, langs)?;
+        for provider in removing.iter().skip(1) {
+            if !preview
+                .unused_providers
+                .iter()
+                .any(|candidate| candidate.id == provider.as_str())
+            {
+                return Err(selection_error(langs));
+            }
+        }
+        for plugin in &removing {
+            self.check_uninstall_state(plugin, &removing, langs)?;
         }
         self.check_uninstall_dependencies(&removing, approve_connections, langs)?;
         let mut report = self
@@ -63,11 +69,8 @@ impl PluginManager {
                 continue;
             }
             let mut missing = false;
-            for capability in consumer
-                .manifest
-                .requires
-                .iter()
-                .filter(|capability| super::generic(capability))
+            for capability in
+                super::required(&consumer.manifest).filter(|capability| super::generic(capability))
             {
                 if super::chosen(&state, &providers, &consumer.manifest.id, capability, None)
                     .is_none_or(|provider| !removing.contains(&provider.id))
@@ -101,7 +104,7 @@ impl PluginManager {
                                 "provider",
                                 langs.pick_owned(&provider.listed.manifest.title).into(),
                             ),
-                            ("capability", capability.as_str().into()),
+                            ("capability", capability.into()),
                         ],
                     )));
                 }

@@ -14,6 +14,11 @@ use hyper::header::{HeaderName, HeaderValue};
 
 use super::languages::Languages;
 use crate::l10n::text;
+mod input;
+pub(super) use input::{
+    URL_SECRET_COMPONENT, render_input_header, render_input_template_with, render_input_url,
+    validate_input_template,
+};
 
 /// 代登录用的密钥至少这么长：网关按值从响应里找出并去掉它，值太短会误伤别的内容。
 const MIN_SECRET_BYTES: usize = 16;
@@ -60,6 +65,7 @@ pub fn validate_header_spec(
         || lower.starts_with("x-forwarded-")
         || lower.starts_with("x-wonton-")
         || MCP_PROTOCOL_HEADERS.contains(&lower.as_str())
+        || matches!(lower.as_str(), "content-length" | "last-event-id")
     {
         return Err(text(
             langs,
@@ -514,7 +520,10 @@ const MCP_PROTOCOL_HEADERS: &[&str] = &["mcp-session-id", "mcp-protocol-version"
 
 /// MCP 上游（`mcp.headers`）的请求头：名字和按插件密钥解析好的值。`Debug` 只打印名字，值不进日志。
 #[derive(Clone, Default, PartialEq, Eq)]
-pub struct McpHeaders(Vec<(HeaderName, HeaderValue)>);
+pub struct McpHeaders(
+    Vec<(HeaderName, HeaderValue)>,
+    Option<super::remote_redaction::Redaction>,
+);
 
 impl std::fmt::Debug for McpHeaders {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -524,6 +533,35 @@ impl std::fmt::Debug for McpHeaders {
 }
 
 impl McpHeaders {
+    /// Construction errors identify only the header, never its possibly secret value.
+    pub(super) fn from_sensitive_pairs(
+        pairs: impl IntoIterator<Item = (&'static str, String)>,
+    ) -> Result<Self, String> {
+        pairs
+            .into_iter()
+            .map(|(name, value)| {
+                let header =
+                    HeaderName::from_bytes(name.as_bytes()).map_err(|_| name.to_owned())?;
+                let mut value = HeaderValue::from_str(&value).map_err(|_| name.to_owned())?;
+                value.set_sensitive(true);
+                Ok((header, value))
+            })
+            .collect::<Result<Vec<_>, String>>()
+            .map(|headers| Self(headers, None))
+    }
+
+    pub(crate) fn error_redaction(&self) -> Option<super::remote_redaction::Redaction> {
+        self.1.clone()
+    }
+
+    pub(super) fn with_error_redaction(
+        mut self,
+        redaction: Option<super::remote_redaction::Redaction>,
+    ) -> Self {
+        self.1 = redaction;
+        self
+    }
+
     /// rmcp 传输层的 `custom_headers`：发往上游的每个请求都带上。
     pub fn custom_headers(&self) -> HashMap<HeaderName, HeaderValue> {
         self.0.iter().cloned().collect()
@@ -541,6 +579,7 @@ impl McpHeaders {
                     )
                 })
                 .collect(),
+            None,
         )
     }
 }
@@ -737,7 +776,7 @@ pub fn resolve_mcp_headers(
         value.set_sensitive(true);
         headers.push((name, value));
     }
-    Ok(McpHeaders(headers))
+    Ok(McpHeaders(headers, None))
 }
 
 #[cfg(test)]

@@ -381,7 +381,7 @@ impl PluginManager {
         purge: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
-        self.check_uninstall_state(id, langs)?;
+        self.check_uninstall_state(id, std::slice::from_ref(id), langs)?;
         let _dependencies = self.dependencies.changing.lock().await;
         // 卸载链里一路到对账、清卷、清会话，调试构建的帧很大：放堆上，别挤占调用方的栈。
         Box::pin(self.uninstall_locked(id, purge, std::slice::from_ref(id), true, langs)).await
@@ -390,13 +390,14 @@ impl PluginManager {
     pub(in crate::plugin) fn check_uninstall_state(
         &self,
         id: &PluginId,
+        removing: &[PluginId],
         langs: &Languages,
     ) -> Result<(), InstallError> {
         self.check_not_upgrading(langs)?;
         if self.failed_install(id) {
             return Ok(());
         }
-        let users = self.hosted_users(id);
+        let users = self.hosted_users(id, removing);
         if !users.is_empty() {
             return Err(InstallError::Conflict(l10n::text(
                 langs,
@@ -439,7 +440,7 @@ impl PluginManager {
         approve_connections: bool,
         langs: &Languages,
     ) -> Result<UninstallReport, InstallError> {
-        self.check_uninstall_state(id, langs)?;
+        self.check_uninstall_state(id, removing, langs)?;
         if self.failed_install(id) {
             return self.clear_failed_install(id, purge, langs).await;
         }
@@ -477,13 +478,15 @@ impl PluginManager {
         drop(_changing);
         self.changed();
         tracing::info!(plugin = %id, operation = "uninstall", phase = "start", purge, "插件卸载开始");
+        let remote_warning = self.forget_remote(id, langs).await;
         let removed = async {
             self.revoke_dependency_keys(id, langs).await?;
             self.teardown(id, purge, langs).await
         }
         .await;
         match removed {
-            Ok(report) => {
+            Ok(mut report) => {
+                report.warnings.extend(remote_warning);
                 self.clear_oom(id);
                 self.lan.clear_degraded(id);
                 self.plugins.write().expect("插件表锁中毒").remove(id);

@@ -244,6 +244,10 @@ impl PluginPackage {
             PackageError::MissingManifest(text(langs, "plugin-install-pkg-missing-manifest", &[]))
         })?;
         super::store_info::check_spec(&manifest_value, langs)?;
+        let remote_fields = super::remote_validate::raw_forbidden_fields(
+            &manifest_value,
+            top.contains_key("services"),
+        );
         let mut manifest: Manifest = match serde_json::from_value(manifest_value) {
             Ok(manifest) => manifest,
             Err(e) => {
@@ -259,6 +263,7 @@ impl PluginPackage {
                 ))));
             }
         };
+        super::remote_validate::validate_package(&manifest, &remote_fields, langs)?;
         manifest.imply_static_webui();
         manifest.validate(langs)?;
 

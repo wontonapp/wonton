@@ -14,7 +14,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         let state = self.dependencies.load()?;
         for capability in declarations(manifest) {
-            let required = manifest.requires.contains(capability);
+            let required = super::requires(manifest, capability);
             let Some(provider) = chosen(&state, &providers, &manifest.id, capability, None) else {
                 if required {
                     return Err(InstallError::Conflict(
@@ -49,7 +49,7 @@ impl PluginManager {
         let providers = self.capability_providers();
         for capability in declarations(manifest) {
             let Some(id) = targets.get(capability) else {
-                if manifest.requires.contains(capability) {
+                if super::requires(manifest, capability) {
                     return Err(InstallError::Conflict(
                         self.capability_missing_other(manifest, capability, langs),
                     ));
@@ -75,7 +75,7 @@ impl PluginManager {
                         .selected
                         .entry(manifest.id.to_string())
                         .or_default()
-                        .insert(capability.clone(), id.clone());
+                        .insert(capability.to_owned(), id.clone());
                 }
             })?;
         }
@@ -94,10 +94,7 @@ impl PluginManager {
             .await
         {
             Err(error)
-                if manifest
-                    .requires
-                    .iter()
-                    .any(|required| required == capability)
+                if super::requires(manifest, capability)
                     || matches!(error, InstallError::Storage(_)) =>
             {
                 Err(error)
@@ -170,7 +167,7 @@ impl PluginManager {
                         Ok(()) => {}
                         Err(error)
                             if consumer.manifest.id != manifest.id
-                                || consumer.manifest.requires.contains(capability)
+                                || super::requires(&consumer.manifest, capability)
                                 || matches!(error, InstallError::Storage(_)) =>
                         {
                             failure = Some(match failure {
@@ -287,6 +284,10 @@ impl PluginManager {
             return Ok(());
         }
         let package = super::super::upgrade::installed_package(&record, langs)?;
+        if super::super::install_hosted::is_containerless(&package.manifest) {
+            self.changed();
+            return Ok(());
+        }
         let lan = self.lan_grant(&package, record.lan_webui, langs).await?;
         let mut ctx = self.rebuild_context(&package, &record, lan, None).await?;
         self.fill_bot_vars(&package, &mut ctx, langs).await?;
@@ -334,7 +335,7 @@ impl PluginManager {
                         category: PluginHintCategory::DependencyStopped,
                         detail: Some(error.to_string()),
                         provider: None,
-                        capability: Some(capability.clone()),
+                        capability: Some(capability.to_owned()),
                     })
                     .collect();
             }
@@ -342,7 +343,7 @@ impl PluginManager {
         declarations(manifest)
             .filter_map(|capability| {
                 let provider = chosen(&state, &providers, &manifest.id, capability, None);
-                let required = manifest.requires.contains(capability);
+                let required = super::requires(manifest, capability);
                 let (category, detail) = match provider {
                     None => (
                         if required {
@@ -376,7 +377,7 @@ impl PluginManager {
                     category,
                     detail,
                     provider: provider.map(|p| reference(p, capability, langs)),
-                    capability: Some(capability.clone()),
+                    capability: Some(capability.to_owned()),
                 })
             })
             .collect()
@@ -392,7 +393,7 @@ impl PluginManager {
             .find(|hint| {
                 hint.capability
                     .as_ref()
-                    .is_some_and(|capability| manifest.requires.contains(capability))
+                    .is_some_and(|capability| super::requires(manifest, capability))
             })
             .map(|hint| {
                 hint.detail.unwrap_or_else(|| match hint.provider {
@@ -418,7 +419,7 @@ impl PluginManager {
     ) -> Result<(), InstallError> {
         let providers = self.capability_providers();
         let state = self.dependencies.load()?;
-        for capability in manifest.requires.iter().filter(|c| super::generic(c)) {
+        for capability in super::required(manifest).filter(|c| super::generic(c)) {
             let provider =
                 chosen(&state, &providers, &manifest.id, capability, None).ok_or_else(|| {
                     InstallError::Conflict(
