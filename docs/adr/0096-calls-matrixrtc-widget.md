@@ -1,6 +1,6 @@
 # ADR-0096 音视频通话：MatrixRTC + LiveKit，Element Call 作为 Matrix widget 跑在插件页里
 
-- 状态：提议（2026-11-12）。本验证 PR 已完成 Android 端可复跑冒烟脚本；正式接受仍待三组真实路径均通过
+- 状态：提议（2026-11-12）；正式接受待三组真实通话路径均通过
 - 细化 [ADR-0014](0014-reserved-capabilities.md) 的“实时通话”：只定房间里的音视频通话；和 Bot 通话、屏幕共享、来电响铃不在这篇
 - 用 [ADR-0072](0072-tunnel-udp.md) 的 UDP 隧道，和 [ADR-0033](0033-plugin-tabs.md) 的插件页、桥、摄像头和麦克风授权
 
@@ -207,7 +207,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 ## 待验证
 
-- **三组 Android 端到端路径**：`deploy/dev/core/call-e2e.sh` 已加入 UDP、TCP 退路和公共中继三种模式，要求两台已配对且登录同一加密房间的设备。2026-11-14 在 194 的 API 36 模拟器现场，核心已健康且两台设备隧道已配对，但本地 call 插件在创建 `jwt` 容器时返回 504（`docker_timed_out`）并回滚；两台设备也没有完成可用的同一加密 Matrix 会话，因此三组真实通话未核实。
+- **三组 Android 端到端路径**：待两台设备在同一加密房间里验证 UDP、TCP 退路和公共中继；冒烟脚本尚未完成一次真实通话验证。2026-11-14 的预检见下方“本次 Android 现场”。
 - **iOS WKWebView：** `127.0.0.1` 的 ICE 候选、`requestMediaCaptureFor`、信令 WebSocket 经本地代理。不通按第 5 节的退路。
 - **delayed events 的上限**和 Element Call 的用法对不对得上。
 - **网页请求 Matrix 对外地址（真机）：** 见“验证结果”的设备门一条；`baseUrl` 取头像能否显示。
@@ -220,16 +220,11 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 通话插件仓库 `wontonapp/wonton-plugin-call` 的开发栈探针已验证 Element Call 页面、LiveKit `/livekit/sfu` 反代、页面配置和 widget 入口；这不等价于真实 App 通话。Android widget 桥和媒体权限实现已在后续壳工作树中具备，本 PR 只把真实冒烟脚本放进主仓库。
 
-### 本 PR 的可复跑冒烟
+### Android 冒烟脚本
 
-`deploy/dev/core/call-e2e.sh`：
+`deploy/dev/core/call-e2e.sh` 尝试从已登录同一加密房间的两台 Android 设备打开 widget，采集 WebRTC 统计并检查挂断和断线退场；需要本地 call 插件、Debug APK 和设备。一次完整通话尚未验证，不能把脚本输出当作三条路径的验收结果。
 
-- `CALL_MODE=udp` 保留清单中的 UDP mux 端口；
-- `CALL_MODE=tcp` 复制清单后移除 UDP 声明，只保留 TCP 7881；
-- `CALL_MODE=relay` 使用失效直连地址，只按两端是否收到双向 RTP 判断通话是否通过；公共中继提示另由前端验收；
-- 每组记录两端屏幕、CDP `inbound-rtp` 包计数、选中的 ICE 候选、挂断和强杀一端后的 delayed leave。
-
-- 脚本要求账号、加密房间和两台设备先由人工准备，不把密码或 Matrix 令牌写进命令行。2026-11-14 的现场只完成核心健康、插件安装请求和设备隧道配对；插件安装在 `wonton-calle2e--app-element-call--jwt` 创建阶段超时，未进入 widget、媒体或 delayed leave。执行结果未核实，没有把失败现场写成通过。
+当前脚本的 relay 模式不能证明强制走公共中继：跳过配对时 `CALL_DIRECT_ADDR` 不影响已保存的连接地址，WebRTC 的回环 ICE 候选也不能证明隧道的实际路径。UDP/TCP 组同样需要核对选中的候选协议。实际通话、路径判定和 delayed leave 均待实测。
 
 ### 已有 Android WebView 媒体前置结果
 
@@ -258,7 +253,7 @@ Tuwunel v2.0.0、lk-jwt-service 0.9.0、livekit-server v1.13.11，Linux + Docker
 
 ### 本次 Android 现场（2026-11-14）
 
-在 Linux + Docker、API 36 Android 模拟器、当前检出核心和本地 `wonton-plugin-call` 清单上，核心启动并健康，主人和 `callguest` 设备均曾完成隧道配对。安装接口返回 HTTP 504，错误类别为 `docker_timed_out`，阶段为 `Starting`，失败服务为 `jwt`；核心随后完成插件回滚，清理错误为空。没有生成通话录屏、`inbound-rtp` 或 delayed-leave 产物。
+Linux + Docker、两台 API 36 Android 模拟器，Element Call v0.28.2、LiveKit v1.13.11、lk-jwt-service 0.10.0：首次安装在创建 JWT 容器时返回 HTTP 504、`docker_timed_out`，核心随后回滚。预拉插件镜像后，复用核心镜像 `eeb1c8f1-dirty` 的第二次安装返回 running/healthy；JWT 容器从 create 到 start 为 0.131 秒，到 healthy 为 5.169 秒（不含 create 请求前的等待）。两台设备的 Matrix 缓存均显示加入同一 Megolm 加密房间。复用的核心安装响应没有 `matrix_widget` 字段，主人设备打开 widget 时显示不能在房间中打开；另一设备停在连接错误页。当前检出核心镜像构建的二进制阶段成功，但锁定系统插件下载超时，未获得可验证的完整镜像。没有双向 RTP、挂断或 delayed leave 的实测结果。
 
 公共中继提示不属于通话媒体连通性的验收门槛。现有 `PortMappingWarning::PublicRelayBandwidth` 在 Android 插件详情的端口映射区域渲染，而不是 widget 通话页；这属于前端线缺口，relay 冒烟不因缺少该提示失败。
 

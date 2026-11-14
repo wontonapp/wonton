@@ -18,7 +18,9 @@
 # One path at a time:
 #   CALL_MODE=udp   deploy/dev/core/call-e2e.sh
 #   CALL_MODE=tcp   deploy/dev/core/call-e2e.sh
-#   CALL_MODE=relay CALL_DIRECT_ADDR=invalid.example:18482 deploy/dev/core/call-e2e.sh
+#   CALL_MODE=relay deploy/dev/core/call-e2e.sh
+# Relay mode does not force or verify the iroh path; check both devices' actual
+# tunnel paths independently. Also verify the selected ICE transport and leave.
 #
 # The default artifact directory is outside the repository:
 #   ~/wonton-dev/research/call-e2e/<mode>-<timestamp>/
@@ -85,12 +87,18 @@ cleanup() {
   if [[ -n "$plugin_copy" ]]; then rm -rf -- "$plugin_copy"; fi
   if ((own_stack)); then
     if [[ "$keep_stack" != 1 ]]; then
-      WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
+      if WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
         WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
         WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" WONTON_DEV_DATA="$WONTON_DEV_DATA" \
-        "$dev" reset || true
+        "$dev" reset; then
+        "$HOME/wonton-dev/stack-slot.sh" release "$slot" || status=1
+      else
+        echo "call-e2e: stack cleanup failed; slot $slot remains reserved" >&2
+        status=1
+      fi
+    else
+      echo "call-e2e: stack and slot $slot kept for inspection"
     fi
-    "$HOME/wonton-dev/stack-slot.sh" release "$slot" || true
   fi
   if ((status == 0)); then
     echo "call-e2e: artifacts $artifacts"
@@ -124,7 +132,7 @@ plugin_compose() {
 }
 
 prepare_tcp_plugin() {
-  local compose source
+  local source
   source="$(plugin_compose)"
   [[ -f "$source" ]] || { echo "call-e2e: no docker-compose.yml at $source" >&2; exit 1; }
   plugin_copy="$(mktemp -d "${TMPDIR:-/tmp}/wonton-call-tcp.XXXXXX")"
@@ -139,13 +147,15 @@ if line not in text:
     raise SystemExit("call-e2e: TCP mode could not find the UDP tunnel declaration")
 path.write_text(text.replace(line, ""))
 PY
-  printf '%s/docker-compose.yml\n' "$plugin_copy"
 }
 
 install_plugin() {
-  local compose result state rc stderr
-  compose="$(plugin_compose)"
-  [[ "$mode" == tcp ]] && compose="$(prepare_tcp_plugin)"
+  local package result state rc stderr
+  package="$plugin"
+  if [[ "$mode" == tcp ]]; then
+    prepare_tcp_plugin
+    package="$plugin_copy"
+  fi
   echo "== install call plugin ($mode)"
   WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
     WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
@@ -154,7 +164,7 @@ install_plugin() {
   set +e
   result="$(WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
     WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
-    WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" install "$compose" --yes 2>"$stderr")"
+    WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" install "$package" --yes 2>"$stderr")"
   rc=$?
   set -e
   printf '%s\n' "$result" >"$artifacts/install.json"
@@ -244,8 +254,8 @@ record_screen() {
 pull_recording() {
   local serial="$1" name="$2" remote
   remote="$(cat "$artifacts/$name-screenrecord.remote")"
-  adb -s "$serial" pull -q "$remote" "$artifacts/$name-screenrecord.mp4" >/dev/null 2>&1 || true
-  adb -s "$serial" shell rm -f "$remote" >/dev/null 2>&1 || true
+  adb -s "$serial" pull "$remote" "$artifacts/$name-screenrecord.mp4" >/dev/null
+  adb -s "$serial" shell rm -f "$remote" >/dev/null
 }
 
 wait_recordings() {
@@ -334,9 +344,9 @@ cat >"$artifacts/metadata.json" <<EOF
   "apk": "$(basename "$apk")",
   "plugin": "app.element-call",
   "inbound_rtp_checked": true,
-  "delayed_leave_checked": $([[ "${CALL_SKIP_KILL:-0}" == 1 ]] && echo false || echo true)
+  "delayed_leave_attempted": $([[ "${CALL_SKIP_KILL:-0}" == 1 ]] && echo false || echo true)
 }
 EOF
 
-echo "PASS: two devices joined, both reported inbound RTP, hangup completed"
-[[ "${CALL_SKIP_KILL:-0}" == 1 ]] || echo "PASS: force-stop delayed leave completed"
+echo "Inbound audio/video RTP samples found on both devices; hangup was requested."
+echo "Verify the selected ICE transport, tunnel path and participant departure independently."
