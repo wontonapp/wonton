@@ -14,7 +14,7 @@ struct ChatBackupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let recoveryKey = encryption.recoveryKey {
-                    RecoveryKeySection(recoveryKey: recoveryKey) { model.send(.confirmRecoveryKeySaved) }
+                    RecoveryKeySection(recoveryKey: recoveryKey) { model.send(.chat(action: .confirmRecoveryKeySaved)) }
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                     Text(encryption.recovery.backupTitle)
@@ -59,7 +59,7 @@ struct ChatBackupView: View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel), kind: .secondary) {},
                 WontonDialogAction(title: String(localized: .ChatBackup1.chatBackupResetConfirm), kind: .danger) {
-                    model.send(.resetRecovery)
+                    model.send(.chat(action: .resetRecovery))
                 }
             ]
         )
@@ -76,7 +76,7 @@ struct ChatBackupView: View {
                 recoveryKeyEntry
             } else {
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    Button { model.send(.startDeviceVerification) } label: {
+                    Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                         Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
@@ -89,7 +89,7 @@ struct ChatBackupView: View {
         case .showFlow:
             // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
             if encryption.verificationFlow == nil {
-                Button { model.send(.startDeviceVerification) } label: {
+                Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                     Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
@@ -117,7 +117,7 @@ struct ChatBackupView: View {
                 .autocorrectionDisabled()
                 .wontonField()
             Button {
-                model.send(.recoverEncryption(recoveryKey: key))
+                model.send(.chat(action: .recoverEncryption(recoveryKey: key)))
                 key = ""
             } label: {
                 Text(.ChatBackup1.chatBackupRecover).frame(maxWidth: .infinity)

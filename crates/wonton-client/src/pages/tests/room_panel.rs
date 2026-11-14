@@ -23,7 +23,7 @@ async fn room_panel_view_reports_selection_and_blocking() {
     assert!(!view.blocked);
 
     rig.tabs
-        .dispatch(Action::SetRoomEntryBlocked {
+        .dispatch(PageAction::SetRoomEntryBlocked {
             room_id: room.to_string(),
             blocked: true,
         })
@@ -31,7 +31,7 @@ async fn room_panel_view_reports_selection_and_blocking() {
     assert!(rig.tabs.room_view.borrow().clone().unwrap().blocked);
 
     rig.tabs
-        .dispatch(Action::SelectPanelPage {
+        .dispatch(PageAction::SelectPanelPage {
             scope: PanelScope::Room {
                 room_id: room.to_string(),
             },
@@ -52,7 +52,7 @@ async fn room_panel_edits_need_an_open_room_and_a_login() {
     };
     let closed = rig
         .tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: scope.clone(),
             tab: url_tab("https://example.com/x"),
         })
@@ -65,7 +65,7 @@ async fn room_panel_edits_need_an_open_room_and_a_login() {
     rig.tabs.recompute();
     let signed_out = rig
         .tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope,
             tab: url_tab("https://example.com/x"),
         })

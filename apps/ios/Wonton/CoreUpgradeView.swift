@@ -13,7 +13,7 @@ struct CoreUpgradeView: View {
     var body: some View {
         content
             .wontonPushedScreen(String(localized: .CoreUpgrade2.coreUpgradeTitle), usesSystemToolbar: true)
-            .onAppear { model.refresh(.refreshCoreUpgrade(manual: false)) }
+            .onAppear { model.refresh(.plugins(action: .refreshCoreUpgrade(manual: false))) }
             .onChange(of: upgrade.offer?.digest) { isConfirming = false }
     }
 
@@ -24,7 +24,7 @@ struct CoreUpgradeView: View {
             ProblemView(
                 problem: Problem(title: failureSummary(problem.reason), detail: problem.message)
             ) {
-                model.send(.refreshCoreUpgrade(manual: true))
+                model.send(.plugins(action: .refreshCoreUpgrade(manual: true)))
             }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -61,7 +61,7 @@ struct CoreUpgradeView: View {
             }
             if check.canCheck {
                 Button {
-                    model.send(.refreshCoreUpgrade(manual: true))
+                    model.send(.plugins(action: .refreshCoreUpgrade(manual: true)))
                 } label: {
                     HStack(spacing: WontonTheme.spacing.s8) {
                         if upgrade.refreshing { ProgressView() }
@@ -101,7 +101,7 @@ struct CoreUpgradeView: View {
                 compat: offer.compat,
                 apps: compatApps(offer),
                 refreshing: upgrade.refreshing,
-                onRetry: { model.send(.refreshCoreUpgrade(manual: true)) },
+                onRetry: { model.send(.plugins(action: .refreshCoreUpgrade(manual: true))) },
                 icon: { PluginIconView(icon: $0, size: WontonTheme.size.taskIcon, model: model) }
             )
             offerButtons(offer)
@@ -121,7 +121,7 @@ struct CoreUpgradeView: View {
     @ViewBuilder private func offerButtons(_ offer: CoreUpgradeOffer) -> some View {
         if isConfirming {
             Button {
-                model.send(.startCoreUpgrade(digest: offer.digest))
+                model.send(.plugins(action: .startCoreUpgrade(digest: offer.digest)))
             } label: {
                 Text(.CoreUpgrade0.coreUpgradeConfirmUpgrade).frame(maxWidth: .infinity)
             }
@@ -141,7 +141,7 @@ struct CoreUpgradeView: View {
             .buttonStyle(WontonButtonStyle())
             if !upgrade.offerSkipped {
                 Button {
-                    model.send(.skipCoreUpgrade(digest: offer.digest))
+                    model.send(.plugins(action: .skipCoreUpgrade(digest: offer.digest)))
                 } label: {
                     Text(.CoreUpgrade1.coreUpgradeSkipVersion).frame(maxWidth: .infinity)
                 }
@@ -307,14 +307,14 @@ private struct CoreUpgradeStageCard: View {
         switch stage {
         case .inProgress(_, canCancel: true):
             Button {
-                model.send(.cancelCoreUpgrade)
+                model.send(.plugins(action: .cancelCoreUpgrade))
             } label: {
                 Text(.CoreUpgrade2.coreUpgradeCancelUpgrade).frame(maxWidth: .infinity)
             }
             .buttonStyle(WontonButtonStyle(kind: .danger))
         case .uncertain:
             Button {
-                model.send(.refreshCoreUpgrade(manual: false))
+                model.send(.plugins(action: .refreshCoreUpgrade(manual: false)))
             } label: {
                 Text(.CoreUpgrade0.coreUpgradeCheckAgain).frame(maxWidth: .infinity)
             }

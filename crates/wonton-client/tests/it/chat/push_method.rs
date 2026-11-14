@@ -137,8 +137,10 @@ async fn the_default_is_keepalive_and_rejects_push_endpoints() {
     assert_eq!(push_method(&phone.settings()), PushMethod::Keepalive);
     assert!(!phone.home().keep_connection, "还没配对，连接不用保");
     assert!(matches!(
-        phone.dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint()
+        phone.dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint()
+            }
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -146,8 +148,10 @@ async fn the_default_is_keepalive_and_rejects_push_endpoints() {
     // 换成 UnifiedPush 后地址就收了（连接还没建，登记留着等会话）。方式存文件是同步的，设置页和推送状态
     // 由后台任务跟着重算，都等它们变。
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     wait_settings(&phone, "设置页换成 UnifiedPush", |view| {
@@ -156,8 +160,10 @@ async fn the_default_is_keepalive_and_rejects_push_endpoints() {
     .await;
     assert!(!phone.home().keep_connection);
     phone
-        .dispatch(Action::SetPushEndpoint {
-            endpoint: endpoint(),
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushEndpoint {
+                endpoint: endpoint(),
+            },
         })
         .unwrap();
     phone
@@ -168,8 +174,10 @@ async fn the_default_is_keepalive_and_rejects_push_endpoints() {
 
     // 换回保持连接：家里的登记和 pusher 删掉（这个测试没连上，删除等会话就绪时尽力而为），状态回到没登记。
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::Keepalive,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::Keepalive,
+            },
         })
         .unwrap();
     wait_settings(&phone, "设置页换回保持连接", |view| {
@@ -188,8 +196,10 @@ async fn a_chosen_method_survives_a_reopened_core() {
     let dir = tempfile::tempdir().unwrap();
     let phone = Phone::open(dir.path());
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     drop(phone);
@@ -215,8 +225,10 @@ async fn keep_connection_follows_pairing_and_the_method() {
     .await;
 
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     wait_home(&phone, "换成 UnifiedPush 后不保连接", |view| {
@@ -225,8 +237,10 @@ async fn keep_connection_follows_pairing_and_the_method() {
     .await;
 
     phone
-        .dispatch(Action::SetPushMethod {
-            method: PushMethod::Keepalive,
+        .dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::Keepalive,
+            },
         })
         .unwrap();
     wait_home(&phone, "换回保持连接", |view| {
@@ -246,7 +260,11 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
     let bot = home.bot("hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room.send_text("在吗").await.expect("Bot 发消息");
     // 先等这条从同步到了手机上（房间预览里出现），这里只可能由那次后台同步写进来；通知要在这个基础上再取一次
@@ -281,8 +299,10 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
     // 被当成“已移除的服务器”误报（点通知先弹“服务器已移除”的盲测 11-12）。
     assert_eq!(notice.2.as_deref(), Some("1"));
     phone
-        .dispatch(Action::SwitchServer {
-            id: notice.2.expect("server_id 已断言"),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer {
+                id: notice.2.expect("server_id 已断言"),
+            },
         })
         .expect("点通知要能按通知里的槽位号切到那台服务器");
 
@@ -290,11 +310,19 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
     own_message_is_not_notified(&phone, &bot_room, room_id.as_str()).await;
 
     // 回到前台清空：主人看得见界面，通知都用不上了。
-    phone.dispatch(Action::AppForegrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppForegrounded,
+        })
+        .unwrap();
     assert!(phone.chat().background_notifications.is_empty());
 
     // 后台的网络变化不是回到前台：不清空、继续收集。
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     bot_room.send_text("还在").await.expect("Bot 再发一条");
     phone
         .wait_chat("重新开始收集", |view| {
@@ -312,8 +340,10 @@ async fn background_messages_are_collected_and_cleared_on_foreground() {
         })
         .await;
     phone
-        .dispatch(Action::NetworkChanged {
-            network: DeviceNetwork::Wifi,
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::NetworkChanged {
+                network: DeviceNetwork::Wifi,
+            },
         })
         .unwrap();
     assert!(
@@ -339,7 +369,11 @@ async fn a_late_room_key_replaces_the_unavailable_background_notification() {
     let bot = home.bot_via(hold.url(), "hermes", "Hermes").await;
     let room_id = accept_the_bots_invite(&home, &phone, &bot).await;
 
-    phone.dispatch(Action::AppBackgrounded).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
     hold.hold(true);
     let bot_room = bot.open_room(&room_id).await.expect("Bot 打开私聊");
     bot_room.send_text("在吗").await.expect("Bot 发消息");

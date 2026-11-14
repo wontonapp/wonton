@@ -35,6 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import app.wonton.protocol.Action
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.CandidatePlugin
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.TabCandidate
@@ -165,7 +166,7 @@ private fun PanelEntries(panel: ChatPanelState, tabs: PagesState) {
                             onDragCancel = { dragging = null },
                             onDragEnd = {
                                 if (destination != index) {
-                                    tabs.send(Action.MovePanelPage(panel.scope, item.tab, destination.toUInt()))
+                                    movePanelEntry(panel, tabs, item.tab, destination)
                                 }
                                 dragging = null
                             },
@@ -181,10 +182,12 @@ private fun PanelEntries(panel: ChatPanelState, tabs: PagesState) {
                     .semantics(mergeDescendants = true) {
                         customActions = buildList {
                             if (index > 0) add(CustomAccessibilityAction(moveUp) {
-                                tabs.send(Action.MovePanelPage(panel.scope, item.tab, (index - 1).toUInt())); true
+                                movePanelEntry(panel, tabs, item.tab, index - 1)
+                                true
                             })
                             if (index < panel.pages.lastIndex) add(CustomAccessibilityAction(moveDown) {
-                                tabs.send(Action.MovePanelPage(panel.scope, item.tab, (index + 1).toUInt())); true
+                                movePanelEntry(panel, tabs, item.tab, index + 1)
+                                true
                             })
                         }
                     }
@@ -202,11 +205,21 @@ private fun PanelEntries(panel: ChatPanelState, tabs: PagesState) {
                 )
                 WontonIconButton(
                     WontonIcon.Trash, stringResource(R.string.panel_remove),
-                    { tabs.send(Action.RemovePanelPage(panel.scope, item.tab)) }, tint = colors.danger.toColor(),
+                    {
+                        tabs.send(
+                            Action.Pages(
+                                PageAction.RemovePanelPage(panel.scope, item.tab),
+                            ),
+                        )
+                    },
                 )
             }
         }
     }
+}
+
+private fun movePanelEntry(panel: ChatPanelState, tabs: PagesState, tab: TabRef, destination: Int) {
+    tabs.send(Action.Pages(PageAction.MovePanelPage(panel.scope, tab, destination.toUInt())))
 }
 
 /** 行首的来源图标：公网网页是地球，插件页是插件自己的图标。 */
@@ -244,7 +257,9 @@ private fun CandidateRow(candidate: TabCandidate, tabs: PagesState, panel: ChatP
     val plugin = candidate.plugin ?: return
     Row(
         Modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
-            .clickable(role = Role.Button) { tabs.send(Action.AddPanelPage(panel.scope, candidate.tab)) }
+            .clickable(role = Role.Button) {
+                tabs.send(Action.Pages(PageAction.AddPanelPage(panel.scope, candidate.tab)))
+            }
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12),
@@ -285,7 +300,7 @@ private fun UrlDialog(tabs: PagesState, panel: ChatPanelState, onDismiss: () -> 
                 onClick = {
                     val typed = url.trim()
                     val full = if ("://" in typed) typed else "https://$typed"
-                    tabs.send(Action.AddPanelPage(panel.scope, TabRef.Url(full)))
+                    tabs.send(Action.Pages(PageAction.AddPanelPage(panel.scope, TabRef.Url(full))))
                     onDismiss()
                 },
             ),

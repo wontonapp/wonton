@@ -18,9 +18,10 @@ use std::time::{Duration, Instant};
 use wonton_protocol::{TimelineAction, TimelineTarget};
 
 use wonton_client::{
-    Action, ChatAccount, ClientCore, FileCard, FileId, FileInfo, FileSource, HomeStatus,
-    MessageContent, SecretString, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage,
-    TimelineSubscription, TransferDirection, TransferState, UploadSource,
+    Action, ChatAccount, ClientCore, FileAction, FileCard, FileId, FileInfo, FileSource,
+    HomeAction, HomeStatus, MessageContent, SecretString, TimelineContent, TimelineDiff,
+    TimelineItem, TimelineMessage, TimelineSubscription, TransferDirection, TransferState,
+    UploadSource,
 };
 
 /// 真实模型要想一会儿，还可能先说一句再调工具。
@@ -129,13 +130,15 @@ async fn resume_after_restart(data_dir: &str, room: &str) -> Outcome<()> {
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
 
     let core = ClientCore::new(data_dir.to_owned()).map_err(|e| e.to_string())?;
-    core.dispatch(Action::UploadFile {
-        source: UploadSource::Path {
-            path: path.to_string_lossy().into_owned(),
+    core.dispatch(Action::Files {
+        action: FileAction::UploadFile {
+            source: UploadSource::Path {
+                path: path.to_string_lossy().into_owned(),
+            },
+            name: "大文件.bin".to_owned(),
+            mime_type: None,
+            room: Some(room.to_owned()),
         },
-        name: "大文件.bin".to_owned(),
-        mime_type: None,
-        room: Some(room.to_owned()),
     })
     .map_err(|e| format!("上传被拒绝：{e}"))?;
     let upload_at = kill_midway(core, TransferDirection::Upload).await?;
@@ -144,8 +147,10 @@ async fn resume_after_restart(data_dir: &str, room: &str) -> Outcome<()> {
     let file = transfer.file.ok_or("做完的上传没有编号")?;
     println!("✓ 上传到 {upload_at} 字节时杀掉，重启后接着传完");
 
-    core.dispatch(Action::DownloadFile { id: file })
-        .map_err(|e| format!("下载被拒绝：{e}"))?;
+    core.dispatch(Action::Files {
+        action: FileAction::DownloadFile { id: file },
+    })
+    .map_err(|e| format!("下载被拒绝：{e}"))?;
     let download_at = kill_midway(core, TransferDirection::Download).await?;
     let core = ClientCore::new(data_dir.to_owned()).map_err(|e| e.to_string())?;
     let transfer = wait_named(&core, "大文件.bin", TransferDirection::Download).await?;
@@ -218,9 +223,11 @@ async fn wait_named(
 }
 
 async fn connect(core: &Arc<ClientCore>, code: &str, bot: &str) -> Outcome<String> {
-    core.dispatch(Action::PairHome {
-        code: SecretString::new(code),
-        device_name: "file-smoke".to_owned(),
+    core.dispatch(Action::Home {
+        action: HomeAction::PairHome {
+            code: SecretString::new(code),
+            device_name: "file-smoke".to_owned(),
+        },
     })
     .map_err(|e| format!("配对被拒绝：{e}"))?;
     let deadline = Instant::now() + SETUP;
@@ -410,8 +417,10 @@ async fn card(core: &Arc<ClientCore>, id: &FileId) -> Outcome<FileInfo> {
 }
 
 async fn download(core: &Arc<ClientCore>, info: &FileInfo) -> Outcome<Vec<u8>> {
-    core.dispatch(Action::DownloadFile {
-        id: info.id.clone(),
+    core.dispatch(Action::Files {
+        action: FileAction::DownloadFile {
+            id: info.id.clone(),
+        },
     })
     .map_err(|e| format!("下载被拒绝：{e}"))?;
     let transfer = wait_transfer(core, TransferDirection::Download).await?;
@@ -474,13 +483,15 @@ async fn play(core: &Arc<ClientCore>, id: &FileId, bytes: &[u8]) -> Outcome<()> 
 async fn upload(core: &Arc<ClientCore>, data_dir: &str, room: &str) -> Outcome<FileId> {
     let path = std::path::Path::new(data_dir).join("测试图.png");
     std::fs::write(&path, green_png()).map_err(|e| e.to_string())?;
-    core.dispatch(Action::UploadFile {
-        source: UploadSource::Path {
-            path: path.to_string_lossy().into_owned(),
+    core.dispatch(Action::Files {
+        action: FileAction::UploadFile {
+            source: UploadSource::Path {
+                path: path.to_string_lossy().into_owned(),
+            },
+            name: "测试图.png".to_owned(),
+            mime_type: Some("image/png".to_owned()),
+            room: Some(room.to_owned()),
         },
-        name: "测试图.png".to_owned(),
-        mime_type: Some("image/png".to_owned()),
-        room: Some(room.to_owned()),
     })
     .map_err(|e| format!("上传被拒绝：{e}"))?;
     let transfer = wait_transfer(core, TransferDirection::Upload).await?;

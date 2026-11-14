@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginStartState
@@ -60,7 +61,7 @@ internal fun PluginStatusNotice(
     onAction: (Action) -> Unit,
     startingText: String = stringResource(R.string.tab_starting),
 ) {
-    val launch = { onAction(Action.StartPlugin(pluginId)) }
+    val launch = { onAction(Action.Plugins(PluginAction.StartPlugin(pluginId))) }
     when (start) {
         is PluginStartState.Starting -> PluginStarting(startingText)
         is PluginStartState.Failed -> key(pluginId, start.problem) {

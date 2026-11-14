@@ -12,7 +12,7 @@ struct OnboardingModelStepView: View {
             if let problem = step.problem {
                 ProblemNotice(problem: problem.onboardingProblem)
                     .id("onboarding-model-problem")
-                Button(String(localized: .Common.commonRetry)) { send(.refreshOnboarding) }
+                Button(String(localized: .Common.commonRetry)) { send(.onboarding(action: .refreshOnboarding)) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
             if let settings = step.settings {
@@ -24,13 +24,13 @@ struct OnboardingModelStepView: View {
             if step.hasConfiguredModels {
                 StepOptionRow(title: String(localized: .Onboarding4.onboardingModelUseCurrent),
                               isSelected: step.choice == .current) {
-                    send(.useCurrentModel)
+                    send(.onboarding(action: .useCurrentModel))
                 }
             }
             ForEach(step.logins, id: \.id) { login in
                 StepOptionRow(title: String(localized: .Onboarding5.onboardingModelUseLogin(login.title)),
                               isSelected: isLoginSelected(login.id)) {
-                    send(.chooseModelLogin(id: login.id))
+                    send(.onboarding(action: .chooseModelLogin(id: login.id)))
                 }
             }
         }

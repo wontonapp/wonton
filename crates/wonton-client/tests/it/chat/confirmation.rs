@@ -59,13 +59,15 @@ pub(crate) async fn send(room: &ChatRoom, content: serde_json::Value) {
 
 fn answer(phone: &Phone, id: &str, answer: Answer) {
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: id.to_owned(),
-            answer,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
-            devices: Vec::new(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: id.to_owned(),
+                answer,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
 }
@@ -98,8 +100,10 @@ pub(crate) async fn joined_direct_chat(phone: &Phone, peer: &MatrixSession) -> O
         })
         .await;
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     phone

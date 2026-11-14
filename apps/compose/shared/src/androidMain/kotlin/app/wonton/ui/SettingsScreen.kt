@@ -17,6 +17,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.FriendsAction
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
@@ -49,7 +52,7 @@ fun SettingsPage(
     val core = plugins.core
     val appLock by remember(core) { core.appLockUpdates() }.collectAsState(remember(core) { core.appLock() })
     // 好友项只在列表取到过以后出现；进设置先取一次。
-    LaunchedEffect(core) { core.send(Action.RefreshFriends) }
+    LaunchedEffect(core) { core.send(Action.Friends(FriendsAction.RefreshFriends)) }
     val back = { onSubpage(subpage.parent()) }
     val version = appVersion()
     var rejection by remember { mutableStateOf<Problem?>(null) }
@@ -79,7 +82,7 @@ fun SettingsPage(
         }) { SettingsScreen(settings, version, onSubpage) }
         else -> ServerSettingsPage(plugins, home, chat, subpage, onSubpage)
     }
-    chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.DismissChatProblem) } }
+    chat.problem?.let { ProblemDialog(it.problem) { core.send(Action.Chat(ChatAction.DismissChatProblem)) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
@@ -101,7 +104,9 @@ private fun SettingsScreen(settings: SettingsViewModel, version: String, onSubpa
             }
         }
         onboarding.view.problem?.let { problem ->
-            OnboardingProblem(problem.onboardingTitle(), problem.message) { onboarding.send(Action.RefreshOnboarding) }
+            OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                onboarding.send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+            }
         }
     }
     if (choosingAgent) DefaultAgentSelection { choosingAgent = false }
@@ -170,7 +175,7 @@ private fun SettingsEntryRow(
             onSubpage(SettingsSubpage.BACKUP)
         }
         SettingsEntry.RestartOnboarding -> WontonRow(stringResource(R.string.settings_show_setup_again)) {
-            onboarding.send(Action.RestartOnboarding)
+            onboarding.send(Action.Onboarding(OnboardingAction.RestartOnboarding))
         }
         SettingsEntry.About -> WontonRow(stringResource(R.string.settings_about), version, showsForward = true) {
             onSubpage(SettingsSubpage.ABOUT)

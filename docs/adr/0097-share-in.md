@@ -9,7 +9,7 @@
 
 主人要能从系统的分享面板把照片、文件、文字和链接分享进云吞，iOS 和 Android 都要。改之前：
 
-- Android 只接 `text/plain` 的 `ACTION_SEND`，进来后用 `Action::AskAgent` 直接发给默认 Agent，不经过输入框、不带附件；
+- Android 只接 `text/plain` 的 `ACTION_SEND`，进来后用 `ChatAction::AskAgent` 直接发给默认 Agent，不经过输入框、不带附件；
   没配对或引导没走完时静默丢掉。
 - iOS 没有分享扩展。数据目录在 App 私有的 Application Support 里，扩展看不到。
 

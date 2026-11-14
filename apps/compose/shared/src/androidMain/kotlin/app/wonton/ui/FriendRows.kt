@@ -20,6 +20,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import app.wonton.protocol.Action
+import app.wonton.protocol.FriendsAction
 import app.wonton.protocol.FriendBlock
 import app.wonton.protocol.FriendBlockScope
 import app.wonton.protocol.FriendBlockTarget
@@ -60,7 +61,7 @@ internal fun FriendList(
         FriendRows(friends, onMenu, onAdd)
         FriendGroups(friends, onNewGroup, onRenameGroup, onDeleteGroup)
         BlockedSection(friends.blocks(), friends.canBlockFederation, onBlockServer) {
-            onAction(Action.UnblockFriend(it.target, it.scope))
+            onAction(Action.Friends(FriendsAction.UnblockFriend(it.target, it.scope)))
         }
     }
 }
@@ -74,13 +75,17 @@ private fun FriendRequestRows(friends: FriendsViewModel, onAction: (Action) -> U
                 if (index > 0) WontonSeparator()
                 IncomingFriendRequestRow(
                     row,
-                    { onAction(Action.ApproveFriendRequest(row.roomId)) },
-                    { onAction(Action.RejectFriendRequest(row.roomId)) },
+                    { onAction(Action.Friends(FriendsAction.ApproveFriendRequest(row.roomId))) },
+                    { onAction(Action.Friends(FriendsAction.RejectFriendRequest(row.roomId))) },
                 )
             }
             friends.outgoing.forEachIndexed { index, row ->
                 if (friends.incoming.isNotEmpty() || index > 0) WontonSeparator()
-                OutgoingFriendRequestRow(row) { onAction(Action.CancelFriendRequest(row.roomId)) }
+                OutgoingFriendRequestRow(row) {
+                    onAction(
+                        Action.Friends(FriendsAction.CancelFriendRequest(row.roomId)),
+                    )
+                }
             }
         }
     }

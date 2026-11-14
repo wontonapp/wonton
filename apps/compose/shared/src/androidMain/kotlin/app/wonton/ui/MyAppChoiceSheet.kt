@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.MyAppRef
@@ -38,7 +39,7 @@ internal fun MyAppChoiceSheet(plugin: InstalledPlugin, onDismiss: () -> Unit) {
             val available = plugin.tabChoices.filter { choice -> choice.tab !in mine }
             available.forEach { choice ->
                 WontonRow(choice.title, onClick = {
-                    close { pages.send(Action.AddMyApp(MyAppRef.Page(choice.tab), null, null)) }
+                    close { pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(choice.tab), null, null))) }
                 })
             }
         }
@@ -53,8 +54,13 @@ internal fun MyAppAddButton(plugin: InstalledPlugin) {
     WontonButton(stringResource(R.string.myapp_add), {
         val mine = pages.plugins.viewModel.sidebar.apps.mapNotNull { it.tab }.toSet()
         val choices = plugin.tabChoices.filter { it.tab !in mine }
-        if (choices.size == 1) pages.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
-        else if (choices.isNotEmpty()) choosing = true
+        if (choices.size == 1) {
+            pages.send(
+                Action.Pages(
+                    PageAction.AddMyApp(MyAppRef.Page(choices.single().tab), null, null),
+                ),
+            )
+        } else if (choices.isNotEmpty()) choosing = true
     })
     if (choosing) MyAppChoiceSheet(plugin) { choosing = false }
 }
@@ -78,8 +84,8 @@ internal fun MyAppsControls(plugin: InstalledPlugin) {
                     Text(choice.title, Modifier.weight(1f), style = WontonTheme.typography.body,
                         color = WontonTheme.colors.textPrimary.toColor())
                     WontonSwitch(mine, { on ->
-                        if (on) pages.send(Action.AddMyApp(MyAppRef.Page(choice.tab), null, null))
-                        else pages.send(Action.RemoveMyApp(MyAppRef.Page(choice.tab)))
+                        if (on) pages.send(Action.Pages(PageAction.AddMyApp(MyAppRef.Page(choice.tab), null, null)))
+                        else pages.send(Action.Pages(PageAction.RemoveMyApp(MyAppRef.Page(choice.tab))))
                     })
                 }
             }

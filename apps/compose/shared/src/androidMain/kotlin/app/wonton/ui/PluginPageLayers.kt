@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.TabPage
@@ -82,6 +83,6 @@ private fun PageOverlays(
     }
     PluginPageChrome(state.tab, pages, viewport.safe, bannerTop, shortStatus(page), state.capsule, state.controller,
         takeover, hint = callRelayHint(state.tab, pages),
-        onClose = { state.controller.closeCustomView(); pages.send(Action.ClosePage) },
-        onReload = { pages.send(Action.ReloadTab(state.place)) }, onDetails = onDetails)
+        onClose = { state.controller.closeCustomView(); pages.send(Action.Pages(PageAction.ClosePage)) },
+        onReload = { pages.send(Action.Pages(PageAction.ReloadTab(state.place))) }, onDetails = onDetails)
 }

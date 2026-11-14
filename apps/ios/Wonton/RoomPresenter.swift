@@ -51,7 +51,7 @@ final class RoomPresenter {
             cover = Cover(content: .player(info))
         case .download:
             waiting = (info, after)
-            files.send(.downloadFile(id: info.id))
+            files.send(.files(action: .downloadFile(id: info.id)))
         case let .open(path):
             show(path, after)
         case .wait:

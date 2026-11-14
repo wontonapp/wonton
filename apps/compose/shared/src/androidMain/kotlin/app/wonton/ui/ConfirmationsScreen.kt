@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotContactAction
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.BotView
 import app.wonton.protocol.ConfirmationsViewModel
 import app.wonton.ui.design.WontonPushedBar
@@ -55,7 +57,7 @@ internal fun ConfirmationsScreen(core: ClientCore, cardId: String, onBack: () ->
         when {
             view.loading -> LoadingView()
             view.problem != null && cards.isEmpty() -> ProblemView(view.problem!!.problem) {
-                rejection = core.send(Action.RetryConfirmations)
+                rejection = core.send(Action.Chat(ChatAction.RetryConfirmations))
             }
             else -> Column(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).wontonContentPadding()
@@ -63,7 +65,7 @@ internal fun ConfirmationsScreen(core: ClientCore, cardId: String, onBack: () ->
                 verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
             ) {
                 view.problem?.let { problem -> ProblemView(problem.problem) {
-                    rejection = core.send(Action.RetryConfirmations)
+                    rejection = core.send(Action.Chat(ChatAction.RetryConfirmations))
                 } }
                 if (cards.isEmpty()) Text(stringResource(R.string.confirmations_empty))
                 cards.forEach { card -> ConfirmationCardView(card) { rejection = core.send(it) } }
@@ -98,7 +100,7 @@ fun ConfirmationsScreen(
         val problem = view.problem
         when {
             problem != null && view.pending.isEmpty() && view.finished.isEmpty() && view.contactRequests.isEmpty() ->
-                ProblemView(problem.problem) { onAction(Action.RetryConfirmations) }
+                ProblemView(problem.problem) { onAction(Action.Chat(ChatAction.RetryConfirmations)) }
             view.loading ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             view.pending.isEmpty() && view.finished.isEmpty() && view.contactRequests.isEmpty() &&
@@ -126,7 +128,7 @@ private fun ConfirmationsList(
         (contactView.state as? app.wonton.protocol.BotContactsState.Failed)?.let { failure ->
             item(key = "contact-load-failure") {
                 ProblemRow(failure.problem()) {
-                    contactView.bot?.let { onAction(Action.RefreshBotContacts(it)) }
+                    contactView.bot?.let { onAction(Action.BotContacts(BotContactAction.RefreshBotContacts(it))) }
                 }
             }
         }
@@ -136,7 +138,7 @@ private fun ConfirmationsList(
         }) { index -> ConfirmationContactRow(view.contactRequests[index], bots, contacts, onAction) }
         view.problem?.let { problem ->
             item(key = "problem") {
-                ProblemRow(problem.problem) { onAction(Action.RetryConfirmations) }
+                ProblemRow(problem.problem) { onAction(Action.Chat(ChatAction.RetryConfirmations)) }
                 WontonSeparator()
             }
         }

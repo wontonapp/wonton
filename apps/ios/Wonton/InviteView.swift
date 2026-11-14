@@ -32,8 +32,8 @@ struct InviteView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .wontonPushedScreen(String(localized: .Invite.inviteTitle), usesSystemToolbar: true)
-        .task { model.send(.inviteDevice) }
-        .onDisappear { model.send(.closeDeviceInvite) }
+        .task { model.send(.home(action: .inviteDevice)) }
+        .onDisappear { model.send(.home(action: .closeDeviceInvite)) }
     }
 
     private var giving: Bool { chat.viewModel.encryption.keyHandoff == .giving }
@@ -49,11 +49,11 @@ struct InviteView: View {
             }
         case let .ready(code, expiresAtMs):
             InviteCode(code: code, expiresAt: Date(timeIntervalSince1970: Double(expiresAtMs) / 1000)) {
-                model.send(.inviteDevice)
+                model.send(.home(action: .inviteDevice))
             }
         case let .failed(_, message):
             WontonNotice(icon: .warning, title: String(localized: .Invite.inviteFailedTitle), lines: [message]) {
-                Button(String(localized: .Invite.inviteTryAgain)) { model.send(.inviteDevice) }
+                Button(String(localized: .Invite.inviteTryAgain)) { model.send(.home(action: .inviteDevice)) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }

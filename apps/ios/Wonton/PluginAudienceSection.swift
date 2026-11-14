@@ -64,9 +64,7 @@ struct InstalledPluginAudience: View {
                 Task {
                     do {
                         updated(
-                            try await model.core.updatePluginAudience(
-                                action: .setPluginAudience(id: id, audience: selected)
-                            )
+                            try await model.core.updatePluginAudience(id: id, audience: selected)
                         )
                         problem = nil
                     } catch { problem = error.problem }

@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PortMappingState
@@ -72,7 +73,9 @@ internal fun PortMappingSection(plugins: PluginsState, installed: InstalledPlugi
                     checked = mapping?.enabled ?: false,
                     onCheckedChange = { enabled ->
                         if (enabled) permission?.request { notificationGranted = it }
-                        problem = plugins.core.send(Action.SetPortMapping(pluginId = installed.id, enabled = enabled))
+                        problem = plugins.core.send(
+                            Action.Plugins(PluginAction.SetPortMapping(pluginId = installed.id, enabled = enabled)),
+                        )
                     },
                     modifier = Modifier.widthIn(min = WontonTheme.size.target)
                         .semantics { contentDescription = title },

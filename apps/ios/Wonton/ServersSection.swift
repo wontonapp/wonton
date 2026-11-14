@@ -14,7 +14,7 @@ struct ServersSection: View {
         WontonGroup {
             ForEach(model.servers.servers, id: \.id) { server in
                 Button {
-                    if !server.current { model.send(.switchServer(id: server.id)) }
+                    if !server.current { model.send(.home(action: .switchServer(id: server.id))) }
                 } label: {
                     HStack(spacing: 0) {
                         WontonRow(title: server.name.localizedDisplayName)
@@ -36,7 +36,7 @@ struct ServersSection: View {
                 }
                 WontonSeparator()
             }
-            Button { model.send(.addServer) } label: {
+            Button { model.send(.home(action: .addServer)) } label: {
                 HStack(spacing: WontonTheme.spacing.s12) {
                     WontonIcon.add.view(size: WontonTheme.size.iconSmall)
                     Text(.Servers.serversAdd).wontonText(WontonTheme.typography.body)
@@ -58,7 +58,7 @@ struct ServersSection: View {
             TextField(String(localized: .Servers.serversName), text: $name)
             Button(.Common.commonCancel, role: .cancel) { renaming = nil }
             Button(.Common.commonSave) {
-                if let renameID { model.send(.renameServer(id: renameID, name: name)) }
+                if let renameID { model.send(.home(action: .renameServer(id: renameID, name: name))) }
                 renaming = nil
             }
             .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -78,7 +78,7 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
-                    if let id = server?.id { model.send(.removeServer(id: id)) }
+                    if let id = server?.id { model.send(.home(action: .removeServer(id: id))) }
                     removing.wrappedValue = nil
                 }
             ]

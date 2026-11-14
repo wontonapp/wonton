@@ -11,11 +11,11 @@ struct ConfirmationsPage: View {
         ConfirmationsListView(
             view: model.viewModel, bots: chat.viewModel.bots, plugins: plugins,
             answer: { card, choice, secrets, settings, devices in
-                chat.send(.answerConfirmation(id: card.card.id, answer: choice.answer,
-                    choiceId: choice.choiceId, secrets: secrets, settings: settings, devices: devices))
+                chat.send(.chat(action: .answerConfirmation(id: card.card.id, answer: choice.answer,
+                    choiceId: choice.choiceId, secrets: secrets, settings: settings, devices: devices)))
             },
-            stopWindow: { chat.send(.stopConfirmationWindow(id: $0.card.id)) },
-            retry: { chat.send(.retryConfirmations) },
+            stopWindow: { chat.send(.chat(action: .stopConfirmationWindow(id: $0.card.id))) },
+            retry: { chat.send(.chat(action: .retryConfirmations)) },
             approveContact: { request in
                 if request.contact.remote == nil {
                     model.act(on: request, approve: true, chat: chat)

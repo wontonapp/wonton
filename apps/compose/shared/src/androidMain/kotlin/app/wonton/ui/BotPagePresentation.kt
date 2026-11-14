@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.runtime.Composable
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
@@ -16,7 +17,7 @@ internal fun BotPageDisclosure(
         BotWebLoginDisclosure(
             onContinue = onContinue,
             onCancel = {
-                cancel?.invoke() ?: pages.send(Action.ClosePage)
+            cancel?.invoke() ?: pages.send(Action.Pages(PageAction.ClosePage))
             },
         )
     }

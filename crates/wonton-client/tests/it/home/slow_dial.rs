@@ -18,8 +18,10 @@ const LAG: Duration = Duration::from_millis(300);
 /// 等连上，顺手记下中途报出过的最多失败次数。
 async fn connect(phone: &Phone, home: &Home, slow: &SlowUdp) -> u32 {
     phone
-        .dispatch(Action::ConnectHome {
-            ticket: home.ticket_at(slow.addr()),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: home.ticket_at(slow.addr()),
+            },
         })
         .unwrap();
     let most = Arc::new(AtomicU32::new(0));

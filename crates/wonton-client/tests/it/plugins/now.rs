@@ -54,7 +54,9 @@ fn upgrade_path(id: &str) -> String {
 async fn connected_with_store(rig: &Rig) {
     rig.connect();
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.wait_for(|view| view.installed.is_some() && view.store.is_some())
         .await;
@@ -78,8 +80,10 @@ async fn one_tap_install_starts_without_a_confirmation_page() {
     assert!(view.confirmation.is_none() && view.pending.is_empty());
 
     rig.app
-        .dispatch(Action::InstallNow {
-            source: "github:owner/app.photos".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallNow {
+                source: "github:owner/app.photos".to_owned(),
+            },
         })
         .unwrap();
     let state = rig
@@ -115,18 +119,22 @@ async fn one_tap_upgrade_asks_when_permissions_grow_and_clears_on_confirm() {
     assert!(view.sidebar.apps[0].badge.update);
 
     rig.app
-        .dispatch(Action::UpgradeNow {
-            plugin_id: PHOTOS.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeNow {
+                plugin_id: PHOTOS.to_owned(),
+            },
         })
         .unwrap();
     let view = rig.wait_for(|view| view.confirmation.is_some()).await;
     assert!(view.pending.is_empty(), "{:?}", view.pending);
 
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview: taking_confirmation(&view, PHOTOS),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: taking_confirmation(&view, PHOTOS),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let state = rig
@@ -164,7 +172,11 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
     connected_with_store(&rig).await;
     rig.wait_for(|view| view.updatable.len() == 3).await;
 
-    rig.app.dispatch(Action::UpgradeAll).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeAll,
+        })
+        .unwrap();
     // 不用拿主意的直接开始做完；要拿主意的排进确认页，一次一条。
     let state = rig
         .task("app.plain", |state| {
@@ -178,10 +190,12 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
     taking_confirmation(&view, "app.risky");
 
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview: taking_confirmation(&view, "app.risky"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: taking_confirmation(&view, "app.risky"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let view = rig
@@ -191,10 +205,12 @@ async fn upgrade_all_starts_the_plain_ones_and_queues_the_rest() {
         .await;
 
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview: taking_confirmation(&view, "app.risky2"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: taking_confirmation(&view, "app.risky2"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     rig.wait_for(|view| view.confirmation.is_none()).await;
@@ -214,9 +230,17 @@ async fn dismissing_the_confirmation_skips_that_one() {
     connected_with_store(&rig).await;
     rig.wait_for(|view| view.updatable.len() == 1).await;
 
-    rig.app.dispatch(Action::UpgradeAll).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeAll,
+        })
+        .unwrap();
     rig.wait_for(|view| view.confirmation.is_some()).await;
-    rig.app.dispatch(Action::DismissStoreConfirmation).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissStoreConfirmation,
+        })
+        .unwrap();
     let view = rig.wait_for(|view| view.confirmation.is_none()).await;
     assert!(
         !view.tasks.iter().any(|task| task.id == PHOTOS),
@@ -236,8 +260,10 @@ async fn a_failed_preview_leaves_a_failed_task_instead_of_a_page() {
     );
 
     rig.app
-        .dispatch(Action::InstallNow {
-            source: "github:owner/app.photos".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallNow {
+                source: "github:owner/app.photos".to_owned(),
+            },
         })
         .unwrap();
     let state = rig
@@ -253,8 +279,10 @@ async fn a_failed_preview_leaves_a_failed_task_instead_of_a_page() {
 
     // 关掉这条失败的任务，按钮就回到“获取”。
     rig.app
-        .dispatch(Action::DismissPluginTask {
-            id: PHOTOS.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: PHOTOS.to_owned(),
+            },
         })
         .unwrap();
     let view = rig.wait_for(|view| view.tasks.is_empty()).await;
@@ -329,8 +357,10 @@ async fn one_tap_on_a_running_task_is_ignored() {
     connected_with_store(&rig).await;
     rig.core.hold(Method::POST, "/_wonton/api/plugins");
     rig.app
-        .dispatch(Action::InstallNow {
-            source: "github:owner/app.photos".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallNow {
+                source: "github:owner/app.photos".to_owned(),
+            },
         })
         .unwrap();
     rig.wait_for(|view| {
@@ -342,8 +372,10 @@ async fn one_tap_on_a_running_task_is_ignored() {
 
     // 任务在跑：再点一次不起第二条。
     rig.app
-        .dispatch(Action::InstallNow {
-            source: "github:owner/app.photos".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallNow {
+                source: "github:owner/app.photos".to_owned(),
+            },
         })
         .unwrap();
     rig.core.release(Method::POST, "/_wonton/api/plugins");
@@ -387,8 +419,10 @@ async fn upgrade_task_shows_the_stages_the_server_reports() {
     rig.wait_for(|view| view.updatable.len() == 1).await;
 
     rig.app
-        .dispatch(Action::UpgradeNow {
-            plugin_id: PHOTOS.to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradeNow {
+                plugin_id: PHOTOS.to_owned(),
+            },
         })
         .unwrap();
     rig.wait_for(|view| {

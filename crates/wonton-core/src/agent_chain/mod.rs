@@ -571,6 +571,7 @@ impl Chains {
             AgentChainsViewModel {
                 chains: rows.into_iter().map(|(_, row)| row).collect(),
                 revision,
+                action_failure: None,
             }
         });
         // 读者拿到的版本不能比列表旧：读守着一把锁，期间的提交已经生效。

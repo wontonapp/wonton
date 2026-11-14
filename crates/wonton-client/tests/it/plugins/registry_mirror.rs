@@ -48,7 +48,11 @@ fn tests(mirror: &str) -> RegistryMirrorTests {
 async fn opened(rig: &Rig, current: &RegistryMirrorSettings) {
     rig.connected().await;
     rig.core.answer(Method::GET, PATH, ok(current));
-    rig.app.dispatch(Action::RefreshRegistryMirror).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshRegistryMirror,
+        })
+        .unwrap();
     let vm = rig
         .wait_for(|view| view.registry_mirror.settings.is_some() && !view.registry_mirror.loading)
         .await
@@ -70,8 +74,10 @@ async fn seen(rig: &Rig, method: Method, path: &str) -> String {
 async fn save(rig: &Rig, mirror: Option<&str>) {
     rig.core.answer(Method::PUT, PATH, ok(&settings(mirror)));
     rig.app
-        .dispatch(Action::SaveRegistryMirror {
-            mirror: mirror.unwrap_or_default().into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: mirror.unwrap_or_default().into(),
+            },
         })
         .unwrap();
     let vm = rig
@@ -92,7 +98,11 @@ async fn registry_refresh_save_disable_and_test_choices_include_custom_current()
     assert_eq!(update.mirror.as_deref(), Some("custom.example:5000"));
     rig.core
         .answer(Method::POST, TEST, ok(&tests("custom.example:5000")));
-    rig.app.dispatch(Action::TestRegistryMirrors).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::TestRegistryMirrors,
+        })
+        .unwrap();
     let vm = rig
         .wait_for(|view| !view.registry_mirror.testing)
         .await
@@ -116,7 +126,11 @@ async fn registry_failures_remain_visible_and_do_not_discard_settings() {
     opened(&rig, &settings(Some("custom.example"))).await;
     rig.core
         .answer(Method::GET, PATH, core_error(500, "docker", "read detail"));
-    rig.app.dispatch(Action::RefreshRegistryMirror).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshRegistryMirror,
+        })
+        .unwrap();
     let vm = rig
         .wait_for(|v| v.registry_mirror.load_problem.is_some())
         .await
@@ -128,8 +142,10 @@ async fn registry_failures_remain_visible_and_do_not_discard_settings() {
         core_error(400, "invalid_input", "invalid host"),
     );
     rig.app
-        .dispatch(Action::SaveRegistryMirror {
-            mirror: "https://bad.example".into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "https://bad.example".into(),
+            },
         })
         .unwrap();
     let vm = rig
@@ -142,7 +158,11 @@ async fn registry_failures_remain_visible_and_do_not_discard_settings() {
         TEST,
         core_error(403, "cross_site", "owner required"),
     );
-    rig.app.dispatch(Action::TestRegistryMirrors).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::TestRegistryMirrors,
+        })
+        .unwrap();
     let vm = rig
         .wait_for(|v| v.registry_mirror.test_problem.is_some())
         .await
@@ -160,7 +180,11 @@ async fn registry_old_refresh_and_test_cannot_undo_a_save() {
     rig.core.hold(Method::GET, PATH);
     rig.core
         .answer(Method::GET, PATH, ok(&settings(Some("old.example"))));
-    rig.app.dispatch(Action::RefreshRegistryMirror).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshRegistryMirror,
+        })
+        .unwrap();
     let deadline = Instant::now() + WAIT;
     while rig.core.seen(&Method::GET, PATH).len() < 2 {
         assert!(Instant::now() < deadline);
@@ -169,7 +193,11 @@ async fn registry_old_refresh_and_test_cannot_undo_a_save() {
     rig.core.hold(Method::POST, TEST);
     rig.core
         .answer(Method::POST, TEST, ok(&tests("old.example")));
-    rig.app.dispatch(Action::TestRegistryMirrors).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::TestRegistryMirrors,
+        })
+        .unwrap();
     seen(&rig, Method::POST, TEST).await;
     save(&rig, Some("new.example")).await;
     rig.core.release(Method::GET, PATH);
@@ -201,18 +229,26 @@ async fn registry_concurrent_saves_are_rejected_until_the_first_settles() {
     rig.core
         .answer(Method::PUT, PATH, ok(&settings(Some("first.example"))));
     rig.app
-        .dispatch(Action::SaveRegistryMirror {
-            mirror: "first.example".into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "first.example".into(),
+            },
         })
         .unwrap();
     seen(&rig, Method::PUT, PATH).await;
     assert!(matches!(
-        rig.app.dispatch(Action::SaveRegistryMirror {
-            mirror: "second.example".into()
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "second.example".into(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
-    rig.app.dispatch(Action::RefreshRegistryMirror).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshRegistryMirror,
+        })
+        .unwrap();
     rig.core.release(Method::PUT, PATH);
     let vm = rig
         .wait_for(|v| !v.registry_mirror.saving)
@@ -229,8 +265,10 @@ async fn registry_previous_server_responses_do_not_populate_the_new_server() {
     rig.core
         .answer(Method::PUT, PATH, ok(&settings(Some("late.example"))));
     rig.app
-        .dispatch(Action::SaveRegistryMirror {
-            mirror: "late.example".into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "late.example".into(),
+            },
         })
         .unwrap();
     seen(&rig, Method::PUT, PATH).await;
@@ -246,7 +284,11 @@ async fn registry_previous_server_responses_do_not_populate_the_new_server() {
     other
         .core
         .answer(Method::GET, PATH, ok(&settings(Some("new-server.example"))));
-    rig.app.dispatch(Action::RefreshRegistryMirror).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshRegistryMirror,
+        })
+        .unwrap();
     rig.wait_for(|v| v.registry_mirror.settings.is_some()).await;
     rig.core.release(Method::PUT, PATH);
     let subscription = rig.app.subscribe_plugins();
@@ -267,8 +309,10 @@ async fn registry_previous_server_responses_do_not_populate_the_new_server() {
 async fn registry_save_without_a_connection_reports_transport_failure() {
     let rig = Rig::new().await;
     rig.app
-        .dispatch(Action::SaveRegistryMirror {
-            mirror: "custom.example".into(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::SaveRegistryMirror {
+                mirror: "custom.example".into(),
+            },
         })
         .unwrap();
     let vm = rig
@@ -297,14 +341,22 @@ async fn registry_test_refreshes_recommendation_without_replacing_the_selected_m
         }),
     });
     rig.core.answer(Method::POST, TEST, ok(&result));
-    rig.app.dispatch(Action::TestRegistryMirrors).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::TestRegistryMirrors,
+        })
+        .unwrap();
     let view = rig.wait_for(|view| !view.registry_mirror.testing).await;
     let current = view.registry_mirror.settings.unwrap();
     assert_eq!(current.mirror.as_deref(), Some("custom.example"));
     assert!(current.recommended);
     result.docker_hub = None;
     rig.core.answer(Method::POST, TEST, ok(&result));
-    rig.app.dispatch(Action::TestRegistryMirrors).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::TestRegistryMirrors,
+        })
+        .unwrap();
     let view = rig.wait_for(|view| !view.registry_mirror.testing).await;
     let current = view.registry_mirror.settings.unwrap();
     assert!(!current.recommended);

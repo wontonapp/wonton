@@ -58,9 +58,9 @@ final class MatrixLoginBrowser: NSObject {
         self.token = nil
         if let callback {
             let returned = MatrixOidcCallback(loginId: loginId, callbackUrl: callback.absoluteString)
-            send(.completeMatrixOidc(callback: returned))
+            send(.home(action: .completeMatrixOidc(callback: returned)))
         } else if cancelled {
-            send(.cancelMatrixLogin(loginId: loginId))
+            send(.home(action: .cancelMatrixLogin(loginId: loginId)))
         } else {
             failedToOpen = true
         }

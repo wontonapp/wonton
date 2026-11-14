@@ -42,8 +42,10 @@ pub(super) async fn invite_to_group_room(
 
 pub(super) async fn join(phone: &Phone, room_id: &OwnedRoomId) {
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     phone

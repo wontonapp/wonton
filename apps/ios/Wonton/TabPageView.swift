@@ -154,7 +154,7 @@ struct TabPageView: View {
                 page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
                 details: { showsDetails = true },
                 shown: capsuleAllowed, panel: panel,
-                close: close ?? { pages.send(.closePage) }
+                close: close ?? { pages.send(.pages(action: .closePage)) }
             )
             // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
             .padding(.top, panel?.insetTop ?? safe.top)
@@ -187,7 +187,7 @@ struct TabPageView: View {
         } else if let close {
             close()
         } else {
-            pages.send(.closePage)
+            pages.send(.pages(action: .closePage))
         }
     }
 

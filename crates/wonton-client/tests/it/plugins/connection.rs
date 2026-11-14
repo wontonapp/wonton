@@ -69,7 +69,11 @@ async fn an_unreachable_server_is_tried_again_and_stays_out_of_the_plugin_page()
         tokio::time::sleep(Duration::from_millis(5)).await;
     };
     assert_eq!(reconnecting.notice, Some(ConnectionNotice::Connecting));
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     assert_eq!(rig.app.plugins().problem, None);
 }
 
@@ -103,13 +107,19 @@ async fn retrying_reconnects_and_fetches_the_lists_again() {
     let home = FakeHome::start(Vec::new()).await;
     home.core.set_lists(vec![vec![running("app.notes")]]);
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.connect_to(home.ticket());
     stays_rejected(&rig).await;
 
     home.allowed.allow(rig.device());
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| view.problem.is_none() && view.installed.is_some() && view.store.is_some())
         .await;
@@ -121,9 +131,11 @@ async fn retrying_reconnects_and_fetches_the_lists_again() {
 async fn without_a_server_a_task_fails_at_once() {
     let rig = Rig::new().await;
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.photos".to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.photos".to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig
@@ -156,7 +168,9 @@ async fn a_list_only_clears_its_own_problem() {
         core_error(503, "source_unavailable", "连不上 GitHub"),
     );
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.wait_for(|view| view.problem.is_some()).await;
     let polled = rig.core.seen(&Method::GET, "/_wonton/api/plugins").len();
@@ -172,7 +186,11 @@ async fn a_list_only_clears_its_own_problem() {
     );
 
     // 主屏上的重试连商店一起取，问题才清得掉。
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let view = rig
         .wait_for(|view| view.problem.is_none() && view.store.is_some())
         .await;
@@ -200,7 +218,11 @@ async fn an_permission_required_refusal_is_permission_not_transport() {
         "/_wonton/api/plugins",
         core_error(403, "permission_required", "Only the owner"),
     );
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
 }
@@ -219,10 +241,12 @@ async fn a_state_from_a_newer_core_is_not_taken_for_success() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let state = rig
@@ -249,10 +273,12 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let view = rig
@@ -265,16 +291,20 @@ async fn a_dropped_install_waits_for_a_connection_and_then_reports_the_result() 
     assert_eq!(view.tasks[0].state, PluginTaskState::Running);
     // 等连接时既不能清掉任务，也不能对同一个插件再发一次。
     assert!(matches!(
-        rig.app.dispatch(Action::DismissPluginTask {
-            id: "app.photos".to_owned()
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: "app.photos".to_owned(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
     assert!(matches!(
-        rig.app.dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -332,10 +362,12 @@ async fn a_dropped_install_preserves_the_server_failure_category() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let state = rig.task("app.photos", |state| !state.in_progress()).await;
@@ -359,10 +391,12 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
     rig.connected_within(CONNECT_BACKSTOP).await;
     rig.core.hold(Method::POST, "/_wonton/api/plugins");
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
 
@@ -393,8 +427,10 @@ async fn losing_the_network_while_the_request_is_out_waits_at_once() {
         .await;
     assert_eq!(view.tasks[0].state, PluginTaskState::Running);
     assert!(matches!(
-        rig.app.dispatch(Action::DismissPluginTask {
-            id: "app.photos".to_owned()
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: "app.photos".to_owned(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -440,10 +476,12 @@ async fn an_install_that_never_shows_up_is_uncertain_and_points_at_the_installed
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     rig.wait_for(|view| view.tasks.iter().any(|task| task.waiting_for_connection))
@@ -475,9 +513,11 @@ async fn uninstalling_a_broken_plugin_over_a_dropped_connection_is_uncertain() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.photos".to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.photos".to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     let state = rig
@@ -513,8 +553,10 @@ async fn a_failed_start_keeps_the_core_error_category() {
             core_error(502, kind, "镜像拉不到"),
         );
         rig.app
-            .dispatch(Action::StartPlugin {
-                plugin_id: "app.photos".to_owned(),
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::StartPlugin {
+                    plugin_id: "app.photos".to_owned(),
+                },
             })
             .unwrap();
         // 派发时上一次启动的问题先被同一个来源清掉，看到的是这一轮的原因。
@@ -533,7 +575,9 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
     )]]);
     rig.connected().await;
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.wait_for(|view| view.installed.is_some() && view.store.is_some())
         .await;
@@ -543,9 +587,11 @@ async fn pairing_with_another_server_forgets_the_previous_one() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.photos".to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.photos".to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     rig.wait_for(|view| !view.tasks.is_empty()).await;
@@ -598,7 +644,11 @@ async fn switching_servers_does_not_report_connected_before_the_new_proxy() {
     rig.connect_to(next.ticket());
     // `RetryConnection` 触发的重算会唤醒还没被收尾的旧连接 watcher：没有守卫时，它按旧客户端
     // 仍是“已连接”的状态重算视图，把刚写下的“连接中”盖回“已连接”。
-    rig.app.dispatch(Action::RetryConnection).unwrap();
+    rig.app
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     let deadline = Instant::now() + CONNECT_BACKSTOP;
     loop {
         // 等待本身限时：连接挂着不动时视图不来，deadline 要能兜底。

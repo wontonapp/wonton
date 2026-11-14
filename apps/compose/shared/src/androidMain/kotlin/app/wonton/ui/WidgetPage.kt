@@ -14,6 +14,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PortMappingWarning
@@ -53,7 +54,9 @@ internal fun WidgetPageEffects(state: WebPageState, page: TabPage, pages: PagesS
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, state) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && pages.current == state.tab) pages.send(Action.ClosePage)
+            if (event == Lifecycle.Event.ON_STOP && pages.current == state.tab) {
+                pages.send(Action.Pages(PageAction.ClosePage))
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }

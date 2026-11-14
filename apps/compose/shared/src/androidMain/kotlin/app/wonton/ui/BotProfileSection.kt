@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import app.wonton.protocol.BotAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AvatarMediaProblem
 import app.wonton.protocol.BotActivity
@@ -104,7 +105,11 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
                 picked.fold(
                     onSuccess = { result ->
                         when (result) {
-                            is AvatarPick.Ready -> send(Action.SetBotAvatar(bot.bot.pluginId, state, result.upload))
+                            is AvatarPick.Ready -> send(
+                                Action.Bot(
+                                    BotAction.SetBotAvatar(bot.bot.pluginId, state, result.upload),
+                                ),
+                            )
                             AvatarPick.UseVideo -> localProblem = Problem(useVideoText)
                         }
                     },
@@ -127,12 +132,12 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
         ProfileHeader(bot, plugins, busy, editingName, nameDraft, { nameDraft = it },
             onEditName = { editingName = true },
             onSaveName = {
-                send(Action.SetBotName(bot.bot.pluginId, nameDraft))
+                send(Action.Bot(BotAction.SetBotName(bot.bot.pluginId, nameDraft)))
                 editingName = false
             },
             onCancelName = { editingName = false },
             onPickStatic = { pickStatic.launch(PickVisualMediaRequest(PickVisualMedia.ImageOnly)) },
-            onRemoveStatic = { send(Action.ClearBotAvatar(bot.bot.pluginId, null)) },
+            onRemoveStatic = { send(Action.Bot(BotAction.ClearBotAvatar(bot.bot.pluginId, null)) ) },
         )
         StateGrid(bot, plugins, busy) { state ->
             pickingState = state
@@ -145,7 +150,9 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
         if (transcoding) LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth())
         localProblem?.let { problem -> ProfileProblemNotice(problem) { localProblem = null } }
         bot.problem?.let { problem ->
-            ProfileProblemNotice(problem.profileProblem()) { send(Action.DismissBotProfileProblem(bot.bot.pluginId)) }
+            ProfileProblemNotice(problem.profileProblem()) {
+                send(Action.Bot(BotAction.DismissBotProfileProblem(bot.bot.pluginId)))
+            }
         }
         sheetState?.let { state ->
             WontonActionSheet(
@@ -155,7 +162,7 @@ internal fun BotProfileSection(bot: BotView, plugins: PluginsState) {
                         pickState.launch(PickVisualMediaRequest(PickVisualMedia.ImageAndVideo))
                     },
                     WontonSheetAction(stringResource(R.string.bot_avatar_remove), WontonIcon.Trash, isDanger = true) {
-                        send(Action.ClearBotAvatar(bot.bot.pluginId, state))
+                        send(Action.Bot(BotAction.ClearBotAvatar(bot.bot.pluginId, state)))
                     },
                 ),
                 onDismiss = { sheetState = null },

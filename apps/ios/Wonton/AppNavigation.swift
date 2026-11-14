@@ -175,8 +175,8 @@ final class AppNavigation {
         }
         let bot = try primaryBot()
         // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
-        try chat.core.dispatch(action: .dismissChatProblem)
-        try chat.core.dispatch(action: .askAgent(text: text))
+        try chat.core.dispatch(action: .chat(action: .dismissChatProblem))
+        try chat.core.dispatch(action: .chat(action: .askAgent(text: text)))
         try select(.chat)
         // AskAgent 已负责建房和接受邀请，不能再发一次 StartDirectChat。
         chat.openAskedAgentChat(with: bot)

@@ -15,7 +15,7 @@ struct MyAppChoiceSheet: View {
                 let available = plugin.tabChoices.filter { choice in !mine.contains(choice.tab) }
                 ForEach(available) { choice in
                     Button {
-                        pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                        pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                         onDismiss()
                     } label: {
                         Text(choice.title)
@@ -45,9 +45,9 @@ struct MyAppsSection: View {
                     get: { mine.contains(choice.tab) },
                     set: { enabled in
                         if enabled {
-                            pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                            pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                         } else {
-                            pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                            pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
                         }
                     }
                 ))
@@ -69,7 +69,7 @@ struct MyAppAddButton: View {
             let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
             let choices = plugin.tabChoices.filter { !mine.contains($0.tab) }
             if choices.count == 1 {
-                pages.send(.addMyApp(app: .page(tab: choices[0].tab), title: nil, index: nil))
+                pages.send(.pages(action: .addMyApp(app: .page(tab: choices[0].tab), title: nil, index: nil)))
             } else if !choices.isEmpty {
                 choosing = true
             }

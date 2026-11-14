@@ -36,12 +36,16 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
     let address = a.codes.direct_addrs[0];
     let old_slot = phone.servers().servers[0].id.clone();
     phone
-        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+        })
         .unwrap();
     phone
-        .dispatch(Action::RenameServer {
-            id: old_slot.clone(),
-            name: "Home".into(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RenameServer {
+                id: old_slot.clone(),
+                name: "Home".into(),
+            },
         })
         .unwrap();
     let old_tabs = dir
@@ -83,7 +87,9 @@ async fn new_identity_at_the_same_address_pairs_without_clearing_old_data() {
     assert_eq!(phone.servers(), servers);
     assert!(phone.pages().auto_add);
     phone
-        .dispatch(Action::SwitchServer { id: old_slot })
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer { id: old_slot },
+        })
         .unwrap();
     assert!(!phone.pages().auto_add, "A's settings remain usable");
     old_identity_stays_unreachable(&phone, &a_id).await;
@@ -103,7 +109,11 @@ async fn old_identity_stays_unreachable(phone: &Phone, server_id: &str) {
         })
         .await;
     assert!(failed.details.last_failure.is_some());
-    phone.dispatch(Action::RetryConnection).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RetryConnection,
+        })
+        .unwrap();
     phone
         .wait_for(|view| {
             matches!(
@@ -144,13 +154,17 @@ async fn pairing_the_same_identity_directly_uses_a_fresh_slot_and_keeps_its_name
     paired(&phone, &home).await;
     let old = phone.servers().servers[0].id.clone();
     phone
-        .dispatch(Action::RenameServer {
-            id: old.clone(),
-            name: "Home".into(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::RenameServer {
+                id: old.clone(),
+                name: "Home".into(),
+            },
         })
         .unwrap();
     phone
-        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+        })
         .unwrap();
 
     paired(&phone, &home).await;
@@ -185,9 +199,11 @@ async fn invalid_pairing_input_does_not_leave_the_configured_server() {
         Err(CoreError::InvalidInput { .. })
     ));
     assert!(matches!(
-        phone.dispatch(Action::PairHome {
-            code: SecretString::new(home.code(None)),
-            device_name: "  ".into(),
+        phone.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::PairHome {
+                code: SecretString::new(home.code(None)),
+                device_name: "  ".into(),
+            },
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -208,15 +224,25 @@ async fn failed_pairing_in_an_added_slot_can_return_to_the_unchanged_server() {
     paired(&phone, &home).await;
     let before = phone.servers();
     phone
-        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+        })
         .unwrap();
-    phone.dispatch(Action::AddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        })
+        .unwrap();
     phone.pair(&home.code(Some(RejectReason::Expired))).unwrap();
     let (reason, _) = phone.pairing_failure().await;
     assert_eq!(reason, PairingFailure::Expired);
     assert_eq!(phone.servers().servers.len(), 1);
     assert!(phone.servers().adding);
-    phone.dispatch(Action::CancelAddServer).unwrap();
+    phone
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::CancelAddServer,
+        })
+        .unwrap();
     phone
         .wait_for(|view| view.status == HomeStatus::Connected)
         .await;

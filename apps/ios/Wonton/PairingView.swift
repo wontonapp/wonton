@@ -77,7 +77,7 @@ struct PairingView: View {
             if #available(iOS 26, *), model.servers.adding {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(.Common.commonCancel) {
-                        if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
+                        if hasFailedPairing { leaveFailure() } else { model.send(.home(action: .cancelAddServer)) }
                     }
                     .buttonStyle(.automatic)
                 }
@@ -102,7 +102,7 @@ struct PairingView: View {
         }
         .task { await askForCamera() }
         .onDisappear {
-            if hasFailedPairing { model.send(.dismissPairingFailure) }
+            if hasFailedPairing { model.send(.home(action: .dismissPairingFailure)) }
         }
         .onChange(of: model.pairingCode) { _, _ in refusal = nil }
         .onChange(of: scenePhase) { _, phase in
@@ -122,7 +122,7 @@ struct PairingView: View {
         if model.servers.adding {
             HStack {
                 Button(.Common.commonCancel) {
-                    if hasFailedPairing { leaveFailure() } else { model.send(.cancelAddServer) }
+                    if hasFailedPairing { leaveFailure() } else { model.send(.home(action: .cancelAddServer)) }
                 }
                 .wontonNavigationAction()
                 .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
@@ -217,7 +217,7 @@ struct PairingView: View {
         scanConsumed = false
         model.dismissPairingFailure()
         if model.servers.adding {
-            model.send(.cancelAddServer)
+            model.send(.home(action: .cancelAddServer))
         } else {
             onBack?()
         }

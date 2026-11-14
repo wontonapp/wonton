@@ -61,8 +61,10 @@ async fn wait_plugin_status(rig: &Rig, id: &str, status: PluginState) {
 /// 打开一个页面并等它的状态就绪；栈里就有了这一页。
 pub(super) async fn open_ready(rig: &Rig, page_tab: &TabRef, state: TabState) -> PagesViewModel {
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     wait_pages(rig, |view| item(view, page_tab).state == state).await
@@ -110,8 +112,10 @@ async fn pages_subscription_reports_current_changes_and_cancel() {
     wait_pages(&rig, |_view| rig.app.plugins().installed.is_some()).await;
     let page_tab = tab(plugin_id, Some("home"));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     let changed = tokio::time::timeout(Duration::from_secs(5), subscription.next())
@@ -148,8 +152,10 @@ async fn defaults_root_stack_and_my_apps_invariants() {
 
     let plugin_tab = tab(plugin_id, None);
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: plugin_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: plugin_tab.clone(),
+            },
         })
         .unwrap();
     let opened = rig.app.pages();
@@ -161,25 +167,33 @@ async fn defaults_root_stack_and_my_apps_invariants() {
 
     // 根页面一路弹回根；关掉最后一页也回到根。
     rig.app
-        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: TabRef::Chat },
+        })
         .unwrap();
     assert!(rig.app.pages().stack.is_empty());
 
     // 打不开的页面拒绝：没装的插件。
-    assert_invalid(rig.app.dispatch(Action::OpenPage {
-        tab: tab("app.missing", None),
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::OpenPage {
+            tab: tab("app.missing", None),
+        },
     }));
     // 我的应用不收内置页：聊天和应用是侧边栏的固定行。
-    assert_invalid(rig.app.dispatch(Action::AddMyApp {
-        app: MyAppRef::Page { tab: TabRef::Chat },
-        title: None,
-        index: None,
-    }));
-    assert_invalid(rig.app.dispatch(Action::MoveMyApp {
-        app: MyAppRef::Plugin {
-            plugin_id: plugin_id.to_owned(),
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::AddMyApp {
+            app: MyAppRef::Page { tab: TabRef::Chat },
+            title: None,
+            index: None,
         },
-        index: 4,
+    }));
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::MoveMyApp {
+            app: MyAppRef::Plugin {
+                plugin_id: plugin_id.to_owned(),
+            },
+            index: 4,
+        },
     }));
 }
 
@@ -201,12 +215,14 @@ async fn my_apps_add_remove_move_rules_and_sidebar_rows() {
     let one = tab(plugin_id, Some("one"));
     let two = tab(plugin_id, Some("two"));
     wait_my_app(&rig, &one).await;
-    assert_invalid(rig.app.dispatch(Action::AddMyApp {
-        app: MyAppRef::Plugin {
-            plugin_id: plugin_id.to_owned(),
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::AddMyApp {
+            app: MyAppRef::Plugin {
+                plugin_id: plugin_id.to_owned(),
+            },
+            title: None,
+            index: None,
         },
-        title: None,
-        index: None,
     }));
 
     // 加进来的行就是侧边栏的“我的应用”行，开着这个插件的第一页。
@@ -220,10 +236,12 @@ async fn my_apps_add_remove_move_rules_and_sidebar_rows() {
 
     // 排序和越界。
     rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Page { tab: two.clone() },
-            title: Some("页面二".to_owned()),
-            index: None,
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddMyApp {
+                app: MyAppRef::Page { tab: two.clone() },
+                title: Some("页面二".to_owned()),
+                index: None,
+            },
         })
         .unwrap();
     let titles: Vec<String> = rig
@@ -239,15 +257,19 @@ async fn my_apps_add_remove_move_rules_and_sidebar_rows() {
         vec!["标题 app.pages".to_owned(), "页面二".to_owned()]
     );
     rig.app
-        .dispatch(Action::MoveMyApp {
-            app: MyAppRef::Page { tab: two.clone() },
-            index: 0,
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::MoveMyApp {
+                app: MyAppRef::Page { tab: two.clone() },
+                index: 0,
+            },
         })
         .unwrap();
     assert_eq!(rig.app.plugins().sidebar.apps[0].tab.as_ref(), Some(&two));
-    assert_invalid(rig.app.dispatch(Action::MoveMyApp {
-        app: MyAppRef::Page { tab: two.clone() },
-        index: 5,
+    assert_invalid(rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::MoveMyApp {
+            app: MyAppRef::Page { tab: two.clone() },
+            index: 5,
+        },
     }));
 }
 
@@ -270,31 +292,39 @@ async fn removing_my_app_rows_updates_the_sidebar_and_candidates() {
     let two = tab(plugin_id, Some("two"));
     let three = tab(plugin_id, Some("three"));
     rig.app
-        .dispatch(Action::AddMyApp {
-            app: MyAppRef::Page { tab: two.clone() },
-            title: Some("页面二".to_owned()),
-            index: None,
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::AddMyApp {
+                app: MyAppRef::Page { tab: two.clone() },
+                title: Some("页面二".to_owned()),
+                index: None,
+            },
         })
         .unwrap();
     rig.app
-        .dispatch(Action::MoveMyApp {
-            app: MyAppRef::Page { tab: two.clone() },
-            index: 0,
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::MoveMyApp {
+                app: MyAppRef::Page { tab: two.clone() },
+                index: 0,
+            },
         })
         .unwrap();
 
     // 移除再移除报错。
     rig.app
-        .dispatch(Action::RemoveMyApp {
-            app: MyAppRef::Page { tab: three.clone() },
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::RemoveMyApp {
+                app: MyAppRef::Page { tab: three.clone() },
+            },
         })
         .unwrap_err();
 
     // 移除插件行：页面行（页面二）还在，插件的页面回到候选里。
     rig.app
-        .dispatch(Action::RemoveMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: plugin_id.to_owned(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::RemoveMyApp {
+                app: MyAppRef::Plugin {
+                    plugin_id: plugin_id.to_owned(),
+                },
             },
         })
         .unwrap();
@@ -312,8 +342,10 @@ async fn removing_my_app_rows_updates_the_sidebar_and_candidates() {
 
     // 移除最后一个页面行：全空，全部页面回候选。
     rig.app
-        .dispatch(Action::RemoveMyApp {
-            app: MyAppRef::Page { tab: two },
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::RemoveMyApp {
+                app: MyAppRef::Page { tab: two },
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().sidebar.apps.is_empty());
@@ -387,7 +419,11 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
             status,
             vec![page(page_id)],
         )]]);
-        rig.app.dispatch(Action::RefreshPlugins).unwrap();
+        rig.app
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins,
+            })
+            .unwrap();
         let view = wait_pages(&rig, |view| item(view, &page_tab).state == expected).await;
         let tab_page = item(&view, &page_tab);
         assert_eq!(tab_page.state, expected);
@@ -411,7 +447,11 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
         },
         Vec::new(),
     )]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| {
         item(view, &page_tab).state == TabState::PageRemoved
     })
@@ -426,7 +466,11 @@ async fn plugin_states_and_page_removal_map_to_tabs() {
     );
 
     rig.core.set_lists(vec![vec![plugin]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| item(view, &page_tab).state == TabState::Ready).await;
 }
 
@@ -464,7 +508,9 @@ async fn corrupted_config_recovers_and_restart_starts_with_an_empty_stack() {
 
     // 下一次成功的配置改动重写文件，原因消失。
     rig.app
-        .dispatch(Action::SetAutoAddApps { enabled: false })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+        })
         .unwrap();
     assert!(rig.app.pages().problem.is_none());
     rig.reopen();
@@ -497,11 +543,19 @@ async fn cold_start_loading_keeps_cached_plugin_until_a_real_list_arrives() {
     assert_eq!(sidebar.apps.len(), 1);
     assert_eq!(sidebar.apps[0].title, "标题 app.cold");
 
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let removed = wait_pages(&rig, |view| view.uninstalled == ["标题 app.cold"]).await;
     assert!(removed.my_app_candidates.is_empty());
     assert_eq!(removed.uninstalled, vec!["标题 app.cold"]);
-    rig.app.dispatch(Action::DismissUninstalledTabs).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::DismissUninstalledTabs,
+        })
+        .unwrap();
     assert!(rig.app.pages().uninstalled.is_empty());
 }
 
@@ -559,8 +613,10 @@ async fn layout_follows_the_manifest_and_unknown_values_use_inset() {
 
     let page_tab = tab(plugin_id, Some(page_id));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     assert_eq!(
@@ -574,8 +630,10 @@ async fn layout_follows_the_manifest_and_unknown_values_use_inset() {
 
     let unknown_tab = tab(plugin_id, Some("unknown"));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: unknown_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: unknown_tab.clone(),
+            },
         })
         .unwrap();
     assert_eq!(
@@ -592,7 +650,9 @@ async fn closing_pages_pops_in_order_and_reopening_is_the_same_instance() {
         path: "/other".to_owned(),
     };
     rig.app
-        .dispatch(Action::OpenPage { tab: other.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: other.clone() },
+        })
         .unwrap();
     let stack: Vec<TabRef> = rig
         .app
@@ -603,11 +663,19 @@ async fn closing_pages_pops_in_order_and_reopening_is_the_same_instance() {
         .collect();
     assert_eq!(stack, vec![page_tab.clone(), other.clone()]);
 
-    rig.app.dispatch(Action::ClosePage).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::ClosePage,
+        })
+        .unwrap();
     assert_eq!(rig.app.pages().stack.len(), 1);
     assert_eq!(rig.app.pages().stack[0].tab, page_tab);
 
     // 再打开同一页：还是栈里那一份，不新建。
-    rig.app.dispatch(Action::OpenPage { tab: other }).unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: other },
+        })
+        .unwrap();
     assert_eq!(rig.app.pages().stack.len(), 2);
 }

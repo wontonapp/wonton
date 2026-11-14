@@ -17,7 +17,7 @@ pub struct UpdatablePlugin {
     pub icon: Option<PluginIcon>,
 }
 
-/// 核心取好预览、要主人拿主意的一键安装或升级（[`crate::Action::InstallNow`] 一类）：预览已经取好，
+/// 核心取好预览、要主人拿主意的一键安装或升级（[`crate::PluginAction::InstallNow`] 一类）：预览已经取好，
 /// 确认页不再重新取；主人在确认页上改的（可选权限、密钥、设备）跟着预览原样交回。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]

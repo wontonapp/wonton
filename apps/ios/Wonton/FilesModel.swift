@@ -35,12 +35,12 @@ final class FilesModel {
     /// 传完由核心授权给这个房间，再把链接发进去。
     func upload(_ url: URL, room: String) {
         do {
-            send(.uploadFile(
+            send(.files(action: .uploadFile(
                 source: .opaque(handle: try BookmarkFileOpener.handle(for: url)),
                 name: url.lastPathComponent,
                 mimeType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType,
                 room: room
-            ))
+            )))
         } catch {
             reject(String(localized: .File.fileOpenFailed(error.localizedDescription)))
         }

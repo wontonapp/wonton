@@ -3,7 +3,7 @@
 //! 新设备：扫码配对后第一次登录时记下要交接（`ChatStorage::begin_key_handoff`）。账号里有别的已验证设备就自动发确认
 //! 请求，交接页代替“输入恢复密钥”，直到密钥到齐、备份可用。旧设备：“添加设备”页开着时自动接受一个请求；确认仍由
 //! 主人在两边点“相同”，核心不代点。哪种失败都不自动重置、不自动转到恢复密钥，恢复密钥只在主人选“手边没有别的设备”
-//! （`Action::SkipKeyHandoff`）之后给。
+//! （`ChatAction::SkipKeyHandoff`）之后给。
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -62,7 +62,7 @@ fn clear_giving(encryption: &mut EncryptionStatus) -> bool {
 }
 
 impl ChatLink {
-    /// “添加设备”页打开（`Action::InviteDevice`）：接下来来的第一个确认请求自动接受。
+    /// “添加设备”页打开（`HomeAction::InviteDevice`）：接下来来的第一个确认请求自动接受。
     pub(crate) fn open_device_invite(&self) {
         self.handoff_armed.store(true, Ordering::SeqCst);
         self.view.send_if_modified(|view| {
@@ -81,7 +81,7 @@ impl ChatLink {
         });
     }
 
-    /// “添加设备”页关掉（`Action::CloseDeviceInvite`）：之后来的请求照 ADR-0046 由主人手动接受。进行中的确认不受影响，
+    /// “添加设备”页关掉（`HomeAction::CloseDeviceInvite`）：之后来的请求照 ADR-0046 由主人手动接受。进行中的确认不受影响，
     /// 改由确认弹窗显示。
     pub(crate) fn close_device_invite(&self) {
         self.handoff_armed.store(false, Ordering::SeqCst);
@@ -89,7 +89,7 @@ impl ChatLink {
             .send_if_modified(|view| clear_giving(&mut view.encryption));
     }
 
-    /// `Action::SkipKeyHandoff`：主人手边没有别的设备。交接结束，备份页回到恢复密钥那几条路。
+    /// `ChatAction::SkipKeyHandoff`：主人手边没有别的设备。交接结束，备份页回到恢复密钥那几条路。
     pub(crate) fn skip_key_handoff(&self) -> Result<(), CoreError> {
         if receiving(&self.view.borrow().encryption).is_none() {
             return Err(CoreError::InvalidInput {
@@ -129,7 +129,7 @@ impl ChatLink {
     }
 }
 
-/// 交接结束、快照里的确认也一并拿掉（`Action::SkipKeyHandoff`）。
+/// 交接结束、快照里的确认也一并拿掉（`ChatAction::SkipKeyHandoff`）。
 pub(super) fn forget(link: &ChatLink) {
     link.view.send_modify(|view| {
         view.encryption.key_handoff = None;

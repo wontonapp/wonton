@@ -28,8 +28,10 @@ async fn stopped_rig() -> (Rig, TabRef) {
     let page_tab = tab(ID, Some("home"));
     wait_my_app(&rig, &page_tab).await;
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     // 开页面会补一次列表；等它落地，测试后面设的应答才不会被它吃掉。
@@ -44,8 +46,10 @@ async fn stopped_rig() -> (Rig, TabRef) {
 }
 
 fn start(rig: &Rig) -> Result<(), CoreError> {
-    rig.app.dispatch(Action::StartPlugin {
-        plugin_id: ID.to_owned(),
+    rig.app.dispatch(Action::Plugins {
+        action: wonton_protocol::PluginAction::StartPlugin {
+            plugin_id: ID.to_owned(),
+        },
     })
 }
 
@@ -80,8 +84,10 @@ async fn stopped_page_can_be_pinned_selected_and_started_without_optimistic_stat
     assert_eq!(stopped_page.state, TabState::Stopped);
     let reload = stopped_page.reload;
     rig.app
-        .dispatch(Action::SetLanguages {
-            languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
+        .dispatch(Action::Settings {
+            action: wonton_protocol::SettingsAction::SetLanguages {
+                languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
+            },
         })
         .unwrap();
     rig.wait_for(|view| !view.refreshing).await;
@@ -169,7 +175,11 @@ async fn start_rejections_remain_visible_after_unrelated_list_refreshes() {
         assert!(!failed.problem.as_ref().unwrap().message.is_empty());
         assert!(failed.tasks.is_empty());
         let lists = rig.core.seen(&Method::GET, LIST).len();
-        rig.app.dispatch(Action::RefreshPlugins).unwrap();
+        rig.app
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins,
+            })
+            .unwrap();
         request_count(&rig.core, Method::GET, LIST, lists + 1).await;
         let refreshed = rig.wait_for(|view| !view.refreshing).await;
         assert_eq!(refreshed.problem, failed.problem);
@@ -231,47 +241,65 @@ async fn stopped_state_overrides_stale_load_failure_and_running_reloads() {
     for intermediate in [None, Some(PluginState::Installing)] {
         let (rig, page_tab, running_plugin) = connected_page_rig(ID, "home").await;
         rig.app
-            .dispatch(Action::TabLoadFailed {
-                page: PlacedTab::Page {
-                    tab: page_tab.clone(),
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::TabLoadFailed {
+                    page: PlacedTab::Page {
+                        tab: page_tab.clone(),
+                    },
+                    status: Some(502),
                 },
-                status: Some(502),
             })
             .unwrap();
         let reload = item(&rig.app.pages(), &page_tab).reload;
         rig.core.set_lists(vec![vec![plugin(PluginState::Stopped)]]);
-        rig.app.dispatch(Action::RefreshPlugins).unwrap();
+        rig.app
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins,
+            })
+            .unwrap();
         wait_pages(&rig, |view| {
             item(view, &page_tab).state == TabState::Stopped
         })
         .await;
         // 晚到的 WebView 失败不能把已停止盖掉。
         rig.app
-            .dispatch(Action::TabLoadFailed {
-                page: PlacedTab::Page {
-                    tab: page_tab.clone(),
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::TabLoadFailed {
+                    page: PlacedTab::Page {
+                        tab: page_tab.clone(),
+                    },
+                    status: None,
                 },
-                status: None,
             })
             .unwrap();
         assert_eq!(item(&rig.app.pages(), &page_tab).state, TabState::Stopped);
         if let Some(status) = intermediate {
             rig.core.set_lists(vec![vec![plugin(status.clone())]]);
-            rig.app.dispatch(Action::RefreshPlugins).unwrap();
+            rig.app
+                .dispatch(Action::Plugins {
+                    action: wonton_protocol::PluginAction::RefreshPlugins,
+                })
+                .unwrap();
             wait_plugin_status(&rig, ID, status).await;
             wait_pages(&rig, |_| true).await;
         }
         rig.core.set_lists(vec![vec![running_plugin]]);
-        rig.app.dispatch(Action::RefreshPlugins).unwrap();
+        rig.app
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins,
+            })
+            .unwrap();
         wait_pages(&rig, |view| {
             let page = item(view, &page_tab);
             page.state == TabState::Ready && page.reload == reload + 1
         })
         .await;
         rig.app
-            .dispatch(Action::ReloadTab {
-                page: PlacedTab::Page {
-                    tab: page_tab.clone(),
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::ReloadTab {
+                    page: PlacedTab::Page {
+                        tab: page_tab.clone(),
+                    },
                 },
             })
             .unwrap();
@@ -327,8 +355,10 @@ async fn switching_home_ignores_old_start_success_and_failure() {
         let page_tab = tab(ID, Some("home"));
         wait_my_app(&rig, &page_tab).await;
         rig.app
-            .dispatch(Action::OpenPage {
-                tab: page_tab.clone(),
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::OpenPage {
+                    tab: page_tab.clone(),
+                },
             })
             .unwrap();
         next.core.answer(
@@ -353,8 +383,10 @@ async fn stopped_implicit_web_page_and_removed_pages_keep_precedence() {
     let (rig, _) = stopped_rig().await;
     let implicit = tab(ID, Some("home"));
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: implicit.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: implicit.clone(),
+            },
         })
         .unwrap();
     assert_eq!(item(&rig.app.pages(), &implicit).state, TabState::Stopped);
@@ -362,7 +394,11 @@ async fn stopped_implicit_web_page_and_removed_pages_keep_precedence() {
     let mut removed = plugin(PluginState::Stopped);
     removed.tabs.clear();
     rig.core.set_lists(vec![vec![removed]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| {
         item(view, &implicit).state == TabState::PageRemoved
     })
@@ -405,8 +441,10 @@ async fn switching_home_ignores_old_start_list_refresh() {
     let page_tab = tab(ID, Some("home"));
     wait_my_app(&rig, &page_tab).await;
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     rig.core.release(Method::GET, LIST);

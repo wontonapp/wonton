@@ -1,5 +1,6 @@
 //! 插件页面的行为测试：只经由导出给原生壳的接口驱动，隧道的对面是本机假扮的核心管理接口，只走回环地址。
 
+mod agent_dispatch;
 mod ask_every_update;
 mod audience;
 mod bots;
@@ -43,13 +44,19 @@ async fn the_list_arrives_once_the_tunnel_is_up_and_says_why_before_that() {
     rig.core
         .set_lists(vec![vec![running("ai.usemagpie.magpie")]]);
     rig.app
-        .dispatch(Action::SetLanguages {
-            languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
+        .dispatch(Action::Settings {
+            action: wonton_protocol::SettingsAction::SetLanguages {
+                languages: vec!["zh-Hans-CN".to_owned(), "en".to_owned()],
+            },
         })
         .unwrap();
 
     // 比隧道早发的刷新不留下问题，连上后自动取。
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
 
     rig.connect();
     let view = rig
@@ -93,11 +100,15 @@ async fn the_store_is_fetched_refreshed_and_searched() {
     rig.connected().await;
 
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.wait_for(|view| view.store.is_some()).await;
     rig.app
-        .dispatch(Action::RefreshStore { force: true })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: true },
+        })
         .unwrap();
     let deadline = Instant::now() + WAIT;
     while rig
@@ -131,7 +142,9 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
     let rig = Rig::new().await;
     rig.connected().await;
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     rig.wait_for(|view| view.store.is_some()).await;
 
@@ -144,10 +157,12 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
     assert!(asked.body.contains("github:owner/app.photos"), "{asked:?}");
 
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown.clone(),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown.clone(),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let view = rig.app.plugins();
@@ -176,14 +191,18 @@ async fn installing_grants_what_the_preview_listed_and_reports_the_result() {
     );
 
     rig.app
-        .dispatch(Action::DismissPluginTask {
-            id: "app.photos".to_owned(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: "app.photos".to_owned(),
+            },
         })
         .unwrap();
     assert!(rig.app.plugins().tasks.is_empty());
     assert!(matches!(
-        rig.app.dispatch(Action::DismissPluginTask {
-            id: "app.photos".to_owned()
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::DismissPluginTask {
+                id: "app.photos".to_owned(),
+            },
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -210,10 +229,12 @@ async fn a_chosen_file_goes_up_as_is_and_installs_by_the_source_in_its_preview()
     assert!(asked.body.ends_with("gz"), "{asked:?}");
 
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)
@@ -293,10 +314,12 @@ async fn a_preview_that_says_no_is_not_sent() {
     let mut blocked = preview("app.photos");
     blocked.blocked = Some("宿主架构不符".to_owned());
     assert!(matches!(
-        rig.app.dispatch(Action::InstallPlugin {
-            preview: blocked,
-            secrets: Default::default(),
-            settings: Default::default(),
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: blocked,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -315,10 +338,12 @@ async fn a_preview_that_needs_the_profile_is_not_sent() {
     let mut needs_email = preview("app.photos");
     needs_email.missing_profile = Some("这个应用要用你的邮箱，填好才能装".to_owned());
     assert!(matches!(
-        rig.app.dispatch(Action::InstallPlugin {
-            preview: needs_email,
-            secrets: Default::default(),
-            settings: Default::default(),
+        rig.app.dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: needs_email,
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -416,10 +441,12 @@ async fn failures_keep_their_reason() {
                 .to_owned();
         rig.core.answer(Method::POST, "/_wonton/api/plugins", error);
         rig.app
-            .dispatch(Action::InstallPlugin {
-                preview: preview("app.photos"),
-                secrets: Default::default(),
-                settings: Default::default(),
+            .dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::InstallPlugin {
+                    preview: preview("app.photos"),
+                    secrets: Default::default(),
+                    settings: Default::default(),
+                },
             })
             .unwrap();
         let state = rig
@@ -442,7 +469,9 @@ async fn failures_keep_their_reason() {
         core_error(401, "unauthenticated", "不认这台设备"),
     );
     rig.app
-        .dispatch(Action::RefreshStore { force: false })
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshStore { force: false },
+        })
         .unwrap();
     let view = rig.wait_for(|view| view.problem.is_some()).await;
     assert_eq!(view.problem.unwrap().reason, PluginFailure::Unauthorized);
@@ -475,10 +504,12 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let state = rig
@@ -495,10 +526,12 @@ async fn a_dropped_connection_waits_for_the_result_on_the_server() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.other"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.other"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let state = rig
@@ -527,10 +560,12 @@ async fn a_stalled_list_read_does_not_fail_the_install() {
         Canned(502, String::new()),
     );
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
 
@@ -560,9 +595,11 @@ async fn uninstalling_deletes_data_only_when_asked() {
     rig.wait_for(|view| view.installed.is_some()).await;
 
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.photos".to_owned(),
-            delete_data: false,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.photos".to_owned(),
+                delete_data: false,
+            },
         })
         .unwrap();
     assert_eq!(rig.app.plugins().tasks[0].title, "标题 app.photos");
@@ -576,9 +613,11 @@ async fn uninstalling_deletes_data_only_when_asked() {
     );
 
     rig.app
-        .dispatch(Action::UninstallPlugin {
-            id: "app.photos".to_owned(),
-            delete_data: true,
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UninstallPlugin {
+                id: "app.photos".to_owned(),
+                delete_data: true,
+            },
         })
         .unwrap();
     rig.wait_for(|_| {
@@ -641,10 +680,12 @@ async fn an_upgrade_says_which_tools_the_new_version_added() {
         Canned(200, result.to_string()),
     );
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let view = rig
@@ -672,10 +713,12 @@ async fn an_upgrade_whose_answer_cannot_be_read_still_succeeded() {
         Canned(200, "{}".to_owned()),
     );
     rig.app
-        .dispatch(Action::UpgradePlugin {
-            preview: preview("app.photos"),
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::UpgradePlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     let view = rig
@@ -702,10 +745,12 @@ async fn the_secret_values_the_owner_filled_are_posted_and_updated() {
         required: true,
     }];
     rig.app
-        .dispatch(Action::InstallPlugin {
-            preview: shown,
-            secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
-            settings: Default::default(),
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: shown,
+                secrets: [("token".to_owned(), SecretString::new("s3cret"))].into(),
+                settings: Default::default(),
+            },
         })
         .unwrap();
     rig.task("app.photos", |state| *state != PluginTaskState::Running)

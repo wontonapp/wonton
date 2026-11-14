@@ -13,7 +13,7 @@ issue #21（迁移自归档 #274）要的是“新设备由已有设备确认”
   `VerificationFlow`（`crates/wonton-protocol/src/verification.rs`），流程在
   `crates/wonton-client/src/chat/verification.rs`，SDK 包装在 `crates/wonton-matrix/src/verification.rs`，两端都有界面
   （`apps/ios/Wonton/DeviceVerificationView.swift`、`apps/compose/shared/src/androidMain/kotlin/app/wonton/ui/DeviceVerificationScreen.kt`）。
-- 恢复密钥和重置本来就有（[ADR-0003](0003-matrix-and-encrypted-push.md) 的“端到端加密”验证结果）：重置入口在聊天记录备份页，`Action::ResetRecovery` 换新身份和新密钥。
+- 恢复密钥和重置本来就有（[ADR-0003](0003-matrix-and-encrypted-push.md) 的“端到端加密”验证结果）：重置入口在聊天记录备份页，`ChatAction::ResetRecovery` 换新身份和新密钥。
 
 所以本文不再重新决定 SAS，只把确认方式的公开事实和取舍写在一个地方，并决定 ADR-0046 留给“恢复密钥或重置”的那一半：没有已验证设备时的入口、步骤和后果。
 

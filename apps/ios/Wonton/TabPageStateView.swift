@@ -97,7 +97,7 @@ struct TabPageStateView: View {
         default: return
         }
         do {
-            try session.core.dispatch(action: .startPlugin(pluginId: pluginId))
+            try session.core.dispatch(action: .plugins(action: .startPlugin(pluginId: pluginId)))
             startProblem = nil
         } catch { startProblem = error.problem }
     }

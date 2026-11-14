@@ -25,6 +25,6 @@ pub struct RoomPlugin {
     pub plugin_id: String,
     pub status: PluginState,
     pub start: Option<PluginStartState>,
-    /// 显示 `Action::StartPlugin`；启动请求进行中时为 false。
+    /// 显示 `PluginAction::StartPlugin`；启动请求进行中时为 false。
     pub can_start: bool,
 }

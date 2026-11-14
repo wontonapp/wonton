@@ -19,8 +19,8 @@ use tokio::runtime::Handle;
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, Me, ModelSettings, ModelSettingsProblem, ONBOARDING_PATH,
-    Onboarding, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
+    CoreError, HomeStatus, Me, ModelSettings, ModelSettingsProblem, ONBOARDING_PATH, Onboarding,
+    OnboardingAction, OnboardingCommit, OnboardingStep, OnboardingTip, OnboardingTooOld,
     OnboardingUpdate, OnboardingViewModel, PluginFailure, PluginProblem, minimum_server_version,
 };
 
@@ -149,33 +149,32 @@ impl OnboardingLink {
         }
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: OnboardingAction) -> Result<(), CoreError> {
         match action {
-            Action::RefreshOnboarding => {
+            OnboardingAction::RefreshOnboarding => {
                 self.refresh();
                 Ok(())
             }
-            Action::RestartOnboarding => self.restart(),
-            Action::ChooseOnboardingAgent { id } => self.choose_agent(&id),
-            Action::ContinueOnboarding => self.continue_step(),
-            Action::SkipOnboardingStep => self.skip_step(),
-            Action::BackOnboardingStep => self.back_step(),
-            Action::ToggleOnboardingNeed { id } => self.toggle_need(&id),
-            Action::EditOnboardingProfile {
+            OnboardingAction::RestartOnboarding => self.restart(),
+            OnboardingAction::ChooseOnboardingAgent { id } => self.choose_agent(&id),
+            OnboardingAction::ContinueOnboarding => self.continue_step(),
+            OnboardingAction::SkipOnboardingStep => self.skip_step(),
+            OnboardingAction::BackOnboardingStep => self.back_step(),
+            OnboardingAction::ToggleOnboardingNeed { id } => self.toggle_need(&id),
+            OnboardingAction::EditOnboardingProfile {
                 display_name,
                 email,
             } => self.edit_profile(display_name, email),
-            Action::UseCurrentModel => self.use_current_model(),
-            Action::ChooseModelLogin { id } => self.choose_login(&id),
-            Action::RetryOnboardingItem { id } => self.retry_item(&id),
-            Action::SetPrimaryAgent { id } => self.set_primary(&id),
-            Action::DismissReplacedAgentOffer => self.dismiss_replaced(),
-            Action::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
-            _ => Err(invalid(&l10n!(
-                CATALOG,
-                language(),
-                "onboarding-invalid-action"
-            ))),
+            OnboardingAction::UseCurrentModel => self.use_current_model(),
+            OnboardingAction::ChooseModelLogin { id } => self.choose_login(&id),
+            OnboardingAction::RetryOnboardingItem { id } => self.retry_item(&id),
+            OnboardingAction::SetPrimaryAgent { id } => self.set_primary(&id),
+            OnboardingAction::DismissReplacedAgentOffer => self.dismiss_replaced(),
+            OnboardingAction::DismissOnboardingTip { tip } => self.dismiss_tip(tip),
+            OnboardingAction::CloseOnboarding => {
+                self.close();
+                Ok(())
+            }
         }
     }
 

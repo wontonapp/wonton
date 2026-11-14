@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 
 import app.wonton.protocol.Action
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingViewModel
 import app.wonton.protocol.StoreItem
 import app.wonton.ui.design.StepOptionRow
@@ -23,14 +24,16 @@ internal fun OnboardingAppsStep(
     send: (Action) -> Unit,
 ) {
     view.catalogProblem?.let {
-        OnboardingProblem(it.onboardingTitle(), it.details) { send(Action.RefreshOnboarding) }
+        OnboardingProblem(it.onboardingTitle(), it.details) {
+            send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+        }
     }
     view.needs.forEach { need ->
         key(need.id) {
             StepOptionRow(
                 title = need.title,
                 selected = need.selected,
-                onSelect = { send(Action.ToggleOnboardingNeed(need.id)) },
+                onSelect = { send(Action.Onboarding(OnboardingAction.ToggleOnboardingNeed(need.id))) },
                 multiple = true,
             )
             // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
@@ -41,7 +44,7 @@ internal fun OnboardingAppsStep(
                 need.plugins.forEach { item ->
                     key(item.id) {
                         OnboardingAppRow(item, need.selected, plugins) {
-                            send(Action.ToggleOnboardingNeed(need.id))
+                            send(Action.Onboarding(OnboardingAction.ToggleOnboardingNeed(need.id)))
                         }
                     }
                 }

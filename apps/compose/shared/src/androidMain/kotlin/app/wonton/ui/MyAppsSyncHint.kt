@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
@@ -40,7 +41,7 @@ internal fun MyAppsSyncHint(pages: PagesState, interactive: Boolean) {
             )
             Spacer(Modifier.widthIn(min = spacing.s8))
             if (view.syncStale) {
-                TextButton(onClick = { pages.send(Action.RetryMyAppSync) }, enabled = interactive) {
+                TextButton(onClick = { pages.send(Action.Pages(PageAction.RetryMyAppSync)) }, enabled = interactive) {
                     Text(stringResource(R.string.common_retry), style = WontonTheme.typography.supporting,
                         color = colors.accentInk.toColor())
                 }

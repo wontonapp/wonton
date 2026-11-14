@@ -73,8 +73,10 @@ async fn invite(phone: &Phone, bot: &MatrixSession, name: &str) -> String {
         })
         .await;
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room.to_string(),
+            },
         })
         .unwrap();
     phone
@@ -136,7 +138,9 @@ fn bot(phone: &Phone, user: &MatrixSession) -> wonton_client::BotView {
 
 fn set(phone: &Phone, target: ChatLayoutTarget, choice: ChatLayoutChoice) {
     phone
-        .dispatch(Action::SetChatLayout { target, choice })
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::SetChatLayout { target, choice },
+        })
         .unwrap();
 }
 

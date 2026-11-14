@@ -4,6 +4,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.TabRef
@@ -32,7 +33,7 @@ class PagesState(val plugins: PluginsState) {
         get() = if (viewModel.showsApps) TabRef.Apps else viewModel.stack.lastOrNull()?.tab ?: viewModel.root
 
     /** 把一个应用（插件整项或某一页）加进“我的应用”。重复加的错误交给调用方显示。 */
-    fun addMyApp(app: MyAppRef, title: String? = null) = send(Action.AddMyApp(app, title, null))
+    fun addMyApp(app: MyAppRef, title: String? = null) = send(Action.Pages(PageAction.AddMyApp(app, title, null)))
 }
 
 val LocalPages = compositionLocalOf<PagesState> { error("PagesState is not provided") }

@@ -14,8 +14,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use wonton_client::{
-    Action, ChatAccount, ChatViewModel, ClientCore, DeviceInvite, DeviceVerification, KeyHandoff,
-    Network, RecoveryStatus, SecretString, VerificationStage,
+    Action, ChatAccount, ChatAction, ChatViewModel, ClientCore, DeviceInvite, DeviceVerification,
+    HomeAction, KeyHandoff, Network, RecoveryStatus, SecretString, VerificationStage,
 };
 
 /// 从配对到新设备确认完。新设备那边要人去扫码、点按钮，给足时间。
@@ -48,9 +48,11 @@ async fn main() -> ExitCode {
 async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
     let core = ClientCore::with_network(dir, Network::DirectOnly).map_err(|e| e.to_string())?;
     if code != "-" {
-        core.dispatch(Action::PairHome {
-            code: SecretString::new(code.to_owned()),
-            device_name: "old-device".to_owned(),
+        core.dispatch(Action::Home {
+            action: HomeAction::PairHome {
+                code: SecretString::new(code.to_owned()),
+                device_name: "old-device".to_owned(),
+            },
         })
         .map_err(|e| e.to_string())?;
     }
@@ -61,13 +63,17 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
     })
     .await?;
     if view.encryption.recovery_key.is_some() {
-        core.dispatch(Action::ConfirmRecoveryKeySaved)
-            .map_err(|e| e.to_string())?;
+        core.dispatch(Action::Chat {
+            action: ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .map_err(|e| e.to_string())?;
     }
     println!("已登录、已验证、备份已开");
 
-    core.dispatch(Action::InviteDevice)
-        .map_err(|e| e.to_string())?;
+    core.dispatch(Action::Home {
+        action: HomeAction::InviteDevice,
+    })
+    .map_err(|e| e.to_string())?;
     let code = invite_code(&core).await?;
     std::fs::write(out, &code).map_err(|e| format!("写不了 {out}：{e}"))?;
     println!("“添加设备”的码已写进 {out}");
@@ -95,8 +101,10 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
         let symbols: Vec<_> = emoji.iter().map(|e| e.symbol.as_str()).collect();
         println!("表情：{}", symbols.join(" "));
     }
-    core.dispatch(Action::ConfirmVerification {
-        flow_id: flow.flow_id.clone(),
+    core.dispatch(Action::Chat {
+        action: ChatAction::ConfirmVerification {
+            flow_id: flow.flow_id.clone(),
+        },
     })
     .map_err(|e| e.to_string())?;
     let view = wait_chat(&core, |view| {
@@ -120,8 +128,10 @@ async fn run(dir: &str, code: &str, out: &str) -> Result<(), String> {
         view.encryption.key_handoff
     );
     tokio::time::sleep(STAY).await;
-    core.dispatch(Action::CloseDeviceInvite)
-        .map_err(|e| e.to_string())?;
+    core.dispatch(Action::Home {
+        action: HomeAction::CloseDeviceInvite,
+    })
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 

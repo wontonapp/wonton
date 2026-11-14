@@ -1,7 +1,7 @@
 //! 推送：App 被杀或锁屏时，新消息经推送唤醒 App 并弹出系统通知（ADR-0003 的“设计：加密推送”）。
 //!
 //! 推送地址和设备的推送公钥来自平台（Android 上是 UnifiedPush 分发器），壳用
-//! [`Action::SetPushEndpoint`](crate::Action::SetPushEndpoint) 交给核心。核心把它经隧道登记给家里的服务器，再在
+//! [`PushAction::SetPushEndpoint`](crate::PushAction::SetPushEndpoint) 交给核心。核心把它经隧道登记给家里的服务器，再在
 //! Matrix 上注册指向家里推送代理的 pusher，进展在 [`ChatViewModel::push`](crate::ChatViewModel::push) 里。推送内容
 //! 按 Web Push 的标准加密（RFC 8291），推送服务和中继只看到密文。壳收到推送、在本机解开后交给客户端核心的
 //! `resolve_push`：核心经隧道取回消息、在本机解密，给出要显示的 [`PushNotification`]。
@@ -30,7 +30,7 @@ pub enum PushMethod {
     /// 前台服务让进程和隧道在后台一直连着，同步到的新消息由 App 自己弹通知（[`ChatViewModel::background_notifications`](crate::ChatViewModel::background_notifications)）。
     #[default]
     Keepalive,
-    /// 经 UnifiedPush 分发器收推送（[`Action::SetPushEndpoint`](crate::Action::SetPushEndpoint)），App 被杀也能收到。
+    /// 经 UnifiedPush 分发器收推送（[`PushAction::SetPushEndpoint`](crate::PushAction::SetPushEndpoint)），App 被杀也能收到。
     UnifiedPush,
 }
 
@@ -152,7 +152,7 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::Action;
+    use crate::{Action, PushAction};
 
     /// 测试用的认证密钥原文。
     const AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
@@ -166,14 +166,20 @@ mod tests {
             auth: SecretString::new(AUTH),
         };
         let actions = [
-            Action::SetPushEndpoint {
-                endpoint: endpoint.clone(),
+            Action::Push {
+                action: PushAction::SetPushEndpoint {
+                    endpoint: endpoint.clone(),
+                },
             },
-            Action::PushUnavailable {
-                message: "没有装 UnifiedPush 分发器".into(),
+            Action::Push {
+                action: PushAction::PushUnavailable {
+                    message: "没有装 UnifiedPush 分发器".into(),
+                },
             },
-            Action::SetPushMethod {
-                method: PushMethod::UnifiedPush,
+            Action::Push {
+                action: PushAction::SetPushMethod {
+                    method: PushMethod::UnifiedPush,
+                },
             },
         ];
         for action in &actions {

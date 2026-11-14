@@ -58,9 +58,11 @@ async fn only_recorded_bots_appear_and_failed_activity_clears_their_capabilities
         "An activity report is not web authorization"
     );
     assert!(matches!(
-        rig.app.dispatch(Action::SetBotName {
-            plugin_id: "app.bot".into(),
-            name: "New name".into(),
+        rig.app.dispatch(Action::Bot {
+            action: wonton_protocol::BotAction::SetBotName {
+                plugin_id: "app.bot".into(),
+                name: "New name".into(),
+            }
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -76,7 +78,11 @@ async fn only_recorded_bots_appear_and_failed_activity_clears_their_capabilities
     assert_eq!(view[0].user_id, "@authoritative:home");
     // Plugin refresh cannot recreate a guessed default from installed metadata.
     rig.core.set_lists(vec![vec![]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait(&rig, |bots| bots.is_empty()).await;
 }
 

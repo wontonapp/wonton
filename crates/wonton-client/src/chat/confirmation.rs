@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatFailure, ChatProblem,
+    Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatAction, ChatFailure, ChatProblem,
     ConfirmationAnswer, ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState,
     ConfirmationView, ConfirmationWindow, CoreError, ProxySettings, WindowEnd, WindowView,
     answer_path, confirmation_path, window_path,
@@ -547,9 +547,9 @@ fn answer_error(problem: &ChatProblem) -> CoreError {
 
 impl ChatLink {
     /// 确认卡片的操作：回答、停掉放行时段、重试取列表。`dispatch` 里确认的动作才路由到这里。
-    pub(super) fn confirmation_action(&self, action: Action) -> Result<(), CoreError> {
+    pub(super) fn confirmation_action(&self, action: ChatAction) -> Result<(), CoreError> {
         match action {
-            Action::AnswerConfirmation {
+            ChatAction::AnswerConfirmation {
                 id,
                 answer,
                 choice_id,
@@ -557,8 +557,8 @@ impl ChatLink {
                 settings,
                 devices,
             } => self.answer_confirmation(id, answer, choice_id, secrets, settings, devices),
-            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
-            Action::RetryConfirmations => {
+            ChatAction::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
+            ChatAction::RetryConfirmations => {
                 self.retry_confirmations.notify_one();
                 Ok(())
             }

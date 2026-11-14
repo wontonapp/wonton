@@ -24,6 +24,7 @@ import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.ThemeMode
 import app.wonton.protocol.Action
+import app.wonton.protocol.SettingsAction
 import app.wonton.ui.send
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -60,7 +61,7 @@ class SafeAreaBackgroundTest {
         assertTrue("Requires a fresh unpaired app", core.home().status is HomeStatus.NotConfigured)
         val original = core.appearance().themeMode
         try {
-            assertNull(core.send(Action.SetThemeMode(mode)))
+            assertNull(core.send(Action.Settings(SettingsAction.SetThemeMode(mode))))
             awaitRoot()
             val appearance = core.appearance()
             val colors = if (mode == ThemeMode.DARK) appearance.dark else appearance.light
@@ -95,7 +96,7 @@ class SafeAreaBackgroundTest {
             compose.waitForIdle()
             checkPixels("$prefix-settings", colors.canvas)
         } finally {
-            assertNull(core.send(Action.SetThemeMode(original)))
+            assertNull(core.send(Action.Settings(SettingsAction.SetThemeMode(original))))
         }
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import app.wonton.protocol.Action
+import app.wonton.protocol.BotContactAction
 import app.wonton.protocol.BotContactsState
 import app.wonton.protocol.BotView
 import app.wonton.protocol.ContactState
@@ -49,7 +50,11 @@ internal fun ConfirmationContactEffects(plugins: PluginsState, state: Confirmati
         ApproveRemoteContactDialog(request.contact, { state.remote = null }) {
             state.remote = null
             state.pending = request
-            val rejection = core.send(Action.ApproveBotContact(request.bot, request.contact.userId))
+            val rejection = core.send(
+                Action.BotContacts(
+                    BotContactAction.ApproveBotContact(request.bot, request.contact.userId),
+                ),
+            )
             if (rejection != null) state.pending = null
             plugins.reject(rejection)
         }
@@ -76,12 +81,16 @@ internal fun ConfirmationContactRow(
         if (state.pending == null) Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
             WontonSmallButton(stringResource(R.string.contacts_reject), {
                 state.pending = request
-                onAction(Action.RejectBotContact(request.bot, request.contact.userId))
+                onAction(Action.BotContacts(BotContactAction.RejectBotContact(request.bot, request.contact.userId)))
             }, danger = true)
             WontonSmallButton(stringResource(R.string.contacts_approve), {
                 if (request.contact.remote != null) state.remote = request else {
                     state.pending = request
-                    onAction(Action.ApproveBotContact(request.bot, request.contact.userId))
+                    onAction(
+                        Action.BotContacts(
+                            BotContactAction.ApproveBotContact(request.bot, request.contact.userId),
+                        ),
+                    )
                 }
             })
         }

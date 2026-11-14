@@ -146,10 +146,10 @@ private struct TransferButtons: View {
             isPresented: $isConfirmingDismiss,
             actions: [
                 WontonDialogAction(title: String(localized: .Transfer0.transferCleanupRecordOnly)) {
-                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
+                    files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: false)))
                 },
                 WontonDialogAction(title: String(localized: .Transfer0.transferCleanupDeleteFile), kind: .danger) {
-                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: true))
+                    files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: true)))
                 },
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]
@@ -160,22 +160,22 @@ private struct TransferButtons: View {
         switch action {
         case .cancel:
             WontonIconButton(icon: .close, label: String(localized: .Common.commonCancel)) {
-                files.send(.cancelTransfer(id: transfer.id))
+                files.send(.files(action: .cancelTransfer(id: transfer.id)))
             }
         case .dismiss:
             WontonIconButton(icon: .close, label: String(localized: .Transfer0.transferClear)) {
-                files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
+                files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: false)))
             }
         case .dismissDownloaded:
             WontonIconButton(icon: .trash,
                 label: String(localized: .Transfer0.transferCleanUp)) { isConfirmingDismiss = true }
         case .resendLink:
             textButton(String(localized: .Transfer1.transferResendLink)) {
-                files.send(.resendFileLink(id: transfer.id))
+                files.send(.files(action: .resendFileLink(id: transfer.id)))
             }
         case .stopSending:
             textButton(String(localized: .Transfer0.transferStopSending)) {
-                files.send(.cancelTransfer(id: transfer.id))
+                files.send(.files(action: .cancelTransfer(id: transfer.id)))
             }
         case .open:
             WontonIconButton(icon: .eye, label: String(localized: .Transfer1.transferOpen)) { opened = localFile }

@@ -513,8 +513,10 @@ impl World {
         };
         world
             .phone()
-            .dispatch(Action::ConnectHome {
-                ticket: world.ticket.clone(),
+            .dispatch(Action::Home {
+                action: wonton_protocol::HomeAction::ConnectHome {
+                    ticket: world.ticket.clone(),
+                },
             })
             .unwrap();
         world.wait_connected().await;

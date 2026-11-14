@@ -10,7 +10,10 @@
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use wonton_client::{Action, ClientCore, HomeStatus, Network, OnboardingStep, SecretString};
+use wonton_client::{
+    Action, ClientCore, HomeAction, HomeStatus, Network, OnboardingAction, OnboardingStep,
+    SecretString,
+};
 
 const CONNECT: Duration = Duration::from_secs(60);
 const QUIET: Duration = Duration::from_secs(30);
@@ -31,7 +34,9 @@ async fn walk(app: &std::sync::Arc<ClientCore>) -> ExitCode {
         }
         let action = match view.step {
             Some(OnboardingStep::Finished) => break,
-            Some(_) => Action::SkipOnboardingStep,
+            Some(_) => Action::Onboarding {
+                action: OnboardingAction::SkipOnboardingStep,
+            },
             None => unreachable!(),
         };
         if let Err(error) = app.dispatch(action) {
@@ -66,7 +71,9 @@ async fn walk(app: &std::sync::Arc<ClientCore>) -> ExitCode {
         }
         tokio::time::sleep(Duration::from_millis(300)).await;
     }
-    if let Err(error) = app.dispatch(Action::ContinueOnboarding) {
+    if let Err(error) = app.dispatch(Action::Onboarding {
+        action: OnboardingAction::ContinueOnboarding,
+    }) {
         eprintln!("点完成失败：{error}");
         return ExitCode::from(1);
     }
@@ -111,9 +118,11 @@ async fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    if let Err(error) = app.dispatch(Action::PairHome {
-        code: SecretString::new((*code).clone()),
-        device_name: "compat-e2e".to_owned(),
+    if let Err(error) = app.dispatch(Action::Home {
+        action: HomeAction::PairHome {
+            code: SecretString::new((*code).clone()),
+            device_name: "compat-e2e".to_owned(),
+        },
     }) {
         eprintln!("配对码不合法：{error}");
         return ExitCode::from(1);

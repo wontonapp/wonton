@@ -15,8 +15,10 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
     let phone = Phone::open(dir.path());
     // 还没配对、没有默认 Agent 时如实拒绝，不悄悄丢掉这句话。
     assert!(matches!(
-        phone.dispatch(Action::AskAgent {
-            text: "明天下雨吗".to_owned()
+        phone.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AskAgent {
+                text: "明天下雨吗".to_owned()
+            }
         }),
         Err(CoreError::NotReady { .. })
     ));
@@ -69,8 +71,10 @@ async fn asking_joins_the_bots_chat_and_sends_the_question() {
     assert_eq!(primary, bot.user_id().as_str());
 
     phone
-        .dispatch(Action::AskAgent {
-            text: "  明天下雨吗 ".to_owned(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AskAgent {
+                text: "  明天下雨吗 ".to_owned(),
+            },
         })
         .unwrap();
     phone

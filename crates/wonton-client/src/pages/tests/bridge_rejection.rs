@@ -1,10 +1,11 @@
 use serde_json::{Value, json};
 
-use super::{Action, PlacedTab, Rig, main_scope, page_tab};
+use super::{PlacedTab, Rig, main_scope, page_tab};
 use crate::appearance::AppearanceLink;
 use crate::pages::bridge::{
     TabBridgeResult, TabEnvironment, TabPlatform, TabSafeArea, handle_message,
 };
+use wonton_protocol::PageAction;
 
 const PAGE_ORIGIN: &str = "http://app.shared.wonton.localhost";
 
@@ -48,7 +49,7 @@ async fn foreign_auth_scheme_and_port_origins_have_no_effect() {
     let appearance = AppearanceLink::new(rig._dir.path());
     rig.open(page_tab());
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -113,7 +114,7 @@ async fn unsupported_requests_are_rejected_without_effects() {
     let appearance = AppearanceLink::new(rig._dir.path());
     rig.open(page_tab());
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })

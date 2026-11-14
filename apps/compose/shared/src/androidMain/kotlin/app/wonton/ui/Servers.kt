@@ -34,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeViewModel
 import app.wonton.protocol.PairingStatus
@@ -75,7 +76,7 @@ internal fun ServersGroup(plugins: PluginsState, onMatrixLogin: () -> Unit) {
             ServerItem(server, plugins::send, { rename = server }, { remove = server })
             WontonSeparator()
         }
-        AddServerRow { plugins.send(Action.AddServer) }
+        AddServerRow { plugins.send(Action.Home(HomeAction.AddServer)) }
         WontonSeparator()
         MatrixLoginRow(onMatrixLogin)
     }
@@ -90,7 +91,7 @@ internal fun ServersGroup(plugins: PluginsState, onMatrixLogin: () -> Unit) {
                 WontonDialogAction(stringResource(R.string.common_cancel), onClick = dismiss),
                 WontonDialogAction(stringResource(R.string.common_remove), WontonButtonKind.DANGER) {
                     dismiss()
-                    plugins.send(Action.RemoveServer(server.id))
+                    plugins.send(Action.Home(HomeAction.RemoveServer(server.id)))
                 },
             ),
         )
@@ -107,7 +108,7 @@ private fun ServerItem(server: ServerRow, send: (Action) -> Unit, rename: () -> 
                 .semantics { selected = server.current }
                 .combinedClickable(
                     role = Role.Button,
-                    onClick = { if (!server.current) send(Action.SwitchServer(server.id)) },
+                    onClick = { if (!server.current) send(Action.Home(HomeAction.SwitchServer(server.id))) },
                     onLongClick = { menu = true },
                     onLongClickLabel = stringResource(R.string.servers_manage),
                 )
@@ -149,7 +150,7 @@ private fun RenameServerDialog(server: ServerRow, send: (Action) -> Unit, dismis
             WontonTextField(name, { name = it }, Modifier.fillMaxWidth(), label = stringResource(R.string.servers_name))
             WontonButton(
                 stringResource(R.string.common_save), {
-                    send(Action.RenameServer(server.id, name))
+                    send(Action.Home(HomeAction.RenameServer(server.id, name)))
                     dismiss()
                 },
                 Modifier.fillMaxWidth(), enabled = name.isNotBlank(),
@@ -161,9 +162,9 @@ private fun RenameServerDialog(server: ServerRow, send: (Action) -> Unit, dismis
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AddServerPairing(plugins: PluginsState, home: HomeViewModel) {
-    val cancel = { plugins.send(Action.CancelAddServer) }
+    val cancel = { plugins.send(Action.Home(HomeAction.CancelAddServer)) }
     val back = {
-        if (home.pairing is PairingStatus.Failed) plugins.send(Action.DismissPairingFailure)
+        if (home.pairing is PairingStatus.Failed) plugins.send(Action.Home(HomeAction.DismissPairingFailure))
         cancel()
     }
     BackHandler(onBack = back)

@@ -19,13 +19,13 @@ use std::sync::atomic::Ordering;
 use tokio::sync::watch;
 
 use wonton_protocol::{
-    Action, AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel,
-    CoreError, DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus,
-    HomeViewModel, InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep,
-    OnboardingViewModel, OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth,
-    PluginKind, PluginState, PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep,
-    RecoveryStatus, RoomMembership, RoomPreview, RoomRow, ServerKind, ServerName, ServerRow,
-    ServersViewModel, TabIcon, TabLayout, TabPage, TabRef, TabState,
+    AppsAction, ChatAccount, ChatLayout, ChatLayoutChoice, ChatSync, ChatViewModel, CoreError,
+    DeviceNetwork, DeviceVerification, EncryptionStatus, HomePath, HomeStatus, HomeViewModel,
+    InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
+    OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
+    PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
+    RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabIcon, TabLayout,
+    TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -96,12 +96,14 @@ impl ClientCore {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = views;
     }
 
-    /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），回答确认卡片把它挪到结束的里
-    /// （`ui_fake_devices`），其余不动 ViewModel。
-    pub(super) fn dispatch_ui_fake(&self, action: Action) -> Result<(), CoreError> {
+    /// 假数据下的操作：开页、关页照真核心的规则改页面栈（`pages::actions`），其余不动 ViewModel。
+    pub(super) fn dispatch_ui_fake(
+        &self,
+        action: wonton_protocol::PageAction,
+    ) -> Result<(), CoreError> {
         let views = self.views();
         match action {
-            Action::OpenPage { tab } => {
+            wonton_protocol::PageAction::OpenPage { tab } => {
                 let Some((tab, page)) = fake_open(tab.clone()) else {
                     // 根页面（聊天、应用）一路弹回根；应用网格开没开记在页面视图里。
                     views.pages.send_modify(|pages| {
@@ -121,7 +123,7 @@ impl ClientCore {
                 });
                 Ok(())
             }
-            Action::ClosePage => {
+            wonton_protocol::PageAction::ClosePage => {
                 let mut closed = false;
                 views.pages.send_if_modified(|pages| {
                     // 应用网格开着时关的是它，栈不动。
@@ -136,18 +138,21 @@ impl ClientCore {
                     })
                 }
             }
-            Action::AnswerConfirmation {
-                id,
-                answer,
-                devices,
-                ..
-            } => {
-                views.confirmations.send_if_modified(|view| {
-                    super::ui_fake_devices::answer(view, &id, answer, &devices)
-                });
-                Ok(())
-            }
             _ => Ok(()),
+        }
+    }
+
+    pub(super) fn dispatch_ui_fake_chat(&self, action: wonton_protocol::ChatAction) {
+        if let wonton_protocol::ChatAction::AnswerConfirmation {
+            id,
+            answer,
+            devices,
+            ..
+        } = action
+        {
+            self.views().confirmations.send_if_modified(|view| {
+                super::ui_fake_devices::answer(view, &id, answer, &devices)
+            });
         }
     }
 }
@@ -422,6 +427,7 @@ fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wonton_protocol::{Action, PageAction};
 
     /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
     #[test]
@@ -449,10 +455,17 @@ mod tests {
         assert_eq!(core.onboarding().step, Some(OnboardingStep::Finished));
         // 操作不落到作用域。
         assert!(
-            core.dispatch(Action::OpenPage { tab: TabRef::Apps })
-                .is_ok()
+            core.dispatch(Action::Pages {
+                action: PageAction::OpenPage { tab: TabRef::Apps },
+            })
+            .is_ok()
         );
-        assert!(core.dispatch(Action::RefreshPlugins).is_ok());
+        assert!(
+            core.dispatch(Action::Plugins {
+                action: wonton_protocol::PluginAction::RefreshPlugins
+            })
+            .is_ok()
+        );
         assert_eq!(core.pages().root, TabRef::Chat);
         assert_eq!(core.plugins().installed.unwrap().plugins.len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
@@ -465,8 +478,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
         let open = |id: &str| {
-            core.dispatch(Action::OpenPage {
-                tab: web_app_tab(id),
+            core.dispatch(Action::Pages {
+                action: PageAction::OpenPage {
+                    tab: web_app_tab(id),
+                },
             })
         };
         let stack = || -> Vec<TabRef> {
@@ -490,23 +505,37 @@ mod tests {
         );
         assert_eq!(core.pages().stack[0].page.state, TabState::Stopped);
 
-        core.dispatch(Action::ClosePage).unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         assert_eq!(stack(), [web_app_tab("app.example.photos")]);
-        core.dispatch(Action::OpenPage { tab: TabRef::Chat })
-            .unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Chat },
+        })
+        .unwrap();
         assert!(stack().is_empty());
         assert!(matches!(
-            core.dispatch(Action::ClosePage),
+            core.dispatch(Action::Pages {
+                action: PageAction::ClosePage
+            }),
             Err(CoreError::InvalidInput { .. })
         ));
         // 应用网格：打开记在视图里，关页关的是它；从网格开一页也收起它。
-        core.dispatch(Action::OpenPage { tab: TabRef::Apps })
-            .unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Apps },
+        })
+        .unwrap();
         assert!(core.pages().shows_apps);
-        core.dispatch(Action::ClosePage).unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         assert!(!core.pages().shows_apps);
-        core.dispatch(Action::OpenPage { tab: TabRef::Apps })
-            .unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage { tab: TabRef::Apps },
+        })
+        .unwrap();
         open("app.example.budget").unwrap();
         assert!(!core.pages().shows_apps);
         assert_eq!(stack(), [web_app_tab("app.example.budget")]);
@@ -515,7 +544,10 @@ mod tests {
         let top = core.pages().stack.pop().unwrap();
         assert!(matches!(top.tab, TabRef::Url { .. }));
         assert_eq!(top.page.state, TabState::Ready);
-        core.dispatch(Action::ClosePage).unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         // 面板里钉着的那一页一直在，不跟着栈变。
         assert_eq!(core.pages().panel.len(), 2);
         let _ = std::fs::remove_dir_all(&dir);
@@ -534,13 +566,15 @@ mod tests {
             card.devices,
             "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into(),
         );
-        core.dispatch(Action::AnswerConfirmation {
-            id: card.id,
-            answer: wonton_protocol::Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
-            devices: crate::chosen_device_ids(devices, card.permissions),
+        core.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: card.id,
+                answer: wonton_protocol::Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: crate::chosen_device_ids(devices, card.permissions),
+            },
         })
         .unwrap();
         let view = core.confirmations();
@@ -582,15 +616,20 @@ mod tests {
             panic!("the call room must have exactly one widget entry");
         };
 
-        core.dispatch(Action::OpenPage {
-            tab: entry.tab.clone(),
+        core.dispatch(Action::Pages {
+            action: PageAction::OpenPage {
+                tab: entry.tab.clone(),
+            },
         })
         .unwrap();
         let pages = core.pages();
         assert_eq!(pages.stack.len(), 1);
         assert_eq!(pages.stack[0].tab, entry.tab);
         assert_eq!(pages.stack[0].page.state, TabState::Ready);
-        core.dispatch(Action::ClosePage).unwrap();
+        core.dispatch(Action::Pages {
+            action: PageAction::ClosePage,
+        })
+        .unwrap();
         assert!(core.pages().stack.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }

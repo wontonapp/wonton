@@ -44,8 +44,10 @@ async fn a_join_the_server_reports_as_invited_still_ends_joined() {
         user_id: OWNER.to_owned(),
     });
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     // 改写持续到显式清除（会话里多条同步连接都会带回房间状态，只改写一次会被没改写的那条覆盖回去）。

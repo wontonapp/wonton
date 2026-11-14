@@ -18,6 +18,7 @@ import app.wonton.android.push.followSystemNotifications
 import app.wonton.client.ClientCore
 import app.wonton.client.initLogging
 import app.wonton.protocol.Action
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.PluginsViewModel
 import app.wonton.ui.LocalNotificationPermission
 import app.wonton.ui.NotificationPermission
@@ -62,7 +63,7 @@ open class MainActivity : AppCompatActivity() {
         // adb shell am start -n app.wonton.android/.MainActivity \
         //   --es wonton_pairing_code '<码>' --es wonton_open_web <网址>
         val code = intent.getStringExtra("wonton_pairing_code")?.takeIf { debuggable }
-        val rejected = code?.let { core.send(Action.PairHome(it, defaultDeviceName(this))) }
+        val rejected = code?.let { core.send(Action.Home(HomeAction.PairHome(it, defaultDeviceName(this)))) }
         if (rejected != null) {
             setContent { StartupFailure(getString(R.string.startup_code_rejected, rejected)) }
             return
@@ -180,20 +181,22 @@ open class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         // 回到前台：网络可能变了，让核心检查隧道并重连；通知权限也可能在系统设置里改过。
-        (application as WontonApplication).core.getOrNull()?.send(Action.AppForegrounded)
+        (application as WontonApplication).core.getOrNull()?.send(Action.Home(HomeAction.AppForegrounded))
         if (::notificationPermission.isInitialized) notificationPermission.refresh()
     }
 
     override fun onStart() {
         super.onStart()
         val core = (application as WontonApplication).core.getOrNull() ?: return
-        networkWatcher = NetworkWatcher(this) { core.send(Action.NetworkChanged(it)) }.also { it.start() }
+        networkWatcher = NetworkWatcher(this) {
+            core.send(Action.Home(HomeAction.NetworkChanged(it)))
+        }.also { it.start() }
     }
 
     override fun onStop() {
         super.onStop()
         networkWatcher?.stop()
         networkWatcher = null
-        (application as WontonApplication).core.getOrNull()?.send(Action.AppBackgrounded)
+        (application as WontonApplication).core.getOrNull()?.send(Action.Home(HomeAction.AppBackgrounded))
     }
 }

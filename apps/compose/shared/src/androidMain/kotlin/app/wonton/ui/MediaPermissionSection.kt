@@ -17,7 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.PluginAction
 import app.wonton.ui.design.WontonGroup
 import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
@@ -53,7 +55,7 @@ internal fun MediaPermissionSection(plugins: PluginsState, id: String) {
                         problem = null
                         // 本机设置，同步落盘；和别的详情页开关一样失败弹回并显示原因。
                         problem = try {
-                            plugins.core.setPluginMediaPermission(pluginId = id, allow = allowed)
+                            plugins.core.dispatch(Action.Plugins(PluginAction.SetPluginMediaPermission(id, allowed)))
                             null
                         } catch (failure: CoreException) {
                             failure.problem

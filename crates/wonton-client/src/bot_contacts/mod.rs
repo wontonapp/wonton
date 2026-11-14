@@ -1,6 +1,6 @@
 //! Bot 资料页的“联系人”（ADR-0045、ADR-0050）：一次看一个 Bot，经隧道取自家核心的联系人接口。
 //!
-//! [`Action::RefreshBotContacts`] 选定一个 Bot；之后对任何 Bot 的操作（包括在“等你确认”里同意别的 Bot 的请求）
+//! [`BotContactAction::RefreshBotContacts`] 选定一个 Bot；之后对任何 Bot 的操作（包括在“等你确认”里同意别的 Bot 的请求）
 //! 都把 ViewModel 切到那个 Bot，结果和失败原因都落在这里。取列表失败换掉列表（`state`）；发起、同意、拒绝、删除失败
 //! 不动列表，原因单独放在 `action_failure`，随后在后台重取一次列表（失败多半说明手上的列表过时了）。有一行在等对方（Bot 等它的归属人同意，人等他接受）
 //! 时隔几秒取一次列表，跟上对方的处理；都没有了就停。
@@ -15,8 +15,8 @@ use tokio::sync::watch::Sender as WatchSender;
 use tokio::sync::{mpsc, watch};
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, BotContactFailure, BotContactsState, BotContactsViewModel, BotRef, ContactError,
-    ContactKind, ContactRequest, ContactState, CoreError, HomeStatus,
+    BotContactAction, BotContactFailure, BotContactsState, BotContactsViewModel, BotRef,
+    ContactError, ContactKind, ContactRequest, ContactState, CoreError, HomeStatus,
 };
 
 use crate::home::HomeLink;
@@ -84,21 +84,18 @@ impl BotContactsLink {
         self.view.clone()
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: BotContactAction) -> Result<(), CoreError> {
         let (bot, op) = match action {
-            Action::RefreshBotContacts { bot } => (bot, Op::List),
-            Action::RequestBotContact { bot, user_id } => (bot, request(user_id, ContactKind::Bot)),
-            Action::RequestPersonContact { bot, user_id } => {
+            BotContactAction::RefreshBotContacts { bot } => (bot, Op::List),
+            BotContactAction::RequestBotContact { bot, user_id } => {
+                (bot, request(user_id, ContactKind::Bot))
+            }
+            BotContactAction::RequestPersonContact { bot, user_id } => {
                 (bot, request(user_id, ContactKind::Person))
             }
-            Action::ApproveBotContact { bot, user_id } => (bot, Op::Approve(user_id)),
-            Action::RejectBotContact { bot, user_id } => (bot, Op::Reject(user_id)),
-            Action::RemoveBotContact { bot, user_id } => (bot, Op::Remove(user_id)),
-            _ => {
-                return Err(CoreError::InvalidInput {
-                    reason: l10n!(CATALOG, language(), "contacts-invalid-action"),
-                });
-            }
+            BotContactAction::ApproveBotContact { bot, user_id } => (bot, Op::Approve(user_id)),
+            BotContactAction::RejectBotContact { bot, user_id } => (bot, Op::Reject(user_id)),
+            BotContactAction::RemoveBotContact { bot, user_id } => (bot, Op::Remove(user_id)),
         };
         *lock(&self.last_action) = Instant::now();
         self.select(&bot, &op);

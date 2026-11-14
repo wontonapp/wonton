@@ -9,6 +9,7 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod action_domains;
 mod agent_chain;
 mod agent_handoff;
 mod agent_outbox;
@@ -68,10 +69,15 @@ mod verification;
 mod widget;
 
 pub use action::Action;
+pub use action_domains::{
+    BotAction, BotContactAction, ChatAction, FamilyAction, FileAction, FriendsAction, HomeAction,
+    OnboardingAction, PageAction, PeerAction, PluginAction, PushAction, SessionAction,
+    SettingsAction, SharingAction,
+};
 pub use agent_chain::{
     ACP_CHAIN_META_KEY, AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS,
-    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH,
-    AgentChainAction, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
+    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
+    AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
     ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
     DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,

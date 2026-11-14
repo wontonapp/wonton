@@ -108,12 +108,27 @@ async fn a_server_without_a_version_is_not_judged_old() {
 
 /// 资料那步被藏起来了：从 Agent 一路走到最后一页。
 async fn walk_to_review_without_profile(rig: &Rig) -> OnboardingViewModel {
-    act(rig, Action::ContinueOnboarding);
+    act(
+        rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(rig, OnboardingStep::Model).await;
     configure_gateway(rig).await;
-    act(rig, Action::ContinueOnboarding);
+    act(
+        rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     at(rig, OnboardingStep::Apps).await;
-    act(rig, Action::ContinueOnboarding);
+    act(
+        rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     rig.wait_onboarding(|view| {
         view.step == Some(OnboardingStep::Review)
             && view
@@ -134,7 +149,12 @@ async fn finishing_on_an_old_server_skips_the_hidden_profile() {
     walk_to_review_without_profile(&rig).await;
     assert!(rig.core.seen(&Method::PUT, PROFILE).is_empty());
 
-    act(&rig, Action::ContinueOnboarding);
+    act(
+        &rig,
+        Action::Onboarding {
+            action: wonton_protocol::OnboardingAction::ContinueOnboarding,
+        },
+    );
     let done = rig
         .wait_onboarding(|view| {
             view.review.commit == OnboardingCommit::Done

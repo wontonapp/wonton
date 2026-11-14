@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingTip
 import app.wonton.ui.design.WontonButton
@@ -70,7 +71,7 @@ internal fun OnboardingTipNotice(tip: OnboardingTip) {
             color = WontonTheme.colors.textSecondary.toColor(),
         )
         WontonIconButton(WontonIcon.Close, stringResource(R.string.common_close), {
-            context.send(Action.DismissOnboardingTip(tip))
+            context.send(Action.Onboarding(OnboardingAction.DismissOnboardingTip(tip)))
         })
     }
 }
@@ -84,7 +85,7 @@ internal fun ReplacedAgentOffer(plugins: PluginsState) {
     if (offer != null && !answered) {
         val dismiss = {
             answered = true
-            context.send(Action.DismissReplacedAgentOffer)
+            context.send(Action.Onboarding(OnboardingAction.DismissReplacedAgentOffer))
         }
         WontonDialog(
             stringResource(R.string.onboarding_replaced_agent_title, offer.title),

@@ -27,6 +27,7 @@ import app.wonton.protocol.Action
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.OnboardingStep
 import app.wonton.protocol.OnboardingViewModel
 import app.wonton.ui.design.WontonTheme
@@ -55,7 +56,7 @@ internal fun OnboardingHost(
     val core = plugins.core
     var skipped by remember(core) { mutableStateOf(false) }
     val send: (Action) -> Unit = { action ->
-        if (action == Action.RestartOnboarding) skipped = false
+        if (action == Action.Onboarding(OnboardingAction.RestartOnboarding)) skipped = false
         plugins.send(action)
     }
     val view by produceState(remember(core) { core.onboarding() }, core) {
@@ -66,7 +67,9 @@ internal fun OnboardingHost(
     val paired = home.status !is HomeStatus.NotConfigured
     OnboardingFinishedEffect(view, paired && !skipped, onFinished)
     CompositionLocalProvider(
-        LocalOnboarding provides OnboardingContext(view, chat, send) { core.closeOnboarding() },
+        LocalOnboarding provides OnboardingContext(view, chat, send) {
+            send(Action.Onboarding(OnboardingAction.CloseOnboarding))
+        },
     ) {
         when {
             paired && !skipped && view.blocksHome() -> {
@@ -113,7 +116,9 @@ private fun OnboardingGateProblem(view: OnboardingViewModel, send: (Action) -> U
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s16, Alignment.CenterVertically),
     ) {
         view.problem?.let { problem ->
-            OnboardingProblem(problem.onboardingTitle(), problem.message) { send(Action.RefreshOnboarding) }
+            OnboardingProblem(problem.onboardingTitle(), problem.message) {
+                send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
+            }
         }
         WontonButton(stringResource(R.string.onboarding_skip_anyway), skip, kind = WontonButtonKind.SECONDARY)
     }
@@ -144,7 +149,7 @@ private fun OnboardingRoute(view: OnboardingViewModel, plugins: PluginsState, ho
     if (url != null) {
         OnboardingGatewayScreen(url, home) {
             gateway = null
-            plugins.send(Action.RefreshOnboarding)
+            plugins.send(Action.Onboarding(OnboardingAction.RefreshOnboarding))
         }
     } else {
         OnboardingScreen(view, plugins, openGateway = { gateway = it })

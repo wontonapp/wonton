@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AddedTools
 import app.wonton.protocol.BotRef
@@ -86,7 +87,7 @@ fun PluginPages(
         storeConfirmations && storeConfirmation != null -> {
             val drop = {
                 if (plugins.viewModel.confirmation?.preview?.id == storeConfirmation.preview.id) {
-                    plugins.send(Action.DismissStoreConfirmation)
+                    plugins.send(Action.Plugins(PluginAction.DismissStoreConfirmation))
                 }
             }
             BackHandler(onBack = drop)
@@ -138,7 +139,7 @@ fun PluginPages(
 internal fun UninstallDialog(target: UninstallTarget, plugins: PluginsState, onDismiss: () -> Unit) {
     val uninstall = { deleteData: Boolean ->
         onDismiss()
-        plugins.send(Action.UninstallPlugin(target.id, deleteData))
+        plugins.send(Action.Plugins(PluginAction.UninstallPlugin(target.id, deleteData)))
     }
     WontonDialog(
         stringResource(R.string.plugin_uninstall_title, target.title),
@@ -179,7 +180,7 @@ fun TaskRow(
             WontonIconButton(
                 WontonIcon.Close,
                 stringResource(R.string.common_close),
-                { plugins.send(Action.DismissPluginTask(task.id)) },
+                { plugins.send(Action.Plugins(PluginAction.DismissPluginTask(task.id))) },
             )
         }
     }

@@ -8,8 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use wonton_client::{
-    Action, ChatAccount, ChatSync, ClientCore, FriendsState, FriendsViewModel, HomeStatus,
-    PeersViewModel,
+    Action, ChatAccount, ChatSync, ClientCore, FriendsAction, FriendsState, FriendsViewModel,
+    HomeAction, HomeStatus, PeerAction, PeersViewModel,
 };
 
 const WAIT: Duration = Duration::from_secs(120);
@@ -59,7 +59,9 @@ impl End {
                 inflight = false;
             }
             if !inflight {
-                self.dispatch(Action::RefreshFriends);
+                self.dispatch(Action::Friends {
+                    action: FriendsAction::RefreshFriends,
+                });
                 inflight = true;
             }
             if check(&self.friends()).is_some() {
@@ -85,7 +87,9 @@ impl End {
         let subscription = self.core.subscribe_peers();
         let deadline = Instant::now() + WAIT;
         loop {
-            self.dispatch(Action::RefreshPeers);
+            self.dispatch(Action::Peers {
+                action: PeerAction::RefreshPeers,
+            });
             if check(&self.peers()).is_some() {
                 println!("PASS: {} {}", self.name, what);
                 return;
@@ -142,9 +146,11 @@ fn pair_core(dir: &str) -> Arc<ClientCore> {
 }
 
 async fn pair(end: &End, code: &str) {
-    end.dispatch(Action::PairHome {
-        code: wonton_protocol::SecretString::new(code),
-        device_name: format!("{} 的探针", end.name),
+    end.dispatch(Action::Home {
+        action: HomeAction::PairHome {
+            code: wonton_protocol::SecretString::new(code),
+            device_name: format!("{} 的探针", end.name),
+        },
     });
     let home = end.core.subscribe_home();
     wait(end.name, "连上家里的服务器", || async {
@@ -204,8 +210,12 @@ async fn main() {
     // 已经配对过（同一对栈重复跑）就跳过。
     let a_server = a_user.rsplit_once(':').expect("用户 ID 有服务器名").1;
     let b_server = b_user.rsplit_once(':').unwrap().1.to_owned();
-    a.dispatch(Action::RefreshPeers);
-    b.dispatch(Action::RefreshPeers);
+    a.dispatch(Action::Peers {
+        action: PeerAction::RefreshPeers,
+    });
+    b.dispatch(Action::Peers {
+        action: PeerAction::RefreshPeers,
+    });
     tokio::time::sleep(Duration::from_secs(3)).await;
     // 只有真连上或正在探活才算配过：`RemovedByPeer`、`AwaitingApproval`、`Declined` 都重配。
     println!("A peers: {:#?}\nB peers: {:#?}", a.peers(), b.peers());
@@ -219,19 +229,25 @@ async fn main() {
         })
     };
     if !(known(&a.peers(), &b_server) && known(&b.peers(), a_server)) {
-        b.dispatch(Action::ShowPeerCode);
+        b.dispatch(Action::Peers {
+            action: PeerAction::ShowPeerCode,
+        });
         b.peers_until("出码", |view| view.code.clone().map(|_| ()))
             .await;
         let code = b.peers().code.clone().unwrap();
-        a.dispatch(Action::ScanPeerCode {
-            code: code.code.clone(),
+        a.dispatch(Action::Peers {
+            action: PeerAction::ScanPeerCode {
+                code: code.code.clone(),
+            },
         });
         b.peers_until("收到配对请求", |view| {
             (!view.requests.is_empty()).then_some(())
         })
         .await;
         let id = b.peers().requests[0].id.clone();
-        b.dispatch(Action::ApprovePeerRequest { id });
+        b.dispatch(Action::Peers {
+            action: PeerAction::ApprovePeerRequest { id },
+        });
     }
     let connected = |view: &PeersViewModel, server: &str| {
         view.peers.iter().any(|peer| {
@@ -251,8 +267,10 @@ async fn main() {
     println!("PASS: 两台服务器已配对");
 
     // 加好友 → 请求 → 同意。
-    b.dispatch(Action::AddFriend {
-        user_id: a_user.clone(),
+    b.dispatch(Action::Friends {
+        action: FriendsAction::AddFriend {
+            user_id: a_user.clone(),
+        },
     });
     tokio::time::sleep(Duration::from_secs(3)).await;
     println!("B 发邀请后：{:#?}", b.friends());
@@ -271,8 +289,10 @@ async fn main() {
         .unwrap()
         .room_id
         .clone();
-    a.dispatch(Action::ApproveFriendRequest {
-        room_id: room.clone(),
+    a.dispatch(Action::Friends {
+        action: FriendsAction::ApproveFriendRequest {
+            room_id: room.clone(),
+        },
     });
     for (end, other) in [(&a, &b_user), (&b, &a_user)] {
         end.friends_until("成为好友", |view| {
@@ -284,8 +304,10 @@ async fn main() {
     }
 
     // 删好友：名单没了，私聊留着。
-    a.dispatch(Action::RemoveFriend {
-        user_id: b_user.clone(),
+    a.dispatch(Action::Friends {
+        action: FriendsAction::RemoveFriend {
+            user_id: b_user.clone(),
+        },
     });
     a.friends_until("好友删掉", |view| {
         (!view.friends.iter().any(|friend| friend.user_id == b_user)).then_some(())
@@ -294,8 +316,10 @@ async fn main() {
     assert!(a.rooms().iter().any(|id| id == &room), "删好友不应退出私聊");
 
     // 再邀请一次（新房间）→ 拒绝。
-    a.dispatch(Action::AddFriend {
-        user_id: b_user.clone(),
+    a.dispatch(Action::Friends {
+        action: FriendsAction::AddFriend {
+            user_id: b_user.clone(),
+        },
     });
     b.friends_until("又收到请求", |view| {
         view.incoming
@@ -312,7 +336,9 @@ async fn main() {
         .unwrap()
         .room_id
         .clone();
-    b.dispatch(Action::RejectFriendRequest { room_id: rejected });
+    b.dispatch(Action::Friends {
+        action: FriendsAction::RejectFriendRequest { room_id: rejected },
+    });
     b.friends_until("请求拒掉", |view| {
         (!view
             .incoming
@@ -323,11 +349,13 @@ async fn main() {
     .await;
 
     // 屏蔽用户：再邀请就不进请求；撤销后照常。
-    b.dispatch(Action::BlockFriend {
-        target: wonton_protocol::FriendBlockTarget::User {
-            user_id: a_user.clone(),
+    b.dispatch(Action::Friends {
+        action: FriendsAction::BlockFriend {
+            target: wonton_protocol::FriendBlockTarget::User {
+                user_id: a_user.clone(),
+            },
+            scope: wonton_protocol::FriendBlockScope::Invitations,
         },
-        scope: wonton_protocol::FriendBlockScope::Invitations,
     });
     b.friends_until("用户已屏蔽", |view| {
         view.blocked
@@ -342,8 +370,10 @@ async fn main() {
             .then_some(())
     })
     .await;
-    a.dispatch(Action::AddFriend {
-        user_id: b_user.clone(),
+    a.dispatch(Action::Friends {
+        action: FriendsAction::AddFriend {
+            user_id: b_user.clone(),
+        },
     });
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert!(
@@ -354,11 +384,13 @@ async fn main() {
         "屏蔽后邀请不该进请求"
     );
     println!("PASS: 屏蔽后邀请进不来");
-    b.dispatch(Action::UnblockFriend {
-        target: wonton_protocol::FriendBlockTarget::User {
-            user_id: a_user.clone(),
+    b.dispatch(Action::Friends {
+        action: FriendsAction::UnblockFriend {
+            target: wonton_protocol::FriendBlockTarget::User {
+                user_id: a_user.clone(),
+            },
+            scope: wonton_protocol::FriendBlockScope::Invitations,
         },
-        scope: wonton_protocol::FriendBlockScope::Invitations,
     });
     b.friends_until("用户已撤销", |view| {
         (!view.blocked.iter().any(|block| {
@@ -374,11 +406,13 @@ async fn main() {
 
     // 拉黑整台服务器：同样进不来；撤销。
     let server_a = a_user.rsplit_once(':').expect("用户 ID 有服务器名").1;
-    b.dispatch(Action::BlockFriend {
-        target: wonton_protocol::FriendBlockTarget::Server {
-            server_name: server_a.to_owned(),
+    b.dispatch(Action::Friends {
+        action: FriendsAction::BlockFriend {
+            target: wonton_protocol::FriendBlockTarget::Server {
+                server_name: server_a.to_owned(),
+            },
+            scope: wonton_protocol::FriendBlockScope::Federation,
         },
-        scope: wonton_protocol::FriendBlockScope::Federation,
     });
     b.friends_until("服务器已拉黑", |view| {
         view.blocked
@@ -387,8 +421,10 @@ async fn main() {
             .then_some(())
     })
     .await;
-    a.dispatch(Action::AddFriend {
-        user_id: b_user.clone(),
+    a.dispatch(Action::Friends {
+        action: FriendsAction::AddFriend {
+            user_id: b_user.clone(),
+        },
     });
     tokio::time::sleep(Duration::from_secs(5)).await;
     assert!(
@@ -399,11 +435,13 @@ async fn main() {
         "拉黑服务器后邀请不该进请求"
     );
     println!("PASS: 拉黑服务器后邀请进不来");
-    b.dispatch(Action::UnblockFriend {
-        target: wonton_protocol::FriendBlockTarget::Server {
-            server_name: server_a.to_owned(),
+    b.dispatch(Action::Friends {
+        action: FriendsAction::UnblockFriend {
+            target: wonton_protocol::FriendBlockTarget::Server {
+                server_name: server_a.to_owned(),
+            },
+            scope: wonton_protocol::FriendBlockScope::Federation,
         },
-        scope: wonton_protocol::FriendBlockScope::Federation,
     });
     b.friends_until("服务器已撤销", |view| {
         (!view
