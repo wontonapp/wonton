@@ -587,7 +587,9 @@ impl Confirmations {
         devices: Vec<String>,
         langs: &Languages,
     ) -> Result<ConfirmationState, AnswerError> {
-        self.answer_with_secrets_by(id, answer, choice_id, secrets, settings, langs, None)
+        self.answer_with_secrets_by(
+            id, answer, choice_id, secrets, settings, devices, langs, None,
+        )
     }
 
     /// Gateway-authenticated answerer, recorded atomically with the winning answer.
@@ -599,6 +601,7 @@ impl Confirmations {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
         langs: &Languages,
         answered_by: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {

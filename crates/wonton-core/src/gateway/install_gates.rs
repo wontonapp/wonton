@@ -307,6 +307,8 @@ where
                 secret_inputs: Vec::new(),
                 settings: None,
                 category: None,
+                permissions: Vec::new(),
+                devices: Vec::new(),
             };
             ask_admin(gateway, peer, headers, draft, run)
         }
@@ -337,6 +339,8 @@ fn preview_draft(preview: &InstallPreview, langs: &Languages) -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 

@@ -524,6 +524,8 @@ fn draft() -> Draft {
         secret_inputs: Vec::new(),
         settings: None,
         category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }
 
