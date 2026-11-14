@@ -16,18 +16,22 @@ fn plain() -> Value {
     json!({"image": "nginx"})
 }
 
+fn healthchecked() -> Value {
+    json!({"image": "nginx", "healthcheck": {"test": ["CMD", "true"]}})
+}
+
 #[test]
 fn a_newer_field_under_an_older_spec_names_the_field_and_the_version() {
     let manifest =
         json!({"webui": {"service": "web", "port": 80, "oidc": {"post_logout_paths": ["/bye"]}}});
-    let found = problems(&document("0.6", manifest.clone(), plain()));
+    let found = problems(&document("0.6", manifest.clone(), healthchecked()));
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(
         found[0].contains("x-wonton.webui.oidc.post_logout_paths"),
         "{found:?}"
     );
     assert!(found[0].contains("\"0.7\""), "{found:?}");
-    assert!(problems(&document("0.7", manifest, plain())).is_empty());
+    assert!(problems(&document("0.7", manifest, healthchecked())).is_empty());
 }
 
 #[test]
@@ -84,7 +88,7 @@ fn no_new_privileges_needs_the_newer_spec_only_without_the_permission() {
 #[test]
 fn a_manifest_that_uses_nothing_new_passes_under_any_spec() {
     let manifest = json!({"webui": {"service": "web", "port": 80}});
-    assert!(problems(&document("0.5", manifest, plain())).is_empty());
+    assert!(problems(&document("0.5", manifest, healthchecked())).is_empty());
 }
 
 /// 表里的版本不能比这份核心支持的新：那样的字段这份核心自己也读不懂。
@@ -134,9 +138,9 @@ fn role_fields_require_0_13() {
             "role_claim": {"name": "immich_role", "admin": "admin", "user": "user"}}}),
     ] {
         let manifest = json!({ "webui": webui });
-        let found = problems(&document("0.12", manifest.clone(), plain()));
+        let found = problems(&document("0.12", manifest.clone(), healthchecked()));
         assert_eq!(found.len(), 1, "{found:?}");
-        assert!(problems(&document("0.13", manifest, plain())).is_empty());
+        assert!(problems(&document("0.13", manifest, healthchecked())).is_empty());
     }
 }
 
@@ -346,10 +350,10 @@ fn base64url_secret_encoding_needs_spec_0_14() {
 fn a_widget_needs_spec_0_14() {
     let manifest =
         json!({"webui": {"service": "web", "port": 80}, "matrix_widget": {"url": "/room"}});
-    let found = problems(&document("0.13", manifest.clone(), plain()));
+    let found = problems(&document("0.13", manifest.clone(), healthchecked()));
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("x-wonton.matrix_widget"), "{found:?}");
-    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+    assert!(problems(&document("0.14", manifest, healthchecked())).is_empty());
 }
 
 #[test]
@@ -388,10 +392,10 @@ fn the_install_deadline_needs_spec_0_14() {
 #[test]
 fn guests_needs_spec_0_14() {
     let manifest = json!({"webui": {"service": "web", "port": 80, "guests": true}});
-    let found = problems(&document("0.13", manifest.clone(), plain()));
+    let found = problems(&document("0.13", manifest.clone(), healthchecked()));
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].contains("x-wonton.webui.guests"), "{found:?}");
-    assert!(problems(&document("0.14", manifest, plain())).is_empty());
+    assert!(problems(&document("0.14", manifest, healthchecked())).is_empty());
 }
 
 #[test]
@@ -439,4 +443,65 @@ fn remote_mcp_needs_0_15() {
     assert!(found[0].contains("x-wonton.remote_mcp"), "{found:?}");
     assert!(found[0].contains("0.15"), "{found:?}");
     assert!(problems(&document("0.15", manifest, plain())).is_empty());
+}
+
+#[test]
+fn automatic_webui_health_requires_spec_0_15_without_an_effective_compose_check() {
+    let manifest = json!({"webui": {"service": "web", "port": 80}});
+    for check in [
+        Value::Null,
+        json!({"disable": true, "test": ["CMD", "true"]}),
+        json!({"test": ["NONE"]}),
+        json!({"test": []}),
+        json!({"test": ""}),
+        json!({"interval": "30s"}),
+    ] {
+        let mut service = plain();
+        service["healthcheck"] = check;
+        assert_eq!(
+            problems(&document("0.14", manifest.clone(), service.clone())).len(),
+            1
+        );
+        assert!(problems(&document("0.15", manifest.clone(), service)).is_empty());
+    }
+}
+
+#[test]
+fn existing_compose_and_explicit_webui_health_keep_their_spec_floors() {
+    let manifest = json!({"webui": {"service": "web", "port": 80}});
+    for test in [json!(["CMD", "true"]), json!("true")] {
+        let mut service = plain();
+        service["healthcheck"] = json!({"test": test});
+        assert!(problems(&document("0.6", manifest.clone(), service)).is_empty());
+    }
+    let manifest = json!({"webui": {"service": "web", "port": 80, "health": "/health"}});
+    assert_eq!(
+        problems(&document("0.12", manifest.clone(), plain())).len(),
+        1
+    );
+    assert!(problems(&document("0.13", manifest, plain())).is_empty());
+}
+
+#[test]
+fn automatic_webui_health_only_counts_resident_compose_web_services() {
+    let manifest = json!({"webui": {"service": "web", "port": 80}});
+    for runtime in ["static_web", "link", "remote_mcp"] {
+        let mut manifest = manifest.clone();
+        manifest["runtime"] = json!(runtime);
+        assert!(problems(&document("0.14", manifest, plain())).is_empty());
+    }
+    let mut one_shot = plain();
+    one_shot["restart"] = json!("no");
+    assert!(problems(&document("0.14", manifest.clone(), one_shot)).is_empty());
+    let mut doc = document("0.14", manifest.clone(), plain());
+    doc["services"]["app"] = json!({
+        "image": "nginx",
+        "depends_on": {"web": {"condition": "service_completed_successfully"}}
+    });
+    assert!(problems(&doc).is_empty());
+    doc["services"] = json!({"sidecar": {"image": "nginx"}});
+    assert!(problems(&doc).is_empty());
+    let mut doc = document("0.14", manifest, plain());
+    doc["x-wonton"]["runtime"] = json!("compose");
+    assert_eq!(problems(&doc).len(), 1);
 }
