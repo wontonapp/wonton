@@ -2,6 +2,9 @@
 <!-- #847 的界面走查页，只在 debug 构建里注册。 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+    <queries>
+        <package android:name="androidx.test.orchestrator" />
+    </queries>
 
     <application
         android:name=".DebugWontonApplication"

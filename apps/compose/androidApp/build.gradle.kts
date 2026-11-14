@@ -163,7 +163,7 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
         // 只打包编译了 Rust 核心的 ABI：其他 ABI 的设备直接装不上，而不是装上后因缺 .so 崩溃。
         ndk {
             abiFilters += providers.gradleProperty("wonton.abis").get().split(" ").filter { it.isNotBlank() }
@@ -171,6 +171,7 @@ android {
     }
 
     testOptions {
+        execution = "ANDROIDX_TEST_ORCHESTRATOR"
         unitTests.isIncludeAndroidResources = true
     }
 }
@@ -203,6 +204,8 @@ dependencies {
     // Apache-2.0。设备上跑 androidTest 的 runner（testInstrumentationRunner 指它）；
     // AndroidJUnitRunner 在这个包里，ext:junit 不带。
     androidTestImplementation(libs.androidx.test.runner)
+    // Apache-2.0。每条设备用例独立启动测试进程，并在用例间清理 App 数据。
+    androidTestUtil(libs.androidx.test.orchestrator)
 }
 
 /** Robolectric 要读 strings.xml 和各语言的 values-*，资源得进单元测试。 */
