@@ -224,7 +224,7 @@ widget ID、用 `generate_webview_url` 得出地址。页面关掉、换房间�
 
 `deploy/dev/core/call-e2e.sh` 尝试从已登录同一加密房间的两台 Android 设备打开 widget，采集 WebRTC 统计并检查挂断和断线退场；需要本地 call 插件、Debug APK 和设备。一次完整通话尚未验证，不能把脚本输出当作三条路径的验收结果。
 
-当前脚本的 relay 模式不能证明强制走公共中继：跳过配对时 `CALL_DIRECT_ADDR` 不影响已保存的连接地址，WebRTC 的回环 ICE 候选也不能证明隧道的实际路径。UDP/TCP 组同样需要核对选中的候选协议。实际通话、路径判定和 delayed leave 均待实测。
+当前脚本的 relay 模式不能证明强制走公共中继：设备配对和连接地址由调用方准备，WebRTC 的回环 ICE 候选也不能证明隧道的实际路径。UDP/TCP 组同样需要核对选中的候选协议。实际通话、路径判定和 delayed leave 均待实测。
 
 ### 已有 Android WebView 媒体前置结果
 

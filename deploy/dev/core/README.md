@@ -184,7 +184,7 @@ Tuwunel 直连核心在 `core` 网络上的推送专用监听，与正式安装�
 
 `call-e2e.sh` 尝试在两台 Android 设备／模拟器上打开 Element Call widget 并采集 WebRTC 统计；录屏和 CDP 数据保存在仓库外的 `~/wonton-dev/research/call-e2e/`。脚本尚未完成真实通话验证，结果不能代替对三种路径、双向媒体、挂断和 delayed leave 的现场验收。
 
-先准备两台已配对到同一开发栈、登录同一个加密房间的 Android Debug WebView 设备，以及带 widget 桥的 Debug APK。外部 Matrix 账号的登录涉及浏览器 OIDC 或密码，脚本不把账号和密钥放进命令行，也不伪造登录状态。复用已经准备好的开发栈时，调用方负责申请和释放栈名额。
+先准备两台以不同账号配对到同一开发栈、登录同一个加密房间的 Android Debug WebView 设备，以及带 widget 桥的 Debug APK。外部 Matrix 账号的登录涉及浏览器 OIDC 或密码，脚本不把账号和密钥放进命令行，也不伪造登录状态。复用已经准备好的开发栈时，调用方负责申请和释放栈名额。
 
 例如，复用已有栈时设置其项目名、实例名、端口和数据目录：
 
@@ -194,8 +194,8 @@ export CALL_SERIAL_A=127.0.0.1:5561
 export CALL_SERIAL_B=127.0.0.1:5563
 export CALL_ROOM='!room:server.example'
 export CALL_APK=/path/to/androidApp-debug.apk
-export CALL_DIRECT_ADDR=192.0.2.10:18682
 export CALL_EXISTING_STACK=1
+export CALL_REUSE_PLUGIN=1
 export CALL_PROJECT=wonton-call-e2e
 export CALL_INSTANCE=call-e2e
 export CALL_PORT=18680
@@ -203,11 +203,14 @@ export CALL_TUNNEL_PORT=18682
 export CALL_DATA_DIR=/path/to/existing-stack-data
 
 CALL_MODE=udp deploy/dev/core/call-e2e.sh
-CALL_MODE=tcp deploy/dev/core/call-e2e.sh
-CALL_MODE=relay deploy/dev/core/call-e2e.sh
+# TCP 模式要求已安装的插件只声明 TCP；切换配置时去掉 CALL_REUSE_PLUGIN，脚本会重新安装插件。
+# CALL_MODE=tcp deploy/dev/core/call-e2e.sh
+# CALL_MODE=relay deploy/dev/core/call-e2e.sh
 ```
 
-`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK；TCP 模式复制插件包并移除 UDP 端口声明，不改原包。默认 `CALL_SKIP_PAIR=1` 时，`CALL_DIRECT_ADDR` 不会改变设备已保存的连接地址；relay 模式不会自动强制或验证公共中继，必须另行配置网络并核实两端实际隧道路由。UDP/TCP 模式也必须核对选中的 ICE 候选协议。公共中继提示属于前端另行验收。`CALL_KEEP_STACK=1` 保留脚本自己启动的栈和名额，检查完后需调用 `dev.sh reset` 并释放名额。
+`CALL_REUSE_PLUGIN=1` 会检查已安装插件的 widget 与端口声明，不卸载插件；TCP 模式要求没有 UDP 声明。关闭这个选项时，TCP 模式复制插件包并移除 UDP 端口声明，不改原包。录屏按 180 秒分段，脚本结束或失败时导出到每台设备各自的 `*-screenrecord/` 目录；导出失败会保留设备上的文件并报错。
+
+`CALL_BUILD=1` 会经 `android-build.sh` 构建 Debug APK。设备配对和账号准备由调用方完成；已配对设备保存的连接地址不会被脚本改变。relay 模式不会自动强制或验证公共中继，必须另行配置网络并核实两端实际隧道路由。UDP/TCP 模式也必须核对选中的 ICE 候选协议。公共中继提示属于前端另行验收。`CALL_KEEP_STACK=1` 保留脚本自己启动的栈和名额，检查完后需调用 `dev.sh reset` 并释放名额。
 
 脚本依赖 Bash、Python 3、ADB、Docker Compose、`jq` 和 `screenrecord`；不需要安装 Python WebSocket 包。
 

@@ -4,15 +4,13 @@
 # The script owns only the stack named by CALL_PROJECT and the two explicitly
 # supplied Android devices. It installs the local call plugin, opens its widget
 # through a Wonton app link, records CDP WebRTC stats, and checks inbound RTP.
-# Account setup is deliberately a prerequisite: the two devices must already be
-# paired and logged into the same encrypted room. The app's external Matrix
-# account flow is not safely automatable from a shell.
+# Account setup is deliberately a prerequisite: two devices must be paired as
+# different accounts and logged into the same encrypted room.
 #
 # Required:
 #   CALL_PLUGIN=/path/to/wonton-plugin-call
 #   CALL_SERIAL_A=<adb serial> CALL_SERIAL_B=<adb serial>
 #   CALL_ROOM='!room:server'
-#   CALL_DIRECT_ADDR=<host-reachable tunnel address>
 #   CALL_APK=/path/to/androidApp-debug.apk (or CALL_BUILD=1)
 #
 # One path at a time:
@@ -24,6 +22,7 @@
 #
 # The default artifact directory is outside the repository:
 #   ~/wonton-dev/research/call-e2e/<mode>-<timestamp>/
+main() {
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,14 +40,13 @@ plugin="${CALL_PLUGIN:-}"
 serial_a="${CALL_SERIAL_A:-}"
 serial_b="${CALL_SERIAL_B:-}"
 room="${CALL_ROOM:-}"
-direct_addr="${CALL_DIRECT_ADDR:-}"
 apk="${CALL_APK:-$repo/apps/compose/androidApp/build/outputs/apk/debug/androidApp-debug.apk}"
 duration="${CALL_DURATION:-30}"
 artifact_root="${CALL_ARTIFACT_DIR:-$HOME/wonton-dev/research/call-e2e}"
 existing_stack="${CALL_EXISTING_STACK:-0}"
+reuse_plugin="${CALL_REUSE_PLUGIN:-0}"
 build="${CALL_BUILD:-0}"
 keep_stack="${CALL_KEEP_STACK:-0}"
-skip_pair="${CALL_SKIP_PAIR:-1}"
 
 case "$mode" in
   udp|tcp|relay) ;;
@@ -56,11 +54,14 @@ case "$mode" in
 esac
 [[ -n "$plugin" && -e "$plugin" ]] || { echo "call-e2e: CALL_PLUGIN is missing" >&2; exit 2; }
 [[ -n "$serial_a" && -n "$serial_b" ]] || { echo "call-e2e: CALL_SERIAL_A and CALL_SERIAL_B are required" >&2; exit 2; }
+[[ "$serial_a" != "$serial_b" ]] || { echo "call-e2e: two different Android devices are required" >&2; exit 2; }
 [[ -n "$room" ]] || { echo "call-e2e: CALL_ROOM is required" >&2; exit 2; }
-[[ -n "$direct_addr" ]] || { echo "call-e2e: CALL_DIRECT_ADDR is required" >&2; exit 2; }
 command -v adb >/dev/null || { echo "call-e2e: adb is required" >&2; exit 2; }
 command -v jq >/dev/null || { echo "call-e2e: jq is required" >&2; exit 2; }
 [[ -f "$cdp" ]] || { echo "call-e2e: missing $cdp" >&2; exit 2; }
+[[ "$reuse_plugin" != 1 || "$existing_stack" == 1 ]] || {
+  echo "call-e2e: CALL_REUSE_PLUGIN=1 requires CALL_EXISTING_STACK=1" >&2; exit 2;
+}
 
 run_id="${mode}-$(date +%Y%m%d-%H%M%S)-$$"
 export WONTON_DEV_DATA="${CALL_DATA_DIR:-$here/.data/call-e2e-$run_id}"
@@ -74,14 +75,14 @@ plugin_copy=""
 forward_a=""
 forward_b=""
 record_pids=()
+record_serials=()
+record_dirs=()
+record_names=()
 
 cleanup() {
   local status=$?
   set +e
-  for pid_file in "${record_pids[@]}"; do
-    pid="$(cat "$pid_file" 2>/dev/null || true)"
-    [[ -z "$pid" ]] || kill "$pid" >/dev/null 2>&1 || true
-  done
+  if ! finish_recordings; then status=1; fi
   [[ -z "$forward_a" ]] || adb -s "$serial_a" forward --remove "tcp:$forward_a" >/dev/null 2>&1
   [[ -z "$forward_b" ]] || adb -s "$serial_b" forward --remove "tcp:$forward_b" >/dev/null 2>&1
   if [[ -n "$plugin_copy" ]]; then rm -rf -- "$plugin_copy"; fi
@@ -107,7 +108,6 @@ cleanup() {
   fi
   exit "$status"
 }
-trap cleanup EXIT INT TERM
 
 export WONTON_DEV_PROJECT="$project"
 export WONTON_DEV_INSTANCE="$instance"
@@ -180,6 +180,22 @@ install_plugin() {
   }
 }
 
+check_installed_plugin() {
+  local response="$artifacts/installed.json"
+  "$dev" api GET /_wonton/api/plugins >"$response"
+  jq -e --arg mode "$mode" '
+    .plugins[] | select(.id == "app.element-call" and .status.state == "running"
+      and .matrix_widget != null
+      and (if $mode == "tcp" then
+        any(.tunnel_ports[]?; .port == 7881 and .protocol == "tcp")
+        and (any(.tunnel_ports[]?; .port == 7882 and .protocol == "udp") | not)
+      else any(.tunnel_ports[]?; .port == 7882 and .protocol == "udp") end))
+  ' "$response" >/dev/null || {
+    echo "call-e2e: installed plugin does not expose a running widget with the requested ports" >&2
+    return 1
+  }
+}
+
 build_apk() {
   [[ "$build" == 1 ]] || return 0
   echo "== build Android debug APK"
@@ -197,16 +213,6 @@ install_apk() {
   done
 }
 
-pair_device() {
-  local serial="$1" name="$2" code
-  code="$(WONTON_DEV_PROJECT="$project" WONTON_DEV_INSTANCE="$instance" \
-    WONTON_DEV_PORT="$port" WONTON_DEV_TUNNEL_PORT="$tunnel_port" \
-    WONTON_DEV_DOMAIN="$WONTON_DEV_DOMAIN" "$dev" pair "$direct_addr" | tail -n 1)"
-  [[ -n "$code" ]] || { echo "call-e2e: pair produced no code" >&2; exit 1; }
-  printf '%s\n' "<redacted>" >"$artifacts/$name-pair-code.txt"
-  adb -s "$serial" shell am start -n app.wonton.android/.MainActivity \
-    --es wonton_pairing_code "\"$code\"" >/dev/null
-}
 
 launch_widget() {
   local serial="$1"
@@ -214,7 +220,7 @@ launch_widget() {
   encoded="$(python3 - "$room" <<'PY'
 from urllib.parse import quote
 import sys
-print(quote(sys.argv[1], safe="!$&'()*+,-.:;=@_~"))
+print(quote(sys.argv[1], safe=""))
 PY
 )"
   adb -s "$serial" shell am start -a android.intent.action.VIEW \
@@ -222,11 +228,11 @@ PY
 }
 
 forward_webview() {
-  local serial="$1" port="$2" pid socket_name
+  local serial="$1" pid socket_name
   pid="$(adb -s "$serial" shell pidof app.wonton.android | tr -d '\r')"
   [[ -n "$pid" ]] || { echo "call-e2e: app is not running on $serial" >&2; exit 1; }
   socket_name="webview_devtools_remote_${pid%% *}"
-  adb -s "$serial" forward "tcp:$port" "localabstract:$socket_name" >/dev/null
+  adb -s "$serial" forward tcp:0 "localabstract:$socket_name"
 }
 
 check_stats() {
@@ -244,27 +250,64 @@ check_stats() {
 
 record_screen() {
   local serial="$1" name="$2"
-  local remote="/sdcard/wonton-call-$name.mp4"
-  adb -s "$serial" shell screenrecord --size 720x1280 --time-limit "$duration" "$remote" >/dev/null 2>&1 &
-  echo "$!" >"$artifacts/$name-screenrecord.pid"
-  record_pids+=("$artifacts/$name-screenrecord.pid")
-  echo "$remote" >"$artifacts/$name-screenrecord.remote"
+  local remote="/sdcard/wonton-call-$run_id-$name"
+  adb -s "$serial" shell "
+    mkdir -p '$remote' || exit 1
+    n=0
+    while [ ! -f '$remote/stop' ]; do
+      n=\$((n + 1))
+      file=\$(printf '%04d.mp4' \"\$n\")
+      screenrecord --size 720x1280 --time-limit 180 '$remote/'\"\$file\" &
+      child=\$!
+      echo \"\$child\" > '$remote/pid'
+      [ -f '$remote/stop' ] && kill -INT \"\$child\" 2>/dev/null || true
+      wait \"\$child\"
+      rc=\$?
+      rm -f '$remote/pid'
+      [ -f '$remote/stop' ] && break
+      [ \"\$rc\" -eq 0 ] || exit \"\$rc\"
+    done
+  " >"$artifacts/$name-screenrecord.log" 2>&1 &
+  record_pids+=("$!")
+  record_serials+=("$serial")
+  record_dirs+=("$remote")
+  record_names+=("$name")
+  adb -s "$serial" shell "
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      [ -s '$remote/pid' ] && exit 0
+      sleep 1
+    done
+    exit 1
+  " || { echo "call-e2e: screen recording failed to start on $serial" >&2; return 1; }
 }
 
-pull_recording() {
-  local serial="$1" name="$2" remote
-  remote="$(cat "$artifacts/$name-screenrecord.remote")"
-  adb -s "$serial" pull "$remote" "$artifacts/$name-screenrecord.mp4" >/dev/null
-  adb -s "$serial" shell rm -f "$remote" >/dev/null
-}
-
-wait_recordings() {
-  local pid_file pid
-  for pid_file in "${record_pids[@]}"; do
-    pid="$(cat "$pid_file" 2>/dev/null || true)"
-    [[ -z "$pid" ]] || wait "$pid" || true
+finish_recordings() {
+  local i rc=0 remote destination
+  for i in "${!record_pids[@]}"; do
+    remote="${record_dirs[$i]}"
+    adb -s "${record_serials[$i]}" shell "
+      mkdir -p '$remote' && touch '$remote/stop'
+      if [ -f '$remote/pid' ]; then kill -INT \"\$(cat '$remote/pid')\" 2>/dev/null || true; fi
+    " || rc=1
   done
+  for i in "${!record_pids[@]}"; do
+    remote="${record_dirs[$i]}"
+    destination="$artifacts/${record_names[$i]}-screenrecord"
+    wait "${record_pids[$i]}" || rc=1
+    if adb -s "${record_serials[$i]}" pull "$remote" "$destination" >/dev/null; then
+      adb -s "${record_serials[$i]}" shell rm -rf "$remote" || rc=1
+    else
+      echo "call-e2e: recording remains on ${record_serials[$i]} at $remote" >&2
+      rc=1
+    fi
+  done
+  record_pids=()
+  return "$rc"
 }
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 if [[ "$existing_stack" != 1 ]]; then
   echo "== acquire stack slot $slot"
@@ -272,17 +315,14 @@ if [[ "$existing_stack" != 1 ]]; then
     "$dev" up
   own_stack=1
 fi
-install_plugin
+if [[ "$reuse_plugin" == 1 ]]; then
+  check_installed_plugin
+else
+  install_plugin
+fi
 build_apk
 install_apk
 
-if [[ "$skip_pair" != 1 ]]; then
-  echo "== pair two Android devices"
-  pair_device "$serial_a" a
-  pair_device "$serial_b" b
-  echo "Pairing is asynchronous; wait until both apps show the connected home before continuing."
-  read -r -p "Press Enter after both devices are paired and logged into the same encrypted room: " _
-fi
 
 for serial in "$serial_a" "$serial_b"; do
   adb -s "$serial" shell am force-stop app.wonton.android >/dev/null 2>&1 || true
@@ -290,14 +330,12 @@ for serial in "$serial_a" "$serial_b"; do
   sleep 2
 done
 
-launch_widget "$serial_a"
-launch_widget "$serial_b"
-forward_a=9222
-forward_b=9223
-forward_webview "$serial_a" "$forward_a"
-forward_webview "$serial_b" "$forward_b"
 record_screen "$serial_a" a
 record_screen "$serial_b" b
+launch_widget "$serial_a"
+launch_widget "$serial_b"
+forward_a="$(forward_webview "$serial_a")"
+forward_b="$(forward_webview "$serial_b")"
 
 echo "== join and sample inbound RTP ($duration seconds)"
 python3 "$cdp" "$forward_a" join "$duration" >"$artifacts/a-stats.jsonl" &
@@ -330,9 +368,6 @@ if [[ "${CALL_SKIP_KILL:-0}" != 1 ]]; then
   python3 "$cdp" "$forward_b" wait-left "${CALL_DELAYED_LEAVE_TIMEOUT:-90}" >"$artifacts/delayed-leave-b.jsonl"
 fi
 
-wait_recordings
-pull_recording "$serial_a" a
-pull_recording "$serial_b" b
 
 cat >"$artifacts/metadata.json" <<EOF
 {
@@ -350,3 +385,7 @@ EOF
 
 echo "Inbound audio/video RTP samples found on both devices; hangup was requested."
 echo "Verify the selected ICE transport, tunnel path and participant departure independently."
+}
+
+main "$@"
+exit
