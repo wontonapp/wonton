@@ -82,6 +82,10 @@ HAProxy 不做 ACME，证书还是 lego。核心从清单生成它的配置，�
 
 每个声明了 `clients` 的插件在 App 里有开关：**局域网入口**、**公网入口**（HTTPS），以及每个 `clients.tcp` 一个。**全部默认关，只有主人能开（App 经隧道），Bot 和 MCP 总线没有这些工具。** 公网入口还受设置里的总开关管（ADR-0090）。 `credentials` 模式下，第一次 `issue` 成功之前不能打开；`app` 模式下，`setup_done` 通过之前不能打开（ADR-0022）。
 
+开关、启动对账和卸载共用串行的配置应用流程：按插件记录重算两份 crt-list，校验 HAProxy 配置，发送 `USR2`，确认运行接口返回新的 worker PID 后才发布开启状态。关闭先撤销核心里的连接守卫；写配置或重载失败时恢复旧配置和开关并返回 `ingress_unavailable`，已撤销的连接不复活。保留数据卸载时只保留标签占用，重装沿用标签，开关重新关闭。
+
+入口的 public、lan、paired 前端都保留客户端原始 Host（包括端口），先验证其主机名与 SNI 一致。插件需要原始地址来生成链接；`single_host` 的改写由核心负责（ADR-0089）。配对联邦前端写 `X-Wonton-Entry: paired`，核心只在转给 Tuwunel 时将已验证的 Host 规范化为服务器名，内部入口头不会发给 Tuwunel。
+
 **`network.clients` 和 `network.lan`（ADR-0019）为什么权限等级不同。** `network.lan` 在安装时就把端口开到局域网，所以算高权限。`network.clients` 只是声明“有这个能力”，安装后什么都没暴露，要主人再开一次开关才有效；打开开关这一步单独醒目确认，相当于高权限确认。所以 `network.clients` 不算高权限，“帮我装 Immich”时卡片上不用醒目提示。局域网入口也要开关，而不是装好就开：不然局域网里任何设备装完就能碰到应用的登录页，这和 `network.lan` 的暴露是同一类。这个权限要列进规范的权限表。
 
 ### 中继

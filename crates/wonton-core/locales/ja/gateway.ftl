@@ -192,3 +192,13 @@ gateway-install-card-device = 渡すデバイス：{ $device }
 gateway-install-card-secret = リクエストで入力されたシークレット：{ $title }
 gateway-install-card-setting = リクエストで入力された設定：{ $title } = { $value }
 gateway-install-changed = カードの送信後に { $id } の権限、デバイス、設定が変更されたため、アップグレードしませんでした。もう一度リクエストしてください。
+clients-switch-container = コアがコンテナ内で動作していないため、入口ネットワークを利用できません
+clients-switch-domain = 入口を開く前にドメインと有効な証明書を設定してください
+clients-switch-lan = LAN 転送コンテナの準備ができていないため、LAN 入口は利用できません
+clients-switch-setup = 先にアプリのウェブページで初回登録を完了してください
+clients-switch-app-unavailable = アプリが動作していないため、初回登録の状態を確認できません
+clients-switch-credentials = アプリがまだパスワードを正常に発行していません
+clients-switch-ingress = 公開入口の種類が設定されていません
+clients-switch-kind = 入口には lan または public を指定してください
+clients-switch-uninstalled = クライアントアプリはアンインストールされています
+clients-switch-failed = クライアント入口の設定を適用できませんでした：{ $error }

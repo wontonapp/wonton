@@ -318,9 +318,6 @@ async fn serve() -> anyhow::Result<()> {
     // Tuwunel 的名单和 hosts 跟着配对走（ADR-0050）。
     serve::spawn_federation_config(&engine, &cfg, &peers, &notices, federation_blocks.clone());
     let clients = serve::open_domain(&cfg, &engine, &notices)?;
-    if let (Some(containers), Some(clients)) = (entry, &clients) {
-        wonton_core::entry_runtime::spawn(containers, clients.clone(), notices.clone());
-    }
     let contacts = serve::open_contacts(
         &cfg,
         (&manager, &members, &owner),
@@ -349,7 +346,7 @@ async fn serve() -> anyhow::Result<()> {
         matrix,
         push,
         bus,
-        notices,
+        notices.clone(),
         files,
         audit,
         upgrades,
@@ -358,9 +355,17 @@ async fn serve() -> anyhow::Result<()> {
         federation_blocks,
         sharing,
         contacts,
-        clients,
+        clients.clone(),
+        entry.clone(),
         agent_chains,
     );
+    manager.attach_clients_gateway(&gateway);
+    if let Err(error) = wonton_core::entry_runtime::reconcile_clients(&gateway).await {
+        tracing::warn!(%error, "启动时客户端入口配置未对上，运行循环会重试");
+    }
+    if let (Some(containers), Some(clients)) = (entry, clients) {
+        wonton_core::entry_runtime::spawn(containers, clients, notices.clone(), gateway.clone());
+    }
     let _mail_worker = start_mailpit(&cfg, mailpit.as_ref(), system_http, gateway.clone())?;
     serve::run_gateway(
         &cfg,
@@ -399,6 +404,7 @@ fn open_gateway(
     sharing: Arc<wonton_core::gateway::sharing::Sharing>,
     contacts: Option<Arc<wonton_core::contacts::Contacts>>,
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
+    entry: Option<wonton_core::entry_containers::EntryContainers>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
     Arc::new(
@@ -432,8 +438,13 @@ fn open_gateway(
         .with_agent_chains(Some(agent_chains))
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
-        .with_clients(clients),
-    )
+        .with_clients(clients)
+        .with_entry(entry),
+    );
+    if let Some(mcp) = &gateway.mcp {
+        mcp.bus.attach_handoff_gateway(Arc::downgrade(&gateway));
+    }
+    gateway
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {

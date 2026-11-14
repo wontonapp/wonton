@@ -130,7 +130,7 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
     let directory = install_dir.join("entry");
     std::fs::create_dir_all(&directory)?;
     let rendered = crate::entry_haproxy::render(model).map_err(anyhow::Error::msg)?;
-    crate::install::write_private(&directory.join("haproxy.cfg"), &rendered.config)?;
+    write_mounted_config(&directory.join("haproxy.cfg"), &rendered.config)?;
     std::fs::create_dir_all(directory.join("certs"))?;
     crate::install::write_private(
         &directory.join("certs/public.crt-list"),
@@ -141,6 +141,65 @@ pub fn write_model(install_dir: &Path, model: &crate::entry_haproxy::Model) -> a
         &rendered.lan_crt_list,
     )?;
     Ok(())
+}
+
+// 单文件 bind mount 固定 inode，重命名会让运行中的容器继续看到旧配置。
+fn write_mounted_config(path: &Path, text: &str) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+/// 一次入口配置变更的旧内容；某一文件写失败也必须逐个恢复全部文件。
+pub(crate) struct ModelSnapshot(Vec<(std::path::PathBuf, Option<String>)>);
+
+impl ModelSnapshot {
+    pub(crate) fn read(install_dir: &Path) -> anyhow::Result<Self> {
+        let mut files = Vec::new();
+        for name in ["haproxy.cfg", "certs/public.crt-list", "certs/lan.crt-list"] {
+            let path = install_dir.join("entry").join(name);
+            let content = match std::fs::read_to_string(&path) {
+                Ok(content) => Some(content),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            };
+            files.push((path, content));
+        }
+        Ok(Self(files))
+    }
+
+    pub(crate) fn restore(self, install_dir: &Path) -> anyhow::Result<()> {
+        let mut failures = Vec::new();
+        for (path, content) in self.0 {
+            let result = match content {
+                Some(content) if path.ends_with("haproxy.cfg") => {
+                    write_mounted_config(&path, &content)
+                }
+                Some(content) => crate::install::write_private(&path, &content),
+                None => match std::fs::remove_file(&path) {
+                    Ok(()) => Ok(()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                    Err(error) => Err(error.into()),
+                },
+            };
+            if let Err(error) = result {
+                failures.push(format!("{}: {error:#}", path.display()));
+            }
+        }
+        if let Err(error) = prepare_permissions(install_dir) {
+            failures.push(format!("恢复权限: {error:#}"));
+        }
+        anyhow::ensure!(failures.is_empty(), "{}", failures.join("；"));
+        Ok(())
+    }
 }
 
 pub fn prepare_permissions(dir: &Path) -> anyhow::Result<()> {

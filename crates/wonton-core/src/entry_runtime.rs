@@ -107,12 +107,18 @@ async fn trusted_entry(State(authority): State<String>, req: Request, next: Next
     next.run(req).await
 }
 
+/// 网关装配完后、恢复插件之前按持久记录重算入口。
+pub async fn reconcile_clients(gateway: &Gateway) -> Result<(), String> {
+    crate::clients::apply::reconcile(gateway).await
+}
+
 /// 对账按退避间隔跑，家名和证书按小时跑；续期由 [`crate::clients::domain::Domain`] 发布证书，
 /// 入口容器在不在由对账判断（读不到设置按"不确定"，不删在跑的容器）。
 pub fn spawn(
     containers: EntryContainers,
     domain: Arc<crate::clients::domain::Domain>,
     notices: Option<Arc<NoticeRoom>>,
+    gateway: Arc<Gateway>,
 ) {
     tokio::spawn(async move {
         let mut previous = None;
@@ -121,11 +127,18 @@ pub fn spawn(
         // 上一次对账的成败：None=还没对过。失败进通知、恢复时再发一条（复用家名状态的转移+notify 模式）。
         let mut reconciled: Option<bool> = None;
         let mut hourly = tokio::time::interval(Duration::from_secs(3600));
+        let mut changes = gateway.plugins.changes();
         loop {
             // 对账按退避间隔跑，家名和证书按小时跑；第一次对账等一会儿，起来先服务再对账。
             tokio::select! {
+                changed = changes.changed() => {
+                    if changed.is_err() { break; }
+                    if let Err(error) = reconcile_clients(&gateway).await {
+                        tracing::warn!(%error, "插件状态变化后的入口对账失败");
+                    }
+                }
                 _ = tokio::time::sleep(retry) => {
-                    retry = reconcile_entry(&containers, &notices, &mut reconciled)
+                    retry = reconcile_entry(&notices, &mut reconciled, &gateway)
                         .await
                         .unwrap_or(retry * 2)
                         .min(Duration::from_secs(RETRY_MAX));
@@ -155,18 +168,12 @@ pub fn spawn(
 /// 对一次账，返回下一次的退避间隔：成功时回到最短，失败时翻倍（调用方封顶到 [`RETRY_MAX`]）。
 /// 失败进入和恢复退出各发一条通知——对账持续失败时公网入口和联邦 TLS 整个不可用，主人得知道。
 async fn reconcile_entry(
-    containers: &EntryContainers,
     notices: &Option<Arc<NoticeRoom>>,
     reconciled: &mut Option<bool>,
+    gateway: &Gateway,
 ) -> Option<Duration> {
-    let settings = match EntrySettings::load(containers.install_dir()) {
-        Ok(settings) => settings,
-        Err(error) => {
-            tracing::warn!(%error, "入口设置读不了");
-            return None;
-        }
-    };
-    match containers.reconcile(settings.as_ref()).await {
+    let result = reconcile_clients(gateway).await;
+    match result {
         Ok(()) => {
             if *reconciled == Some(false) {
                 notify(notices, "entry-reconcile-recovered", &[]).await;
@@ -185,7 +192,7 @@ async fn reconcile_entry(
             }
             *reconciled = Some(false);
             // 核心照常服务；入口的状态在下一次对账成功时恢复。
-            tracing::warn!(category = error.category(), %error, "入口容器没对上，稍后重试");
+            tracing::warn!(%error, "入口容器没对上，稍后重试");
             None
         }
     }
