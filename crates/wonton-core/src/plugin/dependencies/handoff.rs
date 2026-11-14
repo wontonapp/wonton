@@ -17,19 +17,6 @@ impl PluginManager {
             .is_some_and(|listed| declarations(&listed.manifest).any(|name| name == AGENT_ACP.name))
     }
 
-    pub(in crate::plugin) fn forget_handoff_bot(
-        &self,
-        plugin: &PluginId,
-        bot: &str,
-    ) -> Result<(), super::InstallError> {
-        self.dependencies.change(|state| {
-            state.handoff_consents.retain(|consent| {
-                !(consent.from.plugin_id == plugin.as_str() && consent.from.bot == bot
-                    || consent.target.plugin_id == plugin.as_str() && consent.target.bot == bot)
-            });
-        })
-    }
-
     /// 指定交接目标不会修改默认提供方；这次连接由目标归属人的卡片授权。
     pub(crate) async fn handoff_route(
         &self,
@@ -42,10 +29,14 @@ impl PluginManager {
         }
         let provider =
             PluginId::parse(&target.plugin_id).map_err(|_| CapabilityAccessError::Denied)?;
-        let names = self.bot_names(&provider);
-        if names.as_slice() != [target.bot.as_str()] {
+        if self
+            .capability_caller_bot(&provider, &target.bot)
+            .map_err(|error| CapabilityAccessError::Unavailable(error.to_string()))?
+            .is_none()
+        {
             return Err(CapabilityAccessError::Unavailable(
-                "目标提供方必须恰有一个 Bot，且与指定目标一致".into(),
+                self.missing_capability_bot(&provider, &target.bot, langs)
+                    .to_string(),
             ));
         }
         let (listed, spec) = {
@@ -78,7 +69,11 @@ impl PluginManager {
             .get(&(consumer.to_string(), AGENT_ACP.name.to_owned()))
             .cloned()
         {
-            return Ok(CapabilityRoute { provider, endpoint });
+            return Ok(CapabilityRoute {
+                provider,
+                endpoint,
+                bot: Some(target.clone()),
+            });
         }
         let endpoint = self
             .capability_endpoint(&listed.manifest, &spec.0, spec.1)
@@ -91,7 +86,11 @@ impl PluginManager {
                     langs,
                 ))
             })?;
-        Ok(CapabilityRoute { provider, endpoint })
+        Ok(CapabilityRoute {
+            provider,
+            endpoint,
+            bot: Some(target.clone()),
+        })
     }
 
     pub(crate) fn handoff_confirmed(

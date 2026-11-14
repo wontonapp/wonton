@@ -25,6 +25,8 @@ pub struct BotVars {
     pub mcp_url: Option<String>,
     pub app_url: Option<String>,
     pub oidc: Option<super::vars::OidcVars>,
+    /// 这个 Bot 自己的能力连接变量；不继承插件级确认和凭据。
+    pub dependencies: BTreeMap<String, String>,
     /// 这个 Bot 的 AI 动手级别（`WONTON_BOT_AI_LEVEL`，ADR-0088 第 8 节）：私人 Bot 是归属人角色的，
     /// 共享 Bot 是能用人里最低的。Agent 插件和桥凭它锁模式。
     pub ai_level: AiLevel,
@@ -41,6 +43,7 @@ impl Default for BotVars {
             mcp_url: None,
             app_url: None,
             oidc: None,
+            dependencies: BTreeMap::new(),
             // 解析不出的级别按只读（ADR-0088 第 5 节），和 [`crate::ai_level`] 的兜底一致。
             ai_level: AiLevel::ReadOnly,
             keeper_read_only: false,
@@ -86,8 +89,23 @@ impl<'a> ServiceVars<'a> {
             plugin
                 .retain(|name, _| !name.starts_with("WONTON_MATRIX_") && name != "WONTON_MCP_URL");
         }
+        let dependency_names: Vec<_> = super::dependencies::declarations(manifest)
+            .flat_map(|capability| {
+                let stem = super::capabilities::variable_stem(capability);
+                ["URL", "KEY", "HOST", "PORT"].map(|suffix| format!("WONTON_{stem}_{suffix}"))
+            })
+            .collect();
         for (bot, runtime) in bots {
             let mut vars = plugin.clone();
+            for name in &dependency_names {
+                vars.remove(name);
+            }
+            vars.extend(
+                runtime
+                    .dependencies
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone())),
+            );
             if let Some(url) = &runtime.app_url {
                 vars.insert("WONTON_APP_URL".to_owned(), url.clone());
             }

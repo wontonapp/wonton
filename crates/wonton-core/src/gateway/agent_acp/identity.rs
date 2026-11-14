@@ -6,11 +6,12 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use hyper::StatusCode;
 use wonton_l10n::Arg;
-use wonton_protocol::{BotRef, WONTON_BOT_HEADER, WONTON_ON_BEHALF_OF_HEADER};
+use wonton_protocol::{BotRef, WONTON_ON_BEHALF_OF_HEADER};
 
 use super::super::{Gateway, api};
 use crate::l10n;
 use crate::plugin::PluginId;
+use crate::plugin::dependencies::CapabilityAccessError;
 
 /// 使用方自报的发起 Bot：路由键（ADR-0053），也是采纳说话人时“编排器的 Bot”。
 /// agent_acp 的连接必须代表一个人，采纳的名单跟着发起 Bot 走，所以这里没有就建不了连接；
@@ -22,42 +23,19 @@ pub(super) fn initiator_bot(
     headers: &HeaderMap,
     langs: &crate::plugin::languages::Languages,
 ) -> Result<BotRef, Response> {
-    let Some(name) = headers
-        .get(WONTON_BOT_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    else {
-        return Err(refused(
+    match super::super::capabilities::caller_bot(gateway, consumer, headers) {
+        Ok(Some(bot)) => Ok(bot),
+        Ok(None) | Err(CapabilityAccessError::Denied) => Err(refused(
             langs,
             "gateway-agent-acp-initiator-bot-required",
             &[],
-        ));
-    };
-    if !gateway
-        .plugins
-        .bot_names(consumer)
-        .iter()
-        .any(|bot| bot == name)
-    {
-        // ADR-0053：认不出的 Bot 记审计。这里随后按身份拒，行为和“当作没带”一样到不了提供方。
-        if let Some(audit) = &gateway.audit {
-            audit.record(&serde_json::json!({
-                "kind": "agent_acp_bot_unrecognized",
-                "plugin": consumer.as_str(),
-                "bot": name,
-            }));
-        }
-        return Err(refused(
-            langs,
-            "gateway-agent-acp-initiator-bot-unrecognized",
-            &[("bot", name.into())],
-        ));
+        )),
+        Err(CapabilityAccessError::Unavailable(detail)) => Err(api::error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "dependency_stopped",
+            &detail,
+        )),
     }
-    Ok(BotRef {
-        plugin_id: consumer.to_string(),
-        bot: name.to_owned(),
-    })
 }
 
 /// 链代表的人：`X-Wonton-On-Behalf-Of` 自报的说话人，只在他是发起 Bot 听的人时采纳
@@ -87,22 +65,47 @@ pub(super) fn chain_user(
     Ok(claimed.to_owned())
 }
 
-/// 目标 Bot：提供方插件（发起 Bot 的绑定）指向的那一个。提供方 Bot 绑定记在 connections.json
-/// 的选择记录里（ADR-0053），绑定的核心实现在插件底座线上，接在这里；没有绑定的时候按
-/// ADR-0061 第 4 节：提供方恰有一个 Bot 就用它，零个或多个都是“未就绪”，不假选。
+/// 显式绑定必须仍然存在；没有绑定时只接受提供方唯一的 Bot。
 #[expect(clippy::result_large_err)]
 pub(super) fn target_bot(
     gateway: &Gateway,
     provider: &PluginId,
+    selected: Option<&BotRef>,
     langs: &crate::plugin::languages::Languages,
 ) -> Result<BotRef, Response> {
-    let names = gateway.plugins.bot_names(provider);
-    match names.as_slice() {
-        [name] => Ok(BotRef {
-            plugin_id: provider.to_string(),
-            bot: name.clone(),
-        }),
-        [] => Err(unavailable(
+    if let Some(selected) = selected {
+        return gateway
+            .plugins
+            .capability_caller_bot(provider, &selected.bot)
+            .map_err(|error| {
+                api::error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "dependency_stopped",
+                    &error.to_string(),
+                )
+            })?
+            .filter(|bot| bot == selected)
+            .ok_or_else(|| {
+                unavailable(
+                    langs,
+                    "gateway-agent-acp-no-bot",
+                    &[("provider", provider.as_str().into())],
+                )
+            });
+    }
+    let mut bots = gateway
+        .plugins
+        .active_capability_bots(provider)
+        .map_err(|error| {
+            api::error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "dependency_stopped",
+                &error.to_string(),
+            )
+        })?;
+    match bots.pop() {
+        Some(bot) if bots.is_empty() => Ok(bot),
+        None => Err(unavailable(
             langs,
             "gateway-agent-acp-no-bot",
             &[("provider", provider.as_str().into())],

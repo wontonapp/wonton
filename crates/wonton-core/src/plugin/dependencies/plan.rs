@@ -25,7 +25,9 @@ impl PluginManager {
             .map(|connection| {
                 (
                     connection.consumer.as_str(),
+                    connection.consumer_bot.as_deref(),
                     connection.provider.as_str(),
+                    connection.provider_bot.as_deref(),
                     connection.capability.as_str(),
                 )
             })
@@ -81,7 +83,7 @@ impl PluginManager {
                     &connection.capability,
                     commands,
                     false,
-                    &connection.consumer,
+                    &connection.credential_name(),
                     None,
                     langs,
                 )
@@ -149,8 +151,5 @@ impl PluginManager {
 }
 
 fn same_connection(before: &Connection, after: &Connection) -> bool {
-    before.consumer == after.consumer
-        && before.provider == after.provider
-        && before.capability == after.capability
-        && before.key == after.key
+    before.same_pair(after) && before.key == after.key
 }

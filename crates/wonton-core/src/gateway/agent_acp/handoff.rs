@@ -20,7 +20,10 @@ pub(crate) async fn connect_handoff(
     chain: &str,
     route: CapabilityRoute,
 ) -> Result<HandoffConnection, ToolFailure> {
-    if route.provider.as_str() != target.plugin_id || !gateway.bot_listens_to(target, user) {
+    if route.provider.as_str() != target.plugin_id
+        || route.bot.as_ref().is_some_and(|bot| bot != target)
+        || !gateway.bot_listens_to(target, user)
+    {
         return Err(ToolFailure::new(
             "permission_denied",
             "目标 Bot 不听这条链代表的人",
