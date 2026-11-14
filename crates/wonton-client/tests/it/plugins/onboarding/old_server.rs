@@ -8,7 +8,7 @@ use wonton_client::{
 };
 
 use super::super::rig::{Canned, Rig, core_error};
-use super::{PROFILE, act, at, configure_gateway, onboarding, providers};
+use super::{PROFILE, act, at, configure_gateway, model_settings, onboarding};
 
 const UPGRADE: &str = "/_wonton/api/core/upgrade";
 
@@ -34,7 +34,7 @@ fn not_found() -> Canned {
 async fn rig_with(version_canned: Option<Canned>) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("profile"));
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     if let Some(version) = version_canned {
         rig.core.answer_always(Method::GET, UPGRADE, version);
     }

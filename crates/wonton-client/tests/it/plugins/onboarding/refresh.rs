@@ -7,8 +7,8 @@ use wonton_client::{
 
 use super::super::rig::{Canned, Rig, core_error, item, preview, running};
 use super::{
-    ONBOARDING, PROVIDERS, act, at, configure_gateway, edit, flow_rig, onboarding, providers,
-    wait_requests,
+    MODEL_SETTINGS, ONBOARDING, act, at, configure_gateway, edit, flow_rig, model_settings,
+    onboarding, wait_requests,
 };
 
 const PLUGINS: &str = "/_wonton/api/plugins";
@@ -32,7 +32,7 @@ fn install_state(step: &str, installed: bool) -> serde_json::Value {
 async fn install_rig(step: &str) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(install_state(step, false));
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
         .await;
@@ -149,7 +149,7 @@ async fn a_failed_silent_get_keeps_the_visible_errors() {
     at_model(&rig).await;
     rig.core.answer_always(
         Method::GET,
-        PROVIDERS,
+        MODEL_SETTINGS,
         core_error(503, "models_unavailable", "gateway stopped"),
     );
     act(&rig, Action::RefreshOnboarding);
@@ -202,7 +202,7 @@ async fn a_silent_response_cannot_rewind_a_settings_save() {
 async fn a_failed_first_get_is_fetched_again_once_plugins_change() {
     let rig = Rig::new().await;
     rig.core.set_onboarding(onboarding("profile"));
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     rig.core.answer_always(
         Method::GET,
         ONBOARDING,
@@ -270,26 +270,26 @@ async fn a_late_refresh_response_cannot_rewind_the_finished_onboarding() {
     assert_stays(&rig, &settled).await;
 }
 
-/// 重看重置后的那趟取状态还在等服务商时，插件变化触发的静默刷新后发先至：重看那趟照样落地，
-/// 每一步有现值可显示。不扣住服务商时两趟谁先落地看调度，这条竞态在
+/// 重看重置后的那趟取状态还在等模型设置时，插件变化触发的静默刷新后发先至：重看那趟照样落地，
+/// 每一步有现值可显示。不扣住模型设置时两趟谁先落地看调度，这条竞态在
 /// `reopening_shows_the_current_settings_on_every_step` 里只会偶发。
 #[tokio::test]
 async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
     let rig = install_rig("finished").await;
     rig.core.set_owner(Some("云吞"), None);
-    rig.core.set_providers(providers(true));
+    rig.core.set_model_settings(model_settings(true));
 
-    rig.core.hold(Method::GET, PROVIDERS);
-    let fetches = rig.core.seen(&Method::GET, PROVIDERS).len();
+    rig.core.hold(Method::GET, MODEL_SETTINGS);
+    let fetches = rig.core.seen(&Method::GET, MODEL_SETTINGS).len();
     act(&rig, Action::RestartOnboarding);
-    wait_requests(&rig, Method::GET, PROVIDERS, fetches + 1).await;
+    wait_requests(&rig, Method::GET, MODEL_SETTINGS, fetches + 1).await;
 
     rig.core.set_onboarding(install_state("finished", true));
     change_installed(&rig, "app.photos");
     rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
         .await;
 
-    rig.core.release(Method::GET, PROVIDERS);
+    rig.core.release(Method::GET, MODEL_SETTINGS);
     let view = rig
         .wait_onboarding(|view| !view.loading && view.model.settings.is_some())
         .await;
@@ -299,5 +299,43 @@ async fn a_silent_refresh_landing_first_does_not_drop_the_revisit_fetch() {
         view.primary_bot_user_id.as_deref(),
         Some("@installed:home"),
         "重看那趟的 onboarding 比静默刷新的旧，不许盖掉它"
+    );
+}
+
+#[tokio::test]
+async fn a_silent_refresh_does_not_drop_details_from_a_manual_refresh() {
+    let rig = flow_rig(onboarding("profile")).await;
+    rig.wait_for(|view| view.installed.is_some() && !view.refreshing)
+        .await;
+    act(&rig, Action::SkipOnboardingStep);
+    act(&rig, Action::ContinueOnboarding);
+    at(&rig, OnboardingStep::Model).await;
+
+    let settings_gets = rig.core.seen(&Method::GET, MODEL_SETTINGS).len();
+    rig.core.hold(Method::GET, MODEL_SETTINGS);
+    rig.core.set_model_settings(model_settings(true));
+    act(&rig, Action::RefreshOnboarding);
+    wait_requests(&rig, Method::GET, MODEL_SETTINGS, settings_gets + 1).await;
+
+    let manual_onboarding_gets = rig.core.seen(&Method::GET, ONBOARDING).len();
+    rig.core.hold(Method::GET, ONBOARDING);
+    rig.core.set_onboarding(install_state("model", true));
+    change_installed(&rig, "app.photos");
+    wait_requests(&rig, Method::GET, ONBOARDING, manual_onboarding_gets + 1).await;
+    rig.core.release(Method::GET, ONBOARDING);
+    rig.wait_onboarding(|view| view.primary_bot_user_id.as_deref() == Some("@installed:home"))
+        .await;
+
+    rig.core.release(Method::GET, MODEL_SETTINGS);
+    let view = rig
+        .wait_onboarding(|view| {
+            !view.loading
+                && view.model.has_configured_models
+                && view.model.choice == Some(wonton_client::OnboardingModelChoice::Current)
+        })
+        .await;
+    assert_eq!(
+        view.model.settings.unwrap().web_url,
+        "https://example.invalid/models"
     );
 }

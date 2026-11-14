@@ -16,8 +16,7 @@ mod refresh;
 
 const ONBOARDING: &str = "/_wonton/api/onboarding";
 const PROFILE: &str = wonton_protocol::ME_PATH;
-const PROVIDERS: &str = "/_wonton/api/models/providers";
-const KEY: &str = "/_wonton/api/models/providers/openai";
+const MODEL_SETTINGS: &str = "/_wonton/api/models/settings";
 const PREVIEW: &str = "/_wonton/api/plugins/preview";
 const INSTALL: &str = "/_wonton/api/plugins";
 
@@ -48,24 +47,11 @@ fn with_photos(mut state: serde_json::Value) -> serde_json::Value {
     state
 }
 
-fn providers(configured: bool) -> serde_json::Value {
+fn model_settings(configured: bool) -> serde_json::Value {
     serde_json::json!({
         "plugin_id": "system.models",
-        "any_configured": configured,
-        "providers": [{
-            "id": "openai",
-            "title": "OpenAI",
-            "key_url": "https://example.invalid/keys",
-            "recommended": true,
-            "configured": configured
-        }],
         "web_url": "https://example.invalid/models",
-        "configured": if configured {
-            serde_json::json!([{"id": "openai", "title": "OpenAI"}])
-        } else {
-            serde_json::json!([])
-        },
-        "custom": true
+        "has_configured_models": configured
     })
 }
 
@@ -89,7 +75,7 @@ async fn at(rig: &Rig, step: OnboardingStep) -> OnboardingViewModel {
 async fn flow_rig(state: serde_json::Value) -> Rig {
     let rig = Rig::new().await;
     rig.core.set_onboarding(state);
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     rig.wait_onboarding(|view| {
         view.step == Some(OnboardingStep::Profile) && !view.loading && view.model.settings.is_some()
@@ -109,7 +95,7 @@ fn edit(rig: &Rig, name: &str, email: &str) {
 }
 
 async fn configure_gateway(rig: &Rig) {
-    rig.core.set_providers(providers(true));
+    rig.core.set_model_settings(model_settings(true));
     act(rig, Action::RefreshOnboarding);
     rig.wait_onboarding(|view| !view.loading && view.model.has_configured_models)
         .await;
@@ -228,7 +214,7 @@ async fn a_filled_email_can_be_changed_but_not_cleared() {
     let rig = Rig::new().await;
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
     rig.core.set_onboarding(onboarding("profile"));
-    rig.core.set_providers(providers(false));
+    rig.core.set_model_settings(model_settings(false));
     rig.connected().await;
     let view = rig
         .wait_onboarding(|view| view.profile.email == "me@example.com" && !view.loading)
@@ -254,7 +240,7 @@ async fn reopening_shows_the_current_settings_on_every_step() {
     state["needs"][0]["plugins"][0]["installed_version"] = serde_json::json!("1.0.0");
     rig.core.set_onboarding(state);
     rig.core.set_owner(Some("云吞"), Some("me@example.com"));
-    rig.core.set_providers(providers(true));
+    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
 
@@ -319,7 +305,7 @@ async fn closing_a_revisit_discards_every_choice_and_saves_nothing() {
     state["agents"][0]["source"] = serde_json::Value::Null;
     rig.core.set_onboarding(state);
     rig.core.set_owner(Some("云吞"), None);
-    rig.core.set_providers(providers(true));
+    rig.core.set_model_settings(model_settings(true));
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
 
@@ -443,7 +429,7 @@ async fn earlier_server_steps_start_from_the_first_and_finished_does_not_enter()
     rig.connected().await;
     at(&rig, OnboardingStep::Finished).await;
     assert!(rig.core.seen(&Method::GET, PROFILE).is_empty());
-    assert!(rig.core.seen(&Method::GET, PROVIDERS).is_empty());
+    assert!(rig.core.seen(&Method::GET, MODEL_SETTINGS).is_empty());
 
     let other = Rig::new().await;
     other.core.set_onboarding(onboarding("future_step"));
@@ -472,7 +458,7 @@ async fn unavailable_model_settings_can_be_retried_or_skipped() {
             ModelSettingsFailure::Unauthorized,
         ),
     ] {
-        rig.core.answer(Method::GET, PROVIDERS, error);
+        rig.core.answer(Method::GET, MODEL_SETTINGS, error);
         act(&rig, Action::RefreshOnboarding);
         let view = rig
             .wait_onboarding(|view| view.model.problem.is_some() && !view.loading)

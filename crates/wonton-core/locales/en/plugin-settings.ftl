@@ -293,25 +293,6 @@ plugin-settings-models-list-malformed = The model gateway { $provider } returned
 plugin-settings-models-connect-first = Connect a model provider in Models before the bot can reply.
 plugin-settings-models-not-ready = The model gateway { $provider } is not ready: { $error }
 plugin-settings-models-command-rejected = The model gateway { $provider } rejected the credential command ({ $command }, exit code { $code }): { $stderr }
-plugin-settings-model-action-save = save
-plugin-settings-model-action-test = test
-plugin-settings-model-disconnected-saved = Could not reach the provider, but the key was saved
-plugin-settings-model-disconnected-unsaved = Could not reach the provider; nothing was saved
-plugin-settings-model-no-provider-commands = The model gateway { $provider } declares no provider commands
-plugin-settings-model-provider-unsupported = The model gateway does not support the provider { $id }
-plugin-settings-model-custom-unsupported = The model gateway does not support custom providers
-plugin-settings-model-custom-encode-failed = Can't encode the request for the custom provider
-plugin-settings-model-command-timeout = The model gateway { $provider } command failed or timed out
-plugin-settings-model-invalid-endpoint = The provider address or model name is invalid
-plugin-settings-model-key-rejected = The provider rejected the key; it was not saved
-plugin-settings-model-provider-command-failed = The model gateway { $provider } failed to { $action } the provider with exit code { $code }
-plugin-settings-model-list-failed = The model gateway { $provider } failed to list providers: { $error }
-plugin-settings-model-list-exit = The model gateway { $provider } failed to list providers, exit code { $code }
-plugin-settings-model-list-not-json = The provider list from the model gateway { $provider } is not valid JSON
-plugin-settings-model-key-invalid = The key must not be empty, must not contain line breaks, and must be at most 4 KiB
-plugin-settings-model-url-invalid = The provider address must be an http or https URL, must not contain whitespace, and must be at most 2 KiB
-plugin-settings-model-name-invalid = The model name must not be empty, must not contain whitespace or control characters, and must be at most 200 bytes
-plugin-settings-model-request-format = The model provider request format is invalid
 
 # ── Store index (storefront) ───────────────────────────────────────────────
 

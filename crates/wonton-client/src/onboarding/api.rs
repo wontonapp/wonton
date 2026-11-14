@@ -1,7 +1,7 @@
 //! 引导状态、资料、模型设置网页和安装预览的接口调用。网页里的模型修改不经这里保存。
 
 use wonton_protocol::{
-    InstallPreview, InstallSource, Me, ModelProviders, ModelSettingsFailure, ModelSettingsProblem,
+    InstallPreview, InstallSource, Me, ModelSettings, ModelSettingsFailure, ModelSettingsProblem,
     Onboarding, OnboardingUpdate, OwnerProfileUpdate, PluginProblem,
 };
 
@@ -18,8 +18,8 @@ pub(crate) async fn update(
     api.put(&["onboarding"], update, SOURCE_TIMEOUT).await
 }
 
-pub(crate) async fn providers(api: &CoreApi) -> Result<ModelProviders, ModelSettingsProblem> {
-    api.get_detailed(&["models", "providers"], &[], SOURCE_TIMEOUT)
+pub(crate) async fn settings(api: &CoreApi) -> Result<ModelSettings, ModelSettingsProblem> {
+    api.get_detailed(&["models", "settings"], &[], SOURCE_TIMEOUT)
         .await
         .map_err(map_error)
 }

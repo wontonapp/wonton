@@ -266,9 +266,6 @@ plugin-install-prv-models-port = provides.models.port can't be 0
 plugin-install-prv-models-apis-path = Paths in provides.models.apis must start with /
 plugin-install-prv-models-default-model = provides.models.default_model can't be empty
 plugin-install-prv-credentials-argv = provides.models.credentials.{ $field } must be a non-empty argv naming the credential with { $placeholder }
-plugin-install-prv-list-argv = provides.models.providers.list must be a non-empty argv
-plugin-install-prv-provider-argv = provides.models.providers.{ $field } must be a non-empty argv naming the provider id with { "{{" }id{ "}}" }
-plugin-install-prv-custom-argv = provides.models.providers.custom.{ $field } must be a non-empty argv without placeholders
 
 # ── Proxy apps' cookies and headers (proxy_auth.rs) ──────────────────────────
 

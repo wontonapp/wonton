@@ -60,7 +60,6 @@ mod manager;
 mod manifest_errors;
 mod matrix_rtc;
 mod model_gateway_contract;
-mod model_providers;
 mod models;
 mod models_route;
 mod network_mode;
