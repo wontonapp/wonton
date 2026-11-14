@@ -25,6 +25,9 @@ final class TimelineModel {
     private(set) var entryBlocked = false
     /// 这条时间线是旁聊时给标题和状态（ADR-0093），主时间线为空。
     private(set) var sideChat: SideChatCard?
+    /// 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。
+    private(set) var widgets: [RoomWidget] = []
+    private(set) var callActive = false
     private(set) var failure: Problem?
     /// 打不开时点“重试”加一，视图按它重新订阅。
     var attempt = 0
@@ -78,6 +81,8 @@ final class TimelineModel {
             confirmations = update.confirmations
             notice = update.keyNotice
             sideChat = update.sideChat
+            widgets = update.widgets
+            callActive = update.callActive
             if let anchor = update.anchor {
                 self.anchor = anchor
             }

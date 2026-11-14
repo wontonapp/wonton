@@ -162,6 +162,7 @@ fn agent(activity: Option<BotActivity>) -> BotView {
 fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
     RoomRow {
         layout: Default::default(),
+        call_active: false,
         room_id: format!("!{name}:home.example"),
         name: name.to_owned(),
         is_direct: peer.is_some(),

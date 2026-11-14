@@ -1,6 +1,6 @@
 //! 插件的 Matrix widget 页（ADR-0096）：官方 matrix-widget-api 当页面，经核心的桥和 matrix-sdk 的 widget 驱动
 //! 跟真实的 Tuwunel 打交道。能力只批页面请求的 ∩ 清单声明的，发状态事件只能用自己的 `state_key`；
-//! 房间的视图列出 widget 入口，别的设备加入通话后显示“通话中”。
+//! 房间的视图列出 widget 入口，别的设备加入通话后房间和聊天列表的这一行显示“通话中”。
 
 mod page;
 
@@ -267,12 +267,19 @@ async fn bot_to_widget(page: &mut WidgetPage, bot: &wonton_matrix::MatrixSession
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn the_room_shows_a_call_once_another_device_joins() {
     let dir = tempfile::tempdir().unwrap();
-    let (_home, _phone, bot, room, _device, mut timeline) = in_the_bots_room(dir.path()).await;
+    let (_home, phone, bot, room, _device, mut timeline) = in_the_bots_room(dir.path()).await;
     let quiet = until_update(&mut timeline, "房间列出 widget 入口", |update| {
         !update.widgets.is_empty()
     })
     .await;
     assert!(!quiet.call_active);
+    let row_in_call = |view: &wonton_client::ChatViewModel| {
+        view.rooms
+            .iter()
+            .find(|row| row.room_id == room)
+            .map(|row| row.call_active)
+    };
+    assert_eq!(row_in_call(&phone.chat()), Some(false));
 
     bot.join_call(&room.parse::<wonton_matrix::OwnedRoomId>().unwrap())
         .await
@@ -282,4 +289,10 @@ async fn the_room_shows_a_call_once_another_device_joins() {
     })
     .await;
     assert_eq!(ringing.widgets.len(), 1);
+    // 聊天列表的这一行跟着标“通话中”。
+    phone
+        .wait_chat("列表这一行显示通话中", |view| {
+            row_in_call(view).filter(|active| *active)
+        })
+        .await;
 }

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
@@ -41,10 +40,10 @@ internal fun PageLayers(
         if (parked) state.documentScript else state.script(environment, document = true)
     }
     Box(Modifier.zIndex(if (active) 1f else 0f).fillMaxSize().imePadding()) {
-        // Widget 的驱动订阅尚未接入，不能加载为普通网页；Bot 页面还需先通过 admission。
-        val loadable = connection.supported && connection.authorized && admitted &&
-            state.tab !is TabRef.Widget
+        // Bot 页面还需先通过 admission。
+        val loadable = connection.supported && connection.authorized && admitted
         if (state.started && loadable && script != null) {
+            if (state.tab is TabRef.Widget) WidgetPageEffects(state, page, pages)
             // 状态栏区域的点击被系统吃掉（#379），网页从状态栏下沿排；胶囊和状态浮层不受影响，
             // 仍按系统安全区排在网页上面。视频全屏（customView）铺满整屏，不吃这条内边距。
             PageWebView(state, page, connection.proxy, environment, script, active && !state.covers(page),
@@ -75,14 +74,10 @@ private fun PageOverlays(
         SharedPageStatus(page, shared, connection.source, pages, state.problem, connection.supported,
             state.covers(page), inset)
     } else {
-        val widget = state.tab is TabRef.Widget
-        PageStatusOverlay(
-            state, page, state.tab, connection.supported && !widget, page.opensInBrowser, inset, onDetails,
-            unsupported = if (widget) stringResource(R.string.tab_widget_unsupported) else null,
-        )
+        PageStatusOverlay(state, page, state.tab, connection.supported, page.opensInBrowser, inset, onDetails)
     }
     PluginPageChrome(state.tab, pages, viewport.safe, bannerTop, shortStatus(page), state.capsule, state.controller,
-        takeover,
+        takeover, hint = callRelayHint(state.tab, pages),
         onClose = { state.controller.closeCustomView(); pages.send(Action.ClosePage) },
         onReload = { pages.send(Action.ReloadTab(state.place)) }, onDetails = onDetails)
 }

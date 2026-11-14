@@ -96,6 +96,7 @@ pub(crate) fn room_row(
             .and_then(|latest| preview(latest, bots, side_chats)),
         side_chats,
         unread_count: room.unread_count,
+        call_active: room.call_active,
     }
 }
 

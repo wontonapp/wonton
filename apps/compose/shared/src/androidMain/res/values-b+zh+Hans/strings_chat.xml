@@ -141,4 +141,10 @@
     <string name="bot_web_login_title">打开此 Bot 网页前</string>
     <string name="bot_web_login_warning">服务器主人可以查看、管理这里的登录状态。</string>
     <string name="bot_web_shared_state">家人可能查看或修改同一份上游应用状态。账号是否独立取决于应用本身，不保证登录或数据按人隔离。</string>
+    <!-- Accessibility label of the room top bar button that opens the room's video call. No arguments. -->
+    <string name="room_call_video">视频通话</string>
+    <!-- Accessibility label of the room top bar button that opens the room's voice call. No arguments. -->
+    <string name="room_call_voice">语音通话</string>
+    <!-- Short mark on the room top bar button and on the chat list row while someone is in a call in this room; tapping the button joins. Keep it very short. No arguments. -->
+    <string name="room_call_active">通话中</string>
 </resources>

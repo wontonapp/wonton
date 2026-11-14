@@ -29,4 +29,6 @@
     <string name="plugin_trust_unreviewed">未審核</string>
     <!-- Action-sheet item that uninstalls the app. -->
     <string name="plugin_uninstall_action">解除安裝</string>
+    <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
+    <string name="plugin_widget_high">它的網頁能在你開啟它的房間裡讀到聊天內容，以你的名義傳送、收回訊息。</string>
 </resources>

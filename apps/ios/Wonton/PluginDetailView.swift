@@ -455,7 +455,7 @@ private struct DetailSections: View {
                     .foregroundStyle(Color(colors.textPrimary))
             }
         }
-        if !detail.permissions.isEmpty {
+        if !detail.permissions.isEmpty || !detail.widgetCapabilities.isEmpty {
             DetailSection(title: String(localized: .Install.installPermissions)) {
                 ForEach(detail.permissions, id: \.permission) { line in
                     if line.optional, detail.installed != nil {
@@ -464,6 +464,7 @@ private struct DetailSections: View {
                         PermissionRow(line: line)
                     }
                 }
+                WidgetCapabilityRows(capabilities: detail.widgetCapabilities)
             }
         }
         if !detail.requirements.isEmpty {

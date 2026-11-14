@@ -209,7 +209,7 @@ private struct PreviewContent: View {
                 if let binding = Binding($audience) {
                     PluginAudienceSection(audience: binding)
                 }
-                if !preview.permissions.isEmpty {
+                if !preview.permissions.isEmpty || !preview.widgetCapabilities.isEmpty {
                     DetailSection(title: String(localized: .Install.installPermissions)) {
                         ForEach(preview.permissions, id: \.permission) { line in
                             if line.optional {
@@ -227,6 +227,7 @@ private struct PreviewContent: View {
                                 PermissionRow(line: line)
                             }
                         }
+                        WidgetCapabilityRows(capabilities: preview.widgetCapabilities)
                     }
                 }
                 if !preview.secretInputs.isEmpty {

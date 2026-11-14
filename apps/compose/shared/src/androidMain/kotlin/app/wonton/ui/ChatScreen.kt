@@ -35,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -75,6 +76,7 @@ import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
+import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
 import java.time.Instant
 import java.time.LocalDate
@@ -394,6 +396,15 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelec
                             contentDescription = stringResource(R.string.chat_encrypted),
                             modifier = Modifier.size(WontonTheme.size.iconTiny),
                             tint = colors.textSecondary.toColor(),
+                        )
+                    }
+                    // 有人在通话（ADR-0096）。
+                    if (row.callActive) {
+                        Icon(
+                            WontonIcon.VoiceCallFill,
+                            contentDescription = stringResource(R.string.room_call_active),
+                            modifier = Modifier.size(WontonTheme.size.iconTiny).testTag("room-row-call-active"),
+                            tint = (if (isSelected) colors.accentInkOnFill else colors.success).toColor(),
                         )
                     }
                 }

@@ -37,4 +37,6 @@
     <string name="plugin_trust_unreviewed">Unreviewed</string>
     <!-- Action-sheet item that uninstalls the app. -->
     <string name="plugin_uninstall_action">Uninstall</string>
+    <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
+    <string name="plugin_widget_high">Its page can read messages in the room you open it in, and send or delete messages as you.</string>
 </resources>

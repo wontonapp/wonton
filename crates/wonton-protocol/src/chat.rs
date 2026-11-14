@@ -331,6 +331,11 @@ pub struct RoomRow {
     pub unread_count: u64,
     /// 打开这个房间时怎么显示（ADR-0060）。
     pub layout: ChatLayout,
+    /// 房间里有人在通话（ADR-0096），和 [`TimelineUpdate::call_active`](crate::TimelineUpdate::call_active)
+    /// 同一个来源：列表这一行标“通话中”。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub call_active: bool,
 }
 
 /// 本账号在房间里的成员状态。
@@ -490,6 +495,7 @@ mod tests {
             }],
             rooms: vec![RoomRow {
                 layout: Default::default(),
+                call_active: false,
                 room_id: "!bot:home.example".into(),
                 name: "Hermes".into(),
                 is_direct: true,

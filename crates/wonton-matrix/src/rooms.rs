@@ -111,6 +111,8 @@ pub struct RoomInfo {
     pub latest: Option<LatestMessage>,
     /// 未读消息数，按本账号的已读回执在本机算出。
     pub unread_count: u64,
+    /// 房间里有人在通话，同 [`ChatRoom::call_active`](crate::ChatRoom::call_active)。
+    pub call_active: bool,
 }
 
 /// 房间的最新一条消息。
@@ -705,6 +707,7 @@ async fn room_info_in(room: &Room, state: RoomState) -> RoomInfo {
         membership: state.into(),
         latest: latest_message(room).await,
         unread_count: room.num_unread_messages() + crate::side_chat::threads_unread(room).await,
+        call_active: room.has_active_room_call(),
     }
 }
 

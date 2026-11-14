@@ -40,4 +40,6 @@
     <string name="plugin_uninstall_title">Uninstall %1$s?</string>
     <!-- Content description of a screenshot on the app detail page. -->
     <string name="plugin_screenshot">Screenshot</string>
+    <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
+    <string name="plugin_widget_normal">Opened in a room, its page can read and update call status and similar details that hold no messages, and prove to the call service that it\'s you.</string>
 </resources>

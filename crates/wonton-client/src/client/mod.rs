@@ -265,7 +265,9 @@ impl ClientCore {
         // 假数据入口（`new_ui_fake`）没有后端：时间线也是写死的一批。
         #[cfg(feature = "ui-fake")]
         if self.ui_fake.load(Ordering::SeqCst) {
-            return Ok(TimelineSubscription::seeded(ui_fake_room::timeline()));
+            return Ok(TimelineSubscription::seeded(ui_fake_room::timeline(
+                &target.room_id,
+            )));
         }
         let scope = self.scope();
         let chat = scope.chat.clone();

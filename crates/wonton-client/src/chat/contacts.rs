@@ -166,6 +166,7 @@ mod tests {
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
             layout: Default::default(),
+            call_active: false,
             room_id: format!("!{name}:s"),
             name: name.to_owned(),
             is_direct: peer.is_some(),

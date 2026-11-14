@@ -60,6 +60,7 @@ struct ChatListView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityAddTraits(selected ? .isSelected : [])
+                            .accessibilityValue(row.callActive ? String(localized: .Chat.roomCallActive) : "")
                             .accessibilityIdentifier("chatRoom.\(row.roomId)")
                         }
                     }
@@ -377,6 +378,11 @@ private struct RoomRowView: View {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
                                 .foregroundStyle(Color(colors.textSecondary))
                                 .accessibilityLabel(Text(.Chat0.chatEncrypted))
+                        }
+                        // 有人在通话（ADR-0096）。图标是装饰，读屏的那句挂在整行上（见列表里的 accessibilityValue）。
+                        if row.callActive {
+                            WontonIcon.voiceCallFill.view(size: WontonTheme.size.iconTiny)
+                                .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.success))
                         }
                     }
                     Spacer(minLength: 0)

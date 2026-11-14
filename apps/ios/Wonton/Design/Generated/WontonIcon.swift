@@ -78,6 +78,10 @@ enum WontonIcon: String {
     case tasksFill
     case trash
     case upload
+    case videoCall
+    case videoCallFill
+    case voiceCall
+    case voiceCallFill
     case warning
     case warningFill
     case warningCircle

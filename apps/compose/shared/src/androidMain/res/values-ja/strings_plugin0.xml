@@ -29,4 +29,6 @@
     <string name="plugin_trust_unreviewed">未審査</string>
     <!-- Action-sheet item that uninstalls the app. -->
     <string name="plugin_uninstall_action">アンインストール</string>
+    <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
+    <string name="plugin_widget_high">このアプリのページは、開いたルームのメッセージを読み、あなたの名前でメッセージを送信・削除できます。</string>
 </resources>

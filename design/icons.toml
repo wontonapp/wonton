@@ -61,6 +61,8 @@ store = { phosphor = "storefront" }
 tasks = { phosphor = "list-checks", fill = true }
 trash = { phosphor = "trash" }
 upload = { phosphor = "upload-simple" }
+videoCall = { phosphor = "video-camera", fill = true }
+voiceCall = { phosphor = "phone", fill = true }
 warning = { phosphor = "warning", fill = true }
 warningCircle = { phosphor = "warning-circle", fill = true }
 web = { phosphor = "compass" }

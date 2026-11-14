@@ -334,7 +334,7 @@ private fun PreviewContent(
         }
         if (preview.notices.isNotEmpty()) NoticeLines(preview.notices)
         audience?.let { PluginAudienceSection(it, onChange = onAudience) }
-        InstallPermissionChoices(preview.permissions, enabled, onOptional)
+        InstallPermissionChoices(preview.permissions, enabled, onOptional, preview.widgetCapabilities)
         if (preview.secretInputs.isNotEmpty()) {
             DetailSection(stringResource(R.string.secret_section_title)) {
                 SecretInputsSection(preview.secretInputs, secrets, onChange = onSecret)

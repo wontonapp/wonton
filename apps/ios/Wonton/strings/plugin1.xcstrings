@@ -421,6 +421,36 @@
           }
         }
       }
+    },
+    "plugin.widgetHigh": {
+      "comment": "Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its page can read messages in the room you open it in, and send or delete messages as you."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的网页能在你打开它的房间里读到聊天内容，以你的名义发消息、撤回消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "它的網頁能在你開啟它的房間裡讀到聊天內容，以你的名義傳送、收回訊息。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このアプリのページは、開いたルームのメッセージを読み、あなたの名前でメッセージを送信・削除できます。"
+          }
+        }
+      }
     }
   }
 }

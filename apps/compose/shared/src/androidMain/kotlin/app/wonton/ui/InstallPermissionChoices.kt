@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.wonton.protocol.InstallPreview
 import app.wonton.protocol.PermissionLine
+import app.wonton.protocol.WidgetCapability
 import app.wonton.ui.design.LocalWontonBottomInset
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
@@ -28,8 +29,9 @@ internal fun InstallPermissionChoices(
     lines: List<PermissionLine>,
     selected: Set<String>,
     onChange: (String, Boolean) -> Unit,
+    widgetCapabilities: List<WidgetCapability> = emptyList(),
 ) {
-    if (lines.isEmpty()) return
+    if (lines.isEmpty() && widgetCapabilities.isEmpty()) return
     DetailSection(stringResource(R.string.install_permissions)) {
         lines.forEach { line ->
             PermissionRow(line) {
@@ -43,6 +45,7 @@ internal fun InstallPermissionChoices(
                 }
             }
         }
+        WidgetCapabilityRows(widgetCapabilities)
     }
 }
 

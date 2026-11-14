@@ -571,6 +571,36 @@
           }
         }
       }
+    },
+    "plugin.widgetNormal": {
+      "comment": "Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opened in a room, its page can read and update call status and similar details that hold no messages, and prove to the call service that it's you."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在房间里打开时，它的网页能读写通话状态这类不含聊天内容的信息，并向通话服务证明是你本人。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在房間裡開啟時，它的網頁能讀寫通話狀態這類不含聊天內容的資訊，並向通話服務證明是你本人。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ルームで開くと、このアプリのページは通話の状態などメッセージを含まない情報を読み書きでき、通話サービスにあなた本人であることを証明できます。"
+          }
+        }
+      }
     }
   }
 }
