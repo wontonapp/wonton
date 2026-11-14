@@ -87,4 +87,15 @@
     <string name="secret_filled">已填寫</string>
     <string name="secret_unfilled">未就緒：要先填令牌</string>
     <string name="secret_go_fill">去填寫</string>
+    <string name="owner_secrets_title">產生的金鑰</string>
+    <string name="owner_secrets_empty">這個應用程式沒有可查看的產生金鑰。</string>
+    <string name="owner_secrets_show">顯示</string>
+    <string name="owner_secrets_hide">隱藏</string>
+    <string name="owner_secrets_problem_cross_site">伺服器基於安全考量封鎖了這次請求。請關閉此頁後重試。</string>
+    <string name="owner_secrets_problem_owner_only">只有主人能查看這些金鑰。</string>
+    <string name="owner_secrets_problem_not_installed">這個應用程式已解除安裝。請返回應用程式列表。</string>
+    <string name="owner_secrets_problem_not_found">這項金鑰已無法使用。請收合並重新展開此群組以更新列表。</string>
+    <string name="owner_secrets_problem_not_ready">這項金鑰尚未準備好。請等應用程式啟動完成後重試。</string>
+    <string name="owner_secrets_problem_protocol">雲吞無法讀取伺服器的回覆。請更新雲吞或家裡的伺服器後重試。</string>
+    <string name="owner_secrets_problem_other">無法載入金鑰。請重試。</string>
 </resources>

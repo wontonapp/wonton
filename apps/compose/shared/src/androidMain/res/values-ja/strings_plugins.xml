@@ -87,4 +87,15 @@
     <string name="secret_filled">入力済み</string>
     <string name="secret_unfilled">未準備：トークンを先に入力してください</string>
     <string name="secret_go_fill">入力する</string>
+    <string name="owner_secrets_title">生成されたキー</string>
+    <string name="owner_secrets_empty">このアプリには表示できる生成済みキーがありません。</string>
+    <string name="owner_secrets_show">表示</string>
+    <string name="owner_secrets_hide">非表示</string>
+    <string name="owner_secrets_problem_cross_site">安全のため、サーバーがこのリクエストを拒否しました。このページを閉じて、もう一度お試しください。</string>
+    <string name="owner_secrets_problem_owner_only">このキーを表示できるのはホームのオーナーだけです。</string>
+    <string name="owner_secrets_problem_not_installed">このアプリはアンインストールされました。アプリ一覧に戻ってください。</string>
+    <string name="owner_secrets_problem_not_found">このキーは利用できなくなりました。グループを閉じて開き直し、一覧を更新してください。</string>
+    <string name="owner_secrets_problem_not_ready">このキーはまだ準備ができていません。アプリの起動が完了してから、もう一度お試しください。</string>
+    <string name="owner_secrets_problem_protocol">サーバーの応答を読み取れませんでした。Wontonまたはホームサーバーを更新して、もう一度お試しください。</string>
+    <string name="owner_secrets_problem_other">キーを読み込めませんでした。もう一度お試しください。</string>
 </resources>
