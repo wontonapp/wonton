@@ -8,7 +8,9 @@ fn device(id: &str, kind: PluginDeviceKind, service: &str) -> PluginDevice {
         name: id.into(),
         target: match kind {
             PluginDeviceKind::Serial => format!("/dev/{service}"),
-            PluginDeviceKind::Disk | PluginDeviceKind::Other => String::new(),
+            PluginDeviceKind::Usb | PluginDeviceKind::Disk | PluginDeviceKind::Other => {
+                String::new()
+            }
         },
         service: service.into(),
         optional: false,
@@ -152,16 +154,13 @@ fn a_class_whose_optional_permission_is_off_is_neither_shown_nor_sent() {
 }
 
 #[test]
-fn kinds_from_a_newer_core_are_listed_but_never_sent() {
-    let mut newer = device("bluetooth:a", PluginDeviceKind::Other, "ha");
-    newer.chosen = true;
-    let devices = toggle_device(vec![newer], "bluetooth:a".into());
-    assert_eq!(
-        device_choices(devices.clone(), Vec::new())
-            .unwrap()
-            .unknown
-            .len(),
-        1
-    );
-    assert!(chosen_device_ids(devices, Vec::new()).is_empty());
+fn kinds_without_individual_selection_are_listed_but_never_sent() {
+    for kind in [PluginDeviceKind::Other, PluginDeviceKind::Usb] {
+        let mut device = device("newer:a", kind, "ha");
+        device.chosen = true;
+        let devices = toggle_device(vec![device], "newer:a".into());
+        let choices = device_choices(devices.clone(), Vec::new()).unwrap();
+        assert_eq!(choices.unknown[0].kind, kind);
+        assert!(chosen_device_ids(devices, Vec::new()).is_empty());
+    }
 }

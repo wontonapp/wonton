@@ -16,9 +16,11 @@ use super::manifest::{
     DeviceClass, DeviceSlot, Manifest, ManifestDevices, ManifestError, Permission,
 };
 use crate::l10n::{list, text};
+pub use granted::granted;
 pub use host::HostDevices;
 pub use preview::{apply, blocked, preview_items};
 
+mod granted;
 pub mod host;
 mod preview;
 mod recovery;
@@ -501,13 +503,16 @@ pub fn selection_from_record(
     selection
 }
 
-/// 详情页上的设备状态：选中的设备不在了就是一条 `device_unavailable`。
+/// 详情页按同一份已授权设备事实生成缺设备问题，关闭了的授权不泄漏到提示中。
 pub fn problems(
-    record: &super::store::InstalledRecord,
-    dev: Option<&Path>,
+    devices: &[wonton_protocol::PluginGrantedDevice],
     langs: &Languages,
 ) -> Vec<wonton_protocol::PluginProblem> {
-    let gone = missing(record, dev);
+    let gone: Vec<&str> = devices
+        .iter()
+        .filter(|device| !device.available)
+        .map(|device| device.name.as_deref().unwrap_or(&device.path))
+        .collect();
     if gone.is_empty() {
         return Vec::new();
     }
@@ -527,24 +532,26 @@ pub fn problems(
     }]
 }
 
+fn record_name(device: &super::store::InstalledDevice) -> String {
+    if device.name.is_empty() {
+        device
+            .source
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    } else {
+        device.name.clone()
+    }
+}
+
 /// 记录里现在不在的设备名。`dev` 是核心看到的宿主 `/dev`，核心在容器里时不是 `/dev`。
 pub fn missing(record: &super::store::InstalledRecord, dev: Option<&Path>) -> Vec<String> {
     record
         .devices
         .iter()
         .filter(|device| !present(dev, &device.source))
-        .map(|device| {
-            if device.name.is_empty() {
-                device
-                    .source
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or_default()
-                    .to_owned()
-            } else {
-                device.name.clone()
-            }
-        })
+        .map(record_name)
         .collect()
 }
 

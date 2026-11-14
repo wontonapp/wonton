@@ -50,6 +50,13 @@ pub(super) fn detail() -> PluginDetail {
         notices: Vec::new(),
         hints: Vec::new(),
         problems: Vec::new(),
+        devices: vec![wonton_protocol::PluginGrantedDevice {
+            path: "/dev/serial/by-id/usb-zigbee".into(),
+            name: Some("Zigbee".into()),
+            kind: wonton_protocol::PluginDeviceKind::Serial,
+            system: false,
+            available: false,
+        }],
         missing_requires: Vec::new(),
         missing_wants: Vec::new(),
         capability_providers: Vec::new(),
