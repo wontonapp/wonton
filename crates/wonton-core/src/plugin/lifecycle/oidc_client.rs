@@ -1,8 +1,23 @@
 //! Compose OIDC callbacks are resolved against the exact application's origin.
 
-use crate::oidc::ClientSpec;
+use crate::l10n;
+use crate::oidc::{ClientSpec, Hydra};
+use crate::plugin::languages::Languages;
+use crate::plugin::manager::{InstallError, PluginManager};
 use crate::plugin::manifest::Manifest;
 use crate::plugin::render::InstallContext;
+
+impl PluginManager {
+    pub(in crate::plugin) fn hydra(&self, langs: &Languages) -> Result<&Hydra, InstallError> {
+        self.oidc.as_ref().ok_or_else(|| {
+            InstallError::OidcUnavailable(l10n::text(
+                langs,
+                "plugin-install-oidc-unconfigured",
+                &[],
+            ))
+        })
+    }
+}
 
 pub(in crate::plugin) fn client_spec(
     manifest: &Manifest,
