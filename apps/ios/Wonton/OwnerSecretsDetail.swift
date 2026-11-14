@@ -6,7 +6,7 @@ import WontonClient
 struct OwnerSecretsDetail: View {
     let model: PluginsModel
     let pluginId: String
-    @State private var role: Role?
+    @State private var isOwner: Bool?
     @State private var identityProblem: Problem?
     @Environment(\.wontonColors) private var colors
 
@@ -17,16 +17,16 @@ struct OwnerSecretsDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
-            if role == .owner {
+            if isOwner == true {
                 groupHeader
                 if let group { contents(group) }
             } else if let identityProblem {
                 DetailSection(title: String(localized: .ownerSecretsTitle)) {
                     ProblemNotice(problem: identityProblem)
-                    Button(String(localized: .commonRetry)) { Task { await loadIdentity() } }
+                    Button(String(localized: .Common.commonRetry)) { Task { await loadIdentity() } }
                         .buttonStyle(WontonSmallButtonStyle())
                 }
-            } else if role == nil {
+            } else if isOwner == nil {
                 ProgressView()
             }
         }
@@ -56,7 +56,7 @@ struct OwnerSecretsDetail: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(.isHeader)
-        .accessibilityValue(String(localized: group == nil ? .appearanceCollapsed : .appearanceExpanded))
+        .accessibilityValue(String(localized: group == nil ? .Appearance0.appearanceCollapsed : .Appearance1.appearanceExpanded))
     }
 
     @ViewBuilder private func contents(_ group: OwnerSecretsView) -> some View {
@@ -64,7 +64,7 @@ struct OwnerSecretsDetail: View {
             ProgressView()
         } else if let problem = group.problem {
             ProblemNotice(problem: problem.ownerSecretProblem)
-            Button(String(localized: .commonRetry)) { model.send(.listOwnerSecrets(pluginId: pluginId)) }
+            Button(String(localized: .Common.commonRetry)) { model.send(.listOwnerSecrets(pluginId: pluginId)) }
                 .buttonStyle(WontonSmallButtonStyle())
         } else if group.secrets.isEmpty {
             Text(.ownerSecretsEmpty)
@@ -78,12 +78,12 @@ struct OwnerSecretsDetail: View {
     }
 
     private func loadIdentity() async {
-        role = nil
+        isOwner = nil
         identityProblem = nil
         do {
             let profile = try await model.core.me()
             guard !Task.isCancelled else { return }
-            role = profile.role
+            isOwner = profile.isOwner
         } catch {
             guard !Task.isCancelled else { return }
             identityProblem = error.problem
@@ -118,7 +118,7 @@ private struct OwnerSecretRow: View {
                     ProgressView()
                 } else if let problem = secret.problem {
                     ProblemNotice(problem: problem.ownerSecretProblem)
-                    Button(String(localized: .commonRetry), action: show)
+                    Button(String(localized: .Common.commonRetry), action: show)
                         .buttonStyle(WontonSmallButtonStyle())
                 } else if let value = secret.value {
                     Text(verbatim: value)
@@ -131,7 +131,7 @@ private struct OwnerSecretRow: View {
                                 .fill(Color(colors.surfaceSubtle))
                         )
                     // Like the recovery key, copying must not bypass the local-only clipboard protection.
-                    Button(String(localized: .chatBackupCopy)) {
+                    Button(String(localized: .ChatBackup1.chatBackupCopy)) {
                         UIPasteboard.general.setItems(
                             [[UTType.plainText.identifier: value]],
                             options: [.localOnly: true, .expirationDate: Date.now.addingTimeInterval(120)]
