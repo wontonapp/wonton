@@ -44,6 +44,7 @@ mod matrix_login;
 mod onboarding;
 mod pages;
 mod peers;
+mod plugin_choices;
 mod plugins;
 mod port_map;
 mod push;
@@ -73,6 +74,10 @@ pub use pages::bridge::{
 };
 pub use pages::media::{PageMediaAction, PageMediaPlayback, PageMediaState};
 pub use pages::media_permission::TabMediaPermission;
+pub use plugin_choices::{
+    PluginInstallAction, detail_install_action, plugin_audience_notice, preview_install_action,
+    selected_plugin_audience, store_install_action,
+};
 pub use sharing::discover_share_source;
 pub use subscription::{
     AgentChainsSubscription, AppLockSubscription, AppearanceSubscription, BotContactsSubscription,

@@ -13,6 +13,7 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
+    @State private var audience: PluginAudienceView?
     @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
     @State private var submittedId: String?
@@ -33,7 +34,7 @@ struct InstallConfirmView: View {
                 Button {
                     requestConfirmation(preview)
                 } label: {
-                    Text(confirmation.actionTitle).frame(maxWidth: .infinity)
+                    Text(actionTitle).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!canConfirm)
@@ -50,7 +51,7 @@ struct InstallConfirmView: View {
             isPresented: $hostAcknowledgement,
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)),
-                WontonDialogAction(title: confirmation.actionTitle, kind: .danger) {
+                WontonDialogAction(title: actionTitle, kind: .danger) {
                     if let preview { confirm(preview) }
                 }
             ]
@@ -73,10 +74,18 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled, secrets: $secrets) {
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled,
+                           audience: $audience, secrets: $secrets) {
                 isFillingProfile = true
             }
         }
+    }
+
+    private var actionTitle: String {
+        if let preview, previewInstallAction(preview: preview) == .requestAdmin {
+            return String(localized: .Install.installRequestAdmin)
+        }
+        return confirmation.actionTitle
     }
 
     private var isUpgrade: Bool { confirmation.isUpgrade }
@@ -89,7 +98,8 @@ struct InstallConfirmView: View {
     /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
-        return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
+        return previewInstallAction(preview: preview) != .blocked && preview.missingProfile == nil
+            && preview.permissions.allSatisfy(\.supported)
             && !missingRequiredSecret(preview.secretInputs, secrets)
     }
 
@@ -106,6 +116,7 @@ struct InstallConfirmView: View {
         if let preloaded = confirmation.preloaded {
             lanWebui = preloaded.lanWebui?.enabled ?? false
             enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            audience = preloaded.audience
             loaded = .success(preloaded)
             return
         }
@@ -121,6 +132,7 @@ struct InstallConfirmView: View {
             }
             lanWebui = preview.lanWebui?.enabled ?? false
             enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            audience = preview.audience
             loaded = .success(preview)
         } catch {
             loaded = .failure(error)
@@ -143,6 +155,7 @@ struct InstallConfirmView: View {
     private func confirm(_ shown: InstallPreview) {
         var preview = shown
         preview.lanWebui?.enabled = lanWebui
+        preview.audience = audience
         preview.permissions = preview.permissions.map { line in
             guard line.optional else { return line }
             var line = line
@@ -174,6 +187,7 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
+    @Binding var audience: PluginAudienceView?
     @Binding var secrets: [String: String]
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
@@ -192,6 +206,9 @@ private struct PreviewContent: View {
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
+                if let binding = Binding($audience) {
+                    PluginAudienceSection(audience: binding)
+                }
                 if !preview.permissions.isEmpty {
                     DetailSection(title: String(localized: .Install.installPermissions)) {
                         ForEach(preview.permissions, id: \.permission) { line in

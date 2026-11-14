@@ -287,6 +287,11 @@ pub enum Action {
         id: String,
         delete_data: bool,
     },
+    /// 主人修改哪些角色能打开这个应用。
+    SetPluginAudience {
+        id: String,
+        audience: crate::PluginAudience,
+    },
     /// 清掉一个做完的任务（成功或失败的提示）。
     DismissPluginTask {
         id: String,

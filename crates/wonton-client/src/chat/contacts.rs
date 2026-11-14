@@ -152,7 +152,6 @@ mod tests {
             cross_origin_isolated: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
-            family: false,
             upgrade: None,
             removable: true,
             notices: Vec::new(),

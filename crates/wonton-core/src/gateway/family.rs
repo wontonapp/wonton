@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{
-    FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
+    Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
 };
 
 use super::api::{error_response, languages};
@@ -321,41 +321,6 @@ pub async fn remove(
             Some(response) => response,
         },
         Err(e) => members_error(e),
-    }
-}
-
-/// `PUT plugin_family_path(id)`：更新插件记录的 `family` 标记，不改变角色授权。
-pub async fn set_plugin_family(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
-    {
-        return denied;
-    }
-    let Ok(id) = crate::plugin::PluginId::parse(&id) else {
-        return error_response(StatusCode::NOT_FOUND, "not_found", "没有安装这个应用");
-    };
-    let access: FamilyAccess = match serde_json::from_slice(&body) {
-        Ok(access) => access,
-        Err(e) => {
-            let message = format!("请求体不是“家人能用”的开关：{e}");
-            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
-        }
-    };
-    match gateway
-        .plugins
-        .set_family(&id, access.enabled, &super::api::languages(&headers))
-    {
-        Ok(plugin) => {
-            tracing::info!(plugin = %id, enabled = access.enabled, "改“家人能用”的开关");
-            Json(plugin).into_response()
-        }
-        Err(e) => super::api::install_error(&e),
     }
 }
 

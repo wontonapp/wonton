@@ -24,4 +24,11 @@
     <string name="install_permissions">権限</string>
     <!-- Section title above the release notes in the install preview. -->
     <string name="install_release_notes">更新内容</string>
+    <string name="install_audience_admin">管理者</string>
+    <string name="install_audience_family">家族</string>
+    <string name="install_audience_child">子ども</string>
+    <string name="install_audience_friend">友達</string>
+    <string name="install_audience_title">このアプリを開ける人</string>
+    <string name="install_audience_shared_data">このアプリは個人別のアカウントに対応していません。利用者は同じデータを閲覧・変更できる場合があります。</string>
+    <string name="install_request_admin">管理者にインストールを依頼</string>
 </resources>

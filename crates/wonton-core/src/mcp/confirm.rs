@@ -146,6 +146,12 @@ pub struct Ticket {
     pub window: Option<String>,
 }
 
+impl Ticket {
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+}
+
 /// 主人按的那个按钮。
 pub struct Chosen {
     pub answer: Answer,
@@ -160,6 +166,8 @@ struct Slot {
     caller: PluginId,
     /// 见 [`Audience::recipient`]。
     recipient: Option<String>,
+    /// `None` preserves the single keeper recipient; admin recipients are frozen at creation.
+    admins: Option<Vec<Option<String>>>,
     /// 这张卡片能打开放行时段时，时段管哪个插件。
     scope: Option<String>,
     /// 见 [`Ticket::window`]。
@@ -170,6 +178,15 @@ struct Slot {
     secret_inputs: Vec<SecretInput>,
     /// 不再等回答的时刻（Unix 毫秒）：答了、拒了、过期或被取代。结束的卡片按 [`KEEP_FINISHED`] 留这么久。
     ended: Option<u64>,
+}
+
+impl Slot {
+    fn includes(&self, recipient: Option<&str>) -> bool {
+        match &self.admins {
+            Some(admins) => admins.iter().any(|admin| admin.as_deref() == recipient),
+            None => self.recipient.as_deref() == recipient,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -248,7 +265,28 @@ impl Confirmations {
         draft: Draft,
         audience: Audience,
     ) -> Result<Ticket, Refusal> {
-        let (card, answered) = self.open_as(caller, draft, audience)?;
+        self.ask_audience(caller, draft, audience, None).await
+    }
+
+    pub(super) async fn ask_admin_as(
+        &self,
+        caller: &PluginId,
+        draft: Draft,
+        audience: Audience,
+        admins: Vec<Option<String>>,
+    ) -> Result<Ticket, Refusal> {
+        self.ask_audience(caller, draft, audience, Some(admins))
+            .await
+    }
+
+    async fn ask_audience(
+        &self,
+        caller: &PluginId,
+        draft: Draft,
+        audience: Audience,
+        admins: Option<Vec<Option<String>>>,
+    ) -> Result<Ticket, Refusal> {
+        let (card, answered) = self.open_audience(caller, draft, audience, admins)?;
         let chosen = self.deliver(&card, answered).await?;
         match chosen.answer {
             answer @ (Answer::Approve | Answer::ApproveWider | Answer::AllowWindow) => {
@@ -288,6 +326,16 @@ impl Confirmations {
         draft: Draft,
         audience: Audience,
     ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
+        self.open_audience(caller, draft, audience, None)
+    }
+
+    fn open_audience(
+        &self,
+        caller: &PluginId,
+        draft: Draft,
+        audience: Audience,
+        admins: Option<Vec<Option<String>>>,
+    ) -> Result<(ConfirmationCard, oneshot::Receiver<Chosen>), Refusal> {
         let created = SystemTime::now();
         let Audience {
             recipient,
@@ -307,7 +355,11 @@ impl Confirmations {
             window: None,
             requester,
             origin,
-            audience: wonton_protocol::CardAudience::Keeper,
+            audience: if admins.is_some() {
+                wonton_protocol::CardAudience::Admins
+            } else {
+                wonton_protocol::CardAudience::Keeper
+            },
             answered_by: None,
             category: draft.category,
         };
@@ -325,6 +377,7 @@ impl Confirmations {
         let slot = Slot {
             caller: caller.clone(),
             recipient,
+            admins,
             scope: draft.scope,
             released_by: None,
             card: card.clone(),
@@ -363,8 +416,31 @@ impl Confirmations {
         let expires =
             Duration::from_millis(card.expires_at_ms.saturating_sub(now_ms(SystemTime::now())));
         let deadline = tokio::time::Instant::now() + expires;
-        let recipient = self.recipient(&card.id).flatten();
-        let posted = self.notifier.post(recipient.as_deref(), card);
+        let (recipient, admins) = {
+            let table = self.lock();
+            let slot = table.slots.get(&card.id).ok_or(Refusal::Expired)?;
+            (slot.recipient.clone(), slot.admins.clone())
+        };
+        let posted = async {
+            let Some(recipients) = admins else {
+                return self.notifier.post(recipient.as_deref(), card).await;
+            };
+            let results = futures_util::future::join_all(
+                recipients
+                    .iter()
+                    .map(|recipient| self.notifier.post(recipient.as_deref(), card)),
+            )
+            .await;
+            if results.iter().any(Result::is_ok) {
+                Ok(())
+            } else {
+                Err(results
+                    .into_iter()
+                    .filter_map(Result::err)
+                    .collect::<Vec<_>>()
+                    .join("; "))
+            }
+        };
         match tokio::time::timeout_at(deadline, posted).await {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {
@@ -398,7 +474,7 @@ impl Confirmations {
         let mut pending: Vec<&Slot> = Vec::new();
         let mut finished: Vec<&Slot> = Vec::new();
         for slot in table.slots.values() {
-            if slot.recipient.as_deref() != recipient {
+            if !slot.includes(recipient) {
                 continue;
             }
             if slot.waiter.is_some() && slot.card.expires_at_ms > now {
@@ -446,9 +522,20 @@ impl Confirmations {
         self.revision.send_modify(|revision| *revision += 1);
     }
 
-    /// 卡片 `id` 发给谁（`Some(None)` 是主人）；没有这张卡片时是 `None`。
+    /// Single keeper recipient (`Some(None)` is the owner); admin cards and absent IDs return `None`.
     pub fn recipient(&self, id: &str) -> Option<Option<String>> {
-        self.lock().slots.get(id).map(|slot| slot.recipient.clone())
+        self.lock()
+            .slots
+            .get(id)
+            .and_then(|slot| slot.admins.is_none().then(|| slot.recipient.clone()))
+    }
+
+    /// Whether this recipient belongs to the card's frozen audience; absent cards return `None`.
+    pub fn may_answer(&self, id: &str, recipient: Option<&str>) -> Option<bool> {
+        self.lock()
+            .slots
+            .get(id)
+            .map(|slot| slot.includes(recipient))
     }
 
     /// 主人的回答。确认后卡片变成“正在执行”，拒绝后变成“已拒绝”。
@@ -477,6 +564,21 @@ impl Confirmations {
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
         langs: &Languages,
+    ) -> Result<ConfirmationState, AnswerError> {
+        self.answer_with_secrets_by(id, answer, choice_id, secrets, settings, langs, None)
+    }
+
+    /// Gateway-authenticated answerer, recorded atomically with the winning answer.
+    #[allow(clippy::too_many_arguments)]
+    pub fn answer_with_secrets_by(
+        &self,
+        id: &str,
+        answer: Answer,
+        choice_id: Option<&str>,
+        secrets: SecretValues,
+        settings: wonton_protocol::SettingValues,
+        langs: &Languages,
+        answered_by: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
         let state = match answer {
             Answer::Approve | Answer::ApproveWider | Answer::AllowWindow => {
@@ -538,6 +640,7 @@ impl Confirmations {
             return Err(AnswerError::Expired);
         }
         slot.card.state = state.clone();
+        slot.card.answered_by = answered_by.map(str::to_owned);
         slot.ended = Some(now);
         if answer == Answer::AllowWindow {
             // 发消息的卡片按收件人放宽，其余按插件。

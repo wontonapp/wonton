@@ -215,6 +215,7 @@ async fn a_source_without_a_version_installs_the_latest_release_and_remembers_it
 
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         plan: preview.plan.clone(),
@@ -269,6 +270,7 @@ async fn a_tag_moved_after_the_preview_is_not_installed() {
     release(&github, "1.0.0", "evil");
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,

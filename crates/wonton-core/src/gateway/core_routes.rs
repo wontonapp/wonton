@@ -16,7 +16,7 @@ use crate::l10n;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
-    isolation, matrix, me, model_providers, onboarding, pages, peers, push, roles,
+    isolation, matrix, me, model_providers, onboarding, pages, peers, plugin_audience, push, roles,
     same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
@@ -452,8 +452,8 @@ fn member_routes() -> Router<Arc<Gateway>> {
             post(family::remove),
         )
         .route(
-            "/_wonton/api/plugins/{id}/family",
-            put(family::set_plugin_family),
+            "/_wonton/api/plugins/{id}/audience",
+            get(plugin_audience::get).put(plugin_audience::put),
         )
         .route(
             "/_wonton/api/bots/{id}/{bot}/webui",

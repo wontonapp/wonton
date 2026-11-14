@@ -2,6 +2,7 @@
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
 pub(crate) mod api;
+mod audience;
 mod cache;
 pub(crate) mod cards;
 mod core_upgrade;

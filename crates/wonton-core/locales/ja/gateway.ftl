@@ -182,3 +182,6 @@ gateway-agent-acp-multi-bot = {$provider} には複数の Bot があります。
 gateway-agent-acp-token-missing = {$provider} にはまだ提供者トークンがありません。再インストールすると作られます
 gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を引き受けませんでした：{$detail}
 gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限に達しました。しばらくしてからもう一度お試しください
+
+gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
+gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした

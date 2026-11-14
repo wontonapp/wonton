@@ -1,4 +1,4 @@
-//! Bot 开关可选权限（ADR-0057）：打开每次都发卡、不能被放宽；关掉是收权限，放宽过的直接做。
+//! Bot 开关可选权限（ADR-0057）：敏感应用管理操作始终确认，不能被工具放宽绕过。
 
 use serde_json::json;
 use wonton_protocol::Answer;
@@ -25,12 +25,14 @@ async fn enabling_asks_every_time_even_with_every_relaxation_on() {
 
     for n in 1..=2 {
         if n == 2 {
-            // 先关掉才能第二次打开。
-            let off = s.spawn(TOOL, args(false)).await.unwrap();
+            let off = s.spawn(TOOL, args(false));
+            let card = s.cards.wait_for(2).await;
+            s.answer(&card.id, Answer::Approve).unwrap();
+            let off = off.await.unwrap();
             assert!(!off.is_error.unwrap_or(false), "{}", text(&off));
         }
         let call = s.spawn(TOOL, args(true));
-        let card = s.cards.wait_for(n).await;
+        let card = s.cards.wait_for(n * 2 - 1).await;
         assert!(
             card.lines.iter().any(|line| line.text.contains("root")),
             "{:?}",
@@ -46,7 +48,7 @@ async fn enabling_asks_every_time_even_with_every_relaxation_on() {
 }
 
 #[tokio::test]
-async fn disabling_with_allow_all_does_not_ask() {
+async fn disabling_with_allow_all_still_asks() {
     let s = setup_optional().await;
     let turn_on = s.spawn(TOOL, args(true));
     let card = s.cards.wait_for(1).await;
@@ -55,9 +57,12 @@ async fn disabling_with_allow_all_does_not_ask() {
 
     s.manager.tool_policy().set_allow_all(AGENT, true).unwrap();
     let posted = s.cards.posted.lock().unwrap().len();
-    let off = s.spawn(TOOL, args(false)).await.unwrap();
+    let off = s.spawn(TOOL, args(false));
+    let card = s.cards.wait_for(posted + 1).await;
+    s.answer(&card.id, Answer::Approve).unwrap();
+    let off = off.await.unwrap();
     assert!(!off.is_error.unwrap_or(false), "{}", text(&off));
-    assert_eq!(s.cards.posted.lock().unwrap().len(), posted, "没再发卡");
+    assert_eq!(s.cards.posted.lock().unwrap().len(), posted + 1);
     let record = s.manager.record_for_test(&notes_id()).unwrap();
     assert!(record.enabled_permissions.is_empty());
 }

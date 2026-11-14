@@ -21,6 +21,7 @@ import app.wonton.protocol.PluginDetail
 import app.wonton.protocol.PluginState
 import app.wonton.protocol.SecretInput
 import app.wonton.protocol.SecretInputState
+
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonSeparator
@@ -50,6 +51,20 @@ internal fun SecretSection(
 }
 
 /** 缺必填密钥时的「去填写」：滚到密钥一节；密钥只有主人能填，家人的入口没有落点，不显示。 */
+@Composable
+internal fun InstalledPlugin.InstalledRows(
+    plugins: PluginsState,
+    detail: PluginDetail,
+    owner: Boolean?,
+    secretsInView: BringIntoViewRequester,
+    onToggled: (PluginDetail) -> Unit,
+) {
+    detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
+    detail.audience?.audienceRow(plugins, detail.id, onToggled)
+    GoFillSecrets(detail.installed, owner, secretsInView)
+    MyAppsControls(detail.installed!!)
+}
+
 @Composable
 internal fun GoFillSecrets(
     installed: InstalledPlugin?,

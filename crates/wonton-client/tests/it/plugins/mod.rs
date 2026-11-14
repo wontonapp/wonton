@@ -1,6 +1,7 @@
 //! 插件页面的行为测试：只经由导出给原生壳的接口驱动，隧道的对面是本机假扮的核心管理接口，只走回环地址。
 
 mod ask_every_update;
+mod audience;
 mod bots;
 mod chat_rows;
 mod connection;

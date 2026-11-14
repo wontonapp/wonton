@@ -426,11 +426,6 @@ fn install_guarded_routes() -> Vec<(Method, &'static str, &'static str)> {
             "",
         ),
         (
-            Method::GET,
-            "/_wonton/api/store/plugin?source=github:o/r",
-            "",
-        ),
-        (
             Method::PUT,
             "/_wonton/api/plugins/app.whoami/permissions/docker.socket",
             "{\"enabled\": true}",
@@ -493,14 +488,17 @@ fn guarded_routes() -> GuardedRoutes {
                 (Method::POST, MEMBERS, "{}"),
                 (Method::POST, "/_wonton/api/members/mia/pairing-code", "{}"),
                 (Method::POST, "/_wonton/api/members/mia/remove", "{}"),
-                (
-                    Method::PUT,
-                    "/_wonton/api/plugins/app.whoami/family",
-                    "{\"enabled\": true}",
-                ),
             ],
         ),
         (Item::InstallApps, install),
+        (
+            Item::Owner,
+            vec![(
+                Method::PUT,
+                "/_wonton/api/plugins/app.whoami/audience",
+                "{\"role_ids\": [\"admin\"]}",
+            )],
+        ),
         (
             Item::ModelSettings,
             vec![

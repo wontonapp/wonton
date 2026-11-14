@@ -608,10 +608,10 @@ async fn stale_metadata_cannot_erase_stop_intent_or_retry_budget() {
     let installed = manager.install(&app(), &[], super::langs()).await.unwrap();
     let mut stale = manager.store.load(&installed.id).unwrap().unwrap();
     manager.stop_detached(installed.id.clone()).await.unwrap();
-    stale.family = true;
+    stale.ask_every_update = true;
     manager.store.save_metadata(&stale).unwrap();
     let saved = manager.store.load(&installed.id).unwrap().unwrap();
-    assert!(saved.family);
+    assert!(saved.ask_every_update);
     assert_eq!(saved.lifecycle.desired, PluginDesiredState::Stopped);
     assert_eq!(saved.lifecycle.recovery, None);
     manager.watch_containers().await;
