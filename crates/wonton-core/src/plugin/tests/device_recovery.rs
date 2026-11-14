@@ -29,7 +29,10 @@ async fn installed(
     host.serial("usb-radio", "ttyUSB0");
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    let manager = Arc::new(manager_with(engine, &dir).with_host(host.paths()));
+    let mut manager = manager_with(engine, &dir).with_host(host.paths());
+    // 插回后 radio、worker 依次各要稳定运行 3 秒（无健康检查），默认的 5 秒不够两个。
+    manager.cfg.install_timeout = std::time::Duration::from_secs(30);
+    let manager = Arc::new(manager);
     manager
         .install_with_devices(
             &source(optional),
@@ -115,6 +118,7 @@ async fn missing_selected_serial_starts_other_services_and_keeps_its_authorizati
                 wonton_protocol::PluginState::Running { .. }
             ));
             assert!(detail.problems.is_empty());
+            assert!(manager.lifecycle_status(&id()).unwrap().recovery.is_none());
             let plugins = manager.plugins.read().unwrap();
             assert_eq!(
                 plugins[&id()].serving,

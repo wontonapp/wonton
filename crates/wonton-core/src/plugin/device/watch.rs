@@ -165,6 +165,12 @@ impl PluginManager {
         match self.resume_device_services(id, &services, langs).await {
             Ok(deployed) => {
                 self.devices.gone.lock().await.remove(&key);
+                // 缺设备的启动记下了续建（见 recovery.rs）；设备回来、整套都在跑了，续建就不必再做。
+                if deployed.problem.is_none()
+                    && let Err(error) = self.recovery_complete(id)
+                {
+                    tracing::warn!(plugin = %id, %error, "设备回来了，清除续建记录失败");
+                }
                 let mut plugins = self.plugins.write().expect("插件表锁中毒");
                 if let Some(entry) = plugins.get_mut(id)
                     && let Some(listed) = entry.listed.clone()
