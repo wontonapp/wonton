@@ -1,9 +1,10 @@
 //! 商店给 App 的视图：列表（`GET /_wonton/api/store`）和来源最新版本的详情（`GET /_wonton/api/store/plugin`）。
 
 use wonton_protocol::{
-    AddedSource, PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection,
+    AddedSource, CardLine, PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection,
 };
 
+use super::super::dependencies::preview::DependencyPreview;
 use super::super::gallery::IconSource;
 use super::super::github::Repo;
 use super::super::github_source::{INDEX_SCHEME, Origin, SourceRef, Trust};
@@ -233,17 +234,7 @@ impl PluginManager {
                 Ok(dependencies) => dependencies.blocked.clone(),
                 Err(error) => Some(error.to_string()),
             }),
-            notices: cross_origin_isolation_notice(m, langs)
-                .into_iter()
-                .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
-                .chain(
-                    dependencies
-                        .as_ref()
-                        .ok()
-                        .into_iter()
-                        .flat_map(|d| d.notices.iter().cloned()),
-                )
-                .collect(),
+            notices: detail_notices(m, langs, dependencies.as_ref().ok()),
             // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
             hints: installed_detail
                 .as_mut()
@@ -352,6 +343,22 @@ impl PluginManager {
         }
         (items, icons)
     }
+}
+
+fn detail_notices(
+    m: &Manifest,
+    langs: &Languages,
+    dependencies: Option<&DependencyPreview>,
+) -> Vec<CardLine> {
+    cross_origin_isolation_notice(m, langs)
+        .into_iter()
+        .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
+        .chain(
+            dependencies
+                .into_iter()
+                .flat_map(|d| d.notices.iter().cloned()),
+        )
+        .collect()
 }
 
 // 商店版本请求的权限不等于已装版本获准访问的设备。
