@@ -38,7 +38,7 @@ use view::render;
 struct LocalState {
     /// 家里服务器上的引导状态：只记走没走完和默认 Agent。
     onboarding: Option<Onboarding>,
-    /// 每落一份响应加一；刷新记下发出时的值，回来对不上就丢弃（Onboarding 没有服务端版本号）。
+    /// 防止引导响应倒退；断线时递增以丢弃断线前发出的旧响应，不代表授权版本。
     revision: u64,
     /// 正在显示的一步。中间的步骤只在这台设备上（ADR-0038）；还没取到时为空。
     step: Option<OnboardingStep>,
@@ -52,6 +52,8 @@ struct LocalState {
     review_generation: u64,
     commit: OnboardingCommit,
     problem: Option<PluginProblem>,
+    bot_refreshing: bool,
+    bot_problem: Option<PluginProblem>,
     model_problem: Option<ModelSettingsProblem>,
     loading: bool,
     /// 这一趟里因为服务器太旧整步显不出来的步骤：这些步直接跳过。
@@ -284,6 +286,8 @@ impl OnboardingLink {
                     });
                 }
                 state.onboarding = Some(onboarding);
+                state.bot_refreshing = self.home.view().status != HomeStatus::Connected;
+                state.bot_problem = None;
                 state.revision += 1;
             }
             // 静默刷新只更新 onboarding；完整刷新已取到的详情仍是这趟请求的结果。
@@ -335,11 +339,14 @@ impl OnboardingLink {
         if after_reset || state.revision == revision {
             if problem.reason == PluginFailure::ServerTooOld {
                 state.too_old = Some(too_old(&problem));
+                state.bot_problem = Some(problem);
                 state.problem = None;
                 state.step = None;
             } else {
+                state.bot_problem = Some(problem.clone());
                 state.problem = Some(problem);
             }
+            state.bot_refreshing = false;
         }
         drop(state);
         self.publish();
@@ -426,13 +433,21 @@ impl OnboardingLink {
             match result {
                 Ok(onboarding) => {
                     state.onboarding = Some(onboarding);
+                    state.bot_refreshing = link.home.view().status != HomeStatus::Connected;
+                    state.bot_problem = None;
                     state.revision += 1;
                 }
                 Err(problem) if problem.reason == PluginFailure::ServerTooOld => {
                     state.too_old = Some(too_old(&problem));
+                    state.bot_refreshing = false;
+                    state.bot_problem = Some(problem);
                     state.step = None;
                 }
-                Err(problem) => state.problem = Some(problem),
+                Err(problem) => {
+                    state.bot_refreshing = false;
+                    state.bot_problem = Some(problem.clone());
+                    state.problem = Some(problem);
+                }
             }
             drop(state);
             link.publish();
@@ -461,7 +476,11 @@ impl OnboardingLink {
         let sent_rooms = lock(&self.sent_rooms).clone();
         // 发过消息先落盘再渲染：收起提问的视图发出去时 `prompts_used` 一定已经在盘上。落盘和渲染用
         // 同一份快照，房间行或私聊标记短暂缺失时不落盘也不收起，回来后的发布再收。
-        if !records.prompts_used && view::prompt_done(state.onboarding.as_ref(), &chat, &sent_rooms)
+        if !records.prompts_used
+            && !state.loading
+            && !state.bot_refreshing
+            && state.bot_problem.is_none()
+            && view::prompt_done(state.onboarding.as_ref(), &chat, &sent_rooms)
         {
             match self.storage.mark_prompts_used() {
                 Ok(()) => records.prompts_used = true,

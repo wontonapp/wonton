@@ -93,6 +93,189 @@ async fn the_installed_list_is_there_as_soon_as_the_app_opens() {
 }
 
 #[tokio::test]
+async fn cached_bot_identity_is_not_a_current_chat_candidate() {
+    const OLD_BOT: &str = "@old-bot:home";
+    const CURRENT_BOT: &str = "@current-bot:home";
+    let mut rig = Rig::new().await;
+    let mut plugin = running("app.bot");
+    plugin.bot_user_id = Some(OLD_BOT.to_owned());
+    plugin.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![plugin]]);
+    rig.connected().await;
+    rig.wait_for(|view| {
+        view.installed
+            .as_ref()
+            .is_some_and(|installed| installed.plugins[0].bot_user_id.as_deref() == Some(OLD_BOT))
+    })
+    .await;
+
+    let cache = rig.data_dir().join("installed-plugins.json");
+    let mut cached: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
+    cached["installed"]["plugins"][0]["bot_user_id"] = serde_json::json!(OLD_BOT);
+    std::fs::write(cache, serde_json::to_vec(&cached).unwrap()).unwrap();
+    rig.core.hold(Method::GET, "/_wonton/api/plugins");
+    rig.reopen();
+    let installed = rig.app.plugins().installed.expect("cached plugin list");
+    assert_eq!(installed.plugins[0].id, "app.bot");
+    assert_eq!(installed.plugins[0].bot_user_id, None);
+    assert!(
+        rig.app
+            .chat_contacts(String::new())
+            .iter()
+            .all(|contact| contact.user_id != OLD_BOT)
+    );
+
+    let mut current = running("app.bot");
+    current.bot_user_id = Some(CURRENT_BOT.to_owned());
+    current.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![current]]);
+    rig.core.release(Method::GET, "/_wonton/api/plugins");
+    rig.connected().await;
+    rig.wait_for(|view| {
+        view.installed.as_ref().is_some_and(|installed| {
+            installed.plugins[0].bot_user_id.as_deref() == Some(CURRENT_BOT)
+        })
+    })
+    .await;
+    assert!(
+        rig.app
+            .chat_contacts(String::new())
+            .iter()
+            .any(|contact| contact.user_id == CURRENT_BOT)
+    );
+}
+
+#[tokio::test]
+async fn unverified_bot_identity_is_not_a_chat_candidate() {
+    let rig = Rig::new().await;
+    let mut unverified = running("app.unverified");
+    unverified.bot_user_id = Some("@private:home".into());
+    let mut verified = running("app.verified");
+    verified.bot_user_id = Some("@mine:home".into());
+    verified.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![unverified, verified]]);
+    rig.connected().await;
+    let view = rig
+        .wait_for(|view| {
+            view.installed
+                .as_ref()
+                .is_some_and(|list| list.plugins.len() == 2)
+        })
+        .await;
+    let installed = view.installed.unwrap();
+    assert_eq!(installed.plugins[0].bot_user_id, None);
+    assert_eq!(
+        installed.plugins[1].bot_user_id.as_deref(),
+        Some("@mine:home")
+    );
+    let contacts = rig.app.chat_contacts(String::new());
+    assert!(
+        contacts
+            .iter()
+            .all(|contact| contact.user_id != "@private:home")
+    );
+    assert!(
+        contacts
+            .iter()
+            .any(|contact| contact.user_id == "@mine:home")
+    );
+}
+
+#[tokio::test]
+async fn inconsistent_default_identities_are_not_offered_as_chat_candidates() {
+    use wonton_protocol::DefaultBotVisibility;
+
+    let rig = Rig::new().await;
+    let mut malformed = running("app.malformed");
+    malformed.bot_user_id = Some("not-a-matrix-id".into());
+    malformed.default_bot_visibility = Some(DefaultBotVisibility::Visible);
+    let mut contradictory = running("app.contradictory");
+    contradictory.bot_user_id = Some("@secret:home".into());
+    contradictory.default_bot_visibility = Some(DefaultBotVisibility::Absent);
+    let mut visible_without_id = running("app.missing");
+    visible_without_id.default_bot_visibility = Some(DefaultBotVisibility::Visible);
+    let mut verified = running("app.verified");
+    verified.bot_user_id = Some("@mine:home".into());
+    verified.default_bot_visibility = Some(DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![
+        malformed,
+        contradictory,
+        visible_without_id,
+        verified,
+    ]]);
+    rig.connected().await;
+
+    let view = rig
+        .wait_for(|view| {
+            view.installed
+                .as_ref()
+                .is_some_and(|list| list.plugins.len() == 4)
+        })
+        .await;
+    let installed = view.installed.unwrap();
+    for plugin in &installed.plugins[..3] {
+        assert_eq!(plugin.bot_user_id, None);
+        assert_eq!(
+            plugin.default_bot_visibility,
+            Some(DefaultBotVisibility::Unknown)
+        );
+    }
+    let contacts = rig.app.chat_contacts(String::new());
+    assert!(
+        contacts
+            .iter()
+            .all(|contact| contact.user_id != "@secret:home")
+    );
+    assert!(
+        contacts
+            .iter()
+            .any(|contact| contact.user_id == "@mine:home")
+    );
+}
+
+#[tokio::test]
+async fn disconnect_hides_last_known_bot_until_list_is_refetched() {
+    let rig = Rig::new().await;
+    let mut plugin = running("app.bot");
+    plugin.bot_user_id = Some("@mine:home".into());
+    plugin.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![plugin]]);
+    rig.connected().await;
+    rig.wait_for(|view| {
+        view.installed
+            .as_ref()
+            .is_some_and(|list| list.plugins[0].bot_user_id.as_deref() == Some("@mine:home"))
+    })
+    .await;
+
+    rig.app.set_home_status_for_test(HomeStatus::Connecting);
+    let offline = rig
+        .wait_for(|view| {
+            view.installed.as_ref().is_some_and(|list| {
+                list.plugins[0].default_bot_visibility
+                    == Some(wonton_protocol::DefaultBotVisibility::Unknown)
+            })
+        })
+        .await;
+    assert_eq!(offline.installed.unwrap().plugins[0].bot_user_id, None);
+    assert!(
+        rig.app
+            .chat_contacts(String::new())
+            .iter()
+            .all(|contact| contact.user_id != "@mine:home")
+    );
+
+    rig.app.set_home_status_for_test(HomeStatus::Connected);
+    rig.wait_for(|view| {
+        view.installed
+            .as_ref()
+            .is_some_and(|list| list.plugins[0].bot_user_id.as_deref() == Some("@mine:home"))
+    })
+    .await;
+}
+
+#[tokio::test]
 async fn a_server_that_rejects_this_device_is_reported_without_redialing() {
     let rig = Rig::new().await;
     let home = FakeHome::start(Vec::new()).await;

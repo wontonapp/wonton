@@ -191,6 +191,7 @@ impl PluginManager {
             declares_tools: manifest.is_some_and(|m| m.mcp.is_some()),
             tabs,
             bot_user_id: None,
+            default_bot_visibility: None,
             upgrade,
             removable: !entry.system,
             notices,

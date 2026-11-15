@@ -70,6 +70,21 @@ pub struct BotPluginAccessUpdate {
     pub enabled: bool,
 }
 
+/// 默认 Bot 身份对当前请求者的投影；不代表某个房间的发送资格或运行状态。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum DefaultBotVisibility {
+    /// 已核实当前人能看到此默认 Bot 的身份。
+    Visible,
+    /// 已核实当前人没有可披露的这个默认 Bot，不代表其他 Bot 不存在。
+    Absent,
+    /// 无法核实可见性；不能解释为没有 Bot 或确定被拒绝。
+    Unknown,
+    #[serde(other)]
+    Other,
+}
+
 /// Bot 此刻在做什么，也是状态头像的状态（[`StateAvatars::states`] 的键）。客户端核心合成（规则见 ADR-0044），
 /// 壳按它选状态头像。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

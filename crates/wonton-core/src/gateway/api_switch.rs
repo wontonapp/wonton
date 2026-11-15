@@ -8,11 +8,13 @@ use axum::Extension;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Json, Response};
+use axum::response::Response;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-use super::api::{InstallQuery, error_response, install_error, languages};
+use super::api::{
+    InstallQuery, current_permitted_requester, error_response, install_error, languages, requester,
+};
 use super::api_body::package;
 use super::{Gateway, TunnelPeer, permissions};
 use crate::plugin::languages::Languages;
@@ -35,6 +37,10 @@ pub async fn set_plugin_permission(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
@@ -50,12 +56,27 @@ pub async fn set_plugin_permission(
         }
     };
     let langs = languages(&headers);
-    match gateway
+    let result = gateway
         .plugins
         .set_plugin_permission(id, permission, update.enabled, OpenedBy::Owner, langs)
-        .await
-    {
-        Ok(detail) => Json(detail).into_response(),
+        .await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    match result {
+        Ok(detail) => super::bot_projection::detail_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            detail,
+        ),
         Err(e) => install_error(&e),
     }
 }

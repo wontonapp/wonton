@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="problem_default_agent_absent">このアカウントに表示できる既定のアシスタントがありません。オーナーに設定を確認してもらってください。</string>
     <string name="problem_invalid_input_title">この操作は実行できません</string>
     <!-- Next step: look at the app again and approve it again. -->
     <string name="problem_plugin_changed_next_step">内容をもう一度確認してください。</string>

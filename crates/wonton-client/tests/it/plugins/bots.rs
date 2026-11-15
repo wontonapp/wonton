@@ -14,8 +14,10 @@ async fn only_recorded_bots_appear_and_failed_activity_clears_their_capabilities
     let mut bot = running("app.bot");
     bot.title = "Plugin name".into();
     bot.bot_user_id = Some("@installed-default:home".into());
+    bot.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     let mut empty = running("app.empty");
     empty.bot_user_id = Some(String::new());
+    empty.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     rig.core
         .set_lists(vec![vec![running("app.no-bot"), empty, bot]]);
     rig.core.hold(Method::GET, ACTIVITY);
@@ -84,6 +86,55 @@ async fn only_recorded_bots_appear_and_failed_activity_clears_their_capabilities
         })
         .unwrap();
     wait(&rig, |bots| bots.is_empty()).await;
+}
+
+#[tokio::test]
+async fn plugin_refresh_does_not_switch_between_bots_of_the_same_plugin() {
+    let rig = Rig::new().await;
+    let mut plugin = running("app.bot");
+    plugin.bot_user_id = Some("@default:home".into());
+    plugin.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
+    rig.core.set_lists(vec![vec![plugin.clone()]]);
+    let mut alice = facts(Some("alice"), "@alice:home");
+    alice.model_requests = 1;
+    rig.core.set_bot_activity(BotActivityReport {
+        rev: 1,
+        bots: vec![alice, facts(Some("default"), "@default:home")],
+    });
+    rig.connected().await;
+    let before = wait(&rig, |bots| {
+        bots.len() == 2
+            && bots[0].bot.bot == "alice"
+            && bots[0].activity == Some(BotActivity::Working)
+            && bots[1].bot.bot == "default"
+            && bots[1].activity == Some(BotActivity::Idle)
+    })
+    .await;
+
+    rig.core.hold(Method::GET, ACTIVITY);
+    plugin.title = "Updated".into();
+    rig.core.set_lists(vec![vec![plugin]]);
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
+    rig.wait_for(|view| {
+        view.installed.as_ref().is_some_and(|installed| {
+            installed
+                .plugins
+                .first()
+                .is_some_and(|plugin| plugin.title == "Updated")
+        })
+    })
+    .await;
+    let bots = wait(&rig, |bots| bots.len() == 1).await;
+    assert_eq!(bots[0].bot.bot, "default");
+    assert_eq!(bots[0].user_id, "@default:home");
+    assert_eq!(bots[0].name, before[1].name);
+    assert_eq!(bots[0].avatar, before[1].avatar);
+    assert_eq!(bots[0].state_avatars, before[1].state_avatars);
+    assert_eq!(bots[0].activity, Some(BotActivity::Idle));
 }
 
 fn facts(bot: Option<&str>, user_id: &str) -> BotActivityFacts {

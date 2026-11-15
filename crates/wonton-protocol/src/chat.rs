@@ -42,6 +42,57 @@ pub struct ChatViewModel {
     pub chat_layout_default: ChatLayoutChoice,
 }
 
+/// 本人私人 Bot 的身份事实，不表示主房间可发送。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OwnPrivateBotView {
+    NotApplicable,
+    Absent,
+    Ready {
+        bot: crate::BotRef,
+        user_id: String,
+        home_room: Option<String>,
+        room_problem: Option<crate::PrivateBotRoomProblem>,
+    },
+    #[serde(other)]
+    Other,
+}
+
+/// 读取本人私人 Bot 身份时的问题，与聊天收发错误分开。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct OwnBotProblem {
+    pub category: OwnBotFailure,
+    /// 核心给出的机器类别，不用于生成直接显示的文字。
+    pub kind: Option<String>,
+    pub status: Option<u16>,
+    /// 不含服务器原始消息或输入值的本地化详情。
+    pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum OwnBotFailure {
+    TransportUnavailable,
+    Unauthorized,
+    PermissionDenied,
+    CapabilityUnknown,
+    NotReady,
+    RecordInconsistent,
+    StorageUnavailable,
+    StorageCorrupt,
+    Upstream,
+    Protocol,
+    #[serde(other)]
+    Other,
+}
+
+#[cfg(test)]
+#[path = "own_private_bot_view_tests.rs"]
+mod own_private_bot_view_tests;
+
 /// 聊天列表最上面的一行：有 Bot 的插件在装、在升级、装失败了。
 /// 装好、Bot 的私聊出现以后它由私聊那一行代替，不并排显示。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

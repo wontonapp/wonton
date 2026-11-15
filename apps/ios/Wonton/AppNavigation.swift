@@ -216,8 +216,15 @@ final class AppNavigation {
     }
 
     private func primaryBot() throws -> String {
-        guard let bot = chat.core.onboarding().primaryBotUserId else {
-            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyNoDefaultAgent))
+        let onboarding = chat.core.onboarding()
+        guard onboarding.defaultBotVisibility == .visible, let bot = onboarding.primaryBotUserId, !bot.isEmpty else {
+            if let problem = onboarding.problem {
+                throw IntentProblem(problem: problem.problem)
+            }
+            if onboarding.defaultBotVisibility == .absent, onboarding.primaryBotUserId == nil {
+                throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyDefaultAgentAbsent))
+            }
+            throw CoreError.NotReady(reason: String(localized: .Shortcuts.shortcutsNotReadyAgentUnverified))
         }
         return bot
     }

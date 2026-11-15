@@ -2,8 +2,6 @@
 <resources>
     <!-- Problem reason when a link to an app page opens before the installed app list loaded. -->
     <string name="problem_apps_not_ready">The app list isn\'t ready yet. Try again shortly.</string>
-    <!-- Problem reason when an agent chat link opens but no default agent is set. -->
-    <string name="problem_no_default_agent">There\'s no default agent yet. Pick and install one in setup.</string>
     <!-- Problem title: the app is busy with another task. -->
     <string name="problem_plugin_conflict_title">This app is busy</string>
     <!-- Problem title: the device the app should run on isn't available. -->

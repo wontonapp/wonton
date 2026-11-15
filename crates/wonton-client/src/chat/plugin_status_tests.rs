@@ -27,6 +27,7 @@ fn plugin(status: PluginState) -> InstalledPlugin {
         tabs: Vec::new(),
         chat: Some(Default::default()),
         bot_user_id: Some("@agent:example.org".into()),
+        default_bot_visibility: Some(wonton_protocol::DefaultBotVisibility::Visible),
         upgrade: None,
         removable: true,
         notices: Vec::new(),

@@ -38,6 +38,13 @@ async fn follow_home(
             server = next_server;
         }
         let now_connected = view.status == HomeStatus::Connected;
+        if !now_connected && connected {
+            let mut state = lock(&link.state);
+            state.bot_refreshing = true;
+            state.revision += 1;
+            drop(state);
+            link.publish();
+        }
         if now_connected && (!connected || server_changed) {
             link.refresh();
         }

@@ -24,6 +24,15 @@ pub(super) async fn follow_home(link: Weak<PluginsLink>) {
             link.forget_server();
         }
         server = next_server;
+        if !now_connected && connected {
+            link.view.send_if_modified(|view| {
+                let changed = view.installed.as_mut().is_some_and(identity::invalidate);
+                if changed {
+                    PluginsLink::derive(view);
+                }
+                changed
+            });
+        }
         if disconnected {
             link.forget_storage();
         }

@@ -21,7 +21,7 @@ impl PluginsLink {
         route: &PluginDetailRoute,
     ) -> Result<PluginDetail, PluginProblem> {
         let api = self.api()?;
-        match route {
+        let detail = match route {
             PluginDetailRoute::Store { source } => {
                 api.get(&["store", "plugin"], &[("source", source)], SOURCE_TIMEOUT)
                     .await
@@ -29,7 +29,8 @@ impl PluginsLink {
             PluginDetailRoute::Installed { id } => {
                 api.get(&["plugins", id], &[], READ_TIMEOUT).await
             }
-        }
+        }?;
+        Ok(super::identity::detail(detail))
     }
 
     /// 打开详情页时的内容：插件已经卸掉时给 `Close`。

@@ -127,13 +127,36 @@ pub(crate) async fn get(
     {
         return denied;
     }
+    let person = match api::requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let langs = api::languages(&headers);
     let mut view = projection(&gateway, &langs).await;
-    match gateway.onboarding.load().await {
+    let state = gateway.onboarding.load().await;
+    if let Err(denied) = api::current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::ServerSettings,
+    ) {
+        return *denied;
+    }
+    match state {
         Ok(state) => {
             view.step = state.step;
             view.primary_agent = state.primary_agent;
             view.replaced_agent_asked = state.replaced_agent_asked;
+            if let Err(response) = super::bot_projection::onboarding(
+                &gateway,
+                peer.map(|Extension(peer)| peer),
+                &headers,
+                &person,
+                &mut view,
+            ) {
+                return *response;
+            }
             Json(view).into_response()
         }
         Err(error) => api::install_error(&error),
@@ -151,6 +174,10 @@ pub(crate) async fn put(
     {
         return denied;
     }
+    let person = match api::requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let update: OnboardingUpdate = match serde_json::from_slice(&body) {
         Ok(update) => update,
         Err(error) => {
@@ -162,12 +189,31 @@ pub(crate) async fn put(
         }
     };
     let langs = api::languages(&headers);
-    let view = projection(&gateway, &langs).await;
+    let mut view = projection(&gateway, &langs).await;
     let agent_ids = view.agents.iter().map(|agent| agent.id.clone()).collect();
-    let state = match gateway.onboarding.update(&update, &agent_ids, &langs).await {
+    let state = gateway.onboarding.update(&update, &agent_ids, &langs).await;
+    if let Err(denied) = api::current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::ServerSettings,
+    ) {
+        return *denied;
+    }
+    let state = match state {
         Ok(state) => state,
         Err(error) => return api::install_error(&error),
     };
+    if let Err(response) = super::bot_projection::onboarding(
+        &gateway,
+        peer.map(|Extension(peer)| peer),
+        &headers,
+        &person,
+        &mut view,
+    ) {
+        return *response;
+    }
     Json(Onboarding {
         step: state.step,
         primary_agent: state.primary_agent,
@@ -278,6 +324,7 @@ fn onboarding_agents(
                 source: None,
                 status: Some(plugin.status.clone()),
                 bot_user_id: plugin.bot_user_id.clone(),
+                default_bot_visibility: plugin.default_bot_visibility,
                 logins,
                 blocked: None,
             },
@@ -342,6 +389,7 @@ fn agent(item: &StoreItem, logins: Vec<AgentLogin>) -> OnboardingAgent {
         source: Some(item.source.clone()),
         status: None,
         bot_user_id: None,
+        default_bot_visibility: None,
         logins,
         blocked: item.blocked.clone(),
     }
@@ -358,6 +406,7 @@ fn agent_with_logins(
         source: Some(item.source.clone()),
         status: Some(installed.status.clone()),
         bot_user_id: installed.bot_user_id.clone(),
+        default_bot_visibility: installed.default_bot_visibility,
         logins,
         blocked: item.blocked.clone(),
     }

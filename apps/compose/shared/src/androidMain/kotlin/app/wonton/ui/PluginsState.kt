@@ -12,6 +12,7 @@ import androidx.compose.ui.res.stringResource
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.DefaultBotVisibility
 import app.wonton.protocol.InstalledPlugin
 import app.wonton.protocol.PluginAction
 import app.wonton.protocol.PluginImage
@@ -118,7 +119,9 @@ sealed interface PluginEntry {
 val InstalledPlugin.entries: List<PluginEntry>
     get() = buildList {
         val bot = botUserId
-        if (kind == PluginKind.AGENT && bot != null) add(PluginEntry.Chat(bot))
+        if (kind == PluginKind.AGENT && defaultBotVisibility == DefaultBotVisibility.VISIBLE && !bot.isNullOrEmpty()) {
+            add(PluginEntry.Chat(bot))
+        }
         linkUrl?.let { add(PluginEntry.Browser(it)) }
         tabChoices.firstOrNull()?.let { add(PluginEntry.Web(it.tab)) }
     }

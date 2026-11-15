@@ -10,6 +10,7 @@ async fn new_device_lists_openable_installed_apps_in_server_order() {
     let mut agent = installed("app.agent", running());
     agent.kind = PluginKind::Agent;
     agent.bot_user_id = Some("@agent:home".to_owned());
+    agent.default_bot_visibility = Some(wonton_protocol::DefaultBotVisibility::Visible);
     rig.core.set_lists(vec![vec![
         web_plugin("app.notes", running(), vec![page("home"), page("saved")]),
         installed("app.headless", running()),

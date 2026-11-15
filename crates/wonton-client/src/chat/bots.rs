@@ -215,7 +215,10 @@ impl Bots {
                     .filter(|record| record.user_id == *user);
                 let mut bot = previous
                     .as_ref()
-                    .and_then(|_| old.iter().find(|bot| bot.bot.plugin_id == plugin.id))
+                    .and_then(|_| {
+                        old.iter()
+                            .find(|bot| bot.bot == key && bot.user_id == *user)
+                    })
                     .cloned()
                     .unwrap_or_else(|| BotView {
                         chat: Default::default(),

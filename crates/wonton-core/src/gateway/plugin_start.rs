@@ -9,9 +9,9 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
-use hyper::HeaderMap;
+use hyper::{HeaderMap, StatusCode};
 
-use super::api::{install_error, languages};
+use super::api::{current_permitted_requester, install_error, languages, requester};
 use super::{Gateway, TunnelPeer, permissions};
 use crate::plugin::{InstallError, PluginId};
 
@@ -26,16 +26,37 @@ pub async fn start(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(error) => return install_error(&InstallError::Invalid(error.to_string())),
     };
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
-    if let Err(error) = gateway.plugins.start_detached(id.clone()).await {
+    let result = gateway.plugins.start_detached(id.clone()).await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    if let Err(error) = result {
         return install_error(&error);
     }
     match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-        Some(installed) => Json(installed).into_response(),
+        Some(installed) => super::bot_projection::installed_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            installed,
+            StatusCode::OK,
+        ),
         None => install_error(&InstallError::not_installed(&languages(&headers), &id)),
     }
 }
@@ -73,16 +94,37 @@ pub async fn stop(
     {
         return denied;
     }
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(error) => return install_error(&InstallError::Invalid(error.to_string())),
     };
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
-    if let Err(error) = gateway.plugins.stop_detached(id.clone()).await {
+    let result = gateway.plugins.stop_detached(id.clone()).await;
+    if let Err(denied) = current_permitted_requester(
+        &gateway,
+        peer,
+        &headers,
+        &person,
+        PermissionItem::InstallApps,
+    ) {
+        return *denied;
+    }
+    if let Err(error) = result {
         return install_error(&error);
     }
     match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-        Some(installed) => Json(installed).into_response(),
+        Some(installed) => super::bot_projection::installed_response(
+            &gateway,
+            peer.map(|Extension(peer)| peer),
+            &headers,
+            &person,
+            installed,
+            StatusCode::OK,
+        ),
         None => install_error(&InstallError::not_installed(&languages(&headers), &id)),
     }
 }

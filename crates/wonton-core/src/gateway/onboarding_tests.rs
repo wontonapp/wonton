@@ -6,7 +6,10 @@ use hyper::{Method, StatusCode};
 use serde_json::{Value, json};
 use wonton_protocol::ONBOARDING_PATH;
 
+use super::family_plugin_tests::app_with_contact_facts;
+use super::family_tests::send_as;
 use super::tests::{CORE, Harness};
+use crate::members::MemberRecord;
 use crate::plugin::languages::Languages;
 use crate::plugin::storefront::StoreConfig;
 use crate::plugin::storefront::index::IndexEntry;
@@ -191,6 +194,66 @@ async fn onboarding_get_put_persists_and_validates_requests() {
     assert_eq!(partial["replaced_agent_asked"], true);
 
     assert_invalid_updates(&h, &headers).await;
+}
+
+#[tokio::test]
+async fn onboarding_hides_other_peoples_private_bot_from_a_family_admin() {
+    const OWNER_BOT: &str = "@owner-agent:example.com";
+    let index = tempfile::tempdir().unwrap();
+    let agent = write_catalog(index.path());
+    let h = Harness::start_with_store(
+        None,
+        StoreConfig {
+            index_dir: Some(index.path().to_owned()),
+            community: false,
+        },
+    )
+    .await;
+    let (app, _matrix_state) = app_with_contact_facts(&h).await;
+    h.manager
+        .register_for_test(agent.manifest.clone(), PluginStatus::Running, None);
+    h.manager.bot_for_test(&agent.manifest.id, OWNER_BOT);
+    h.members
+        .invite(MemberRecord {
+            role_id: "admin".into(),
+            wants_private_bot: false,
+            ..MemberRecord::for_test("mia")
+        })
+        .unwrap();
+    h.members.mark_joined("mia").unwrap();
+    let owner = iroh::SecretKey::generate().public();
+    h.tunnel.devices.add(owner, None).unwrap();
+    let family = iroh::SecretKey::generate().public();
+    h.tunnel
+        .devices
+        .add_if(family, None, Some("mia".into()), |_| true)
+        .unwrap();
+
+    for method in [Method::GET, Method::PUT] {
+        for (device, allowed) in [(owner, true), (family, false)] {
+            let reply = send_as(
+                &app,
+                Some(device),
+                method.clone(),
+                CORE,
+                ONBOARDING_PATH,
+                &[("content-type", "application/json")],
+                r#"{"step":"finished"}"#,
+            )
+            .await;
+            assert_eq!(reply.status, StatusCode::OK, "{}", reply.text());
+            assert_eq!(
+                reply
+                    .json()
+                    .pointer("/agents/0/bot_user_id")
+                    .and_then(Value::as_str),
+                allowed.then_some(OWNER_BOT),
+            );
+            if !allowed {
+                assert!(!reply.text().contains(OWNER_BOT));
+            }
+        }
+    }
 }
 
 async fn assert_invalid_updates(h: &Harness, headers: &[(&str, &str); 2]) {

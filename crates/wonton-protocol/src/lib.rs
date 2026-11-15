@@ -113,8 +113,9 @@ pub use bot_profile::{
     AvatarMediaProblem, AvatarUpload, BOT_ACTIVITY_PATH, BOT_ACTIVITY_WAIT_SECS, BotActivity,
     BotActivityFacts, BotActivityReport, BotNameProblem, BotPluginAccess, BotPluginAccessUpdate,
     BotProfileFailure, BotProfileProblem, BotProfileUpdate, BotProfileUpdated, BotView,
-    MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE, MAX_BOT_NAME_CHARS, StateAvatar,
-    StateAvatars, bot_plugin_access_path, bot_profile_path, check_bot_name,
+    DefaultBotVisibility, MAX_AVATAR_BYTES, MAX_AVATAR_DURATION_MS, MAX_AVATAR_EDGE,
+    MAX_BOT_NAME_CHARS, StateAvatar, StateAvatars, bot_plugin_access_path, bot_profile_path,
+    check_bot_name,
 };
 pub use bot_web::{
     BOT_WEB_LABEL_PREFIX, BotWebFailure, BotWebPage, BotWebView, bot_web_label, bot_web_path,
@@ -123,8 +124,8 @@ pub use bot_web_registration::{BotWebConflict, bot_web_registration};
 pub use chat::{
     BackupReminder, BotInstallRow, BotInstallState, ChatAccount, ChatContact, ChatFailure,
     ChatProblem, ChatSync, ChatViewModel, DeviceVerification, EncryptionStatus, ImageThumbnail,
-    ImageUpload, MessageSummary, PendingConfirmation, RecoveryNextStep, RecoveryStatus,
-    RoomMembership, RoomPreview, RoomRow,
+    ImageUpload, MessageSummary, OwnBotFailure, OwnBotProblem, OwnPrivateBotView,
+    PendingConfirmation, RecoveryNextStep, RecoveryStatus, RoomMembership, RoomPreview, RoomRow,
 };
 pub use chat_layout::{
     BotChatSettings, CHAT_LAYOUT_EVENT, ChatForm, ChatLayout, ChatLayoutChoice, ChatLayoutSettings,
@@ -176,9 +177,11 @@ pub use family::FAMILY_ROOM_SYNC_PATH;
 pub use family::MEMBER_SYNC_PATH;
 pub use family::{
     BotKeeper, BotRef, FAMILY_ROOM_EVENT, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
-    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
-    MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus, NewSharedBot, Role,
-    SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_removal_path,
+    HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, MY_PRIVATE_BOT_PATH,
+    Me, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
+    NewSharedBot, OwnPrivateBotResponse, OwnPrivateBotResult, PrivateBotIdentity,
+    PrivateBotRoomProblem, Role, SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path,
+    member_removal_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,

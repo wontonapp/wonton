@@ -75,37 +75,41 @@ pub(super) async fn follow_plugins(
 
 async fn refresh(link: &Arc<OnboardingLink>) {
     let (generation, operation, revision) = {
-        let state = lock(&link.state);
+        let mut state = lock(&link.state);
         if state.onboarding.is_none() {
-            // 第一次取状态失败（配对后家里的服务器还没就绪）时不能就此停住：插件那头能连上了就再取一次（#434）。
             let retry = !state.loading && link.home.view().status == HomeStatus::Connected;
             drop(state);
             if retry {
                 link.refresh();
             }
             return;
-        };
+        }
+        state.bot_refreshing = true;
         (
             link.generation.load(Ordering::SeqCst),
             link.operation.load(Ordering::SeqCst),
             state.revision,
         )
     };
-    let Ok(api) = link.plugins.api() else {
-        return;
-    };
-    let Ok(onboarding) = api::get(&api).await else {
-        return;
+    link.publish();
+    let result = match link.plugins.api() {
+        Ok(api) => api::get(&api).await,
+        Err(problem) => Err(problem),
     };
     {
         let mut state = lock(&link.state);
-        // begin_operation 和换服务器也持这把锁，检查与写入之间不能开始新操作。
-        // 已经在保存的操作可能先完成；它的响应同样不能被这个 GET 倒退。
         if !link.operation_is_current(generation, operation) || state.revision != revision {
             return;
         }
-        state.onboarding = Some(onboarding);
-        state.revision += 1;
+        state.bot_refreshing = link.home.view().status != HomeStatus::Connected;
+        match result {
+            Ok(onboarding) => {
+                state.onboarding = Some(onboarding);
+                state.bot_problem = None;
+                state.revision += 1;
+            }
+            Err(problem) => state.bot_problem = Some(problem),
+        }
     }
     link.publish();
 }

@@ -104,7 +104,9 @@ extension InstalledPlugin {
     /// 打开它的方式，第一种是点图标时用的。都没有时点开看详情。
     var entries: [PluginEntry] {
         var entries: [PluginEntry] = []
-        if kind == .agent, let bot = botUserId { entries.append(.chat(botUserId: bot)) }
+        if kind == .agent, defaultBotVisibility == .visible, let bot = botUserId, !bot.isEmpty {
+            entries.append(.chat(botUserId: bot))
+        }
         if let url = linkUrl, let external = URL(string: url) {
             entries.append(.browser(url: external))
         }
