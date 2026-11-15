@@ -469,7 +469,7 @@ fn open_gateway(
     clients: Option<Arc<wonton_core::clients::domain::Domain>>,
     agent_chains: Arc<AgentChains>,
 ) -> Arc<Gateway> {
-    let gateway = Arc::new(
+    Arc::new(
         Gateway::new(
             cfg.public.clone(),
             owner,
@@ -501,8 +501,7 @@ fn open_gateway(
         .with_federation_blocks(federation_blocks)
         .with_sharing(Some(sharing))
         .with_clients(clients),
-    );
-    gateway
+    )
 }
 
 fn lifecycle_config(cfg: &Config, owner: Arc<OwnerStore>) -> LifecycleConfig {
