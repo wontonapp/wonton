@@ -108,6 +108,7 @@ final class PluginPageUITests: XCTestCase {
         if let code = try UITestBackend.codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
+        UITestBackend.enableStateProbe(to: app)
         app.launch()
         if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
             XCTAssertTrue(waitPaired(timeout: 40), "配对没完成（配对码过期、用过或连不上开发栈）\n\(app.debugDescription)")

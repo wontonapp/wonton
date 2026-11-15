@@ -31,39 +31,77 @@ enum UITestBackend {
         let missing = try codes().isEmpty
         try XCTSkipIf(missing, "需要开发栈：没有 PAIRING_CODE")
     }
-
+    static func enableStateProbe(to app: XCUIApplication) {
+        app.launchEnvironment["WONTON_UI_TEST_STATE"] = "1"
+    }
     /// 每次启动都用一个空的数据目录，再带上第一个配对码：不依赖模拟器上留下的会话。
     static func passPairingCode(to app: XCUIApplication) throws {
         app.launchEnvironment["WONTON_DEV_DATA_SUFFIX"] = UUID().uuidString
+        enableStateProbe(to: app)
         if let code = try codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
     }
 
-    /// 配对后可能先盖一层“在另一台设备上继续”（ADR-0087 的密钥交接）：开发栈上没有旧设备开着“添加设备”，
-    /// 不收起它，引导和侧边栏都被盖住。点“手边没有别的设备”收起；App 接着推出聊天备份页，下一次调用按返回退回去。
-    /// 不等待，只看当下：放进各用例过引导的循环里每轮调一次，过完引导再调到它返回 `false`。动过界面返回 `true`。
+    /// 只处理已经出现的交接入口；引导循环和收尾等待共用同一条导航路径。
     @discardableResult
     static func skipKeyHandoff(_ app: XCUIApplication) -> Bool {
         let skip = app.buttons["key-handoff-skip"]
         if skip.exists && skip.isHittable {
             skip.tap()
+            let backup = app.scrollViews["chat-backup"]
+            XCTAssertTrue(backup.waitForExistence(timeout: 10), app.debugDescription)
+            return closeChatBackup(app)
+        }
+        if app.scrollViews["chat-backup"].exists { return closeChatBackup(app) }
+        let reminder = app.buttons["chat-backup-reminder-dismiss"]
+        if reminder.exists && reminder.isHittable {
+            reminder.tap()
+            XCTAssertTrue(reminder.waitForNonExistence(timeout: 10), app.debugDescription)
             return true
         }
-        guard app.scrollViews["chat-backup"].exists else { return false }
-        let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "返回", "戻る"])).firstMatch
-        guard back.exists && back.isHittable else { return false }
-        back.tap()
-        return true
+        return false
     }
 
-    /// 过完引导后收尾：交接页可能晚几秒才盖上来，备份页推出来也要一会儿。`timeout` 秒内没动静就算干净。
-    static func settleKeyHandoff(_ app: XCUIApplication, timeout: TimeInterval = 6) {
-        var deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if skipKeyHandoff(app) { deadline = Date().addingTimeInterval(timeout) }
-            Thread.sleep(forTimeInterval: 0.5)
+    /// 等核心结束 Checking，而不是等一个不一定出现的按钮或猜测一段安静时间。
+    static func settleKeyHandoff(_ app: XCUIApplication, timeout: TimeInterval = 90) {
+        let state = app.descendants(matching: .any)["key-handoff-test-state"].firstMatch
+        let resolved = NSPredicate { _, _ in
+            app.buttons["key-handoff-skip"].isHittable
+                || app.scrollViews["chat-backup"].exists
+                || (state.exists && state.value as? String == "settled")
         }
+        let result = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: resolved, object: app)], timeout: timeout
+        )
+        guard result == .completed else {
+            XCTFail("交接判定未完成：\(app.debugDescription)")
+            return
+        }
+        _ = skipKeyHandoff(app)
+        let finished = NSPredicate { _, _ in
+            state.exists && state.value as? String == "settled"
+                && !app.buttons["key-handoff-skip"].exists
+                && !app.scrollViews["chat-backup"].exists
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: finished, object: app)], timeout: 10),
+            .completed, app.debugDescription
+        )
+        _ = skipKeyHandoff(app)
+    }
+
+    private static func closeChatBackup(_ app: XCUIApplication) -> Bool {
+        let back = app.buttons.matching(NSPredicate(format: "label IN %@", ["Back", "返回", "戻る"])).firstMatch
+        let ready = NSPredicate { _, _ in back.exists && back.isHittable }
+        guard XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: app)], timeout: 10)
+            == .completed else {
+            XCTFail("聊天备份页没有可用的返回入口：\(app.debugDescription)")
+            return false
+        }
+        back.tap()
+        XCTAssertTrue(app.scrollViews["chat-backup"].waitForNonExistence(timeout: 10), app.debugDescription)
+        return true
     }
 
     /// 和核心 `PairingCode::parse` 的第一道检查一致：`wonton://pair?` 开头的一整行，中间没有空白。

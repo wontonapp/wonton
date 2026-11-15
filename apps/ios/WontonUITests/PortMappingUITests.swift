@@ -19,6 +19,8 @@ final class PortMappingUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 90), app.debugDescription)
         UITestBackend.settleKeyHandoff(app)
+        XCTAssertFalse(app.buttons["key-handoff-skip"].exists)
+        XCTAssertFalse(app.buttons["chat-backup-reminder-dismiss"].exists)
         try await expectMapping(false)
 
         app.open(try XCTUnwrap(URL(string: "wonton://tab/plugin/app.whoami")))
@@ -54,6 +56,8 @@ final class PortMappingUITests: XCTestCase {
         XCTAssertTrue(close.waitForExistence(timeout: 10), app.debugDescription)
         close.tap()
         try await expectMapping(false)
+        XCTAssertTrue(UITestSidebar.waitForMain(app, timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.webViews.firstMatch.isHittable)
     }
 
     private func expectMapping(_ available: Bool) async throws {

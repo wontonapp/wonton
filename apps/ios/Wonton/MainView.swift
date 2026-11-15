@@ -54,6 +54,9 @@ struct MainView: View {
         }
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
         .overlay { if chat.isOpeningChat { ProgressView() } }
+        #if DEBUG
+        .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
+        #endif
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
         .modifier(KeyHandoffCover(model: chat) {

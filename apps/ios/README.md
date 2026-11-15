@@ -176,6 +176,11 @@ apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
 要后端的界面用例（好友、粘贴、安装行、图片查看、Bot 资料）用 `apps/ios/scripts/ui-test.sh` 跑：配对码只经环境变量
 `PAIRING_CODE` 传进去，没给就 XCTSkip，给了但不像配对码就直接失败。
 
+配对后的交接前置共用 `UITestBackend.settleKeyHandoff`：等真实 ViewModel 结束 `Checking`，有交接页就从
+“手边没有别的设备”进入备份页并返回，有恢复提醒就关提醒；不假定交接页必出现，也不以一段静默时间判成功。
+测试启动时经 `passPairingCode` 设置 `WONTON_UI_TEST_STATE=1`；自行启动的调用方也要设置。Debug 只读 AX 标识
+只暴露登录、同步和交接类别，不含密钥、不改核心状态；真正验证 SAS 交接的 `KeyHandoffUITests` 不调用跳过前置。
+
 ```bash
 PAIRING_CODE="$(deploy/dev/core/dev.sh pair <地址> | tail -n 1)" apps/ios/scripts/ui-test.sh <模拟器 UDID> test \
   -only-testing:WontonUITests/BotProfileUITests

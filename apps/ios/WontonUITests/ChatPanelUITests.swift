@@ -135,6 +135,7 @@ final class ChatPanelUITests: XCTestCase {
         if let code = try UITestBackend.codes().first {
             app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] = code
         }
+        UITestBackend.enableStateProbe(to: app)
         app.launch()
         if app.launchEnvironment["WONTON_DEV_PAIRING_CODE"] != nil {
             XCTAssertTrue(waitPaired(timeout: 90), "配对没完成（配对码过期、用过或连不上开发栈）")
@@ -198,7 +199,7 @@ final class ChatPanelUITests: XCTestCase {
 
     /// 进 Bot 的房间，返回输入框。新配对的设备走完引导直接落在主 Bot 的房间里，这时不用再从列表点进去。
     private func enterBotRoom() -> XCUIElement? {
-        skipKeyHandoff()
+        UITestBackend.settleKeyHandoff(app)
         if let field = composer(timeout: 3) {
             goToBottom()
             return field
@@ -274,15 +275,6 @@ final class ChatPanelUITests: XCTestCase {
         attachment.name = text
         attachment.lifetime = .keepAlways
         add(attachment)
-    }
-
-    /// 新配上的设备先整屏盖着加设备的密钥交接页“在另一台设备上继续”，落进房间后才出来也有。
-    /// 这里不测交接：选“手边没有别的设备”，再从它打开的聊天备份页退回列表。
-    private func skipKeyHandoff() {
-        let labels = ["I don't have my other device", "手边没有别的设备"]
-        guard let button = waitAnyButton(labels, timeout: 10) else { return }
-        button.tap()
-        tapAnyButton(["Back", "返回"], timeout: 5)
     }
 
     /// 列表里 Bot 的房间行。按名字找：列表顶上还可能有整行宽的提示（如恢复聊天备份），按位置挑会点错。
