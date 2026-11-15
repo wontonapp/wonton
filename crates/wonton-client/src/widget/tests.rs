@@ -127,6 +127,8 @@ fn chat(account: ChatAccount, sync: ChatSync, rooms: Vec<RoomRow>) -> ChatViewMo
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots: vec![agent(Some(BotActivity::Waiting))],
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
 

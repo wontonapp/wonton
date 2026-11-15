@@ -38,6 +38,15 @@ pub struct ChatViewModel {
     pub background_notifications: Vec<PushNotification>,
     /// 已装插件的 Bot：名字、头像、状态头像和此刻的状态（ADR-0044）。壳按 [`RoomRow::direct_user_id`] 找私聊对方是哪个 Bot。
     pub bots: Vec<BotView>,
+    /// 本人私人 Bot 的身份事实；失败走 [`Self::own_private_bot_problem`]，不占全局 `problem`。
+    /// 旧核心的流里没有这个键时逐字段 serde(default) 取 None，壳不能把缺键当成确认 Absent。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub own_private_bot: Option<OwnPrivateBotView>,
+    /// 读取本人私人 Bot 失败的问题。读取成功或恢复后由核心清掉。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub own_private_bot_problem: Option<OwnBotProblem>,
     /// 聊天显示方式的全局默认里用户改过的项（ADR-0060），设置页的“聊天显示”读它。
     pub chat_layout_default: ChatLayoutChoice,
 }
@@ -60,6 +69,7 @@ pub enum OwnPrivateBotView {
 }
 
 /// 读取本人私人 Bot 身份时的问题，与聊天收发错误分开。
+/// 壳按 `category` 复用既有 Problem/ProblemRow 控件，`detail` 进正文；`kind` 不直接显示。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct OwnBotProblem {
@@ -596,6 +606,8 @@ mod tests {
                 unread_total: 2,
             }],
             bots: Vec::new(),
+            own_private_bot: None,
+            own_private_bot_problem: None,
         }
     }
 

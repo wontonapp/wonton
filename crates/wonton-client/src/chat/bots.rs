@@ -28,6 +28,8 @@ pub(super) struct Bots {
     pub foreground: watch::Sender<bool>,
     pub changed: Notify,
     pub epoch: AtomicU64,
+    /// 本人 Bot 读取的发布代。结果发布与换会话／注销竞态：发布时在同一把锁里比对，`set_session` 和 Drop 都在同一把锁里加代。
+    pub own_epoch: Mutex<u64>,
     pub refresh_serial: AtomicU64,
     pub local: Mutex<Local>,
 }
@@ -82,6 +84,7 @@ impl Bots {
             foreground: watch::Sender::new(true),
             changed: Notify::new(),
             epoch: AtomicU64::new(0),
+            own_epoch: Mutex::default(),
             local: Mutex::default(),
             refresh_serial: AtomicU64::new(0),
         });
@@ -105,9 +108,15 @@ impl Bots {
 
     pub fn set_session(self: &Arc<Self>, session: Option<Arc<MatrixSession>>) {
         self.epoch.fetch_add(1, Ordering::SeqCst);
+        let own_epoch = {
+            let mut epoch = lock(&self.own_epoch);
+            *epoch = epoch.wrapping_add(1);
+            *epoch
+        };
         self.clear_activity();
-        self.session.send_replace(session);
+        self.session.send_replace(session.clone());
         self.changed.notify_one();
+        self.refresh_own_private_bot(session, own_epoch);
         self.view.send_modify(|view| {
             for bot in &mut view.bots {
                 bot.saving = false;
@@ -115,6 +124,54 @@ impl Bots {
             }
         });
         self.refresh_all();
+    }
+
+    /// 本人的私人 Bot 身份是独立读取：成功写身份槽并清掉问题，失败只写本人问题槽，不占全局 `problem`。
+    /// 有效性比对和写入在同一把 `own_epoch` 锁里，换会话或注销后迟到的结果不写回旧身份。
+    pub fn refresh_own_private_bot(
+        self: &Arc<Self>,
+        session: Option<Arc<MatrixSession>>,
+        epoch: u64,
+    ) {
+        let Some(session) = session else {
+            let current = lock(&self.own_epoch);
+            if *current != epoch {
+                return;
+            }
+            self.view.send_modify(|view| {
+                view.own_private_bot = None;
+                view.own_private_bot_problem = None;
+            });
+            return;
+        };
+        let weak = Arc::downgrade(self);
+        let plugins = self.plugins.clone();
+        self.runtime.spawn(async move {
+            let outcome = plugins.own_private_bot(&session).await;
+            let Some(bots) = weak.upgrade() else {
+                return;
+            };
+            bots.publish_own_private_bot(epoch, outcome);
+        });
+    }
+
+    /// 结果发布：代比对与双槽写入在同一把锁里，换会话／注销后迟到的结果不写回旧身份。
+    pub(super) fn publish_own_private_bot(
+        &self,
+        epoch: u64,
+        outcome: Result<wonton_protocol::OwnPrivateBotView, wonton_protocol::OwnBotProblem>,
+    ) {
+        let current = lock(&self.own_epoch);
+        if *current != epoch {
+            return;
+        }
+        self.view.send_modify(|view| match outcome {
+            Ok(own) => {
+                view.own_private_bot = Some(own);
+                view.own_private_bot_problem = None;
+            }
+            Err(problem) => view.own_private_bot_problem = Some(problem),
+        });
     }
 
     pub fn foregrounded(self: &Arc<Self>) {

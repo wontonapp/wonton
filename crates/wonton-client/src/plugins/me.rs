@@ -195,6 +195,8 @@ fn own_bot_http_failure(status: u16, kind: Option<&str>) -> OwnBotFailure {
             | "private_bot_identity_mismatch"
             | "member_identity_invalid",
         ) => OwnBotFailure::RecordInconsistent,
+        // `role_not_found` 只预留给别的 Bot 投影：本人路由缺角色返回 `member_role_unavailable`，
+        // 谁真发 `role_not_found` 都按未就绪算。
         Some(
             "private_bot_pending"
             | "private_bot_changed"

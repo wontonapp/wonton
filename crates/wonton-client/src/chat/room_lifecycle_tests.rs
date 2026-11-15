@@ -115,3 +115,61 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
     assert_eq!(update.panel_selected, Some(selected));
     assert!(update.entry_blocked);
 }
+
+fn own_bot_ready() -> wonton_protocol::OwnPrivateBotView {
+    wonton_protocol::OwnPrivateBotView::Ready {
+        bot: wonton_protocol::BotRef {
+            plugin_id: "app.whoami".into(),
+            bot: "mia-bot".into(),
+        },
+        user_id: "@mia-bot:test".into(),
+        home_room: None,
+        room_problem: None,
+    }
+}
+
+#[tokio::test]
+async fn late_own_private_bot_result_is_dropped_after_session_change() {
+    let chat = rig().0;
+    let mut watch = chat.bots.view.subscribe();
+    let stale = *crate::chat::lock(&chat.bots.own_epoch);
+    chat.bots.set_session(None);
+    watch.borrow_and_update();
+    chat.bots
+        .publish_own_private_bot(stale, Ok(own_bot_ready()));
+    assert_eq!(watch.borrow_and_update().own_private_bot, None);
+
+    let current = *crate::chat::lock(&chat.bots.own_epoch);
+    chat.bots
+        .publish_own_private_bot(current, Ok(own_bot_ready()));
+    assert!(matches!(
+        watch.borrow_and_update().own_private_bot,
+        Some(wonton_protocol::OwnPrivateBotView::Ready { .. })
+    ));
+}
+
+#[tokio::test]
+async fn task_that_already_upgraded_cannot_publish_after_the_link_is_dropped() {
+    let chat = rig().0;
+    let bots = chat.bots.clone();
+    let mut watch = bots.view.subscribe();
+    let stale = *crate::chat::lock(&bots.own_epoch);
+    drop(chat);
+    bots.publish_own_private_bot(stale, Ok(own_bot_ready()));
+    assert_eq!(watch.borrow_and_update().own_private_bot, None);
+}
+
+#[tokio::test]
+async fn reused_channel_ignores_a_result_of_the_previous_server() {
+    let chat = rig().0;
+    let bots = chat.bots.clone();
+    let sender = bots.view.clone();
+    let mut watch = sender.subscribe();
+    let stale = *crate::chat::lock(&bots.own_epoch);
+    // 换服务器时 scope 复用同一 sender 并写入新作用域的初始值，然后旧链接才析构。
+    let initial = watch.borrow().clone();
+    sender.send_replace(initial);
+    drop(chat);
+    bots.publish_own_private_bot(stale, Ok(own_bot_ready()));
+    assert_eq!(watch.borrow_and_update().own_private_bot, None);
+}

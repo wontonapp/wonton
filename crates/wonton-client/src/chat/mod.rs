@@ -196,6 +196,10 @@ impl Drop for ChatLink {
         let _context = self.runtime.enter();
         lock(&self.open).clear();
         lock(&self.session).take();
+        {
+            let mut epoch = lock(&self.bots.own_epoch);
+            *epoch = epoch.wrapping_add(1);
+        }
         self.bots.session.send_replace(None);
         self.active.get_mut().take();
     }
@@ -237,6 +241,32 @@ fn initial_encryption(storage: &ChatStorage) -> Result<EncryptionStatus, CoreErr
 }
 
 impl ChatLink {
+    /// 首次快照：壳复用的通道直接沿用，空快照按这里初始化。
+    fn initial_view(
+        view: Option<watch::Sender<ChatViewModel>>,
+        encryption: EncryptionStatus,
+    ) -> watch::Sender<ChatViewModel> {
+        reuse(
+            view,
+            ChatViewModel {
+                chat_layout_default: Default::default(),
+                account: ChatAccount::SignedOut,
+                sync: ChatSync::Idle,
+                encryption,
+                installing_bots: Vec::new(),
+                rooms: Vec::new(),
+                problem: None,
+                push: PushStatus::NoEndpoint,
+                pending_confirmations: Vec::new(),
+                settled_confirmations: Vec::new(),
+                background_notifications: Vec::new(),
+                bots: Vec::new(),
+                own_private_bot: None,
+                own_private_bot_problem: None,
+            },
+        )
+    }
+
     pub(crate) fn new(
         runtime: Handle,
         home: Arc<HomeLink>,
@@ -256,24 +286,7 @@ impl ChatLink {
             external,
         } = channels;
         let storage = ChatStorage::open(data_dir)?;
-        let encryption = initial_encryption(&storage)?;
-        let view = reuse(
-            view,
-            ChatViewModel {
-                chat_layout_default: Default::default(),
-                account: ChatAccount::SignedOut,
-                sync: ChatSync::Idle,
-                encryption,
-                installing_bots: Vec::new(),
-                rooms: Vec::new(),
-                problem: None,
-                push: PushStatus::NoEndpoint,
-                pending_confirmations: Vec::new(),
-                settled_confirmations: Vec::new(),
-                background_notifications: Vec::new(),
-                bots: Vec::new(),
-            },
-        );
+        let view = Self::initial_view(view, initial_encryption(&storage)?);
         let installs = installs::Installs::new(plugins.clone(), view.clone());
         let layouts = Layouts::new();
         let bots = bots::Bots::new(

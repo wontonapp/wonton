@@ -92,5 +92,8 @@ pub use subscription::{
     TransfersSubscription, UnreadSubscription, WidgetSnapshotSubscription,
 };
 pub use widget::read_widget_snapshot;
+// 本人私人 Bot 的三件套在公共面上显式钉名；FFI 的 Swift/Kotlin 枚举由 derive 生成，
+// 靠 `OwnBotProblem` 进 `ChatViewModel` 的双槽保持可达（真实 FFI 尚未实测）。
+pub use wonton_protocol::{OwnBotFailure, OwnBotProblem, OwnPrivateBotView};
 // 协议类型整体转出：并行 PR 各自加名字不再挤在同一段列表里。
 pub use wonton_protocol::*;

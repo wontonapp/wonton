@@ -109,6 +109,8 @@ fn chat_view(bots: Vec<wonton_protocol::BotView>) -> wonton_protocol::ChatViewMo
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots,
+        own_private_bot: None,
+        own_private_bot_problem: None,
         chat_layout_default: Default::default(),
     }
 }

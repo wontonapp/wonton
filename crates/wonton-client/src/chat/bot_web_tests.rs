@@ -32,6 +32,8 @@ fn empty_view() -> ChatViewModel {
         settled_confirmations: Vec::new(),
         background_notifications: Vec::new(),
         bots: Vec::new(),
+        own_private_bot: None,
+        own_private_bot_problem: None,
     }
 }
 
@@ -261,6 +263,7 @@ async fn background_disconnect_and_session_change_clear_the_existing_chat_watch(
         foreground: watch::Sender::new(true),
         changed: Notify::new(),
         epoch: AtomicU64::new(0),
+        own_epoch: Mutex::default(),
         refresh_serial: AtomicU64::new(0),
         local: Mutex::default(),
     });

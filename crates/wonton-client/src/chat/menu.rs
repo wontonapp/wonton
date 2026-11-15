@@ -415,11 +415,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn only_new_own_messages_interrupt_reading_history() {
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let (_, room_view) = watch::channel(None);
-        let (_, chat) = watch::channel(ChatViewModel {
+    fn empty_chat() -> (watch::Sender<ChatViewModel>, watch::Receiver<ChatViewModel>) {
+        watch::channel(ChatViewModel {
             account: wonton_protocol::ChatAccount::SignedOut,
             sync: wonton_protocol::ChatSync::Idle,
             encryption: wonton_protocol::EncryptionStatus {
@@ -441,8 +438,17 @@ mod tests {
             settled_confirmations: Vec::new(),
             background_notifications: Vec::new(),
             bots: Vec::new(),
+            own_private_bot: None,
+            own_private_bot_problem: None,
             chat_layout_default: Default::default(),
-        });
+        })
+    }
+
+    #[test]
+    fn only_new_own_messages_interrupt_reading_history() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (_, room_view) = watch::channel(None);
+        let (_, chat) = empty_chat();
         let (_, confirmations) = watch::channel(Arc::new(Vec::new()));
         let outbox = Outbox::new(
             tx,
