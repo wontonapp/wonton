@@ -338,9 +338,9 @@ async fn assert_decoding_over_budget() {
     let diagnostic = diagnostic.expect("拒绝诊断仍然保留");
     let log = std::fs::read_to_string(&log_path).unwrap();
     assert!(
-        diagnostic.contains("[redacted: excessive sensitive patterns]"),
+        diagnostic.contains("[redacted: excessive percent encoding layers]"),
         "{diagnostic}"
     );
     assert_absent(&diagnostic, &log, &["frag-over707", "query-over707"]);
-    assert!(log.contains("[redacted: excessive sensitive patterns]"));
+    assert!(log.contains("[redacted: excessive percent encoding layers]"));
 }

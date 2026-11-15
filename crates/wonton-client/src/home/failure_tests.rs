@@ -1,5 +1,6 @@
 use super::*;
 use iroh::SecretKey;
+use std::time::Instant;
 use wonton_tunnel::pair::{PairingSecret, SECRET_LEN};
 use wonton_tunnel::relays::Relay;
 
@@ -173,4 +174,43 @@ fn deeply_encoded_pairing_error_is_explicitly_redacted() {
     assert_eq!(reason, PairingFailure::TransportUnavailable);
     assert!(diagnostic.contains("[redacted: excessive percent encoding]"));
     assert!(!diagnostic.contains(&encoded));
+}
+
+#[test]
+fn pattern_length_limit_counts_before_expanding() {
+    let fits = "\u{1F600}".repeat(MAX_PATTERN_CHARS);
+    let mut patterns = Patterns::default();
+    patterns.add(&fits, false);
+    assert!(patterns.exhausted.is_none());
+    let text = format!("before {fits} after");
+    assert_eq!(redact_patterns(&text, &patterns), "before [redacted] after");
+
+    let too_long = "\u{1F600}".repeat(MAX_PATTERN_CHARS + 1);
+    let mut patterns = Patterns::default();
+    patterns.add(&too_long, false);
+    assert_eq!(patterns.exhausted, Some(Exhaustion::Scale));
+    assert!(patterns.list.is_empty(), "超长取值不应先展开写法");
+    assert_eq!(redact_patterns(&too_long, &patterns), CROWDED);
+}
+
+#[test]
+fn overlong_values_are_counted_before_spellings_are_built() {
+    let value = "\u{1F600}".repeat(MAX_PATTERN_CHARS + 1);
+    let rounds = 30;
+    let expanded = Instant::now();
+    for _ in 0..rounds {
+        std::hint::black_box(value.chars().map(spellings).collect::<Vec<_>>());
+    }
+    let expanded = expanded.elapsed();
+    let counted = Instant::now();
+    for _ in 0..rounds {
+        let mut patterns = Patterns::default();
+        patterns.add(std::hint::black_box(&value), false);
+        assert!(patterns.list.is_empty());
+    }
+    let counted = counted.elapsed();
+    assert!(
+        counted * 4 < expanded,
+        "超长取值应在展开前被拒绝：计数 {counted:?}，展开 {expanded:?}"
+    );
 }

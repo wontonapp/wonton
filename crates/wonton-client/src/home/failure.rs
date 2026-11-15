@@ -43,6 +43,7 @@ pub(super) fn diagnostic(error: &TunnelError, lang: Lang) -> String {
 const REDACTED: &str = "[redacted]";
 const OVERFLOW: &str = "[redacted: excessive percent encoding]";
 const CROWDED: &str = "[redacted: excessive sensitive patterns]";
+const TOO_DEEP: &str = "[redacted: excessive percent encoding layers]";
 const DECODE_WORK_FACTOR: usize = 16;
 /// 配置端取值的解码层数上限：敏感值本身不再变化时提前收手；用完仍可解则整段遮蔽。
 const URL_DECODE_LAYERS: usize = 3;
@@ -51,39 +52,58 @@ const MAX_PATTERNS: usize = 128;
 const MAX_PATTERN_CHARS: usize = 512;
 
 /// 一个敏感值的匹配视图：逐字符列出它可能被写成的字节写法（原文、`%XX`/JSON 层的解码目标、JSON 转义）。
-#[derive(PartialEq)]
 struct Pattern {
+    value: String,
     chars: Vec<Vec<Vec<u8>>>,
     /// 出自 query 的值按表单规则匹配：正文的 `+` 也可以对应空格。
     form: bool,
 }
 
+/// 模式不完整的原因；两者都让调用方整段遮蔽，但文案不同。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Exhaustion {
+    /// 条数或单个取值超过上限。
+    Scale,
+    /// 解码层数用尽后仍可再解。
+    Depth,
+}
+
 #[derive(Default)]
 struct Patterns {
     list: Vec<Pattern>,
-    /// 已用尽层数、条数或长度，模式不完整：调用方整段遮蔽。
-    exhausted: bool,
+    exhausted: Option<Exhaustion>,
 }
 
 impl Patterns {
     fn add(&mut self, value: &str, form: bool) {
-        if value.is_empty() || self.exhausted {
+        if value.is_empty() || self.exhausted.is_some() {
             return;
         }
-        let chars: Vec<_> = value.chars().map(spellings).collect();
-        if chars.len() > MAX_PATTERN_CHARS {
-            self.exhausted = true;
+        // 去重在超长判定之前：同样是超长值的重复，第一次已置耗尽，重排不影响语义。
+        if self.list.iter().any(|pattern| pattern.value == value) {
             return;
         }
-        let pattern = Pattern { chars, form };
-        if self.list.contains(&pattern) {
+        // 先数后扩：超长取值不在长度检查前展开逐字符写法。字节数不足字符数上限时免扫。
+        if value.len() > MAX_PATTERN_CHARS
+            && value.chars().take(MAX_PATTERN_CHARS + 1).count() > MAX_PATTERN_CHARS
+        {
+            self.exhausted = Some(Exhaustion::Scale);
             return;
         }
         if self.list.len() >= MAX_PATTERNS {
-            self.exhausted = true;
+            self.exhausted = Some(Exhaustion::Scale);
             return;
         }
-        self.list.push(pattern);
+        let chars = value.chars().map(spellings).collect();
+        self.list.push(Pattern {
+            value: value.to_owned(),
+            chars,
+            form,
+        });
+    }
+
+    fn escape(&mut self, cause: Exhaustion) {
+        self.exhausted.get_or_insert(cause);
     }
 }
 
@@ -148,7 +168,7 @@ fn spellings(character: char) -> Vec<Vec<u8>> {
 fn add_decoded(patterns: &mut Patterns, value: &str, form: bool) {
     let mut current = value.to_owned();
     for _ in 0..URL_DECODE_LAYERS {
-        if patterns.exhausted {
+        if patterns.exhausted.is_some() {
             return;
         }
         let Ok(decoded) = percent_encoding::percent_decode_str(&current).decode_utf8() else {
@@ -165,7 +185,7 @@ fn add_decoded(patterns: &mut Patterns, value: &str, form: bool) {
         .decode_utf8()
         .is_ok_and(|deeper| deeper != current)
     {
-        patterns.exhausted = true;
+        patterns.escape(Exhaustion::Depth);
     }
 }
 
@@ -364,8 +384,11 @@ fn unicode_escape(bytes: &[SourceByte]) -> Option<(Vec<u8>, usize)> {
 }
 
 fn redact_patterns(text: &str, patterns: &Patterns) -> String {
-    if patterns.exhausted {
-        return CROWDED.to_owned();
+    if let Some(cause) = patterns.exhausted {
+        return match cause {
+            Exhaustion::Scale => CROWDED.to_owned(),
+            Exhaustion::Depth => TOO_DEEP.to_owned(),
+        };
     }
     if patterns.list.is_empty() {
         return text.to_owned();
