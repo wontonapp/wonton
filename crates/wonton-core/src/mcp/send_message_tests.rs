@@ -169,7 +169,12 @@ async fn the_window_relaxes_only_the_same_recipient() {
     let send = send_setup().await;
     send.s.members.invite(member("mom", "妈妈")).unwrap();
     send.s.members.invite(member("dad", "爸爸")).unwrap();
-    let caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    let mut caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    // 请求头和会话头都没有时，从这个 Bot 进行中的轮次取说话人。
+    caller.sender = None;
+    caller.session = None;
+    caller.chain = None;
+    caller.sender = crate::mcp::server::turn_sender(&send.s.bus, &caller, None);
     let first = send
         .s
         .spawn_as(&caller, TOOL, json!({"recipient": "mom", "body": "第一条"}));

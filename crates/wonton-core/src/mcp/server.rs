@@ -30,8 +30,8 @@ pub struct Caller {
     /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
-    /// 这轮消息的说话人（`X-Wonton-On-Behalf-Of`）。本机人给用户名，认不出的（含远端好友）是
-    /// [`TurnSender::Unknown`]；没这个头是 `None`，按链或 Bot 归属人算。
+    /// 这轮消息的说话人（`X-Wonton-On-Behalf-Of` 或已报的轮次）。本机人给完整 MXID（联系人门要看服务器），
+    /// 认不出的（含远端好友）是 [`TurnSender::Unknown`]；请求头和轮次都没有是 `None`，按 Bot 归属人算。
     pub sender: Option<TurnSender>,
     /// 核对过归属的会话；权限卡片按它找状态，不以房间或链 ID 代替。
     pub session: Option<String>,
@@ -90,45 +90,88 @@ impl Caller {
     }
 }
 
-/// `X-Wonton-On-Behalf-Of` 报的说话人必须是这个 Bot 听的人；本服务器的人才给用户名，别家联系人按认不出。
-fn turn_sender(
+/// 说话人来自请求头或已报轮次；报的人必须是这个 Bot 听的人。本服务器的人才给 [`TurnSender::Local`]，
+/// 别家联系人按认不出。
+pub(super) fn turn_sender(
     bus: &Bus,
     caller: &Caller,
     headers: Option<&hyper::HeaderMap>,
 ) -> Option<TurnSender> {
-    let raw = headers?
-        .get(wonton_protocol::WONTON_ON_BEHALF_OF_HEADER)?
-        .to_str()
-        .ok()?;
-    let Some(bot) = caller.bot.as_ref() else {
-        return Some(TurnSender::Unknown);
-    };
-    let bot = wonton_protocol::BotRef {
+    let reported = headers.and_then(|headers| {
+        headers
+            .get(wonton_protocol::WONTON_ON_BEHALF_OF_HEADER)?
+            .to_str()
+            .ok()
+    });
+    if let Some(raw) = reported {
+        return Some(if listens(bus, caller, raw) {
+            local_sender(bus, raw)
+        } else {
+            TurnSender::Unknown
+        });
+    }
+    // 旧接入方没有每轮请求头：先按它报的会话找那一轮，找不到就看这个 Bot 进行中的轮次。
+    let bot = bot_ref(caller)?;
+    let turns = bus.agent_chains()?.ledger().live_bridge_turns(&bot);
+    if let (Some(session), Some(chain)) = (caller.session.as_deref(), caller.chain.as_deref())
+        && let Some(turn) = turns
+            .iter()
+            .find(|turn| turn.chain == chain && turn.session == session)
+    {
+        return Some(local_sender(bus, &turn.sender));
+    }
+    // 并发的几轮分不清是哪一轮时取封顶最严的那轮，和没报说话人时的算法一致。
+    let mut lowest: Option<(wonton_protocol::AiLevel, TurnSender)> = None;
+    for turn in turns {
+        let sender = local_sender(bus, &turn.sender);
+        let mut probe = caller.clone();
+        probe.ai_level = None;
+        probe.sender = Some(sender.clone());
+        let level = bus.ai_cap(&probe);
+        if lowest
+            .as_ref()
+            .is_none_or(|(current, _)| crate::ai_level::lower(level, *current) != *current)
+        {
+            lowest = Some((level, sender));
+        }
+    }
+    lowest.map(|(_, sender)| sender)
+}
+
+fn bot_ref(caller: &Caller) -> Option<wonton_protocol::BotRef> {
+    Some(wonton_protocol::BotRef {
         plugin_id: caller.id.to_string(),
-        bot: bot.bot.clone(),
+        bot: caller.bot.as_ref()?.bot.clone(),
+    })
+}
+
+fn listens(bus: &Bus, caller: &Caller, raw: &str) -> bool {
+    let Some(bot) = bot_ref(caller) else {
+        return false;
     };
-    if !crate::gateway::agent_chains::bot_listens_to(
+    crate::gateway::agent_chains::bot_listens_to(
         &bus.plugins,
         bus.matrix(),
         bus.contacts(),
         &bot,
         raw,
-    ) {
-        return Some(TurnSender::Unknown);
-    }
+    )
+}
+
+fn local_sender(bus: &Bus, raw: &str) -> TurnSender {
     let Some(rest) = raw.strip_prefix('@') else {
-        return Some(TurnSender::Unknown);
+        return TurnSender::Unknown;
     };
     let Some((user, server)) = rest.split_once(':') else {
-        return Some(TurnSender::Unknown);
+        return TurnSender::Unknown;
     };
     let Ok(people) = bus.people() else {
-        return Some(TurnSender::Unknown);
+        return TurnSender::Unknown;
     };
     if user.is_empty() || !server.eq_ignore_ascii_case(&people.server_name) {
-        return Some(TurnSender::Unknown);
+        return TurnSender::Unknown;
     }
-    Some(TurnSender::Local(raw.to_owned()))
+    TurnSender::Local(raw.to_owned())
 }
 
 /// 审计里的“会话认到了别人的轮次”：头里的会话不在这个 Bot 的链上时记一行。
@@ -207,6 +250,10 @@ impl ServerHandler for Handler {
     ) -> Result<ListToolsResult, ErrorData> {
         let mut caller = caller(&ctx)?;
         let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
+        if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {
+            caller.chain = Some(chain);
+            caller.session = Some(session);
+        }
         caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));
         Ok(ListToolsResult::with_all_items(
@@ -221,13 +268,13 @@ impl ServerHandler for Handler {
     ) -> Result<CallToolResponse, ErrorData> {
         let mut caller = caller(&ctx)?;
         let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
-        caller.sender = turn_sender(&self.bus, &caller, headers);
         let meta = ctx.meta.0.0.get(ORIGIN_META_KEY);
         caller.origin = super::audience::reported_origin(meta, headers);
         if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {
             caller.chain = Some(chain);
             caller.session = Some(session);
         }
+        caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));
         caller.request_id = Some(ctx.id.clone());
         let cancelled = ctx.ct.clone().cancelled_owned();

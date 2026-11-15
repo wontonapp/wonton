@@ -21,7 +21,7 @@ pub const AGENT_OUTBOX_PATH: &str = "/agent/outbox";
 pub const WONTON_USER_HEADER: &str = "X-Wonton-User";
 
 /// 每轮消息的说话人（MXID）：前端调用工具时带上。核心只在这个 Bot 听的人里采用，否则按只读、
-/// 联系人门按远端；没带时仍按链或 Bot 归属人算。
+/// 联系人门按远端；没带时从已报的轮次取，轮次也没有才按 Bot 归属人算。
 pub const WONTON_ON_BEHALF_OF_HEADER: &str = "X-Wonton-On-Behalf-Of";
 
 /// 核心注入的请求头：链上目标 Bot 是哪一个，网关按它起对应的 Agent 进程。
