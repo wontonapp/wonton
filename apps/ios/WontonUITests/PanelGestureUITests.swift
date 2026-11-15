@@ -110,18 +110,38 @@ extension PanelGestureUITests {
         safeTop = sidebar.frame.minY
     }
 
-    /// 有页面时按钮直接打开整页；用圆点选中可加载的本机网页，整页不抢网页横滑。
+    /// `panelDots` 在 iOS 26.5 上落在各圆点叶节点，不能再向下查 descendants。
     private func openMainPanel() {
         let open = app.buttons["panelOpen"]
         XCTAssertTrue(open.waitForExistence(timeout: 5) && open.isHittable, "面板入口按钮不可达")
         open.tap()
-        XCTAssertTrue(waitLevel("full", timeout: 5), "按钮没有打开整页面板")
-        let player = app.otherElements["panelDots"].descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "Player")).firstMatch
-        XCTAssertTrue(player.waitForExistence(timeout: 5), "面板缺少 Player 页圆点")
-        player.tap()
-        XCTAssertTrue(page.waitForExistence(timeout: 20), "面板网页没加载出来\n\(app.debugDescription)")
-        XCTAssertTrue(waitLevel("full", timeout: 2), "切页改变了整页面板的级别")
+        XCTAssertTrue(wait(5) {
+            self.panel.exists && (self.panel.value as? String == "peek" || self.panel.value as? String == "full")
+        }, "按钮没有打开面板")
+        let startedPeek = panel.value as? String == "peek"
+        if startedPeek, app.buttons["panelAdd"].exists {
+            app.buttons["panelAdd"].tap()
+            XCTAssertTrue(app.textFields["https://"].waitForExistence(timeout: 5), "空面板加号没有打开编辑页")
+            return XCTFail("fixture 面板为空；已进入添加页面，网页手势场景需要真实 Player 页面")
+        }
+        if !page.exists {
+            let dots = panel.descendants(matching: .any).matching(identifier: "panelDots")
+            let player = dots.matching(NSPredicate(format: "label == %@", "Player")).firstMatch
+            if player.waitForExistence(timeout: 5) {
+                XCTAssertTrue(player.isHittable, "Player 圆点不可点\n\(app.debugDescription)")
+                player.tap()
+            } else {
+                XCTAssertEqual(dots.count, 0, "有分页圆点，但缺少 fixture 的 Player 圆点\n\(app.debugDescription)")
+            }
+        }
+        // 单页没有圆点，仍必须证明当前选中的是实际可加载的 fixture 网页。
+        XCTAssertTrue(page.waitForExistence(timeout: 20), "fixture 没有就绪的 Player 网页；检查单页及回环服务\n\(app.debugDescription)")
+        if startedPeek {
+            dragDown(fromY: pageTop + 12)
+            XCTAssertTrue(waitLevel("full", timeout: 5), "PEEK 里的真实网页没有从栏缘进入 FULL")
+        } else {
+            XCTAssertTrue(waitLevel("full", timeout: 2), "切页改变了整页面板的级别")
+        }
     }
 
     private var panel: XCUIElement { app.otherElements["chatPanel"] }
