@@ -186,6 +186,17 @@ impl Drop for Active {
     }
 }
 
+impl ChatLink {
+    /// 撤销本人 Bot 结果的上写资格，不碰 ViewModel：旧任务在飞的发送随后被代际拒绝。
+    ///
+    /// 换服务器时共用同一个 ViewModel 发送端，旧链接这时还没 Drop；交接前先撤销，旧作用域关停最多等一秒，
+    /// 不能靠 Drop 兜这个窗口。Drop 里同样只撤销，不清新作用域的快照。
+    pub(crate) fn abandon_own_private_bot(&self) {
+        let mut epoch = lock(&self.bots.own_epoch);
+        *epoch = epoch.wrapping_add(1);
+    }
+}
+
 /// matrix-sdk 的 sqlite 连接池释放连接时要在 tokio 运行时的上下文里（`spawn_blocking`），没有就 panic，接着释放下一个
 /// 连接时再 panic，进程直接中止。最后一个引用可能在壳的线程上释放：换服务器时旧作用域在 `dispatch` 里释放（实测
 /// Android 上点“添加服务器”闪退），临时作用域在壳驱动的 async 方法里释放。所以在自己运行时的上下文里放掉会话、Bot 那边
@@ -196,10 +207,7 @@ impl Drop for ChatLink {
         let _context = self.runtime.enter();
         lock(&self.open).clear();
         lock(&self.session).take();
-        {
-            let mut epoch = lock(&self.bots.own_epoch);
-            *epoch = epoch.wrapping_add(1);
-        }
+        self.abandon_own_private_bot();
         self.bots.session.send_replace(None);
         self.active.get_mut().take();
     }

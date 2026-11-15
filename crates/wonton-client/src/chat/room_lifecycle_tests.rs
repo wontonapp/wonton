@@ -166,9 +166,12 @@ async fn reused_channel_ignores_a_result_of_the_previous_server() {
     let sender = bots.view.clone();
     let mut watch = sender.subscribe();
     let stale = *crate::chat::lock(&bots.own_epoch);
-    // 换服务器时 scope 复用同一 sender 并写入新作用域的初始值，然后旧链接才析构。
+    // 换服务器时 scope 先撤旧资格、复用同一 sender 写入新作用域的初始值，旧链接随后才析构。
     let initial = watch.borrow().clone();
+    chat.abandon_own_private_bot();
     sender.send_replace(initial);
+    bots.publish_own_private_bot(stale, Ok(own_bot_ready()));
+    assert_eq!(watch.borrow_and_update().own_private_bot, None);
     drop(chat);
     bots.publish_own_private_bot(stale, Ok(own_bot_ready()));
     assert_eq!(watch.borrow_and_update().own_private_bot, None);
