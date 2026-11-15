@@ -91,8 +91,15 @@ async fn assert_invalid_pairing_and_rejection() {
     assert_server_rejection(&phone, &log_path).await;
 }
 
-async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
-    let home = Home::start().await;
+struct Rejection {
+    code: PairingCode,
+    query_canary: &'static str,
+    query_url: String,
+    json_token: &'static str,
+    typed_token: &'static str,
+}
+
+fn rejection_code(home: &Home) -> Rejection {
     let token = "relay+example";
     let mut code =
         PairingCode::parse(&home.code(Some(wonton_tunnel::pair::RejectReason::Expired))).unwrap();
@@ -113,6 +120,45 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
         token: None,
         tier: 2,
     });
+    // 合法取值各自只出现一种写法：JSON 转义的 `/` 与 `-`、两层百分号后再转义、解码后的 URL 分量。
+    let json_token = "json-relay/707";
+    let typed_token = "mix/707";
+    for (token, tier) in [(json_token, 3), (typed_token, 4)] {
+        code.relays.push(Relay {
+            url: "https://relay.example.com/".parse().unwrap(),
+            token: Some(RelayToken::new(token)),
+            tier,
+        });
+    }
+    for (url, tier) in [
+        ("https://relay.example.com/#frag%2D707", 5),
+        ("https://relay.example.com/?access_token=query%252D707", 6),
+    ] {
+        code.relays.push(Relay {
+            url: url.parse().unwrap(),
+            token: None,
+            tier,
+        });
+    }
+    Rejection {
+        code,
+        query_canary,
+        query_url,
+        json_token,
+        typed_token,
+    }
+}
+
+async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
+    let home = Home::start().await;
+    let Rejection {
+        code,
+        query_canary,
+        query_url,
+        json_token,
+        typed_token,
+    } = rejection_code(&home);
+    let token = "relay+example";
     let issued = code.to_uri();
     let secret = PairingCode::parse(&issued)
         .unwrap()
@@ -136,8 +182,9 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
         encoded_secret.as_str(),
     ];
     *home.codes.refusal_message.lock().unwrap() = Some(format!(
-        "Expired: {issued} {} {colliding_secret} {encoded_url}",
-        variants.join(" ")
+        "Expired: {issued} {} {colliding_secret} {encoded_url} {}",
+        variants.join(" "),
+        r#"{"token":"json\u002Drelay\/707"} mix%255Cu002F707 frag-707 query-707 {"token":"relay+example"} ?access_token=query-canary-707"#
     ));
     phone.pair(&issued).unwrap();
     let view = phone
@@ -160,21 +207,41 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
     );
     let diagnostic = diagnostic.unwrap();
     let log = std::fs::read_to_string(log_path).unwrap();
-    let needles = [&secret[1..], "relay%252bexample", query_canary];
-    let diagnostic_leaks = needles.map(|needle| diagnostic.contains(needle));
-    let log_leaks = needles.map(|needle| log.contains(needle));
-    assert_eq!(
-        diagnostic_leaks, [false; 3],
-        "encoded secret spans leaked in diagnostics"
+    assert_absent(
+        &diagnostic,
+        &log,
+        &[&secret[1..], "relay%252bexample", query_canary],
     );
-    assert_eq!(
-        log_leaks, [false; 3],
-        "encoded secret spans leaked in the log"
+    // 逃逸与解码后的写法：原始转义、两层百分号叠加转义、fragment/query 解码值，两个 sink 都必须遮住。
+    assert_absent(
+        &diagnostic,
+        &log,
+        &[
+            json_token,
+            typed_token,
+            r"json\u002Drelay\/707",
+            "mix%255Cu002F707",
+            "frag-707",
+            "query-707",
+        ],
     );
     assert_redacted(&message, &issued, &secret, &variants);
     assert_redacted(&diagnostic, &issued, &secret, &variants);
     assert!(log.contains("the home server rejected pairing"));
     assert_redacted(&log, &issued, &secret, &variants);
+    // 对照：规范 JSON、单层 query 的原文也经同一条路径出现，仍须遮住。
+    assert!(!log.contains(r#"{"token":"relay+example"}"#));
+    assert!(!log.contains("?access_token=query-canary-707"));
+}
+
+fn assert_absent(diagnostic: &str, log: &str, needles: &[&str]) {
+    for needle in needles {
+        assert!(
+            !diagnostic.contains(needle),
+            "{needle} leaked in diagnostics: {diagnostic}"
+        );
+        assert!(!log.contains(needle), "{needle} leaked in the log");
+    }
 }
 
 fn assert_redacted(text: &str, issued: &str, secret: &str, variants: &[&str]) {
