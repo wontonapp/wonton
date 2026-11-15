@@ -88,7 +88,6 @@ async fn retrying_an_interrupted_file_sends_its_text_once_before_later_messages(
 
     s.link.retry(ROOM, &attachment).unwrap();
     s.link.retry(ROOM, &attachment).unwrap();
-    s.link.retry_outgoing(ROOM, &outgoing.id).unwrap();
     until("仅文件重新上传", || {
         s.fake.file_calls.lock().unwrap().len() == 2
     })
