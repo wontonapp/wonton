@@ -49,8 +49,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -310,18 +308,5 @@ private fun PanelEmpty(onAdd: () -> Unit) {
             }
             Text(label, style = WontonTheme.typography.supporting, color = colors.textSecondary.toColor())
         }
-    }
-}
-
-/** 消息列表上的读屏动作“打开面板”：过度拉动做不了，用一个动作补上。 */
-@Composable
-internal fun Modifier.panelAction(panel: ChatPanelState?): Modifier {
-    if (panel == null) return this
-    val label = stringResource(R.string.panel_open)
-    return semantics {
-        customActions = listOf(CustomAccessibilityAction(label) {
-            panel.move(PanelLevel.PEEK)
-            true
-        })
     }
 }

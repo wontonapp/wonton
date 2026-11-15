@@ -220,12 +220,11 @@ struct MainView: View {
         ChatPanelHost(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
             scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
-            blocked: false, draft: receiveDraft, open: open,
+            draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
             select: { pages.send(.pages(action: .selectPanelPage(scope: .main, tab: $0))) },
             remove: { pages.send(.pages(action: .removePanelPage(scope: .main, tab: $0))) },
             move: { pages.send(.pages(action: .movePanelPage(scope: .main, tab: $0, index: UInt32($1)))) },
-            pullAnchor: nil,
             content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
     }

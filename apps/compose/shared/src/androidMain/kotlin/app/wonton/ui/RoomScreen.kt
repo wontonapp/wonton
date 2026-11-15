@@ -89,6 +89,7 @@ import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Home
 import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
@@ -130,8 +131,6 @@ internal class TimelineState {
     /** 这个房间的面板（ADR-0052）：核心每一批带上。 */
     var panel by mutableStateOf<List<PanelItem>>(emptyList())
     var panelSelected by mutableStateOf<TabRef?>(null)
-    /** 另有东西盖着消息列表（长按菜单、转发、删除确认），上推拉面板的入口不响应。 */
-    var entryBlocked by mutableStateOf(false)
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
@@ -197,7 +196,6 @@ internal fun RoomRoute(
                 update.anchor?.let { timeline.anchor = it }
                 timeline.panel = update.panel
                 timeline.panelSelected = update.panelSelected
-                timeline.entryBlocked = update.entryBlocked
                 timeline.sideChat = update.sideChat
                 timeline.call = RoomCall(update.widgets, update.callActive)
                 timeline.confirmations = update.confirmations
@@ -303,14 +301,6 @@ private fun RoomScreen(
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
-    // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。旁聊页没有面板，不报。
-    val messageOverlay = menu != null || forwarding != null || redacting != null
-    val covers = messageOverlay || timeline.openedConfirmation != null
-    if (target.threadRoot == null) {
-        LaunchedEffect(covers, target.roomId) {
-            onAction(Action.Pages(PageAction.SetRoomEntryBlocked(target.roomId, covers)))
-        }
-    }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
@@ -391,10 +381,8 @@ private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
     val panel = LocalChatPanel.current
     val panelPages = timeline.panel
     val panelSelected = timeline.panelSelected
-    val entryBlocked = timeline.entryBlocked
     SideEffect {
         panel?.feed(panelPages, panelSelected)
-        panel?.blocked = entryBlocked
     }
     DisposableEffect(panel, draft) {
         panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
@@ -431,6 +419,7 @@ private fun RoomBar(
     } else {
         null
     }
+    val panel = LocalChatPanel.current
     WontonPushedBar(
         barTitle,
         onClose,
@@ -438,6 +427,13 @@ private fun RoomBar(
         showsStatusLine = true,
         avatar = barAvatar,
         actions = {
+            if (panel != null) {
+                WontonIconButton(
+                    WontonIcon.Home,
+                    stringResource(R.string.panel_open),
+                    { panel.move(PanelLevel.FULL) },
+                )
+            }
             RoomCallEntry(call, onOpenWidget)
             if (isDirect && bot != null) {
                 Box(Modifier.testTag("bot-profile-open")) {
@@ -615,7 +611,6 @@ private fun Messages(
     modifier: Modifier,
 ) {
     val listState = rememberLazyListState()
-    val panel = LocalChatPanel.current
     ScrollEffects(listState, timeline, target, sideChats.covered, onAction)
     // 待发消息出现、交出去换成本地回显时，在底部附近的跟着到底：插在第 0 项前面的行，列表按键记位置不会自己露出来。
     val outgoingIds = outgoing.map { it.id }
@@ -636,9 +631,7 @@ private fun Messages(
     Box(modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
-                .testTag("room-timeline")
-                .panelAction(panel)
-                .chatPanelPull(panel, { !listState.canScrollBackward }, !timeline.entryBlocked),
+                .testTag("room-timeline"),
             state = listState,
             reverseLayout = true,
             overscrollEffect = null,

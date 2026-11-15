@@ -18,6 +18,9 @@ struct PanelDependencies {
 
 extension EnvironmentValues {
     @Entry var panelDeps: PanelDependencies?
+
+    /// 顶栏按钮打开面板的动作：房间里的面板盖住外层聊天页的同名值（ADR-0052）。
+    @Entry var chatPanelOpen: (() -> Void)?
 }
 
 struct TabPanelMode {
@@ -54,8 +57,6 @@ struct ChatPanelHost<Content: View>: View {
     let items: [PanelItem]
     /// 核心记住的上次看的那一页。
     let selected: TabRef?
-    /// 房间里盖着列表的东西开着：入口不响应（ADR-0052）。
-    let blocked: Bool
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
@@ -63,9 +64,6 @@ struct ChatPanelHost<Content: View>: View {
     let select: (TabRef) -> Void
     let remove: (TabRef) -> Void
     let move: (TabRef, Int) -> Void
-    /// 房间把消息列表的 `PullAnchor` 交进来：拖动手势要接到这个面板，不能按环境去找（房间里环境里
-    /// 还是外面主聊天页的那个面板）。
-    let pullAnchor: PullAnchor?
     @ViewBuilder let content: () -> Content
     @State private var level = PanelLevel.closed
     @State private var drag: CGFloat = 0
@@ -104,7 +102,7 @@ struct ChatPanelHost<Content: View>: View {
                     BuzzMark(count: buzzes)
                 #endif
             }
-            .environment(\.chatPull, pull(height: height))
+            .environment(\.chatPanelOpen, openPanel)
         }
         .onGeometryChange(for: CGFloat.self) { $0.safeAreaInsets.top } action: { safeTop = $0 }
         .onGeometryChange(for: CGFloat.self) {
@@ -131,15 +129,6 @@ struct ChatPanelHost<Content: View>: View {
 
     private var sign: CGFloat { edge == .top ? 1 : -1 }
 
-    private func pull(height: CGFloat) -> ChatPull {
-        ChatPull(
-            enabled: level == .closed && !blocked,
-            changed: { distance in pullChanged(distance) },
-            ended: { distance, velocity in settle(distance: distance, velocity: velocity, height: height) },
-            cancelled: { move(to: level) }
-        )
-    }
-
     // MARK: - 级
 
     private func base(_ level: PanelLevel, _ height: CGFloat) -> CGFloat {
@@ -158,28 +147,19 @@ struct ChatPanelHost<Content: View>: View {
         return min(limit, max(0, base(level, height) + drag))
     }
 
-    private func pullChanged(_ distance: CGFloat) {
-        if !mounted || drag == 0 { dismissKeyboard() }
-        mounted = true
-        drag = max(0, distance)
-        arm(distance: drag, height: screenHeight)
-    }
-
     private func settle(distance: CGFloat, velocity: CGFloat, height: CGFloat) {
         move(to: target(distance: distance, velocity: velocity, height: height))
     }
 
     private func target(distance: CGFloat, velocity: CGFloat = 0, height: CGFloat) -> PanelLevel {
-        let opens = WontonGesture.commits(distance: distance, velocity: velocity,
-                                         threshold: WontonTheme.gesture.pullDistance)
         let advances = WontonGesture.commits(distance: distance, velocity: velocity,
                                             threshold: WontonTheme.gesture.pushDistance)
         let closes = WontonGesture.commits(distance: -distance, velocity: -velocity,
                                           threshold: WontonTheme.gesture.pullDistance)
         switch level {
         case .closed:
-            return distance >= base(.peek, height) + WontonTheme.gesture.pushDistance ? .full
-                : opens ? .peek : .closed
+            // 收着时没有拖动了：入口只有顶栏的按钮，直接 move 换级。
+            return .closed
         case .peek:
             return advances ? .full : closes ? .closed : .peek
         case .full:
@@ -218,10 +198,12 @@ struct ChatPanelHost<Content: View>: View {
         }
     }
 
+    /// 顶栏按钮打开面板：有页面直接整页，空面板落回第 1 级（move 里降级）。
     private func openPanel() {
+        dismissKeyboard()
         mounted = true
         syncSelection()
-        move(to: .peek)
+        move(to: .full)
     }
 
     private func dismissKeyboard() {
@@ -263,13 +245,7 @@ extension ChatPanelHost {
                     .padding(.bottom, edge == .bottom && (level != .closed || drag > 0) ? 0 : -safeBottom)
             }
             .offset(y: sign * chatOffset(height))
-            .background {
-                if let pullAnchor {
-                    RoomPullBinder(anchor: pullAnchor, pull: pull(height: height)).allowsHitTesting(false)
-                }
-            }
             .shadow(color: .black.opacity(level == .closed && drag == 0 ? 0 : 0.15), radius: 12)
-            .accessibilityAction(named: Text(TabText.openPanel)) { openPanel() }
     }
 
     /// 露出的那条聊天页：点一下收起，往外推换级。单独一层放在聊天页上面，不靠它的位移决定命中区——
@@ -568,8 +544,6 @@ struct RoomPanelHost<Content: View>: View {
     let roomId: String
     let panel: [PanelItem]
     let selected: TabRef?
-    let blocked: Bool
-    let pullAnchor: PullAnchor?
     @ViewBuilder let content: () -> Content
     @Environment(\.panelDeps) private var deps
 
@@ -579,16 +553,27 @@ struct RoomPanelHost<Content: View>: View {
             ChatPanelHost(
                 pages: deps.pages, home: deps.home, plugins: deps.plugins, chat: deps.chat,
                 appearance: deps.appearance, scope: scope, edge: .bottom, items: panel, selected: selected,
-                blocked: blocked, draft: deps.draft, open: deps.open, pendingCards: deps.pendingCards,
+                draft: deps.draft, open: deps.open, pendingCards: deps.pendingCards,
                 openCardRoom: deps.openCardRoom,
                 select: { deps.pages.send(.pages(action: .selectPanelPage(scope: scope, tab: $0))) },
                 remove: { deps.pages.send(.pages(action: .removePanelPage(scope: scope, tab: $0))) },
                 move: { deps.pages.send(.pages(action: .movePanelPage(scope: scope, tab: $0, index: UInt32($1)))) },
-                pullAnchor: pullAnchor,
                 content: { content() }
             )
         } else {
             content()
+        }
+    }
+}
+
+/// 顶栏打开面板的按钮：动作来自包着这一页的面板宿主；没有面板的地方（旁聊页、iPad 的详情栏）不显示。
+struct PanelEntryButton: View {
+    @Environment(\.chatPanelOpen) private var open
+
+    var body: some View {
+        if let open {
+            WontonIconButton(icon: .home, label: TabText.openPanel, action: open)
+                .accessibilityIdentifier("panelOpen")
         }
     }
 }

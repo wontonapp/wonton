@@ -1,9 +1,5 @@
 package app.wonton.ui
 
-import android.view.MotionEvent
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.input.pointer.motionEventSpy
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
@@ -14,15 +10,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.unit.Velocity
 import app.wonton.ui.design.WontonTheme
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.PanelScope
@@ -33,7 +23,7 @@ import kotlinx.coroutines.launch
 
 internal enum class PanelLevel { CLOSED, PEEK, FULL }
 
-/** 面板从哪一边出来：主聊天页在上（列表到顶后往下拉），房间在下（最新一条之后往上推）。 */
+/** 面板从哪一边出来：主聊天页的面板在上，房间的面板在下。 */
 internal enum class PanelEdge { TOP, BOTTOM }
 
 /** 第 1 级主聊天页保留 18%；房间保留约 45%，即面板占约 55%。 */
@@ -67,7 +57,6 @@ internal class ChatPanelState(
     var selection by mutableStateOf<TabRef?>(null)
         private set
     var editing by mutableStateOf(false)
-    var blocked by mutableStateOf(false)
     /** 聊天页往哪边移：主聊天页往下（正），房间往上（负）。 */
     val sign: Float get() = if (edge == PanelEdge.TOP) 1f else -1f
 
@@ -121,7 +110,7 @@ internal class ChatPanelState(
     fun clampedShift(): Float = shift.coerceIn(0f, height)
 
     /**
-     * 核心推来新的页面；不认识的选中项落到第一页。房间的 blocked 由房间页报告。
+     * 核心推来新的页面；不认识的选中项落到第一页。
      * 只在没拉开或换了一边时才会被外部改选中：拉开时用户自己翻的页优先。
      */
     fun feed(items: List<PanelItem>, saved: TabRef?) {
@@ -214,16 +203,11 @@ internal class ChatPanelState(
     }
 
     private fun target(from: PanelLevel, distance: Float, velocity: Float = 0f): PanelLevel {
-        val opens = commitsGesture(distance, velocity, WontonTheme.gesture.pullDistance, density)
         val pushes = commitsGesture(distance, velocity, WontonTheme.gesture.pushDistance, density)
         val closes = commitsGesture(-distance, -velocity, WontonTheme.gesture.pullDistance, density)
         return when (from) {
-            PanelLevel.CLOSED -> when {
-                pages.isNotEmpty() && distance >= base(PanelLevel.PEEK) +
-                    WontonTheme.gesture.pushDistance * density -> PanelLevel.FULL
-                opens -> PanelLevel.PEEK
-                else -> PanelLevel.CLOSED
-            }
+            // 收着时没有拖动了：入口只有顶栏的按钮，直接 move 换级。
+            PanelLevel.CLOSED -> PanelLevel.CLOSED
             PanelLevel.PEEK -> when {
                 pushes -> PanelLevel.FULL
                 closes -> PanelLevel.CLOSED
@@ -239,7 +223,7 @@ internal class ChatPanelState(
         val was = armed
         armed = next
         if (next == was || next == from) return
-        // 从第 0 级抬起时每跨过一次都算；往下换级只在往更深处时震。
+        // 从停着的级别跨出去时每跨过一次都算；往回退不震。
         if (depth(next) > depth(was) || was == from) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
@@ -263,55 +247,4 @@ internal fun rememberChatPanelState(edge: PanelEdge, scope: PanelScope): ChatPan
     return remember(edge, scope) { ChatPanelState(edge, scope, haptics, coroutine) }
 }
 
-/**
- * 聊天列表到头后接着拉，把余下的手指距离交给面板（同系统下拉刷新的做法）。只认手指拖动：
- * 惯性滚到头的分量不算，照样留给列表。
- */
-@OptIn(ExperimentalComposeUiApi::class)
-@Composable
-internal fun Modifier.chatPanelPull(
-    state: ChatPanelState?,
-    atBoundary: () -> Boolean,
-    enabled: Boolean,
-): Modifier {
-    if (state == null) return this
-    DisposableEffect(state, enabled) { onDispose { state.cancelDrag() } }
-    return motionEventSpy { event ->
-        if (event.actionMasked == MotionEvent.ACTION_CANCEL) state.cancelDrag()
-    }.nestedScroll(remember(state, enabled) {
-        connection(state, atBoundary, enabled)
-    })
-}
 
-private fun connection(
-    state: ChatPanelState,
-    atBoundary: () -> Boolean,
-    enabled: Boolean,
-): NestedScrollConnection =
-    object : NestedScrollConnection {
-        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-            // 往后推的距离先把面板收回去，列表不跟着动。
-            val closing = -available.y * state.sign
-            val open = enabled && source == NestedScrollSource.UserInput &&
-                state.level == PanelLevel.CLOSED && state.shiftPx > 0f
-            if (!open || closing <= 0f) return Offset.Zero
-            val consumed = state.pull(-closing)
-            return Offset(0f, -consumed * state.sign)
-        }
-
-        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-            val opening = available.y * state.sign
-            val atRest = enabled && source == NestedScrollSource.UserInput &&
-                state.level == PanelLevel.CLOSED && atBoundary()
-            if (!atRest || opening <= 0f) return Offset.Zero
-            val consumed = state.pull(opening)
-            return Offset(0f, consumed * state.sign)
-        }
-
-        override suspend fun onPreFling(available: Velocity): Velocity {
-            if (!enabled || state.level != PanelLevel.CLOSED || state.shiftPx <= 0f) return Velocity.Zero
-            // The list's fling can consume the release speed even while its boundary is held by the panel.
-            state.settle(PanelLevel.CLOSED, available.y * state.sign)
-            return available
-        }
-    }
