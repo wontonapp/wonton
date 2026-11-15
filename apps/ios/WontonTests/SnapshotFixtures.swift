@@ -82,7 +82,7 @@ enum SnapshotFixtures {
                 row(TimelineItem(id: "run", content: .agentRun(
                     run: nil, state: .done, step: nil, steps: 3, progress: nil,
                     result: "Checked the card sequence", end: nil, body: "", cardId: nil, choices: [],
-                    senderName: "Ada Lovelace"
+                    senderName: "Ada", timestampMs: 0
                 )), core: core, showsSender: false)
                 row(message(id: "m3", sender: "Owner", isOwn: true, text: "And the punched cards.",
                             minutesLater: 40, receipt: .delivered, startsTimeGroup: true),
