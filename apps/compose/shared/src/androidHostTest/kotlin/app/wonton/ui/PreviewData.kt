@@ -51,6 +51,7 @@ import app.wonton.protocol.RoomRow
 import app.wonton.protocol.Rgb
 import app.wonton.protocol.SidebarViewModel
 import app.wonton.protocol.StorageUsage
+import app.wonton.protocol.StoreLoadState
 import app.wonton.protocol.TextSize
 import app.wonton.protocol.ThemeColors
 import app.wonton.protocol.ThemeMode
@@ -251,6 +252,7 @@ internal fun previewInstalled() = InstalledPlugins(
 internal fun previewPlugins() = PluginsViewModel(
     installed = InstalledPlugins(plugins = emptyList(), upgradeCheck = null),
     store = null,
+    storeLoad = StoreLoadState.NotRequested,
     sidebar = SidebarViewModel(apps = emptyList(), moreApps = false, updates = 0u, settingsBadge = false),
     refreshing = false,
     problem = null,

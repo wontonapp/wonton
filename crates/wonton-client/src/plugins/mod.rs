@@ -19,6 +19,7 @@ mod settings;
 mod sharing;
 mod start;
 pub(crate) mod store_api;
+mod store_load;
 mod support;
 mod takeover;
 mod tasks;
@@ -26,7 +27,7 @@ mod tool_policy;
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
@@ -37,7 +38,7 @@ use wonton_protocol::{
     AddSourceRequest, AddedSource, AskEveryUpdate, CoreError, CoreUpgradeViewModel,
     EgressViewModel, HomeStatus, InstallPreview, InstallSource, InstalledPlugins, LanWebuiUpdate,
     PermissionUpdate, PluginDetail, PluginDetailRoute, PluginFailure, PluginImage, PluginProblem,
-    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreListing,
+    PluginsViewModel, ProxySettings, StorageUsage, StoreConfirmation, StoreItem, StoreLoadState,
     TabRef,
 };
 
@@ -55,7 +56,6 @@ const POLL_INTERVAL: Duration = Duration::from_secs(3);
 #[derive(Clone, PartialEq, Eq)]
 enum Listing {
     Installed,
-    Store,
     Start(String),
 }
 
@@ -70,10 +70,11 @@ pub(crate) struct PluginsLink {
     /// 本地代理的凭据每次启动都换；同一个代理上复用连接。
     client: Mutex<Option<(ProxySettings, Client)>>,
     images_dir: PathBuf,
-    /// 正在进行的列表请求，大于 0 时 `refreshing` 为真。
-    in_flight: AtomicUsize,
+    /// 计数和 `refreshing` 同锁发布，最后一次完成不能覆盖并发新请求的忙碌状态。
+    in_flight: Mutex<usize>,
     /// 主人打开过商店：隧道重新连上时也重新取它。
     store_wanted: AtomicBool,
+    store_request: Mutex<store_load::Request>,
     polling: AtomicBool,
     foreground: AtomicBool,
     active_page: Mutex<Option<TabRef>>,
@@ -149,8 +150,9 @@ impl PluginsLink {
             languages: Mutex::new(Vec::new()),
             client: Mutex::new(None),
             images_dir: data_dir.join("plugin-images"),
-            in_flight: AtomicUsize::new(0),
+            in_flight: Mutex::new(0),
             store_wanted: AtomicBool::new(false),
+            store_request: Mutex::new(store_load::Request::default()),
             polling: AtomicBool::new(false),
             foreground: AtomicBool::new(true),
             active_page: Mutex::new(None),
@@ -330,26 +332,6 @@ impl PluginsLink {
             link.spawn_installed();
             link.spawn_storage();
             link.spawn_roles();
-            // 商店留下的问题，已安装列表取到了也清不掉，页面上的重试不连它一起取就没有用。
-            if *lock(&link.problem_of) == Some(Listing::Store) {
-                link.spawn_store(false);
-            }
-        });
-    }
-
-    /// `RefreshStore`：在后台取商店，`force` 时家里的服务器不等缓存过期。
-    pub(crate) fn refresh_store(self: &Arc<Self>, force: bool) {
-        self.store_wanted.store(true, Ordering::Relaxed);
-        if self.external || self.connecting() {
-            return;
-        }
-        let link = self.clone();
-        self.runtime.spawn(async move {
-            link.home.retry_if_rejected().await;
-            link.spawn_store(force);
-            if *lock(&link.problem_of) == Some(Listing::Installed) {
-                link.spawn_installed();
-            }
         });
     }
 
@@ -363,18 +345,9 @@ impl PluginsLink {
         });
     }
 
-    fn spawn_store(self: &Arc<Self>, force: bool) {
-        let link = self.clone();
-        let generation = self.generation.load(Ordering::SeqCst);
-        self.begin_refresh();
-        self.runtime.spawn(async move {
-            let result = link.fetch_store(force).await;
-            link.end_refresh(Listing::Store, generation, result);
-        });
-    }
-
     fn begin_refresh(&self) {
-        self.in_flight.fetch_add(1, Ordering::SeqCst);
+        let mut in_flight = lock(&self.in_flight);
+        *in_flight += 1;
         self.view.send_if_modified(|view| {
             let changed = !view.refreshing;
             view.refreshing = true;
@@ -382,19 +355,24 @@ impl PluginsLink {
         });
     }
 
-    /// 其间换了服务器时，成败都不算数，不能清掉新服务器的问题。
-    fn end_refresh(&self, listing: Listing, generation: u64, result: Result<(), PluginProblem>) {
-        if self.in_flight.fetch_sub(1, Ordering::SeqCst) == 1 {
+    fn finish_refresh(&self) {
+        let mut in_flight = lock(&self.in_flight);
+        *in_flight -= 1;
+        if *in_flight == 0 {
             self.view.send_modify(|view| view.refreshing = false);
-        }
-        if self.is_current(generation) {
-            self.record(listing, result);
         }
     }
 
-    /// 失败时记下原因，显示的还是上次取到的列表。列表连不上由 `HomeViewModel::notice` 负责说，连上后
-    /// [`follow_home`] 自动再取（ADR-0032）；启动失败则必须明确显示，不能假装成功。成功只清同一个来源留下的问题，
-    /// 避免后台轮询清掉商店或启动错误，也避免另一插件的启动成功覆盖失败。
+    /// 其间换了服务器时，成败都不算数，不能清掉新服务器的问题。
+    fn end_refresh(&self, listing: Listing, generation: u64, result: Result<(), PluginProblem>) {
+        if self.is_current(generation) {
+            self.record(listing, result);
+        }
+        self.finish_refresh();
+    }
+
+    /// 已安装列表连不上由 `HomeViewModel::notice` 负责说，连上后 [`follow_home`] 再取；
+    /// 启动失败必须明确显示。成功只清同一个来源的问题，避免另一插件的启动成功覆盖失败。
     fn record(&self, listing: Listing, result: Result<(), PluginProblem>) {
         self.view.send_if_modified(|view| {
             let mut source = lock(&self.problem_of);
@@ -436,6 +414,9 @@ impl PluginsLink {
     /// 正开着。
     fn forget_server(&self) {
         let _registry = lock(&self.registry);
+        let mut store_request = lock(&self.store_request);
+        store_request.revision += 1;
+        store_request.force = false;
         self.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.starts).clear();
         self.forget_owner_secrets();
@@ -446,6 +427,7 @@ impl PluginsLink {
             *lock(&self.problem_of) = None;
             view.installed = None;
             view.store = None;
+            view.store_load = StoreLoadState::NotRequested;
             view.problem = None;
             view.starts.clear();
             view.egress = EgressViewModel::default();
@@ -461,6 +443,7 @@ impl PluginsLink {
             Self::derive(view);
         });
         drop(installed_server);
+        drop(store_request);
         self.forget_core_upgrade();
         self.forget_takeover();
     }
@@ -549,22 +532,6 @@ impl PluginsLink {
 
     async fn list_installed(&self) -> Result<InstalledPlugins, PluginProblem> {
         self.api()?.get(&["plugins"], &[], READ_TIMEOUT).await
-    }
-
-    async fn fetch_store(&self, force: bool) -> Result<(), PluginProblem> {
-        let generation = self.generation.load(Ordering::SeqCst);
-        let query: &[(&str, &str)] = if force { &[("refresh", "true")] } else { &[] };
-        let result: Result<StoreListing, PluginProblem> =
-            async { self.api()?.get(&["store"], query, SOURCE_TIMEOUT).await }.await;
-        if !self.is_current(generation) {
-            return Ok(());
-        }
-        let store = result?;
-        self.view.send_modify(|view| {
-            view.store = Some(store);
-            Self::derive(view);
-        });
-        Ok(())
     }
 
     pub(crate) fn api(&self) -> Result<CoreApi, PluginProblem> {

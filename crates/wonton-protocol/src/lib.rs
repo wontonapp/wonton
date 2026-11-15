@@ -255,6 +255,7 @@ pub use personal_data::{
     RetentionPolicy, RetentionSetting, SleepStage, WriteAccepted, data_path, query_path,
 };
 pub use plugin::LanClient;
+pub use plugin::StoreLoadState;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
 pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};

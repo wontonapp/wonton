@@ -20,6 +20,10 @@ struct StoreView: View {
             WontonSearchField(text: $query, prompt: String(localized: .Store.storeSearchPrompt))
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.bottom, WontonTheme.spacing.s8)
+            if let rejection = model.storeRefreshRejection {
+                ProblemRow(problem: rejection.problem) { model.refreshStore(force: true) }
+                    .padding(WontonTheme.spacing.pageInset)
+            }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.viewModel.tasks, id: \.id) { task in
@@ -30,9 +34,9 @@ struct StoreView: View {
                         .padding(.vertical, WontonTheme.spacing.s8)
                     }
                     if let store = model.viewModel.store {
-                        if let problem = model.viewModel.problem {
+                        if case let .failed(problem) = model.viewModel.storeLoad {
                             ProblemRow(problem: problem.problem) {
-                                model.send(.plugins(action: .refreshStore(force: true)))
+                                model.refreshStore(force: true)
                             }
                             .padding(WontonTheme.spacing.pageInset)
                         }
@@ -48,7 +52,7 @@ struct StoreView: View {
             .overlay {
                 if model.viewModel.store == nil { placeholder }
             }
-            .refreshable { model.send(.plugins(action: .refreshStore(force: true))) }
+            .refreshable { model.refreshStore(force: true) }
         }
         .wontonPushedScreen(String(localized: .Store.storeTitle), showsStatusLine: true, usesSystemToolbar: true) {
             HStack(spacing: 0) {
@@ -73,18 +77,42 @@ struct StoreView: View {
         }, content: {
             AddSourceView(model: model) { chosen = $0 }
         })
-        .task { model.refresh(.plugins(action: .refreshStore(force: false))) }
+        .task { model.refreshStore(force: false) }
     }
 
-    /// 还没取到商店：取不到的原因和下一步，或者正在取。
+    /// 没有商店内容时，只在核心正在请求时显示骨架。
     @ViewBuilder private var placeholder: some View {
-        if let problem = model.viewModel.problem {
-            ProblemView(problem: problem.problem) { model.send(.plugins(action: .refreshStore(force: true))) }
-        } else if let rejection = model.refreshRejection {
-            ProblemView(problem: rejection.problem) { model.send(.plugins(action: .refreshStore(force: true))) }
-        } else {
-            ListSkeleton(iconSize: WontonTheme.size.storeIcon)
+        switch model.viewModel.storeLoad {
+        case .notRequested:
+            statusMessage(.Store.storeNotRequested, canLoad: true)
+        case .waitingForConnection:
+            statusMessage(.Store.storeWaitingForConnection)
+        case .loading:
+            VStack(spacing: WontonTheme.spacing.s16) {
+                ListSkeleton(iconSize: WontonTheme.size.storeIcon, slowHint: .Store.storePending)
+                Button(String(localized: .Store.storeReload)) { model.refreshStore(force: true) }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+                    .padding(.bottom, WontonTheme.spacing.pageInset)
+            }
+        case .ready:
+            EmptyView()
+        case let .failed(problem):
+            ProblemView(problem: problem.problem) { model.refreshStore(force: true) }
         }
+    }
+
+    private func statusMessage(_ message: LocalizedStringResource, canLoad: Bool = false) -> some View {
+        VStack(spacing: WontonTheme.spacing.s16) {
+            Text(message)
+                .wontonText(WontonTheme.typography.supporting)
+                .foregroundStyle(Color(colors.textSecondary))
+            if canLoad {
+                Button(String(localized: .Store.storeLoad)) { model.refreshStore(force: true) }
+                    .buttonStyle(WontonButtonStyle(kind: .secondary))
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(WontonTheme.spacing.s32)
     }
 
     @ViewBuilder private func listing(_ store: StoreListing) -> some View {
@@ -107,7 +135,7 @@ struct StoreView: View {
                 if let problem = source.section.problem {
                     ProblemRow(
                         problem: problem.problem.titled(from: source.provider),
-                        retry: problem.canRetry ? { model.send(.plugins(action: .refreshStore(force: true))) } : nil
+                        retry: problem.canRetry ? { model.refreshStore(force: true) } : nil
                     )
                     .padding(.horizontal, WontonTheme.spacing.pageInset)
                     .padding(.vertical, WontonTheme.spacing.s8)
@@ -145,7 +173,7 @@ struct StoreView: View {
             if let problem = content.problem {
                 ProblemRow(
                     problem: problem.problem,
-                    retry: problem.canRetry ? { model.send(.plugins(action: .refreshStore(force: true))) } : nil
+                    retry: problem.canRetry ? { model.refreshStore(force: true) } : nil
                 )
                 .padding(.horizontal, WontonTheme.spacing.pageInset)
                 .padding(.vertical, WontonTheme.spacing.s8)
