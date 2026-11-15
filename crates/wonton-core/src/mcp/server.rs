@@ -30,11 +30,21 @@ pub struct Caller {
     /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
+    /// 这轮消息的说话人（`X-Wonton-On-Behalf-Of`）。本机人给用户名，认不出的（含远端好友）是
+    /// [`TurnSender::Unknown`]；没这个头是 `None`，按链或 Bot 归属人算。
+    pub sender: Option<TurnSender>,
     /// 核对过归属的会话；权限卡片按它找状态，不以房间或链 ID 代替。
     pub session: Option<String>,
     pub request_id: Option<rmcp::model::RequestId>,
     /// 这次请求已按当前记录解析出的 AI 动手封顶（[`Bus::ai_cap`]）；内部入口直接构造的 `Caller` 留空，由总线再算。
     pub ai_level: Option<wonton_protocol::AiLevel>,
+}
+
+/// 这轮消息的说话人。认不出服务器或本机记录时用 `Unknown`，封顶按只读、联系人门按远端。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnSender {
+    Local(String),
+    Unknown,
 }
 
 /// 令牌认出的 Bot。
@@ -60,6 +70,7 @@ impl Caller {
             bot: None,
             origin: None,
             chain: None,
+            sender: None,
             session: None,
             request_id: None,
             ai_level: None,
@@ -77,6 +88,47 @@ impl Caller {
         caller.bot = Some(BotIdentity { bot, keeper });
         caller
     }
+}
+
+/// `X-Wonton-On-Behalf-Of` 报的说话人必须是这个 Bot 听的人；本服务器的人才给用户名，别家联系人按认不出。
+fn turn_sender(
+    bus: &Bus,
+    caller: &Caller,
+    headers: Option<&hyper::HeaderMap>,
+) -> Option<TurnSender> {
+    let raw = headers?
+        .get(wonton_protocol::WONTON_ON_BEHALF_OF_HEADER)?
+        .to_str()
+        .ok()?;
+    let Some(bot) = caller.bot.as_ref() else {
+        return Some(TurnSender::Unknown);
+    };
+    let bot = wonton_protocol::BotRef {
+        plugin_id: caller.id.to_string(),
+        bot: bot.bot.clone(),
+    };
+    if !crate::gateway::agent_chains::bot_listens_to(
+        &bus.plugins,
+        bus.matrix(),
+        bus.contacts(),
+        &bot,
+        raw,
+    ) {
+        return Some(TurnSender::Unknown);
+    }
+    let Some(rest) = raw.strip_prefix('@') else {
+        return Some(TurnSender::Unknown);
+    };
+    let Some((user, server)) = rest.split_once(':') else {
+        return Some(TurnSender::Unknown);
+    };
+    let Ok(people) = bus.people() else {
+        return Some(TurnSender::Unknown);
+    };
+    if user.is_empty() || !server.eq_ignore_ascii_case(&people.server_name) {
+        return Some(TurnSender::Unknown);
+    }
+    Some(TurnSender::Local(raw.to_owned()))
 }
 
 /// 审计里的“会话认到了别人的轮次”：头里的会话不在这个 Bot 的链上时记一行。
@@ -154,6 +206,8 @@ impl ServerHandler for Handler {
         ctx: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
         let mut caller = caller(&ctx)?;
+        let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
+        caller.sender = turn_sender(&self.bus, &caller, headers);
         caller.ai_level = Some(self.bus.ai_cap(&caller));
         Ok(ListToolsResult::with_all_items(
             self.bus.tools(&caller).await,
@@ -167,6 +221,7 @@ impl ServerHandler for Handler {
     ) -> Result<CallToolResponse, ErrorData> {
         let mut caller = caller(&ctx)?;
         let headers = ctx.extensions.get::<Parts>().map(|parts| &parts.headers);
+        caller.sender = turn_sender(&self.bus, &caller, headers);
         let meta = ctx.meta.0.0.get(ORIGIN_META_KEY);
         caller.origin = super::audience::reported_origin(meta, headers);
         if let Some((chain, session)) = chain_session(&self.bus, &caller, headers) {

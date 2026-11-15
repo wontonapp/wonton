@@ -322,6 +322,36 @@ async fn without_live_turns_the_contact_list_decides() {
     assert_full(&s, &me).await;
 }
 
+/// 报的说话人是本机的人：即使有远端轮在跑，这一轮也全量。
+#[tokio::test]
+async fn a_local_sender_ignores_a_parallel_remote_turn() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let mut me = caller(&alice);
+    me.sender = Some(super::TurnSender::Local("@alice:a.test".into()));
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, BOB, "s-remote");
+    assert_full(&s, &me).await;
+}
+
+/// 报的说话人认不出：收紧成只聊天，不拿 Bot 归属人的身份兜底。
+#[tokio::test]
+async fn an_unknown_sender_is_blocked_even_for_the_keeper() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let alice = a.bot("alice", "alice");
+    let mut me = caller(&alice);
+    me.sender = Some(super::TurnSender::Unknown);
+    let _ledger = attach_ledger(&s);
+
+    assert_only_chats(&s, &me).await;
+}
+
 /// 远端轮结束后的下一轮全量（回落只在没有进行中的轮次时生效，这一轮是归属人说的）。
 #[tokio::test]
 async fn the_turn_after_a_remote_end_gets_everything() {

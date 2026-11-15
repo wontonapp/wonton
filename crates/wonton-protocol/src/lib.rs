@@ -79,10 +79,9 @@ pub use agent_chain::{
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
     ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
-    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
-    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
-    agent_consumer_concurrency_path,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
+    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
+    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
 };
 pub use agent_outbox::{
     OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
