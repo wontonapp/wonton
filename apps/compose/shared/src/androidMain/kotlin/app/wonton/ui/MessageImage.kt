@@ -32,18 +32,27 @@ import app.wonton.client.ClientCore
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MediaHandle
+import app.wonton.protocol.MessageContent
 import app.wonton.protocol.SendState
+import app.wonton.protocol.TimelineContent
+import app.wonton.protocol.TimelineItem
 import app.wonton.ui.design.WontonTheme
 import java.io.IOException
 import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/**
+ * 消息里的图片。长按给消息菜单；[groupImages] 是这条消息所在一组（ADR-0094）的图片、[groupIndex] 是这张在组里的
+ * 位置，查看器拿它们左右翻页；不在一组里（长按菜单的预览拿不到整条时间线）就只看这一张。
+ */
 @Composable
 fun MessageImage(
     image: ImageContent,
     core: ClientCore,
     sendState: SendState,
+    groupImages: List<ImageContent> = emptyList(),
+    groupIndex: Int = 0,
     onLongPress: (() -> Unit)? = null,
 ) {
     val shown = image.thumbnail ?: image.media
@@ -72,7 +81,9 @@ fun MessageImage(
         }
     }
     if (showingViewer) {
-        ImageViewer(image, core) { showingViewer = false }
+        // 不在一组里时这组就是它自己：查看器按一张显示。
+        val images = groupImages.ifEmpty { listOf(image) }
+        ImageViewer(images, groupIndex.coerceIn(images.indices), core) { showingViewer = false }
     }
 }
 
@@ -107,16 +118,53 @@ internal fun loadedImage(core: ClientCore, media: MediaHandle, retryKey: Int = 0
         val formatUnsupported = stringResource(R.string.message_image_format_unsupported)
         LaunchedEffect(media, retryKey) {
             state.value = null
-            state.value = try {
-                val bytes = core.loadMedia(media)
-                withContext(Dispatchers.Default) {
-                    val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
-                    Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
-                }
-            } catch (failure: CoreException) {
-                Result.failure(failure)
-            } catch (failure: IOException) {
-                Result.failure(IllegalStateException(formatUnsupported, failure))
-            }
+            state.value = decodeImage(core, media, formatUnsupported)
         }
     }
+
+/** 取媒体并按 EXIF 方向解码；本地解不开的（IOException）按“格式不支持”报，核心的错误原样给。 */
+internal suspend fun decodeImage(
+    core: ClientCore,
+    media: MediaHandle,
+    formatUnsupported: String,
+): Result<ImageBitmap> = try {
+    val bytes = core.loadMedia(media)
+    withContext(Dispatchers.Default) {
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        Result.success(ImageDecoder.decodeBitmap(source).asImageBitmap())
+    }
+} catch (failure: CoreException) {
+    Result.failure(failure)
+} catch (failure: IOException) {
+    Result.failure(IllegalStateException(formatUnsupported, failure))
+}
+
+/**
+ * 时间线第 [index] 条消息所在一组（ADR-0094 的分组标记）的图片，按显示顺序（早的在前），和这张在组里的位置；
+ * 图片查看器左右翻整组用。不带标记的图片消息一组就是它自己；挨着才算一组：中间隔了别人的消息就断开。
+ */
+internal fun imageGroup(items: List<TimelineItem>, index: Int): Pair<List<ImageContent>, Int> {
+    val message = (items[index].content as? TimelineContent.Message)?.message
+        ?: return emptyList<ImageContent>() to 0
+    val groupId = message.group?.id
+    var start = index
+    var end = index
+    if (groupId != null) {
+        fun inGroup(other: TimelineItem): Boolean {
+            val member = (other.content as? TimelineContent.Message)?.message ?: return false
+            return member.senderId == message.senderId && member.group?.id == groupId
+        }
+        while (start > 0 && inGroup(items[start - 1])) start--
+        while (end + 1 < items.size && inGroup(items[end + 1])) end++
+    }
+    // 时间线是新到旧排的：从 end 往回数才是显示顺序（早的在前）。
+    val images = ArrayList<ImageContent>()
+    var position = 0
+    for (i in end downTo start) {
+        val image = ((items[i].content as? TimelineContent.Message)?.message?.body as? MessageContent.Image)?.image
+            ?: continue
+        if (i == index) position = images.size
+        images.add(image)
+    }
+    return images to position
+}

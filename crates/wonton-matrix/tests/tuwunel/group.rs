@@ -1,6 +1,6 @@
 //! 一次发送里的几条事件（ADR-0094）：照片先传完，再一起交给发送队列；对方收到的每条都带同一个分组标记，字是最后一张的说明文字。
 
-use wonton_matrix::{GroupPart, ImageThumbnail, ImageUpload, MessageBody};
+use wonton_matrix::{GroupPart, ImageThumbnail, ImageUpload, MessageBody, SendStatus};
 
 use crate::{
     chat::direct_chat,
@@ -67,6 +67,40 @@ async fn a_group_of_photos_arrives_with_one_marker_and_the_caption_on_the_last()
         .await
         .expect("交给发送队列");
     assert_eq!(*handed.lock().unwrap(), [1, 2], "每交出一条报一次");
+
+    // 发送方自己的设备也要读得到标记：Android 查看器翻整组，主人发完当场就要能翻（本地回显被服务器事件替换之后）。
+    let alice_room = alice
+        .open_room(&room_id)
+        .await
+        .expect("Alice 打开自己发的房间");
+    let own_images = eventually(
+        "Alice 自己的设备上两条照片都已发出且带分组标记",
+        alice_room.message_updates().await,
+        |messages| {
+            let images: Vec<_> = messages
+                .iter()
+                .filter_map(|message| match &message.body {
+                    MessageBody::Image(image) => {
+                        Some((message.status.clone(), message.group.clone(), image.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            // 本地回显不带原始事件；等服务器事件替换回显（两条都 Sent）再判，别把回显当结论。
+            (images.len() == 2
+                && images
+                    .iter()
+                    .all(|(status, _, _)| *status == SendStatus::Sent))
+            .then_some(images)
+        },
+    )
+    .await;
+    for (index, (_, group, _)) in own_images.iter().enumerate() {
+        let group = group.as_ref().expect("发送方自己的设备也带分组标记");
+        assert_eq!(group.id, GROUP);
+        assert_eq!(group.count, 2);
+        assert_eq!(group.index as usize, index, "发送方按发送顺序到");
+    }
 
     let bob_room = bob.open_room(&room_id).await.expect("Bob 打开私聊");
     let images = eventually(

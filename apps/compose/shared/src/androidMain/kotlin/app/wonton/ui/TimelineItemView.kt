@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ImageContent
 import app.wonton.protocol.MessageAction
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.RichBlockKind
@@ -71,7 +72,8 @@ import java.util.Date
 
 /**
  * `showsSender`：私聊里对方是谁看标题就知道，不在每条消息上重复名字。`joinsPrevious`、`joinsNext`：和上一条、下一条是
- * 不是同一个人连着发的。`onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
+ * 不是同一个人连着发的。`groupImages`、`groupIndex`：这条消息所在一组（ADR-0094）的图片和这张的位置，给图片查看器翻页。
+ * `onRetry`、`onCancel` 处理发送失败的这一条，`onCardAction` 是确认卡片上的操作。
  * `onOpenAgentCard` 打开这张等回答的卡片，`onAnswerAgentChoice` 回答 Bot 自己的提问（ADR-0082）。
  * `onOpenSideChat` 进旁聊（参数是根的事件 ID），旁聊卡片和结果行都用它（ADR-0093）。
  */
@@ -82,6 +84,8 @@ fun TimelineItemView(
     showsSender: Boolean,
     joinsPrevious: Boolean,
     joinsNext: Boolean,
+    groupImages: List<ImageContent>,
+    groupIndex: Int,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
@@ -101,6 +105,8 @@ fun TimelineItemView(
                 showsSender && !joinsPrevious,
                 joinsPrevious,
                 joinsNext,
+                groupImages,
+                groupIndex,
                 onRetry,
                 onCancel,
                 onCardAction,
@@ -179,6 +185,8 @@ private fun MessageBubble(
     showsSender: Boolean,
     joinsPrevious: Boolean,
     joinsNext: Boolean,
+    groupImages: List<ImageContent>,
+    groupIndex: Int,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
@@ -233,6 +241,8 @@ private fun MessageBubble(
                 onCancel,
                 onCardAction,
                 onLongPress = openMenu.takeIf { showsMenu },
+                groupImages = groupImages,
+                groupIndex = groupIndex,
             )
         }
         if (showsTime) {
@@ -249,7 +259,7 @@ private fun MessageBubble(
     }
 }
 
-/** 气泡本身。长按菜单的预览也画这个。 */
+/** 气泡本身。长按菜单的预览也画这个：预览拿不到整条时间线，组参数用默认的“不在一组里”。 */
 @Composable
 fun BubbleSurface(
     message: TimelineMessage,
@@ -261,6 +271,8 @@ fun BubbleSurface(
     onCancel: () -> Unit,
     onCardAction: (Action) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    groupImages: List<ImageContent> = emptyList(),
+    groupIndex: Int = 0,
 ) {
     val colors = WontonTheme.colors
     val isOwn = message.isOwn
@@ -279,7 +291,16 @@ fun BubbleSurface(
                 LocalContentColor provides content.toColor(),
                 LocalTextStyle provides WontonTheme.typography.body,
             ) {
-                MessageBody(message.body, core, message.sendState, reserve, onCardAction, onLongPress)
+                MessageBody(
+                    message.body,
+                    core,
+                    message.sendState,
+                    reserve,
+                    onCardAction,
+                    onLongPress,
+                    groupImages,
+                    groupIndex,
+                )
             }
         }
     }
@@ -396,11 +417,13 @@ private fun MessageBody(
     trailingReserve: String?,
     onCardAction: (Action) -> Unit,
     onLongPress: (() -> Unit)? = null,
+    groupImages: List<ImageContent> = emptyList(),
+    groupIndex: Int = 0,
 ) {
     when (body) {
         is MessageContent.Text -> TextMessageBody(body.blocks, body.files, core, trailingReserve)
         is MessageContent.Image -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            MessageImage(body.image, core, sendState, onLongPress)
+            MessageImage(body.image, core, sendState, groupImages, groupIndex, onLongPress)
             // 一次发送里主人写的字是最后一张照片的说明文字（ADR-0094），画在照片下面。
             body.image.caption?.let { caption -> TextMessageBody(caption.blocks, emptyList(), core) }
         }

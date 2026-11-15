@@ -27,6 +27,7 @@
     <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
     <string name="message_quote_other">一条消息</string>
     <string name="message_image_save_failed">没能保存到相册</string>
+    <string name="message_image_position">第 %1$d 张，共 %2$d 张</string>
     <string name="message_image_share_failed">没能分享这张图片</string>
     <string name="message_summary_redacted">[已撤回]</string>
     <string name="message_link_open_failed">无法打开这个链接</string>

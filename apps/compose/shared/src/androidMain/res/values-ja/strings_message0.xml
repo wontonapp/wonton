@@ -27,6 +27,7 @@
     <!-- Short stand-in in a quote for a message type with no text, like an approval card. Android only. -->
     <string name="message_quote_other">メッセージ</string>
     <string name="message_image_save_failed">アルバムに保存できませんでした</string>
+    <string name="message_image_position">%2$d枚のうち%1$d枚目</string>
     <string name="message_image_share_failed">画像を共有できませんでした</string>
     <string name="message_summary_redacted">[削除されたメッセージ]</string>
     <string name="message_link_open_failed">このリンクを開けませんでした</string>

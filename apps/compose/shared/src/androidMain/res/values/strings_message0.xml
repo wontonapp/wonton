@@ -24,6 +24,8 @@
     <string name="message_image_share_failed">Couldn\'t share this picture</string>
     <!-- Notice when saving the picture into the gallery failed. Android only. -->
     <string name="message_image_save_failed">Couldn\'t save to the gallery</string>
+    <!-- Read-screen description of the picture position in a group, shown as "2/3". Android only. -->
+    <string name="message_image_position">%1$d of %2$d pictures</string>
     <!-- Screen-reader label of the cross that stops replying above the composer. Android only. -->
     <string name="message_reply_cancel">Stop replying</string>
     <!-- Short stand-in for a quoted message type that can be shown but has nothing to summarize. Android only. -->

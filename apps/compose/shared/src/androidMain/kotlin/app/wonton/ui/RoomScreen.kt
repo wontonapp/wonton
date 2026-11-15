@@ -635,6 +635,10 @@ private fun Messages(
                 if (item.isBlankAgentRun) return@itemsIndexed
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
                 val joinsNext = newestFirst.getOrNull(index - 1)?.joins(item) == true
+                // 这条消息所在一组的图片（ADR-0094）：查看器要左右翻整组。只给图片消息算。
+                val group = (item.content as? TimelineContent.Message)
+                    ?.takeIf { it.message.body is MessageContent.Image }
+                    ?.let { imageGroup(newestFirst, index) }
                 Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
                     TimelineItemView(
                         item,
@@ -642,6 +646,8 @@ private fun Messages(
                         showsSender,
                         joinsPrevious,
                         joinsNext,
+                        groupImages = group?.first.orEmpty(),
+                        groupIndex = group?.second ?: 0,
                         onRetry = { onAction(Action.Timeline(TimelineAction.RetrySend(target, item.id))) },
                         onCancel = { onAction(Action.Timeline(TimelineAction.CancelSend(target, item.id))) },
                         onCardAction = onAction,
