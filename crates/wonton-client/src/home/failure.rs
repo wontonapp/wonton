@@ -266,13 +266,16 @@ pub(super) fn pairing(
     PairingStatus::Failed {
         reason,
         message: pairing_message(pairing_reason_key(error, bind_failed), elapsed, limit, lang),
-        diagnostic: Some(l10n!(
-            CATALOG,
-            lang,
-            "home-pairing-diagnostic",
-            addresses = format!("{:?}", code.direct_addrs),
-            relays = redact(code, &relays),
-            error = redact(code, &diagnostic(error, lang))
+        diagnostic: Some(redact(
+            code,
+            &l10n!(
+                CATALOG,
+                lang,
+                "home-pairing-diagnostic",
+                addresses = format!("{:?}", code.direct_addrs),
+                relays = relays,
+                error = diagnostic(error, lang)
+            ),
         )),
     }
 }

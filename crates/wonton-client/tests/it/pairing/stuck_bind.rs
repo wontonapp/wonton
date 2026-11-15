@@ -4,6 +4,8 @@
 use std::time::Duration;
 
 use wonton_client::{HomeStatus, PairingFailure, PairingStatus};
+use wonton_tunnel::pair::PairingCode;
+use wonton_tunnel::relays::{Relay, RelayToken};
 
 use super::{Home, Phone};
 use crate::home::support::Gate;
@@ -23,7 +25,17 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
     phone.test_set_bind_hook(Some(gate.hook()));
     // 看门线程等得比测试还久：失败只能来自绑定自己那一段时限，证明绑定卡住时计时器照常在走。
     phone.test_set_pair_deadlines(SHORT, NEVER);
-    phone.pair(&home_side.code(None)).unwrap();
+    let mut code = PairingCode::parse(&home_side.code(None)).unwrap();
+    code.direct_addrs = vec![
+        "192.0.2.10:18482".parse().unwrap(),
+        "198.51.100.42:27519".parse().unwrap(),
+    ];
+    code.relays.push(Relay {
+        url: "https://relay.example.com/".parse().unwrap(),
+        token: Some(RelayToken::new("18482")),
+        tier: 0,
+    });
+    phone.pair(&code.to_uri()).unwrap();
     assert!(matches!(
         phone.home().pairing,
         Some(PairingStatus::InProgress { .. })
@@ -45,6 +57,16 @@ async fn a_bind_that_never_returns_fails_at_the_bind_deadline() {
     assert!(!message.contains("endpoint binding"), "{message}");
     assert_eq!(phone.home().status, HomeStatus::NotConfigured);
     gate.open();
+    assert!(
+        !message.contains("18482"),
+        "relay token leaked in the summary"
+    );
+    assert!(diagnostic.contains("192.0.2.10:"));
+    assert!(diagnostic.contains("198.51.100.42:27519"));
+    assert!(
+        !diagnostic.contains("18482"),
+        "relay token leaked in diagnostics"
+    );
 }
 
 #[tokio::test]
