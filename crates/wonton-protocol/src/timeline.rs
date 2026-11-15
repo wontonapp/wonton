@@ -564,44 +564,13 @@ mod tests {
             item(
                 "3",
                 message(
-                    MessageContent::Image {
-                        image: ImageContent {
-                            media: media.clone(),
-                            thumbnail: Some(media.clone()),
-                            filename: "cat.jpg".into(),
-                            mime_type: Some("image/jpeg".into()),
-                            size: Some(4096),
-                            width: Some(640),
-                            height: Some(480),
-                            caption: Some(ImageCaption {
-                                body: "哪张好看".into(),
-                                blocks: Vec::new(),
-                            }),
-                        },
-                    },
+                    sample_image(media.clone()),
                     SendState::Sending {
                         progress: Some(0.5),
                     },
                 ),
             ),
-            item(
-                "3a",
-                message(
-                    MessageContent::File {
-                        file: FileAttachment {
-                            media: media.clone(),
-                            filename: "2025-报税表.pdf".into(),
-                            mime_type: Some("application/pdf".into()),
-                            size: Some(262_144),
-                            caption: Some(ImageCaption {
-                                body: "上个月的账单".into(),
-                                blocks: Vec::new(),
-                            }),
-                        },
-                    },
-                    SendState::Sent,
-                ),
-            ),
+            item("3a", message(sample_file(media.clone()), SendState::Sent)),
             item(
                 "4",
                 message(
@@ -653,6 +622,41 @@ mod tests {
                 },
             ),
         ]
+    }
+
+    /// 图片样例：有缩略图和说明。
+    fn sample_image(media: MediaHandle) -> MessageContent {
+        MessageContent::Image {
+            image: ImageContent {
+                thumbnail: Some(media.clone()),
+                filename: "cat.jpg".into(),
+                mime_type: Some("image/jpeg".into()),
+                size: Some(4096),
+                width: Some(640),
+                height: Some(480),
+                caption: Some(ImageCaption {
+                    body: "哪张好看".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
+    }
+
+    /// 文件样例：带 MIME、大小和说明。
+    fn sample_file(media: MediaHandle) -> MessageContent {
+        MessageContent::File {
+            file: FileAttachment {
+                filename: "2025-报税表.pdf".into(),
+                mime_type: Some("application/pdf".into()),
+                size: Some(262_144),
+                caption: Some(ImageCaption {
+                    body: "上个月的账单".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
     }
 
     /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。

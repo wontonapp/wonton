@@ -36,6 +36,7 @@ import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.File
 import app.wonton.ui.icons.WontonIcon
 import java.io.IOException
+import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -67,7 +68,11 @@ fun MessageFileCard(file: FileAttachment, core: ClientCore, onLongPress: (() -> 
                 problem = Problem(title = failure.message ?: failure.toString())
                 null
             }
-            if (path != null) after(path)
+            if (path != null) {
+                // 记住本地路径：再点直接打开，分享入口出现。
+                local = path
+                after(path)
+            }
             loading = false
         }
     }
@@ -154,10 +159,10 @@ private fun FileGlyph(loading: Boolean) {
 private suspend fun downloadToShare(context: Context, core: ClientCore, file: FileAttachment, media: String): String =
     withContext(Dispatchers.IO) {
         val bytes = core.loadMedia(file.media)
-        // MediaHandle.token 对同一媒体唯一，拿它当缓存子目录：不同消息同名文件不互相覆盖。token 不写日志。
+        // 目录名是完整句柄的 SHA-256：Ruma 序列化的媒体来源（加密附件带密钥材料）能超过文件系统单段名
+        // 255 字节上限，原样进路径落不了盘；哈希定长、不含密钥材料。
         val root = java.io.File(context.cacheDir, "share")
-        val dir = java.io.File(root, media.takeLastWhile { it != '/' }.ifEmpty { "media" })
-            .apply { mkdirs() }
+        val dir = java.io.File(root, cacheKey(media)).apply { mkdirs() }
         // 文件系统单段名上限 255：超长的名字保扩展名截断，其他 App 靠扩展名认类型。
         val full = galleryName(file.filename, file.mimeType)
         val dot = full.lastIndexOf('.')
@@ -176,3 +181,8 @@ private suspend fun downloadToShare(context: Context, core: ClientCore, file: Fi
         }
         target.path
     }
+
+/** 缓存目录名：完整句柄的 SHA-256，64 个十六进制字符。同一媒体恒定，不同媒体（含同名文件）互不覆盖。 */
+private fun cacheKey(media: String): String =
+    MessageDigest.getInstance("SHA-256").digest(media.toByteArray())
+        .joinToString("") { "%02x".format(it) }

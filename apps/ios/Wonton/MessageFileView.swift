@@ -1,3 +1,4 @@
+import CryptoKit
 import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
@@ -92,7 +93,12 @@ struct MessageFileBody: View {
         Task {
             do {
                 let data = try await core.loadMedia(media: file.media)
-                let url = try Self.temporaryFileURL(filename: file.filename, mimeType: file.mimeType, token: file.media.token, data: data)
+                let url = try Self.temporaryFileURL(
+                    filename: file.filename,
+                    mimeType: file.mimeType,
+                    token: file.media.token,
+                    data: data
+                )
                 local = url
                 handle(url)
             } catch {
@@ -111,13 +117,20 @@ struct MessageFileBody: View {
            let type = UTType(mimeType: mime), let ext = type.preferredFilenameExtension {
             name += "." + ext
         }
-        // token 对同一媒体唯一，放各自的子目录里：不同消息同名文件不互相覆盖，也不会打开到别的消息的内容。
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("files", isDirectory: true)
-            .appendingPathComponent(token, isDirectory: true)
+        // 目录名是完整句柄的 SHA-256：Ruma 序列化的媒体来源（加密附件带密钥材料）能超过文件系统单段名
+        // 255 字节上限，原样进路径落不了盘；哈希定长、不含密钥材料，同一媒体恒定，不同媒体不互相覆盖。
+        let dir = cacheDirectory(token: token)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent(name)
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// 文件缓存的目录：完整句柄的 SHA-256，64 个十六进制字符。
+    private static func cacheDirectory(token: String) -> URL {
+        let hex = SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("files", isDirectory: true)
+            .appendingPathComponent(hex, isDirectory: true)
     }
 }
