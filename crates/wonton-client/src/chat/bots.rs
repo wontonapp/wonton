@@ -176,6 +176,14 @@ impl Bots {
 
     pub fn foregrounded(self: &Arc<Self>) {
         self.foreground.send_replace(true);
+        let session = self.session.borrow().clone();
+        // 每次发起都换一代：先前在飞的本人读取即使同一会话也不能再回写。
+        let epoch = {
+            let mut epoch = lock(&self.own_epoch);
+            *epoch = epoch.wrapping_add(1);
+            *epoch
+        };
+        self.refresh_own_private_bot(session, epoch);
         self.refresh_all();
     }
 

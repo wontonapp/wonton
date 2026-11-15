@@ -173,3 +173,65 @@ async fn reused_channel_ignores_a_result_of_the_previous_server() {
     bots.publish_own_private_bot(stale, Ok(own_bot_ready()));
     assert_eq!(watch.borrow_and_update().own_private_bot, None);
 }
+
+fn own_bot_problem() -> wonton_protocol::OwnBotProblem {
+    wonton_protocol::OwnBotProblem {
+        category: wonton_protocol::OwnBotFailure::TransportUnavailable,
+        kind: None,
+        status: None,
+        detail: "传输不可用".into(),
+    }
+}
+
+#[tokio::test]
+async fn foregrounded_reissues_the_own_bot_read_and_clears_a_stale_problem() {
+    let chat = rig().0;
+    let mut watch = chat.bots.view.subscribe();
+    let initial_epoch = *crate::chat::lock(&chat.bots.own_epoch);
+    chat.bots
+        .publish_own_private_bot(initial_epoch, Err(own_bot_problem()));
+    assert!(watch.borrow_and_update().own_private_bot_problem.is_some());
+
+    chat.bots.foregrounded();
+    let retry_epoch = *crate::chat::lock(&chat.bots.own_epoch);
+    assert!(retry_epoch > initial_epoch);
+    chat.bots
+        .publish_own_private_bot(retry_epoch, Ok(own_bot_ready()));
+    let view = watch.borrow_and_update();
+    assert!(view.own_private_bot_problem.is_none());
+    assert!(matches!(
+        view.own_private_bot,
+        Some(wonton_protocol::OwnPrivateBotView::Ready { .. })
+    ));
+
+    let current = *crate::chat::lock(&chat.bots.own_epoch);
+    assert_eq!(current, retry_epoch);
+}
+
+#[tokio::test]
+async fn a_result_left_over_from_the_previous_foreground_cannot_write_back() {
+    let chat = rig().0;
+    let mut watch = chat.bots.view.subscribe();
+    let before = *crate::chat::lock(&chat.bots.own_epoch);
+    chat.bots.foregrounded();
+    chat.bots
+        .publish_own_private_bot(before, Ok(own_bot_ready()));
+    let view = watch.borrow_and_update();
+    assert!(view.own_private_bot.is_none());
+    assert!(view.own_private_bot_problem.is_none());
+}
+
+#[tokio::test]
+async fn foregrounded_without_a_session_clears_both_own_bot_slots() {
+    let chat = rig().0;
+    let mut watch = chat.bots.view.subscribe();
+    let epoch = *crate::chat::lock(&chat.bots.own_epoch);
+    chat.bots
+        .publish_own_private_bot(epoch, Ok(own_bot_ready()));
+    assert!(watch.borrow_and_update().own_private_bot.is_some());
+
+    chat.bots.foregrounded();
+    let view = watch.borrow_and_update();
+    assert!(view.own_private_bot.is_none());
+    assert!(view.own_private_bot_problem.is_none());
+}
