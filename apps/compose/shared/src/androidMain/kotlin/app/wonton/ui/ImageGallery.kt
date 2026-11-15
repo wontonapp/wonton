@@ -92,7 +92,8 @@ private val BMP_SIGNATURE = intArrayOf(0x42, 0x4D)
 /** 相册条目和缓存文件的名字：只留最后一个路径段和文件名里合法的字符，没有扩展名时按 MIME 补上。 */
 fun galleryName(filename: String, mime: String?): String {
     val base = filename.substringAfterLast('/').substringAfterLast('\\')
-        .replace(ILLEGAL_NAME_CHARS, "").trim().ifEmpty { "wonton-image" }
+        .replace(ILLEGAL_NAME_CHARS, "").trim()
+        .takeUnless { it.isEmpty() || it == "." || it == ".." } ?: "wonton-image"
     val extension = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }
     return when {
         base.contains('.') -> base

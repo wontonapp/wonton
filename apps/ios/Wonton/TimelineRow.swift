@@ -318,6 +318,9 @@ private struct MessageBubble: View {
                     TextMessageBody(blocks: caption.blocks, ink: textColor, files: [])
                 }
             }
+        case let .file(file):
+            // token 变了就是另一份媒体：换掉视图身份，状态（已下载路径、错误）跟着重来，不会显示新名打开旧内容。
+            MessageFileBody(file: file, core: core).id(file.media.token)
         case let .confirmation(view):
             ConfirmationCardView(
                 view: view,
