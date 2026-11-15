@@ -79,8 +79,13 @@ impl Patterns {
         if value.is_empty() || self.exhausted.is_some() {
             return;
         }
-        // 去重在超长判定之前：同样是超长值的重复，第一次已置耗尽，重排不影响语义。
-        if self.list.iter().any(|pattern| pattern.value == value) {
+        // 去重键含 form，在超长判定之前：同一个值来自 query 和 token 时两种写法都要留。
+        // 超长值的重复在第一次已置耗尽，重排不影响语义。
+        if self
+            .list
+            .iter()
+            .any(|pattern| pattern.value == value && pattern.form == form)
+        {
             return;
         }
         // 先数后扩：超长取值不在长度检查前展开逐字符写法。字节数不足字符数上限时免扫。

@@ -344,3 +344,85 @@ async fn assert_decoding_over_budget() {
     assert_absent(&diagnostic, &log, &["frag-over707", "query-over707"]);
     assert!(log.contains("[redacted: excessive percent encoding layers]"));
 }
+
+#[test]
+fn duplicate_values_keep_both_matching_forms_regardless_of_relay_order() {
+    const CHILD: &str = "WONTON_DUPLICATE_FORM_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pairing::invalid_details::duplicate_values_keep_both_matching_forms_regardless_of_relay_order",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated duplicate form test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(assert_duplicate_forms());
+}
+
+async fn assert_duplicate_forms() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("pairing.log");
+    wonton_client::init_logging(
+        "wonton_client::home::pairing=info".to_owned(),
+        Some(log_path.to_string_lossy().into_owned()),
+    );
+    let phone = Phone::open(dir.path());
+    let home = Home::start().await;
+    let mut code =
+        PairingCode::parse(&home.code(Some(wonton_tunnel::pair::RejectReason::Expired))).unwrap();
+    // token 在前：query 同值需要留下自己的表单匹配。
+    code.relays.push(Relay {
+        url: "https://relay.example.com/".parse().unwrap(),
+        token: Some(RelayToken::new("dupe space707")),
+        tier: 0,
+    });
+    code.relays.push(Relay {
+        url: "https://relay.example.com/?access_token=dupe%20space707"
+            .parse()
+            .unwrap(),
+        token: None,
+        tier: 1,
+    });
+    // query 在前：反向顺序同样要命中。
+    code.relays.push(Relay {
+        url: "https://relay.example.com/?access_token=dupe2%20space707"
+            .parse()
+            .unwrap(),
+        token: None,
+        tier: 2,
+    });
+    code.relays.push(Relay {
+        url: "https://relay.example.com/".parse().unwrap(),
+        token: Some(RelayToken::new("dupe2 space707")),
+        tier: 3,
+    });
+    let issued = code.to_uri();
+    *home.codes.refusal_message.lock().unwrap() = Some(format!(
+        "Expired: {issued} dupe+space707 and dupe2+space707 end"
+    ));
+    phone.pair(&issued).unwrap();
+    let view = phone
+        .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
+        .await;
+    let Some(PairingStatus::Failed { diagnostic, .. }) = view.pairing else {
+        unreachable!()
+    };
+    let diagnostic = diagnostic.expect("拒绝诊断仍然保留");
+    let log = std::fs::read_to_string(&log_path).unwrap();
+    assert_absent(&diagnostic, &log, &["dupe+space707", "dupe2+space707"]);
+    assert!(log.contains(" and "), "{log}");
+}

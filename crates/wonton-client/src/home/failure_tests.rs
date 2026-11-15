@@ -214,3 +214,12 @@ fn overlong_values_are_counted_before_spellings_are_built() {
         "超长取值应在展开前被拒绝：计数 {counted:?}，展开 {expanded:?}"
     );
 }
+
+#[test]
+fn hex_case_variants_of_one_value_share_a_single_pattern() {
+    let mut patterns = Patterns::default();
+    add_decoded(&mut patterns, "a%2Db", true);
+    add_decoded(&mut patterns, "a%2db", true);
+    assert_eq!(patterns.list.len(), 1);
+    assert_eq!(redact_patterns("a-b", &patterns), REDACTED);
+}
