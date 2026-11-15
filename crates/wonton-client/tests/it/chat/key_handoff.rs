@@ -461,7 +461,8 @@ async fn an_old_phone_without_complete_keys_does_not_accept() {
     assert_without_keys(&new);
 }
 
-/// 取消在哪边点的都如实报出来，新手机仍在交接；“手边没有别的设备”才结束交接、回到恢复密钥，重启后也不再交接。
+/// 取消在哪边点的都如实报出来，新手机仍在交接；“手边没有别的设备”才结束交接、回到恢复密钥，重启后也不再交接，
+/// 还是同一槽位、同一台 Matrix 设备，不再要登录令牌。
 #[tokio::test(flavor = "multi_thread")]
 #[ignore = "需要 Docker，用 --include-ignored 运行"]
 async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
@@ -474,7 +475,14 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
 
     let code = invite(&old).await;
     pair(&new, code);
-    new.signed_in().await;
+    let (user_id, device_id) = new.signed_in().await;
+    let slot_id = new
+        .servers()
+        .servers
+        .iter()
+        .find(|row| row.current)
+        .map(|row| row.id.clone())
+        .unwrap();
     let flow_id = both_compare(&old, &new).await;
     old.dispatch(Action::Chat {
         action: wonton_protocol::ChatAction::CancelDeviceVerification {
@@ -514,13 +522,31 @@ async fn cancelling_keeps_the_handoff_until_the_owner_has_no_other_device() {
         Err(wonton_client::CoreError::InvalidInput { .. })
     ));
 
+    let tokens_before_restart = home.login_tokens();
+    new.test_shut_down().await;
     drop(new);
     let new = Phone::open(new_dir.path());
-    new.signed_in().await;
+    let (restored_user, restored_device) = new.signed_in().await;
     new.wait_chat("重启后照旧提示恢复密钥", |view| {
         (view.encryption.backup_reminder == Some(BackupReminder::EnterRecoveryKey)).then_some(())
     })
     .await;
+    assert_eq!(restored_user, user_id, "重启后应是同一个用户");
+    assert_eq!(restored_device, device_id, "重启后应是同一台设备");
+    assert_eq!(
+        new.servers()
+            .servers
+            .iter()
+            .find(|row| row.current)
+            .map(|row| row.id.clone()),
+        Some(slot_id),
+        "重启后应是同一槽位"
+    );
+    assert_eq!(
+        home.login_tokens(),
+        tokens_before_restart,
+        "恢复会话不应再要登录令牌"
+    );
     assert_eq!(new.chat().encryption.key_handoff, None);
 }
 
