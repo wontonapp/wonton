@@ -28,7 +28,6 @@ pub(crate) mod preview;
 mod routing;
 pub(in crate::plugin) use bot_cleanup::BotRemovalRecovery;
 pub(crate) use install::DependencyInstall;
-mod handoff;
 mod lifecycle;
 mod provider_token;
 mod rollback;
@@ -49,6 +48,8 @@ pub(crate) enum CapabilityAccessError {
 pub(crate) struct CapabilityRoute {
     pub provider: PluginId,
     pub endpoint: Endpoint,
+    /// 按哪个 Bot 选的提供方；转发时不再用，测试靠它核对 Bot 级别的路由。
+    #[cfg_attr(not(test), allow(dead_code))]
     pub bot: Option<BotRef>,
 }
 
