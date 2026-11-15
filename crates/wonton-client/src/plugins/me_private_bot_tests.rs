@@ -283,3 +283,39 @@ async fn unavailable_transport_is_not_treated_as_an_absent_bot() {
     assert_eq!(problem.kind, None);
     assert!(!problem.detail.contains("@mia:test"));
 }
+
+fn bot_ref(plugin_id: &str, bot: &str) -> BotRef {
+    BotRef {
+        plugin_id: plugin_id.into(),
+        bot: bot.into(),
+    }
+}
+
+#[test]
+fn bot_ref_plugin_id_stops_at_sixty_three_bytes() {
+    let label = "a".repeat(61);
+    assert!(valid_bot_ref(&bot_ref(&format!("x.{label}"), "mia")));
+    assert!(!valid_bot_ref(&bot_ref(
+        &format!("x.{}", "a".repeat(62)),
+        "mia"
+    )));
+}
+
+#[test]
+fn bot_ref_needs_two_nonempty_labels_and_lowercase_ascii() {
+    assert!(valid_bot_ref(&bot_ref("app.whoami", "mia-bot-2")));
+    assert!(!valid_bot_ref(&bot_ref("whoami", "mia")));
+    assert!(!valid_bot_ref(&bot_ref("app..whoami", "mia")));
+    assert!(!valid_bot_ref(&bot_ref("App.whoami", "mia")));
+    assert!(!valid_bot_ref(&bot_ref("app.who_ami", "mia")));
+    assert!(!valid_bot_ref(&bot_ref("app.-whoami", "mia")));
+    assert!(!valid_bot_ref(&bot_ref("app.whoami-", "mia")));
+}
+
+#[test]
+fn bot_ref_bot_name_stops_at_thirty_two_bytes() {
+    assert!(valid_bot_ref(&bot_ref("app.whoami", &"a".repeat(32))));
+    assert!(!valid_bot_ref(&bot_ref("app.whoami", &"a".repeat(33))));
+    assert!(!valid_bot_ref(&bot_ref("app.whoami", "")));
+    assert!(!valid_bot_ref(&bot_ref("app.whoami", "-mia")));
+}
