@@ -123,7 +123,12 @@ fn rejection_code(home: &Home) -> Rejection {
     // 合法取值各自只出现一种写法：JSON 转义的 `/` 与 `-`、两层百分号后再转义、解码后的 URL 分量。
     let json_token = "json-relay/707";
     let typed_token = "mix/707";
-    for (token, tier) in [(json_token, 3), (typed_token, 4)] {
+    for (token, tier) in [
+        (json_token, 3),
+        (typed_token, 4),
+        ("\u{1F600}", 7),
+        ("pre\u{1F600}post", 8),
+    ] {
         code.relays.push(Relay {
             url: "https://relay.example.com/".parse().unwrap(),
             token: Some(RelayToken::new(token)),
@@ -133,6 +138,7 @@ fn rejection_code(home: &Home) -> Rejection {
     for (url, tier) in [
         ("https://relay.example.com/#frag%2D707", 5),
         ("https://relay.example.com/?access_token=query%252D707", 6),
+        ("https://relay.example.com/#frag%20space-preserve707", 9),
     ] {
         code.relays.push(Relay {
             url: url.parse().unwrap(),
@@ -186,6 +192,11 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
         variants.join(" "),
         r#"{"token":"json\u002Drelay\/707"} mix%255Cu002F707 frag-707 query-707 {"token":"relay+example"} ?access_token=query-canary-707"#
     ));
+    let mut message = home.codes.refusal_message.lock().unwrap().take().unwrap();
+    message.push_str(
+        r#" {"e":"\uD83D\uDE00"} {"e":"\uD83d\uDe00"} pre\uD83D\uDE00post {"e":"\uD83D\uDE01"} pre\uD83DXuDE00post frag+space-preserve707 end"#,
+    );
+    *home.codes.refusal_message.lock().unwrap() = Some(message);
     phone.pair(&issued).unwrap();
     let view = phone
         .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
@@ -223,8 +234,18 @@ async fn assert_server_rejection(phone: &Phone, log_path: &std::path::Path) {
             "mix%255Cu002F707",
             "frag-707",
             "query-707",
+            r"\uD83D\uDE00",
+            r"\uD83d\uDe00",
         ],
     );
+    // 对照：另一个 emoji、非法代理对（缺第二个 `\`）、fragment 里保留的 `+` 不被误遮。
+    for kept in [
+        "frag+space-preserve707",
+        r"pre\uD83DXuDE00post",
+        r"\uD83D\uDE01",
+    ] {
+        assert!(log.contains(kept), "{kept} was wrongly redacted: {log}");
+    }
     assert_redacted(&message, &issued, &secret, &variants);
     assert_redacted(&diagnostic, &issued, &secret, &variants);
     assert!(log.contains("the home server rejected pairing"));
@@ -250,4 +271,76 @@ fn assert_redacted(text: &str, issued: &str, secret: &str, variants: &[&str]) {
     for value in variants {
         assert!(!text.contains(value), "relay token leaked");
     }
+}
+
+#[test]
+fn decoded_values_beyond_the_layer_budget_redact_the_whole_text() {
+    const CHILD: &str = "WONTON_DEEP_DECODE_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "pairing::invalid_details::decoded_values_beyond_the_layer_budget_redact_the_whole_text",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated deep decoding test failed:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        return;
+    }
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(assert_decoding_over_budget());
+}
+
+async fn assert_decoding_over_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let log_path = dir.path().join("pairing.log");
+    wonton_client::init_logging(
+        "wonton_client::home::pairing=info".to_owned(),
+        Some(log_path.to_string_lossy().into_owned()),
+    );
+    let phone = Phone::open(dir.path());
+    let home = Home::start().await;
+    let mut code =
+        PairingCode::parse(&home.code(Some(wonton_tunnel::pair::RejectReason::Expired))).unwrap();
+    for (url, tier) in [
+        ("https://relay.example.com/#frag%2525252Dover707", 0),
+        (
+            "https://relay.example.com/?access_token=query%252525252Dover707",
+            1,
+        ),
+    ] {
+        code.relays.push(Relay {
+            url: url.parse().unwrap(),
+            token: None,
+            tier,
+        });
+    }
+    let issued = code.to_uri();
+    *home.codes.refusal_message.lock().unwrap() =
+        Some(format!("Expired: {issued} frag-over707 query-over707"));
+    phone.pair(&issued).unwrap();
+    let view = phone
+        .wait_for(|view| matches!(view.pairing, Some(PairingStatus::Failed { .. })))
+        .await;
+    let Some(PairingStatus::Failed { diagnostic, .. }) = view.pairing else {
+        unreachable!()
+    };
+    let diagnostic = diagnostic.expect("拒绝诊断仍然保留");
+    let log = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        diagnostic.contains("[redacted: excessive sensitive patterns]"),
+        "{diagnostic}"
+    );
+    assert_absent(&diagnostic, &log, &["frag-over707", "query-over707"]);
+    assert!(log.contains("[redacted: excessive sensitive patterns]"));
 }

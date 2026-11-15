@@ -41,25 +41,57 @@ pub(super) fn diagnostic(error: &TunnelError, lang: Lang) -> String {
 }
 
 const REDACTED: &str = "[redacted]";
+const OVERFLOW: &str = "[redacted: excessive percent encoding]";
+const CROWDED: &str = "[redacted: excessive sensitive patterns]";
 const DECODE_WORK_FACTOR: usize = 16;
-/// 配置端取值的解码层数上限：敏感值本身不再变化时提前收手。
+/// 配置端取值的解码层数上限：敏感值本身不再变化时提前收手；用完仍可解则整段遮蔽。
 const URL_DECODE_LAYERS: usize = 3;
+/// 匹配模式的条数和单个取值的字符数上限，超限同样整段遮蔽。
+const MAX_PATTERNS: usize = 128;
+const MAX_PATTERN_CHARS: usize = 512;
 
 /// 一个敏感值的匹配视图：逐字符列出它可能被写成的字节写法（原文、`%XX`/JSON 层的解码目标、JSON 转义）。
-type Pattern = Vec<Vec<Vec<u8>>>;
+#[derive(PartialEq)]
+struct Pattern {
+    chars: Vec<Vec<Vec<u8>>>,
+    /// 出自 query 的值按表单规则匹配：正文的 `+` 也可以对应空格。
+    form: bool,
+}
+
+#[derive(Default)]
+struct Patterns {
+    list: Vec<Pattern>,
+    /// 已用尽层数、条数或长度，模式不完整：调用方整段遮蔽。
+    exhausted: bool,
+}
+
+impl Patterns {
+    fn add(&mut self, value: &str, form: bool) {
+        if value.is_empty() || self.exhausted {
+            return;
+        }
+        let chars: Vec<_> = value.chars().map(spellings).collect();
+        if chars.len() > MAX_PATTERN_CHARS {
+            self.exhausted = true;
+            return;
+        }
+        let pattern = Pattern { chars, form };
+        if self.list.contains(&pattern) {
+            return;
+        }
+        if self.list.len() >= MAX_PATTERNS {
+            self.exhausted = true;
+            return;
+        }
+        self.list.push(pattern);
+    }
+}
 
 #[derive(Clone, Copy)]
 struct SourceByte {
     byte: u8,
     start: usize,
     end: usize,
-}
-
-fn add_pattern(patterns: &mut Vec<Pattern>, value: &str) {
-    if value.is_empty() {
-        return;
-    }
-    patterns.push(value.chars().map(spellings).collect());
 }
 
 fn hex_case_variants(upper: &str) -> Vec<Vec<u8>> {
@@ -98,71 +130,85 @@ fn spellings(character: char) -> Vec<Vec<u8>> {
     if let Some(short) = short {
         spellings.push(short.as_bytes().to_vec());
     }
-    // 任意字符都可能被写成 `\uXXXX`；星平面字符是两个码元的代理对。
-    for unit in character.encode_utf16(&mut [0u16; 2]) {
-        spellings.push(format!("\\u{unit:04X}").into_bytes());
-        for variant in hex_case_variants(&format!("\\u{unit:04X}")) {
-            spellings.push(variant);
-        }
+    // 任意字符都可能被写成 `\uXXXX`；星平面字符是完整的一对代理码元，拆开不是合法写法。
+    let mut units = [0u16; 2];
+    let units = character.encode_utf16(&mut units);
+    let escape = match *units {
+        [unit] => format!("\\u{unit:04X}"),
+        [high, low] => format!("\\u{high:04X}\\u{low:04X}"),
+        _ => unreachable!(),
+    };
+    for variant in hex_case_variants(&escape) {
+        spellings.push(variant);
     }
     spellings
 }
 
 /// 把配置端取值按它所在 URL 分量的规则再解几层，正文字面回显这些解码值时也能命中。
-fn add_decoded(patterns: &mut Vec<Pattern>, value: &str) {
+fn add_decoded(patterns: &mut Patterns, value: &str, form: bool) {
     let mut current = value.to_owned();
     for _ in 0..URL_DECODE_LAYERS {
+        if patterns.exhausted {
+            return;
+        }
         let Ok(decoded) = percent_encoding::percent_decode_str(&current).decode_utf8() else {
             return;
         };
         if decoded == current {
             return;
         }
-        add_pattern(patterns, &decoded);
+        patterns.add(&decoded, form);
         current = decoded.into_owned();
+    }
+    // 预算用尽后还能再解：更深的回显没有模式，交给整段遮蔽。
+    if percent_encoding::percent_decode_str(&current)
+        .decode_utf8()
+        .is_ok_and(|deeper| deeper != current)
+    {
+        patterns.exhausted = true;
     }
 }
 
-fn sensitive_patterns(relays: &[Relay], secret: Option<&str>) -> Vec<Pattern> {
-    let mut patterns = Vec::new();
+fn sensitive_patterns(relays: &[Relay], secret: Option<&str>) -> Patterns {
+    let mut patterns = Patterns::default();
     if let Some(secret) = secret {
-        add_pattern(&mut patterns, secret);
+        patterns.add(secret, false);
     }
     for relay in relays {
         let url = relay.url.as_str();
         let address = url.split(['?', '#']).next().unwrap_or_default();
         let suffix = &url[address.len()..];
         if suffix.len() > 1 {
-            add_pattern(&mut patterns, suffix);
+            patterns.add(suffix, false);
         }
         if let Some(query) = relay.url.query() {
-            add_pattern(&mut patterns, query);
+            patterns.add(query, true);
             for part in query.split('&') {
                 if let Some((_, value)) = part.split_once('=') {
-                    add_pattern(&mut patterns, value);
+                    patterns.add(value, true);
                     // 查询分量按表单规则解码：`+` 是空格。
-                    add_decoded(&mut patterns, &value.replace('+', " "));
+                    add_decoded(&mut patterns, &value.replace('+', " "), true);
                 }
             }
             for (_, value) in relay.url.query_pairs() {
-                add_pattern(&mut patterns, &value);
-                add_decoded(&mut patterns, &value);
+                patterns.add(&value, true);
+                add_decoded(&mut patterns, &value, true);
             }
         }
         if let Some(fragment) = relay.url.fragment() {
-            add_pattern(&mut patterns, fragment);
+            patterns.add(fragment, false);
             // 片段按片段规则解码：`+` 不是空格。
-            add_decoded(&mut patterns, fragment);
+            add_decoded(&mut patterns, fragment, false);
         }
         if let Some(token) = &relay.token {
-            add_pattern(&mut patterns, token.expose());
+            patterns.add(token.expose(), false);
         }
     }
     patterns
 }
 
-fn byte_matches(actual: u8, expected: u8) -> bool {
-    actual == expected || (actual == b'+' && expected == b' ')
+fn byte_matches(actual: u8, expected: u8, form: bool) -> bool {
+    actual == expected || (form && actual == b'+' && expected == b' ')
 }
 
 /// 从 `start` 起让每个字符命中它的一种写法；成功时返回原文里最后一个命中字节之后的偏移。
@@ -170,7 +216,7 @@ fn match_at(view: &[SourceByte], start: usize, pattern: &Pattern) -> Option<usiz
     let mut stack = vec![(start, 0usize)];
     let mut seen = HashSet::new();
     while let Some((at, step)) = stack.pop() {
-        if step == pattern.len() {
+        if step == pattern.chars.len() {
             return Some(if at == start {
                 view[start].end
             } else {
@@ -180,13 +226,13 @@ fn match_at(view: &[SourceByte], start: usize, pattern: &Pattern) -> Option<usiz
         if !seen.insert((at, step)) {
             continue;
         }
-        for spelling in &pattern[step] {
+        for spelling in &pattern.chars[step] {
             let end = at + spelling.len();
             if end <= view.len()
                 && view[at..end]
                     .iter()
                     .zip(spelling)
-                    .all(|(actual, &expected)| byte_matches(actual.byte, expected))
+                    .all(|(actual, &expected)| byte_matches(actual.byte, expected, pattern.form))
             {
                 stack.push((end, step + 1));
             }
@@ -295,6 +341,10 @@ fn unicode_escape(bytes: &[SourceByte]) -> Option<(Vec<u8>, usize)> {
     };
     let first = unit(1)?;
     let (character, consumed) = if (0xD800..0xDC00).contains(&first) {
+        // 代理对是第二个完整转义，`\`、`u` 缺一不可。
+        if bytes.get(6)?.byte != b'\\' {
+            return None;
+        }
         let second = unit(7)?;
         if !(0xDC00..0xE000).contains(&second) {
             return None;
@@ -313,10 +363,14 @@ fn unicode_escape(bytes: &[SourceByte]) -> Option<(Vec<u8>, usize)> {
     ))
 }
 
-fn redact_patterns(text: &str, patterns: &[Pattern]) -> String {
-    if patterns.is_empty() {
+fn redact_patterns(text: &str, patterns: &Patterns) -> String {
+    if patterns.exhausted {
+        return CROWDED.to_owned();
+    }
+    if patterns.list.is_empty() {
         return text.to_owned();
     }
+    let patterns = patterns.list.as_slice();
     let mut spans = Vec::new();
     let mut bytes: Vec<_> = text
         .bytes()
@@ -350,7 +404,7 @@ fn redact_patterns(text: &str, patterns: &[Pattern]) -> String {
         decoded_once = true;
         work = work.saturating_add(bytes.len());
         if work > text.len().saturating_mul(DECODE_WORK_FACTOR) {
-            return "[redacted: excessive percent encoding]".to_owned();
+            return OVERFLOW.to_owned();
         }
         mark(&next, patterns, &mut spans);
         bytes = next;
