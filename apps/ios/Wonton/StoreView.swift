@@ -239,12 +239,13 @@ struct StoreView: View {
                 model.send(.plugins(action: .installNow(source: item.source)))
             }
         }
-        if version != item.version {
+        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
+        if version != item.version, installed?.source != nil {
+            // 本地装的（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。
             return .get(title: String(localized: .Store.storeUpdate)) {
                 model.send(.plugins(action: .upgradeNow(pluginId: item.id)))
             }
         }
-        let installed = model.viewModel.installed?.plugins.first { $0.id == item.id }
         guard let entry = installed?.entries.first else { return .hidden }
         return .get(title: String(localized: .Store.storeOpen)) { open(entry) }
     }

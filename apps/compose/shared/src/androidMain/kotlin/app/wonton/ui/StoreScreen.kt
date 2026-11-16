@@ -432,7 +432,11 @@ private fun storeButton(item: StoreItem, plugins: PluginsState, navigation: Plug
         ) {
             plugins.send(Action.Plugins(PluginAction.InstallNow(source = item.source)))
         }
-        installed != item.version -> StoreButton.Get(stringResource(R.string.store_update), enabled = true) {
+        // 本地装的（没有来源）核心升不了，不给“更新”：点了只会报“应用没找到”。
+        installed != item.version && plugin?.source != null -> StoreButton.Get(
+            stringResource(R.string.store_update),
+            enabled = true,
+        ) {
             plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = item.id)))
         }
         entry != null -> StoreButton.Get(stringResource(R.string.store_open), enabled = true) { navigation.open(entry) }
