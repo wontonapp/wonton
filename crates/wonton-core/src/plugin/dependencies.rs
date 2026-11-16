@@ -12,7 +12,7 @@ use super::capabilities;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager, PluginStatus};
-use super::manifest::{Manifest, PluginId, PluginKind};
+use super::manifest::{Manifest, ManifestExt, PermissionExt, PluginId, PluginKind};
 use super::provides::ProviderService;
 use super::upstreams::Endpoint;
 
