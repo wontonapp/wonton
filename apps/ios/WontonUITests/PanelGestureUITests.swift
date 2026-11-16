@@ -66,10 +66,9 @@ final class PanelGestureUITests: XCTestCase {
         XCTAssertEqual(app.webViews.count, 0, "收起的面板里网页还在可访问树里\n\(app.debugDescription)")
         XCTAssertFalse(page.exists, "收起的面板里网页的元素还在可访问树里")
 
-        // 再从按钮打开，旁白又摸得到。
-        app.buttons["panelOpen"].tap()
-        XCTAssertTrue(waitLevel("full", timeout: 5), "收起后按钮打不开整页面板")
-        XCTAssertTrue(page.waitForExistence(timeout: 20) && capsuleHittable, "重新打开后网页或胶囊不在可访问树里")
+        // 再从按钮打开，旁白又摸得到。空面板第一下只到 PEEK，交给统一入口拉满。
+        openMainPanel()
+        XCTAssertTrue(page.exists && capsuleHittable, "重新打开后网页或胶囊不在可访问树里")
     }
 
     /// 面板里的网页在放声音（网页播放器）：收起面板不打断它，过一阵再拉开，声音一直在放。

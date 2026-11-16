@@ -10,6 +10,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
@@ -118,13 +119,21 @@ internal fun PanelPage(
     val crossOriginBlocked = !public && page.opensInBrowser
     val openLink = externalLinkOpener { state.problem = it }
     val admitted = access.allowed && !awaitingLogin
+    val loadable = admitted && page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
+    val webView = state.started && supported && loadable
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
-        val loadable = admitted && page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
-        if (state.started && supported && loadable) {
+        if (webView) {
             PageWebView(
                 state, page, home, environmentKey, script.orEmpty(), inset,
                 visible = active, openLink = openLink, onDraft = onDraft, publicPage = public,
             )
+        }
+        // 没有网页框的页（还没连上、加载出错）没有东西转发触摸，露一截时由这层接手翻页。
+        if (panel.level == PanelLevel.PEEK && current && !webView) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
+                touch.observe(event)
+                true
+            })
         }
         BotPageDisclosure(page, active, awaitingLogin, tabs,
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
@@ -166,7 +175,7 @@ private fun PageWebView(
     if (!publicPage) state.controller.permissionHandler = state.media::handle
     PluginWebView(
         url, proxy, page.reload,
-        onLoaded = { state.loadFinished(environment) },
+        onLoaded = { state.loadFinished(environment, scripts = !publicPage) },
         onFailed = state::loadFailed,
         modifier = Modifier.padding(inset),
         darkTheme = environment.dark,

@@ -33,6 +33,10 @@ internal const val PANEL_ROOM_PEEK_FRACTION = 0.45f
 private const val SPRING_DAMPING = 0.86f
 private const val SPRING_STIFFNESS = 340f
 
+/** 整页时移除最后一页就落回 PEEK：没有页面就没有胶囊，留在整页没有出口。收着收空不动。 */
+internal fun levelAfterFeed(level: PanelLevel, hadPages: Boolean, hasPages: Boolean): PanelLevel =
+    if (hadPages && !hasPages && level == PanelLevel.FULL) PanelLevel.PEEK else level
+
 /**
  * 面板的级别、手指拖动和页面数据（ADR-0052）。拉到第几级、手指在哪是壳里的状态，不进核心。
  * 拖动方向以“把面板拉出来”为正：主聊天页往下，房间往上。
@@ -114,11 +118,13 @@ internal class ChatPanelState(
      * 只在没拉开或换了一边时才会被外部改选中：拉开时用户自己翻的页优先。
      */
     fun feed(items: List<PanelItem>, saved: TabRef?) {
+        val next = levelAfterFeed(level, pages.isNotEmpty(), items.isNotEmpty())
         pages = items
         if (level == PanelLevel.CLOSED && saved != null && items.any { it.tab == saved }) {
             selection = saved
         }
         if (selection != null && items.none { it.tab == selection }) selection = items.firstOrNull()?.tab
+        if (next != level) move(next)
     }
 
     /** 拔出第一页：没有选中或已经不在时取第一页。 */

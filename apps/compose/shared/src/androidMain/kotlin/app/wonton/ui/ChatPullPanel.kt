@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -65,6 +66,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.math.sign
 
 private val DOT = 7.dp
 private val DOT_OFFSET = 4.dp
@@ -102,9 +104,6 @@ internal fun ChatPanelHost(
         if (panel.visible) {
             panel.selection?.let { tabs.send(Action.Pages(PageAction.SelectPanelPage(panel.scope, it))) }
         }
-    }
-    LaunchedEffect(panel.pages.isEmpty()) {
-        if (panel.pages.isEmpty() && panel.level == PanelLevel.FULL) panel.move(PanelLevel.PEEK)
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         panel.ready(constraints.maxHeight.toFloat(), with(density) { status.calculateTopPadding().toPx() },
@@ -202,7 +201,12 @@ private fun PanelPager(
             touch.position = { position }
             touch.width = { width }
             touch.flipTo = flipTo
-            touch.flipEnd = { velocity -> settlePage(position - velocity / width * FLIP_PROJECT) }
+            touch.flipEnd = { released, velocity, base ->
+                // 松手事件偶尔改报起点坐标，速度方向会和拖动相反；落页只认拖动方向，速度只加距离。
+                val drag = released - base
+                val direction = if (drag == 0f) -sign(velocity) else sign(drag)
+                settlePage(released + abs(velocity / width * FLIP_PROJECT) * direction)
+            }
         }
         Box(Modifier.fillMaxSize()) {
             pages.forEachIndexed { index, item ->
@@ -218,7 +222,7 @@ private fun PanelPager(
                             active = panel.visible,
                             current = index == chosen,
                             touch = touch,
-                            modifier = Modifier.fillMaxSize().graphicsLayer {
+                            modifier = Modifier.fillMaxSize().zIndex(if (index == chosen) 1f else 0f).graphicsLayer {
                                 translationX = (index - position) * width
                             },
                             onDraft = onDraft,

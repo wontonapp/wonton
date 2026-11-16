@@ -191,16 +191,17 @@ private val publicProfile by lazy(LazyThreadSafetyMode.NONE) {
 
 private data class WebLayer(val profile: String?, val multiProfile: Boolean)
 
-/** 本页该用的 Profile；来源不在本机代理里、或需要 Profile 而系统不支持时返回 null。 */
+/** 本页该用的 Profile；插件页不在本机代理里、公网页不支持多 Profile 时返回 null。 */
 @Composable
-private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?): WebLayer? {
+private fun rememberWebLayer(proxy: ProxySettings?, profileName: String?, publicPage: Boolean): WebLayer? {
     val route = LocalPluginProxy.current
     val account = LocalPluginAccount.current
     val profile = profileName ?: account?.let { pluginProfileName(it) }
     val multiProfile = WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)
-    val onRoute = proxy != null && route?.contains(proxy) == true
+    // 公网页不走本机代理（proxy 为 null），挂在独立的公网 Profile 上；插件页必须在本机代理路由里。
+    val usable = if (publicPage) multiProfile else proxy != null && route?.contains(proxy) == true
     val unsupported = profileName != null && !multiProfile
-    return if (!onRoute || unsupported) {
+    return if (!usable || unsupported) {
         null
     } else {
         WebLayer(profile, multiProfile)
@@ -249,7 +250,7 @@ fun PluginWebView(
         overrideProxy(proxy) { if (active) proxyReady = proxy }
         onDispose { active = false }
     }
-    val layer = rememberWebLayer(proxy, profileName) ?: return
+    val layer = rememberWebLayer(proxy, profileName, publicPage) ?: return
     key(controller, generation, layer.profile) {
         AndroidView(
             modifier = modifier.fillMaxSize(),

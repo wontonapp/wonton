@@ -276,13 +276,15 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
 
     fun loadStarted() { loaded = false; failed = false }
 
-    fun loadFinished(environment: TabEnvironment) {
+    fun loadFinished(environment: TabEnvironment, scripts: Boolean = true) {
         loaded = true
         failed = false
         if (lifecycle.loadFinished()) {
             pages.send(Action.Pages(PageAction.TabLoadSucceeded(place)))
-            script(environment)?.let { controller.evaluateJavascript(it) }
-            controller.evaluateJavascript(pages.core.tabConnectionScript(tab))
+            if (scripts) {
+                script(environment)?.let { controller.evaluateJavascript(it) }
+                controller.evaluateJavascript(pages.core.tabConnectionScript(tab))
+            }
         }
     }
 
