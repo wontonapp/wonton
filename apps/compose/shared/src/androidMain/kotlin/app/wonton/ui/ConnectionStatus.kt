@@ -283,9 +283,19 @@ fun ConnectionPage(
                 }
             }
             WontonGroup {
+                // 进入只是打开配对码页面；断开现在的连接发生在提交新的配对码之后（#712），入口不用破坏性的红色。
                 WontonRow(
-                    stringResource(R.string.connection_pair_again), titleTint = WontonTheme.colors.danger,
+                    stringResource(R.string.connection_pair_again),
                     showsForward = true, onClick = { onNavigate(SettingsSubpage.PAIRING) },
+                )
+                Text(
+                    stringResource(R.string.connection_pair_again_hint),
+                    Modifier.padding(
+                        start = WontonTheme.spacing.s16, end = WontonTheme.spacing.s16,
+                        bottom = WontonTheme.spacing.s12,
+                    ),
+                    style = WontonTheme.typography.supporting,
+                    color = WontonTheme.colors.textSecondary.toColor(),
                 )
             }
         }
