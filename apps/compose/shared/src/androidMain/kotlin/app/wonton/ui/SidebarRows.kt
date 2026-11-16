@@ -74,7 +74,7 @@ internal fun SidebarAppRow(
     // 条件照核心的 `browser::opens_in_browser` 抄（这边只有 Android，省掉引擎判断），改规则时两处一起改；
     // `Page` 已限定为插件的网页页，BotChat 行点开是聊天、`ExternalBrowser` 本来就直开浏览器。
     val inBrowser = app.open is SidebarOpen.ExternalBrowser ||
-        (app.open is SidebarOpen.Page && plugin?.crossOriginIsolated == true)
+        (app.open is SidebarOpen.Page && plugin?.crossOriginIsolated == true && plugin.webUrl != null)
     SidebarRow(
         title = app.title,
         selected = choice != null && choice == current,
