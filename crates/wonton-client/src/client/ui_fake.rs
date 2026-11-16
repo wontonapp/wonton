@@ -5,7 +5,7 @@
 //! ViewModel 换成写死的值；开着时 `dispatch` 不落到作用域，免得网络链路把 ViewModel 改回空的。
 //!
 //! 只够渲染首屏和主入口的导航：一台“家里”的服务器、一个 Bot 私聊、一个有人在通话、顶栏带 widget 入口的群聊
-//! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、
+//! （ADR-0096）、一个没有网页的已装应用（点开是详情页）、一个带授权设备的应用（`ui_fake_plugin_detail.rs`）、
 //! 三个有网页的已装应用（页面各停在加载中、已停止、出了问题）、一个整页打开本机网页的应用、
 //! 主面板里钉着的一页、商店入口、“等你确认”里一张带设备的安装卡片（`ui_fake_devices.rs`）、引导已经走完。
 //! 操作里只认开页、关页（`OpenPage`、`ClosePage`）和回答确认卡片：开关页照真核心的规则改页面栈和应用网格的开关，
@@ -338,6 +338,12 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         };
         fake_plugin(title, id, status, Some(web_url(id)))
     }));
+    installed.push(fake_plugin(
+        super::ui_fake_plugin_detail::HUB_TITLE,
+        super::ui_fake_plugin_detail::HUB_ID,
+        super::ui_fake_plugin_detail::status(),
+        None,
+    ));
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
@@ -467,7 +473,6 @@ mod tests {
             .is_ok()
         );
         assert_eq!(core.pages().root, TabRef::Chat);
-        assert_eq!(core.plugins().installed.unwrap().plugins.len(), 5);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

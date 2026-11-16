@@ -12,7 +12,7 @@ use wonton_protocol::{
 };
 
 use super::confirm::{Audience, Recipients, Refusal, Ticket};
-use super::{Bus, Caller, Draft};
+use super::{Bus, Caller, Draft, TurnSender};
 use crate::ai_level::{lower, strict_ai};
 use crate::matrix::BotAccount;
 use crate::plugin::languages::Languages;
@@ -121,6 +121,13 @@ impl Bus {
         let Some(bot) = &caller.bot else {
             return AiLevel::SelfConfirms;
         };
+        if let Some(sender) = &caller.sender {
+            return match sender {
+                TurnSender::Local(user_id) => localpart(user_id)
+                    .map_or(AiLevel::ReadOnly, |username| self.person_ai(username)),
+                TurnSender::Unknown => AiLevel::ReadOnly,
+            };
+        }
         match &bot.keeper {
             BotKeeper::User { username } => {
                 let turns = self.live_turn_ais(caller);
@@ -426,7 +433,7 @@ impl Bus {
 }
 
 /// Matrix 用户 ID（`@localpart:服务器名`）里的用户名；不是这个写法返回 `None`，让查角色时按认不出处理。
-fn localpart(user_id: &str) -> Option<&str> {
+pub(super) fn localpart(user_id: &str) -> Option<&str> {
     let rest = user_id.strip_prefix('@')?;
     let (localpart, server) = rest.split_once(':')?;
     (!localpart.is_empty() && !server.is_empty()).then_some(localpart)

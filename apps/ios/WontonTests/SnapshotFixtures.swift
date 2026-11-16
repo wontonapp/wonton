@@ -201,7 +201,7 @@ enum SnapshotFixtures {
                 details: ConnectionDetails(
                     network: nil, relay: .unknown, server: .unknown, lastConnectedAtMs: nil,
                     handshakeMs: nil, disconnects: 0, failedDials: 0, sentPackets: 0, lostPackets: 0,
-                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil,
+                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil, diagnostic: nil,
                     addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
                 ),
                 proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false

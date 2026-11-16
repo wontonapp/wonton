@@ -93,12 +93,32 @@ pub struct PluginDevice {
     pub chosen: bool,
 }
 
-/// 预览里可选设备的类别。
+/// 已装插件获授权的宿主设备，设备拔除后仍保留在详情页。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct PluginGrantedDevice {
+    /// 宿主路径；串口、硬盘通常为 by-id，USB 整类为 `/dev/bus/usb`。
+    pub path: String,
+    /// 安装记录中的名称；USB 整类没有单设备名称，由壳按类别本地化。
+    #[serde(default)]
+    pub name: Option<String>,
+    /// 不认识的类别仍列出，不作为可选择设备提交。
+    #[serde(default)]
+    pub kind: PluginDeviceKind,
+    #[serde(default)]
+    pub system: bool,
+    /// 授权路径在核心所见的宿主设备树中是否存在，不代表插件服务运行正常。
+    pub available: bool,
+}
+
+/// 宿主设备的类别。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(rename_all = "snake_case")]
 pub enum PluginDeviceKind {
     Serial,
+    /// 整类 USB 授权，仅在已授权设备详情中列出，不提供单设备选择。
+    Usb,
     Disk,
     /// 比这个 App 新的核心给的类别。
     #[default]

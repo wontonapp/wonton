@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use super::WidgetCapability;
 use super::{
     ConsumerCapabilitySetting, InstalledPlugin, LanWebuiOffer, MissingCapability, PermissionLine,
-    PluginAuthor, PluginIcon, PluginImage, PluginKind, PluginLimits, PluginProblem, PluginRuntime,
-    PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine, SecretInputState, SecurityTier,
-    hint,
+    PluginAuthor, PluginGrantedDevice, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginProblem, PluginRuntime, PluginScope, PluginTrust, RemoteMcpDetail, RequirementLine,
+    SecretInputState, SecurityTier, hint,
 };
 use crate::{CardLine, PluginShares};
 
@@ -105,6 +105,9 @@ pub struct PluginDetail {
     /// 装着的插件现在的问题，壳按类别提示主人下一步（目前是选中的设备不在了，ADR-0036）；状态照常，没有时为空。
     #[serde(default)]
     pub problems: Vec<PluginProblem>,
+    /// 持久安装记录中已授权的宿主设备；串口、硬盘逐项列出，USB 整类一项，未授权或未安装时为空。
+    #[serde(default)]
+    pub devices: Vec<PluginGrantedDevice>,
     /// 缺的 `requires` 能力（ADR-0053）：`providers` 列索引里能提供它的插件；没有的装不上。
     #[serde(default)]
     pub missing_requires: Vec<MissingCapability>,

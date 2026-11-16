@@ -22,6 +22,7 @@ connection = { phosphor = "broadcast" }
 copy = { phosphor = "copy" }
 cpu = { phosphor = "cpu", fill = true }
 device = { phosphor = "device-mobile-camera" }
+disk = { phosphor = "hard-drive" }
 document = { phosphor = "file-text", fill = true }
 download = { phosphor = "download-simple", fill = true }
 error = { phosphor = "x-circle", fill = true }
@@ -52,6 +53,7 @@ refresh = { phosphor = "arrows-clockwise" }
 reply = { phosphor = "arrow-elbow-down-left", mirror = true }
 search = { phosphor = "magnifying-glass" }
 send = { phosphor = "arrow-up" }
+serialPort = { phosphor = "plugs" }
 server = { phosphor = "hard-drives" }
 settings = { phosphor = "gear-six", fill = true }
 share = { phosphor = "export" }
@@ -61,6 +63,7 @@ store = { phosphor = "storefront" }
 tasks = { phosphor = "list-checks", fill = true }
 trash = { phosphor = "trash" }
 upload = { phosphor = "upload-simple" }
+usb = { phosphor = "usb" }
 videoCall = { phosphor = "video-camera", fill = true }
 voiceCall = { phosphor = "phone", fill = true }
 warning = { phosphor = "warning", fill = true }

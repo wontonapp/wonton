@@ -60,6 +60,8 @@ mod ui_fake;
 #[cfg(feature = "ui-fake")]
 mod ui_fake_devices;
 #[cfg(feature = "ui-fake")]
+mod ui_fake_plugin_detail;
+#[cfg(feature = "ui-fake")]
 mod ui_fake_room;
 mod widget;
 
@@ -88,6 +90,8 @@ pub struct ClientCore {
     replay: Mutex<Replay>,
     /// 串行化切换：列表改动和换作用域要一起做完。
     switching: Arc<Mutex<()>>,
+    #[cfg(feature = "test-hooks")]
+    language_refresh_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// 为不是当前这台的服务器临时开的作用域。
     visits: Arc<Visits>,
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
@@ -258,7 +262,7 @@ impl ClientCore {
     }
 
     /// 订阅一条时间线（主对话或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
-    /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新；同一个房间的主对话和一个旁聊可以同时订阅。
+    /// 可同时订阅多个房间或同一目标；滚动位置按订阅独立，取消一份不影响其他订阅。
     /// 还没登录、房间还没同步到本机时返回 `NotReady`。
     pub async fn subscribe_timeline(
         &self,
@@ -273,10 +277,13 @@ impl ClientCore {
         }
         let scope = self.scope();
         let chat = scope.chat.clone();
-        let room_view = scope.pages.subscribe_room_view();
+        let pages = scope.pages.clone();
         let opening = chat.begin_timeline(&target)?;
         scope
-            .run(async move { chat.open_timeline(opening, room_view).await })
+            .run(async move {
+                let room_view = pages.subscribe_room_view(&target.room_id).await?;
+                chat.open_timeline(opening, room_view).await
+            })
             .await
     }
 
@@ -650,6 +657,21 @@ impl ClientCore {
         self.scope().home.test_close_endpoint();
     }
 
+    /// Pause a language action after dispatch captured its scope, before synchronization.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn test_set_language_refresh_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
+        *switch::lock(&self.language_refresh_hook) = hook;
+    }
+
+    #[cfg(feature = "test-hooks")]
+    fn test_before_language_refresh(&self) {
+        let hook = switch::lock(&self.language_refresh_hook).clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         crate::l10n::init();
@@ -691,6 +713,8 @@ impl ClientCore {
             network,
             replay: Mutex::default(),
             switching,
+            #[cfg(feature = "test-hooks")]
+            language_refresh_hook: Mutex::default(),
             visits,
             in_flight_registrations: Arc::default(),
             matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),

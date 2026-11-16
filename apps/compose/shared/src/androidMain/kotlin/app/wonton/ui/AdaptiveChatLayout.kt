@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.window.core.layout.WindowSizeClass
@@ -77,7 +78,11 @@ internal fun AdaptiveChatLayout(
             navigator = navigator,
             listPane = { if (expanded) Box(Modifier.fillMaxSize().testTag("wide-screen-list")) { list() } },
             detailPane = {
-                Box(Modifier.fillMaxSize().then(if (expanded) Modifier.testTag("wide-screen-detail") else Modifier)) {
+                Box(
+                    Modifier.fillMaxSize().then(
+                        if (expanded) Modifier.clipToBounds().testTag("wide-screen-detail") else Modifier,
+                    ),
+                ) {
                     content()
                 }
             },

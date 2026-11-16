@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Fallback name for an authorized disk with no name. No arguments. -->
+    <string name="plugin_device_disk">Disk</string>
     <!-- Section title for the app's requirements. No arguments. -->
     <string name="plugin_requirements">Requirements</string>
     <!-- Meta row: the star count of the app's repository. -->

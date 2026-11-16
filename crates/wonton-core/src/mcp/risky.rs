@@ -108,8 +108,7 @@ impl Bus {
         );
         let relaxable = !decision.highest
             && !decision.deletes
-            && decision.caller_level == AiLevel::SelfConfirms
-            && super::handoff::allows_relaxation(self, caller);
+            && decision.caller_level == AiLevel::SelfConfirms;
         if !relaxable {
             return draft;
         }

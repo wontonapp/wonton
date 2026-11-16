@@ -236,6 +236,34 @@ async fn live_shared_bot_turns_use_the_lowest_sender_level() {
 }
 
 #[tokio::test]
+async fn sender_header_beats_the_bot_default() {
+    let s = notes().await;
+    let read_only = role(&s, "只读", AiLevel::ReadOnly, true);
+    let self_confirms = role(&s, "自己确认", AiLevel::SelfConfirms, true);
+    member(&s, "alice", &read_only);
+    member(&s, "bob", &self_confirms);
+    let mut shared = caller("household", BotKeeper::Household);
+    shared.sender = Some(super::TurnSender::Local("@alice:test".into()));
+
+    let listed = names(&s, &shared).await;
+    assert!(listed.contains(&SEARCH.to_owned()), "{listed:?}");
+    assert!(!listed.contains(&ARCHIVE.to_owned()), "{listed:?}");
+}
+
+#[tokio::test]
+async fn unknown_sender_is_read_only() {
+    let s = notes().await;
+    let self_confirms = role(&s, "自己确认", AiLevel::SelfConfirms, true);
+    member(&s, "bob", &self_confirms);
+    let mut shared = caller("household", BotKeeper::Household);
+    shared.sender = Some(super::TurnSender::Unknown);
+
+    let listed = names(&s, &shared).await;
+    assert!(listed.contains(&SEARCH.to_owned()), "{listed:?}");
+    assert!(!listed.contains(&ARCHIVE.to_owned()), "{listed:?}");
+}
+
+#[tokio::test]
 async fn no_live_turn_fallback_uses_keeper_or_shared_bot_users() {
     let s = notes().await;
     let read_only = role(&s, "只读", AiLevel::ReadOnly, true);
