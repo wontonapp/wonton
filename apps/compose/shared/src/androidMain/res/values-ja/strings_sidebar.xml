@@ -34,7 +34,7 @@
     <string name="sidebar_updatable">アップデートあり</string>
     <!-- アプリの行にある小さなピンの読み上げ：このアプリのページがナビゲーションバーに固定されている。 -->
     <string name="sidebar_pinned">ナビゲーションバーに固定済み</string>
-    <!-- 一行の注意：このアプリのアップデートは確認してから始まる。 -->
+    <!-- アプリ行のサブタイトル：このアプリのページはシステムのブラウザで開く。 -->
     <string name="sidebar_opens_in_browser">ブラウザで開きます</string>
     <string name="sidebar_needs_attention">対応が必要です</string>
     <string name="sidebar_problem">ページに問題あり</string>
