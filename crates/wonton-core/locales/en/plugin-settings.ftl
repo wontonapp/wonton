@@ -292,7 +292,6 @@ plugin-settings-models-gateway-not-running = The model gateway { $id } is not ru
 plugin-settings-models-gateway-absent = There is no model gateway installed (a system app declaring provides.models)
 plugin-settings-models-revoke-not-running = The model gateway is not running, so the credentials of { $id } cannot be revoked
 plugin-settings-models-revoke-provider-not-running = The model gateway { $provider } is not running, so the credentials of { $id } cannot be revoked
-plugin-settings-models-reconcile-failed = Can't sync the model gateway's credentials: { $error }
 plugin-settings-models-credential-rejected = The model gateway { $provider } rejected the credentials { $name } issued by the server: listing models still returned 401 after they were issued
 plugin-settings-models-unreachable = The model gateway { $provider } is unreachable: { $error }
 plugin-settings-models-list-error = The model gateway { $provider } returned an error while listing models: HTTP { $status }
@@ -302,6 +301,10 @@ plugin-settings-models-list-malformed = The model gateway { $provider } returned
 plugin-settings-models-connect-first = Connect a model provider in Models before the bot can reply.
 plugin-settings-models-not-ready = The model gateway { $provider } is not ready: { $error }
 plugin-settings-models-command-rejected = The model gateway { $provider } rejected the credential command ({ $command }, exit code { $code }): { $stderr }
+
+plugin-settings-models-command-outcome-unknown = The result of the model gateway's previous credential command is not known yet
+plugin-settings-models-credential-container-missing = The model gateway { $gateway } has no credential container
+plugin-settings-models-credential-missing = The model gateway consumer { $id } is missing the credential { $name }
 
 # ── Store index (storefront) ───────────────────────────────────────────────
 

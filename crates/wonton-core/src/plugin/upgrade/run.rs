@@ -808,7 +808,7 @@ impl PluginManager {
             .as_ref()
             .is_some_and(|p| p.models.is_some())
         {
-            for (plugin, error) in self.reconcile_models().await {
+            for (plugin, error) in self.reconcile_models_locked().await {
                 tracing::warn!(%plugin, %error, "模型网关升级后对账失败");
             }
         }

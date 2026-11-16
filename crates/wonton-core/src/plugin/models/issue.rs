@@ -1,7 +1,7 @@
 use super::{
-    COMMAND_TIMEOUT, InstallError, Languages, ModelVars, ModelsRoute, NAME_PLACEHOLDER, PluginId,
-    PluginManager, PluginPackage, ProviderState, credential_names, empty_model_vars, random_token,
-    unavailable, uses_models,
+    COMMAND_TIMEOUT, InstallError, Languages, ModelVars, ModelsRoute, NAME_PLACEHOLDER,
+    PendingCommand, PluginId, PluginManager, PluginPackage, ProviderState, credential_names,
+    empty_model_vars, random_token, unavailable, uses_models,
 };
 
 impl PluginManager {
@@ -37,8 +37,7 @@ impl PluginManager {
         Ok(Some(vars))
     }
 
-    /// 给使用方签发凭据并验证：缺的名字生成新值，逐个签发；成功后把变量一并记下（重建容器时用），
-    /// 失败就吊销已经签发的、清掉记下的值，只留下原因。网关在签发中途坏掉时也照此办理，不留半套凭据。
+    /// 给使用方签发并验证凭据；调用前保存随机值，超时后保留原值和失败原因。
     pub(super) async fn issue_consumer_credentials(
         &self,
         route: &ModelsRoute,
@@ -53,6 +52,7 @@ impl PluginManager {
         for name in plugin.iter().chain(bots.iter()) {
             file.keys.entry(name.clone()).or_insert_with(random_token);
         }
+        store.save(id, &file)?;
         let issued = async {
             for name in plugin.iter().chain(bots.iter()) {
                 self.issue_verified(route, name, &file.keys[name], langs)
@@ -73,14 +73,6 @@ impl PluginManager {
                 Ok(vars)
             }
             Err(e) => {
-                for name in file.keys.keys() {
-                    let revoke = &route.spec.credentials.revoke;
-                    if let Err(cleanup) = self.run_command(route, revoke, name, None, langs).await {
-                        tracing::error!(plugin = %id, credential = %name, error = %cleanup, "吊销没签发完的模型网关凭据失败");
-                    }
-                }
-                file.keys.clear();
-                file.vars = None;
                 file.problem = Some(e.to_string());
                 store.save(id, &file)?;
                 Err(e)
@@ -253,6 +245,27 @@ impl PluginManager {
         value: Option<&str>,
         langs: &Languages,
     ) -> Result<(), InstallError> {
+        let store = self.store.model_keys();
+        let _commands = store.commands.lock().await;
+        if !self.settle_model_command().await? {
+            return Err(unavailable(crate::l10n::text(
+                langs,
+                "plugin-settings-models-command-outcome-unknown",
+                &[],
+            )));
+        }
+        let container = self
+            .engine
+            .inspect_container(&route.credentials_container)
+            .await?
+            .and_then(|info| info.id)
+            .ok_or_else(|| {
+                unavailable(crate::l10n::text(
+                    langs,
+                    "plugin-settings-models-credential-container-missing",
+                    &[("gateway", route.id.as_str().into())],
+                ))
+            })?;
         let argv: Vec<String> = argv
             .iter()
             .map(|arg| arg.replace(NAME_PLACEHOLDER, name))
@@ -260,11 +273,22 @@ impl PluginManager {
         let stdin = value.map(|v| format!("{v}\n"));
         let output = self
             .engine
-            .exec(
-                &route.credentials_container,
+            .exec_tracked(
+                &container,
                 &argv,
                 stdin.as_deref().map(str::as_bytes),
                 COMMAND_TIMEOUT,
+                |exec_id| {
+                    store
+                        .save_pending(&PendingCommand {
+                            exec_id: exec_id.to_owned(),
+                            container_id: container.clone(),
+                            consumer: name.split('/').next().unwrap_or(name).to_owned(),
+                        })
+                        .map_err(|error| {
+                            super::super::docker::EngineError::Unavailable(error.to_string())
+                        })
+                },
             )
             .await
             .map_err(|e| {
@@ -277,6 +301,7 @@ impl PluginManager {
                     ],
                 ))
             })?;
+        store.clear_pending()?;
         if output.exit_code == 0 {
             return Ok(());
         }

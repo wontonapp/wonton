@@ -164,6 +164,15 @@ fn web_env(bed: &Bed) -> BTreeMap<String, String> {
     env_of_container(&bed.docker, &container_name("app-test", "web"))
 }
 
+/// 针对某个凭据名执行过的命令数（签发或吊销）；网关自己的 health 凭据不算。
+fn credential_execs(bed: &Bed, name: &str) -> usize {
+    bed.docker
+        .execs()
+        .iter()
+        .filter(|exec| exec.cmd.get(3).map(String::as_str) == Some(name))
+        .count()
+}
+
 #[tokio::test]
 async fn consumers_get_their_own_verified_credential_through_the_core() {
     let bed = bed().await;
@@ -602,13 +611,17 @@ async fn bot_services_get_the_bot_credential_and_shared_services_the_plugin_one(
     assert_ne!(keys["app.test"], keys["app.test/default"]);
 }
 
+/// 对账失败：容器状态不动（不撒谎说“异常”），原因写进详情页的轻提示；巡检按原值补发，
+/// 网关还拒绝就一直带着原因，容器和凭据都不换。
 #[tokio::test]
-async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
+async fn a_failed_reconcile_keeps_the_container_running_and_carries_the_reason() {
     let bed = bed().await;
     bed.manager
         .install(&consumer(), &models(), super::langs())
         .await
         .unwrap();
+    // 网关重启后不认旧凭据，重签又被拒绝。
+    bed.keys.lock().unwrap().remove("app.test");
     bed.docker.on_exec(|_, _, _| (1, "网关坏了".to_owned()));
     let failures = bed.manager.reconcile_models().await;
     assert_eq!(failures.len(), 1);
@@ -618,10 +631,226 @@ async fn a_failed_reconcile_marks_the_consumer_as_degraded() {
         .into_iter()
         .find(|p| p.id.as_str() == "app.test")
         .unwrap();
-    let PluginStatus::Degraded { reason } = consumer.status else {
-        panic!("对账失败的使用方应标为异常");
+    assert!(
+        matches!(consumer.status, PluginStatus::Running),
+        "{:?}",
+        consumer.status
+    );
+    let hints = bed.hints().await.hints;
+    let [hint] = hints.as_slice() else {
+        panic!("对账失败的使用方应有轻提示: {hints:?}");
     };
-    assert!(reason.contains("网关坏了"), "{reason}");
+    assert_eq!(
+        hint.category,
+        wonton_protocol::PluginHintCategory::ModelsNotConnected
+    );
+    assert!(
+        hint.detail
+            .as_deref()
+            .is_some_and(|d| d.contains("网关坏了")),
+        "{hint:?}"
+    );
+
+    let web = container_name("app-test", "web");
+    let execs = credential_execs(&bed, "app.test");
+    let creations = bed.docker.creations(&web);
+    let env_before = web_env(&bed);
+    bed.manager.watch_containers().await;
+    bed.manager.watch_containers().await;
+    let consumer = bed
+        .manager
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(matches!(consumer.status, PluginStatus::Running));
+    let hints = bed.hints().await.hints;
+    let [hint] = hints.as_slice() else {
+        panic!("网关不认凭据时轻提示不能消失: {hints:?}");
+    };
+    assert_eq!(
+        hint.category,
+        wonton_protocol::PluginHintCategory::ModelsNotConnected
+    );
+    assert!(
+        hint.detail
+            .as_deref()
+            .is_some_and(|d| d.contains("网关坏了")),
+        "{hint:?}"
+    );
+    assert!(
+        credential_execs(&bed, "app.test") > execs,
+        "巡检要拿原值补发凭据命令"
+    );
+    assert_eq!(bed.docker.creations(&web), creations, "巡检不重建容器");
+    assert_eq!(web_env(&bed), env_before, "巡检不换凭据");
+}
+
+/// 凭据命令的结局未知（#643 的超时）：容器照常运行、原因写明；命令在引擎侧完成后，
+/// 巡检自己对账恢复，不重启、不重建、不换钥匙、不补发写命令。
+#[tokio::test]
+async fn an_unknown_command_outcome_recovers_once_the_command_settles() {
+    let bed = bed().await;
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    let web = container_name("app-test", "web");
+    let env_before = web_env(&bed);
+    let creations = bed.docker.creations(&web);
+
+    // 网关丢了状态；重签的命令已创建，但启动时连接断了：结局未知，对账失败。
+    bed.keys.lock().unwrap().remove("app.test");
+    bed.docker.fail_next_exec_start("connection reset", true);
+    let failures = bed.manager.reconcile_models().await;
+    assert_eq!(failures.len(), 1);
+    let consumer = bed
+        .manager
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(
+        matches!(consumer.status, PluginStatus::Running),
+        "{:?}",
+        consumer.status
+    );
+    let hints = bed.hints().await.hints;
+    let [hint] = hints.as_slice() else {
+        panic!("命令结局未知时应有轻提示: {hints:?}");
+    };
+    assert_eq!(
+        hint.category,
+        wonton_protocol::PluginHintCategory::ModelsNotConnected
+    );
+    assert!(
+        hint.detail
+            .as_deref()
+            .is_some_and(|d| d.contains("connection reset")),
+        "{hint:?}"
+    );
+
+    // 巡检只看不动：命令没回来之前不签发、不吊销、不清原因。
+    bed.manager.watch_containers().await;
+    let consumer = bed
+        .manager
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(matches!(consumer.status, PluginStatus::Running));
+    assert!(
+        bed.hints()
+            .await
+            .hints
+            .iter()
+            .any(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+    );
+    let execs = credential_execs(&bed, "app.test");
+
+    // 命令在网关那边其实完成了（钥匙登记回去了）：下一次巡检自己恢复。
+    let key = env_before["KEY"].clone();
+    bed.keys.lock().unwrap().insert("app.test".into(), key);
+    bed.docker.finish_last_exec(0);
+    bed.manager.watch_containers().await;
+    let consumer = bed
+        .manager
+        .list()
+        .into_iter()
+        .find(|p| p.id.as_str() == "app.test")
+        .unwrap();
+    assert!(matches!(consumer.status, PluginStatus::Running));
+    assert!(
+        !bed.hints()
+            .await
+            .hints
+            .iter()
+            .any(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+    );
+    assert_eq!(bed.docker.creations(&web), creations, "恢复不重建容器");
+    assert_eq!(web_env(&bed), env_before, "恢复不换凭据");
+    assert_eq!(
+        credential_execs(&bed, "app.test"),
+        execs,
+        "恢复不补发写命令"
+    );
+}
+
+/// 命令创建了但根本没启动（Docker 报没在跑、也没有退出码）：结局其实已经定了。
+/// 巡检按原值补发一次，网关收下就恢复，不重建容器。
+#[tokio::test]
+async fn an_unknown_command_that_never_started_settles_and_retries() {
+    let bed = bed().await;
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    let web = container_name("app-test", "web");
+    let env_before = web_env(&bed);
+    let creations = bed.docker.creations(&web);
+
+    bed.keys.lock().unwrap().remove("app.test");
+    bed.docker.fail_next_exec_start("connection reset", false);
+    assert_eq!(bed.manager.reconcile_models().await.len(), 1);
+    assert!(
+        bed.hints()
+            .await
+            .hints
+            .iter()
+            .any(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+    );
+
+    // 命令没跑，网关还缺这把钥匙：巡检补发成功，提示清掉。
+    bed.manager.watch_containers().await;
+    assert!(
+        !bed.hints()
+            .await
+            .hints
+            .iter()
+            .any(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+    );
+    assert_eq!(bed.docker.creations(&web), creations, "恢复不重建容器");
+    assert_eq!(web_env(&bed), env_before, "恢复不换凭据");
+}
+
+/// 凭据命令进行中网关容器重启：Docker 把 exec 记录丢掉了，不能一直卡在“结局未知”。
+/// 命令也许已经在重启前落地，重新验证同一份凭据就能确定。
+#[tokio::test]
+async fn an_unknown_command_whose_exec_vanished_recovers_by_verifying() {
+    let bed = bed().await;
+    bed.manager
+        .install(&consumer(), &models(), super::langs())
+        .await
+        .unwrap();
+    let web = container_name("app-test", "web");
+    let env_before = web_env(&bed);
+    let creations = bed.docker.creations(&web);
+
+    bed.keys.lock().unwrap().remove("app.test");
+    bed.docker.fail_next_exec_start("connection reset", true);
+    assert_eq!(bed.manager.reconcile_models().await.len(), 1);
+
+    // 命令在引擎侧跑完并登记了钥匙，核心没等到结果；紧接着网关容器重启，exec 查不到了。
+    let key = env_before["KEY"].clone();
+    bed.keys.lock().unwrap().insert("app.test".into(), key);
+    bed.docker.forget_execs();
+    let execs = credential_execs(&bed, "app.test");
+    bed.manager.watch_containers().await;
+
+    assert!(
+        !bed.hints()
+            .await
+            .hints
+            .iter()
+            .any(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+    );
+    assert_eq!(
+        credential_execs(&bed, "app.test"),
+        execs,
+        "凭据已生效，不补发命令"
+    );
+    assert_eq!(bed.docker.creations(&web), creations, "恢复不重建容器");
+    assert_eq!(web_env(&bed), env_before, "恢复不换凭据");
 }
 
 #[tokio::test]
@@ -642,20 +871,36 @@ async fn the_watch_retries_a_failed_reconcile_and_the_consumer_recovers() {
             .status
     };
 
-    // 网关一时应答慢（I/O 压力下命令超时）：对账失败，使用方如实标成异常。
+    // 网关丢了状态，重签时又一时应答慢（I/O 压力下命令超时）：对账失败，容器状态照实报，原因进轻提示。
+    bed.keys.lock().unwrap().remove("app.test");
     bed.docker.on_exec(|_, _, _| (1, "命令超时".to_owned()));
     assert_eq!(bed.manager.reconcile_models().await.len(), 1);
-    let PluginStatus::Degraded { reason } = status(&bed) else {
-        panic!("对账失败的使用方应标为异常");
-    };
+    assert!(
+        matches!(status(&bed), PluginStatus::Running),
+        "{:?}",
+        status(&bed)
+    );
+    let reason = bed
+        .hints()
+        .await
+        .hints
+        .into_iter()
+        .find(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+        .and_then(|h| h.detail)
+        .expect("对账失败的使用方应有轻提示");
     assert!(reason.contains("命令超时"), "{reason}");
 
-    // 还没好：下一轮巡检重试还是失败，如实继续异常，不假装恢复，也不重建容器。
+    // 还没好：下一轮巡检重试还是失败，继续带着原因，不假装恢复，也不重建容器。
     bed.manager.watch_containers().await;
-    assert!(matches!(status(&bed), PluginStatus::Degraded { .. }));
-    let PluginStatus::Degraded { reason } = status(&bed) else {
-        unreachable!()
-    };
+    assert!(matches!(status(&bed), PluginStatus::Running));
+    let reason = bed
+        .hints()
+        .await
+        .hints
+        .into_iter()
+        .find(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+        .and_then(|h| h.detail)
+        .expect("网关不认凭据时轻提示不能消失");
     assert!(reason.contains("命令超时"), "{reason}");
     assert_eq!(bed.docker.creations(&web), 1);
 
@@ -709,7 +954,8 @@ async fn a_failed_retry_still_tries_the_rest_and_replaces_only_the_failed_value(
             .status
     };
 
-    // 第一个凭据一直超时，第二个每次都正常：一轮里两个都要试，不能撞到第一个就收手。
+    // 网关丢了状态，第一个凭据一直超时，第二个每次都正常：一轮里两个都要试，不能撞到第一个就收手。
+    bed.keys.lock().unwrap().clear();
     let keys = bed.keys.clone();
     let issues = Arc::new(Mutex::new(BTreeMap::<String, usize>::new()));
     let counted = issues.clone();
@@ -742,11 +988,16 @@ async fn a_failed_retry_still_tries_the_rest_and_replaces_only_the_failed_value(
     assert_eq!(bed.manager.reconcile_models().await.len(), 1);
     assert_eq!(issues.lock().unwrap()[&second], 1);
     assert_eq!(stored_keys(&bed)[&second], before[&second]);
-    // 再一轮还是失败：原因里带上是哪个凭据，第二个也又试了一次。
+    // 再一轮还是失败：轻提示里带上是哪个凭据，第二个也又试了一次。
     bed.manager.watch_containers().await;
-    let PluginStatus::Degraded { reason } = status(&bed) else {
-        panic!("凭据还在失败，使用方应继续异常");
-    };
+    let reason = bed
+        .hints()
+        .await
+        .hints
+        .into_iter()
+        .find(|h| h.category == wonton_protocol::PluginHintCategory::ModelsNotConnected)
+        .and_then(|h| h.detail)
+        .expect("凭据还在失败，使用方应继续带着轻提示");
     assert!(reason.contains(&format!("{first}: ")), "{reason}");
     assert_eq!(issues.lock().unwrap()[&second], 2);
     // 第三轮缓过来：坏的那个重新签发、第二个也照试一遍，状态回去。

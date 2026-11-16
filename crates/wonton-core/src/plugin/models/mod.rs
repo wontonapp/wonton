@@ -39,7 +39,7 @@ pub(super) use errors::{reconcile_failed, unavailable};
 pub(super) use keys::KeyFile;
 pub use keys::ModelKeyStore;
 pub(super) use keys::uses_models;
-use keys::{Keys, credential_names};
+use keys::{Keys, PendingCommand, credential_names};
 use route::base_url;
 pub use route::{ModelsRoute, ProviderState};
 use vars::empty_model_vars;
