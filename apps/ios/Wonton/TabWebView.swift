@@ -11,6 +11,8 @@ final class TabWebViewStore {
     private var accountId: String?
     /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
     private(set) var generation = 0
+    /// 公网网页与插件凭据分开，窗口之间仍共享同一公网存储。
+    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
 
     func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
         let currentAccount = core.servers().servers.first(where: { $0.current })?.id
@@ -27,6 +29,8 @@ final class TabWebViewStore {
                 store = .nonPersistent()
                 sharedStores[ownerUserId] = store
             }
+        } else if case .url = placed.tab {
+            store = WKWebsiteDataStore(forIdentifier: Self.publicPanelStore)
         } else { store = .default() }
         let session = TabWebSession(placed: placed, core: core, dataStore: store)
         sessions[placed] = session
@@ -56,7 +60,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .page(tab), let .panel(_, tab): tab
+        case let .page(tab), let .content(tab), let .panel(_, tab): tab
         }
     }
 }
@@ -160,7 +164,7 @@ final class TabWebSession: NSObject {
 
     private func create() throws {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = Self.dataStore(for: placed)
+        configuration.websiteDataStore = dataStore
         // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
         if bridged {
             let controller = configuration.userContentController
@@ -277,14 +281,6 @@ final class TabWebSession: NSObject {
     private var bridged: Bool {
         if case .url = placed.tab { return false }
         return true
-    }
-
-    /// 公网网页不和插件页共用 Cookie 和存储（ADR-0052）：公网页面共用一个单独的存储。
-    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
-
-    private static func dataStore(for placed: PlacedTab) -> WKWebsiteDataStore {
-        guard case .url = placed.tab else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: publicPanelStore)
     }
 
     /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。

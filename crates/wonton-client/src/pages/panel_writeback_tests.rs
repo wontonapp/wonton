@@ -1,3 +1,4 @@
+use super::super::tests::Rig;
 use super::*;
 
 fn panel() -> RoomPanel {
@@ -11,31 +12,45 @@ fn panel() -> RoomPanel {
     }
 }
 
-#[test]
-fn a_late_write_does_not_reopen_a_closed_room() {
+fn channel(rig: &Rig, room: &OwnedRoomId) -> watch::Sender<Option<Arc<RoomPanelView>>> {
+    lock(&rig.tabs.state).rooms[room.as_str()].view.clone()
+}
+
+#[tokio::test]
+async fn a_late_write_does_not_reopen_a_closed_room() {
+    let rig = Rig::new();
     let room: OwnedRoomId = "!old:example.com".parse().unwrap();
-    let sender = watch::Sender::new(Some((room.clone(), RoomPanel::default())));
-    sender.send_replace(None);
-    publish_written_panel(&sender, &room, panel());
-    assert!(sender.borrow().is_none());
+    rig.open_room(&room, RoomPanel::default());
+    let expected = channel(&rig, &room);
+    rig.close_room(&room);
+    rig.tabs
+        .receive_room_panel(&room, panel(), &expected)
+        .unwrap();
+    assert!(rig.tabs.room_view(room.as_str()).is_none());
 }
 
-#[test]
-fn a_late_write_does_not_replace_the_new_room() {
-    let old: OwnedRoomId = "!old:example.com".parse().unwrap();
-    let new: OwnedRoomId = "!new:example.com".parse().unwrap();
-    let sender = watch::Sender::new(Some((new.clone(), RoomPanel::default())));
-    publish_written_panel(&sender, &old, panel());
-    let current = sender.borrow();
-    let (room, panel) = current.as_ref().unwrap();
-    assert_eq!(room, &new);
-    assert!(panel.pages.is_empty());
+#[tokio::test]
+async fn a_late_write_does_not_replace_a_reopened_room() {
+    let rig = Rig::new();
+    let room: OwnedRoomId = "!room:example.com".parse().unwrap();
+    rig.open_room(&room, RoomPanel::default());
+    let expected = channel(&rig, &room);
+    rig.close_room(&room);
+    rig.open_room(&room, RoomPanel::default());
+    rig.tabs
+        .receive_room_panel(&room, panel(), &expected)
+        .unwrap();
+    assert!(rig.tabs.room_view(room.as_str()).unwrap().panel.is_empty());
 }
 
-#[test]
-fn a_write_updates_the_still_open_room() {
+#[tokio::test]
+async fn a_write_updates_the_still_open_room() {
+    let rig = Rig::new();
     let room: OwnedRoomId = "!current:example.com".parse().unwrap();
-    let sender = watch::Sender::new(Some((room.clone(), RoomPanel::default())));
-    publish_written_panel(&sender, &room, panel());
-    assert_eq!(sender.borrow().as_ref().unwrap().1.pages.len(), 1);
+    rig.open_room(&room, RoomPanel::default());
+    let expected = channel(&rig, &room);
+    rig.tabs
+        .receive_room_panel(&room, panel(), &expected)
+        .unwrap();
+    assert_eq!(rig.tabs.room_view(room.as_str()).unwrap().panel.len(), 1);
 }
