@@ -164,6 +164,8 @@ final class ChatPanelUITests: XCTestCase {
         XCTAssertTrue(waitGone(collapse))
         let button = app.buttons.matching(UITestSidebar.button).firstMatch
         XCTAssertTrue(button.isHittable, "Accessible sidebar button was lost")
+        // 收起动画还没完时按钮可点，但这一下会被吞；等它落定再点。
+        Thread.sleep(forTimeInterval: 0.6)
         button.tap()
         XCTAssertTrue(collapse.waitForExistence(timeout: 5))
     }
@@ -258,6 +260,31 @@ extension ChatPanelUITests {
         passOnboarding()
         UITestBackend.settleKeyHandoff(app)
         XCTAssertTrue(app.scrollViews.firstMatch.waitForExistence(timeout: 20), "没到聊天页")
+        clearPanelPages()
+    }
+
+    /// 面板页面存在账号数据里，同一账号前一用例加的页会留到下一用例。用例开头都要空面板，先删干净。
+    private func clearPanelPages() {
+        let panel = app.otherElements["chatPanel"]
+        openPanel()
+        let deadline = Date().addingTimeInterval(20)
+        while panel.value as? String == "full", Date() < deadline {
+            app.buttons["pageMore"].firstMatch.tap()
+            guard let edit = waitAnyButton(["Edit Panel", "编辑面板"], timeout: 5) else { break }
+            edit.tap()
+            let removes = app.buttons.matching(NSPredicate(format: "label IN %@", ["Remove", "移除"]))
+            while removes.firstMatch.exists, removes.firstMatch.isHittable {
+                removes.firstMatch.tap()
+            }
+            tapAnyButton(["Done", "完成", "完了"], timeout: 5, required: true)
+        }
+        if capsule.waitForExistence(timeout: 1) {
+            capsule.tap()
+        } else {
+            // 空面板只有第 1 级，没有胶囊：再点顶栏按钮收起。
+            app.buttons.matching(identifier: "panelOpen").firstMatch.tap()
+        }
+        XCTAssertTrue(waitGone(panel), "清完面板后收不起来")
     }
 
     /// 配对页的输入框不在、又已经出了页面（聊天列表或引导）才算配上；出现拒绝提示就不用再等。
