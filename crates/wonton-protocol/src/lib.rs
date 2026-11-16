@@ -265,7 +265,9 @@ pub use plugin::StoreLoadState;
 pub use plugin::StoreUnreadable;
 pub use plugin::hint::{PluginHint, PluginHintCategory};
 pub use plugin::ports::{PortProtocol, PortSpec, TunnelSpec};
-pub use plugin::store::{StoreConfirmation, UpdatablePlugin};
+pub use plugin::store::{
+    StoreConfirmation, StoreUpdateBatch, StoreUpdateItem, StoreUpdateState, UpdatablePlugin,
+};
 pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,

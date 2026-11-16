@@ -28,3 +28,36 @@ pub enum StoreConfirmation {
     /// 升级装着的应用。
     Upgrade { preview: InstallPreview },
 }
+
+/// 本设备发起的一批更新；结果保留到主人清除，不写入磁盘。
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StoreUpdateBatch {
+    pub items: Vec<StoreUpdateItem>,
+    /// 没有排队、取预览或执行中的项；需要主人决定的项不阻塞其他更新。
+    pub finished: bool,
+    pub succeeded: u32,
+    pub failed: u32,
+    pub needs_attention: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct StoreUpdateItem {
+    pub app: UpdatablePlugin,
+    pub state: StoreUpdateState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StoreUpdateState {
+    Queued,
+    Checking,
+    /// 由行内入口打开确认页，不自动盖住其他应用的进展。
+    NeedsDecision,
+    /// 复用单项任务的阶段、错误和真实结果，批次保留独立快照。
+    Task {
+        task: super::PluginTask,
+    },
+}

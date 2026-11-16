@@ -151,6 +151,7 @@ fn sidebar_view_model_round_trip() {
             version: "0.25.0".into(),
             icon: None,
         }],
+        update_batch: None,
         pending: vec!["app.memos".into()],
         confirmation: Some(StoreConfirmation::Upgrade { preview: preview() }),
         egress: EgressViewModel::default(),
