@@ -37,6 +37,14 @@ private const val SPRING_STIFFNESS = 340f
 internal fun levelAfterFeed(level: PanelLevel, hadPages: Boolean, hasPages: Boolean): PanelLevel =
     if (hadPages && !hasPages && level == PanelLevel.FULL) PanelLevel.PEEK else level
 
+/** 第 1 级拖动的落点：空面板没有第 2 级可去，move 会把 FULL 降回 PEEK。 */
+internal fun levelAfterPeekDrag(pushes: Boolean, closes: Boolean, hasPages: Boolean): PanelLevel = when {
+    !hasPages -> if (closes) PanelLevel.CLOSED else PanelLevel.PEEK
+    pushes -> PanelLevel.FULL
+    closes -> PanelLevel.CLOSED
+    else -> PanelLevel.PEEK
+}
+
 /**
  * 面板的级别、手指拖动和页面数据（ADR-0052）。拉到第几级、手指在哪是壳里的状态，不进核心。
  * 拖动方向以“把面板拉出来”为正：主聊天页往下，房间往上。
@@ -214,12 +222,7 @@ internal class ChatPanelState(
         return when (from) {
             // 收着时没有拖动了：入口只有顶栏的按钮，直接 move 换级。
             PanelLevel.CLOSED -> PanelLevel.CLOSED
-            // 空面板没有第 2 级可去，move 会把 FULL 降回 PEEK，这里也别震。
-            PanelLevel.PEEK -> when {
-                pushes && pages.isNotEmpty() -> PanelLevel.FULL
-                closes -> PanelLevel.CLOSED
-                else -> PanelLevel.PEEK
-            }
+            PanelLevel.PEEK -> levelAfterPeekDrag(pushes, closes, pages.isNotEmpty())
             PanelLevel.FULL -> if (closes) PanelLevel.PEEK else PanelLevel.FULL
         }
     }

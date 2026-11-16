@@ -20,4 +20,16 @@ class PanelFeedLevelTest {
         assertEquals(PanelLevel.FULL, levelAfterFeed(PanelLevel.FULL, hadPages = false, hasPages = false))
         assertEquals(PanelLevel.PEEK, levelAfterFeed(PanelLevel.PEEK, hadPages = true, hasPages = false))
     }
+
+    @Test
+    fun emptyPanelStaysPeekWhenDraggedOutward() {
+        assertEquals(PanelLevel.PEEK, levelAfterPeekDrag(pushes = true, closes = false, hasPages = false))
+        assertEquals(PanelLevel.CLOSED, levelAfterPeekDrag(pushes = true, closes = true, hasPages = false))
+    }
+
+    @Test
+    fun emptyAddPageStillReachesFullFromPeek() {
+        assertEquals(PanelLevel.FULL, levelAfterPeekDrag(pushes = true, closes = false, hasPages = true))
+        assertEquals(PanelLevel.PEEK, levelAfterPeekDrag(pushes = false, closes = false, hasPages = true))
+    }
 }
