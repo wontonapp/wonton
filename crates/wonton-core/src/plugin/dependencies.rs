@@ -60,6 +60,20 @@ struct Provider {
     serving: BTreeSet<String>,
 }
 
+/// 插件声明由自己提供的服务名（托管能力由核心转给它的入口，不需要容器）。
+pub(crate) fn declared_services(manifest: &Manifest) -> BTreeSet<String> {
+    manifest
+        .provides
+        .iter()
+        .flat_map(|provides| {
+            provides
+                .capabilities
+                .values()
+                .map(|spec| spec.service.clone())
+        })
+        .collect()
+}
+
 pub(crate) fn generic(name: &str) -> bool {
     name != capabilities::MODELS.name && !capabilities::has_no_consumer(name)
 }

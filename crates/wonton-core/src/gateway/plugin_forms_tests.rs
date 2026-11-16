@@ -34,7 +34,11 @@ async fn non_compose_uploads_fail_before_storing_inputs_or_installing() {
     let h = Harness::start(None).await;
     let id = PluginId::parse("app.forms").unwrap();
     let secrets = URL_SAFE_NO_PAD.encode(br#"{"api_key":"should-not-be-stored"}"#);
-    for runtime in ["skills", "remote_mcp"] {
+    // `skills` 这种形态这里还不认；`remote_mcp` 认得，但还没装连接器提供方，先死在缺提供方。
+    for (runtime, status, kind) in [
+        ("skills", StatusCode::BAD_REQUEST, "unsupported"),
+        ("remote_mcp", StatusCode::CONFLICT, "conflict"),
+    ] {
         let reply = send_as(
             &h.app,
             None,
@@ -48,9 +52,9 @@ async fn non_compose_uploads_fail_before_storing_inputs_or_installing() {
             &package(runtime),
         )
         .await;
-        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.text());
-        assert_eq!(reply.error_kind(), Some("unsupported"));
-        assert_eq!(reply.json()["error"]["kind"], "unsupported");
+        assert_eq!(reply.status, status, "{}", reply.text());
+        assert_eq!(reply.error_kind(), Some(kind));
+        assert_eq!(reply.json()["error"]["kind"], kind);
         assert!(
             reply.json()["error"]["message"]
                 .as_str()
@@ -78,7 +82,10 @@ async fn non_compose_upgrades_do_not_touch_the_installed_version() {
     let containers = h.docker.containers();
     let networks = h.docker.networks();
     let volumes = h.docker.volumes();
-    for runtime in ["skills", "remote_mcp"] {
+    for (runtime, status, kind) in [
+        ("skills", StatusCode::BAD_REQUEST, "unsupported"),
+        ("remote_mcp", StatusCode::CONFLICT, "conflict"),
+    ] {
         let reply = send_as(
             &h.app,
             None,
@@ -89,8 +96,9 @@ async fn non_compose_upgrades_do_not_touch_the_installed_version() {
             &package(runtime),
         )
         .await;
-        assert_eq!(reply.status, StatusCode::BAD_REQUEST, "{}", reply.text());
-        assert_eq!(reply.error_kind(), Some("unsupported"));
+        assert_eq!(reply.status, status, "{}", reply.text());
+        assert_eq!(reply.error_kind(), Some(kind));
+        assert_eq!(reply.json()["error"]["kind"], kind);
         assert_eq!(h.manager.record_for_test(&id).unwrap().version, "1.0.0");
         assert_eq!(
             h.manager

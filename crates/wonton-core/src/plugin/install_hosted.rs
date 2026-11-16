@@ -227,6 +227,21 @@ impl PluginManager {
     }
 
     /// 装一个不起容器的插件。调用方已核对过权限（`granted` 就是主人的确认）。
+    /// 装这种形态之前先看托管能力的提供方在不在；缺了在写任何东西之前就拒。
+    pub(super) fn check_hosted_providers(
+        &self,
+        manifest: &Manifest,
+        langs: &Languages,
+    ) -> Result<(), InstallError> {
+        match required_hosted(manifest)
+            .into_iter()
+            .find(|capability| self.hosted_provider(capability).is_none())
+        {
+            Some(capability) => Err(missing_provider(capability, langs)),
+            None => Ok(()),
+        }
+    }
+
     pub(super) async fn install_containerless(
         &self,
         package: &PluginPackage,
@@ -234,12 +249,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(PluginView, Undo), InstallError> {
         let manifest = package.manifest.clone();
-        if let Some(capability) = required_hosted(&manifest)
-            .into_iter()
-            .find(|capability| self.hosted_provider(capability).is_none())
-        {
-            return Err(missing_provider(capability, langs));
-        }
+        self.check_hosted_providers(&manifest, langs)?;
         self.probe_remote(&manifest, langs).await?;
         let listed = Listed::new(package, now_secs(), false, false, Default::default());
         self.reserve(&listed, langs)?;
@@ -280,6 +290,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<(), InstallError> {
         let id = package.manifest.id.clone();
+        self.check_hosted_providers(&package.manifest, langs)?;
         self.probe_remote(&package.manifest, langs).await?;
         let old = self
             .store

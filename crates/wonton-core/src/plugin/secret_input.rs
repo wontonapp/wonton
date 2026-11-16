@@ -176,6 +176,7 @@ impl PluginManager {
         langs: &Languages,
     ) -> Result<Vec<String>, InstallError> {
         super::install_entry::check_runtime(manifest, langs)?;
+        self.check_hosted_providers(manifest, langs)?;
         let store = self.store.secrets();
         let mut secrets = match filled {
             Some(secrets) => secrets.clone(),

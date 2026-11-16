@@ -510,6 +510,14 @@ impl PluginManager {
         hints
     }
 
+    /// 托管能力由提供方的入口直接伺候，不立连接；提供方在跑、声明了这个服务就算到位。
+    fn hosted_serving(provider: &Provider, capability: &str) -> bool {
+        crate::plugin::capabilities::lookup(capability).is_some_and(|c| c.hosted.is_some())
+            && (provider.status == PluginStatus::Running
+                || service(&provider.listed.manifest, capability)
+                    .is_some_and(|spec| provider.serving.contains(&spec.service)))
+    }
+
     fn capability_dependency_hint(
         &self,
         state: &State,
@@ -528,6 +536,7 @@ impl PluginManager {
                 },
                 None,
             ),
+            Some(provider) if Self::hosted_serving(provider, capability) => return None,
             Some(provider) => match self.capability_dependency_connection(
                 state,
                 &manifest.id,
@@ -644,16 +653,17 @@ impl PluginManager {
                             self.capability_missing_other(manifest, capability, langs),
                         )
                     })?;
-                if self
-                    .capability_dependency_connection(
-                        &state,
-                        &manifest.id,
-                        provider,
-                        capability,
-                        bot,
-                        langs,
-                    )?
-                    .is_none()
+                if !Self::hosted_serving(provider, capability)
+                    && self
+                        .capability_dependency_connection(
+                            &state,
+                            &manifest.id,
+                            provider,
+                            capability,
+                            bot,
+                            langs,
+                        )?
+                        .is_none()
                 {
                     return Err(InstallError::Conflict(
                         self.capability_missing(capability, langs),

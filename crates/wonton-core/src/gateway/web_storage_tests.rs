@@ -237,7 +237,12 @@ async fn a_stopped_storage_provider_is_reported_as_not_ready() {
         wants.send(Method::GET, "/", &[]).await.status,
         StatusCode::OK
     );
-    assert_eq!(status(&wants), json!("running"));
+    assert_eq!(
+        status(&wants),
+        json!("running"),
+        "{:?}",
+        wants.h.manager.statuses_for_test()
+    );
 
     let requires = bed("  requires: [web_storage]\n", false).await;
     assert_eq!(status(&requires), json!("degraded"));

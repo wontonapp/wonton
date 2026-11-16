@@ -306,7 +306,8 @@ impl PluginManager {
             }
             return Ok(Started {
                 health: entry.health.unwrap_or(Health::Unknown),
-                serving: BTreeSet::new(),
+                // 托管能力由核心直接伺候，没有容器可查：声明的服务从起来这一刻就在提供。
+                serving: super::dependencies::declared_services(&package.manifest),
                 deployed: None,
             });
         }
