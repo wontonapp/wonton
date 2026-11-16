@@ -8,7 +8,7 @@ final class PortMappingUITests: XCTestCase {
 
     func testPageAndForegroundControlMapping() async throws {
         continueAfterFailure = false
-        executionTimeAllowance = 180
+        executionTimeAllowance = 300
         try UITestBackend.require()
         let configured = ProcessInfo.processInfo.environment["PORT_MAPPING_TEST_PORT"]
         try XCTSkipIf(configured == nil, "Requires the whoami TCP mapping fixture and PORT_MAPPING_TEST_PORT")
@@ -23,8 +23,7 @@ final class PortMappingUITests: XCTestCase {
         XCTAssertFalse(app.buttons["chat-backup-reminder-dismiss"].exists)
         try await expectMapping(false)
 
-        app.open(try XCTUnwrap(URL(string: "wonton://tab/plugin/app.whoami")))
-        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+        try openPluginPage()
         try await expectMapping(true)
 
         XCUIDevice.shared.press(.home)
@@ -34,7 +33,7 @@ final class PortMappingUITests: XCTestCase {
         try await expectMapping(false)
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
-        UITestBackend.settleKeyHandoff(app)
+        try openPluginPage()
         try await expectMapping(true)
 
         app.buttons["More"].tap()
@@ -60,6 +59,19 @@ final class PortMappingUITests: XCTestCase {
         XCTAssertFalse(app.webViews.firstMatch.isHittable)
     }
 
+    /// 打开插件页。交接盖层迟到时 `SkipKeyHandoff` 的 `openBackup()` 会把页面栈切到 `ChatBackup`，
+    /// 插件页连同映射一起消失；所以每次开好都等一层 `settle`，被顶掉就重开，不拿“当时的栈”当起点。
+    private func openPluginPage() throws {
+        let url = try XCTUnwrap(URL(string: "wonton://tab/plugin/app.whoami"))
+        for _ in 0..<2 {
+            app.open(url)
+            XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 90), app.debugDescription)
+            UITestBackend.settleKeyHandoff(app, timeout: 30)
+            if app.webViews.firstMatch.isHittable { return }
+        }
+        XCTFail("插件页反复被交接盖层顶掉：\(app.debugDescription)")
+    }
+
     private func expectMapping(_ available: Bool) async throws {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 1
@@ -72,7 +84,7 @@ final class PortMappingUITests: XCTestCase {
             do {
                 let (data, response) = try await session.data(from: url)
                 reached = (response as? HTTPURLResponse)?.statusCode == 200
-                    && String(decoding: data, as: UTF8.self).contains("GET / HTTP/")
+                    && (String(bytes: data, encoding: .utf8) ?? "").contains("GET / HTTP/")
             } catch {
                 reached = false
             }
