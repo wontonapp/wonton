@@ -51,10 +51,7 @@ struct MyAppsSettingsView: View {
             }
             if let problem = pages.viewModel.problem {
                 Section {
-                    ProblemNotice(problem: Problem(
-                        title: String(localized: .Tab1.tabSettingsUnreadable),
-                        detail: problem.message
-                    ))
+                    ProblemNotice(problem: problem.problem)
                 }
             }
         }
@@ -107,10 +104,7 @@ private struct MyAppCandidates: View {
             }
             if let problem = pages.viewModel.problem {
                 Section {
-                    ProblemNotice(problem: Problem(
-                        title: String(localized: .Tab1.tabSettingsUnreadable),
-                        detail: problem.message
-                    ))
+                    ProblemNotice(problem: problem.problem)
                 }
             }
         }

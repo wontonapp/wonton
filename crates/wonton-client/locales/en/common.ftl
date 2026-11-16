@@ -157,6 +157,5 @@ app-lock-write-failed = Can't write the app lock settings file { $path }: { $rea
 app-lock-read-failed = Can't read the app lock settings file { $path }: { $reason }
 app-lock-corrupt = The app lock settings file { $path } is damaged: { $reason }
 pages-storage-problem = Could not save My Apps; they may fall back to an older state on next launch: { $error }
-pages-file-unreadable = Can't read My Apps on this device, so the defaults are in use for now: { $reason }
 # Owner-only generated plugin keys; input and collected secrets are never returned.
 plugins-owner-secret-not-listed = This key is not in the open list: { $name }

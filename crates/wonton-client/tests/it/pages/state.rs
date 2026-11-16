@@ -1,3 +1,8 @@
+use axum::http::Method;
+use wonton_client::{BOT_PANEL_PINS_PATH, PagesFailure};
+
+use crate::plugins::rig::{Canned, Headered};
+
 use super::*;
 
 #[tokio::test]
@@ -15,7 +20,10 @@ async fn a_storage_error_leaves_my_apps_unchanged_and_recovers() {
     let after = rig.app.pages();
     assert_eq!(after.my_app_candidates, before.my_app_candidates);
     assert_eq!(after.auto_add, before.auto_add);
-    assert!(after.problem.is_some());
+    assert_eq!(
+        after.problem.as_ref().and_then(|problem| problem.reason),
+        Some(PagesFailure::StorageWrite)
+    );
     std::fs::remove_dir(rig.data_dir().join("layout.json")).unwrap();
     rig.app
         .dispatch(Action::Pages {
@@ -355,4 +363,270 @@ async fn page_urls_keep_web_entry_and_resolve_declared_paths_from_origin() {
         item(&rig.app.pages(), &page_tab).url.as_deref(),
         Some("https://x/feed")
     );
+}
+
+fn pin_response(id: &str) -> String {
+    serde_json::json!({
+        "pins": [{
+            "id": id,
+            "scope": {"type": "main"},
+            "tab": {"type": "url", "url": format!("https://example.com/{id}")},
+            "title": id,
+            "attention": false,
+            "plugin_id": "app.example.agent",
+            "bot": "agent",
+            "name": "Agent"
+        }],
+        "consents": []
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn page_problem_pin_read_preserves_pages_and_recovers() {
+    let rig = Rig::new().await.without_periodic_checks();
+    rig.core.answer_always(
+        Method::GET,
+        BOT_PANEL_PINS_PATH,
+        Canned(200, pin_response("first")),
+    );
+    rig.connected().await;
+    let first_tab = TabRef::Url {
+        url: "https://example.com/first".into(),
+    };
+    let first = wait_pages(&rig, |view| {
+        view.panel.iter().any(|page| page.tab == first_tab)
+    })
+    .await;
+    for (status, body, expected) in [
+        (200, "{\"pins\":[]}", PagesFailure::InvalidResponse),
+        (502, "", PagesFailure::Upstream),
+        (
+            403,
+            "{\"error\":{\"kind\":\"permission_denied\",\"message\":\"denied\"}}",
+            PagesFailure::Forbidden,
+        ),
+        (503, "", PagesFailure::Upstream),
+    ] {
+        rig.core.answer_always(
+            Method::GET,
+            BOT_PANEL_PINS_PATH,
+            Canned(status, body.into()),
+        );
+        let failed = wait_pages(&rig, |view| {
+            view.problem.as_ref().and_then(|problem| problem.reason) == Some(expected)
+        })
+        .await;
+        assert_eq!(
+            failed
+                .panel
+                .iter()
+                .map(|page| &page.tab)
+                .collect::<Vec<_>>(),
+            first.panel.iter().map(|page| &page.tab).collect::<Vec<_>>()
+        );
+    }
+    rig.core.answer_always(
+        Method::GET,
+        BOT_PANEL_PINS_PATH,
+        Canned(200, pin_response("recovered")),
+    );
+    let recovered_tab = TabRef::Url {
+        url: "https://example.com/recovered".into(),
+    };
+    let recovered = wait_pages(&rig, |view| {
+        view.problem.is_none() && view.panel.iter().any(|page| page.tab == recovered_tab)
+    })
+    .await;
+    assert!(!recovered.panel.iter().any(|page| page.tab == first_tab));
+}
+
+#[tokio::test]
+async fn page_problem_reloads_an_externally_repaired_local_file() {
+    let mut rig = Rig::new().await;
+    let layout = rig.data_dir().join("layout.json");
+    std::fs::write(&layout, b"{\"server_id\":null}").unwrap();
+    rig.reopen();
+    let failed = rig.app.pages();
+    assert_eq!(
+        failed.problem.unwrap().reason,
+        Some(PagesFailure::InvalidConfig)
+    );
+    let result = rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+    });
+    assert!(matches!(result, Err(CoreError::Storage { .. })));
+    assert_eq!(std::fs::read(&layout).unwrap(), b"{\"server_id\":null}");
+    assert_eq!(
+        rig.app.pages().problem.unwrap().reason,
+        Some(PagesFailure::InvalidConfig)
+    );
+    let fixed = rig.data_dir().join("layout-repaired.json");
+    std::fs::write(
+        &fixed,
+        b"{\"server_id\":null,\"my_apps\":[],\"auto_add\":false}",
+    )
+    .unwrap();
+    std::fs::rename(fixed, layout).unwrap();
+    let recovered = wait_pages(&rig, |view| view.problem.is_none()).await;
+    assert!(!recovered.auto_add);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn page_problem_rechecks_a_temporarily_unreadable_local_file() {
+    let mut rig = Rig::new().await;
+    let layout = rig.data_dir().join("layout.json");
+    std::os::unix::fs::symlink("layout.json", &layout).unwrap();
+    rig.reopen();
+    assert_eq!(
+        rig.app.pages().problem.unwrap().reason,
+        Some(PagesFailure::StorageRead)
+    );
+    let repaired = rig.data_dir().join("layout-repaired.json");
+    std::fs::write(
+        &repaired,
+        b"{\"server_id\":null,\"my_apps\":[],\"auto_add\":false}",
+    )
+    .unwrap();
+    std::fs::rename(repaired, layout).unwrap();
+    let recovered = wait_pages(&rig, |view| view.problem.is_none()).await;
+    assert!(!recovered.auto_add);
+}
+
+#[tokio::test]
+async fn page_problem_pin_consent_failure_clears_when_the_result_is_observed() {
+    let rig = Rig::new().await.without_periodic_checks();
+    let plugin = "app.example.agent";
+    let bot = "agent";
+    let path = wonton_client::bot_panel_consent_path(plugin, bot);
+    let list = serde_json::json!({"pins": [], "consents": [{
+        "plugin_id": plugin, "bot": bot, "name": "Agent", "main_consent": true
+    }]})
+    .to_string();
+    rig.core
+        .answer_always(Method::GET, BOT_PANEL_PINS_PATH, Canned(200, list));
+    rig.core
+        .answer_always(Method::PUT, &path, Canned(503, "".into()));
+    rig.connected().await;
+    wait_pages(&rig, |view| {
+        view.bot_pin_consents.iter().any(|entry| entry.main_consent)
+    })
+    .await;
+    let action = || Action::Pages {
+        action: wonton_protocol::PageAction::SetBotPinConsent {
+            plugin_id: plugin.into(),
+            bot: bot.into(),
+            allowed: false,
+        },
+    };
+    rig.app.dispatch(action()).unwrap();
+    let failed = wait_pages(&rig, |view| {
+        view.problem.as_ref().and_then(|problem| problem.reason) == Some(PagesFailure::Upstream)
+    })
+    .await;
+    assert!(failed.bot_pin_consents[0].main_consent);
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+        })
+        .unwrap();
+    assert_eq!(
+        rig.app.pages().problem.unwrap().reason,
+        Some(PagesFailure::Upstream)
+    );
+    let recovered_list = serde_json::json!({"pins": [], "consents": [{
+        "plugin_id": plugin, "bot": bot, "name": "Agent", "main_consent": false
+    }]})
+    .to_string();
+    rig.core.answer_always(
+        Method::GET,
+        BOT_PANEL_PINS_PATH,
+        Canned(200, recovered_list),
+    );
+    let recovered = wait_pages(&rig, |view| {
+        view.problem.is_none()
+            && view
+                .bot_pin_consents
+                .iter()
+                .any(|entry| !entry.main_consent)
+    })
+    .await;
+    assert!(!recovered.bot_pin_consents[0].main_consent);
+
+    let active_list = serde_json::json!({"pins": [], "consents": [{
+        "plugin_id": plugin, "bot": bot, "name": "Agent", "main_consent": true
+    }]})
+    .to_string();
+    rig.core
+        .answer_always(Method::GET, BOT_PANEL_PINS_PATH, Canned(200, active_list));
+    wait_pages(&rig, |view| {
+        view.bot_pin_consents.iter().any(|entry| entry.main_consent)
+    })
+    .await;
+    rig.app.dispatch(action()).unwrap();
+    wait_pages(&rig, |view| {
+        view.problem.as_ref().and_then(|problem| problem.reason) == Some(PagesFailure::Upstream)
+    })
+    .await;
+    rig.core.answer_always(
+        Method::GET,
+        BOT_PANEL_PINS_PATH,
+        Canned(200, r#"{"pins":[],"consents":[]}"#.into()),
+    );
+    let recovered = wait_pages(&rig, |view| {
+        view.problem.is_none() && view.bot_pin_consents.is_empty()
+    })
+    .await;
+    assert!(recovered.bot_pin_consents.is_empty());
+}
+
+#[tokio::test]
+async fn page_problem_uses_the_tunnel_error_category_and_recovers() {
+    let rig = Rig::new().await.without_periodic_checks();
+    rig.connected().await;
+    for (code, expected) in [
+        ("upstream-unavailable", PagesFailure::Upstream),
+        ("unauthorized", PagesFailure::Unauthorized),
+        ("transport-unavailable", PagesFailure::TransportUnavailable),
+        ("protocol", PagesFailure::Protocol),
+    ] {
+        rig.core.answer_always_headered(
+            Method::GET,
+            BOT_PANEL_PINS_PATH,
+            Headered(
+                502,
+                vec![("x-wonton-tunnel-error".into(), code.into())],
+                String::new(),
+            ),
+        );
+        wait_pages(&rig, |view| {
+            view.problem.as_ref().and_then(|problem| problem.reason) == Some(expected)
+        })
+        .await;
+    }
+    for (status, kind, expected) in [
+        (403, "cross_site", PagesFailure::Forbidden),
+        (401, "unauthenticated", PagesFailure::Unauthorized),
+        (400, "invalid_input", PagesFailure::InvalidInput),
+        (404, "not_found", PagesFailure::NotFound),
+        (500, "storage", PagesFailure::Upstream),
+    ] {
+        rig.core.answer_always_headered(
+            Method::GET,
+            BOT_PANEL_PINS_PATH,
+            Headered(
+                status,
+                vec![("x-wonton-error".into(), kind.into())],
+                serde_json::json!({"error": {"kind": kind, "message": "test"}}).to_string(),
+            ),
+        );
+        wait_pages(&rig, |view| {
+            view.problem.as_ref().and_then(|problem| problem.reason) == Some(expected)
+        })
+        .await;
+    }
+    rig.core
+        .stop_answering_headered(Method::GET, BOT_PANEL_PINS_PATH);
+    wait_pages(&rig, |view| view.problem.is_none()).await;
 }

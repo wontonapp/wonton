@@ -15,8 +15,8 @@ use url::Url;
 use wonton_matrix::{LayoutContent, MatrixSession, OwnedRoomId};
 use wonton_protocol::{
     BotPanelPin, BotView, ChatViewModel, CoreError, HomeStatus, HomeViewModel, LayoutSettings,
-    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesProblem, PagesViewModel, PanelEntry, PanelItem,
-    PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
+    MAX_PANEL_PAGES, MyAppRef, PageAction, PagesFailure, PagesProblem, PagesViewModel, PanelEntry,
+    PanelItem, PanelScope, PinTarget, PlacedTab, PluginState, PluginsViewModel, RoomPanel, TabIcon,
     TabLoadFailure, TabRef,
 };
 
@@ -63,10 +63,22 @@ struct PreviousPlugin {
     revision: String,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+enum PinAction {
+    Remove(String),
+    Consent {
+        plugin_id: String,
+        bot: String,
+        allowed: bool,
+    },
+}
+
 #[derive(Clone)]
 struct PagesState {
     config: LayoutFile,
     problem: Option<PagesProblem>,
+    read_problem: Option<PagesProblem>,
+    action_problem: Option<(PinAction, PagesProblem)>,
     /// 打开着的页面，从底到顶；空就是根页面。
     stack: Vec<StoredItem>,
     content: HashMap<TabRef, content::ContentPage>,
@@ -92,7 +104,7 @@ struct PagesState {
     /// 核心地址：MCP Apps 的宿主页按它拼。
     core_url: Option<Url>,
     /// 拉 Bot 钉页失败的原因（和配置文件的 problem 分开）。
-    pins_problem: Option<String>,
+    pins_problem: Option<PagesProblem>,
     /// 还没答的摄像头/麦克风询问（一次只有一张，页面关掉就清）。
     media_prompt: Option<PendingMediaPrompt>,
     /// 打开的 widget 页（ADR-0096），同一时间只有一个。
@@ -154,38 +166,30 @@ impl PagesLink {
     ) -> Arc<Self> {
         let path = data_dir.join(LAYOUT_FILE);
         let home_view = home.view();
-        let _home_link = home.clone();
-        let (config, mut problem) = match read_file(&path) {
+        let (config, mut read_problem) = match read_file(&path) {
             Ok(config) => (config, None),
-            Err(reason) => {
+            Err(error) => {
                 let mut config = default_file(home_view.server_id.clone());
                 config.my_apps_initialized = true;
-                (
-                    config,
-                    Some(PagesProblem {
-                        message: l10n!(
-                            CATALOG,
-                            language(),
-                            "pages-file-unreadable",
-                            reason = reason
-                        ),
-                    }),
-                )
+                (config, Some(file_problem(error)))
             }
         };
         let server_changed =
             home_view.server_id.is_some() && config.server_id != home_view.server_id;
         let mut config = config;
+        let mut problem = None;
         normalize_for_server(&mut config, home_view.server_id.clone());
         if server_changed {
             match persist(&path, &config) {
-                Ok(()) => problem = None,
+                Ok(()) => read_problem = None,
                 Err(error) => problem = Some(storage_problem(&error)),
             }
         }
         let state = PagesState {
             config,
             problem,
+            read_problem,
+            action_problem: None,
             stack: Vec::new(),
             content: HashMap::new(),
             paired: home_view.server_id.is_some(),
@@ -279,7 +283,7 @@ impl PagesLink {
         }
     }
 
-    /// 收回或给回一个 Bot 往主面板钉页的同意：写服务器，成了才更新本机。
+    /// 收回或给回一个 Bot 往主面板上钉页的同意：写服务器，成了才更新本机。
     fn set_bot_consent(
         &self,
         plugin_id: String,
@@ -290,11 +294,31 @@ impl PagesLink {
         self.runtime.spawn(async move {
             let Some(link) = weak.upgrade() else { return };
             match link.put_bot_consent(&plugin_id, &bot, allowed).await {
-                Ok(()) => link.recompute(),
-                Err(error) => {
-                    let message = error.to_string();
+                Ok(()) => {
+                    let mut state = lock(&link.state);
+                    if matches!(
+                        state.action_problem.as_ref().map(|(action, _)| action),
+                        Some(PinAction::Consent {
+                            plugin_id: current_plugin,
+                            bot: current_bot,
+                            ..
+                        }) if current_plugin == &plugin_id && current_bot == &bot
+                    ) {
+                        state.action_problem = None;
+                    }
+                    drop(state);
+                    link.recompute();
+                }
+                Err(problem) => {
                     link.runtime_change(|state, _| {
-                        state.problem = Some(PagesProblem { message });
+                        state.action_problem = Some((
+                            PinAction::Consent {
+                                plugin_id,
+                                bot,
+                                allowed,
+                            },
+                            problem,
+                        ));
                         Ok(())
                     })
                     .ok();
@@ -316,31 +340,51 @@ impl PagesLink {
         (plugins, home.clone(), bots)
     }
 
+    fn reload_config_if_recovered(&self, state: &mut PagesState) {
+        if state.read_problem.is_none() || std::fs::symlink_metadata(&self.path).is_err() {
+            return;
+        }
+        let Ok(config) = read_file(&self.path) else {
+            return;
+        };
+        state.config = config;
+        state.read_problem = None;
+    }
+
     pub(super) fn recompute(&self) {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
+        self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
         let config_changed = refresh_state(&mut state, &plugins, &home);
-        if config_changed {
-            match persist(&self.path, &state.config) {
-                Ok(()) => state.problem = None,
-                Err(error) => state.problem = Some(storage_problem(&error)),
-            }
+        if config_changed && state.read_problem.is_none() {
+            let persisted = match persist(&self.path, &state.config) {
+                Ok(()) => {
+                    state.problem = None;
+                    true
+                }
+                Err(error) => {
+                    state.problem = Some(storage_problem(&error));
+                    false
+                }
+            };
             // 新装自动加入、卸载清行都改了配置：本机落了盘，接着写账号数据（和 config_change 同一条路），
             // 不然另一台设备收不到，下次收账号数据还会把这里的改动冲掉。
-            let settings = state.config.layout();
-            let session = self.session.borrow().clone();
-            if let Some(session) = session
-                && self.layout_ready.load(Ordering::SeqCst)
-            {
-                self.dirty.store(true, Ordering::SeqCst);
-                let weak = lock(&self.weak).clone();
-                self.runtime.spawn(async move {
-                    if let Some(link) = weak.upgrade() {
-                        link.push_layout(&session, settings).await;
-                    }
-                });
+            if persisted {
+                let settings = state.config.layout();
+                let session = self.session.borrow().clone();
+                if let Some(session) = session
+                    && self.layout_ready.load(Ordering::SeqCst)
+                {
+                    self.dirty.store(true, Ordering::SeqCst);
+                    let weak = lock(&self.weak).clone();
+                    self.runtime.spawn(async move {
+                        if let Some(link) = weak.upgrade() {
+                            link.push_layout(&session, settings).await;
+                        }
+                    });
+                }
             }
         }
         self.remove_uninstalled_room_pages(&mut state);
@@ -373,6 +417,12 @@ impl PagesLink {
         let (plugins, home, bots) = self.inputs();
         let previous = lock(&self.state).clone();
         let mut state = previous.clone();
+        self.reload_config_if_recovered(&mut state);
+        if let Some(problem) = &state.read_problem {
+            return Err(CoreError::Storage {
+                reason: problem.message.clone(),
+            });
+        }
         bot::replace_bots(&mut state, bots);
         refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
@@ -388,6 +438,7 @@ impl PagesLink {
             return Err(error);
         }
         state.problem = None;
+        state.read_problem = None;
         clear_gone_prompt(&mut state);
         widget::clear_closed(&mut state);
         let sync_stale = self.sync_problem.borrow().is_some();
@@ -418,11 +469,12 @@ impl PagesLink {
         let _writing = lock(&self.writing);
         let (plugins, home, bots) = self.inputs();
         let mut state = lock(&self.state).clone();
+        self.reload_config_if_recovered(&mut state);
         bot::replace_bots(&mut state, bots);
         let config_changed = refresh_state(&mut state, &plugins, &home);
         change(&mut state, &plugins)?;
         ensure_stack(&mut state, &plugins);
-        if config_changed {
+        if config_changed && state.read_problem.is_none() {
             match persist(&self.path, &state.config) {
                 Ok(()) => state.problem = None,
                 Err(error) => state.problem = Some(storage_problem(&error)),
@@ -506,7 +558,13 @@ impl PagesState {
     }
 }
 
-// 每次刷新的状态推导函数在 state 模块（refresh_state、卸载清理、自动加入）。
+fn file_problem(error: LayoutReadError) -> PagesProblem {
+    PagesProblem {
+        reason: Some(error.reason),
+        message: error.message,
+    }
+}
+
 fn invalid(reason: &str) -> CoreError {
     CoreError::InvalidInput {
         reason: reason.to_owned(),
