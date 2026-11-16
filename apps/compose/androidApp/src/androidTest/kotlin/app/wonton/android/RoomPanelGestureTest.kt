@@ -6,8 +6,10 @@ import android.Manifest
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.isDisplayed
+import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -121,8 +124,9 @@ class RoomPanelGestureTest {
         openButton.performTouchInput { click() }
         // 重开这一刻渲染进程常正在崩（WebView 重建），点下去的落脚比平时慢，等面板真的回来再截图。
         compose.waitUntil(10_000) { closePage.isDisplayed() }
+        // 收回后选中项会回落，重开的新渲染进程也常先以空白 finished：等回来的真页面，不拿一次 10 秒赌。
+        awaitPlayerEventually()
         screenshot("main-reopened")
-        awaitFullPlayer()
         pageAssertions.withPlayerHeld {
             awaitFullPlayer()
             screenshot("main-full-player-held")
@@ -133,7 +137,7 @@ class RoomPanelGestureTest {
     fun uninstallingPageDoesNotReuseAStartedWebView() {
         openButton.performTouchInput { click() }
         compose.onNodeWithContentDescription("Player").performClick()
-        awaitFullPlayer()
+        awaitPlayerEventually()
         fixture.uninstallPlayer()
         SystemClock.sleep(15_000)
         val uninstalling = compose.activity.getString(R.string.tab_uninstalling)
@@ -160,14 +164,18 @@ class RoomPanelGestureTest {
     fun stoppedPageKeepsItsStatusAfterParkAndResume() {
         val tab = TabRef.Plugin("app.example.photos", null)
         val title = compose.activity.getString(R.string.tab_stopped, "Photos")
+        // 「开始」按钮只在停机的插件页出现，和状态页标题一起断，别只认一个信号。
+        val start = compose.activity.getString(R.string.tab_start)
         fixture.openPage(tab)
         pageAssertions.awaitNotReady(title)
+        compose.onNodeWithText(start).assertIsDisplayed()
         screenshot("not-ready-open")
         fixture.openPage(TabRef.Chat)
         compose.waitUntil(10_000) { openButton.isDisplayed() }
         screenshot("not-ready-parked")
         fixture.openPage(tab)
         pageAssertions.awaitNotReady(title)
+        compose.onNodeWithText(start).assertIsDisplayed()
         screenshot("not-ready-resumed")
     }
 
@@ -187,14 +195,16 @@ class RoomPanelGestureTest {
         assertRoomClosed(closedBottom)
         openButton.performTouchInput { click() }
         closePage.assertIsDisplayed()
+        pageAssertions.awaitPlayer()
         screenshot("room-button-full")
         pressBack()
         closeStrip.assertIsDisplayed()
         closePage.assertDoesNotExist()
+        compose.waitUntil(10_000) { pageAssertions.playerVisible() }
         screenshot("room-back-peek")
         pressBack()
         assertRoomClosed(closedBottom)
-        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+        compose.onNodeWithText("Echo").assertIsDisplayed()
         openButton.performTouchInput { click() }
         closePage.assertIsDisplayed()
         pressBack()
@@ -211,6 +221,24 @@ class RoomPanelGestureTest {
         closePage.assertIsDisplayed()
         closeStrip.assertIsNotDisplayed()
         assertTrue("FULL must show the fixture page", pageAssertions.playerVisible())
+    }
+
+    /** WebView 渲染进程重建后旧页常停在空白；关掉再选一次，最多三轮。 */
+    private fun awaitPlayerEventually() {
+        repeat(3) {
+            try {
+                awaitFullPlayer()
+                return
+            } catch (_: ComposeTimeoutException) {
+                Log.i("PanelGestureTest", "player blank tree:\n${compose.onRoot().printToString(maxDepth = 4)}")
+                closePage.performTouchInput { click() }
+                compose.waitUntil(10_000) { openButton.isDisplayed() }
+                openButton.performTouchInput { click() }
+                compose.waitUntil(10_000) { closePage.isDisplayed() }
+                compose.onNodeWithContentDescription("Player").performClick()
+            }
+        }
+        awaitFullPlayer()
     }
 
     private fun pressBack() {

@@ -1,11 +1,13 @@
 package app.wonton.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.content.res.Configuration
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import android.view.View
 import android.view.MotionEvent
@@ -272,6 +274,9 @@ fun PluginWebView(
                         WebViewCompat.setProfile(this, layer.profile)
                     } else if (publicPage) WebViewCompat.setProfile(this, publicProfile.getName())
                     configureAppearance(this, canvas, darkTheme)
+                    // 模拟器用 SwiftShader 画 WebView，整屏网页常超显存配额，图一片都不出（渲染进程
+                    // 仍可能崩）；调试包在模拟器上改软件层，真机照旧走硬件。
+                    setSoftwareLayerIfEmulator(context)
                     controller.view = this
                     webChromeClient = PluginChromeClient(this, controller)
                     webViewClient = ProxyAuthClient(proxy, reload, url, controller, snapshot,
@@ -293,6 +298,7 @@ fun PluginWebView(
                 }
                 configureBackground(view, canvas)
                 view.updateTheme(darkTheme, canvas)
+                view.wantedVisible = visible
                 view.visibility = if (visible) android.view.View.VISIBLE else android.view.View.INVISIBLE
                 if (view.settings.textZoom != textZoom) view.settings.textZoom = textZoom
                 val client = view.webViewClient as ProxyAuthClient
@@ -315,12 +321,18 @@ private fun pluginContext(context: android.content.Context, dark: Boolean): Cont
 private fun pluginTheme(dark: Boolean): Int = if (dark) android.R.style.Theme_Material_NoActionBar
     else android.R.style.Theme_Material_Light_NoActionBar
 
+private fun WebView.setSoftwareLayerIfEmulator(context: Context) {
+    val debug = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+    if (debug && Build.HARDWARE == "ranchu") setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+}
+
 private class ThemedPluginWebView(
     private val wrapped: ContextThemeWrapper,
     private var dark: Boolean,
     private val controller: PluginWebViewController,
 ) : WebView(wrapped) {
     var rendererGone = false
+    var wantedVisible = false
     private var disposed = false
     private var bridgeOrigins: Set<String>? = null
     private var startScript: String? = null
@@ -567,6 +579,8 @@ private class ProxyAuthClient(
         controller.updateHistory()
         // 出错的加载也会走到这里。
         if (!failedThisLoad) {
+            // 加载开始时网页框被藏起来，此时组合不一定再跑 update，按当前可见要求自己放出来。
+            view.visibility = if ((view as ThemedPluginWebView).wantedVisible) View.VISIBLE else View.INVISIBLE
             onLoaded()
         }
     }

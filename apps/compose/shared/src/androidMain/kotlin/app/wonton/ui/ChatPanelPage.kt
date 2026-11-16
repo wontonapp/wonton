@@ -1,5 +1,6 @@
 package app.wonton.ui
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import app.wonton.protocol.PanelItem
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLayout
+import app.wonton.protocol.TabPage
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TabState
 import kotlin.math.roundToInt
@@ -84,11 +86,14 @@ internal fun PanelPage(
     LaunchedEffect(active, canConnect, page.state) {
         if (active && canConnect && page.state is TabState.Ready) state.started = true
     }
-    val script = remember(page.url, appearance, environmentKey, public) {
-        if (public) null else state.script(environmentKey, document = true)
+    val loadableNow = page.state is TabState.Ready || page.state is TabState.Upgrading
+    val script = remember(page.url, appearance, environmentKey, public, loadableNow) {
+        if (public || !loadableNow) null else state.script(environmentKey, document = true)
     }
-    LaunchedEffect(appearance, environmentKey, public) {
-        if (!public && state.started) state.script(environmentKey)?.let { state.controller.evaluateJavascript(it) }
+    LaunchedEffect(appearance, environmentKey, public, loadableNow) {
+        if (!public && loadableNow && state.started) state.script(environmentKey)?.let {
+            state.controller.evaluateJavascript(it)
+        }
     }
     LaunchedEffect(home.status) {
         if (!public) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
@@ -123,24 +128,17 @@ internal fun PanelPage(
     val webView = state.started && supported && loadable
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
         if (webView) {
+            val shown = active && (state.loaded || state.failed)
             PageWebView(
                 state, page, home, environmentKey, script.orEmpty(), inset,
-                visible = active, openLink = openLink, onDraft = onDraft, publicPage = public,
+                visible = shown, openLink = openLink, onDraft = onDraft, publicPage = public,
             )
         }
         // 没有网页框的页（还没连上、加载出错）没有东西转发触摸，露一截时由这层接手翻页。
-        if (panel.level == PanelLevel.PEEK && current && !webView) {
-            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
-                touch.observe(event)
-                true
-            })
-        }
+        if (panel.level == PanelLevel.PEEK && current && !webView) PeekTouchCatcher(touch)
         BotPageDisclosure(page, active, awaitingLogin, tabs,
             onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
-        PageStatusOverlay(
-            state, page, tab, supported, crossOriginBlocked, inset, onDetails,
-            unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
-        )
+        PanelStatusOverlay(state, page, tab, supported, crossOriginBlocked, inset, public, onDetails)
         if (panel.level == PanelLevel.FULL && current) {
             PluginPageChrome(tab, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
                 onClose = { panel.move(PanelLevel.CLOSED) },
@@ -150,6 +148,25 @@ internal fun PanelPage(
         }
     }
     DisposableEffect(current) { onDispose { if (current) takeover?.end() } }
+}
+
+@Composable
+private fun PanelStatusOverlay(
+    state: WebPageState, page: TabPage, tab: TabRef, supported: Boolean, crossOriginBlocked: Boolean,
+    inset: PaddingValues, public: Boolean, onDetails: (String) -> Unit,
+) {
+    PageStatusOverlay(
+        state, page, tab, supported, crossOriginBlocked, inset, onDetails,
+        unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
+    )
+}
+
+@Composable
+private fun PeekTouchCatcher(touch: PanelPageTouch) {
+    Box(Modifier.fillMaxSize().pointerInteropFilter { event ->
+        touch.observe(event)
+        true
+    })
 }
 
 /**

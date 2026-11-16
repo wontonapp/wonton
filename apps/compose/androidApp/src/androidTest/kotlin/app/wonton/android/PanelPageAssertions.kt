@@ -17,7 +17,6 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import app.wonton.ui.R
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 
 private const val PAGE_WAIT_MILLIS = 10_000L
@@ -36,8 +35,6 @@ internal class PanelPageAssertions(
         val text = compose.onNodeWithText(title).fetchSemanticsNode()
             .config[SemanticsProperties.Text].joinToString("\n") { it.text }
         assertTrue("Initial page has no visible status", text.isNotBlank())
-        val loading = context.getString(R.string.problem_slow_loading)
-        assertFalse("Loading placeholder is still visible", hasDisplayedText(loading))
     }
 
     fun awaitPlayer() {
@@ -46,13 +43,13 @@ internal class PanelPageAssertions(
 
     /**
      * 状态页盖住网页时，旧文档的网页框仍是 `VISIBLE`（盖的是另一层不透明 Box），无障碍树里的旧文本也还在，
-     * 所以不能用“看不到 Player”判断没就绪。壳自己的信号是状态页文字：等到目标文字出现、加载占位消失。
+     * 所以不能用“看不到 Player”判断没就绪。壳自己的信号是状态页文字，等目标文字出现。
+     *
+     * 不能拿“加载占位消失”当判据：骨架（[R.string.problem_loading]）和那句话（[R.string.problem_slow_loading]）
+     * 只在没有问题的状态页里出现，而这句 `SlowHint` 用 `alpha(0f)` 先占着位，图上看不见、语义树里算显示。
      */
     fun awaitNotReady(title: String) {
-        val slow = context.getString(R.string.problem_slow_loading)
-        compose.waitUntil(PAGE_WAIT_MILLIS) {
-            hasDisplayedText(title) && !hasDisplayedText(slow)
-        }
+        compose.waitUntil(PAGE_WAIT_MILLIS) { hasDisplayedText(title) }
     }
 
     /** 网页文字在 WebView 的无障碍树里，只有网页框可见时才算页面上看得到。 */

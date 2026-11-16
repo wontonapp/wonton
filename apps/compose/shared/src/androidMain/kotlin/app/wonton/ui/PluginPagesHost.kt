@@ -264,6 +264,7 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
             pages.core.tabContextScript(place, environment)
         }
     } catch (failure: CoreException) {
+        // 停机、卸载中的页还没有文档脚本要，这一步抛的「输入非法」不算网页的错。
         problem = failure.problem
         null
     }
@@ -274,7 +275,9 @@ internal class WebPageState(val place: PlacedTab, val pages: PagesState) {
         pages.send(Action.Pages(PageAction.ClosePage))
     }
 
-    fun loadStarted() { loaded = false; failed = false }
+    fun loadStarted() {
+        loaded = false; failed = false
+    }
 
     fun loadFinished(environment: TabEnvironment, scripts: Boolean = true) {
         loaded = true
