@@ -43,7 +43,7 @@ struct ChatRoomView: View {
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId, threadRoot: threadRoot))
         _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId, threadRoot: threadRoot))
-        _presenter = State(initialValue: RoomPresenter(files: model.files))
+        _presenter = State(initialValue: RoomPresenter(files: model.files, roomId: roomId))
         let key = model.draftKey(TimelineTarget(roomId: roomId, threadRoot: threadRoot))
         _savedAnchor = SceneStorage(wrappedValue: "", "timeline.anchor.\(key)")
     }

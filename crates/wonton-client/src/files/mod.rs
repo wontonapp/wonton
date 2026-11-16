@@ -149,7 +149,7 @@ impl FilesLink {
                 mime_type,
                 room,
             } => self.start_upload(source, name, mime_type, room),
-            FileAction::DownloadFile { id } => self.start_download(id),
+            FileAction::DownloadFile { id, room } => self.start_download(id, room),
             FileAction::CancelTransfer { id } => self.cancel(&id),
             FileAction::DismissTransfer {
                 id,
@@ -235,7 +235,7 @@ impl FilesLink {
         })
     }
 
-    fn start_download(self: &Arc<Self>, id: FileId) -> Result<(), CoreError> {
+    fn start_download(self: &Arc<Self>, id: FileId, room: String) -> Result<(), CoreError> {
         let same_file: Vec<_> = self
             .store
             .view()
@@ -286,6 +286,7 @@ impl FilesLink {
             job: Job::Download {
                 path: None,
                 etag: None,
+                room: Some(room),
             },
         })
     }
