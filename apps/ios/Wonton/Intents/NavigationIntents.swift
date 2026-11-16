@@ -42,7 +42,9 @@ struct OpenPageIntent: AppIntent {
         guard let link = parseAppLink(url: page.id), case .tab = link else {
             throw IntentProblem(CoreError.InvalidInput(reason: String(localized: .Shortcuts.shortcutsInvalidPageLink)))
         }
-        try shared().request { try await $0.open(link) }
+        // 外部网页插件在 openTab 里交给系统的 App 内浏览器（ADR-0080）。
+        guard case let .tab(tab) = link else { return .result() }
+        try shared().openTab(tab)
         return .result()
     }
 }

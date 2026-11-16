@@ -158,7 +158,8 @@ impl TestPeer {
         let device_allowlist = Allowlist::default();
         let server_allowlist = Allowlist::default();
         let upstream = Upstream::spawn().await;
-        let federation = FederationProtocol::new(server_allowlist.clone(), upstream.addr);
+        let federation =
+            FederationProtocol::new(server_allowlist.clone(), upstream.addr.to_string());
         let (paired, paired_rx) = watch::channel(BTreeSet::new());
         let forwarder = FederationForwarder::bind(
             endpoint.clone(),
@@ -213,7 +214,10 @@ impl TestPeer {
         let endpoint =
             loopback_endpoint(self.key.clone(), self.endpoint_port, Timeouts::Short).await;
         assert_eq!(endpoint.addr().id, self.id, "重启后 endpoint ID 变了");
-        let federation = FederationProtocol::new(self.server_allowlist.clone(), self.upstream.addr);
+        let federation = FederationProtocol::new(
+            self.server_allowlist.clone(),
+            self.upstream.addr.to_string(),
+        );
         // 旧转发器的监听套接字挂在刚被 abort 的 accept 任务里，运行时回收那个任务时才真正关闭；并行的
         // 测试的 bind(0) 也可能把这口临时拿走。和上面 endpoint 端口的重绑一样，等口空出来再起。
         let deadline = tokio::time::Instant::now() + RESTART;

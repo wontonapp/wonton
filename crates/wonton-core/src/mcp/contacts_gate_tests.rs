@@ -4,17 +4,21 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::header::HeaderName;
 use rmcp::model::CallToolResult;
 use serde_json::json;
-use wonton_protocol::{BotKeeper, BotRef, ChainLimits, ChainTurnReport};
+use wonton_protocol::{BotKeeper, BotRef, ChainTurnReport};
+
+use super::TurnSender;
+use super::server::turn_sender;
+use crate::plugin::bots::BotEntry;
+use crate::plugin::store::Store;
 
 use super::Caller;
 use super::test_setup::{Setup, setup};
 use super::tests::{failed, text};
 use super::tool_failure_tests::failure_kind;
 use crate::agent_chain::Chains;
-use crate::agent_chain::settings::AgentSettings;
-use crate::agent_outbox::Outbox;
 use crate::contacts::InviteeState;
 use crate::contacts::tests::{Net, Server, ask, bot_request, person_request};
 use crate::gateway::agent_chains::AgentChains;
@@ -75,19 +79,9 @@ const ONLY_CHAT: [&str; 4] = [
 
 /// 总线和一本空账本接上：轮次直接造，不经网关。返回账本。
 fn attach_ledger(s: &Setup) -> Arc<Chains> {
-    let ledger = Arc::new(
-        Chains::open(
-            s.dir.path().join("agent-chains.json"),
-            ChainLimits::default(),
-        )
-        .unwrap(),
-    );
-    s.bus.attach_agent_chains(Arc::new(AgentChains::new(
-        ledger.clone(),
-        Arc::new(Outbox::default()),
-        Arc::new(AgentSettings::open(s.dir.path().join("agent-settings.json")).unwrap()),
-    )));
-    ledger
+    let chains = AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains);
+    s.bus.agent_chains().unwrap().ledger().clone()
 }
 
 /// 桥报这个 Bot 的一轮开始，说话的是 `sender`；`session` 用来结束这一轮。
@@ -114,6 +108,79 @@ async fn remote_contact(net: &Arc<Net>, a: &Server, alice: &BotRef, b: &Server, 
         .await
         .unwrap();
     net.deliver_all().await;
+}
+
+fn save_bot(s: &Setup, id: &str, name: &str, user_id: &str) {
+    let store = Store::open(s.dir.path().join("plugins")).unwrap();
+    let mut bots = store
+        .bots()
+        .load(&PluginId::parse(id).unwrap())
+        .unwrap_or_default();
+    bots.bots.insert(
+        name.to_owned(),
+        BotEntry {
+            account: crate::matrix::BotAccount {
+                user_id: user_id.to_owned(),
+                home_room: format!("!{name}:{}", user_id.split_once(':').unwrap().1),
+            },
+            device_id: None,
+            keeper: BotKeeper::User {
+                username: "alice".to_owned(),
+            },
+            bus_token: format!("{name}-token"),
+        },
+    );
+    store
+        .bots()
+        .save(&PluginId::parse(id).unwrap(), &bots)
+        .unwrap();
+}
+
+fn sender_header(value: &str) -> hyper::HeaderMap {
+    let mut headers = hyper::HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-wonton-on-behalf-of"),
+        value.parse().unwrap(),
+    );
+    headers
+}
+
+/// 请求头里的说话人得是这个 Bot 听的人；服务器名对不上就不当本机用户，别家联系人不能冒充主人。
+#[tokio::test]
+async fn a_reported_sender_is_local_only_on_our_server() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    save_bot(&s, &alice.plugin_id, "alice", "@hermes-alice:a.test");
+    let local = format!("@hermes-alice2:{}", s.bus.people().unwrap().server_name);
+    save_bot(&s, &alice.plugin_id, "alice2", &local);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+
+    // 已成立的远端联系人发来的话：认得出是听的人，但服务器不是本机。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header(BOB))),
+        Some(TurnSender::Unknown)
+    );
+    // 同一个归属人的另一个 Bot 在本机服务器上：本机用户。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header(&local))),
+        Some(TurnSender::Local(local.clone()))
+    );
+    // 同一个用户名换个服务器：不是同一个人。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header("@hermes-alice2:b.test"))),
+        Some(TurnSender::Unknown)
+    );
+    // 不是 Matrix ID 的报法。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header("alice"))),
+        Some(TurnSender::Unknown)
+    );
+    // 老接入方不报说话人、也没有进行中的轮次。
+    assert_eq!(turn_sender(&s.bus, &me, None), None);
 }
 
 /// 这个调用方此刻只看到 4 个核心工具，插件的工具调不动。
@@ -332,6 +399,36 @@ async fn without_live_turns_the_contact_list_decides() {
     assert_only_chats(&s, &me).await;
     a.contacts.remove(&alice, "alice", BOB).await.unwrap();
     assert_full(&s, &me).await;
+}
+
+/// 报的说话人是本机的人：即使有远端轮在跑，这一轮也全量。
+#[tokio::test]
+async fn a_local_sender_ignores_a_parallel_remote_turn() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let mut me = caller(&alice);
+    me.sender = Some(super::TurnSender::Local("@alice:a.test".into()));
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+    let ledger = attach_ledger(&s);
+
+    start_turn(&ledger, &alice, BOB, "s-remote");
+    assert_full(&s, &me).await;
+}
+
+/// 报的说话人认不出：收紧成只聊天，不拿 Bot 归属人的身份兜底。
+#[tokio::test]
+async fn an_unknown_sender_is_blocked_even_for_the_keeper() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let alice = a.bot("alice", "alice");
+    let mut me = caller(&alice);
+    me.sender = Some(super::TurnSender::Unknown);
+    let _ledger = attach_ledger(&s);
+
+    assert_only_chats(&s, &me).await;
 }
 
 /// 远端轮结束后的下一轮全量（回落只在没有进行中的轮次时生效，这一轮是归属人说的）。

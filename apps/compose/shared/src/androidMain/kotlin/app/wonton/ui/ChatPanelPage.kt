@@ -7,7 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -16,6 +16,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.webkit.WebViewFeature
 import app.wonton.client.TabBridgeAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.HomeStatus
@@ -48,23 +49,34 @@ internal fun PanelPage(
     onDraft: (String) -> Unit,
     onDetails: (String) -> Unit,
 ) {
-    val page = item.page
+    val sourcePage = item.page
     val tab = item.tab
     val public = tab is TabRef.Url
+    val plugin = tabs.installedPlugin(tab)
+    val access = botWebPageAccess(tab, sourcePage.url, plugin, rememberChat(tabs.core).bots)
+    val page = if (access.allowed) sourcePage else sourcePage.copy(url = null, state = TabState.Unknown)
+    val loginAcknowledged = remember(page.url) { mutableStateOf(false) }
+    val awaitingLogin = access.disclosure && !loginAcknowledged.value
     val place = remember(scope, tab) { PlacedTab.Panel(scope, tab) }
     val state = remember(place) { WebPageState(place, tabs) }
     val safe = tabSafeInsets()
     val direction = LocalLayoutDirection.current
     val density = LocalDensity.current
     val edge = page.layout == TabLayout.EDGE_TO_EDGE
+    val panelTop = if (panel.edge == PanelEdge.BOTTOM) panel.height - panel.shiftPx else 0f
+    val top = with(density) { (panel.safeTop - panelTop).coerceAtLeast(0f).toDp() }
+    val pageSafe = PaddingValues(
+        top = top, bottom = safe.calculateBottomPadding(),
+        start = safe.calculateLeftPadding(direction), end = safe.calculateRightPadding(direction),
+    )
     val cover = if (panel.level == PanelLevel.FULL) panel.safeBottom else panel.strip
     val environment = tabEnvironment(
-        safe.calculateTopPadding(), with(density) { cover.toDp() }, safe, edge,
+        top, with(density) { cover.toDp() }, pageSafe, edge,
     )
     val inset = if (edge) {
         PaddingValues(0.dp)
     } else {
-        PaddingValues(top = safe.calculateTopPadding(), bottom = safe.calculateBottomPadding())
+        PaddingValues(top = top, bottom = safe.calculateBottomPadding())
     }
     val environmentKey = environment
     val canConnect = public || home.status is HomeStatus.Connected
@@ -81,6 +93,9 @@ internal fun PanelPage(
         if (!public) state.controller.evaluateJavascript(state.pages.core.tabConnectionScript(state.tab))
     }
     val capsule = state.capsule
+    // 没铺满的页面网页框已经从状态栏下沿开始，铺满的要把状态栏那一截算进去。
+    val visibleTop = if (edge) with(density) { top.toPx() } else 0f
+    if (current) SideEffect { touch.visibleTop = { visibleTop } }
     DisposableEffect(state.controller, current, touch) {
         // 拉满时网页自己滚动，不再旁听拉面板的手势。
         state.controller.touchObserver = { event ->
@@ -102,14 +117,17 @@ internal fun PanelPage(
     }
     val crossOriginBlocked = !public && page.opensInBrowser
     val openLink = externalLinkOpener { state.problem = it }
+    val admitted = access.allowed && !awaitingLogin
     androidx.compose.foundation.layout.Box(modifier.fillMaxSize()) {
-        val loadable = page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
+        val loadable = admitted && page.url?.takeIf { !crossOriginBlocked } != null && (public || home.proxy != null)
         if (state.started && supported && loadable) {
             PageWebView(
                 state, page, home, environmentKey, script.orEmpty(), inset,
                 visible = active, openLink = openLink, onDraft = onDraft, publicPage = public,
             )
         }
+        BotPageDisclosure(page, active, awaitingLogin, tabs,
+            onContinue = { loginAcknowledged.value = true }, cancel = { panel.move(PanelLevel.CLOSED) })
         PageStatusOverlay(
             state, page, tab, supported, crossOriginBlocked, inset, onDetails,
             unsupported = if (public) stringResource(R.string.panel_public_unsupported) else null,
@@ -117,7 +135,7 @@ internal fun PanelPage(
         if (panel.level == PanelLevel.FULL && current) {
             PluginPageChrome(tab, tabs, safe, 0.dp, shortStatus(page), capsule, state.controller, takeover,
                 onClose = { panel.move(PanelLevel.CLOSED) },
-                onReload = { tabs.send(Action.ReloadTab(place)) },
+                onReload = { tabs.send(Action.Pages(PageAction.ReloadTab(place))) },
                 onDetails = onDetails,
                 onEditPanel = { panel.editing = true })
         }

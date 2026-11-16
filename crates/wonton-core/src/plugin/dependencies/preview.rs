@@ -193,8 +193,14 @@ impl PluginManager {
                             && high(provider, c)
                             && chosen(&state, &providers, &consumer.manifest.id, c, None)
                                 .is_none_or(|p| p.id == provider.id)
-                            && super::connection(&state, &consumer.manifest.id, &provider.id, c)
-                                .is_none()
+                            && super::connection(
+                                &state,
+                                &consumer.manifest.id,
+                                &provider.id,
+                                c,
+                                None,
+                            )
+                            .is_none()
                     })
             })
             .map(|consumer| CapabilityProviderRef {

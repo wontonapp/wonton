@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use wonton_l10n::l10n;
-use wonton_protocol::{CoreError, InstalledPlugin, PluginProblem};
+use wonton_protocol::{
+    CoreError, InstalledPlugin, PluginProblem, PluginStart, PluginStartState, PluginState,
+    PluginsViewModel,
+};
 
 use super::api::INSTALL_TIMEOUT;
 use super::{Listing, PluginsLink, lock};
@@ -33,6 +36,7 @@ impl PluginsLink {
         // 连接和语言在派发时固定，不能等异步任务开始才取到另一台服务器。
         let api = self.api();
         self.record(Listing::Start(id.clone()), Ok(()));
+        self.set_start(&id, Some(PluginStartState::Starting));
         let link = Arc::clone(self);
         self.runtime.spawn(async move {
             let result: Result<(), PluginProblem> = async {
@@ -58,9 +62,42 @@ impl PluginsLink {
                 starts.remove(&id);
             }
             if link.is_current_home(generation, &server) {
+                let state = result
+                    .as_ref()
+                    .err()
+                    .map(|problem| PluginStartState::Failed {
+                        problem: problem.clone(),
+                    });
+                link.set_start(&id, state);
                 link.record(Listing::Start(id), result);
             }
         });
         Ok(())
+    }
+
+    fn set_start(&self, id: &str, state: Option<PluginStartState>) {
+        self.view.send_modify(|view| {
+            view.starts.retain(|start| start.plugin_id != id);
+            if let Some(state) = state {
+                view.starts.push(PluginStart {
+                    plugin_id: id.to_owned(),
+                    state,
+                });
+            }
+            Self::reconcile_starts(view);
+        });
+    }
+
+    pub(super) fn reconcile_starts(view: &mut PluginsViewModel) -> bool {
+        let Some(installed) = &view.installed else {
+            return false;
+        };
+        let before = view.starts.len();
+        view.starts.retain(|start| {
+            !installed.plugins.iter().any(|plugin| {
+                plugin.id == start.plugin_id && matches!(plugin.status, PluginState::Running { .. })
+            })
+        });
+        before != view.starts.len()
     }
 }

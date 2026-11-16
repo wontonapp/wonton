@@ -9,11 +9,12 @@
 uniffi::setup_scaffolding!();
 
 mod action;
+mod action_domains;
 mod agent_chain;
-mod agent_handoff;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
+mod app_lock;
 mod appearance;
 mod bot_commands;
 mod bot_contacts;
@@ -36,6 +37,7 @@ mod home;
 mod lan;
 mod link;
 mod link_preview;
+pub mod manifest;
 mod matrix_login;
 mod onboarding;
 mod owner;
@@ -67,27 +69,31 @@ mod verification;
 mod widget;
 
 pub use action::Action;
+pub use action_domains::{
+    BotAction, BotContactAction, ChatAction, FamilyAction, FileAction, FriendsAction, HomeAction,
+    OnboardingAction, PageAction, PeerAction, PluginAction, PushAction, SessionAction,
+    SettingsAction, SharingAction,
+};
 pub use agent_chain::{
     ACP_CHAIN_META_KEY, AGENT_CHAINS_API_PATH, AGENT_CHAINS_PATH, AGENT_CHAINS_WAIT_SECS,
-    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH,
-    AgentChainAction, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
+    AGENT_LIMITS_PATH, AGENT_OUTBOX_PATH, AGENT_OUTBOX_WAIT_SECS, AGENT_SETTINGS_PATH, AgentAction,
+    AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
     ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
-    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
-    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
-    agent_consumer_concurrency_path,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
+    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
+    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
 };
-pub use agent_handoff::{
-    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
-    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+pub use agent_outbox::{
+    OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
+    SendMessageRequest,
 };
-pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
 };
 pub use agent_run::{AgentRunChoice, AgentRunEnd, AgentRunState};
+pub use app_lock::{AppLockTimeout, AppLockViewModel};
 pub use appearance::{
     AppearanceProblem, AppearanceViewModel, FontStyle, Rgb, TextSize, ThemeColors, ThemeMode,
 };
@@ -144,7 +150,8 @@ pub use composer::{
 pub use confirmation::{
     Answer, CARD_FIELD, CORE_LOCALPART, CardAudience, CardChoice, CardLine, ConfirmationAnswer,
     ConfirmationCard, ConfirmationCategory, ConfirmationList, ConfirmationReply, ConfirmationState,
-    ConfirmationView, ConfirmationWindow, WindowEnd, WindowView, answer_path, window_path,
+    ConfirmationTool, ConfirmationToolImpact, ConfirmationView, ConfirmationWindow, WindowEnd,
+    WindowView, answer_path, window_path,
 };
 pub use confirmation_origin::{
     CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ConfirmationOrigin, ConfirmationRequester,
@@ -166,12 +173,12 @@ pub use egress::{
 };
 pub use error::{CoreError, set_core_error_formatter};
 pub use family::FAMILY_ROOM_SYNC_PATH;
+pub use family::MEMBER_SYNC_PATH;
 pub use family::{
-    BotKeeper, BotRef, FAMILY_ROOM_EVENT, FamilyAccess, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
+    BotKeeper, BotRef, FAMILY_ROOM_EVENT, GATEWAY_REFUSAL_HEADER, GatewayRefusal,
     HOP_LIMIT_ERRCODE, ME_PATH, MEMBER_PAIRING_CODE_TTL_SECS, MEMBERS_PATH, Me, Member,
     MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus, NewSharedBot, Role,
     SHARED_BOTS_PATH, TOOL_CALL_USER_META, member_pairing_code_path, member_removal_path,
-    plugin_family_path,
 };
 pub use file::{
     FILE_ERROR_HEADER, FILES_HEADER, FileCard, FileCardAction, FileCardActions, FileError,
@@ -204,15 +211,13 @@ pub use matrix_login::{
     MatrixOidcCallback, MatrixOidcLogin, MatrixPasswordLogin,
 };
 pub use onboarding::{
-    AgentLogin, CUSTOM_MODEL_PROVIDER_PATH, CUSTOM_MODEL_PROVIDER_TEST_PATH,
-    ConfiguredModelProvider, CustomModelProvider, MODEL_PROVIDERS_PATH, ModelProvider,
-    ModelProviderFailure, ModelProviderInput, ModelProviderKey, ModelProviderProblem,
-    ModelProviders, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
+    AgentLogin, MODEL_SETTINGS_PATH, ModelSettings, ModelSettingsFailure, ModelSettingsPage,
+    ModelSettingsProblem, ONBOARDING_PATH, Onboarding, OnboardingAgent, OnboardingAgentRow,
     OnboardingCommit, OnboardingItemProblem, OnboardingItemState, OnboardingModelChoice,
     OnboardingModelStep, OnboardingNeed, OnboardingNeedRow, OnboardingProfileStep,
     OnboardingReview, OnboardingReviewDetail, OnboardingReviewItem, OnboardingReviewKind,
     OnboardingStep, OnboardingTip, OnboardingTips, OnboardingTooOld, OnboardingUpdate,
-    OnboardingViewModel, ReplacedAgent, StepNav, model_provider_path, model_provider_test_path,
+    OnboardingViewModel, ReplacedAgent, StepNav,
 };
 pub use owner::{
     MAX_DISPLAY_NAME_CHARS, OwnerProfile, OwnerProfileUpdate, ProfileProblem, check_display_name,
@@ -256,25 +261,31 @@ pub use plugin::{
     AddSourceRequest, AddedSource, AddedTools, AskEveryUpdate, BlockedCategory, BotSwitch,
     CapabilityDefaultChoice, CapabilityProvider, CapabilityProviderRef, CapabilityProviderSettings,
     CapabilitySetting, ConsumerCapabilityChoice, ConsumerCapabilitySetting, InUseError,
-    InstallPreview, InstallProgress, InstallRequest, InstallSource, InstallStage, InstallTogether,
-    InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES, MissingCapability,
-    OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets, OwnerSecretFailure,
-    OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine, PermissionOpened,
-    PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail, PluginDetailOutcome,
-    PluginDetailRoute, PluginDevice, PluginFailure, PluginHealth, PluginIcon, PluginImage,
-    PluginKind, PluginLimits, PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime,
-    PluginScope, PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
+    InstallFailure, InstallPreview, InstallProgress, InstallRequest, InstallSource, InstallStage,
+    InstallTogether, InstalledPlugin, InstalledPlugins, LanWebuiOffer, MAX_PLUGIN_ARCHIVE_BYTES,
+    MissingCapability, OpenWindow, OwnerPluginSecret, OwnerPluginSecretValue, OwnerPluginSecrets,
+    OwnerSecretFailure, OwnerSecretProblem, OwnerSecretView, OwnerSecretsView, PermissionLine,
+    PermissionOpened, PermissionRisk, PermissionUpdate, PluginAuthor, PluginDetail,
+    PluginDetailOutcome, PluginDetailRoute, PluginDevice, PluginDeviceKind, PluginFailure,
+    PluginGrantedDevice, PluginHealth, PluginIcon, PluginImage, PluginKind, PluginLimits,
+    PluginMediaGrant, PluginOperation, PluginProblem, PluginRuntime, PluginScope,
+    PluginSettingField, PluginSettingKind, PluginSettingOption, PluginSettingsUpdate,
     PluginSettingsView, PluginState, PluginTakeover, PluginTask, PluginTaskNextStep,
-    PluginTaskState, PluginTrust, PluginWriter, PluginsViewModel, RequirementLine,
-    RequirementStatus, SecretInput, SecretInputState, SecretUpdate, SecretValues, SecurityTier,
-    SettingValue, SettingValues, SettingsFieldError, SettingsFieldProblem,
-    SettingsFieldProblemKind, SettingsForm, SettingsInvalidError, SettingsProblem,
-    SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, SourceKind,
-    StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection, TakeoverState,
-    ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest, UpgradeOffer,
-    UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel, plugin_scope_path,
-    plugin_settings_path, plugin_settings_preview_path, secret_input_path,
+    PluginTaskState, PluginTrust, PluginWidget, PluginWriter, PluginsViewModel, RemoteAuth,
+    RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant, RemoteOauthStart,
+    RequirementLine, RequirementStatus, RoomWidget, SecretInput, SecretInputState, SecretUpdate,
+    SecretValues, SecurityTier, SettingValue, SettingValues, SettingsFieldError,
+    SettingsFieldProblem, SettingsFieldProblemKind, SettingsForm, SettingsInvalidError,
+    SettingsProblem, SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind,
+    SourceKind, StorageUsage, StoreFailure, StoreItem, StoreListing, StoreProblem, StoreSection,
+    TakeoverState, ToolAccess, ToolPolicyEntry, ToolPolicyView, UninstallPreview, UninstallRequest,
+    UpgradeOffer, UpgradeRequest, UpgradeResult, WidgetCapability, WidgetCapabilityLevel,
+    WidgetEntry, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
+    plugin_scope_path, plugin_settings_path, plugin_settings_preview_path, remote_oauth_start_path,
+    secret_input_path,
 };
+pub use plugin::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
+pub use plugin::{PluginStart, PluginStartState, RoomPlugin};
 pub use plugin_mail::{MAIL_FIELD, PluginMail, PluginMailAttachment};
 pub use plugin_notice::{NOTICE_FIELD, NoticeLevel, PluginNotice};
 pub use port_mapping::{
@@ -294,8 +305,9 @@ pub use roles::{
     AdminScope, AiLevel, AppScope, BOT_AI_LEVEL_ENV, CAPABILITIES_HEADER, Capability,
     DEFAULT_INVITE_ROLE_PATH, Gate, JOIN_REQUESTS_PATH, JoinOutcome, JoinRequest, JoinRequestList,
     OIDC_USER_GROUP, PERMISSION_REQUIRED, PermissionItem, PermissionRequired, Permissions,
-    PluginAudience, ROLES_PATH, RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate,
-    RolesViewModel, TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
+    PluginAudience, PluginAudienceChoice, PluginAudienceNotice, PluginAudienceView, ROLES_PATH,
+    RoleAssignment, RoleDef, RoleDraft, RoleList, RoleTemplate, RolesViewModel,
+    TOOL_CALL_CAPABILITIES_META, friend_role_path, join_request_approve_path,
     join_request_reject_path, member_role_path, plugin_audience_path, role_path,
 };
 pub use secret::SecretString;
@@ -324,10 +336,10 @@ pub use side_chat::{
 };
 pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
-    BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
-    MessageAction, MessageContent, RichBlock, RichBlockKind, RichLink, RichLinkKind, RichSpan,
-    SendState, TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, TimelineScroll,
-    TimelineUpdate, TimelineViewport,
+    BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
+    MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
+    RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
+    TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };
 pub use timeline_action::{TimelineAction, TimelineTarget};
 pub use verification::{

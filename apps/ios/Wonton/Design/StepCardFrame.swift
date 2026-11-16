@@ -63,7 +63,7 @@ struct StepCardFrame<Content: View>: View {
                 .accessibilityLabel(String(localized: .Design.designStepProgress(Int(nav.position), Int(nav.total))))
             Spacer(minLength: 0)
             Button(String(localized: .Design.designSkip), action: skip)
-                .buttonStyle(.plain)
+                .wontonNavigationAction()
                 .wontonText(WontonTheme.typography.body)
                 .foregroundStyle(Color(colors.textPrimary))
                 .frame(minWidth: WontonTheme.size.target, minHeight: WontonTheme.size.target)
@@ -71,5 +71,6 @@ struct StepCardFrame<Content: View>: View {
                 .opacity(nav.canSkip ? 1 : WontonTheme.ratio.secondaryContent)
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .environment(\.wontonGlassControls, true)
     }
 }

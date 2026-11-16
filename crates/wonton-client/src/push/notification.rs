@@ -83,6 +83,7 @@ impl Payload {
             confirmation: None,
             contact_request: Some(request),
             thread_root: None,
+            hidden: false,
             lock_screen_private: false,
             unread_total: 0,
         })
@@ -105,6 +106,7 @@ impl Payload {
             confirmation: None,
             contact_request: None,
             thread_root: None,
+            hidden: false,
             lock_screen_private: false,
             unread_total: 0,
         }
@@ -297,6 +299,7 @@ impl PushLink {
             confirmation: None,
             contact_request: None,
             thread_root: None,
+            hidden: false,
             lock_screen_private: false,
             unread_total: 0,
         };
@@ -340,6 +343,7 @@ impl PushLink {
                     }),
                     contact_request: None,
                     thread_root,
+                    hidden: false,
                     lock_screen_private: false,
                     unread_total: 0,
                 })
@@ -410,6 +414,7 @@ pub(crate) fn push_notification(
         confirmation: None,
         contact_request: None,
         thread_root,
+        hidden: false,
         // 这两项构造时还不知道：保持连接那一路自己填，推送这一路由 [`PushLink::decorate`] 统一补。
         lock_screen_private: false,
         unread_total: 0,

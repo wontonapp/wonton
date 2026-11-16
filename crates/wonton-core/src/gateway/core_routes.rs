@@ -16,7 +16,7 @@ use crate::l10n;
 use super::session::{CORE_COOKIE, CORE_TTL, cookies, set_cookie};
 use super::{
     Gateway, TunnelPeer, api, bots, confirmations, core_upgrade, devices, family, files, friends,
-    isolation, matrix, me, model_providers, onboarding, pages, peers, push, roles,
+    isolation, matrix, me, model_settings, onboarding, pages, peers, plugin_audience, push, roles,
     same_origin_path, settings_api, sso, store_api, tool_policy, with_cookie,
 };
 
@@ -52,35 +52,10 @@ fn confirmation_routes() -> Router<Arc<Gateway>> {
         )
 }
 
-/// 密钥请求显式限 8 KiB，鉴权和同源限制与插件管理接口相同。
-fn model_provider_routes() -> Router<Arc<Gateway>> {
-    Router::new()
-        .route(
-            wonton_protocol::MODEL_PROVIDERS_PATH,
-            get(model_providers::list),
-        )
-        .route(
-            "/_wonton/api/models/providers/{id}",
-            put(model_providers::save),
-        )
-        .route(
-            "/_wonton/api/models/providers/{id}/test",
-            post(model_providers::test),
-        )
-        .route(
-            wonton_protocol::CUSTOM_MODEL_PROVIDER_PATH,
-            put(model_providers::custom_save),
-        )
-        .route(
-            wonton_protocol::CUSTOM_MODEL_PROVIDER_TEST_PATH,
-            post(model_providers::custom_test),
-        )
-        .layer(DefaultBodyLimit::max(8 << 10))
-}
-
 /// 插件管理这一组路由：装、看、升级、开关，都挂在 `/_wonton/api/plugins` 下。
 fn plugin_routes() -> Router<Arc<Gateway>> {
     Router::new()
+        .merge(plugin_lifecycle_routes())
         .route(
             "/_wonton/api/capabilities",
             get(super::capability_settings::list),
@@ -92,6 +67,10 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
         .route(
             "/_wonton/api/plugins/{id}/capabilities",
             put(super::capability_settings::set_consumer),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/bots/{bot}/capabilities",
+            get(super::capability_settings::list_bot).put(super::capability_settings::set_bot),
         )
         .route(
             "/_wonton/api/plugins/{id}/uninstall/preview",
@@ -132,10 +111,6 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             get(super::owner_secrets::value),
         )
         .route(
-            "/_wonton/api/plugins/{id}/start",
-            post(super::plugin_start::start),
-        )
-        .route(
             "/_wonton/api/plugins/{id}/upgrade",
             post(api::upgrade).layer(DefaultBodyLimit::max(api::MAX_UPLOAD_BYTES)),
         )
@@ -174,6 +149,22 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             post(store_api::add_store_source).delete(store_api::remove_store_source),
         )
         .route("/_wonton/api/images/{sha256}/{file}", get(api::image))
+}
+
+fn plugin_lifecycle_routes() -> Router<Arc<Gateway>> {
+    Router::new()
+        .route(
+            "/_wonton/api/plugins/{id}/start",
+            post(super::plugin_start::start),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/lifecycle",
+            get(super::plugin_start::lifecycle),
+        )
+        .route(
+            "/_wonton/api/plugins/{id}/stop",
+            post(super::plugin_start::stop),
+        )
 }
 
 /// 服务器配对的管理接口（ADR-0050）。
@@ -231,7 +222,10 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         .route("/_wonton/oidc/login", get(sso::oidc_login))
         .route("/_wonton/oidc/consent", get(sso::oidc_consent))
         .route("/_wonton/matrix/login-token", post(matrix::login_token))
-        .merge(model_provider_routes())
+        .route(
+            wonton_protocol::MODEL_SETTINGS_PATH,
+            get(model_settings::settings),
+        )
         .route(
             "/_wonton/push/registration",
             put(push::register).delete(push::unregister),
@@ -285,6 +279,7 @@ pub fn routes(gateway: Arc<Gateway>) -> Router {
         )
         .route("/_wonton/api/tunnel", get(devices::tunnel))
         .merge(peer_routes())
+        .merge(super::clients_api::routes(gateway.clone()))
         .merge(friend_routes())
         .merge(sharing_routes())
         .route(
@@ -406,6 +401,10 @@ fn friend_routes() -> Router<Arc<Gateway>> {
 fn member_routes() -> Router<Arc<Gateway>> {
     Router::new()
         .route(
+            wonton_protocol::MEMBER_SYNC_PATH,
+            post(super::family_private::retry),
+        )
+        .route(
             wonton_protocol::FAMILY_ROOM_SYNC_PATH,
             post(super::family_room::retry),
         )
@@ -434,8 +433,12 @@ fn member_routes() -> Router<Arc<Gateway>> {
             post(family::remove),
         )
         .route(
-            "/_wonton/api/plugins/{id}/family",
-            put(family::set_plugin_family),
+            "/_wonton/api/plugins/{id}/audience",
+            get(plugin_audience::get).put(plugin_audience::put),
+        )
+        .route(
+            "/_wonton/api/bots/{id}/{bot}/webui",
+            get(super::bot_web::get),
         )
 }
 
@@ -545,9 +548,16 @@ struct LoginForm {
 
 async fn login(
     State(gateway): State<Arc<Gateway>>,
+    source: Option<Extension<axum::extract::ConnectInfo<std::net::SocketAddr>>>,
     headers: HeaderMap,
     Form(form): Form<LoginForm>,
 ) -> Response {
+    if source.is_some_and(|Extension(source)| gateway.plugins.source(source.0.ip()).is_some()) {
+        return super::bot_web::failure(
+            wonton_protocol::BotWebFailure::PermissionDenied,
+            &api::languages(&headers),
+        );
+    }
     let next = safe_next(&gateway, form.next.as_deref());
     if !gateway.check_owner_token(&form.token) {
         tracing::warn!("主人令牌不正确");

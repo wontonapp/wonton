@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.DeviceInvite
 import app.wonton.protocol.KeyHandoff
@@ -69,9 +70,9 @@ fun InviteScreen(
 ) {
     // 核心当场拒绝的原因，比如还没配对。
     var refusal by remember { mutableStateOf<Problem?>(null) }
-    val request = { refusal = core.send(Action.InviteDevice) }
+    val request = { refusal = core.send(Action.Home(HomeAction.InviteDevice)) }
     LaunchedEffect(Unit) { request() }
-    DisposableEffect(core) { onDispose { core.send(Action.CloseDeviceInvite) } }
+    DisposableEffect(core) { onDispose { core.send(Action.Home(HomeAction.CloseDeviceInvite)) } }
     val giving = handoff is KeyHandoff.Giving
     Column(
         modifier.verticalScroll(rememberScrollState())

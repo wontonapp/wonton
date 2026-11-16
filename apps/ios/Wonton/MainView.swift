@@ -7,6 +7,7 @@ struct MainView: View {
     let home: HomeModel
     let plugins: PluginsModel
     let appearance: AppearanceModel
+    let lock: AppLockModel
     let devWebURL: URL?
     let navigation: AppNavigation
     var pages: PagesModel { navigation.pages }
@@ -17,24 +18,29 @@ struct MainView: View {
     /// 最近关掉的插件页：最多留 4 个实例（内存考虑），重开不重载。
     @State private var recentPages: [TabRef] = []
     @State var showsSettings = false
-    @State var pendingSettingsPresentation = false
-    /// “全部应用”网格这一层：配对后的根页面是聊天，网格从侧边栏进。
-    @State var showsApps = false
+    var showsApps: Bool { pages.viewModel.showsApps }
     @EnvironmentObject private var orientation: FullscreenOrientation
     @State var onboardingGateway: TabChoice?
     @State var showsSidebar = false
+    @State var showsMyApps = false
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    var usesTwoColumns: Bool {
+        horizontalSizeClass == .regular && isPaired && !home.servers.adding && onboarding.viewModel.step == .finished
+    }
     @State var showsPanel = false
+    /// 没配对时是根页面（网格或配对页）的路径；配对后是“全部应用”那一层的路径，空就是没开（见 `HomeView.layered`）。
     @State var appsPath = NavigationPath()
     /// 插件页层的路径，和核心的页面栈一一对应；左边缘右滑是系统的交互式返回。
     @State var pagePath: [TabRef] = []
     @State private var addingReturn: (serverID: String?, settingsModal: Bool)?
 
     init(chat: ChatModel, home: HomeModel, plugins: PluginsModel, appearance: AppearanceModel,
-         navigation: AppNavigation, devWebURL: URL?) {
+         lock: AppLockModel, navigation: AppNavigation, devWebURL: URL?) {
         self.chat = chat
         self.home = home
         self.plugins = plugins
         self.appearance = appearance
+        self.lock = lock
         self.navigation = navigation
         self.devWebURL = devWebURL
         _settings = State(initialValue: SettingsModel(core: chat.core))
@@ -42,33 +48,23 @@ struct MainView: View {
 
     var body: some View {
         @Bindable var navigation = navigation
-        return SidebarContainer(isOpen: $showsSidebar, edgeSwipe: allowsEdgeSwipe) {
-            ZStack {
-                rootContent
-                pageStack
-            }
-            .environment(\.wontonOpenSidebar) { showsSidebar = true }
-        } panel: {
-            SidebarPanel(home: home, plugins: plugins,
-                         current: pages.viewModel.stack.last?.tab ?? pages.viewModel.root, navigate: navigate)
-        }
+        return adaptiveContent
         .onPreferenceChange(ChatPanelOpenKey.self) { showsPanel = $0 }
+        .onChange(of: horizontalSizeClass) { _, _ in showsSidebar = false }
         .overlay { if chat.isOpeningChat { ProgressView() } }
         #if DEBUG
         .overlay(alignment: .topLeading) { KeyHandoffTestState(model: chat) }
         #endif
         .modifier(ChatDialogs(model: chat))
         .modifier(DeviceVerificationDialogs(model: chat, suppressed: verificationSurfacesOpen))
+        .modifier(TabMediaDialogs(model: pages))
         .modifier(KeyHandoffCover(model: chat) {
             pages.open(.chat)
             chat.path = [.chatBackup]
         })
-        .fullScreenCover(isPresented: $showsApps, onDismiss: presentPendingSettings) {
-            appsGrid
-        }
 
         .fullScreenCover(isPresented: $showsSettings) {
-            SettingsTab(model: settings, appearance: appearance, chat: chat,
+            SettingsTab(model: settings, appearance: appearance, appLock: lock, chat: chat,
                         home: home, plugins: plugins, isModal: true)
         }
         .wontonDialog(problem: pages.rejection, isPresented: Binding(
@@ -79,7 +75,8 @@ struct MainView: View {
             // 关掉的页面按关闭先后记着，最多留 4 个（每个 WebView 一份渲染进程，个数是内存折中）。
             let closed = visited.subtracting(stackTabs)
             visited = Set(stackTabs)
-            recentPages.append(contentsOf: closed)
+            // widget 页不保活：关掉就是挂断，WebView 跟着释放（ADR-0096）。
+            recentPages.append(contentsOf: closed.filter { !$0.isWidget })
             recentPages = Array(recentPages.suffix(4))
             visited.formUnion(recentPages)
             pages.setKeepAlive(recentPages)
@@ -104,9 +101,6 @@ struct MainView: View {
         .task { await chat.observe() }
         .task { await chat.files.observe() }
         .task { await settings.observe() }
-        .task {
-            for await network in DeviceNetwork.changes() { home.send(.networkChanged(network: network)) }
-        }
         .environment(pages)
         .environment(onboarding)
         .environment(\.panelDeps, PanelDependencies(
@@ -131,23 +125,39 @@ struct MainView: View {
         .onChange(of: pages.viewModel.myAppCandidates) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: onboarding.viewModel.step) { _, _ in WontonShortcuts.updateAppShortcutParameters() }
         .onChange(of: home.servers) { old, new in updatePairingPresentation(from: old, to: new) }
+        // 根页面和“全部应用”那一层共用一条路径，配对状态一变含义就换了。
+        .onChange(of: isPaired) { _, _ in closeApps() }
+        .onChange(of: pages.viewModel.showsApps, initial: true) { _, shown in
+            if shown && isPaired && appsPath.isEmpty {
+                appsPath = NavigationPath([AppsRoute.launcher])
+            } else if !shown && !appsPath.isEmpty {
+                appsPath = NavigationPath()
+            }
+        }
+        .onChange(of: appsPath.count) { _, count in
+            if isPaired && count == 0 && pages.viewModel.showsApps {
+                pages.closeCurrent()
+            }
+        }
         .environment(plugins)
         .environment(\.wontonBarStatus, barStatus)
     }
 
     /// 服务器列表变化时的界面善后：换服务器清聊天导航；“添加服务器”盖住设置，取消后回设置；
-    /// 服务器清空时回应用网格。
+    /// 服务器清空时根页面换成没配对的那一个，“全部应用”那一层跟着收起。
 
     private func updatePairingPresentation(from old: ServersViewModel, to new: ServersViewModel) {
         if old.servers.first(where: { $0.current })?.id != new.servers.first(where: { $0.current })?.id {
             chat.path = []
             chat.visiting = nil
+            closeApps()
         }
         if new.adding && !old.adding {
             addingReturn = (old.servers.first(where: { $0.current })?.id, showsSettings)
             showsSettings = false
             onboardingGateway = nil
-            pendingSettingsPresentation = false
+            // 配对页在根页面上，“全部应用”那一层盖着它。
+            closeApps()
         } else if old.adding && !new.adding {
             if let target = addingReturn,
                new.servers.first(where: { $0.current })?.id == target.serverID {
@@ -158,12 +168,12 @@ struct MainView: View {
         if !new.adding, new.servers.isEmpty, !old.servers.isEmpty {
             showsSettings = false
             settings.path = []
-            showsApps = true
+            closeApps()
         }
     }
 
     /// 根页面：配对后是聊天（下拉面板在它上面），没配对是应用网格（配对页也在它上面）。
-    @ViewBuilder private var rootContent: some View {
+    @ViewBuilder var rootContent: some View {
         if home.servers.adding {
             NavigationStack {
                 PairingView(model: home)
@@ -194,7 +204,7 @@ struct MainView: View {
                             )
                         }
                     }
-                    .environment(\.wontonOpenApps) { showsApps = true }
+                    .environment(\.wontonOpenApps) { openApps() }
                 }
             })
         }
@@ -202,71 +212,31 @@ struct MainView: View {
 
     /// 配对后的根页面：聊天列表加下拉面板。
     @ViewBuilder private var chatRoot: some View {
+        if usesTwoColumns {
+            ChatDetailView(model: chat, plugins: plugins)
+        } else {
+            chatListPanel(listOnly: false)
+        }
+    }
+
+    func chatListPanel(listOnly: Bool) -> some View {
         ChatPanelHost(
             pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
             scope: .main, edge: .top, items: pages.viewModel.panel, selected: pages.viewModel.panelSelected,
             blocked: false, draft: receiveDraft, open: open,
             pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            select: { pages.send(.selectPanelPage(scope: .main, tab: $0)) },
-            remove: { pages.send(.removePanelPage(scope: .main, tab: $0)) },
-            move: { pages.send(.movePanelPage(scope: .main, tab: $0, index: UInt32($1))) },
+            select: { pages.send(.pages(action: .selectPanelPage(scope: .main, tab: $0))) },
+            remove: { pages.send(.pages(action: .removePanelPage(scope: .main, tab: $0))) },
+            move: { pages.send(.pages(action: .movePanelPage(scope: .main, tab: $0, index: UInt32($1)))) },
             pullAnchor: nil,
-            content: { ChatListView(model: chat, plugins: plugins) }
+            content: { ChatListView(model: chat, plugins: plugins, listOnly: listOnly) }
         )
-    }
-
-    /// 侧边栏的“全部应用”：独立的一层，配对后才开。
-    @ViewBuilder private var appsGrid: some View {
-        if isPaired {
-            HomeView(
-                model: home, plugins: plugins, chat: chat, settings: settings, open: open,
-                pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-                showSettings: { settings.path = []; showsSettings = true },
-                showServer: { showServerRoute(.server) }, settingsPresented: showsSettings || !isPaired,
-                devWebURL: devWebURL, path: $appsPath
-            )
-        }
-    }
-
-    /// 插件页层：系统的 NavigationStack 供给左边缘右滑的交互式返回；路径空时透明且不挡下面的根页面。
-    @ViewBuilder private var pageStack: some View {
-        NavigationStack(path: $pagePath) {
-            Color.clear
-                .background { PageStackBack() }
-                .navigationDestination(for: TabRef.self) { tab in
-                    Group {
-                        if let open = pages.viewModel.stack.first(where: { $0.tab == tab }) {
-                            pluginPage(open)
-                        } else {
-                            // 核心已把这页弹走：保活的会话还在，等这一帧过渡结束。
-                            Color.clear
-                        }
-                    }
-                    .toolbar(.hidden, for: .navigationBar)
-                }
-        }
-        .allowsHitTesting(pagePath.isEmpty ? false : pages.showsPluginPage)
-    }
-
-    @ViewBuilder private func pluginPage(_ entry: OpenPage) -> some View {
-        TabPageView(
-            pages: pages, home: home, plugins: plugins, chat: chat, appearance: appearance,
-            tab: entry.tab, placed: .page(tab: entry.tab), store: pages.webViews,
-            page: entry.page, draft: receiveDraft, open: open,
-            pendingCards: chat.viewModel.pendingConfirmations, openCardRoom: openCardRoom,
-            close: onboardingGateway?.tab == entry.tab ? { closeGateway(entry.tab) } : nil
-        )
-        .id(entry.tab)
-    }
-
-    private func closeGateway(_ tab: TabRef) {
-        if pages.viewModel.stack.last?.tab == tab { pages.closeCurrent() }
-        onboardingGateway = nil
     }
 
     private var pendingElsewhere: [PendingConfirmation] {
         let shown: String? = if pages.showsPluginPage { nil } else { chat.shownRoom(in: .chat) }
-        return chat.viewModel.pendingConfirmations.filter { shown != $0.roomId }
+        if !pages.showsPluginPage, chat.path.last == .confirmations { return [] }
+        return chat.viewModel.pendingConfirmations.filter { $0.roomId == nil || shown != $0.roomId }
     }
 
     /// “添加设备”和聊天备份页正开着：这两处不管什么状态都在页面里显示确认流程（ADR-0046），所以页面开着就不弹窗。
@@ -294,7 +264,9 @@ extension MainView {
                 Text(pages.viewModel.uninstalled.map(TabText.uninstalled).joined(separator: "\n"))
                     .wontonText(WontonTheme.typography.supporting)
                 Spacer(minLength: 0)
-                WontonIconButton(icon: .close, label: TabText.close) { pages.send(.dismissUninstalledTabs) }
+                WontonIconButton(icon: .close, label: TabText.close) {
+                    pages.send(.pages(action: .dismissUninstalledTabs))
+                }
             }
             .padding(.horizontal, WontonTheme.spacing.pageInset)
         }
@@ -303,7 +275,7 @@ extension MainView {
     /// 连接状态条：拆出计算属性，整条 body 的类型检查超时（Swift 编译器限制）。
     fileprivate var barStatus: WontonBarStatus {
         WontonBarStatus(home: home.viewModel, recovered: home.viewModel.justRecovered) {
-            ConnectionLine(notice: $0, retry: { home.send(.retryConnection) }, open: showServerRoute)
+            ConnectionLine(notice: $0, retry: { home.send(.home(action: .retryConnection)) }, open: showServerRoute)
         }
     }
 }

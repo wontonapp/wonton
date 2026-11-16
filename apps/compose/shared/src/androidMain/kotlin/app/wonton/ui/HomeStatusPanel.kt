@@ -27,7 +27,7 @@ fun HomeStatusPanel(
     plugins: PluginsViewModel,
     cards: List<PendingConfirmation>,
     onConnection: () -> Unit,
-    onOpenCardRoom: (String) -> Unit,
+    onOpenCardRoom: (String?) -> Unit,
 ) {
     val colors = WontonTheme.colors
     val context = LocalContext.current
@@ -46,7 +46,7 @@ fun HomeStatusPanel(
                 stringResource(R.string.home_awaiting),
                 pluralStringResource(R.plurals.home_cards, cards.size, cards.size),
                 showsForward = true,
-                onClick = { first.roomId?.let(onOpenCardRoom) },
+                onClick = { onOpenCardRoom(first.roomId) },
             )
         } else {
             WontonRow(stringResource(R.string.home_awaiting), stringResource(R.string.home_none))

@@ -76,7 +76,7 @@ async fn ask_all(
         let langs = bus.languages_for(ask.recipient.as_deref());
         let draft = draft(&stopped, hops, &langs);
         let audience = Audience {
-            recipient: ask.recipient.clone(),
+            recipients: crate::mcp::Recipients::Keeper(ask.recipient.clone()),
             requester: Some(ConfirmationRequester::Bot {
                 bot: BotRef {
                     plugin_id: ask.plugin.to_string(),
@@ -153,5 +153,8 @@ fn draft(stopped: &HopLimitReached, hops: u32, langs: &Languages) -> Draft {
         plugin_id: None,
         secret_inputs: Vec::new(),
         settings: None,
+        category: None,
+        permissions: Vec::new(),
+        devices: Vec::new(),
     }
 }

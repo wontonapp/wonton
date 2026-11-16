@@ -77,6 +77,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
     let preview = m.preview_source(source, &zh()).await.unwrap();
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
         plan: preview.plan.clone(),
@@ -93,6 +94,7 @@ async fn install(m: &Arc<PluginManager>, source: &str) {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
 }
@@ -230,11 +232,7 @@ async fn stopped_plugins_are_offered_new_versions() {
     release(&github, &hello("1.0.0", "", "  permissions: []\n"));
     install(&m, SOURCE).await;
     let revision = m.installed_plugin(&id(), &zh()).unwrap().revision;
-    docker.set_state(
-        &web(),
-        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
-    );
-    m.watch_containers().await;
+    m.stop_detached(id()).await.unwrap();
     assert_eq!(
         m.installed_plugin(&id(), &zh()).unwrap().status,
         PluginState::Stopped
@@ -246,6 +244,14 @@ async fn stopped_plugins_are_offered_new_versions() {
     assert_eq!(plugin.status, PluginState::Stopped);
     assert_eq!(plugin.upgrade.unwrap().version, "1.1.0");
     assert_eq!(plugin.revision, revision);
+    let before = docker.writes();
+    assert!(matches!(upgrade(&m).await, Err(InstallError::Conflict(_))));
+    assert_eq!(docker.writes(), before);
+    assert_eq!(version(&m), "1.0.0");
+    assert_eq!(
+        m.lifecycle_status(&id()).unwrap().desired,
+        wonton_protocol::PluginDesiredState::Stopped
+    );
 }
 
 #[tokio::test]
@@ -415,6 +421,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
         Vec::new(),
         Vec::new(),
         false,
+        &[],
         &Default::default(),
         &super::langs(),
     )
@@ -435,6 +442,7 @@ async fn plugins_without_a_tag_are_not_checked_and_uploads_are_not_offered_upgra
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -475,6 +483,7 @@ pub(super) async fn upgrade_expect_rollback(
             permissions(&broken),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -645,6 +654,7 @@ async fn nothing_is_upgraded_while_the_core_itself_is_upgrading() {
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -758,6 +768,15 @@ async fn more_widget_capabilities_ask_the_owner_again() {
     let (github, _docker, m, _dir) = with_github(false).await;
     release(&github, &hello("1.0.0", "", &widget(&[transports])));
     install(&m, SOURCE).await;
+    // App 按已装列表里的声明在房间里打开 widget、批能力。
+    assert_eq!(
+        m.installed_plugin(&id(), &zh()).unwrap().matrix_widget,
+        Some(wonton_protocol::PluginWidget {
+            url: "/room".to_owned(),
+            entry: wonton_protocol::WidgetEntry::Other,
+            capabilities: vec![transports.to_owned()],
+        })
+    );
 
     release(&github, &hello("1.1.0", "", &widget(&[transports])));
     assert_eq!(m.check_upgrades_now().await, None);

@@ -270,7 +270,7 @@ pub struct BotView {
     pub activity: Option<BotActivity>,
     /// 主人在 App 里改的资料还在提交。
     pub saving: bool,
-    /// 最近一次改资料失败；壳显示后用 [`Action::DismissBotProfileProblem`](crate::Action::DismissBotProfileProblem) 清掉。
+    /// 最近一次改资料失败；壳显示后用 [`BotAction::DismissBotProfileProblem`](crate::BotAction::DismissBotProfileProblem) 清掉。
     pub problem: Option<BotProfileProblem>,
     /// Bot 资料页“显示”一节（ADR-0060）。
     pub chat: BotChatSettings,

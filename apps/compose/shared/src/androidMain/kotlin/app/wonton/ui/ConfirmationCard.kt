@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -20,9 +22,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Answer
 import app.wonton.protocol.CardChoice
 import app.wonton.protocol.ConfirmationCard
+import app.wonton.protocol.ConfirmationCategory
+import app.wonton.protocol.CardAudience
+import app.wonton.protocol.ConfirmationTool
+import app.wonton.protocol.ConfirmationToolImpact
 import app.wonton.protocol.ConfirmationState
 import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.InstalledPlugin
@@ -41,7 +49,7 @@ import app.wonton.ui.icons.WontonIcon
 import java.text.DateFormat
 import java.util.Date
 
-/** 确认卡片：文字是家里的服务器写好的，按钮有没有、能不能点都由核心决定。 */
+/** 核心给出卡片内容和风险类别；壳本地化固定提示，按钮状态仍由核心决定。 */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
@@ -51,8 +59,8 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     var settings by remember(card.id) { mutableStateOf<Map<String, SettingValue?>>(emptyMap()) }
     var drafts by remember(card.id) { mutableStateOf<Map<String, String>>(emptyMap()) }
     var shown by remember(card.id) { mutableStateOf(false) }
+    val cardDevices = remember(card.id, card.devices, card.permissions) { CardDevices(card) }
     CardSecureScreen(card, secrets, shown)
-    val tabs = LocalPages.current
     Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
         Text(card.title, style = WontonTheme.typography.itemTitle)
         card.lines.forEach { line ->
@@ -63,6 +71,7 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 color = (if (line.emphasis) colors.danger else colors.textPrimary).toColor(),
             )
         }
+        CardToolCallSection(card.category, card.id)
         if (card.secretInputs.isNotEmpty()) {
             SecretInputsSection(
                 card.secretInputs,
@@ -83,16 +92,25 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                 },
             )
         }
+        CardDeviceSection(cardDevices, view)
+        card.answeredBy
+            ?.takeIf { card.audience == CardAudience.ADMINS }
+            ?.let { answeredBy ->
+                Text(
+                    stringResource(R.string.confirmation_card_answered_by, answeredBy),
+                    style = WontonTheme.typography.supporting,
+                )
+            }
         CardState(card.state)
-        view.window?.let { window -> CardWindow(window) { onAction(Action.StopConfirmationWindow(card.id)) } }
-        view.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
-        // 成功卡片只在已装列表确认插件存在时提供入口；列表未刷新或插件已卸载时不显示。
-        val installed = if (card.state is ConfirmationState.Succeeded) {
-            card.pluginId?.let { id -> tabs.plugins.viewModel.installed?.plugins?.firstOrNull { it.id == id } }
-        } else {
-            null
+        view.window?.let { window ->
+            CardWindow(window) {
+                onAction(Action.Chat(ChatAction.StopConfirmationWindow(card.id)))
+            }
         }
-        installed?.let { CardInstalledActions(it, tabs, onAction) }
+        view.problem?.let { ProblemRow(it.problem) }
+        // 卡片变成成功态、且插件已在已装列表里时，给“打开 / 放到底栏”（ADR-0033）。查不到（已卸载、列表还没
+        // 刷新）时如实不显示。
+        CardInstalledActions(card, onAction)
         if (card.choices.isNotEmpty()) {
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
@@ -102,16 +120,17 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
                     ChoiceButton(
                         choice,
                         view,
-                        secretsReady = cardInputsReady(card, secrets, settings),
+                        secretsReady = cardInputsReady(card, secrets, settings, cardDevices),
                     ) {
                         onAction(
-                            Action.AnswerConfirmation(
+                            Action.Chat(ChatAction.AnswerConfirmation(
                                 card.id,
                                 choice.answer,
                                 choice.choiceId,
                                 secretValues(card.secretInputs, secrets),
                                 cardSettingsValues(settings),
-                            ),
+                                cardDevices.chosenIds,
+                            ))
                         )
                     }
                 }
@@ -120,37 +139,96 @@ fun ConfirmationCardView(view: ConfirmationView, onAction: (Action) -> Unit) {
     }
 }
 
+/** 缺必填密钥、设置没填对或必选的串口没选时，不能同意。 */
 private fun cardInputsReady(
     card: ConfirmationCard,
     secrets: Map<String, String>,
     settings: Map<String, SettingValue?>,
-): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && card.settings?.fields.orEmpty().none {
-    isUnsupported(it, settings) || isMissingRequired(it, settings)
-}
+    devices: CardDevices,
+): Boolean = !missingRequiredSecret(card.secretInputs, secrets) && devices.section?.ready != false &&
+    card.settings?.fields.orEmpty().none { isUnsupported(it, settings) || isMissingRequired(it, settings) }
 
 private fun cardSettingsValues(settings: Map<String, SettingValue?>): Map<String, SettingValue> =
     settings.mapNotNull { (name, value) -> value?.let { name to it } }.toMap()
 
-/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。 */
 @Composable
-private fun CardInstalledActions(installed: InstalledPlugin, tabs: PagesState, onAction: (Action) -> Unit) {
+private fun CardToolCallSection(category: ConfirmationCategory?, cardId: String) {
+    val tool = (category as? ConfirmationCategory.ToolCall)?.tool ?: return
+    CardToolSummary(tool)
+    key(cardId) {
+        ProblemDetail(
+            text = "${tool.name}\n\n${tool.arguments}",
+            modifier = Modifier.heightIn(min = WontonTheme.size.target),
+        )
+    }
+}
+
+@Composable
+private fun CardToolSummary(tool: ConfirmationTool) {
+    val colors = WontonTheme.colors
+    val style = WontonTheme.typography.supporting
+    Text(
+        stringResource(R.string.confirmation_card_tool_source, tool.pluginTitle),
+        style = style,
+        color = colors.textSecondary.toColor(),
+    )
+    val warning = when (val impact = tool.impact) {
+        ConfirmationToolImpact.ReadOnly -> null
+        ConfirmationToolImpact.ChangesData -> stringResource(R.string.confirmation_card_tool_changes_data)
+        is ConfirmationToolImpact.Destructive -> impact.target?.let {
+            stringResource(R.string.confirmation_card_tool_destructive_target, it)
+        } ?: stringResource(R.string.confirmation_card_tool_destructive_unknown)
+        ConfirmationToolImpact.Other -> stringResource(R.string.confirmation_card_tool_unknown_impact)
+    }
+    warning?.let {
+        val tint = if (tool.impact is ConfirmationToolImpact.Destructive) colors.danger else colors.warning
+        Text(
+            it,
+            style = style,
+            color = tint.toColor(),
+        )
+    }
+    if (tool.runsAsRoot) {
+        Text(
+            stringResource(R.string.confirmation_card_tool_root),
+            style = style,
+            color = colors.warning.toColor(),
+        )
+    }
+}
+
+/** 已装插件可整页打开，也可加入“我的应用”；多页面复用应用选择页。卡片成功且插件还在已装列表里才显示。 */
+@Composable
+private fun CardInstalledActions(card: ConfirmationCard, onAction: (Action) -> Unit) {
+    if (card.state !is ConfirmationState.Succeeded) return
+    val tabs = LocalPages.current
+    val installed = tabs.plugins.viewModel.installed?.plugins?.firstOrNull { plugin -> plugin.id == card.pluginId }
+        ?: return
     var showsPages by remember(installed.id) { mutableStateOf(false) }
     val choices = installed.tabChoices
     val added = choices.any { choice -> tabs.plugins.viewModel.sidebar.apps.any { it.tab == choice.tab } }
-    if (choices.isEmpty()) return
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-        verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
-    ) {
-        WontonButton(stringResource(R.string.tab_open), { onAction(Action.OpenPage(choices[0].tab)) })
-        if (!added) {
-            WontonButton(stringResource(R.string.myapp_add), {
-                if (choices.size > 1) {
-                    showsPages = true
-                } else {
-                    tabs.send(Action.AddMyApp(MyAppRef.Page(choices.single().tab), null, null))
-                }
-            })
+    if (choices.isNotEmpty()) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8),
+        ) {
+            WontonButton(
+                stringResource(R.string.tab_open),
+                { onAction(Action.Pages(PageAction.OpenPage(choices[0].tab))) },
+            )
+            if (!added) {
+                WontonButton(stringResource(R.string.myapp_add), {
+                    if (choices.size > 1) {
+                        showsPages = true
+                    } else {
+                        tabs.send(
+                            Action.Pages(
+                                PageAction.AddMyApp(MyAppRef.Page(choices.single().tab), null, null),
+                            ),
+                        )
+                    }
+                })
+            }
         }
     }
     if (showsPages) MyAppChoiceSheet(installed) { showsPages = false }
@@ -216,7 +294,7 @@ private fun CardWindow(window: WindowView, onStop: () -> Unit) {
                     enabled = !window.stopping,
                 )
             }
-            window.problem?.let { problem -> StateLine(WontonIcon.Warning, problem.message, colors.danger) }
+            window.problem?.let { ProblemRow(it.problem) }
         }
     }
 }

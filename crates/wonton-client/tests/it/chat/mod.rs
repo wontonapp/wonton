@@ -9,6 +9,7 @@ mod ask_agent;
 mod bot_profile;
 pub mod bot_profile_support;
 mod card_plugin_refresh;
+mod concurrent_timelines;
 mod confirmation;
 mod device_name;
 mod draft;
@@ -21,6 +22,7 @@ mod message_actions;
 mod notification_actions;
 mod onboarding;
 mod pending;
+mod plugin_status;
 mod push;
 mod push_method;
 mod rebuild_reason;
@@ -40,6 +42,7 @@ mod timeline;
 mod timeline_position;
 mod upload_progress;
 mod verification;
+mod widget;
 
 use std::time::{Duration, Instant};
 
@@ -90,7 +93,11 @@ async fn the_owner_chats_with_a_bot_through_the_tunnel_and_keeps_it_after_restar
             text(item, "你好，主人")
         })
         .await;
-    phone.dispatch(Action::ConfirmRecoveryKeySaved).unwrap();
+    phone
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::ConfirmRecoveryKeySaved,
+        })
+        .unwrap();
     assert_eq!(phone.chat().encryption.recovery_key, None);
     drop(timeline);
     drop(phone);
@@ -315,8 +322,10 @@ async fn accept_the_bots_invite(home: &Home, phone: &Phone, bot: &MatrixSession)
         Some(bot.user_id().as_str())
     );
     phone
-        .dispatch(Action::JoinRoom {
-            room_id: room_id.to_string(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::JoinRoom {
+                room_id: room_id.to_string(),
+            },
         })
         .unwrap();
     let joined = phone
@@ -461,14 +470,7 @@ async fn read_and_wait_for_recovery(phone: &Phone, room_id: &OwnedRoomId) -> Sec
         thread_root: None,
     };
     let timeline = phone.subscribe_timeline(target.clone()).await.unwrap();
-    phone
-        .dispatch(Action::Timeline {
-            action: TimelineAction::SetTimelineScroll {
-                target: target.clone(),
-                scroll: wonton_client::TimelineScroll::Bottom,
-            },
-        })
-        .unwrap();
+    timeline.set_scroll(wonton_client::TimelineScroll::Bottom);
     phone
         .dispatch(Action::Timeline {
             action: TimelineAction::MarkRead { target },

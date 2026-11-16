@@ -1,6 +1,6 @@
 # ADR-0008 模型网关：magpie
 
-- 状态：已接受（2026-10-28）；2026-11-13 按 [ADR-0055](0055-model-gateway-optional.md) 修订模型来源与缺网关处理，配置入口按 [ADR-0034](0034-onboarding-and-help.md) 收敛到原生网页
+- 状态：通用模型网关合同保留；Magpie 的系统插件地位、默认安装前置与 Agent 统一模型入口已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。Hermes 改用其自带供应商接入，核心与默认装机不依赖 Magpie；下文相关预装、默认组与配置入口记录旧方案及其验证条件。
 
 ## 背景
 
@@ -11,6 +11,8 @@ OpenAI、Anthropic、Ollama 等预设；支持订阅账号、额度用尽自动�
 Web UI；支持列表里有 Hermes Agent。
 
 ## 决策
+
+> 以下“系统插件预装、不可卸载、所有 Agent 共用入口”的要求不再适用。Magpie 是普通可选插件；仅声明使用通用网关的消费者继续遵守凭据、权限、对账、吊销及明确失败的合同，不把它们变成默认 Hermes 的依赖（ADR-0108）。
 
 - magpie 作为系统插件预装，锁定版本。主人换不掉；可替换只表示我们换实现时 Agent 不用改（主人 2026-11-04 定）。
 - 用户在 App 的“模型设置”小程序（magpie 自带的 Web UI）里配置 provider 和 key。
@@ -68,7 +70,7 @@ Web UI；支持列表里有 Hermes Agent。
   `key_env: WONTON_MODEL_API_KEY`、`transport: chat_completions`、`discover_models: false`、`context_length`），
   再设 `model.provider: custom:magpie`、`model.default: ${WONTON_MODEL_DEFAULT}`。Hermes 会展开配置里的
   `${VAR}`，凭据只在环境变量里。Hermes 自己也会改写 `config.yaml`，所以由插件的 init 服务在首次启动前写入，
-  之后不覆盖（见 [Hermes 的 config.yaml](https://github.com/geraldpeng6/wonton-plugin-hermes/blob/main/config.yaml)）。
+  之后不覆盖（见 [Hermes 的 config.yaml](https://github.com/wontonapp/wonton-plugin-hermes/blob/main/config.yaml)）。
 - 默认模型指向 magpie 的路由组 `group/wonton-default`：换 provider 或模型只在 magpie 里改，
   Hermes 和其他插件不用动；路由组按顺序回退。
 - 网关地址必须用带点的主机名（开发环境用网络别名 `magpie.wonton.internal`）。Hermes 把不带点的主机名
@@ -193,7 +195,7 @@ key 被拒时列表与可用时相同、补全 401，轻提示带出 `HTTP 401`�
   行都是），两边的保存相隔不到约 0.1 秒时，后写的一方会盖掉先写的一方，这要 magpie 加锁才能消除。default-model 只在
   provider、模型列表或模型目录变了之后写，平时不写。
 - **没有模型时**：组是空的，magpie 的模型列表里没有它，请求它得到 404，报错很长，绕过了 Hermes 对模型报错的改写，
-  原样进了聊天。所以 Hermes 的插件包带一个 Hermes 插件（[wonton/](https://github.com/geraldpeng6/wonton-plugin-hermes/tree/main/wonton)，`post_gateway_admission` 钩子）：
+  原样进了聊天。所以 Hermes 的插件包带一个 Hermes 插件（[wonton/](https://github.com/wontonapp/wonton-plugin-hermes/tree/main/wonton)，`post_gateway_admission` 钩子）：
   每条消息先查一次网关的模型列表，默认模型不在里面时直接回提示，不调模型，这条消息也不进会话历史：
   - 一个模型都没有：请在“模型设置”里添加模型服务商和它的 API key；
   - 有模型、默认模型却不可用（组被改空了）：请检查 wonton-default 路由组。

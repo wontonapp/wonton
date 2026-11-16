@@ -17,6 +17,15 @@ final class SidebarUITests: XCTestCase {
         XCTAssertTrue(sidebar.waitForExistence(timeout: 10), "主界面没有侧边栏按钮")
         let myApps = app.staticTexts["My Apps"].firstMatch
         XCTAssertFalse(myApps.exists, "侧边栏应当默认关闭")
+        XCTAssertTrue(sidebar.isHittable, "侧边栏按钮不可点击")
+        let closed = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        closed.name = "sidebar-menu-closed"
+        closed.lifetime = .keepAlways
+        add(closed)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = "sidebar-menu-closed-accessibility"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
 
         sidebar.tap()
         assertMyAppsVisible(screenshot: "sidebar-button-open")

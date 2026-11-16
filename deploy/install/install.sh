@@ -471,7 +471,7 @@ chmod 600 "$temporary"
 [ ! -f "$output" ] || cat "$output" >"$temporary"
 for key in WONTON_MATRIX_SERVER_NAME WONTON_MATRIX_NAME_MODE WONTON_CLIENT_SERVICE \
   WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL WONTON_ACME_ACCEPT_TERMS \
-  WONTON_ACME_NETWORK WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
+  WONTON_ACME_NETWORK WONTON_ACME_PROPAGATION_DISABLE_ANS WONTON_ACME_DNS_PROVIDER WONTON_ENTRY_CERTIFICATE; do
   value=$(printenv "$key" || true)
   [ -n "$value" ] || continue
   case "$value" in *'
@@ -501,7 +501,13 @@ record_entry_env() {
 
 # 送名字要的家名服务、邀请码和证书输入缺了：给两条能直接抄的路，不写死内部地址。
 entry_missing() {
-  [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ] && return 1
+  # 不要名字的安装没有 settings.json，ACME 坐标只能靠环境留到运行时。
+  if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ]; then
+    for key in WONTON_ACME_DIRECTORY WONTON_ACME_ACCEPT_TERMS; do
+      [ -n "$(printenv "$key" || true)" ] || return 0
+    done
+    return 1
+  fi
   [ -n "${WONTON_MATRIX_SERVER_NAME:-}" ] && return 1
   for key in WONTON_CLIENT_SERVICE WONTON_CLIENT_INVITE_FILE WONTON_ACME_DIRECTORY \
     WONTON_ACME_ACCEPT_TERMS WONTON_FRP_CA_FILE; do
@@ -511,7 +517,16 @@ entry_missing() {
 }
 
 init_failed() {
-  if entry_missing; then
+  if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ]; then
+    if entry_missing; then
+      cat >&2 <<'EOF'
+“不要名字”的安装要 ACME 坐标，否则运行时签不出证书（ADR-0089 第 3 节）。带上这两项再执行：
+  WONTON_ACME_DIRECTORY=https://<ACME 目录> WONTON_ACME_ACCEPT_TERMS=true
+（测试或内部 CA 还可以给 WONTON_ACME_CA_FILE、WONTON_ACME_RESOLVERS、WONTON_ACME_EMAIL。）
+EOF
+      exit 1
+    fi
+  elif entry_missing; then
     cat >&2 <<'EOF'
 还没有服务器名，送名字要的配置（家名服务、邀请码、证书）也不全。两条路选一条，在原来的安装命令上带一个变量：
   1) 不要名字（以后不能改；要和外面的 Matrix 互通得清空聊天数据重装）：
@@ -542,6 +557,8 @@ write_config() {
   [ -z "$relays" ] || fits_env "$relays" ||
     die "WONTON_RELAYS 里不能有空格和引号这些字符，令牌里的特殊字符写成百分号编码"
   prepare_entry_env
+  # “不要名字”的坐标核心运行时也要用，现在就查，别等装完才发现签不出。
+  if [ "${WONTON_MATRIX_NAME_MODE:-given}" = none ] && entry_missing; then init_failed; fi
   # resolver_dns_args 输出成对的 --dns 和 IP，靠分词拆成参数。
   # shellcheck disable=SC2046
   docker run --rm --network "${WONTON_ACME_NETWORK:-bridge}" \
@@ -559,6 +576,9 @@ write_config() {
   setup_plugin_slice
 
   umask 077
+  # 主人手写的连接器发布地址和端口要保住：这两行不在下面的固定键表里，重跑安装不能把它们删掉。
+  entry_bind="$(saved WONTON_ENTRY_BIND)"
+  entry_port="$(saved WONTON_ENTRY_PORT)"
   # 写临时文件、落盘、改名：一键升级也读这个文件，不能让它读到写了一半的。
   cat >"$env_file.tmp" <<EOF
 # 由 install.sh 写出。改端口、换镜像后再执行一次 install.sh；基础域名装好后不能改。
@@ -580,6 +600,8 @@ WONTON_RELAYS=$relays
 WONTON_EGRESS_PROXY=$egress_proxy
 WONTON_DOH_URL=$doh_url
 EOF
+  [ -z "$entry_bind" ] || echo "WONTON_ENTRY_BIND=$entry_bind" >>"$env_file.tmp"
+  [ -z "$entry_port" ] || echo "WONTON_ENTRY_PORT=$entry_port" >>"$env_file.tmp"
   # 设了才写：没设时核心用自己的默认值，.env 里不记常用默认。
   if [ -n "$install_timeout" ]; then
     echo "WONTON_INSTALL_TIMEOUT_SECS=$install_timeout" >>"$env_file.tmp"
@@ -591,6 +613,15 @@ EOF
   if [ -n "$record_detected" ]; then
     echo "WONTON_EGRESS_PROXY_DETECTED=$egress_detected" >>"$env_file.tmp"
   fi
+  # ACME 坐标要活到运行时（ADR-0089 第 3 节）：none 模式没有 settings.json，核心只认环境和设置。
+  # 值从 init.env 取：复制进来的 CA 在里面的路径已经改成私有安装目录下的那份。
+  for key in WONTON_ACME_DIRECTORY WONTON_ACME_RESOLVERS WONTON_ACME_EMAIL \
+    WONTON_ACME_ACCEPT_TERMS WONTON_ACME_NETWORK WONTON_ACME_CA_FILE \
+    WONTON_ACME_PROPAGATION_DISABLE_ANS; do
+    value=$(grep -m1 "^$key=" "$install_dir/entry-input/init.env" 2>/dev/null | cut -d= -f2- || true)
+    [ -n "$value" ] || continue
+    printf '%s=%s\n' "$key" "$value" >>"$env_file.tmp"
+  done
   sync
   mv "$env_file.tmp" "$env_file"
   sync

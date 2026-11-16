@@ -20,4 +20,5 @@
     <string name="launcher_upgrade_to">升級到 %1$s</string>
     <string name="launcher_badge_degraded">有問題</string>
     <string name="launcher_badge_needs_configuration">待設定</string>
+    <string name="launcher_badge_stopped">已停止</string>
 </resources>

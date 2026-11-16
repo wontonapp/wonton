@@ -116,6 +116,7 @@ impl ClientCore {
             &self.servers.slot_dir(slot),
             self.network,
             self.servers.subscribe(),
+            &self.app_lock,
             Some(views),
         )
     }

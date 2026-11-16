@@ -96,10 +96,6 @@
     <string name="widget_agent_status_unknown">狀態不明</string>
     <string name="widget_updated_at">更新於 %1$s</string>
     <string name="widget_status_at">%1$s · %2$s</string>
-    <!-- Notification fallback page for cards without a chat room; no arguments. -->
-    <string name="confirmations_title">等你確認</string>
-    <!-- Empty confirmation list after requests have been answered or expired. -->
-    <string name="confirmations_empty">沒有需要確認的事</string>
     <string name="myapp_add">加進我的應用</string>
     <string name="myapp_add_more">新增應用</string>
     <string name="myapp_auto_add">新裝的應用自動加入</string>
@@ -107,4 +103,15 @@
     <string name="myapp_remove">從我的應用移出</string>
     <string name="myapp_sync_stale">改動還沒同步上</string>
     <string name="myapp_sync_stale_detail">本機已存好；連上伺服器後自動同步。</string>
+    <string name="owner_secrets_title">產生的金鑰</string>
+    <string name="owner_secrets_empty">這個應用程式沒有可查看的產生金鑰。</string>
+    <string name="owner_secrets_show">顯示</string>
+    <string name="owner_secrets_hide">隱藏</string>
+    <string name="owner_secrets_problem_cross_site">伺服器基於安全考量封鎖了這次請求。請關閉此頁後重試。</string>
+    <string name="owner_secrets_problem_owner_only">只有主人能查看這些金鑰。</string>
+    <string name="owner_secrets_problem_not_installed">這個應用程式已解除安裝。請返回應用程式列表。</string>
+    <string name="owner_secrets_problem_not_found">這項金鑰已無法使用。請收合並重新展開此群組以更新列表。</string>
+    <string name="owner_secrets_problem_not_ready">這項金鑰尚未準備好。請等應用程式啟動完成後重試。</string>
+    <string name="owner_secrets_problem_protocol">雲吞無法讀取伺服器的回覆。請更新雲吞或家裡的伺服器後重試。</string>
+    <string name="owner_secrets_problem_other">無法載入金鑰。請重試。</string>
 </resources>

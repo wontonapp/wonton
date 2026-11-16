@@ -192,6 +192,15 @@ impl Engine {
             .await
     }
 
+    /// 按给定参数建一张网络，IPAM、内部与否、网关模式全由调用方写（入口的 `edge`、`relay` 是 compose
+    /// 不管的死网络：没有服务引用它们，`compose up` 不会建）。
+    pub async fn create_network_from(
+        &self,
+        request: NetworkCreateRequest,
+    ) -> Result<(), EngineError> {
+        self.create_raw(request).await
+    }
+
     /// 同 [`Self::create_network`]，但在迁移预留的网段上建。
     pub(super) async fn create_network_at(
         &self,
@@ -388,10 +397,7 @@ impl Engine {
     }
 
     /// 查询网络；不存在时返回 `None`。
-    pub(super) async fn inspect_network(
-        &self,
-        name: &str,
-    ) -> Result<Option<NetworkInspect>, EngineError> {
+    pub async fn inspect_network(&self, name: &str) -> Result<Option<NetworkInspect>, EngineError> {
         let langs = self.owner_languages();
         let context = l10n::text(
             &langs,
@@ -430,7 +436,7 @@ impl Engine {
     }
 
     /// 容器在网络里的端点，容器停着也有；容器不在或者没接这个网络时为空。
-    pub(super) async fn endpoint(
+    pub async fn endpoint(
         &self,
         container: &str,
         network: &str,
@@ -511,7 +517,24 @@ impl PluginManager {
         self.attach_mailpit(network, manifest).await?;
         let address = self.engine.core_address(network).await?.to_string();
         let current = self.engine.endpoint_address(core, network).await?;
-        if current.as_deref() == Some(address.as_str()) {
+        if current.as_deref() == Some(address.as_str())
+            && !super::bot_web_registry::has_bot_web(manifest)
+        {
+            return Ok(());
+        }
+        let aliases = self.runtime_core_aliases(manifest)?;
+        let actual_aliases = self
+            .engine
+            .inspect_container(core)
+            .await?
+            .and_then(|info| info.network_settings)
+            .and_then(|settings| settings.networks)
+            .and_then(|mut networks| networks.remove(network))
+            .and_then(|endpoint| endpoint.aliases)
+            .unwrap_or_default();
+        if current.as_deref() == Some(address.as_str())
+            && aliases.iter().all(|alias| actual_aliases.contains(alias))
+        {
             return Ok(());
         }
         if current.is_some() {

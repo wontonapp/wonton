@@ -35,8 +35,9 @@ pub(super) async fn approve(
     {
         return denied;
     }
+    let _sync = gateway.member_sync.lock().await;
     match gateway.members.approve_join(&id, &gateway.tunnel.devices) {
-        Ok(()) => match super::family_room::synchronize(&gateway, &headers).await {
+        Ok(()) => match super::family_private::synchronize_locked(&gateway, &headers).await {
             None => StatusCode::NO_CONTENT.into_response(),
             Some(response) => response,
         },

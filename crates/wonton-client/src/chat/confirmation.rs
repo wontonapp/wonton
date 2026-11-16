@@ -14,7 +14,7 @@ use tokio::sync::watch;
 use url::Url;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatFailure, ChatProblem,
+    Answer, CONFIRMATIONS_PATH, CONFIRMATIONS_WAIT_SECS, ChatAction, ChatFailure, ChatProblem,
     ConfirmationAnswer, ConfirmationCard, ConfirmationList, ConfirmationReply, ConfirmationState,
     ConfirmationView, ConfirmationWindow, CoreError, ProxySettings, WindowEnd, WindowView,
     answer_path, confirmation_path, window_path,
@@ -547,17 +547,18 @@ fn answer_error(problem: &ChatProblem) -> CoreError {
 
 impl ChatLink {
     /// 确认卡片的操作：回答、停掉放行时段、重试取列表。`dispatch` 里确认的动作才路由到这里。
-    pub(super) fn confirmation_action(&self, action: Action) -> Result<(), CoreError> {
+    pub(super) fn confirmation_action(&self, action: ChatAction) -> Result<(), CoreError> {
         match action {
-            Action::AnswerConfirmation {
+            ChatAction::AnswerConfirmation {
                 id,
                 answer,
                 choice_id,
                 secrets,
                 settings,
-            } => self.answer_confirmation(id, answer, choice_id, secrets, settings),
-            Action::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
-            Action::RetryConfirmations => {
+                devices,
+            } => self.answer_confirmation(id, answer, choice_id, secrets, settings, devices),
+            ChatAction::StopConfirmationWindow { id } => self.stop_confirmation_window(id),
+            ChatAction::RetryConfirmations => {
                 self.retry_confirmations.notify_one();
                 Ok(())
             }
@@ -574,8 +575,9 @@ impl ChatLink {
         choice_id: Option<String>,
         secrets: wonton_protocol::SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
     ) -> Result<(), CoreError> {
-        let answer = self.prepare_answer(id, answer, choice_id, secrets, settings)?;
+        let answer = self.prepare_answer(id, answer, choice_id, secrets, settings, devices)?;
         let Some(answer) = answer else {
             return Ok(());
         };
@@ -620,6 +622,7 @@ impl ChatLink {
                 id.clone(),
                 answer,
                 choice_id,
+                Default::default(),
                 Default::default(),
                 Default::default(),
             )? {
@@ -692,6 +695,7 @@ impl ChatLink {
         choice_id: Option<String>,
         secrets: wonton_protocol::SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
     ) -> Result<Option<PreparedAnswer>, CoreError> {
         if answer == Answer::Unknown {
             return Err(invalid(&l10n!(CATALOG, language(), "chat-unknown-answer")));
@@ -717,6 +721,7 @@ impl ChatLink {
                 choice_id,
                 secrets,
                 settings,
+                devices,
             },
         }))
     }

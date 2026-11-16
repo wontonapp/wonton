@@ -108,7 +108,10 @@ def check_entry(home):
                  == {"m.homeserver": {"base_url": "https://" + home.name}}, seconds=200)
         keys = wait_for("federation keys", lambda: fetched(home, "/_matrix/key/v2/server"), seconds=200)
     except RuntimeError:
-        print(run("docker", "logs", "--tail", "30", home.project + "-entry", check=False).stdout, flush=True)
+        for component in ("entry", "connector"):
+            container = home.component_container(component)
+            if container:
+                print(run("docker", "logs", "--tail", "30", container, check=False).stdout, flush=True)
         print(run("docker", "logs", "--tail", "30", home.core, check=False).stdout, flush=True)
         raise
     assert keys["server_name"] == home.name
@@ -149,6 +152,9 @@ def install(home, acquire, entry=True):
         "WONTON_ACME_RESOLVERS": home.cloud["resolver"] + ":53",
         "WONTON_RELAYS": f"https://iroh.{home.cloud['zone']}",
     }
+    if not entry:
+        # 无入口的那台用私用名，旧版本也认这个变量。
+        values["WONTON_MATRIX_NAME_MODE"] = "none"
     (inputs / "init.env").write_text("".join(f"{key}={value}\n" for key, value in values.items()))
     def init_once():
         return run("docker", "run", "--rm", "--network", home.cloud["network"], "--dns", home.cloud["resolver"],
@@ -224,10 +230,12 @@ def install(home, acquire, entry=True):
     home.started = True
     up = home.compose("up", "--detach", "--wait", "--wait-timeout", "420", check=False)
     if up.returncode:
-        for service in ("tuwunel", "core", "connector"):
+        for service in ("tuwunel", "core"):
             logs = run("docker", "logs", "--tail", "40", home.project + "-" + service, check=False)
             print(f"--- {service}\n" + logs.stdout + logs.stderr, flush=True)
         raise RuntimeError(f"{home.label} 起不来：" + up.stdout + up.stderr)
+    if entry:
+        home.attach_connector()
     home.token = (home.data / "core/owner-token").read_text().strip()
     print(f"Installed {home.label}: {home.name}", flush=True)
 
@@ -294,11 +302,14 @@ def main():
         old_mounts = json.loads(run("docker", "inspect", tuwenel_container(b),
                                     "--format", "{{json .Mounts}}").stdout)
         old_sources = {mount["Destination"]: mount["Source"] for mount in old_mounts}
-        assert old_sources["/etc/tuwunel/tuwunel.toml"].endswith("secrets/tuwunel.toml"), old_mounts
-        assert "fed/config.toml" in old_sources["/etc/tuwunel/fed.toml"], old_mounts
-        assert (b.install / "secrets/tuwunel.toml").exists()
-        assert (b.install / "fed/config.toml").exists()
-        print("PASS main lays out the old mount", flush=True)
+        # 换成整目录挂 `/etc/tuwunel` 之前是这样挂的；已经换成整目录的 main 只核对目录。
+        old_layout = "/etc/tuwunel/tuwunel.toml" in old_sources
+        if old_layout:
+            assert old_sources["/etc/tuwunel/tuwunel.toml"].endswith("secrets/tuwunel.toml"), old_mounts
+            assert "fed/config.toml" in old_sources["/etc/tuwunel/fed.toml"], old_mounts
+            assert (b.install / "secrets/tuwunel.toml").exists()
+            assert (b.install / "fed/config.toml").exists()
+        print(f"PASS main lays out the mount (old layout: {old_layout})", flush=True)
         run("docker", "rm", "--force", b.phone, check=False)
         b.compose("down")
 

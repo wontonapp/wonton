@@ -52,7 +52,23 @@ final class AppNavigation {
             shareIn.claim(token)
             return
         }
-        request { try await $0.open(link) }
+        if case let .tab(tab) = link {
+            openTab(tab)
+        } else {
+            request { try await $0.open(link) }
+        }
+    }
+
+    /// 打开一个页面引用；外部网页插件不经页面栈，交给系统的 App 内浏览器（ADR-0080）。
+    /// 插件列表还没读到时按页面打开：和改造前的行为一致（打开不了如实报）。
+    func openTab(_ tab: TabRef) {
+        if case let .plugin(pluginId, _) = tab,
+           let plugin = plugins.viewModel.installed?.plugins.first(where: { $0.id == pluginId }),
+           plugin.webUrl == nil, let url = plugin.linkUrl, let external = URL(string: url) {
+            safari = SafariTarget(url: external)
+            return
+        }
+        request { try await $0.open(.tab(tab: tab)) }
     }
 
     /// 分享页发出去以后打开那个聊天看进度。
@@ -73,7 +89,7 @@ final class AppNavigation {
             guard let url = URL(string: link.url) else { return }
             safari = SafariTarget(url: url)
         case let .plugin(pluginId):
-            request { try await $0.open(.tab(tab: .plugin(pluginId: pluginId, page: nil))) }
+            openTab(.plugin(pluginId: pluginId, page: nil))
         case let .matrix(target):
             switch target {
             case let .user(userId):
@@ -159,8 +175,8 @@ final class AppNavigation {
         }
         let bot = try primaryBot()
         // 新操作不能被上一次后台失败留下的 problem 提前判成失败。
-        try chat.core.dispatch(action: .dismissChatProblem)
-        try chat.core.dispatch(action: .askAgent(text: text))
+        try chat.core.dispatch(action: .chat(action: .dismissChatProblem))
+        try chat.core.dispatch(action: .chat(action: .askAgent(text: text)))
         try select(.chat)
         // AskAgent 已负责建房和接受邀请，不能再发一次 StartDirectChat。
         chat.openAskedAgentChat(with: bot)

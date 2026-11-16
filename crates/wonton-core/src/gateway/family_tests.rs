@@ -173,7 +173,7 @@ async fn an_invited_member_pairs_her_device_and_sees_herself() {
     let (home, _matrix_state) = home_with_matrix().await;
     let member = invite(
         &home,
-        json!({"display_name": "爱丽丝", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "爱丽丝", "private_bot": false, "role_id": "family"}),
     )
     .await;
     assert_eq!(
@@ -256,7 +256,7 @@ async fn member_pairing_codes_are_single_use_and_voidable() {
     let (home, _matrix_state) = home_with_matrix().await;
     invite(
         &home,
-        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "Mia", "private_bot": false, "role_id": "family"}),
     )
     .await;
     // 再出一个，旧的作废。
@@ -309,7 +309,7 @@ async fn removing_a_member_revokes_her_devices_and_keeps_the_username_taken() {
     let (home, _matrix_state) = home_with_matrix().await;
     invite(
         &home,
-        json!({"display_name": "Mia", "private_bot": true, "role_id": "family"}),
+        json!({"display_name": "Mia", "private_bot": false, "role_id": "family"}),
     )
     .await;
     let code = member_code(&home, "mia").await;
@@ -402,9 +402,8 @@ type GuardedRoutes = Vec<(
     Vec<(Method, &'static str, &'static str)>,
 )>;
 
-fn guarded_routes() -> GuardedRoutes {
-    use wonton_protocol::PermissionItem as Item;
-    let install: Vec<(Method, &str, &str)> = vec![
+fn install_guarded_routes() -> Vec<(Method, &'static str, &'static str)> {
+    vec![
         (
             Method::POST,
             "/_wonton/api/plugins/preview",
@@ -412,6 +411,8 @@ fn guarded_routes() -> GuardedRoutes {
         ),
         (Method::POST, "/_wonton/api/plugins", "{}"),
         (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/lifecycle", ""),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/stop", ""),
         (
             Method::POST,
             "/_wonton/api/plugins/app.whoami/upgrade",
@@ -419,11 +420,6 @@ fn guarded_routes() -> GuardedRoutes {
         ),
         (Method::DELETE, "/_wonton/api/plugins/app.whoami", ""),
         (Method::GET, "/_wonton/api/store", ""),
-        (
-            Method::GET,
-            "/_wonton/api/store/plugin?source=github:o/r",
-            "",
-        ),
         (
             Method::GET,
             "/_wonton/api/store/plugin?source=github:o/r",
@@ -462,7 +458,12 @@ fn guarded_routes() -> GuardedRoutes {
             "/_wonton/api/bots/app.agent/default/plugin-access/app.whoami",
             "",
         ),
-    ];
+    ]
+}
+
+fn guarded_routes() -> GuardedRoutes {
+    use wonton_protocol::PermissionItem as Item;
+    let install = install_guarded_routes();
     let server: Vec<(Method, &str, &str)> = vec![
         (Method::GET, "/_wonton/api/egress-proxy", ""),
         (Method::PUT, "/_wonton/api/egress-proxy", "{}"),
@@ -487,20 +488,20 @@ fn guarded_routes() -> GuardedRoutes {
                 (Method::POST, MEMBERS, "{}"),
                 (Method::POST, "/_wonton/api/members/mia/pairing-code", "{}"),
                 (Method::POST, "/_wonton/api/members/mia/remove", "{}"),
-                (
-                    Method::PUT,
-                    "/_wonton/api/plugins/app.whoami/family",
-                    "{\"enabled\": true}",
-                ),
             ],
         ),
         (Item::InstallApps, install),
         (
+            Item::Owner,
+            vec![(
+                Method::PUT,
+                "/_wonton/api/plugins/app.whoami/audience",
+                "{\"role_ids\": [\"admin\"]}",
+            )],
+        ),
+        (
             Item::ModelSettings,
-            vec![
-                (Method::GET, "/_wonton/api/models/providers", ""),
-                (Method::PUT, "/_wonton/api/models/providers/magpie", "{}"),
-            ],
+            vec![(Method::GET, "/_wonton/api/models/settings", "")],
         ),
     ]
 }
@@ -546,6 +547,9 @@ async fn routes_ask_for_their_permission_item() {
         (Method::GET, "/_wonton/api/devices", ""),
         (Method::GET, "/_wonton/api/storage", ""),
         (Method::POST, "/_wonton/api/store/sources", "{}"),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/start", ""),
+        (Method::GET, "/_wonton/api/plugins/app.whoami/lifecycle", ""),
+        (Method::POST, "/_wonton/api/plugins/app.whoami/stop", ""),
     ] {
         let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], body).await;
         assert_ne!(
@@ -554,6 +558,21 @@ async fn routes_ask_for_their_permission_item() {
             "管理员 {method} {path}: {}",
             reply.text()
         );
+    }
+    // 三个接口复用启动权限；未安装只报业务错误，不能把获授权的家人误挡为未登录或仅限主人。
+    for (method, path) in [
+        (Method::POST, "/_wonton/api/plugins/app.missing/start"),
+        (Method::GET, "/_wonton/api/plugins/app.missing/lifecycle"),
+        (Method::POST, "/_wonton/api/plugins/app.missing/stop"),
+    ] {
+        let reply = send_as(&h.app, Some(member), method.clone(), CORE, path, &[], "").await;
+        assert_eq!(
+            reply.status,
+            StatusCode::NOT_FOUND,
+            "{method} {path}: {}",
+            reply.text()
+        );
+        assert_eq!(reply.error_kind(), Some("not_installed"), "{path}");
     }
     let reply = send_as(
         &h.app,

@@ -13,6 +13,8 @@ struct InstallConfirmView: View {
     @State private var rejection: Problem?
     @State private var lanWebui = false
     @State private var enabled: Set<String> = []
+    @State private var devices: [PluginDevice] = []
+    @State private var audience: PluginAudienceView?
     @State private var secrets: [String: String] = [:]
     @State private var isFillingProfile = false
     @State private var submittedId: String?
@@ -33,7 +35,7 @@ struct InstallConfirmView: View {
                 Button {
                     requestConfirmation(preview)
                 } label: {
-                    Text(confirmation.actionTitle).frame(maxWidth: .infinity)
+                    Text(actionTitle).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle())
                 .disabled(!canConfirm)
@@ -50,7 +52,7 @@ struct InstallConfirmView: View {
             isPresented: $hostAcknowledgement,
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)),
-                WontonDialogAction(title: confirmation.actionTitle, kind: .danger) {
+                WontonDialogAction(title: actionTitle, kind: .danger) {
                     if let preview { confirm(preview) }
                 }
             ]
@@ -73,10 +75,18 @@ struct InstallConfirmView: View {
                 Task { await load() }
             }
         case let .success(preview):
-            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled, secrets: $secrets) {
+            PreviewContent(model: model, preview: preview, lanWebui: $lanWebui, enabled: $enabled,
+                           devices: $devices, audience: $audience, secrets: $secrets) {
                 isFillingProfile = true
             }
         }
+    }
+
+    private var actionTitle: String {
+        if let preview, previewInstallAction(preview: preview) == .requestAdmin {
+            return String(localized: .Install.installRequestAdmin)
+        }
+        return confirmation.actionTitle
     }
 
     private var isUpgrade: Bool { confirmation.isUpgrade }
@@ -86,11 +96,13 @@ struct InstallConfirmView: View {
         return nil
     }
 
-    /// 装不了（`blocked`）、缺资料、有核心不支持的权限或缺必填密钥时不能确认。
+    /// 装不了（`blocked`）、缺资料、有核心不支持的权限、缺必填密钥或必选的串口没选时不能确认。
     private var canConfirm: Bool {
         guard let preview else { return false }
-        return preview.blocked == nil && preview.missingProfile == nil && preview.permissions.allSatisfy(\.supported)
+        return previewInstallAction(preview: preview) != .blocked && preview.missingProfile == nil
+            && preview.permissions.allSatisfy(\.supported)
             && !missingRequiredSecret(preview.secretInputs, secrets)
+            && deviceChoices(devices: devices, permissions: preview.permissionLines(enabling: enabled))?.ready != false
     }
 
     private var isShowingRejection: Binding<Bool> {
@@ -105,7 +117,9 @@ struct InstallConfirmView: View {
     private func load() async {
         if let preloaded = confirmation.preloaded {
             lanWebui = preloaded.lanWebui?.enabled ?? false
+            devices = preloaded.devices ?? []
             enabled = Set(preloaded.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            audience = preloaded.audience
             loaded = .success(preloaded)
             return
         }
@@ -120,7 +134,9 @@ struct InstallConfirmView: View {
             case .store: throw CancellationError()
             }
             lanWebui = preview.lanWebui?.enabled ?? false
+            devices = preview.devices ?? []
             enabled = Set(preview.permissions.filter { $0.optional && $0.enabled }.map(\.permission))
+            audience = preview.audience
             loaded = .success(preview)
         } catch {
             loaded = .failure(error)
@@ -143,18 +159,15 @@ struct InstallConfirmView: View {
     private func confirm(_ shown: InstallPreview) {
         var preview = shown
         preview.lanWebui?.enabled = lanWebui
-        preview.permissions = preview.permissions.map { line in
-            guard line.optional else { return line }
-            var line = line
-            line.enabled = enabled.contains(line.permission)
-            return line
-        }
+        preview.audience = audience
+        preview.permissions = preview.permissionLines(enabling: enabled)
+        if preview.devices != nil { preview.devices = devices }
         let secrets = secretValues(preview.secretInputs, self.secrets)
         let action: Action
         if isUpgrade {
-            action = .upgradePlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .plugins(action: .upgradePlugin(preview: preview, secrets: secrets, settings: [:]))
         } else {
-            action = .installPlugin(preview: preview, secrets: secrets, settings: [:])
+            action = .plugins(action: .installPlugin(preview: preview, secrets: secrets, settings: [:]))
         }
         do {
             try model.core.dispatch(action: action)
@@ -174,6 +187,8 @@ private struct PreviewContent: View {
     let preview: InstallPreview
     @Binding var lanWebui: Bool
     @Binding var enabled: Set<String>
+    @Binding var devices: [PluginDevice]
+    @Binding var audience: PluginAudienceView?
     @Binding var secrets: [String: String]
     let fillProfile: () -> Void
     @Environment(\.wontonColors) private var colors
@@ -192,7 +207,10 @@ private struct PreviewContent: View {
                     }
                 }
                 if !preview.notices.isEmpty { NoticeLines(lines: preview.notices) }
-                if !preview.permissions.isEmpty {
+                if let binding = Binding($audience) {
+                    PluginAudienceSection(audience: binding)
+                }
+                if !preview.permissions.isEmpty || !preview.widgetCapabilities.isEmpty {
                     DetailSection(title: String(localized: .Install.installPermissions)) {
                         ForEach(preview.permissions, id: \.permission) { line in
                             if line.optional {
@@ -210,6 +228,14 @@ private struct PreviewContent: View {
                                 PermissionRow(line: line)
                             }
                         }
+                        WidgetCapabilityRows(capabilities: preview.widgetCapabilities)
+                    }
+                }
+                if let choices = deviceChoices(
+                    devices: devices, permissions: preview.permissionLines(enabling: enabled)
+                ) {
+                    DeviceChoicesSection(choices: choices) { id in
+                        devices = toggleDevice(devices: devices, id: id)
                     }
                 }
                 if !preview.secretInputs.isEmpty {

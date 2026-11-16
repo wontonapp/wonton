@@ -1,8 +1,8 @@
 //! Agent 链列表（ADR-0061 第 10 节）：长轮询 `GET /_wonton/api/agent/chains?after=<版本>`，把还没结束的
-//! 链交给壳。和确认列表一样的做法：跟着家里的连接走，连不上时留上次的列表、退避后接着轮询。列表本身没有
-//! 出错的显示位（协议的 [`AgentChainsViewModel`] 只有链和版本），取不到的原因只进日志。
+//! 链交给壳。和确认列表一样的做法：跟着家里的连接走，连不上时留上次的列表、退避后接着轮询。取列表失败的
+//! 原因只进日志，动作失败则写入 [`AgentChainsViewModel::action_failure`]。
 //!
-//! 动作（停链、改上限、改并发）在 [`actions`]，壳从 `ClientCore` 的单独分派入口发。
+//! 动作（停链、改上限、改并发）在 [`actions`]，壳经 `ClientCore::dispatch` 发送。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -67,7 +67,10 @@ async fn follow(link: Arc<AgentChainsLink>, mut updates: watch::Receiver<HomeVie
             Ok(view) => {
                 after = Some(view.revision);
                 backoff = Duration::ZERO;
-                link.view.send_replace(view);
+                link.view.send_modify(|current| {
+                    current.chains = view.chains;
+                    current.revision = view.revision;
+                });
             }
             Err(failure) => {
                 tracing::warn!("the chain list fetch failed: {}", failure.describe());

@@ -46,11 +46,16 @@ services:
       WONTON_INSTANCE: ${WONTON_INSTANCE:-}
       # 宿主的 /dev 挂在这里（下面的 volumes）：核心据此检测显卡设备和它们所属的组（ADR-0018）。
       WONTON_HOST_DEV: /host/dev
+      # 宿主的 udev 数据库挂在下面的 /host/udev：设备插件自动发现用（ADR-0036）。
+      WONTON_HOST_UDEV: /host/udev
       # 出网代理（ADR-0023）：前者是主人指定的，后者是安装脚本检测到的，只作初值。核心自己访问外网也用它们。
       WONTON_EGRESS_PROXY: ${WONTON_EGRESS_PROXY:-}
       WONTON_EGRESS_PROXY_DETECTED: ${WONTON_EGRESS_PROXY_DETECTED:-}
       # 配了代理时链接预览经代理解析域名的 DoH 服务器（ADR-0065），空时用默认的。
       WONTON_DOH_URL: ${WONTON_DOH_URL:-}
+      # 路由器和自建 frps 的连接器发布在哪个地址和端口上；空时 127.0.0.1:8443。入口容器和连接器由核心建。
+      WONTON_ENTRY_BIND: ${WONTON_ENTRY_BIND:-}
+      WONTON_ENTRY_PORT: ${WONTON_ENTRY_PORT:-}
       # 空时核心自动选插件的局域网端口开在哪个地址上（ADR-0019）。
       WONTON_LAN_ADDRESSES: ${WONTON_LAN_ADDRESSES:-}
       # 启动器声明的宣告地址（ADR-0019）：设了就绑 0.0.0.0，手机连这些地址。每项可以带前缀。
@@ -58,6 +63,15 @@ services:
       WONTON_PLUGIN_SLICE: ${WONTON_PLUGIN_SLICE:-}
       # 装插件时等容器就绪的下限秒数：空值时用核心自己的默认值，不在这里写。
       WONTON_INSTALL_TIMEOUT_SECS: ${WONTON_INSTALL_TIMEOUT_SECS:-}
+      # ACME 坐标（ADR-0089）：安装时给了就沿用到运行时，“不要名字”的安装没有 settings.json 时靠它签发。
+      WONTON_ACME_DIRECTORY: ${WONTON_ACME_DIRECTORY:-}
+      WONTON_ACME_RESOLVERS: ${WONTON_ACME_RESOLVERS:-}
+      WONTON_ACME_EMAIL: ${WONTON_ACME_EMAIL:-}
+      WONTON_ACME_ACCEPT_TERMS: ${WONTON_ACME_ACCEPT_TERMS:-}
+      WONTON_ACME_NETWORK: ${WONTON_ACME_NETWORK:-}
+      WONTON_ACME_CA_FILE: ${WONTON_ACME_CA_FILE:-}
+      # 假 DNS（Pebble + challtestsrv）没有 NS 记录，权威检查永远不过；真服务商默认仍开检查。
+      WONTON_ACME_PROPAGATION_DISABLE_ANS: ${WONTON_ACME_PROPAGATION_DISABLE_ANS:-}
       WONTON_PLUGIN_NETWORK_POOL: ${WONTON_PLUGIN_NETWORK_POOL:-10.213.0.0/16}
       # 给 Tuwunel 的联邦出站代理（ADR-0050）：用下面 core 网络上的别名，核心只绑在这个网络的地址上，插件网络里
       # 连不到。和 tuwunel.toml 里的代理地址（wonton-core init 写的）是同一个值。
@@ -104,6 +118,13 @@ services:
       - type: bind
         source: /dev
         target: /host/dev
+        read_only: true
+        bind:
+          recursive: disabled
+      # 设备插件要读 udev 数据库（Zigbee2MQTT 列适配器、smartctl 认盘）：由核心只读转挂进它们的容器。
+      - type: bind
+        source: /run/udev
+        target: /host/udev
         read_only: true
         bind:
           recursive: disabled

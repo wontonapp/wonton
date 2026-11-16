@@ -21,6 +21,12 @@ use wonton_l10n::l10n;
 fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
     if preview.blocked.is_some()
         || preview.missing_profile.is_some()
+        || preview.install_gate == wonton_protocol::Gate::AskAdmin
+        || (!upgrade
+            && preview
+                .audience
+                .as_ref()
+                .is_some_and(|view| !view.choices.is_empty() || view.notice.is_some()))
         || !preview.always_allowed.is_empty()
         || preview
             .devices
@@ -50,7 +56,7 @@ fn needs_confirmation(preview: &InstallPreview, upgrade: bool) -> bool {
 pub(super) fn updatable(view: &PluginsViewModel) -> Vec<UpdatablePlugin> {
     let installed = view.installed.iter().flat_map(|list| &list.plugins);
     installed
-        .filter(|plugin| !is_busy(plugin))
+        .filter(|plugin| plugin.install_failure.is_none() && !is_busy(plugin))
         .filter_map(|plugin| {
             if let Some(offer) = &plugin.upgrade {
                 return Some(updatable_of(plugin, &offer.version));
@@ -341,8 +347,8 @@ fn confirmation_preview(confirmation: &StoreConfirmation) -> &InstallPreview {
 #[cfg(test)]
 mod tests {
     use wonton_protocol::{
-        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice, PluginKind,
-        WidgetCapability, WidgetCapabilityLevel,
+        CardLine, MissingCapability, PermissionLine, PermissionRisk, PluginDevice,
+        PluginDeviceKind, PluginKind, WidgetCapability, WidgetCapabilityLevel,
     };
 
     use super::*;
@@ -378,6 +384,9 @@ mod tests {
                     target: "/dev/video0".into(),
                     service: "camera".into(),
                     optional: false,
+                    kind: PluginDeviceKind::Serial,
+                    system: false,
+                    chosen: false,
                 }])
             }),
             false
@@ -463,6 +472,7 @@ mod tests {
             kind: PluginKind::App,
             runtime: Default::default(),
             security_tier: None,
+            remote: None,
             scope_choices: Vec::new(),
             has_bot: false,
             icon: None,
@@ -498,6 +508,8 @@ mod tests {
             devices: None,
             lan_webui: None,
             always_allowed: Vec::new(),
+            audience: None,
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 

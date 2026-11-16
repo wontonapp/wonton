@@ -11,6 +11,8 @@ final class TabWebViewStore {
     private var accountId: String?
     /// 释放过 WebView 的计数：页面视图据此判断手里的会话还能不能用、要不要重新要一份。
     private(set) var generation = 0
+    /// 公网网页与插件凭据分开，窗口之间仍共享同一公网存储。
+    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
 
     func session(for placed: PlacedTab, core: ClientCore) -> TabWebSession {
         let currentAccount = core.servers().servers.first(where: { $0.current })?.id
@@ -27,6 +29,8 @@ final class TabWebViewStore {
                 store = .nonPersistent()
                 sharedStores[ownerUserId] = store
             }
+        } else if case .url = placed.tab {
+            store = WKWebsiteDataStore(forIdentifier: Self.publicPanelStore)
         } else { store = .default() }
         let session = TabWebSession(placed: placed, core: core, dataStore: store)
         sessions[placed] = session
@@ -34,9 +38,14 @@ final class TabWebViewStore {
     }
 
     /// 整页和面板里的同一个页面各一份（ADR-0052）：不在这一份里的释放掉。
-    func retain(_ placed: Set<PlacedTab>) {
+    /// `open` 是核心那边开着的页面；留着但不在里面的是关掉后保活的，见 `TabWebSession.parked`。
+    /// 面板的页面一直在核心的面板列表里，不传。
+    func retain(_ placed: Set<PlacedTab>, open: Set<PlacedTab>? = nil) {
         for key in Array(sessions.keys) where !placed.contains(key) {
             sessions.removeValue(forKey: key)?.dispose()
+        }
+        if let open {
+            for (key, session) in sessions { session.park(!open.contains(key)) }
         }
         generation += 1
     }
@@ -51,7 +60,7 @@ final class TabWebViewStore {
 extension PlacedTab {
     var tab: TabRef {
         switch self {
-        case let .page(tab), let .panel(_, tab): tab
+        case let .page(tab), let .content(tab), let .panel(_, tab): tab
         }
     }
 }
@@ -89,8 +98,20 @@ final class TabWebSession: NSObject {
     @ObservationIgnored var lastConnection: String?
     @ObservationIgnored var documentScript: String?
     @ObservationIgnored private var lastTextScale: CGFloat?
+    /// 页面关掉后保活着（`PagesModel.keepAlive`）：核心的栈里没有这一页，这时拿它去问核心只会得到
+    /// “页面没有打开”，记成 `problem` 以后重开不重载就一直盖在网页上。停着的时候 WebKit 的回调不问核心，
+    /// 欠下的在重开后的第一次 `update` 里补。
+    @ObservationIgnored private(set) var parked = false
+    @ObservationIgnored var missedFinish = false
     @ObservationIgnored private var backObservation: NSKeyValueObservation?
+    /// 页面自己的顶栏颜色，只在网页框让出顶上一条的系统上跟（`PageTopInset.framesWebView`）。
+    var topColor: UIColor?
+    @ObservationIgnored var topColorObservations: [NSKeyValueObservation] = []
     @ObservationIgnored private let dataStore: WKWebsiteDataStore
+    /// 这份会话的网页在放媒体：开始或停止时经 [`PageMediaActive`] 上报核心。
+    @ObservationIgnored private var mediaPlaying = false
+    /// widget 页（ADR-0096）：驱动发给页面的消息，见 `TabWidgetChannel`。
+    @ObservationIgnored let widgetChannel = TabWidgetChannel()
 
     init(placed: PlacedTab, core: ClientCore, dataStore: WKWebsiteDataStore) {
         self.placed = placed
@@ -109,11 +130,19 @@ final class TabWebSession: NSObject {
         do {
             if let webView {
                 try configure(webView)
-                try updateContext(webView)
+                if missedFinish {
+                    missedFinish = false
+                    try core.dispatch(action: .pages(action: .tabLoadSucceeded(page: placed)))
+                    try updateContext(webView, force: true)
+                } else {
+                    try updateContext(webView)
+                }
             }
             guard input.connected, input.page.state == .ready,
-                  let proxy = input.proxy, let entry = input.page.url,
-                  let url = URL(string: entry) else { return }
+                  let entry = input.page.url, let url = URL(string: entry) else { return }
+            // 插件页要等家里的代理；公网网页直接连，不经隧道（ADR-0052），没有代理也加载。
+            let proxy = input.proxy
+            guard proxy != nil || !bridged else { return }
             if webView == nil { try create() }
             guard let webView else { return }
             if loadedReload != input.page.reload || loadedEntry != entry || loadedProxy != proxy {
@@ -125,6 +154,8 @@ final class TabWebSession: NSObject {
                 loadedProxy = proxy
                 recoveryURL = nil
                 webView.load(URLRequest(url: destination))
+                // widget 页每次加载都是一次新的 widget 会话（重新加载换驱动、换地址）：页面开始加载后订阅。
+                if tab.isWidget { try widgetChannel.start(page: placed, core: core, into: self) }
             }
         } catch {
             problem = error.problem
@@ -133,10 +164,14 @@ final class TabWebSession: NSObject {
 
     private func create() throws {
         let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = Self.dataStore(for: placed)
+        configuration.websiteDataStore = dataStore
         // 公网网页没有桥，也不注入变量和脚本（ADR-0052）。
         if bridged {
-            configuration.userContentController.add(WeakTabMessageHandler(self), name: "wontonBridge")
+            let controller = configuration.userContentController
+            controller.add(WeakTabMessageHandler(self), name: "wontonBridge")
+            controller.add(WeakTabMessageHandler(self), name: "wontonMedia")
+            // 插件页换曲时在新元素上自动播放，等不到用户手势；页面本来就是主人打开的（同 Android）。
+            configuration.mediaTypesRequiringUserActionForPlayback = []
         }
         // 和 Safari 一样，页面写了 user-scalable=no 或 maximum-scale 也能双指缩放；
         // 配合 focusZoomScript 的 maximum-scale=1，只拦住聚焦输入框时的自动放大。
@@ -148,6 +183,15 @@ final class TabWebSession: NSObject {
         // 网页自己的前进后退手势也是左边缘右滑，会抢系统的返回；关掉，网页历史走胶囊菜单的后退。
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
+        if bridged {
+            view.uiDelegate = self
+            let captures = responds(to: #selector(
+                WKUIDelegate.webView(_:requestMediaCapturePermissionFor:initiatedByFrame:type:decisionHandler:)
+            ))
+            NSLog("[media] create bridged uiDelegate=session responds=%d", captures ? 1 : 0)
+        } else {
+            NSLog("[media] create unbridged (public page), no uiDelegate")
+        }
         #if DEBUG
         view.isInspectable = true
         #endif
@@ -156,6 +200,7 @@ final class TabWebSession: NSObject {
         backObservation = view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] _, _ in
             Task { @MainActor in self?.canGoBack = self?.webView?.canGoBack ?? false }
         }
+        if PageTopInset.framesWebView, case .page = placed { observeTopColor(of: view) }
     }
 
     private func configure(_ view: WKWebView) throws {
@@ -185,6 +230,12 @@ final class TabWebSession: NSObject {
             controller.addUserScript(WKUserScript(
                 source: script, injectionTime: .atDocumentStart, forMainFrameOnly: true
             ))
+            // 核心的媒体脚本经 window.wontonMedia 发状态（同 Android 的 WebMessageListener 名字）；
+            // iOS 的消息处理挂在 window.webkit.messageHandlers 上，先垫一段把两边对上。
+            controller.addUserScript(WKUserScript(
+                source: Self.mediaChannelScript + "\n" + core.pageMediaScript(),
+                injectionTime: .atDocumentStart, forMainFrameOnly: true
+            ))
             controller.addUserScript(WKUserScript(
                 source: Self.focusZoomScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true
             ))
@@ -213,9 +264,17 @@ final class TabWebSession: NSObject {
 
     func evaluate(_ script: String, in view: WKWebView) {
         view.evaluateJavaScript(script) { [weak self, weak view] _, error in
-            guard let self, self.webView === view, let error else { return }
+            guard let self, self.webView === view, let error, !Self.resultUnsupported(error) else { return }
             self.problem = error.problem
         }
+    }
+
+    /// 这些脚本只为副作用，结果用不上：WebKit 说“结果类型不支持”（WKErrorDomain 5）不算页面出错，不记成 `problem`。
+    /// Paperless 的面板页刚加载完时实测会报（iOS 26.5），给脚本补 `undefined` 当完成值也照样报；记成出错的话
+    /// 一张好好的网页上会盖着“出了点问题”。
+    static func resultUnsupported(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == WKErrorDomain && error.code == WKError.javaScriptResultTypeIsUnsupported.rawValue
     }
 
     /// 公网网页没有桥：不注入脚本和变量，不装消息处理。
@@ -224,62 +283,34 @@ final class TabWebSession: NSObject {
         return true
     }
 
-    /// 公网网页不和插件页共用 Cookie 和存储（ADR-0052）：公网页面共用一个单独的存储。
-    private static let publicPanelStore = UUID(uuidString: "6C3B0E7A-6C61-4A0E-9E2B-5C5A0B7C8F61")!
-
-    private static func dataStore(for placed: PlacedTab) -> WKWebsiteDataStore {
-        guard case .url = placed.tab else { return .default() }
-        return WKWebsiteDataStore(forIdentifier: publicPanelStore)
-    }
-
-    /// WebKit 在输入框字号小于 16px 时聚焦会放大页面，失焦不缩回（#442）。聚焦放大的上限
-    /// 取 viewport 的 maximum-scale，不受 ignoresViewportScaleLimits 影响，所以补上
-    /// maximum-scale=1 只拦它。页面自己写了 maximum-scale 的照它的；没有 viewport 的
-    /// 是桌面宽度的页面，聚焦放大对它有用，不动。
-    private static let focusZoomScript = """
-        (() => {
-          const meta = document.querySelector('meta[name="viewport"]');
-          if (!meta || /maximum-scale/i.test(meta.content)) return;
-          meta.content = meta.content + ', maximum-scale=1';
-        })();
-        """
-
-    private func textSizeScript(_ scale: CGFloat) -> String {
-        """
-        (() => {
-          const apply = () => {
-            if (!document.documentElement) return false;
-            document.documentElement.style.setProperty(
-              '-webkit-text-size-adjust', '\(Double(scale * 100))%', 'important'
-            );
-            return true;
-          };
-          if (!apply()) {
-            const observer = new MutationObserver(() => {
-              if (apply()) observer.disconnect();
-            });
-            observer.observe(document, { childList: true });
-          }
-        })();
-        """
-    }
-
     /// 面板拉开、翻到这一页：经桥告诉页面它被看到了。
     func seen() {
         guard let webView else { return }
         evaluate(core.tabReselectedScript(), in: webView)
     }
 
+    /// 网页开始或停止放媒体：上报核心，App 退到后台也照常探测、自动重连（ADR-0033）。
+    /// 整页和面板里的同一页各一份会话，都停了才解除，换曲的一瞬由核心的宽限兜住。
+    func setMediaPlaying(_ playing: Bool) {
+        guard mediaPlaying != playing else { return }
+        mediaPlaying = playing
+        PageMediaActive.shared.set(self, playing: playing, core: core)
+    }
+
     func retry() {
         problem = nil
         do {
             if case let .sharedApp(ownerUserId, _) = tab {
-                try core.dispatch(action: .refreshSharedApps(ownerUserId: ownerUserId))
+                try core.dispatch(action: .sharing(action: .refreshSharedApps(ownerUserId: ownerUserId)))
             } else {
-                try core.dispatch(action: .refreshPlugins)
+                try core.dispatch(action: .plugins(action: .refreshPlugins))
             }
-            try core.dispatch(action: .reloadTab(page: placed))
+            try core.dispatch(action: .pages(action: .reloadTab(page: placed)))
         } catch { problem = error.problem }
+    }
+
+    func park(_ value: Bool) {
+        parked = value
     }
 
     func rebuild() {
@@ -296,15 +327,39 @@ final class TabWebSession: NSObject {
         lastContext = nil
         lastConnection = nil
         lastTextScale = nil
+        missedFinish = false
+        // 停着的页面没有地方显示，核心也不认它：留到重开时由页面视图的 `update` 重建。
+        guard !parked else { return }
         update(input, action: action)
     }
 
+    /// Remove a previously loaded page when exact Bot metadata or pre-open consent no longer permits it.
+    func withhold() {
+        dispose()
+        input = nil
+        ready = false
+        hasContent = false
+        canGoBack = false
+        loadedReload = nil
+        loadedEntry = nil
+        loadedProxy = nil
+        recoveryURL = nil
+        navigationURL = nil
+    }
+
     func dispose() {
+        widgetChannel.stop()
+        setMediaPlaying(false)
         backObservation = nil
+        topColorObservations = []
+        topColor = nil
         webView?.stopLoading()
         webView?.navigationDelegate = nil
+        webView?.uiDelegate = nil
         if bridged {
-            webView?.configuration.userContentController.removeScriptMessageHandler(forName: "wontonBridge")
+            let controller = webView?.configuration.userContentController
+            controller?.removeScriptMessageHandler(forName: "wontonBridge")
+            controller?.removeScriptMessageHandler(forName: "wontonMedia")
         }
         webView = nil
         action = nil
@@ -313,7 +368,8 @@ final class TabWebSession: NSObject {
 
 struct TabWebView: UIViewRepresentable {
     let webView: WKWebView
-    /// 面板挡住的上下两条（ADR-0052）：页面照样画在后面，但固定定位的元素和滚动的终点让开。整页是 0（ADR-0095）。
+    /// 浮在网页上面、挡住它的上下两条：整页是状态栏加胶囊那一行（ADR-0095），面板里是面板的布局（ADR-0052）。
+    /// 页面照样画在后面，但固定定位的元素和滚动的终点让开。iOS 26 之前没有这个接口，见 `PageTopInset`。
     let obscured: UIEdgeInsets
 
     func makeUIView(context: Context) -> WKWebView {

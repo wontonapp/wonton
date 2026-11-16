@@ -35,11 +35,11 @@ const ROOM_ID: &AsciiSet = &NON_ALPHANUMERIC
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AppLink {
-    /// 打开一个页面，压进栈（[`Action::OpenPage`](crate::Action::OpenPage)）。
+    /// 打开一个页面，压进栈（[`PageAction::OpenPage`](crate::PageAction::OpenPage)）。
     Tab { tab: TabRef },
     /// 新会话：打开“发起私聊”。
     NewChat,
-    /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`Action::AskAgent`](crate::Action::AskAgent)。
+    /// 打开和默认 Agent 的聊天。带一句话直接发出去的“问 Bot”用 [`ChatAction::AskAgent`](crate::ChatAction::AskAgent)。
     AgentChat,
     /// 打开设置。
     Settings,
@@ -99,6 +99,10 @@ impl AppLink {
                 } => format!(
                     "tab/shared/{}/{plugin_id}",
                     URL_SAFE_NO_PAD.encode(owner_user_id)
+                ),
+                TabRef::Widget { plugin_id, room_id } => format!(
+                    "tab/widget/{plugin_id}/{}",
+                    utf8_percent_encode(room_id, ROOM_ID)
                 ),
             },
             Self::Settings => "settings".to_owned(),
@@ -189,6 +193,10 @@ impl AppLink {
                     plugin_id: (*plugin_id).to_owned(),
                 })
             }
+            ["tab", "widget", plugin_id, encoded] if is_id(plugin_id) => tab(TabRef::Widget {
+                plugin_id: (*plugin_id).to_owned(),
+                room_id: decode_room_id(encoded)?,
+            }),
             ["new-chat"] => Some(Self::NewChat),
             ["agent-chat"] => Some(Self::AgentChat),
             ["settings"] => Some(Self::Settings),
@@ -196,12 +204,9 @@ impl AppLink {
             ["share", token] if crate::is_share_token(token) => Some(Self::Share {
                 token: (*token).to_owned(),
             }),
-            ["room", encoded] => {
-                let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
-                is_room_id(&room_id).then(|| Self::Room {
-                    room_id: room_id.into_owned(),
-                })
-            }
+            ["room", encoded] => Some(Self::Room {
+                room_id: decode_room_id(encoded)?,
+            }),
             _ => None,
         }
     }
@@ -223,15 +228,22 @@ fn is_room_id(text: &str) -> bool {
         && !text.chars().any(|c| c.is_whitespace() || c.is_control())
 }
 
+fn decode_room_id(encoded: &str) -> Option<String> {
+    let room_id = percent_decode_str(encoded).decode_utf8().ok()?;
+    is_room_id(&room_id).then(|| room_id.into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Action;
+    use crate::{Action, ChatAction};
 
     #[test]
     fn asking_the_agent_round_trips_through_json() {
-        let action = Action::AskAgent {
-            text: "明天几点下雨？".into(),
+        let action = Action::Chat {
+            action: ChatAction::AskAgent {
+                text: "明天几点下雨？".into(),
+            },
         };
         let json = serde_json::to_string(&action).unwrap();
         assert_eq!(serde_json::from_str::<Action>(&json).unwrap(), action);
@@ -276,6 +288,12 @@ mod tests {
                 tab: TabRef::SharedApp {
                     owner_user_id: "@alice/smith:[2001:db8::1]:8448".into(),
                     plugin_id: "app.snake".into(),
+                },
+            },
+            AppLink::Tab {
+                tab: TabRef::Widget {
+                    plugin_id: "app.example.call".into(),
+                    room_id: "!odd/id?x=1#y%z:[2001:db8::1]:8448".into(),
                 },
             },
             AppLink::NewChat,

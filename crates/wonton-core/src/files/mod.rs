@@ -11,6 +11,8 @@
 mod bot;
 pub mod content;
 mod host;
+mod operations;
+mod private;
 pub mod record;
 pub mod resource;
 mod saving;
@@ -35,7 +37,7 @@ pub use host::{CoreHost, FileHost};
 use crate::l10n;
 use crate::mcp::audit::Audit;
 use crate::plugin::PluginId;
-use crate::plugin::hostdir::{self, DirError, Owner};
+use crate::plugin::hostdir::{DirError, Owner};
 use crate::plugin::image_worker::{ImageError, ImageWorker};
 use crate::plugin::languages::Languages;
 use crate::plugin::manager::now_secs;
@@ -43,7 +45,9 @@ use crate::plugin::store::StoreError;
 use content::{can_thumbnail, declared_type, served_type};
 use record::{Accessor, FileRecord, Lookup, Origin, Registry, RegistryError};
 use resource::{InternalUrl, RemoteRequest};
-use share_fs::{Deleted, Opened, ShareError, ShareRef, Shares, TRANSFERS};
+#[cfg(test)]
+use share_fs::TRANSFERS;
+use share_fs::{Opened, ShareError, ShareRef, Shares};
 use slots::PluginSlots;
 use thumbnails::{
     MAX_THUMBNAIL_DECODES, MAX_THUMBNAIL_READS, Scale, THUMBNAIL_DECODE_TIMEOUT,
@@ -156,6 +160,8 @@ pub enum OpenError {
 /// 文件服务的目录。
 #[derive(Debug, Clone)]
 pub struct FilesConfig {
+    /// Data root containing core/home; independent from the file registry directory.
+    pub data_dir: PathBuf,
     /// 核心数据目录下的 `core/files`。
     pub dir: PathBuf,
     /// 共享文件夹的根目录。
@@ -233,6 +239,9 @@ pub struct FileEvent<'a> {
 pub struct Files {
     registry: Registry,
     shares: Shares,
+    data_dir: PathBuf,
+    // Home deletion excludes upload placement and recovery, which can publish new file records.
+    home_changes: std::sync::RwLock<()>,
     /// Bot 存文件的暂存目录（ADR-0027）。
     saving_dir: PathBuf,
     owner: Owner,
@@ -255,7 +264,7 @@ pub struct Files {
 }
 
 impl Files {
-    /// 读出编号记录，建好共享文件夹 `transfers`。
+    /// Open the registry and recover interrupted deletions in existing private homes.
     pub fn open(
         config: &FilesConfig,
         host: Arc<dyn FileHost>,
@@ -269,7 +278,6 @@ impl Files {
                 source,
             })?;
         }
-        hostdir::ensure_owned_dir(&config.shares_dir.join(TRANSFERS), config.owner)?;
         let registry = Registry::open(config.dir.join("records"))?;
         let saving_dir = config.dir.join("saving");
         share_fs::saving::reset_staging(&saving_dir).map_err(|source| OpenError::Create {
@@ -277,14 +285,12 @@ impl Files {
             source,
         })?;
         let shares = Shares::new(config.shares_dir.clone());
-        shares.prepare_removal().map_err(OpenError::Removal)?;
-        // 找不回来不妨碍别的文件，下次启动再试。
-        if let Err(e) = shares.recover_deleting() {
-            tracing::error!(error = %e, "找回删除到一半的文件失败");
-        }
+        Self::recover_homes(&config.data_dir).map_err(OpenError::Removal)?;
         Ok(Self {
             registry,
             shares,
+            data_dir: config.data_dir.clone(),
+            home_changes: std::sync::RwLock::default(),
             saving_dir,
             owner: config.owner,
             uploads: uploads::Uploads::open(&config.dir, config.owner)?,
@@ -326,6 +332,7 @@ impl Files {
         who: &Accessor,
         langs: &Languages,
     ) -> Result<FileRecord, Failure> {
+        self.host.check_person(who)?;
         let bot = matches!(who, Accessor::Bot(_));
         match self.registry.get(id, now_secs()) {
             Lookup::Found(record) if record.access.contains(who) => Ok(record),
@@ -352,7 +359,7 @@ impl Files {
         let record = self.authorize(id, who, langs)?;
         let size = match &record.origin {
             Origin::Share { reference } | Origin::Upload { reference, .. } => Some(
-                self.open_share(reference.clone(), langs)
+                self.open_origin(&record.origin, reference.clone(), langs)
                     .await?
                     .snapshot
                     .size,
@@ -395,7 +402,7 @@ impl Files {
     ) -> Result<Content, Failure> {
         match &record.origin {
             Origin::Share { reference } | Origin::Upload { reference, .. } => self
-                .open_share(reference.clone(), langs)
+                .open_origin(&record.origin, reference.clone(), langs)
                 .await
                 .map(Content::File),
             Origin::Plugin {
@@ -575,185 +582,6 @@ impl Files {
             .clone()
             .try_acquire_owned()
             .map_err(|_| view_busy(langs))
-    }
-
-    /// 把这个房间的 Bot 加进访问范围，返回加了哪些。房间里没有 Bot 时也会清掉过期：App 授权之后马上发链接，这时链接就算发出去了。
-    /// 和到期清理排同一个队：清理已经取了过期名单也不会在授权之后把文件删掉。
-    pub async fn grant_room(
-        self: &Arc<Self>,
-        id: &FileId,
-        room: &str,
-        langs: &Languages,
-    ) -> Result<Vec<String>, Failure> {
-        let (task, room, langs) = (id.clone(), room.to_owned(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let bots = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                // 主人已经在范围里，`grant` 也负责清掉过期时间（ADR-0020 的“生命周期”）。
-                files
-                    .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                let bots = files.host.bots_in_room(&room)?;
-                for bot in &bots {
-                    files
-                        .registry
-                        .grant_by_owner(&task, bot, now_secs())?
-                        .ok_or_else(|| Failure::unknown(&langs))?;
-                }
-                Ok(bots)
-            })
-            .await;
-        drop(turn);
-        bots
-    }
-
-    /// 单独收回一个 Bot 的访问：来源插件的授权收回时，主人亲手授权过的 Bot 不受影响，要靠这个。这个 Bot 再经工具找到同一个文件时，
-    /// 按来源插件的授权算。
-    pub async fn revoke_bot(
-        self: &Arc<Self>,
-        id: &FileId,
-        bot: &str,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let (id, bot, langs) = (id.clone(), bot.to_owned(), langs.clone());
-        self.blocking(move |files| {
-            files.authorize(&id, &Accessor::Owner, &langs)?;
-            files
-                .registry
-                .revoke_bot(&id, &bot)?
-                .ok_or_else(|| Failure::unknown(&langs))?;
-            Ok(())
-        })
-        .await
-    }
-
-    /// 把链接发到“Wonton”私聊：主人所有设备都看得到卡片。发之前先清掉过期（和到期清理排同一个队），发不出去时文件多留一阵也好过链接被删掉。
-    pub async fn send_to_devices(
-        self: &Arc<Self>,
-        id: &FileId,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let (task, langs) = (id.clone(), langs.clone());
-        let turn = self.uploads.turn(id).await;
-        let granted = self
-            .blocking(move |files| {
-                files.authorize(&task, &Accessor::Owner, &langs)?;
-                files
-                    .registry
-                    .grant(&task, Accessor::Owner, now_secs())?
-                    .ok_or_else(|| Failure::unknown(&langs))?;
-                Ok(())
-            })
-            .await;
-        drop(turn);
-        granted?;
-        self.host.notify_owner(&id.link()).await
-    }
-
-    /// 删掉编号。设备上传的文件核对后连文件一起删；已经换成别的文件时编号照删、文件不动，返回 `file_changed`。其他来源的
-    /// 原文件不动。删除和审计在单独的任务里一起做：请求断了也要做完，文件删了就要有审计。
-    pub async fn delete(
-        self: &Arc<Self>,
-        id: &FileId,
-        device: String,
-        langs: &Languages,
-    ) -> Result<(), Failure> {
-        let files = self.clone();
-        let id = id.clone();
-        let langs = langs.clone();
-        tokio::spawn(async move {
-            // 和放文件排同一个队：不然放到一半的文件可能删完之后才冒出来。
-            let _turn = files.uploads.turn(&id).await;
-            let task = id.clone();
-            let langs = langs.clone();
-            let removed = files
-                .blocking(move |files| files.delete_now(&task, &langs))
-                .await;
-            let outcome = match &removed {
-                Ok(outcome) => outcome,
-                Err(e) => e.kind.as_str(),
-            };
-            files.audit(&FileEvent {
-                event: "file_delete",
-                device,
-                file: id.as_str(),
-                range: None,
-                bots: None,
-                outcome,
-            });
-            removed.map(|_| ())
-        })
-        .await
-        .map_err(|e| Failure::internal(format!("删除文件的任务中止：{e}")))?
-    }
-
-    /// 返回审计要写的结果。目录没能确认落盘时记录也照删：文件这时已经没了，留着记录主人就删不掉这个编号，断电后文件回来的话审计里有据可查。
-    fn delete_now(&self, id: &FileId, langs: &Languages) -> Result<&'static str, Failure> {
-        let record = self.authorize(id, &Accessor::Owner, langs)?;
-        // 删失败了记录留着：文件还在，主人可以再删一次。
-        let removed = match &record.origin {
-            Origin::Upload { reference, placed } => {
-                // 放好之后清理没做完（崩溃了）的残留先清掉：待完成记录和数据还在的话，下次清理会把删掉的文件再放回来。
-                if !self.forget_now(id, true) {
-                    return Err(Failure::new(
-                        FileFailure::Internal,
-                        l10n::text(langs, "files-residual-undeletable", &[]),
-                    ));
-                }
-                self.shares
-                    .delete_if_unchanged(reference, placed, langs)
-                    .map_err(|e| share_failure(e, langs))?
-            }
-            _ => Deleted::AlreadyGone,
-        };
-        self.registry.remove(id)?;
-        match removed {
-            Deleted::Removed { durable: false } => Ok(DELETED_UNSYNCED),
-            Deleted::Removed { durable: true } | Deleted::AlreadyGone => Ok("ok"),
-            Deleted::Changed => Err(Failure::new(
-                FileFailure::FileChanged,
-                l10n::text(langs, "files-path-collision", &[]),
-            )),
-        }
-    }
-
-    /// 传完但链接没发出去的上传到期了：和 App 里删同一条核对，记录跟着删。调用方排着这个上传的队，没有请求头，里面的错误按英文说。
-    /// 开始之后才授权出去（链接又发了）的不删；名字上已经换成主人的文件时不再过期，留着记录。返回审计要写的结果。
-    fn delete_expired_now(&self, id: &FileId, now: u64) -> Result<&'static str, Failure> {
-        let record = match self.registry.get(id, now) {
-            Lookup::Expired(record) => record,
-            // 已经被删掉或者刚刚授权出去。
-            _ => return Ok("kept"),
-        };
-        let Origin::Upload { reference, placed } = &record.origin else {
-            return Ok("kept");
-        };
-        let langs = Languages::from_header(None);
-        if !self.forget_now(id, true) {
-            return Err(Failure::internal(l10n::text(
-                &langs,
-                "files-residual-undeletable",
-                &[],
-            )));
-        }
-        match self.shares.delete_if_unchanged(reference, placed, &langs) {
-            Ok(Deleted::AlreadyGone) => {
-                self.registry.remove(id)?;
-                Ok("expired")
-            }
-            Ok(Deleted::Removed { durable }) => {
-                // 文件已经没了，记录留着就删不掉这个编号。
-                self.registry.remove(id)?;
-                Ok(if durable { "expired" } else { DELETED_UNSYNCED })
-            }
-            Ok(Deleted::Changed) => {
-                self.registry.keep(id)?;
-                Ok("file_changed")
-            }
-            Err(e) => Err(share_failure(e, &langs)),
-        }
     }
 }
 

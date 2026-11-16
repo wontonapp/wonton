@@ -584,8 +584,9 @@ async fn mcp_messages_follow_the_owner_languages() {
     assert_ne!(expected("ja"), expected("en"));
 }
 
-#[tokio::test]
-async fn bus_tokens_identify_bots_and_reject_foreign_ones() {
+/// 装好总线家人记录和三个 Bot 令牌的网关：alice 的私人 Bot（admin 角色）、family 共享 Bot，
+/// 以及别的插件 Bob 的令牌。
+async fn bus_home_with_bot_records() -> Home {
     let home = start(Some(vec![Permission::Tools])).await;
     let agent_id = PluginId::parse("com.example.agent").unwrap();
     let other_id = PluginId::parse("com.example.other").unwrap();
@@ -630,21 +631,35 @@ async fn bus_tokens_identify_bots_and_reject_foreign_ones() {
             "token-bob",
         )],
     );
+    home
+}
 
-    // 私人 Bot：`_meta` 带上归属人的用户名。
-    let alice = home
-        .agent_at(
-            format!("{}/token-alice", home.mcp_url()),
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
-            },
-        )
-        .await;
+async fn agent_at_token(home: &Home, token: &str) -> RunningService<RoleClient, ClientConfig> {
+    home.agent_at(
+        format!("{}/token-{token}", home.mcp_url()),
+        ClientLifecycleMode::Auto {
+            preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
+            legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
+        },
+    )
+    .await
+}
+
+async fn call_search(service: &RunningService<RoleClient, ClientConfig>, name: &str) {
     let request = CallToolRequestParams::new("app-example-notes__search")
-        .with_arguments(json!({"name": "x"}).as_object().cloned().unwrap());
-    let result = alice.peer().call_tool(request).await.unwrap();
-    assert_eq!(text(&result), "找到 x.txt");
+        .with_arguments(json!({"name": name}).as_object().cloned().unwrap());
+    let result = service.peer().call_tool(request).await.unwrap();
+    assert_eq!(text(&result), format!("找到 {name}.txt"));
+}
+
+/// 私人 Bot 的 `_meta` 带归属人和他的能力；共享 Bot 两个都不带（ADR-0088 第 8 节）。
+#[tokio::test]
+async fn bus_meta_carries_the_keeper_identity_and_capabilities() {
+    let home = bus_home_with_bot_records().await;
+
+    // 私人 Bot：`_meta` 带上归属人的用户名和能力。
+    let alice = agent_at_token(&home, "alice").await;
+    call_search(&alice, "x").await;
     let metas = home.notes.received_meta.lock().unwrap().clone();
     let last = metas.last().unwrap().as_ref().expect("调用带 _meta");
     assert_eq!(
@@ -652,27 +667,31 @@ async fn bus_tokens_identify_bots_and_reject_foreign_ones() {
             .and_then(|v| v.as_str()),
         Some("alice")
     );
+    assert_eq!(
+        last.get(wonton_protocol::TOOL_CALL_CAPABILITIES_META),
+        Some(&json!(["plugin_admin"])),
+        "admin 角色的归属人带插件管理员能力"
+    );
 
-    // 共享 Bot：不带 `app.wonton/user`（核心不知道是谁让它办事的）。
-    let family = home
-        .agent_at(
-            format!("{}/token-family", home.mcp_url()),
-            ClientLifecycleMode::Auto {
-                preferred_versions: vec![rmcp::model::ProtocolVersion::V_2026_07_28],
-                legacy_version: Some(rmcp::model::ProtocolVersion::V_2025_11_25),
-            },
-        )
-        .await;
-    let request = CallToolRequestParams::new("app-example-notes__search")
-        .with_arguments(json!({"name": "y"}).as_object().cloned().unwrap());
-    let result = family.peer().call_tool(request).await.unwrap();
-    assert_eq!(text(&result), "找到 y.txt");
+    // 共享 Bot：不带人也不带能力（核心不知道是谁让它办事的）。
+    let family = agent_at_token(&home, "family").await;
+    call_search(&family, "y").await;
     let metas = home.notes.received_meta.lock().unwrap().clone();
-    let last = metas.last().unwrap().as_ref().expect("调用带 _meta");
+    let last = metas.last().unwrap().as_ref().expect("调用送达插件");
     assert!(
         !last.contains_key(wonton_protocol::TOOL_CALL_USER_META),
         "共享 Bot 不带用户：{last:?}"
     );
+    assert!(
+        !last.contains_key(wonton_protocol::TOOL_CALL_CAPABILITIES_META),
+        "共享 Bot 不带能力：{last:?}"
+    );
+}
+
+/// 总线令牌认得出 Bot，别的插件、无令牌和编造的令牌都 403。
+#[tokio::test]
+async fn bus_tokens_reject_foreign_or_missing_ones() {
+    let home = bus_home_with_bot_records().await;
 
     // 别的插件的总线令牌：403。
     let (status, _) = home.raw_get(&format!("{}/token-bob", home.mcp_url())).await;

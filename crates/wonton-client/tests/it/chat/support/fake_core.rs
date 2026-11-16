@@ -70,9 +70,13 @@ async fn answer_core_route(core: &Arc<Core>, text: &str, raw: &str, tcp: &mut Tc
         let mut released = core.hold_answers.subscribe();
         released.wait_for(|hold| !hold).await.ok();
     }
-    let reply = match core.bot_api.respond(text, &body).await {
-        Some(reply) => Some(reply),
-        None => respond(core, text, &body).await,
+    let reply = if let Some(reply) = super::plugin_start::respond(core, text, &body).await {
+        Some(reply)
+    } else {
+        match core.bot_api.respond(text, &body).await {
+            Some(reply) => Some(reply),
+            None => respond(core, text, &body).await,
+        }
     };
     hold_push_registration_response(core, text).await;
     let response = match reply {

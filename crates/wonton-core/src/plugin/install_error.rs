@@ -48,6 +48,8 @@ pub enum InstallError {
     DockerUnavailable(String),
     #[error("{0}")]
     Docker(String),
+    #[error("{0}")]
+    DockerTimedOut(String),
     /// 插件要开的局域网端口被宿主上的别的容器或程序占着。`message` 里有地址、端口和 Docker 的原话。
     #[error("{0}")]
     PortTaken(String),
@@ -66,6 +68,9 @@ pub enum InstallError {
     /// 插件要显卡（`requirements.gpu: required`），本机没有可用的：没有设备、没有驱动，或者没有运行时。
     #[error("{0}")]
     GpuUnavailable(String),
+    /// 插件必需的设备这台主机上没有，或者选的设备不在了（ADR-0036）。
+    #[error("{0}")]
+    DeviceUnavailable(String),
     /// 插件要在局域网上开放端口（`network.lan`），选不出地址：没有默认路由、默认路由走虚拟网卡、选的网卡或地址
     /// 不在了、检测不了网卡等。主人在局域网设置里选网卡或地址后再试。
     #[error("{0}")]
@@ -115,6 +120,7 @@ impl InstallError {
             Self::RecordUnusable(_) => "record_unusable",
             Self::DockerUnavailable(_) => "docker_unavailable",
             Self::Docker(_) => "docker_rejected",
+            Self::DockerTimedOut(_) => "docker_timed_out",
             Self::PortTaken(_) => "port_taken",
             Self::ImagePull(_) => "image_pull_failed",
             Self::OidcUnavailable(_) => "oidc_unavailable",
@@ -122,6 +128,7 @@ impl InstallError {
             Self::ModelsUnavailable(_) => "models_unavailable",
             Self::UpstreamUnavailable(_) => "upstream_unavailable",
             Self::GpuUnavailable(_) => "gpu_unavailable",
+            Self::DeviceUnavailable(_) => "device_unavailable",
             Self::LanUnavailable(_) => "lan_unavailable",
             Self::EgressProxyUnavailable { .. } => "egress_proxy_unavailable",
             Self::ImagesUnavailable(_) => "images_unavailable",
@@ -171,6 +178,7 @@ impl InstallError {
             Self::RecordUnusable(m) => Self::RecordUnusable(m),
             Self::DockerUnavailable(m) => Self::DockerUnavailable(add(m)),
             Self::Docker(m) => Self::Docker(add(m)),
+            Self::DockerTimedOut(m) => Self::DockerTimedOut(add(m)),
             Self::PortTaken(m) => Self::PortTaken(add(m)),
             Self::ImagePull(m) => Self::ImagePull(add(m)),
             Self::OidcUnavailable(m) => Self::OidcUnavailable(add(m)),
@@ -182,6 +190,7 @@ impl InstallError {
             Self::ModelsUnavailable(m) => Self::ModelsUnavailable(add(m)),
             Self::UpstreamUnavailable(m) => Self::UpstreamUnavailable(add(m)),
             Self::GpuUnavailable(m) => Self::GpuUnavailable(add(m)),
+            Self::DeviceUnavailable(m) => Self::DeviceUnavailable(add(m)),
             Self::LanUnavailable(m) => Self::LanUnavailable(add(m)),
             Self::EgressProxyUnavailable { reason, message } => Self::EgressProxyUnavailable {
                 reason,
@@ -194,6 +203,12 @@ impl InstallError {
             Self::NotFound(m) => Self::NotFound(add(m)),
             Self::Changed(m) => Self::Changed(add(m)),
             Self::CoreUpgrading(m) => Self::CoreUpgrading(m),
+        }
+    }
+    pub(crate) fn from_create_engine_error(error: EngineError) -> Self {
+        match error {
+            EngineError::TimedOut(message) => Self::DockerTimedOut(message),
+            other => other.into(),
         }
     }
 }
@@ -224,6 +239,7 @@ impl From<EngineError> for InstallError {
     fn from(e: EngineError) -> Self {
         match e {
             EngineError::Unavailable(m) => Self::DockerUnavailable(m),
+            EngineError::TimedOut(m) => Self::Docker(m),
             EngineError::Unsupported(m) => Self::Unsupported(m),
             pull @ EngineError::Pull { .. } => Self::ImagePull(pull.to_string()),
             EngineError::PortTaken(m) => Self::PortTaken(m),
@@ -259,5 +275,20 @@ impl From<CollectError> for InstallError {
 impl From<StoreError> for InstallError {
     fn from(e: StoreError) -> Self {
         Self::Storage(e.to_string())
+    }
+}
+
+impl From<crate::private_home::HomeError> for InstallError {
+    fn from(error: crate::private_home::HomeError) -> Self {
+        match &error {
+            // 没有权限动私人空间的目录：对外是“权限缺失”，不是笼统的存储错误（EPERM/EACCES 的处理）。
+            crate::private_home::HomeError::Chown { .. }
+            | crate::private_home::HomeError::Permission { .. } => {
+                Self::PermissionNotGranted(error.to_string())
+            }
+            crate::private_home::HomeError::Io { .. }
+            | crate::private_home::HomeError::NotDirectory { .. }
+            | crate::private_home::HomeError::Invalid(_) => Self::Storage(error.to_string()),
+        }
     }
 }

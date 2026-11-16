@@ -24,6 +24,6 @@ struct NotificationSettingsView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Settings.notificationTitle))
+        .wontonPushedScreen(String(localized: .Settings.notificationTitle), usesSystemToolbar: true)
     }
 }

@@ -15,7 +15,7 @@ struct TabPageView: View {
     let draft: (String) -> Void
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     private let close: (() -> Void)?
     /// 面板里的那一份（ADR-0052）：整页大小、右上角胶囊、退出回聊天页。
     private let panel: TabPanelMode?
@@ -26,17 +26,20 @@ struct TabPageView: View {
     @State private var showsDetails = false
     @State private var isVisible = false
     @State private var seenReady = false
+    @State private var disclosedURL: String?
+    @State private var disclosedProxy: ProxySettings?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonBarStatus) private var status
     @Environment(\.openURL) private var openURL
+    @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .body) private var textScale: CGFloat = 1
 
     init(
         pages: PagesModel, home: HomeModel, plugins: PluginsModel, chat: ChatModel, appearance: AppearanceModel,
         tab: TabRef, placed: PlacedTab, store: TabWebViewStore, page: TabPage,
         draft: @escaping (String) -> Void, open: @escaping (PluginEntry) -> Void,
-        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String) -> Void,
+        pendingCards: [PendingConfirmation], openCardRoom: @escaping (String?) -> Void,
         close: (() -> Void)? = nil, panel: TabPanelMode? = nil, remove: (() -> Void)? = nil,
         keepAlive: Bool = true
     ) {
@@ -61,7 +64,7 @@ struct TabPageView: View {
     }
 
     var body: some View {
-        content
+        sceneContent
         // 键盘交给 WebKit 自己让（和 Safari 一样：可视区域缩小，焦点输入框滚进来）。SwiftUI 默认再把网页框缩到键盘上面，
         // 两边各让一次：网页只剩一条，noVNC 这类按窗口缩放的页面跟着缩，缩放动画里画面被拉成竖条（iOS 26.5 实测）。
         .ignoresSafeArea(.keyboard)
@@ -70,13 +73,21 @@ struct TabPageView: View {
         .onChange(of: panel?.visible) { _, visible in
             if visible == true { seenReady = false; notifySeen() }
         }
+        .onChange(of: scenePhase) { _, phase in
+            // 第一版离开通话页就挂断（ADR-0096 第 3 节）：App 退到后台，widget 页跟着关。
+            if phase == .background, tab.isWidget { closePage() }
+        }
         .onAppear { notifySeen(); isVisible = true }
         .onDisappear {
             isVisible = false
             if panel == nil { takeover?.end() }
         }
         .sheet(isPresented: $showsDetails) {
-            if let pluginId {
+            if case let .bot(bot, _) = tab {
+                NavigationStack {
+                    BotProfileView(chat: chat, plugins: plugins, botRef: bot) { showsDetails = false }
+                }
+            } else if let pluginId {
                 NavigationStack {
                     PluginDetailView(model: plugins, chat: chat, route: .installed(id: pluginId)) { entry in
                         showsDetails = false
@@ -87,32 +98,44 @@ struct TabPageView: View {
         }
     }
 
+    @ViewBuilder private var sceneContent: some View {
+        if case .content = placed {
+            content.modifier(ContentPageScroll(session: session))
+        } else {
+            content
+        }
+    }
+
     /// 拆开写：整段放在 `body` 里时，Xcode 27 的编译器会报“类型检查超时”（CI 的模拟器构建因此失败）。
     private var content: some View {
         GeometryReader { geometry in
             let safe = geometry.safeAreaInsets
             let inputs = inputs(safe: safe)
             ZStack {
-                if let webView = session.webView, sourceAvailable {
-                    TabWebView(webView: webView, obscured: obscured())
-                        .id(ObjectIdentifier(webView))
-                        .ignoresSafeArea(.container)
-                }
-                TabPageStateView(
-                    page: page, session: session, connected: connected,
-                    shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
-                    details: { showsDetails = true },
-                    remove: {
-                        if let remove {
-                            remove()
-                        } else if let close {
-                            close()
-                        } else {
-                            pages.send(.closePage)
-                        }
+                if blocksBotPage {
+                    ProblemView(problem: Problem(title: blockedBotText), retry: session.retry)
+                } else if requiresDisclosure {
+                    BotWebDisclosure(url: page.url, proceed: {
+                        disclosedURL = page.url
+                        disclosedProxy = home.viewModel.proxy
+                        updatePermittedSession(inputs)
+                    }, cancel: closePage)
+                } else {
+                    if let webView = session.webView, sourceAvailable {
+                        let top = framedTop(safe: safe)
+                        if top > 0 { PageTopStrip(color: session.ready ? session.topColor : nil, height: top) }
+                        TabWebView(webView: webView, obscured: obscured(safe: safe))
+                            .id(ObjectIdentifier(webView))
+                            .padding(.top, top)
+                            .ignoresSafeArea(.container)
                     }
-                )
-                .ignoresSafeArea(.container)
+                    TabPageStateView(
+                        page: page, session: session, connected: connected,
+                        shareProblem: plugins.viewModel.sharedProblem(for: tab), isPanel: panel != nil,
+                        details: { showsDetails = true }, remove: closePage
+                    )
+                    .ignoresSafeArea(.container)
+                }
                 chrome(safe: safe)
             }
             .background { Color(colors.canvas).ignoresSafeArea(.container) }
@@ -120,11 +143,14 @@ struct TabPageView: View {
                 if let panel {
                     PanelPagePull(
                         enabled: panel.pagePull && isVisible, webView: session.webView, edge: panel.pageEdge,
-                        changed: panel.pageChanged, ended: panel.pageEnded
+                        zone: PagePullZone(obscured: obscured(safe: safe)),
+                        changed: panel.pageChanged, ended: panel.pageEnded, cancelled: panel.pageCancelled
                     )
                 }
             }
-            .task(id: inputs) { updateSession(inputs) }
+            .task(id: inputs) { updatePermittedSession(inputs) }
+            .onChange(of: blocksBotPage) { updatePermittedSession(inputs) }
+            .onChange(of: requiresDisclosure) { updatePermittedSession(inputs) }
             .onChange(of: keepAlive) { _, keep in keepSessionAlive(inputs, when: keep) }
             .task(id: store.generation) { keepSessionAlive(inputs, when: keepAlive) }
         }
@@ -136,18 +162,41 @@ struct TabPageView: View {
                 page: page, tab: tab, placed: placed, pages: pages, session: session, takeover: takeover,
                 details: { showsDetails = true },
                 shown: capsuleAllowed, panel: panel,
-                close: close ?? { pages.send(.closePage) }
+                close: close ?? { pages.send(.pages(action: .closePage)) }
             )
-            .padding(.top, safe.top)
+            // 面板里按网页框的顶边放：房间的面板第 1 级从屏幕中间开始，那里没有状态栏要让。
+            .padding(.top, panel?.insetTop ?? safe.top)
             .padding(.leading, safe.leading + WontonTheme.spacing.s8)
             .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
             if panel == nil, !pendingCards.isEmpty {
                 PendingCardBanner(cards: pendingCards, open: openCardRoom)
             }
             if let takeover { TakeoverNotice(takeover: takeover) }
+            if callRelayed {
+                CallRelayHint()
+                    .padding(.top, WontonTheme.spacing.s8)
+                    .padding(.leading, safe.leading + WontonTheme.spacing.s8)
+                    .padding(.trailing, safe.trailing + WontonTheme.spacing.s8)
+            }
             Spacer(minLength: 0)
         }
         .ignoresSafeArea(.container)
+    }
+
+    /// widget 页的媒体走插件的端口映射；映射只连上了公共中继时核心给提醒的类别（ADR-0096 第 4 节）。
+    private var callRelayed: Bool {
+        guard case let .widget(pluginId, _) = tab else { return false }
+        return plugins.viewModel.portMappings.first { $0.pluginId == pluginId }?.warning == .publicRelayBandwidth
+    }
+
+    private func closePage() {
+        if let remove {
+            remove()
+        } else if let close {
+            close()
+        } else {
+            pages.send(.pages(action: .closePage))
+        }
     }
 
     /// 面板拉开、翻到这一页只发一次“被看到了”，重新翻回来再发。
@@ -157,8 +206,8 @@ struct TabPageView: View {
         session.seen()
     }
 
-    /// 面板里的页面按整页显示：状态栏照常显示，右上角是胶囊（ADR-0052）。
-    private var capsuleAllowed: Bool { panel?.expanded ?? true }
+    /// 面板拉开着就有胶囊，两级都是（ADR-0052）：第 1 级只靠点露出的那条聊天页收回时，页面出错或空白就找不到出口。
+    private var capsuleAllowed: Bool { panel?.open ?? true }
 
     private var connected: Bool {
         if case .sharedApp = tab { return sourceProxy != nil }
@@ -195,31 +244,117 @@ struct TabPageView: View {
         }
     }
 
+}
+
+private extension TabPageView {
+    /// Only Bot-bound entries need this disclosure; ordinary plugin pages retain their existing behavior.
+    private var requiresDisclosure: Bool {
+        guard isBotPage, let url = page.url else { return false }
+        return disclosedURL != url || disclosedProxy != home.viewModel.proxy
+    }
+
+    private var pageBotRef: BotRef? {
+        switch tab {
+        case let .bot(bot, _): return bot
+        case let .plugin(id, _), let .pluginPath(id, _):
+            guard plugins.viewModel.installed?.plugins.contains(where: {
+                $0.id == id && ($0.botUserId != nil || $0.chat != nil)
+            }) == true else { return nil }
+            return BotRef(pluginId: id, bot: "default")
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return nil
+        }
+    }
+
+    private var pageBot: BotView? {
+        guard let pageBotRef else { return nil }
+        return chat.viewModel.bots.first { $0.bot == pageBotRef }
+    }
+
+    private var verifiedBotPage: Bool {
+        guard let ref = pageBotRef, let bot = pageBot, let web = bot.web,
+              case let .ready(metadata) = web, metadata.bot == ref,
+              let origin = webOrigin(metadata.url), origin == webOrigin(page.url) else { return false }
+        return true
+    }
+
+    private var blocksBotPage: Bool { isBotPage && !verifiedBotPage }
+
+    private var blockedBotText: String {
+        if let web = pageBot?.web, case let .unavailable(reason) = web { return reason.profileText }
+        return String(localized: .BotProfile1.botProfileWebUnknown)
+    }
+
+    private func updatePermittedSession(_ inputs: TabWebInputs) {
+        guard !blocksBotPage, !requiresDisclosure else {
+            session.withhold()
+            return
+        }
+        updateSession(inputs)
+    }
+
+    private func webOrigin(_ value: String?) -> String? {
+        guard let value, var url = URLComponents(string: value), let scheme = url.scheme?.lowercased(),
+              let host = url.host?.lowercased() else { return nil }
+        url.scheme = scheme
+        url.host = host
+        if (scheme == "http" && url.port == 80) || (scheme == "https" && url.port == 443) { url.port = nil }
+        url.path = ""
+        url.query = nil
+        url.fragment = nil
+        url.user = nil
+        url.password = nil
+        return url.string
+    }
+
+    private var isBotPage: Bool {
+        switch tab {
+        case .bot: return true
+        case .plugin, .pluginPath:
+            guard pageBotRef != nil else { return false }
+            if let web = pageBot?.web, case .unavailable(.noWebui) = web { return false }
+            return true
+        case .chat, .apps, .url, .sharedApp, .uiResource, .widget: return false
+        }
+    }
+
     private var takeover: PageTakeover? {
+        if case .bot = tab { return nil }
         guard let pluginId, let plugin = plugins.viewModel.installed?.plugins.first(where: { $0.id == pluginId }),
               plugin.declaresTools else { return nil }
         return PageTakeover(pluginId: pluginId, current: plugins.viewModel.takeover, send: plugins.send)
     }
 
-    /// 整页铺满整个屏幕、不替页面让安全区（ADR-0095）：刘海和 Home 条由页面自己按 env(safe-area-inset-*) 或桥给的
-    /// 安全区让。面板里的页面照面板的布局让出上下两条（ADR-0052）。
-    private func obscured() -> UIEdgeInsets {
-        guard let panel else { return .zero }
-        return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+    /// 网页被浮在上面的东西挡住的上下两条。整页铺满整个屏幕（ADR-0095），顶上是状态栏加胶囊那一行：
+    /// 页面的背景照样画到屏幕顶，固定在顶上的按钮和滚动到头的位置让到胶囊下面，不然压在胶囊底下点不到。
+    /// 面板里的页面照面板的布局让出上下两条（ADR-0052）。网页框自己让开的系统上（`framedTop`）没有被挡住的。
+    private func obscured(safe: EdgeInsets) -> UIEdgeInsets {
+        if let panel {
+            return UIEdgeInsets(top: panel.insetTop, left: 0, bottom: panel.insetBottom, right: 0)
+        }
+        if PageTopInset.framesWebView { return .zero }
+        return UIEdgeInsets(top: safe.top + TabPageCapsule.rowHeight, left: 0, bottom: 0, right: 0)
     }
 
+    /// 整页的网页框顶边到屏幕顶的距离：iOS 26 之前是状态栏加胶囊那一行（见 `PageTopInset`），之后是 0。
+    private func framedTop(safe: EdgeInsets) -> CGFloat {
+        guard panel == nil, PageTopInset.framesWebView else { return 0 }
+        return safe.top + TabPageCapsule.rowHeight
+    }
+
+    /// 整页的顶上一条壳已经替页面让开了（`obscured` 或 `framedTop`），桥的 `--wonton-inset-top` 和
+    /// `safeAreaInsets.top` 报 0：照实给的话，按桥适配过的页面会再让一次。
     private func inputs(safe: EdgeInsets) -> TabWebInputs {
         let bottom = panel?.insetBottom ?? 0
-        let top = panel?.insetTop ?? safe.top
         return TabWebInputs(
             page: page, proxy: sourceProxy, connected: connected,
             appearance: appearance.viewModel,
             environment: TabEnvironment(
                 locale: AppLanguage.current,
                 timeZone: TimeZone.current.identifier, platform: .ios, dark: colorScheme == .dark,
-                insetTop: Double(top), insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
+                insetTop: Double(panel?.insetTop ?? 0),
+                insetBottom: Double(bottom + (panel == nil ? safe.bottom : 0)),
                 safeArea: TabSafeArea(
-                    top: Double(safe.top), right: Double(safe.trailing),
+                    top: Double(panel == nil ? 0 : safe.top), right: Double(safe.trailing),
                     bottom: Double(safe.bottom), left: Double(safe.leading)
                 )
             ), textScale: textScale
@@ -234,7 +369,7 @@ struct TabPageView: View {
 
     private func revive(_ inputs: TabWebInputs) {
         session = store.session(for: placed, core: pages.core)
-        updateSession(inputs)
+        updatePermittedSession(inputs)
     }
 
     private func updateSession(_ inputs: TabWebInputs) {

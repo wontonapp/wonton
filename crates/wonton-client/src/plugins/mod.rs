@@ -2,6 +2,7 @@
 //! 家里的服务器按主人的语言挑好，这里原样放进 ViewModel。
 
 pub(crate) mod api;
+mod audience;
 mod cache;
 pub(crate) mod cards;
 mod core_upgrade;
@@ -10,6 +11,7 @@ mod egress;
 mod me;
 mod media;
 mod now;
+mod owner_secrets;
 mod polling;
 mod registry_mirror;
 mod roles;
@@ -22,7 +24,7 @@ mod takeover;
 mod tasks;
 mod tool_policy;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
@@ -95,6 +97,7 @@ pub(crate) struct PluginsLink {
     upgrade_polling_paused: AtomicBool,
     registry: Mutex<registry_mirror::RegistryLocal>,
     takeover: Mutex<takeover::Slot>,
+    owner_secrets: Mutex<owner_secrets::Local>,
     starts: Mutex<HashMap<String, u64>>,
     data_dir: PathBuf,
     /// 发起安装、升级时的预览，按插件 ID 记着：失败后重试要来源，聊天列表的安装行要 `has_bot`。做完被主人清掉时删。
@@ -163,6 +166,7 @@ impl PluginsLink {
             upgrade_polling_paused: AtomicBool::new(false),
             registry: Mutex::new(registry_mirror::RegistryLocal::default()),
             takeover: Mutex::new(takeover::Slot::default()),
+            owner_secrets: Mutex::new(owner_secrets::Local::default()),
             starts: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_owned(),
             previews: Mutex::new(HashMap::new()),
@@ -178,6 +182,10 @@ impl PluginsLink {
 
     pub(crate) fn view(&self) -> PluginsViewModel {
         self.view.borrow().clone()
+    }
+
+    pub(crate) fn is_external(&self) -> bool {
+        self.external
     }
 
     pub(crate) fn view_for_server(&self, server: Option<&str>) -> PluginsViewModel {
@@ -205,7 +213,8 @@ impl PluginsLink {
     /// 中间状态（测试按事件断言时会正好撞上）。值没变时返回 false。
     /// 应用行由页面那边算（`set_sidebar_apps`），这里只跟可更新数和设置红点。
     pub(crate) fn derive(view: &mut PluginsViewModel) -> bool {
-        let mut changed = Self::sync_task_progress(view);
+        let mut changed = Self::reconcile_starts(view);
+        changed |= Self::sync_task_progress(view);
         let updatable = now::updatable(view);
         changed |= view.updatable != updatable;
         view.updatable = updatable.clone();
@@ -258,9 +267,9 @@ impl PluginsLink {
         self.ports.set_enabled(plugin_id, enabled)
     }
 
-    /// 屏幕上正显示着哪个插件的页面，`None` 是没有。由页面栈的栈顶推导（ADR-0095），壳不再上报。
-    pub(crate) fn set_visible_plugin(&self, plugin_id: Option<String>) {
-        self.ports.set_visible(plugin_id);
+    /// 主页面栈和内容窗口正在显示的插件；后台暂停自动映射，手动开关不受影响。
+    pub(crate) fn set_visible_plugins(&self, plugins: HashSet<String>) {
+        self.ports.set_visible(plugins);
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<PluginsViewModel> {
@@ -276,6 +285,7 @@ impl PluginsLink {
             }
             *current = languages;
         }
+        self.forget_owner_secrets();
         let (installed, store) = {
             let view = self.view.borrow();
             (view.installed.is_some(), view.store.is_some())
@@ -428,6 +438,7 @@ impl PluginsLink {
         let _registry = lock(&self.registry);
         self.generation.fetch_add(1, Ordering::SeqCst);
         lock(&self.starts).clear();
+        self.forget_owner_secrets();
         cache::forget(&self.installed_cache);
         let mut installed_server = lock(&self.installed_server);
         *installed_server = None;
@@ -436,6 +447,7 @@ impl PluginsLink {
             view.installed = None;
             view.store = None;
             view.problem = None;
+            view.starts.clear();
             view.egress = EgressViewModel::default();
             view.registry_mirror = wonton_protocol::RegistryMirrorViewModel::default();
             view.core_upgrade = CoreUpgradeViewModel::default();

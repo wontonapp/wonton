@@ -1,4 +1,3 @@
-import LocalAuthentication
 import SwiftUI
 import UniformTypeIdentifiers
 import WontonClient
@@ -15,7 +14,7 @@ struct ChatBackupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let recoveryKey = encryption.recoveryKey {
-                    RecoveryKeySection(recoveryKey: recoveryKey) { model.send(.confirmRecoveryKeySaved) }
+                    RecoveryKeySection(recoveryKey: recoveryKey) { model.send(.chat(action: .confirmRecoveryKeySaved)) }
                 }
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s8) {
                     Text(encryption.recovery.backupTitle)
@@ -52,7 +51,7 @@ struct ChatBackupView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("chat-backup")
-        .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle))
+        .wontonPushedScreen(String(localized: .ChatBackup1.chatBackupTitle), usesSystemToolbar: true)
         .wontonDialog(
             String(localized: .ChatBackup1.chatBackupResetTitle),
             message: String(localized: .ChatBackup0.chatBackupResetMessage),
@@ -60,7 +59,7 @@ struct ChatBackupView: View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel), kind: .secondary) {},
                 WontonDialogAction(title: String(localized: .ChatBackup1.chatBackupResetConfirm), kind: .danger) {
-                    model.send(.resetRecovery)
+                    model.send(.chat(action: .resetRecovery))
                 }
             ]
         )
@@ -77,7 +76,7 @@ struct ChatBackupView: View {
                 recoveryKeyEntry
             } else {
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    Button { model.send(.startDeviceVerification) } label: {
+                    Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                         Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
@@ -90,7 +89,7 @@ struct ChatBackupView: View {
         case .showFlow:
             // 设备确认是这一步：流程在上面那一屏；还没开始时给入口按钮（账号没有备份，输恢复密钥没用）。
             if encryption.verificationFlow == nil {
-                Button { model.send(.startDeviceVerification) } label: {
+                Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                     Text(.Verification1.verificationVerifyWithOtherDevice).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WontonButtonStyle(kind: .primary))
@@ -118,7 +117,7 @@ struct ChatBackupView: View {
                 .autocorrectionDisabled()
                 .wontonField()
             Button {
-                model.send(.recoverEncryption(recoveryKey: key))
+                model.send(.chat(action: .recoverEncryption(recoveryKey: key)))
                 key = ""
             } label: {
                 Text(.ChatBackup1.chatBackupRecover).frame(maxWidth: .infinity)
@@ -207,13 +206,9 @@ private struct RecoveryKeySection: View {
     init(recoveryKey: String, confirm: @escaping () -> Void) {
         self.recoveryKey = recoveryKey
         self.confirm = confirm
-        let context = LAContext()
-        var error: NSError?
-        let canEvaluate = context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error)
-        let passcodeNotSet = (error as? LAError)?.code == .passcodeNotSet
-        _revealed = State(initialValue: !canEvaluate && passcodeNotSet)
-        _unavailable = State(initialValue: !canEvaluate && !passcodeNotSet)
-        _failureDetail = State(initialValue: canEvaluate ? nil : error?.localizedDescription)
+        _revealed = State(initialValue: SystemAuth.passcodeNotSet())
+        _unavailable = State(initialValue: !SystemAuth.canAuthenticate())
+        _failureDetail = State(initialValue: SystemAuth.failureDetail())
     }
 
     var body: some View {
@@ -311,36 +306,15 @@ private struct RecoveryKeySection: View {
 
     @MainActor
     private func authenticate() {
-        let context = LAContext()
-        var error: NSError?
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            // 没设密码不该走到这（初始就直显了）；真发生了当作不用验证。
-            if (error as? LAError)?.code == .passcodeNotSet {
-                revealed = true
-                return
-            }
-            // 生物识别坏了这类失败：按失败即停给提示，不再静默无反应。
-            unavailable = true
-            failureDetail = error?.localizedDescription
-            return
-        }
         Task {
-            do {
-                let passed = try await context.evaluatePolicy(
-                    .deviceOwnerAuthentication,
-                    localizedReason: String(localized: .ChatBackup1.chatBackupVerifyReason)
-                )
-                if passed { revealed = true }
-            } catch {
-                // 只有通过才显示；用户取消（含系统和 App 代取消）不算过也不算失败，不提示；
-                // 其余失败（单次没对上、生物识别锁死这类）按失败即停给提示，不再静默无反应。
-                switch (error as? LAError)?.code {
-                case .userCancel, .systemCancel, .appCancel:
-                    break
-                default:
-                    unavailable = true
-                    failureDetail = error.localizedDescription
-                }
+            switch await SystemAuth.authenticate(reason: String(localized: .ChatBackup1.chatBackupVerifyReason)) {
+            case .passed:
+                revealed = true
+            case .cancelled:
+                break
+            case .unavailable(let detail):
+                unavailable = true
+                failureDetail = detail
             }
         }
     }

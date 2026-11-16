@@ -35,11 +35,11 @@ async fn installed() -> (Harness, String) {
     (h, containers[0].clone())
 }
 
-async fn stopped(h: &Harness, container: &str) {
-    h.docker.set_state(
-        container,
-        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
-    );
+async fn stopped(h: &Harness, _container: &str) {
+    h.manager
+        .stop_detached(crate::plugin::PluginId::parse(ID).unwrap())
+        .await
+        .unwrap();
     h.manager.restore().await.unwrap();
     let bearer = format!("Bearer {TOKEN}");
     let detail = h

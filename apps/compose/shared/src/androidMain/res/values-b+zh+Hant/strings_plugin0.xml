@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Status of an authorized host device that the core reports unavailable. No arguments. -->
+    <string name="plugin_device_unavailable">無法使用</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <string name="plugin_save_folders">可儲存檔案的資料夾</string>
     <string name="plugin_media_title">網頁的相機和麥克風</string>
@@ -29,4 +31,6 @@
     <string name="plugin_trust_unreviewed">未審核</string>
     <!-- Action-sheet item that uninstalls the app. -->
     <string name="plugin_uninstall_action">解除安裝</string>
+    <!-- Highlighted row in the install/upgrade confirmation and on the app's detail page: the app's web page can read and change message content in the room it is opened in. No arguments. -->
+    <string name="plugin_widget_high">它的網頁能在你開啟它的房間裡讀到聊天內容，以你的名義傳送、收回訊息。</string>
 </resources>

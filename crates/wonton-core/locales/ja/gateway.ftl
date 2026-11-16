@@ -43,10 +43,25 @@ gateway-plugin-not-shared = アプリ{ $id }は家族に共有されていませ
 gateway-proxy-sso-failed = アプリ{ $id }の代行ログイン資格情報を取得できません：{ $error }
 gateway-cross-site-login = ゲートウェイは、他のサイトからのリクエストに付いたログイン状態を信頼しません。アプリ自身のページから操作してください
 gateway-login-required = まずWontonにログインしてください
+gateway-bot-web-permission = プラグインネットワーク内のアプリはBotのWebページを開いたり、ブラウザーのログインを利用したりできません
+gateway-bot-web-storage = BotのWebページの記録を読み取れません。サーバーのストレージを確認してから、もう一度お試しください
 
 # 上流（IDプロバイダーのエンドポイント、モデルゲートウェイ）のエラーに表示する名前。
 gateway-name-oidc = IDプロバイダー
 gateway-name-models = モデルゲートウェイ
+
+# TLS入口コンテナの後ろにあるクライアント入口（ADR-0021）。
+gateway-entry-header-invalid = 入口ゲートウェイがこのリクエストに正しい印を付けていません
+gateway-entry-closed = この入口は開いていません。オーナーがWontonアプリで開けられます
+gateway-entry-public-denied = 公開アドレスからはこのパスにアクセスできません
+gateway-entry-setup-pending = まずこのアプリのウェブページで初回登録を済ませてから、もう一度お試しください
+gateway-entry-auth-unsupported = このアプリはまだ、Wontonが発行したパスワードでのログインに対応していません
+gateway-entry-auth-required = Wontonで発行したこのアプリのパスワードでサインインしてください
+gateway-entry-auth-revoked = このパスワードは取り消されました。Wontonで新しく発行してください
+gateway-entry-state-unavailable = このアプリの入口設定を読み取れません。オーナーがWontonで確認してください
+gateway-entry-setup-closed = アプリ{ $id }に管理者アカウントがなくなりました（データが初期化または復元された可能性があります）。第三者に登録されるのを防ぐため、入口を自動的に閉じました。アプリの準備ができたらWontonアプリで再度開いてください。
+gateway-entry-setup-timeout = アプリの初回登録状態の確認がタイムアウトしました
+gateway-entry-target-unavailable = アプリの入口は、専用ネットワーク内でアプリ全体が共有する一つのサービスを指定してください
 
 # SSOの引き渡しとOIDCログイン、承認確認。
 gateway-sso-invalid-next = リダイレクト先のアドレスが不正です
@@ -149,6 +164,14 @@ gateway-web-storage-undeclared = このアプリはデータを保存しませ�
 gateway-web-storage-cross-site = このアプリのデータを変更できるのは、このアプリ自身のページだけです
 gateway-web-storage-not-ready = このアプリのデータを保存しているアプリが実行されていません。しばらくしてからもう一度お試しください
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = リクエストに X-Wonton-Clients ヘッダーがありません
+clients-unauthenticated = これを変更できるのはオーナーのペアリング済み端末だけです
+clients-unavailable = コアがコンテナで実行されていないため、ドメイン設定は使えません
+clients-passwords-unavailable = 今はアプリのパスワードの保存先を読み取れません
+clients-password-label-invalid = クライアントには改行を含まない1〜128文字の名前を付けてください
+clients-password-not-found = このアプリのパスワードはもう存在しません
+clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 
 # agent_acp の転送（ADR-0061 第 5 ブロック）：接続時の拒否とフレームごとのエラーを、種別付きで利用者に返す。
@@ -164,3 +187,6 @@ gateway-agent-acp-multi-bot = {$provider} には複数の Bot があります。
 gateway-agent-acp-token-missing = {$provider} にはまだ提供者トークンがありません。再インストールすると作られます
 gateway-agent-acp-provider-unreachable = Agent ランタイムがこの接続を引き受けませんでした：{$detail}
 gateway-agent-acp-busy = このアプリの開いている Agent 接続が上限に達しました。しばらくしてからもう一度お試しください
+
+gateway-install-rejected = 管理者が承認しなかったため、{$action}は行われませんでした
+gateway-install-expired = 管理者が期限内に回答しなかったため、{$action}は行われませんでした

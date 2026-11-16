@@ -190,14 +190,14 @@ fn lan_frontend_is_absent_without_the_lan_forward_network() {
 fn federation_only_model_matches_the_previous_configuration() {
     let rendered = render(&Model::federation_only("home.example", "home.example")).unwrap();
     for line in [
-        "frontend public\n  bind entry-edge.wonton.internal:8443 ssl crt-list /certs/public.crt-list strict-sni\n",
+        "frontend public\n  bind entry-edge.wonton.internal:8443 ssl crt-list /certs/public.crt-list strict-sni expose-fd listeners\n",
         "  tcp-request connection reject unless { src 10.90.0.2 }\n  tcp-request connection expect-proxy layer4 if { src 10.90.0.2 }\n",
         "  http-request deny deny_status 421 unless { hdr(host),field(1,:),lower,strcmp(txn.sni) eq 0 }\n",
         "  http-request del-header Forwarded\n  http-request del-header X-Forwarded-For\n  http-request del-header X-Forwarded-Host\n  http-request del-header X-Forwarded-Proto\n",
         "  http-request del-header X-Real-IP\n  http-request del-header X-Wonton-Entry\n",
         "  http-request set-header X-Real-IP %[src]\n  http-request set-header X-Wonton-Entry public\n",
         "  default_backend gateway\n",
-        "frontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni\n  acl correct_sni ssl_fc_sni -i home.example\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless { hdr(host),lower -i home.example home.example:443 home.example:8448 }\n  http-request set-header Host home.example\n  default_backend gateway\n",
+        "frontend paired\n  bind entry.wonton.internal:8449 ssl crt /certs/site.pem strict-sni expose-fd listeners\n  acl correct_sni ssl_fc_sni -i home.example\n  http-request deny deny_status 421 unless correct_sni\n  http-request deny deny_status 421 unless { hdr(host),lower -i home.example home.example:443 home.example:8448 }\n  http-request set-header Host home.example\n  default_backend gateway\n",
         "backend gateway\n  server core entry-gateway.wonton.internal:8484 resolvers docker init-addr libc,none\n",
         "resolvers docker\n  nameserver docker 127.0.0.11:53\n  resolve_retries 1\n  timeout resolve 1s\n  timeout retry 1s\n  hold valid 10s\n",
         "option http-restrict-req-hdr-names delete\n",

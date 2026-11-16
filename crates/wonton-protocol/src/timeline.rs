@@ -50,7 +50,7 @@ pub struct TimelineUpdate {
     pub panel_selected: Option<crate::TabRef>,
     /// 房间里另有东西开着（长按菜单、多选模式、转发或删除确认、交给 Bot 的选择、斜杠命令列表）：
     /// 上推拉面板的入口不响应。壳只读它，不自己合成；状态由
-    /// [`Action::SetRoomEntryBlocked`](crate::Action::SetRoomEntryBlocked) 报告，换房间后按没盖算。
+    /// [`PageAction::SetRoomEntryBlocked`](crate::PageAction::SetRoomEntryBlocked) 报告，换房间后按没盖算。
     #[serde(default)]
     pub entry_blocked: bool,
     /// 时间线里有本设备解不开的消息时，给主人的下一步；没有或者这台设备已经有密钥时长这样。
@@ -65,6 +65,12 @@ pub struct TimelineUpdate {
     /// 旁聊订阅的头部（ADR-0093）：这条时间线是旁聊时给标题和状态，主时间线为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub side_chat: Option<crate::SideChatCard>,
+    /// 房间顶栏的 widget 入口（ADR-0096）：声明了 `matrix_widget`、在运行的插件，按安装顺序。空的时候不画按钮。
+    #[serde(default)]
+    pub widgets: Vec<crate::RoomWidget>,
+    /// 房间里有人在通话（`m.call.member` 里有没过期的通话成员）：入口显示“通话中”，点了就是加入。
+    #[serde(default)]
+    pub call_active: bool,
 }
 
 /// 解不开的消息旁边的入口，壳按它写按钮。
@@ -193,7 +199,7 @@ pub enum TimelineContent {
         /// 是那张卡片：点条目打开它。
         card_id: Option<String>,
         /// Bot 自己发的待回答选项（`choices`），只在等待回答时有；点了一个经
-        /// [`Action::AnswerAgentChoice`](crate::Action::AnswerAgentChoice) 以主人的身份发反应。
+        /// [`ChatAction::AnswerAgentChoice`](crate::ChatAction::AnswerAgentChoice) 以主人的身份发反应。
         choices: Vec<AgentRunChoice>,
         /// 发这条状态的 Bot 的显示名，没有设置时是用户 ID。壳在 `choices` 区标明是谁在问。
         sender_name: String,
@@ -266,6 +272,31 @@ pub struct TimelineMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub group: Option<crate::MessageGroup>,
+    /// 这条下面那行小字（学 iMessage）：整条时间线里最多两条有——别人读到的自己发的最后一条是
+    /// [`MessageReceipt::Read`]，它后面要是还有发出去了的，最后那条是 [`MessageReceipt::Delivered`]。
+    /// 其余的消息为空，壳不在每个气泡上写状态。还没发出去和发送失败看 [`TimelineMessage::send_state`]。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub receipt: Option<MessageReceipt>,
+    /// 这条和上一条消息隔得够久（间隔由核心定），壳在它上方居中写一行时间。紧跟在
+    /// [`TimelineContent::DateDivider`] 后面的那条为假：分隔线自己带着那条的时间，壳把日期和时间写在一行。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub starts_time_group: bool,
+}
+
+/// 自己发的消息下面那行小字写什么。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(rename_all = "snake_case")]
+pub enum MessageReceipt {
+    /// 服务器收下了，还没有人读到。
+    Delivered,
+    /// 有人读到了这一条；是谁在 [`TimelineMessage::read_by`]。
+    Read,
+    /// 更新的核心给出的取值：壳不写这行。
+    #[serde(other)]
+    Other,
 }
 
 /// 长按消息的菜单里的一项。
@@ -327,6 +358,11 @@ pub enum MessageContent {
     },
     Image {
         image: ImageContent,
+    },
+    /// 文件消息（`m.file`）。字节经 `ClientCore::load_media` 取（同图片，核心负责下载、解密和缓存），
+    /// 壳画文件卡片，下载后交给系统打开或分享（ADR-0020 的信任边界：不在 App 里渲染）。
+    File {
+        file: FileAttachment,
     },
     /// 确认卡片（ADR-0016）。只有核心账号发的才是卡片，别人发的同样结构的内容是 [`MessageContent::Text`]。卡片靠编辑
     /// 消息更新状态，[`TimelineMessage::edited`] 总是假。
@@ -451,7 +487,7 @@ pub struct ImageContent {
     pub caption: Option<ImageCaption>,
 }
 
-/// 图片的说明文字。
+/// 图片的说明文字。图片和文件的说明同用这个（Matrix v1.10 的媒体说明）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ImageCaption {
@@ -459,6 +495,23 @@ pub struct ImageCaption {
     pub body: String,
     /// 排好版的样子，壳画这个，同 [`MessageContent::Text`] 的 `blocks`。
     pub blocks: Vec<RichBlock>,
+}
+
+/// 文件消息（`m.file`）的附件。和 [`ImageContent`] 的差别：没有像素尺寸和缩略图，点开走文件卡片。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct FileAttachment {
+    /// 原文件，经 `ClientCore::load_media` 取。
+    pub media: MediaHandle,
+    pub filename: String,
+    /// MIME 类型，发送方没有声明时为空。
+    pub mime_type: Option<String>,
+    /// 字节数。
+    pub size: Option<u64>,
+    /// 说明文字（Matrix v1.10 的媒体说明），壳画在文件卡片下面。没有时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub caption: Option<ImageCaption>,
 }
 
 /// 取媒体用的句柄。对壳是不透明的，原样交回核心即可；里面可能有加密附件的密钥，不要写进日志。
@@ -511,26 +564,13 @@ mod tests {
             item(
                 "3",
                 message(
-                    MessageContent::Image {
-                        image: ImageContent {
-                            media: media.clone(),
-                            thumbnail: Some(media.clone()),
-                            filename: "cat.jpg".into(),
-                            mime_type: Some("image/jpeg".into()),
-                            size: Some(4096),
-                            width: Some(640),
-                            height: Some(480),
-                            caption: Some(ImageCaption {
-                                body: "哪张好看".into(),
-                                blocks: Vec::new(),
-                            }),
-                        },
-                    },
+                    sample_image(media.clone()),
                     SendState::Sending {
                         progress: Some(0.5),
                     },
                 ),
             ),
+            item("3a", message(sample_file(media.clone()), SendState::Sent)),
             item(
                 "4",
                 message(
@@ -584,6 +624,41 @@ mod tests {
         ]
     }
 
+    /// 图片样例：有缩略图和说明。
+    fn sample_image(media: MediaHandle) -> MessageContent {
+        MessageContent::Image {
+            image: ImageContent {
+                thumbnail: Some(media.clone()),
+                filename: "cat.jpg".into(),
+                mime_type: Some("image/jpeg".into()),
+                size: Some(4096),
+                width: Some(640),
+                height: Some(480),
+                caption: Some(ImageCaption {
+                    body: "哪张好看".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
+    }
+
+    /// 文件样例：带 MIME、大小和说明。
+    fn sample_file(media: MediaHandle) -> MessageContent {
+        MessageContent::File {
+            file: FileAttachment {
+                filename: "2025-报税表.pdf".into(),
+                mime_type: Some("application/pdf".into()),
+                size: Some(262_144),
+                caption: Some(ImageCaption {
+                    body: "上个月的账单".into(),
+                    blocks: Vec::new(),
+                }),
+                media,
+            },
+        }
+    }
+
     /// 契约：时间线增量的每种变化和每种条目都能经 JSON 往返；媒体句柄不进 Debug 输出。
     #[test]
     fn timeline_updates_round_trip_through_json() {
@@ -626,6 +701,16 @@ mod tests {
             key_notice: Some(KeyNotice::EnterRecoveryKey),
             confirmations: Vec::new(),
             side_chat: None,
+            widgets: vec![crate::RoomWidget {
+                tab: crate::TabRef::Widget {
+                    plugin_id: "app.call".into(),
+                    room_id: "!room:home.example".into(),
+                },
+                title: "通话".into(),
+                icon: None,
+                entry: crate::WidgetEntry::VideoCall,
+            }],
+            call_active: true,
         };
         assert_eq!(round_trip(&update), update);
         assert!(
@@ -678,6 +763,8 @@ mod tests {
             key_notice: Some(KeyNotice::VerifyWithOtherDevice),
             confirmations: Vec::new(),
             side_chat: None,
+            widgets: Vec::new(),
+            call_active: false,
         };
         let mut value = serde_json::to_value(empty()).unwrap();
         value.as_object_mut().unwrap().remove("key_notice");
@@ -714,6 +801,8 @@ mod tests {
                 card: ConfirmationCard {
                     secret_inputs: Vec::new(),
                     settings: None,
+                    permissions: Vec::new(),
+                    devices: Vec::new(),
                     requester: None,
                     origin: None,
                     audience: crate::CardAudience::Keeper,
@@ -828,6 +917,8 @@ mod tests {
                     index: 0,
                     count: 2,
                 }),
+                receipt: Some(MessageReceipt::Read),
+                starts_time_group: true,
             },
         }
     }

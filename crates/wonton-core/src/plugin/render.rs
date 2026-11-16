@@ -12,6 +12,7 @@ use super::bot_services::{BotVars, ServiceVars};
 use super::compose::{DependCondition, NetworkMode, PullPolicy, Service, StringOrList};
 use super::configs::{self, ConfigFile};
 use super::core_address;
+use super::device::DeviceGrant;
 use super::egress::{self, EgressVars};
 use super::gpu::GpuGrant;
 use super::host_relay::HostRelay;
@@ -19,7 +20,7 @@ use super::hostdir::Owner;
 use super::interpolate::UsedVars;
 use super::lan::{self, LanGrant};
 use super::languages::Languages;
-use super::manifest::{Access, Manifest, Permission, Sso};
+use super::manifest::{Access, Manifest, ManifestExt, Permission, Sso};
 use super::mounts::{Mounts, check_not_nested, dir_owners};
 use super::names::Instance;
 use super::package::{PackageError, PluginPackage};
@@ -113,6 +114,7 @@ pub struct InstallContext {
     pub matrix: Option<MatrixVars>,
     /// 声明了 `bots` 时每个 Bot 的 Matrix 身份、模型凭据和总线地址（`bots.services` 里的服务用）。
     pub bots: BTreeMap<String, BotVars>,
+    pub(crate) homes: BTreeMap<String, super::private_homes::HomeMount>,
     /// 声明了 `models` 时：模型网关的地址、凭据和默认模型。
     pub models: Option<ModelVars>,
     /// 通用能力的地址和凭据，仅用于清单插值；Debug 不打印值。
@@ -152,6 +154,8 @@ pub struct InstallContext {
     pub cgroup_parent: Option<String>,
     /// 生效集：主人确认的必需权限加上开着的可选项（ADR-0057）。渲染按它决定可选字段给不给。
     pub granted: Vec<Permission>,
+    /// 主人选的宿主设备（ADR-0036）；没申请设备类权限时为空。
+    pub devices: Option<DeviceGrant>,
 }
 
 impl std::fmt::Debug for InstallContext {
@@ -184,6 +188,7 @@ impl std::fmt::Debug for InstallContext {
             .field("limits", &self.limits)
             .field("cgroup_parent", &self.cgroup_parent)
             .field("granted", &self.granted)
+            .field("devices", &self.devices)
             .finish()
     }
 }
@@ -256,8 +261,11 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         .keys()
         .map(|name| (name.clone(), "dry-run".to_owned()))
         .collect();
+    let app_data = root.join("apps").join(&slug);
+    let capabilities = dry_run_capabilities(manifest, &app_data);
     InstallContext {
-        app_data: root.join("apps").join(&slug),
+        app_data,
+        homes: super::private_homes::dry_run_homes(manifest),
         hosted_root: root.join("hosted"),
         relay_dir: PathBuf::from(crate::config::DEFAULT_RELAY_DIR),
         config_store: root.join("core").join("configs"),
@@ -285,28 +293,9 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 allowed_users: "@owner:wonton.invalid".into(),
                 home_room: "!dry-run:wonton.invalid".into(),
             }),
-        bots: dry_run_bots(manifest),
-        models: manifest
-            .permissions
-            .contains(&Permission::Models)
-            .then(|| ModelVars {
-                base_url: "http://models.wonton.internal/v1".into(),
-                anthropic_url: Some("http://models.wonton.internal".into()),
-                gemini_url: Some("http://models.wonton.internal".into()),
-                plugin_key: Some("dry-run".into()),
-                bot_keys: manifest
-                    .bots
-                    .as_ref()
-                    .map(|_| {
-                        BTreeMap::from([(
-                            super::bot_services::DEFAULT_BOT.to_owned(),
-                            "dry-run".into(),
-                        )])
-                    })
-                    .unwrap_or_default(),
-                default_model: "dry-run".into(),
-            }),
-        capabilities: dry_run_capabilities(manifest, &root.join("apps").join(&slug)),
+        bots: dry_run_bots(manifest, &capabilities),
+        models: dry_run_models(manifest),
+        capabilities,
         mcp_url: manifest
             .permissions
             .contains(&Permission::Tools)
@@ -334,6 +323,7 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
         host_name: String::new(),
         cgroup_parent: None,
         slug,
+        devices: None,
         granted: manifest.effective_permissions(
             &manifest
                 .optional_permissions
@@ -342,6 +332,29 @@ pub(super) fn dry_run_context(package: &PluginPackage) -> InstallContext {
                 .collect::<Vec<_>>(),
         ),
     }
+}
+
+fn dry_run_models(manifest: &Manifest) -> Option<ModelVars> {
+    manifest
+        .permissions
+        .contains(&Permission::Models)
+        .then(|| ModelVars {
+            base_url: "http://models.wonton.internal/v1".into(),
+            anthropic_url: Some("http://models.wonton.internal".into()),
+            gemini_url: Some("http://models.wonton.internal".into()),
+            plugin_key: Some("dry-run".into()),
+            bot_keys: manifest
+                .bots
+                .as_ref()
+                .map(|_| {
+                    BTreeMap::from([(
+                        super::bot_services::DEFAULT_BOT.to_owned(),
+                        "dry-run".into(),
+                    )])
+                })
+                .unwrap_or_default(),
+            default_model: "dry-run".into(),
+        })
 }
 
 fn dry_run_lan(manifest: &Manifest, slug: &str) -> Option<LanGrant> {
@@ -415,11 +428,15 @@ fn dry_run_shares(manifest: &Manifest, root: &Path) -> BTreeMap<String, PathBuf>
 }
 
 /// dry run 里每个 Bot 的占位值：渲染和正式安装走同一条路，多 Bot 的插件每个 Bot 一套。
-fn dry_run_bots(manifest: &Manifest) -> BTreeMap<String, BotVars> {
+fn dry_run_bots(
+    manifest: &Manifest,
+    capabilities: &BTreeMap<String, String>,
+) -> BTreeMap<String, BotVars> {
     if manifest.bots.is_none() || !manifest.permissions.contains(&Permission::MatrixBot) {
         return BTreeMap::new();
     }
     let vars = BotVars {
+        dependencies: capabilities.clone(),
         model_key: manifest
             .permissions
             .contains(&Permission::Models)
@@ -435,6 +452,7 @@ fn dry_run_bots(manifest: &Manifest) -> BTreeMap<String, BotVars> {
             .permissions
             .contains(&Permission::Tools)
             .then(|| "http://mcp.wonton.internal/mcp/dry-run".into()),
+        ..Default::default()
     };
     BTreeMap::from([(super::bot_services::DEFAULT_BOT.to_owned(), vars)])
 }
@@ -477,9 +495,19 @@ fn render_service_containers(
             })?,
             None => vars.get(name),
         };
+        let scoped_service = bot
+            .map(|_| package.bot_service(name, service_vars, variables, langs))
+            .transpose()?;
+        let service = scoped_service.as_ref().unwrap_or(service);
+        // 归属人“AI 动手”是只读的私人 Bot：共享文件夹一律只读挂载（ADR-0088 第 5 节），
+        // 插件自己声明了写权限的也一样。
+        let forced_shares_read_only = bot
+            .and_then(|bot| ctx.bots.get(bot))
+            .is_some_and(|vars| vars.keeper_read_only);
         let mut mounts = Mounts {
             ctx,
             read_only_shares,
+            forced_shares_read_only,
             named: package.named_volumes(),
             service: name,
             allow_docker_socket: ctx.granted.contains(&Permission::DockerSocket),
@@ -491,6 +519,7 @@ fn render_service_containers(
         }
         .build(&service.volumes, binds)?;
         mounts.extend(hosted_mounts(manifest, ctx, name));
+        super::private_homes::mount_home(manifest, ctx, bot, &mut mounts, service, name, langs)?;
         let (files, store_dir) = configs::resolve_service(
             package,
             service,
@@ -513,24 +542,14 @@ fn render_service_containers(
             labels,
             gpu,
             bot_services: vars.bot_service_names(),
+            manifest,
+            devices: ctx.devices.as_ref(),
         };
         let mut plan = container_plan(name, service, bot, mounts, ctx, options, langs)?;
         if let Some(grant) = &ctx.lan {
             lan::publish(name, service, grant, &mut plan.body, langs)?;
         }
-        // 宿主网络里解析不了别名 `egress.wonton.internal`：只用出口容器在这个网络里的地址，地址还没定下来
-        // 时先不写（能出网，只是不经代理），别写出一个连不上的代理。
-        if let Some(egress) = ctx.egress.as_ref() {
-            let url = match &service.network_mode {
-                None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
-                Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
-                Some(NetworkMode::None) => None,
-            };
-            if let Some(url) = url {
-                egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
-                egress::healthcheck::apply(&mut plan.body);
-            }
-        }
+        inject_service_egress(ctx, service, service_keys, &mut plan);
         plan.files = files;
         plan.store_dir = store_dir;
         plan.one_shot = one_shot;
@@ -538,6 +557,26 @@ fn render_service_containers(
         containers.push(plan);
     }
     Ok(())
+}
+
+fn inject_service_egress(
+    ctx: &InstallContext,
+    service: &Service,
+    service_keys: &[String],
+    plan: &mut ContainerPlan,
+) {
+    // Host-network services cannot resolve the plugin network's proxy alias.
+    if let Some(egress) = ctx.egress.as_ref() {
+        let url = match &service.network_mode {
+            None | Some(NetworkMode::Service(_)) => Some(egress::PROXY_URL),
+            Some(NetworkMode::Host) => egress.host_proxy.as_deref(),
+            Some(NetworkMode::None) => None,
+        };
+        if let Some(url) = url {
+            egress.inject(&mut plan.body, service_keys.iter().map(String::as_str), url);
+            egress::healthcheck::apply(&mut plan.body);
+        }
+    }
 }
 
 fn render_plan(

@@ -48,4 +48,5 @@
     <string name="chat_backup_verify_reason">復旧キーを表示するには認証してください</string>
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">再接続しています…</string>
+    <string name="chat_plugin_starting">エージェントを起動中…</string>
 </resources>

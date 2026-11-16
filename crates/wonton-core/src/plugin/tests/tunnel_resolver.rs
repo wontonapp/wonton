@@ -109,12 +109,14 @@ impl Fixture {
         self.manager
             .store
             .save(&InstalledRecord {
+                lifecycle: Default::default(),
                 id: package.manifest.id.clone(),
                 version: "1.0.0".into(),
                 source,
                 files: Default::default(),
                 granted_permissions: Vec::new(),
                 enabled_permissions: Vec::new(),
+                devices: Vec::new(),
                 limits: Default::default(),
                 lan_webui: false,
                 relays: Vec::new(),
@@ -123,10 +125,11 @@ impl Fixture {
                 oidc_client_secret: None,
                 installed_at: 1,
                 entry_label: None,
+                clients_entries: Default::default(),
+                setup_done_ever: false,
                 origin: None,
                 written_by: None,
                 ask_every_update: false,
-                family: false,
                 settings: Default::default(),
                 settings_changed_ms: None,
                 static_files: Default::default(),

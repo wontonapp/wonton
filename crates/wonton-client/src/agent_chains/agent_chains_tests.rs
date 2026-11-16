@@ -9,7 +9,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 use wonton_protocol::{
-    AgentChainAction, AgentChainStatus, ChainLimits, ChainSpend, CoreError, ProxySettings,
+    AgentAction, AgentChainStatus, ChainLimits, ChainSpend, CoreError, ProxySettings,
 };
 
 use super::actions::{self, Effect, perform};
@@ -164,7 +164,7 @@ async fn stopping_a_running_chain_shows_it_stopped() {
     let effect = perform(
         &core,
         &proxy,
-        &AgentChainAction::StopChain {
+        &AgentAction::StopChain {
             chain: "c-1".to_owned(),
         },
     )
@@ -235,7 +235,7 @@ async fn a_forbidden_stop_fails_with_a_category() {
     let error = perform(
         &core,
         &proxy,
-        &AgentChainAction::StopChain {
+        &AgentAction::StopChain {
             chain: "c-1".to_owned(),
         },
     )
@@ -263,7 +263,7 @@ async fn setting_agent_limits_sends_them_and_reads_the_new_settings() {
     let effect = perform(
         &core,
         &proxy,
-        &AgentChainAction::SetAgentLimits {
+        &AgentAction::SetAgentLimits {
             limits: ChainLimits {
                 max_depth: 5,
                 max_rounds: 100,
@@ -290,7 +290,7 @@ async fn setting_consumer_concurrency_sends_the_plugin_and_the_number() {
     let effect = perform(
         &core,
         &proxy,
-        &AgentChainAction::SetConsumerAgentConcurrency {
+        &AgentAction::SetConsumerAgentConcurrency {
             plugin_id: "app.orchestrator".to_owned(),
             concurrency: 8,
         },

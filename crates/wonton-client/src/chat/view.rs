@@ -14,8 +14,8 @@ use wonton_matrix::{
     SendStatus, TimelineEntry, UserId, VectorDiff, Verification,
 };
 use wonton_protocol::{
-    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileLinks,
-    ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
+    ChatFailure, ChatLayout, CoreError, DeviceVerification, EncryptionStatus, FileAttachment,
+    FileLinks, ImageCaption, ImageContent, KeyNotice, MediaHandle, MessageContent, MessageSummary,
     QuotedMessage, RecoveryStatus, RichBlock, RoomMembership, RoomPreview, RoomRow, SendState,
     TimelineContent, TimelineDiff, TimelineItem, TimelineMessage, extract_file_links,
 };
@@ -83,6 +83,7 @@ pub(crate) fn room_row(
         name: room.name,
         is_direct: room.is_direct,
         direct_user_id: room.direct_user_id.map(|user| user.to_string()),
+        plugin: None,
         is_encrypted: room.is_encrypted,
         is_read_only,
         membership: match room.membership {
@@ -95,6 +96,7 @@ pub(crate) fn room_row(
             .and_then(|latest| preview(latest, bots, side_chats)),
         side_chats,
         unread_count: room.unread_count,
+        call_active: room.call_active,
     }
 }
 
@@ -163,7 +165,7 @@ pub(crate) fn timeline_item(
     bots: &BotsView,
     previews: &super::previews::Previews,
 ) -> TimelineItem {
-    let read_by = read.readers_of(&entry.id);
+    let mark = read.of_entry(&entry.id);
     let content = match entry.kind {
         EntryKind::Message(message) => match &message.agent_run {
             // 只有核心认得的 Bot 发的状态对象才是 AgentRun，别人发的按普通消息显示（ADR-0082 第 4 节）。
@@ -178,7 +180,7 @@ pub(crate) fn timeline_item(
             _ => match bots.side_chats().content(&message) {
                 Some(content) => content,
                 None => TimelineContent::Message {
-                    message: timeline_message(*message, read_by, links, previews, bots),
+                    message: timeline_message(*message, mark, links, previews, bots),
                 },
             },
         },
@@ -206,7 +208,7 @@ pub(crate) fn timeline_item(
 
 fn timeline_message(
     message: Message,
-    read_by: Vec<String>,
+    mark: super::read_mark::EntryMark,
     links: &LinkTargets,
     previews: &super::previews::Previews,
     bots: &BotsView,
@@ -250,8 +252,10 @@ fn timeline_message(
         preview,
         actions,
         body,
-        read_by,
+        read_by: mark.readers,
         group: message.group,
+        receipt: mark.receipt,
+        starts_time_group: mark.starts_time_group,
     }
 }
 
@@ -289,8 +293,19 @@ pub(super) fn message_content(
         },
         MessageBody::Undecryptable => MessageContent::Undecryptable,
         MessageBody::Redacted => MessageContent::Redacted,
-        MessageBody::File(_) => MessageContent::Unsupported {
-            kind: "m.file".to_owned(),
+        MessageBody::File(file) => MessageContent::File {
+            file: FileAttachment {
+                media: MediaHandle {
+                    token: file.media_token(),
+                },
+                filename: file.filename,
+                mime_type: file.mime_type,
+                size: file.size,
+                caption: file.caption.map(|body| ImageCaption {
+                    blocks: blocks_of(&body, is_own, links),
+                    body,
+                }),
+            },
         },
         MessageBody::Other { kind } => MessageContent::Unsupported { kind },
     }

@@ -298,7 +298,10 @@ private fun ComposerField(
             Box(
                 Modifier.fillMaxWidth()
                     .heightIn(min = WontonTheme.size.composerField)
-                    .background(colors.surfaceSubtle.toColor(), RoundedCornerShape(WontonTheme.radii.composerField))
+                    .background(
+                        colors.surfaceSubtle.toColor().copy(alpha = 0.72f),
+                        RoundedCornerShape(WontonTheme.radii.composerField),
+                    )
                     .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s8),
                 contentAlignment = Alignment.CenterStart,
             ) {

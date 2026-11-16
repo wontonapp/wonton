@@ -32,10 +32,12 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.PushAction
 import app.wonton.protocol.ChatFailure
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.NotificationCategory
 import app.wonton.protocol.PushMethod
+import app.wonton.protocol.SettingsAction
 import app.wonton.protocol.PushStatus
 import app.wonton.protocol.SettingsEntry
 import app.wonton.protocol.SettingsViewModel
@@ -109,7 +111,7 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
             WontonGroup {
                 KeepaliveToggle(keepalive) { wanted ->
                     val method = if (wanted) PushMethod.KEEPALIVE else PushMethod.UNIFIED_PUSH
-                    rejection = core.send(Action.SetPushMethod(method))
+                    rejection = core.send(Action.Push(PushAction.SetPushMethod(method)))
                 }
                 WontonSeparator()
                 WontonRow(
@@ -176,10 +178,10 @@ fun NotificationSettingsScreen(core: ClientCore, settings: SettingsViewModel, on
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
-/** 直接调用不返回结果的核心方法（`setLockScreenContent`），失败按同一个 [Problem] 提示。 */
+/** 锁屏内容开关经统一 SettingsAction 入口发送，失败按同一个 [Problem] 提示。 */
 private fun ClientCore.setLockScreen(category: NotificationCategory, hidden: Boolean): Problem? =
     try {
-        setLockScreenContent(category, hidden)
+        dispatch(Action.Settings(SettingsAction.SetLockScreenContent(category, hidden)))
         null
     } catch (rejection: CoreException) {
         rejection.problem

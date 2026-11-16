@@ -55,7 +55,7 @@ pub enum TabRef {
         page: Option<String>,
     },
     /// 插件网站里的某一页：网页入口下的路径（含查询和 `#` 后面的部分），只认同一个插件网站。
-    /// 从正在看的页面加进我的应用或面板的（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)），
+    /// 从正在看的页面加进我的应用或面板的（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)），
     /// 或者编辑器里给插件填的路径。
     PluginPath {
         plugin_id: String,
@@ -85,6 +85,12 @@ pub enum TabRef {
         owner_user_id: String,
         plugin_id: String,
     },
+    /// 插件网页作为 Matrix widget 在某个房间里打开（ADR-0096）：全屏盖在聊天上，不能固定。
+    /// 每次打开都是新的 widget 会话，关掉、换房间或退出登录时结束；同一时间只有一个。
+    Widget {
+        plugin_id: String,
+        room_id: String,
+    },
 }
 
 /// 主界面和打开着的页面。壳按 [`PagesViewModel::stack`] 渲染，栈顶在最上面。
@@ -93,10 +99,14 @@ pub enum TabRef {
 pub struct PagesViewModel {
     /// 不在栈里时露出来的那一页：配对后是聊天，没配对时是应用网格页（配对页也在它上面）。
     pub root: TabRef,
+    /// 配对后的应用网格覆盖层；打开应用或聊天时收起，不改变根页面。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub shows_apps: bool,
     /// 打开着的页面，从底到顶；空就是根页面。最后一个元素是当前页。
     pub stack: Vec<OpenPage>,
     /// 刚被卸载、已从我的应用移除的插件的标题，提示一次，见
-    /// [`Action::DismissUninstalledTabs`](crate::Action::DismissUninstalledTabs)。
+    /// [`PageAction::DismissUninstalledTabs`](crate::PageAction::DismissUninstalledTabs)。
     pub uninstalled: Vec<String>,
     /// 配置文件读不了，我的应用退回默认。改任何一项后，文件重写，这里变空。
     pub problem: Option<PagesProblem>,
@@ -104,13 +114,13 @@ pub struct PagesViewModel {
     /// [`crate::SidebarViewModel::apps`]，侧边栏和编辑态渲染同一份。
     #[serde(default)]
     pub my_app_candidates: Vec<TabCandidate>,
-    /// 新装的应用自动加到我的应用末尾，见 [`Action::SetAutoAddApps`](crate::Action::SetAutoAddApps)。
+    /// 新装的应用自动加到我的应用末尾，见 [`PageAction::SetAutoAddApps`](crate::PageAction::SetAutoAddApps)。
     pub auto_add: bool,
     /// 主聊天页下拉面板里的页面，按显示顺序（ADR-0052）。空的时候壳画大加号。
     #[serde(default)]
     pub panel: Vec<crate::PanelItem>,
     /// 还没放进主面板、可以放进去的页面：已装插件的页面，去掉已经在面板里的。
-    /// 插件里的某一页和公网网页不走这里：钉当前页（[`Action::PinCurrentPage`](crate::Action::PinCurrentPage)）
+    /// 插件里的某一页和公网网页不走这里：钉当前页（[`PageAction::PinCurrentPage`](crate::PageAction::PinCurrentPage)）
     /// 或在编辑面板里填。
     #[serde(default)]
     pub panel_candidates: Vec<TabCandidate>,
@@ -124,7 +134,7 @@ pub struct PagesViewModel {
     #[serde(default)]
     pub bot_pin_consents: Vec<crate::BotPinOwner>,
     /// 插件页在问摄像头和麦克风：壳画成平台风格的弹窗（允许 / 不允许）。一次只有一张，
-    /// 页面关掉或答完就清；决定按插件记在本机（[`Action::SetPluginMediaPermission`](crate::Action::SetPluginMediaPermission)）。
+    /// 页面关掉或答完就清；决定按插件记在本机（[`PluginAction::SetPluginMediaPermission`](crate::PluginAction::SetPluginMediaPermission)）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media_prompt: Option<TabMediaPrompt>,
 }
@@ -285,7 +295,7 @@ mod tests {
     use serde::de::DeserializeOwned;
 
     use super::*;
-    use crate::Action;
+    use crate::{Action, PageAction};
 
     fn page() -> TabRef {
         TabRef::Plugin {
@@ -357,6 +367,7 @@ mod tests {
         }];
         round_trip(PagesViewModel {
             root: TabRef::Chat,
+            shows_apps: true,
             stack,
             uninstalled: vec!["相册".into()],
             sync_stale: true,
@@ -388,74 +399,114 @@ mod tests {
     #[test]
     fn page_actions_round_trip_through_json() {
         for action in [
-            Action::OpenPage { tab: page() },
-            Action::ClosePage,
-            Action::AddMyApp {
-                app: MyAppRef::Plugin {
-                    plugin_id: "app.example.feed".into(),
-                },
-                title: None,
-                index: Some(0),
+            Action::Pages {
+                action: PageAction::OpenPage { tab: page() },
             },
-            Action::RemoveMyApp {
-                app: MyAppRef::Page {
-                    tab: TabRef::Url {
+            Action::Pages {
+                action: PageAction::ClosePage,
+            },
+            Action::Pages {
+                action: PageAction::AddMyApp {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.feed".into(),
+                    },
+                    title: None,
+                    index: Some(0),
+                },
+            },
+            Action::Pages {
+                action: PageAction::RemoveMyApp {
+                    app: MyAppRef::Page {
+                        tab: TabRef::Url {
+                            url: "https://example.com/weather".into(),
+                        },
+                    },
+                },
+            },
+            Action::Pages {
+                action: PageAction::MoveMyApp {
+                    app: MyAppRef::Plugin {
+                        plugin_id: "app.example.feed".into(),
+                    },
+                    index: 2,
+                },
+            },
+            Action::Pages {
+                action: PageAction::SetAutoAddApps { enabled: false },
+            },
+            Action::Pages {
+                action: PageAction::ReloadTab {
+                    page: crate::PlacedTab::Page { tab: page() },
+                },
+            },
+            Action::Pages {
+                action: PageAction::TabLoadFailed {
+                    page: crate::PlacedTab::Panel {
+                        scope: crate::PanelScope::Main,
+                        tab: page(),
+                    },
+                    status: Some(503),
+                },
+            },
+            Action::Pages {
+                action: PageAction::TabLoadSucceeded {
+                    page: crate::PlacedTab::Page { tab: page() },
+                },
+            },
+            Action::Pages {
+                action: PageAction::DismissUninstalledTabs,
+            },
+        ] {
+            round_trip(action);
+        }
+    }
+
+    #[test]
+    fn panel_actions_round_trip_through_json() {
+        for action in [
+            Action::Pages {
+                action: PageAction::AddPanelPage {
+                    scope: crate::PanelScope::Main,
+                    tab: crate::TabRef::Url {
                         url: "https://example.com/weather".into(),
                     },
                 },
             },
-            Action::MoveMyApp {
-                app: MyAppRef::Plugin {
-                    plugin_id: "app.example.feed".into(),
+            Action::Pages {
+                action: PageAction::RemovePanelPage {
+                    scope: crate::PanelScope::Room {
+                        room_id: "!room:home.example".into(),
+                    },
+                    tab: page(),
                 },
-                index: 2,
             },
-            Action::SetAutoAddApps { enabled: false },
-            Action::ReloadTab {
-                page: crate::PlacedTab::Page { tab: page() },
+            Action::Pages {
+                action: PageAction::MovePanelPage {
+                    scope: crate::PanelScope::Main,
+                    tab: page(),
+                    index: 1,
+                },
             },
-            Action::TabLoadFailed {
-                page: crate::PlacedTab::Panel {
+            Action::Pages {
+                action: PageAction::SelectPanelPage {
                     scope: crate::PanelScope::Main,
                     tab: page(),
                 },
-                status: Some(503),
             },
-            Action::TabLoadSucceeded {
-                page: crate::PlacedTab::Page { tab: page() },
-            },
-            Action::DismissUninstalledTabs,
-            Action::AddPanelPage {
-                scope: crate::PanelScope::Main,
-                tab: crate::TabRef::Url {
-                    url: "https://example.com/weather".into(),
+            Action::Pages {
+                action: PageAction::PinCurrentPage {
+                    url: "https://app.example.wonton.localhost/stats".into(),
+                    title: Some("本月统计".into()),
+                    to: crate::PinTarget::Panel {
+                        scope: crate::PanelScope::Main,
+                    },
                 },
             },
-            Action::RemovePanelPage {
-                scope: crate::PanelScope::Room {
+            Action::Pages {
+                action: PageAction::SetRoomEntryBlocked {
                     room_id: "!room:home.example".into(),
+                    blocked: true,
                 },
-                tab: page(),
-            },
-            Action::MovePanelPage {
-                scope: crate::PanelScope::Main,
-                tab: page(),
-                index: 1,
-            },
-            Action::SelectPanelPage {
-                scope: crate::PanelScope::Main,
-                tab: page(),
-            },
-            Action::PinCurrentPage {
-                url: "https://app.example.wonton.localhost/stats".into(),
-                title: Some("本月统计".into()),
-                to: crate::PinTarget::Panel {
-                    scope: crate::PanelScope::Main,
-                },
-            },
-            Action::SetRoomEntryBlocked {
-                room_id: "!room:home.example".into(),
-                blocked: true,
             },
         ] {
             round_trip(action);

@@ -42,7 +42,7 @@ struct KeyHandoffView: View {
                     .foregroundStyle(Color(colors.textPrimary))
                 progress
                 Button {
-                    model.send(.skipKeyHandoff)
+                    model.send(.chat(action: .skipKeyHandoff))
                     openBackup()
                 } label: {
                     Text(.Handoff.handoffNoOtherDevice)
@@ -69,7 +69,7 @@ struct KeyHandoffView: View {
                 lines: [String(localized: .Handoff.handoffUnansweredMessage)]
             ) {
                 HStack(spacing: WontonTheme.spacing.s8) {
-                    Button { model.send(.startDeviceVerification) } label: {
+                    Button { model.send(.chat(action: .startDeviceVerification)) } label: {
                         Text(.Handoff.handoffTryAgain).frame(maxWidth: .infinity)
                     }
                     .buttonStyle(WontonButtonStyle(kind: .primary))

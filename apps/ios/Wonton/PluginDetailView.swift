@@ -26,7 +26,7 @@ struct PluginDetailView: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen("", showsStatusLine: true)
+            .wontonPushedScreen("", showsStatusLine: true, usesSystemToolbar: true)
             .task(id: route) { await load() }
             .task { isOwner = (try? await model.core.me())?.isOwner == true }
             .fullScreenCover(item: $confirmation) { InstallConfirmView(model: model, confirmation: $0) }
@@ -85,6 +85,13 @@ struct PluginDetailView: View {
                         }
                     }
                     DetailHeader(model: model, detail: detail, action: action(for: detail))
+                    if let installed = liveInstalled(detail.id),
+                       installed.status == .stopped || startState(detail.id) != nil {
+                        PluginStartStatusView(
+                            model: model, pluginId: detail.id, state: startState(detail.id),
+                            canStart: installed.status == .stopped, isAgent: installed.kind == .agent
+                        )
+                    }
                     if let task, task.state != .succeeded || task.hasAddedToolsNews {
                         TaskRow(
                             model: model,
@@ -98,10 +105,25 @@ struct PluginDetailView: View {
                     if let installed = detail.installed, !installed.notices.isEmpty {
                         NoticeLines(lines: installed.notices)
                     }
+                    // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
+                    ForEach(Array(detail.problems.enumerated()), id: \.offset) { _, problem in
+                        ProblemRow(problem: problem.problem) {
+                            Task { await load() }
+                        }
+                    }
+                    if detail.installed != nil, let audience = detail.audience {
+                        if audience.choices.isEmpty {
+                            PluginAudienceSection(audience: .constant(audience), enabled: false)
+                        } else {
+                            InstalledPluginAudience(model: model, id: detail.id, view: audience) {
+                                loaded = .success($0)
+                            }
+                        }
+                    }
                     if let installed = detail.installed, !installed.tabChoices.isEmpty {
                         MyAppsSection(plugin: installed)
                     }
-                    if let installed = detail.installed, case .needsConfiguration = installed.status, isOwner {
+                    if let installed = liveInstalled(detail.id), case .needsConfiguration = installed.status, isOwner {
                         Button {
                             secretsScrollTarget = pluginSecretsAnchor
                         } label: {
@@ -141,6 +163,9 @@ struct PluginDetailView: View {
                             mapping: model.viewModel.portMappings.first { $0.pluginId == installed.id }
                         )
                     }
+                    if detail.installed != nil, !detail.devices.isEmpty {
+                        PluginGrantedDevicesSection(devices: detail.devices)
+                    }
                     if let installed = detail.installed, !detail.saveGrants.isEmpty {
                         SaveGrants(model: model, id: installed.id, folders: detail.saveGrants) { loaded = .success($0) }
                     }
@@ -150,6 +175,7 @@ struct PluginDetailView: View {
                         }
                     }
                     if let installed = detail.installed {
+                        OwnerSecretsDetail(model: model, pluginId: installed.id)
                         ToolPolicySection(model: model, id: installed.id, version: detail.version)
                     }
                     if let installed = detail.installed, installed.writtenBy != nil {
@@ -207,21 +233,34 @@ struct PluginDetailView: View {
         }
     }
 
+    private func liveInstalled(_ id: String) -> InstalledPlugin? {
+        model.viewModel.installed?.plugins.first { $0.id == id }
+    }
+
+    private func startState(_ id: String) -> PluginStartState? {
+        model.viewModel.starts.first { $0.pluginId == id }?.state
+    }
+
     /// 标题旁的按钮：没装的“获取”，能升级的“更新”（和商店列表行尾同一个核心动作，要不要确认由核心判断），装着的“打开”。
     private func action(for detail: PluginDetail) -> DetailAction? {
-        if let installed = detail.installed {
+        if let installed = liveInstalled(detail.id) {
             if installed.upgrade != nil {
                 // 取预览还没回来时任务还没建，列表行尾靠 pending 转圈，这里用同一个口径。
                 let busy = isWorking || model.viewModel.pending.contains(installed.id)
                 return DetailAction(title: String(localized: .Store.storeUpdate), enabled: !busy) {
-                    model.send(.upgradeNow(pluginId: installed.id))
+                    model.send(.plugins(action: .upgradeNow(pluginId: installed.id)))
                 }
             }
             guard let entry = installed.entries.first else { return nil }
             return DetailAction(title: String(localized: .Store.storeOpen), enabled: !installed.isBusy) { open(entry) }
         }
+        guard detail.installed == nil else { return nil }
         guard let source = detail.source else { return nil }
-        return DetailAction(title: String(localized: .Store.storeGet), enabled: detail.blocked == nil && !isWorking) {
+        let action = detailInstallAction(detail: detail)
+        let title = action == .requestAdmin
+            ? String(localized: .Install.installRequestAdmin)
+            : String(localized: .Store.storeGet)
+        return DetailAction(title: title, enabled: action != .blocked && !isWorking) {
             confirmation = .install(source: source)
         }
     }
@@ -364,7 +403,8 @@ private struct DetailHeader: View {
             if let blocked = detail.blocked {
                 WontonNotice(icon: .blocked, title: blocked)
             }
-            if let installed = detail.installed, case let .degraded(reason) = installed.status {
+            if let installed = model.viewModel.installed?.plugins.first(where: { $0.id == detail.id }),
+               case let .degraded(reason) = installed.status {
                 WontonNotice(icon: .warning, title: reason)
             }
         }
@@ -425,7 +465,7 @@ private struct DetailSections: View {
                     .foregroundStyle(Color(colors.textPrimary))
             }
         }
-        if !detail.permissions.isEmpty {
+        if !detail.permissions.isEmpty || !detail.widgetCapabilities.isEmpty {
             DetailSection(title: String(localized: .Install.installPermissions)) {
                 ForEach(detail.permissions, id: \.permission) { line in
                     if line.optional, detail.installed != nil {
@@ -434,6 +474,7 @@ private struct DetailSections: View {
                         PermissionRow(line: line)
                     }
                 }
+                WidgetCapabilityRows(capabilities: detail.widgetCapabilities)
             }
         }
         if !detail.requirements.isEmpty {
@@ -503,10 +544,10 @@ extension View {
             ),
             actions: [
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallKeepData)) {
-                    model.send(.uninstallPlugin(id: id, deleteData: false))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: false)))
                 },
                 WontonDialogAction(title: String(localized: .Plugin1.pluginUninstallDeleteData), kind: .danger) {
-                    model.send(.uninstallPlugin(id: id, deleteData: true))
+                    model.send(.plugins(action: .uninstallPlugin(id: id, deleteData: true)))
                 },
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]

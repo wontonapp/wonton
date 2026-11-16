@@ -2,7 +2,7 @@ import SwiftUI
 import PhotosUI
 import WontonClient
 
-/// 已装 Agent 插件详情页最上面的「资料」一节（ADR-0044）：名字、头像和状态头像，家人线的「谁能用」以后加在这一节下面。
+/// The plugin detail profile edits only the default Bot; nondefault profiles are read-only in BotProfileView.
 /// 资料存在 Matrix，改动经客户端核心提交；进展和失败都在 `BotView.saving`、`BotView.problem` 里，这里只渲染和转发。
 struct BotProfileSection: View {
     let chat: ChatModel
@@ -56,7 +56,7 @@ struct BotProfileSection: View {
                     stateGrid(bot, isBusy: isBusy(bot))
                     if let failure = bot.problem {
                         ProblemNotice(problem: failure.reason.problem(detail: failure.detail)) {
-                            dispatch(.dismissBotProfileProblem(pluginId: pluginId))
+                            dispatch(.bot(action: .dismissBotProfileProblem(pluginId: pluginId)))
                         }
                     }
                     if let localProblem {
@@ -70,6 +70,7 @@ struct BotProfileSection: View {
                     get: { sheetSlot != nil },
                     set: { if !$0 { sheetSlot = nil } }
                 ),
+                usesSystemPresentation: true,
                 actions: sheetActions
             )
             .onChange(of: bot.saving) { _, saving in
@@ -160,7 +161,7 @@ struct BotProfileSection: View {
             return
         }
         pending = .name
-        dispatch(.setBotName(pluginId: pluginId, name: draftName))
+        dispatch(.bot(action: .setBotName(pluginId: pluginId, name: draftName)))
     }
 
     /// 进展和失败都记在 `BotView.saving`、`BotView.problem` 里（核心立即拒绝时也会先写 problem），这里吞掉
@@ -201,7 +202,7 @@ private extension BotProfileSection {
             .accessibilityIdentifier("botProfileChooseStatic")
             if bot.avatar != nil {
                 Button(String(localized: .BotProfile1.botProfilePickRemove)) {
-                    dispatch(.clearBotAvatar(pluginId: pluginId, state: nil))
+                    dispatch(.bot(action: .clearBotAvatar(pluginId: pluginId, state: nil)))
                     pending = .staticRemove
                 }
                 .buttonStyle(WontonSmallButtonStyle())
@@ -292,7 +293,7 @@ private extension BotProfileSection {
             WontonSheetAction(title: String(localized: .BotProfile1.botProfilePickRemove), icon: .trash,
                 isDanger: true) {
                 if let state = sheetSlot?.state {
-                    dispatch(.clearBotAvatar(pluginId: pluginId, state: state))
+                    dispatch(.bot(action: .clearBotAvatar(pluginId: pluginId, state: state)))
                     pending = .stateRemove(state)
                 }
                 sheetSlot = nil
@@ -311,7 +312,7 @@ private extension BotProfileSection {
             let upload = try await AvatarTranscode.upload(from: item, slot: slot, core: plugins.core) { value in
                 Task { @MainActor in processingProgress = value }
             }
-            dispatch(.setBotAvatar(pluginId: pluginId, state: slot.state, upload: upload))
+            dispatch(.bot(action: .setBotAvatar(pluginId: pluginId, state: slot.state, upload: upload)))
             if let state = slot.state {
                 pending = .stateSet(state)
             } else {

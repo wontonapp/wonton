@@ -88,6 +88,7 @@ fn request_without_extras() -> InstallRequest {
         source: "github:example/wonton-jellyfin@v1.0.0".into(),
         digest: format!("sha256:{}", "cd".repeat(32)),
         plan: "provider-plan".into(),
+        audience: None,
         scope: None,
         grant: vec![],
         devices: vec![],
@@ -97,6 +98,7 @@ fn request_without_extras() -> InstallRequest {
         settings: Default::default(),
         install_together: vec![],
         connect_plugins: vec![],
+        remote_oauth: None,
     }
 }
 
@@ -238,6 +240,10 @@ fn blocked_categories_fall_back_to_other() {
         json!("capability_dropped")
     );
     assert_eq!(
+        serde_json::to_value(BlockedCategory::DeviceUnavailable).unwrap(),
+        json!("device_unavailable")
+    );
+    assert_eq!(
         serde_json::from_value::<BlockedCategory>(json!("provider_migrating")).unwrap(),
         BlockedCategory::Other
     );
@@ -246,4 +252,39 @@ fn blocked_categories_fall_back_to_other() {
         ..preview()
     };
     assert_eq!(round_trip(&preview), preview);
+}
+
+/// 旧核心给的设备项没有类别、系统盘标记和选中状态：按不认识的类、没标、没选读。
+#[test]
+fn devices_from_older_cores_default_the_new_fields() {
+    let device: PluginDevice = serde_json::from_value(json!({
+        "id": "usb-1", "name": "Zigbee 棒", "target": "/dev/zigbee",
+        "service": "zigbee2mqtt", "optional": false
+    }))
+    .unwrap();
+    assert_eq!(device.kind, PluginDeviceKind::Other);
+    assert!(!device.system && !device.chosen);
+}
+
+#[test]
+fn granted_devices_preserve_unknown_kinds_and_missing_devices() {
+    let devices: Vec<PluginGrantedDevice> = serde_json::from_value(json!([
+        {"path": "/dev/disk/by-id/ata-1", "name": "WDC", "kind": "disk", "system": true, "available": true},
+        {"path": "/dev/bus/usb", "kind": "usb", "available": false},
+        {"path": "/dev/rfkill", "name": "Bluetooth", "kind": "bluetooth", "available": true}
+    ]))
+    .unwrap();
+    assert_eq!(devices[0].kind, PluginDeviceKind::Disk);
+    assert!(devices[0].system && devices[0].available);
+    assert_eq!(devices[1].kind, PluginDeviceKind::Usb);
+    assert_eq!(devices[1].name, None);
+    assert!(!devices[1].available);
+    assert_eq!(devices[2].kind, PluginDeviceKind::Other);
+    assert_eq!(devices[2].path, "/dev/rfkill");
+    assert_eq!(round_trip(&devices), devices);
+
+    let mut old = serde_json::to_value(detail()).unwrap();
+    old.as_object_mut().unwrap().remove("devices");
+    let old: PluginDetail = serde_json::from_value(old).unwrap();
+    assert!(old.devices.is_empty());
 }

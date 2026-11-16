@@ -4,15 +4,11 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use wonton_protocol::{
-    Answer, BotKeeper, BotRef, ChainLimits, ChainTurnReport, ConfirmationCategory,
-    ConfirmationState,
+    Answer, BotKeeper, BotRef, ChainTurnReport, ConfirmationCategory, ConfirmationState,
 };
 
-use super::Caller;
 use super::test_setup::{self, Setup};
-use crate::agent_chain::Chains;
-use crate::agent_chain::settings::AgentSettings;
-use crate::agent_outbox::Outbox;
+use super::{Caller, TurnSender};
 use crate::gateway::agent_chains::AgentChains;
 use crate::members::MemberRecord;
 use crate::plugin::PluginId;
@@ -23,8 +19,7 @@ const TOOL: &str = "wonton__send_message";
 struct Send {
     s: Setup,
     caller: Caller,
-    chains: Arc<Chains>,
-    outbox: Arc<Outbox>,
+    chains: Arc<AgentChains>,
 }
 
 async fn send_setup() -> Send {
@@ -52,26 +47,9 @@ async fn send_setup() -> Send {
     s.bus.attach_friends(Arc::new(
         crate::friends::Friends::open(s.dir.path().join("friends")).unwrap(),
     ));
-    let chains = Arc::new(
-        Chains::open(
-            s.dir.path().join("agent-chains.json"),
-            ChainLimits::default(),
-        )
-        .unwrap(),
-    );
-    let outbox = Arc::new(Outbox::default());
-    let settings = Arc::new(AgentSettings::open(s.dir.path().join("agent-settings.json")).unwrap());
-    s.bus.attach_agent_chains(Arc::new(AgentChains::new(
-        chains.clone(),
-        outbox.clone(),
-        settings,
-    )));
-    Send {
-        s,
-        caller,
-        chains,
-        outbox,
-    }
+    let chains = AgentChains::for_test(s.dir.path()).unwrap();
+    s.bus.attach_agent_chains(chains.clone());
+    Send { s, caller, chains }
 }
 
 fn member(username: &str, display: &str) -> MemberRecord {
@@ -120,7 +98,10 @@ async fn a_stranger_is_refused_without_a_card() {
     assert!(failed(&result));
     assert_eq!(failure_kind(&result).as_deref(), Some("permission_denied"));
     assert!(send.s.cards.posted.lock().unwrap().is_empty(), "不发卡片");
-    assert!(send.outbox.next(&bot_ref()).await.is_none(), "不入队");
+    assert!(
+        send.chains.outbox().next(&bot_ref()).await.is_none(),
+        "不入队"
+    );
 }
 
 /// Bot 调 send_message(妈妈, …)：主人收到卡片（收件人和全文都在），批准后出箱一项。
@@ -146,7 +127,7 @@ async fn a_family_send_asks_the_keeper_and_enqueues_on_approval() {
     let result = call.await.unwrap();
     assert!(!failed(&result), "{result:?}");
     assert_eq!(confirmation_of(&result).as_deref(), Some("card"));
-    let item = send.outbox.next(&bot_ref()).await.unwrap();
+    let item = send.chains.outbox().next(&bot_ref()).await.unwrap();
     assert_eq!(
         item.kind,
         wonton_protocol::OutboxKind::Message {
@@ -175,7 +156,7 @@ async fn a_rejection_does_not_enqueue() {
     let result = call.await.unwrap();
     assert!(failed(&result));
     assert_eq!(failure_kind(&result).as_deref(), Some("owner_rejected"));
-    assert!(send.outbox.next(&bot_ref()).await.is_none());
+    assert!(send.chains.outbox().next(&bot_ref()).await.is_none());
     assert!(matches!(
         send.s.bus.confirmations().card(&card.id).map(|c| c.state),
         Some(ConfirmationState::Rejected)
@@ -188,7 +169,12 @@ async fn the_window_relaxes_only_the_same_recipient() {
     let send = send_setup().await;
     send.s.members.invite(member("mom", "妈妈")).unwrap();
     send.s.members.invite(member("dad", "爸爸")).unwrap();
-    let caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    let mut caller = chain_caller(&send, "sess-1", "@owner:wonton.localhost");
+    // 请求头和会话头都没有时，从这个 Bot 进行中的轮次取说话人。
+    caller.sender = None;
+    caller.session = None;
+    caller.chain = None;
+    caller.sender = crate::mcp::server::turn_sender(&send.s.bus, &caller, None);
     let first = send
         .s
         .spawn_as(&caller, TOOL, json!({"recipient": "mom", "body": "第一条"}));
@@ -197,7 +183,7 @@ async fn the_window_relaxes_only_the_same_recipient() {
     assert!(!failed(&first.await.unwrap()));
     // 第一条还压在队列里（没人取走）：先核对它。取走没回报的项会一直重发，
     // 核对完回报结清，下面的轮询才轮得到第二条。
-    let first = send.outbox.next(&bot_ref()).await.unwrap();
+    let first = send.chains.outbox().next(&bot_ref()).await.unwrap();
     assert_eq!(
         first.kind,
         wonton_protocol::OutboxKind::Message {
@@ -205,7 +191,8 @@ async fn the_window_relaxes_only_the_same_recipient() {
             body: "第一条".into(),
         }
     );
-    send.outbox
+    send.chains
+        .outbox()
         .receipt(&wonton_protocol::OutboxReceipt {
             id: first.id,
             result: wonton_protocol::OutboxResult::Sent {
@@ -227,7 +214,7 @@ async fn the_window_relaxes_only_the_same_recipient() {
         "结果是先前批准的时段"
     );
     assert_eq!(send.s.cards.posted.lock().unwrap().len(), 1, "没发新卡片");
-    let item = send.outbox.next(&bot_ref()).await.unwrap();
+    let item = send.chains.outbox().next(&bot_ref()).await.unwrap();
     assert_eq!(
         item.kind,
         wonton_protocol::OutboxKind::Message {
@@ -235,7 +222,8 @@ async fn the_window_relaxes_only_the_same_recipient() {
             body: "第二条".into(),
         }
     );
-    send.outbox
+    send.chains
+        .outbox()
         .receipt(&wonton_protocol::OutboxReceipt {
             id: item.id,
             result: wonton_protocol::OutboxResult::Sent {
@@ -289,7 +277,7 @@ async fn a_chain_started_by_someone_else_asks_every_time() {
     assert!(failed(&second.await.unwrap()));
     // 队里只有第一条：第二条没入队。取走的那条回报结清后，再轮询才拿不到东西
     // （取走没回报的项按重发设计会一遍遍交出来）。
-    let only = send.outbox.next(&bot_ref()).await.unwrap();
+    let only = send.chains.outbox().next(&bot_ref()).await.unwrap();
     assert_eq!(
         only.kind,
         wonton_protocol::OutboxKind::Message {
@@ -298,7 +286,8 @@ async fn a_chain_started_by_someone_else_asks_every_time() {
         },
         "批准入队的只有第一条"
     );
-    send.outbox
+    send.chains
+        .outbox()
         .receipt(&wonton_protocol::OutboxReceipt {
             id: only.id,
             result: wonton_protocol::OutboxResult::Sent {
@@ -307,7 +296,7 @@ async fn a_chain_started_by_someone_else_asks_every_time() {
         })
         .then_some(())
         .unwrap();
-    assert!(send.outbox.next(&bot_ref()).await.is_none());
+    assert!(send.chains.outbox().next(&bot_ref()).await.is_none());
 }
 
 fn bot_ref() -> BotRef {
@@ -319,8 +308,20 @@ fn bot_ref() -> BotRef {
 
 fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
     let mut caller = send.caller.clone();
+    caller.sender = Some(
+        match sender
+            .strip_prefix('@')
+            .and_then(|rest| rest.split_once(':'))
+        {
+            Some((_, server)) if server == send.s.bus.people().unwrap().server_name.as_str() => {
+                TurnSender::Local(sender.into())
+            }
+            _ => TurnSender::Unknown,
+        },
+    );
     let grant = send
         .chains
+        .ledger()
         .start_bridge_turn(
             bot_ref(),
             ChainTurnReport::Start {
@@ -330,7 +331,7 @@ fn chain_caller(send: &Send, session: &str, sender: &str) -> Caller {
                 sender: sender.into(),
                 event_id: format!("${session}"),
             },
-            // 说话人不是 Bot：链代表就是说话人（网关侧对 Bot 说话人才换归属人，第 8 块）。
+            // 说话人不是 Bot：链代表就是说话人。
             None,
             sender.into(),
         )

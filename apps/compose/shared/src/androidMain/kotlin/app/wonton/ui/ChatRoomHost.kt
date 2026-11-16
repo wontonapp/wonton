@@ -60,6 +60,7 @@ internal fun OpenRoom(
                 onReject = onReject,
                 onOpenRoom = { navigation.openRoom = it },
                 onOpenBackup = { navigation.showingBackup = true },
+                onOpenBotProfile = { navigation.botProfile = it },
                 onClose = { if (navigation.openRoom == room) navigation.closeRoom() },
             )
         }
@@ -85,6 +86,7 @@ internal fun OpenRoom(
                     onReject = onReject,
                     onOpenRoom = { navigation.openRoom = it },
                     onOpenBackup = { navigation.showingBackup = true },
+                    onOpenBotProfile = { navigation.botProfile = it },
                     onClose = { if (navigation.sideChat == sideChat) navigation.sideChat = null },
                 )
             }

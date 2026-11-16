@@ -24,8 +24,8 @@ use tokio::sync::watch;
 use tokio::sync::watch::Sender as WatchSender;
 use url::Url;
 use wonton_protocol::{
-    Action, CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure,
-    FriendProblem, FriendRequest, FriendRequestKind, FriendRow, FriendsList, FriendsState,
+    CoreError, FriendBlock, FriendBlockScope, FriendBlockTarget, FriendFailure, FriendProblem,
+    FriendRequest, FriendRequestKind, FriendRow, FriendsAction, FriendsList, FriendsState,
     FriendsViewModel, MatrixTarget, ProxySettings,
 };
 
@@ -99,20 +99,19 @@ impl FriendsLink {
         self.view.subscribe()
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: FriendsAction) -> Result<(), CoreError> {
         match action {
-            Action::RefreshFriends => self.refresh(true),
-            Action::AddFriend { user_id } => self.add(user_id),
-            Action::ApproveFriendRequest { room_id } => self.approve(room_id),
-            Action::RejectFriendRequest { room_id } => self.reject(room_id),
-            Action::CancelFriendRequest { room_id } => self.cancel(room_id),
-            Action::RemoveFriend { user_id } => self.remove(user_id),
-            Action::BlockFriend { target, scope } => self.block(target, scope),
-            Action::UnblockFriend { target, scope } => self.unblock(target, scope),
-            Action::SaveFriendGroup { id, name } => self.save_group(id, name),
-            Action::RemoveFriendGroup { id } => self.remove_group(id),
-            Action::SetFriendGroups { user_id, groups } => self.set_groups(user_id, groups),
-            _ => return Err(invalid("friends-invalid-action")),
+            FriendsAction::RefreshFriends => self.refresh(true),
+            FriendsAction::AddFriend { user_id } => self.add(user_id),
+            FriendsAction::ApproveFriendRequest { room_id } => self.approve(room_id),
+            FriendsAction::RejectFriendRequest { room_id } => self.reject(room_id),
+            FriendsAction::CancelFriendRequest { room_id } => self.cancel(room_id),
+            FriendsAction::RemoveFriend { user_id } => self.remove(user_id),
+            FriendsAction::BlockFriend { target, scope } => self.block(target, scope),
+            FriendsAction::UnblockFriend { target, scope } => self.unblock(target, scope),
+            FriendsAction::SaveFriendGroup { id, name } => self.save_group(id, name),
+            FriendsAction::RemoveFriendGroup { id } => self.remove_group(id),
+            FriendsAction::SetFriendGroups { user_id, groups } => self.set_groups(user_id, groups),
         }
         Ok(())
     }
@@ -741,12 +740,6 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
         .unwrap_or_default()
-}
-
-fn invalid(id: &str) -> CoreError {
-    CoreError::InvalidInput {
-        reason: text(id, &[]),
-    }
 }
 
 /// `Url` 在测试里也要用。

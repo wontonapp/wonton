@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.OnboardingAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.OnboardingItemProblem
 import app.wonton.protocol.OnboardingItemState
@@ -40,7 +41,9 @@ internal fun OnboardingReviewStep(review: OnboardingReview, plugins: PluginsStat
                 ) {
                     ReviewItemHeading(item, plugins)
                     InstallAccessDetails(item.notices, item.permissions)
-                    ReviewItemState(item.state) { send(Action.RetryOnboardingItem(item.id)) }
+                    ReviewItemState(item.state) {
+                        send(Action.Onboarding(OnboardingAction.RetryOnboardingItem(item.id)))
+                    }
                 }
             }
         }
@@ -112,9 +115,6 @@ private fun ReviewItemState(state: OnboardingItemState, retry: () -> Unit) {
                 is OnboardingItemProblem.Plugin -> OnboardingProblem(
                     problem.problem.onboardingTitle(), problem.problem.message, retry,
                 )
-                is OnboardingItemProblem.Model -> OnboardingProblem(
-                    problem.problem.onboardingTitle(), problem.problem.message, retry,
-                )
             }
         }
     }
@@ -126,10 +126,6 @@ private fun OnboardingReviewDetail.line(): String = when (this) {
     is OnboardingReviewDetail.Email -> email
     is OnboardingReviewDetail.SetAsDefault -> stringResource(R.string.onboarding_review_set_default)
     is OnboardingReviewDetail.KeepCurrent -> stringResource(R.string.onboarding_review_keep_current)
-    is OnboardingReviewDetail.Model -> model
-    is OnboardingReviewDetail.Unreachable -> model
-        ?.let { stringResource(R.string.onboarding_review_unreachable_model, it) }
-        ?: stringResource(R.string.onboarding_review_unreachable)
     is OnboardingReviewDetail.SignInAfterSetup -> stringResource(R.string.onboarding_review_sign_in_after_setup)
     is OnboardingReviewDetail.Unchanged -> stringResource(R.string.onboarding_review_unchanged)
 }

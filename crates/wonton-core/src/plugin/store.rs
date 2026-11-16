@@ -19,7 +19,7 @@ use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::languages::Languages;
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
 use super::pins::PinStore;
@@ -27,6 +27,22 @@ use super::preinstall::PreinstallMarks;
 use super::save_grants::SaveGrantStore;
 use super::secrets::SecretStore;
 use super::tool_policy::ToolPolicy;
+
+/// 安装时交给某个服务的一个宿主设备（ADR-0036）。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InstalledDevice {
+    pub service: String,
+    pub class: super::manifest::DeviceClass,
+    /// 宿主上的 by-id 路径（NVMe 的控制器是 `/dev/nvmeN`）。
+    pub source: String,
+    /// 容器里的路径。
+    pub target: String,
+    /// 给主人看的设备名，设备不在时详情页写它。
+    #[serde(default)]
+    pub name: String,
+    pub gid: u32,
+    pub system: bool,
+}
 
 /// 一项可选权限现在开着，以及是谁、什么时候打开的（ADR-0057）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +64,8 @@ pub enum OpenedBy {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InstalledRecord {
     pub id: PluginId,
+    #[serde(default)]
+    pub lifecycle: wonton_protocol::PluginLifecycle,
     pub version: String,
     /// 原始 compose 文本。
     pub source: String,
@@ -62,6 +80,9 @@ pub struct InstalledRecord {
     /// 主人或 Bot 打开了的可选项（ADR-0057）；关着的可选项不在这里。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub enabled_permissions: Vec<EnabledPermission>,
+    /// 主人选的宿主设备（ADR-0036）：升级保留，卸载随记录删掉。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<InstalledDevice>,
     #[serde(default, skip_serializing_if = "limits_empty")]
     pub limits: PluginLimits,
     /// 开关 `lan_webui`（见 [`super::lan::webui`]），默认关。
@@ -88,12 +109,17 @@ pub struct InstalledRecord {
     /// 主人打开的“每次都问”：这个 Agent 每次更新都发卡片。只在 written_by 有值时有意义。
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ask_every_update: bool,
-    /// `family` 设置接口保存的标记，不参与 `open_apps` 授权。
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub family: bool,
     /// 入口上的标签（`<标签>.<后缀>`），装的时候定下，升级和重启不变。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry_label: Option<String>,
+    /// 客户端入口的开关（ADR-0021，见 [`crate::clients::state`]）：局域网、公网，默认全关。开关接口在 C7。
+    #[serde(default)]
+    pub clients_entries: crate::clients::state::ClientsEntries,
+    /// `clients.http.auth.app` 的 `setup_done` 曾查到过完成（退出码 0）。之后得 1 才说明数据被
+    /// 清空或恢复过（关闭入口并通知主人，ADR-0022）；从没注册过的应用得 1 只是主人还没注册，
+    /// 入口保持开、回 409，不能把首次注册的入口关死。
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub setup_done_ever: bool,
     /// 主人设置的普通值（ADR-0077）：属性名 → JSON。明文可读，不是凭据。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub settings: std::collections::BTreeMap<String, serde_json::Value>,
@@ -196,6 +222,7 @@ pub struct RecordFile {
 
 pub struct Store {
     dir: PathBuf,
+    writes: std::sync::Mutex<()>,
     secrets: SecretStore,
     bots: BotStore,
     pins: PinStore,
@@ -213,6 +240,7 @@ impl Store {
         let tool_policy = dir.join("tool-policy");
         create_private_dir(&tool_policy)?;
         Ok(Self {
+            writes: std::sync::Mutex::new(()),
             secrets: SecretStore::new(dir.join("secrets")),
             bots: BotStore::new(dir.join("bots")),
             pins: PinStore::new(dir.join("pins")),
@@ -257,6 +285,10 @@ impl Store {
     /// 默认插件装过一次的标记，在记录目录下的 `preinstalled/` 里，卸载时保留。
     pub fn preinstalled(&self) -> &PreinstallMarks {
         &self.preinstalled
+    }
+
+    pub(super) fn bot_web_registry(&self) -> PathBuf {
+        self.dir.join("bot-web").join("registrations.json")
     }
 
     fn path(&self, id: &PluginId) -> PathBuf {
@@ -322,7 +354,34 @@ impl Store {
     }
 
     pub fn save(&self, record: &InstalledRecord) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
         write_json(&self.path(&record.id), record)
+    }
+
+    /// 普通设置不能用操作开始时的旧副本覆盖并发保存的停止意图或重试额度。
+    pub(super) fn save_metadata(&self, record: &InstalledRecord) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
+        let path = self.path(&record.id);
+        let mut updated = record.clone();
+        if let Some(current) = self.load(&record.id)? {
+            updated.lifecycle = current.lifecycle;
+        }
+        write_json(&path, &updated)
+    }
+
+    pub(super) fn save_lifecycle(
+        &self,
+        id: &PluginId,
+        lifecycle: wonton_protocol::PluginLifecycle,
+    ) -> Result<(), StoreError> {
+        let _writing = self.writes.lock().expect("插件记录写锁中毒");
+        let path = self.path(id);
+        let mut record = self.load(id)?.ok_or_else(|| StoreError::Io {
+            path: path.clone(),
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        })?;
+        record.lifecycle = lifecycle;
+        write_json(&path, &record)
     }
 
     /// 主人的局域网设置（ADR-0019），在记录目录下的 `lan/choice.json` 里：放进子目录，不和插件记录混在一起。
@@ -598,6 +657,7 @@ mod tests {
 
     fn record(id: &str) -> InstalledRecord {
         InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,
@@ -608,14 +668,16 @@ mod tests {
             files: [("config.yaml".to_owned(), b"a: \x01\xff".to_vec())].into(),
             granted_permissions: vec!["storage.share.photos:read".parse().unwrap()],
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             limits: Default::default(),
             oidc_client_secret: Some("s3cret".into()),
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

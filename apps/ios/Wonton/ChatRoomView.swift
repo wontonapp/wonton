@@ -12,19 +12,28 @@ struct ChatRoomView: View {
     @State private var composer: ComposerModel
     @State private var presenter: RoomPresenter
     @State private var pin = BottomPin()
+    /// 左滑整列露出每条消息的时间。
+    @State private var reveal = TimeReveal()
     @State private var isKeyboardVisible = false
     @State private var pageAnchor: String?
+    @SceneStorage private var savedAnchor: String
+    @State private var visibleRows: [String: CGFloat] = [:]
     /// 正在选转发目标的条目、正在确认撤回的条目。
     @State private var forwarding: String?
     @State private var pickingForwardRoom = false
     @State private var redactItem: String?
     @State private var showingRedact = false
+    @State private var showingConfirmations = false
+    @State private var selectedConfirmation: String?
+    @State private var showsBotProfile = false
+    @State private var profileBot: BotRef?
     /// 进房间的落点摆好之前不标已读（ADR-0071）：标早了已读行会跳到最新一条，落点就丢了。
     @State private var placed = false
     /// 在最新一条之后往上推，拉出房间的面板（ADR-0052）。
     @State private var roomPull = PullAnchor(attachesToAncestor: false, edge: .bottom)
     @Environment(OnboardingModel.self) private var onboarding
     @Environment(PagesModel.self) private var pages
+    @Environment(\.wontonContentRoot) private var isContentRoot
 
     init(model: ChatModel, plugins: PluginsModel, roomId: String, threadRoot: String? = nil, title: String) {
         self.model = model
@@ -34,7 +43,9 @@ struct ChatRoomView: View {
         self.title = title
         _timeline = State(initialValue: TimelineModel(core: model.core, roomId: roomId, threadRoot: threadRoot))
         _composer = State(initialValue: ComposerModel(chat: model, roomId: roomId, threadRoot: threadRoot))
-        _presenter = State(initialValue: RoomPresenter(files: model.files))
+        _presenter = State(initialValue: RoomPresenter(files: model.files, roomId: roomId))
+        let key = model.draftKey(TimelineTarget(roomId: roomId, threadRoot: threadRoot))
+        _savedAnchor = SceneStorage(wrappedValue: "", "timeline.anchor.\(key)")
     }
 
     var body: some View {
@@ -44,7 +55,9 @@ struct ChatRoomView: View {
                 RoomPanelHost(roomId: roomId, panel: timeline.panel, selected: timeline.panelSelected,
                               blocked: entryBlocked, pullAnchor: roomPull) {
                     roomContent
-                        .overlay(alignment: .topLeading) { ScrollDebug(text: pin.snapshot) }
+                    #if DEBUG
+                        .overlay(alignment: .topLeading) { ScrollDebug(pin: pin) }
+                    #endif
                 }
             }
         } else {
@@ -57,38 +70,41 @@ struct ChatRoomView: View {
 @MainActor
 private extension ChatRoomView {
     /// 房间里另有东西开着：长按菜单之外的转发、删除确认不响应上推入口（ADR-0052）。
-    private var entryBlocked: Bool { pickingForwardRoom || showingRedact }
+    private var entryBlocked: Bool { pickingForwardRoom || showingRedact || showingConfirmations }
 
     private var roomContent: some View {
-        VStack(spacing: 0) {
-            // 旁聊页顶栏下面是它的状态；主对话顶上是“这个 AI 不支持旁聊”的提示（ADR-0093）。
-            if threadRoot != nil {
-                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
-            } else if model.noSideChatsRoom == roomId {
-                NoSideChatsHint()
-            }
+        Group {
             if let failure = timeline.failure {
                 ProblemView(problem: failure) { timeline.attempt += 1 }
                     .frame(maxHeight: .infinity)
             } else {
                 messages
             }
-            if let notice = timeline.notice {
-                KeyNoticeBanner(notice: notice)
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if threadRoot != nil {
+                if let state = timeline.sideChat?.state { SideChatHeaderLine(state: state) }
+            } else if model.noSideChatsRoom == roomId {
+                NoSideChatsHint()
             }
-            TransfersStrip(roomId: roomId)
-            if !isReadOnly {
-                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
-                   model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
-                   !onboarding.viewModel.chatPrompts.isEmpty {
-                    OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
-                        model.appendDraft($0, to: target)
-                    }
-                }
-                ComposerView(model: model, composer: composer, pin: pin)
+            if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
+                AgentPluginStatusBanner(plugin: plugin, model: plugins)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            roomBottomBar
+                .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
+        }
         .modifier(RoomPresentations(presenter: presenter))
+        .wontonSheet(isPresented: $showingConfirmations,
+            title: String(localized: .ConfirmationCard.confirmationCardRequests)) { _ in
+            RoomConfirmationSheet(
+                cards: timeline.confirmations, selectedId: selectedConfirmation,
+                action: { model.send($0) }
+            )
+            .environment(pages)
+            .environment(plugins)
+        }
         .wontonSheet(isPresented: $pickingForwardRoom,
             title: String(localized: .Message0.messageForwardTitle)) { close in
             ForwardRoomSheet(model: model, plugins: plugins, rooms: forwardRooms) { room in
@@ -98,6 +114,9 @@ private extension ChatRoomView {
                     forwarding = nil
                 }
             }
+        }
+        .navigationDestination(isPresented: $showsBotProfile) {
+            if let profileBot { BotProfileView(chat: model, plugins: plugins, botRef: profileBot) }
         }
         .wontonDialog(
             redactTitle,
@@ -122,6 +141,18 @@ private extension ChatRoomView {
             sideChatTitle: threadRoot == nil ? nil : timeline.sideChat?.title ?? String(localized: .Chat.sideChat),
             close: threadRoot == nil ? nil : { model.closeSideChat(in: roomId) }
         ) {
+            // 房间里装着的 widget（通话）：点了全屏打开，关掉回到这里（ADR-0096）。旁聊页没有。
+            if threadRoot == nil, !timeline.widgets.isEmpty {
+                RoomCallEntry(widgets: timeline.widgets, active: timeline.callActive) { pages.open($0.tab) }
+            }
+            // 和 Bot 的私聊：顶栏进它的资料页（ADR-0044）。
+            if let bot {
+                WontonIconButton(icon: .info, label: String(localized: .BotProfile0.botProfileTitle)) {
+                    profileBot = bot.bot
+                    showsBotProfile = true
+                }
+                .accessibilityIdentifier("roomBotProfile")
+            }
             if supportsSideChats {
                 WontonIconButton(icon: .compose, label: String(localized: .Chat.sideChatNew)) {
                     model.composingSideChat = roomId
@@ -132,14 +163,20 @@ private extension ChatRoomView {
         })
         // 入口按钮压进这一页。房间也能从别的标签页打开，那边的导航栈不认聊天页的路由，所以在这里登记一次。
         .navigationDestination(for: ChatRoute.self) { route in
-            if case .chatBackup = route { ChatBackupView(model: model) }
+            if isContentRoot {
+                ChatDestination(model: model, plugins: plugins, route: route)
+                    .environment(\.wontonContentRoot, false)
+            } else if case .chatBackup = route {
+                ChatBackupView(model: model)
+                    .environment(\.wontonContentRoot, false)
+            }
         }
         // 留着标签栏时，键盘弹出后输入框和发送按钮被盖在键盘下面（iOS 26.5 模拟器实测）。
         .toolbar(.hidden, for: .tabBar)
         .onChange(of: entryBlocked, initial: true) { _, blocked in
             // 旁聊页没有面板，不报（ADR-0093）。
             if threadRoot == nil {
-                model.send(.setRoomEntryBlocked(roomId: roomId, blocked: blocked))
+                model.send(.pages(action: .setRoomEntryBlocked(roomId: roomId, blocked: blocked)))
             }
         }
         .task(id: model.draftKey(target)) { await model.loadDraft(target) }
@@ -149,7 +186,7 @@ private extension ChatRoomView {
                 if threadRoot != nil {
                     // 旁聊没了：只收起旁聊，主对话还在。
                     model.closeSideChat(in: roomId)
-                } else {
+                } else if !isContentRoot {
                     model.path = []
                     model.visiting = nil
                     pages.open(.chat)
@@ -174,6 +211,29 @@ private extension ChatRoomView {
         }
     }
 
+    private var roomBottomBar: some View {
+        VStack(spacing: 0) {
+            if let notice = timeline.notice {
+                KeyNoticeBanner(notice: notice)
+            }
+            TransfersStrip(roomId: roomId)
+            RoomConfirmationBanner(cards: timeline.confirmations) {
+                selectedConfirmation = nil
+                showingConfirmations = true
+            }
+            if !isReadOnly {
+                if threadRoot == nil, let bot = onboarding.viewModel.primaryBotUserId,
+                   model.viewModel.rooms.first(where: { $0.roomId == roomId })?.directUserId == bot,
+                   !onboarding.viewModel.chatPrompts.isEmpty {
+                    OnboardingChatPrompts(prompts: onboarding.viewModel.chatPrompts) {
+                        model.appendDraft($0, to: target)
+                    }
+                }
+                ComposerView(model: model, composer: composer, pin: pin)
+            }
+        }
+    }
+
     /// 这条时间线：主对话或一个旁聊（ADR-0093）。
     private var target: TimelineTarget { TimelineTarget(roomId: roomId, threadRoot: threadRoot) }
 }
@@ -195,7 +255,7 @@ private extension ChatRoomView {
                             .task(id: PageRequest(timeline)) {
                                 // 第一批消息到时这一行闪现一下，紧接着就滚到底了：停得住才算翻到了顶，滚走时这里被取消。
                                 guard (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
-                                if timeline.isLoaded, timeline.backPagination == .idle {
+                                if timeline.isLoaded, timeline.backPagination == .idle, placed {
                                     pageAnchor = oldestEvent
                                     sendTimeline(.paginateBackwards(target: target))
                                 }
@@ -209,41 +269,55 @@ private extension ChatRoomView {
                 .background(EnclosingScrollView { scrollView in
                     pin.attach(scrollView)
                     roomPull.attach(to: scrollView)
+                    reveal.attach(scrollView)
                 })
                 .timelineListRow()
                 ForEach(Array(timeline.items.enumerated()), id: \.element.id) { index, item in
                     let joinsPrevious = index > 0 && item.joins(timeline.items[index - 1])
-                    let joinsNext = index + 1 < timeline.items.count && item.joins(timeline.items[index + 1])
-                    TimelineRow(
-                        item: item, core: model.core, showsSender: !isDirect,
-                        joinsPrevious: joinsPrevious, joinsNext: joinsNext,
-                        retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
-                        cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
-                        cardAction: { model.send($0) },
-                        reply: { model.startReply(.ready(message: $0), in: target) },
-                        forward: {
-                            forwarding = item.id
-                            pickingForwardRoom = true
-                        },
-                        redact: {
-                            redactItem = item.id
-                            showingRedact = true
-                        },
-                        openCard: { cardId in
-                            guard let target = timeline.items.first(where: { $0.cardId == cardId }) else { return }
-                            pin.unpin()
-                            DispatchQueue.main.async { scroller.scrollTo(target.id, anchor: .center) }
-                        },
-                        answerChoice: { key in
-                            model.send(.answerAgentChoice(roomId: roomId, itemId: item.id, key: key))
-                        },
-                        onOpenSideChat: { model.openSideChat($0, in: roomId) }
-                    )
-                    .id(item.id)
-                    .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
-                    .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
-                        model.startReply(.ready(message: quote), in: target)
-                    })
+                    let joinsNext = index + 1 < timeline.items.count && timeline.items[index + 1].joins(item)
+                    // 做完了又没什么可写的 Agent 状态行不占一行。
+                    if !item.isBlankAgentRun {
+                        TimelineRow(
+                            item: item, core: model.core, showsSender: !isDirect,
+                            joinsPrevious: joinsPrevious, joinsNext: joinsNext,
+                            retry: { sendTimeline(.retrySend(target: target, itemId: item.id)) },
+                            cancel: { sendTimeline(.cancelSend(target: target, itemId: item.id)) },
+                            cardAction: { model.send($0) },
+                            reply: { model.startReply(.ready(message: $0), in: target) },
+                            forward: {
+                                forwarding = item.id
+                                pickingForwardRoom = true
+                            },
+                            redact: {
+                                redactItem = item.id
+                                showingRedact = true
+                            },
+                            openCard: { cardId in
+                                selectedConfirmation = cardId
+                                showingConfirmations = true
+                            },
+                            answerChoice: { key in
+                                model.send(.chat(action: .answerAgentChoice(roomId: roomId, itemId: item.id, key: key)))
+                            },
+                            onOpenSideChat: { model.openSideChat($0, in: roomId) }
+                        )
+                        .id(item.id)
+                        .onGeometryChange(for: CGRect.self) { proxy in
+                            proxy.frame(in: .named("timelineViewport"))
+                        } action: { frame in
+                            if case .message = item.content, frame.maxY > 0, frame.minY < pin.viewportHeight {
+                                visibleRows[item.id] = frame.minY
+                            } else {
+                                visibleRows.removeValue(forKey: item.id)
+                            }
+                            saveVisibleAnchor()
+                        }
+                        .onDisappear { visibleRows.removeValue(forKey: item.id) }
+                        .timelineListRow(joinsPrevious: joinsPrevious, joinsNext: joinsNext)
+                        .modifier(ReplySwipe(quote: item.replyQuote()) { quote in
+                            model.startReply(.ready(message: quote), in: target)
+                        })
+                    }
                 }
                 // 点了发送、还没交出去的消息（ADR-0094）跟在最后一条后面；交出去后由时间线里的本地回显代替。
                 ForEach(composer.outgoing, id: \.id) { message in
@@ -253,6 +327,19 @@ private extension ChatRoomView {
                 }
             }
             .listStyle(.plain)
+            .environment(reveal)
+            .coordinateSpace(name: "timelineViewport")
+            .task(id: PageRequest(timeline)) {
+                guard timeline.isLoaded, !placed, !savedAnchor.isEmpty else { return }
+                if timeline.items.contains(where: { $0.id == savedAnchor }) {
+                    placeAnchor(scroller)
+                } else if timeline.backPagination == .idle {
+                    sendTimeline(.paginateBackwards(target: target))
+                } else if timeline.backPagination == .reachedStart {
+                    savedAnchor = ""
+                    placeAnchor(scroller)
+                }
+            }
             .scrollContentBackground(.hidden)
             .environment(\.defaultMinListRowHeight, 1)
             // 键盘收着时也开交互式收起，屏幕靠底一段里行内的按钮点不动，也没有报错（iOS 26.5 模拟器实测，屏高 912：y≈745 能点，y≈805 不能）。
@@ -278,6 +365,7 @@ private extension ChatRoomView {
             .onChange(of: pin.isPinned) { _, pinned in
                 // 报告发生在实际滚动之后，不把按钮意图或尚未摆好的首屏当成已读。
                 if placed { reportPosition(pinned) }
+                if placed, pinned { savedAnchor = "" }
             }
             // 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面（落点行在视野顶部），解开贴底；
             // 没有落点或落点就是最新一条，维持贴底。unpin 触发上面的方向报告，核心的落点由此知道没被当成到底。
@@ -292,6 +380,10 @@ private extension ChatRoomView {
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { _ in
                 pin.stick()
             }
+            .onGeometryChange(for: EdgeInsets.self) { $0.safeAreaInsets } action: { _ in
+                // Bar growth changes scroll insets, not the underlapping list's frame.
+                DispatchQueue.main.async { pin.stick() }
+            }
             // 停在别处时的“回到底部”：数字是离开底部后到的消息数（ADR-0071）。
             .overlay(alignment: .bottomTrailing) {
                 if case let .away(newMessages) = timeline.viewport {
@@ -300,11 +392,26 @@ private extension ChatRoomView {
             }
         }
     }
+}
+
+private extension ChatRoomView {
 
     /// 摆进房间的落点（ADR-0071）：落点不是最新一条就停在它上面，落点行在视野顶部；没有落点或落点就是最新
     /// 一条，维持贴底。摆好（或决定贴底）后放开标已读的闸门。
     private func placeAnchor(_ scroller: ScrollViewProxy) {
         guard timeline.isLoaded, !placed else { return }
+        if !savedAnchor.isEmpty {
+            pin.unpin()
+            guard timeline.items.contains(where: { $0.id == savedAnchor }) else { return }
+            let anchor = savedAnchor
+            DispatchQueue.main.async {
+                guard timeline.items.contains(where: { $0.id == anchor }) else { return }
+                scroller.scrollTo(anchor, anchor: .top)
+                placed = true
+                reportPosition(false)
+            }
+            return
+        }
         if let anchor = timeline.anchor, timeline.items.last?.id != anchor,
            timeline.items.contains(where: { $0.id == anchor }) {
             pin.unpin()
@@ -320,8 +427,16 @@ private extension ChatRoomView {
         }
     }
 
+    private func saveVisibleAnchor() {
+        guard placed, !pin.isPinned else { return }
+        if let first = visibleRows.min(by: { $0.value < $1.value }),
+           timeline.items.contains(where: { $0.id == first.key }) {
+            savedAnchor = first.key
+        }
+    }
+
     private func reportPosition(_ pinned: Bool) {
-        sendTimeline(.setTimelineScroll(target: target, scroll: pinned ? .bottom : .away))
+        timeline.setScroll(pinned ? .bottom : .away)
         // 旁聊页盖着这条主对话时不标已读（ADR-0093）：主人看不见，别替他把新消息读掉。
         if pinned, !covered { sendTimeline(.markRead(target: target)) }
     }
@@ -345,7 +460,7 @@ private extension ChatRoomView {
 
     var barAvatar: AnyView? {
         guard let bot else { return nil }
-        let plugin = plugins.viewModel.installed?.plugins.first { $0.botUserId == bot.userId }
+        let plugin = plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }
         return AnyView(BotAvatarView(
             bot: bot, pluginIcon: plugin?.icon, core: model.core, model: plugins, size: WontonTheme.size.avatar
         ).accessibilityIdentifier("roomTopBarAvatar"))
@@ -360,12 +475,34 @@ private extension ChatRoomView {
         model.viewModel.rooms.first { $0.roomId == roomId }?.isReadOnly ?? false
     }
 }
+private extension ChatRoomView {
+    /// 有消息解不开时的一行说明和入口：账号设过备份就输恢复密钥，没设过就请另一台设备确认。都去备份页。
+    private func keyNotice(_ notice: KeyNotice) -> some View {
+        WontonNotice(icon: .lockKey, title: String(localized: .Message2.messageUndecryptableNotice), isError: false) {
+            // 更新的核心给出的类别没有按钮，说明照常显示。
+            if let action = notice.action {
+                NavigationLink(value: ChatRoute.chatBackup) {
+                    Text(action).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(WontonButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.horizontal, WontonTheme.spacing.pageInset)
+        .padding(.vertical, WontonTheme.spacing.s8)
+    }
+}
 
 private extension TimelineItem {
-    /// 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。
-    func joins(_ other: TimelineItem) -> Bool {
-        guard case let .message(mine) = content, case let .message(theirs) = other.content else { return false }
-        return mine.senderId == theirs.senderId
+    /// 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
+    /// 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
+    func joins(_ earlier: TimelineItem) -> Bool {
+        guard case let .message(mine) = content, case let .message(theirs) = earlier.content else { return false }
+        return mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == nil
+    }
+
+    var isBlankAgentRun: Bool {
+        guard case let .agentRun(_, state, _, steps, _, result, _, _, _, choices, _) = content else { return false }
+        return choices.isEmpty && AgentRunRow.isBlank(state: state, steps: steps, result: result)
     }
 
     /// 这条消息带的回复引用：核心把引用作为消息动作下发。
@@ -426,8 +563,8 @@ private struct ScrollToBottomButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             count > 0
-                ? String(format: String(localized: "room.scrollToBottom.count"), "\(count)")
-                : String(localized: "room.scrollToBottom")
+                ? String(localized: .Chat.roomScrollToBottomCount("\(count)"))
+                : String(localized: .Chat.roomScrollToBottom)
         )
         .padding(.trailing, 16)
         .padding(.bottom, 16)

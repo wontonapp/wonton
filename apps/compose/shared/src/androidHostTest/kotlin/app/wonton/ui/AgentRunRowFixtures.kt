@@ -18,7 +18,7 @@ import app.wonton.protocol.AgentRunState
 import app.wonton.protocol.TimelineContent
 
 /**
- * 状态行的固定假数据：Agent 一轮的十一种状态（ADR-0082）。只在预览和截图测试里用，
+ * 状态行的固定假数据：Agent 一轮的各种状态（ADR-0082）。只在预览和截图测试里用，
  * 字段和取值都是核心的 `AgentRunState`、`AgentRunEnd`、`AgentRunChoice`，不复刻壳的模型。
  */
 object AgentRunRowFixtures {
@@ -63,6 +63,11 @@ object AgentRunRowFixtures {
         ),
     )
     val doneWithSteps = row(AgentRunState.Done, steps = 5u)
+    val doneWithSummary = row(
+        AgentRunState.Done,
+        steps = 3u,
+        result = "Updated the config and restarted the service",
+    )
     val done = row(AgentRunState.Done)
     val failed = row(AgentRunState.Failed, result = "Model gateway error")
     val cancelled = row(AgentRunState.Failed, end = AgentRunEnd.Cancelled)
@@ -76,7 +81,7 @@ object AgentRunRowFixtures {
     /** 全部状态按顺序排好，供预览和截图测试一次画完。 */
     val all: List<TimelineContent.AgentRun> = listOf(
         working, workingWithProgress, waitingForCard, waitingWithChoices,
-        doneWithSteps, done, failed, cancelled, uncertain, offline, other,
+        doneWithSteps, doneWithSummary, done, failed, cancelled, uncertain, offline, other,
     )
 }
 

@@ -22,6 +22,7 @@ async fn install_optional_consumer(manager: &Arc<PluginManager>, source: &str, c
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
+        audience: None,
         scope: None,
         grant: Vec::new(),
         enabled_permissions: Vec::new(),
@@ -31,6 +32,7 @@ async fn install_optional_consumer(manager: &Arc<PluginManager>, source: &str, c
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     manager.install_source(&request).await.unwrap();
 }
@@ -241,7 +243,7 @@ async fn failed_rebuild_after_optional_provider_removal_reports_a_degraded_consu
     let (docker, engine) = FakeDocker::start().await;
     credentials(&docker);
     let dir = tempfile::tempdir().unwrap();
-    let manager = manager_with(engine, &dir);
+    let manager = Arc::new(manager_with(engine, &dir));
     manager
         .install(&provider("jellyfin"), &[], langs())
         .await
@@ -372,6 +374,10 @@ async fn a_failed_pending_connection_rebuild_retries_with_the_same_key() {
             .await,
         Err(CapabilityAccessError::Unavailable(_))
     ));
+    let consumer = id("app.a-consumer");
+    let mut record = manager.store.load(&consumer).unwrap().unwrap();
+    record.lifecycle.recovery.as_mut().unwrap().next_retry_at = Some(0);
+    manager.store.save(&record).unwrap();
     manager.watch_containers().await;
     assert_eq!(keys.lock().unwrap()["app.a-consumer"], key);
     assert_eq!(env_of_container(&docker, &container)["KEY"], key);
@@ -417,6 +423,7 @@ async fn a_quiet_consumer_upgrade_does_not_approve_a_previously_denied_high_priv
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )
@@ -466,6 +473,7 @@ async fn adding_provider_credentials_rebuilds_existing_consumers_but_same_key_re
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )
@@ -485,6 +493,7 @@ async fn adding_provider_credentials_rebuilds_existing_consumers_but_same_key_re
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &langs(),
         )

@@ -35,13 +35,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import app.wonton.client.ClientCore
 import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import app.wonton.protocol.ChatAccount
 import app.wonton.protocol.ChatContact
 import app.wonton.protocol.ChatFailure
@@ -74,6 +77,7 @@ import app.wonton.ui.icons.Add
 import app.wonton.ui.icons.Close
 import app.wonton.ui.icons.Connection
 import app.wonton.ui.icons.LockFill
+import app.wonton.ui.icons.VoiceCallFill
 import app.wonton.ui.icons.WontonIcon
 import java.time.Instant
 import java.time.LocalDate
@@ -94,6 +98,7 @@ fun ChatRoute(
     val updates = remember(core) { core.chatUpdates() }
     val initial = remember(core) { core.chat() }
     val viewModel by updates.collectAsState(initial = initial)
+    val confirmations by remember(core) { core.confirmationsUpdates() }.collectAsState(core.confirmations())
     var rejection by remember { mutableStateOf<Problem?>(null) }
     val scope = rememberCoroutineScope()
     // 只在被拒绝时更新提示：成功的操作（比如自动发出的已读回执）不清掉还没看的拒绝原因。
@@ -102,7 +107,14 @@ fun ChatRoute(
     val room = navigation.openRoom
     // 提示条和通知能在备份页面上打开房间。
     LaunchedEffect(room) { if (room != null) navigation.showingBackup = false }
+    val profile = navigation.botProfile
     when {
+        navigation.showingConfirmations -> {
+            BackHandler { navigation.showingConfirmations = false }
+            ConfirmationsScreen(confirmations, viewModel.bots, plugins, onAction) {
+                navigation.showingConfirmations = false
+            }
+        }
         navigation.showingBackup -> {
             BackHandler { navigation.showingBackup = false }
             ChatBackupScreen(
@@ -110,6 +122,13 @@ fun ChatRoute(
                 onAction,
                 onContinueHandoff = { navigation.keyHandoffDeferred = false },
                 onClose = { navigation.showingBackup = false },
+            )
+        }
+        profile != null -> {
+            BackHandler { navigation.botProfile = null }
+            BotProfileScreen(
+                profile, viewModel.bots.firstOrNull { it.bot == profile }, plugins, onAction,
+                onClose = { navigation.botProfile = null },
             )
         }
         navigation.startingChat -> {
@@ -142,11 +161,14 @@ fun ChatRoute(
                 OpenRoom(core, navigation, room, row, viewModel, plugins, onAction) { rejection = it }
             }
         }
+        LocalExpandedChat.current -> PluginPages(plugins, pluginNavigation) { ChatDetailEmpty() }
         else -> PluginPages(plugins, pluginNavigation) {
             ChatListScreen(
                 viewModel = viewModel,
                 plugins = plugins,
                 pluginNavigation = pluginNavigation,
+                confirmationCount = confirmations.pending.size + confirmations.contactRequests.size,
+                onOpenConfirmations = navigation::openConfirmations,
                 onAction = onAction,
                 onOpenRoom = { navigation.openRoom = it },
                 onOpenBackup = {
@@ -161,20 +183,25 @@ fun ChatRoute(
         }
     }
 
-    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.DismissChatProblem) } }
+    viewModel.problem?.let { ProblemDialog(it.problem) { onAction(Action.Chat(ChatAction.DismissChatProblem)) } }
     rejection?.let { ProblemDialog(it) { rejection = null } }
 }
 
 @Composable
-private fun ChatListScreen(
+internal fun ChatListScreen(
     viewModel: ChatViewModel,
     plugins: PluginsState,
     pluginNavigation: PluginNavigation,
+    confirmationCount: Int,
+    onOpenConfirmations: () -> Unit,
     onAction: (Action) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
     onStartChat: () -> Unit,
     onOpenApps: () -> Unit,
+    showNewChat: Boolean = true,
+    selectedRoom: String? = null,
+    onReviewInstall: () -> Unit = {},
 ) {
     val installing = viewModel.installingBots
     val panel = LocalChatPanel.current
@@ -194,6 +221,14 @@ private fun ChatListScreen(
                 ),
             ) {
                 item(key = "notices") { Notices(viewModel, onOpenBackup) }
+                item(key = "confirmations") {
+                    WontonRow(
+                        stringResource(R.string.confirmations_title),
+                        badgeCount = confirmationCount,
+                        showsForward = true,
+                        onClick = onOpenConfirmations,
+                    )
+                }
                 itemsIndexed(installing, key = { _, row -> "install:${row.pluginId}" }) { index, row ->
                     if (index > 0) {
                         Box(Modifier.padding(start = WontonTheme.size.avatar + WontonTheme.spacing.s12)) {
@@ -204,6 +239,7 @@ private fun ChatListScreen(
                         row,
                         plugins,
                         onRetry = {
+                            onReviewInstall()
                             // 重试不进核心的执行路径：重新预览，主人在确认页上再点一次（ADR-0067）。
                             pluginNavigation.confirmation = when (row.operation) {
                                 PluginOperation.UPGRADE -> PluginConfirmation.Upgrade(row.pluginId)
@@ -222,7 +258,9 @@ private fun ChatListScreen(
                     if (row.membership == RoomMembership.INVITED) {
                         InviteItem(row, onAction)
                     } else {
-                        RoomItem(row, viewModel.bots.directBot(row), plugins, onClick = { onOpenRoom(row.roomId) })
+                        RoomItem(row, viewModel.bots.directBot(row), plugins, row.roomId == selectedRoom) {
+                            onOpenRoom(row.roomId)
+                        }
                     }
                 }
             }
@@ -237,7 +275,7 @@ private fun ChatListScreen(
                     )
                 }
             }
-            FloatingActionButton(
+            if (showNewChat) FloatingActionButton(
                 onClick = onStartChat,
                 modifier = Modifier.align(Alignment.BottomEnd)
                     .padding(
@@ -322,11 +360,13 @@ internal fun List<BotView>.directBot(row: RoomRow?): BotView? =
     row?.directUserId?.let { direct -> firstOrNull { it.userId == direct } }
 
 @Composable
-private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick: () -> Unit) {
+private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, isSelected: Boolean, onClick: () -> Unit) {
     val colors = WontonTheme.colors
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = WontonTheme.size.target)
+            .semantics { selected = isSelected }
+            .then(if (isSelected) Modifier.background(colors.accentFill.toColor()) else Modifier)
             .clickable(onClick = onClick)
             .padding(horizontal = WontonTheme.spacing.s16, vertical = WontonTheme.spacing.s12),
         verticalAlignment = Alignment.CenterVertically,
@@ -347,7 +387,7 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick
                         row.name,
                         Modifier.weight(1f, fill = false),
                         style = WontonTheme.typography.itemTitle,
-                        color = colors.textPrimary.toColor(),
+                        color = (if (isSelected) colors.accentInkOnFill else colors.textPrimary).toColor(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -357,6 +397,15 @@ private fun RoomItem(row: RoomRow, bot: BotView?, plugins: PluginsState, onClick
                             contentDescription = stringResource(R.string.chat_encrypted),
                             modifier = Modifier.size(WontonTheme.size.iconTiny),
                             tint = colors.textSecondary.toColor(),
+                        )
+                    }
+                    // 有人在通话（ADR-0096）。
+                    if (row.callActive) {
+                        Icon(
+                            WontonIcon.VoiceCallFill,
+                            contentDescription = stringResource(R.string.room_call_active),
+                            modifier = Modifier.size(WontonTheme.size.iconTiny).testTag("room-row-call-active"),
+                            tint = (if (isSelected) colors.accentInkOnFill else colors.success).toColor(),
                         )
                     }
                 }
@@ -461,9 +510,13 @@ internal fun InviteItem(row: RoomRow, onAction: (Action) -> Unit) {
             color = WontonTheme.colors.textPrimary.toColor(),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s8)) {
-            WontonButton(stringResource(R.string.chat_invite_accept), { onAction(Action.JoinRoom(row.roomId)) })
             WontonButton(
-                stringResource(R.string.chat_invite_decline), { onAction(Action.LeaveRoom(row.roomId)) },
+                stringResource(R.string.chat_invite_accept),
+                { onAction(Action.Chat(ChatAction.JoinRoom(row.roomId))) },
+            )
+            WontonButton(
+                stringResource(R.string.chat_invite_decline),
+                { onAction(Action.Chat(ChatAction.LeaveRoom(row.roomId))) },
                 kind = WontonButtonKind.SECONDARY,
             )
         }

@@ -10,18 +10,20 @@ struct TransfersStrip: View {
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
-        let view = files.viewModel
+        // 读一下传输列表当变化信号：一变就重取这个房间的传输条；下载完的按房间归属在里面。
+        // swiftlint:disable:next redundant_discardable_let
+        let _ = files.viewModel
         let listed = files.core.roomTransfers(roomId: roomId)
         // 不用 `Group`：它没有自己的视图，内容变空时 `onChange` 可能不触发。
         VStack(spacing: 0) {
-            if !listed.here.isEmpty || !listed.elsewhere.isEmpty || !view.downloaded.isEmpty {
+            if !listed.here.isEmpty || !listed.elsewhere.isEmpty || !listed.downloaded.isEmpty {
                 VStack(spacing: WontonTheme.spacing.s8) {
                     ForEach(listed.here, id: \.id) { TransferRow(transfer: $0) }
                     ForEach(listed.elsewhere, id: \.transfer.id) {
                         TransferRow(transfer: $0.transfer, elsewhere: $0)
                     }
-                    if !view.downloaded.isEmpty {
-                        Button(.Transfer1.transferDownloadedCount(files: view.downloaded.count)) {
+                    if !listed.downloaded.isEmpty {
+                        Button(caption(listed.downloaded)) {
                             isShowingDownloaded = true
                         }
                             .wontonText(WontonTheme.typography.caption)
@@ -36,24 +38,39 @@ struct TransfersStrip: View {
                 .overlay(alignment: .top) {
                     Rectangle().fill(Color(colors.separator)).frame(height: WontonTheme.size.hairline)
                 }
-                .wontonSheet(isPresented: $isShowingDownloaded,
-                    title: String(localized: .Transfer0.transferDownloaded)) { _ in
-                    DownloadedList().environment(files)
+                .wontonSheet(
+                    isPresented: $isShowingDownloaded,
+                    title: String(localized: .Transfer0.transferDownloaded), usesSystemPresentation: true
+                ) { _ in
+                    DownloadedList(roomId: roomId).environment(files)
                 }
             }
         }
-        .onChange(of: view.downloaded.isEmpty) { _, empty in
+        .onChange(of: listed.downloaded.isEmpty) { _, empty in
             if empty { isShowingDownloaded = false }
         }
+    }
+
+    /// 一个文件直接写它的名字，多个才写数量。
+    private func caption(_ downloaded: [Transfer]) -> String {
+        if downloaded.count == 1 {
+            return String(localized: .Transfer0.transferDownloadedOne(downloaded[0].name))
+        }
+        return String(localized: .Transfer1.transferDownloadedCount(files: downloaded.count))
     }
 }
 
 private struct DownloadedList: View {
+    let roomId: String
     @Environment(FilesModel.self) private var files
 
     var body: some View {
+        // 读传输列表当变化信号：列表开着时来新的下载，跟着变。
+        // swiftlint:disable:next redundant_discardable_let
+        let _ = files.viewModel
+        let listed = files.core.roomTransfers(roomId: roomId)
         VStack(spacing: WontonTheme.spacing.s8) {
-            ForEach(files.viewModel.downloaded, id: \.id) { TransferRow(transfer: $0) }
+            ForEach(listed.downloaded, id: \.id) { TransferRow(transfer: $0) }
         }
         .padding(.horizontal, WontonTheme.spacing.pageInset)
     }
@@ -144,10 +161,10 @@ private struct TransferButtons: View {
             isPresented: $isConfirmingDismiss,
             actions: [
                 WontonDialogAction(title: String(localized: .Transfer0.transferCleanupRecordOnly)) {
-                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
+                    files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: false)))
                 },
                 WontonDialogAction(title: String(localized: .Transfer0.transferCleanupDeleteFile), kind: .danger) {
-                    files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: true))
+                    files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: true)))
                 },
                 WontonDialogAction(title: String(localized: .Common.commonCancel))
             ]
@@ -158,22 +175,22 @@ private struct TransferButtons: View {
         switch action {
         case .cancel:
             WontonIconButton(icon: .close, label: String(localized: .Common.commonCancel)) {
-                files.send(.cancelTransfer(id: transfer.id))
+                files.send(.files(action: .cancelTransfer(id: transfer.id)))
             }
         case .dismiss:
             WontonIconButton(icon: .close, label: String(localized: .Transfer0.transferClear)) {
-                files.send(.dismissTransfer(id: transfer.id, deleteLocalFile: false))
+                files.send(.files(action: .dismissTransfer(id: transfer.id, deleteLocalFile: false)))
             }
         case .dismissDownloaded:
             WontonIconButton(icon: .trash,
                 label: String(localized: .Transfer0.transferCleanUp)) { isConfirmingDismiss = true }
         case .resendLink:
             textButton(String(localized: .Transfer1.transferResendLink)) {
-                files.send(.resendFileLink(id: transfer.id))
+                files.send(.files(action: .resendFileLink(id: transfer.id)))
             }
         case .stopSending:
             textButton(String(localized: .Transfer0.transferStopSending)) {
-                files.send(.cancelTransfer(id: transfer.id))
+                files.send(.files(action: .cancelTransfer(id: transfer.id)))
             }
         case .open:
             WontonIconButton(icon: .eye, label: String(localized: .Transfer1.transferOpen)) { opened = localFile }

@@ -39,16 +39,16 @@ async fn closing_a_page_pops_the_top_and_root_pages_clear_the_stack() {
     rig.open(page_tab());
     rig.open(url_tab("https://example.com/report"));
 
-    rig.tabs.dispatch(Action::ClosePage).unwrap();
+    rig.tabs.dispatch(PageAction::ClosePage).unwrap();
     assert_eq!(rig.view().stack.len(), 1);
 
     // 根页面（聊天）一路弹回根。
     rig.tabs
-        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .dispatch(PageAction::OpenPage { tab: TabRef::Chat })
         .unwrap();
     assert!(rig.view().stack.is_empty());
 
-    let nothing = rig.tabs.dispatch(Action::ClosePage).unwrap_err();
+    let nothing = rig.tabs.dispatch(PageAction::ClosePage).unwrap_err();
     assert!(matches!(nothing, CoreError::InvalidInput { .. }));
 }
 
@@ -59,7 +59,7 @@ async fn opening_before_the_list_arrives_fails_and_succeeds_after() {
     rig.tabs.recompute();
     let missing = rig
         .tabs
-        .dispatch(Action::OpenPage { tab: page_tab() })
+        .dispatch(PageAction::OpenPage { tab: page_tab() })
         .unwrap_err();
     assert!(matches!(missing, CoreError::NotReady { .. }), "{missing:?}");
 
@@ -78,7 +78,7 @@ async fn switching_servers_discards_previous_pages_and_reload_counts() {
         path: "/report".to_owned(),
     };
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: inner.clone(),
         })
@@ -118,7 +118,7 @@ async fn new_list_before_pages_observes_server_change_starts_fresh() {
     rig.home.send_replace(home("new-server"));
     rig.plugins.send_replace(plugins("new-content"));
     rig.tabs
-        .dispatch(Action::OpenPage { tab: TabRef::Chat })
+        .dispatch(PageAction::OpenPage { tab: TabRef::Chat })
         .unwrap();
     let switched = rig.view();
     assert!(switched.stack.is_empty());
@@ -148,4 +148,144 @@ async fn switching_servers_does_not_seed_apps_from_the_previous_server() {
     assert!(rig.my_app_titles().is_empty());
     assert!(rig.view().uninstalled.is_empty());
     assert!(rig.view().stack.is_empty());
+}
+
+/// 重启 App：打开过的页面不恢复，回到根页面；钉在面板里的页面是存下来的偏好，照旧在。
+/// 壳不会一启动就盖上一个整页的插件页。
+#[tokio::test]
+async fn restart_comes_back_to_the_root_and_keeps_the_panel() {
+    let rig = Rig::new();
+    rig.tabs
+        .dispatch(PageAction::AddPanelPage {
+            scope: main_scope(),
+            tab: page_tab(),
+        })
+        .unwrap();
+    rig.open(page_tab());
+    rig.open(url_tab("https://example.com/report"));
+    assert_eq!(rig.view().stack.len(), 2);
+
+    let restarted = PagesLink::new(
+        Handle::current(),
+        rig.tabs.home_link.clone(),
+        rig.tabs.plugins.clone(),
+        rig._dir.path(),
+        None,
+        watch::channel(None).1,
+        rig.chat.subscribe(),
+    );
+    let view = restarted.view();
+    assert!(view.stack.is_empty(), "{:?}", view.stack);
+    assert_eq!(
+        view.panel
+            .iter()
+            .map(|item| item.tab.clone())
+            .collect::<Vec<_>>(),
+        vec![page_tab()]
+    );
+    // 没有页面开着：关页被拒，不会把别的东西弹掉。
+    let nothing = restarted.dispatch(PageAction::ClosePage).unwrap_err();
+    assert!(matches!(nothing, CoreError::InvalidInput { .. }));
+}
+
+#[tokio::test]
+async fn apps_grid_stays_on_rejection_and_closes_when_a_page_opens() {
+    let rig = Rig::new();
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    let rejected = rig.tabs.dispatch(PageAction::OpenPage {
+        tab: url_tab("http://example.com/report"),
+    });
+    assert!(matches!(rejected, Err(CoreError::InvalidInput { .. })));
+    assert!(rig.view().shows_apps);
+
+    rig.open(page_tab());
+    assert!(!rig.view().shows_apps);
+    assert_eq!(rig.view().stack.last().unwrap().tab, page_tab());
+    rig.tabs.dispatch(PageAction::ClosePage).unwrap();
+    assert_eq!(rig.view().root, TabRef::Chat);
+    assert!(rig.view().stack.is_empty());
+    assert!(!rig.view().shows_apps);
+}
+
+#[tokio::test]
+async fn apps_grid_is_not_carried_between_servers_or_into_pairing() {
+    let rig = Rig::new();
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    rig.home.send_replace(home("new-server"));
+    rig.tabs.recompute();
+    assert_eq!(rig.view().root, TabRef::Chat);
+    assert!(!rig.view().shows_apps);
+
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    let mut unpaired = home("new-server");
+    unpaired.server_id = None;
+    unpaired.status = HomeStatus::NotConfigured;
+    rig.home.send_replace(unpaired);
+    rig.tabs.recompute();
+    assert_eq!(rig.view().root, TabRef::Apps);
+    assert!(!rig.view().shows_apps);
+    rig.open(TabRef::Apps);
+    assert!(!rig.view().shows_apps);
+}
+
+#[tokio::test]
+async fn unpaired_chat_returns_to_pairing_without_losing_pairing_failure() {
+    let rig = Rig::new();
+    let failure = wonton_protocol::PairingStatus::Failed {
+        reason: wonton_protocol::PairingFailure::TransportUnavailable,
+        message: "connection failed".to_owned(),
+        diagnostic: Some("raw transport error".to_owned()),
+    };
+    for pairing in [None, Some(failure)] {
+        let mut unpaired = home("old-server");
+        unpaired.server_id = None;
+        unpaired.status = HomeStatus::NotConfigured;
+        unpaired.pairing = pairing.clone();
+        rig.home.send_replace(unpaired);
+        rig.tabs.recompute();
+
+        let page = url_tab("https://example.com/report");
+        rig.open(page.clone());
+        assert_eq!(rig.view().stack.last().unwrap().tab, page);
+        rig.open(TabRef::Chat);
+        let view = rig.view();
+        assert_eq!(view.root, TabRef::Apps);
+        assert!(view.stack.is_empty());
+        assert!(!view.shows_apps);
+        assert_eq!(rig.home.borrow().pairing, pairing);
+
+        rig.open(TabRef::Apps);
+        assert_eq!(rig.view().root, TabRef::Apps);
+        assert!(!rig.view().shows_apps);
+    }
+}
+
+#[tokio::test]
+async fn paired_offline_chat_returns_to_chat_not_pairing() {
+    let rig = Rig::new();
+    let mut offline = home("old-server");
+    offline.status = HomeStatus::Disconnected {
+        reason: HomeFailure::TransportUnavailable,
+        message: "connection failed".to_owned(),
+    };
+    rig.home.send_replace(offline);
+    rig.tabs.recompute();
+
+    rig.open(TabRef::Apps);
+    assert!(rig.view().shows_apps);
+    rig.open(TabRef::Chat);
+    let view = rig.view();
+    assert_eq!(view.root, TabRef::Chat);
+    assert!(!view.shows_apps);
+    assert!(view.stack.is_empty());
+    assert!(matches!(
+        rig.home.borrow().status,
+        HomeStatus::Disconnected {
+            reason: HomeFailure::TransportUnavailable,
+            ..
+        }
+    ));
 }

@@ -10,10 +10,10 @@ use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
+    CoreError, CoreUpgradeCheck, CoreUpgradeCheckRequest, CoreUpgradeCompat,
     CoreUpgradeCompatCategory, CoreUpgradeCompatDetail, CoreUpgradeFailure, CoreUpgradeOffer,
     CoreUpgradePhase, CoreUpgradeProblem, CoreUpgradeRequest, CoreUpgradeRun, CoreUpgradeRunState,
-    CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeViewModel,
+    CoreUpgradeStage, CoreUpgradeStatus, CoreUpgradeViewModel, PluginAction,
 };
 
 use super::api::{READ_TIMEOUT, SOURCE_TIMEOUT};
@@ -432,15 +432,18 @@ impl PluginsLink {
         });
     }
 
-    pub(crate) fn dispatch_core_upgrade(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch_core_upgrade(
+        self: &Arc<Self>,
+        action: PluginAction,
+    ) -> Result<(), CoreError> {
         match action {
-            Action::RefreshCoreUpgrade { manual } => {
+            PluginAction::RefreshCoreUpgrade { manual } => {
                 self.refresh_core_upgrade(manual);
                 Ok(())
             }
-            Action::StartCoreUpgrade { digest } => self.start_core_upgrade(digest),
-            Action::CancelCoreUpgrade => self.cancel_core_upgrade(),
-            Action::SkipCoreUpgrade { digest } => {
+            PluginAction::StartCoreUpgrade { digest } => self.start_core_upgrade(digest),
+            PluginAction::CancelCoreUpgrade => self.cancel_core_upgrade(),
+            PluginAction::SkipCoreUpgrade { digest } => {
                 self.skip_core_upgrade(digest);
                 Ok(())
             }

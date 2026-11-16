@@ -9,6 +9,8 @@
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；`grant` 含全部必需权限，可选项放在 `enabled_permissions`（201 `InstalledPlugin`） |
 //! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`）。容器不在时按安装记录照安装的路径重建再启动（网络不在也重建），做不到按原因报类别：镜像拉不到 `image_pull_failed`，安装记录读不出 `record_unusable` |
+//! | GET | `/_wonton/api/plugins/{id}/lifecycle` | 与启动接口相同的鉴权，返回持久化意图和恢复日志（200 `PluginLifecycle`），不把容器观测状态当作主人的意图 |
+//! | POST | `/_wonton/api/plugins/{id}/stop` | 与启动接口相同的鉴权，持久化明确停止意图；幂等停止后返回（200 `InstalledPlugin`），忙时拒绝，不在后台重新启动 |
 //! | PUT | `/_wonton/api/plugins/{id}/permissions/{permission}` | 开关一项可选权限（`PermissionUpdate`），重建完返回详情（200 `PluginDetail`） |
 //! | PUT | `/_wonton/api/plugins/{id}/scope` | 主人提交 `PluginScope`；不支持范围设置时返回 501 `unsupported`，不保存 |
 //! | GET、PUT | `/_wonton/api/bots/{id}/{bot}/plugin-access/{target}` | 插件 `{id}` 的 Bot `{bot}` 能不能用 `{target}` 的工具（`BotPluginAccess`）；主人 `PUT` 一个 `BotPluginAccessUpdate` 单独开关，总线按它过滤这个 Bot 的工具（见 [`super::bot_plugin_access`]）。Bot 不在 404 `not_found`，`{target}` 没装 `not_installed`，工具策略读不出 503 `policy_unavailable` |
@@ -17,8 +19,17 @@
 //! | POST | `/_wonton/api/plugins/{id}/upgrade` | 按预览升级（`UpgradeRequest`），或者上传插件包加 `?grant=权限,权限`；换完容器才返回（`UpgradeResult`） |
 //! | GET | `/_wonton/api/images/{sha256}/{文件名}` | 插件的图标（PNG），地址由上面的响应给出 |
 //!
+//! 手动启动把意图设为运行并重置恢复额度。新安装默认要运行；旧记录没有意图时只观察。中断日志保留
+//! `category`、`reason`、`stage`、`attempts` 和 Unix 秒 `next_retry_at`，进程中断的类别是 `interrupted`。
+//! 恢复最多后台尝试五次，间隔 30、60、120、240、300 秒；核心重启不重置额度。空的重试时间表示执行中或已耗尽。
+//!
+//! 生命周期查询和停止沿用启动接口的 `InstallApps` 权限项：主人及获授此项的家人都能调用，
+//! 未获授的家人不能调用；不另加仅限主人的策略，网页来源限制也与启动相同。
+//!
+//! 停止先保存 `stopped` 意图和 `stopping` 日志；Docker 停止失败或超时保留原因并显示降级，不安排自动启动。
+//!
 //! 商店的接口在 [`super::store_api`]，服务器设置和插件资源上限的接口在 [`super::settings_api`]，镜像加速在
-//! [`super::registry_mirror`]，模型服务商在 [`super::model_providers`]，引导在 [`super::onboarding`]。
+//! [`super::registry_mirror`]，模型设置在 [`super::model_settings`]，引导在 [`super::onboarding`]。
 //!
 //! 插件包是 compose 文本，或者 tar、tar.gz、zip 压缩包（按内容认）；JSON 请求体（`Content-Type: application/json`）按来源预览和安装。
 
@@ -39,14 +50,14 @@ use wonton_protocol::{
 
 pub(super) use super::api_body::{MAX_UPLOAD_BYTES, invalid_body, json_body, package};
 use super::api_switch::{enabled, granted, secrets, settings, upload_parts};
-use super::{Gateway, Person, TunnelPeer, isolation, pages, permissions};
+use super::{Gateway, Person, TunnelPeer, install_gates, isolation, pages, permissions};
 
 pub use super::api_switch::set_plugin_permission;
 use crate::l10n;
 use crate::plugin::gallery::Variant;
 use crate::plugin::image_worker::ImageError;
 use crate::plugin::languages::Languages;
-use crate::plugin::{InstallError, PluginId, PluginView, UpgradeTo};
+use crate::plugin::{InstallError, PluginId, PluginPackage, PluginView, UpgradeTo};
 
 pub(super) fn languages(headers: &HeaderMap) -> Languages {
     Languages::from_header(headers.get(ACCEPT_LANGUAGE).and_then(|v| v.to_str().ok()))
@@ -96,6 +107,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         InstallError::PermissionNotGranted(_) => StatusCode::FORBIDDEN,
         InstallError::Unsupported(_)
         | InstallError::GpuUnavailable(_)
+        | InstallError::DeviceUnavailable(_)
         | InstallError::LanUnavailable(_) => StatusCode::UNPROCESSABLE_ENTITY,
         InstallError::Conflict(_)
         | InstallError::InUse { .. }
@@ -112,6 +124,7 @@ pub(crate) fn install_error(error: &InstallError) -> Response {
         | InstallError::ImagesUnavailable(_)
         | InstallError::SourceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         InstallError::UpstreamUnavailable(_) => StatusCode::BAD_GATEWAY,
+        InstallError::DockerTimedOut(_) => StatusCode::GATEWAY_TIMEOUT,
         InstallError::Docker(_) | InstallError::ImagePull(_) | InstallError::Unhealthy(_) => {
             StatusCode::BAD_GATEWAY
         }
@@ -304,10 +317,6 @@ pub async fn detail(
         .await
     {
         Some(mut detail) => {
-            if !permissions.allows(PermissionItem::InstallApps) {
-                detail.scope = None;
-            }
-            detail.shares = None;
             if permissions.allows(PermissionItem::ShareApps)
                 && let Some(sharing) = gateway.sharing.as_ref()
             {
@@ -322,6 +331,7 @@ pub async fn detail(
                     };
                 }
             }
+            install_gates::project_detail(&gateway, &person, id.as_str(), &mut detail);
             Json(detail).into_response()
         }
         None => install_error(&InstallError::NotInstalled(id.to_string())),
@@ -354,12 +364,17 @@ pub async fn preview(
         },
     };
     match preview {
-        Ok(preview) => Json(preview).into_response(),
+        Ok(mut preview) => {
+            if let Ok(person) = requester(&gateway, peer, &headers) {
+                install_gates::project_preview(&gateway, &person, &mut preview);
+            }
+            Json(preview).into_response()
+        }
         Err(e) => install_error(&e),
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct InstallQuery {
     #[serde(default)]
     pub(super) grant: String,
@@ -369,6 +384,9 @@ pub struct InstallQuery {
     /// 主人打开了的可选项，逗号分隔（ADR-0057）。
     #[serde(default)]
     pub(super) enabled_permissions: String,
+    /// 主人选的设备 ID，逗号分隔（ADR-0036）；上传插件包时用。
+    #[serde(default)]
+    pub(super) devices: String,
 }
 
 pub async fn install(
@@ -378,46 +396,118 @@ pub async fn install(
     Query(query): Query<InstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
-    {
-        return denied;
-    }
     let langs = languages(&headers);
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
-    let installed = match json_body::<InstallRequest>(&headers, &body) {
-        Some(Err(e)) => return install_error(&e),
-        Some(Ok(request)) => gateway.plugins.install_source(&request).await,
-        None => install_upload(&gateway, &langs, &headers, &query, &body).await,
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
     };
-    let id = match installed {
-        Ok(view) => view.id,
-        Err(e) => return install_error(&e),
-    };
-    match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
-        Some(installed) => (StatusCode::CREATED, Json(installed)).into_response(),
-        // 装好之后立刻被卸掉了。
-        None => install_error(&InstallError::NotInstalled(id.to_string())),
+    // 不能装的人在读请求体之前就被挡下（ADR-0088 的权限项按人判断，与请求内容无关）。
+    if let Some(denied) = install_gates::deny_check(&gateway, &person) {
+        return denied;
+    }
+    // 门槛要预览的内容写卡片，先把请求体读出来；安装仍按预览给的来源与摘要执行。
+    match json_body::<InstallRequest>(&headers, &body) {
+        Some(Err(e)) => install_error(&e),
+        Some(Ok(request)) => {
+            let finish = {
+                let request = request.clone();
+                let headers = headers.clone();
+                move |gateway: Arc<Gateway>| {
+                    let request = request.clone();
+                    let headers = headers.clone();
+                    async move {
+                        let installed = gateway.plugins.install_source(&request).await;
+                        let id = match installed {
+                            Ok(view) => view.id,
+                            Err(e) => return install_error(&e),
+                        };
+                        match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+                            Some(installed) => {
+                                (StatusCode::CREATED, Json(installed)).into_response()
+                            }
+                            // 装好之后立刻被卸掉了。
+                            None => install_error(&InstallError::NotInstalled(id.to_string())),
+                        }
+                    }
+                }
+            };
+            let gate =
+                install_gates::install_source(&gateway, peer, &headers, &person, &request, finish)
+                    .await;
+            match install_gates::settle(gate, "install", &langs).await {
+                Ok(response) => response,
+                Err(response) => response,
+            }
+        }
+        None => {
+            // 门槛的预览和闭包各用一份：闭包装的是主人批准后的同一份包。
+            let package = match package(&langs, &headers, &body) {
+                Ok(package) => package,
+                Err(e) => return install_error(&e),
+            };
+            let for_install = package.clone();
+            let finish = {
+                let headers = headers.clone();
+                move |gateway: Arc<Gateway>| {
+                    let package = for_install.clone();
+                    let headers = headers.clone();
+                    let query = query.clone();
+                    async move {
+                        match install_upload_package(&gateway, &headers, &query, package).await {
+                            Ok(view) => {
+                                let id = view.id;
+                                match gateway.plugins.installed_plugin(&id, &languages(&headers)) {
+                                    Some(installed) => {
+                                        (StatusCode::CREATED, Json(installed)).into_response()
+                                    }
+                                    None => {
+                                        install_error(&InstallError::NotInstalled(id.to_string()))
+                                    }
+                                }
+                            }
+                            Err(e) => install_error(&e),
+                        }
+                    }
+                }
+            };
+            let gate =
+                install_gates::install_upload(&gateway, peer, &headers, &person, &package, finish)
+                    .await;
+            match install_gates::settle(gate, "install", &langs).await {
+                Ok(response) => response,
+                Err(response) => response,
+            }
+        }
     }
 }
 
-/// 上传的插件包，`?grant=` 是主人确认的权限。
-async fn install_upload(
+/// 逗号分隔的设备 ID 列表。
+fn devices(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// 上传的插件包，`?grant=` 是主人确认的权限。包已在门槛的预览里解析过，这里直接装。
+async fn install_upload_package(
     gateway: &Arc<Gateway>,
-    langs: &Languages,
     headers: &HeaderMap,
     query: &InstallQuery,
-    body: &[u8],
+    package: PluginPackage,
 ) -> Result<PluginView, InstallError> {
+    let langs = languages(headers);
     let granted = granted(query)?;
     let enabled = enabled(query)?;
     let secrets = secrets(headers)?;
     let given = settings(headers)?;
-    let package = package(langs, headers, body)?;
     gateway
         .plugins
-        .store_input_values(&package.manifest, &secrets, None, langs)?;
-    let settings = crate::plugin::settings::install_values(&package, &given, langs)?;
+        .store_input_values(&package.manifest, &secrets, None, &langs)?;
+    let settings = crate::plugin::settings::install_values(&package, &given, &langs)?;
     gateway
         .plugins
         .install_detached_enabled(
@@ -425,6 +515,7 @@ async fn install_upload(
             granted,
             enabled,
             query.lan_webui,
+            &devices(&query.devices),
             settings,
             langs.clone(),
         )
@@ -468,28 +559,24 @@ pub async fn preview_upgrade(
     };
     let langs = languages(&headers);
     match gateway.plugins.preview_upgrade(&id, to, &langs).await {
-        Ok(preview) => Json(preview).into_response(),
+        Ok(mut preview) => {
+            if let Ok(person) = requester(&gateway, peer, &headers) {
+                install_gates::project_preview(&gateway, &person, &mut preview);
+            }
+            Json(preview).into_response()
+        }
         Err(e) => install_error(&e),
     }
 }
 
-pub async fn upgrade(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
+/// 卡片批准后真正执行升级：来源或上传，回升级结果（ADR-0088 的门槛在入口，不在这里）。
+async fn perform_upgrade(
+    gateway: Arc<Gateway>,
+    id: PluginId,
     headers: HeaderMap,
-    Path(id): Path<String>,
-    Query(query): Query<InstallQuery>,
+    query: InstallQuery,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
-    {
-        return denied;
-    }
-    let id = match PluginId::parse(&id) {
-        Ok(id) => id,
-        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
-    };
     let langs = languages(&headers);
     let before = match &gateway.mcp {
         Some(mcp) => mcp.bus.tool_names(&id).await,
@@ -516,6 +603,7 @@ pub async fn upgrade(
                         grant,
                         enabled,
                         query.lan_webui,
+                        &devices(&query.devices),
                         &given,
                         &langs,
                     )
@@ -547,6 +635,54 @@ pub async fn upgrade(
     }
 }
 
+pub async fn upgrade(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+    Query(query): Query<InstallQuery>,
+    body: Bytes,
+) -> Response {
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(e) => return install_error(&InstallError::Invalid(e.to_string())),
+    };
+    let langs = languages(&headers);
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
+    // 不能升级的人在读请求体之前就被挡下（ADR-0088 的权限项按人判断，与请求内容无关）。
+    if let Some(denied) = install_gates::deny_check(&gateway, &person) {
+        return denied;
+    }
+    let finish = {
+        let headers = headers.clone();
+        let query = query.clone();
+        let body = body.clone();
+        let id = id.clone();
+        move |gateway: Arc<Gateway>| perform_upgrade(gateway, id, headers, query, body)
+    };
+    // 门槛要升级预览的内容写卡片，先把请求体读出来。
+    let to = match json_body::<UpgradeFrom>(&headers, &body) {
+        Some(Err(e)) => return install_error(&e),
+        Some(Ok(UpgradeFrom {
+            source: Some(source),
+        })) => UpgradeTo::Source(source),
+        Some(Ok(UpgradeFrom { source: None })) => UpgradeTo::Offered,
+        None if body.is_empty() => UpgradeTo::Offered,
+        None => match package(&languages(&headers), &headers, &body) {
+            Ok(package) => UpgradeTo::Upload(Box::new(package)),
+            Err(e) => return install_error(&e),
+        },
+    };
+    let gate = install_gates::upgrade(&gateway, peer, &headers, &person, &id, to, finish).await;
+    match install_gates::settle(gate, "upgrade", &langs).await {
+        Ok(response) => response,
+        Err(response) => response,
+    }
+}
+
 #[derive(Deserialize)]
 
 pub struct UninstallQuery {
@@ -562,17 +698,16 @@ pub async fn uninstall(
     Query(query): Query<UninstallQuery>,
     body: Bytes,
 ) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
-    {
-        return denied;
-    }
     let id = match PluginId::parse(&id) {
         Ok(id) => id,
         Err(e) => return error_response(StatusCode::BAD_REQUEST, "invalid_input", &e.to_string()),
     };
     let langs = languages(&headers);
     gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    let person = match requester(&gateway, peer, &headers) {
+        Ok(person) => person,
+        Err(response) => return *response,
+    };
     let request = if body.is_empty() {
         UninstallRequest::default()
     } else {
@@ -585,19 +720,33 @@ pub async fn uninstall(
     // 批准连接重组只有主人能做（ADR-0088：这不是“装、删、升级应用”能换来的）。
     let approve_connections =
         permissions::require(&gateway, peer, &headers, PermissionItem::Owner).is_none();
-    match gateway
-        .plugins
-        .uninstall_detached(
-            id,
-            query.purge,
-            request.providers,
-            approve_connections,
-            langs,
-        )
-        .await
-    {
-        Ok(report) => Json(report).into_response(),
-        Err(e) => install_error(&e),
+    let finish = {
+        let id = id.clone();
+        let langs = langs.clone();
+        move |gateway: Arc<Gateway>| {
+            let id = id.clone();
+            async move {
+                match gateway
+                    .plugins
+                    .uninstall_detached(
+                        id,
+                        query.purge,
+                        request.providers,
+                        approve_connections,
+                        langs,
+                    )
+                    .await
+                {
+                    Ok(report) => Json(report).into_response(),
+                    Err(e) => install_error(&e),
+                }
+            }
+        }
+    };
+    let gate = install_gates::uninstall(&gateway, peer, &headers, &person, &id, finish).await;
+    match install_gates::settle(gate, "uninstall", &langs).await {
+        Ok(response) => response,
+        Err(response) => response,
     }
 }
 

@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "chat.pluginStopped": {
+      "comment": "Stopped agent notice above the conversation.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This agent is stopped. Start it to receive replies."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent 已停止，启动后才能回复。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此 Agent 已停止，啟動後才能回覆。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このエージェントは停止しています。返信を受け取るには起動してください。"
+          }
+        }
+      }
+    },
     "chat.profile.avatarChanged": {
       "comment": "Timeline note when someone changed their avatar without renaming.",
       "extractionState": "manual",

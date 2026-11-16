@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::get;
-use wonton_protocol::{OwnerProfileUpdate, Role};
+use wonton_protocol::OwnerProfileUpdate;
 
 use super::super::docker::Engine;
 use super::super::fake_docker::FakeDocker;
@@ -258,7 +258,7 @@ async fn without_a_real_email_a_proxy_template_installs_with_the_internal_addres
     m.install(&compose, &[], super::langs()).await.unwrap();
     let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
     assert_eq!(
-        auth.headers(&m.cfg.profile.owner(), Role::Owner).unwrap()[0].1,
+        auth.headers(&m.cfg.profile.owner(), true).unwrap()[0].1,
         "owner@wonton.internal"
     );
 }
@@ -284,24 +284,24 @@ async fn proxy_and_lan_templates_share_stable_person_specific_internal_addresses
         email: Some("me@example.com".into()),
     };
     assert_eq!(
-        auth.headers(&owner, Role::Owner).unwrap()[0].1,
+        auth.headers(&owner, true).unwrap()[0].1,
         "owner@wonton.internal"
     );
     owner.email = Some("changed@example.com".into());
     assert_eq!(
-        auth.headers(&owner, Role::Owner).unwrap()[0].1,
+        auth.headers(&owner, true).unwrap()[0].1,
         "owner@wonton.internal"
     );
     owner.email = None;
     assert_eq!(
-        auth.headers(&owner, Role::Owner).unwrap()[0].1,
+        auth.headers(&owner, true).unwrap()[0].1,
         "owner@wonton.internal"
     );
     let member = Owner {
         username: "alice".into(),
         ..owner
     };
-    let proxy_email = auth.headers(&member, Role::Owner).unwrap()[0].1.clone();
+    let proxy_email = auth.headers(&member, true).unwrap()[0].1.clone();
     assert_eq!(proxy_email, "alice@wonton.internal");
     let lan_email = super::super::proxy_auth::fill_template(
         "{email}",

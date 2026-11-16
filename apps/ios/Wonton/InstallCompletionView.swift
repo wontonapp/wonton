@@ -25,7 +25,7 @@ struct InstallCompletionView: View {
                 if task.state == .succeeded {
                     if onboarding.viewModel.tips.appInstalled {
                         OnboardingTipView(text: String(localized: .Onboarding5.onboardingTipAppInstalled)) {
-                            onboarding.send(.dismissOnboardingTip(tip: .appInstalled))
+                            onboarding.send(.onboarding(action: .dismissOnboardingTip(tip: .appInstalled)))
                         }
                     }
                     if let plugin = model.viewModel.installed?.plugins.first(where: { $0.id == pluginId }) {

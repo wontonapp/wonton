@@ -1,6 +1,6 @@
 //! 敏感操作的确认（ADR-0016）：核心请主人确认的卡片，以及主人的回答。
 //!
-//! 卡片记在核心里，文字由核心写好，客户端原样渲染。客户端从 `GET /_wonton/api/confirmations`（[`ConfirmationList`]，
+//! 卡片记在核心里，工具风险由类别和原始值表达，壳负责固定提示。客户端从 `GET /_wonton/api/confirmations`（[`ConfirmationList`]，
 //! 见 [`crate::CONFIRMATIONS_PATH`]）取卡片，画在发起的会话里（[`ConfirmationCard::origin`]）和“等你确认”列表里；
 //! 新卡片另经推送通知设备。主人点了按钮，客户端经隧道请求 `POST <核心地址>/_wonton/confirmations/{id}`
 //! （[`answer_path`]），请求体是 [`ConfirmationAnswer`]，响应是 [`ConfirmationReply`]；回答过的、过期的得到 409。
@@ -27,14 +27,14 @@ pub fn window_path(id: &str) -> String {
     format!("/_wonton/confirmations/{id}/window")
 }
 
-/// 一张确认卡片。文字由核心写好，客户端原样渲染。
+/// 一张确认卡片。提供方文字原样显示，类别对应的固定提示由壳本地化。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
 pub struct ConfirmationCard {
     /// 这次确认的 ID，回答时带上。
     pub id: String,
     pub state: ConfirmationState,
-    /// 一句话说明谁要做什么，如“Hermes 想安装 Grafana”。
+    /// 动作的显示标题；插件工具用提供方标题，没有时用工具原名。
     pub title: String,
     /// 说明行，按顺序显示。
     pub lines: Vec<CardLine>,
@@ -55,11 +55,17 @@ pub struct ConfirmationCard {
     /// 要主人填的设置（ADR-0077）：壳用同一套原生控件画，值随回答的 [`ConfirmationAnswer::settings`] 带回。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings: Option<crate::SettingsForm>,
+    /// Raw permission categories and risks disclosed before execution.
+    #[serde(default)]
+    pub permissions: Vec<crate::PermissionLine>,
+    /// Host device choices; IDs are submitted explicitly by the owner.
+    #[serde(default)]
+    pub devices: Vec<crate::PluginDevice>,
     /// 谁请主人确认。核心自己发起的（如服务器配对，ADR-0050）为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub requester: Option<crate::ConfirmationRequester>,
-    /// 卡片是关于什么的（ADR-0061）：核心按它写文字和按钮，壳按它做类别特有的跳转。旧核心没写时为空。
+    /// 类别特有的风险、详情或跳转所需的原始值。未分类时为空。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "uniffi", uniffi(default = None))]
     pub category: Option<ConfirmationCategory>,
@@ -90,8 +96,8 @@ pub enum CardAudience {
     Other,
 }
 
-/// 卡片类别（ADR-0061）：链的上限、交接和发消息的确认。文字和按钮仍由核心写好，类别带的是壳做跳转、
-/// 分组要用的字段；比壳新的核心给的未知类别落到 [`ConfirmationCategory::Other`]，壳只渲染文字和按钮。
+/// 卡片类别：工具的风险和原始参数由壳按类别显示，其他卡片保留服务器提供的文字和按钮。
+/// 未知类别落到 [`ConfirmationCategory::Other`]。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -117,7 +123,35 @@ pub enum ConfirmationCategory {
         /// 要发的全文。
         body: String,
     },
+    /// 工具标题和说明由提供方给出；固定提示由壳本地化，参数默认收起。
+    ToolCall { tool: ConfirmationTool },
     /// 比壳新的核心给的未知类别。
+    #[serde(other)]
+    Other,
+}
+
+/// 一次待确认的工具调用，不从参数名或工具名猜测动作和对象。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct ConfirmationTool {
+    pub name: String,
+    pub plugin_title: String,
+    /// 未截断的 JSON 参数，只在默认收起的详情里显示。
+    pub arguments: String,
+    pub impact: ConfirmationToolImpact,
+    pub runs_as_root: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConfirmationToolImpact {
+    ReadOnly,
+    ChangesData,
+    Destructive {
+        /// 核心能核实的对象名字或摘要；拿不到时为 None，不能把调用方传的 ID 当成名字。
+        target: Option<String>,
+    },
     #[serde(other)]
     Other,
 }
@@ -238,6 +272,8 @@ pub struct ConfirmationAnswer {
     /// 装插件、升级插件的卡片要主人填的设置（ADR-0077），键是卡片表单的项；校验不过返回 400 `settings_invalid`。
     #[serde(default)]
     pub settings: crate::SettingValues,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub devices: Vec<String>,
 }
 
 /// 回答之后卡片的状态。
@@ -361,6 +397,7 @@ mod tests {
             choice_id: Some("opaque-2".into()),
             secrets: crate::SecretValues::new(),
             settings: crate::SettingValues::new(),
+            devices: Vec::new(),
         };
         assert_eq!(
             json!(answer),
@@ -441,6 +478,48 @@ mod tests {
             serde_json::from_value::<ConfirmationCategory>(json!({"type": "sms"})).unwrap(),
             ConfirmationCategory::Other
         );
+    }
+
+    #[test]
+    fn tool_cards_preserve_unknown_targets_and_unknown_impacts() {
+        let parse = |impact| {
+            serde_json::from_value::<ConfirmationCategory>(json!({
+                "type": "tool_call",
+                "tool": {
+                    "name": "remove",
+                    "plugin_title": "Notes",
+                    "arguments": "{\"id\":42}",
+                    "impact": impact,
+                    "runs_as_root": false
+                }
+            }))
+            .unwrap()
+        };
+        for (wire, expected) in [
+            (
+                json!({"type":"destructive", "target":null}),
+                ConfirmationToolImpact::Destructive { target: None },
+            ),
+            (
+                json!({"type":"destructive", "target":"Shopping list"}),
+                ConfirmationToolImpact::Destructive {
+                    target: Some("Shopping list".into()),
+                },
+            ),
+            (
+                json!({"type":"future_impact"}),
+                ConfirmationToolImpact::Other,
+            ),
+        ] {
+            let ConfirmationCategory::ToolCall { tool } = parse(wire) else {
+                panic!("lost tool card")
+            };
+            assert_eq!(tool.impact, expected);
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&tool.arguments).unwrap(),
+                json!({"id":42})
+            );
+        }
     }
 
     #[test]

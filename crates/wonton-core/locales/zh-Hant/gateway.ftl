@@ -43,10 +43,25 @@ gateway-plugin-not-shared = 應用程式 { $id } 沒有開放給家人
 gateway-proxy-sso-failed = 拿不到應用程式 { $id } 的代登入憑證：{ $error }
 gateway-cross-site-login = 閘道不認其他網頁發出的跨站請求的登入狀態，請從應用程式自己的頁面操作
 gateway-login-required = 需要先登入 Wonton
+gateway-bot-web-permission = 外掛程式網路裡的應用程式不能開啟 Bot 網頁或使用瀏覽器登入
+gateway-bot-web-storage = 無法讀取 Bot 網頁記錄，請檢查伺服器儲存空間後重試
 
 # 上游（身分提供者端點、模型閘道）出錯時顯示的名稱。
 gateway-name-oidc = 身分提供者
 gateway-name-models = 模型閘道
+
+# TLS 入口容器後面的客戶端入口（ADR-0021）。
+gateway-entry-header-invalid = 入口閘道沒有給這個請求標上正確的記號
+gateway-entry-closed = 這個入口沒有開啟，主人可以在 Wonton 應用程式裡開啟
+gateway-entry-public-denied = 公網位址上存取不了這個路徑
+gateway-entry-setup-pending = 請先在這個應用程式的網頁上完成首次註冊，然後再試
+gateway-entry-auth-unsupported = 這個應用程式還不支援用雲吞發的密碼登入
+gateway-entry-auth-required = 請用在雲吞裡給這個應用程式發的專用密碼登入
+gateway-entry-auth-revoked = 這個專用密碼已吊銷，請在雲吞裡重新產生一個
+gateway-entry-state-unavailable = 讀不到這個應用程式的入口設定，請擁有者在雲吞裡檢查
+gateway-entry-setup-closed = 應用程式 { $id } 裡已經沒有管理員帳號（資料可能被清空或還原過）。為防止有人搶註管理員，它的入口已自動關閉；確認應用程式就緒後在雲吞應用程式裡重新開啟。
+gateway-entry-setup-timeout = 檢查應用程式首次註冊狀態逾時
+gateway-entry-target-unavailable = 應用程式入口必須指向本應用程式網路中全應用程式共用的唯一服務
 
 # SSO 交接和 OIDC 登入、授權確認。
 gateway-sso-invalid-next = 跳轉位址不合法
@@ -149,6 +164,14 @@ gateway-web-storage-undeclared = 這個應用程式不儲存資料
 gateway-web-storage-cross-site = 只有這個應用程式自己的頁面能修改它的資料
 gateway-web-storage-not-ready = 替這個應用程式儲存資料的應用程式沒有在執行，請稍後再試
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = 請求少了 X-Wonton-Clients 標頭
+clients-unauthenticated = 只有主人已配對的裝置能修改這些設定
+clients-unavailable = 核心沒有跑在安裝好的容器裡，網域設定用不了
+clients-passwords-unavailable = 現在讀不到專用密碼的存放處
+clients-password-label-invalid = 給用戶端起個 1-128 個字元、不帶換行的名字
+clients-password-not-found = 這個專用密碼已經不存在了
+clients-domain-read-failed = 網域設定讀不了：{ $error }
 gateway-chains-disabled = 家裡的伺服器沒有啟用呼叫鏈帳本
 
 # agent_acp 的轉發（ADR-0061 第 5 塊）：建連時的拒絕和逐幀轉發裡的錯誤，按類別回給使用方。
@@ -164,3 +187,6 @@ gateway-agent-acp-multi-bot = {$provider} 有幾個 Bot，先在詳情頁綁定�
 gateway-agent-acp-token-missing = {$provider} 還沒有提供方權杖，重新安裝一次就有了
 gateway-agent-acp-provider-unreachable = Agent 執行時沒有接起這條連線：{$detail}
 gateway-agent-acp-busy = 這個應用開著的 Agent 連線已經到上限，稍後再試
+
+gateway-install-rejected = 管理員沒有同意，沒有{$action}
+gateway-install-expired = 管理員沒有在期限內回答，沒有{$action}

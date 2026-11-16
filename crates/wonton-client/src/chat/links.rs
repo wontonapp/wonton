@@ -264,7 +264,8 @@ fn external_in(text: &str, links: &LinkTargets) -> Option<ExternalLink> {
             if let Some(link) = piece_link(piece, links) {
                 return Some(link);
             }
-            let punctuation = tail.chars().take(1).count();
+            // 标点是 `char`，切过去要按它自己的 UTF-8 字节长度，字符数 1 对多字节标点是半个字符。
+            let punctuation = tail.chars().next().map_or(0, char::len_utf8);
             rest = &tail[punctuation..];
         }
     }
@@ -537,5 +538,56 @@ mod tests {
             .unwrap();
         assert_eq!(link.url, "tel:+8613800138000");
         assert_eq!(link.kind, RichLinkKind::Phone);
+    }
+
+    /// 中文标点紧挨着链接：标点不算进链接，前面带标点也不影响认出来。
+    #[test]
+    fn cjk_punctuation_around_a_link_is_not_part_of_it() {
+        let targets = LinkTargets::default();
+        for punctuation in ['；', '，', '。', '、', '！', '？', '：'] {
+            let text = format!("记下：https://example.com/a{punctuation}回头见");
+            let link = first_external_link(&text, &targets).unwrap();
+            assert_eq!(link.raw, "https://example.com/a", "{text}");
+            assert_eq!(link.url, "https://example.com/a", "{text}");
+        }
+    }
+
+    /// 标点前那段不是外部链接（文件名、matrix.to）时，跳过标点继续找，不 panic。
+    #[test]
+    fn punctuation_after_a_non_external_piece_keeps_the_search_going() {
+        let targets = LinkTargets::default();
+        for punctuation in ['；', '，', '。', '、', '！', '？', '：'] {
+            let text = format!("先看 main.rs{punctuation}再开 https://example.com/a");
+            let link = first_external_link(&text, &targets).unwrap();
+            assert_eq!(link.raw, "https://example.com/a", "{text}");
+        }
+        // matrix.to 不是外部链接，同一个 span 里后面的外部链接照样认出来。
+        let glued = "https://matrix.to/#/@a:b；https://example.com/a";
+        let link = first_external_link(glued, &targets).unwrap();
+        assert_eq!(link.raw, "https://example.com/a", "{glued}");
+    }
+
+    /// 插件页不是外部链接，后面跟中文标点也不 panic，正确返回没有外部链接。
+    #[test]
+    fn plugin_page_with_trailing_cjk_punctuation_is_not_external() {
+        let targets = test_targets(&[("app.grafana", "http://app-grafana.home.example:18480/")]);
+        let text = "看下 http://app-grafana.home.example:18480/explore，好了叫我";
+        assert!(first_external_link(text, &targets).is_none());
+    }
+
+    /// 整段只有标点或 emoji：没有链接，也不 panic。
+    #[test]
+    fn punctuation_or_emoji_only_text_has_no_links() {
+        let targets = LinkTargets::default();
+        assert!(first_external_link("；，。、！？：", &targets).is_none());
+        assert!(first_external_link("🎉🎉，！", &targets).is_none());
+    }
+
+    /// emoji 这类多字节字符贴着链接：链接照样认出来，不 panic。
+    #[test]
+    fn emoji_next_to_a_link_keeps_the_link() {
+        let targets = LinkTargets::default();
+        let link = first_external_link("🎉https://example.com/a，好", &targets).unwrap();
+        assert_eq!(link.raw, "https://example.com/a");
     }
 }

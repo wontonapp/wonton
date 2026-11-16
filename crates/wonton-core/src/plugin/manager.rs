@@ -16,7 +16,6 @@ use super::egress::settings::Egress;
 use super::gallery::Gallery;
 use super::github::GitHub;
 use super::gpu::HostPaths;
-use super::health_gate::Gate;
 use super::host_facts::NvidiaMemory;
 use super::image_worker::ImageWorker;
 use super::lan::Lan;
@@ -25,7 +24,7 @@ use super::lifecycle::LifecycleConfig;
 use super::listed::Listed;
 #[cfg(test)]
 use super::manifest::Permission;
-use super::manifest::{LocalizedText, Manifest, PluginId};
+use super::manifest::{LocalizedText, Manifest, ManifestExt, PluginId};
 use super::mcp_server::{McpServer, ToolLimits};
 #[cfg(test)]
 use super::models::ModelsRoute;
@@ -44,7 +43,7 @@ use crate::matrix::Matrix;
 pub(super) mod busy;
 mod views;
 
-pub use views::{HostedRoute, PluginView, Route, StorageRoute};
+pub use views::{ClientsRoute, ClientsView, HostedRoute, PluginView, Route, StorageRoute};
 
 pub(super) use busy::{busy, detached};
 
@@ -99,13 +98,17 @@ pub struct PluginManager {
     pub(super) storefront: Storefront,
     /// 分配 Bot 用户名时持有：同时安装的两个插件不能分到同一个账号。
     pub(super) bot_allocation: tokio::sync::Mutex<()>,
+    pub(super) bot_web_routes: RwLock<BTreeMap<String, super::bot_web::BotRoute>>,
     /// 交给 App 的图标。
     pub(super) gallery: Gallery,
     pub(super) plugins: RwLock<BTreeMap<PluginId, Entry>>,
+    pub(super) failed_installs: RwLock<BTreeMap<PluginId, super::install_failure::FailedInstall>>,
     pub(super) dependencies: super::dependencies::Dependencies,
+    pub(crate) client_passwords: Option<Arc<crate::clients::passwords::PasswordStore>>,
     /// 插件表每变一次加一：MCP 总线据此刷新工具列表（见 [`Self::changes`]）。
     changes: tokio::sync::watch::Sender<u64>,
     pub(crate) activity: Arc<crate::bot_activity::BotActivity>,
+    pub(crate) clients: Arc<crate::clients::state::State>,
     /// 随核心附带的插件（预装目录里的插件包），见 [`super::preinstall`]。
     pub(super) bundled: RwLock<BTreeSet<PluginId>>,
     /// 局域网端口开在哪里，见 [`super::lan`]。
@@ -119,6 +122,8 @@ pub struct PluginManager {
     pub(super) upgrade_frozen: Option<tokio::sync::watch::Receiver<bool>>,
     /// 查到的新版本，见 [`super::upgrade`]。
     pub(super) upgrades: Upgrades,
+    /// 拔掉和插回的设备，见 [`super::device::watch`]。
+    pub(super) devices: super::device::watch::DeviceWatch,
     pub(super) oom: super::oom::OomRecords,
     pub(super) staged: StagedUploads,
     /// 写“每个人的语言”表时串行化：读改整份文件，两个人同时来不能互相盖掉。
@@ -126,6 +131,7 @@ pub struct PluginManager {
     pub(super) sharing:
         std::sync::OnceLock<(Arc<crate::friends::Friends>, Arc<crate::shares::Shares>)>,
     pub(super) person_members: std::sync::OnceLock<Arc<crate::members::Members>>,
+    pub(super) person_roles: RwLock<Arc<crate::roles::Roles>>,
     /// Bot 已成立的联系人（ADR-0045），注入 `WONTON_MATRIX_ALLOWED_USERS` 时加在归属人后面。见
     /// [`super::contacts`]。
     pub(super) contact_source: std::sync::OnceLock<super::contacts::ContactSource>,
@@ -171,7 +177,12 @@ impl PluginManager {
         let storefront =
             Storefront::new(github.clone(), StoreConfig::default(), store.index_cache());
         let dependencies = super::dependencies::Dependencies::open(store.capabilities_path());
+        let clients = Arc::new(crate::clients::state::State::new(&store));
+        let client_passwords = crate::clients::passwords::PasswordStore::open(&cfg.data_dir)
+            .map(Arc::new)
+            .ok();
         Self {
+            client_passwords,
             engine,
             store,
             http,
@@ -181,7 +192,7 @@ impl PluginManager {
             matrix_rtc_ca: None,
             mailpit: None,
             profiles: Default::default(),
-            host: HostPaths::new(host_dev),
+            host: HostPaths::new(host_dev, None),
             nvidia_memory: NvidiaMemory::default(),
             cfg,
             sources: Sources::default(),
@@ -189,10 +200,13 @@ impl PluginManager {
             storefront,
             core_proxy,
             bot_allocation: tokio::sync::Mutex::new(()),
+            bot_web_routes: Default::default(),
             gallery: Gallery::new(images),
             plugins: RwLock::new(BTreeMap::new()),
+            failed_installs: RwLock::new(BTreeMap::new()),
             dependencies,
             changes: tokio::sync::watch::Sender::new(0),
+            clients,
             activity: Arc::default(),
             bundled: RwLock::new(BTreeSet::new()),
             lan,
@@ -202,10 +216,12 @@ impl PluginManager {
             upgrade_frozen: None,
             oom: Default::default(),
             upgrades: Upgrades::default(),
+            devices: Default::default(),
             staged: StagedUploads::default(),
             people_writes: std::sync::Mutex::new(()),
             sharing: std::sync::OnceLock::new(),
             person_members: std::sync::OnceLock::new(),
+            person_roles: RwLock::new(Arc::new(crate::roles::Roles::initial())),
             contact_source: std::sync::OnceLock::new(),
         }
     }
@@ -221,6 +237,7 @@ impl PluginManager {
     }
 
     pub(super) fn changed(&self) {
+        self.clients.refresh(&self.store);
         self.changes.send_modify(|generation| *generation += 1);
         self.activity.changed();
     }
@@ -301,9 +318,15 @@ impl PluginManager {
 
     pub fn list(&self) -> Vec<PluginView> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
+        let failed = self.failed_installs.read().expect("安装结果锁中毒");
         plugins
             .iter()
             .map(|(id, entry)| self.view(id, entry))
+            .chain(failed.iter().map(|(id, entry)| {
+                let mut view = self.view(id, &entry.entry);
+                view.url = None;
+                view
+            }))
             .collect()
     }
 
@@ -323,7 +346,16 @@ impl PluginManager {
 
     pub(super) fn status_of(&self, id: &PluginId) -> Option<PluginStatus> {
         let plugins = self.plugins.read().expect("插件表锁中毒");
-        plugins.get(id).map(|entry| entry.status.clone())
+        plugins
+            .get(id)
+            .map(|entry| entry.status.clone())
+            .or_else(|| {
+                self.failed_installs
+                    .read()
+                    .expect("安装结果锁中毒")
+                    .get(id)
+                    .map(|failed| failed.entry.status.clone())
+            })
     }
 
     /// 插件的名字（多语言）。
@@ -362,11 +394,25 @@ impl PluginManager {
             .is_some_and(|entry| entry.system)
     }
 
-    /// OIDC 客户端（ID 是插件的 `id`）在 `owner` 之外要发的组名（清单 `oidc.admin_groups`）。
-    /// 客户端没登记、没声明或已卸载时为空，只有 `owner`。
-    pub fn oidc_admin_groups(&self, client_id: &str) -> Vec<String> {
-        let Ok(id) = PluginId::parse(client_id) else {
-            return Vec::new();
+    /// OIDC 客户端（ID 是插件的 `id`，Bot 的网页客户端按它的插件 ID 查）声明的管理员组和角色声明；
+    /// 插件没登记时返回空值。
+    pub fn oidc_identity_claims(
+        &self,
+        client_id: &str,
+    ) -> (Vec<String>, Option<super::manifest::RoleClaim>) {
+        let identity = match self.bot_web_oidc_identity(client_id) {
+            Ok(identity) => identity,
+            Err(error) => {
+                tracing::warn!(%error, "Cannot read Bot OIDC identity");
+                return (Vec::new(), None);
+            }
+        };
+        let Ok(id) = PluginId::parse(
+            identity
+                .as_ref()
+                .map_or(client_id, |bot| bot.plugin_id.as_str()),
+        ) else {
+            return (Vec::new(), None);
         };
         self.plugins
             .read()
@@ -375,7 +421,7 @@ impl PluginManager {
             .and_then(|entry| entry.listed.as_ref())
             .and_then(|listed| listed.manifest.webui.as_ref())
             .and_then(|webui| webui.oidc.as_ref())
-            .map(|client| client.admin_groups.clone())
+            .map(|client| (client.admin_groups.clone(), client.role_claim.clone()))
             .unwrap_or_default()
     }
 
@@ -385,6 +431,10 @@ impl PluginManager {
             title: manifest.title.clone(),
             ..Entry::broken(&manifest.id, manifest.version.clone(), reason)
         };
+        self.failed_installs
+            .write()
+            .expect("安装结果锁中毒")
+            .remove(&manifest.id);
         self.plugins
             .write()
             .expect("插件表锁中毒")
@@ -500,9 +550,10 @@ impl PluginManager {
     /// 单个插件恢复失败（包括它的记录损坏）只把它标为异常，不影响核心和其他插件启动。
     ///
     /// 这里是一个插件接一个插件串行的：漂移重建只等 `install_timeout`，不让一个起不来的慢插件把排在后面
-    /// 的所有插件拖住几十分钟（见 [`Gate`]）。超时的插件容器留着，健康以后由容器监视捡回来。
+    /// 的所有插件拖住几十分钟（见 [`super::health_gate::Gate`]）。超时保留续建账本，后台按间隔重试。
     pub async fn restore(&self) -> Result<(), InstallError> {
         let langs = self.owner_languages();
+        self.prune_orphaned_bot_web().await?;
         let files = self.store.load_all()?;
         let mut ordered = Vec::with_capacity(files.len());
         for file in files {
@@ -581,23 +632,9 @@ impl PluginManager {
                     tracing::warn!(plugin = %record.id, error = %e, "登记插件网络的地址段失败");
                 }
                 let listed = Listed::of_record(&package, record);
-                let lan_ports = listed.open_ports(record.lan_webui);
-                match self.reconcile(&package, record, Gate::InstallTimeout).await {
-                    // 有的服务没就绪时路由照样回来了：照常让局域网检测核一遍地址（见下面）。
-                    Ok(Some(deployed)) => {
-                        if deployed.problem.is_some() && !lan_ports.is_empty() {
-                            self.lan.mark_degraded(&manifest.id);
-                        }
-                        Entry::running(listed, deployed)
-                    }
-                    Ok(None) => Entry::stopped(listed),
-                    Err(e) => {
-                        // 宿主重启后 DHCP 换了地址时，容器发布不到旧地址上、起不来：由局域网检测按新地址重建。
-                        if !lan_ports.is_empty() {
-                            self.lan.mark_degraded(&manifest.id);
-                        }
-                        Entry::containers_failed(listed, e.to_string())
-                    }
+                match self.restore_runtime(&package, record).await {
+                    Ok(entry) => entry,
+                    Err(error) => Entry::containers_failed(listed, error.to_string()),
                 }
             }
             Err(e) => Entry::broken(

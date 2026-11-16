@@ -2,7 +2,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use serde_json::json;
 
 use super::*;
-use crate::Action;
+use crate::{Action, FriendsAction};
 
 fn round_trip<T>(value: &T)
 where
@@ -102,40 +102,62 @@ fn friendship_operations_preserve_targets_and_scope() {
         server_name: "spam.example.org".into(),
     };
     for action in [
-        Action::RefreshFriends,
-        Action::AddFriend {
-            user_id: "@bob:matrix.org".into(),
+        Action::Friends {
+            action: FriendsAction::RefreshFriends,
         },
-        Action::ApproveFriendRequest {
-            room_id: "!incoming:example.org".into(),
+        Action::Friends {
+            action: FriendsAction::AddFriend {
+                user_id: "@bob:matrix.org".into(),
+            },
         },
-        Action::RejectFriendRequest {
-            room_id: "!rejected:example.org".into(),
+        Action::Friends {
+            action: FriendsAction::ApproveFriendRequest {
+                room_id: "!incoming:example.org".into(),
+            },
         },
-        Action::CancelFriendRequest {
-            room_id: "!outgoing:example.org".into(),
+        Action::Friends {
+            action: FriendsAction::RejectFriendRequest {
+                room_id: "!rejected:example.org".into(),
+            },
         },
-        Action::RemoveFriend {
-            user_id: "@bob:matrix.org".into(),
+        Action::Friends {
+            action: FriendsAction::CancelFriendRequest {
+                room_id: "!outgoing:example.org".into(),
+            },
         },
-        Action::BlockFriend {
-            target: target.clone(),
-            scope: FriendBlockScope::Federation,
+        Action::Friends {
+            action: FriendsAction::RemoveFriend {
+                user_id: "@bob:matrix.org".into(),
+            },
         },
-        Action::UnblockFriend {
-            target,
-            scope: FriendBlockScope::Invitations,
+        Action::Friends {
+            action: FriendsAction::BlockFriend {
+                target: target.clone(),
+                scope: FriendBlockScope::Federation,
+            },
         },
-        Action::SaveFriendGroup {
-            id: None,
-            name: "Players".into(),
+        Action::Friends {
+            action: FriendsAction::UnblockFriend {
+                target,
+                scope: FriendBlockScope::Invitations,
+            },
         },
-        Action::RemoveFriendGroup {
-            id: "players".into(),
+        Action::Friends {
+            action: FriendsAction::SaveFriendGroup {
+                id: None,
+                name: "Players".into(),
+            },
         },
-        Action::SetFriendGroups {
-            user_id: "@bob:matrix.org".into(),
-            groups: vec!["players".into()],
+        Action::Friends {
+            action: FriendsAction::RemoveFriendGroup {
+                id: "players".into(),
+            },
+        },
+        Action::Friends {
+            action: FriendsAction::SetFriendGroups {
+                user_id: "@bob:matrix.org".into(),
+                groups: vec!["players".into()],
+            },
         },
     ] {
         round_trip(&action);

@@ -37,6 +37,33 @@ done
 echo "d24b6ae50dbc989539db8287e217f41f0833f2b0a81ac4c6dbde444715ef5cd0  $fixture/generated/ext-apps-2.0.4.mjs" | sha256sum -c -
 ```
 
+## matrix-widget-api（widget 页）
+
+`widget.mjs` 用 `generated/matrix-widget-api-1.20.0.min.js` 当 widget 页，它是 npm 官方
+[`matrix-widget-api@1.20.0`](https://www.npmjs.com/package/matrix-widget-api/v/1.20.0) 的 `package/dist/api.min.js`，
+逐字节保留，只改文件名。它是 UMD 打包、没有外部导入，载入后设全局 `mxwidgets`。包声明 Apache-2.0，`generated/LICENSE.matrix-widget-api`
+是随包 LICENSE；打包进去的 `events@3.3.0`（MIT）的 LICENSE 在 `generated/LICENSE.events`。只在测试里跑，不进任何二进制。
+
+SHA-256：
+
+- npm tarball：`f46a20c0b39b7c60df7d15fa5e2af84edb28f6abfd590bb0796a279f3628587b`
+- `.min.js`：`6a66356cede9b91b7cc8fe02089758d9cc6ac07b12f6b6ca3f67245a2c7eb7fb`
+- `events-3.3.0.tgz`：`2c30dd630b58299bdfaac8688f763c6f312d29779c500b1e3701a1d4fb3b534b`
+
+```sh
+fixture="$PWD/crates/wonton-client/tests/it/tabs_bridge/fixtures"
+tmp="$(mktemp -d)"
+curl -fL https://registry.npmjs.org/matrix-widget-api/-/matrix-widget-api-1.20.0.tgz -o "$tmp/mwa.tgz"
+echo "f46a20c0b39b7c60df7d15fa5e2af84edb28f6abfd590bb0796a279f3628587b  $tmp/mwa.tgz" | sha256sum -c -
+tar -xzf "$tmp/mwa.tgz" -C "$tmp"
+cp "$tmp/package/dist/api.min.js" "$fixture/generated/matrix-widget-api-1.20.0.min.js"
+cp "$tmp/package/LICENSE" "$fixture/generated/LICENSE.matrix-widget-api"
+curl -fL https://registry.npmjs.org/events/-/events-3.3.0.tgz -o "$tmp/events.tgz"
+echo "2c30dd630b58299bdfaac8688f763c6f312d29779c500b1e3701a1d4fb3b534b  $tmp/events.tgz" | sha256sum -c -
+tar -xOf "$tmp/events.tgz" package/LICENSE > "$fixture/generated/LICENSE.events"
+echo "6a66356cede9b91b7cc8fe02089758d9cc6ac07b12f6b6ca3f67245a2c7eb7fb  $fixture/generated/matrix-widget-api-1.20.0.min.js" | sha256sum -c -
+```
+
 `scripts/check-file-size.sh` 的 `:(exclude)**/generated/**` 已排除生成文件，无需 `.size-allowlist`。
 
 ## Rust 驱动协议

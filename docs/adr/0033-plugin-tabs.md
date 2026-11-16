@@ -1,6 +1,6 @@
 # ADR-0033 底栏的插件页、全屏和 Agent 写插件：网页打底，App 管栏和主题，桥接用 MCP Apps 的词汇
 
-- 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）。**底栏、`display`/全屏、页面标题栏已被 [ADR-0095](0095-no-tab-bar.md) 取代**（2026-11-11）：清单的 `tabs`、桥、主题、状态页、Agent 写插件这些部分仍然有效
+- 状态：已接受（2026-11-04）。取舍由主人确认（见“已定”）。**底栏、`display`/全屏、页面标题栏已被 [ADR-0095](0095-no-tab-bar.md) 取代**（2026-11-11）；插件出口胶囊的外观由 [ADR-0107](0107-ios-liquid-glass.md) 部分取代：清单的 `tabs`、桥、主题、状态页、Agent 写插件这些部分仍然有效
 - 取代：[ADR-0014](0014-reserved-capabilities.md) 的“小程序 JS SDK”；[ADR-0028](0028-settings-page.md) 的“入口是底栏最后一项”（设置默认在栏上，可以拿掉）；[ADR-0016](0016-mcp-bus-and-confirmations.md) 的规则 4 和 [ADR-0017](0017-plugin-ecosystem-and-store.md) 的“谁能装”：Bot 能装官方插件和自己写的插件，高权限都经卡片；[ADR-0024](0024-confirmation-scope.md) 的判定：Bot 更新自己写的插件，权限没变宽时不发卡片
 
 ## 背景
@@ -185,7 +185,7 @@ x-wonton:
 - 清单写了 `display: fullscreen`，或用户设了“总是全屏”，打开就是全屏。
 - 适配过的页面调 `ui/request-display-mode`。
 
-**胶囊：** 浮在页面右上角，顶边是状态栏下沿 + 8（横屏是屏幕顶 + 8），不为它让出一行。一层淡黑的底、白色图标带淡阴影，深浅页面上都看得出，不跟页面换颜色。
+**胶囊：** 浮在页面右上角，顶边是状态栏下沿 + 8（横屏是屏幕顶 + 8），不为它让出一行；iOS 26 自绘胶囊使用 ADR-0107 的一层 regular glass，iOS 17–18 使用 `Material`，不跟页面换颜色。
 
 - **自动隐藏：** 进来、切回 App、加载完、转屏时出现，3 秒没碰就淡出。手指在网页上往下拖（往回看）24pt 叫出来，往上拖（往下读）立刻藏起。
 - **只看手指，不看页面滚没滚：** 整页滚动、页面里的容器滚动、不能滚的单页和 canvas 都是同一条规则。壳只旁听拖动，不拦触摸；iOS 上旁听的手势挂在窗口上，页面自己处理触摸时也叫得出胶囊。
@@ -274,12 +274,12 @@ x-wonton:
 
 - 插件在清单的 `webui` 上写 `cross_origin_isolated: true` 声明要它。没声明的插件不受影响。
 - 核心给声明了的插件的网页响应加 `Document-Isolation-Policy: isolate-and-credentialless`，给支持它的浏览器；COOP/COEP 由应用自己发。
-- 在哪里打开由客户端核心定：`TabPage.opens_in_browser`，只在 Android 的核心、声明了的本机插件页上为真。壳不看清单字段，看到它就不建 WebView：进页面时用 Custom Tabs 打开一次（默认浏览器不支持 Custom Tabs 时由它直接打开），App 里只留一行“xx 在浏览器里打开”和“打开”按钮。面板里的页面不自动打开，点按钮才开。没有浏览器时按“说人话 + 下一步 + 收起的详情”报错，不退回打不开的 WebView。
+- 在哪里打开由客户端核心定：`TabPage.opens_in_browser`，只在 Android 的核心、声明了的本机插件页上为真。壳不看清单字段，看到它就不建 WebView：进页面时用 Custom Tabs 打开一次（默认浏览器不支持 Custom Tabs 时由它直接打开），开了之后这一页换成“xx 已在浏览器里打开”，给“回聊天”和“再打开一次”：从浏览器按 HOME 再点云吞图标、关掉标签回来，都落回这一页而不是一个没出路的页面。没开过时是“xx 在浏览器里打开”和“打开”按钮，侧边栏的入口行也提前一行写着“在浏览器打开”。面板里的页面不自动打开，点按钮才开。没有浏览器时按“说人话 + 下一步 + 收起的详情”报错，不退回打不开的 WebView。
 - **浏览器怎么到插件。** 浏览器用不了 App 的会话代理，也到不了家里的服务器，只能经本机回环。客户端核心在 `127.0.0.1` 和 `[::1]` 的同一个端口上开一个浏览器入口（`wonton-tunnel` 的 `browser_front`；两个都听，免得空着的那个被别的 App 抢去收请求）。壳调 `ClientCore::plugin_browser_url(TabPage.url)` 换地址 `http://<标签>.localhost:<端口>/<原路径>`。浏览器自己把 `*.localhost` 解析到回环、当安全上下文，跨源隔离才生效。
 - **身份怎么带过去。** 入口按 `Host` 里的标签认请求。标签是 128 位的秘密，只经 Intent 交给浏览器；对不上的回“地址已失效”，不进隧道。对上的把 `Host`，以及等于浏览器 origin 的 `Origin`、`Referer` 前缀改回插件网页自己的，每条连接只转一个请求，再经 App 的本地代理（带会话凭据）`CONNECT` 进隧道。网关和插件看到的和 WebView 发的一样，照旧按隧道认出的设备认人（`sso: proxy`、`oidc` 都照常），**网关不需要新的登录方式**。
 - **为什么不用一次性登录链接换 Cookie。** 浏览器到不了网关，Cookie 只能由回环入口自己发；Cookie 又不分端口，同机的 App 在另一个端口上听同一个主机名、让浏览器打开它，就能把 Cookie 拿走。秘密放进主机名就没有这条路。
 - **origin 固定。** 标签是以设备私钥为键、对服务器和插件做的 HMAC-SHA256，端口也由它推出来（被占时换随机端口；端口不算秘密，同机 App 扫得到，门槛只在标签）：同一台手机上同一个插件的 origin 不变，插件存在浏览器里的数据（登录状态、本地账本）一直在。重新配对换了设备密钥，标签跟着换。
-- Custom Tab 开着时浏览器绑定 App 里的一个空服务（`android.support.customtabs.extra.KEEP_ALIVE`），App 的进程跟着保持前台的优先级，入口和隧道才答得上。App 被杀后浏览器里的页面回“没连上”，回到云吞重开即可。
+- Custom Tab 开着时浏览器绑定 App 里的一个空服务（`android.support.customtabs.extra.KEEP_ALIVE`），App 的进程跟着保持前台的优先级，入口和隧道才答得上。Intent 带 `FLAG_ACTIVITY_NEW_TASK`，浏览器开在自己的任务里：HOME 再点云吞图标回到云吞，不回刚离开的浏览器。App 被杀后浏览器里的页面回“没连上”，回到云吞重开即可。
 - 详情页和卡片给声明了的插件加一条提示，说它在 Android 上会在浏览器里打开。Agent 写的插件声明了这一项，安装和更新的确认卡片上也写明；从没声明变成声明照旧发卡片。
 - 好友分享的插件页（`SharedApp`）不走这条路。
 
@@ -401,13 +401,13 @@ x-wonton:
 | 说明 | wonton-docs 的 `skills/wonton-plugin/`，Agent Skills 格式；`llms.txt` 指向它和规范。核心镜像带一份，经 `wonton__plugin_guide` 给 | 从需求到装好的步骤、Compose 子集的禁区、常见报错怎么改。还要回答实测里 Agent 靠猜的几处（见“验证”）。随核心走，版本对得上，机器没外网也能用 |
 | 最小例子 | 说明的 `assets/`，模板仓库同一份 | 静态页（nginx 加 configs）；带后端的页面（python 加 configs）。都带 `tabs` 和令牌样式表 |
 | 校验 | `wonton__check_plugin`；`wonton-core plugin check`；模板的 `scripts/check.sh` | 同一份代码 |
-| 引导语 | Hermes 插件仓库的 [wonton/__init__.py](https://github.com/geraldpeng6/wonton-plugin-hermes/blob/main/wonton/__init__.py) | 一句话：主人想要新页面或应用时，先调 `wonton__plugin_guide`。别的 Agent 插件同样写一句 |
+| 引导语 | Hermes 插件仓库的 [wonton/__init__.py](https://github.com/wontonapp/wonton-plugin-hermes/blob/main/wonton/__init__.py) | 一句话：主人想要新页面或应用时，先调 `wonton__plugin_guide`。别的 Agent 插件同样写一句 |
 
 Skills over MCP 等宿主支持了再加，内容是同一个目录。
 
 #### 底栏
 
-卡片上的“放到底栏”是壳的按钮，点了发 `Action::PinTab`，只改这台手机，不回核心。有多个页面时列出来逐个选。Bot 没有改底栏的工具：配置只在设备上，手机也可能不在线。
+卡片上的“放到底栏”是壳的按钮；有多个页面时列出来逐个选。Bot 没有改底栏的工具。页面加入和排序的操作见 [ADR-0052](0052-chat-pull-panel.md)。
 
 主人能自己定义的是：底栏放哪些页面、什么顺序，以及页面本身（说一句让 Agent 写）。聊天和“应用”留在栏上，那是回到其余一切的路。
 

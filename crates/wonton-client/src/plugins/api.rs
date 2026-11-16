@@ -4,6 +4,7 @@
 #[path = "api_error.rs"]
 mod error;
 use error::core_error;
+pub(crate) use error::failure_kind;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -360,57 +361,6 @@ impl CoreApi {
             .await?;
         parse(&bytes)
     }
-    pub(crate) async fn put_unit_detailed(
-        &self,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        self.unit_detailed(Method::PUT, segments, body, timeout)
-            .await
-    }
-
-    /// 发 JSON 请求体，不要响应体，错误带类别和消息：测试模型服务商要分得清 key 被拒和连不上。
-    pub(crate) async fn post_unit_detailed(
-        &self,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        self.unit_detailed(Method::POST, segments, body, timeout)
-            .await
-    }
-
-    async fn unit_detailed(
-        &self,
-        method: Method,
-        segments: &[&str],
-        body: &impl serde::Serialize,
-        timeout: Duration,
-    ) -> Result<(), CoreApiError> {
-        let body = serde_json::to_vec(body).map_err(|error| {
-            CoreApiError::Protocol(l10n!(
-                CATALOG,
-                language(),
-                "plugins-api-invalid-request",
-                reason = error.to_string()
-            ))
-        })?;
-        let (status, bytes) = self
-            .exchange(
-                method,
-                self.url(segments, &[]),
-                Some(body),
-                "application/json",
-                timeout,
-            )
-            .await
-            .map_err(CoreApiError::Transport)?;
-        if status < 400 {
-            return Ok(());
-        }
-        Err(http_error(status, &bytes))
-    }
 
     pub(crate) async fn put_detailed<T: DeserializeOwned>(
         &self,
@@ -737,6 +687,10 @@ pub(crate) fn to_core_error(problem: PluginProblem) -> CoreError {
         // 记录不可用：现在做不了。壳按类别出「重新安装」的下一步（#198 的核心行为、#230 的 iOS 壳）。
         | PluginFailure::RecordUnusable => CoreError::NotReady { reason },
         PluginFailure::SourceUnavailable | PluginFailure::Upstream | PluginFailure::Protocol => {
+            CoreError::Upstream { reason }
+        }
+        // 远端 MCP 服务器连不上或者回错了：都是家外的一方出事。专门的界面在 App 那一步补。
+        PluginFailure::RemoteUnavailable | PluginFailure::RemoteError => {
             CoreError::Upstream { reason }
         }
         PluginFailure::ServerTooOld => CoreError::ServerTooOld {

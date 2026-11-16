@@ -146,7 +146,8 @@ impl Files {
                 }
             }
             Origin::Upload { reference, .. } => {
-                self.open_share(reference.clone(), langs).await?;
+                self.open_origin(&record.origin, reference.clone(), langs)
+                    .await?;
             }
             Origin::Plugin { plugin, .. } => self.host.check_plugin(plugin)?,
         }
@@ -181,7 +182,7 @@ impl Files {
         self.scaled(record, Scale::Preview, langs).await
     }
 
-    /// Bot 把文件分享给主人：加进范围，不再过期。
+    /// Share with the bot's keeper; household bots resolve to the actual server owner.
     pub async fn share_with_owner(
         self: &Arc<Self>,
         id: &FileId,
@@ -189,11 +190,12 @@ impl Files {
         langs: &Languages,
     ) -> Result<FileRecord, Failure> {
         self.authorize(id, &Accessor::Bot(bot.to_owned()), langs)?;
+        let recipient = self.host.bot_person(bot)?;
         let (id, langs) = (id.clone(), langs.clone());
         self.blocking(move |files| {
             files
                 .registry
-                .grant(&id, Accessor::Owner, now_secs())?
+                .grant(&id, recipient, now_secs())?
                 .ok_or_else(|| Failure::unknown(&langs))
         })
         .await

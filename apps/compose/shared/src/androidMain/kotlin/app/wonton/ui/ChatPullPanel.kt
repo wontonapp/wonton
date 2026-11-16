@@ -7,7 +7,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -18,6 +17,9 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import app.wonton.protocol.PageAction
+import app.wonton.protocol.Action
+import app.wonton.protocol.ChatAction
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -102,7 +104,7 @@ internal fun ChatPanelHost(
     }
     LaunchedEffect(panel.visible, panel.selection) {
         if (panel.visible) {
-            panel.selection?.let { tabs.send(app.wonton.protocol.Action.SelectPanelPage(panel.scope, it)) }
+            panel.selection?.let { tabs.send(Action.Pages(PageAction.SelectPanelPage(panel.scope, it))) }
         }
     }
     LaunchedEffect(panel.pages.isEmpty()) {
@@ -289,7 +291,6 @@ private fun BoxScope.PanelDots(panel: ChatPanelState, pages: List<PanelItem>, on
 private fun PanelEmpty(onAdd: () -> Unit) {
     val label = stringResource(R.string.panel_add_pages)
     val colors = WontonTheme.colors
-    val interaction = remember { MutableInteractionSource() }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -299,7 +300,7 @@ private fun PanelEmpty(onAdd: () -> Unit) {
                 Modifier.size(WontonTheme.size.detailIcon)
                     .background(colors.surface.toColor(), CircleShape)
                     .border(WontonTheme.size.hairline, colors.separator.toColor(), CircleShape)
-                    .clickable(interaction, indication = null, role = Role.Button, onClick = onAdd)
+                    .clickable(role = Role.Button, onClick = onAdd)
                     .semantics { contentDescription = label },
                 contentAlignment = Alignment.Center,
             ) {

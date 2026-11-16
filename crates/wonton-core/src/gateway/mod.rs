@@ -19,7 +19,6 @@
 //! 隔离规则见 `isolation`：插件上只认同源请求和导航，核心上改状态的请求只接受同源，插件的 Cookie 出不了
 //! 自己的子域名。
 
-pub mod agent_acp;
 pub mod agent_chains;
 mod agent_chains_api;
 pub mod agent_outbox;
@@ -32,22 +31,32 @@ mod bot_activity;
 mod bot_contacts;
 mod bot_plugin_access;
 mod bot_profile;
+mod bot_web;
+#[cfg(test)]
+mod bot_web_tests;
 mod bots;
 mod capabilities;
 mod capability_settings;
 mod chain_mentions;
+mod clients_api;
+mod clients_domain;
+mod clients_entry;
+mod clients_passwords;
 mod confirmations;
 mod core_routes;
 mod core_upgrade;
 mod devices;
 mod entry;
+mod entry_federation;
 pub mod family;
+mod family_private;
 mod family_room;
 mod files;
 mod friends;
 mod friends_wiring;
 mod health;
 mod hosted;
+mod install_gates;
 mod isolation;
 mod join_requests;
 mod lan;
@@ -58,7 +67,7 @@ pub mod matrix_rtc_alias;
 mod mcp;
 mod mcp_apps;
 mod me;
-mod model_providers;
+mod model_settings;
 mod models;
 pub(crate) mod notify;
 pub(crate) mod notify_limit;
@@ -69,6 +78,7 @@ mod panel_pins;
 mod peers;
 pub mod people_limits;
 pub(crate) mod permissions;
+mod plugin_audience;
 mod plugin_scope;
 mod plugin_settings;
 mod plugin_start;
@@ -100,9 +110,9 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{ConnectInfo, Request};
-use axum::response::{IntoResponse, Redirect, Response};
+use axum::response::Response;
 use hyper::header::{ACCEPT_LANGUAGE, AUTHORIZATION, HOST, SET_COOKIE};
-use hyper::{HeaderMap, Method, StatusCode};
+use hyper::{HeaderMap, StatusCode};
 use iroh::EndpointId;
 use tower::ServiceExt;
 use wonton_protocol::{MemberStatus, Permissions, Role};
@@ -170,8 +180,11 @@ pub struct Gateway {
     owner_token: String,
     pub members: Arc<Members>,
     family_room_sync: tokio::sync::Mutex<()>,
+    member_sync: tokio::sync::Mutex<()>,
     /// 角色记录（ADR-0088）：主人以外的人按各自角色判断；主人短路为全部权限。
     pub roles: Arc<Roles>,
+    /// 客户端入口的开关状态和连接守卫（ADR-0021，[`crate::clients::state`]）。
+    pub(crate) clients: Arc<crate::clients::state::State>,
     pub plugins: Arc<PluginManager>,
     pub hydra: Option<Hydra>,
     /// 身份提供方公开端点的内部地址（`host:port`），`auth.<base>` 的请求转发到这里。
@@ -212,11 +225,11 @@ pub struct Gateway {
     health_limits: health::RateLimits,
     pub(crate) link_previews: Arc<crate::link_preview::LinkPreviews>,
     pub(crate) app_calls: Arc<mcp_apps::AppCalls>,
+    /// 自己的域名和证书（ADR-0089）；核心没跑在装好的容器里时是空。
+    pub(crate) domain: Option<Arc<crate::clients::domain::Domain>>,
     sessions: session::SessionStore,
     /// 调用链（ADR-0061 第 10 节）：账本、出箱、设置和 `agent_acp` 的取消方，见 [`agent_chains::AgentChains`]。
     pub(crate) agent_chains: Option<Arc<agent_chains::AgentChains>>,
-    /// `agent_acp` 的活连接注册表（ADR-0061 第 5 块）：并发计数和停链取消。
-    pub(crate) agent_acp: Option<Arc<agent_acp::Registry>>,
 }
 impl Gateway {
     /// `hydra` 带上身份提供方公开端点的地址，必须来自 [`crate::config::Config`]：配置层已经校验过它是
@@ -248,13 +261,16 @@ impl Gateway {
         ));
         let roles = Arc::new(Roles::initial());
         tunnel.pairing.attach_roles(roles.clone());
+        plugins.attach_person_roles(roles.clone());
         Self {
             public,
             owner,
             owner_token,
             members,
             family_room_sync: tokio::sync::Mutex::new(()),
+            member_sync: tokio::sync::Mutex::new(()),
             roles,
+            clients: plugins.clients.clone(),
             plugins,
             hydra,
             hydra_public,
@@ -286,10 +302,16 @@ impl Gateway {
             health_limits: health::RateLimits::new(),
             link_previews,
             app_calls: Arc::default(),
+            domain: None,
             sessions: session::SessionStore::default(),
             agent_chains: None,
-            agent_acp: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_clients(mut self, domain: Option<Arc<crate::clients::domain::Domain>>) -> Self {
+        self.domain = domain;
+        self
     }
 
     #[must_use]
@@ -302,6 +324,7 @@ impl Gateway {
     #[must_use]
     pub fn with_roles(mut self, roles: Arc<Roles>) -> Self {
         self.tunnel.pairing.attach_roles(roles.clone());
+        self.plugins.attach_person_roles(roles.clone());
         self.roles = roles;
         self
     }
@@ -560,6 +583,18 @@ impl Gateway {
             .get(&record.role_id)
             .map_or_else(Permissions::strictest, |role| role.permissions)
     }
+    /// 这个人是否在指定应用里具备插件管理员能力。应用未对他开放时，管理员范围也不生效。
+    pub(crate) fn plugin_admin(&self, person: &Person, plugin_id: &str) -> bool {
+        if person.is_owner() {
+            return true;
+        }
+        if person.role == Role::Friend {
+            return false;
+        }
+        let permissions = self.permissions(person);
+        permissions.open_apps.allows_plugin(plugin_id)
+            && permissions.plugin_admin.allows_plugin(plugin_id)
+    }
 
     /// 这个角色有几人在用：没移除的家人和还在名单里的好友。角色接口接上之前只有测试用。
     #[cfg_attr(not(test), allow(dead_code))]
@@ -632,7 +667,7 @@ async fn dispatch(gateway: Arc<Gateway>, core: Router, req: Request) -> Response
         HostKind::PluginHealth => health::request(&gateway, req).await,
         HostKind::PluginNotify => notify::request(&gateway, req).await,
         HostKind::FileHooks => files::hook_request(&gateway, req).await,
-        HostKind::Plugin(slug) => plugin_request(&gateway, &slug, req).await,
+        HostKind::Plugin(slug) => plugin_web::request(&gateway, &slug, req).await,
         HostKind::Lan(ip) => lan::request(&gateway, ip, &req),
         HostKind::Unknown => {
             let langs = api::languages(req.headers());
@@ -671,103 +706,6 @@ async fn from_service(authority: Option<&str>, peer: Option<SocketAddr>, name: &
     }
 }
 
-/// 插件子域名：经隧道的已配对设备直接放行；局域网浏览器先兑换交接码或校验插件会话。登录状态只认本插件
-/// 页面发起的请求和导航。`sso: proxy` 的插件这时加上代登录凭据（`proxy_sso`）。然后转发给插件，并过滤插件
-/// 响应里的 `Set-Cookie` 和会交出凭据的头。
-async fn plugin_request(gateway: &Gateway, slug: &str, mut req: Request) -> Response {
-    let host = gateway.public.plugin_host(slug);
-    let langs = api::languages(req.headers());
-    let format = pages::Format::of(req.headers());
-    let Some(route) = gateway.plugins.route(slug, req.uri().path()) else {
-        return pages::error(
-            StatusCode::NOT_FOUND,
-            "not_installed",
-            &l10n::text(
-                &langs,
-                "gateway-no-app-for-host",
-                &[("host", host.as_str().into())],
-            ),
-            &langs,
-            format,
-        );
-    };
-    // 这个插件自己网络里的容器访问它自己的网页地址：不要会话，转给它自己的上游，也不代表任何人（ADR-0063）。
-    // 认来源用网关认出调用方的同一张表（按来源地址落在哪个插件网络里）。
-    let from_itself = client_addr(&req)
-        .and_then(|addr| gateway.plugins.source(addr.ip()))
-        .is_some_and(|source| source.id == route.id);
-    if from_itself {
-        return plugin_web::self_request(gateway, &route, req).await;
-    }
-    if req.uri().path() == "/_wonton/session" {
-        return sso::redeem(gateway, &host, &req);
-    }
-    let origin = gateway.public.origin(&host);
-    let credentials = isolation::credentials_allowed(req.method(), req.headers(), &origin);
-    // 登记 OIDC 回调表单（精确路径、urlencoded、来源限签发方/本插件/缺失）无会话可达，身份由应用校验（ADR-0078）。
-    let callback = plugin_web::oidc_callback_post(&route, &req, &gateway.public, &origin);
-    let person = gateway.plugin_person(&host, &req);
-    if !credentials && !callback {
-        return request_guards::unauthenticated(gateway, &host, &req, false);
-    }
-    let person = match person {
-        Some(person) => Some(person),
-        None if callback => None,
-        None => return request_guards::unauthenticated(gateway, &host, &req, true),
-    };
-    if let Some(denied) = request_guards::app_denied(gateway, person.as_ref(), &route.id, &req) {
-        return denied;
-    }
-    // 数据存储不经网页的提供方，不看它的状态（ADR-0080 第 6 节）。
-    if let Some(hosted) = &route.hosted
-        && web_storage::is_data_path(req.uri().path())
-    {
-        return web_storage::forward(gateway, &route, hosted, req, &origin, &langs, format).await;
-    }
-    let upstream = match plugin_web::upstream(&route, &langs, format) {
-        Ok(upstream) => upstream,
-        Err(response) => return *response,
-    };
-    if let Some(hosted) = &route.hosted {
-        return hosted::forward(gateway, &route, &upstream, hosted, req, &langs, format).await;
-    }
-    if let Some(person) = &person
-        && let Err(response) = proxy_sso::attach_credentials(
-            gateway,
-            &route,
-            person,
-            req.headers_mut(),
-            &langs,
-            format,
-        )
-    {
-        return *response;
-    }
-    let fwd = proxy::Forwarded {
-        client: client_addr(&req),
-        scheme: &gateway.public.scheme,
-    };
-    let target = proxy::Target {
-        endpoint: &upstream,
-        name: route.id.as_str(),
-    };
-    let mut response =
-        match proxy::forward_or(&gateway.upstream_http, target, req, fwd, &langs).await {
-            Ok(response) => response,
-            Err(error) => return error.response(route.id.as_str(), &langs, format),
-        };
-    isolation::sanitize_set_cookies(response.headers_mut());
-    if let Some(auth) = &route.proxy {
-        proxy_sso::scrub(response.headers_mut(), auth);
-    }
-    if route.cross_origin_isolated {
-        proxy::add_document_isolation_policy(&mut response);
-    }
-    response
-}
-
-/// 未登录：浏览器的页面导航跳到核心换取插件会话，其余请求（XHR、API）直接 401。`credentials` 为假的
-/// 跨站请求换到会话也不认，同样 401。
 #[cfg(test)]
 mod agent_chains_test_support;
 #[cfg(test)]
@@ -786,12 +724,19 @@ mod capabilities_tests;
 mod capability_uninstall_tests;
 #[cfg(test)]
 mod chain_mentions_tests;
+// 原有联邦用例照旧跑（main 上这个文件一度没人挂载，用例没在跑）：421、点段和发现文件的行为由它们锁住。
+#[cfg(test)]
+#[path = "clients_entry_tests.rs"]
+mod clients_entry_tests;
 #[cfg(test)]
 mod core_upgrade_tests;
 #[cfg(test)]
 mod degraded_webui_tests;
 #[cfg(test)]
 mod egress_api_tests;
+#[cfg(test)]
+#[path = "entry_tests.rs"]
+mod entry_tests;
 #[cfg(test)]
 pub(crate) mod fakes;
 #[cfg(test)]
@@ -818,6 +763,8 @@ mod first_run_tests;
 mod friends_tests;
 #[cfg(test)]
 mod health_tests;
+#[cfg(test)]
+mod install_gate_tests;
 #[cfg(test)]
 mod isolation_policy_tests;
 #[cfg(test)]
@@ -847,8 +794,6 @@ mod mcp_takeover_tests;
 #[cfg(test)]
 mod mcp_tests;
 #[cfg(test)]
-mod model_providers_tests;
-#[cfg(test)]
 mod models_tests;
 #[cfg(test)]
 mod notify_tests;
@@ -867,7 +812,11 @@ mod panel_pins_tests;
 #[cfg(test)]
 mod peers_api_tests;
 #[cfg(test)]
+mod plugin_capability_tests;
+#[cfg(test)]
 mod plugin_forms_tests;
+#[cfg(test)]
+mod plugin_install_failure_tests;
 #[cfg(test)]
 mod plugin_start_tests;
 #[cfg(test)]

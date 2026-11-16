@@ -28,11 +28,14 @@ impl Bus {
             choice_id,
             SecretValues::new(),
             Default::default(),
+            Vec::new(),
             by,
+            Some(by),
         )
     }
 
-    /// 带密钥的回答卡片（ADR-0064）。
+    /// 带密钥的回答卡片（ADR-0064）。`by` 用于审计和放行时段，`user_id` 写进管理员卡片的 `answered_by`。
+    #[allow(clippy::too_many_arguments)] // Owner answer values are forwarded together without duplicating form state.
     pub fn answer_card_with_secrets(
         self: &Arc<Self>,
         id: &str,
@@ -40,15 +43,19 @@ impl Bus {
         choice_id: Option<&str>,
         secrets: SecretValues,
         settings: wonton_protocol::SettingValues,
+        devices: Vec<String>,
         by: &str,
+        user_id: Option<&str>,
     ) -> Result<ConfirmationState, AnswerError> {
-        let state = self.confirmations.answer_with_secrets(
+        let state = self.confirmations.answer_with_secrets_by(
             id,
             answer,
             choice_id,
             secrets,
             settings,
+            devices,
             &self.owner_languages(),
+            user_id,
         )?;
         if answer == Answer::AllowWindow {
             self.window_opened(id, by);

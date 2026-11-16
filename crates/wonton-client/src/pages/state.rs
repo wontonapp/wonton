@@ -7,6 +7,7 @@ use wonton_l10n::l10n;
 pub(super) fn empty_view() -> PagesViewModel {
     PagesViewModel {
         root: TabRef::Apps,
+        shows_apps: false,
         stack: Vec::new(),
         uninstalled: Vec::new(),
         problem: None,
@@ -29,6 +30,9 @@ pub(super) fn refresh_state(
 ) -> bool {
     let mut config_changed = false;
     let server_changed = home.server_id.is_some() && state.config.server_id != home.server_id;
+    if server_changed || state.paired != home.server_id.is_some() {
+        state.shows_apps = false;
+    }
     if server_changed {
         if state.config.server_id.is_some() && state.config.server_id != home.server_id {
             clear_plugin_config(state);
@@ -76,7 +80,11 @@ pub(super) fn auto_add_new(
     }
     let mut changed = initialize;
     for plugin in &installed.plugins {
-        if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
+        if plugin.install_failure.is_some()
+            || (plugin.web_url.is_none()
+                && plugin.bot_user_id.is_none()
+                && plugin.link_url.is_none())
+        {
             continue;
         }
         if (!initialize
@@ -126,6 +134,7 @@ pub(super) fn update_reload_counters(
             installed
                 .plugins
                 .iter()
+                .filter(|plugin| plugin.install_failure.is_none())
                 .map(|plugin| {
                     (
                         plugin.id.clone(),
@@ -221,12 +230,12 @@ pub(super) fn remove_uninstalled(
         }
     }
     // 打开的房间的面板也拿掉；写回房间账号数据的活儿交给 recompute 收尾（记下是哪几个插件）。
-    if let Some((_, panel)) = &mut state.open_room {
-        panel.pages.retain(|entry| match &entry.tab {
+    for room in state.rooms.values_mut() {
+        room.panel.pages.retain(|entry| match &entry.tab {
             TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
                 let removed = gone(plugin_id);
-                if removed && !state.room_panel_removed.contains(plugin_id) {
-                    state.room_panel_removed.push(plugin_id.clone());
+                if removed && !room.removed.contains(plugin_id) {
+                    room.removed.push(plugin_id.clone());
                 }
                 !removed
             }
@@ -252,7 +261,7 @@ pub(super) fn remove_uninstalled(
             state.panel_selected = None;
         }
     }
-    !removed.is_empty() || !state.room_panel_removed.is_empty()
+    !removed.is_empty() || state.rooms.values().any(|room| !room.removed.is_empty())
 }
 
 /// 面板条目的提示名：用户起的名字，没有时按插件补。
@@ -351,17 +360,20 @@ pub(super) fn ensure_stack(state: &mut PagesState, plugins: &PluginsViewModel) {
     {
         state.panel_selected = None;
     }
-    if let Some(selected) = &state.room_panel_selected
-        && let Some((_, panel)) = &state.open_room
-        && !panel.pages.iter().any(|entry| entry.tab == *selected)
-    {
-        state.room_panel_selected = None;
+    for room in state.rooms.values_mut() {
+        if let Some(selected) = &room.selected
+            && !room.panel.pages.iter().any(|entry| entry.tab == *selected)
+        {
+            room.selected = None;
+        }
     }
 }
 
 pub(super) fn tab_plugin_id(tab: &TabRef) -> Option<&str> {
     match tab {
-        TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => Some(plugin_id),
+        TabRef::Plugin { plugin_id, .. }
+        | TabRef::PluginPath { plugin_id, .. }
+        | TabRef::Widget { plugin_id, .. } => Some(plugin_id),
         _ => None,
     }
 }

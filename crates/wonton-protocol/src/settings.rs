@@ -9,8 +9,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    HomeStatus, MatrixAccount, NotificationCategory, PushMethod, PushStatus, RecoveryStatus,
-    ServerName,
+    AppLockTimeout, HomeStatus, MatrixAccount, NotificationCategory, PushMethod, PushStatus,
+    RecoveryStatus, ServerName,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,7 +39,7 @@ pub enum SettingsEntry {
     },
     /// 当前 Matrix 账号的设备、验证和密钥备份入口；不是服务器的配对设备。
     MatrixDevices,
-    /// 添加自己的 Wonton，发送 `Action::AddServer`，不把外部账号变成 Wonton。
+    /// 添加自己的 Wonton，发送 `HomeAction::AddServer`，不把外部账号变成 Wonton。
     AddWontonServer,
     /// 任意账号的好友和好友请求，不要求拥有或配对 Wonton。
     Friends {
@@ -72,6 +72,11 @@ pub enum SettingsEntry {
         method: PushMethod,
         push: PushStatus,
         categories: Vec<NotificationCategorySetting>,
+    },
+    /// App 锁（ADR-0102）：开关和退到后台后多久要求解锁。
+    AppLock {
+        enabled: bool,
+        timeout: AppLockTimeout,
     },
     /// 默认 Agent。配对以后才有。
     DefaultAgent,

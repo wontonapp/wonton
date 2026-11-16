@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use wonton_protocol::BotKeeper;
+use wonton_protocol::{AiLevel, BotKeeper};
 
 use super::languages::Languages;
 use super::manager::{BotReport, InstallError, PluginManager};
@@ -56,7 +56,7 @@ impl PluginBots {
 
 /// Bot 记录的存取。
 pub struct BotStore {
-    dir: PathBuf,
+    pub(super) dir: PathBuf,
 }
 
 impl BotStore {
@@ -93,6 +93,7 @@ impl BotStore {
             .into_values()
             .flat_map(|bots| bots.bots.into_values())
             .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
+            .chain(self.pending_localparts()?)
             .collect())
     }
 
@@ -267,6 +268,7 @@ impl PluginManager {
     ) -> Result<ProvisionedBot, InstallError> {
         // 同时建的两个 Bot 不能分到同一个用户名，也不能同时改 Bot 记录。
         let _allocating = self.bot_allocation.lock().await;
+        self.reserve_bot_web(manifest, bot)?;
         self.provision_bot_locked(id, manifest, bot, keeper, package)
             .await
     }
@@ -284,13 +286,26 @@ impl PluginManager {
         let store = self.store.bots();
         let mut plugin_bots = store.load(id)?;
         // 同一个 Bot 重试安装时沿用账号；其他 Bot 的令牌不变。
-        let existing = plugin_bots.bots.get(bot).cloned();
-        let mut taken: BTreeSet<String> = store
-            .all()?
-            .into_values()
-            .flat_map(|bots| bots.bots.into_values())
-            .filter_map(|entry| localpart(&entry.account.user_id).map(str::to_owned))
-            .collect();
+        let mut pending = store.pending(id)?;
+        let existing = plugin_bots.bots.get(bot).cloned().or_else(|| {
+            pending.get(bot).map(|intent| BotEntry {
+                account: intent.account(),
+                device_id: intent.device_id.clone(),
+                keeper: intent.keeper.clone(),
+                bus_token: intent.bus_token.clone(),
+            })
+        });
+        if let Some(entry) = &existing {
+            if entry.keeper != keeper {
+                return Err(self.home_denied());
+            }
+            for device in matrix.devices(&entry.account.user_id).await? {
+                matrix
+                    .delete_device(&entry.account.user_id, &device)
+                    .await?;
+            }
+        }
+        let mut taken = store.localparts()?;
         self.reserve_friend_names(&mut taken);
         if let Some(members) = self.person_members.get() {
             taken.extend(members.list().into_iter().map(|member| member.username));
@@ -309,39 +324,58 @@ impl PluginManager {
             avatar: avatar(package, &langs)?,
             owner: &self.keeper_user(&keeper),
         };
-        let provisioned = matrix.provision_bot(&spec).await.map_err(|e| {
-            if e.errcode() == "M_USER_DEACTIVATED" {
-                let user = existing.as_ref().map_or("", |e| e.account.user_id.as_str());
-                InstallError::Conflict(crate::l10n::text(
-                    &langs,
-                    "plugin-settings-bot-account-deactivated",
-                    &[("user", user.into())],
-                ))
-            } else {
-                e.into()
-            }
-        })?;
-        let bus_token = existing.map_or_else(random_token, |e| e.bus_token);
-        plugin_bots.bots.insert(
+        let reserved = matrix.reserve_bot_account(&spec).await?;
+        let bus_token = existing
+            .as_ref()
+            .map_or_else(random_token, |entry| entry.bus_token.clone());
+        pending.insert(
             bot.to_owned(),
-            BotEntry {
-                account: provisioned.account.clone(),
-                device_id: Some(provisioned.device_id.clone()),
-                keeper,
+            super::bot_intents::PendingBot {
+                user_id: reserved.user_id.clone(),
+                home_room: (!reserved.home_room.is_empty()).then(|| reserved.home_room.clone()),
+                device_id: None,
+                keeper: keeper.clone(),
                 bus_token,
             },
         );
-        store.save(id, &plugin_bots)?;
+        store.save_pending(id, &pending)?;
+        let spec = BotSpec {
+            previous: Some(&reserved),
+            ..spec
+        };
+        let provisioned = matrix
+            .provision_bot_checkpointed(&spec, |provisioned| {
+                let intent = pending.get_mut(bot).expect("reserved bot intent");
+                intent.home_room = (!provisioned.account.home_room.is_empty())
+                    .then(|| provisioned.account.home_room.clone());
+                intent.device_id = Some(provisioned.device_id.clone());
+                store
+                    .save_pending(id, &pending)
+                    .map_err(|error| MatrixError::Invalid(error.to_string()))
+            })
+            .await
+            .map_err(|e| {
+                if e.errcode() == "M_USER_DEACTIVATED" {
+                    let user = existing.as_ref().map_or("", |e| e.account.user_id.as_str());
+                    InstallError::Conflict(crate::l10n::text(
+                        &langs,
+                        "plugin-settings-bot-account-deactivated",
+                        &[("user", user.into())],
+                    ))
+                } else {
+                    e.into()
+                }
+            })?;
+        let intent = pending.remove(bot).expect("checkpointed bot intent");
+        if let Err(error) = store.publish_pending(id, bot, &provisioned, intent, &mut plugin_bots) {
+            matrix
+                .delete_device(&provisioned.account.user_id, &provisioned.device_id)
+                .await?;
+            return Err(error.into());
+        }
         self.changed();
         self.initialize_default_avatars(package, &provisioned)
             .await?;
-        tracing::info!(
-            plugin = %id,
-            bot,
-            user = %provisioned.account.user_id,
-            room = %provisioned.account.home_room,
-            "Bot 已就绪"
-        );
         Ok(provisioned)
     }
 
@@ -350,6 +384,31 @@ impl PluginManager {
         match keeper {
             BotKeeper::User { username } => username.clone(),
             BotKeeper::Household | BotKeeper::Other => self.cfg.owner.clone(),
+        }
+    }
+
+    /// Bot 容器按归属人注入的 AI 级别（ADR-0088 第 5、8 节）：私人 Bot 按归属人的角色，共享 Bot 按
+    /// 能用人里最低的；解析不出按只读并记日志，和总线的封顶同用 [`crate::ai_level`]。归属人是只读
+    /// 级别的私人 Bot，共享文件夹挂载一律只读；共享 Bot 没有归属人，不按人算。
+    pub(super) fn bot_levels(&self, keeper: &BotKeeper) -> (AiLevel, bool) {
+        let roles = self
+            .person_roles
+            .read()
+            .expect("person roles lock poisoned");
+        let records = self
+            .person_members
+            .get()
+            .map(|members| (members.as_ref(), roles.as_ref()));
+        match keeper {
+            BotKeeper::User { username } => {
+                let level = crate::ai_level::person_ai(&self.cfg.owner, records, username);
+                (level, level == AiLevel::ReadOnly)
+            }
+            BotKeeper::Household => (crate::ai_level::shared_bot_ai(records), false),
+            BotKeeper::Other => {
+                tracing::warn!("Bot 没有归属人记录，AI 动手按只读注入");
+                (AiLevel::ReadOnly, false)
+            }
         }
     }
 
@@ -372,10 +431,19 @@ impl PluginManager {
         manifest: &Manifest,
         bot: &ProvisionedBot,
         ctx: &mut super::render::InstallContext,
-    ) {
+    ) -> Result<(), InstallError> {
         ctx.matrix = Some(self.matrix_vars(bot));
+        let dependencies =
+            self.dependency_vars(manifest, Some(super::bot_services::DEFAULT_BOT))?;
+        if manifest.bots.is_none() {
+            ctx.capabilities.extend(dependencies.clone());
+        }
         // Bot 的变量先放齐（模型凭据、Matrix 身份），总线地址只有申请了 tools 的插件才有。
         if manifest.bots.is_some() {
+            // 默认 Bot 归主人（安装时按主人代登录），级别走归属人的解析。
+            let (ai_level, keeper_read_only) = self.bot_levels(&BotKeeper::User {
+                username: self.cfg.owner.clone(),
+            });
             ctx.bots.insert(
                 super::bot_services::DEFAULT_BOT.to_owned(),
                 super::bot_services::BotVars {
@@ -385,18 +453,21 @@ impl PluginManager {
                         .and_then(|m| m.bot_keys.get(super::bot_services::DEFAULT_BOT).cloned()),
                     matrix: ctx.matrix.clone(),
                     mcp_url: None,
+                    dependencies,
+                    ai_level,
+                    keeper_read_only,
+                    ..Default::default()
                 },
             );
         }
         if !manifest.permissions.contains(&Permission::Tools) {
-            return;
+            return Ok(());
         }
-        let Ok(plugin_bots) = self.store.bots().load(&manifest.id) else {
-            return;
-        };
-        let Some(entry) = plugin_bots.bots.get(super::bot_services::DEFAULT_BOT) else {
-            return;
-        };
+        let plugin_bots = self.store.bots().load(&manifest.id)?;
+        let entry = plugin_bots
+            .bots
+            .get(super::bot_services::DEFAULT_BOT)
+            .ok_or_else(|| InstallError::Storage("Missing default Bot record".to_owned()))?;
         let url = format!(
             "http://{}:{}/mcp/{}",
             crate::config::PLUGIN_MCP_HOST,
@@ -407,6 +478,7 @@ impl PluginManager {
         if let Some(vars) = ctx.bots.get_mut(super::bot_services::DEFAULT_BOT) {
             vars.mcp_url = Some(url);
         }
+        Ok(())
     }
 
     /// 存下来的一个 Bot 的 Matrix 变量：令牌是占位值（重建时从旧容器读回），名单按归属人算
@@ -604,6 +676,11 @@ impl PluginManager {
             .load(id)
             .map(|bots| bots.bots.keys().cloned().collect())
             .unwrap_or_default()
+    }
+
+    /// 同 [`Self::bot_names`]，但读不了 Bot 记录时报错：核对容器不能把读失败当成没有 Bot。
+    pub(super) fn stored_bot_names(&self, id: &PluginId) -> Result<Vec<String>, StoreError> {
+        Ok(self.store.bots().load(id)?.bots.into_keys().collect())
     }
 
     /// 这个插件有没有 Bot 记录：有的插件调用总线必须带令牌认 Bot。

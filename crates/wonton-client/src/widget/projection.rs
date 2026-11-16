@@ -59,6 +59,7 @@ pub(super) fn project(
         Some(installed) => installed
             .plugins
             .iter()
+            .filter(|plugin| plugin.install_failure.is_none())
             .filter(|plugin| plugin.web_url.is_some() || !plugin.tabs.is_empty())
             .map(|plugin| WidgetPlugin {
                 plugin_id: plugin.id.clone(),

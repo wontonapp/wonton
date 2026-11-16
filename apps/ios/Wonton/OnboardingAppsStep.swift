@@ -15,13 +15,13 @@ struct OnboardingAppsStep: View {
             }
             ForEach(needs, id: \.id) { need in
                 StepOptionRow(title: need.title, isSelected: need.selected) {
-                    send(.toggleOnboardingNeed(id: need.id))
+                    send(.onboarding(action: .toggleOnboardingNeed(id: need.id)))
                 }
                 // 子项跟着分组一起勾：勾的粒度是需求，子项列出它装哪些应用，点子项同切换。
                 ForEach(need.plugins, id: \.id) { item in
                     StepOptionRow(
                         title: item.title, isSelected: need.selected, blocked: item.blocked,
-                        select: { send(.toggleOnboardingNeed(id: need.id)) },
+                        select: { send(.onboarding(action: .toggleOnboardingNeed(id: need.id))) },
                         leading: {
                             PluginIconView(icon: item.icon, size: WontonTheme.size.taskIcon, model: plugins)
                         },

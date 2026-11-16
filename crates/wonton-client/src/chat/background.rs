@@ -84,6 +84,8 @@ impl ChatLink {
         };
         notification.lock_screen_private = self.lock_screen.borrow().hidden(notification.category);
         notification.unread_total = unread_total(&self.view.borrow());
+        // App 锁着就不在通知里写发送者和正文（ADR-0102）。
+        notification.hidden = self.app_lock.is_locked();
         self.view.send_modify(|view| {
             if let Some(shown) = view
                 .background_notifications

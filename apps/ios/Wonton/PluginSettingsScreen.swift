@@ -28,7 +28,7 @@ struct PluginSettingsScreen: View {
     var body: some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .wontonPushedScreen(String(localized: .Plugin1.pluginSettingsTitle)) {
+            .wontonPushedScreen(String(localized: .Plugin1.pluginSettingsTitle), usesSystemToolbar: true) {
                 PluginSettingsSaveTrailing(saving: saving, blocked: blocked) {
                     Task { await save() }
                 }
@@ -265,7 +265,7 @@ struct PluginSettingsSaveTrailing: View {
             ProgressView().padding(.trailing, WontonTheme.spacing.s12)
         } else {
             Button(String(localized: .Common.commonSave)) { onSave() }
-                .buttonStyle(WontonSmallButtonStyle())
+                .wontonBarAction()
                 .disabled(blocked)
                 .padding(.trailing, WontonTheme.spacing.s12)
         }

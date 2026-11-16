@@ -12,6 +12,7 @@ enum AgentRunFixtures {
             ("waiting (card)", waitingForCard),
             ("waiting (choices)", waitingWithChoices),
             ("done", doneWithSteps),
+            ("done (summary)", doneWithSummary),
             ("done (no steps)", done),
             ("failed", failed),
             ("cancelled", cancelled),
@@ -72,6 +73,9 @@ enum AgentRunFixtures {
         )
     }
     static var doneWithSteps: AnyView { row(state: .done, steps: 5) }
+    static var doneWithSummary: AnyView {
+        row(state: .done, steps: 3, result: "Updated the config and restarted the service")
+    }
     static var done: AnyView { row(state: .done) }
     static var failed: AnyView { row(state: .failed, result: "Model gateway error") }
     static var cancelled: AnyView { row(state: .failed, end: .cancelled) }

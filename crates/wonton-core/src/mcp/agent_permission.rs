@@ -170,7 +170,7 @@ impl Bus {
         asked.card.clone_from(&card.id);
         asked.settled = false;
         // 请求报了会话、会话在链上：卡片认到这条链，停链时撤回，状态查询里报 waiting_permission。
-        asked.chain = card_chain(self, &asked.request).filter(|chain| {
+        asked.chain = card_chain(self, &caller, &asked.request).filter(|chain| {
             let bound = self
                 .agent_chains()
                 .is_some_and(|chains| chains.ledger().bind_card(chain, &card.id).is_ok());
@@ -203,12 +203,17 @@ impl Bus {
 }
 
 /// 卡片该认到哪条链：请求里带了会话、会话登记在链上时是那条链。
-fn card_chain(bus: &Bus, request: &AgentPermissionRequest) -> Option<String> {
+fn card_chain(bus: &Bus, caller: &Caller, request: &AgentPermissionRequest) -> Option<String> {
     let session = request.session.as_deref()?;
     let chains = bus.agent_chains()?;
     chains
         .ledger()
         .session_chain(session)
+        .filter(|info| {
+            caller.bot.as_ref().is_some_and(|bot| {
+                info.bot.plugin_id == caller.id.as_str() && info.bot.bot == bot.bot
+            })
+        })
         .map(|info| info.chain)
 }
 

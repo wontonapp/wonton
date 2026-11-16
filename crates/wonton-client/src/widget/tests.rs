@@ -162,10 +162,12 @@ fn agent(activity: Option<BotActivity>) -> BotView {
 fn room(name: &str, peer: Option<&str>, unread: u64) -> RoomRow {
     RoomRow {
         layout: Default::default(),
+        call_active: false,
         room_id: format!("!{name}:home.example"),
         name: name.to_owned(),
         is_direct: peer.is_some(),
         direct_user_id: peer.map(str::to_owned),
+        plugin: None,
         is_encrypted: true,
         is_read_only: false,
         membership: RoomMembership::Joined,
@@ -201,16 +203,18 @@ fn plugin(id: &str, web: bool) -> InstalledPlugin {
         declares_tools: false,
         status: PluginState::Stopped,
         web_url: web.then(|| format!("http://{id}.home.example")),
+        link_url: None,
         cross_origin_isolated: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: None,
     }
 }
 

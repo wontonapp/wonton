@@ -1,5 +1,7 @@
 package app.wonton.ui
 
+import app.wonton.client.PluginInstallAction
+import app.wonton.client.detailInstallAction
 import android.content.Context
 import android.icu.text.ListFormatter
 import androidx.compose.foundation.Image
@@ -42,6 +44,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
+import app.wonton.protocol.PluginAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.CoreException
 import app.wonton.protocol.PluginDetail
@@ -124,7 +127,14 @@ fun PluginDetailScreen(plugins: PluginsState, navigation: PluginNavigation, rout
             when {
                 result == null -> LoadingView()
                 result.isFailure -> ProblemView(result.failureProblem, onRetry = { attempt++ })
-                else -> DetailContent(toggled ?: result.getOrThrow(), task, plugins, navigation) { toggled = it }
+                else -> {
+                    val detail = toggled ?: result.getOrThrow()
+                    val installedList = plugins.viewModel.installed
+                    val current = if (installedList == null) detail else detail.copy(
+                        installed = installedList.plugins.firstOrNull { it.id == detail.id },
+                    )
+                    DetailContent(current, task, plugins, navigation, onReload = { attempt++ }) { toggled = it }
+                }
             }
         }
     }
@@ -136,6 +146,7 @@ private fun DetailContent(
     task: PluginTask?,
     plugins: PluginsState,
     navigation: PluginNavigation,
+    onReload: () -> Unit,
     onToggled: (PluginDetail) -> Unit,
 ) {
     val colors = WontonTheme.colors
@@ -159,6 +170,9 @@ private fun DetailContent(
             BotContactsEntry { navigation.contacts = bot.bot }
         }
         DetailHeader(detail, plugins, detailAction(detail, working, plugins, navigation, LocalContext.current))
+        PluginDetailStatus(detail, plugins, working)
+        // 装着的应用现在的问题（选中的设备不在了，ADR-0036）：按类别说明，重试是重新取详情。
+        detail.problems.forEach { ProblemRow(it.problem, onRetry = onReload) }
         task?.takeIf { it.state !is PluginTaskState.Succeeded || it.hasAddedToolsNews }?.let {
             TaskRow(
                 it,
@@ -167,9 +181,7 @@ private fun DetailContent(
                 navigation.checkInstalled,
             )
         }
-        detail.installed?.notices?.takeIf { it.isNotEmpty() }?.let { NoticeLines(it) }
-        GoFillSecrets(detail.installed, owner, secretsInView)
-        detail.installed?.let { MyAppsControls(it) }
+        detail.installed?.InstalledRows(plugins, detail, owner, secretsInView, onToggled)
         if (detail.screenshots.isNotEmpty()) {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
                 items(detail.screenshots, key = { it.path }) { Screenshot(it, plugins) }
@@ -249,12 +261,14 @@ private fun InstalledDetailSections(
     secretsInView: BringIntoViewRequester,
 ) {
     val installed = detail.installed ?: return
+    if (detail.devices.isNotEmpty()) GrantedDevicesSection(detail.devices)
     if (detail.hasSettings) {
         SettingsEntry(detail, navigation)
     }
     Box(Modifier.bringIntoViewRequester(secretsInView)) {
         SecretSection(detail, owner == true, plugins, onToggled)
     }
+    OwnerSecretsSection(detail.id, plugins)
     detail.lanWebui?.let { InstalledLanWebui(plugins, detail.id, it, onToggled) }
     if (installed.tunnelPorts.isNotEmpty()) PortMappingSection(plugins, installed)
     if (detail.saveGrants.isNotEmpty()) SaveGrants(plugins, detail.id, detail.saveGrants, onToggled)
@@ -337,11 +351,16 @@ private fun detailAction(
     return when {
         installed?.upgrade != null -> DetailAction(
             context.getString(R.string.install_action_upgrade), !busy,
-        ) { plugins.send(Action.UpgradeNow(pluginId = installed.id)) }
+        ) { plugins.send(Action.Plugins(PluginAction.UpgradeNow(pluginId = installed.id)))}
         installed != null -> entry?.let {
             DetailAction(context.getString(R.string.store_open), !installed.isBusy) { navigation.open(it) }
         }
-        source != null -> DetailAction(context.getString(R.string.store_get), detail.blocked == null && !working) {
+        source != null -> DetailAction(
+            context.getString(if (detailInstallAction(detail) == PluginInstallAction.REQUEST_ADMIN) {
+                R.string.install_request_admin
+            } else { R.string.store_get }),
+            detailInstallAction(detail) != PluginInstallAction.BLOCKED && !working,
+        ) {
             navigation.confirmation = PluginConfirmation.Install(source)
         }
         else -> null
@@ -377,7 +396,6 @@ private fun DetailHeader(detail: PluginDetail, plugins: PluginsState, action: De
         }
         action?.let { WontonButton(it.title, it.perform, Modifier.fillMaxWidth(), enabled = it.enabled) }
         detail.blocked?.let { WontonNotice(WontonIcon.Blocked, it) }
-        (detail.installed?.status as? PluginState.Degraded)?.let { WontonNotice(WontonIcon.Warning, it.reason) }
     }
 }
 

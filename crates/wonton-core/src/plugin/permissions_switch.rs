@@ -14,7 +14,7 @@ use super::health_gate::Gate;
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager, detached};
-use super::manifest::{Permission, PluginId};
+use super::manifest::{ManifestExt, Permission, PluginId};
 use super::package::PluginPackage;
 use super::render::{ContainerPlan, Deployment, InstallContext, render};
 use super::store::{EnabledPermission, InstalledRecord, OpenedBy};
@@ -133,7 +133,7 @@ impl PluginManager {
         let after = self.render_for(listed, package, to, &langs).await?;
         let changed = changed_services(&before, &after);
         if changed.is_empty() {
-            self.store.save(to)?;
+            self.store.save_metadata(to)?;
             return Ok(());
         }
         let mut plan = after;
@@ -141,7 +141,8 @@ impl PluginManager {
         let ctx = self.switch_context(listed, package, to, &langs).await?;
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
             .await?;
-        self.store.save(to)?;
+        self.store.save_metadata(to)?;
+        self.recovery_complete(&to.id)?;
         Ok(())
     }
 

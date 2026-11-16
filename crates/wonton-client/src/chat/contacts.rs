@@ -148,26 +148,30 @@ mod tests {
             declares_tools: false,
             status: PluginState::Installing,
             web_url: None,
+            link_url: None,
             cross_origin_isolated: false,
             tabs: Vec::new(),
             bot_user_id: bot.map(str::to_owned),
-            family: false,
             upgrade: None,
             removable: true,
             notices: Vec::new(),
             enabled_root_permissions: Vec::new(),
             install_progress: None,
+            install_failure: None,
             tunnel_ports: Vec::new(),
+            matrix_widget: None,
         }
     }
 
     fn room(name: &str, peer: Option<&str>, read_only: bool) -> RoomRow {
         RoomRow {
             layout: Default::default(),
+            call_active: false,
             room_id: format!("!{name}:s"),
             name: name.to_owned(),
             is_direct: peer.is_some(),
             direct_user_id: peer.map(str::to_owned),
+            plugin: None,
             is_encrypted: true,
             is_read_only: read_only,
             membership: RoomMembership::Joined,

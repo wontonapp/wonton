@@ -28,12 +28,15 @@ struct FriendsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .Friends2.friendsTitle)) {
+            .wontonPushedScreen(String(localized: .Friends2.friendsTitle), usesSystemToolbar: true) {
                 WontonIconButton(icon: .add, label: String(localized: .Friends1.friendsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Friends1.friendsAdd)) { close in
+            .wontonSheet(
+                isPresented: $showsAdd,
+                title: String(localized: .Friends1.friendsAdd), usesSystemPresentation: true
+            ) { close in
                 addPanel(close)
             }
             .fullScreenCover(isPresented: $showsScanner, onDismiss: sendScannedCode) {
@@ -42,25 +45,29 @@ struct FriendsView: View {
                         scannedCode = code
                         showsScanner = false
                     }
-                    .wontonModalScreen(String(localized: .Friends1.friendsScanCode))
+                    .wontonModalScreen(String(localized: .Friends1.friendsScanCode), usesSystemToolbar: true)
                 }
             }
             .wontonSheet(
                 isPresented: Binding(
                     get: { showsMyCode && model.viewModel.myLink != nil }, set: { if !$0 { showsMyCode = false } }
                 ),
-                title: String(localized: .Friends3.friendsMyCode)
+                title: String(localized: .Friends3.friendsMyCode),
+                usesSystemPresentation: true
             ) { _ in
                 if let link = model.viewModel.myLink { MyFriendCodePanel(link: link) }
             }
-            .wontonSheet(isPresented: isEditingGroup, title: groupPanelTitle) { close in
+            .wontonSheet(
+                isPresented: isEditingGroup, title: groupPanelTitle, usesSystemPresentation: true
+            ) { close in
                 groupPanel(close)
             }
             .wontonSheet(
                 isPresented: Binding(
                     get: { choosingGroups != nil }, set: { if !$0 { choosingGroups = nil } }
                 ),
-                title: String(localized: .Friends1.friendsGroupsChoose)
+                title: String(localized: .Friends1.friendsGroupsChoose),
+                usesSystemPresentation: true
             ) { _ in
                 groupsPanel
             }
@@ -129,8 +136,8 @@ struct FriendsView: View {
                 ForEach(model.viewModel.incoming, id: \.roomId) { request in
                     FriendRequestRowView(
                         request: request,
-                        accept: { model.send(.approveFriendRequest(roomId: request.roomId)) },
-                        decline: { model.send(.rejectFriendRequest(roomId: request.roomId)) }
+                        accept: { model.send(.friends(action: .approveFriendRequest(roomId: request.roomId))) },
+                        decline: { model.send(.friends(action: .rejectFriendRequest(roomId: request.roomId))) }
                     )
                     .listRowBackground(Color(colors.surfaceSubtle))
                     .listRowSeparatorTint(Color(colors.separator))
@@ -147,7 +154,7 @@ struct FriendsView: View {
             Section {
                 ForEach(model.viewModel.outgoing, id: \.roomId) { request in
                     OutgoingFriendRequestRowView(request: request) {
-                        model.send(.cancelFriendRequest(roomId: request.roomId))
+                        model.send(.friends(action: .cancelFriendRequest(roomId: request.roomId)))
                     }
                     .listRowBackground(Color(colors.surfaceSubtle))
                     .listRowSeparatorTint(Color(colors.separator))
@@ -166,7 +173,11 @@ struct FriendsView: View {
                     groupNames: groupNames(row.groups),
                     remove: { removing = row },
                     chooseGroups: { choosingGroups = row },
-                    block: { model.send(.blockFriend(target: .user(userId: row.userId), scope: .invitations)) }
+                    block: {
+                        model.send(.friends(action: .blockFriend(
+                            target: .user(userId: row.userId), scope: .invitations
+                        )))
+                    }
                 )
                 .listRowBackground(Color(colors.surfaceSubtle))
                 .listRowSeparatorTint(Color(colors.separator))
@@ -245,7 +256,7 @@ struct FriendsView: View {
             }
             ForEach(Array(model.viewModel.blocked.enumerated()), id: \.offset) { _, block in
                 BlockedFriendRowView(block: block) {
-                    model.send(.unblockFriend(target: block.target, scope: block.scope))
+                    model.send(.friends(action: .unblockFriend(target: block.target, scope: block.scope)))
                 }
                 .listRowBackground(Color(colors.surfaceSubtle))
                 .listRowSeparatorTint(Color(colors.separator))
@@ -343,13 +354,13 @@ private extension FriendsView {
     private func sendScannedCode() {
         guard let code = scannedCode else { return }
         scannedCode = nil
-        model.send(.addFriend(userId: code))
+        model.send(.friends(action: .addFriend(userId: code)))
     }
 
     /// 发出去就收起面板；格式不对由核心回来时说。
     private func submitAdd(_ close: @escaping (@escaping () -> Void) -> Void) {
         guard canSubmitAdd else { return }
-        model.send(.addFriend(userId: normalizedUserId))
+        model.send(.friends(action: .addFriend(userId: normalizedUserId)))
         close {}
     }
 
@@ -378,7 +389,9 @@ private extension FriendsView {
     private func saveGroup(_ close: @escaping (@escaping () -> Void) -> Void) {
         let name = groupName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        model.send(.saveFriendGroup(id: editingGroup?.id.isEmpty == false ? editingGroup?.id : nil, name: name))
+        model.send(.friends(action: .saveFriendGroup(
+            id: editingGroup?.id.isEmpty == false ? editingGroup?.id : nil, name: name
+        )))
         close {}
     }
 
@@ -405,7 +418,7 @@ private extension FriendsView {
                             } else {
                                 ids.append(group.id)
                             }
-                            model.send(.setFriendGroups(userId: row.userId, groups: ids))
+                            model.send(.friends(action: .setFriendGroups(userId: row.userId, groups: ids)))
                         } trailing: {
                             EmptyView()
                         }
@@ -420,12 +433,12 @@ private extension FriendsView {
     private func blockServer() {
         let name = normalizedServerName
         guard !name.isEmpty else { return }
-        model.send(.blockFriend(target: .server(serverName: name), scope: .federation))
+        model.send(.friends(action: .blockFriend(target: .server(serverName: name), scope: .federation)))
         serverName = ""
     }
 
     private func retry() {
-        model.send(.refreshFriends)
+        model.send(.friends(action: .refreshFriends))
     }
 
     /// 失败原因按类别写人话；限频把服务器给的秒数带上，技术细节收在下面。
@@ -477,7 +490,7 @@ final class FriendsModel {
 
     /// 进页面时取一次列表，之后跟着核心的推送走；页面消失时订阅结束。
     func observe() async {
-        send(.refreshFriends)
+        send(.friends(action: .refreshFriends))
         for await viewModel in core.subscribeFriends().updates() {
             self.viewModel = viewModel
         }
@@ -493,7 +506,7 @@ final class FriendsModel {
 
     /// 下拉刷新：等核心把状态从 Loading 换走，圈才收起来。
     func refresh() async {
-        send(.refreshFriends)
+        send(.friends(action: .refreshFriends))
         guard rejection == nil else { return }
         for await viewModel in core.subscribeFriends().updates() {
             if case .loading = viewModel.state { continue }
@@ -523,7 +536,7 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Friends2.friendsRemove), kind: .danger) {
-                    if let row { model.send(.removeFriend(userId: row.userId)) }
+                    if let row { model.send(.friends(action: .removeFriend(userId: row.userId))) }
                     removing.wrappedValue = nil
                 }
             ]
@@ -542,7 +555,7 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { deleting.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
-                    if let group { model.send(.removeFriendGroup(id: group.id)) }
+                    if let group { model.send(.friends(action: .removeFriendGroup(id: group.id))) }
                     deleting.wrappedValue = nil
                 }
             ]

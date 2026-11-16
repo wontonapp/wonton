@@ -27,13 +27,13 @@ struct AppearanceView: View {
                 SettingsPreview()
                 section(String(localized: .Appearance1.appearanceTheme)) {
                     choices(appearance.themeModes, title: \.label, selected: appearance.themeMode) {
-                        model.send(.setThemeMode(mode: $0))
+                        model.send(.settings(action: .setThemeMode(mode: $0)))
                     }
                 }
                 section(String(localized: .Appearance1.appearanceAccent)) { accent }
                 section(String(localized: .Appearance0.appearanceTextSize)) {
                     choices(appearance.textSizes, title: \.label, selected: appearance.textSize) {
-                        model.send(.setTextSize(size: $0))
+                        model.send(.settings(action: .setTextSize(size: $0)))
                     }
                 }
                 section(String(localized: .Appearance0.appearanceFont)) { fonts }
@@ -80,7 +80,7 @@ struct AppearanceView: View {
             ForEach(Array(appearance.fonts.enumerated()), id: \.offset) { index, option in
                 if index > 0 { WontonSeparator() }
                 ChoiceRow(title: option.label, sample: "Aa", isSelected: option == appearance.font) {
-                    model.send(.setFont(font: option))
+                    model.send(.settings(action: .setFont(font: option)))
                 }
                 .fontDesign(option.design)
             }
@@ -140,7 +140,7 @@ struct AppearanceView: View {
             ForEach(Array(swatches.enumerated()), id: \.offset) { index, swatch in
                 let isSelected = swatch == appearance.accent
                 Button {
-                    model.send(.setAccentColor(color: swatch))
+                    model.send(.settings(action: .setAccentColor(color: swatch)))
                 } label: {
                     Swatch(color: swatch, isSelected: isSelected)
                 }
@@ -153,7 +153,7 @@ struct AppearanceView: View {
 
     private func submitHex() {
         if let color = parseAccent(text: hexText) {
-            model.send(.setAccentColor(color: color))
+            model.send(.settings(action: .setAccentColor(color: color)))
         } else {
             isHexInvalid = true
         }

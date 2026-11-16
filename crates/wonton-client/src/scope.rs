@@ -11,10 +11,11 @@ use tokio::sync::watch;
 use wonton_protocol::{
     AgentChainsViewModel, BotContactsViewModel, ChatViewModel, ConfirmationsViewModel, CoreError,
     FriendsViewModel, HomeViewModel, OnboardingViewModel, PagesViewModel, PeersViewModel,
-    PluginsViewModel, RoomPanel, ServersViewModel, SettingsViewModel, TransfersViewModel,
+    PluginsViewModel, ServersViewModel, SettingsViewModel, TransfersViewModel,
 };
 
 use crate::agent_chains::AgentChainsLink;
+use crate::app_lock::AppLockLink;
 use crate::bot_contacts::BotContactsLink;
 use crate::chat::{CardSuccess, ChatLink};
 use crate::composer::{ComposerLink, uplink::LiveUplink};
@@ -31,7 +32,7 @@ use crate::push_method::PushMethodLink;
 use crate::settings::SettingsLink;
 pub(crate) use runtime::ScopeRuntime;
 pub(crate) use visit::{Entered, Visits};
-use wonton_matrix::{MatrixSession, OwnedRoomId};
+use wonton_matrix::MatrixSession;
 
 pub(crate) struct Scope {
     pub(crate) slot: String,
@@ -116,6 +117,7 @@ struct Shared<'a> {
     home: &'a Arc<HomeLink>,
     plugins: &'a Arc<PluginsLink>,
     push_method: &'a PushMethodLink,
+    app_lock: &'a AppLockLink,
     lock_screen: &'a LockScreenLink,
     dir: &'a Path,
     views: Option<&'a Views>,
@@ -135,8 +137,6 @@ fn chat_links(
     card_success: CardSuccess,
     channels: crate::chat::ChatChannels,
     session_in: watch::Receiver<Option<Arc<MatrixSession>>>,
-    room_sender: watch::Sender<Option<(OwnedRoomId, RoomPanel)>>,
-    room_receiver: watch::Receiver<Option<(OwnedRoomId, RoomPanel)>>,
 ) -> Result<ChatLinks, CoreError> {
     let Shared {
         slot,
@@ -144,6 +144,7 @@ fn chat_links(
         home,
         plugins,
         push_method,
+        app_lock: _,
         lock_screen,
         dir,
         views,
@@ -172,7 +173,7 @@ fn chat_links(
         dir,
         views.map(|v| v.pages.clone()),
         session_in,
-        (room_sender, room_receiver),
+        chat.subscribe(),
     );
     let files = FilesLink::new(
         handle.clone(),
@@ -209,6 +210,7 @@ fn people_links(
         home,
         plugins,
         push_method,
+        app_lock,
         lock_screen,
         dir,
         views,
@@ -230,6 +232,7 @@ fn people_links(
         friends.subscribe(),
         servers,
         push_method.subscribe(),
+        app_lock.subscribe(),
         lock_screen.subscribe(),
         views.map(|v| v.settings.clone()),
     );
@@ -246,13 +249,13 @@ impl Scope {
         dir: &Path,
         network: Network,
         servers: watch::Receiver<ServersViewModel>,
+        app_lock: &AppLockLink,
         views: Option<&Views>,
     ) -> Result<Arc<Self>, CoreError> {
         let runtime = ScopeRuntime::new();
         let handle = runtime.handle().expect("the runtime was just built");
-        // 会话和打开着的房间的面板（ADR-0052）：chat 往里喂，tabs 用来同步账号数据、合成房间面板的视图。
+        // chat 发布会话，页面订阅按房间读取账号数据。
         let session_out = watch::channel(None);
-        let room_panel = watch::channel(None);
         let hub = crate::sharing::hub::bind(handle.clone())?;
         let external = servers.borrow().servers.iter().any(|row| {
             row.id == slot && matches!(row.kind, wonton_protocol::ServerKind::Matrix { .. })
@@ -299,9 +302,9 @@ impl Scope {
             view: views.map(|v| v.chat.clone()),
             confirmations: views.map(|v| v.confirmations.clone()),
             method: push_method.subscribe(),
+            app_lock: app_lock.clone(),
             lock_screen: lock_screen.subscribe(),
             session_out: session_out.0.clone(),
-            room_panel_out: room_panel.0.clone(),
             external,
         };
         let shared = Shared {
@@ -310,18 +313,12 @@ impl Scope {
             home: &home,
             plugins: &plugins,
             push_method: &push_method,
+            app_lock,
             lock_screen: &lock_screen,
             dir,
             views,
         };
-        let links = chat_links(
-            &shared,
-            card_success,
-            channels,
-            session_out.1,
-            room_panel.0,
-            room_panel.1,
-        )?;
+        let links = chat_links(&shared, card_success, channels, session_out.1)?;
         let composer = ComposerLink::new(
             handle.clone(),
             Arc::new(LiveUplink {
@@ -339,6 +336,7 @@ impl Scope {
             device_key,
             home.subscribe(),
             plugins.subscribe(),
+            links.chat.subscribe(),
         );
         let bot_contacts = BotContactsLink::new(
             handle.clone(),
@@ -381,6 +379,7 @@ impl Scope {
     /// 壳给的语言交给作用域里每个按 App 语言写字或把语言带给家里服务器（Accept-Language）的模块。
     /// 壳发 `SetLanguages` 和换作用域时重放都走这里，两处不各列一份，漏不掉哪个模块。
     pub(crate) fn set_languages(&self, languages: &[String]) {
+        self.home.language_changed();
         self.plugins.set_languages(languages.to_vec());
         self.onboarding.set_languages(languages.to_vec());
         self.peers.set_languages(languages.to_vec());
@@ -402,6 +401,11 @@ impl Scope {
 
     pub(crate) fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
         self.runtime.spawn(task);
+    }
+
+    /// 作用域的运行时。给不归本作用域管的部件（App 锁的宽限定时器）借用，作用域停掉定时器就没了。
+    pub(crate) fn handle(&self) -> Option<tokio::runtime::Handle> {
+        self.runtime.handle()
     }
 
     /// 停掉这台服务器：进行中的传输记成暂停，后台任务一起结束。

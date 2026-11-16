@@ -43,10 +43,25 @@ gateway-plugin-not-shared = 应用 { $id } 没有开放给家人
 gateway-proxy-sso-failed = 拿不到应用 { $id } 的代登录凭据：{ $error }
 gateway-cross-site-login = 网关不认其他网页发来的跨站请求的登录状态，请从应用自己的页面操作
 gateway-login-required = 需要先登录 Wonton
+gateway-bot-web-permission = 插件网络里的应用不能打开 Bot 网页或使用浏览器登录
+gateway-bot-web-storage = 无法读取 Bot 网页记录，请检查服务器存储后重试
 
 # 上游（身份提供方端点、模型网关）出错时显示的名字。
 gateway-name-oidc = 身份提供方
 gateway-name-models = 模型网关
+
+# TLS 入口容器后面的客户端入口（ADR-0021）。
+gateway-entry-header-invalid = 入口网关没有给这个请求打上正确的标记
+gateway-entry-closed = 这个入口没有打开，主人可以在 Wonton 应用里打开
+gateway-entry-public-denied = 公网地址上访问不了这个路径
+gateway-entry-setup-pending = 请先在这个应用的网页上完成首次注册，然后再试
+gateway-entry-auth-unsupported = 这个应用还不支持用云吞发的密码登录
+gateway-entry-auth-required = 请用在云吞里给这个应用发的专用密码登录
+gateway-entry-auth-revoked = 这个专用密码已吊销，请在云吞里重新生成一个
+gateway-entry-state-unavailable = 读不到这个应用的入口设置，请主人在云吞里检查
+gateway-entry-setup-closed = 应用 { $id } 里已经没有管理员账号（数据可能被清空或恢复过）。为防止有人抢注管理员，它的入口已自动关闭；确认应用就绪后在云吞应用里重新打开。
+gateway-entry-setup-timeout = 检查应用首次注册状态超时
+gateway-entry-target-unavailable = 应用入口必须指向本应用网络中全应用共用的唯一服务
 
 # SSO 交接和 OIDC 登录、授权确认。
 gateway-sso-invalid-next = 跳转地址不合法
@@ -149,6 +164,14 @@ gateway-web-storage-undeclared = 这个应用不存数据
 gateway-web-storage-cross-site = 只有这个应用自己的页面能改它的数据
 gateway-web-storage-not-ready = 替这个应用存数据的应用没有在运行，请稍后再试
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = 请求少了 X-Wonton-Clients 头
+clients-unauthenticated = 只有主人已配对的设备能改这些设置
+clients-unavailable = 核心没有跑在装好的容器里，域名设置用不了
+clients-passwords-unavailable = 现在读不到专用密码的存放处
+clients-password-label-invalid = 给客户端起个 1-128 个字符、不带换行的名字
+clients-password-not-found = 这个专用密码已经不存在了
+clients-domain-read-failed = 域名设置读不了：{ $error }
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 
 # agent_acp 的转发（ADR-0061 第 5 块）：建连时的拒绝和逐帧转发里的错误，按类别回给使用方。
@@ -164,3 +187,6 @@ gateway-agent-acp-multi-bot = {$provider} 有几个 Bot，先在详情页绑定�
 gateway-agent-acp-token-missing = {$provider} 还没有提供方令牌，重新安装一次就有了
 gateway-agent-acp-provider-unreachable = Agent 运行时没有接起这条连接：{$detail}
 gateway-agent-acp-busy = 这个应用开着的 Agent 连接已经到上限，稍后再试
+
+gateway-install-rejected = 管理员没有同意，没有{$action}
+gateway-install-expired = 管理员没有在期限内回答，没有{$action}

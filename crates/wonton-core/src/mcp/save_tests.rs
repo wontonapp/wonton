@@ -251,10 +251,7 @@ async fn a_plugin_without_an_outbox_is_told_so() {
 async fn shares_are_listed_by_name() {
     let b = bench().await;
     let result = b.s.call("wonton__list_shares", json!({})).await;
-    assert_eq!(
-        text(&result),
-        json!({"shares": ["music", "transfers"]}).to_string()
-    );
+    assert_eq!(text(&result), json!({"shares": ["music"]}).to_string());
 }
 
 #[tokio::test]

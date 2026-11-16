@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use super::languages::Languages;
 use super::manager::InstallError;
-use super::manifest::{Manifest, Permission};
+use super::manifest::{Manifest, ManifestExt, Permission};
 use super::store::EnabledPermission;
 use crate::l10n;
 
@@ -13,6 +13,8 @@ pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
     matches!(
         permission,
         Permission::StorageShare { .. }
+            | Permission::StorageHome { .. }
+            | Permission::NetworkClients
             | Permission::NetworkEgress
             | Permission::EgressProxy
             | Permission::MatrixBot
@@ -29,6 +31,9 @@ pub(in crate::plugin) fn supported(permission: &Permission) -> bool {
             | Permission::HostIpc
             | Permission::SecurityOpt
             | Permission::Privileged
+            | Permission::DevicesSerial
+            | Permission::DevicesUsb
+            | Permission::DevicesDisk
             | Permission::Device { .. }
             | Permission::DockerSocket
     )

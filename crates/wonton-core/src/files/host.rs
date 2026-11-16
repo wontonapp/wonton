@@ -7,6 +7,7 @@ use futures_util::future::BoxFuture;
 use serde_json::json;
 use wonton_protocol::FileFailure;
 
+use super::record::Accessor;
 use super::resource::InternalUrl;
 use super::slots::{PluginSlots, SLOT_WAIT};
 use super::{Failure, MAX_RESOURCE_BYTES};
@@ -16,8 +17,17 @@ use crate::mcp::upstream::{ReadError, Upstreams};
 use crate::plugin::languages::Languages;
 use crate::plugin::upstreams::ResourceUpstreamError;
 use crate::plugin::{McpServer, PluginId, PluginManager};
+mod people;
 
 pub trait FileHost: Send + Sync {
+    fn check_person(&self, who: &Accessor) -> Result<(), Failure>;
+    fn upload_person(&self, device: &str) -> Result<(String, Accessor), Failure>;
+    fn bot_person(&self, bot: &str) -> Result<Accessor, Failure>;
+    fn notify_person<'a>(
+        &'a self,
+        who: &'a Accessor,
+        text: &'a str,
+    ) -> BoxFuture<'a, Result<(), Failure>>;
     /// 来源插件在运行，否则 `plugin_unavailable`。
     fn check_plugin(&self, plugin: &PluginId) -> Result<(), Failure>;
     /// 来源插件在运行，也提供 MCP 服务，否则 `plugin_unavailable`。
@@ -50,6 +60,7 @@ pub struct CoreHost {
     reads: PluginSlots,
     /// 没接 Matrix 时为空。
     notices: Option<Arc<NoticeRoom>>,
+    people: Option<people::People>,
 }
 
 impl CoreHost {
@@ -63,6 +74,7 @@ impl CoreHost {
             upstreams,
             reads: PluginSlots::new(),
             notices,
+            people: None,
         }
     }
 
@@ -105,6 +117,22 @@ impl FileHost for CoreHost {
             .ok_or_else(|| unavailable(plugin, &self.plugins.owner_languages()))
     }
 
+    fn check_person(&self, who: &Accessor) -> Result<(), Failure> {
+        self.check_file_person(who)
+    }
+    fn upload_person(&self, device: &str) -> Result<(String, Accessor), Failure> {
+        self.upload_file_person(device)
+    }
+    fn bot_person(&self, bot: &str) -> Result<Accessor, Failure> {
+        self.bot_file_person(bot)
+    }
+    fn notify_person<'a>(
+        &'a self,
+        who: &'a Accessor,
+        text: &'a str,
+    ) -> BoxFuture<'a, Result<(), Failure>> {
+        self.notify_file_person(who, text).boxed()
+    }
     fn check_mcp(&self, plugin: &PluginId) -> Result<(), Failure> {
         self.mcp_server(plugin).map(|_| ())
     }

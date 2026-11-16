@@ -8,10 +8,12 @@ use super::manifest::{Permission, Sso};
 use super::package::{PackageError, PluginPackage};
 use super::render::{RenderError, dry_run};
 
-mod agent_acp_contract;
+mod bot_ai_levels;
 mod bot_avatars;
 mod bot_lifecycle;
+mod bot_web;
 mod bots;
+mod capability_bots;
 mod capability_deps_install;
 mod capability_host_network;
 mod capability_install_requests;
@@ -23,6 +25,11 @@ mod check;
 mod clients_manifest_package;
 mod configs;
 mod configs_docker;
+mod device_detail;
+mod device_host;
+mod device_recovery;
+mod devices;
+mod devices_docker;
 mod docker_timeouts;
 mod egress;
 mod egress_manifest;
@@ -43,6 +50,7 @@ mod host_facts;
 mod host_name;
 mod host_relay;
 mod host_relay_docker;
+mod install_failure;
 mod install_l10n;
 mod install_progress;
 mod instances;
@@ -56,9 +64,9 @@ mod leftovers;
 mod limits;
 mod manager;
 mod manifest_errors;
+mod manifest_remote;
 mod matrix_rtc;
 mod model_gateway_contract;
-mod model_providers;
 mod models;
 mod models_route;
 mod network_mode;
@@ -70,7 +78,10 @@ mod people_languages;
 mod personal_data_contract;
 mod plugin_settings;
 mod preinstall;
+mod private_home;
+mod private_home_docker;
 mod privileges;
+mod rebuild_resume;
 mod render_drift;
 mod resources;
 mod runtime;
@@ -96,7 +107,9 @@ mod upgrade_bot;
 mod views;
 mod views_l10n;
 mod watch;
+mod watch_docker;
 mod webui_health;
+mod webui_health_docker;
 mod widget;
 
 /// 测试里的请求语言：默认（英文）。断言的期望值用 [`crate::l10n::CATALOG`] 生成。
@@ -268,6 +281,21 @@ fn full_example_is_a_valid_plugin() {
         .unwrap();
     assert_eq!(pkg.manifest.id.as_str(), "app.immich.photos");
     dry_run(&pkg, &langs()).unwrap();
+}
+#[test]
+fn orchestrator_example_declares_agent_acp_provider_and_dependency() {
+    let pkg = PluginPackage::parse(include_str!("examples/orchestrator.yaml"), &langs()).unwrap();
+    assert_eq!(pkg.manifest.id.as_str(), "app.example.orchestrator");
+    assert_eq!(pkg.manifest.requires, ["agent_acp"]);
+    let provider = &pkg.manifest.provides.as_ref().unwrap().capabilities["agent_acp"];
+    assert_eq!(provider.service, "orchestrator");
+    assert_eq!(provider.port, 8080);
+    let plan = dry_run(&pkg, &langs()).unwrap();
+    let env = env_of(&plan.containers[0]);
+    assert!(
+        env.iter()
+            .any(|item| item == "WONTON_AGENT_ACP_URL=http://agent_acp.wonton.internal")
+    );
 }
 
 #[test]

@@ -3,3 +3,5 @@ entry-name-active = Home name { $domain } is available again.
 entry-name-unknown = Cannot check home name { $domain }. Its availability is unknown; check the home-name service connection.
 entry-certificate-reload-failed = The renewed entry certificate could not be loaded. Check the entry service: { $error }
 entry-certificate-renew-failed = Entry certificate renewal failed. The existing certificate is still in use: { $error }
+entry-reconcile-failed = Public entry reconciliation failed. The public entry and federation TLS may be unavailable until it recovers: { $error }
+entry-reconcile-recovered = Public entry is reconciled and available again.

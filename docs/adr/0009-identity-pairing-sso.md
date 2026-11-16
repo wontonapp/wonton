@@ -208,7 +208,7 @@ App（客户端核心）经隧道登录和使用 Tuwunel，不需要知道 Tuwun
 ## 接口：扫码配对（M1）
 
 App 扫一个一次性的配对码，成为主人的设备。线协议的类型和契约测试在 `crates/wonton-tunnel/src/pair.rs`，App 一侧的
-操作和状态是 `Action::PairHome`、`HomeViewModel::pairing`（`crates/wonton-protocol`）。
+操作和状态是 `Action::Home { action: HomeAction::PairHome { .. } }`、`HomeViewModel::pairing`（`crates/wonton-protocol`）。
 
 **配对码**：二维码里是一个地址 `wonton://pair?v=0&id=…&relays=…&addr=…&domain=…&core=…&secret=…`。
 
@@ -297,7 +297,7 @@ iOS 用成功通知触感，Android 11 起用确认触感、Android 10 用虚拟
 `{"code": "wonton://pair?…", "expires_in": 600}`，已经有设备时也能用。认两种身份：主人令牌（服务器上的命令、开发和冒烟），
 以及隧道认证过的已配对设备（App 里的“添加设备”）。
 
-**添加设备**：已配对的 App 发 `Action::InviteDevice`，客户端核心经隧道调上面的接口，不带直连地址（由核心给），拿到的码
+**添加设备**：已配对的 App 发 `HomeAction::InviteDevice`，客户端核心经隧道调上面的接口，不带直连地址（由核心给），拿到的码
 放进 `HomeViewModel::invite`（`Ready`，带过期时间），App 画成二维码给新设备扫，
 新设备照常用 `PairHome`。还没配对时 `InviteDevice` 返回 `NotReady`；连不上、本设备被吊销、服务器出错分别是 `Failed` 里
 `HomeFailure` 的 `TransportUnavailable`、`Unauthorized`、`UpstreamUnavailable`，回应认不出是 `Protocol`。

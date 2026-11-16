@@ -3,7 +3,9 @@
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use wonton_protocol::{Answer, BotKeeper, PanelScope, TOOL_CALL_USER_META};
+use wonton_protocol::{
+    Answer, BotKeeper, PanelScope, TOOL_CALL_CAPABILITIES_META, TOOL_CALL_USER_META,
+};
 
 use super::test_setup::setup_with_upstreams;
 use super::upstream::Upstreams;
@@ -376,7 +378,7 @@ async fn cancelling_the_pin_call_still_asks_and_pins() {
 }
 
 #[tokio::test]
-async fn app_calls_run_as_the_owner() {
+async fn app_calls_carry_no_person_or_capabilities() {
     let (s, b, _fake) = bot("com.example.agent").await;
     s.call_as(
         &b.caller,
@@ -395,16 +397,20 @@ async fn app_calls_run_as_the_owner() {
         .await
     });
     let card = s.cards.wait_for(1).await;
-    assert!(card.title.contains("你"), "{}", card.title);
     s.bus
         .confirmations()
         .answer(&card.id, Answer::Approve, None)
         .unwrap();
     assert!(call.await.unwrap().is_ok());
     let metas = s.notes.received_meta.lock().unwrap();
-    assert_eq!(
-        metas.last().unwrap().as_ref().unwrap().0[TOOL_CALL_USER_META],
-        "owner"
+    let last = metas.last().unwrap().as_ref().expect("调用送达插件");
+    assert!(
+        !last.0.contains_key(TOOL_CALL_USER_META),
+        "界面的调用不带用户：{last:?}"
+    );
+    assert!(
+        !last.0.contains_key(TOOL_CALL_CAPABILITIES_META),
+        "界面的调用不带能力：{last:?}"
     );
 }
 

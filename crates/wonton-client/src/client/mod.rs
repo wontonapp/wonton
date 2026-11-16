@@ -2,20 +2,22 @@ use std::path::PathBuf;
 #[cfg(feature = "ui-fake")]
 use std::sync::RwLockReadGuard;
 #[cfg(feature = "ui-fake")]
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use tokio::sync::watch;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, AddedSource, AppearanceViewModel, ChatContact, ChatViewModel, ComposerDraft, CoreError,
-    FileCard, FileCardActions, FileFailure, FileId, FileInfo, FileOperation, FileProblem,
-    FriendsViewModel, HomeViewModel, InstallPreview, LanChoice, LanSettings, Me, MediaHandle,
-    OnboardingViewModel, OwnerProfileUpdate, PagesViewModel, PeersViewModel, PluginDetail,
-    PluginImage, PluginsViewModel, RoomTransfers, SecretString, ServersViewModel,
-    SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget, TransfersViewModel,
+    AddedSource, AppLockTimeout, AppLockViewModel, AppearanceViewModel, ChatContact, ChatViewModel,
+    ComposerDraft, CoreError, FileCard, FileCardActions, FileFailure, FileId, FileInfo,
+    FileOperation, FileProblem, FriendsViewModel, HomeViewModel, InstallPreview, LanChoice,
+    LanSettings, Me, MediaHandle, OnboardingViewModel, OwnerProfileUpdate, PagesViewModel,
+    PeersViewModel, PluginDetail, PluginImage, PluginsViewModel, RoomTransfers, SecretString,
+    ServersViewModel, SessionListViewModel, SettingsViewModel, StoreItem, TimelineTarget,
+    TransfersViewModel,
 };
 
+use crate::app_lock::AppLockLink;
 use crate::appearance::AppearanceLink;
 use crate::chat::TimelineSubscription;
 use crate::files::FileOpener;
@@ -25,10 +27,10 @@ use crate::scope::{Scope, Views, Visits};
 use crate::servers::ServerList;
 use crate::session_store::SessionStore;
 use crate::subscription::{
-    AppearanceSubscription, ChatSubscription, FriendsSubscription, HomeSubscription,
-    OnboardingSubscription, PagesSubscription, PeersSubscription, PluginsSubscription,
-    ServersSubscription, SessionListSubscription, SettingsSubscription, TransfersSubscription,
-    UnreadSubscription,
+    AppLockSubscription, AppearanceSubscription, ChatSubscription, FriendsSubscription,
+    HomeSubscription, OnboardingSubscription, PagesSubscription, PeersSubscription,
+    PluginsSubscription, ServersSubscription, SessionListSubscription, SettingsSubscription,
+    TransfersSubscription, UnreadSubscription,
 };
 use switch::Replay;
 
@@ -55,6 +57,12 @@ mod test_support;
 mod tool_policy;
 #[cfg(feature = "ui-fake")]
 mod ui_fake;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_devices;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_plugin_detail;
+#[cfg(feature = "ui-fake")]
+mod ui_fake_room;
 mod widget;
 
 /// 客户端核心的入口。原生壳在启动时创建一个实例并一直持有。
@@ -65,6 +73,8 @@ mod widget;
 #[derive(uniffi::Object)]
 pub struct ClientCore {
     state: watch::Sender<SessionStore>,
+    /// App 锁（ADR-0102）：整机一个，不随服务器切换重建。
+    app_lock: AppLockLink,
     appearance: AppearanceLink,
     servers: Arc<ServerList>,
     root: PathBuf,
@@ -80,6 +90,8 @@ pub struct ClientCore {
     replay: Mutex<Replay>,
     /// 串行化切换：列表改动和换作用域要一起做完。
     switching: Arc<Mutex<()>>,
+    #[cfg(feature = "test-hooks")]
+    language_refresh_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// 为不是当前这台的服务器临时开的作用域。
     visits: Arc<Visits>,
     /// 正在给哪台后台登记哪个推送地址，`push_route` 拿它和落盘记录一起去重。
@@ -111,6 +123,27 @@ impl ClientCore {
     /// 订阅底栏，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
     pub fn subscribe_pages(&self) -> Arc<PagesSubscription> {
         Arc::new(PagesSubscription::new(self.views().pages.subscribe()))
+    }
+
+    /// 当前的 App 锁状态，用于首帧渲染。
+    pub fn app_lock(&self) -> AppLockViewModel {
+        self.app_lock.view()
+    }
+
+    /// 订阅 App 锁，语义同 [`subscribe_session_list`](Self::subscribe_session_list)。
+    pub fn subscribe_app_lock(&self) -> Arc<AppLockSubscription> {
+        Arc::new(AppLockSubscription::new(self.app_lock.subscribe()))
+    }
+
+    /// 开关 App 锁、选退到后台后多久要求解锁，存在本机，写不了时返回 `Storage`。开着时下一次进后台才锁，
+    /// 主人正看着的界面不盖上；设备没设锁屏也能开，验证不了时停在锁定页。
+    pub fn set_app_lock(&self, enabled: bool, timeout: AppLockTimeout) -> Result<(), CoreError> {
+        self.app_lock.set(enabled, timeout)
+    }
+
+    /// 壳的系统验证通过后调用，幂等。
+    pub fn unlock_app(&self) {
+        self.app_lock.unlock();
     }
 
     /// 当前的外观（用户的设置和颜色令牌），用于首帧渲染。
@@ -229,17 +262,28 @@ impl ClientCore {
     }
 
     /// 订阅一条时间线（主对话或旁聊，ADR-0093 §5）：第一批是全部条目，之后是按顺序应用的增量。
-    /// 同一时间只打开一个房间，打开另一个房间后前一个的订阅不再更新；同一个房间的主对话和一个旁聊可以同时订阅。
+    /// 可同时订阅多个房间或同一目标；滚动位置按订阅独立，取消一份不影响其他订阅。
     /// 还没登录、房间还没同步到本机时返回 `NotReady`。
     pub async fn subscribe_timeline(
         &self,
         target: TimelineTarget,
     ) -> Result<Arc<TimelineSubscription>, CoreError> {
+        // 假数据入口（`new_ui_fake`）没有后端：时间线也是写死的一批。
+        #[cfg(feature = "ui-fake")]
+        if self.ui_fake.load(Ordering::SeqCst) {
+            return Ok(TimelineSubscription::seeded(ui_fake_room::timeline(
+                &target.room_id,
+            )));
+        }
         let scope = self.scope();
         let chat = scope.chat.clone();
-        let room_view = scope.pages.subscribe_room_view();
+        let pages = scope.pages.clone();
+        let opening = chat.begin_timeline(&target)?;
         scope
-            .run(async move { chat.open_timeline(&target, room_view).await })
+            .run(async move {
+                let room_view = pages.subscribe_room_view(&target.room_id).await?;
+                chat.open_timeline(opening, room_view).await
+            })
             .await
     }
 
@@ -303,12 +347,6 @@ impl ClientCore {
     /// 当前的新用户引导状态，用于首帧渲染。
     pub fn onboarding(&self) -> OnboardingViewModel {
         self.views().onboarding.borrow().clone()
-    }
-
-    /// 关掉从设置进去的重看引导：这次记下的选择全部丢弃，什么都不保存，壳回到设置。
-    /// 没在重看时调用没有效果。
-    pub fn close_onboarding(&self) {
-        self.scope().onboarding.close();
     }
 
     /// 订阅新用户引导，第一次 `next()` 立即返回当前值。
@@ -619,11 +657,27 @@ impl ClientCore {
         self.scope().home.test_close_endpoint();
     }
 
+    /// Pause a language action after dispatch captured its scope, before synchronization.
+    #[cfg(feature = "test-hooks")]
+    #[doc(hidden)]
+    pub fn test_set_language_refresh_hook(&self, hook: Option<Arc<dyn Fn() + Send + Sync>>) {
+        *switch::lock(&self.language_refresh_hook) = hook;
+    }
+
+    #[cfg(feature = "test-hooks")]
+    fn test_before_language_refresh(&self) {
+        let hook = switch::lock(&self.language_refresh_hook).clone();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
     /// 指定 iroh 的网络配置。[`Network::DirectOnly`] 不连中继、不做地址发现，本机和局域网测试用。
     pub fn with_network(data_dir: &str, network: Network) -> Result<Arc<Self>, CoreError> {
         crate::l10n::init();
         let root = PathBuf::from(data_dir);
         let servers = Arc::new(ServerList::open(&root)?);
+        let app_lock = AppLockLink::new(&root);
         let slot = servers.current();
         let scope = Scope::open(
             &slot,
@@ -631,14 +685,22 @@ impl ClientCore {
             &servers.slot_dir(&slot),
             network,
             servers.subscribe(),
+            &app_lock,
             None,
         )?;
         let switching = Arc::new(Mutex::new(()));
-        let visits = Visits::new(servers.clone(), root.clone(), network, switching.clone());
+        let visits = Visits::new(
+            servers.clone(),
+            root.clone(),
+            network,
+            switching.clone(),
+            app_lock.clone(),
+        );
         let servers_for_login = servers.clone();
         let share_in = Arc::new(crate::share_in::ShareInLink::new(&root));
         let core = Arc::new(Self {
             state: watch::Sender::new(SessionStore::default()),
+            app_lock,
             appearance: AppearanceLink::new(&root),
             widget: crate::widget::WidgetFile::new(&root),
             #[cfg(feature = "ui-fake")]
@@ -651,6 +713,8 @@ impl ClientCore {
             network,
             replay: Mutex::default(),
             switching,
+            #[cfg(feature = "test-hooks")]
+            language_refresh_hook: Mutex::default(),
             visits,
             in_flight_registrations: Arc::default(),
             matrix_login: crate::matrix_login::MatrixLogins::new(servers_for_login),
@@ -662,101 +726,6 @@ impl ClientCore {
         core.matrix_login.bind(switch);
         core.attach(&scope);
         Ok(core)
-    }
-
-    /// `dispatch` 的后半：插件的操作，其余都是聊天的。分开放是因为函数长度有上限。
-    fn dispatch_plugins_or_chat(&self, scope: &Scope, action: Action) -> Result<(), CoreError> {
-        match action {
-            Action::SetBotName { plugin_id, name } => scope.chat.set_bot_name(plugin_id, name),
-            Action::SetBotAvatar {
-                plugin_id,
-                state,
-                upload,
-            } => scope.chat.set_bot_avatar(plugin_id, state, upload),
-            Action::ClearBotAvatar { plugin_id, state } => {
-                scope.chat.clear_bot_avatar(plugin_id, state)
-            }
-            Action::DismissBotProfileProblem { plugin_id } => {
-                scope.chat.dismiss_bot_profile_problem(&plugin_id);
-                Ok(())
-            }
-            Action::SetLanguages { languages } => {
-                crate::l10n::set_languages(&languages);
-                scope.set_languages(&languages);
-                self.replay().languages = Some(languages);
-                Ok(())
-            }
-            Action::RefreshPlugins => {
-                scope.plugins.refresh_installed();
-                Ok(())
-            }
-            Action::StartPlugin { plugin_id } => scope.plugins.start(plugin_id),
-            Action::SetPortMapping { plugin_id, enabled } => {
-                scope.plugins.set_port_mapping(plugin_id, enabled)
-            }
-            Action::RefreshStore { force } => {
-                scope.plugins.refresh_store(force);
-                Ok(())
-            }
-            Action::InstallPlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.install(preview, secrets, settings),
-            Action::UpgradePlugin {
-                preview,
-                secrets,
-                settings,
-            } => scope.plugins.upgrade(preview, secrets, settings),
-            Action::InstallNow { source } => scope.plugins.install_now(source),
-            Action::UpgradeNow { plugin_id } => scope.plugins.upgrade_now(plugin_id),
-            Action::UpgradeAll => scope.plugins.upgrade_all(),
-            Action::DismissStoreConfirmation => {
-                scope.plugins.dismiss_confirmation();
-                Ok(())
-            }
-            Action::UninstallPlugin { id, delete_data } => scope.plugins.uninstall(id, delete_data),
-            Action::DismissPluginTask { id } => scope.plugins.dismiss_task(&id),
-            Action::StartTakeover { id } => {
-                scope.plugins.start_takeover(id);
-                Ok(())
-            }
-            Action::EndTakeover { id } => {
-                scope.plugins.end_takeover(&id);
-                Ok(())
-            }
-            Action::RefreshRegistryMirror => {
-                scope.plugins.refresh_registry_mirror();
-                Ok(())
-            }
-            Action::SaveRegistryMirror { mirror } => scope.plugins.save_registry_mirror(mirror),
-            Action::TestRegistryMirrors => scope.plugins.test_registry_mirrors(),
-            Action::RefreshEgressProxy => {
-                scope.plugins.refresh_egress();
-                Ok(())
-            }
-            Action::SaveEgressProxy {
-                address,
-                direct_cidrs,
-                use_plugin,
-            } => scope
-                .plugins
-                .save_egress(&address, &direct_cidrs, use_plugin),
-            Action::ConfirmEgressProxy => scope.plugins.confirm_egress(),
-            Action::DismissEgressConfirmation => {
-                scope.plugins.dismiss_egress_confirmation();
-                Ok(())
-            }
-            Action::AskAgent { text } => {
-                let bot = scope.onboarding.view().primary_bot_user_id.ok_or_else(|| {
-                    CoreError::NotReady {
-                        reason: l10n!(CATALOG, language(), "chat-no-default-agent"),
-                    }
-                })?;
-                scope.chat.ask(&bot, &text)
-            }
-            chat => scope.chat.dispatch(chat),
-        }
     }
 
     fn update_sessions(

@@ -4,6 +4,7 @@ import WontonClient
 struct ChatListView: View {
     @Bindable var model: ChatModel
     let plugins: PluginsModel
+    var listOnly = false
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonOpenApps) private var openApps
@@ -14,10 +15,25 @@ struct ChatListView: View {
     private let reminderDismissals = BackupReminderDismissals()
 
     var body: some View {
-        NavigationStack(path: $model.path) {
+        Group {
+            if listOnly {
+                list
+            } else {
+                NavigationStack(path: $model.path) {
+                    list
+                        .navigationDestination(for: ChatRoute.self) { route in
+                            ChatDestination(model: model, plugins: plugins, route: route)
+                        }
+                }
+            }
+        }
+    }
+
+    private var list: some View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     notices
+                    confirmationsEntry
                     if model.pendingDraft != nil {
                         Text(TabText.selectChat)
                             .wontonText(WontonTheme.typography.supporting)
@@ -38,43 +54,59 @@ struct ChatListView: View {
                         if row.membership == .invited {
                             InviteRow(row: row, model: model)
                         } else {
-                            NavigationLink(value: ChatRoute.room(row.roomId)) {
-                                RoomRowView(row: row, model: model, plugins: plugins)
+                            let selected = listOnly && model.path.last == .room(row.roomId) && !pages.showsPluginPage
+                            Button { select(.room(row.roomId)) } label: {
+                                RoomRowView(row: row, model: model, plugins: plugins, selected: selected)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(selected ? .isSelected : [])
+                            .accessibilityValue(row.callActive ? String(localized: .Chat.roomCallActive) : "")
+                            .accessibilityIdentifier("chatRoom.\(row.roomId)")
+                            .contextMenu { ContentWindowButton(target: .room(roomId: row.roomId)) }
                         }
                     }
                 }
                 .background { if let pull { ChatPullDetector(pull: pull) } }
             }
             .overlay {
-                if isEmpty { NoChats() }
+                if isEmpty { NoChats().allowsHitTesting(false) }
             }
             .safeAreaInset(edge: .bottom, alignment: .trailing, spacing: 0) {
-                newChatButton
-                    .padding(.trailing, WontonTheme.spacing.s16)
-                    .padding(.bottom, WontonTheme.spacing.s12)
-            }
-            .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
-            .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
-            .environment(\.goToInstalledApps, { pages.open(.apps) })
-            .navigationDestination(for: ChatRoute.self) { route in
-                switch route {
-                case let .room(roomId):
-                    // 提示条把路径直接换成另一个房间时，SwiftUI 会复用这个视图，@State 里还是旧房间的时间线。
-                    ChatRoomView(model: model, plugins: plugins, roomId: roomId, title: model.title(of: roomId))
-                        .id(roomId)
-                case .chatBackup:
-                    ChatBackupView(model: model)
-                case .startChat:
-                    StartChatView(model: model)
+                if !listOnly {
+                    newChatButton
+                        .padding(.trailing, WontonTheme.spacing.s16)
+                        .padding(.bottom, WontonTheme.spacing.s12)
                 }
             }
+            .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+            .task { await model.confirmations.observe() }
+            .fullScreenCover(item: $confirmation) { InstallConfirmView(model: plugins, confirmation: $0) }
+            .environment(\.goToInstalledApps, { pages.open(.apps) })
             .onChange(of: model.viewModel.encryption.backupReminder?.text, initial: true) { _, _ in
                 // 换一类提醒（保存↔输入）时重新看关没关过；核心清掉提醒后也落回未关。
                 locallyDismissed = false
             }
+    }
+
+    private func select(_ route: ChatRoute) {
+        if listOnly {
+            pages.open(.chat)
+            model.path = [route]
+        } else {
+            model.path.append(route)
         }
+    }
+
+    private var confirmationsEntry: some View {
+        NavigationLink(value: ChatRoute.confirmations) {
+            WontonRow(
+                title: String(localized: .Confirmations.confirmationsTitle),
+                value: model.confirmations.pendingCount > 0 ? String(model.confirmations.pendingCount) : nil,
+                showsForward: true
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("confirmations-entry")
     }
 
     private var separator: some View {
@@ -91,17 +123,31 @@ struct ChatListView: View {
         }
     }
 
-    private var newChatButton: some View {
-        NavigationLink(value: ChatRoute.startChat) {
-            WontonIcon.add.view()
-                .foregroundStyle(Color(colors.textPrimary))
-                .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
-                .contentShape(Circle())
+    @ViewBuilder private var newChatButton: some View {
+        if #available(iOS 26, *) {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.onPrimary))
+            }
+            .buttonStyle(.glassProminent)
+            .buttonBorderShape(.circle)
+            .controlSize(.large)
+            .tint(Color(colors.primary))
+            .frame(minWidth: WontonTheme.size.floatingActionButton, minHeight: WontonTheme.size.floatingActionButton)
+            .contentShape(Circle())
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
+        } else {
+            NavigationLink(value: ChatRoute.startChat) {
+                WontonIcon.add.view()
+                    .foregroundStyle(Color(colors.textPrimary))
+                    .frame(width: WontonTheme.size.floatingActionButton, height: WontonTheme.size.floatingActionButton)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay { Circle().strokeBorder(Color(colors.separator), lineWidth: WontonTheme.size.hairline) }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(.Chat1.chatNewChat))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(.Chat1.chatNewChat))
     }
 
     /// 关过的提醒不再挂（本机显示偏好，存壳里）；这次会话里刚关的立即生效。
@@ -125,7 +171,7 @@ struct ChatListView: View {
                                 Button { model.keyHandoffDeferred = false } label: { reminderTitle(reminder) }
                                     .buttonStyle(.plain)
                             } else {
-                                NavigationLink(value: ChatRoute.chatBackup) { reminderTitle(reminder) }
+                                Button { select(.chatBackup) } label: { reminderTitle(reminder) }
                                     .buttonStyle(.plain)
                             }
                             WontonIconButton(icon: .close, label: String(localized: .Common.commonClose)) {
@@ -159,6 +205,43 @@ struct ChatListView: View {
 
 }
 
+struct ChatDestination: View {
+    let model: ChatModel
+    let plugins: PluginsModel
+    let route: ChatRoute
+
+    var body: some View {
+        switch route {
+        case let .room(roomId):
+            ChatRoomView(model: model, plugins: plugins, roomId: roomId, title: model.title(of: roomId))
+                .id(roomId)
+        case .chatBackup:
+            ChatBackupView(model: model)
+        case .startChat:
+            StartChatView(model: model)
+        case .confirmations:
+            ConfirmationsPage(model: model.confirmations, chat: model, plugins: plugins)
+        }
+    }
+}
+
+struct ChatDetailView: View {
+    @Bindable var model: ChatModel
+    let plugins: PluginsModel
+
+    var body: some View {
+        NavigationStack(path: $model.path) {
+            Text(TabText.chat)
+                .wontonText(WontonTheme.typography.itemTitle)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .wontonRootScreen(TabText.chat, hasActions: false) { EmptyView() }
+                .navigationDestination(for: ChatRoute.self) { route in
+                    ChatDestination(model: model, plugins: plugins, route: route)
+                }
+        }
+    }
+}
+
 /// 聊天操作的结果。只在底栏之上挂一份：挂在各页的话，后台页的那份先弹，弹不出来，用户在别的页就看不到。
 struct ChatDialogs: ViewModifier {
     let model: ChatModel
@@ -169,7 +252,7 @@ struct ChatDialogs: ViewModifier {
             .wontonDialog(
                 problem: model.viewModel.problem?.problem,
                 isPresented: isShowingProblem,
-                onDismiss: { model.send(.dismissChatProblem) }
+                onDismiss: { model.send(.chat(action: .dismissChatProblem)) }
             )
     }
 
@@ -180,7 +263,7 @@ struct ChatDialogs: ViewModifier {
     private var isShowingProblem: Binding<Bool> {
         Binding(
             get: { model.viewModel.problem != nil },
-            set: { if !$0 { model.send(.dismissChatProblem) } }
+            set: { if !$0 { model.send(.chat(action: .dismissChatProblem)) } }
         )
     }
 }
@@ -280,6 +363,7 @@ private struct RoomRowView: View {
     let row: RoomRow
     let model: ChatModel
     let plugins: PluginsModel
+    var selected = false
     @Environment(\.wontonColors) private var colors
 
     var body: some View {
@@ -290,12 +374,17 @@ private struct RoomRowView: View {
                     HStack(spacing: WontonTheme.spacing.s4) {
                         Text(row.name)
                             .wontonText(WontonTheme.typography.itemTitle)
-                            .foregroundStyle(Color(colors.textPrimary))
+                            .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.textPrimary))
                             .lineLimit(1)
                         if row.isEncrypted {
                             WontonIcon.lockFill.view(size: WontonTheme.size.iconTiny)
                                 .foregroundStyle(Color(colors.textSecondary))
                                 .accessibilityLabel(Text(.Chat0.chatEncrypted))
+                        }
+                        // 有人在通话（ADR-0096）。图标是装饰，读屏的那句挂在整行上（见列表里的 accessibilityValue）。
+                        if row.callActive {
+                            WontonIcon.voiceCallFill.view(size: WontonTheme.size.iconTiny)
+                                .foregroundStyle(Color(selected ? colors.accentInkOnFill : colors.success))
                         }
                     }
                     Spacer(minLength: 0)
@@ -330,6 +419,7 @@ private struct RoomRowView: View {
         .padding(.horizontal, WontonTheme.spacing.s16)
         .padding(.vertical, WontonTheme.spacing.s12)
         .frame(maxWidth: .infinity, minHeight: WontonTheme.size.target, alignment: .leading)
+        .background(selected ? Color(colors.accentFill) : Color.clear)
         .contentShape(Rectangle())
     }
 
@@ -348,8 +438,11 @@ struct RoomAvatar: View {
     @Environment(\.wontonColors) private var colors
 
     private var plugin: InstalledPlugin? {
-        guard let bot = row.directUserId else { return nil }
-        return plugins.viewModel.installed?.plugins.first { $0.botUserId == bot }
+        guard let userId = row.directUserId else { return nil }
+        if let bot = model.viewModel.bots.first(where: { $0.userId == userId }) {
+            return plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }
+        }
+        return plugins.viewModel.installed?.plugins.first { $0.botUserId == userId }
     }
 
     var body: some View {
@@ -399,9 +492,9 @@ private struct InviteRow: View {
                 .wontonText(WontonTheme.typography.itemTitle)
                 .foregroundStyle(Color(colors.textPrimary))
             HStack(spacing: WontonTheme.spacing.s8) {
-                Button(.Chat0.chatInviteAccept) { model.send(.joinRoom(roomId: row.roomId)) }
+                Button(.Chat0.chatInviteAccept) { model.send(.chat(action: .joinRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .primary))
-                Button(.Chat1.chatInviteDecline) { model.send(.leaveRoom(roomId: row.roomId)) }
+                Button(.Chat1.chatInviteDecline) { model.send(.chat(action: .leaveRoom(roomId: row.roomId))) }
                     .buttonStyle(WontonButtonStyle(kind: .secondary))
             }
         }
@@ -448,7 +541,7 @@ private struct StartChatView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle))
+        .wontonPushedScreen(String(localized: .Chat1.chatStartTitle), usesSystemToolbar: true)
     }
 }
 

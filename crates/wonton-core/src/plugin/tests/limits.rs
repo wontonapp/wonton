@@ -436,12 +436,14 @@ async fn a_bot_plugin_can_change_its_limits() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             id: id.clone(),
             version: "1.0.0".into(),
             source,
             files: Default::default(),
             granted_permissions: vec![Permission::MatrixBot],
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             limits: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
@@ -450,10 +452,11 @@ async fn a_bot_plugin_can_change_its_limits() {
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

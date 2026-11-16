@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Fallback name for an authorized disk with no name. No arguments. -->
+    <string name="plugin_device_disk">ディスク</string>
     <string name="plugin_requirements">要件</string>
     <string name="plugin_stars">スター数</string>
     <string name="plugin_repository">リポジトリ</string>
@@ -36,4 +38,6 @@
     <!-- Title of the uninstall confirmation. Argument: the app's name. -->
     <string name="plugin_uninstall_title">「%1$s」をアンインストールしますか？</string>
     <string name="plugin_screenshot">スクリーンショット</string>
+    <!-- Row in the install/upgrade confirmation and on the app's detail page: what the app's web page may do when opened inside a chat room, for the capabilities that never touch message content. No arguments. -->
+    <string name="plugin_widget_normal">ルームで開くと、このアプリのページは通話の状態などメッセージを含まない情報を読み書きでき、通話サービスにあなた本人であることを証明できます。</string>
 </resources>

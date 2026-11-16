@@ -1,6 +1,6 @@
 # ADR-0081 用户自己电脑上的 Agent：电脑只当远端 ACP 运行时，桥和令牌留在服务器
 
-- 状态：已接受（2026-11-11，三处取舍主人定，见“主人已定”）
+- 状态：电脑 ACP 运行时产品路线已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。下文接口、连接程序、主机注册与验证保留作历史依据，不作为继续维护 Wonton 多运行时的要求；Hermes 原生委派不等于本篇的远端电脑 Agent 已获支持。
 - 延伸 [ADR-0061](0061-agent-runtime-and-frontends.md)：运行时的 Agent 进程可以在服务器外。
   [ADR-0011](0011-security-model.md)、[ADR-0036](0036-plugin-privileges.md) 的“Agent 拿不到宿主 shell”只管服务器宿主，用户电脑按本篇
 

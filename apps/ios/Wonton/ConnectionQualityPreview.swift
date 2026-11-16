@@ -33,7 +33,7 @@ enum QualityPreviews {
                 network: .wifi, relay: .ok, server: .ok, lastConnectedAtMs: 1_794_000_000_000,
                 handshakeMs: 120, disconnects: 0, failedDials: 0, sentPackets: 900, lostPackets: 66,
                 quality: .poor, lossPerMille: 73, rttMs: 1_240,
-                lastFailure: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
+                lastFailure: nil, diagnostic: nil, addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
             ),
             proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
         )
@@ -72,7 +72,7 @@ private struct QualityDetailsPreview: View {
             ConnectionDetailsRows(details: home.details, path: home.path)
                 .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Common.commonDetails))
+        .wontonPushedScreen(String(localized: .Common.commonDetails), usesSystemToolbar: true)
     }
 }
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WontonClient
 
 /// “应用”：配对入口、已装插件和应用商店。只渲染核心给出的 ViewModel。
@@ -9,14 +10,20 @@ struct HomeView: View {
     let settings: SettingsModel
     let open: (PluginEntry) -> Void
     let pendingCards: [PendingConfirmation]
-    let openCardRoom: (String) -> Void
+    let openCardRoom: (String?) -> Void
     let showSettings: () -> Void
     let showServer: () -> Void
     var settingsPresented = false
+    /// 配对后“全部应用”是盖在聊天根页面上的一层（ADR-0095）：导航栈的根是透明的，网格是推入的第一页，
+    /// 所以网格的左边缘右滑、返回按钮回聊天，和插件页一个手感。不做成 fullScreenCover：盖子没有系统返回，
+    /// 盖子开着时同一个视图上的设置盖子也弹不出来。没配对时网格（或配对页）自己就是根页面。
+    var layered = false
     /// 开发时经 `WONTON_DEV_OPEN_WEB` 传入的插件网页，本地代理就绪后自动打开，真机上不用点按也能测。
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
+    @Environment(\.wontonOpenContent) private var openContent
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
     @State private var openedDevPage = false
     @Binding var path: NavigationPath
     @State private var confirmation: PluginConfirmation?
@@ -24,43 +31,55 @@ struct HomeView: View {
     @State private var menuPlugin: InstalledPlugin?
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                if case .notConfigured = model.viewModel.status,
-                   model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
-                    PairingView(model: model)
-                        .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
-                            settingsLink
-                        }
-                } else {
-                    launcher
-                        .wontonRootScreen(String(localized: .Launcher.launcherTitle), hasActions: true) {
-                            settingsLink
-                        }
-                }
+        NavigationStack(path: $path) { prompts(on: stackRoot) }
+            .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
+            .environment(\.goToInstalledApps, {
+                pages.open(.apps)
+            })
+    }
+
+    private var stackRoot: some View {
+        Group {
+            if layered {
+                // 这一层的导航栈整片内容右滑返回照常留着（网格、商店里没有要让的横滑）。
+                Color.clear
+                    .background { PageStackBack(contentPop: true) }
+                    .toolbar(.hidden, for: .navigationBar)
+            } else if case .notConfigured = model.viewModel.status,
+               model.servers.adding || !model.servers.servers.contains(where: { $0.current }) {
+                PairingView(model: model)
+                    .wontonRootScreen(String(localized: .Pairing.pairingTitle), hasActions: true) {
+                        settingsLink
+                    }
+            } else {
+                launcher
+                    .wontonRootScreen(String(localized: .Launcher.launcherTitle), hasActions: true) {
+                        settingsLink
+                    }
             }
-            .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
-            .navigationDestination(for: AppsRoute.self) { route in
-                switch route {
-                case .store: StoreView(model: plugins, open: open)
-                }
-            }
-            .navigationDestination(for: PluginRoute.self) { route in
-                PluginDetailView(model: plugins, chat: chat, route: route, open: open)
-            }
-            .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
-                guard !openedDevPage, let devWebURL,
-                      let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
-                      let choice = plugin.tabChoices.first else { return }
-                openedDevPage = true
-                pages.open(choice.tab)
-            }
-            .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
         }
-        .wontonDialog(problem: plugins.rejection, isPresented: isShowingPluginRejection)
-        .environment(\.goToInstalledApps, {
-            pages.open(.apps)
-        })
+        .modifier(VisitingRoomModifier(model: chat, plugins: plugins, tab: .apps, path: $path))
+        .navigationDestination(for: AppsRoute.self) { route in
+            switch route {
+            case .launcher:
+                launcher
+                    .wontonPushedScreen(
+                        String(localized: .Launcher.launcherTitle), showsStatus: true, showsStatusLine: true
+                    ) { settingsLink }
+            case .store: StoreView(model: plugins, open: open)
+            }
+        }
+        .navigationDestination(for: PluginRoute.self) { route in
+            PluginDetailView(model: plugins, chat: chat, route: route, open: open)
+        }
+        .onChange(of: plugins.viewModel.installed, initial: true) { _, installed in
+            guard !openedDevPage, let devWebURL,
+                  let plugin = installed?.plugins.first(where: { $0.webUrl == devWebURL.absoluteString }),
+                  let choice = plugin.tabChoices.first else { return }
+            openedDevPage = true
+            pages.open(choice.tab)
+        }
+        .wontonDialog(problem: model.rejection, isPresented: isShowingRejection)
     }
 
     private var launcher: some View {
@@ -81,44 +100,22 @@ struct HomeView: View {
             .padding(WontonTheme.spacing.pageInset)
         }
         .refreshable {
-            if plugins.viewModel.actions.contains(.store) { plugins.send(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
+            if plugins.viewModel.actions.contains(.store) { plugins.send(.plugins(action: .refreshPlugins)) }
+            plugins.send(.sharing(action: .refreshSharedApps(ownerUserId: nil)))
         }
         .task {
-            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.refreshPlugins) }
-            plugins.send(.refreshSharedApps(ownerUserId: nil))
+            if plugins.viewModel.actions.contains(.store) { plugins.refresh(.plugins(action: .refreshPlugins)) }
+            plugins.send(.sharing(action: .refreshSharedApps(ownerUserId: nil)))
         }
-        .fullScreenCover(item: $confirmation) {
-            InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true)
-        }
-        // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
-        // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
-        .onChange(of: plugins.viewModel.confirmation) { _, offered in
-            confirmation = offered.map(PluginConfirmation.store)
-        }
-        .onChange(of: confirmation) { (old: PluginConfirmation?, new: PluginConfirmation?) in
-            // 主人自己关掉确认页：核心撤走这条、放下一条。确认后核心已把这条撤走，ID 对不上，不会再进来。
-            guard new == nil, let shown = old, case let .store(offer) = shown else { return }
-            let current = plugins.viewModel.confirmation
-            if current?.preview.id == offer.preview.id {
-                plugins.send(.dismissStoreConfirmation)
-            }
-        }
-        .uninstallDialog($uninstalling, model: plugins)
-        .wontonActionSheet(
-            isPresented: isShowingMenu,
-            title: menuPlugin?.title,
-            actions: menuPlugin.map(menu(for:)) ?? []
-        )
-        .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
+
     }
 
     @ViewBuilder private func installedPlugins(_ installed: InstalledPlugins) -> some View {
         if let problem = plugins.viewModel.problem {
-            ProblemRow(problem: problem.problem) { plugins.send(.refreshPlugins) }
+            ProblemRow(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if let check = installed.upgradeCheck {
-            ProblemRow(problem: check.problem) { plugins.send(.refreshPlugins) }
+            ProblemRow(problem: check.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         }
         if installed.plugins.isEmpty {
             NoPlugins { path.append(AppsRoute.store) }
@@ -169,9 +166,9 @@ struct HomeView: View {
     /// 还没取到已安装的插件：取不到的原因和下一步，或者正在取。
     @ViewBuilder private var placeholder: some View {
         if let problem = plugins.viewModel.problem {
-            ProblemView(problem: problem.problem) { plugins.send(.refreshPlugins) }
+            ProblemView(problem: problem.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else if let rejection = plugins.refreshRejection {
-            ProblemView(problem: rejection.problem) { plugins.send(.refreshPlugins) }
+            ProblemView(problem: rejection.problem) { plugins.send(.plugins(action: .refreshPlugins)) }
         } else {
             LoadingView()
         }
@@ -184,55 +181,6 @@ struct HomeView: View {
         } else {
             path.append(PluginRoute.installed(id: plugin.id))
         }
-    }
-
-    private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
-        var actions = [
-            WontonSheetAction(title: String(localized: .Common.commonDetails), icon: .info) {
-                path.append(PluginRoute.installed(id: plugin.id))
-            }
-        ]
-        // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
-        if plugin.entries.count > 1, let web = plugin.entries.last {
-            actions.append(WontonSheetAction(title: String(localized: .Launcher.launcherOpenWeb),
-                icon: .web) { open(web) })
-        }
-        // 已加进“我的应用”的页给移出，没加的给加进。
-        let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
-        for choice in plugin.tabChoices {
-            let added = mine.contains(choice.tab)
-            let title = (added ? TabText.removeFromMyApps : TabText.addToMyApps)
-                + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
-            actions.append(WontonSheetAction(title: title, icon: .apps) {
-                if added {
-                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
-                } else {
-                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
-                }
-            })
-        }
-        if let upgrade = plugin.upgrade {
-            let title = String(localized: .Launcher.launcherUpgradeTo(upgrade.version))
-            actions.append(WontonSheetAction(title: title, icon: .download) {
-                plugins.send(.upgradeNow(pluginId: plugin.id))
-            })
-        }
-        if plugin.removable {
-            let title = String(localized: .Plugin3.pluginUninstallAction)
-            actions.append(WontonSheetAction(title: title, icon: .trash, isDanger: true) {
-                uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
-            })
-        }
-        return actions
-    }
-
-    private var isShowingMenu: Binding<Bool> {
-        Binding(
-            get: { menuPlugin != nil },
-            set: { isShowing in
-                if !isShowing { menuPlugin = nil }
-            }
-        )
     }
 
     private var settingsLink: some View {
@@ -266,7 +214,98 @@ struct HomeView: View {
     }
 }
 
+/// 网格这一层弹出来的东西：安装确认、卸载和长按菜单。
+extension HomeView {
+    /// 确认页、卸载和长按菜单挂在栈的根上，不挂在网格上：网格在这一层里是推入的页面，从侧边栏直接进商店时
+    /// 它夹在栈中间、没上过屏，挂在它上面的 onChange 不保证在跑。
+    private func prompts(on content: some View) -> some View {
+        content
+            .fullScreenCover(item: $confirmation) {
+                InstallConfirmView(model: plugins, confirmation: $0, coreOffered: true)
+            }
+            // 核心取好预览、要主人拿主意的一键操作（ADR-0017）：商店列表和详情页都在这层栈里，确认页盖在最上面。
+            // 确认后核心自己把这条撤走（排着队的放下一条进来），只有主人自己关才要告诉核心撤走。
+            .onChange(of: plugins.viewModel.confirmation) { _, offered in
+                // 这一层收着的时候和以前盖子没开一样，不接。
+                guard !layered || !path.isEmpty else { return }
+                confirmation = offered.map(PluginConfirmation.store)
+            }
+            .onChange(of: confirmation) { (old: PluginConfirmation?, new: PluginConfirmation?) in
+                // 主人自己关掉确认页：核心撤走这条、放下一条。确认后核心已把这条撤走，ID 对不上，不会再进来。
+                guard new == nil, let shown = old, case let .store(offer) = shown else { return }
+                let current = plugins.viewModel.confirmation
+                if current?.preview.id == offer.preview.id {
+                    plugins.send(.plugins(action: .dismissStoreConfirmation))
+                }
+            }
+            .uninstallDialog($uninstalling, model: plugins)
+            .wontonActionSheet(
+                isPresented: isShowingMenu,
+                title: menuPlugin?.title,
+                usesSystemPresentation: true,
+                actions: menuPlugin.map(menu(for:)) ?? []
+            )
+            .sensoryFeedback(.impact, trigger: menuPlugin?.id) { _, id in id != nil }
+    }
+
+    private func menu(for plugin: InstalledPlugin) -> [WontonSheetAction] {
+        var actions = [
+            WontonSheetAction(title: String(localized: .Common.commonDetails), icon: .info) {
+                path.append(PluginRoute.installed(id: plugin.id))
+            }
+        ]
+        // 有 Bot 又有网页的 Agent 插件，点图标进私聊，网页从这里打开。
+        if plugin.entries.count > 1, let web = plugin.entries.last {
+            actions.append(WontonSheetAction(title: String(localized: .Launcher.launcherOpenWeb),
+                icon: .web) { open(web) })
+        }
+        // 已加进“我的应用”的页给移出，没加的给加进。
+        let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
+        for choice in plugin.tabChoices {
+            if supportsMultipleWindows, UIDevice.current.userInterfaceIdiom == .pad, let openContent {
+                let title = String(localized: .Sidebar.sidebarOpenWindow)
+                    + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
+                actions.append(WontonSheetAction(title: title, icon: .web) { openContent(.tab(tab: choice.tab)) })
+            }
+            let added = mine.contains(choice.tab)
+            let title = (added ? TabText.removeFromMyApps : TabText.addToMyApps)
+                + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
+            actions.append(WontonSheetAction(title: title, icon: .apps) {
+                if added {
+                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
+                } else {
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
+                }
+            })
+        }
+        if let upgrade = plugin.upgrade {
+            let title = String(localized: .Launcher.launcherUpgradeTo(upgrade.version))
+            actions.append(WontonSheetAction(title: title, icon: .download) {
+                plugins.send(.plugins(action: .upgradeNow(pluginId: plugin.id)))
+            })
+        }
+        if plugin.removable {
+            let title = String(localized: .Plugin3.pluginUninstallAction)
+            actions.append(WontonSheetAction(title: title, icon: .trash, isDanger: true) {
+                uninstalling = UninstallTarget(id: plugin.id, title: plugin.title)
+            })
+        }
+        return actions
+    }
+
+    private var isShowingMenu: Binding<Bool> {
+        Binding(
+            get: { menuPlugin != nil },
+            set: { isShowing in
+                if !isShowing { menuPlugin = nil }
+            }
+        )
+    }
+}
+
 enum AppsRoute: Hashable {
+    /// 配对后那一层里的网格页（见 `HomeView.layered`）。
+    case launcher
     case store
 }
 
@@ -331,7 +370,19 @@ private struct LauncherIcon: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder private var badge: some View {
+    private var badge: some View {
+        HStack(spacing: WontonTheme.spacing.s4) {
+            if case .stopped = plugin.status {
+                WontonIcon.pauseFill.view(size: WontonTheme.size.iconSmall)
+                    .foregroundStyle(Color(colors.textSecondary))
+                    .background(Circle().fill(Color(colors.canvas)))
+                    .accessibilityLabel(String(localized: .Launcher.launcherBadgeStopped))
+            }
+            problemBadge
+        }
+    }
+
+    @ViewBuilder private var problemBadge: some View {
         if case .degraded = plugin.status {
             WontonIcon.warningCircleFill.view(size: WontonTheme.size.iconSmall)
                 .foregroundStyle(Color(colors.danger))

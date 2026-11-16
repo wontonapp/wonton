@@ -6,7 +6,7 @@
 //! 要显示已配对的台数，条目只在取到过列表时给（核心只让主人设备读这个接口，非主人的设备取不到，
 //! 也就看不到这一项）。
 //!
-//! 出码页由壳开关：[`Action::ShowPeerCode`] 取码放进 [`PeersViewModel::code`]，[`Action::HidePeerCode`] 清掉。
+//! 出码页由壳开关：[`PeerAction::ShowPeerCode`] 取码放进 [`PeersViewModel::code`]，[`PeerAction::HidePeerCode`] 清掉。
 //! 出码页开着（码还在）、有一行在等对方同意或刚配对还没探活出结果时，每几秒取一次列表，跟上对方的扫码和
 //! 同意，不用退出页面再进；都没有了就停。列表取到过（包括空的）以后按核心的探活周期取，已配对服务器的
 //! 连上、掉线、对方删了配对在半分钟内显示出来，设置首页的台数也跟着变。
@@ -23,7 +23,7 @@ use tokio::sync::watch;
 use tokio::sync::watch::Sender as WatchSender;
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, HomeStatus, PeerCode, PeerError, PeerStatus, PeersState, PeersViewModel,
+    CoreError, HomeStatus, PeerAction, PeerCode, PeerError, PeerStatus, PeersState, PeersViewModel,
     SecretString,
 };
 
@@ -91,47 +91,44 @@ impl PeersLink {
         self.view.subscribe()
     }
 
-    pub(crate) fn dispatch(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch(self: &Arc<Self>, action: PeerAction) -> Result<(), CoreError> {
         match action {
-            Action::RefreshPeers => {
+            PeerAction::RefreshPeers => {
                 self.refresh();
                 Ok(())
             }
-            Action::ShowPeerCode => {
+            PeerAction::ShowPeerCode => {
                 self.show_code();
                 Ok(())
             }
-            Action::HidePeerCode => {
+            PeerAction::HidePeerCode => {
                 self.hide_code();
                 Ok(())
             }
-            Action::ResetPeerCode => {
+            PeerAction::ResetPeerCode => {
                 self.reset_code();
                 Ok(())
             }
-            Action::ApprovePeerRequest { id } => {
-                self.act(Action::ApprovePeerRequest { id });
+            PeerAction::ApprovePeerRequest { id } => {
+                self.act(PeerAction::ApprovePeerRequest { id });
                 Ok(())
             }
-            Action::RejectPeerRequest { id } => {
-                self.act(Action::RejectPeerRequest { id });
+            PeerAction::RejectPeerRequest { id } => {
+                self.act(PeerAction::RejectPeerRequest { id });
                 Ok(())
             }
-            Action::UnrejectPeerRequest { id } => {
-                self.act(Action::UnrejectPeerRequest { id });
+            PeerAction::UnrejectPeerRequest { id } => {
+                self.act(PeerAction::UnrejectPeerRequest { id });
                 Ok(())
             }
-            Action::ScanPeerCode { code } => {
+            PeerAction::ScanPeerCode { code } => {
                 self.scan(code);
                 Ok(())
             }
-            Action::RemovePeer { server_name } => {
+            PeerAction::RemovePeer { server_name } => {
                 self.remove(&server_name);
                 Ok(())
             }
-            _ => Err(CoreError::InvalidInput {
-                reason: l10n!(CATALOG, language(), "peers-invalid-action"),
-            }),
         }
     }
 
@@ -227,13 +224,13 @@ impl PeersLink {
     }
 
     /// 处理一条请求（同意、拒绝、撤销）：成功后重新取列表，失败按类别进状态。
-    fn act(self: &Arc<Self>, action: Action) {
+    fn act(self: &Arc<Self>, action: PeerAction) {
         let link = self.clone();
         self.spawn(async move {
             let outcome = match (link.api(), action) {
-                (Ok(api), Action::ApprovePeerRequest { id }) => api.approve(&id).await,
-                (Ok(api), Action::RejectPeerRequest { id }) => api.reject(&id).await,
-                (Ok(api), Action::UnrejectPeerRequest { id }) => api.unreject(&id).await,
+                (Ok(api), PeerAction::ApprovePeerRequest { id }) => api.approve(&id).await,
+                (Ok(api), PeerAction::RejectPeerRequest { id }) => api.reject(&id).await,
+                (Ok(api), PeerAction::UnrejectPeerRequest { id }) => api.unreject(&id).await,
                 (Err(failure), _) => Err(failure),
                 (Ok(_), _) => Ok(()),
             };

@@ -45,6 +45,9 @@ pub(super) async fn install(
     activity: Guard,
 ) -> CallToolResult {
     let value = Value::Object(args.clone());
+    if let Err(failure) = bus.require_plugin_install(caller) {
+        return bus.deny(caller, name, &value, &failure);
+    }
     let id = args.get("id").and_then(Value::as_str);
     let dir = args.get("dir").and_then(Value::as_str);
     match (id, dir) {
@@ -136,9 +139,12 @@ async fn official(
     let id_for_run = package.manifest.id.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
-                    settings: wonton_protocol::SettingValues| async move {
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| async move {
+        proposed.with_devices(devices);
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
+
         let installed = bus
             .plugins
             .install_with_dependencies(
@@ -169,17 +175,21 @@ fn update_header(
     requester: &str,
     package: &PluginPackage,
     langs: &Languages,
+    quiet_updates: bool,
 ) -> (String, Vec<CardLine>) {
     if adopt {
-        // 三件事要说清（#817）：换成 Bot 的版本、数据保留、以后没变宽不再问。权限变化照常列。
-        let mut lines = vec![
-            cards::line(l10n::text(langs, "chat-card-update-adopt-replace", &[])),
-            cards::line(l10n::text(
+        let mut lines = vec![cards::line(l10n::text(
+            langs,
+            "chat-card-update-adopt-replace",
+            &[],
+        ))];
+        if quiet_updates {
+            lines.push(cards::line(l10n::text(
                 langs,
                 "chat-card-agent-ask-again",
                 &[("requester", requester.into())],
-            )),
-        ];
+            )));
+        }
         lines.extend(widened.iter().cloned());
         (
             l10n::text(
@@ -198,6 +208,19 @@ fn update_header(
         (
             l10n::text(langs, "chat-card-update-header-risky", &[]),
             cards::risky_lines(package, langs),
+        )
+    } else if !quiet_updates {
+        (
+            l10n::text(
+                langs,
+                if package.manifest.permissions.is_empty() {
+                    "chat-card-no-permissions"
+                } else {
+                    "chat-card-permissions-header"
+                },
+                &[],
+            ),
+            cards::permission_lines(&package.manifest, langs),
         )
     } else {
         (
@@ -344,7 +367,8 @@ async fn first_install(
             );
         }
     };
-    let mut draft = cards::agent_install(&caller.name, &package, inputs, langs);
+    let quiet_updates = bus.plugin_install_gate(caller) == wonton_protocol::Gate::Allow;
+    let mut draft = cards::agent_install(&caller.name, &package, inputs, quiet_updates, langs);
     draft.settings = match bus.plugins.card_settings(&package, None, langs) {
         Ok(settings) => settings,
         Err(e) => {
@@ -387,9 +411,12 @@ async fn first_install(
     let langs = langs.clone();
     let run = move |bus: Arc<Bus>,
                     secrets: SecretValues,
-                    settings: wonton_protocol::SettingValues| async move {
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| async move {
+        proposed.with_devices(devices);
         let mut request = proposed.with_secrets(secrets);
         request.settings = settings;
+
         let installed = bus
             .plugins
             .install_with_dependencies(
@@ -433,6 +460,7 @@ async fn quiet_update(
             granted,
             record.enabled_permissions.clone(),
             record.lan_webui,
+            &[],
             &Default::default(),
             &bus.plugins.owner_languages(),
         )
@@ -533,7 +561,13 @@ async fn update(
                 .as_ref()
                 .is_some_and(|secrets| secrets.contains_key(name))
     });
-    if !adopt && widened.is_empty() && !risky && !record.ask_every_update && !needs_secrets {
+    if !adopt
+        && widened.is_empty()
+        && !risky
+        && !record.ask_every_update
+        && !needs_secrets
+        && bus.plugin_install_gate(caller) == wonton_protocol::Gate::Allow
+    {
         // 不打扰主人：直接更新，写审计（ADR-0033 的“更新，权限没变宽”）。之前还在等的
         // 同一份提交让位，不能让主人批一份已经被盖掉的。
         bus.confirmations
@@ -604,7 +638,16 @@ async fn card_update(
     bus.confirmations
         .supersede_pending(&caller.id, &id, langs)
         .await;
-    let (header, lines) = update_header(adopt, &widened, risky, &caller.name, &package, langs);
+    let quiet_updates = bus.plugin_install_gate(caller) == wonton_protocol::Gate::Allow;
+    let (header, lines) = update_header(
+        adopt,
+        &widened,
+        risky,
+        &caller.name,
+        &package,
+        langs,
+        quiet_updates,
+    );
     let inputs = match bus
         .plugins
         .secret_inputs(&package.manifest, filled.as_ref(), langs)
@@ -628,8 +671,16 @@ async fn card_update(
         inputs,
         langs,
     );
-    draft.settings = match bus.plugins.card_settings(&package, Some(&record), langs) {
-        Ok(settings) => settings,
+    let preview = match bus
+        .plugins
+        .preview_upgrade(
+            &id,
+            crate::plugin::UpgradeTo::Upload(Box::new(package.clone())),
+            langs,
+        )
+        .await
+    {
+        Ok(preview) => preview,
         Err(e) => {
             return bus.deny(
                 caller,
@@ -639,19 +690,24 @@ async fn card_update(
             );
         }
     };
+    draft.settings = preview.settings;
+    draft.permissions = preview.permissions;
+    draft.devices = preview.devices.unwrap_or_default();
     let second = highest(&package.manifest).then(|| cards::highest_confirm(&package, langs));
     let id_for_run = id;
     let writer = adopt.then(|| PluginWriter {
         plugin_id: caller.id.to_string(),
         title: caller.name.clone(),
     });
-    let run =
-        move |bus: Arc<Bus>, secrets: SecretValues, settings: wonton_protocol::SettingValues| {
-            upgrade_ran(
-                bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
-                writer,
-            )
-        };
+    let run = move |bus: Arc<Bus>,
+                    secrets: SecretValues,
+                    settings: wonton_protocol::SettingValues,
+                    devices: Vec<String>| {
+        upgrade_ran(
+            bus, id_for_run, version, package, granted, enabled, lan_webui, secrets, settings,
+            devices, writer,
+        )
+    };
     bus.confirmed_twice(
         caller,
         name,

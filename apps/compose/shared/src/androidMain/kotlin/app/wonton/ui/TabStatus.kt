@@ -11,6 +11,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import app.wonton.protocol.PluginAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.PlacedTab
 import app.wonton.protocol.TabLoadFailure
@@ -33,7 +35,16 @@ internal fun PluginTabStatus(
     val inBrowser = crossOriginBlocked && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
     if (inBrowser) {
-        BrowserPageStatus(page, tabs.core, autoOpen = place !is PlacedTab.Panel)
+        BrowserPageStatus(
+            page, tabs.core,
+            autoOpen = place !is PlacedTab.Panel,
+            onBackToChat = {
+                when (place) {
+                    is PlacedTab.Panel -> tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
+                    else -> tabs.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+                }
+            },
+        )
         return
     }
     val failure = when {
@@ -76,20 +87,23 @@ internal fun PluginTabStatus(
 private fun TabStatusActions(
     state: TabState, tab: TabRef, tabs: PagesState, onDetails: (String) -> Unit, place: PlacedTab?,
 ) {
+    val pluginId = tab.localPluginId()
     if (state is TabState.PageRemoved && place is PlacedTab.Panel) {
         WontonButton(stringResource(R.string.panel_remove), {
-            tabs.send(Action.RemovePanelPage(place.scope, tab))
+            tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
         })
     } else if (state is TabState.PageRemoved) {
-        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.ClosePage) })
+        WontonButton(stringResource(R.string.common_close), { tabs.send(Action.Pages(PageAction.ClosePage)) })
     } else if (state is TabState.Stopped && tab is TabRef.Plugin) {
-        WontonButton(stringResource(R.string.tab_start), { tabs.send(Action.StartPlugin(tab.pluginId)) })
+        WontonButton(stringResource(R.string.tab_start), {
+            tabs.send(Action.Plugins(PluginAction.StartPlugin(tab.pluginId)))
+        })
     } else {
         WontonButton(stringResource(R.string.common_retry), {
-            tabs.send(Action.ReloadTab(place ?: PlacedTab.Page(tab)))
+            tabs.send(Action.Pages(PageAction.ReloadTab(place ?: PlacedTab.Page(tab))))
         })
-        if (state is TabState.Failed && tab is TabRef.Plugin) {
-            WontonButton(stringResource(R.string.tab_view_details), { onDetails(tab.pluginId) })
+        if (state is TabState.Failed && pluginId != null) {
+            WontonButton(stringResource(R.string.tab_view_details), { onDetails(pluginId) })
         }
     }
 }
@@ -107,7 +121,7 @@ fun TabNotices(tabs: PagesState) {
     val view = tabs.viewModel
     if (view.uninstalled.isNotEmpty()) {
         val names = ListFormatter.getInstance(LocalConfiguration.current.locales[0]).format(view.uninstalled)
-        val dismiss = { tabs.send(Action.DismissUninstalledTabs) }
+        val dismiss = { tabs.send(Action.Pages(PageAction.DismissUninstalledTabs)) }
         WontonDialog(
             stringResource(R.string.tab_uninstalled_notice, names),
             onDismiss = dismiss,

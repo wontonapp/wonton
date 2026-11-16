@@ -22,6 +22,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.movableContentOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.SaveableStateHolder
@@ -35,10 +37,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
 import app.wonton.client.defaultAppearance
+import app.wonton.protocol.HomeAction
+import app.wonton.protocol.SettingsAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.AppearanceViewModel
 import app.wonton.protocol.ChatViewModel
 import app.wonton.protocol.HomeViewModel
+import app.wonton.protocol.HomeStatus
 import app.wonton.protocol.PendingConfirmation
 import app.wonton.protocol.PanelScope
 import app.wonton.protocol.SettingsViewModel
@@ -56,6 +62,7 @@ internal fun ServerApp(
     onCardsSettled: (List<String>) -> Unit,
     requestedLink: AppLinkRequest? = null,
     shareIntake: ShareIntake = remember { ShareIntake() },
+    onContactRequests: (List<String>) -> Unit = {},
 ) {
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
     val settings by remember(core) { core.settingsUpdates() }.collectAsState(remember(core) { core.settings() })
@@ -64,12 +71,13 @@ internal fun ServerApp(
     val plugins = remember(core) { PluginsState(core) }
     val pages = remember(core) { PagesState(plugins) }
     val draft = remember(core) { TabDraft() }
-    val chat = rememberChatNavigation { pages.send(Action.OpenPage(it)) }
+    val chat = rememberChatNavigation { pages.send(Action.Pages(PageAction.OpenPage(it))) }
     val context = LocalContext.current.applicationContext
     val navigation = remember(core, context) { AppNavigation(pages, chat, context) }
     LaunchedEffect(pages) { pages.observe() }
     LaunchedEffect(chatView) { chat.onUpdate(chatView) }
     LaunchedEffect(chatView.settledConfirmations) { onCardsSettled(chatView.settledConfirmations) }
+    ContactNotificationsEffect(core, onContactRequests)
     LaunchedEffect(requestedRoom) {
         requestedRoom?.let { request ->
             when {
@@ -92,7 +100,12 @@ internal fun ServerApp(
             if (LocalServers.current.adding) {
                 AddServerPairing(plugins, home)
             } else OnboardingHost(plugins, home, chatView, navigation::finishOnboarding) {
-                AppContent(navigation, home, settings, appearance, chatView)
+                AdaptiveChatLayout(
+                    list = { ExpandedChatPane(navigation, chatView, home, appearance) },
+                    enabled = home.status != HomeStatus.NotConfigured,
+                ) {
+                    AppContent(navigation, home, settings, appearance, chatView)
+                }
                 navigation.confirmationCard?.let { card ->
                     ConfirmationsScreen(core, card) { navigation.confirmationCard = null }
                 }
@@ -118,32 +131,42 @@ private fun AppContent(
     val shown = pages.current
     // 栈顶是插件网页时整页归网页；其余都是原生的（聊天根、应用网格）。设置盖在什么上面都算原生。
     val opened = view.stack.lastOrNull()
-    val pluginShown = opened != null && !opened.tab.isNativeRoot()
+    val pluginShown = !view.showsApps && opened != null && !opened.tab.isNativeRoot()
     val native = !pluginShown || nav.settingsOverlay
+    val expanded = LocalExpandedChat.current
     var showsSidebar by remember { mutableStateOf(false) }
     val nativeState = rememberSaveableStateHolder()
-    val status = connectionBarStatus(home, { pages.send(Action.RetryConnection) }, nav::settings)
+    val status = connectionBarStatus(home, { pages.send(Action.Home(HomeAction.RetryConnection)) }, nav::settings)
     val cards = chat.pendingConfirmations.filter {
-        shown != TabRef.Chat || nav.settingsOverlay || it.roomId != nav.chat.openRoom
+        val listShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
+            nav.chat.showingConfirmations
+        val roomShown = shown == TabRef.Chat && !nav.settingsOverlay && !view.showsApps &&
+            !nav.chat.showingBackup && !nav.chat.startingChat && it.roomId != null &&
+            it.roomId == nav.chat.openRoom
+        !listShown && !roomShown
     }
-    val onDraft: (String) -> Unit = { text -> draft.text = text; pages.send(Action.OpenPage(TabRef.Chat)) }
+    val onDraft: (String) -> Unit = { text ->
+        draft.text = text
+        pages.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+    }
     // 面板只在聊天页和房间里；拉开时左边缘归面板（A 块的手势用来关它）。
     val panelScope = nav.chat.openRoom?.let { PanelScope.Room(it) } ?: PanelScope.Main
-    val panelActive = !pluginShown && !nav.settingsOverlay && nav.appsPage == null &&
-        !nav.chat.showingBackup && !nav.chat.startingChat
-    val panel = if (panelActive) {
+    val panelActive = shown == TabRef.Chat && !pluginShown && !nav.settingsOverlay &&
+        !view.showsApps && !nav.chat.showingBackup && !nav.chat.startingChat && !nav.chat.showingConfirmations
+    val panel = if (panelActive && (!expanded || nav.chat.openRoom != null)) {
         rememberChatPanelState(if (nav.chat.openRoom == null) PanelEdge.TOP else PanelEdge.BOTTOM, panelScope)
     } else null
     if (panel != null && panel.scope == PanelScope.Main) {
         SideEffect { panel.feed(view.panel, view.panelSelected) }
     }
     // 只在聊天的根页面响应左边缘右滑（开抽屉）：进了房间、页面或盖了别的层，左边缘是系统的返回手势。
-    val edgeSwipe = panelActive && nav.chat.openRoom == null && panel?.visible != true
+    val edgeSwipe = !expanded && panelActive && nav.chat.openRoom == null && panel?.visible != true
+    BackHandler(enabled = view.showsApps) { nav.closeApps() }
     CompositionLocalProvider(LocalWontonBarStatus provides status) {
-        WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openRoom) { bannerTop ->
+        WithPendingCards(cards, pluginShown && !nav.settingsOverlay, nav::openCardTarget) { bannerTop ->
             val page: @Composable () -> Unit = {
                 SidebarContainer(
-                    isOpen = showsSidebar,
+                    isOpen = showsSidebar && !expanded,
                     edgeSwipe = edgeSwipe,
                     onSetOpen = { showsSidebar = it },
                     panel = { width, interactive ->
@@ -165,7 +188,8 @@ private fun AppContent(
                                 onDetails = nav::detail, onDraft = onDraft, bannerTop = bannerTop,
                             )
                             if (native) Box(Modifier.fillMaxSize()) {
-                                CompositionLocalProvider(LocalWontonOpenSidebar provides { showsSidebar = true }) {
+                                CompositionLocalProvider(LocalWontonOpenSidebar provides
+                                    if (expanded) null else ({ showsSidebar = true })) {
                                     NativeContent(nav, home, settings, appearance, chat, nativeState)
                                 }
                                 OpeningChat(nav.chat)
@@ -174,19 +198,20 @@ private fun AppContent(
                     }
                 }
             }
+            val latestPage by rememberUpdatedState(page)
+            val retainedPage = remember { movableContentOf { latestPage() } }
             CompositionLocalProvider(LocalChatPanel provides panel) {
                 if (panel != null) {
                     ChatPanelHost(panel, pages, home, appearance, onDraft = onDraft, onDetails = nav::detail,
-                        content = page)
+                        content = retainedPage)
                 } else {
-                    page()
+                    retainedPage()
                 }
             }
         }
     }
     if (panel != null && panel.editing) ChatPanelEditor(panel, pages) { panel.editing = false }
-    BackHandler(enabled = showsSidebar) { showsSidebar = false }
-    BackHandler(enabled = nav.appsPage != null) { nav.closeApps() }
+    BackHandler(enabled = showsSidebar && !expanded) { showsSidebar = false }
     TabNotices(pages)
 }
 
@@ -225,9 +250,11 @@ private fun NativeTab(
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
         ) { nav.settingsPage = it }
-        nav.appsPage != null -> HomeRoute(
-            pages.core, home, pages.plugins, nav.plugins, nav.appsPage, { nav.appsPage = it },
-            chat.pendingConfirmations, nav::openRoom,
+        pages.viewModel.showsApps || pages.current == TabRef.Apps ||
+            home.status is HomeStatus.NotConfigured -> HomeRoute(
+            pages.core, home, pages.plugins, nav.plugins, nav.appsPage,
+            { nav.appsPage = it },
+            chat.pendingConfirmations, nav::openCardTarget,
             onConnection = { nav.settings(SettingsSubpage.SERVER) }, settingsUpgrade = settings.serverUpgrade,
             onSettings = { nav.settings() },
         )
@@ -244,7 +271,7 @@ private fun OpenDevWebEffect(url: String?, plugins: PluginsState, pages: PagesSt
             val plugin = installed.plugins.firstOrNull { it.webUrl == url }
             if (plugin != null) {
                 handled = true
-                plugin.tabChoices.firstOrNull()?.let { pages.send(Action.OpenPage(it.tab)) }
+                plugin.tabChoices.firstOrNull()?.let { pages.send(Action.Pages(PageAction.OpenPage(it.tab))) }
             }
         }
     }
@@ -252,7 +279,8 @@ private fun OpenDevWebEffect(url: String?, plugins: PluginsState, pages: PagesSt
 
 @Composable
 private fun WithPendingCards(
-    cards: List<PendingConfirmation>, fullscreen: Boolean, onOpen: (String) -> Unit,
+    cards: List<PendingConfirmation>, fullscreen: Boolean,
+    onOpen: (String?) -> Unit,
     content: @Composable (bannerTop: Dp) -> Unit,
 ) {
     val density = LocalDensity.current
@@ -281,7 +309,9 @@ private fun PluginsEffects(plugins: PluginsState) {
     LaunchedEffect(plugins) { plugins.observe() }
     val locales = LocalConfiguration.current.locales
     val shown = appLanguageTag()
-    LaunchedEffect(plugins, locales, shown) { plugins.refresh(Action.SetLanguages(coreLanguageTags(shown, locales))) }
+    LaunchedEffect(plugins, locales, shown) {
+        plugins.refresh(Action.Settings(SettingsAction.SetLanguages(coreLanguageTags(shown, locales))))
+    }
 }
 
 @Composable

@@ -58,6 +58,7 @@ fn texts(preview: &InstallPreview) -> Vec<&str> {
 pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
     InstallRequest {
         scope: None,
+        audience: None,
         devices: Vec::new(),
         source: preview.source.clone().unwrap(),
         digest: preview.digest.clone(),
@@ -74,6 +75,7 @@ pub(super) fn install_request(preview: &InstallPreview) -> InstallRequest {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     }
 }
 

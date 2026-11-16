@@ -4,18 +4,22 @@ use wonton_protocol::{
     SidebarOpen, TabState,
 };
 
+mod bot_pages;
 mod bot_pins;
+mod bridge_rejection;
+mod content;
+mod media_permission;
 mod my_apps;
 mod page_rules;
 mod room_panel;
 mod stack;
 
-struct Rig {
-    tabs: PagesLink,
+pub(super) struct Rig {
+    pub(super) tabs: Arc<PagesLink>,
     home: watch::Sender<HomeViewModel>,
     plugins: PluginSnapshots,
-    /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
-    room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
+    chat: watch::Sender<ChatViewModel>,
+    rooms: Mutex<HashMap<String, watch::Receiver<Option<Arc<RoomPanelView>>>>>,
     _dir: tempfile::TempDir,
 }
 
@@ -29,10 +33,49 @@ impl PluginSnapshots {
         self.link
             .replace_view_for_test(self.home.borrow().server_id.clone(), view);
     }
+
+    fn send_modify(&self, change: impl FnOnce(&mut PluginsViewModel)) {
+        let mut view = self
+            .link
+            .view_for_server(self.home.borrow().server_id.as_deref());
+        change(&mut view);
+        self.send_replace(view);
+    }
+}
+
+fn empty_chat() -> ChatViewModel {
+    ChatViewModel {
+        account: wonton_protocol::ChatAccount::SignedOut,
+        sync: wonton_protocol::ChatSync::Idle,
+        encryption: wonton_protocol::EncryptionStatus {
+            verification: wonton_protocol::DeviceVerification::Unknown,
+            recovery: wonton_protocol::RecoveryStatus::Unknown,
+            recovery_key: None,
+            backup_reminder: None,
+            can_verify_with_other_device: false,
+            can_reset: false,
+            recovery_next_step: wonton_protocol::RecoveryNextStep::None,
+            verification_flow: None,
+            key_handoff: None,
+        },
+        push: wonton_protocol::PushStatus::NoEndpoint,
+        chat_layout_default: Default::default(),
+        installing_bots: Vec::new(),
+        rooms: Vec::new(),
+        problem: None,
+        pending_confirmations: Vec::new(),
+        settled_confirmations: Vec::new(),
+        background_notifications: Vec::new(),
+        bots: Vec::new(),
+    }
 }
 
 impl Rig {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
+        Self::for_account(false)
+    }
+
+    fn for_account(external: bool) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let runtime = Handle::current();
         let mut config = default_file(Some("old-server".to_owned()));
@@ -47,8 +90,13 @@ impl Rig {
             method_rx,
         )
         .unwrap();
-        let plugins_link =
-            PluginsLink::new(runtime.clone(), home_link.clone(), dir.path(), None, false);
+        let plugins_link = PluginsLink::new(
+            runtime.clone(),
+            home_link.clone(),
+            dir.path(),
+            None,
+            external,
+        );
         let home = watch::Sender::new(home("old-server"));
         let initial = plugins("old-content");
         let plugins = PluginSnapshots {
@@ -56,20 +104,23 @@ impl Rig {
             home: home.subscribe(),
         };
         plugins.send_replace(initial);
-        let (panel_sender, panel_receiver) = watch::channel(None);
+        let chat = watch::Sender::new(empty_chat());
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
             home_link,
             plugins_view: plugins_link.subscribe(),
             plugins: plugins_link,
+            chat: chat.subscribe(),
             path: dir.path().join(LAYOUT_FILE),
             view: watch::Sender::new(empty_view()),
             state: Mutex::new(PagesState {
                 config,
                 problem: None,
                 stack: Vec::new(),
+                content: HashMap::new(),
                 paired: true,
+                shows_apps: false,
                 failures: HashMap::new(),
                 reloads: HashMap::new(),
                 uninstalled: Vec::new(),
@@ -77,39 +128,79 @@ impl Rig {
                 connected: true,
                 attention: HashSet::new(),
                 panel_selected: None,
-                open_room: None,
-                room_panel_selected: None,
-                entry_blocked: false,
-                room_panel_removed: Vec::new(),
+                rooms: HashMap::new(),
                 bot_pins: Vec::new(),
                 core_url: None,
                 bot_pin_consents: Vec::new(),
                 pins_problem: None,
                 media_prompt: None,
+                widget: None,
+                bots: Vec::new(),
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
-            room_panel: (panel_sender.clone(), panel_receiver),
-            room_view: watch::Sender::new(None),
             sync_problem: watch::Sender::new(None),
             dirty: AtomicBool::new(false),
             layout_ready: AtomicBool::new(false),
             sync_task: Mutex::new(None),
             weak: Mutex::new(std::sync::Weak::new()),
+            widgets: Default::default(),
         };
+        let tabs = Arc::new(tabs);
         tabs.recompute();
         Self {
             tabs,
             home,
             plugins,
-            room_panel: panel_sender,
+            chat,
+            rooms: Mutex::default(),
             _dir: dir,
+        }
+    }
+
+    pub(super) fn open_room(&self, room: &OwnedRoomId, panel: RoomPanel) {
+        let mut receivers = lock(&self.rooms);
+        self.tabs
+            .runtime_change(|state, _| {
+                match state.rooms.get_mut(room.as_str()) {
+                    Some(current) => current.panel = panel,
+                    None => {
+                        let current = room_panels::RoomPanelState::new(panel);
+                        receivers.insert(room.to_string(), current.view.subscribe());
+                        state.rooms.insert(room.to_string(), current);
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    pub(super) fn close_room(&self, room: &OwnedRoomId) {
+        lock(&self.rooms).remove(room.as_str());
+        self.tabs
+            .runtime_change(|state, _| {
+                room_panels::forget_room(state, room.as_str());
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    fn switch_room(&self, room: Option<(&OwnedRoomId, RoomPanel)>) {
+        let open: Vec<OwnedRoomId> = lock(&self.rooms)
+            .keys()
+            .map(|id| id.parse().unwrap())
+            .collect();
+        for id in open {
+            self.close_room(&id);
+        }
+        if let Some((id, panel)) = room {
+            self.open_room(id, panel);
         }
     }
 
     fn add_app(&self, app: MyAppRef) {
         self.tabs
-            .dispatch(Action::AddMyApp {
+            .dispatch(PageAction::AddMyApp {
                 app,
                 title: None,
                 index: None,
@@ -118,7 +209,7 @@ impl Rig {
     }
 
     fn open(&self, tab: TabRef) {
-        self.tabs.dispatch(Action::OpenPage { tab }).unwrap();
+        self.tabs.dispatch(PageAction::OpenPage { tab }).unwrap();
     }
 
     fn view(&self) -> PagesViewModel {
@@ -185,17 +276,19 @@ fn plugin(id: &str, title: &str, revision: &str) -> InstalledPlugin {
             health: PluginHealth::Healthy,
         },
         web_url: Some(format!("http://{id}.wonton.localhost/")),
+        link_url: None,
         cross_origin_isolated: false,
         declares_tools: false,
         tabs: Vec::new(),
         bot_user_id: None,
-        family: false,
         upgrade: None,
         removable: true,
         notices: Vec::new(),
         enabled_root_permissions: Vec::new(),
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: None,
     }
 }
 
@@ -240,13 +333,13 @@ fn panel_tabs(rig: &Rig) -> Vec<TabRef> {
 async fn added_pages_keep_order_and_duplicates_are_rejected() {
     let rig = Rig::new();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
         .unwrap();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/report"),
         })
@@ -262,7 +355,7 @@ async fn added_pages_keep_order_and_duplicates_are_rejected() {
 
     let duplicate = rig
         .tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -276,21 +369,21 @@ async fn panel_holds_at_most_five_pages() {
     let rig = Rig::new();
     for index in 0..4 {
         rig.tabs
-            .dispatch(Action::AddPanelPage {
+            .dispatch(PageAction::AddPanelPage {
                 scope: main_scope(),
                 tab: url_tab(&format!("https://example.com/{index}")),
             })
             .unwrap();
     }
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/fifth"),
         })
         .unwrap();
     let sixth = rig
         .tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/sixth"),
         })
@@ -305,7 +398,7 @@ async fn public_pages_must_be_https_with_a_host() {
     for bad in ["http://example.com", "example.com/page", "https://"] {
         let error = rig
             .tabs
-            .dispatch(Action::AddPanelPage {
+            .dispatch(PageAction::AddPanelPage {
                 scope: main_scope(),
                 tab: url_tab(bad),
             })
@@ -317,7 +410,7 @@ async fn public_pages_must_be_https_with_a_host() {
     // 我的应用的页面行同一份规矩。
     let bad = rig
         .tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: MyAppRef::Page {
                 tab: url_tab("http://example.com"),
             },
@@ -333,7 +426,7 @@ async fn public_pages_must_be_https_with_a_host() {
 async fn selecting_a_page_clears_its_red_dot() {
     let rig = Rig::new();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -350,7 +443,7 @@ async fn selecting_a_page_clears_its_red_dot() {
     assert!(rig.view().panel[0].attention);
 
     rig.tabs
-        .dispatch(Action::SelectPanelPage {
+        .dispatch(PageAction::SelectPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -376,13 +469,13 @@ async fn red_dot_belongs_to_panel_instances_only() {
 async fn removing_a_page_forgets_selection_and_red_dot() {
     let rig = Rig::new();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
         .unwrap();
     rig.tabs
-        .dispatch(Action::SelectPanelPage {
+        .dispatch(PageAction::SelectPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -398,7 +491,7 @@ async fn removing_a_page_forgets_selection_and_red_dot() {
         .unwrap();
 
     rig.tabs
-        .dispatch(Action::RemovePanelPage {
+        .dispatch(PageAction::RemovePanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -409,7 +502,7 @@ async fn removing_a_page_forgets_selection_and_red_dot() {
 
     let again = rig
         .tabs
-        .dispatch(Action::RemovePanelPage {
+        .dispatch(PageAction::RemovePanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
@@ -422,14 +515,14 @@ async fn moving_a_page_reorders_and_checks_the_index() {
     let rig = Rig::new();
     for url in ["https://example.com/a", "https://example.com/b"] {
         rig.tabs
-            .dispatch(Action::AddPanelPage {
+            .dispatch(PageAction::AddPanelPage {
                 scope: main_scope(),
                 tab: url_tab(url),
             })
             .unwrap();
     }
     rig.tabs
-        .dispatch(Action::MovePanelPage {
+        .dispatch(PageAction::MovePanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/b"),
             index: 0,
@@ -445,7 +538,7 @@ async fn moving_a_page_reorders_and_checks_the_index() {
 
     let out_of_range = rig
         .tabs
-        .dispatch(Action::MovePanelPage {
+        .dispatch(PageAction::MovePanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/a"),
             index: 4,
@@ -459,7 +552,7 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
     let rig = Rig::new();
     // 插件网站的入口：加进我的应用的是插件行。
     rig.tabs
-        .dispatch(Action::PinCurrentPage {
+        .dispatch(PageAction::PinCurrentPage {
             url: "http://app.shared.wonton.localhost/".to_owned(),
             title: None,
             to: PinTarget::MyApps,
@@ -474,7 +567,7 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
 
     // 公网网页：只收 https。
     rig.tabs
-        .dispatch(Action::PinCurrentPage {
+        .dispatch(PageAction::PinCurrentPage {
             url: "https://example.com/report?day=1".to_owned(),
             title: Some("日报".to_owned()),
             to: PinTarget::MyApps,
@@ -494,7 +587,7 @@ async fn pinning_the_open_page_classifies_plugins_and_public_urls() {
 
     let http = rig
         .tabs
-        .dispatch(Action::PinCurrentPage {
+        .dispatch(PageAction::PinCurrentPage {
             url: "http://example.com/".to_owned(),
             title: None,
             to: PinTarget::MyApps,
@@ -508,7 +601,7 @@ async fn my_apps_keep_user_order_and_duplicates_are_rejected() {
     let rig = Rig::new();
     rig.add_app(plugin_app("app.shared"));
     rig.tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: MyAppRef::Page {
                 tab: url_tab("https://example.com/report"),
             },
@@ -524,7 +617,7 @@ async fn my_apps_keep_user_order_and_duplicates_are_rejected() {
     // 同一个插件不能加两行；页面行可以和插件行并存。
     let duplicate = rig
         .tabs
-        .dispatch(Action::AddMyApp {
+        .dispatch(PageAction::AddMyApp {
             app: plugin_app("app.shared"),
             title: None,
             index: None,
@@ -535,7 +628,7 @@ async fn my_apps_keep_user_order_and_duplicates_are_rejected() {
 
     // 排序和越界。
     rig.tabs
-        .dispatch(Action::MoveMyApp {
+        .dispatch(PageAction::MoveMyApp {
             app: MyAppRef::Page {
                 tab: url_tab("https://example.com/report"),
             },
@@ -548,7 +641,7 @@ async fn my_apps_keep_user_order_and_duplicates_are_rejected() {
     );
     let out_of_range = rig
         .tabs
-        .dispatch(Action::MoveMyApp {
+        .dispatch(PageAction::MoveMyApp {
             app: plugin_app("app.shared"),
             index: 4,
         })
@@ -557,14 +650,14 @@ async fn my_apps_keep_user_order_and_duplicates_are_rejected() {
 
     // 移除后再移除报错；移除不影响面板。
     rig.tabs
-        .dispatch(Action::RemoveMyApp {
+        .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.shared"),
         })
         .unwrap();
     assert_eq!(rig.my_app_titles(), vec!["日报".to_owned()]);
     let gone = rig
         .tabs
-        .dispatch(Action::RemoveMyApp {
+        .dispatch(PageAction::RemoveMyApp {
             app: plugin_app("app.shared"),
         })
         .unwrap_err();
@@ -599,13 +692,13 @@ async fn uninstalling_a_plugin_takes_its_rows_and_reports_once() {
     let rig = Rig::new();
     rig.add_app(plugin_app("app.shared"));
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
         .unwrap();
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url_tab("https://example.com/keep"),
         })
@@ -636,14 +729,14 @@ async fn failures_are_kept_per_instance() {
     rig.add_app(plugin_app("app.shared"));
     rig.open(page_tab());
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: page_tab(),
         })
         .unwrap();
 
     rig.tabs
-        .dispatch(Action::TabLoadFailed {
+        .dispatch(PageAction::TabLoadFailed {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: page_tab(),
@@ -665,7 +758,7 @@ async fn failures_are_kept_per_instance() {
     ));
 
     rig.tabs
-        .dispatch(Action::ReloadTab {
+        .dispatch(PageAction::ReloadTab {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: page_tab(),
@@ -680,13 +773,13 @@ async fn url_page_load_failure_is_upstream() {
     let rig = Rig::new();
     let url = url_tab("https://example.com/report");
     rig.tabs
-        .dispatch(Action::AddPanelPage {
+        .dispatch(PageAction::AddPanelPage {
             scope: main_scope(),
             tab: url.clone(),
         })
         .unwrap();
     rig.tabs
-        .dispatch(Action::TabLoadFailed {
+        .dispatch(PageAction::TabLoadFailed {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: url.clone(),
@@ -704,7 +797,7 @@ async fn url_page_load_failure_is_upstream() {
     ));
 
     rig.tabs
-        .dispatch(Action::TabLoadFailed {
+        .dispatch(PageAction::TabLoadFailed {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: url.clone(),
@@ -722,7 +815,7 @@ async fn url_page_load_failure_is_upstream() {
     ));
 
     rig.tabs
-        .dispatch(Action::TabLoadSucceeded {
+        .dispatch(PageAction::TabLoadSucceeded {
             page: PlacedTab::Panel {
                 scope: main_scope(),
                 tab: url,
@@ -773,7 +866,7 @@ async fn disconnected_keeps_cached_my_apps_and_marks_stale_without_a_problem() {
     assert!(rig.view().problem.is_none(), "断线不该产生弹窗类状态");
 
     // 断线下的重试是空操作但不报错：提示原样留着，等重连后自动对账。
-    rig.tabs.dispatch(Action::RetryMyAppSync).unwrap();
+    rig.tabs.dispatch(PageAction::RetryMyAppSync).unwrap();
     assert_eq!(rig.my_app_titles(), titles);
     assert!(rig.view().sync_stale);
 }

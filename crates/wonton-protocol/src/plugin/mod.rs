@@ -10,16 +10,25 @@ mod detail;
 mod forms;
 pub mod hint;
 mod install;
+mod lifecycle;
+pub use lifecycle::{PluginDesiredState, PluginLifecycle, PluginRecovery, PluginRecoveryStage};
 mod owner_secrets;
+mod remote_mcp;
 pub mod store;
 mod view_model;
 mod widget;
 pub use install::{InstallPreview, InstallRequest, UpgradeRequest};
+pub use remote_mcp::{
+    RemoteAuth, RemoteAuthorization, RemoteMcpDetail, RemoteMcpPreview, RemoteOauthGrant,
+    RemoteOauthStart, plugin_remote_oauth_finish_path, plugin_remote_oauth_start_path,
+    remote_oauth_start_path,
+};
 pub use view_model::PluginsViewModel;
 mod permission;
 pub(super) mod ports;
 mod secret_input;
 mod settings;
+mod start;
 mod takeover;
 #[path = "task.rs"]
 mod task;
@@ -39,6 +48,7 @@ pub use owner_secrets::{
 };
 pub use permission::{
     PermissionLine, PermissionOpened, PermissionRisk, PermissionUpdate, PluginDevice,
+    PluginDeviceKind, PluginGrantedDevice,
 };
 pub use secret_input::{
     SecretInput, SecretInputState, SecretUpdate, SecretValues, secret_input_path,
@@ -51,12 +61,13 @@ pub use settings::{
     SettingsSchemaError, SettingsSchemaProblem, SettingsSchemaProblemKind, plugin_settings_path,
     plugin_settings_preview_path,
 };
+pub use start::{PluginStart, PluginStartState, RoomPlugin};
 pub use takeover::{PluginTakeover, TakeoverState};
 pub use task::{PluginOperation, PluginTask, PluginTaskNextStep, PluginTaskState, UpgradeResult};
 pub use tool_policy::{
     AddedTools, BotSwitch, OpenWindow, ToolAccess, ToolPolicyEntry, ToolPolicyView,
 };
-pub use widget::{WidgetCapability, WidgetCapabilityLevel};
+pub use widget::{PluginWidget, RoomWidget, WidgetCapability, WidgetCapabilityLevel, WidgetEntry};
 /// 插件从哪里来，决定商店、确认页和已安装列表上的标签。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
@@ -150,6 +161,10 @@ pub struct InstalledPlugin {
     pub status: PluginState,
     /// 插件网页的地址，点开就是整页的应用；没有网页时为空。
     pub web_url: Option<String>,
+    /// `runtime` 是 [`PluginRuntime::Link`] 时的外部网页地址，壳用系统的 App 内浏览器打开，页面
+    /// 不给任何和 App 通信的桥（ADR-0080）；其他形态为空。
+    #[serde(default)]
+    pub link_url: Option<String>,
     /// 清单 `webui` 声明了页面要跨源隔离。WebView 给不了时，客户端核心让页面在系统浏览器里打开（`TabPage.opens_in_browser`）。
     #[serde(default)]
     pub cross_origin_isolated: bool,
@@ -164,9 +179,6 @@ pub struct InstalledPlugin {
     pub chat: Option<PluginChat>,
     /// 这台设备的人在这个插件里的 Bot（Matrix 用户 ID）：Agent 插件点开就是和它的私聊。
     pub bot_user_id: Option<String>,
-    /// 插件记录里的 `family` 标记；可见性由当前角色的 `open_apps` 决定。
-    #[serde(default)]
-    pub family: bool,
     /// 能升级到的版本；没有新版本时为空。
     pub upgrade: Option<UpgradeOffer>,
     /// 主人能卸载它；系统插件不能。
@@ -179,10 +191,16 @@ pub struct InstalledPlugin {
     /// 正在安装或升级时做到了哪一步；其余状态和还没开始部署时为空。
     #[serde(default)]
     pub install_progress: Option<InstallProgress>,
+    /// 上次安装失败的结果；仅保留到重试、卸载或核心重启，不代表插件已安装。
+    #[serde(default)]
+    pub install_failure: Option<InstallFailure>,
     /// 清单 `tunnel.ports` 的端口和协议：App 在 `127.0.0.1` 上同号映射这些端口。只给 App 要的两项，不带清单校验用的
     /// `deny_unknown_fields`：新核心给端口项加字段时旧 App 照样读得懂列表。
     #[serde(default)]
     pub tunnel_ports: Vec<crate::MappedPort>,
+    /// 清单声明了 `matrix_widget`：网页能在房间里作为 Matrix widget 打开（ADR-0096）。
+    #[serde(default)]
+    pub matrix_widget: Option<PluginWidget>,
 }
 
 /// 插件的状态。
@@ -229,6 +247,19 @@ pub struct InstallProgress {
     pub stage: InstallStage,
     /// 这一步完成了多少，0 到 100；算不出来时为空，壳只显示阶段。
     pub percent: Option<u8>,
+}
+
+/// 核心内存中的安装失败结果；错误类别与安装接口一致，不写入已安装记录。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "uniffi", derive(uniffi::Record))]
+pub struct InstallFailure {
+    pub kind: String,
+    pub message: String,
+    pub stage: InstallStage,
+    /// 批量安装中真正失败的插件；本条目也可能只是被连带回滚。
+    pub failed_plugin_id: String,
+    /// 回滚没有完成的清理；为空表示本次回滚完成，不代表之前保留的数据被删除。
+    pub cleanup_errors: Vec<String>,
 }
 
 /// 安装或升级的阶段。
@@ -406,6 +437,11 @@ pub struct StoreItem {
     pub security_tier: Option<SecurityTier>,
     /// 装不了的原因（宿主架构不符、需要核心不支持的权限、规范版本比核心新）；能装时为空。
     pub blocked: Option<String>,
+    /// 这个人可直接安装；AskAdmin 时为 false，但仍可请求管理员。
+    #[serde(default)]
+    pub installable: bool,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 安全档位到了要醒目提示的程度（ADR-0080 的 High 及以上，比这个 App 新的档位也算）：商店里
     /// 标红。档位比较只在核心这一处，壳不重复。旧核心不给时按没有算。
     #[serde(default)]
@@ -558,6 +594,10 @@ pub enum PluginFailure {
     CoreUpgrading,
     /// 主人配的代理连不上或者拒绝了，出网插件装不上：要主人在代理设置里改地址，或者修好代理（ADR-0023）。
     EgressProxyUnavailable,
+    /// 连不上远端 MCP 服务器：DNS、TLS、超时、拒连（ADR-0066）。
+    RemoteUnavailable,
+    /// 远端 MCP 服务器回 5xx 或者说了连接器听不懂的话（ADR-0066）。
+    RemoteError,
     /// 家里的服务器上出错了：Docker、身份提供方、Matrix、模型网关没就绪，或者插件没通过健康检查。
     Upstream,
     /// 设置值没通过 Schema（ADR-0077），明细在 [`PluginProblem::settings`]。

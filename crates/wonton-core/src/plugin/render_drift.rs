@@ -36,13 +36,14 @@ pub(super) fn digest(container: &ContainerPlan) -> String {
             })
         })
         .collect();
-    // `HashMap` 的字段（标签、端口）由 `serde_json::Value` 按名字排序，同一个渲染两次算出来一样。
-    let value = serde_json::json!({
+    // ACP SDK 开启 preserve_order，摘要必须显式排序，不能依赖 serde_json 的编译特性。
+    let mut value = serde_json::json!({
         "name": container.name,
         "body": body,
         "files": files,
         "store_dir": container.store_dir,
     });
+    value.sort_all_objects();
     let json = serde_json::to_string(&value).unwrap_or_default();
     format!("sha256:{:x}", Sha256::digest(json.as_bytes()))
 }
@@ -65,7 +66,8 @@ struct Drift {
 }
 
 impl PluginManager {
-    /// 渲染和容器上的摘要对不上就重建全部容器；`when_stopped` 时全停着的插件也重建。返回重建过没有。
+    /// 渲染和容器上的摘要对不上就重建全部容器；`when_stopped` 时全停着的插件也重建；`force` 时不管
+    /// 摘要对不对都重建（网络刚重建过，容器引用的还是旧网络）。返回重建过没有。
     /// 失败照实往外报，不回退成用旧容器。`gate` 是等健康的时限：开机恢复和容器监视串行核对，用固定的
     /// 安装时限，别人触发的重建按插件声明。
     pub(super) async fn recreate_on_drift(
@@ -75,19 +77,69 @@ impl PluginManager {
         langs: &Languages,
         when_stopped: bool,
         gate: Gate,
+        force: bool,
     ) -> Result<bool, InstallError> {
-        // 局域网端口照检测出来的地址渲染，和局域网巡检、按代理/模型重建走同一条路。
+        let (ctx, mut plan) = self.rebuild_plan(package, record, langs).await?;
+        if let Some(devices) = &ctx.devices {
+            devices.retain_available(&mut plan);
+        }
+        let drift = self.drift_of(&plan).await?;
+        if !force && (!drift.drifted || (drift.running == 0 && !when_stopped)) {
+            return Ok(false);
+        }
+        tracing::info!(
+            plugin = %package.manifest.id,
+            operation = "reconcile",
+            forced = force,
+            drifted = drift.drifted,
+            "插件容器的渲染变了或网络刚重建，按安装的路径重建"
+        );
+        match self.replace_containers(&ctx, plan, gate).await {
+            Ok(()) => {
+                tracing::info!(
+                    plugin = %package.manifest.id,
+                    operation = "reconcile",
+                    result = "succeeded",
+                    "插件容器重建完成"
+                );
+                Ok(true)
+            }
+            Err(error) => {
+                tracing::error!(
+                    plugin = %package.manifest.id,
+                    operation = "reconcile",
+                    result = "failed",
+                    error_kind = error.kind(),
+                    reason = %error,
+                    "插件容器重建失败"
+                );
+                Err(error)
+            }
+        }
+    }
+
+    pub(super) async fn recreate_interrupted(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        langs: &Languages,
+        gate: Gate,
+    ) -> Result<(), InstallError> {
+        let (ctx, plan) = self.rebuild_plan(package, record, langs).await?;
+        self.replace_containers(&ctx, plan, gate).await
+    }
+
+    async fn rebuild_plan(
+        &self,
+        package: &PluginPackage,
+        record: &InstalledRecord,
+        langs: &Languages,
+    ) -> Result<(super::render::InstallContext, Deployment), InstallError> {
         let lan = self.lan_grant(package, record.lan_webui, langs).await?;
         let mut ctx = self.rebuild_context(package, record, lan, None).await?;
         self.fill_bot_vars(package, &mut ctx, langs).await?;
         let plan = render(package, &ctx, langs)?;
-        let drift = self.drift_of(&plan).await?;
-        if !drift.drifted || (drift.running == 0 && !when_stopped) {
-            return Ok(false);
-        }
-        tracing::info!(plugin = %package.manifest.id, "插件容器的渲染变了，按安装的路径重建");
-        self.replace_containers(&ctx, plan, gate).await?;
-        Ok(true)
+        Ok((ctx, plan))
     }
 
     async fn drift_of(&self, plan: &Deployment) -> Result<Drift, InstallError> {

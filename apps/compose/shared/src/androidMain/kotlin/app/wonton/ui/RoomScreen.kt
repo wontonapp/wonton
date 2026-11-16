@@ -30,7 +30,6 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -38,24 +37,32 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.wonton.client.ClientCore
+import app.wonton.protocol.ChatAction
+import app.wonton.protocol.PageAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.BackPagination
 import app.wonton.protocol.BotView
+import app.wonton.protocol.BotRef
 import app.wonton.protocol.ComposerViewModel
 import app.wonton.protocol.CoreException
+import app.wonton.protocol.ConfirmationView
 import app.wonton.protocol.KeyNotice
 import app.wonton.protocol.MessageContent
 import app.wonton.protocol.OutgoingMessage
 import app.wonton.protocol.PanelItem
 import app.wonton.protocol.RoomMembership
+import app.wonton.protocol.RoomPlugin
 import app.wonton.protocol.RoomRow
+import app.wonton.protocol.RoomWidget
 import app.wonton.protocol.SideChatCard
 import app.wonton.protocol.TabRef
 import app.wonton.protocol.TimelineContent
@@ -74,16 +81,15 @@ import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
 import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
-import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.icons.Compose
+import app.wonton.ui.icons.Info
 import app.wonton.ui.icons.LockKey
 import app.wonton.ui.icons.WontonIcon
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filter
-import kotlinx.coroutines.launch
 
 private const val TAG = "RoomScreen"
 
@@ -123,6 +129,10 @@ internal class TimelineState {
 
     /** 旁聊页顶上的标题和状态（ADR-0093）；主对话为空。 */
     var sideChat by mutableStateOf<SideChatCard?>(null)
+    /** 顶栏的 widget 入口和房间里有没有人在通话（ADR-0096）。 */
+    var call by mutableStateOf(RoomCall())
+    var confirmations by mutableStateOf<List<ConfirmationView>>(emptyList())
+    var openedConfirmation by mutableStateOf<String?>(null)
 
     fun apply(diff: TimelineDiff) {
         when (diff) {
@@ -166,6 +176,7 @@ internal fun RoomRoute(
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
     onClose: () -> Unit,
 ) {
     val timeline = remember(target) { TimelineState() }
@@ -182,6 +193,8 @@ internal fun RoomRoute(
                 timeline.panelSelected = update.panelSelected
                 timeline.entryBlocked = update.entryBlocked
                 timeline.sideChat = update.sideChat
+                timeline.call = RoomCall(update.widgets, update.callActive)
+                timeline.confirmations = update.confirmations
                 if (update.scrollToBottom) timeline.bottomRequest++
                 timeline.revision++
                 timeline.loaded = true
@@ -209,7 +222,7 @@ internal fun RoomRoute(
     // 旁聊页没有房间的面板（ADR-0052）：面板跟着主对话。
     val panel = if (target.threadRoot == null) LocalChatPanel.current else null
     CompositionLocalProvider(
-        LocalFiles provides FilesContext(transfers, onAction, onReject),
+        LocalFiles provides FilesContext(target.roomId, transfers, onAction, onReject),
         LocalChatPanel provides panel,
     ) {
         RoomScreen(
@@ -228,6 +241,7 @@ internal fun RoomRoute(
             onReject,
             onOpenRoom,
             onOpenBackup,
+            onOpenBotProfile,
             onClose,
         )
     }
@@ -235,6 +249,22 @@ internal fun RoomRoute(
 
 /** 长按的是哪条消息，它的气泡在屏幕上的位置。 */
 private class MessageMenuTarget(val itemId: String, val message: TimelineMessage, val bubble: Rect)
+
+@Composable
+private fun messageMenuBounds(): Rect {
+    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
+    // 横屏时导航栏或挖孔在侧边，左右也要让。
+    val windowSize = LocalWindowInfo.current.containerSize
+    val density = LocalDensity.current
+    val safe = WindowInsets.safeDrawing
+    val direction = LocalLayoutDirection.current
+    return Rect(
+        safe.getLeft(density, direction).toFloat(),
+        safe.getTop(density).toFloat(),
+        (windowSize.width - safe.getRight(density, direction)).toFloat(),
+        (windowSize.height - safe.getBottom(density)).toFloat(),
+    )
+}
 
 @Composable
 private fun RoomScreen(
@@ -253,57 +283,44 @@ private fun RoomScreen(
     onReject: (Problem) -> Unit,
     onOpenRoom: (String) -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
     onClose: () -> Unit,
 ) {
     var menu by remember { mutableStateOf<MessageMenuTarget?>(null) }
     val openMenu = { item: TimelineItem, message: TimelineMessage, bounds: Rect ->
         menu = MessageMenuTarget(item.id, message, bounds)
     }
-    // 菜单能画在哪儿：窗口减去系统栏和键盘。弹层是另一个窗口，在里面拿不到这些，在这里算好传进去。
-    // 横屏时导航栏或挖孔在侧边，左右也要让。
-    val windowSize = LocalWindowInfo.current.containerSize
-    val density = LocalDensity.current
-    val safe = WindowInsets.safeDrawing
-    val direction = LocalLayoutDirection.current
-    val visible = Rect(
-        safe.getLeft(density, direction).toFloat(),
-        safe.getTop(density).toFloat(),
-        (windowSize.width - safe.getRight(density, direction)).toFloat(),
-        (windowSize.height - safe.getBottom(density)).toFloat(),
-    )
+    val visible = messageMenuBounds()
     val roomId = target.roomId
     val draft = rememberRoomDraft(core, target, onAction)
-    val panel = LocalChatPanel.current
-    // 在组合里读一遍，面板数据变了才会重组，下面的 SideEffect 才会跟着跑。
-    val panelPages = timeline.panel
-    val panelSelected = timeline.panelSelected
-    val entryBlocked = timeline.entryBlocked
-    SideEffect {
-        panel?.feed(panelPages, panelSelected)
-        panel?.blocked = entryBlocked
-    }
-    DisposableEffect(panel, draft) {
-        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
-        onDispose { panel?.draftSink = null }
-    }
+    RoomPanelEffects(timeline, draft)
     // 转发、撤回都要时间线条目的 id，菜单开着的那条。
     var forwarding by remember { mutableStateOf<String?>(null) }
     var redacting by remember { mutableStateOf<MessageMenuTarget?>(null) }
     // 有东西盖着列表时上推的入口不响应，由核心合成（ADR-0052）。旁聊页没有面板，不报。
-    val covers = menu != null || forwarding != null || redacting != null
+    val messageOverlay = menu != null || forwarding != null || redacting != null
+    val covers = messageOverlay || timeline.openedConfirmation != null
     if (target.threadRoot == null) {
-        LaunchedEffect(covers, roomId) { onAction(Action.SetRoomEntryBlocked(roomId, covers)) }
+        LaunchedEffect(covers, target.roomId) {
+            onAction(Action.Pages(PageAction.SetRoomEntryBlocked(target.roomId, covers)))
+        }
     }
     Box(Modifier.fillMaxSize()) {
         // 菜单开着时背后的页面模糊（ADR-0029）。Android 12 以下没有模糊，只靠菜单的压暗。
         Box(if (menu != null) Modifier.blur(WontonTheme.size.menuBlur) else Modifier) {
-            WontonScreen(
-                bar = { RoomBar(target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose) },
-            ) {
+            RoomSurface(
+                bar = {
+                    RoomBar(
+                        target, sideChats, title, isDirect, bot, plugins, timeline.sideChat, onClose,
+                        onOpenBotProfile = { onOpenBotProfile(it) },
+                        call = timeline.call, onOpenWidget = { onAction(Action.Pages(PageAction.OpenPage(it.tab))) },
+                    )
+                },
+            ) { backdrop ->
                 Conversation(
                     core, target, sideChats, isDirect, isReadOnly, timeline, composer, draft, onAction, onReject,
-                    openMenu,
-                    onOpenBackup,
+                    rooms.firstOrNull { it.roomId == roomId }?.plugin, title, openMenu,
+                    onOpenBackup, backdrop,
                 )
             }
         }
@@ -321,7 +338,7 @@ private fun RoomScreen(
         }
         forwarding?.let { itemId ->
             ForwardSheet(
-                rooms = rooms.filter { it.forwardTarget(roomId) },
+                rooms = rooms.filter { it.forwardTarget(target.roomId) },
                 onPick = { row ->
                     onAction(
                         Action.Timeline(
@@ -343,10 +360,16 @@ private fun RoomScreen(
                 onDismiss = { redacting = null },
             )
         }
+        RoomConfirmationSheet(
+            timeline.confirmations,
+            timeline.openedConfirmation,
+            onDismiss = { timeline.openedConfirmation = null },
+            onAction = onAction,
+        )
         if (sideChats.composing) {
             NewSideChatSheet(
                 core,
-                roomId,
+                target.roomId,
                 onStarted = { root ->
                     sideChats.onComposingChange(false)
                     sideChats.onOpen(root)
@@ -357,9 +380,26 @@ private fun RoomScreen(
     }
 }
 
+@Composable
+private fun RoomPanelEffects(timeline: TimelineState, draft: RoomDraft) {
+    val panel = LocalChatPanel.current
+    val panelPages = timeline.panel
+    val panelSelected = timeline.panelSelected
+    val entryBlocked = timeline.entryBlocked
+    SideEffect {
+        panel?.feed(panelPages, panelSelected)
+        panel?.blocked = entryBlocked
+    }
+    DisposableEffect(panel, draft) {
+        panel?.draftSink = { text -> draft.change(if (draft.text.isBlank()) text else "${draft.text}\n$text") }
+        onDispose { panel?.draftSink = null }
+    }
+}
+
 /**
  * 顶栏。和 Bot 的私聊显示 Bot 的状态头像和名字（ADR-0044），名字下面不写状态文字；支持旁聊的房间带开旁聊的按钮。
  * 旁聊页的标题是旁聊的标题（ADR-0093），状态在顶栏下面一行。
+ * 房间里装着 widget（通话）时带它的入口：点了全屏打开 widget 页，关掉回到这个房间（ADR-0096）。
  */
 @Composable
 private fun RoomBar(
@@ -371,6 +411,9 @@ private fun RoomBar(
     plugins: PluginsState,
     header: SideChatCard?,
     onClose: () -> Unit,
+    onOpenBotProfile: (BotRef) -> Unit,
+    call: RoomCall,
+    onOpenWidget: (RoomWidget) -> Unit,
 ) {
     if (target.threadRoot != null) {
         WontonPushedBar(header?.title ?: stringResource(R.string.side_chat), onClose, showsStatus = true)
@@ -389,6 +432,15 @@ private fun RoomBar(
         showsStatusLine = true,
         avatar = barAvatar,
         actions = {
+            RoomCallEntry(call, onOpenWidget)
+            if (isDirect && bot != null) {
+                Box(Modifier.testTag("bot-profile-open")) {
+                    WontonIconButton(
+                        WontonIcon.Info, stringResource(R.string.bot_profile_open),
+                        { onOpenBotProfile(bot.bot) },
+                    )
+                }
+            }
             if (sideChats.supported) {
                 WontonIconButton(
                     WontonIcon.Compose,
@@ -413,54 +465,67 @@ private fun Conversation(
     draft: RoomDraft,
     onAction: (Action) -> Unit,
     onReject: (Problem) -> Unit,
+    plugin: RoomPlugin?,
+    title: String,
     onOpenMenu: (TimelineItem, TimelineMessage, Rect) -> Unit,
     onOpenBackup: () -> Unit,
+    backdrop: RoomBackdrop,
 ) {
-    // 这一页没有底栏，要自己让开手势条；键盘弹出时手势条算在键盘里，不重复让。
-    // 房间列表倒着排、贴底，稳态下旧消息正对着顶栏：让位不能像普通滚动页那样走 contentPadding
-    // （随滚动消失，消息仍画到标题和状态栏上），视口本身要从顶栏下面开始。
-    Column(
-        Modifier.fillMaxSize()
-            .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
-            .padding(top = LocalWontonTopInset.current),
-    ) {
-        timeline.sideChat?.let { SideChatHeaderLine(it.state) }
-        if (sideChats.unsupportedHint) NoSideChatsHint()
-        val failure = timeline.failure
-        if (failure != null) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                ProblemView(failure) { timeline.attempt++ }
+    val density = LocalDensity.current
+    var composerHeight by remember { mutableIntStateOf(0) }
+    var headerHeight by remember { mutableIntStateOf(0) }
+    val barInset = LocalWontonTopInset.current
+    val panelVisible = LocalChatPanel.current?.visible == true
+    val bottomInsets = if (panelVisible) WindowInsets.ime else WindowInsets.ime.union(WindowInsets.navigationBars)
+    Box(Modifier.fillMaxSize().windowInsetsPadding(bottomInsets)) {
+        CompositionLocalProvider(
+            LocalWontonBottomInset provides with(density) { composerHeight.toDp() },
+            LocalWontonTopInset provides barInset + with(density) { headerHeight.toDp() },
+        ) {
+            val failure = timeline.failure
+            if (failure != null) {
+                Box(Modifier.fillMaxSize().padding(top = LocalWontonTopInset.current)) {
+                    ProblemView(failure) { timeline.attempt++ }
+                }
+            } else {
+                Messages(
+                    core, target, sideChats, timeline, composer?.outgoing.orEmpty(),
+                    showsSender = !isDirect,
+                    onAction = onAction,
+                    onOpenMenu = onOpenMenu,
+                    onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
+                    modifier = Modifier.fillMaxSize().recordRoomBackdrop(backdrop),
+                )
             }
-        } else {
-            Messages(
-                core,
-                target,
-                sideChats,
-                timeline,
-                composer?.outgoing.orEmpty(),
-                showsSender = !isDirect,
-                onAction = onAction,
-                onOpenMenu = onOpenMenu,
-                onReply = { message -> message.replyAction?.let { draft.replyTo(it.message) } },
-                modifier = Modifier.weight(1f),
-            )
         }
-        timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
-        TransfersStrip(target.roomId, core)
-        if (!isReadOnly) {
-            Composer(
-                target = target,
-                draft = draft.text,
-                reply = draft.reply,
-                focusToken = draft.focusToken,
-                composer = composer,
-                core = core,
-                onDraftChange = draft::change,
-                onSent = draft::sent,
-                onReplyCancel = draft::stopReplying,
-                onAction = onAction,
-                onReject = onReject,
-            )
+        Column(Modifier.fillMaxWidth().padding(top = barInset).onSizeChanged { headerHeight = it.height }) {
+            AgentPluginStatusBanner(plugin, title, onAction)
+            timeline.sideChat?.let { SideChatHeaderLine(it.state) }
+            if (sideChats.unsupportedHint) NoSideChatsHint()
+        }
+        Column(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .roomBackdrop(backdrop, top = false)
+                .onSizeChanged { composerHeight = it.height },
+        ) {
+            timeline.notice?.let { KeyNoticeRow(it, onOpenBackup) }
+            TransfersStrip(target.roomId, core)
+            RoomConfirmationRow(timeline.confirmations) { timeline.openedConfirmation = it }
+            if (!isReadOnly) {
+                Composer(
+                    target = target,
+                    draft = draft.text,
+                    reply = draft.reply,
+                    focusToken = draft.focusToken,
+                    composer = composer,
+                    core = core,
+                    onDraftChange = draft::change,
+                    onSent = draft::sent,
+                    onReplyCancel = draft::stopReplying,
+                    onAction = onAction,
+                    onReject = onReject,
+                )
+            }
         }
     }
 }
@@ -533,13 +598,7 @@ private fun Messages(
     }
     // 倒着排：第 0 项是最新的一条，贴着底部。
     val newestFirst = timeline.items.asReversed()
-    val scope = rememberCoroutineScope()
-    // Agent 在等回答的卡片就在这个房间：滚到那张卡片所在的消息，不另开界面（ADR-0082）。
-    val openCard: (String) -> Unit = { cardId ->
-        val index = newestFirst.indexOfFirst { it.cardId == cardId }
-        // 列表最前面是还没交出去的发送中消息，时间线的下标要接在它们后面。
-        if (index >= 0) scope.launch { listState.animateScrollToItem(index + outgoing.size) }
-    }
+    val openCard: (String) -> Unit = { cardId -> timeline.openedConfirmation = cardId }
     // 滚到最上面（最早的一条露出来）时加载更早的消息；加载完条目变多，还在顶上就再加载一页。
     LaunchedEffect(listState, target) {
         snapshotFlow { listState.reachedTop(timeline) }
@@ -550,16 +609,16 @@ private fun Messages(
     Box(modifier) {
         LazyColumn(
             modifier = Modifier.fillMaxSize()
+                .testTag("room-timeline")
                 .panelAction(panel)
-                .chatPanelPull(panel, { !listState.canScrollForward }, !timeline.entryBlocked),
+                .chatPanelPull(panel, { !listState.canScrollBackward }, !timeline.entryBlocked),
             state = listState,
             reverseLayout = true,
             overscrollEffect = null,
-            // 顶栏让位已垫在视口上（上面的 Column），这里不再叠加；底部照旧让开手势条。
             contentPadding = PaddingValues(
                 start = WontonTheme.spacing.pageInset,
                 end = WontonTheme.spacing.pageInset,
-                top = WontonTheme.spacing.s8,
+                top = LocalWontonTopInset.current + WontonTheme.spacing.s8,
                 bottom = LocalWontonBottomInset.current + WontonTheme.spacing.s8,
             ),
             verticalArrangement = Arrangement.spacedBy(JOINED_GAP),
@@ -572,8 +631,10 @@ private fun Messages(
             }
             itemsIndexed(newestFirst, key = { _, item -> item.id }) { index, item ->
                 // 倒着排：下标大的是更早的一条。
+                // 做完了又没什么可写的 Agent 状态行不占地方。
+                if (item.isBlankAgentRun) return@itemsIndexed
                 val joinsPrevious = item.joins(newestFirst.getOrNull(index + 1))
-                val joinsNext = item.joins(newestFirst.getOrNull(index - 1))
+                val joinsNext = newestFirst.getOrNull(index - 1)?.joins(item) == true
                 Box(Modifier.padding(top = if (joinsPrevious) 0.dp else WontonTheme.spacing.s8 - JOINED_GAP)) {
                     TimelineItemView(
                         item,
@@ -588,7 +649,7 @@ private fun Messages(
                         onReply = onReply,
                         onOpenAgentCard = openCard,
                         onAnswerAgentChoice = { key ->
-                            onAction(Action.AnswerAgentChoice(target.roomId, item.id, key))
+                            onAction(Action.Chat(ChatAction.AnswerAgentChoice(target.roomId, item.id, key)))
                         },
                         onOpenSideChat = sideChats.onOpen,
                     )
@@ -615,14 +676,22 @@ private fun Messages(
 
 private val JOINED_GAP = 2.dp
 
-/** 同一个人连着发的消息并成一组：气泡挨紧，相接的角收小。 */
-private fun TimelineItem.joins(other: TimelineItem?): Boolean {
-    val sender = senderId
-    return sender != null && sender == other?.senderId
+/**
+ * 和上一条 `earlier` 是同一个人连着发的：并成一组，气泡挨紧，相接的角收小。
+ * 中间隔着一行字的不并：这条上方写了时间，或者上一条下面写着已送达、已读。
+ */
+private fun TimelineItem.joins(earlier: TimelineItem?): Boolean {
+    val mine = message
+    val theirs = earlier?.message
+    return mine != null && theirs != null &&
+        mine.senderId == theirs.senderId && !mine.startsTimeGroup && theirs.receipt == null
 }
 
-private val TimelineItem.senderId
-    get() = (content as? TimelineContent.Message)?.message?.senderId
+private val TimelineItem.message
+    get() = (content as? TimelineContent.Message)?.message
+
+private val TimelineItem.isBlankAgentRun
+    get() = (content as? TimelineContent.AgentRun)?.isBlank == true
 
 /// 这条消息带着的确认卡片 ID：Agent 的等待行靠它滚到卡片。
 private val TimelineItem.cardId

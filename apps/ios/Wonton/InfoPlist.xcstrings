@@ -121,6 +121,36 @@
           }
         }
       }
+    },
+    "NSMicrophoneUsageDescription": {
+      "comment": "System permission prompt for the microphone, shown when a page's app records audio.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wonton uses the microphone for voice input on app pages."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "云吞在应用网页里用麦克风录音。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "雲吞在應用網頁裡用麥克風錄音。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アプリのページで音声入力するために、マイクを使用します。"
+          }
+        }
+      }
     }
   }
 }

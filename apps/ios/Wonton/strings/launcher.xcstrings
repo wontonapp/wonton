@@ -2,6 +2,36 @@
   "sourceLanguage": "en",
   "version": "1.0",
   "strings": {
+    "launcher.badgeStopped": {
+      "comment": "Accessibility label of the stopped plugin badge.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopped"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止中"
+          }
+        }
+      }
+    },
     "launcher.defaultAgent": {
       "comment": "Title of the default agent picker, opened from Settings.",
       "extractionState": "manual",

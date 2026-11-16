@@ -3,14 +3,12 @@
 
 use std::sync::Arc;
 
-use wonton_l10n::l10n;
 use wonton_protocol::{
-    Action, CoreError, PluginProblem, RoleAssignment, RoleDef, RoleDraft, RoleList,
+    CoreError, FamilyAction, PluginProblem, RoleAssignment, RoleDef, RoleDraft, RoleList,
 };
 
 use super::PluginsLink;
 use super::api::READ_TIMEOUT;
-use crate::l10n::{CATALOG, language};
 
 const ROLES: [&str; 1] = ["roles"];
 
@@ -26,22 +24,21 @@ enum Request {
 
 impl PluginsLink {
     /// 角色页的操作。改动成功以后重新取一遍列表：人数和默认角色都由核心算，不在客户端拼。
-    pub(crate) fn dispatch_roles(self: &Arc<Self>, action: Action) -> Result<(), CoreError> {
+    pub(crate) fn dispatch_roles(self: &Arc<Self>, action: FamilyAction) -> Result<(), CoreError> {
         let request = match action {
-            Action::RefreshRoles => {
+            FamilyAction::RefreshRoles => {
                 self.refresh_roles();
                 return Ok(());
             }
-            Action::CreateRole { draft } => Request::Create(draft),
-            Action::UpdateRole { role_id, draft } => Request::Update(role_id, draft),
-            Action::DeleteRole { role_id } => Request::Delete(role_id),
-            Action::SetDefaultRole { role_id } => Request::Default(role_id),
-            Action::AssignMemberRole { username, role_id } => Request::Member(username, role_id),
-            Action::AssignFriendRole { user_id, role_id } => Request::Friend(user_id, role_id),
-            _ => {
-                return Err(CoreError::InvalidInput {
-                    reason: l10n!(CATALOG, language(), "plugins-roles-invalid-action"),
-                });
+            FamilyAction::CreateRole { draft } => Request::Create(draft),
+            FamilyAction::UpdateRole { role_id, draft } => Request::Update(role_id, draft),
+            FamilyAction::DeleteRole { role_id } => Request::Delete(role_id),
+            FamilyAction::SetDefaultRole { role_id } => Request::Default(role_id),
+            FamilyAction::AssignMemberRole { username, role_id } => {
+                Request::Member(username, role_id)
+            }
+            FamilyAction::AssignFriendRole { user_id, role_id } => {
+                Request::Friend(user_id, role_id)
             }
         };
         let link = Arc::clone(self);

@@ -3,25 +3,36 @@ import WontonClient
 
 extension TabWebSession: WKNavigationDelegate {
     func receive(_ message: WKScriptMessage) {
-        guard let input, let body = message.body as? String,
-              let view = message.webView, view === webView else { return }
-        let origin = message.frameInfo.securityOrigin
-        var components = URLComponents()
-        components.scheme = origin.protocol
-        components.host = origin.host
-        if origin.port > 0 { components.port = origin.port }
+        guard let input, let view = message.webView, view === webView else { return }
+        if message.name == "wontonMedia" {
+            receiveMedia(message, view: view)
+            return
+        }
+        // 关掉后保活着的页面不在核心的栈里：桥的请求不转给核心（见 `parked`）。媒体状态照常上报，在上面。
+        guard !parked, let body = message.body as? String else { return }
+        let origin = Self.originString(message.frameInfo.securityOrigin)
         let result = core.tabHandleMessage(
             page: placed, isMainFrame: message.frameInfo.isMainFrame,
-            origin: components.string ?? "", message: body, environment: input.environment
+            origin: origin, message: body, environment: input.environment
         )
         if result.initialized { ready = true }
         if let reply = result.replyScript {
             view.evaluateJavaScript(reply) { [weak self, weak view] _, error in
                 guard let self, self.webView === view else { return }
-                if let error { self.problem = error.problem; return }
+                if let error, !Self.resultUnsupported(error) { self.problem = error.problem; return }
                 if let action = result.action { self.action?(action) }
             }
         } else if let action = result.action { self.action?(action) }
+    }
+
+    /// 网页报来的媒体状态：开始或停止放就上报核心，后台照常探测、自动重连（ADR-0033）。
+    /// 通道只开给页面自己的源，页面里嵌的第三方 iframe 报的不算（同 Android 把通道限制到插件的源）。
+    private func receiveMedia(_ message: WKScriptMessage, view: WKWebView) {
+        guard message.frameInfo.isMainFrame, let body = message.body as? String,
+              Self.sameOrigin(message.frameInfo.securityOrigin, of: view) else { return }
+        if let state = core.pageMediaMessage(message: body) {
+            setMediaPlaying(state.playback == .playing)
+        }
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -37,11 +48,27 @@ extension TabWebSession: WKNavigationDelegate {
         webView.isOpaque = true
         recoveryURL = nil
         canGoBack = webView.canGoBack
-        do {
-            try core.dispatch(action: .tabLoadSucceeded(page: placed))
-            try updateContext(webView, force: true)
-        } catch { problem = error.problem }
+        if parked {
+            missedFinish = true
+        } else {
+            do {
+                try core.dispatch(action: .pages(action: .tabLoadSucceeded(page: placed)))
+                try updateContext(webView, force: true)
+            } catch { problem = error.problem }
+        }
         #if DEBUG
+        // 夜跑的网页媒体权限用例（wonton-media-capture-test）：真插件页没有现成的麦克风入口，
+        // XCUITest 也执行不了网页脚本，页面加载完在页面里要一次麦克风，出壳的询问弹窗。
+        if ProcessInfo.processInfo.arguments.contains("wonton-media-capture-test") {
+            // 首句实锤插件页的安全上下文（*.wonton.localhost 按安全上下文算）；结果看走查日志里的 "Wonton media probe"。
+            webView.evaluateJavaScript(
+                "typeof navigator.mediaDevices + ':' + (navigator.mediaDevices ? "
+            + "navigator.mediaDevices.getUserMedia({audio: true})"
+            + ".then(() => 'granted', (e) => 'denied:' + e.name).catch(() => 'error') : 'none')"
+            ) { result, error in
+                NSLog("Wonton media probe: %@%@", result as? String ?? "?", error.map { " error:\($0)" } ?? "")
+            }
+        }
         let path = webView.url?.path ?? ""
         NSLog("Wonton tab loaded: %@ %@", String(describing: tab), path)
         #endif
@@ -149,8 +176,13 @@ extension TabWebSession: WKNavigationDelegate {
     private func loadFailed(status: UInt16?) {
         ready = hasContent
         if recoveryURL == nil { recoveryURL = navigationURL }
+        guard !parked else {
+            // 没处报：重开时重新加载，失败了那时再报给核心。
+            loadedReload = nil
+            return
+        }
         do {
-            try core.dispatch(action: .tabLoadFailed(page: placed, status: status))
+            try core.dispatch(action: .pages(action: .tabLoadFailed(page: placed, status: status)))
         } catch { problem = error.problem }
     }
 }

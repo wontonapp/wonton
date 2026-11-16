@@ -1,6 +1,6 @@
 # ADR-0007 Agent 与 Bot：Agent 即插件
 
-- 状态：已接受（2026-10-28）。Agent 的总体边界和 Bot 关系见本文；ACP 桥的实现形态见 [ADR-0035](0035-acp-bridge.md)。经桥登录的条款限制见 [ADR-0034](0034-onboarding-and-help.md)；家人的 Bot、Bot 听谁的和 Bot 之间的规则由 [ADR-0045](0045-family-members.md) 细化；家人账号的角色和按角色给 AI 设的上限见 [ADR-0088](0088-family-accounts.md)，不等 M2。Agent 自带的网页做插件网页见 [ADR-0084](0084-agent-own-web.md)
+- 状态：已接受（2026-10-28）；多内核接入、ACP 桥、默认安装的模型网关前置及模型入口已被 [ADR-0108](0108-hermes-default-kernel.md) 取代（主人 2026-11-15）。Bot 关系与权限保留；家人和角色边界见 [ADR-0045](0045-family-members.md)、[ADR-0088](0088-family-accounts.md)，通用插件网页见 [ADR-0084](0084-agent-own-web.md)。
 
 ## 背景
 
@@ -12,6 +12,8 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
 有独立模型、记忆、技能和定时任务的 Bot，多个 Bot 可以组群协作。
 
 ## 决策
+
+> 以下接入标准、模型入口与“只收发消息”的展示取舍记录旧方案；默认内核、模型及委派以 ADR-0108 为准，不据此固定新的 App 交互。Bot 身份、家人多个 Bot 和权限约束保留。
 
 - **Bot = 一个 Matrix 身份 + 一个驱动它的 Agent 插件。** 核心负责给 Bot 分配身份、权限、模型访问
   （magpie）和工具（MCP），不和任何具体 Agent 耦合。
@@ -47,6 +49,8 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
   260–450 MiB，Claude Code 每多一个活会话再加约 200 MiB。
 
 ## 补充：默认 Agent 的安装（2026-10-30）
+
+> 本节保留普通默认插件只装一次、健康后交接加密私聊的边界；先装 Magpie、强制网关权限与去 Magpie 配模型的要求已由 ADR-0108 取代。下列版本数据与实测按原条件保留。
 
 一行安装、配对之后，聊天列表里就要有和 Hermes 的加密私聊（GOAL 的 M1 第 3 项）。
 
@@ -89,6 +93,8 @@ Hermes 上游已经自带 Matrix 等 20 多个 IM 平台、MCP、cron，以及 B
   自动装上。真实的 Docker 29.8.2 拉不到镜像时在开始下载前就回错误：镜像不存在是 404，仓库拒绝、连不上是 500。
 
 ## 补充：ACP 桥的形态（2026-11-05）
+
+> 本节的 Wonton ACP 桥路线已由 ADR-0108 取代；后文验证记录不是继续建设桥或逐家适配的要求。
 
 ACP 桥的 C1 设计、容器边界、Matrix/ACP/MCP 转换和 C3 登录路径见 [ADR-0035](0035-acp-bridge.md)。桥是独立插件，核心只提供标准接口，不认识具体 Agent。
 

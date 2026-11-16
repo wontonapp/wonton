@@ -43,10 +43,25 @@ gateway-plugin-not-shared = { $id } isn't shared with family members
 gateway-proxy-sso-failed = Can't get the sign-in credentials for the app { $id }: { $error }
 gateway-cross-site-login = The gateway doesn't trust sign-in state on requests from another site; use the app's own page
 gateway-login-required = Sign in to Wonton first
+gateway-bot-web-permission = Apps on the plugin network cannot open Bot web pages or use browser sign-in
+gateway-bot-web-storage = Can't read the Bot web page records; check the server's storage and try again
 
 # Names shown when an upstream behind the gateway fails.
 gateway-name-oidc = identity provider
 gateway-name-models = model gateway
+
+# Client entries behind the TLS entry container (ADR-0021).
+gateway-entry-header-invalid = The entry gateway didn't label this request correctly
+gateway-entry-closed = This entry is turned off; the owner can turn it on in the Wonton app
+gateway-entry-public-denied = This path isn't available on the public address
+gateway-entry-setup-pending = Finish the app's first-time setup on its web page first, then try again
+gateway-entry-auth-unsupported = Signing in with a Wonton-issued password isn't supported for this app yet
+gateway-entry-auth-required = Sign in with the app password issued in Wonton
+gateway-entry-auth-revoked = This app password was revoked; issue a new one in Wonton
+gateway-entry-state-unavailable = Can't read this app's entry settings; the owner can check them in Wonton
+gateway-entry-setup-closed = The app { $id } has no admin account any more, so its entry addresses were turned off to stop someone from claiming one. Reopen them in the Wonton app once the app is set up again.
+gateway-entry-setup-timeout = Checking this app's first-time setup took too long
+gateway-entry-target-unavailable = This app's entry must point to one shared service on its own app network
 
 # SSO handoff and OIDC login and consent.
 gateway-sso-invalid-next = That redirect address isn't valid
@@ -149,6 +164,14 @@ gateway-web-storage-undeclared = This app doesn't store data
 gateway-web-storage-cross-site = Only this app's own pages can change its data
 gateway-web-storage-not-ready = The app that keeps this app's data isn't running; try again later
 
+# 第三方客户端和公网访问（ADR-0021、ADR-0089）。
+clients-header-missing = The request is missing the X-Wonton-Clients header
+clients-unauthenticated = Only the owner's paired devices can change this
+clients-unavailable = The core isn't running in its container, so domain settings are unavailable
+clients-passwords-unavailable = The app password storage can't be read right now
+clients-password-label-invalid = Give the client a name of 1-128 characters without line breaks
+clients-password-not-found = This app password doesn't exist any more
+clients-domain-read-failed = Couldn't read the domain settings: { $error }
 gateway-chains-disabled = The home server doesn't have the call chain ledger enabled
 
 # agent_acp forwarding (ADR-0061, block 5): connect-time refusals and per-frame errors, returned to the consumer by category.
@@ -164,3 +187,6 @@ gateway-agent-acp-multi-bot = {$provider} has several bots; pick one on its deta
 gateway-agent-acp-token-missing = {$provider} has no provider token yet; reinstall it to get one
 gateway-agent-acp-provider-unreachable = The agent runtime did not take over this connection: {$detail}
 gateway-agent-acp-busy = This app already has the maximum number of concurrent agent connections; try again later
+
+gateway-install-rejected = An administrator declined; the { $action } was not done
+gateway-install-expired = No administrator answered in time; the { $action } was not done

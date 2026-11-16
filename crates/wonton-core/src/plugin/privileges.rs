@@ -6,7 +6,7 @@ use bollard::models::{DeviceMapping, HostConfig};
 
 use super::compose::{NetworkMode, Service, VolumeEntry, VolumeType};
 use super::languages::Languages;
-use super::manifest::{Manifest, ManifestError, Permission, PluginKind, Sso};
+use super::manifest::{Manifest, ManifestError, ManifestExt, Permission, PluginKind, Sso};
 use crate::l10n::text;
 
 pub const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -80,7 +80,11 @@ pub fn risk(permission: &Permission) -> Option<CapabilityRisk> {
         Permission::EgressProxy
         | Permission::NetworkLan
         | Permission::DevicesGpu
+        | Permission::DevicesSerial
+        | Permission::DevicesUsb
         | Permission::Device { .. } => Some(CapabilityRisk::High),
+        // 硬盘能读到整盘上的数据，还带着能发写命令的 SYS_RAWIO。
+        Permission::DevicesDisk => Some(CapabilityRisk::VeryHigh),
         Permission::Capability { name } => Some(capability_risk(name)),
         Permission::NetworkHost => Some(CapabilityRisk::VeryHigh),
         Permission::HostPid
@@ -100,6 +104,8 @@ pub fn may_be_optional(permission: &Permission) -> bool {
             | Permission::DevicesGpu
             | Permission::DevicesSerial
             | Permission::DevicesUsb
+            // 由 [`super::device::validate`] 拦下，说清为什么不能可选。
+            | Permission::DevicesDisk
     )
 }
 
@@ -294,18 +300,6 @@ fn validate_host_network(
                 text(langs, "plugin-install-priv-host-network-sso", &[]),
             ));
         }
-        // `webui.health` 时核心自己探，不用 compose 里的 healthcheck。
-        if webui.health.is_none()
-            && service
-                .healthcheck
-                .as_ref()
-                .is_none_or(|check| check.disable || check.test.is_none())
-        {
-            return Err(ServiceError::new(
-                name,
-                text(langs, "plugin-install-priv-host-network-healthcheck", &[]),
-            ));
-        }
     }
     Ok(())
 }
@@ -328,6 +322,16 @@ fn validate_capabilities(
                 ),
             )
         })?;
+        // 读 SMART 的 SYS_RAWIO 随 `devices.disk` 由核心给，插件不用也不能为此另写 `cap.SYS_RAWIO`（ADR-0036）。
+        let from_disk = capability == "SYS_RAWIO"
+            && manifest
+                .devices
+                .as_ref()
+                .is_some_and(|devices| devices.disk.iter().any(|slot| slot.service == name));
+        if from_disk {
+            used.caps.insert(capability);
+            continue;
+        }
         require(
             manifest,
             Permission::Capability {

@@ -23,7 +23,7 @@ pub struct HomeViewModel {
     pub web_url: Option<String>,
     /// 扫码配对的进展；没在配对时为空，配上后停在 [`PairingStatus::Paired`] 直到下一次配对或重置连接信息。
     pub pairing: Option<PairingStatus>,
-    /// “添加设备”的进展和给新设备扫的码（[`Action::InviteDevice`](crate::Action::InviteDevice)）；没在添加设备时为空。
+    /// “添加设备”的进展和给新设备扫的码（[`HomeAction::InviteDevice`](crate::HomeAction::InviteDevice)）；没在添加设备时为空。
     pub invite: Option<DeviceInvite>,
     /// 已配对、收新消息的方式是 [`PushMethod::Keepalive`](crate::PushMethod::Keepalive)：Android 的壳按它启停“保持连接”的前台服务。
     pub keep_connection: bool,
@@ -68,7 +68,7 @@ pub enum PairingStage {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PairingStatus {
     /// 正在连服务器、出示配对码。`elapsed_ms` 是这一次已经进行的时间，核心按秒推进；壳按它决定何时补
-    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`crate::Action::CancelPairing`]，
+    /// “还在连接”一行和取消按钮，不在壳里自己计时。取消走 [`HomeAction::CancelPairing`](crate::HomeAction::CancelPairing)，
     /// 进行中的每一步都能取消：本机只是放弃这一次尝试，服务端按设备幂等登记，同一个码再配对仍能配上。
     InProgress {
         elapsed_ms: u64,
@@ -79,8 +79,10 @@ pub enum PairingStatus {
     Paired,
     Failed {
         reason: PairingFailure,
-        /// 原始说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步，不从说明里猜类别。
+        /// 按 App 语言写的失败说明，只放进默认收起的“详情”；壳按 `reason` 写标题和下一步。
         message: String,
+        /// 原始错误和连接地址，只在用户主动打开的可复制诊断中显示，不含配对密钥。
+        diagnostic: Option<String>,
     },
 }
 
@@ -116,7 +118,7 @@ pub enum PairingFailure {
 #[cfg_attr(feature = "uniffi", derive(uniffi::Enum))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HomeStatus {
-    /// 还没有连接信息，等 [`Action::ConnectHome`](crate::Action::ConnectHome)。
+    /// 还没有连接信息，等 [`HomeAction::ConnectHome`](crate::HomeAction::ConnectHome)。
     NotConfigured,
     /// 正在建立连接，或者连上了但服务端还没确认本设备。
     Connecting,
@@ -240,8 +242,10 @@ pub struct ConnectionDetails {
     /// 判定窗口内的往返时间，毫秒；样本不够时为空。
     #[serde(default)]
     pub rtt_ms: Option<u32>,
-    /// 最近一次失败的原文，只在“详情”里显示；连上之后还留着，方便查刚才的问题。
+    /// 最近一次失败的本地化说明；连上之后还留着，方便查刚才的问题。
     pub last_failure: Option<String>,
+    /// 最近一次失败的原始诊断；与本地化说明分开，用户主动打开后才显示并可复制。
+    pub diagnostic: Option<String>,
     /// 连上之后一直没取到服务器现在的地址：存着的地址可能已经过时，下次建连可能要先绕中继。取到就清掉。
     pub addresses_stale: bool,
     /// 当前隧道连接的 UDP 流向；只统计完整应用包，不能与上面的 QUIC 包计数相加。

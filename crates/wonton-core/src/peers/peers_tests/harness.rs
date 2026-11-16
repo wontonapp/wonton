@@ -75,7 +75,7 @@ impl TestCore {
         let upstream = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
         let federation = FederationProtocol::new(
             peers.server_allowlist().clone(),
-            upstream.local_addr().unwrap(),
+            upstream.local_addr().unwrap().to_string(),
         );
         let (_server, _listener) = wonton_tunnel::TunnelServer::spawn_embedded_with_pairing_and(
             peers.tunnel().endpoint.clone(),

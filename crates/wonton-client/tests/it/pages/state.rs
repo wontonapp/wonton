@@ -5,7 +5,9 @@ async fn a_storage_error_leaves_my_apps_unchanged_and_recovers() {
     let rig = Rig::new().await;
     let before = rig.app.pages();
     std::fs::create_dir(rig.data_dir().join("layout.json")).unwrap();
-    let result = rig.app.dispatch(Action::SetAutoAddApps { enabled: false });
+    let result = rig.app.dispatch(Action::Pages {
+        action: wonton_protocol::PageAction::SetAutoAddApps { enabled: false },
+    });
     assert!(
         matches!(result, Err(CoreError::Storage { .. })),
         "{result:?}"
@@ -16,7 +18,9 @@ async fn a_storage_error_leaves_my_apps_unchanged_and_recovers() {
     assert!(after.problem.is_some());
     std::fs::remove_dir(rig.data_dir().join("layout.json")).unwrap();
     rig.app
-        .dispatch(Action::SetAutoAddApps { enabled: true })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: true },
+        })
         .unwrap();
     assert!(rig.app.pages().problem.is_none());
 }
@@ -39,7 +43,11 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
     std::fs::remove_file(rig.data_dir().join("layout.json")).unwrap();
     std::fs::create_dir(rig.data_dir().join("layout.json")).unwrap();
     rig.core.set_lists(vec![Vec::new()]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let removed = wait_pages(&rig, |view| {
         view.uninstalled == ["标题 app.persist-error"] && view.problem.is_some()
     })
@@ -48,7 +56,9 @@ async fn uninstall_persist_error_is_visible_and_recovers() {
 
     std::fs::remove_dir(rig.data_dir().join("layout.json")).unwrap();
     rig.app
-        .dispatch(Action::SetAutoAddApps { enabled: true })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::SetAutoAddApps { enabled: true },
+        })
         .unwrap();
     assert!(rig.app.pages().problem.is_none());
 }
@@ -58,13 +68,17 @@ async fn page_actions_before_the_list_are_not_ready() {
     let rig = Rig::new().await;
     let page = tab("app.missing", Some("home"));
     let actions = [
-        Action::OpenPage { tab: page.clone() },
-        Action::AddMyApp {
-            app: MyAppRef::Plugin {
-                plugin_id: "app.missing".to_owned(),
+        Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: page.clone() },
+        },
+        Action::Pages {
+            action: wonton_protocol::PageAction::AddMyApp {
+                app: MyAppRef::Plugin {
+                    plugin_id: "app.missing".to_owned(),
+                },
+                title: None,
+                index: None,
             },
-            title: None,
-            index: None,
         },
     ];
     for action in actions {
@@ -94,19 +108,27 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_open_pages() {
     // 两个页面行加进我的应用，打开其中一个。
     for page in [&one, &two] {
         rig.app
-            .dispatch(Action::AddMyApp {
-                app: MyAppRef::Page { tab: page.clone() },
-                title: None,
-                index: None,
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::AddMyApp {
+                    app: MyAppRef::Page { tab: page.clone() },
+                    title: None,
+                    index: None,
+                },
             })
             .unwrap();
     }
     rig.app
-        .dispatch(Action::OpenPage { tab: one.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: one.clone() },
+        })
         .unwrap();
 
     rig.core.set_lists(vec![Vec::new()]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let removed = wait_pages(&rig, |view| {
         view.uninstalled == ["标题 app.uninstalled"]
             && !view
@@ -130,10 +152,17 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_open_pages() {
     wait_pages(&other_rig, |_| other_rig.app.plugins().installed.is_some()).await;
     other_rig
         .app
-        .dispatch(Action::OpenPage { tab: one.clone() })
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage { tab: one.clone() },
+        })
         .unwrap();
     other_rig.core.set_lists(vec![Vec::new()]);
-    other_rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    other_rig
+        .app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let opened_removed = wait_pages(&other_rig, |view| {
         view.stack.is_empty() && view.root == TabRef::Chat
     })
@@ -142,7 +171,9 @@ async fn uninstall_notice_uses_plugin_title_once_and_ignores_open_pages() {
     assert_eq!(opened_removed.uninstalled, vec!["标题 app.uninstalled"]);
     other_rig
         .app
-        .dispatch(Action::DismissUninstalledTabs)
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::DismissUninstalledTabs,
+        })
         .unwrap();
     assert!(other_rig.app.pages().uninstalled.is_empty());
 }
@@ -152,19 +183,29 @@ async fn content_change_reload_clears_a_previous_load_failure() {
     let (rig, page_tab, mut running_plugin) =
         connected_page_rig("app.upgrade-reload", "home").await;
     // 后台化停掉 10 秒一轮的页面轮询：列表节奏由测试控制，重载只数这一次。
-    rig.app.dispatch(Action::AppBackgrounded).unwrap();
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::AppBackgrounded,
+        })
+        .unwrap();
+    rig.app
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: Some(502),
             },
-            status: Some(502),
         })
         .unwrap();
     let before = item(&rig.app.pages(), &page_tab).reload;
     running_plugin.revision = "changed-content".to_owned();
     rig.core.set_lists(vec![vec![running_plugin]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     let recovered = wait_pages(&rig, |view| {
         let page = item(view, &page_tab);
         page.state == TabState::Ready && page.reload == before + 1
@@ -192,11 +233,13 @@ async fn reconnect_reload_clears_a_previous_load_failure() {
     wait_my_app(&rig, &page_tab).await;
     open_ready(&rig, &page_tab, TabState::Ready).await;
     rig.app
-        .dispatch(Action::TabLoadFailed {
-            page: PlacedTab::Page {
-                tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::TabLoadFailed {
+                page: PlacedTab::Page {
+                    tab: page_tab.clone(),
+                },
+                status: Some(502),
             },
-            status: Some(502),
         })
         .unwrap();
     let before = item(&rig.app.pages(), &page_tab).reload;
@@ -242,14 +285,20 @@ async fn open_pages_report_loading_and_removal_honestly() {
     rig.core.set_lists(vec![Vec::new()]);
     rig.reopen();
     rig.app
-        .dispatch(Action::OpenPage {
-            tab: page_tab.clone(),
+        .dispatch(Action::Pages {
+            action: wonton_protocol::PageAction::OpenPage {
+                tab: page_tab.clone(),
+            },
         })
         .unwrap();
     assert_eq!(item(&rig.app.pages(), &page_tab).state, TabState::Loading);
 
     rig.core.set_lists(vec![vec![plugin]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| item(view, &page_tab).state == TabState::Ready).await;
     // 新版本不再提供这个页面：状态页照实说，入口还在。
     let mut removed = web_plugin(
@@ -261,7 +310,11 @@ async fn open_pages_report_loading_and_removal_honestly() {
     );
     removed.web_url = Some("https://x/app".to_owned());
     rig.core.set_lists(vec![vec![removed]]);
-    rig.app.dispatch(Action::RefreshPlugins).unwrap();
+    rig.app
+        .dispatch(Action::Plugins {
+            action: wonton_protocol::PluginAction::RefreshPlugins,
+        })
+        .unwrap();
     wait_pages(&rig, |view| {
         item(view, &page_tab).state == TabState::PageRemoved
     })
@@ -289,7 +342,9 @@ async fn page_urls_keep_web_entry_and_resolve_declared_paths_from_origin() {
     let page_tab = tab(plugin_id, Some("feed"));
     for open in [&web_tab, &page_tab] {
         rig.app
-            .dispatch(Action::OpenPage { tab: open.clone() })
+            .dispatch(Action::Pages {
+                action: wonton_protocol::PageAction::OpenPage { tab: open.clone() },
+            })
             .unwrap();
     }
     assert_eq!(

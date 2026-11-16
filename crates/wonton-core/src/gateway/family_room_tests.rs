@@ -87,6 +87,7 @@ impl Family {
             .members
             .invite(MemberRecord {
                 role_id: role.to_owned(),
+                wants_private_bot: false,
                 ..MemberRecord::for_test(username)
             })
             .unwrap();
@@ -244,11 +245,21 @@ async fn approved_family_joins_once_and_power_levels_follow_role_assignment_and_
             state.room_state[&room].events[&("m.room.create".to_owned(), String::new())]["room_version"],
             "12"
         );
-        assert_eq!(
-            state.room_state[&room].events[&(FAMILY_ROOM_EVENT.to_owned(), String::new())],
-            json!({})
-        );
     }
+    f.assert_people(&room, &[("alice", 0)]);
+    let alice = f.matrix.login("alice", "Phone").await.unwrap();
+    f.matrix
+        .session(&alice)
+        .send_message(
+            &room,
+            &json!({"msgtype": "m.text", "body": "before joining"}),
+        )
+        .await
+        .unwrap();
+    f.matrix.session(&alice).logout().await.unwrap();
+    let reply = f.retry().await;
+    assert_eq!(reply.status, StatusCode::NO_CONTENT, "{}", reply.text());
+    assert_eq!(f.room(), room);
     f.assert_people(&room, &[("alice", 0)]);
     for (role, level) in [("admin", 100), ("family", 0)] {
         let reply = f
@@ -263,6 +274,27 @@ async fn approved_family_joins_once_and_power_levels_follow_role_assignment_and_
         f.assert_people(&room, &[("alice", level)]);
     }
     f.join("bob", "family").await;
+    assert_eq!(f.room(), room);
+    f.assert_people(&room, &[("alice", 0), ("bob", 0)]);
+    let bob = f.matrix.login("bob", "Phone").await.unwrap();
+    f.matrix
+        .session(&bob)
+        .send_message(
+            &f.room(),
+            &json!({"msgtype": "m.text", "body": "after joining"}),
+        )
+        .await
+        .unwrap();
+    f.matrix.session(&bob).logout().await.unwrap();
+    assert_eq!(
+        f.fake
+            .state()
+            .sent
+            .iter()
+            .map(|(target, _)| target.as_str())
+            .collect::<Vec<_>>(),
+        vec![room.as_str(), room.as_str()]
+    );
     for manage_members in [true, false] {
         let reply = f
             .call(
@@ -339,7 +371,7 @@ async fn failed_creation_is_reported_and_retry_uses_saved_approval_without_reinv
         "{}",
         reply.text()
     );
-    assert_eq!(reply.error_kind(), Some("family_room_sync_failed"));
+    assert_eq!(reply.error_kind(), Some("matrix_unavailable"));
     assert_eq!(
         f.gateway.members.get("alice").unwrap().status,
         MemberStatus::Joined

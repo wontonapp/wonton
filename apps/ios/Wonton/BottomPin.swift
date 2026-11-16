@@ -19,6 +19,8 @@ final class BottomPin {
     private var updateGeneration = 0
     private var settling = false
 
+    var viewportHeight: CGFloat { scrollView?.bounds.height ?? 0 }
+
     /// List 会为末尾追加和变高的行调整 contentOffset；翻走时保留更新前的位置，不借内容高度反推主人的手势。
     func prepareForUpdate() {
         guard !isPinned, let scrollView, !scrollView.isDragging, !scrollView.isDecelerating else { return }
@@ -94,7 +96,11 @@ final class BottomPin {
     /// 走查用：贴底状态和滚动的实际位置。界面上看不见，放进无障碍树给 UI 测试读。
     var snapshot: String {
         let view = scrollView
+        let visibleBottom = view.map {
+            $0.convert(CGPoint(x: 0, y: $0.bounds.maxY - $0.adjustedContentInset.bottom), to: nil).y
+        } ?? -1
         return "pin=\(isPinned) y=\(view?.contentOffset.y ?? -1) bottom=\(view?.bottomOffset ?? -1)"
+            + " visibleBottom=\(visibleBottom)"
     }
 
     /// List 排完新行会自己再挪一次 contentOffset，保住原先看到的那一行；键盘弹着、新行比可见区高时新消息就停在可见区下面，
@@ -114,9 +120,13 @@ final class BottomPin {
     }
 }
 
-private extension UIScrollView {
-    /// 贴底的位置。List 报的 `contentSize` 会少算比可见区还高的行的后半截（iOS 26.5 模拟器实测：按它算的底
-    /// 到不了最后一条，还差一千多点），所以可见的最下面那一格比 `contentSize` 还靠下时按格子算。
+extension UIScrollView {
+    /// 贴底的位置；内容不满一屏时就是顶上。贴底（`BottomPin`）和到底后上推（`PullAnchor`）都按这一个算：
+    /// 两处各算各的，差一点就是“贴着底却推不出面板”或一推就被拽回去。
+    ///
+    /// 可见的最下面那一格比 `contentSize` 还靠下时按格子算：行高刚量出来、`contentSize` 还没跟上的那一轮也不落在半截。
+    /// 停稳以后两者一致（iOS 26.5 模拟器，3000pt 高的行，2026-11-14 实测 `contentSize`、布局的内容高度和最后一格的
+    /// 底边都是 21676.67）。
     var bottomOffset: CGFloat {
         let end = (self as? UICollectionView).map { view in
             max(contentSize.height, view.visibleCells.map(\.frame.maxY).max() ?? 0)
@@ -162,14 +172,17 @@ struct EnclosingScrollView: UIViewRepresentable {
     }
 }
 
-/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。
+/// 走查用：看不见的一行，写着 `BottomPin` 的贴底状态，UI 测试按标识读它。只在 Debug 包里挂。
 struct ScrollDebug: View {
-    let text: String
+    let pin: BottomPin
 
     var body: some View {
-        Text(verbatim: text)
-            .accessibilityIdentifier("roomScroll")
-            .allowsHitTesting(false)
-            .opacity(0.02)
+        // 滚动位置不是可观察的状态：只在房间重画时取一次的话，测试读到的是上一次重画时的位置。
+        TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+            Text(verbatim: pin.snapshot)
+                .accessibilityIdentifier("roomScroll")
+                .allowsHitTesting(false)
+                .opacity(0.02)
+        }
     }
 }

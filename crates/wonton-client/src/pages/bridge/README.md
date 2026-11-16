@@ -28,11 +28,19 @@
 `reply_script` 派发来源为当前 window 的合成 `MessageEvent`。文档脚本在捕获阶段拦住真实的 self-postMessage，
 避免 SDK 把自己的请求当成宿主请求；原生回复不再次转给原生。`window.wonton` 不存在。
 
-## 每 Bot 网页接口
+## widget 页
+
+`TabRef::Widget { plugin_id, room_id }` 是插件的 Matrix widget 页（[ADR-0096](../../../../../docs/adr/0096-calls-matrixrtc-widget.md)），只经 `Action::Pages { action: PageAction::OpenPage { .. } }` 从房间里打开、压入页面栈，不能加入“我的应用”或面板。同一时间只保留一个 widget 页；离开栈顶就结束驱动并移除该页，不保留已断开的 widget 页面。上面 1–3 步照旧，另加：
+
+- `TabPage.url` 出来、页面开始加载后调用 `subscribe_tab_widget(tab)`，循环 `next()`，把每段脚本原样注入同一个页面的主框架；
+  返回空（页面关了、换了房间、退出登录、重新加载）就停，`cancel()` 用于壳自己先拆掉页面时。
+- 页面发来的 widget 报文照常交给 `tab_handle_message`，`reply_script` 为空，应答从订阅回来。
+
+## 每 Bot 网页
 
 每 Bot 页面身份使用 `TabRef::Bot { bot: BotRef, path: Option<String> }`，不保存 URL，不降成
 `TabRef::Plugin` 或 `TabRef::Url`。`path: None` 打开对应 Bot 的 `BotView.web.Ready.page.url`；
-`Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开沿用 `Action::OpenPage`，加入沿用
+`Some(path)` 只接受该 origin 内的路径，可含查询和片段。打开沿用 `PageAction::OpenPage`，加入沿用
 `AddMyApp`、`PinCurrentPage` 和 `Panel`，`PlacedTab` 保留同一 Bot 身份和路径。
 
 实现时把聊天已有的 `BotView` watch 通道接入 `PagesLink`，Bot 网页状态变化时重算 `PagesViewModel` 的
@@ -42,12 +50,12 @@ URL，断连或身份变化时清空。桥的来源判定仍按 `TabPage.url` �
 
 Bot 页沿用上述 WebView 容器、文档／消息／上下文接口、`--wonton-*` 和既有媒体授权接口，后者同样通过
 `TabRef`／`PlacedTab` 取得该精确页面 origin；不能另建壳层 WebView，也不能按公网网页跳过桥或令牌注入。
-这是接口约定，不是运行时入口接线或端到端验证结论；接口阶段不暴露 Bot 页面，未支持的客户端明确拒绝，
-不能转开其他页面。
 
 ## 验证
 
-`cargo test -p wonton-client --locked --test it tabs_bridge` 覆盖 Rust 行为，
+`cargo test -p wonton-client --locked -- bridge_rejection:: tabs_bridge::` 覆盖 Rust 行为。
+来源、不支持的方法拒绝与面板红点在不启动后台同步的页面夹具里验证；全客户端的 HTTP 请求总数包含登录和刷新，不能用来判断桥消息有没有副作用。
+
 `cargo test -p wonton-client --locked --test it tabs_bridge::sdk::official_sdk_roundtrip -- --ignored --exact`
-用固定摘要的官方 Node 22 镜像跑 SDK 双平台通道。SDK 来源、许可证和驱动协议见
+用固定摘要的官方 Node 22 镜像跑 SDK 双平台通道。widget 页对真实 Tuwunel 的行为测试是 `cargo test -p wonton-client --test it chat::widget -- --include-ignored`，页面用固定版本的官方 matrix-widget-api。SDK 来源、许可证和驱动协议见
 [测试夹具](../../../tests/it/tabs_bridge/fixtures/README.md)。

@@ -68,7 +68,11 @@ async fn plugins_get_no_way_out_unless_they_declare_network_egress() {
     assert_eq!(created(&docker), (false, Value::Null, Value::Null));
     // 核心以低于默认（0）的优先级接入：默认路由和发布的端口留在核心自己的网络上（#90）。
     let priority = docker.gateway_priority("wonton-app-test");
-    assert!(priority.is_some_and(|p| p < 0), "{priority:?}");
+    assert!(
+        priority.is_some_and(|p| p < 0),
+        "writes={:?}",
+        docker.writes()
+    );
 }
 
 #[tokio::test]
@@ -79,6 +83,7 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,
@@ -90,13 +95,15 @@ async fn a_plugin_network_that_can_reach_out_without_egress_is_reported_after_re
             limits: Default::default(),
             granted_permissions: Vec::new(),
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

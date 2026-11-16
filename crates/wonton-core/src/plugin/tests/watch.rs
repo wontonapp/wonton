@@ -1,5 +1,7 @@
 //! 插件状态跟着容器走：核心跑着的时候容器好了、坏了，状态都如实跟上。
 
+use std::sync::Arc;
+
 use axum::Router;
 use axum::routing::get;
 use serde_json::{Value, json};
@@ -99,6 +101,32 @@ async fn the_core_rejoins_the_network_of_a_plugin_that_crashes_without_it() {
 }
 
 #[tokio::test]
+async fn a_missing_plugin_network_is_recreated_and_containers_are_redeployed() {
+    let (docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let network = "wonton-app-test";
+    let container = container_name("app-test", "app");
+    let first = manager_with(engine.clone(), &dir);
+    first
+        .install(
+            &package("  app:\n    image: nginx\n", "  permissions: []"),
+            &[],
+            super::langs(),
+        )
+        .await
+        .unwrap();
+    let before = docker.creations(&container);
+    docker.remove(&container);
+    docker.remove_network(network);
+    let restarted = manager_with(engine, &dir);
+    restarted.restore().await.unwrap();
+
+    assert_eq!(restarted.list()[0].status, PluginStatus::Running);
+    assert_eq!(docker.creations(&container), before + 1);
+    assert!(docker.network(network).is_some());
+}
+
+#[tokio::test]
 async fn a_running_plugin_follows_its_container_down_and_back() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
@@ -139,6 +167,27 @@ async fn a_running_plugin_follows_its_container_down_and_back() {
     docker.set_state(&container, with_health("healthy"));
     m.watch_containers().await;
     assert_eq!(seen(&m), (PluginStatus::Running, Some(Health::Healthy)));
+}
+
+#[tokio::test]
+async fn an_old_container_watch_cannot_stop_a_reinstalled_plugin() {
+    let (_docker, engine) = FakeDocker::start().await;
+    let dir = tempfile::tempdir().unwrap();
+    let manager = manager_with(engine, &dir);
+    let source = app().await;
+    let installed = manager.install(&source, &[], super::langs()).await.unwrap();
+    let old_token = manager.watch_token_for_test(&installed.id).unwrap();
+
+    manager
+        .uninstall(&installed.id, false, &super::langs())
+        .await
+        .unwrap();
+    let reinstalled = manager.install(&source, &[], super::langs()).await.unwrap();
+    let new_token = manager.watch_token_for_test(&reinstalled.id).unwrap();
+    assert!(!Arc::ptr_eq(&old_token, &new_token));
+
+    manager.saw_unavailable_for_test(&reinstalled.id, old_token, PluginStatus::Stopped);
+    assert_eq!(manager.list()[0].status, PluginStatus::Running);
 }
 
 #[tokio::test]

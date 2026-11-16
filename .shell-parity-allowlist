@@ -1,6 +1,6 @@
 # 两个壳的对齐检查（scripts/check-shell-parity.py）的例外：有意只在一个壳里用的 ViewModel 项。
 # 每行一条：项 | 原因。原因里不能有 |。
-# 项写类型名（整个类型连同字段、分支都不查，也不顺着它往下走）、类型.成员（Action.SetPushMethod、
+# 项写类型名（整个类型连同字段、分支都不查，也不顺着它往下走）、类型.成员（PushAction.SetPushMethod、
 # ChatViewModel.push）、对象.方法（ClientCore.resolve_push）或自由函数名，名字照 Rust 源码写。
 # 只放平台专属或按 ADR 有意只做一边的；“另一边还没做”不是理由，让警告留着。
 
@@ -10,9 +10,9 @@ PushStatus | 推送按 ADR-0003 先只在 Android 上做
 PushEndpoint | 推送按 ADR-0003 先只在 Android 上做
 PushNotification | 推送按 ADR-0003 先只在 Android 上做
 NotificationCategory | Android 的通知渠道，推送按 ADR-0003 先只在 Android 上做
-Action.SetPushEndpoint | 推送按 ADR-0003 先只在 Android 上做
-Action.PushUnavailable | 推送按 ADR-0003 先只在 Android 上做
-Action.SetPushMethod | 推送按 ADR-0003 先只在 Android 上做
+PushAction.SetPushEndpoint | 推送按 ADR-0003 先只在 Android 上做
+PushAction.PushUnavailable | 推送按 ADR-0003 先只在 Android 上做
+PushAction.SetPushMethod | 推送按 ADR-0003 先只在 Android 上做
 ClientCore.resolve_push | 推送按 ADR-0003 先只在 Android 上做
 ChatViewModel.push | 推送按 ADR-0003 先只在 Android 上做
 ChatViewModel.background_notifications | 保持连接方式下的系统通知，推送按 ADR-0003 先只在 Android 上做
@@ -30,11 +30,29 @@ ClientCore.page_media_command_script | 后台音频和系统媒体控制是平�
 
 # 端口映射给第三方 App：ADR-0072 定只有 Android 能（前台服务）；iOS 只在前台给 App 自己用。
 PluginPortMapping | ADR-0072：映射到本机给第三方 App 只有 Android 能做
-Action.SetPortMapping | ADR-0072：映射到本机给第三方 App 只有 Android 能做
+PluginAction.SetPortMapping | ADR-0072：映射到本机给第三方 App 只有 Android 能做
 PluginsViewModel.port_mappings | ADR-0072：映射到本机给第三方 App 只有 Android 能做
 
 # 测试入口。
 ClientCore.new_ui_fake | UI 测试的假数据入口；iOS 在 App 代码的 DEBUG 分支里调，Android 在 debug 源集里调，检查不看 debug 源集
+
+# 服务器列表：两个壳的行都只显示名字和当前勾，不按 ServerKind 区分样子；Matrix 账号的信息走 MatrixAccount，两边都显示。
+# iOS 的 `.wonton` 命中来自字符串字面量（DispatchQueue 标签 "app.wonton.network"），不是这个枚举。
+ServerKind | 两壳都不按服务器类型显示行；iOS 的命中是 "app.wonton.*" 字符串字面量撞名
+
+# 传输：Transfer.file 是文件的编号，两壳的传输卡片都不显示它（iOS 的 `.file` 命中来自 WontonIcon.file 和 ByteCountStyle.file）。
+Transfer.file | 两壳传输卡片都不显示文件编号；iOS 的 `.file` 是同名图标/字数风格的撞名
+
+# 插件共享撤销：两壳都走 ClientCore.revoke_plugin_share 函数（iOS PluginShareEditor、Android PluginSharesSection 都有撤销按钮），
+# 不经 Action 分发；Kotlin 的匹配只认 SharingAction.RevokePluginShare 字面量。
+SharingAction.RevokePluginShare | 两壳都经 ClientCore.revoke_plugin_share 函数撤销，Action 分支没人发
+
+# 上传进共享文件夹（FileAction.UploadFile）：iOS 唯一引用是 FilesModel.upload，没有任何界面调用；
+# 聊天里的文件上传两边都走 ClientCore.add_file_attachment。两壳一起定入口后再接，不先做 Android 一边。
+FileAction.UploadFile | iOS 也只有无调用方的辅助函数；聊天上传两边都走 add_file_attachment，入口两壳一起接
+
+# 固定当前插件页：Android 的导航正随 #379 去底栏重做，等它合并后照新导航一起接。
+PageAction.PinCurrentPage | Android 等 #379（去底栏的导航大改）合并后再接，先不碰导航文件
 
 # Agent 调用链（ADR-0061 第 10 节）：客户端核心已就绪，壳的界面在前端线的需求里，暂未接（任务卡 chain-client）。
 AgentChainStatus | 壳待前端线接
@@ -46,8 +64,11 @@ AgentChainsViewModel | 壳待前端线接
 AgentSettingsViewModel | 壳待前端线接
 ChainLimits | 壳待前端线接
 AgentConcurrency | 壳待前端线接
-AgentChainAction | 壳待前端线接
+AgentAction | 壳待前端线接
 ClientCore.agent_chains | 壳待前端线接
 ClientCore.subscribe_agent_chains | 壳待前端线接
-ClientCore.dispatch_agent_chain | 壳待前端线接
 ClientCore.agent_settings | 壳待前端线接
+
+# 内容窗口只在 iPad 提供；Android 使用系统分屏和宽屏两栏，不开应用内多实例。
+ClientCore.subscribe_content_page | iPad 内容窗口不改变主页面栈，Android 不提供该窗口入口
+ContentPageSubscription | iPad 内容窗口的页面订阅，Android 不提供该窗口入口

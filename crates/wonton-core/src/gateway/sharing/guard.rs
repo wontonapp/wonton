@@ -193,30 +193,3 @@ pub(in crate::gateway) fn guard_request(
     req.extensions_mut().insert(guard);
     Ok(())
 }
-
-pub(in crate::gateway) fn guard_body(
-    body: hyper::body::Incoming,
-    guard: AccessGuard,
-) -> axum::body::Body {
-    use http_body_util::BodyExt;
-    let frames = futures_util::stream::unfold(
-        (body, guard, false),
-        |(mut body, guard, stopped)| async move {
-            if stopped {
-                return None;
-            }
-            let next = tokio::select! {
-                biased;
-                _ = guard.cancelled() => Some(Err(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionAborted, "share access revoked",
-                ))),
-                frame = body.frame() => frame.map(|frame| frame.map_err(std::io::Error::other)),
-            };
-            next.map(|frame| {
-                let stopped = frame.is_err();
-                (frame, (body, guard, stopped))
-            })
-        },
-    );
-    axum::body::Body::new(http_body_util::StreamBody::new(frames))
-}

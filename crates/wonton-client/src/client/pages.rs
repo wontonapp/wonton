@@ -1,14 +1,28 @@
 //! 页面的壳接口：注入脚本、桥消息和网页权限的询问，拆出 [client mod] 保持文件在门禁内。
 
+use std::sync::Arc;
+
 use wonton_protocol::{CoreError, PlacedTab, TabRef};
 
 use super::ClientCore;
 use super::sharing;
+use crate::pages::ContentPageSubscription;
 use crate::pages::bridge::{self, TabBridgeResult, TabEnvironment};
 use crate::pages::media_permission::TabMediaPermission;
 
 #[uniffi::export]
 impl ClientCore {
+    /// 打开独立内容页订阅，不改变主窗口页面栈。
+    pub fn subscribe_content_page(
+        &self,
+        tab: TabRef,
+    ) -> Result<Arc<ContentPageSubscription>, CoreError> {
+        let scope = self.scope();
+        let subscription = scope.pages.subscribe_content_page(tab.clone())?;
+        self.probe_shared_page(&scope, &tab);
+        Ok(subscription)
+    }
+
     /// 文档开始前、只在插件自己的主框架注入；原生通道名为 `wontonBridge`。
     pub fn tab_document_script(
         &self,
@@ -41,6 +55,16 @@ impl ClientCore {
             &message,
             &environment,
         )
+    }
+
+    /// widget 页（[`TabRef::Widget`]，ADR-0096）的地址出来、开始加载后订阅：每一项是驱动发给页面的消息包成的脚本，
+    /// 壳原样注入同一个页面的主框架。页面发来的 widget 报文照常经 [`Self::tab_handle_message`] 交进来。
+    /// 不是 widget 页时是输入非法，驱动还没起来（页面没打开、地址还没出来）是未就绪。
+    pub fn subscribe_tab_widget(
+        &self,
+        page: PlacedTab,
+    ) -> Result<std::sync::Arc<bridge::TabWidgetSubscription>, CoreError> {
+        bridge::subscribe(&self.scope().pages, &page)
     }
 
     /// 外观、字号、布局或全屏状态变化后注入，不重新加载页面。
@@ -94,16 +118,5 @@ impl ClientCore {
         allow: bool,
     ) -> Result<TabMediaPermission, CoreError> {
         self.scope().pages.decide_media_permission(allow)
-    }
-
-    /// 插件详情页的开关：`true` 是允许，`false` 是改回没问过（清掉，下次再问）。
-    /// 拒绝只在询问弹窗里产生，开关给不出拒绝。不经 [`Action`](wonton_protocol::Action)：
-    /// 那个枚举的 uniffi 元数据已贴着上限，加变体会编不过。
-    pub fn set_plugin_media_permission(
-        &self,
-        plugin_id: String,
-        allow: bool,
-    ) -> Result<(), CoreError> {
-        self.scope().plugins.set_media_permission(plugin_id, allow)
     }
 }

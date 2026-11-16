@@ -10,7 +10,8 @@ use super::super::entry::Health;
 use super::super::entry::PluginStatus;
 use super::super::install_hosted::{effective_status, hosted_capability, provider_in};
 use super::super::install_storage::storage_need;
-use super::super::manifest::{LocalizedText, PluginId, Sso};
+use super::super::manifest::{LocalizedText, Manifest, PluginId, Sso};
+use super::super::manifest_clients::ClientsHttp;
 use super::super::manifest_static::content_security_policy;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::upstreams::Endpoint;
@@ -26,6 +27,26 @@ pub struct PluginView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health: Option<Health>,
     pub url: Option<String>,
+}
+
+/// 客户端入口（ADR-0021）网关转发要的东西：清单的 `clients.http` 原文和解析出的转发地址。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientsRoute {
+    /// 清单的 `clients.http`：开关之外的检查（路径规则、auth、auth_failures）都按它来。
+    pub http: ClientsHttp,
+    /// 核心访问 `clients.http.service` 的地址；服务容器不在（插件没运行）时为空。
+    pub upstream: Option<Endpoint>,
+}
+
+/// App 里显示的第三方客户端入口和网关认证信息。
+#[derive(Debug, Clone)]
+pub struct ClientsView {
+    pub id: PluginId,
+    pub label: String,
+    pub route: ClientsRoute,
+    pub switches: crate::clients::state::ClientsEntries,
+    pub entry_label: Option<String>,
+    pub tcp_names: Vec<String>,
 }
 
 /// 网关查询用的路由信息。
@@ -45,6 +66,8 @@ pub struct Route {
     pub oidc_callback: bool,
     /// 托管插件（ADR-0080）：`upstream` 是提供方，网关还要带上插件 ID、加按清单算的响应头。
     pub hosted: Option<HostedRoute>,
+    /// 声明了 `clients.http` 时的客户端入口（ADR-0021）；没声明时为空。
+    pub clients: Option<ClientsRoute>,
 }
 
 /// 网关转发托管插件的请求要的东西。
@@ -76,6 +99,26 @@ fn oidc_callback(entry: &Entry, path: &str) -> bool {
         .is_some_and(|client| client.redirect_paths.iter().any(|p| p == path))
 }
 
+/// 清单声明了 `clients.http` 就给路由；转发地址用部署时解析的那个，清单变了就当没解析出来，
+/// 等重新部署（ADR-0021 的开关关着不在这里看：开关在插件记录里，入口侧自己查）。
+fn clients_route(manifest: Option<&Manifest>, entry: &Entry) -> Option<ClientsRoute> {
+    let http = manifest?.clients.as_ref()?.http.clone()?;
+    Some(ClientsRoute {
+        upstream: entry
+            .clients
+            .as_ref()
+            .filter(|resolved| resolved.http == http)
+            .filter(|_| {
+                matches!(
+                    entry.status,
+                    PluginStatus::Running | PluginStatus::Degraded { .. }
+                ) && entry.serving.contains(&http.service)
+            })
+            .and_then(|resolved| resolved.upstream.clone()),
+        http,
+    })
+}
+
 impl PluginManager {
     pub fn route(&self, slug: &str, path: &str) -> Option<Route> {
         let langs = self.owner_languages();
@@ -104,6 +147,7 @@ impl PluginManager {
                             .and_then(|p| p.endpoint),
                     }),
                 }),
+                clients: clients_route(manifest, entry),
             });
         }
         Some(Route {
@@ -123,7 +167,112 @@ impl PluginManager {
             proxy: entry.proxy.clone(),
             oidc_callback: oidc_callback(entry, path),
             hosted: None,
+            clients: clients_route(manifest, entry),
         })
+    }
+
+    pub fn client_views(&self) -> Result<Vec<ClientsView>, super::super::store::StoreError> {
+        let langs = self.owner_languages();
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let mut views = Vec::new();
+        for (id, entry) in plugins.iter() {
+            let Some(listed) = entry.listed.as_ref() else {
+                continue;
+            };
+            let Some(clients) = listed.manifest.clients.as_ref() else {
+                continue;
+            };
+            let Some(http) = clients.http.as_ref() else {
+                continue;
+            };
+            let record = self.store.load(id)?;
+            views.push(ClientsView {
+                id: id.clone(),
+                label: langs.pick_owned(&listed.manifest.title),
+                route: ClientsRoute {
+                    upstream: entry
+                        .clients
+                        .as_ref()
+                        .and_then(|route| route.upstream.clone()),
+                    http: http.clone(),
+                },
+                switches: record
+                    .as_ref()
+                    .map_or_else(Default::default, |record| record.clients_entries),
+                entry_label: record
+                    .as_ref()
+                    .and_then(|record| record.entry_label.clone()),
+                tcp_names: clients
+                    .tcp
+                    .as_deref()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|tcp| tcp.name.clone())
+                    .collect(),
+            });
+        }
+        Ok(views)
+    }
+
+    pub fn client_view(
+        &self,
+        id: &PluginId,
+    ) -> Result<Option<ClientsView>, super::super::store::StoreError> {
+        Ok(self.client_views()?.into_iter().find(|view| view.id == *id))
+    }
+
+    pub fn gateway_auth_headers(
+        &self,
+        id: &PluginId,
+        plugin_admin: bool,
+    ) -> Result<Vec<(hyper::header::HeaderName, hyper::header::HeaderValue)>, String> {
+        let plugins = self.plugins.read().expect("插件表锁中毒");
+        let entry = plugins.get(id).ok_or_else(|| "插件未安装".to_owned())?;
+        let listed = entry
+            .listed
+            .as_ref()
+            .ok_or_else(|| "插件清单不可用".to_owned())?;
+        let gateway = listed
+            .manifest
+            .clients
+            .as_ref()
+            .and_then(|clients| clients.http.as_ref())
+            .and_then(|http| http.auth.gateway.as_ref())
+            .ok_or_else(|| "插件不是 gateway 密码入口".to_owned())?;
+        let secrets = self
+            .store
+            .secrets()
+            .load(id)
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        let generated = super::super::secrets::generated_values(
+            &listed.manifest,
+            &secrets,
+            &self.owner_languages(),
+        )
+        .map_err(|error| error.to_string())?;
+        let owner = self.cfg.profile.owner();
+        let rendered = super::super::proxy_auth::render_gateway_headers(
+            &gateway.headers,
+            &owner,
+            plugin_admin,
+            &generated,
+            &self.owner_languages(),
+        )
+        .map_err(|error| error.to_string())?;
+        rendered
+            .into_iter()
+            .map(|(name, value)| {
+                let value = hyper::header::HeaderValue::from_str(&value)
+                    .map_err(|error| error.to_string())?;
+                Ok((name, value))
+            })
+            .collect()
+    }
+
+    /// 第三方客户端入口验证 Basic 用的用户名（ADR-0021「接口」）：这批密码都挂在主人名下。
+    pub(crate) fn owner_username(&self) -> String {
+        self.cfg.profile.owner().username
     }
 
     pub(in crate::plugin) fn view(&self, id: &PluginId, entry: &Entry) -> PluginView {

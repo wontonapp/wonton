@@ -126,7 +126,12 @@ async fn switching_back_keeps_the_first_servers_chat() {
         .await
         .expect("打开 A 的房间");
 
-    dispatch_from_shell(&phone, Action::AddServer);
+    dispatch_from_shell(
+        &phone,
+        Action::Home {
+            action: wonton_protocol::HomeAction::AddServer,
+        },
+    );
     let ended = async { while timeline.next().await.is_some() {} };
     tokio::time::timeout(Duration::from_secs(30), ended)
         .await
@@ -135,7 +140,12 @@ async fn switching_back_keeps_the_first_servers_chat() {
     let (_, on_b) = phone.signed_in().await;
     assert_ne!(on_b, on_a);
 
-    dispatch_from_shell(&phone, Action::SwitchServer { id: "1".into() });
+    dispatch_from_shell(
+        &phone,
+        Action::Home {
+            action: wonton_protocol::HomeAction::SwitchServer { id: "1".into() },
+        },
+    );
     phone
         .wait_chat("切回 A", |view| {
             let signed_in = matches!(

@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Action, ServersViewModel};
+use crate::{Action, HomeAction, ServersViewModel};
 
 fn round_trip<T>(value: &T) -> T
 where
@@ -134,21 +134,33 @@ fn login_failures_round_trip_and_unknown_failure_is_other() {
 #[test]
 fn login_actions_round_trip_through_json() {
     for action in [
-        Action::StartMatrixLogin { homeserver: None },
-        Action::StartMatrixLogin {
-            homeserver: Some("matrix.org".into()),
+        Action::Home {
+            action: HomeAction::StartMatrixLogin { homeserver: None },
         },
-        Action::SubmitMatrixPassword {
-            login: password_login(),
+        Action::Home {
+            action: HomeAction::StartMatrixLogin {
+                homeserver: Some("matrix.org".into()),
+            },
         },
-        Action::StartMatrixOidc {
-            login: oidc_login(),
+        Action::Home {
+            action: HomeAction::SubmitMatrixPassword {
+                login: password_login(),
+            },
         },
-        Action::CompleteMatrixOidc {
-            callback: callback(),
+        Action::Home {
+            action: HomeAction::StartMatrixOidc {
+                login: oidc_login(),
+            },
         },
-        Action::CancelMatrixLogin {
-            login_id: "login-1".into(),
+        Action::Home {
+            action: HomeAction::CompleteMatrixOidc {
+                callback: callback(),
+            },
+        },
+        Action::Home {
+            action: HomeAction::CancelMatrixLogin {
+                login_id: "login-1".into(),
+            },
         },
     ] {
         assert_eq!(round_trip(&action), action);
@@ -169,11 +181,15 @@ fn password_and_oidc_secrets_are_redacted_in_debug_not_serialization() {
         oidc_redirect_uri: "io.github.wontonapp:/matrix-login".into(),
         state,
     };
-    let password_action = Action::SubmitMatrixPassword {
-        login: password.clone(),
+    let password_action = Action::Home {
+        action: HomeAction::SubmitMatrixPassword {
+            login: password.clone(),
+        },
     };
-    let callback_action = Action::CompleteMatrixOidc {
-        callback: callback.clone(),
+    let callback_action = Action::Home {
+        action: HomeAction::CompleteMatrixOidc {
+            callback: callback.clone(),
+        },
     };
     for debug in [
         format!("{password:?}"),

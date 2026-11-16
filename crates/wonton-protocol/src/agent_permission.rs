@@ -32,9 +32,7 @@ pub struct AgentPermissionRequest {
     /// [`ORIGIN_META_KEY`](crate::ORIGIN_META_KEY)；不带时卡片落到 Bot 的主房间。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<crate::ConfirmationOrigin>,
-    /// 这条请求属于链上哪个会话（ADR-0061 第 10 节）：核心据此把卡片认到链上，停链时撤回，
-    /// [`HAND_OFF_STATUS_TOOL`](crate::HAND_OFF_STATUS_TOOL) 报
-    /// [`HandOffState::WaitingPermission`](crate::HandOffState::WaitingPermission)。不带时卡片不归任何链。
+    /// 这条请求属于哪个会话（ADR-0061 第 10 节）：核心据此把卡片认到会话上。不带时卡片不归任何会话。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
 }

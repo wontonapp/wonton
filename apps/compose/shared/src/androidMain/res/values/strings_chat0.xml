@@ -55,4 +55,5 @@
     <string name="chat_backup_verify_reason">Verify your identity to view the recovery key</string>
     <!-- Status line on the chat list: signing in failed for a temporary reason and the app is retrying by itself. -->
     <string name="chat_status_reconnecting">Reconnecting…</string>
+    <string name="chat_plugin_starting">Starting agent…</string>
 </resources>

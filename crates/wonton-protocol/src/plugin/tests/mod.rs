@@ -1,5 +1,6 @@
 mod actions;
 mod forms;
+mod remote_mcp;
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -58,6 +59,7 @@ fn installed() -> InstalledPlugin {
         },
         web_url: Some("http://app-immich-photos.wonton.localhost:8480".into()),
         cross_origin_isolated: false,
+        link_url: None,
         declares_tools: true,
         tabs: vec![PluginTab {
             id: "photos".into(),
@@ -70,7 +72,6 @@ fn installed() -> InstalledPlugin {
             layout: TabLayout::EdgeToEdge,
         }],
         bot_user_id: None,
-        family: false,
         upgrade: Some(UpgradeOffer {
             version: "2.1.0".into(),
             release_notes: Some("支持视频转码".into()),
@@ -80,7 +81,13 @@ fn installed() -> InstalledPlugin {
         notices: vec![],
         enabled_root_permissions: vec!["docker.socket".into()],
         install_progress: None,
+        install_failure: None,
         tunnel_ports: Vec::new(),
+        matrix_widget: Some(PluginWidget {
+            url: "/room?widgetId=$matrix_widget_id".into(),
+            entry: WidgetEntry::VideoCall,
+            capabilities: vec!["org.matrix.msc4157.send.delayed_event".into()],
+        }),
     }
 }
 
@@ -90,6 +97,8 @@ fn store() -> StoreListing {
         id: "app.immich.photos".into(),
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),
+        installable: true,
+        install_gate: crate::Gate::Allow,
         icon: Some(icon("ab")),
         tags: vec!["immich".into(), "照片".into()],
         kind: PluginKind::App,
@@ -156,12 +165,27 @@ fn store() -> StoreListing {
     }
 }
 
+fn preview_device() -> PluginDevice {
+    PluginDevice {
+        id: "usb-1".into(),
+        name: "Zigbee 棒".into(),
+        target: "/dev/zigbee".into(),
+        service: "homeassistant".into(),
+        optional: true,
+        kind: PluginDeviceKind::Serial,
+        system: false,
+        chosen: false,
+    }
+}
+
 fn preview() -> InstallPreview {
     InstallPreview {
         source: Some("github:someone/wonton-samba@v1.0.0".into()),
         commit: Some("0123456789abcdef0123456789abcdef01234567".into()),
         digest: format!("sha256:{}", "cd".repeat(32)),
         plan: "consumer-plan".into(),
+        audience: None,
+        install_gate: crate::Gate::Allow,
         id: "app.samba".into(),
         title: "Samba".into(),
         summary: "局域网文件共享".into(),
@@ -169,6 +193,7 @@ fn preview() -> InstallPreview {
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
         security_tier: Some(SecurityTier::High),
+        remote: None,
         scope_choices: vec![],
         has_bot: false,
         icon: None,
@@ -232,13 +257,7 @@ fn preview() -> InstallPreview {
         missing_profile: None,
         blocked: None,
         blocked_category: None,
-        devices: Some(vec![PluginDevice {
-            id: "usb-1".into(),
-            name: "Zigbee 棒".into(),
-            target: "/dev/zigbee".into(),
-            service: "homeassistant".into(),
-            optional: true,
-        }]),
+        devices: Some(vec![preview_device()]),
         lan_webui: Some(LanWebuiOffer {
             ports: vec![LanPort {
                 port: 8080,
@@ -265,6 +284,9 @@ fn detail() -> PluginDetail {
         id: "app.immich.photos".into(),
         title: "相册".into(),
         summary: "照片备份、人脸与语义搜索".into(),
+        audience: None,
+        installable: true,
+        install_gate: crate::Gate::Allow,
         about: Some("第一段\n\n第二段".into()),
         icon: Some(icon("ab")),
         screenshots: vec![PluginImage {
@@ -274,6 +296,7 @@ fn detail() -> PluginDetail {
         kind: PluginKind::App,
         runtime: PluginRuntime::Compose,
         security_tier: Some(SecurityTier::Standard),
+        remote: None,
         link_url: None,
         scope: None,
         version: "2.1.0".into(),
@@ -308,6 +331,8 @@ fn detail() -> PluginDetail {
         installed: Some(installed()),
         blocked: None,
         notices: Vec::new(),
+        problems: Vec::new(),
+        devices: Vec::new(),
         hints: vec![PluginHint {
             category: PluginHintCategory::ModelsNotConnected,
             detail: Some("模型网关没在运行".into()),

@@ -21,12 +21,14 @@ struct BotContactsView: View {
 
     var body: some View {
         content
-            .wontonPushedScreen(String(localized: .Contacts0.contactsTitle)) {
+            .wontonPushedScreen(String(localized: .Contacts0.contactsTitle), usesSystemToolbar: true) {
                 WontonIconButton(icon: .add, label: String(localized: .Contacts0.contactsAdd)) { showsAdd = true }
             }
             .task { await model.observe() }
             .refreshable { await model.refresh() }
-            .wontonSheet(isPresented: $showsAdd, title: String(localized: .Contacts0.contactsAdd)) { close in
+            .wontonSheet(
+                isPresented: $showsAdd, title: String(localized: .Contacts0.contactsAdd), usesSystemPresentation: true
+            ) { close in
                 addPanel(close)
             }
             .contactsRemoveDialog($removing, model: model)
@@ -81,12 +83,14 @@ struct BotContactsView: View {
                     approve: {
                         // 别的服务器的请求先弹确认：同意后这个 Bot 只聊天（ADR-0050）。
                         if contact.remote == nil {
-                            model.send(.approveBotContact(bot: model.bot, userId: contact.userId))
+                            model.send(.botContacts(action: .approveBotContact(bot: model.bot, userId: contact.userId)))
                         } else {
                             approvingRemote = contact
                         }
                     },
-                    reject: { model.send(.rejectBotContact(bot: model.bot, userId: contact.userId)) }
+                    reject: {
+                        model.send(.botContacts(action: .rejectBotContact(bot: model.bot, userId: contact.userId)))
+                    }
                 )
             }
             section(.Contacts1.contactsSectionActive, model.contacts.filter { $0.state == .active }) { contact in
@@ -101,7 +105,7 @@ struct BotContactsView: View {
             let sent = model.contacts.filter { $0.state != .incoming && $0.state != .active }
             section(.Contacts1.contactsSectionSent, sent) { contact in
                 SentContactRowView(contact: contact) {
-                    model.send(.removeBotContact(bot: model.bot, userId: contact.userId))
+                    model.send(.botContacts(action: .removeBotContact(bot: model.bot, userId: contact.userId)))
                 }
             }
         }
@@ -182,9 +186,9 @@ private extension BotContactsView {
     private func submitAdd(_ close: @escaping (@escaping () -> Void) -> Void) {
         let userId = normalizedUserId
         guard !userId.isEmpty else { return }
-        model.send(addsPerson
+        model.send(.botContacts(action: addsPerson
             ? .requestPersonContact(bot: model.bot, userId: userId)
-            : .requestBotContact(bot: model.bot, userId: userId))
+            : .requestBotContact(bot: model.bot, userId: userId)))
         close {}
     }
 }
@@ -229,7 +233,7 @@ final class BotContactsModel {
 
     /// 进页面时选定这个 Bot 取一次，之后跟着核心的推送走；页面消失时订阅结束。
     func observe() async {
-        send(.refreshBotContacts(bot: bot))
+        send(.botContacts(action: .refreshBotContacts(bot: bot)))
         for await viewModel in core.subscribeBotContacts().updates() {
             self.viewModel = viewModel
         }
@@ -244,7 +248,7 @@ final class BotContactsModel {
     }
 
     func retry() {
-        send(.refreshBotContacts(bot: bot))
+        send(.botContacts(action: .refreshBotContacts(bot: bot)))
     }
 
     /// 下拉刷新：等核心把状态从 Loading 换走，圈才收起来。
@@ -271,7 +275,9 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { removing.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Common.commonRemove), kind: .danger) {
-                    if let contact { model.send(.removeBotContact(bot: model.bot, userId: contact.userId)) }
+                    if let contact {
+                        model.send(.botContacts(action: .removeBotContact(bot: model.bot, userId: contact.userId)))
+                    }
                     removing.wrappedValue = nil
                 }
             ]
@@ -290,7 +296,9 @@ extension View {
             actions: [
                 WontonDialogAction(title: String(localized: .Common.commonCancel)) { approving.wrappedValue = nil },
                 WontonDialogAction(title: String(localized: .Contacts1.contactsApprove), kind: .primary) {
-                    if let contact { model.send(.approveBotContact(bot: model.bot, userId: contact.userId)) }
+                    if let contact {
+                        model.send(.botContacts(action: .approveBotContact(bot: model.bot, userId: contact.userId)))
+                    }
                     approving.wrappedValue = nil
                 }
             ]

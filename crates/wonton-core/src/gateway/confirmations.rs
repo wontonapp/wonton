@@ -17,11 +17,19 @@ use wonton_protocol::{
 };
 
 use super::api::{acted_by, denied, error_response, languages, plugin_denied, requester};
-use super::{Gateway, TunnelPeer};
+use super::{Gateway, Person, TunnelPeer};
 use crate::contacts::Contacts;
 use crate::l10n;
 use crate::mcp::{AnswerError, Confirmations};
 use crate::plugin::languages::Languages;
+
+fn person_user_id(gateway: &Gateway, person: &Person) -> String {
+    gateway
+        .matrix
+        .as_ref()
+        .map(|matrix| matrix.user_id(&person.username))
+        .unwrap_or_else(|| format!("@{}:{}", person.username, gateway.public.base_domain))
+}
 
 fn mcp_unavailable(langs: &Languages) -> Response {
     error_response(
@@ -143,7 +151,7 @@ pub async fn card(
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
     };
-    if let Some(not_yours) = not_their_card(&gateway, mcp, peer, &headers, &id) {
+    if let Some(not_yours) = not_their_card(&gateway, mcp, peer, &headers, &id, None) {
         return not_yours;
     }
     match mcp.bus.confirmations().card(&id) {
@@ -164,7 +172,10 @@ pub async fn answer(
     Path(id): Path<String>,
     body: Bytes,
 ) -> Response {
-    let by = acted_by(&gateway, peer.as_ref(), &headers);
+    let answerer_user_id = match requester(&gateway, peer, &headers) {
+        Ok(person) => person_user_id(&gateway, &person),
+        Err(response) => return *response,
+    };
     let langs = languages(&headers);
     if let Some(denied) = plugin_denied(&gateway, peer, &headers) {
         return denied;
@@ -172,7 +183,9 @@ pub async fn answer(
     let Some(mcp) = &gateway.mcp else {
         return mcp_unavailable(&languages(&headers));
     };
-    if let Some(not_yours) = not_their_card(&gateway, mcp, peer, &headers, &id) {
+    if let Some(not_yours) =
+        not_their_card(&gateway, mcp, peer, &headers, &id, Some(&answerer_user_id))
+    {
         return not_yours;
     }
     let answer: ConfirmationAnswer = match serde_json::from_slice(&body) {
@@ -186,13 +199,16 @@ pub async fn answer(
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
+    let by = acted_by(&gateway, peer.as_ref(), &headers);
     match mcp.bus.answer_card_with_secrets(
         &id,
         answer.answer,
         answer.choice_id.as_deref(),
         answer.secrets,
         answer.settings,
+        answer.devices,
         &by,
+        Some(&answerer_user_id),
     ) {
         Ok(state) => Json(ConfirmationReply { state }).into_response(),
         Err(e) => {
@@ -231,25 +247,41 @@ pub async fn stop_window(
     }
 }
 
-/// 卡片发给谁谁回答（ADR-0045）：主人答没写收件人的，家人答写了他用户名的，别人回 403 `not_yours`。没有这张卡片时
-/// 交给回答本身报 404。
+/// 卡片发给谁谁回答（ADR-0045）：主人和管理员答管理员卡，家人答写了他用户名的，
+/// 别人回 403 `not_yours`。没有这张卡片时交给回答本身报 404。
 fn not_their_card(
     gateway: &Gateway,
     mcp: &crate::mcp::Endpoint,
     peer: Option<Extension<TunnelPeer>>,
     headers: &HeaderMap,
     id: &str,
+    user_id: Option<&str>,
 ) -> Option<Response> {
     let person = match requester(gateway, peer, headers) {
         Ok(person) => person,
         Err(response) => return Some(*response),
     };
-    let recipient = mcp.bus.confirmations().recipient(id)?;
-    let theirs = match recipient {
-        None => person.is_owner(),
-        Some(username) => !person.is_owner() && person.username == username,
-    };
-    (!theirs).then(|| error_response(StatusCode::FORBIDDEN, "not_yours", "这张卡片不是发给你的"))
+    let recipient = (!person.is_owner()).then_some(person.username.as_str());
+    let confirmations = mcp.bus.confirmations();
+    // 先按收件人判断：不是收件人的回答一律 403，管理员卡片也一样。
+    if confirmations.may_answer(id, recipient) == Some(false) {
+        return Some(error_response(
+            StatusCode::FORBIDDEN,
+            "not_yours",
+            "这张卡片不是发给你的",
+        ));
+    }
+    // 是收件人再答：管理员卡片别人先答了，回 409（谁先答算谁的，ADR-0088）。
+    if let Some(user_id) = user_id
+        && confirmations.may_answer_as(id, recipient, Some(user_id)) == Some(false)
+    {
+        return Some(error_response(
+            StatusCode::CONFLICT,
+            "not_yours",
+            "这张卡片已经被别人回答",
+        ));
+    }
+    None
 }
 
 /// 放行时段只在主人的卡片上（ADR-0024）：主人的令牌和设备能答，家人的设备回答回 403 `not_yours`。

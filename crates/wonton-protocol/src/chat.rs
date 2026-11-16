@@ -24,7 +24,7 @@ pub struct ChatViewModel {
     /// 房间，按最近活动排序：最近有消息的在前，正在发送的在最前。
     pub rooms: Vec<RoomRow>,
     /// 最近一次在后台失败的操作（加入房间、发起私聊、设置恢复等）；壳显示后用
-    /// [`Action::DismissChatProblem`](crate::Action::DismissChatProblem) 清掉。
+    /// [`ChatAction::DismissChatProblem`](crate::ChatAction::DismissChatProblem) 清掉。
     pub problem: Option<ChatProblem>,
     /// 推送：App 被杀或锁屏时，新消息能不能弹出通知。
     pub push: PushStatus,
@@ -56,7 +56,7 @@ pub struct BotInstallRow {
     pub operation: PluginOperation,
     /// 重试时重新预览的来源，如 `github:owner/repo@v1.2.0`、`upload:sha256:…`：和
     /// [`InstallPreview::source`](crate::InstallPreview::source) 一样交给预览接口，主人重新确认后再发
-    /// [`Action::InstallPlugin`](crate::Action::InstallPlugin)。不知道来源时为空，壳不给重试，引导回插件页。
+    /// [`PluginAction::InstallPlugin`](crate::PluginAction::InstallPlugin)。不知道来源时为空，壳不给重试，引导回插件页。
     pub source: Option<String>,
     pub state: BotInstallState,
 }
@@ -205,19 +205,17 @@ pub struct EncryptionStatus {
     pub verification: DeviceVerification,
     pub recovery: RecoveryStatus,
     /// 刚设置好恢复时生成的恢复密钥，主人用它在别的设备上取回加密消息的密钥。只在主人确认已经另外保存
-    /// （[`Action::ConfirmRecoveryKeySaved`](crate::Action::ConfirmRecoveryKeySaved)）之前给出，确认后核心
+    /// （[`ChatAction::ConfirmRecoveryKeySaved`](crate::ChatAction::ConfirmRecoveryKeySaved)）之前给出，确认后核心
     /// 把它从快照和本机清掉；其余时候为空。
     pub recovery_key: Option<SecretString>,
     /// 聊天列表需要主人处理的备份提醒；文字和跳转由原生壳呈现。
     pub backup_reminder: Option<BackupReminder>,
-    /// 本设备没验证，账号里有别的已验证设备：可以请它确认（[`Action::StartDeviceVerification`]），和输入恢复密钥并列。
+    /// 本设备没验证，账号里有别的已验证设备：可以请它确认（[`ChatAction::StartDeviceVerification`](crate::ChatAction::StartDeviceVerification)），和输入恢复密钥并列。
     ///
-    /// [`Action::StartDeviceVerification`]: crate::Action::StartDeviceVerification
+    /// [`ChatAction::StartDeviceVerification`](crate::ChatAction::StartDeviceVerification)：请求另一个已验证设备确认。
     pub can_verify_with_other_device: bool,
-    /// 备份页显不显示“重置备份”（[`Action::ResetRecovery`]）：只在缺密钥、备份残缺时显示——恢复残缺，或者账号
+    /// 备份页显不显示“重置备份”（[`ChatAction::ResetRecovery`](crate::ChatAction::ResetRecovery)）：只在缺密钥、备份残缺时显示——恢复残缺，或者账号
     /// 还没有备份而本设备又没验证。备份完好不显示，新密钥还没确认保存也不显示（还没抄下来就作废）。
-    ///
-    /// [`Action::ResetRecovery`]: crate::Action::ResetRecovery
     #[serde(default)]
     pub can_reset: bool,
     /// 备份页的下一步给主人看什么。核心按恢复状态算好（ADR-0076），壳只按类别画，不再自己判断。
@@ -295,8 +293,8 @@ pub enum RecoveryStatus {
     /// 已设置，本设备也拿到了全部秘密。
     Enabled,
     /// 账号设置过恢复，但本设备还没拿到秘密：用
-    /// [`Action::RecoverEncryption`](crate::Action::RecoverEncryption) 输入恢复密钥；密钥丢了或者备份残缺，
-    /// 用 [`Action::ResetRecovery`](crate::Action::ResetRecovery) 重置。
+    /// [`ChatAction::RecoverEncryption`](crate::ChatAction::RecoverEncryption) 输入恢复密钥；密钥丢了或者备份残缺，
+    /// 用 [`ChatAction::ResetRecovery`](crate::ChatAction::ResetRecovery) 重置。
     Incomplete,
 }
 
@@ -313,6 +311,10 @@ pub struct RoomRow {
     /// 私聊对方的 Matrix 用户 ID，壳按它找和某个用户（如插件的 Bot）的私聊。加入了的私聊是 `m.direct` 里记的
     /// 对方，记了不止一个时为空；收到邀请、还没加入的私聊是邀请人。不是私聊时为空。
     pub direct_user_id: Option<String>,
+    /// 私聊背后的插件未就绪；正常运行或不是插件私聊时为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub plugin: Option<crate::RoomPlugin>,
     /// 是否开了端到端加密。
     pub is_encrypted: bool,
     /// 只读的房间（和核心账号的通知私聊）：没有人读这里的消息，壳不显示输入框，发文字和图片会被拒绝。
@@ -327,6 +329,11 @@ pub struct RoomRow {
     pub unread_count: u64,
     /// 打开这个房间时怎么显示（ADR-0060）。
     pub layout: ChatLayout,
+    /// 房间里有人在通话（ADR-0096），和 [`TimelineUpdate::call_active`](crate::TimelineUpdate::call_active)
+    /// 同一个来源：列表这一行标“通话中”。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = false))]
+    pub call_active: bool,
 }
 
 /// 本账号在房间里的成员状态。
@@ -335,7 +342,7 @@ pub struct RoomRow {
 #[serde(rename_all = "snake_case")]
 pub enum RoomMembership {
     Joined,
-    /// 收到邀请，还没加入：用 [`Action::JoinRoom`](crate::Action::JoinRoom) 接受。
+    /// 收到邀请，还没加入：用 [`ChatAction::JoinRoom`](crate::ChatAction::JoinRoom) 接受。
     Invited,
     /// 已离开或被移出。
     Left,
@@ -486,10 +493,12 @@ mod tests {
             }],
             rooms: vec![RoomRow {
                 layout: Default::default(),
+                call_active: false,
                 room_id: "!bot:home.example".into(),
                 name: "Hermes".into(),
                 is_direct: true,
                 direct_user_id: Some("@hermes:home.example".into()),
+                plugin: None,
                 is_encrypted: true,
                 is_read_only: false,
                 membership: RoomMembership::Invited,
@@ -531,6 +540,7 @@ mod tests {
                 confirmation: None,
                 contact_request: None,
                 thread_root: None,
+                hidden: false,
                 lock_screen_private: true,
                 unread_total: 2,
             }],
@@ -558,11 +568,15 @@ mod tests {
             }),
         };
         let actions = [
-            Action::JoinRoom {
-                room_id: "!a:home.example".into(),
+            Action::Chat {
+                action: crate::ChatAction::JoinRoom {
+                    room_id: "!a:home.example".into(),
+                },
             },
-            Action::StartDirectChat {
-                user_id: "@hermes:home.example".into(),
+            Action::Chat {
+                action: crate::ChatAction::StartDirectChat {
+                    user_id: "@hermes:home.example".into(),
+                },
             },
             Action::Timeline {
                 action: crate::TimelineAction::SendImage {
@@ -574,11 +588,17 @@ mod tests {
                     reply_to: None,
                 },
             },
-            Action::RecoverEncryption {
-                recovery_key: SecretString::new(KEY),
+            Action::Chat {
+                action: crate::ChatAction::RecoverEncryption {
+                    recovery_key: SecretString::new(KEY),
+                },
             },
-            Action::ConfirmRecoveryKeySaved,
-            Action::DismissChatProblem,
+            Action::Chat {
+                action: crate::ChatAction::ConfirmRecoveryKeySaved,
+            },
+            Action::Chat {
+                action: crate::ChatAction::DismissChatProblem,
+            },
         ];
         for action in &actions {
             assert_eq!(&round_trip(action), action);

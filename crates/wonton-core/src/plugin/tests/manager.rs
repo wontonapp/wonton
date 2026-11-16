@@ -222,7 +222,13 @@ async fn a_failed_record_write_rolls_back_the_deployment() {
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
     assert!(docker.networks().is_empty(), "{:?}", docker.networks());
     assert!(!dir.path().join("apps/app-test").exists());
-    assert!(m.list().is_empty(), "失败的安装不能留在插件表里");
+    let failed = m
+        .installed_plugin(&PluginId::parse("app.test").unwrap(), &super::langs())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "storage"
+    );
 }
 
 /// 归档里的文件：（路径，uid，gid，权限，内容）。
@@ -381,6 +387,7 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,
@@ -392,13 +399,15 @@ async fn a_broken_record_degrades_only_its_own_plugin() {
             limits: Default::default(),
             granted_permissions: Vec::new(),
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),
@@ -514,7 +523,13 @@ async fn an_image_that_cannot_be_pulled_fails_the_install_with_dockers_reason() 
         .await
         .unwrap_err();
     assert_eq!(err.kind(), "image_pull_failed", "{err}");
-    assert!(m.list().is_empty());
+    let failed = m
+        .installed_plugin(&example("whoami").manifest.id, &super::langs())
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "image_pull_failed"
+    );
     assert!(docker.containers().is_empty(), "{:?}", docker.containers());
 }
 
@@ -545,12 +560,12 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
         email: Some("owner@wonton.localhost".into()),
     };
     let auth = m.route("app-test", "/").unwrap().proxy.unwrap();
-    let header = auth.headers(&owner, wonton_protocol::Role::Owner).unwrap();
+    let header = auth.headers(&owner, true).unwrap();
     assert_eq!(
         (header[0].0.as_str(), header[0].1.as_str()),
         ("remote-user", "owner")
     );
-    let cookies = auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap();
+    let cookies = auth.cookies(&owner, true).unwrap();
     let (name, key) = (&cookies[0].0, cookies[0].1.clone());
     assert_eq!((*name, key.len()), ("app_web", 64), "32 字节的十六进制");
     assert_eq!(auth.secrets(), [key.as_str()]);
@@ -558,10 +573,7 @@ async fn proxy_sso_plugins_get_their_credentials_from_their_own_secrets() {
     let restarted = manager_with(engine, &dir);
     restarted.restore().await.unwrap();
     let auth = restarted.route("app-test", "/").unwrap().proxy.unwrap();
-    assert_eq!(
-        auth.cookies(&owner, wonton_protocol::Role::Owner).unwrap()[0].1,
-        key
-    );
+    assert_eq!(auth.cookies(&owner, true).unwrap()[0].1, key);
 }
 
 #[tokio::test]
@@ -776,6 +788,7 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
     Store::open(dir.path().join("plugins"))
         .unwrap()
         .save(&InstalledRecord {
+            lifecycle: Default::default(),
             lan_webui: false,
             relays: Vec::new(),
             firewalled: false,
@@ -787,13 +800,15 @@ async fn in_a_container_the_webui_and_mcp_upstreams_use_the_service_host() {
             limits: Default::default(),
             granted_permissions: Vec::new(),
             enabled_permissions: Vec::new(),
+            devices: Vec::new(),
             oidc_client_secret: None,
             installed_at: 1,
             entry_label: None,
+            clients_entries: Default::default(),
+            setup_done_ever: false,
             origin: None,
             written_by: None,
             ask_every_update: false,
-            family: false,
             settings: Default::default(),
             settings_changed_ms: None,
             static_files: Default::default(),

@@ -66,10 +66,12 @@ mod tests {
     fn row(id: &str, direct_user_id: Option<&str>) -> RoomRow {
         RoomRow {
             layout: Default::default(),
+            call_active: false,
             room_id: id.to_owned(),
             name: id.to_owned(),
             is_direct: direct_user_id.is_some(),
             direct_user_id: direct_user_id.map(str::to_owned),
+            plugin: None,
             is_encrypted: false,
             is_read_only: false,
             membership: RoomMembership::Joined,

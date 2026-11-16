@@ -17,13 +17,10 @@ use iroh::SecretKey;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use super::agent_chains::{AgentAcpCancel, AgentChains};
+use super::agent_chains::AgentChains;
 use super::fakes::loopback_tunnel;
 use super::tests::{CORE, TOKEN, owner};
 use super::{Gateway, TunnelPeer, router};
-use crate::agent_chain::Chains;
-use crate::agent_chain::settings::AgentSettings;
-use crate::agent_outbox::Outbox;
 use crate::config::{PLUGIN_MCP_HOST, PublicUrls};
 use crate::http::HttpClient;
 use crate::mcp::Bus;
@@ -36,7 +33,6 @@ use crate::plugin::languages::Languages;
 use crate::plugin::lifecycle::LifecycleConfig;
 use crate::plugin::store::Store;
 use crate::plugin::{Permission, PluginId, PluginManager, PluginPackage, PluginStatus};
-use wonton_protocol::ChainLimits;
 
 pub(crate) const AGENT: &str = "com.example.agent";
 pub(crate) const BUS_ALICE: &str = "bus-alice";
@@ -65,22 +61,11 @@ x-wonton:
   bots: {services: [bridge]}
 ";
 
-pub(crate) struct FakeAcp {
-    pub(crate) cancelled: std::sync::Mutex<Vec<String>>,
-}
-
-impl AgentAcpCancel for FakeAcp {
-    fn cancel(&self, session: &str) {
-        self.cancelled.lock().unwrap().push(session.to_owned());
-    }
-}
-
 pub(crate) struct Home {
     pub(crate) app: Router,
     pub(crate) fake: crate::matrix::fake::Fake,
     pub(crate) cards: Arc<Cards>,
     pub(crate) chains: Arc<AgentChains>,
-    pub(crate) acp: Arc<FakeAcp>,
     pub(crate) owner_peer: TunnelPeer,
     pub(crate) alice_peer: TunnelPeer,
     pub(crate) bob_peer: TunnelPeer,
@@ -97,7 +82,7 @@ pub(crate) async fn start() -> Home {
         port: 18480,
     };
     let profile = OwnerStore::for_test(dir.path(), &owner());
-    let (bus, cards, chains, acp) = chain_service(dir.path(), manager.clone());
+    let (bus, cards, chains) = chain_service(dir.path(), manager.clone());
     let (tunnel, members) = loopback_tunnel(dir.path()).await;
     seed_members(&members);
     let owner_peer = TunnelPeer(SecretKey::generate().public());
@@ -121,7 +106,6 @@ pub(crate) async fn start() -> Home {
         fake,
         cards,
         chains,
-        acp,
         owner_peer,
         alice_peer,
         bob_peer,
@@ -232,7 +216,7 @@ pub(crate) async fn agent_plugin(
 pub(crate) fn chain_service(
     dir: &std::path::Path,
     manager: Arc<PluginManager>,
-) -> (Arc<Bus>, Arc<Cards>, Arc<AgentChains>, Arc<FakeAcp>) {
+) -> (Arc<Bus>, Arc<Cards>, Arc<AgentChains>) {
     let cards = Arc::new(Cards::default());
     let bus = Bus::new(
         manager,
@@ -242,20 +226,12 @@ pub(crate) fn chain_service(
         )),
         Arc::new(crate::mcp::audit::Audit::new(dir.join("audit.jsonl"))),
     );
-    let ledger =
-        Arc::new(Chains::open(dir.join("agent-chains.json"), ChainLimits::default()).unwrap());
-    ledger.on_limit_event(super::agent_chains::limit_handler(&bus));
-    let chains = Arc::new(AgentChains::new(
-        ledger,
-        Arc::new(Outbox::default()),
-        Arc::new(AgentSettings::open(dir.join("agent-settings.json")).unwrap()),
-    ));
-    let acp = Arc::new(FakeAcp {
-        cancelled: Default::default(),
-    });
-    chains.attach_acp_cancel(acp.clone());
+    let chains = AgentChains::for_test(dir).unwrap();
+    chains
+        .ledger()
+        .on_limit_event(super::agent_chains::limit_handler(&bus));
     bus.attach_agent_chains(chains.clone());
-    (bus, cards, chains, acp)
+    (bus, cards, chains)
 }
 
 #[allow(clippy::too_many_arguments)]

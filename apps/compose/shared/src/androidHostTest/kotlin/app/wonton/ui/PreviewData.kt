@@ -148,6 +148,7 @@ internal fun previewHome() = HomeViewModel(
         lossPerMille = 2u,
         rttMs = 48u,
         lastFailure = null,
+        diagnostic = null,
         addressesStale = false,
         udpFlows = listOf(
             UdpFlowStats(
@@ -198,18 +199,20 @@ internal fun previewInstalled() = InstalledPlugins(
             writtenBy = null,
             status = PluginState.Stopped,
             webUrl = null,
+            linkUrl = null,
             crossOriginIsolated = false,
             declaresTools = false,
             tabs = emptyList(),
             chat = null,
             botUserId = null,
-            family = false,
             upgrade = null,
             removable = true,
             notices = emptyList(),
             enabledRootPermissions = emptyList(),
             installProgress = null,
+            installFailure = null,
             tunnelPorts = emptyList(),
+            matrixWidget = null,
         ),
         InstalledPlugin(
             id = "app.neko",
@@ -227,18 +230,20 @@ internal fun previewInstalled() = InstalledPlugins(
             writtenBy = null,
             status = PluginState.Stopped,
             webUrl = null,
+            linkUrl = null,
             crossOriginIsolated = false,
             declaresTools = false,
             tabs = emptyList(),
             chat = null,
             botUserId = null,
-            family = false,
             upgrade = null,
             removable = true,
             notices = emptyList(),
             enabledRootPermissions = emptyList(),
             installProgress = null,
+            installFailure = null,
             tunnelPorts = emptyList(),
+            matrixWidget = null,
         ),
     ),
     upgradeCheck = null,
@@ -251,6 +256,7 @@ internal fun previewPlugins() = PluginsViewModel(
     refreshing = false,
     problem = null,
     tasks = emptyList(),
+    starts = emptyList(),
     updatable = emptyList(),
     pending = emptyList(),
     confirmation = null,
@@ -377,7 +383,7 @@ internal fun ConnectionDetailsFlowsPreview() {
 }
 
 /** 列表里的邀请行，预览用；只填看得见的字段。 */
-private fun previewInviteRow() = RoomRow(
+internal fun previewInviteRow() = RoomRow(
     roomId = "!design:home.example",
     name = "Design review",
     isDirect = false,

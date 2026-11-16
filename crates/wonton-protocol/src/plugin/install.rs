@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::{
     BlockedCategory, BotSwitch, CapabilityProviderRef, InstallTogether, LanWebuiOffer,
     MissingCapability, PermissionLine, PluginAuthor, PluginDevice, PluginIcon, PluginKind,
-    PluginRuntime, PluginScope, PluginTrust, PluginWriter, SecretInput, SecretValues, SecurityTier,
-    SettingValues, SettingsForm, WidgetCapability,
+    PluginRuntime, PluginScope, PluginTrust, PluginWriter, RemoteMcpPreview, RemoteOauthGrant,
+    SecretInput, SecretValues, SecurityTier, SettingValues, SettingsForm, WidgetCapability,
 };
 use crate::CardLine;
 
@@ -36,6 +36,14 @@ pub struct InstallPreview {
     /// 核心按清单算出的安全档位（ADR-0080）；旧核心不给时为空。
     #[serde(default)]
     pub security_tier: Option<SecurityTier>,
+    /// `runtime: remote_mcp` 的远端服务器：确认页写明数据发到哪个主机、怎么鉴权（ADR-0066）；其他形态为空。
+    #[serde(default)]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub remote: Option<RemoteMcpPreview>,
+    #[serde(default)]
+    pub audience: Option<crate::PluginAudienceView>,
+    #[serde(default)]
+    pub install_gate: crate::Gate,
     /// 可供主人选择的 Bot；只有一个 Bot 时为空，壳不显示范围选择。
     #[serde(default)]
     pub scope_choices: Vec<crate::BotRef>,
@@ -120,7 +128,10 @@ pub struct InstallRequest {
     /// 主人选择的范围；省略时按全局（[`PluginScope::All`]）安装。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<PluginScope>,
-    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可以带上可选项（老客户端会这么做），但它们不算打开；
+    /// 主人选择开放给哪些角色；省略时只保留“全部应用”的角色。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audience: Option<crate::PluginAudience>,
+    /// 主人确认的权限：每项必需权限都要在，少一项装不上；可选项只有 enabled_permissions 打开。
     /// 多出预览里没有的项装不上。
     pub grant: Vec<String>,
     /// 主人在预览里打开的可选项（[`PermissionLine::optional`] 的 `permission`），没带就是全关。
@@ -146,6 +157,11 @@ pub struct InstallRequest {
     /// `wanting_plugins`，主人勾选的才接上。
     #[serde(default)]
     pub connect_plugins: Vec<String>,
+    /// 远端 MCP 插件（`auth: oauth`）在授权页拿到的授权码，先经 [`remote_oauth_start_path`] 取的授权地址再
+    /// 回到这里；其他形态为空。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "uniffi", uniffi(default = None))]
+    pub remote_oauth: Option<RemoteOauthGrant>,
 }
 
 /// `POST /_wonton/api/plugins/{id}/upgrade` 的请求体（JSON）：换到升级预览给的版本。

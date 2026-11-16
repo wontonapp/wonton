@@ -50,8 +50,8 @@ def for_platform(tokens, platform):
 
 def swift_tokens(tokens):
     enums = []
-    for section, unit in [("spacing", "CGFloat"), ("radii", "CGFloat"), ("size", "CGFloat"), ("ratio", "CGFloat")]:
-        lines = [f"    static let {name}: {unit} = {value}" for name, value in tokens[section].items()]
+    for section in ["spacing", "radii", "size", "ratio", "gesture"]:
+        lines = [f"    static let {name}: CGFloat = {value}" for name, value in tokens[section].items()]
         enums.append(f"enum Wonton{camel_upper(section)} {{\n" + "\n".join(lines) + "\n}\n")
     motion = [f"    static let {name}: Double = {value / 1000}" for name, value in tokens["motion"].items()]
     enums.append("enum WontonMotion {\n" + "\n".join(motion) + "\n}\n")
@@ -81,6 +81,7 @@ def kotlin_tokens(tokens):
         section("radii", tokens["radii"], lambda v: f"{v}.dp"),
         section("size", tokens["size"], lambda v: f"{v}.dp"),
         section("ratio", tokens["ratio"], lambda v: f"{v}f"),
+        section("gesture", tokens["gesture"], lambda v: f"{v}f"),
         section("motion", tokens["motion"], str),
         f"class WontonTypography(fontFamily: FontFamily?) {{\n{styles}\n}}\n",
     ]

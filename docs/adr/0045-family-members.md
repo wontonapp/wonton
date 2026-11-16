@@ -84,12 +84,12 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
 
 ### 私人空间和共享文件夹
 
-- 私人空间在 `<数据目录>/homes/<用户名>/`，主人也有一个，加人时建。
-- **设备上传改放上传者的私人空间** `homes/<用户名>/transfers`，共享文件夹 `transfers` 去掉。共享文件夹全家可见：上传留在那里，
+- 私人空间在 `<数据目录>/core/home/<用户名>/`，主人也有一个，加人时建。
+- **设备上传改放上传者的私人空间** `core/home/<用户名>/transfers`，共享文件夹 `transfers` 去掉。共享文件夹全家可见：上传留在那里，
   谁传的文件都会被开放给别人的 Samba、文件搜索看到。要让 Samba 这类应用看到上传，用下面的 `storage.homes`。
 - **共享文件夹**（照片、音乐、文档等）全家共用，不按人授权：一家人，按人分文件夹的需求由私人空间满足。家人经开放给他的插件用它们。
 - **`storage.home:read` / `:write`** 只能用在 `bots.services` 里，挂这个 Bot 归属人的私人空间；共享 Bot 没有私人空间，声明了它的 Bot 不能建成共享 Bot。
-- **新权限 `storage.homes:read` / `:write`（高）**：挂所有人私人空间的根 `homes/`，给自己有账号体系的应用（Samba、Syncthing、文件管理器）
+- **新权限 `storage.homes:read` / `:write`（高）**：挂所有人私人空间的根 `core/home/`，给自己有账号体系的应用（Samba、Syncthing、文件管理器）
   按用户名分开。安装确认写明“能看到所有人的私人空间，靠应用自己的账号分开”。核心注入用户名单 `WONTON_USERS`（逗号分隔），名单变了重建插件。
 - **文件服务的访问范围**（ADR-0020）：`owner` 换成用户名（`user:<用户名>`），设备只能取范围里有自己这个人的文件。设备上传的起始范围是上传者。
   私人 Bot 分享给归属人不用确认；分享给别人（`to`）算对外发送，归属人确认。共享 Bot 只碰得到共享文件夹和插件里的文件，分享给房间里的人不用确认。
@@ -130,16 +130,16 @@ GOAL 的 M2 第 4、6 项：主人邀请家人，每人有私人 Bot 和私人�
   就绪时 `BotWebPage` 带完整 `BotRef`、URL、显示方式和跨源隔离要求；页面身份专用
   `TabRef::Bot { bot: BotRef, path: Option<String> }`，不存 URL，不借 `TabRef::Plugin` 或 `TabRef::Url`。
   `path: None` 打开同一个 `BotRef` 的 `BotView.web` 在 `Ready` 时给出的 `page.url`；`Some(path)` 只允许该
-  origin 内的路径，可含查询和片段。选择／打开沿用 `Action::SelectTab`，固定沿用 `PinTab`、`PinCurrentPage`
-  和 `Panel`；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
+  origin 内的路径，可含查询和片段。打开沿用 `PageAction::OpenPage`，加入沿用 `PageAction::AddMyApp`、`PageAction::PinCurrentPage`
+  和面板；`PlacedTab` 保留相同的 Bot 身份和路径。桥、媒体、`--wonton-*` 走既有 `TabRef`／`PlacedTab`
   和页面容器，不另建壳层 WebView，也不省略桥。
-  实现时把聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
+  聊天已有的 `BotView` watch 通道传给 `TabsLink`，Bot 网页状态变化时重算 `TabsViewModel` 的
   `TabPage`，桥和媒体使用它的精确页面 URL／origin。URL 只来自该 `BotRef` 的 `BotView.web.Ready.page.url`，
   不读 `plugin.web_url`。`BotView.web: None` 表示没有验证可用的 URL，包括断连或身份变化；未知、缺失或错误时
   不给页面 URL，断连或身份变化时清空，不猜 URL、不回退默认 Bot。运行事实只带 Bot 身份和运行计数，不混入访问授权。
   Bot 不存在为 404 `not_found`，未认证为 401 `unauthenticated`，服务未就绪为 503 `not_ready`，
-  无网页为 404 `no_webui`。这些是接口和目标行为约定，不是网关路由、App 打开行为或端到端验证结论；
-  接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
+  无网页为 404 `no_webui`。元数据、会话交接与网页转发使用相同的目标和权限检查。这些是接口和目标行为约定，
+  不是网关路由、App 打开行为或端到端验证结论；接口阶段不暴露运行时入口，客户端对不支持的 Bot 页面明确拒绝，不能转开其他页面。
 - **身份**（`groups` 改成按能力给、`owner_groups` 改名 `admin_groups`、`{role}` 的取值，由 [ADR-0088](0088-family-accounts.md) 第 8 节修订）：OIDC 的 `sub`、`preferred_username` 是当前这个人的用户名，`groups` 主人默认是 `["owner"]`、家人是 `["member"]`；代登录的
   `{user}`、`{name}`、`{email}` 也是当前这个人。`owner.identity` 不变，注入的是主人（服务器管理员）；在 `bots.services` 里注入的是这个 Bot 的归属人，
   共享 Bot 是主人。

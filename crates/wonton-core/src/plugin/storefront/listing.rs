@@ -1,9 +1,10 @@
 //! 商店给 App 的视图：列表（`GET /_wonton/api/store`）和来源最新版本的详情（`GET /_wonton/api/store/plugin`）。
 
 use wonton_protocol::{
-    AddedSource, PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection,
+    AddedSource, CardLine, PluginDetail, PluginTrust, StoreItem, StoreListing, StoreSection,
 };
 
+use super::super::dependencies::preview::DependencyPreview;
 use super::super::gallery::IconSource;
 use super::super::github::Repo;
 use super::super::github_source::{INDEX_SCHEME, Origin, SourceRef, Trust};
@@ -175,7 +176,12 @@ impl PluginManager {
         let m = &package.manifest;
         let origin = package.origin.as_ref();
         let facts = self.host_facts(langs).await;
-        let installed = self.installed_plugin(&m.id, langs);
+        let installed = self
+            .installed_plugin(&m.id, langs)
+            .filter(|plugin| plugin.install_failure.is_none());
+        let mut installed_detail = installed
+            .as_ref()
+            .and_then(|_| self.installed_detail(&m.id, langs));
         let dependencies = self.dependency_preview(m, langs).await;
         PluginDetail {
             source: origin.map(|o| o.index.clone().unwrap_or_else(|| o.repo.clone())),
@@ -188,13 +194,23 @@ impl PluginManager {
             icon: icon.map(|i| i.paths()),
             screenshots: Vec::new(),
             tags: langs.pick_tags(&m.tags),
+            problems: installed_detail
+                .as_mut()
+                .map_or_else(Vec::new, |detail| std::mem::take(&mut detail.problems)),
+            devices: installed_detail
+                .as_mut()
+                .map_or_else(Vec::new, |detail| std::mem::take(&mut detail.devices)),
             kind: kind(m.kind),
             runtime: m.runtime.into(),
             security_tier: Some(crate::plugin::security_tier::security_tier(m)),
             link_url: m.link.as_ref().map(|link| link.url.clone()),
+            remote: crate::plugin::manifest_remote::detail(m),
             scope: installed
                 .as_ref()
                 .map(|_| wonton_protocol::PluginScope::All),
+            audience: Some(crate::plugin::audience::view(m)),
+            installable: true,
+            install_gate: wonton_protocol::Gate::Allow,
             version: m.version.clone(),
             trust: match origin.map(|o| o.trust) {
                 Some(Trust::Official) => PluginTrust::Official,
@@ -207,11 +223,7 @@ impl PluginManager {
             license_url: m.license_url.clone(),
             stars,
             release_notes: m.release_notes.as_ref().map(|t| langs.pick_owned(t)),
-            permissions: m
-                .permissions
-                .iter()
-                .map(|p| permission_line(p, langs))
-                .collect(),
+            permissions: requested_permissions(m, langs),
             widget_capabilities: crate::plugin::manifest_widget::capabilities(m),
             requirements: requirement_checks(m, &facts, langs),
             secret_inputs: Vec::new(),
@@ -222,22 +234,11 @@ impl PluginManager {
                 Ok(dependencies) => dependencies.blocked.clone(),
                 Err(error) => Some(error.to_string()),
             }),
-            notices: cross_origin_isolation_notice(m, langs)
-                .into_iter()
-                .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
-                .chain(
-                    dependencies
-                        .as_ref()
-                        .ok()
-                        .into_iter()
-                        .flat_map(|d| d.notices.iter().cloned()),
-                )
-                .collect(),
+            notices: detail_notices(m, langs, dependencies.as_ref().ok()),
             // 从商店点进已装的插件也是同一个详情页：轻提示、局域网开关和资源上限都跟着装着的版本走。
-            hints: self
-                .installed_detail(&m.id, langs)
-                .map(|detail| detail.hints)
-                .unwrap_or_default(),
+            hints: installed_detail
+                .as_mut()
+                .map_or_else(Vec::new, |detail| std::mem::take(&mut detail.hints)),
             missing_requires: dependencies
                 .as_ref()
                 .map(|d| d.missing_requires.clone())
@@ -246,19 +247,20 @@ impl PluginManager {
                 .as_ref()
                 .map(|d| d.missing_wants.clone())
                 .unwrap_or_default(),
-            capability_providers: self.consumer_capabilities(m, langs).unwrap_or_default(),
+            capability_providers: self
+                .consumer_capabilities(m, langs, None)
+                .unwrap_or_default(),
             lan_webui: self
                 .with_lan_client(
                     &m.id,
-                    self.installed_detail(&m.id, langs)
-                        .and_then(|detail| detail.lan_webui),
+                    installed_detail
+                        .as_mut()
+                        .and_then(|detail| detail.lan_webui.take()),
                 )
                 .await,
             save_grants: self.save_grants(&m.id),
             ask_every_update: None,
-            limits: self
-                .installed_detail(&m.id, langs)
-                .and_then(|detail| detail.limits),
+            limits: installed_detail.and_then(|detail| detail.limits),
             shares: None,
         }
     }
@@ -290,6 +292,8 @@ impl PluginManager {
             security_tier: Some(tier),
             high_permissions: crate::plugin::security_tier::prominent(tier),
             blocked: blocked(m, facts, langs),
+            installable: blocked(m, facts, langs).is_none(),
+            install_gate: wonton_protocol::Gate::Allow,
         }
     }
 
@@ -339,6 +343,30 @@ impl PluginManager {
         }
         (items, icons)
     }
+}
+
+fn detail_notices(
+    m: &Manifest,
+    langs: &Languages,
+    dependencies: Option<&DependencyPreview>,
+) -> Vec<CardLine> {
+    cross_origin_isolation_notice(m, langs)
+        .into_iter()
+        .chain(crate::plugin::manifest_widget::manifest_notices(m, langs))
+        .chain(
+            dependencies
+                .into_iter()
+                .flat_map(|d| d.notices.iter().cloned()),
+        )
+        .collect()
+}
+
+// 商店版本请求的权限不等于已装版本获准访问的设备。
+fn requested_permissions(m: &Manifest, langs: &Languages) -> Vec<wonton_protocol::PermissionLine> {
+    m.permissions
+        .iter()
+        .map(|permission| permission_line(permission, langs))
+        .collect()
 }
 
 /// 这台主机上装不了的原因：系统插件、核心不支持的权限、不满足的要求。查不出来的要求不拦。

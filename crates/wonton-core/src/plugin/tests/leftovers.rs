@@ -164,7 +164,16 @@ async fn network_is_refused(prepare: impl Fn(&FakeDocker), owner: Option<&str>) 
     let reason = err.to_string();
     assert!(reason.contains(NETWORK), "{reason}");
     assert!(owner.is_none_or(|o| reason.contains(o)), "{reason}");
-    assert!(m.list().is_empty(), "主人主动装的，原因在回答里");
+    let failed = m
+        .installed_plugin(
+            &super::super::PluginId::parse("app.test").unwrap(),
+            &super::langs(),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(failed).unwrap()["install_failure"]["kind"],
+        "conflict"
+    );
 
     // 预装没人等着回答：标成异常让主人看到。重试的话这里要等一小时，要主人动手的事不重试。
     let m = manager_with(engine, &dir);
@@ -275,10 +284,12 @@ async fn an_installed_plugin_is_never_taken_for_leftovers() {
 async fn a_stopped_plugin_is_never_taken_for_leftovers() {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
-    manager_with(engine.clone(), &dir)
+    let installed = std::sync::Arc::new(manager_with(engine.clone(), &dir));
+    let plugin = installed
         .install(&app(), &[], super::langs())
         .await
         .unwrap();
+    installed.stop_detached(plugin.id).await.unwrap();
     docker.set_state(
         &container_name("app-test", "web"),
         json!({"Status": "exited", "Running": false, "ExitCode": 1}),

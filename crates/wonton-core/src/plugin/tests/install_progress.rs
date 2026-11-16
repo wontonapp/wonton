@@ -1,4 +1,4 @@
-//! 安装和升级报的阶段（ADR-0067）：准备、拉镜像、启动、等 Bot，装完清空；失败时连进度一起撤掉。
+//! 安装和升级报的阶段（ADR-0067）：准备、拉镜像、启动、等 Bot，结束后不再显示运行中的进度。
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -199,20 +199,32 @@ fn stage_now(
     stage
 }
 
-/// 契约：安装失败、插件回滚以后没有进度留下。
+/// 回滚清掉运行中的进度，但失败结果仍可查询。
 #[tokio::test]
-async fn a_failed_install_leaves_no_progress() {
+async fn a_failed_install_keeps_its_cause_without_live_progress() {
     let (docker, engine) = fake_docker().await;
-    docker.fail_pulls(Some("拉不下来"));
+    docker.fail_pulls(Some("registry unavailable"));
     let dir = tempfile::tempdir().unwrap();
     let m = manager_with(engine, &dir);
     let compose = package("  web:\n    image: nginx", "  permissions: []");
-
-    assert!(
-        m.install(&compose, &[], langs()).await.is_err(),
-        "拉不到镜像时安装要失败"
+    let error = m.install(&compose, &[], langs()).await.unwrap_err();
+    let id = super::super::PluginId::parse("app.test").unwrap();
+    let failed = m
+        .installed_plugin(&id, &langs())
+        .expect("failed install remains queryable");
+    let wire = serde_json::to_value(&failed).unwrap();
+    assert_eq!(wire["install_failure"]["kind"], error.kind());
+    assert_eq!(wire["install_failure"]["message"], error.to_string());
+    assert_eq!(wire["install_failure"]["stage"], "pulling_images");
+    assert_eq!(
+        wire["install_failure"]["cleanup_errors"],
+        serde_json::json!([])
     );
-    assert!(m.installed(&langs()).plugins.is_empty(), "失败的插件已回滚");
+    assert!(failed.install_progress.is_none());
+    assert!(m.installed_detail(&id, &langs()).is_some());
+    assert!(!m.is_installed(&id));
+    assert!(docker.containers().is_empty());
+    assert!(docker.networks().is_empty());
 }
 
 /// 契约：层之间交错、完成的层只有 `Pull complete` 没有字节数时，百分比也不往回跳，最后到 100。

@@ -3,13 +3,13 @@
 use url::Url;
 use wonton_protocol::{
     CandidatePlugin, CoreError, InstalledPlugin, MyAppRef, OpenPage, PagesProblem, PagesViewModel,
-    PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginState, PluginsViewModel,
-    SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout, TabLoadFailure,
-    TabPage, TabRef, TabState,
+    PanelEntry, PanelItem, PanelScope, PanelSource, PlacedTab, PluginIcon, PluginState,
+    PluginsViewModel, SidebarApp, SidebarBadge, SidebarOpen, TabCandidate, TabIcon, TabLayout,
+    TabLoadFailure, TabPage, TabRef, TabState,
 };
 
 use super::panel_view::main_panel;
-use super::{PagesState, StoredApp, StoredItem, StoredPage, invalid};
+use super::{PagesState, StoredApp, StoredItem, StoredPage, bot, invalid};
 use crate::l10n::{CATALOG, language};
 use wonton_l10n::l10n;
 
@@ -29,6 +29,7 @@ pub(super) fn make_view(
     let main = PanelScope::Main;
     PagesViewModel {
         root: state.root(),
+        shows_apps: state.shows_apps,
         stack,
         uninstalled: state.uninstalled.clone(),
         // 钉页拉不到（连着却出错）也如实报；已知连不上时 pins 那边不记，只有连接提示和侧边栏的轻提示。
@@ -42,7 +43,7 @@ pub(super) fn make_view(
         auto_add: state.config.auto_add,
         bot_pin_consents: state.bot_pin_consents.clone(),
         panel: main_panel(state, plugins),
-        panel_candidates: plugin_pages(plugins)
+        panel_candidates: plugin_pages(plugins, false)
             .filter(|candidate| {
                 !state
                     .config
@@ -81,78 +82,26 @@ pub(super) fn build_app(
     let plugin = |plugin_id: &str| {
         installed.and_then(|list| list.plugins.iter().find(|plugin| plugin.id == plugin_id))
     };
-    let (plugin_id, tab, title, icon, open) = match &entry.app {
-        MyAppRef::Plugin { plugin_id } => match plugin(plugin_id) {
-            Some(plugin) => {
-                let open = if plugin.kind == wonton_protocol::PluginKind::Agent
-                    && let Some(bot_user_id) = plugin.bot_user_id.clone()
-                {
-                    SidebarOpen::BotChat { bot_user_id }
-                } else if plugin.web_url.is_some() {
-                    SidebarOpen::Page {
-                        tab: TabRef::Plugin {
-                            plugin_id: plugin_id.clone(),
-                            page: plugin.tabs.first().map(|page| page.id.clone()),
-                        },
-                    }
-                } else {
-                    return None;
-                };
-                (
-                    Some(plugin_id.clone()),
-                    None,
-                    entry.title.clone().unwrap_or_else(|| plugin.title.clone()),
-                    plugin.icon.clone(),
-                    open,
-                )
-            }
-            // 列表没读到：按存的元数据显示（真被卸载的行在卸载时就拿掉了）。
-            // Agent 行没有存的 bot 账号，显示不了，先空着。
-            None => {
-                let page = entry.page.as_ref()?;
-                (
-                    Some(plugin_id.clone()),
-                    None,
-                    entry.title.clone().unwrap_or_else(|| page.title.clone()),
-                    match &page.icon {
-                        TabIcon::Plugin { icon } => icon.clone(),
-                        TabIcon::Monochrome { .. } => None,
-                    },
-                    SidebarOpen::Page {
-                        tab: TabRef::Plugin {
-                            plugin_id: plugin_id.clone(),
-                            page: None,
-                        },
-                    },
-                )
-            }
-        },
-        MyAppRef::Page { tab } => {
-            let page = entry.page.clone()?;
-            let plugin_id = match tab {
-                TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => {
-                    Some(plugin_id.clone())
-                }
-                _ => None,
-            };
-            let _live_problem = state
-                .failures
-                .contains_key(&PlacedTab::Page { tab: tab.clone() });
-            (
-                plugin_id,
-                Some(tab.clone()),
-                entry.title.clone().unwrap_or(page.title),
-                match &page.icon {
-                    TabIcon::Plugin { icon } => icon.clone(),
-                    TabIcon::Monochrome { .. } => None,
-                },
-                SidebarOpen::Page { tab: tab.clone() },
-            )
-        }
+    let row = match &entry.app {
+        MyAppRef::Plugin { plugin_id } => plugin_row(entry, plugin_id, plugin(plugin_id))?,
+        MyAppRef::Page { tab } => page_row(
+            state,
+            entry,
+            tab,
+            super::tab_plugin_id(tab),
+            super::tab_plugin_id(tab).and_then(plugin),
+        ),
     };
+    let AppRow {
+        plugin_id,
+        tab,
+        title,
+        icon,
+        open,
+    } = row;
     let page_tab = tab.or_else(|| match &open {
         SidebarOpen::Page { tab } => Some(tab.clone()),
-        SidebarOpen::BotChat { .. } => None,
+        SidebarOpen::BotChat { .. } | SidebarOpen::ExternalBrowser { .. } => None,
     });
     let plugin = plugin_id.as_deref().and_then(plugin);
     let problem = problem_badge(entry, page_tab.as_ref(), plugin, open_pages);
@@ -170,8 +119,105 @@ pub(super) fn build_app(
                     .any(|updatable| updatable.plugin_id == plugin_id)
             }),
             problem,
+            stopped: plugin.is_some_and(|plugin| matches!(plugin.status, PluginState::Stopped)),
         },
     })
+}
+
+/// 行拆开后、拼 [`SidebarApp`] 前的中间值，`plugin_row` 和 `page_row` 共用。
+struct AppRow {
+    plugin_id: Option<String>,
+    tab: Option<TabRef>,
+    title: String,
+    icon: Option<PluginIcon>,
+    open: SidebarOpen,
+}
+
+/// 插件行的一行：打开动作按插件算。列表没读到时按存的元数据显示（真被卸载的行在卸载时就拿掉了）；
+/// Agent 行没有存的 bot 账号，显示不了，先空着。
+fn plugin_row(
+    entry: &StoredApp,
+    plugin_id: &str,
+    plugin: Option<&InstalledPlugin>,
+) -> Option<AppRow> {
+    let icon = |page: &StoredPage| match &page.icon {
+        TabIcon::Plugin { icon } => icon.clone(),
+        TabIcon::Monochrome { .. } => None,
+    };
+    let Some(plugin) = plugin else {
+        let page = entry.page.as_ref()?;
+        return Some(AppRow {
+            plugin_id: Some(plugin_id.to_owned()),
+            tab: None,
+            title: entry.title.clone().unwrap_or_else(|| page.title.clone()),
+            icon: icon(page),
+            open: SidebarOpen::Page {
+                tab: TabRef::Plugin {
+                    plugin_id: plugin_id.to_owned(),
+                    page: None,
+                },
+            },
+        });
+    };
+    let open = if plugin.kind == wonton_protocol::PluginKind::Agent
+        && let Some(bot_user_id) = plugin.bot_user_id.clone()
+    {
+        SidebarOpen::BotChat { bot_user_id }
+    } else if let Some(url) = plugin.link_url.clone() {
+        SidebarOpen::ExternalBrowser { url }
+    } else if plugin.web_url.is_some() {
+        SidebarOpen::Page {
+            tab: TabRef::Plugin {
+                plugin_id: plugin_id.to_owned(),
+                page: plugin.tabs.first().map(|page| page.id.clone()),
+            },
+        }
+    } else {
+        return None;
+    };
+    Some(AppRow {
+        plugin_id: Some(plugin_id.to_owned()),
+        tab: None,
+        title: entry.title.clone().unwrap_or_else(|| plugin.title.clone()),
+        icon: plugin.icon.clone(),
+        open,
+    })
+}
+
+/// 页面行的一行：外部网页插件的行（页面行和插件行都可能是它）打开的是系统的 App 内浏览器（ADR-0080）。
+fn page_row(
+    state: &PagesState,
+    entry: &StoredApp,
+    tab: &TabRef,
+    plugin_id: Option<&str>,
+    plugin: Option<&InstalledPlugin>,
+) -> AppRow {
+    let page = entry
+        .page
+        .clone()
+        .expect("page rows always keep their metadata");
+    let _live_problem = state
+        .failures
+        .contains_key(&PlacedTab::Page { tab: tab.clone() });
+    let open = match (tab, plugin) {
+        (TabRef::Plugin { .. }, Some(plugin)) if plugin.web_url.is_none() => plugin
+            .link_url
+            .clone()
+            .map(|url| SidebarOpen::ExternalBrowser { url }),
+        _ => Some(SidebarOpen::Page { tab: tab.clone() }),
+    }
+    .expect("page rows of openable plugins always have an open action");
+    let icon = match &page.icon {
+        TabIcon::Plugin { icon } => icon.clone(),
+        TabIcon::Monochrome { .. } => None,
+    };
+    AppRow {
+        plugin_id: plugin_id.map(str::to_owned),
+        tab: Some(tab.clone()),
+        title: entry.title.clone().unwrap_or(page.title),
+        icon,
+        open,
+    }
 }
 
 /// 页面出了问题要不要红点：插件坏了（降级）、或这一行对应的打开页面被新版本移走。
@@ -211,7 +257,7 @@ fn problem_badge(
 
 /// 还没加进我的应用的插件页，按已装插件的顺序。没有网页的插件没有页面可加。
 fn my_app_candidates(state: &PagesState, plugins: &PluginsViewModel) -> Vec<TabCandidate> {
-    plugin_pages(plugins)
+    plugin_pages(plugins, true)
         .filter(|candidate| match &candidate.tab {
             // 插件行盖住这个插件的全部页面；只加了别的页面行时，这一页还能加。
             TabRef::Plugin { plugin_id, page: Some(_) } => {
@@ -241,10 +287,14 @@ fn my_app_candidates(state: &PagesState, plugins: &PluginsViewModel) -> Vec<TabC
 }
 
 /// 每个能打开的插件页：声明了 `tabs` 的按页，没声明的是网页入口。没有网页的插件没有页面。
-fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate> + '_ {
+/// `with_link`：外部网页插件（`runtime: link`）没有页面可嵌进面板，只进"我的应用"（ADR-0080）。
+fn plugin_pages(
+    plugins: &PluginsViewModel,
+    with_link: bool,
+) -> impl Iterator<Item = TabCandidate> + '_ {
     let installed = plugins.installed.iter().flat_map(|list| &list.plugins);
     installed
-        .filter(|plugin| plugin.web_url.is_some())
+        .filter(move |plugin| plugin.web_url.is_some() || (with_link && plugin.link_url.is_some()))
         .flat_map(|plugin| {
             let candidate = |page: Option<&wonton_protocol::PluginTab>| TabCandidate {
                 tab: TabRef::Plugin {
@@ -272,10 +322,17 @@ fn plugin_pages(plugins: &PluginsViewModel) -> impl Iterator<Item = TabCandidate
 }
 
 /// 栈里的一页：页面元数据按插件或缓存合成。
-fn build_page_item(state: &PagesState, stored: &StoredItem, plugins: &PluginsViewModel) -> TabPage {
+pub(super) fn build_page_item(
+    state: &PagesState,
+    stored: &StoredItem,
+    plugins: &PluginsViewModel,
+) -> TabPage {
     let placed = PlacedTab::Page {
         tab: stored.tab.clone(),
     };
+    if matches!(stored.tab, TabRef::Widget { .. }) {
+        return super::widget::page(state, &placed, stored, plugins);
+    }
     let plugin = match &stored.tab {
         TabRef::Plugin { plugin_id, .. } | TabRef::PluginPath { plugin_id, .. } => plugins
             .installed
@@ -418,6 +475,7 @@ fn compose_page(
     pin: Option<&wonton_protocol::BotPanelPin>,
 ) -> TabPage {
     match &stored.tab {
+        TabRef::Bot { .. } => return bot::build_page(state, placed, stored, plugins),
         // 插件里的某一页和公网网页：网址核心直接拼，插件不在了还能用缓存的标题显示。
         TabRef::PluginPath { plugin_id, path } => {
             let url = plugin.and_then(|plugin| page_url(plugin.web_url.as_deref(), Some(path)));
@@ -469,17 +527,16 @@ fn compose_page(
         _ => {}
     }
     let Some(plugin) = plugin else {
-        let metadata = stored
-            .page
-            .clone()
-            .expect("plugin tab item must keep its page metadata");
-        return page_from_metadata(state, placed, metadata, None, TabState::Loading, plugins);
+        let metadata = stored_or_placeholder(stored, None, plugins);
+        let unavailable = if plugins.installed.is_some() {
+            TabState::PageRemoved
+        } else {
+            TabState::Loading
+        };
+        return page_from_metadata(state, placed, metadata, None, unavailable, plugins);
     };
     let Some(metadata) = metadata_for_plugin(plugin, page_id) else {
-        let metadata = stored
-            .page
-            .clone()
-            .expect("plugin tab item must keep its page metadata");
+        let metadata = stored_or_placeholder(stored, Some(plugin), plugins);
         return page_from_metadata(
             state,
             placed,
@@ -496,6 +553,29 @@ fn compose_page(
     page_from_metadata(state, placed, metadata, url, state_value, plugins)
 }
 
+/// 插件列表没到、或插件不再声明这一页时显示用的元数据。栈和我的应用的行存着一份；面板里的条目只存了名字
+/// （主面板的在 `layout.json`，房间的在别的客户端也能写的账号数据里），没存的按插件现有的信息补，
+/// 列表没到就拿插件 ID 当名字。这里不能 panic：启动和每次开页、关页都要重算视图，算不出来主人就关不掉页面。
+fn stored_or_placeholder(
+    stored: &StoredItem,
+    plugin: Option<&InstalledPlugin>,
+    plugins: &PluginsViewModel,
+) -> StoredPage {
+    stored.page.clone().unwrap_or_else(|| {
+        let plugin_title = plugin_title_of(
+            super::tab_plugin_id(&stored.tab).unwrap_or_default(),
+            plugins,
+        );
+        StoredPage {
+            title: plugin_title.clone(),
+            plugin_title,
+            icon: TabIcon::Plugin {
+                icon: plugin.and_then(|plugin| plugin.icon.clone()),
+            },
+            layout: TabLayout::Inset,
+        }
+    })
+}
 fn plugin_title_of(plugin_id: &str, plugins: &PluginsViewModel) -> String {
     plugins
         .installed
@@ -572,7 +652,7 @@ pub(super) fn page_state(
 
 /// 出错页默认收起的"详情"：核心按 App 语言写，HTTP 错误码收在里面（ADR-0032）。没拿到响应
 /// 就没有错误码可写，交回空，壳保持只显示错误码的原样。
-fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
+pub(super) fn load_failed_details(failure: TabLoadFailure, status: Option<u16>) -> Option<String> {
     match (failure, status) {
         (TabLoadFailure::Transport, _) => {
             Some(l10n!(CATALOG, language(), "tabs-load-details-transport"))
@@ -598,7 +678,8 @@ pub(super) fn metadata_for_plugin(
     page: Option<&str>,
 ) -> Option<StoredPage> {
     let Some(page) = page else {
-        return plugin.web_url.as_ref().map(|_| StoredPage {
+        // 网页入口（`webui`）和外部网页（`link`）都没有声明的页面，行就是整个插件。
+        return (plugin.web_url.is_some() || plugin.link_url.is_some()).then(|| StoredPage {
             plugin_title: plugin.title.clone(),
             title: plugin.title.clone(),
             icon: TabIcon::Plugin {
@@ -657,15 +738,9 @@ pub(super) fn page_url(base: Option<&str>, page: Option<&str>) -> Option<String>
     (url.origin() == base.origin()).then(|| url.to_string())
 }
 
-pub(super) fn stored_item_for_tab(
-    tab: &TabRef,
-    plugins: &PluginsViewModel,
-) -> Result<StoredItem, CoreError> {
-    stored_item_with_title(tab, plugins, None)
-}
-
 /// 钉页面上来的带用户起的名字；候选页来的没有，按插件或域名补。
 pub(super) fn stored_item_with_title(
+    state: &PagesState,
     tab: &TabRef,
     plugins: &PluginsViewModel,
     title: Option<String>,
@@ -684,34 +759,13 @@ pub(super) fn stored_item_with_title(
                 layout: TabLayout::Inset,
             }),
         }),
-        TabRef::Bot { bot, .. } => Ok(StoredItem {
-            tab: tab.clone(),
-            page: Some(StoredPage {
-                plugin_title: bot.bot.clone(),
-                title: bot.bot.clone(),
-                icon: TabIcon::Plugin { icon: None },
-                layout: TabLayout::Inset,
-            }),
-        }),
-
-        TabRef::Url { url } => {
-            if !is_https_url(url) {
-                return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
-            }
-            let host = url
-                .parse::<Url>()
-                .ok()
-                .and_then(|parsed| parsed.host_str().map(str::to_owned));
-            Ok(StoredItem {
-                tab: tab.clone(),
-                page: Some(StoredPage {
-                    plugin_title: host.clone().unwrap_or_else(|| url.clone()),
-                    title: title.or(host).unwrap_or_else(|| url.clone()),
-                    icon: TabIcon::Plugin { icon: None },
-                    layout: TabLayout::Inset,
-                }),
-            })
-        }
+        TabRef::Widget { .. } => Err(invalid(&l10n!(
+            CATALOG,
+            language(),
+            "tabs-widget-not-pinnable"
+        ))),
+        TabRef::Bot { .. } => bot::stored_item(state, tab, title),
+        TabRef::Url { url } => stored_url_item(tab, url, title),
         TabRef::PluginPath { plugin_id, path: _ } => {
             let installed = plugins
                 .installed
@@ -776,6 +830,29 @@ pub(super) fn stored_item_with_title(
     }
 }
 
+fn stored_url_item(
+    tab: &TabRef,
+    url: &str,
+    title: Option<String>,
+) -> Result<StoredItem, CoreError> {
+    if !is_https_url(url) {
+        return Err(invalid(&l10n!(CATALOG, language(), "panel-pin-not-https")));
+    }
+    let host = url
+        .parse::<Url>()
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_owned));
+    Ok(StoredItem {
+        tab: tab.clone(),
+        page: Some(StoredPage {
+            plugin_title: host.clone().unwrap_or_else(|| url.to_owned()),
+            title: title.or(host).unwrap_or_else(|| url.to_owned()),
+            icon: TabIcon::Plugin { icon: None },
+            layout: TabLayout::Inset,
+        }),
+    })
+}
+
 /// 这个页面现在能不能打开（栈和面板共用）：插件页要清单里还有、插件网页也还在。
 pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
     match tab {
@@ -788,7 +865,7 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
             .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id))
             .is_some_and(|plugin| match page {
                 Some(page) => plugin.tabs.iter().any(|tab| tab.id == *page),
-                None => plugin.web_url.is_some(),
+                None => plugin.web_url.is_some() || plugin.link_url.is_some(),
             }),
         TabRef::PluginPath { plugin_id, .. } => plugins
             .installed
@@ -796,15 +873,24 @@ pub(super) fn page_available(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
             .and_then(|list| list.plugins.iter().find(|plugin| plugin.id == *plugin_id))
             .is_some_and(|plugin| plugin.web_url.is_some()),
         TabRef::Bot { .. } | TabRef::SharedApp { .. } => true,
+        TabRef::Widget { .. } => super::widget::available(tab, plugins),
         TabRef::Chat | TabRef::Apps => false,
     }
 }
 
-pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> bool {
+pub(super) fn plugin_is_running(
+    state: &PagesState,
+    tab: &TabRef,
+    plugins: &PluginsViewModel,
+) -> bool {
+    if let TabRef::Bot { bot, .. } = tab {
+        return bot::ready_page(state, bot).is_some();
+    }
     let plugin_id = match tab {
         TabRef::Plugin { plugin_id, .. }
         | TabRef::PluginPath { plugin_id, .. }
-        | TabRef::UiResource { plugin_id, .. } => plugin_id,
+        | TabRef::UiResource { plugin_id, .. }
+        | TabRef::Widget { plugin_id, .. } => plugin_id,
         _ => return false,
     };
     plugins
@@ -815,6 +901,13 @@ pub(super) fn plugin_is_running(tab: &TabRef, plugins: &PluginsViewModel) -> boo
 }
 
 pub(super) fn item_title(item: &StoredItem) -> String {
+    if let TabRef::Bot { bot, .. } = &item.tab {
+        return item
+            .page
+            .as_ref()
+            .map(|page| page.plugin_title.clone())
+            .unwrap_or_else(|| bot.bot.clone());
+    }
     item.page
         .as_ref()
         .expect("plugin tab item must keep its page metadata")
@@ -825,7 +918,7 @@ pub(super) fn item_title(item: &StoredItem) -> String {
 /// 这个实例指的是哪个页面。PlacedTab 在 protocol 里，这里放个取值的自由函数。
 pub(super) fn placed_tab_ref(placed: &PlacedTab) -> &TabRef {
     match placed {
-        PlacedTab::Page { tab } | PlacedTab::Panel { tab, .. } => tab,
+        PlacedTab::Page { tab } | PlacedTab::Content { tab } | PlacedTab::Panel { tab, .. } => tab,
     }
 }
 
@@ -844,8 +937,9 @@ pub(super) fn is_web_page(tab: &TabRef) -> bool {
         TabRef::Plugin { .. }
             | TabRef::PluginPath { .. }
             | TabRef::UiResource { .. }
+            | TabRef::Bot { .. }
             | TabRef::Url { .. }
             | TabRef::SharedApp { .. }
-            | TabRef::Bot { .. }
+            | TabRef::Widget { .. }
     )
 }

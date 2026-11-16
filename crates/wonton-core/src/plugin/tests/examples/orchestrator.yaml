@@ -1,0 +1,31 @@
+name: orchestrator
+services:
+  orchestrator:
+    image: ghcr.io/example/orchestrator:1
+    environment:
+      WONTON_AGENT_ACP_URL: ${WONTON_AGENT_ACP_URL}
+      WONTON_MCP_URL: ${WONTON_MCP_URL}
+      WONTON_MATRIX_HOMESERVER: ${WONTON_MATRIX_HOMESERVER}
+      WONTON_MATRIX_USER_ID: ${WONTON_MATRIX_USER_ID}
+      WONTON_MATRIX_ACCESS_TOKEN: ${WONTON_MATRIX_ACCESS_TOKEN}
+      WONTON_MATRIX_ALLOWED_USERS: ${WONTON_MATRIX_ALLOWED_USERS}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+
+x-wonton:
+  spec: "0.15"
+  id: app.example.orchestrator
+  version: 1.0.0
+  kind: agent
+  title: { zh: 任务编排, en: Task orchestrator }
+  description: { zh: 把复杂任务交给多个 Agent 协作完成, en: Coordinate multiple Agents to complete complex tasks }
+  agent:
+    protocol: matrix
+  bot:
+    display_name: { zh: 编排器, en: Orchestrator }
+  provides:
+    agent_acp:
+      service: orchestrator
+      port: 8080
+  requires: [agent_acp]
+  permissions: [matrix.bot, tools]

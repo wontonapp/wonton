@@ -9,12 +9,13 @@ use super::compose::Service;
 use super::interpolate::Vars;
 use super::manifest::Manifest;
 use super::render::MatrixVars;
+use wonton_protocol::{AiLevel, BOT_AI_LEVEL_ENV};
 
 /// 安装时核心建的 Bot。
 pub const DEFAULT_BOT: &str = "default";
 
 /// 一个 Bot 渲染容器时要注入的、和其他 Bot 不一样的值。
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BotVars {
     /// 这个 Bot 的模型网关凭据（`<插件 id>/<Bot 名>`），Bot 服务里的 `WONTON_MODEL_API_KEY` 用它。
     pub model_key: Option<String>,
@@ -22,6 +23,32 @@ pub struct BotVars {
     pub matrix: Option<MatrixVars>,
     /// 这个 Bot 的总线地址，令牌在路径里：`http://mcp.wonton.internal:<端口>/mcp/<令牌>`。
     pub mcp_url: Option<String>,
+    pub app_url: Option<String>,
+    pub oidc: Option<super::vars::OidcVars>,
+    /// 这个 Bot 自己的能力连接变量；不继承插件级确认和凭据。
+    pub dependencies: BTreeMap<String, String>,
+    /// 这个 Bot 的 AI 动手级别（`WONTON_BOT_AI_LEVEL`，ADR-0088 第 8 节）：私人 Bot 是归属人角色的，
+    /// 共享 Bot 是能用人里最低的。Agent 插件和桥凭它锁模式。
+    pub ai_level: AiLevel,
+    /// 归属人“AI 动手”是只读的私人 Bot：共享文件夹挂载一律只读（ADR-0088 第 5 节第 1 层），
+    /// 插件自己声明了写权限的也一样。共享 Bot 没有归属人，总是 false。
+    pub keeper_read_only: bool,
+}
+
+impl Default for BotVars {
+    fn default() -> Self {
+        Self {
+            model_key: None,
+            matrix: None,
+            mcp_url: None,
+            app_url: None,
+            oidc: None,
+            dependencies: BTreeMap::new(),
+            // 解析不出的级别按只读（ADR-0088 第 5 节），和 [`crate::ai_level`] 的兜底一致。
+            ai_level: AiLevel::ReadOnly,
+            keeper_read_only: false,
+        }
+    }
 }
 
 /// 服务名之外，Bot 服务的另一个网络别名：同一个 Bot 的服务之间用它互访。
@@ -62,9 +89,38 @@ impl<'a> ServiceVars<'a> {
             plugin
                 .retain(|name, _| !name.starts_with("WONTON_MATRIX_") && name != "WONTON_MCP_URL");
         }
+        let dependency_names: Vec<_> = super::dependencies::declarations(manifest)
+            .flat_map(|capability| {
+                let stem = super::capabilities::variable_stem(capability);
+                ["URL", "KEY", "HOST", "PORT"].map(|suffix| format!("WONTON_{stem}_{suffix}"))
+            })
+            .collect();
         for (bot, runtime) in bots {
             let mut vars = plugin.clone();
+            for name in &dependency_names {
+                vars.remove(name);
+            }
+            vars.extend(
+                runtime
+                    .dependencies
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone())),
+            );
+            if let Some(url) = &runtime.app_url {
+                vars.insert("WONTON_APP_URL".to_owned(), url.clone());
+            }
+            if let Some(oidc) = &runtime.oidc {
+                vars.insert("WONTON_OIDC_CLIENT_ID".to_owned(), oidc.client_id.clone());
+                vars.insert(
+                    "WONTON_OIDC_CLIENT_SECRET".to_owned(),
+                    oidc.client_secret.clone(),
+                );
+            }
             vars.insert("WONTON_BOT_NAME".to_owned(), bot.clone());
+            vars.insert(
+                BOT_AI_LEVEL_ENV.to_owned(),
+                runtime.ai_level.as_str().to_owned(),
+            );
             let data = app_data.join("bots").join(bot);
             vars.insert("WONTON_BOT_DATA".to_owned(), data.display().to_string());
             match &runtime.model_key {
@@ -154,6 +210,10 @@ impl<'a> ServiceVars<'a> {
             && self.bot_services.contains(service)
         {
             aliases.push(bot_alias(service, bot));
+            aliases.push(super::names::service_host(
+                &self.slug,
+                &bot_alias(service, bot),
+            ));
         }
         aliases.push(super::names::service_host(&self.slug, service));
         aliases

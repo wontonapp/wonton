@@ -5,10 +5,9 @@ struct OnboardingView: View {
     let model: OnboardingModel
     let plugins: PluginsModel
     let nav: StepNav
-    let openGateway: (URL) -> Void
+    let openGateway: (ModelSettingsPage) -> Void
     /// 重看引导的关闭；首次引导没有。
     var close: (() -> Void)?
-    @State private var modelForm = OnboardingModelForm()
     @State private var isKeyboardVisible = false
     @Environment(\.wontonColors) private var colors
 
@@ -19,21 +18,12 @@ struct OnboardingView: View {
         { model.close(); close?() }
     }
 
-    private var frameNav: StepNav {
-        var result = nav
-        // key 在测试前不进核心，只有这个按钮需要合并输入框状态。
-        if view.step == .model, modelForm.hasCompleteInput, !view.model.testing {
-            result.canNext = true
-        }
-        return result
-    }
-
     var body: some View {
         StepCardFrame(
-            nav: frameNav, title: view.step?.title ?? "", primaryTitle: primaryTitle,
-            isWorking: view.loading || view.model.testing || view.review.commit == .running,
-            back: { model.send(.backOnboardingStep) },
-            skip: { model.send(.skipOnboardingStep) }, next: advance,
+            nav: nav, title: view.step?.title ?? "", primaryTitle: primaryTitle,
+            isWorking: view.loading || view.review.commit == .running,
+            back: { model.send(.onboarding(action: .backOnboardingStep)) },
+            skip: { model.send(.onboarding(action: .skipOnboardingStep)) }, next: advance,
             close: close.map { _ in handleClose },
             content: {
                 ScrollViewReader { proxy in
@@ -55,16 +45,13 @@ struct OnboardingView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             isKeyboardVisible = false
         }
-        .onChange(of: view.step, initial: true) { _, step in
-            modelForm = OnboardingModelForm(choice: step == .model ? view.model.choice : nil)
-        }
         // 左边缘右滑：和系统返回同一路——能后退就后退，第一步（或关掉的引导）等同关闭。
         .background(
             FullscreenExitGesture(
-                enabled: frameNav.canClose, webView: nil,
+                enabled: nav.canClose, webView: nil,
                 exit: {
-                    if frameNav.canBack {
-                        model.send(.backOnboardingStep)
+                    if nav.canBack {
+                        model.send(.onboarding(action: .backOnboardingStep))
                     } else {
                         handleClose()
                     }
@@ -75,7 +62,7 @@ struct OnboardingView: View {
 
     @ViewBuilder private func content(_ proxy: ScrollViewProxy) -> some View {
         if let problem = view.problem {
-            ProblemView(problem: problem.problem) { model.send(.refreshOnboarding) }
+            ProblemView(problem: problem.problem) { model.send(.onboarding(action: .refreshOnboarding)) }
         } else {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.s16) {
                 if let problem = model.rejection {
@@ -89,11 +76,13 @@ struct OnboardingView: View {
                         OnboardingProfileStepView(profile: view.profile, send: model.send)
                     }
                 case .agent:
-                    OnboardingAgentStep(agents: view.agents) { model.send(.chooseOnboardingAgent(id: $0)) }
+                    OnboardingAgentStep(agents: view.agents) {
+                        model.send(.onboarding(action: .chooseOnboardingAgent(id: $0)))
+                    }
                 case .model:
-                    OnboardingModelStepView(step: view.model, form: $modelForm, send: model.send,
+                    OnboardingModelStepView(step: view.model, send: model.send,
                                             openGateway: openGateway,
-                                            revealForm: { proxy.scrollTo($0, anchor: .top) })
+                                            revealProblem: { proxy.scrollTo($0, anchor: .top) })
                 case .apps:
                     OnboardingAppsStep(needs: view.needs, catalogProblem: view.catalogProblem,
                                        plugins: plugins, send: model.send)
@@ -116,11 +105,7 @@ struct OnboardingView: View {
     }
 
     private func advance() {
-        if view.step == .model {
-            modelForm.submit(thenContinue: true, send: model.send)
-        } else {
-            model.send(.continueOnboarding)
-        }
+        model.send(.onboarding(action: .continueOnboarding))
     }
 }
 

@@ -226,20 +226,12 @@ async fn a_stopped_plugin_is_recreated_when_started_not_at_restore() {
     let dir = tempfile::tempdir().unwrap();
     let issuer = Arc::new(Mutex::new("http://auth.wonton.internal".into()));
     let hydra = fake_hydra(issuer.clone()).await;
-    let manager = manager_with_oidc(engine.clone(), &dir, hydra.clone());
+    let manager = Arc::new(manager_with_oidc(engine.clone(), &dir, hydra.clone()));
     let installed = manager
         .install(&app(webui().await), &[], super::langs())
         .await
         .unwrap();
-    docker.set_state(
-        WEB,
-        json!({"Status": "exited", "Running": false, "ExitCode": 0}),
-    );
-    docker.set_start_state(
-        WEB,
-        json!({"Status": "running", "Running": true, "Health": {"Status": "healthy"}}),
-    );
-    manager.watch_containers().await;
+    manager.stop_detached(installed.id.clone()).await.unwrap();
 
     *issuer.lock().unwrap() = "http://auth.wonton.internal:9443".into();
     drop(manager);

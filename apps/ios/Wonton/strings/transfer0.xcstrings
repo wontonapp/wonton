@@ -152,6 +152,36 @@
         }
       }
     },
+    "transfer.downloadedOne": {
+      "comment": "Caption button above the chat composer when one file was downloaded in this chat: opens the list. Argument: the file's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded “%1$@”"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下载“%1$@”"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已下載「%1$@」"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "「%1$@」をダウンロード済み"
+          }
+        }
+      }
+    },
     "transfer.linkNotSent": {
       "comment": "Line under an upload: it finished, but the link never reached the room. Argument: the home server's reason, shown as is.",
       "extractionState": "manual",

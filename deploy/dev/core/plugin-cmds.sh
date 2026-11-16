@@ -45,7 +45,7 @@ secret_header() {
 
 install() {
   local file="$1" yes="${2:-}" secrets="${3:-}" type preview answer
-  local -a headers
+  local -a headers statuses
   [[ -e "$file" ]] || die "找不到插件包：$file"
   type="$(package_type "$file")"
   preview="$(preview_package "$file")" || die "预览失败：$preview"
@@ -56,7 +56,15 @@ install() {
   fi
   headers=(-H "Content-Type: $type")
   secret_header headers "$secrets"
-  package "$file" | api POST "/_wonton/api/plugins?grant=$GRANTS" "${headers[@]}" --data-binary @-
+  package "$file" | api POST "/_wonton/api/plugins?grant=$GRANTS" "${headers[@]}" --data-binary @- || {
+    statuses=("${PIPESTATUS[@]}")
+    if [[ "${statuses[1]}" -eq 28 ]]; then
+      printf '核心可能仍在安装，用 %q status 查\n' "$here/dev.sh" >&2
+    fi
+    # pipefail 返回最右侧的非零状态；打包失败不能被成功的 API 掩盖。
+    if [[ "${statuses[1]}" -ne 0 ]]; then return "${statuses[1]}"; fi
+    return "${statuses[0]}"
+  }
   echo
 }
 

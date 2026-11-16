@@ -88,10 +88,16 @@ pub(super) struct Entry {
     pub(super) proxy: Option<Arc<ProxyAuth>>,
     /// 运行中时 MCP 服务的地址。
     pub(super) mcp: Option<McpTarget>,
+    /// 监控任务的实例令牌：卸载后重新安装同一 ID 时，旧任务不能覆盖新状态。
+    pub(super) watch_token: Arc<()>,
     /// 这个异常是容器决定的，容器好了就恢复（见 [`super::watch`]）。
     pub(super) follows_containers: bool,
     /// 提供托管能力时，网关转发托管插件请求的地址（见 [`Deployed::hosted`]）。
     pub(super) hosted: BTreeMap<String, Endpoint>,
+    /// 声明了 `clients.http` 时的转发地址（ADR-0021）；部署或核对时解析，没解析出来时为空。
+    pub(super) clients: Option<super::manager::ClientsRoute>,
+    /// 随部署表项隔离，完成结果还必须匹配 Docker 的容器和启动代次。
+    pub(super) setup: Arc<super::clients_setup::SetupState>,
 }
 
 /// 部署或核对完成的插件：核心访问它网页的地址（是模型网关时还有网关接口的地址），和检查时的健康状况。
@@ -109,6 +115,8 @@ pub(super) struct Deployed {
     pub firewalled: bool,
     /// 提供托管能力时，网关转发托管插件请求的地址：能力名 → 地址（ADR-0080）。
     pub hosted: BTreeMap<String, Endpoint>,
+    /// 声明了 `clients.http` 时的转发地址（ADR-0021）；没声明、或声明了但服务容器不在时没有。
+    pub clients: Option<super::manager::ClientsRoute>,
 }
 
 impl Entry {
@@ -141,8 +149,11 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: Some(listed),
+            watch_token: Arc::new(()),
             follows_containers: false,
             hosted: BTreeMap::new(),
+            clients: None,
+            setup: Arc::default(),
         }
     }
 
@@ -162,6 +173,7 @@ impl Entry {
             proxy: deployed.proxy,
             mcp: deployed.mcp,
             hosted: deployed.hosted,
+            clients: deployed.clients,
             ..Self::new(listed, PluginStatus::Running, deployed.upstream)
         }
     }
@@ -202,8 +214,11 @@ impl Entry {
             proxy: None,
             mcp: None,
             listed: None,
+            watch_token: Arc::new(()),
             follows_containers: false,
             hosted: BTreeMap::new(),
+            clients: None,
+            setup: Arc::default(),
         }
     }
 

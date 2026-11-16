@@ -127,6 +127,7 @@ fn request(preview: InstallPreview, token: &str) -> InstallRequest {
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
+        audience: None,
         scope: None,
         grant: preview
             .permissions
@@ -141,6 +142,7 @@ fn request(preview: InstallPreview, token: &str) -> InstallRequest {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     }
 }
 
@@ -407,7 +409,11 @@ async fn every_nested_decision_is_validated_before_any_provider_or_secret_is_ins
                     "{decision:?}: {error}"
                 );
             }
-            InvalidDecision::UnknownDevice | InvalidDecision::UnknownScope => {
+            // 设备选择现在按设备校验：认不出的 ID 是输入错误，不再整体不支持（ADR-0036）。
+            InvalidDecision::UnknownDevice => {
+                assert_eq!(error.kind(), "invalid_input", "{decision:?}: {error}");
+            }
+            InvalidDecision::UnknownScope => {
                 assert_eq!(error.kind(), "unsupported", "{decision:?}: {error}");
             }
             _ => assert_eq!(error.kind(), "invalid_input", "{decision:?}: {error}"),
@@ -504,6 +510,11 @@ async fn a_failed_consumer_rolls_back_all_new_providers_but_preserves_existing_c
             1
         );
         assert!(!bed.manager.is_installed(&id(plugin)), "{plugin}");
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.test");
+        assert_eq!(failure["kind"], "unhealthy");
+        assert_eq!(failure["cleanup_errors"], json!([]));
         assert_eq!(stored_secrets(&bed, plugin), None, "{plugin}");
         assert!(
             !bed.data
@@ -548,7 +559,17 @@ async fn a_provider_that_fails_readiness_rolls_back_before_creating_the_consumer
         1
     );
     assert_eq!(bed.docker.creations(&container_name("app-test", "web")), 0);
-    assert!(bed.manager.installed(&langs()).plugins.is_empty());
+    for plugin in ["app.search", "app.ledger"] {
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.ledger");
+        assert_eq!(failure["kind"], "unhealthy");
+    }
+    assert!(
+        bed.manager
+            .installed_plugin(&id("app.test"), &langs())
+            .is_none()
+    );
     assert!(bed.docker.containers().is_empty());
     assert_eq!(bed.docker.networks(), ["bridge"]);
     assert!(bed.docker.volumes().is_empty());
@@ -594,7 +615,12 @@ async fn a_failed_transaction_restores_retained_secrets_and_data_for_every_layer
         }),
     );
     bed.manager.install_source(&outer).await.unwrap_err();
-    assert!(bed.manager.installed(&langs()).plugins.is_empty());
+    for plugin in ["app.search", "app.test"] {
+        let failed = bed.manager.installed_plugin(&id(plugin), &langs()).unwrap();
+        let failure = serde_json::to_value(failed).unwrap()["install_failure"].clone();
+        assert_eq!(failure["failed_plugin_id"], "app.test");
+        assert_eq!(failure["kind"], "unhealthy");
+    }
     assert!(bed.docker.containers().is_empty());
     assert_eq!(bed.docker.networks(), ["bridge"]);
     assert!(bed.keys.lock().unwrap().is_empty());

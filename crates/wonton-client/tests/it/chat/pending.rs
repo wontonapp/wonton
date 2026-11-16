@@ -165,12 +165,15 @@ async fn answering_shows_progress_then_the_result() {
     // 正在发：按钮还在，但不能点。
     home.hold_answers(true);
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "install".to_owned(),
-            answer: Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "install".to_owned(),
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: vec!["serial:0:/dev/serial/by-id/test".to_owned()],
+            },
         })
         .unwrap();
     wait_confirmations(&phone, "正在发", |view| {
@@ -192,15 +195,24 @@ async fn answering_shows_progress_then_the_result() {
     assert!(view.card.choices.is_empty());
     // 连点不再发一次。
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "install".to_owned(),
-            answer: Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "install".to_owned(),
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: vec!["serial:0:/dev/serial/by-id/test".to_owned()],
+            },
         })
         .unwrap();
-    assert_eq!(home.confirmation_answers().len(), 1);
+    assert_eq!(
+        home.confirmation_answers(),
+        [(
+            "install".to_owned(),
+            json!({"answer": "approve", "secrets": {}, "settings": {}, "devices": ["serial:0:/dev/serial/by-id/test"]}),
+        )]
+    );
 
     // 核心的列表更新：卡片挪进结束的。
     home.set_confirmations(
@@ -255,12 +267,15 @@ async fn a_refused_answer_shows_why() {
         json!({"error": {"kind": "already_answered", "message": "这个确认已经回答过了"}}),
     );
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "answered".to_owned(),
-            answer: Answer::Reject,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "answered".to_owned(),
+                answer: Answer::Reject,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
     let view = wait_confirmations(&phone, "核心不收", |view| {
@@ -331,7 +346,11 @@ async fn a_broken_poll_keeps_the_last_list_until_it_recovers() {
         vec![],
     );
     home.fail_confirmations(0);
-    phone.dispatch(Action::RetryConfirmations).unwrap();
+    phone
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::RetryConfirmations,
+        })
+        .unwrap();
     wait_confirmations(&phone, "重试后恢复", |view| {
         (view.problem.is_none() && view.pending.len() == 2).then_some(())
     })
@@ -427,12 +446,15 @@ async fn an_answer_that_does_not_land_says_why_and_stays_clickable() {
 
     home.reply_to_next_answer(502, json!({}));
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "flaky".to_owned(),
-            answer: Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "flaky".to_owned(),
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
     let view = wait_confirmations(&phone, "没答上", |view| {
@@ -453,12 +475,15 @@ async fn an_answer_that_does_not_land_says_why_and_stays_clickable() {
 
     // 再点一次答上了。
     phone
-        .dispatch(Action::AnswerConfirmation {
-            id: "flaky".to_owned(),
-            answer: Answer::Approve,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "flaky".to_owned(),
+                answer: Answer::Approve,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            },
         })
         .unwrap();
     wait_confirmations(&phone, "再点一次答上了", |view| {
@@ -491,12 +516,15 @@ async fn an_unknown_answer_is_rejected_before_sending() {
     })
     .await;
     assert!(matches!(
-        phone.dispatch(Action::AnswerConfirmation {
-            id: "install".to_owned(),
-            answer: Answer::Unknown,
-            choice_id: None,
-            secrets: Default::default(),
-            settings: Default::default(),
+        phone.dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::AnswerConfirmation {
+                id: "install".to_owned(),
+                answer: Answer::Unknown,
+                choice_id: None,
+                secrets: Default::default(),
+                settings: Default::default(),
+                devices: Vec::new(),
+            }
         }),
         Err(CoreError::InvalidInput { .. })
     ));
@@ -546,8 +574,10 @@ async fn the_owner_can_stop_a_window_and_sees_it_end() {
     );
 
     phone
-        .dispatch(Action::StopConfirmationWindow {
-            id: "windowed".to_owned(),
+        .dispatch(Action::Chat {
+            action: wonton_protocol::ChatAction::StopConfirmationWindow {
+                id: "windowed".to_owned(),
+            },
         })
         .unwrap();
     wait_confirmations(&phone, "停止在发", |view| {

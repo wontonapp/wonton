@@ -99,6 +99,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
     );
     let request = InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
@@ -110,6 +111,7 @@ async fn official_plugins_come_from_the_index_and_are_checked_against_it() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     };
     m.install_source(&request).await.unwrap();
     let id = PluginId::parse("app.hello").unwrap();
@@ -528,6 +530,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
     assert_eq!(preview.trust, PluginTrust::Official);
     m.install_source(&InstallRequest {
         scope: None,
+        audience: None,
         source: preview.source.unwrap(),
         digest: preview.digest,
         plan: preview.plan,
@@ -539,6 +542,7 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
         lan_webui: false,
         install_together: Vec::new(),
         connect_plugins: Vec::new(),
+        remote_oauth: None,
     })
     .await
     .unwrap();
@@ -561,4 +565,35 @@ async fn a_subdirectory_entry_is_listed_installed_and_checked_for_upgrades() {
         .await
         .unwrap();
     assert_eq!(upgrade.version, "0.2.0");
+}
+
+#[tokio::test]
+async fn a_failed_install_stays_queryable_but_the_store_still_offers_installation() {
+    let index = tempfile::tempdir().unwrap();
+    write_index(index.path(), &compose("1.0.0", "nginx"), ICON);
+    let bed = bed(index.path(), false).await;
+    let id = PluginId::parse("app.hello").unwrap();
+    let blocked = bed._dir.path().join("plugins/app.hello.json");
+    fs::create_dir_all(&blocked).unwrap();
+    let package = bed.m.fetch_source("github:acme/hello").await.unwrap();
+    let error = bed.m.install_package(package, &[], zh()).await.unwrap_err();
+    assert_eq!(error.kind(), "storage");
+    let failure = bed.m.installed_plugin(&id, &zh()).unwrap();
+    assert!(failure.install_failure.is_some());
+    let detail = bed
+        .m
+        .store_plugin("github:acme/hello", &zh())
+        .await
+        .unwrap();
+    assert!(detail.installed.is_none());
+    assert!(detail.source.is_some());
+    let listing = bed.m.store_listing(&zh(), false).await;
+    assert!(listing.official.plugins[0].installed_version.is_none());
+    fs::remove_dir(&blocked).unwrap();
+    assert!(
+        bed.m
+            .preview_source("github:acme/hello", &zh())
+            .await
+            .is_ok()
+    );
 }

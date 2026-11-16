@@ -89,7 +89,9 @@ async fn refreshing_shows_the_bots_contacts() {
         ]),
     );
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     let view = wait_contacts(&rig, |view| ready(view) && !view.contacts.is_empty()).await;
     assert_eq!(view.bot, Some(alice()));
@@ -119,9 +121,11 @@ async fn a_pending_person_turns_active_without_another_refresh() {
         list(&[contact(PERSON, "person", "active")]),
     );
     rig.app
-        .dispatch(Action::RequestPersonContact {
-            bot: alice(),
-            user_id: PERSON.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RequestPersonContact {
+                bot: alice(),
+                user_id: PERSON.into(),
+            },
         })
         .unwrap();
     wait_contacts(&rig, |view| {
@@ -153,9 +157,11 @@ async fn a_rejection_by_the_other_side_shows_without_waiting_out_the_slow_poll()
     rig.core
         .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "pending")]));
     rig.app
-        .dispatch(Action::RequestBotContact {
-            bot: alice(),
-            user_id: BOT.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RequestBotContact {
+                bot: alice(),
+                user_id: BOT.into(),
+            },
         })
         .unwrap();
     wait_contacts(&rig, |view| {
@@ -189,14 +195,18 @@ async fn rejecting_shows_at_once_from_the_rejections_own_answer() {
     rig.core
         .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "incoming")]));
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
     rig.core.answer(Method::POST, &reject, list(&[]));
     rig.app
-        .dispatch(Action::RejectBotContact {
-            bot: alice(),
-            user_id: BOT.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RejectBotContact {
+                bot: alice(),
+                user_id: BOT.into(),
+            },
         })
         .unwrap();
     wait_contacts(&rig, |view| ready(view) && view.contacts.is_empty()).await;
@@ -224,9 +234,11 @@ async fn approving_rejecting_and_removing_hit_the_contacts_own_paths() {
     rig.core.answer(Method::DELETE, &remove, list(&[]));
 
     rig.app
-        .dispatch(Action::ApproveBotContact {
-            bot: bot.clone(),
-            user_id: BOT.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::ApproveBotContact {
+                bot: bot.clone(),
+                user_id: BOT.into(),
+            },
         })
         .unwrap();
     wait_contacts(&rig, |view| {
@@ -234,15 +246,19 @@ async fn approving_rejecting_and_removing_hit_the_contacts_own_paths() {
     })
     .await;
     rig.app
-        .dispatch(Action::RejectBotContact {
-            bot: bot.clone(),
-            user_id: PERSON.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RejectBotContact {
+                bot: bot.clone(),
+                user_id: PERSON.into(),
+            },
         })
         .unwrap();
     rig.app
-        .dispatch(Action::RemoveBotContact {
-            bot: bot.clone(),
-            user_id: BOT.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RemoveBotContact {
+                bot: bot.clone(),
+                user_id: BOT.into(),
+            },
         })
         .unwrap();
     wait_contacts(&rig, |view| ready(view) && view.contacts.is_empty()).await;
@@ -260,7 +276,9 @@ async fn list_failures_keep_their_category() {
     rig.core
         .answer_headered(Method::GET, &path, contact_error(404, "bot_not_found"));
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     let view = wait_contacts(&rig, |view| {
         matches!(view.state, BotContactsState::Failed { .. })
@@ -280,7 +298,9 @@ async fn list_failures_keep_their_category() {
         Canned(StatusCode::FORBIDDEN.as_u16(), "device revoked".into()),
     );
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     let view = wait_contacts(&rig, |view| {
         matches!(
@@ -305,7 +325,9 @@ async fn an_action_failure_keeps_the_list_and_reports_on_its_own() {
     rig.core
         .answer_always(Method::GET, &path, list(&[contact(BOT, "bot", "active")]));
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
     let listed = rig.core.seen(&Method::GET, &path).len();
@@ -313,9 +335,11 @@ async fn an_action_failure_keeps_the_list_and_reports_on_its_own() {
     rig.core
         .answer_headered(Method::POST, &path, contact_error(400, "invalid_user_id"));
     rig.app
-        .dispatch(Action::RequestBotContact {
-            bot: alice(),
-            user_id: "sam".into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RequestBotContact {
+                bot: alice(),
+                user_id: "sam".into(),
+            },
         })
         .unwrap();
     let view = wait_contacts(&rig, |view| view.action_failure.is_some()).await;
@@ -341,7 +365,9 @@ async fn an_action_failure_keeps_the_list_and_reports_on_its_own() {
     assert_eq!(view.contacts.len(), 1);
 
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     assert_eq!(rig.app.bot_contacts().action_failure, None);
 }
@@ -364,9 +390,11 @@ async fn an_action_failure_on_a_fresh_bot_fetches_its_list() {
         contact_error(404, "contact_not_found"),
     );
     rig.app
-        .dispatch(Action::ApproveBotContact {
-            bot: alice(),
-            user_id: BOT.into(),
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::ApproveBotContact {
+                bot: alice(),
+                user_id: BOT.into(),
+            },
         })
         .unwrap();
     let view = wait_contacts(&rig, |view| ready(view) && view.contacts.len() == 1).await;
@@ -381,7 +409,9 @@ async fn an_action_failure_on_a_fresh_bot_fetches_its_list() {
 async fn without_a_home_connection_the_transport_is_reported() {
     let rig = Rig::new().await;
     rig.app
-        .dispatch(Action::RefreshBotContacts { bot: alice() })
+        .dispatch(Action::BotContacts {
+            action: wonton_protocol::BotContactAction::RefreshBotContacts { bot: alice() },
+        })
         .unwrap();
     let view = wait_contacts(&rig, |view| {
         matches!(view.state, BotContactsState::Failed { .. })

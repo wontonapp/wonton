@@ -25,6 +25,7 @@ fn package(id: &str, kind: &str) -> String {
 
 fn record(id: &str, source: &str) -> InstalledRecord {
     InstalledRecord {
+        lifecycle: Default::default(),
         lan_webui: false,
         relays: Vec::new(),
         firewalled: false,
@@ -36,13 +37,17 @@ fn record(id: &str, source: &str) -> InstalledRecord {
         limits: PluginLimits::default(),
         granted_permissions: Vec::new(),
         enabled_permissions: Vec::new(),
+        devices: Vec::new(),
         oidc_client_secret: None,
         installed_at: 1,
         entry_label: None,
+        clients_entries: Default::default(),
+        setup_done_ever: false,
         origin: None,
         written_by: None,
         ask_every_update: false,
-        family: false,
+        settings: Default::default(),
+        settings_changed_ms: None,
         static_files: Default::default(),
         hosted: Vec::new(),
         gpu_vendor: None,

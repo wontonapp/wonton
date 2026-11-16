@@ -333,7 +333,7 @@
       }
     },
     "message.read": {
-      "comment": "Marker on your own message that the other side has read.",
+      "comment": "Small line under your own message that the other side has read.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -358,6 +358,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "既読"
+          }
+        }
+      }
+    },
+    "message.delivered": {
+      "comment": "Small line under your own latest message: the server has it, nobody has read it yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delivered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送达"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已送達"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "配信済み"
           }
         }
       }

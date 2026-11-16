@@ -56,8 +56,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -95,13 +97,9 @@ private const val PANEL_TUCKED = 0.18f
 private const val PANEL_DIM = 0.3f
 private const val SCRIM_ALPHA = 0.22f
 
-/** 松手时按位置加速度决定开还是弹回：预测位置 = 位移 + 速度 × 这个系数。 */
-private const val PROJECT_FACTOR = 0.15f
 private const val SPRING_DAMPING = 0.86f
 private const val SPRING_STIFFNESS = 270f
 private const val BADGE_MAX = 99
-
-private val EDGE_WIDTH = 20.dp
 
 /** 边缘热区占屏高的比例：系统返回手势的排除区最多认 200dp，2400px 屏上 0.22 ≈ 528px（≈220dp，压到上限内）。 */
 private const val EDGE_ZONE_RATIO = 0.22f
@@ -189,19 +187,22 @@ private fun Modifier.sidebarDrag(
     base: Float,
     isOpen: Boolean,
     panelWidthPx: Float,
+    density: Float,
     scope: CoroutineScope,
     springSpec: SpringSpec<Float>,
     reduceMotion: Boolean,
     onSetOpen: (Boolean) -> Unit,
-): Modifier = pointerInput(base) {
-    val half = panelWidthPx / 2f
+): Modifier = pointerInput(base, density) {
     detectHorizontalDragGestures(
         onDragStart = { gestures.start() },
         onDragEnd = {
-            val projected = base * panelWidthPx + gestures.dragPx +
-                gestures.velocityX() * PROJECT_FACTOR
+            val direction = if (isOpen) -1f else 1f
+            val commit = commitsGesture(
+                gestures.dragPx * direction, gestures.velocityX() * direction,
+                WontonTheme.gesture.swipeDistance, density,
+            )
             gestures.settle(
-                projected > half, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
+                if (commit) !isOpen else isOpen, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
             )
         },
         onDragCancel = {
@@ -236,6 +237,7 @@ internal fun SidebarContainer(
     BoxWithConstraints(Modifier.fillMaxSize().background(colors.surfaceSubtle.toColor())) {
         val panelWidth = maxWidth * PANEL_RATIO
         val panelWidthPx = with(LocalDensity.current) { panelWidth.toPx() }
+        val density = LocalDensity.current.density
         val base = if (isOpen) 1f else 0f
         val progress = gestures.progress(base, panelWidthPx)
 
@@ -253,7 +255,10 @@ internal fun SidebarContainer(
                 .graphicsLayer {
                     alpha = PANEL_DIM + (1f - PANEL_DIM) * progress
                     translationX = -panelWidthPx * PANEL_TUCKED * (1f - progress)
-                },
+                }
+                // 收起停稳后整块盖在主界面底下，看不见也点不到：不留在语义树里，读屏和界面测试摸不到里面的
+                // “设置”“商店”“新聊天”（iOS 同样对旁白隐藏收起的侧边栏）。面板照常组合，滚动位置和编辑态不丢。
+                .then(if (progress > 0f) Modifier else Modifier.clearAndSetSemantics { }),
         ) {
             panel(panelWidth, progress > PANEL_INTERACTIVE_AT)
         }
@@ -276,10 +281,12 @@ internal fun SidebarContainer(
                 val collapse = stringResource(R.string.sidebar_collapse)
                 Box(
                     Modifier.matchParentSize()
+                        .testTag("sidebar-close")
                         .background(Color.Black.copy(alpha = SCRIM_ALPHA * progress))
                         .then(
                             if (isOpen) Modifier.sidebarDrag(
-                                gestures, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen,
+                                gestures, base, isOpen, panelWidthPx, density,
+                                scope, springSpec, reduceMotion, onSetOpen,
                             ) else Modifier,
                         )
                         .clickable(
@@ -298,9 +305,11 @@ internal fun SidebarContainer(
             Box(
                 Modifier.align(Alignment.CenterStart)
                     .fillMaxHeight(EDGE_ZONE_RATIO)
-                    .width(EDGE_WIDTH)
+                    .width(WontonTheme.gesture.edgeWidth.dp)
                     .systemGestureExclusion()
-                    .sidebarDrag(gestures, base, isOpen, panelWidthPx, scope, springSpec, reduceMotion, onSetOpen),
+                    .sidebarDrag(
+                        gestures, base, isOpen, panelWidthPx, density, scope, springSpec, reduceMotion, onSetOpen,
+                    ),
             )
         }
     }
@@ -315,6 +324,7 @@ internal fun SidebarMenuButton(onClick: () -> Unit) {
     val label = stringResource(R.string.sidebar_open)
     Box(
         Modifier.size(WontonTheme.size.target)
+            .testTag("sidebar-open")
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
@@ -426,7 +436,7 @@ private fun SidebarHeader(home: HomeViewModel) {
 
 /** “我的应用”：用户选出来的行，核心排好序；装了还没加进的收进最后一行“全部应用”。 */
 @Composable
-private fun SidebarApps(
+internal fun SidebarApps(
     plugins: PluginsState,
     tabs: PagesState,
     current: TabRef,
@@ -447,7 +457,7 @@ private fun SidebarApps(
         Spacer(Modifier.weight(1f))
         Text(
             stringResource(R.string.sidebar_all),
-            Modifier.clickable(
+            Modifier.testTag("sidebar-all-apps").heightIn(min = WontonTheme.size.target).clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 enabled = interactive,
@@ -500,11 +510,10 @@ private fun SidebarFooter(
         val attentionLabel = stringResource(R.string.sidebar_needs_attention)
         Box(
             Modifier.size(WontonTheme.size.target)
+                .testTag("sidebar-settings")
                 .background(colors.surface.toColor(), CircleShape)
                 .border(WontonTheme.size.hairline, colors.separator.toColor(), CircleShape)
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
                     enabled = interactive,
                     role = Role.Button,
                     onClick = { onGo(SidebarDestination.Settings) },
@@ -534,8 +543,6 @@ private fun SidebarFooter(
                 .clip(RoundedCornerShape(WontonTheme.radii.pill))
                 .background(colors.primary.toColor())
                 .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
                     enabled = interactive,
                     role = Role.Button,
                     onClick = { onGo(SidebarDestination.NewChat) },

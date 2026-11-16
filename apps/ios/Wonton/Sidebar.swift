@@ -19,12 +19,13 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     @ViewBuilder let panel: Panel
     @State private var drag: CGFloat = 0
     @State private var isDragging = false
+    @GestureState private var gestureActive = false
     @State private var tapCancelled = false
     @Environment(\.wontonColors) private var colors
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let widthRatio: CGFloat = 0.82
-    private let edgeWidth: CGFloat = 20
+    private var edgeWidth: CGFloat { WontonTheme.gesture.edgeWidth }
 
     var body: some View {
         GeometryReader { geometry in
@@ -41,21 +42,37 @@ struct SidebarContainer<Main: View, Panel: View>: View {
                     .accessibilityHidden(!isOpen)
                 main
                     .allowsHitTesting(progress == 0)
+                    // Expand only the drawing/clipping bounds; the paired padding keeps native content
+                    // in its original safe bounds, including safeAreaBar and scroll-edge effects.
+                    .padding(geometry.safeAreaInsets)
+                    .background(Color(colors.canvas))
                     .overlay { scrim(progress) }
                     .clipShape(RoundedRectangle(cornerRadius: 40 * progress, style: .continuous))
                     .shadow(color: .black.opacity(0.18 * progress), radius: 24, x: -4)
                     .scaleEffect(1 - 0.06 * progress, anchor: .leading)
                     .offset(x: width * progress)
+                    .padding(EdgeInsets(
+                        top: -geometry.safeAreaInsets.top,
+                        leading: -geometry.safeAreaInsets.leading,
+                        bottom: -geometry.safeAreaInsets.bottom,
+                        trailing: -geometry.safeAreaInsets.trailing
+                    ))
                 if edgeSwipe, !isOpen {
                     Color.clear
                         .frame(width: edgeWidth)
                         .contentShape(Rectangle())
-                        .gesture(dragGesture(width: width))
+                        .gesture(dragGesture())
                 }
             }
-            .simultaneousGesture(dragGesture(width: width), including: isOpen ? .all : .subviews)
+            .simultaneousGesture(dragGesture(), including: isOpen ? .all : .subviews)
         }
         .sensoryFeedback(.impact(weight: .light), trigger: isOpen)
+        .onChange(of: gestureActive) { _, active in
+            guard !active, isDragging else { return }
+            isDragging = false
+            set(open: isOpen)
+            clearCancelledTap()
+        }
     }
 
     private func progress(width: CGFloat) -> CGFloat {
@@ -75,8 +92,9 @@ struct SidebarContainer<Main: View, Panel: View>: View {
     }
 
     /// 跟手：松开时按位置和速度决定打开还是弹回去。
-    private func dragGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
+    private func dragGesture() -> some Gesture {
+        DragGesture(minimumDistance: WontonTheme.gesture.dragSlop, coordinateSpace: .global)
+            .updating($gestureActive) { _, active, _ in active = true }
             .onChanged { value in
                 guard abs(value.translation.width) > abs(value.translation.height) || isDragging else { return }
                 isDragging = true
@@ -88,15 +106,23 @@ struct SidebarContainer<Main: View, Panel: View>: View {
             .onEnded { value in
                 guard isDragging else { return }
                 isDragging = false
-                let projected = (isOpen ? width : 0) + value.predictedEndTranslation.width
-                set(open: projected > width / 2)
-                // 抬手时按钮动作和拖动的 onEnded 先后不定：留一小段窗口让被取消的点按落进来；
-                // 窗口过了点按照常。拖动还在走时标记会被 onChanged 立刻置回。
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(350))
-                    tapCancelled = false
-                }
+                let direction: CGFloat = isOpen ? -1 : 1
+                let commits = WontonGesture.commits(
+                    distance: direction * value.translation.width,
+                    velocity: direction * value.velocity.width,
+                    threshold: WontonTheme.gesture.swipeDistance
+                )
+                set(open: commits ? !isOpen : isOpen)
+                clearCancelledTap()
             }
+    }
+
+    private func clearCancelledTap() {
+        // Keep the cancelled tap suppressed through the release event, including native cancellation.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(350))
+            if !isDragging { tapCancelled = false }
+        }
     }
 
     private func set(open: Bool) {
@@ -113,6 +139,7 @@ struct SidebarPanel: View {
     let plugins: PluginsModel
     let current: TabRef
     let navigate: (SidebarDestination) -> Void
+    var appsOnly = false
     @Environment(PagesModel.self) private var pages
     @Environment(\.wontonColors) private var colors
     @Environment(\.wontonSidebarTapCancelled) private var tapCancelled
@@ -125,34 +152,40 @@ struct SidebarPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-                .padding(.horizontal, WontonTheme.spacing.s24)
-                .padding(.top, WontonTheme.spacing.s16)
-                .padding(.bottom, WontonTheme.spacing.s24)
+            if !appsOnly {
+                header
+                    .padding(.horizontal, WontonTheme.spacing.s24)
+                    .padding(.top, WontonTheme.spacing.s16)
+                    .padding(.bottom, WontonTheme.spacing.s24)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: WontonTheme.spacing.s4) {
-                    SidebarRow(title: TabText.chat, selected: current == .chat) {
-                        (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
-                    } action: { openDestination(.chat) }
-                    SidebarRow(
-                        title: String(localized: .Store.storeTitle),
-                        badge: Int(sidebar.updates),
-                        selected: false
-                    ) {
-                        WontonIcon.store.view()
-                    } action: { openDestination(.store) }
+                    if !appsOnly {
+                        SidebarRow(title: TabText.chat, selected: current == .chat) {
+                            (current == .chat ? WontonIcon.chatFill : WontonIcon.chat).view()
+                        } action: { openDestination(.chat) }
+                        SidebarRow(
+                            title: String(localized: .Store.storeTitle),
+                            badge: Int(sidebar.updates),
+                            selected: false
+                        ) {
+                            WontonIcon.store.view()
+                        } action: { openDestination(.store) }
+                    }
                     myApps
                 }
                 .padding(.horizontal, WontonTheme.spacing.s12)
             }
             .scrollIndicators(.hidden)
-            footer
-                .padding(.horizontal, WontonTheme.spacing.s16)
-                .padding(.vertical, WontonTheme.spacing.s12)
+            if !appsOnly {
+                footer
+                    .padding(.horizontal, WontonTheme.spacing.s16)
+                    .padding(.vertical, WontonTheme.spacing.s12)
+            }
         }
         .task {
-            plugins.refresh(.refreshPlugins)
-            plugins.refresh(.refreshStore(force: false))
+            plugins.refresh(.plugins(action: .refreshPlugins))
+            plugins.refresh(.plugins(action: .refreshStore(force: false)))
         }
     }
 
@@ -193,7 +226,9 @@ struct SidebarPanel: View {
             SidebarRow(
                 title: app.title,
                 selected: selected(app),
-                badgeMark: SidebarBadgeMark(update: app.badge.update, problem: app.badge.problem)
+                badgeMark: SidebarBadgeMark(
+                    update: app.badge.update, problem: app.badge.problem, stopped: app.badge.stopped
+                )
             ) {
                 PluginIconView(icon: app.icon, size: 28, model: plugins)
             } action: {
@@ -206,7 +241,7 @@ struct SidebarPanel: View {
                 Text(TabText.syncStale)
                     .wontonText(WontonTheme.typography.supporting)
                 Spacer(minLength: 0)
-                Button(TabText.syncStaleRetry) { pages.send(.retryMyAppSync) }
+                Button(TabText.syncStaleRetry) { pages.send(.pages(action: .retryMyAppSync)) }
                     .buttonStyle(WontonSmallButtonStyle())
             }
             .padding(.horizontal, WontonTheme.spacing.s12)
@@ -225,15 +260,16 @@ struct SidebarPanel: View {
 
     /// 长按：这一插件的每一页，加进或移出“我的应用”。
     @ViewBuilder private func myAppMenu(_ app: SidebarApp) -> some View {
+        if case let .page(tab) = app.open { ContentWindowButton(target: .tab(tab: tab)) }
         let plugin = plugins.viewModel.installed?.plugins.first { $0.id == app.pluginId }
         let mine = sidebar.apps.compactMap(\.tab)
         ForEach(plugin?.tabChoices ?? []) { choice in
             let added = mine.contains(choice.tab)
             Button {
                 if added {
-                    pages.send(.removeMyApp(app: .page(tab: choice.tab)))
+                    pages.send(.pages(action: .removeMyApp(app: .page(tab: choice.tab))))
                 } else {
-                    pages.send(.addMyApp(app: .page(tab: choice.tab), title: nil, index: nil))
+                    pages.send(.pages(action: .addMyApp(app: .page(tab: choice.tab), title: nil, index: nil)))
                 }
             } label: {
                 Label(
@@ -306,10 +342,11 @@ enum SidebarDestination {
     case app(SidebarApp)
 }
 
-/// 行尾两个红点的来源，分开画。
+/// 行尾各个独立状态的来源，分开画。
 struct SidebarBadgeMark {
     var update = false
     var problem = false
+    var stopped = false
 }
 
 private struct SidebarRow<Icon: View>: View {
@@ -332,6 +369,11 @@ private struct SidebarRow<Icon: View>: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if let badgeMark {
+                    if badgeMark.stopped {
+                        WontonIcon.pauseFill.view(size: WontonTheme.size.iconSmall)
+                            .foregroundStyle(Color(colors.textSecondary))
+                            .accessibilityLabel(String(localized: .Launcher.launcherBadgeStopped))
+                    }
                     if badgeMark.update {
                         Circle().fill(Color(colors.danger)).frame(width: 8, height: 8)
                             .accessibilityLabel(String(localized: .Sidebar.sidebarUpdatable))

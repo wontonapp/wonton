@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use hyper::{HeaderMap, StatusCode};
 use wonton_protocol::{
-    FamilyAccess, Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
+    Member, MemberInvite, MemberList, MemberPairingCode, MemberRemoval, MemberStatus,
 };
 
 use super::api::{error_response, languages};
@@ -282,8 +282,7 @@ pub async fn void_pairing_code(
     }
 }
 
-/// `POST member_removal_path(username)`：移除家人。吊销他的所有设备（隧道连接立即断开），状态改成
-/// “已移除”，作废他的码。停用 Matrix 账号、删 Bot、删私人空间是后续任务，按事件订阅。
+/// 移除先吊销设备、保存收尾选项，再同步家庭群、私人 Bot、账号和私人空间；失败可重试。
 pub async fn remove(
     State(gateway): State<Arc<Gateway>>,
     peer: Option<Extension<TunnelPeer>>,
@@ -303,58 +302,25 @@ pub async fn remove(
             return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
         }
     };
+    let _sync = gateway.member_sync.lock().await;
     if gateway.members.get(&username).is_none() {
         return members_error(MembersError::NotFound(username));
-    }
-    for device in gateway.tunnel.devices.of_user(&username) {
-        if let Err(e) = devices::revoke_device(&gateway, &device.id) {
-            return devices::storage_error(&e);
-        }
     }
     match gateway
         .members
         .remove(&username, removal.delete_home, removal.keep_bot_data)
     {
-        Ok(record) => match super::family_room::synchronize(&gateway, &headers).await {
-            None => Json(to_member(&record)).into_response(),
+        Ok(_) => match super::family_private::synchronize_locked(&gateway, &headers).await {
+            None => Json(to_member(
+                &gateway
+                    .members
+                    .get(&username)
+                    .expect("member tombstone retained"),
+            ))
+            .into_response(),
             Some(response) => response,
         },
         Err(e) => members_error(e),
-    }
-}
-
-/// `PUT plugin_family_path(id)`：更新插件记录的 `family` 标记，不改变角色授权。
-pub async fn set_plugin_family(
-    State(gateway): State<Arc<Gateway>>,
-    peer: Option<Extension<TunnelPeer>>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    body: Bytes,
-) -> Response {
-    if let Some(denied) =
-        permissions::require(&gateway, peer, &headers, PermissionItem::ManageMembers)
-    {
-        return denied;
-    }
-    let Ok(id) = crate::plugin::PluginId::parse(&id) else {
-        return error_response(StatusCode::NOT_FOUND, "not_found", "没有安装这个应用");
-    };
-    let access: FamilyAccess = match serde_json::from_slice(&body) {
-        Ok(access) => access,
-        Err(e) => {
-            let message = format!("请求体不是“家人能用”的开关：{e}");
-            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &message);
-        }
-    };
-    match gateway
-        .plugins
-        .set_family(&id, access.enabled, &super::api::languages(&headers))
-    {
-        Ok(plugin) => {
-            tracing::info!(plugin = %id, enabled = access.enabled, "改“家人能用”的开关");
-            Json(plugin).into_response()
-        }
-        Err(e) => super::api::install_error(&e),
     }
 }
 

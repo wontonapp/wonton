@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import app.wonton.client.ClientCore
+import app.wonton.protocol.HomeAction
 import app.wonton.protocol.Action
 import app.wonton.protocol.HomeStatus
 import app.wonton.ui.design.WontonTheme
@@ -27,6 +28,7 @@ fun WontonApp(
     onCardsSettled: (String, List<String>) -> Unit = { _, _ -> },
     requestedLink: AppLinkRequest? = null,
     shareIntake: ShareIntake = remember { ShareIntake() },
+    onContactRequests: (String, List<String>) -> Unit = { _, _ -> },
 ) {
     val servers by remember(core) { core.serversUpdates() }.collectAsState(remember(core) { core.servers() })
     val appearance by remember(core) { core.appearanceUpdates() }.collectAsState(remember(core) { core.appearance() })
@@ -38,7 +40,7 @@ fun WontonApp(
         ready = null
         val request = requestedRoom ?: return@LaunchedEffect
         if (core.servers().servers.none { it.id == request.serverId && it.current }) {
-            val problem = core.send(Action.SwitchServer(request.serverId))
+            val problem = core.send(Action.Home(HomeAction.SwitchServer(request.serverId)))
             if (problem != null) {
                 rejection = problem
                 onRoomRequestHandled()
@@ -58,15 +60,21 @@ fun WontonApp(
         if (ready == null) onRoomRequestHandled()
     }
     val serverId = servers.servers.firstOrNull { it.current }?.id
-    CompositionLocalProvider(LocalServers provides servers) {
-        key(serverId, servers.adding) {
-            ServerApp(
-                core, devWebUrl, ready?.takeIf { it.serverId == serverId }, onRoomRequestHandled,
-                onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
-                requestedLink = requestedLink,
-                shareIntake = shareIntake,
-            )
+    WontonTheme(appearance) {
+        // 锁页盖在整棵树上：深链、设置页和插件网页都挡得住（ADR-0102）。
+        AppLockGate(core) {
+            CompositionLocalProvider(LocalServers provides servers) {
+                key(serverId, servers.adding) {
+                    ServerApp(
+                        core, devWebUrl, ready?.takeIf { it.serverId == serverId }, onRoomRequestHandled,
+                        onCardsSettled = { cards -> serverId?.let { onCardsSettled(it, cards) } },
+                        requestedLink = requestedLink,
+                        shareIntake = shareIntake,
+                        onContactRequests = { active -> serverId?.let { onContactRequests(it, active) } },
+                    )
+                }
+            }
         }
+        rejection?.let { ProblemDialog(it) { rejection = null } }
     }
-    WontonTheme(appearance) { rejection?.let { ProblemDialog(it) { rejection = null } } }
 }

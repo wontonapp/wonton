@@ -1,5 +1,6 @@
 #if DEBUG
 import SwiftUI
+import UIKit
 import WontonClient
 
 @testable import Wonton
@@ -15,6 +16,18 @@ enum SnapshotFixtures {
     /// 固定的消息时刻，2024-03-08 09:41 UTC。取一年以前，时间永远落在“年月日”这一档，
     /// 不会随运行日期变成“昨天”或星期几；格式化按工作流设的 TZ=UTC 和 en_US。
     static let timestampMs: UInt64 = 1_709_890_860_000
+
+    /// 带 Home 条的竖屏 iPhone 的系统栏高度（状态栏 47、Home 条 34）。
+    static let safeArea = UIEdgeInsets(top: 47, left: 0, bottom: 34, right: 0)
+
+    /// 侧边栏容器配不画底的主内容和面板：系统栏那两条是什么颜色，只看容器自己铺的底。
+    static func sidebar(isOpen: Bool) -> some View {
+        SidebarContainer(isOpen: .constant(isOpen), edgeSwipe: false) {
+            Text("Chats").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        } panel: {
+            Text("Sidebar").frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
+    }
 
     /// 外观、语言和字号都钉死：参考图不能受模拟器的系统设置影响。
     static func wrapped<V: View>(_ view: V) -> some View {
@@ -39,6 +52,20 @@ enum SnapshotFixtures {
     static func chatList(core: ClientCore) -> some View {
         ChatListView(model: chatModel(core: core), plugins: PluginsModel(core: core))
             .environment(PagesModel(core: core))
+            .environment(\.wontonOpenSidebar, {})
+    }
+
+    static func wideChat(core: ClientCore) -> some View {
+        let model = chatModel(core: core)
+        let plugins = PluginsModel(core: core)
+        return NavigationSplitView(columnVisibility: .constant(.all)) {
+            ChatListView(model: model, plugins: plugins, listOnly: true)
+                .navigationSplitViewColumnWidth(320)
+        } detail: {
+            ChatDetailView(model: model, plugins: plugins)
+        }
+        .navigationSplitViewStyle(.balanced)
+        .environment(PagesModel(core: core))
     }
 
     static func chatRoom(core: ClientCore) -> some View {
@@ -50,7 +77,15 @@ enum SnapshotFixtures {
                     core: core, showsSender: true)
                 row(message(id: "m2", sender: "Owner", isOwn: true,
                             text: "Good. Bring the tables to the drawing room tomorrow.",
-                            readBy: ["Ada Lovelace"]),
+                            readBy: ["Ada Lovelace"], receipt: .read),
+                    core: core, showsSender: true)
+                row(TimelineItem(id: "run", content: .agentRun(
+                    run: nil, state: .done, step: nil, steps: 3, progress: nil,
+                    result: "Checked the card sequence", end: nil, body: "", cardId: nil, choices: [],
+                    senderName: "Ada Lovelace"
+                )), core: core, showsSender: false)
+                row(message(id: "m3", sender: "Owner", isOwn: true, text: "And the punched cards.",
+                            minutesLater: 40, receipt: .delivered, startsTimeGroup: true),
                     core: core, showsSender: true)
                 row(TimelineItem(id: "read", content: .readMarker), core: core, showsSender: false)
             }
@@ -64,9 +99,10 @@ enum SnapshotFixtures {
         SettingsTab(
             model: settingsModel(core: core),
             appearance: AppearanceModel(core: core),
+            appLock: AppLockModel(core: core),
             chat: ChatModel(core: core),
             home: HomeModel(core: core),
-            plugins: PluginsModel(core: core)
+            plugins: PluginsModel(core: core), isModal: true
         )
         .environment(OnboardingModel(core: core))
         // 版本号钉死：设置页直接读 Bundle 版本，不钉的话参考图随无 tag 的 Debug 构建漂（构建号 1→0）。
@@ -118,63 +154,6 @@ enum SnapshotFixtures {
         }
     }
 
-    // MARK: 系统入口（ADR-0100）的小组件
-
-    /// 小组件的假快照，数据同 Android 的 WidgetSnapshotsTest。更新时刻钉在“1 分钟前”：
-    /// 底部相对时间（`Text(date, style: .relative)`）渲染成“1 minute ago”，参考图不随日期漂移。
-    /// 颜色按 ADR-0026 默认浅色的令牌值写死（扩展侧的 Palette 不链接核心，测试替身照抄协议的 JSON）。
-    static func entrySnapshot(account: EntrySnapshot.Account = .signedIn) -> EntrySnapshot {
-        let palette = EntrySnapshot.Palette(
-            surface: EntrySnapshot.RGB(red: 255, green: 255, blue: 255),
-            textPrimary: EntrySnapshot.RGB(red: 17, green: 17, blue: 17),
-            textSecondary: EntrySnapshot.RGB(red: 94, green: 94, blue: 94),
-            accentFill: EntrySnapshot.RGB(red: 254, green: 235, blue: 234),
-            accentInk: EntrySnapshot.RGB(red: 155, green: 73, blue: 74),
-            accentInkOnFill: EntrySnapshot.RGB(red: 155, green: 73, blue: 74)
-        )
-        return EntrySnapshot(
-            version: 1,
-            updatedAtMs: UInt64((Date.now.addingTimeInterval(-90)).timeIntervalSince1970 * 1_000),
-            account: account,
-            unreadTotal: 5,
-            rooms: [
-                EntrySnapshot.Room(
-                    roomId: "!family:home.example", name: "Family", unreadCount: 3,
-                    preview: EntrySnapshot.Preview(
-                        senderName: "Ann", isOwn: false,
-                        body: EntrySnapshot.PreviewBody(type: "text", text: "Dinner at seven?", title: nil, state: nil)
-                    )
-                ),
-                EntrySnapshot.Room(
-                    roomId: "!hermes:home.example", name: "Hermes", unreadCount: 2,
-                    preview: EntrySnapshot.Preview(
-                        senderName: "Hermes", isOwn: false,
-                        body: EntrySnapshot.PreviewBody(type: "text", text: "Here's the summary you asked for.", title: nil, state: nil)
-                    )
-                ),
-                EntrySnapshot.Room(
-                    roomId: "!research:home.example", name: "Research", unreadCount: 0,
-                    preview: EntrySnapshot.Preview(
-                        senderName: "Hermes", isOwn: false,
-                        body: EntrySnapshot.PreviewBody(type: "side_chat", text: nil, title: "Research", state: "done")
-                    )
-                ),
-                EntrySnapshot.Room(
-                    roomId: "!ann:home.example", name: "Ann", unreadCount: 0,
-                    preview: EntrySnapshot.Preview(
-                        senderName: "Me", isOwn: true,
-                        body: EntrySnapshot.PreviewBody(type: "text", text: "See you tomorrow", title: nil, state: nil)
-                    )
-                ),
-                EntrySnapshot.Room(roomId: "!trip:home.example", name: "Trip planning", unreadCount: 0, preview: nil),
-            ],
-            defaultAgent: EntrySnapshot.Agent(name: "Hermes", activity: "working", unreadCount: 2),
-            plugins: [EntrySnapshot.Plugin(pluginId: "immich", title: "Immich")],
-            light: palette,
-            dark: palette
-        )
-    }
-
     static func widget(
         kind: EntryWidgetView.Kind,
         family: EntryWidgetView.Family,
@@ -196,18 +175,20 @@ enum SnapshotFixtures {
     }
 
     private static func message(
-        id: String, sender: String, isOwn: Bool, text: String, readBy: [String] = []
+        id: String, sender: String, isOwn: Bool, text: String, readBy: [String] = [],
+        minutesLater: UInt64 = 0, receipt: MessageReceipt? = nil, startsTimeGroup: Bool = false
     ) -> TimelineItem {
         let senderId = isOwn ? "@owner:home.example" : "@ada:home.example"
         return TimelineItem(id: id, content: .message(message: TimelineMessage(
             eventId: "$\(id):home.example", senderId: senderId, senderName: sender, isOwn: isOwn,
-            timestampMs: timestampMs, sendState: .sent,
+            timestampMs: timestampMs + minutesLater * 60_000, sendState: .sent,
             body: .text(body: text, blocks: [
                 RichBlock(kind: .paragraph, depth: 0, quoted: false, spans: [
                     RichSpan(text: text, bold: false, italic: false, code: false, strike: false, link: nil)
                 ])
             ], files: []),
-            edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)]
+            edited: false, readBy: readBy, reply: nil, sideChat: nil, preview: nil, actions: [.copy(text: text)],
+            receipt: receipt, startsTimeGroup: startsTimeGroup
         )))
     }
 
@@ -220,7 +201,7 @@ enum SnapshotFixtures {
                 details: ConnectionDetails(
                     network: nil, relay: .unknown, server: .unknown, lastConnectedAtMs: nil,
                     handshakeMs: nil, disconnects: 0, failedDials: 0, sentPackets: 0, lostPackets: 0,
-                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil,
+                    quality: .unknown, lossPerMille: nil, rttMs: nil, lastFailure: nil, diagnostic: nil,
                     addressesStale: false, udpFlows: [], udpBufferEvictedDatagrams: nil
                 ),
                 proxy: nil, webUrl: nil, pairing: nil, invite: nil, keepConnection: false, justRecovered: false
@@ -282,6 +263,76 @@ enum SnapshotFixtures {
             ]),
             SettingsSection(entries: [.about])
         ]))
+    }
+
+}
+extension SnapshotFixtures {
+    // MARK: 系统入口（ADR-0100）的小组件
+
+    /// 小组件的假快照，数据同 Android 的 WidgetSnapshotsTest。更新时刻钉在“1 分钟前”：
+    /// 底部相对时间（`Text(date, style: .relative)`）渲染成“1 minute ago”，参考图不随日期漂移。
+    /// 颜色按 ADR-0026 默认浅色的令牌值写死（扩展侧的 Palette 不链接核心，测试替身照抄协议的 JSON）。
+    static func entrySnapshot(account: EntrySnapshot.Account = .signedIn) -> EntrySnapshot {
+        let palette = EntrySnapshot.Palette(
+            surface: EntrySnapshot.RGB(red: 255, green: 255, blue: 255),
+            textPrimary: EntrySnapshot.RGB(red: 17, green: 17, blue: 17),
+            textSecondary: EntrySnapshot.RGB(red: 94, green: 94, blue: 94),
+            accentFill: EntrySnapshot.RGB(red: 254, green: 235, blue: 234),
+            accentInk: EntrySnapshot.RGB(red: 155, green: 73, blue: 74),
+            accentInkOnFill: EntrySnapshot.RGB(red: 155, green: 73, blue: 74)
+        )
+        return EntrySnapshot(
+            version: 1,
+            updatedAtMs: UInt64((Date.now.addingTimeInterval(-90)).timeIntervalSince1970 * 1_000),
+            account: account,
+            unreadTotal: 5,
+            rooms: [
+                EntrySnapshot.Room(
+                    roomId: "!family:home.example", name: "Family", unreadCount: 3,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Ann", isOwn: false,
+                        body: EntrySnapshot.PreviewBody(type: "text", text: "Dinner at seven?", title: nil, state: nil)
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!hermes:home.example", name: "Hermes", unreadCount: 2,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Hermes", isOwn: false,
+                        body: EntrySnapshot.PreviewBody(
+                            type: "text", text: "Here's the summary you asked for.", title: nil, state: nil
+                        )
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!research:home.example", name: "Research", unreadCount: 0,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Hermes", isOwn: false,
+                        body: EntrySnapshot.PreviewBody(type: "side_chat", text: nil, title: "Research", state: "done")
+                    )
+                ),
+                EntrySnapshot.Room(
+                    roomId: "!ann:home.example", name: "Ann", unreadCount: 0,
+                    preview: EntrySnapshot.Preview(
+                        senderName: "Me", isOwn: true,
+                        body: EntrySnapshot.PreviewBody(type: "text", text: "See you tomorrow", title: nil, state: nil)
+                    )
+                ),
+                EntrySnapshot.Room(roomId: "!trip:home.example", name: "Trip planning", unreadCount: 0, preview: nil)
+            ],
+            defaultAgent: EntrySnapshot.Agent(name: "Hermes", activity: "working", unreadCount: 2),
+            plugins: [EntrySnapshot.Plugin(pluginId: "immich", title: "Immich")],
+            light: palette,
+            dark: palette
+        )
+    }
+}
+
+#Preview("Wide chat") {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("wide-chat-preview")
+    if let core = try? ClientCore(dataDir: directory.path) {
+        SnapshotFixtures.wrapped(SnapshotFixtures.wideChat(core: core))
+            .environment(\.horizontalSizeClass, .regular)
+            .frame(width: 1194, height: 834)
     }
 }
 #endif

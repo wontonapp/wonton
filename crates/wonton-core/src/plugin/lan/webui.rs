@@ -257,7 +257,7 @@ impl PluginManager {
             .load(id)?
             .ok_or_else(|| InstallError::not_installed(langs, id))?;
         record.lan_webui = enabled;
-        self.store.save(&record)?;
+        self.store.save_metadata(&record)?;
         let mut package = PluginPackage::with_files(&record.source, record.files.clone(), langs)?;
         package.origin = record.origin.clone();
         self.rebuild_lan(&package, &record, plan).await?;

@@ -11,19 +11,17 @@ use wonton_protocol::InstallStage;
 
 use super::super::bots::is_bot;
 use super::super::compose::PullPolicy;
-use super::super::gpu::GpuGrant;
 use super::super::health_gate::Gate;
-use super::super::lan::LanGrant;
 use super::super::lan::webui::switched;
 use super::super::languages::Languages;
 use super::super::lifecycle::volumes::{VolumeAction, volume_action};
-use super::super::lifecycle::{Undo, client_spec};
+use super::super::lifecycle::{Grants, Undo, client_spec};
 use super::super::listed::Listed;
 use super::super::manager::{
     Deployed, Entry, Health, InstallError, PluginManager, PluginStatus, busy, check_permissions,
     now_secs,
 };
-use super::super::manifest::{Manifest, Permission, PluginId, PluginKind};
+use super::super::manifest::{Manifest, ManifestExt, Permission, PluginId, PluginKind};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use wonton_protocol::BotKeeper;
@@ -67,6 +65,7 @@ struct Progress {
 /// 新版本部署要用的，都在旧容器还在跑的时候备好。
 struct Prepared {
     ctx: InstallContext,
+    devices: Vec<super::super::store::InstalledDevice>,
     secrets: Secrets,
     proxy: Option<ProxyAuth>,
     oidc_secret: Option<String>,
@@ -106,6 +105,7 @@ impl PluginManager {
         granted: &[Permission],
         requested: &[EnabledPermission],
         lan_webui: bool,
+        chosen_devices: &[String],
         settings: super::super::settings::Values,
     ) -> Result<(), InstallError> {
         let langs = self.owner_languages();
@@ -122,6 +122,13 @@ impl PluginManager {
             .store
             .load(id)?
             .ok_or_else(|| InstallError::NotInstalled(id.to_string()))?;
+        if record.lifecycle.desired == wonton_protocol::PluginDesiredState::Stopped {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-recovery-owner-stopped",
+                &[],
+            )));
+        }
         let enabled: Vec<EnabledPermission> = requested
             .iter()
             .filter(|item| manifest.optional_permissions.contains_key(&item.permission))
@@ -142,15 +149,18 @@ impl PluginManager {
         self.check_hosted_provider(manifest, &langs)?;
         self.check_requirements(manifest, &langs).await?;
         self.check_egress(manifest, &langs).await?;
-        let gpu = self
-            .gpu_grant(
-                manifest,
-                &manifest.effective_permissions(&super::super::store::permission_set(&enabled)),
-                &langs,
-            )
-            .await?;
+        let effective =
+            manifest.effective_permissions(&super::super::store::permission_set(&enabled));
+        let gpu = self.gpu_grant(manifest, &effective, &langs).await?;
         let lan_webui = lan_webui && switched(&package).is_some();
         let lan = self.lan_grant(&package, lan_webui, &langs).await?;
+        let (devices, device_record) = self.upgrade_devices(
+            manifest,
+            &effective,
+            &record.devices,
+            chosen_devices,
+            &langs,
+        )?;
         let before = self.begin_upgrade(id)?;
         tracing::info!(plugin = %id, version = %manifest.version, "开始升级插件");
         // 放堆上跑：从建容器到对账的一整串都在这条链里，调试构建的帧很大，嵌套两层就够顶满测试线程的 2 MiB 栈。
@@ -158,7 +168,12 @@ impl PluginManager {
             &package,
             granted,
             &enabled,
-            (gpu, lan),
+            Grants {
+                gpu,
+                lan,
+                devices,
+                device_record,
+            },
             settings.clone(),
             &langs,
         ))
@@ -185,6 +200,13 @@ impl PluginManager {
             .ok_or_else(|| InstallError::not_installed(&langs, id))?;
         if let Some(e) = busy(id, &entry.status, &langs) {
             return Err(e);
+        }
+        if self.explicitly_stopped(id)? {
+            return Err(InstallError::Conflict(l10n::text(
+                &langs,
+                "plugin-recovery-owner-stopped",
+                &[],
+            )));
         }
         if !self.lan.begin(id) {
             return Err(InstallError::Conflict(l10n::text(
@@ -262,7 +284,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         langs: &Languages,
     ) -> Outcome {
@@ -357,7 +379,7 @@ impl PluginManager {
         package: &PluginPackage,
         granted: &[Permission],
         enabled: &[EnabledPermission],
-        grants: (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Deployed, InstallError> {
@@ -368,6 +390,7 @@ impl PluginManager {
         let langs = self.owner_languages();
         let Prepared {
             mut ctx,
+            devices,
             mut secrets,
             proxy,
             oidc_secret,
@@ -383,6 +406,7 @@ impl PluginManager {
             let spec = client_spec(manifest, &ctx, secret);
             self.hydra(&langs)?.upsert_client(&spec).await?;
         }
+        self.sync_bot_web_clients(manifest, &ctx).await?;
         self.rewrite_image_healthchecks(&ctx, &mut plan).await?;
         let deadline =
             super::super::health_gate::deadline(&plan, ctx.install_limit, Instant::now());
@@ -406,12 +430,14 @@ impl PluginManager {
             progress.undo.handed_over = self.hand_over_home_room(&self.cfg.owner, bot).await?;
         }
         self.store.save(&InstalledRecord {
+            lifecycle: super::super::recovery::running(),
             id: manifest.id.clone(),
             version: manifest.version.clone(),
             source: package.source.clone(),
             files: package.files().clone(),
             granted_permissions: granted.to_vec(),
             enabled_permissions: enabled.to_vec(),
+            devices,
             limits: old.record.limits,
             lan_webui: ctx.lan.as_ref().is_some_and(|lan| lan.webui),
             relays: plan.relays.clone(),
@@ -420,17 +446,19 @@ impl PluginManager {
             oidc_client_secret: oidc_secret,
             installed_at: old.record.installed_at,
             entry_label: old.record.entry_label.clone(),
+            clients_entries: old.record.clients_entries,
+            setup_done_ever: old.record.setup_done_ever,
             origin: package.origin.clone(),
             // 归属跟着插件走：Agent 更新自己写的插件后还是它写的；App 里经文件或来源升级的清掉（各路径自己做）。
             written_by: old.record.written_by.clone(),
             ask_every_update: old.record.ask_every_update,
-            family: old.record.family,
             settings: ctx.settings.clone().into_iter().collect(),
             settings_changed_ms: old.record.settings_changed_ms,
             static_files: Default::default(),
             hosted: Vec::new(),
             gpu_vendor: ctx.gpu.as_ref().map(|gpu| gpu.vendor),
         })?;
+        self.refresh_bot_web_routes(manifest).await?;
         Ok(Deployed {
             upstream,
             serving: package
@@ -445,6 +473,7 @@ impl PluginManager {
             mcp,
             firewalled,
             hosted: self.hosted_upstreams(manifest, &network).await?,
+            clients: self.clients_upstream(manifest, &plan).await?,
         })
     }
 
@@ -454,11 +483,12 @@ impl PluginManager {
         old: &Old,
         package: &PluginPackage,
         enabled: &[EnabledPermission],
-        (gpu, lan): (Option<GpuGrant>, Option<LanGrant>),
+        grants: Grants,
         settings: super::super::settings::Values,
         progress: &mut Progress,
     ) -> Result<Prepared, InstallError> {
         let manifest = &package.manifest;
+        self.ensure_bot_web_registration(manifest).await?;
         self.stage(&manifest.id, InstallStage::Preparing);
         let oidc_secret = uses_sso(manifest)
             .then(|| old.record.oidc_client_secret.clone())
@@ -481,8 +511,9 @@ impl PluginManager {
             )
             .await?;
         ctx.limits = old.record.limits;
-        ctx.gpu = gpu;
-        ctx.lan = lan;
+        ctx.gpu = grants.gpu;
+        ctx.lan = grants.lan;
+        ctx.devices = Some(grants.devices);
         ctx.settings = settings;
         // 新版本才接入 Matrix 的插件：先代 Bot 登录新设备，模型凭据签发后再把变量填进上下文。
         let mut new_bot = None;
@@ -510,10 +541,18 @@ impl PluginManager {
             .upgrade_model_vars(package, &mut progress.added_models, &langs)
             .await?;
         if let Some(bot) = new_bot {
-            self.fill_default_bot_vars(manifest, &bot, &mut ctx);
+            self.prepare_bot_dependencies(
+                manifest,
+                super::super::bot_services::DEFAULT_BOT,
+                &langs,
+                None,
+            )
+            .await?;
+            self.fill_default_bot_vars(manifest, &bot, &mut ctx)?;
         } else {
             self.fill_bot_vars(package, &mut ctx, &langs).await?;
         }
+        self.fill_bot_web_vars(manifest, &mut ctx)?;
         let mut plan = render(package, &ctx, &langs)?;
         self.prepare_images(&mut plan, Some(&manifest.id), &langs)
             .await?;
@@ -537,6 +576,7 @@ impl PluginManager {
         }
         Ok(Prepared {
             ctx,
+            devices: grants.device_record,
             secrets,
             proxy,
             oidc_secret,
@@ -710,6 +750,7 @@ impl PluginManager {
                 None => {}
             }
         }
+        self.sync_bot_web_clients(manifest, &ctx).await?;
         let mut plan = render(&old.package, &ctx, &langs)?;
         pin_images(&mut plan, &old.images);
         self.replace_containers(&ctx, plan, Gate::StartPeriod)
@@ -723,6 +764,12 @@ impl PluginManager {
         let manifest = &package.manifest;
         let id = &manifest.id;
         let was = &old.package.manifest;
+        if super::super::bot_web_registry::has_bot_web(was)
+            && (!super::super::bot_web_registry::has_bot_web(manifest) || !uses_sso(manifest))
+            && let Err(error) = self.drop_unused_bot_web(manifest).await
+        {
+            tracing::warn!(plugin = %id, %error, "Cannot delete unused Bot web registrations");
+        }
         if let (true, false, Some(hydra)) = (uses_sso(was), uses_sso(manifest), &self.oidc)
             && let Err(e) = hydra.delete_client(id.as_str()).await
         {
@@ -786,15 +833,16 @@ impl PluginManager {
             return;
         }
         let granted = manifest.permissions.clone();
-        if let Err(e) = self
-            .upgrade_checked(
-                package,
-                &granted,
-                &installed.enabled_permissions,
-                installed.lan_webui,
-                installed.settings.clone(),
-            )
-            .await
+        // 和 install_checked 一样：upgrade 子树的状态机搬上堆，默认 2 MiB 测试线程栈装不下整条 await 链。
+        if let Err(e) = Box::pin(self.upgrade_checked(
+            package,
+            &granted,
+            &installed.enabled_permissions,
+            installed.lan_webui,
+            &[],
+            installed.settings.clone(),
+        ))
+        .await
         {
             let from = installed.version;
             tracing::error!(plugin = %id, error = %e, "系统插件升级失败");

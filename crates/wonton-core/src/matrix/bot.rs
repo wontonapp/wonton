@@ -70,33 +70,63 @@ impl std::fmt::Debug for ProvisionedBot {
 impl Matrix {
     /// 代 Bot 登录一台新设备，设置资料，准备好主房间。中途失败时吊销这台设备再返回错误。
     pub async fn provision_bot(&self, spec: &BotSpec<'_>) -> Result<ProvisionedBot, MatrixError> {
+        self.provision_bot_checkpointed(spec, |_| Ok(())).await
+    }
+
+    pub async fn provision_bot_checkpointed(
+        &self,
+        spec: &BotSpec<'_>,
+        mut checkpoint: impl FnMut(&ProvisionedBot) -> Result<(), MatrixError>,
+    ) -> Result<ProvisionedBot, MatrixError> {
         let login = self.login_bot(spec).await?;
-        match self.prepare_bot(spec, &login).await {
-            Ok(home_room) => Ok(ProvisionedBot {
-                account: BotAccount {
-                    user_id: login.user_id,
-                    home_room,
-                },
-                device_id: login.device_id,
-                access_token: login.access_token,
-                owner: self.user_id(spec.owner),
-            }),
-            Err(e) => {
-                if let Err(cleanup) = self.delete_device(&login.user_id, &login.device_id).await {
-                    tracing::error!(user = %login.user_id, error = %cleanup, "吊销没建好的 Bot 设备失败");
+        let mut provisioned = ProvisionedBot {
+            account: BotAccount {
+                user_id: login.user_id.clone(),
+                home_room: spec
+                    .previous
+                    .map(|account| account.home_room.clone())
+                    .unwrap_or_default(),
+            },
+            device_id: login.device_id.clone(),
+            access_token: login.access_token.clone(),
+            owner: self.user_id(spec.owner),
+        };
+        let result = async {
+            checkpoint(&provisioned)?;
+            provisioned.account.home_room = self.prepare_bot(spec, &login).await?;
+            if let Err(error) = checkpoint(&provisioned) {
+                if spec
+                    .previous
+                    .is_none_or(|old| old.home_room != provisioned.account.home_room)
+                {
+                    self.withdraw(&provisioned, &Languages::default()).await?;
                 }
-                Err(e)
+                return Err(error);
             }
+            Ok(())
         }
+        .await;
+        if let Err(error) = result {
+            self.delete_device(&login.user_id, &login.device_id).await?;
+            return Err(error);
+        }
+        Ok(provisioned)
     }
 
     /// 上次的账号直接登录（账号已停用时报错，不悄悄换一个）。没有时按顺序分配一个还没人用过的用户名：JWT 登录对
     /// 已有的账号是直接登录进去，所以已经存在的账号（家人、别的插件的 Bot、停用的账号）一律跳过，不接管。只有这个
     /// 插件记录在案的 Bot（`previous`）能登录已有的账号。
     async fn login_bot(&self, spec: &BotSpec<'_>) -> Result<Login, MatrixError> {
+        let account = self.reserve_bot_account(spec).await?;
+        self.login(localpart(&account.user_id)?, spec.device_name)
+            .await
+    }
+
+    /// Select an unclaimed identity without creating it. The caller persists this reservation
+    /// before JWT login so a failed room/profile operation cannot allocate another account.
+    pub async fn reserve_bot_account(&self, spec: &BotSpec<'_>) -> Result<BotAccount, MatrixError> {
         if let Some(previous) = spec.previous {
-            let localpart = localpart(&previous.user_id)?;
-            return self.login(localpart, spec.device_name).await;
+            return Ok(previous.clone());
         }
         let reserved = [ADMIN_LOCALPART, SERVER_USER_LOCALPART, spec.owner];
         for n in 1..=MAX_CANDIDATES {
@@ -110,7 +140,10 @@ impl Matrix {
             {
                 continue;
             }
-            return self.login(&candidate, spec.device_name).await;
+            return Ok(BotAccount {
+                user_id: self.user_id(&candidate),
+                home_room: String::new(),
+            });
         }
         Err(MatrixError::Invalid(format!(
             "分配 Bot 用户名失败：{0} 到 {0}-{MAX_CANDIDATES} 都已经有人用了",
@@ -121,7 +154,10 @@ impl Matrix {
     /// 设置显示名和头像，返回主房间：上次的主房间还能用（见 [`reusable`]）就沿用，否则新建一个，先只有 Bot 在里面。
     async fn prepare_bot(&self, spec: &BotSpec<'_>, login: &Login) -> Result<String, MatrixError> {
         let bot = self.session(login);
-        if spec.previous.is_none() {
+        if spec
+            .previous
+            .is_none_or(|account| account.home_room.is_empty())
+        {
             bot.set_display_name(spec.display_name).await?;
             if let Some(avatar) = &spec.avatar {
                 bot.set_avatar(avatar.content_type, avatar.filename, avatar.data.to_vec())
@@ -130,11 +166,15 @@ impl Matrix {
         }
         let owner = self.user_id(spec.owner);
         if let Some(previous) = spec.previous
+            && !previous.home_room.is_empty()
             && reusable(&bot, &previous.home_room, &owner).await?
         {
             return Ok(previous.home_room.clone());
         }
-        bot.create_direct_room(&owner).await
+        if let Some(room) = bot.recover_bot_home(&owner).await? {
+            return Ok(room);
+        }
+        bot.create_bot_home(&owner).await
     }
 
     /// 把主房间交给主人：Bot 邀请主人、记进自己的 `m.direct`，核心代主人加入、记进主人的 `m.direct`。主人已经在
@@ -209,7 +249,11 @@ impl Matrix {
 
 /// 上次的主房间能不能接着用：Bot 还在里面，主人也在，或者还没交给过主人（上次安装没装完，主人从来没进过、或者只
 /// 收到了邀请）。主人退出过就不用了，不往没人看的房间里发。Bot 已经不在房间里时 Tuwunel 回 `M_FORBIDDEN`。
-async fn reusable(bot: &Session<'_>, room: &str, owner: &str) -> Result<bool, MatrixError> {
+pub(super) async fn reusable(
+    bot: &Session<'_>,
+    room: &str,
+    owner: &str,
+) -> Result<bool, MatrixError> {
     let members = match bot.joined_members(room).await {
         Ok(members) => members,
         Err(e) if matches!(e.errcode(), "M_FORBIDDEN" | "M_NOT_FOUND") => return Ok(false),

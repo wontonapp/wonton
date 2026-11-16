@@ -123,6 +123,7 @@ async fn a_static_page_lives_in_the_hosted_directory_for_its_whole_life() {
             Vec::new(),
             Vec::new(),
             false,
+            &[],
             &Default::default(),
             &super::langs(),
         )
@@ -257,4 +258,47 @@ async fn a_link_installs_without_containers_or_a_provider() {
         json!("https://example.com/app"),
         "{detail}"
     );
+    // 已装列表也带着网址：壳按它把插件钉进“我的应用”（ADR-0080 第 5 节）。
+    let installed = manager.installed(&super::langs());
+    let installed = serde_json::to_value(&installed).unwrap();
+    assert_eq!(
+        installed["plugins"][0]["link_url"],
+        json!("https://example.com/app"),
+        "{installed}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_static_publication_is_visible_and_retryable_without_becoming_a_consumer() {
+    let (_docker, dir, manager) = with_provider().await;
+    let blocked = dir.path().join("plugins").join(format!("{SNAKE}.json"));
+    std::fs::create_dir(&blocked).unwrap();
+    let page = snake("1.0.0", &[("index.html", "v1")]);
+    let error = manager
+        .install_package(page.clone(), &[], super::langs())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), "storage");
+    assert!(!site(&dir).exists());
+    let failed = manager
+        .judged_detail(&id(SNAKE), &super::langs())
+        .await
+        .unwrap();
+    let failure = serde_json::to_value(failed).unwrap()["installed"]["install_failure"].clone();
+    assert_eq!(failure["kind"], "storage");
+    assert_eq!(failure["stage"], "preparing");
+    assert_eq!(failure["cleanup_errors"], json!([]));
+    assert!(!manager.is_installed(&id(SNAKE)));
+    assert!(manager.route("io-github-alice-snake", "/").is_none());
+    assert!(manager.hosted_users(&id(PROVIDER)).is_empty());
+    std::fs::remove_dir(&blocked).unwrap();
+    manager
+        .install_package(page, &[], super::langs())
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read(site(&dir).join("index.html")).unwrap(), b"v1");
+    let installed = manager
+        .installed_plugin(&id(SNAKE), &super::langs())
+        .unwrap();
+    assert!(installed.install_failure.is_none());
 }

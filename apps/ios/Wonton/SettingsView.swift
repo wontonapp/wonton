@@ -4,6 +4,7 @@ import WontonClient
 struct SettingsTab: View {
     @Bindable var model: SettingsModel
     let appearance: AppearanceModel
+    let appLock: AppLockModel
     let chat: ChatModel
     let home: HomeModel
     let plugins: PluginsModel
@@ -16,22 +17,36 @@ struct SettingsTab: View {
 
     var body: some View {
         NavigationStack(path: $model.path) {
-            SettingsView(model: model, editProfile: { isEditingProfile = true },
-                         chooseAgent: { isChoosingAgent = true })
-                .wontonRootScreen(TabText.settings, hasActions: isModal) {
-                    if isModal { WontonIconButton(icon: .close, label: TabText.close) { dismiss() } }
-                }
-                .navigationDestination(for: SettingsRoute.self, destination: destination)
+            settingsRoot
         }
         .fullScreenCover(isPresented: $isEditingProfile) { OwnerProfileView(model: plugins) }
         .fullScreenCover(isPresented: $isChoosingAgent) { PrimaryAgentPicker(model: onboarding) }
-        .task { try? chat.core.dispatch(action: .refreshFriends) }
+        .task { try? chat.core.dispatch(action: .friends(action: .refreshFriends)) }
         .wontonDialog(problem: home.rejection, isPresented: Binding(
             get: { isActive && home.rejection != nil }, set: { if !$0 && isActive { home.rejection = nil } }
         ))
         .wontonDialog(problem: plugins.rejection, isPresented: Binding(
             get: { isActive && plugins.rejection != nil }, set: { if !$0 && isActive { plugins.rejection = nil } }
         ))
+    }
+
+    @ViewBuilder
+    private var settingsRoot: some View {
+        if isModal {
+            settingsContent
+                .wontonModalScreen(TabText.settings, usesSystemToolbar: true)
+        } else {
+            settingsContent
+                .wontonRootScreen(TabText.settings, hasActions: false) { EmptyView() }
+        }
+    }
+
+    private var settingsContent: some View {
+        SettingsView(
+            model: model, editProfile: { isEditingProfile = true },
+            chooseAgent: { isChoosingAgent = true }
+        )
+        .navigationDestination(for: SettingsRoute.self, destination: destination)
     }
 
     @ViewBuilder private func destination(_ route: SettingsRoute) -> some View {
@@ -49,7 +64,7 @@ struct SettingsTab: View {
                 onBack: { if !model.path.isEmpty { model.path.removeLast() } },
                 onPaired: { if !model.path.isEmpty { model.path.removeLast() } }
             )
-                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain))
+                .wontonPushedScreen(String(localized: .Pairing.pairingTitleAgain), usesSystemToolbar: true)
         case .peers:
             PeersView(core: chat.core, focusRequests: model.peersFocusRequests)
         case .friends: FriendsView(core: chat.core)
@@ -58,10 +73,11 @@ struct SettingsTab: View {
         case .coreUpgrade: CoreUpgradeView(model: plugins)
         case .appearance:
             AppearanceView(model: appearance)
-                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle))
+                .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle), usesSystemToolbar: true)
         case .chatBackup: ChatBackupView(model: chat)
-        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps)
+        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
+        case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()
         }
     }
@@ -78,7 +94,7 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: WontonTheme.spacing.sectionGap) {
                 if let problem = onboarding.rejection ?? onboarding.viewModel.problem?.problem {
-                    ProblemRow(problem: problem) { onboarding.send(.refreshOnboarding) }
+                    ProblemRow(problem: problem) { onboarding.send(.onboarding(action: .refreshOnboarding)) }
                 }
                 ForEach(Array(model.viewModel.sections.enumerated()), id: \.offset) { _, section in
                     WontonGroup {
@@ -132,6 +148,14 @@ struct SettingsView: View {
             NavigationLink(value: SettingsRoute.notifications) {
                 WontonRow(title: String(localized: .Settings.notificationTitle), showsForward: true)
             }
+        case let .appLock(enabled, timeout):
+            NavigationLink(value: SettingsRoute.appLock) {
+                WontonRow(
+                    title: String(localized: .Settings.appLockTitle),
+                    value: enabled ? timeout.label : nil,
+                    showsForward: true
+                )
+            }
         case .defaultAgent:
             Button(action: chooseAgent) {
                 WontonRow(title: String(localized: .Launcher.launcherDefaultAgent), showsForward: true)
@@ -144,7 +168,7 @@ struct SettingsView: View {
                 )
             }
         case .restartOnboarding:
-            Button { onboarding.send(.restartOnboarding) } label: {
+            Button { onboarding.send(.onboarding(action: .restartOnboarding)) } label: {
                 WontonRow(title: String(localized: .Settings.settingsRestartOnboarding))
             }
         case .about:
@@ -198,6 +222,6 @@ private struct AboutView: View {
             }
             .padding(WontonTheme.spacing.pageInset)
         }
-        .wontonPushedScreen(String(localized: .Settings.settingsAbout))
+        .wontonPushedScreen(String(localized: .Settings.settingsAbout), usesSystemToolbar: true)
     }
 }

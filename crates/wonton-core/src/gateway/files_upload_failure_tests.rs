@@ -53,7 +53,7 @@ async fn a_404_from_tusd_halfway_through_placing_waits_for_it() {
         reply.header(hyper::header::HeaderName::from_static("upload-offset")),
         "5"
     );
-    let transfers = home.f.shares_dir.join("transfers");
+    let transfers = home.f.home_dir().join("transfers");
     assert!(transfers.join("a.txt").exists());
     assert!(!transfers.join("a (1).txt").exists());
 }

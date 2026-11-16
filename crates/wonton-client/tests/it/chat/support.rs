@@ -39,6 +39,7 @@ mod friends;
 mod io;
 mod link_preview;
 mod matrix;
+mod plugin_start;
 
 pub use diagnostics::{is_room_list, pending_requests, request_arrived, request_done};
 use endpoint::loopback_endpoint;
@@ -214,6 +215,7 @@ struct Core {
     installed: Mutex<Option<Value>>,
     /// 取已装列表的请求次数。
     installed_requests: AtomicUsize,
+    plugin_starts: plugin_start::Starts,
     /// “等你确认”列表的假数据（ADR-0016）：卡片和 revision 由测试改，改了挂着的取列表请求就回来。
     confirmations: Mutex<FakeConfirmations>,
     /// [`Self::confirmations`] 的 revision，等的一方靠它的事件变化再查。
@@ -300,6 +302,7 @@ impl Home {
             pairing_codes_issued: AtomicUsize::new(0),
             installed: Mutex::default(),
             installed_requests: AtomicUsize::new(0),
+            plugin_starts: plugin_start::Starts::default(),
             confirmations: Mutex::default(),
             confirmations_revision: watch::Sender::new(0),
             failing_confirmations: AtomicUsize::new(0),
@@ -743,8 +746,10 @@ impl Phone {
     }
 
     pub fn connect(&self, home: &Home) {
-        self.dispatch(Action::ConnectHome {
-            ticket: home.ticket(),
+        self.dispatch(Action::Home {
+            action: wonton_protocol::HomeAction::ConnectHome {
+                ticket: home.ticket(),
+            },
         })
         .unwrap();
     }
@@ -792,6 +797,43 @@ impl Phone {
             }
         }
     }
+    /// 同 [`Self::wait_chat_within`]，超时额外带上最后一次视图和完整同步请求序列，供同步注入类测试诊断。
+    pub async fn wait_chat_within_and_sync<R>(
+        &self,
+        home: &Home,
+        what: &str,
+        within: Duration,
+        mut check: impl FnMut(&ChatViewModel) -> Option<R>,
+    ) -> R {
+        let subscription = self.subscribe_chat();
+        let since = std::time::Instant::now();
+        let mut last = None;
+        let waiting = async {
+            while let Some(view) = subscription.next().await {
+                if let Some(found) = check(&view) {
+                    return found;
+                }
+                last = Some(view);
+            }
+            panic!("订阅提前结束");
+        };
+        match tokio::time::timeout(within, waiting).await {
+            Ok(found) => found,
+            Err(_) => {
+                let view = self.chat();
+                let device = match &view.account {
+                    ChatAccount::SignedIn { device_id, .. } => device_id.as_str(),
+                    _ => "",
+                };
+                panic!(
+                    "{what}：{within:?} 内没有等到，当前：{view:#?}\n最后一次视图：{last:#?}\n同步起步：{}\n同步请求：{:#?}\n挂着的请求：{}",
+                    wonton_matrix::last_sync_diagnostic(device),
+                    home.sync_requests(),
+                    pending_requests(since)
+                )
+            }
+        }
+    }
 
     /// 等登录并同步起来，返回用户 ID 和设备 ID。
     pub async fn signed_in(&self) -> (String, String) {
@@ -808,8 +850,10 @@ impl Phone {
 
     /// 这些测试登记推送端点，走的是 UnifiedPush：默认方式是保持连接（ADR-0003），先切过去才登记得了。
     pub async fn use_unified_push(&self) {
-        self.dispatch(Action::SetPushMethod {
-            method: PushMethod::UnifiedPush,
+        self.dispatch(Action::Push {
+            action: wonton_protocol::PushAction::SetPushMethod {
+                method: PushMethod::UnifiedPush,
+            },
         })
         .unwrap();
     }

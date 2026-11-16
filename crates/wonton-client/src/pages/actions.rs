@@ -5,22 +5,27 @@ use super::*;
 impl PagesLink {
     /// 打开一个页面：根页面一路弹回根，已经在栈里的挪到栈顶，其余压栈。
     pub(crate) fn open_page(&self, tab: TabRef) -> Result<(), CoreError> {
+        if matches!(tab, TabRef::Widget { .. }) {
+            return self.open_widget(tab);
+        }
         self.runtime_change(|state, plugins| {
-            if state.root_is(&tab) || tab == TabRef::Apps {
+            if matches!(tab, TabRef::Chat | TabRef::Apps) {
                 state.stack.clear();
+                state.shows_apps = state.paired && tab == TabRef::Apps;
                 return Ok(());
             }
             if !page_available(&tab, plugins) && !matches!(tab, TabRef::Plugin { .. }) {
                 return Err(invalid(&l10n!(CATALOG, language(), "tabs-view-not-a-page")));
             }
             // 列表还没读到时，我的应用里已有的行照样打开：按存的元数据显示，状态页如实说加载中。
-            let item = match stored_item_for_tab(&tab, plugins) {
+            let item = match bot::stored_item_or_plugin(state, &tab, plugins, None) {
                 Ok(item) => item,
                 Err(error @ CoreError::NotReady { .. }) => {
                     stored_item_from_config(&state.config, &tab).ok_or(error)?
                 }
                 Err(error) => return Err(error),
             };
+            state.shows_apps = false;
             if state.stack.last().is_some_and(|open| open.tab == tab) {
                 return Ok(());
             }
@@ -33,6 +38,10 @@ impl PagesLink {
     /// 关掉当前页。
     pub(super) fn close_page(&self) -> Result<(), CoreError> {
         self.runtime_change(|state, _| {
+            if state.shows_apps {
+                state.shows_apps = false;
+                return Ok(());
+            }
             if state.stack.pop().is_none() {
                 return Err(invalid(&l10n!(
                     CATALOG,
@@ -116,7 +125,9 @@ impl PagesLink {
                 // 重新打开：现在装着的、还没加的应用都补进末尾（用户之后还能移除）。
                 if let Some(installed) = &plugins.installed {
                     for plugin in &installed.plugins {
-                        if plugin.web_url.is_none() && plugin.bot_user_id.is_none() {
+                        if plugin.install_failure.is_some()
+                            || (plugin.web_url.is_none() && plugin.bot_user_id.is_none())
+                        {
                             continue;
                         }
                         let app = MyAppRef::Plugin {
@@ -135,6 +146,12 @@ impl PagesLink {
     }
 
     pub(super) fn reload(&self, page: PlacedTab) -> Result<(), CoreError> {
+        if let PlacedTab::Page {
+            tab: tab @ TabRef::Widget { .. },
+        } = &page
+        {
+            return self.reopen_widget(tab.clone());
+        }
         self.runtime_change(|state, _| {
             if !is_web_page(placed_tab_ref(&page)) || !state_has_page(state, &page) {
                 return Err(invalid(&l10n!(
@@ -143,6 +160,7 @@ impl PagesLink {
                     "tabs-page-cannot-reload"
                 )));
             }
+            let page = canonical_page(page);
             state.failures.remove(&page);
             increment_reload(state, &page);
             Ok(())
@@ -168,23 +186,41 @@ impl PagesLink {
                 TabLoadFailure::Upstream
             } else if status.is_none() {
                 TabLoadFailure::Transport
-            } else if !plugin_is_running(tab, plugins) {
+            } else if !plugin_is_running(state, tab, plugins) {
                 TabLoadFailure::PluginNotReady
             } else {
                 TabLoadFailure::Upstream
             };
-            state.failures.insert(page, (failure, status));
+            state
+                .failures
+                .insert(canonical_page(page), (failure, status));
             Ok(())
         })
     }
 
     pub(crate) fn load_succeeded(&self, page: PlacedTab) -> Result<(), CoreError> {
-        // 没有失败记录时什么都不发布：runtime_change 无条件发新状态，会白白唤醒壳。
-        if !lock(&self.state).failures.contains_key(&page) {
-            return Ok(());
+        {
+            let state = lock(&self.state);
+            if !state_has_page(&state, &page) {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bridge-page-not-open"
+                )));
+            }
+            if !state.failures.contains_key(&canonical_page(page.clone())) {
+                return Ok(());
+            }
         }
         self.runtime_change(|state, _| {
-            state.failures.remove(&page);
+            if !state_has_page(state, &page) {
+                return Err(invalid(&l10n!(
+                    CATALOG,
+                    language(),
+                    "tabs-bridge-page-not-open"
+                )));
+            }
+            state.failures.remove(&canonical_page(page));
             Ok(())
         })
     }

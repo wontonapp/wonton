@@ -10,6 +10,7 @@ from pathlib import Path
 import shutil
 import socket
 import sys
+import time
 import ssl
 import subprocess
 import tempfile
@@ -32,7 +33,21 @@ def account(home, username):
 def chat(a, b, alice, bob, label):
     room = a.matrix("/_matrix/client/v3/createRoom", {"preset": "private_chat"}, alice["access_token"])["room_id"]
     path = "/_matrix/client/v3/rooms/" + quote(room, safe="")
-    a.matrix(path + "/invite", {"user_id": bob["user_id"]}, alice["access_token"])
+    # 两端刚配对时对方的签名密钥可能还没拉到，邀请会 403 M_FORBIDDEN（Failed to fetch signing keys）：
+    # 短时间内重试，别的 403 照样抛。
+    def invite():
+        try:
+            return a.matrix(path + "/invite", {"user_id": bob["user_id"]}, alice["access_token"])
+        except (RuntimeError, AssertionError) as error:
+            if "Failed to fetch signing keys" not in str(error):
+                raise
+            return None
+    for _attempt in range(30):
+        if invite() is not None:
+            break
+        time.sleep(5)
+    else:
+        raise RuntimeError("邀请一直拉不到对方的签名密钥")
     b.matrix(path + "/join", {}, bob["access_token"])
     body = label + ":" + os.urandom(8).hex()
     a.matrix(path + "/send/m.room.message/" + os.urandom(8).hex(),

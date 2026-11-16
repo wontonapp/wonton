@@ -31,6 +31,10 @@ pub struct TimelineSubscription {
     updates: Mutex<mpsc::UnboundedReceiver<TimelineUpdate>>,
     cancelled: watch::Sender<bool>,
     scroll: watch::Sender<TimelineScroll>,
+    opening: std::sync::Mutex<Option<super::target::TimelineOpening>>,
+    /// 假数据入口的订阅没有转发任务：发送端留在这里（不读它），通道不关，壳就不会以为房间没了。
+    #[cfg(feature = "ui-fake")]
+    _seeded: Option<mpsc::UnboundedSender<TimelineUpdate>>,
 }
 
 /// 一个房间的时间线订阅要用的部件：房间、能显示的卡片和各路账号数据。[`TimelineSubscription::start`] 一次带走。
@@ -55,7 +59,11 @@ impl TimelineSubscription {
     /// `room_view` 是 tabs 合成的房间面板视图（ADR-0052）：每一批都带上当前值，变了也发一批空的。`chat` 读加密状态，
     /// 决定解不开的消息旁给什么入口。`confirmations` 是这个房间能显示的确认卡片（ADR-0016），出口按
     /// `origin.room_id` 过滤后随每一批带上，变了也发一批空的。
-    pub(crate) fn start(runtime: &Handle, source: TimelineSource) -> Arc<Self> {
+    pub(crate) fn start(
+        runtime: &Handle,
+        source: TimelineSource,
+        opening: super::target::TimelineOpening,
+    ) -> Arc<Self> {
         let TimelineSource {
             room,
             room_id,
@@ -102,7 +110,29 @@ impl TimelineSubscription {
             updates: Mutex::new(receiver),
             cancelled,
             scroll,
+            opening: std::sync::Mutex::new(Some(opening)),
+            #[cfg(feature = "ui-fake")]
+            _seeded: None,
         })
+    }
+
+    /// 假数据入口（`ClientCore::new_ui_fake`）的时间线：只有 `first` 这一批，之后一直等到取消。
+    #[cfg(feature = "ui-fake")]
+    pub(crate) fn seeded(first: TimelineUpdate) -> Arc<Self> {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        // 接收端就在下面，发不出去只会是它已经释放。
+        let _ = sender.send(first);
+        Arc::new(Self {
+            updates: Mutex::new(receiver),
+            cancelled: watch::Sender::new(false),
+            scroll: watch::Sender::new(TimelineScroll::Away),
+            opening: std::sync::Mutex::new(None),
+            _seeded: Some(sender),
+        })
+    }
+
+    pub(super) fn is_active(&self) -> bool {
+        !*self.cancelled.borrow() && !self.cancelled.is_closed()
     }
 
     pub(super) fn is_at_bottom(&self) -> bool {
@@ -124,7 +154,7 @@ impl TimelineSubscription {
         }
     }
 
-    /// 壳报告列表停在哪（[`TimelineAction::SetTimelineScroll`](wonton_protocol::TimelineAction::SetTimelineScroll)）。
+    /// 壳直接向本订阅报告列表位置；同一目标的其他订阅不受影响。
     /// 跨过底部时发一次，下一批更新里带重新算过的位置和新消息数。
     pub fn set_scroll(&self, scroll: TimelineScroll) {
         self.scroll.send_replace(scroll);
@@ -133,8 +163,13 @@ impl TimelineSubscription {
     /// 取消订阅，语义同 `HomeSubscription::cancel`（Swift 的 Task 取消不会传到 Rust）。
     pub fn cancel(&self) {
         self.cancelled.send_replace(true);
+        drop(super::lock(&self.opening).take());
     }
 }
+
+#[cfg(test)]
+#[path = "room_lifecycle_tests.rs"]
+mod room_lifecycle_tests;
 
 /// 每一批随增量带出去的外壳状态：翻页状态、壳报告的滚动位置、未读数。位置只在壳报告到底时变成
 /// [`TimelineScroll::Bottom`]，未读数从那一刻起不再算数（到底了就是 0）。
@@ -146,6 +181,9 @@ struct View {
     sent_unread: u32,
     /// 上一批送出去的加密入口：加密状态变了时入口跟着变才补发一批，没变不重复发。
     notice: Option<KeyNotice>,
+    /// 房间里有没有人在通话（`m.call.member`），和上一批送出去的：变了补发一批（ADR-0096）。
+    call: bool,
+    sent_call: bool,
 }
 
 impl View {
@@ -160,6 +198,7 @@ impl View {
 
     async fn refresh_unread(&mut self, room: &ChatRoom) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
+        self.call = room.call_active();
     }
 }
 
@@ -233,7 +272,10 @@ async fn forward(
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => return,
                     }
-                    if view.scroll == TimelineScroll::Bottom || view.unread == view.sent_unread {
+                    view.call = room.call_active();
+                    let unread_moved =
+                        view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
+                    if !unread_moved && view.call == view.sent_call {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
@@ -375,6 +417,8 @@ async fn start_batch(
         unread: 0,
         sent_unread: 0,
         notice: None,
+        call: false,
+        sent_call: false,
     };
     view.refresh_unread(room).await;
     let position = read_index(room, entries).await;
@@ -632,7 +676,7 @@ fn log_rebuild(room: &ChatRoom, reason: &'static str, missed: Option<&MissedEven
     }
 }
 
-/// “已读”换了地方时，换下来和换上去的两条各发一个 `Set`。
+/// “已读”“已送达”换了地方、上方该不该写时间变了的条目，各发一个 `Set`。
 fn move_read_mark(
     entries: &Vector<TimelineEntry>,
     read: &mut ReadMark,
@@ -647,7 +691,7 @@ fn move_read_mark(
     let diffs = entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| read.marks(&entry.id) || now.marks(&entry.id))
+        .filter(|(_, entry)| read.of_entry(&entry.id) != now.of_entry(&entry.id))
         .map(|(index, entry)| TimelineDiff::Set {
             index: u32::try_from(index).unwrap_or(u32::MAX),
             item: timeline_item(entry.clone(), &now, links, bots, previews),
@@ -700,7 +744,15 @@ fn send(
 ) -> Result<(), ()> {
     view.sent_unread = view.unread;
     view.notice = sender.key_notice(entries);
-    sender.send(entries, diffs, view.status, view.viewport(), anchor)
+    view.sent_call = view.call;
+    sender.send(
+        entries,
+        diffs,
+        view.status,
+        view.viewport(),
+        anchor,
+        view.call,
+    )
 }
 
 /// 本账号已读位置在 `entries` 里的下标：回执指着的事件不在这一批里时为空。
