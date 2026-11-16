@@ -292,7 +292,6 @@ plugin-settings-models-gateway-not-running = 模型閘道 { $id } 沒在執行
 plugin-settings-models-gateway-absent = 沒有安裝模型閘道（宣告 provides.models 的系統應用程式）
 plugin-settings-models-revoke-not-running = 模型閘道沒在執行，吊銷不了 { $id } 的憑證
 plugin-settings-models-revoke-provider-not-running = 模型閘道 { $provider } 沒在執行，吊銷不了 { $id } 的憑證
-plugin-settings-models-reconcile-failed = 模型閘道憑證對帳失敗：{ $error }
 plugin-settings-models-credential-rejected = 模型閘道 { $provider } 不認家用伺服器簽發的憑證 { $name }：簽發後請求模型清單仍然 401
 plugin-settings-models-unreachable = 模型閘道 { $provider } 連不上：{ $error }
 plugin-settings-models-list-error = 模型閘道 { $provider } 回答模型清單時出錯：HTTP { $status }
@@ -302,6 +301,10 @@ plugin-settings-models-list-malformed = 模型閘道 { $provider } 的模型清�
 plugin-settings-models-connect-first = 先在「模型設定」接上模型，Bot 才能回覆。
 plugin-settings-models-not-ready = 模型閘道 { $provider } 未就緒：{ $error }
 plugin-settings-models-command-rejected = 模型閘道 { $provider } 拒絕了憑證命令（{ $command }，結束代碼 { $code }）：{ $stderr }
+
+plugin-settings-models-command-outcome-unknown = 模型閘道上一次憑證命令的結果還沒確定
+plugin-settings-models-credential-container-missing = 模型閘道 { $gateway } 的憑證容器不存在
+plugin-settings-models-credential-missing = 模型閘道使用方 { $id } 缺少憑證 { $name }
 
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 

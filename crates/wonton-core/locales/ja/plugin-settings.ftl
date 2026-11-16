@@ -292,7 +292,6 @@ plugin-settings-models-gateway-not-running = モデルゲートウェイ{ $id }�
 plugin-settings-models-gateway-absent = モデルゲートウェイ（provides.modelsを宣言するシステムアプリ）がインストールされていません
 plugin-settings-models-revoke-not-running = モデルゲートウェイが動いていないため、{ $id }の資格情報を取り消せません
 plugin-settings-models-revoke-provider-not-running = モデルゲートウェイ{ $provider }が動いていないため、{ $id }の資格情報を取り消せません
-plugin-settings-models-reconcile-failed = モデルゲートウェイの資格情報の照合に失敗しました：{ $error }
 plugin-settings-models-credential-rejected = モデルゲートウェイ{ $provider }がサーバーが発行した資格情報{ $name }を受け付けません。発行後にモデル一覧を要求しても401が返ります
 plugin-settings-models-unreachable = モデルゲートウェイ{ $provider }に接続できません：{ $error }
 plugin-settings-models-list-error = モデルゲートウェイ{ $provider }がモデル一覧の応答でエラーを返しました：HTTP { $status }
@@ -302,6 +301,10 @@ plugin-settings-models-list-malformed = モデルゲートウェイ{ $provider }
 plugin-settings-models-connect-first = Bot が返信できるように、「モデル設定」でモデルを接続してください。
 plugin-settings-models-not-ready = モデルゲートウェイ{ $provider }の準備ができていません：{ $error }
 plugin-settings-models-command-rejected = モデルゲートウェイ{ $provider }が資格情報のコマンドを拒否しました（{ $command }、終了コード{ $code }）：{ $stderr }
+
+plugin-settings-models-command-outcome-unknown = モデルゲートウェイでの前回の資格情報コマンドの結果はまだわかりません
+plugin-settings-models-credential-container-missing = モデルゲートウェイ{ $gateway }の資格情報コンテナが存在しません
+plugin-settings-models-credential-missing = モデルゲートウェイの利用元{ $id }に資格情報{ $name }がありません
 
 # ── ストアのインデックス（storefront）────────────────────────────────────
 

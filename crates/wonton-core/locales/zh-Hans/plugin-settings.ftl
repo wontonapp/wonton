@@ -292,7 +292,6 @@ plugin-settings-models-gateway-not-running = 模型网关 { $id } 没在运行
 plugin-settings-models-gateway-absent = 没有装模型网关（声明 provides.models 的系统应用）
 plugin-settings-models-revoke-not-running = 模型网关没在运行，吊销不了 { $id } 的凭据
 plugin-settings-models-revoke-provider-not-running = 模型网关 { $provider } 没在运行，吊销不了 { $id } 的凭据
-plugin-settings-models-reconcile-failed = 模型网关凭据对账失败：{ $error }
 plugin-settings-models-credential-rejected = 模型网关 { $provider } 不认服务器签发的凭据 { $name }：签发后请求模型列表仍然 401
 plugin-settings-models-unreachable = 模型网关 { $provider } 不可达：{ $error }
 plugin-settings-models-list-error = 模型网关 { $provider } 回答模型列表时出错：HTTP { $status }
@@ -302,6 +301,10 @@ plugin-settings-models-list-malformed = 模型网关 { $provider } 的模型列�
 plugin-settings-models-connect-first = 先在“模型设置”接入模型，Bot 才能回话。
 plugin-settings-models-not-ready = 模型网关 { $provider } 未就绪：{ $error }
 plugin-settings-models-command-rejected = 模型网关 { $provider } 拒绝了凭据命令（{ $command }，退出码 { $code }）：{ $stderr }
+
+plugin-settings-models-command-outcome-unknown = 模型网关上一次凭据命令的结果还没确定
+plugin-settings-models-credential-container-missing = 模型网关 { $gateway } 的凭据容器不存在
+plugin-settings-models-credential-missing = 模型网关使用方 { $id } 缺少凭据 { $name }
 
 # ── 商店索引（storefront）──────────────────────────────────────────────────
 
