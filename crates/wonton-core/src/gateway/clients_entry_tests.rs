@@ -406,3 +406,6 @@ mod clients_entry_race_tests;
 
 #[path = "clients_entry_setup_tests.rs"]
 mod clients_entry_setup_tests;
+
+#[path = "clients_entry_credentials_tests.rs"]
+mod clients_entry_credentials_tests;

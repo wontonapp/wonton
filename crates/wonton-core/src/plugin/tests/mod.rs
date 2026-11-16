@@ -13,6 +13,7 @@ mod bot_avatars;
 mod bot_lifecycle;
 mod bot_web;
 mod bots;
+mod c17_credentials;
 mod capability_bots;
 mod capability_deps_install;
 mod capability_host_network;

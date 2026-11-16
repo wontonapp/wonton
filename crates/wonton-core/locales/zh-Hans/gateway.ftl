@@ -171,6 +171,14 @@ clients-unavailable = 核心没有跑在装好的容器里，域名设置用不�
 clients-passwords-unavailable = 现在读不到专用密码的存放处
 clients-password-label-invalid = 给客户端起个 1-128 个字符、不带换行的名字
 clients-password-not-found = 这个专用密码已经不存在了
+clients-password-shared = 应用密码
+clients-credentials-missing = 这个应用不用凭据验证
+clients-credentials-shared-exists = 这个应用已经有它唯一的共享密码
+clients-credentials-timeout = 应用里的命令超时，可能已经生效，会重试
+clients-credentials-unavailable = 插件没在运行，现在发不了密码
+clients-credentials-missing-command = 清单里没有 { $op } 命令
+clients-credentials-failed = 应用里的命令失败：{ $error }
+gateway-entry-credentials-not-issued = 应用还没有密码，入口先不开
 clients-domain-read-failed = 域名设置读不了：{ $error }
 gateway-chains-disabled = 家里的服务器没有启用调用链账本
 

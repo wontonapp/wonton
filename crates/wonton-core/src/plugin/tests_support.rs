@@ -247,6 +247,21 @@ fn serve_declared(entry: &mut Entry, manifest: &Manifest) {
                 .provides
                 .iter()
                 .flat_map(|provides| provides.capabilities.values().map(|c| &c.service)),
+        )
+        .chain(
+            manifest
+                .clients
+                .as_ref()
+                .and_then(|clients| clients.http.as_ref())
+                .map(|http| &http.service),
+        )
+        .chain(
+            manifest
+                .clients
+                .as_ref()
+                .and_then(|clients| clients.http.as_ref())
+                .and_then(|http| http.auth.credentials.as_ref())
+                .and_then(|credentials| credentials.service.as_ref()),
         );
     entry.serving.extend(services.cloned());
 }
