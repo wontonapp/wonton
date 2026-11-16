@@ -34,11 +34,14 @@ final class RoomPresenter {
     var preview: URL?
     var sharing: SharedFile?
     let files: FilesModel
+    /// 触发下载时人在的房间：下载完的提示只列在这个房间里，别的房间不显示。
+    let roomId: String
     private var waiting: (info: FileInfo, after: AfterDownload)?
     @ObservationIgnored private var elsewhereAfterCover: FileInfo?
 
-    init(files: FilesModel) {
+    init(files: FilesModel, roomId: String) {
         self.files = files
+        self.roomId = roomId
     }
 
     var waitedAction: WaitedAction? {
@@ -51,7 +54,7 @@ final class RoomPresenter {
             cover = Cover(content: .player(info))
         case .download:
             waiting = (info, after)
-            files.send(.files(action: .downloadFile(id: info.id)))
+            files.send(.files(action: .downloadFile(id: info.id, room: roomId)))
         case let .open(path):
             show(path, after)
         case .wait:

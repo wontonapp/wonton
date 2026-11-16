@@ -29,7 +29,10 @@ async fn download(world: &World, file: &wonton_client::FileId) -> wonton_client:
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world
@@ -61,7 +64,10 @@ async fn audio_and_video_play_and_can_open_elsewhere() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     let during = actions_of(&world, &file).await;
@@ -182,7 +188,10 @@ async fn a_downloaded_file_that_changed_at_home_is_downloaded_again() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world
@@ -219,7 +228,10 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     let part = world.downloaded(&file, "a.mov.part");
@@ -271,7 +283,10 @@ async fn cleaning_up_a_download_leaves_no_folder_behind() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world
@@ -297,7 +312,10 @@ async fn a_failed_download_can_be_tried_again() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: file.clone() },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: file.clone(),
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     world
@@ -339,7 +357,10 @@ async fn each_transfer_says_which_buttons_it_has() {
     world
         .phone()
         .dispatch(Action::Files {
-            action: wonton_protocol::FileAction::DownloadFile { id: held },
+            action: wonton_protocol::FileAction::DownloadFile {
+                id: held,
+                room: "!bot:home".into(),
+            },
         })
         .unwrap();
     let running = world.phone().transfers().active.pop().unwrap();
@@ -725,4 +746,17 @@ async fn an_upload_whose_link_was_not_sent_is_listed_outside_its_room() {
     let home = world.phone().room_transfers("!bot:home".to_owned());
     assert_eq!(home.here[0].id, transfer.id);
     assert!(home.elsewhere.is_empty());
+}
+
+/// 下载完的只在触发它的房间列，别的房间不显示，免得以为当前聊天发生了下载。
+#[tokio::test]
+async fn a_finished_download_is_listed_only_in_its_room() {
+    let world = World::start().await;
+    let file = world.core.lock().serve("a.jpg", &source_bytes(1024), "v1");
+    download(&world, &file).await;
+    let home = world.phone().room_transfers("!bot:home".to_owned());
+    assert_eq!(home.downloaded.len(), 1);
+    assert_eq!(home.downloaded[0].file, Some(file));
+    let elsewhere = world.phone().room_transfers("!other:home".to_owned());
+    assert!(elsewhere.downloaded.is_empty() && elsewhere.here.is_empty());
 }
