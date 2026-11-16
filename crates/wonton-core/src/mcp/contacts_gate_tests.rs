@@ -4,9 +4,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use axum::http::header::HeaderName;
 use rmcp::model::CallToolResult;
 use serde_json::json;
 use wonton_protocol::{BotKeeper, BotRef, ChainTurnReport};
+
+use super::TurnSender;
+use super::server::turn_sender;
+use crate::plugin::bots::BotEntry;
+use crate::plugin::store::Store;
 
 use super::Caller;
 use super::test_setup::{Setup, setup};
@@ -102,6 +108,79 @@ async fn remote_contact(net: &Arc<Net>, a: &Server, alice: &BotRef, b: &Server, 
         .await
         .unwrap();
     net.deliver_all().await;
+}
+
+fn save_bot(s: &Setup, id: &str, name: &str, user_id: &str) {
+    let store = Store::open(s.dir.path().join("plugins")).unwrap();
+    let mut bots = store
+        .bots()
+        .load(&PluginId::parse(id).unwrap())
+        .unwrap_or_default();
+    bots.bots.insert(
+        name.to_owned(),
+        BotEntry {
+            account: crate::matrix::BotAccount {
+                user_id: user_id.to_owned(),
+                home_room: format!("!{name}:{}", user_id.split_once(':').unwrap().1),
+            },
+            device_id: None,
+            keeper: BotKeeper::User {
+                username: "alice".to_owned(),
+            },
+            bus_token: format!("{name}-token"),
+        },
+    );
+    store
+        .bots()
+        .save(&PluginId::parse(id).unwrap(), &bots)
+        .unwrap();
+}
+
+fn sender_header(value: &str) -> hyper::HeaderMap {
+    let mut headers = hyper::HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-wonton-on-behalf-of"),
+        value.parse().unwrap(),
+    );
+    headers
+}
+
+/// 请求头里的说话人得是这个 Bot 听的人；服务器名对不上就不当本机用户，别家联系人不能冒充主人。
+#[tokio::test]
+async fn a_reported_sender_is_local_only_on_our_server() {
+    let net = Arc::new(Net::default());
+    let (s, a) = home(&net).await;
+    let b = Server::start(&net, "b.test");
+    let alice = a.bot("alice", "alice");
+    let bob = b.bot("bob", "bob");
+    let me = caller(&alice);
+    save_bot(&s, &alice.plugin_id, "alice", "@hermes-alice:a.test");
+    let local = format!("@hermes-alice2:{}", s.bus.people().unwrap().server_name);
+    save_bot(&s, &alice.plugin_id, "alice2", &local);
+    remote_contact(&net, &a, &alice, &b, &bob).await;
+
+    // 已成立的远端联系人发来的话：认得出是听的人，但服务器不是本机。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header(BOB))),
+        Some(TurnSender::Unknown)
+    );
+    // 同一个归属人的另一个 Bot 在本机服务器上：本机用户。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header(&local))),
+        Some(TurnSender::Local(local.clone()))
+    );
+    // 同一个用户名换个服务器：不是同一个人。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header("@hermes-alice2:b.test"))),
+        Some(TurnSender::Unknown)
+    );
+    // 不是 Matrix ID 的报法。
+    assert_eq!(
+        turn_sender(&s.bus, &me, Some(&sender_header("alice"))),
+        Some(TurnSender::Unknown)
+    );
+    // 老接入方不报说话人、也没有进行中的轮次。
+    assert_eq!(turn_sender(&s.bus, &me, None), None);
 }
 
 /// 这个调用方此刻只看到 4 个核心工具，插件的工具调不动。
