@@ -65,14 +65,14 @@ impl<H: PeerPairHandler> PeerPairProtocol<H> {
         Self { handler }
     }
 
-    async fn respond(&self, conn: &Connection) -> Result<(), String> {
+    async fn respond(&self, conn: &Connection) -> Result<(), &'static str> {
         let (mut send, mut recv) = tokio::time::timeout(REQUEST_TIMEOUT, conn.accept_bi())
             .await
-            .map_err(|_| "对方没有及时开流".to_owned())?
-            .map_err(|e| e.to_string())?;
+            .map_err(|_| "对方没有及时开流")?
+            .map_err(|_| "opening the server-pairing stream failed")?;
         let request = tokio::time::timeout(REQUEST_TIMEOUT, recv.read_to_end(MAX_MESSAGE_LEN))
             .await
-            .map_err(|_| "对方没有及时写完消息".to_owned())?;
+            .map_err(|_| "对方没有及时写完消息")?;
         let reply = match request.map_err(|e| e.to_string()).and_then(|bytes| {
             serde_json::from_slice::<PeerMessage>(&bytes).map_err(|e| e.to_string())
         }) {
@@ -83,8 +83,11 @@ impl<H: PeerPairHandler> PeerPairProtocol<H> {
             },
         };
         let body = serde_json::to_vec(&reply).expect("回应总能编成 JSON");
-        send.write_all(&body).await.map_err(|e| e.to_string())?;
-        send.finish().map_err(|e| e.to_string())?;
+        send.write_all(&body)
+            .await
+            .map_err(|_| "writing the server-pairing response failed")?;
+        send.finish()
+            .map_err(|_| "finishing the server-pairing response failed")?;
         Ok(())
     }
 

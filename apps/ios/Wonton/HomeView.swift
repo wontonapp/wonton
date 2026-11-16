@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import WontonClient
 
 /// “应用”：配对入口、已装插件和应用商店。只渲染核心给出的 ViewModel。
@@ -21,6 +22,8 @@ struct HomeView: View {
     var devWebURL: URL?
     @Environment(\.wontonColors) private var colors
     @Environment(PagesModel.self) private var pages
+    @Environment(\.wontonOpenContent) private var openContent
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
     @State private var openedDevPage = false
     @Binding var path: NavigationPath
     @State private var confirmation: PluginConfirmation?
@@ -259,6 +262,11 @@ extension HomeView {
         // 已加进“我的应用”的页给移出，没加的给加进。
         let mine = plugins.viewModel.sidebar.apps.compactMap(\.tab)
         for choice in plugin.tabChoices {
+            if supportsMultipleWindows, UIDevice.current.userInterfaceIdiom == .pad, let openContent {
+                let title = String(localized: .Sidebar.sidebarOpenWindow)
+                    + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")
+                actions.append(WontonSheetAction(title: title, icon: .web) { openContent(.tab(tab: choice.tab)) })
+            }
             let added = mine.contains(choice.tab)
             let title = (added ? TabText.removeFromMyApps : TabText.addToMyApps)
                 + (plugin.tabChoices.count > 1 ? " · \(choice.title)" : "")

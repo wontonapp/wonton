@@ -66,6 +66,10 @@ pub(super) fn quoted_content(body: &MessageContent) -> QuotedContent {
                     .unwrap_or_else(|| image.media.clone()),
             ),
         },
+        // 文件引用给文件名：没有缩略图可画，名字是引用里最有用的信息。
+        MessageContent::File { file } => QuotedContent::Text {
+            text: file.filename.chars().take(QUOTE_CHARS).collect(),
+        },
         MessageContent::Redacted => QuotedContent::Redacted,
         MessageContent::Undecryptable => QuotedContent::Undecryptable,
         MessageContent::Confirmation { .. } | MessageContent::Unsupported { .. } => {
@@ -121,7 +125,7 @@ impl QuoteFetches {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wonton_protocol::{ImageContent, MediaHandle};
+    use wonton_protocol::{FileAttachment, ImageContent, MediaHandle};
 
     fn text(body: &str) -> MessageContent {
         message_content(
@@ -146,6 +150,33 @@ mod tests {
         };
         assert_eq!(cut.chars().count(), QUOTE_CHARS);
         assert!(long.starts_with(&cut));
+    }
+
+    /// 行为：文件引用给文件名（没有缩略图可画），文件名超长按字符截断。
+    #[test]
+    fn files_quote_their_filename() {
+        let file = |filename: &str| MessageContent::File {
+            file: FileAttachment {
+                media: MediaHandle {
+                    token: "mxc".to_owned(),
+                },
+                filename: filename.to_owned(),
+                mime_type: None,
+                size: None,
+                caption: None,
+            },
+        };
+        assert_eq!(
+            quoted_content(&file("2025-报税表.pdf")),
+            QuotedContent::Text {
+                text: "2025-报税表.pdf".to_owned()
+            }
+        );
+        let long = "名".repeat(QUOTE_CHARS + 50);
+        let QuotedContent::Text { text: cut } = quoted_content(&file(&long)) else {
+            panic!("文件名还是文字");
+        };
+        assert_eq!(cut.chars().count(), QUOTE_CHARS);
     }
 
     /// 行为：图片引用给缩略图，没有缩略图时给原图；核心早先发在私聊里的卡片按正文引用（ADR-0016 后卡片不再是消息）。

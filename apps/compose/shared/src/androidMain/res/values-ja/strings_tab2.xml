@@ -27,4 +27,5 @@
     <string name="tab_page_close">ページを閉じる</string>
     <!-- Light hint at the top of a call page when the connection only goes through the public relay; the call still works. No arguments. -->
     <string name="tab_call_relay_hint">公共リレー経由でしか接続できていません。映像が途切れることがあります。</string>
+    <string name="tab_back_to_chat">チャットに戻る</string>
 </resources>
