@@ -6,7 +6,6 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
 use wonton_protocol::CardLine;
 use wonton_protocol::{PluginWidget, WidgetCapability, WidgetCapabilityLevel};
 
@@ -17,18 +16,7 @@ use crate::l10n;
 /// 房间顶栏的图标，清单和 App 用同一个枚举：不认识的落到 `Other`。
 pub use wonton_protocol::WidgetEntry;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MatrixWidget {
-    /// 网页入口下的路径和查询，如 `/room?widgetId=$matrix_widget_id`。占位符由 widget 规范和核心替换，
-    /// 路径规则同 `webui.path`。
-    pub url: String,
-    #[serde(default)]
-    pub entry: WidgetEntry,
-    /// 页面要的能力，如 `org.matrix.msc2762.send.state_event:org.matrix.msc3401.call.member`。
-    #[serde(default)]
-    pub capabilities: Vec<String>,
-}
+pub use wonton_protocol::manifest::MatrixWidget;
 
 /// 带事件类型的能力前缀。
 const TYPED: [&str; 6] = [

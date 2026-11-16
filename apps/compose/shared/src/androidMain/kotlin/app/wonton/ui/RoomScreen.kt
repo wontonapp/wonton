@@ -222,7 +222,7 @@ internal fun RoomRoute(
     // 旁聊页没有房间的面板（ADR-0052）：面板跟着主对话。
     val panel = if (target.threadRoot == null) LocalChatPanel.current else null
     CompositionLocalProvider(
-        LocalFiles provides FilesContext(transfers, onAction, onReject),
+        LocalFiles provides FilesContext(target.roomId, transfers, onAction, onReject),
         LocalChatPanel provides panel,
     ) {
         RoomScreen(

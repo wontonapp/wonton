@@ -77,7 +77,6 @@ impl Visit {
                 app_lock: app_lock.clone(),
                 lock_screen: lock_screen.subscribe(),
                 session_out: watch::channel(None).0,
-                room_panel_out: watch::channel(None).0,
                 external: false,
             },
         )?;

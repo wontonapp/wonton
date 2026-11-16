@@ -79,6 +79,7 @@ pub(super) struct State {
     /// 提供方令牌（ADR-0061 第 3 节），键 `<能力>/<插件 ID>`，见 [`super::provider_token`]。
     #[serde(default)]
     pub provider_tokens: BTreeMap<String, String>,
+    /// 旧版 ACP 交接留下的显式提供方绑定：规划时不让这些绑定被自动换掉。写入方已随交接删除，字段继续读。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub handoff_consents: Vec<HandoffConsent>,
 }

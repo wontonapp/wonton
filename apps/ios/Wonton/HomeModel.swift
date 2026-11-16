@@ -106,7 +106,8 @@ final class HomeModel {
             try core.dispatch(action: .home(action: .pairHome(code: code, deviceName: deviceName)))
             return nil
         } catch {
-            return Problem(title: error.problem.title, detail: String(describing: error))
+            let problem = error.problem
+            return Problem(title: problem.title, detail: problem.nextStep ?? problem.detail)
         }
     }
 }

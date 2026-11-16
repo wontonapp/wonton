@@ -74,6 +74,17 @@ impl TunnelError {
     }
 }
 
+pub(crate) fn connection_log_code(err: &ConnectionError) -> &'static str {
+    match err {
+        ConnectionError::ApplicationClosed(close) if close.error_code == CLOSE_UNAUTHORIZED => {
+            "unauthorized"
+        }
+        ConnectionError::ApplicationClosed(_) => "peer-closed",
+        ConnectionError::LocallyClosed => "locally-closed",
+        _ => "transport-unavailable",
+    }
+}
+
 /// 连接被关闭的原因。服务端用 [`CLOSE_UNAUTHORIZED`] 关闭即为未授权；其余都是传输问题。
 ///
 /// 本机断开的连接也算传输问题：客户端关闭后，新的请求由客户端自己回 [`TunnelError::Closed`]；回到前台时

@@ -20,7 +20,6 @@ on:
         default: remote-mcp
         options:
           - remote-mcp
-          - acp-bridge
 
 permissions:
   contents: read
@@ -104,90 +103,6 @@ jobs:
         with:
           tags: ${{ steps.meta.outputs.tags }}
           artifact: digests-core
-
-  acp-bridge-image:
-    name: ACP bridge 镜像 ${{ matrix.platform }}
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'acp-bridge')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux/amd64
-            runs-on: ubuntu-24.04
-          - platform: linux/arm64
-            runs-on: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runs-on }}
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 版本、镜像仓库与基础镜像
-        id: meta
-        run: |
-          mirror="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/test-images"
-          {
-            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-              echo "version=main-${GITHUB_SHA::7}"
-            else
-              echo "version=${GITHUB_REF_NAME#v}"
-            fi
-            echo "image=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
-            echo "rust=$mirror/rust:1.99.1-slim-trixie"
-            echo "debian=$mirror/debian:trixie-slim"
-            # 层缓存读 main 上存的那份（cache.yml 的桥镜像作业），发版不写。
-            echo "cache=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-ci-cache:acp-bridge"
-          } >> "$GITHUB_OUTPUT"
-      - id: push
-        uses: ./.github/actions/push-image
-        with:
-          platforms: ${{ matrix.platform }}
-          file: deploy/dev/acp-bridge/Dockerfile
-          version: ${{ steps.meta.outputs.version }}
-          extra-build-args: |-
-            RUST_IMAGE=${{ steps.meta.outputs.rust }}
-            DEBIAN_IMAGE=${{ steps.meta.outputs.debian }}
-          image: ${{ steps.meta.outputs.image }}
-          cache-ref: ${{ steps.meta.outputs.cache }}
-          push-by-digest: "true"
-      - name: 记下本架构的 digest
-        env:
-          DIGEST: ${{ steps.push.outputs.digest }}
-          PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p digests
-          echo "$DIGEST" > "digests/${PLATFORM##*/}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          # 每个架构一个 artifact：同名的话 v4 只留下一份，合出来的 manifest 少一个架构（v0.2.0 就这样只有单架构）。
-          name: digests-acp-bridge-${{ strategy.job-index }}
-          path: digests/*
-          retention-days: 1
-
-  acp-bridge-merge:
-    name: ACP bridge 镜像合 manifest
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.component == 'acp-bridge')
-    needs: acp-bridge-image
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: 版本、渠道
-        id: meta
-        run: |
-          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/wonton-acp-bridge"
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            echo "tags=$image:main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          else
-            version="${GITHUB_REF_NAME#v}"
-            echo "tags=$image:$version,$image:stable" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: ./.github/actions/merge-image-manifest
-        with:
-          tags: ${{ steps.meta.outputs.tags }}
-          artifact: digests-acp-bridge
 
   remote-mcp-image:
     name: 远端 MCP 连接器镜像 ${{ matrix.platform }}
