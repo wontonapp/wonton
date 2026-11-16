@@ -85,7 +85,6 @@ final class TimelineModel {
         viewport = update.viewport
         panel = update.panel
         panelSelected = update.panelSelected
-        entryBlocked = update.entryBlocked
         notice = update.keyNotice
         sideChat = update.sideChat
         widgets = update.widgets

@@ -5,8 +5,8 @@ package app.wonton.android
 import android.Manifest
 import android.graphics.Bitmap
 import android.os.Build
+import android.os.SystemClock
 import android.view.KeyEvent
-import android.view.accessibility.AccessibilityNodeInfo
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,6 +15,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -50,6 +51,10 @@ import org.junit.runner.RunWith
 class RoomPanelGestureTest {
     private val compose = createAndroidComposeRule<UiFakeMainActivity>()
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
+    private val pageAssertions by lazy {
+        PanelPageAssertions(compose, instrumentation, compose.activity)
+    }
+    private val fixture by lazy { PanelPageFixture(compose.activity) }
     private val permissions: TestRule = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS)
     } else {
@@ -77,6 +82,7 @@ class RoomPanelGestureTest {
     fun startFromChatRoot() {
         val core = (compose.activity.application as WontonApplication).core.getOrThrow()
         assertNull(core.send(Action.Pages(PageAction.OpenPage(TabRef.Chat))))
+        fixture.reset()
         openButton.assertIsDisplayed()
     }
 
@@ -90,27 +96,79 @@ class RoomPanelGestureTest {
         openButton.performTouchInput { click() }
         closePage.assertIsDisplayed()
         closeStrip.assertIsNotDisplayed()
+        pageAssertions.assertInitialContent()
         compose.onNodeWithContentDescription("Player").performClick()
         // 假网页是普通 URL 页，没有 Bot 网页的登录披露；真 Bot 页有就必须先确认。
         val disclosure = compose.onAllNodesWithText(compose.activity.getString(R.string.bot_web_open))
         if (disclosure.fetchSemanticsNodes().isNotEmpty()) disclosure[0].performClick()
-        compose.waitUntil(20_000) { visiblePlayer(instrumentation.uiAutomation.rootInActiveWindow) }
+        awaitFullPlayer()
         screenshot("main-button-full")
         pressBack()
         closeStrip.assertIsDisplayed()
         closePage.assertDoesNotExist()
         canvasSwipe(0.2f, 0.4f, 0.85f, 0.4f)
-        compose.waitUntil(10_000) { !visiblePlayer(instrumentation.uiAutomation.rootInActiveWindow) }
+        compose.waitUntil(10_000) { !pageAssertions.playerVisible() }
         closeStrip.assertIsDisplayed()
         screenshot("main-peek-flipped")
         canvasSwipe(0.85f, 0.4f, 0.2f, 0.4f)
-        compose.waitUntil(10_000) { visiblePlayer(instrumentation.uiAutomation.rootInActiveWindow) }
+        compose.waitUntil(10_000) { pageAssertions.playerVisible() }
         closeStrip.assertIsDisplayed()
         canvasSwipe(0.005f, 0.5f, 0.85f, 0.5f)
         closeStrip.assertIsNotDisplayed()
         closePage.assertDoesNotExist()
         openButton.assertIsDisplayed()
         screenshot("main-edge-closed")
+        openButton.performTouchInput { click() }
+        // 重开这一刻渲染进程常正在崩（WebView 重建），点下去的落脚比平时慢，等面板真的回来再截图。
+        compose.waitUntil(10_000) { closePage.isDisplayed() }
+        screenshot("main-reopened")
+        awaitFullPlayer()
+        pageAssertions.withPlayerHeld {
+            awaitFullPlayer()
+            screenshot("main-full-player-held")
+        }
+    }
+
+    @Test
+    fun uninstallingPageDoesNotReuseAStartedWebView() {
+        openButton.performTouchInput { click() }
+        compose.onNodeWithContentDescription("Player").performClick()
+        awaitFullPlayer()
+        fixture.uninstallPlayer()
+        SystemClock.sleep(15_000)
+        val uninstalling = compose.activity.getString(R.string.tab_uninstalling)
+        pageAssertions.awaitNotReady(uninstalling)
+        compose.onNodeWithText(uninstalling).assertIsDisplayed()
+        closePage.assertIsDisplayed()
+        screenshot("started-uninstalling")
+        fixture.removePlayer()
+        val removed = compose.activity.getString(R.string.tab_page_removed)
+        pageAssertions.awaitNotReady(removed)
+        compose.onNodeWithText(removed).assertIsDisplayed()
+        compose.onNodeWithText(compose.activity.getString(R.string.panel_remove)).assertIsDisplayed()
+        pressBack()
+        closeStrip.performTouchInput { click() }
+        compose.waitUntil(10_000) { openButton.isDisplayed() }
+        openButton.performTouchInput { click() }
+        pageAssertions.awaitNotReady(removed)
+        compose.onNodeWithText(removed).assertIsDisplayed()
+        screenshot("removed-resumed")
+        closePage.performTouchInput { click() }
+    }
+
+    @Test
+    fun stoppedPageKeepsItsStatusAfterParkAndResume() {
+        val tab = TabRef.Plugin("app.example.photos", null)
+        val title = compose.activity.getString(R.string.tab_stopped, "Photos")
+        fixture.openPage(tab)
+        pageAssertions.awaitNotReady(title)
+        screenshot("not-ready-open")
+        fixture.openPage(TabRef.Chat)
+        compose.waitUntil(10_000) { openButton.isDisplayed() }
+        screenshot("not-ready-parked")
+        fixture.openPage(tab)
+        pageAssertions.awaitNotReady(title)
+        screenshot("not-ready-resumed")
     }
 
     @Test
@@ -148,6 +206,13 @@ class RoomPanelGestureTest {
         compose.onNode(hasSetTextAction()).assertIsNotDisplayed()
     }
 
+    private fun awaitFullPlayer() {
+        pageAssertions.awaitPlayer()
+        closePage.assertIsDisplayed()
+        closeStrip.assertIsNotDisplayed()
+        assertTrue("FULL must show the fixture page", pageAssertions.playerVisible())
+    }
+
     private fun pressBack() {
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
         compose.waitForIdle()
@@ -182,20 +247,10 @@ class RoomPanelGestureTest {
         openButton.assertIsDisplayed()
     }
 
-    private fun visiblePlayer(node: AccessibilityNodeInfo?): Boolean {
-        if (node == null) return false
-        var found = node.isVisibleToUser && node.text?.startsWith("Fixture player") == true
-        var index = 0
-        while (!found && index < node.childCount) {
-            found = visiblePlayer(node.getChild(index))
-            index++
-        }
-        return found
-    }
-
     private fun screenshot(name: String) {
         val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "panel-entry")
         check(directory.isDirectory || directory.mkdirs())
+        File(directory, "$name.state.txt").writeText(pageAssertions.snapshot())
         val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
         FileOutputStream(File(directory, "$name.png")).use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
         image.recycle()

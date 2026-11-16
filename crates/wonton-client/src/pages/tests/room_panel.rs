@@ -178,7 +178,7 @@ async fn room_page_bridge_rejects_departed_rooms_with_the_same_page() {
 }
 
 #[tokio::test]
-async fn two_room_panels_keep_their_pages_selection_and_blocking() {
+async fn two_room_panels_keep_their_pages_and_selection() {
     let rig = Rig::new();
     let first: OwnedRoomId = "!first:home.example".parse().unwrap();
     let second: OwnedRoomId = "!second:home.example".parse().unwrap();

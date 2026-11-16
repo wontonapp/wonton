@@ -9,8 +9,8 @@
 //! 壳让出来的顶条跟不跟页面的颜色也由界面测试看。
 
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpListener};
-use std::sync::OnceLock;
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::sync::LazyLock;
 
 use wonton_protocol::{
     BackPagination, MessageContent, PanelItem, PanelSource, RichBlock, RichBlockKind, RichSpan,
@@ -247,30 +247,35 @@ fn body(path: &str) -> String {
 
 /// 回环地址上给上面几页的小服务，进程里只起一次，跟着 App 进程结束。
 fn fixture_url() -> Option<String> {
-    static URL: OnceLock<Option<String>> = OnceLock::new();
-    URL.get_or_init(|| {
+    static URL: LazyLock<Option<String>> = LazyLock::new(|| {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).ok()?;
         let port = listener.local_addr().ok()?.port();
         std::thread::Builder::new()
             .name("ui-fake-page".into())
             .spawn(move || {
-                for mut stream in listener.incoming().flatten() {
-                    // 只看请求行里的路径，别的不读。
-                    let mut request = [0; 2048];
-                    let read = stream.read(&mut request).unwrap_or(0);
-                    let line = String::from_utf8_lossy(&request[..read]);
-                    let body = body(line.split_whitespace().nth(1).unwrap_or("/"));
-                    let _ = write!(
-                        stream,
-                        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                        body.len()
-                    );
+                // 每个连接单开一条线程：WebView 会先连一条不发数据的预备连接，串行处理会让后面的
+                // 正式请求一直等着，页面关掉重开、WebView 重建时页面就会停在骨架。
+                for stream in listener.incoming().flatten() {
+                    std::thread::spawn(move || serve(stream));
                 }
             })
             .ok()?;
         Some(format!("http://127.0.0.1:{port}/"))
-    })
-    .clone()
+    });
+    URL.clone()
+}
+
+/// 只看请求行里的路径，别的不读；应答完就关连接。
+fn serve(mut stream: TcpStream) {
+    let mut request = [0; 2048];
+    let read = stream.read(&mut request).unwrap_or(0);
+    let line = String::from_utf8_lossy(&request[..read]);
+    let body = body(line.split_whitespace().nth(1).unwrap_or("/"));
+    let _ = write!(
+        stream,
+        "HTTP/1.1 200 OK\r\ncontent-type: text/html; charset=utf-8\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
 }
 
 #[cfg(test)]
@@ -292,6 +297,27 @@ mod tests {
         stream.read_to_string(&mut response).unwrap();
         assert!(response.starts_with("HTTP/1.1 200"));
         assert!(response.contains("Fixture close"));
+    }
+
+    #[test]
+    fn fixture_page_is_served_while_an_idle_connection_is_open() {
+        let panel = panel();
+        let Some(url) = panel.first().and_then(|item| item.page.url.clone()) else {
+            panic!("the loopback fixture page did not start");
+        };
+        let address = url.trim_start_matches("http://").trim_end_matches('/');
+        // WebView 会先连一条不发请求的连接，后面的正式请求不能等它。
+        let _idle = std::net::TcpStream::connect(address).unwrap();
+        let mut stream = std::net::TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nhost: fixture\r\n\r\n")
+            .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200"));
     }
 
     #[test]
