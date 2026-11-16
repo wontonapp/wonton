@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Fallback name for an authorized disk with no name. No arguments. -->
+    <string name="plugin_device_disk">硬碟</string>
     <string name="plugin_requirements">需求</string>
     <string name="plugin_stars">星數</string>
     <string name="plugin_repository">程式碼儲存庫</string>

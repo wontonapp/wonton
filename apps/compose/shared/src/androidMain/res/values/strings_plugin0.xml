@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Status of an authorized host device that the core reports unavailable. No arguments. -->
+    <string name="plugin_device_unavailable">Unavailable</string>
     <!-- Small tag next to a permission that's newly requested in this update. -->
     <!-- Section title for the folders the app may save files into. No arguments. -->
     <string name="plugin_save_folders">Folders it can save to</string>

@@ -157,6 +157,25 @@ async fn explicit_webui_health_still_passes_under_spec_0_13() {
     assert!(report.warnings.is_empty(), "{report:?}");
 }
 
+// `WONTON_BOT_AI_LEVEL` 是 0.15 才注入的变量：`spec` 写低时 `plugin check` 在发布前就报要升 spec，
+// 不要等装到旧核心上才在插值时报“变量没有注入”。
+#[tokio::test]
+async fn check_names_the_spec_floor_for_the_bot_ai_level_variable() {
+    let services = format!(
+        "  web:\n    image: nginx:1.27@sha256:{}\n    environment:\n      LEVEL: ${{WONTON_BOT_AI_LEVEL}}",
+        "a".repeat(64)
+    );
+    let report = run(repo(&compose(&services, "")).path(), false)
+        .await
+        .unwrap();
+    assert!(
+        report.problems.iter().any(|problem| {
+            problem.contains("references WONTON_BOT_AI_LEVEL") && problem.contains("spec \"0.15\"")
+        }),
+        "{report:?}"
+    );
+}
+
 #[tokio::test]
 async fn the_official_index_refuses_hardcoded_proxy_addresses() {
     let services = |environment: &str| {
@@ -457,4 +476,120 @@ async fn depends_on_pointing_at_a_missing_service_is_called_out() {
         "{:?}",
         report.warnings
     );
+}
+
+// check 认得出 Element Call 的页面（url 查询带 widgetId、baseUrl、intent）时，对照内置的所需能力
+// 清单提醒漏声明的项；提醒不算不合格，退出码仍是 0。
+fn pinned() -> String {
+    format!(
+        "  web:\n    image: nginx:1.27@sha256:{}\n    healthcheck:\n      test: [CMD, nginx, -t]",
+        "a".repeat(64)
+    )
+}
+const EC_URL: &str = "/room?widgetId=$matrix_widget_id&baseUrl=$org.matrix.msc4039.matrix_base_url&intent=join_existing";
+
+// 声明 matrix_widget 的清单 spec 至少 0.14（spec_floor），夹具里的 '0.5' 要跟着抬。
+fn widget_compose(services: &str, extra: &str) -> String {
+    compose(services, extra).replace("spec: '0.5'", "spec: '0.14'")
+}
+
+fn element_call(capabilities: &[&str]) -> String {
+    let mut yaml =
+        format!("  webui: {{service: web, port: 8080}}\n  matrix_widget:\n    url: {EC_URL}\n");
+    if capabilities.is_empty() {
+        return yaml + "    capabilities: []\n";
+    }
+    yaml.push_str("    capabilities:\n");
+    for capability in capabilities {
+        yaml.push_str(&format!("      - {capability:?}\n"));
+    }
+    yaml
+}
+
+#[tokio::test]
+async fn a_manifest_missing_an_element_call_capability_is_reminded_about_it() {
+    use super::super::check_element_call::ELEMENT_CALL_CAPABILITIES;
+
+    let missing = "org.matrix.msc2762.send.event:m.rtc.decline";
+    let capabilities: Vec<&str> = ELEMENT_CALL_CAPABILITIES
+        .iter()
+        .copied()
+        .filter(|capability| *capability != missing)
+        .collect();
+    let report = run(
+        repo(&widget_compose(&pinned(), &element_call(&capabilities))).path(),
+        false,
+    )
+    .await
+    .unwrap();
+    let expected = super::message(
+        "plugin-check-element-call-capability-missing",
+        &[("capability", missing)],
+    );
+    assert_eq!(report.warnings, [expected], "{report:?}");
+    // 提醒不挡发布：不是不合格。
+    assert!(report.problems.is_empty(), "{report:?}");
+}
+
+#[tokio::test]
+async fn a_complete_element_call_manifest_gets_no_reminder() {
+    use super::super::check_element_call::ELEMENT_CALL_CAPABILITIES;
+
+    let report = run(
+        repo(&widget_compose(
+            &pinned(),
+            &element_call(ELEMENT_CALL_CAPABILITIES),
+        ))
+        .path(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(
+        report.warnings.is_empty() && report.problems.is_empty(),
+        "{report:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_widget_that_is_not_element_call_gets_no_reminder() {
+    let report = run(
+        repo(
+            &widget_compose(&pinned(), &element_call(&[]))
+                .replace(EC_URL, "/room?widgetId=$matrix_widget_id"),
+        )
+        .path(),
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(
+        report.warnings.is_empty() && report.problems.is_empty(),
+        "{report:?}"
+    );
+}
+
+// 内置的 Element Call 能力清单是从 matrix-rust-sdk 抄的，SDK 升级时要跟着对：锁定版本号，对不上
+// 就红，提醒去更新清单。
+#[test]
+fn the_element_call_list_tracks_the_pinned_sdk() {
+    let lock =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.lock")).unwrap();
+    let mut lines = lock.lines();
+    while let Some(line) = lines.next() {
+        if line.trim_end() == "name = \"matrix-sdk\"" {
+            let version = lines
+                .next()
+                .expect("the matrix-sdk version follows its name in Cargo.lock")
+                .trim();
+            assert_eq!(
+                version, "version = \"0.19.1\"",
+                "matrix-sdk 升级了：照新版 SDK 的 Element Call 所需能力（matrix-sdk-ffi 的 \
+                 get_element_call_required_permissions，crates.io 发布的 crate 里没有这个函数）\
+                 更新 check_element_call::ELEMENT_CALL_CAPABILITIES，再改这里的锁定版本"
+            );
+            return;
+        }
+    }
+    panic!("Cargo.lock 里没有 matrix-sdk");
 }

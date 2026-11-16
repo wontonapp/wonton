@@ -593,11 +593,6 @@ impl PagesState {
             TabRef::Apps
         }
     }
-
-    /// 这个页面就是根（打开它等于弹回根）。
-    fn root_is(&self, tab: &TabRef) -> bool {
-        tab == &self.root()
-    }
 }
 
 // 每次刷新的状态推导函数在 state 模块（refresh_state、卸载清理、自动加入）。

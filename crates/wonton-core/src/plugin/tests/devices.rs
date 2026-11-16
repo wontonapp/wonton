@@ -14,7 +14,7 @@ use super::manager::manager_with;
 use super::{langs, render_err};
 
 /// 一个串口服务、一个 USB 服务和一个读 SMART 的硬盘服务。
-fn plugin(extra: &str) -> String {
+pub(super) fn plugin(extra: &str) -> String {
     super::package(
         "  zigbee: {image: example/zigbee2mqtt}\n  scan: {image: example/scanservjs}\n  smart: {image: example/scrutiny}",
         &format!(
@@ -25,7 +25,7 @@ fn plugin(extra: &str) -> String {
     )
 }
 
-fn granted() -> Vec<Permission> {
+pub(super) fn granted() -> Vec<Permission> {
     ["devices.serial", "devices.usb", "devices.disk"]
         .iter()
         .map(|p| p.parse().unwrap())
@@ -36,7 +36,7 @@ fn parse(source: &str) -> Result<PluginPackage, String> {
     PluginPackage::parse(source, &langs()).map_err(|e| e.to_string())
 }
 
-fn device_host() -> FakeHost {
+pub(super) fn device_host() -> FakeHost {
     let host = FakeHost::empty();
     host.serial("usb-FTDI-if00-port0", "ttyUSB0");
     host.usb();
@@ -60,7 +60,7 @@ fn host_config(docker: &FakeDocker, service: &str) -> Value {
         .clone()
 }
 
-async fn on_host(host: &FakeHost) -> (FakeDocker, PluginManager, tempfile::TempDir) {
+pub(super) async fn on_host(host: &FakeHost) -> (FakeDocker, PluginManager, tempfile::TempDir) {
     let (docker, engine) = FakeDocker::start().await;
     let dir = tempfile::tempdir().unwrap();
     host.mounts(&[(dir.path().to_str().unwrap(), "8:0")]);
