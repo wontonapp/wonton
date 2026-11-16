@@ -1,6 +1,6 @@
 name: 构建并推送 GHCR 镜像
 description: >-
-  buildx 构建、ghcr 登录和 OCI labels 的镜像构建推送。release.yml 的核心、桥镜像和 main-image.yml 的
+  buildx 构建、ghcr 登录和 OCI labels 的镜像构建推送。release.yml 的核心和 main-image.yml 的
   :main 镜像共用，别在调用方复制这些步骤，构建器等写法只在这里改。
 inputs:
   tags:

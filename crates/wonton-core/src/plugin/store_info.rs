@@ -3,7 +3,6 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::languages::Languages;
@@ -47,14 +46,7 @@ pub(crate) fn next_spec() -> String {
     SpecVersion(SPEC_VERSION.0, SPEC_VERSION.1 + 1).to_string()
 }
 
-/// 插件包的作者。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Author {
-    pub name: String,
-    #[serde(default)]
-    pub url: Option<String>,
-}
+pub use wonton_protocol::manifest::Author;
 
 const MAX_SCREENSHOTS: usize = 6;
 const MAX_TAGS: usize = 8;

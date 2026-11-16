@@ -4,8 +4,23 @@
 //!
 //! 这里的项都由核心产出、前端消费：不认识的项落到 [`OutboxKind::Other`]，前端照实回报并跳过，
 //! 不猜怎么执行。
+//!
+//! 核心工具 [`SEND_MESSAGE_TOOL`] 批准后的正文也走这里投递。
 
 use serde::{Deserialize, Serialize};
+
+/// 给某人发消息的核心工具（ADR-0061 第 9 节）；投递走出箱（[`AGENT_OUTBOX_PATH`]）。
+pub const SEND_MESSAGE_TOOL: &str = "wonton__send_message";
+
+/// [`SEND_MESSAGE_TOOL`] 的入参。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SendMessageRequest {
+    /// 收件人：这个 Bot 归属人的家人或好友（ADR-0045、ADR-0051），按用户名认。每条都先发卡片给
+    /// Bot 的归属人，卡片里是收件人和全文（[`crate::ConfirmationCategory::SendMessage`]）。
+    pub recipient: String,
+    /// 要发的正文，批准后原样发进和收件人的私聊。
+    pub body: String,
+}
 
 /// 取走要执行的一项。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +137,22 @@ mod tests {
         assert_eq!(
             serde_json::from_value::<OutboxReceipt>(json!(receipt)).unwrap(),
             receipt
+        );
+    }
+
+    #[test]
+    fn a_send_message_request_round_trips() {
+        let request = SendMessageRequest {
+            recipient: "mom".into(),
+            body: "周末回来吗".into(),
+        };
+        assert_eq!(
+            json!(request),
+            json!({"recipient": "mom", "body": "周末回来吗"})
+        );
+        assert_eq!(
+            serde_json::from_value::<SendMessageRequest>(json!(request)).unwrap(),
+            request
         );
     }
 

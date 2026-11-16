@@ -112,7 +112,7 @@ impl PagesLink {
             camera,
             microphone,
         });
-        let (plugins, _, _, _) = self.inputs();
+        let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
@@ -155,7 +155,7 @@ impl PagesLink {
                     "could not record the media decision; the prompt stays pending for a retry",
                 )
             })?;
-        let (plugins, _, _, _) = self.inputs();
+        let (plugins, _, _) = self.inputs();
         let sync_stale = self.sync_problem.borrow().is_some();
         let view = make_view(&state, &plugins, sync_stale);
         *lock(&self.state) = state;
@@ -210,14 +210,14 @@ pub(super) fn clear_gone_prompt(state: &mut super::PagesState) {
 
 fn page_open(state: &super::PagesState, place: &PlacedTab) -> bool {
     match place {
+        PlacedTab::Content { tab } => state.content.contains_key(tab),
         PlacedTab::Page { tab } => state.stack.iter().any(|item| &item.tab == tab),
         PlacedTab::Panel { scope, tab } => match scope {
             PanelScope::Main => state.config.panel.iter().any(|entry| &entry.tab == tab),
-            PanelScope::Room { room_id } => {
-                state.open_room.as_ref().is_some_and(|(open, panel)| {
-                    open == room_id && panel.pages.iter().any(|entry| &entry.tab == tab)
-                })
-            }
+            PanelScope::Room { room_id } => state
+                .rooms
+                .get(room_id)
+                .is_some_and(|room| room.panel.pages.iter().any(|entry| &entry.tab == tab)),
         },
     }
 }
@@ -235,6 +235,7 @@ pub(super) fn same_origin(url: &Url, origin: &Url) -> bool {
 fn page_id(page: &PlacedTab) -> String {
     let (placement, tab) = match page {
         PlacedTab::Page { tab } => ("page", tab),
+        PlacedTab::Content { tab } => ("content", tab),
         PlacedTab::Panel { scope, tab } => (
             match scope {
                 PanelScope::Main => "panel/main",
