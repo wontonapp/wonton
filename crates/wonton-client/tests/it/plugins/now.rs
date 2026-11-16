@@ -325,7 +325,11 @@ async fn updates_flag_added_app_rows_and_the_store_row() {
 #[tokio::test]
 async fn store_versions_count_as_updates_when_the_check_has_not_run() {
     let rig = Rig::new().await;
-    rig.core.set_lists(vec![vec![running(PHOTOS)]]);
+    // 从商店装的应用有来源；升级检查还没跑到时，商店里版本号和装着的不一样，也算可更新
+    // （和行尾“更新”按钮同一个口径）。
+    let mut photos = running(PHOTOS);
+    photos.source = Some("github:owner/app.photos@v1.0.0".to_owned());
+    rig.core.set_lists(vec![vec![photos]]);
     let mut store = listing();
     let mut photos = store.official.plugins.remove(0);
     photos.version = "2.0.0".to_owned();
@@ -349,6 +353,34 @@ async fn store_versions_count_as_updates_when_the_check_has_not_run() {
         0,
         "没有网页的插件点不开，不进侧边栏"
     );
+}
+
+/// 本地装的插件（主人上传的包，没有来源）核心升不了：升级接口对没有 origin 的记录直接报
+/// not_found。商店里版本号不一样也不算可更新，不然“全部更新”答应了核心做不到的事。
+#[tokio::test]
+async fn a_locally_installed_plugin_is_not_counted_as_updatable() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![vec![running(PHOTOS)]]);
+    let mut store = listing();
+    let mut photos = store.official.plugins.remove(0);
+    photos.version = "2.0.0".to_owned();
+    photos.installed_version = Some("1.0.0".to_owned());
+    store.official.plugins = vec![photos];
+    rig.core.answer(
+        Method::GET,
+        "/_wonton/api/store",
+        Canned(200, serde_json::to_string(&store).unwrap()),
+    );
+    connected_with_store(&rig).await;
+
+    let view = rig.app.plugins();
+    assert_eq!(
+        view.updatable,
+        [],
+        "本地装的插件不算可更新：{:?}",
+        view.updatable
+    );
+    assert_eq!(view.sidebar.updates, 0);
 }
 
 #[tokio::test]
