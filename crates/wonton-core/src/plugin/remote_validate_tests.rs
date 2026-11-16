@@ -2,6 +2,7 @@ use serde_json::{Value, json};
 
 use super::*;
 use crate::plugin::install_error::InstallError;
+use crate::plugin::manifest::ManifestExt;
 use crate::plugin::package::{PackageError, PluginPackage};
 use crate::plugin::proxy_auth::{McpHeaders, render_input_header, render_input_url};
 use crate::plugin::secrets::Secrets;

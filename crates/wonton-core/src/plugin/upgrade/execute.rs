@@ -3,7 +3,7 @@
 use super::super::lan::webui::switched;
 use super::super::lifecycle::Grants;
 use super::super::manager::{InstallError, PluginManager, check_permissions};
-use super::super::manifest::Permission;
+use super::super::manifest::{ManifestExt, Permission};
 use super::super::package::PluginPackage;
 use super::super::render::dry_run;
 use super::run::Outcome;

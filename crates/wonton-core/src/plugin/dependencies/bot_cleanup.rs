@@ -444,7 +444,7 @@ impl PluginManager {
             if let Err(error) = self
                 .connect_capability(&manifest.id, provider, capability, langs, None)
                 .await
-                && (manifest.requires.contains(capability)
+                && (super::requires(manifest, capability)
                     || matches!(error, InstallError::Storage(_)))
             {
                 return Err(error);
