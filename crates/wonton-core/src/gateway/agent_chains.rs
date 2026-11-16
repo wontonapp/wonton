@@ -27,18 +27,10 @@ use crate::plugin::PluginId;
 /// 请求体的上限：一轮的报告就是几个 ID，再大是调用方的错。
 const MAX_BODY: usize = 64 * 1024;
 
-/// `agent_acp` 连接上会话的取消（ADR-0061 第 10 节，第 5 块的网关接上）：停链时核心对每个经 `agent_acp`
-/// 的会话发 `session/cancel`，网关自己把未决的权限请求回 `cancelled`。取消是异步的，接口不等它。
-pub trait AgentAcpCancel: Send + Sync {
-    fn cancel(&self, session: &str);
-}
-
 pub struct AgentChains {
     ledger: Arc<Chains>,
     outbox: Arc<Outbox>,
     settings: Arc<AgentSettings>,
-    /// `agent_acp` 的取消方；第 5 块接上之前停链只停桥的轮次。
-    acp: std::sync::OnceLock<Arc<dyn AgentAcpCancel>>,
 }
 
 impl AgentChains {
@@ -47,7 +39,6 @@ impl AgentChains {
             ledger,
             outbox,
             settings,
-            acp: std::sync::OnceLock::new(),
         }
     }
     #[cfg(test)]
@@ -79,15 +70,8 @@ impl AgentChains {
         &self.settings
     }
 
-    /// 接上 `agent_acp` 的取消方（第 5 块）。接两次时保留先接上的。
-    pub fn attach_acp_cancel(&self, cancel: Arc<dyn AgentAcpCancel>) {
-        if self.acp.set(cancel).is_err() {
-            tracing::warn!("agent_acp 的取消方接了两次，用先接上的");
-        }
-    }
-
-    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped` 并交出活会话和待答卡片；桥的轮次进这个 Bot 的出箱
-    /// 发 `CancelTurn`，`agent_acp` 的会话交给网关取消。撤回卡片归总线（[`crate::mcp::Bus::stop_chain`]）。
+    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped` 并交出活会话和待答卡片；轮次进这个 Bot 的出箱
+    /// 发 `CancelTurn`。撤回卡片归总线（[`crate::mcp::Bus::stop_chain`]）。
     pub fn stop(
         &self,
         chain: &str,
@@ -105,11 +89,6 @@ impl AgentChains {
                 tracing::warn!(%error, session = %session.session, "取消轮次没能排进出箱");
             }
         }
-        if let Some(acp) = self.acp.get() {
-            for session in outcome.agent_acp.iter().chain(&outcome.hand_off) {
-                acp.cancel(&session.session);
-            }
-        }
         Ok(outcome)
     }
 }
@@ -118,12 +97,6 @@ impl Gateway {
     #[must_use]
     pub fn with_agent_chains(mut self, chains: Option<Arc<AgentChains>>) -> Self {
         self.agent_chains = chains;
-        self
-    }
-
-    /// 接上 `agent_acp` 的连接注册表：并发计数和停链取消这才可用。
-    pub fn with_agent_acp(mut self, registry: Option<Arc<super::agent_acp::Registry>>) -> Self {
-        self.agent_acp = registry;
         self
     }
 

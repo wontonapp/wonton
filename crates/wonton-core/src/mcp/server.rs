@@ -30,7 +30,7 @@ pub struct Caller {
     /// 这条调用属于哪条调用链（ADR-0061 第 10 节）：`wonton-session` 头里的会话在这个 Bot 的轮次里时是那条链。
     /// 会话不是这个 Bot 的就当没带，审计里记一行。
     pub chain: Option<String>,
-    /// 核对过归属的 ACP 会话；交接去重和父会话路径用它，不以房间或链 ID 代替。
+    /// 核对过归属的会话；权限卡片按它找状态，不以房间或链 ID 代替。
     pub session: Option<String>,
     pub request_id: Option<rmcp::model::RequestId>,
     /// 这次请求已按当前记录解析出的 AI 动手封顶（[`Bus::ai_cap`]）；内部入口直接构造的 `Caller` 留空，由总线再算。
