@@ -62,6 +62,7 @@ struct ChatListView: View {
                             .accessibilityAddTraits(selected ? .isSelected : [])
                             .accessibilityValue(row.callActive ? String(localized: .Chat.roomCallActive) : "")
                             .accessibilityIdentifier("chatRoom.\(row.roomId)")
+                            .contextMenu { ContentWindowButton(target: .room(roomId: row.roomId)) }
                         }
                     }
                 }

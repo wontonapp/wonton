@@ -31,6 +31,10 @@ SwiftUI 原生壳，外加通知扩展（解密推送）和小组件扩展（ADR
 - `project.yml`：XcodeGen 工程描述。`Wonton.xcodeproj` 和 `Wonton/Info.plist` 由它生成，不提交。
 - iPad regular 宽度用 `NavigationSplitView` 展示会话列表和当前内容，插件页只铺右栏；compact 宽度保留单列和抽屉。
   当前房间沿用 `ChatModel.path`，旋转和系统分屏不改选中项；iPad 不套用 iPhone 的竖屏限制。
+- iPad 的会话行、我的应用和插件页胶囊长按菜单可“在新窗口打开”。每个内容窗口独立保存目标与滚动位置，
+  房间窗口保留完整聊天操作，插件窗口关闭胶囊只清空本窗口页面；系统关窗才销毁窗口。
+  所有窗口共用一个核心、连接和房间草稿，时间线订阅与 WebView 各自独立；切换服务器后，旧服务器窗口提示切回，
+  不把旧目标交给新服务器。系统重复打开的完整主窗口仍共享页面栈，链接和快捷指令只路由到主窗口。
 - `scripts/build-core.sh`：编译 Rust 核心、生成 XCFramework 和 Swift 绑定。
 
 插件的可选权限在安装预览中本地选择，升级沿用核心预览的开关；提交包含最高风险或未知风险权限时另行确认主机控制权。
@@ -54,7 +58,7 @@ WebContent 进程终止后重建 WebView，恢复当前地址，重新加载期�
 顶上的状态栏加胶囊那一行设成 `obscuredContentInsets`；iOS 17–18 没有这个接口，网页框从这一条下面开始，这一条涂
 WebKit 给的页面颜色（`themeColor`，没有就是 `underPageBackgroundColor`）。不取网页的像素，不注入 `viewport-fit=cover`。
 
-插件端口映射由核心按页面栈顶和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
+插件端口映射由核心按主窗口页面栈顶、存活内容页和 App 前后台状态启停（[ADR-0072](../../docs/adr/0072-tunnel-udp.md)），
 壳不另报可见插件。详情页显示核心给的映射状态、拒绝原因和公共中继带宽提示；没有状态时显示未知，
 不把端口声明当作已绑定成功。iOS 不提供第三方 App 用的手动映射开关。
 

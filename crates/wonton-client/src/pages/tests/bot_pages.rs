@@ -207,17 +207,17 @@ async fn bot_room_panels_keep_identity_but_reject_outside_or_absolute_paths() {
         );
     }
     let room: OwnedRoomId = "!bot:home".parse().unwrap();
-    rig.room_panel.send_replace(Some((
-        room,
+    rig.open_room(
+        &room,
         RoomPanel {
             pages: vec![PanelEntry {
                 tab: tab(&family, Some("/report?q=1#now")),
                 title: None,
             }],
         },
-    )));
+    );
     rig.tabs.recompute();
-    let view = rig.tabs.room_view().unwrap();
+    let view = rig.tabs.room_view(room.as_str()).unwrap();
     assert_eq!(view.panel[0].tab, tab(&family, Some("/report?q=1#now")));
     assert_eq!(
         view.panel[0].page.url.as_deref(),
