@@ -11,6 +11,7 @@ struct TransfersStrip: View {
 
     var body: some View {
         // 读一下传输列表当变化信号：一变就重取这个房间的传输条；下载完的按房间归属在里面。
+        // swiftlint:disable:next redundant_discardable_let
         let _ = files.viewModel
         let listed = files.core.roomTransfers(roomId: roomId)
         // 不用 `Group`：它没有自己的视图，内容变空时 `onChange` 可能不触发。
@@ -65,6 +66,7 @@ private struct DownloadedList: View {
 
     var body: some View {
         // 读传输列表当变化信号：列表开着时来新的下载，跟着变。
+        // swiftlint:disable:next redundant_discardable_let
         let _ = files.viewModel
         let listed = files.core.roomTransfers(roomId: roomId)
         VStack(spacing: WontonTheme.spacing.s8) {
