@@ -11,7 +11,6 @@ uniffi::setup_scaffolding!();
 mod action;
 mod action_domains;
 mod agent_chain;
-mod agent_handoff;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
@@ -86,11 +85,10 @@ pub use agent_chain::{
     WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
     agent_consumer_concurrency_path,
 };
-pub use agent_handoff::{
-    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
-    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+pub use agent_outbox::{
+    OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
+    SendMessageRequest,
 };
-pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,

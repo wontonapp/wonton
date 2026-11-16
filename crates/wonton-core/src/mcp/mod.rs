@@ -20,8 +20,6 @@ mod core_tools;
 mod dependencies;
 mod file_results;
 mod file_tools;
-mod handoff;
-mod handoff_tools;
 mod naming;
 mod notifier;
 mod panel_tools;
@@ -121,8 +119,6 @@ pub struct Bus {
     agent_chains: OnceLock<Arc<crate::gateway::agent_chains::AgentChains>>,
     /// 好友名单（ADR-0051）：`wonton__send_message` 认收件人用（[`Bus::attach_friends`]）。
     friends: OnceLock<Arc<crate::friends::Friends>>,
-    handoffs: Arc<handoff::Handoffs>,
-    handoff_gateway: OnceLock<std::sync::Weak<crate::gateway::Gateway>>,
     /// Bot 钉进主面板的同意卡片的等待：每个（插件）最多一张。
     pin_cards: Mutex<HashSet<PluginId>>,
     /// 旧协议（2026-07-28 之前）的会话：工具列表变了要逐个通知。
@@ -160,8 +156,6 @@ impl Bus {
             contacts: OnceLock::new(),
             agent_chains: OnceLock::new(),
             friends: OnceLock::new(),
-            handoffs: Arc::default(),
-            handoff_gateway: OnceLock::new(),
             pin_cards: Mutex::new(HashSet::new()),
             peers: Mutex::new(Vec::new()),
         });
@@ -270,12 +264,6 @@ impl Bus {
         self.agent_chains.get()
     }
 
-    pub fn attach_handoff_gateway(&self, gateway: std::sync::Weak<crate::gateway::Gateway>) {
-        if self.handoff_gateway.set(gateway).is_err() {
-            tracing::error!("交接的网关接了两次，用先接上的");
-        }
-    }
-
     /// 接上好友名单（ADR-0051）。只接一次。
     pub fn attach_friends(&self, friends: Arc<crate::friends::Friends>) {
         if self.friends.set(friends).is_err() {
@@ -291,7 +279,7 @@ impl Bus {
         &self.audit
     }
 
-    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、桥的轮次进他的出箱、`agent_acp` 的会话交给网关取消，
+    /// 停整条链（ADR-0061 第 10 节）：账本置 `Stopped`、轮次进他的出箱并撤回待答卡片，
     /// 链上还等着的卡片撤回（等待方拿到 `cancelled`）。
     pub async fn stop_chain(
         self: &Arc<Self>,
@@ -598,7 +586,7 @@ impl Bus {
         } else {
             Subject::Tool
         };
-        let relaxed = cap == AiLevel::SelfConfirms && handoff::allows_relaxation(self, caller);
+        let relaxed = cap == AiLevel::SelfConfirms;
         Ok(risky::ToolDecision::new(
             definition, cap, highest, subject, relaxed,
         ))
@@ -822,12 +810,6 @@ mod device_card_tests;
 mod file_block_tests;
 #[cfg(test)]
 mod file_tests;
-#[cfg(test)]
-mod handoff_path_tests;
-#[cfg(test)]
-mod handoff_test_support;
-#[cfg(test)]
-mod handoff_tests;
 #[cfg(test)]
 mod help_tests;
 #[cfg(test)]
