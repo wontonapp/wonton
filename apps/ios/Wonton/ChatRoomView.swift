@@ -476,6 +476,7 @@ private struct KeyNoticeBanner: View {
         .foregroundStyle(Color(colors.textPrimary))
         .padding(.horizontal, WontonTheme.spacing.pageInset)
         .padding(.vertical, WontonTheme.spacing.s8)
+        .frame(minHeight: WontonTheme.size.target)
     }
 }
 
