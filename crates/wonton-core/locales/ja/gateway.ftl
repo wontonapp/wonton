@@ -171,6 +171,14 @@ clients-unavailable = コアがコンテナで実行されていないため、�
 clients-passwords-unavailable = 今はアプリのパスワードの保存先を読み取れません
 clients-password-label-invalid = クライアントには改行を含まない1〜128文字の名前を付けてください
 clients-password-not-found = このアプリのパスワードはもう存在しません
+clients-password-shared = アプリのパスワード
+clients-credentials-missing = このアプリは資格情報認証を使っていません
+clients-credentials-shared-exists = このアプリには共有パスワードがすでにあります
+clients-credentials-timeout = アプリ内のコマンドがタイムアウトしました。すでに反映されている可能性があり、再試行します
+clients-credentials-unavailable = アプリが実行されていないため、今はパスワードを発行できません
+clients-credentials-missing-command = マニフェストに { $op } コマンドがありません
+clients-credentials-failed = アプリ内のコマンドが失敗しました：{ $error }
+gateway-entry-credentials-not-issued = アプリのパスワードがまだないため、入口は閉じたままです
 clients-domain-read-failed = ドメイン設定を読めませんでした：{ $error }
 gateway-chains-disabled = 自宅サーバーで呼び出しの連鎖の台帳が有効になっていません
 

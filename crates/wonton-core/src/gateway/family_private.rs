@@ -26,7 +26,9 @@ impl Gateway {
             .filter(|member| member.status == MemberStatus::Removed)
         {
             for device in self.tunnel.devices.of_user(&member.username) {
-                super::devices::revoke_device(self, &device.id).map_err(storage)?;
+                super::devices::revoke_device(self, &device.id, false)
+                    .await
+                    .map_err(storage)?;
             }
         }
         self.sync_family_room().await?;

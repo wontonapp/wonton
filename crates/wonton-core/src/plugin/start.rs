@@ -65,6 +65,12 @@ impl PluginManager {
             this.start(&started_id).await
         })
         .await?;
+        // 启动已成功：补共享密码、重试待完成的凭据操作、对账旧值；不拖启动返回。
+        let reconciling = Arc::clone(self);
+        let reconciled = id.clone();
+        tokio::spawn(async move {
+            reconciling.reconcile_credentials(&reconciled).await;
+        });
         if probe {
             closing.check_models_once(vec![id]).await;
         }
