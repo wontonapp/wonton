@@ -184,6 +184,10 @@ struct View {
     /// 房间里有没有人在通话（`m.call.member`），和上一批送出去的：变了补发一批（ADR-0096）。
     call: bool,
     sent_call: bool,
+    /// 群里在场的 AI（本账号认识的 Bot 里在房间成员中的），和上一批送出去的：变了补发一批。
+    /// 私聊里 Bot 本来就在顶栏，壳不消费这个字段。
+    bots_in_room: Vec<String>,
+    sent_bots_in_room: Vec<String>,
 }
 
 impl View {
@@ -196,9 +200,19 @@ impl View {
         }
     }
 
-    async fn refresh_unread(&mut self, room: &ChatRoom) {
+    async fn refresh_unread(&mut self, room: &ChatRoom, bots: &BotsView) {
         self.unread = u32::try_from(room.unread_messages().await).unwrap_or(u32::MAX);
         self.call = room.call_active();
+        self.bots_in_room = room
+            .member_user_ids()
+            .into_iter()
+            .filter(|member| bots.is_bot(member))
+            .collect();
+    }
+
+    /// 在场的 AI 变了没有（和上一批送出去的比）。
+    fn bots_changed(&self) -> bool {
+        self.bots_in_room != self.sent_bots_in_room
     }
 }
 
@@ -259,7 +273,7 @@ async fn forward(
         let mut check = tokio::time::interval(std::time::Duration::from_secs(1));
         check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
-            view.refresh_unread(room).await;
+            view.refresh_unread(room, &bots).await;
             let sent = tokio::select! {
                 batch = diffs.next() => {
                     let Some(batch) = batch else { return };
@@ -272,10 +286,10 @@ async fn forward(
                         Err(broadcast::error::RecvError::Lagged(_)) => {}
                         Err(broadcast::error::RecvError::Closed) => return,
                     }
-                    view.call = room.call_active();
+                    view.refresh_unread(room, &bots).await;
                     let unread_moved =
                         view.scroll != TimelineScroll::Bottom && view.unread != view.sent_unread;
-                    if !unread_moved && view.call == view.sent_call {
+                    if !unread_moved && view.call == view.sent_call && !view.bots_changed() {
                         continue;
                     }
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
@@ -288,9 +302,19 @@ async fn forward(
                             Batch::Sent(Ok(()), true)
                         }
                         // 旁聊的未读、状态（“没收到结果”按时间到）、头部也按秒重算。
-                        None => match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
-                            Some(batch) => batch,
-                            None => continue,
+                        None => {
+                            // 成员进出不产生时间线条目，在场的 AI 按秒对一次表：变了补发一批空的。
+                            if view.bots_changed() {
+                                Batch::Sent(
+                                    send(sender, &entries, Vec::new(), &mut view, None),
+                                    false,
+                                )
+                            } else {
+                                match side_chat_batch(room, support, &entries, &read, plugins, sender, &mut view, &mut bots, &previews).await {
+                                    Some(batch) => batch,
+                                    None => continue,
+                                }
+                            }
                         },
                     }
                 }
@@ -330,7 +354,7 @@ async fn forward(
                         continue;
                     }
                     view.scroll = next;
-                    view.refresh_unread(room).await;
+                    view.refresh_unread(room, &bots).await;
                     Batch::Sent(send(sender, &entries, Vec::new(), &mut view, None), false)
                 }
                 changed = chat.changed() => {
@@ -348,7 +372,11 @@ async fn forward(
                         &new_bots,
                         &previews,
                     );
-                    if diffs.is_empty() && sender.key_notice(&entries) == view.notice {
+                    view.refresh_unread(room, &new_bots).await;
+                    if diffs.is_empty()
+                        && sender.key_notice(&entries) == view.notice
+                        && !view.bots_changed()
+                    {
                         continue;
                     }
                     bots = new_bots;
@@ -419,8 +447,10 @@ async fn start_batch(
         notice: None,
         call: false,
         sent_call: false,
+        bots_in_room: Vec::new(),
+        sent_bots_in_room: Vec::new(),
     };
-    view.refresh_unread(room).await;
+    view.refresh_unread(room, bots).await;
     let position = read_index(room, entries).await;
     let anchor = anchor_of(entries, view.unread, position);
     if anchor.as_deref() != entries.last().map(|entry| entry.id.as_str()) {
@@ -745,6 +775,7 @@ fn send(
     view.sent_unread = view.unread;
     view.notice = sender.key_notice(entries);
     view.sent_call = view.call;
+    view.sent_bots_in_room = view.bots_in_room.clone();
     sender.send(
         entries,
         diffs,
@@ -752,6 +783,7 @@ fn send(
         view.viewport(),
         anchor,
         view.call,
+        view.bots_in_room.clone(),
     )
 }
 

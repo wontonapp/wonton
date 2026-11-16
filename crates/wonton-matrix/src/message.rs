@@ -227,6 +227,11 @@ impl MemberNames {
         self
     }
 
+    /// 在场成员的用户 ID；"谁在群里"按它算，不按显示名。
+    pub(crate) fn user_ids(&self) -> Vec<String> {
+        self.names.keys().map(|user| user.to_string()).collect()
+    }
+
     pub(crate) fn name(&self, user: &UserId) -> String {
         self.get(user).to_owned()
     }

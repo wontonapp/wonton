@@ -90,6 +90,18 @@ private extension ChatRoomView {
             if let plugin = model.viewModel.rooms.first(where: { $0.roomId == roomId })?.plugin {
                 AgentPluginStatusBanner(plugin: plugin, model: plugins)
             }
+            // 群里能用的 AI；私聊不显示，Bot 本来就在顶栏（ADR-0044）。
+            if threadRoot == nil, !isDirect {
+                RoomAiLine(
+                    roomBots: timeline.roomBots,
+                    bots: model.viewModel.bots,
+                    core: model.core,
+                    plugins: plugins
+                ) { bot in
+                    profileBot = bot
+                    showsBotProfile = true
+                }
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             roomBottomBar
@@ -647,6 +659,64 @@ private extension ChatRoomView {
             default: true
             }
         }?.id
+    }
+}
+
+/// 群里能用的 AI：在场的 Bot 一行小胶囊，点了开 Bot 资料；一个都没有时说明 @ 不会有人回应。
+/// 私聊不显示：Bot 本来就在顶栏（ADR-0044）。
+private struct RoomAiLine: View {
+    let roomBots: [String]
+    let bots: [BotView]
+    let core: ClientCore
+    let plugins: PluginsModel
+    let onOpen: (BotRef) -> Void
+
+    @Environment(\.wontonColors) private var colors
+
+    var body: some View {
+        let inRoom = roomBots.compactMap { id in bots.first { $0.userId == id } }
+        if inRoom.isEmpty {
+            HStack(spacing: WontonTheme.spacing.s8) {
+                WontonIcon.info.view(size: WontonTheme.size.iconTiny)
+                Text(.Chat.roomNoAi)
+            }
+            .wontonText(WontonTheme.typography.caption)
+            .foregroundStyle(Color(colors.textSecondary))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .padding(.vertical, WontonTheme.spacing.s4)
+        } else {
+            HStack(spacing: WontonTheme.spacing.s8) {
+                ForEach(inRoom, id: \.userId) { bot in
+                    Button {
+                        onOpen(bot.bot)
+                    } label: {
+                        HStack(spacing: WontonTheme.spacing.s4) {
+                            BotAvatarView(
+                                bot: bot,
+                                pluginIcon: pluginIcon(bot),
+                                core: core,
+                                model: plugins,
+                                size: WontonTheme.size.icon
+                            )
+                            Text(bot.name)
+                                .wontonText(WontonTheme.typography.caption)
+                                .foregroundStyle(Color(colors.textPrimary))
+                                .lineLimit(1)
+                        }
+                        .frame(minHeight: WontonTheme.size.target)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, WontonTheme.spacing.pageInset)
+            .padding(.vertical, WontonTheme.spacing.s4)
+        }
+    }
+
+    private func pluginIcon(_ bot: BotView) -> PluginIcon? {
+        plugins.viewModel.installed?.plugins.first { $0.id == bot.bot.pluginId }?.icon
     }
 }
 

@@ -79,6 +79,12 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
             Vec::new()
         },
         call_active: in_call,
+        // UI 测试的假房间：私聊（顶栏显示 Bot）不带；通话群是群聊，带一个在场的 AI。
+        room_bots: if in_call {
+            vec!["@hermes:home.example".into()]
+        } else {
+            Vec::new()
+        },
     }
 }
 
