@@ -43,6 +43,10 @@ plugins-tasks-uncertain = The connection dropped, so the result from your home s
 plugins-tasks-server-changed = Your home server changed, so the result from the previous one is unknown.
 
 plugins-tasks-preview-no-source = This preview has no source, so it can't be installed.
+# $title is the provider's name, $capability the missing required capability it provides.
+plugins-tasks-install-together = { $title } will be installed with it, because it provides the missing required capability { $capability }.
+# $capability is the missing required capability.
+plugins-tasks-preview-no-provider = Nothing in the store provides the missing required capability { $capability}, so it can't be installed.
 
 # $id is the unchanged task ID.
 plugins-tasks-no-such-task = There's no such task: { $id }

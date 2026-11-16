@@ -4,6 +4,7 @@ mod agent_dispatch;
 mod ask_every_update;
 mod audience;
 mod bots;
+mod capability_install;
 mod chat_rows;
 mod connection;
 mod core_upgrade;

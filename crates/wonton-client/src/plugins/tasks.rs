@@ -10,10 +10,11 @@ use tokio::sync::watch;
 
 use wonton_l10n::l10n;
 use wonton_protocol::{
-    CoreError, HomeStatus, HomeViewModel, InstallPreview, InstallRequest, PluginDetail,
-    PluginFailure, PluginIcon, PluginOperation, PluginProblem, PluginState, PluginTask,
-    PluginTaskNextStep, PluginTaskState, PluginsViewModel, SecretString, SecretUpdate,
-    SecretValues, SettingValues, UpgradeRequest, UpgradeResult,
+    CapabilityProvider, CardLine, CoreError, HomeStatus, HomeViewModel, InstallPreview,
+    InstallRequest, InstallTogether, MissingCapability, PluginDetail, PluginFailure, PluginIcon,
+    PluginOperation, PluginProblem, PluginState, PluginTask, PluginTaskNextStep, PluginTaskState,
+    PluginsViewModel, SecretString, SecretUpdate, SecretValues, SettingValues, UpgradeRequest,
+    UpgradeResult,
 };
 
 use super::api::{CoreApi, INSTALL_TIMEOUT, to_core_error};
@@ -62,6 +63,7 @@ impl PluginsLink {
             .take()
             .and_then(crate::selected_plugin_audience);
         let devices = Self::chosen_devices(&preview);
+        let missing = preview.missing_requires.clone();
         let Some(source) = preview.source else {
             return Err(CoreError::InvalidInput {
                 reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
@@ -73,7 +75,7 @@ impl PluginsLink {
             preview.icon.clone(),
             PluginOperation::Install,
         )?;
-        let request = InstallRequest {
+        let mut request = InstallRequest {
             source,
             digest: preview.digest,
             plan: preview.plan,
@@ -96,11 +98,39 @@ impl PluginsLink {
             let Some(api) = link.task_api(&id, generation) else {
                 return;
             };
-            let sent = api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT);
+            let sent = async {
+                request.install_together = link.providers(&missing).await.map_err(problem)?;
+                api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT).await
+            };
             link.finish_task(&id, Outcome::Running { version: None }, sent)
                 .await;
         });
         Ok(())
+    }
+
+    /// 一起装的提供方（ADR-0053）：预览里缺的必需能力各取列表的第一个提供方，连同它自己的预览一起装。
+    /// 确认页没有选提供方的操作，主人看到的是 [`provider_notices`] 写下的那一行。
+    async fn providers(
+        self: &Arc<Self>,
+        missing: &[MissingCapability],
+    ) -> Result<Vec<InstallTogether>, CoreError> {
+        let mut together = Vec::with_capacity(missing.len());
+        for capability in missing {
+            let provider = capability
+                .providers
+                .first()
+                .ok_or_else(|| CoreError::NotReady {
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "plugins-tasks-preview-no-provider",
+                        capability = capability.capability.as_str()
+                    ),
+                })?;
+            let preview = self.preview_install(provider.source.clone()).await?;
+            together.push(provider_install(provider, preview)?);
+        }
+        Ok(together)
     }
 
     /// 填一项密钥或清空可选项（ADR-0064）：核心重建用到它的服务，做完才回应。
@@ -629,4 +659,77 @@ fn enabled_permissions(preview: &InstallPreview) -> Vec<String> {
         .filter(|line| line.optional && line.enabled)
         .map(|line| line.permission.clone())
         .collect()
+}
+
+/// 确认页写明会一起装的提供方（ADR-0053）：安装确认页就是这次授权的确认，高权限的提供方要醒目。
+pub(super) fn provider_notices(preview: &mut InstallPreview) {
+    for missing in &preview.missing_requires {
+        let Some(provider) = missing.providers.first() else {
+            continue;
+        };
+        preview.notices.push(CardLine {
+            text: l10n!(
+                CATALOG,
+                language(),
+                "plugins-tasks-install-together",
+                title = provider.title.as_str(),
+                capability = missing.capability.as_str()
+            ),
+            emphasis: provider.high_privilege,
+        });
+    }
+}
+
+/// 一个提供方的安装决定：它预览里列出的权限照授，内层不再带别的依赖（ADR-0053）。
+fn provider_install(
+    provider: &CapabilityProvider,
+    mut preview: InstallPreview,
+) -> Result<InstallTogether, CoreError> {
+    let grant = confirmed(&preview)?;
+    let enabled_permissions = enabled_permissions(&preview);
+    let lan_webui = lan_webui_chosen(&preview);
+    let devices = PluginsLink::chosen_devices(&preview);
+    let audience = preview
+        .audience
+        .take()
+        .and_then(crate::selected_plugin_audience);
+    let Some(source) = preview.source.take() else {
+        return Err(CoreError::InvalidInput {
+            reason: l10n!(CATALOG, language(), "plugins-tasks-preview-no-source"),
+        });
+    };
+    Ok(InstallTogether {
+        id: provider.id.clone(),
+        request: InstallRequest {
+            source,
+            digest: preview.digest,
+            plan: preview.plan,
+            scope: None,
+            audience,
+            grant,
+            enabled_permissions,
+            secrets: SecretValues::new(),
+            settings: Default::default(),
+            devices,
+            lan_webui,
+            install_together: Vec::new(),
+            connect_plugins: Vec::new(),
+            remote_oauth: None,
+        },
+    })
+}
+
+/// 取提供方预览失败：断线照样可能已经装上了，别的按输入不合法收场。
+fn problem(error: CoreError) -> PluginProblem {
+    let (reason, message) = match error {
+        CoreError::TransportUnavailable { reason } => (PluginFailure::TransportUnavailable, reason),
+        CoreError::NotReady { reason } => (PluginFailure::RecordUnusable, reason),
+        other => (PluginFailure::Invalid, other.to_string()),
+    };
+    PluginProblem {
+        reason,
+        message,
+        min_version: None,
+        settings: None,
+    }
 }

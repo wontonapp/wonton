@@ -40,6 +40,10 @@ plugins-tasks-uncertain = 接続が切断されたため、自宅サーバーで
 plugins-tasks-server-changed = 自宅サーバーが変わったため、以前のサーバーでの結果は不明です。
 
 plugins-tasks-preview-no-source = このプレビューには提供元がないため、インストールできません。
+# $title は提供元の名前、$capability はそれが提供する不足中の必須機能です。
+plugins-tasks-install-together = { $title }も一緒にインストールします：不足している必須機能{ $capability }はこれが提供します。
+# $capability は不足している必須機能です。
+plugins-tasks-preview-no-provider = 不足している必須機能{ $capability }を提供するプラグインがストアにないため、インストールできません。
 
 # $id はそのままのタスクIDです。
 plugins-tasks-no-such-task = そのようなタスクはありません：{ $id }

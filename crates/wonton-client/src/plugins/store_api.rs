@@ -20,13 +20,16 @@ impl PluginsLink {
         source: String,
     ) -> Result<InstallPreview, CoreError> {
         let api = self.api().map_err(to_core_error)?;
-        api.post(
-            &["plugins", "preview"],
-            &InstallSource { source },
-            SOURCE_TIMEOUT,
-        )
-        .await
-        .map_err(to_core_error)
+        let mut preview: InstallPreview = api
+            .post(
+                &["plugins", "preview"],
+                &InstallSource { source },
+                SOURCE_TIMEOUT,
+            )
+            .await
+            .map_err(to_core_error)?;
+        super::tasks::provider_notices(&mut preview);
+        Ok(preview)
     }
 
     pub(crate) async fn preview_upgrade(&self, id: &str) -> Result<InstallPreview, CoreError> {
