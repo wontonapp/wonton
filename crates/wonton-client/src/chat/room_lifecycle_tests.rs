@@ -508,6 +508,8 @@ async fn a_foregrounded_read_in_flight_at_logout_cannot_write_back_its_old_ident
         .await
         .expect("old fetch did not reach the publish gate")
         .unwrap();
+    // 旧任务过闸门后不得再发第 3 笔：累计仍应是前台 1 + 注销 1。
+    assert_eq!(core.requests.load(Ordering::SeqCst), 2);
     let view = watch.borrow_and_update();
     assert_eq!(view.own_private_bot, Some(new));
     assert!(view.own_private_bot_problem.is_none());
