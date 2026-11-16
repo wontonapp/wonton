@@ -99,25 +99,25 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "There's no default agent yet. Pick one in Settings."
+            "value": "There's no default assistant yet. Pick one in Settings."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "还没有默认 Agent：先在设置里选一个"
+            "value": "还没有默认助手：先在设置里选一个"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "還沒有預設 Agent：先在設定裡選一個"
+            "value": "還沒有預設助手：先在設定裡選一個"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "デフォルトのエージェントがまだありません。設定で選んでください。"
+            "value": "デフォルトのアシスタントがまだありません。設定で選んでください。"
           }
         }
       }

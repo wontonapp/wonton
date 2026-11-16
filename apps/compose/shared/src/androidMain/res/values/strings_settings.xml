@@ -7,7 +7,7 @@
     <!-- Settings row and page title for the navigation bar buttons. No arguments. -->
     <string name="settings_nav_bar">Navigation bar</string>
     <!-- Settings row title and value of the default agent; the value is the agent's name. -->
-    <string name="settings_default_agent">Default agent</string>
+    <string name="settings_default_agent">Default assistant</string>
     <!-- Settings row and page title for the version and licenses. No arguments. -->
     <string name="settings_about">About</string>
     <!-- Row on the About page and value label of the version. No arguments. -->
