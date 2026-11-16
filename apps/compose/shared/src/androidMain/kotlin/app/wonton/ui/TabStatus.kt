@@ -35,7 +35,16 @@ internal fun PluginTabStatus(
     val inBrowser = crossOriginBlocked && problem == null &&
         (state is TabState.Ready || state is TabState.Upgrading)
     if (inBrowser) {
-        BrowserPageStatus(page, tabs.core, autoOpen = place !is PlacedTab.Panel)
+        BrowserPageStatus(
+            page, tabs.core,
+            autoOpen = place !is PlacedTab.Panel,
+            onBackToChat = {
+                when (place) {
+                    is PlacedTab.Panel -> tabs.send(Action.Pages(PageAction.RemovePanelPage(place.scope, tab)))
+                    else -> tabs.send(Action.Pages(PageAction.OpenPage(TabRef.Chat)))
+                }
+            },
+        )
         return
     }
     val failure = when {

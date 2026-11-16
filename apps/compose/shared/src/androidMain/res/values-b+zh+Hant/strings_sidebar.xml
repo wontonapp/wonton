@@ -35,6 +35,7 @@
     <!-- 應用程式行上小圖釘的讀屏描述：這個應用程式的頁面固定在底部導覽列上。 -->
     <string name="sidebar_pinned">已固定到底部導覽列</string>
     <!-- 一行提示：這個應用程式的更新要先確認才能開始。 -->
+    <string name="sidebar_opens_in_browser">在瀏覽器開啟</string>
     <string name="sidebar_needs_attention">需要你處理</string>
     <string name="sidebar_problem">頁面出了問題</string>
 </resources>
