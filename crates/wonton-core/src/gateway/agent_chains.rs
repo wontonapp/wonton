@@ -103,34 +103,48 @@ impl Gateway {
     /// 这个 Bot 听的人里有没有 `sender`（ADR-0045 的名单）：归属人本人、已成立的联系人，或者同一个归属人的
     /// 另一个 Bot（ADR-0083 第 4 节）。认不出这个 Bot 时是假。
     pub(crate) fn bot_listens_to(&self, bot: &BotRef, sender: &str) -> bool {
-        let Ok(id) = PluginId::parse(&bot.plugin_id) else {
-            return false;
-        };
-        let Some(account) = self.plugins.bot_account(&id, &bot.bot) else {
-            return false;
-        };
-        // 归属人：私人 Bot 是这个人，共享 Bot 是主人。同一个归属人的另一个 Bot 也算（Bot 之间按名字叫）。
-        let viewer = self.plugins.bot_by_user(sender);
-        if let Some((_, _, keeper)) = &viewer
-            && self
-                .plugins
-                .bot_by_user(&account.user_id)
-                .is_some_and(|(_, _, own)| &own == keeper)
-        {
-            return true;
-        }
-        let keeper = keeper_of(&self.plugins, &account.user_id);
-        let keeper_id = self.matrix.as_ref().map(|m| m.user_id(&keeper));
-        if keeper_id.as_deref() == Some(sender) {
-            return true;
-        }
-        self.contacts().is_some_and(|contacts| {
-            contacts
-                .allowed_users(&account.user_id)
-                .iter()
-                .any(|u| u == sender)
-        })
+        bot_listens_to(
+            &self.plugins,
+            self.matrix.as_deref(),
+            self.contacts().map(Arc::as_ref),
+            bot,
+            sender,
+        )
     }
+}
+
+/// [`Gateway::bot_listens_to`] 的实现：MCP 总线也要验请求头里报的说话人。
+pub(crate) fn bot_listens_to(
+    plugins: &crate::plugin::PluginManager,
+    matrix: Option<&crate::matrix::Matrix>,
+    contacts: Option<&crate::contacts::Contacts>,
+    bot: &BotRef,
+    sender: &str,
+) -> bool {
+    let Ok(id) = PluginId::parse(&bot.plugin_id) else {
+        return false;
+    };
+    let Some(account) = plugins.bot_account(&id, &bot.bot) else {
+        return false;
+    };
+    // 归属人：私人 Bot 是这个人，共享 Bot 是主人。同一个归属人的另一个 Bot 也算（Bot 之间按名字叫）。
+    if let Some((_, _, keeper)) = plugins.bot_by_user(sender)
+        && plugins
+            .bot_by_user(&account.user_id)
+            .is_some_and(|(_, _, own)| own == keeper)
+    {
+        return true;
+    }
+    let keeper = keeper_of(plugins, &account.user_id);
+    if matrix.map(|m| m.user_id(&keeper)).as_deref() == Some(sender) {
+        return true;
+    }
+    contacts.is_some_and(|contacts| {
+        contacts
+            .allowed_users(&account.user_id)
+            .iter()
+            .any(|u| u == sender)
+    })
 }
 
 fn keeper_of(plugins: &crate::plugin::PluginManager, bot_user_id: &str) -> String {

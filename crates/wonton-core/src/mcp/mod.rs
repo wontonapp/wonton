@@ -60,7 +60,7 @@ pub use cards::Draft;
 pub use cards::text as card_text;
 pub use confirm::{AnswerError, Audience, Confirmations, Notifier, Recipients, Refusal, Ticket};
 pub use notifier::DevicePush;
-pub use server::Caller;
+pub use server::{Caller, TurnSender};
 use takeover::Takeovers;
 pub use tool_policy::PolicyChange;
 use upstream::Upstreams;
@@ -204,6 +204,14 @@ impl Bus {
     /// 接上 Matrix 和主人：Bot 往主面板钉页的同意卡片发在 Bot 自己的房间里。
     pub fn attach_matrix(&self, matrix: Option<Arc<crate::matrix::Matrix>>, owner: String) {
         let _ = self.matrix.set(Cards { matrix, owner });
+    }
+
+    fn matrix(&self) -> Option<&crate::matrix::Matrix> {
+        self.matrix.get()?.matrix.as_deref()
+    }
+
+    fn contacts(&self) -> Option<&crate::contacts::Contacts> {
+        self.contacts.get().map(Arc::as_ref)
     }
 
     fn cards(&self) -> Result<&Cards, String> {
