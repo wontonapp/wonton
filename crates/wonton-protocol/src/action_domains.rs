@@ -287,8 +287,12 @@ pub enum PluginAction {
     /// 主人点了"更新"，同 [`PluginAction::InstallNow`]，对装着的应用升级到提示的版本。
     UpgradeNow { plugin_id: String },
     /// 主人在商店页点了"全部更新"：逐个升级 [`PluginsViewModel::updatable`](crate::PluginsViewModel::updatable) 里的应用，
-    /// 不用拿主意的直接开始；要拿主意的排进 [`PluginsViewModel::confirmation`](crate::PluginsViewModel::confirmation)，一次一条。
+    /// 不用拿主意的直接开始；需要决定的留在批次行内，由主人打开确认页。
     UpgradeAll,
+    /// 打开批次中一项需要主人决定的更新；不重新取预览。
+    ReviewStoreUpdate { plugin_id: String },
+    /// 清除已结束的批次结果，不取消更新，不清除无关任务。
+    DismissStoreUpdates,
     /// 主人关掉了一键操作的确认页，没装也没升。还有排着队的就放下一条进来，没有就清空。
     DismissStoreConfirmation,
     /// 主人在插件网页的标题栏上点了“我来操作”。正在操作别的插件时，那个先交还。

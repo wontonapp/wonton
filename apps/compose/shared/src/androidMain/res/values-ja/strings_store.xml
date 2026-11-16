@@ -48,4 +48,13 @@
     <string name="store_update_all">すべてアップデート</string>
     <!-- そのシートを開くツールバーのダウンロードアイコンの読み上げ。 -->
     <string name="store_update_all_a11y">すべてアップデート、%1$d件</string>
+    <string name="store_update_batch_running">アプリを更新中 · %1$d/%2$d件完了</string>
+    <string name="store_update_batch_finished">更新結果：成功 %1$d件 · 失敗 %2$d件 · 要確認 %3$d件</string>
+    <string name="store_update_batch_clear">結果を消去</string>
+    <string name="store_update_batch_target">更新先バージョン：%1$s</string>
+    <string name="store_update_batch_queued">更新待ち</string>
+    <string name="store_update_batch_checking">アップデートを確認中</string>
+    <string name="store_update_batch_needs_decision">確認が必要です</string>
+    <string name="store_update_batch_review">内容を確認</string>
+    <string name="store_update_batch_review_app">%1$sの更新内容を確認</string>
 </resources>
