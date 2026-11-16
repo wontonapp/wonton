@@ -19,7 +19,7 @@ use super::bots::BotStore;
 use super::egress::settings::StoredEgress;
 use super::github_source::Origin;
 use super::languages::Languages;
-use super::manifest::{Manifest, Permission, PluginId};
+use super::manifest::{Manifest, ManifestExt, Permission, PluginId};
 use super::models::ModelKeyStore;
 use super::package_files::PackageFiles;
 use super::pins::PinStore;

@@ -27,7 +27,6 @@ use std::collections::{BTreeSet, HashMap};
 use std::net::IpAddr;
 
 use bollard::models::{ContainerCreateBody, EndpointSettings, PortBinding};
-use serde::{Deserialize, Serialize};
 use wonton_protocol::{PortProtocol, PortSpec};
 
 use crate::l10n;
@@ -48,14 +47,7 @@ pub const ADDRESSES_VAR: &str = "WONTON_LAN_ADDRESSES";
 /// 启动器声明的宣告地址（见 [`announce`]）：告诉手机去哪连，不在虚拟机自己的网卡上。
 pub const ANNOUNCE_VAR: &str = "WONTON_ANNOUNCE_ADDRESSES";
 
-/// 清单的 `lan`：在局域网上开放的端口。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct LanSpec {
-    pub ports: Vec<PortSpec>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client: Option<client::LanClientSpec>,
-}
+pub use wonton_protocol::manifest::LanSpec;
 
 /// `lan` 和 `network.lan` 要一起出现；端口不重复，也不能是 MCP 的端口：它只经核心访问。网页的端口可以列，要不要开关见
 /// [`webui`]。
