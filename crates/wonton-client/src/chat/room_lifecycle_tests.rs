@@ -1,4 +1,12 @@
 use super::*;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
+
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
+use serde_json::{Value, json};
+
 use crate::chat::{ChatChannels, ChatLink, target::TimelineOpening};
 use wonton_protocol::{PushMethod, TimelineTarget};
 
@@ -114,6 +122,125 @@ async fn a_timeline_does_not_receive_another_rooms_panel() {
     let update = updates.try_recv().unwrap();
     assert_eq!(update.panel_selected, Some(selected));
     assert!(update.entry_blocked);
+}
+
+/// 受控核心：数请求、按到达次序回不同的 Ready，第一笔可卡在响应前。
+/// 接缝只替换会话获取（真 `MatrixSession` 要 login/whoami/SDK restore），请求本身走真实 CoreApi。
+struct OwnBotCore {
+    requests: AtomicUsize,
+    entered: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    release_first: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+    first: Value,
+    later: Value,
+}
+
+async fn own_bot_reply(State(core): State<Arc<OwnBotCore>>) -> (StatusCode, Json<Value>) {
+    let arrival = core.requests.fetch_add(1, Ordering::SeqCst) + 1;
+    if let Some(entered) = core.entered.lock().unwrap().take() {
+        let _ = entered.send(());
+    }
+    let release = core.release_first.lock().unwrap().take();
+    if let Some(release) = release.filter(|_| arrival == 1) {
+        let _ = release.await;
+    }
+    let body = if arrival == 1 {
+        &core.first
+    } else {
+        &core.later
+    };
+    (StatusCode::OK, Json(body.clone()))
+}
+
+async fn own_bot_core(
+    first: Value,
+    later: Value,
+) -> (String, Arc<OwnBotCore>, tokio::task::JoinHandle<()>) {
+    let core = Arc::new(OwnBotCore {
+        requests: AtomicUsize::new(0),
+        entered: std::sync::Mutex::new(None),
+        release_first: std::sync::Mutex::new(None),
+        first,
+        later,
+    });
+    let router = Router::new()
+        .route(wonton_protocol::MY_PRIVATE_BOT_PATH, get(own_bot_reply))
+        .with_state(core.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    (base, core, server)
+}
+
+/// 服务器应答体；requester 固定成接缝里的本人，取数时会走真实的请求人校验。
+fn own_bot_body(plugin: &str, bot: &str, user: &str, room: &str) -> Value {
+    json!({
+        "requester_user_id": "@mia:test",
+        "result": {
+            "state": "ready",
+            "bot": {"plugin_id": plugin, "bot": bot},
+            "user_id": user,
+            "home_room": room,
+            "room_problem": null
+        }
+    })
+}
+
+fn own_bot_identity(
+    plugin: &str,
+    bot: &str,
+    user: &str,
+    room: &str,
+) -> wonton_protocol::OwnPrivateBotView {
+    wonton_protocol::OwnPrivateBotView::Ready {
+        bot: wonton_protocol::BotRef {
+            plugin_id: plugin.into(),
+            bot: bot.into(),
+        },
+        user_id: user.into(),
+        home_room: Some(room.into()),
+        room_problem: None,
+    }
+}
+
+type OwnBotFuture = Pin<
+    Box<
+        dyn Future<
+                Output = Result<wonton_protocol::OwnPrivateBotView, wonton_protocol::OwnBotProblem>,
+            > + Send,
+    >,
+>;
+
+/// 装上接缝取数：每次 refresh 都按本人向受控核心发真 GET。
+fn install_own_bot_fetch(chat: &Arc<ChatLink>, base: &str) {
+    let base = base.to_owned();
+    let user = <&wonton_matrix::UserId>::try_from("@mia:test")
+        .unwrap()
+        .to_owned();
+    let fetch: crate::chat::bots::OwnBotFetch = Arc::new(move || {
+        let base = base.clone();
+        let user = user.clone();
+        Box::pin(async move { crate::plugins::PluginsLink::own_private_bot_at(&base, &user).await })
+            as OwnBotFuture
+    });
+    *crate::chat::lock(&chat.bots.own_bot_fetch) = Some(fetch);
+}
+
+/// 等到 watch 里的本人身份等于服务器应答；比单次 `changed` 稳，不被中途的其它写入带偏。
+async fn wait_own_bot(
+    watch: &mut tokio::sync::watch::Receiver<wonton_protocol::ChatViewModel>,
+    expected: &wonton_protocol::OwnPrivateBotView,
+) {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            let matched = watch.borrow_and_update().own_private_bot.as_ref() == Some(expected);
+            if matched {
+                return;
+            }
+            watch.changed().await.unwrap();
+        }
+    })
+    .await
+    .expect("own bot identity was not published");
 }
 
 fn own_bot_ready() -> wonton_protocol::OwnPrivateBotView {
@@ -305,27 +432,130 @@ fn assert_new_scope_preserved(
 
 #[tokio::test]
 async fn foregrounded_reissues_the_own_bot_read_and_clears_a_stale_problem() {
-    let chat = rig().0;
+    let (chat, _dir) = rig();
+    let (base, core, server) = own_bot_core(
+        own_bot_body("app.http", "http-bot", "@http-bot:test", "!http:test"),
+        Value::Null,
+    )
+    .await;
+    install_own_bot_fetch(&chat, &base);
+    let expected = own_bot_identity("app.http", "http-bot", "@http-bot:test", "!http:test");
     let mut watch = chat.bots.view.subscribe();
     let initial_epoch = crate::chat::lock(&chat.bots.own_epoch).current();
     chat.bots
         .publish_own_private_bot(initial_epoch, Err(own_bot_problem()));
     assert!(watch.borrow_and_update().own_private_bot_problem.is_some());
 
+    // 成功来自响应本身：foregrounded 发出 GET，测试不再手工 publish。
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    *core.entered.lock().unwrap() = Some(entered_tx);
     chat.bots.foregrounded();
-    let retry_epoch = crate::chat::lock(&chat.bots.own_epoch).current();
-    assert!(retry_epoch > initial_epoch);
-    chat.bots
-        .publish_own_private_bot(retry_epoch, Ok(own_bot_ready()));
+    tokio::time::timeout(Duration::from_secs(10), entered_rx)
+        .await
+        .expect("foreground did not send the private bot GET")
+        .unwrap();
+    assert_eq!(core.requests.load(Ordering::SeqCst), 1);
+
+    wait_own_bot(&mut watch, &expected).await;
     let view = watch.borrow_and_update();
     assert!(view.own_private_bot_problem.is_none());
-    assert!(matches!(
-        view.own_private_bot,
-        Some(wonton_protocol::OwnPrivateBotView::Ready { .. })
-    ));
 
-    let current = crate::chat::lock(&chat.bots.own_epoch).current();
-    assert_eq!(current, retry_epoch);
+    let retry_epoch = crate::chat::lock(&chat.bots.own_epoch).current();
+    assert!(retry_epoch > initial_epoch);
+    assert_eq!(
+        crate::chat::lock(&chat.bots.own_epoch).current(),
+        retry_epoch
+    );
+    server.abort();
+}
+
+#[tokio::test]
+async fn a_foregrounded_read_in_flight_at_logout_cannot_write_back_its_old_identity() {
+    let (chat, _dir) = rig();
+    let (base, core, server) = own_bot_core(
+        own_bot_body("app.old", "old-bot", "@old-bot:test", "!old:test"),
+        own_bot_body("app.new", "new-bot", "@new-bot:test", "!new:test"),
+    )
+    .await;
+    install_own_bot_fetch(&chat, &base);
+    let _old = own_bot_identity("app.old", "old-bot", "@old-bot:test", "!old:test");
+    let new = own_bot_identity("app.new", "new-bot", "@new-bot:test", "!new:test");
+    let mut watch = chat.bots.view.subscribe();
+
+    // 第一笔取数卡在响应前；接缝下 refresh 恒走取数分支，注销本身也会再发一笔。
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    *core.release_first.lock().unwrap() = Some(release_rx);
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    *core.entered.lock().unwrap() = Some(entered_tx);
+    chat.bots.foregrounded();
+    tokio::time::timeout(Duration::from_secs(10), entered_rx)
+        .await
+        .expect("first read did not arrive")
+        .unwrap();
+
+    // 注销本身也会按新代再发一笔取数。
+    chat.bots.set_session(None);
+    wait_own_bot(&mut watch, &new).await;
+    assert_eq!(core.requests.load(Ordering::SeqCst), 2);
+
+    // 放行迟到的旧响应：它的代已作废，不得覆盖新读取。
+    release_tx.send(()).unwrap();
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let view = watch.borrow_and_update();
+    assert_eq!(view.own_private_bot, Some(new));
+    assert!(view.own_private_bot_problem.is_none());
+    server.abort();
+}
+
+#[tokio::test]
+async fn a_paused_logout_cannot_clear_the_read_of_the_session_that_replaced_it() {
+    let (chat, _dir) = rig();
+    let (base, core, server) = own_bot_core(
+        own_bot_body("app.other", "other-bot", "@other-bot:test", "!other:test"),
+        Value::Null,
+    )
+    .await;
+    let ready = own_bot_identity("app.other", "other-bot", "@other-bot:test", "!other:test");
+    let mut watch = chat.bots.view.subscribe();
+    let bots = chat.bots.clone();
+
+    // 注销的 None 清槽在检查发布资格前暂停（接缝也在入口之后才装，不劫持这次调用）。
+    let (captured_tx, captured_rx) = tokio::sync::oneshot::channel();
+    let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+    crate::chat::lock(&bots.own_epoch).before_refresh = Some(Box::new(move || {
+        captured_tx.send(()).unwrap();
+        resume_rx
+            .recv_timeout(Duration::from_secs(10))
+            .expect("old None refresh was not released");
+    }));
+    let old_bots = bots.clone();
+    let pending = tokio::task::spawn_blocking(move || old_bots.set_session(None));
+    tokio::time::timeout(Duration::from_secs(10), captured_rx)
+        .await
+        .expect("set_session did not capture its None refresh")
+        .unwrap();
+
+    // 暂停期间新会话的读取已经落地（接缝取数）。
+    install_own_bot_fetch(&chat, &base);
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+    *core.entered.lock().unwrap() = Some(entered_tx);
+    chat.bots.foregrounded();
+    tokio::time::timeout(Duration::from_secs(10), entered_rx)
+        .await
+        .expect("replacement read did not send")
+        .unwrap();
+    wait_own_bot(&mut watch, &ready).await;
+
+    // 放行过期的旧 None 清槽：它不得清掉新读取。
+    resume_tx.send(()).unwrap();
+    pending.await.unwrap();
+    assert_eq!(
+        watch.borrow_and_update().own_private_bot,
+        Some(ready.clone())
+    );
+    assert!(watch.borrow().own_private_bot_problem.is_none());
+    assert_eq!(core.requests.load(Ordering::SeqCst), 1);
+    server.abort();
 }
 
 #[tokio::test]

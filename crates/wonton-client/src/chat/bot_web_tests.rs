@@ -264,6 +264,8 @@ async fn background_disconnect_and_session_change_clear_the_existing_chat_watch(
         changed: Notify::new(),
         epoch: AtomicU64::new(0),
         own_epoch: Mutex::default(),
+        #[cfg(test)]
+        own_bot_fetch: Mutex::default(),
         refresh_serial: AtomicU64::new(0),
         local: Mutex::default(),
     });

@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+#[cfg(test)]
+use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 
@@ -30,6 +32,10 @@ pub(super) struct Bots {
     pub epoch: AtomicU64,
     /// 本人 Bot 读取的发布资格。`epoch` 防迟到结果，`retired` 防交接后的旧链接再发有效代。
     pub own_epoch: Mutex<OwnEpoch>,
+    /// 测试接缝：真 `MatrixSession` 本地造不出（login/whoami/SDK restore）。装上后 refresh 一律走取数分支，
+    /// 等于会话恒在；闭包自己走真实 HTTP 取数。没装时照旧按会话有无分派。
+    #[cfg(test)]
+    pub(super) own_bot_fetch: Mutex<Option<OwnBotFetch>>,
     pub refresh_serial: AtomicU64,
     pub local: Mutex<Local>,
 }
@@ -42,6 +48,22 @@ pub(super) struct OwnEpoch {
     #[cfg(test)]
     pub(super) before_refresh: Option<Box<dyn FnOnce() + Send>>,
 }
+
+/// 测试接缝的取数闭包：每次调用返回一次真实取数，结果原样交给发布闸门。
+#[cfg(test)]
+pub(super) type OwnBotFetch = Arc<
+    dyn Fn() -> Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            wonton_protocol::OwnPrivateBotView,
+                            wonton_protocol::OwnBotProblem,
+                        >,
+                    > + Send,
+            >,
+        > + Send
+        + Sync,
+>;
 
 impl OwnEpoch {
     #[cfg(test)]
@@ -124,6 +146,8 @@ impl Bots {
             changed: Notify::new(),
             epoch: AtomicU64::new(0),
             own_epoch: Mutex::default(),
+            #[cfg(test)]
+            own_bot_fetch: Mutex::default(),
             local: Mutex::default(),
             refresh_serial: AtomicU64::new(0),
         });
@@ -174,12 +198,20 @@ impl Bots {
         session: Option<Arc<MatrixSession>>,
         epoch: u64,
     ) {
+        // 接缝在暂停前快照：暂停期间装上或换掉的闭包不影响这次调用已经选定的分派。
+        #[cfg(test)]
+        let fetch = lock(&self.own_bot_fetch).clone();
         #[cfg(test)]
         {
             let pause = lock(&self.own_epoch).before_refresh.take();
             if let Some(pause) = pause {
                 pause();
             }
+        }
+        #[cfg(test)]
+        if let Some(fetch) = fetch {
+            self.spawn_own_bot_fetch(fetch, epoch);
+            return;
         }
         let Some(session) = session else {
             let own = lock(&self.own_epoch);
@@ -196,6 +228,19 @@ impl Bots {
         let plugins = self.plugins.clone();
         self.runtime.spawn(async move {
             let outcome = plugins.own_private_bot(&session).await;
+            let Some(bots) = weak.upgrade() else {
+                return;
+            };
+            bots.publish_own_private_bot(epoch, outcome);
+        });
+    }
+
+    /// 接缝取数的后台任务：和会话取数是同一条发布闸门，唯一区别是闭包替代了会话上的取数。
+    #[cfg(test)]
+    fn spawn_own_bot_fetch(self: &Arc<Self>, fetch: OwnBotFetch, epoch: u64) {
+        let weak = Arc::downgrade(self);
+        self.runtime.spawn(async move {
+            let outcome = fetch().await;
             let Some(bots) = weak.upgrade() else {
                 return;
             };

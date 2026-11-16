@@ -54,6 +54,22 @@ impl PluginsLink {
             .map_err(|error| own_bot_problem(CoreApiError::Transport(error)))?;
         fetch_own_private_bot(&api, session.user_id()).await
     }
+
+    /// 测试接缝：真会话要 login/whoami/SDK restore 才建得出，测试用指定核心地址按指定本人
+    /// 走与 [`PluginsLink::own_private_bot`] 相同的取数和校验；生产路径不经过这里。
+    #[cfg(test)]
+    pub(crate) async fn own_private_bot_at(
+        base: &str,
+        session_user_id: &UserId,
+    ) -> Result<OwnPrivateBotView, OwnBotProblem> {
+        let api = CoreApi {
+            base: base.parse().expect("test core base URL"),
+            client: reqwest::Client::new(),
+            languages: String::new(),
+            version: super::api::ServerVersion::default(),
+        };
+        fetch_own_private_bot(&api, session_user_id).await
+    }
 }
 
 async fn fetch_own_private_bot(
