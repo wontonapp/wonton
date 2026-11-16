@@ -69,7 +69,6 @@ pub(super) fn timeline(room_id: &str) -> TimelineUpdate {
         scroll_to_bottom: false,
         panel: panel(),
         panel_selected: None,
-        entry_blocked: false,
         key_notice: None,
         confirmations: Vec::new(),
         side_chat: None,
