@@ -4,15 +4,13 @@
 //! 这里对照清单自己的 `gpu.services`、`requirements.gpu.vendors` 和镜像的写法；服务在 compose 里存不存在、
 //! 厂商版镜像和通用镜像是不是一样由 [`super::package`] 检查。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use super::languages::Languages;
 use super::manifest::{Manifest, ManifestError};
-use super::requirements::GpuVendor;
 use crate::l10n::text;
 
-/// 服务 → 厂商 → 完整的镜像引用。
-pub type GpuImages = BTreeMap<String, BTreeMap<GpuVendor, String>>;
+pub use wonton_protocol::manifest::GpuImages;
 
 /// 一处问题一条，一次报全。
 pub(super) fn validate(manifest: &Manifest, langs: &Languages) -> Result<(), ManifestError> {
