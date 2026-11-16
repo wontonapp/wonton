@@ -7,19 +7,19 @@ use wonton_protocol::{
 mod bot_pages;
 mod bot_pins;
 mod bridge_rejection;
+mod content;
 mod media_permission;
 mod my_apps;
 mod page_rules;
 mod room_panel;
 mod stack;
 
-struct Rig {
-    tabs: PagesLink,
+pub(super) struct Rig {
+    pub(super) tabs: Arc<PagesLink>,
     home: watch::Sender<HomeViewModel>,
     plugins: PluginSnapshots,
     chat: watch::Sender<ChatViewModel>,
-    /// 房间面板这一对通道的发送端：chat 用它喂打开着的房间和面板内容。
-    room_panel: watch::Sender<Option<(wonton_matrix::OwnedRoomId, RoomPanel)>>,
+    rooms: Mutex<HashMap<String, watch::Receiver<Option<Arc<RoomPanelView>>>>>,
     _dir: tempfile::TempDir,
 }
 
@@ -32,6 +32,14 @@ impl PluginSnapshots {
     fn send_replace(&self, view: PluginsViewModel) {
         self.link
             .replace_view_for_test(self.home.borrow().server_id.clone(), view);
+    }
+
+    fn send_modify(&self, change: impl FnOnce(&mut PluginsViewModel)) {
+        let mut view = self
+            .link
+            .view_for_server(self.home.borrow().server_id.as_deref());
+        change(&mut view);
+        self.send_replace(view);
     }
 }
 
@@ -63,7 +71,7 @@ fn empty_chat() -> ChatViewModel {
 }
 
 impl Rig {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self::for_account(false)
     }
 
@@ -97,7 +105,6 @@ impl Rig {
         };
         plugins.send_replace(initial);
         let chat = watch::Sender::new(empty_chat());
-        let (panel_sender, panel_receiver) = watch::channel(None);
         let tabs = PagesLink {
             runtime,
             home: home.subscribe(),
@@ -111,6 +118,7 @@ impl Rig {
                 config,
                 problem: None,
                 stack: Vec::new(),
+                content: HashMap::new(),
                 paired: true,
                 shows_apps: false,
                 failures: HashMap::new(),
@@ -120,10 +128,7 @@ impl Rig {
                 connected: true,
                 attention: HashSet::new(),
                 panel_selected: None,
-                open_room: None,
-                room_panel_selected: None,
-                entry_blocked: false,
-                room_panel_removed: Vec::new(),
+                rooms: HashMap::new(),
                 bot_pins: Vec::new(),
                 core_url: None,
                 bot_pin_consents: Vec::new(),
@@ -134,8 +139,6 @@ impl Rig {
             }),
             writing: Mutex::new(()),
             session: watch::channel(None).1,
-            room_panel: (panel_sender.clone(), panel_receiver),
-            room_view: watch::Sender::new(None),
             sync_problem: watch::Sender::new(None),
             dirty: AtomicBool::new(false),
             layout_ready: AtomicBool::new(false),
@@ -143,14 +146,55 @@ impl Rig {
             weak: Mutex::new(std::sync::Weak::new()),
             widgets: Default::default(),
         };
+        let tabs = Arc::new(tabs);
         tabs.recompute();
         Self {
             tabs,
             home,
             plugins,
             chat,
-            room_panel: panel_sender,
+            rooms: Mutex::default(),
             _dir: dir,
+        }
+    }
+
+    pub(super) fn open_room(&self, room: &OwnedRoomId, panel: RoomPanel) {
+        let mut receivers = lock(&self.rooms);
+        self.tabs
+            .runtime_change(|state, _| {
+                match state.rooms.get_mut(room.as_str()) {
+                    Some(current) => current.panel = panel,
+                    None => {
+                        let current = room_panels::RoomPanelState::new(panel);
+                        receivers.insert(room.to_string(), current.view.subscribe());
+                        state.rooms.insert(room.to_string(), current);
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    pub(super) fn close_room(&self, room: &OwnedRoomId) {
+        lock(&self.rooms).remove(room.as_str());
+        self.tabs
+            .runtime_change(|state, _| {
+                room_panels::forget_room(state, room.as_str());
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    fn switch_room(&self, room: Option<(&OwnedRoomId, RoomPanel)>) {
+        let open: Vec<OwnedRoomId> = lock(&self.rooms)
+            .keys()
+            .map(|id| id.parse().unwrap())
+            .collect();
+        for id in open {
+            self.close_room(&id);
+        }
+        if let Some((id, panel)) = room {
+            self.open_room(id, panel);
         }
     }
 

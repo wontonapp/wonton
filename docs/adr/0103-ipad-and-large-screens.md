@@ -92,6 +92,10 @@ Android 对应大屏/折叠屏与多窗口，有对应能力的一起做。
 明确不共享的取舍：两个窗口看同一房间时，各自滚动位置独立、互不同步（Telegram 桌面版同款行为）；草稿和已读是房间级全局，
 两边一致。发送等操作按房间路由，无窗口歧义。
 
+时间线注册表保留所有存活订阅，同目标共用 Matrix 时间线（发送队列、分页和回执），各订阅独立维护滚动和消息菜单。
+Main/Thread focus 的房间 watch 按引用计数持有；取消、释放或切换服务器后释放，不替换其他房间的同步名单。
+房间面板按 room ID 保存和订阅，桥、权限、重载、选中页均按对应房间查找，不依赖最后打开的房间。
+
 ### 5. 内容窗口的插件页
 
 - 页面内容的解析走**新的 `ClientCore` 方法**（如 `page_view(tab: TabRef) -> TabPage`，命名实现时定），复用
@@ -109,7 +113,8 @@ Android 对应大屏/折叠屏与多窗口，有对应能力的一起做。
 
 - 内容窗口靠 `WindowGroup(for:)` 的系统恢复拿回目标值（WWDC22 会话 10061）；主窗口恢复到根页（恢复整条页面栈不做，栈在核心，
   跨进程恢复要另存，价值低）。
-- 每窗口滚动位置存壳（场景存储）；聊天列表视口是否恢复，实现时以模拟器实测为准（待验证）。
+- 每窗口会话滚动锚点以房间 ID 为键存于 `SceneStorage`，保存实际可见条目的 ID，不存全局像素偏移；恢复时等时间线加载，
+  必要时向前分页直到锚点出现。已到历史开头仍不存在时，使用核心给出的已读落点。聊天列表视口是否恢复，以模拟器实测为准。
 - `scenePhase`：现在 `home.send(.appForegrounded/.appBackgrounded)` 挂在主 `WindowGroup` 内容上
   （`apps/ios/Wonton/WontonApp.swift:41-46`）。改成监听 `NotificationCenter` 的
   `UIApplication.didBecomeActive/willResignActiveNotification`（应用级），多窗口下任一窗口前台就算前台，全部后台才算后台——
