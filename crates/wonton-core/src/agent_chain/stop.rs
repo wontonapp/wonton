@@ -38,14 +38,6 @@ pub(super) fn stop(
             chain: chain_id.to_owned(),
             bot: entry.bot.clone(),
             layer: entry.layer,
-            source: entry.source,
-            parents: entry
-                .path
-                .parents
-                .iter()
-                .map(|parent| parent.session.clone())
-                .collect(),
-            connection: entry.connection,
             sender: entry.sender.clone(),
             live: false,
         };
