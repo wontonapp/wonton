@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -59,6 +60,7 @@ import app.wonton.ui.design.WontonSwitch
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.icons.Add
+import app.wonton.ui.icons.Forward
 import app.wonton.ui.icons.Settings
 import app.wonton.ui.icons.Trash
 import app.wonton.ui.icons.WontonIcon
@@ -80,8 +82,10 @@ private fun SidebarApp.myAppRef(): MyAppRef? {
 }
 
 @Composable
-fun MyAppsSettingsScreen(onBack: () -> Unit) {
+fun MyAppsSettingsScreen(onBack: () -> Unit, open: (PluginEntry) -> Unit) {
     val pages = LocalPages.current
+    // 应用行打开的详情页：设置的浮层里没有插件页栈，单开一个；返回键先关详情。
+    val navigation = remember { PluginNavigation(open = open, checkInstalled = onBack) }
     var adding by remember { mutableStateOf(false) }
     var editingPanel by remember { mutableStateOf(false) }
     val editor = if (editingPanel) rememberChatPanelState(PanelEdge.TOP, PanelScope.Main) else null
@@ -95,28 +99,32 @@ fun MyAppsSettingsScreen(onBack: () -> Unit) {
     }
     BackHandler(onBack = onBack)
     val list = rememberLazyListState()
-    WontonScreen(bar = { MyAppsBar(stringResource(R.string.settings_my_apps), onBack) }) {
-        LazyColumn(
-            state = list,
-            modifier = Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
-            contentPadding = wontonContentPaddingValues(),
-            verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
-        ) {
-            item(key = "auto") { WontonGroup { AutoAddRow(pages.viewModel.autoAdd) } }
-            item(key = "current") {
-                CurrentAppsGroup(pages.plugins.viewModel.sidebar.apps, list)
-            }
-            if (pages.viewModel.myAppCandidates.isNotEmpty()) {
+    PluginPages(pages.plugins, navigation) {
+        WontonScreen(bar = { MyAppsBar(stringResource(R.string.settings_my_apps), onBack) }) {
+            LazyColumn(
+                state = list,
+                modifier = Modifier.fillMaxSize().padding(horizontal = WontonTheme.spacing.pageInset),
+                contentPadding = wontonContentPaddingValues(),
+                verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
+            ) {
+                item(key = "auto") { WontonGroup { AutoAddRow(pages.viewModel.autoAdd) } }
+                item(key = "current") {
+                    CurrentAppsGroup(pages.plugins.viewModel.sidebar.apps, list, navigation)
+                }
+                if (pages.viewModel.myAppCandidates.isNotEmpty()) {
 
-                item(key = "add") {
-                    WontonGroup {
-                        WontonRow(
-                            stringResource(R.string.myapp_add_more), showsForward = true, onClick = { adding = true },
-                        )
+                    item(key = "add") {
+                        WontonGroup {
+                            WontonRow(
+                                stringResource(R.string.myapp_add_more),
+                                showsForward = true,
+                                onClick = { adding = true },
+                            )
+                        }
                     }
                 }
+                item(key = "problem") { PagesConfigurationProblem(pages.viewModel) }
             }
-            item(key = "problem") { PagesConfigurationProblem(pages.viewModel) }
         }
     }
 }
@@ -142,7 +150,7 @@ private fun AutoAddRow(autoAdd: Boolean) {
 
 /** Only the rows inside the group participate in drag destinations, not the lazy list's other items. */
 @Composable
-private fun CurrentAppsGroup(apps: List<SidebarApp>, list: LazyListState) {
+private fun CurrentAppsGroup(apps: List<SidebarApp>, list: LazyListState, navigation: PluginNavigation) {
     val pages = LocalPages.current
     val scope = rememberCoroutineScope()
     val edgeSize = WontonTheme.size.target
@@ -204,20 +212,30 @@ private fun CurrentAppsGroup(apps: List<SidebarApp>, list: LazyListState) {
                         },
                     )
                 }
-            key(appRef) { MyAppSettingsRow(pages, app, appRef, index, apps.size, modifier) }
+            key(appRef) {
+                MyAppSettingsRow(
+                    pages, app, appRef, index, apps.size, modifier, detailClick(navigation, app),
+                )
+            }
         }
     }
 }
 
+/** 点行开详情：插件行才有，Bot 私聊行没有可看的详情。 */
+private fun detailClick(navigation: PluginNavigation, app: SidebarApp): (() -> Unit)? =
+    app.pluginId?.let { id -> { navigation.detail = PluginRoute.Installed(id) } }
+
 @Composable
 private fun MyAppSettingsRow(
     pages: PagesState, app: SidebarApp, appRef: MyAppRef, index: Int, count: Int, modifier: Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     val moveUp = stringResource(R.string.tab_move_up)
     val moveDown = stringResource(R.string.tab_move_down)
     val colors = WontonTheme.colors
     Row(
         modifier.fillMaxWidth().heightIn(min = WontonTheme.size.target)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier)
             .semantics(mergeDescendants = true) {
                 customActions = buildList {
                     if (index > 0) add(CustomAccessibilityAction(moveUp) {
@@ -238,8 +256,17 @@ private fun MyAppSettingsRow(
             Icon(WontonIcon.Settings, null, Modifier.size(WontonTheme.size.icon),
                 tint = WontonTheme.colors.textPrimary.toColor())
         }
-        Text(app.title, Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12),
-            style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+        Column(Modifier.weight(1f).padding(vertical = WontonTheme.spacing.s12)) {
+            Text(app.title, style = WontonTheme.typography.body, color = colors.textPrimary.toColor())
+            if (onClick != null) {
+                Text(stringResource(R.string.share_apps_row), style = WontonTheme.typography.caption,
+                    color = colors.textSecondary.toColor())
+            }
+        }
+        if (onClick != null) {
+            Icon(WontonIcon.Forward, null, Modifier.size(WontonTheme.size.iconSmall),
+                tint = colors.textSecondary.toColor())
+        }
         WontonIconButton(WontonIcon.Trash, stringResource(R.string.myapp_remove),
             { pages.send(Action.Pages(PageAction.RemoveMyApp(appRef))) }, tint = colors.danger.toColor())
     }

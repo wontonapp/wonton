@@ -24,8 +24,8 @@ use wonton_protocol::{
     InstalledPlugin, InstalledPlugins, MessageSummary, OnboardingStep, OnboardingViewModel,
     OpenPage, PagesViewModel, PanelItem, PanelSource, PluginHealth, PluginKind, PluginState,
     PluginTrust, PluginsViewModel, PushStatus, RecoveryNextStep, RecoveryStatus, RoomMembership,
-    RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, TabIcon, TabLayout,
-    TabPage, TabRef, TabState,
+    RoomPreview, RoomRow, ServerKind, ServerName, ServerRow, ServersViewModel, SidebarApp,
+    SidebarBadge, SidebarOpen, TabIcon, TabLayout, TabPage, TabRef, TabState,
 };
 
 use super::ClientCore;
@@ -342,13 +342,24 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         super::ui_fake_plugin_detail::HUB_TITLE,
         super::ui_fake_plugin_detail::HUB_ID,
         super::ui_fake_plugin_detail::status(),
-        None,
+        Some(web_url(super::ui_fake_plugin_detail::HUB_ID)),
     ));
     plugins.installed = Some(InstalledPlugins {
         plugins: installed,
         upgrade_check: None,
     });
     plugins.problem = None;
+    // 我的应用里放两个应用：一个有分享、一个没有，设置里的行点开就是详情页。
+    plugins.sidebar.apps = vec![
+        sidebar_app(
+            super::ui_fake_plugin_detail::BUDGET_TITLE,
+            super::ui_fake_plugin_detail::BUDGET_ID,
+        ),
+        sidebar_app(
+            super::ui_fake_plugin_detail::HUB_TITLE,
+            super::ui_fake_plugin_detail::HUB_ID,
+        ),
+    ];
     // 通话插件的端口映射只连上了公共中继：它的 widget 页上有中继提示可看（ADR-0096 第 4 节）。
     plugins.port_mappings = vec![wonton_protocol::PluginPortMapping {
         plugin_id: CALL_PLUGIN.into(),
@@ -358,6 +369,19 @@ fn fake_plugins(mut plugins: PluginsViewModel) -> PluginsViewModel {
         warning: Some(wonton_protocol::PortMappingWarning::PublicRelayBandwidth),
     }];
     plugins
+}
+
+fn sidebar_app(title: &str, id: &str) -> SidebarApp {
+    SidebarApp {
+        plugin_id: Some(id.into()),
+        tab: None,
+        title: title.into(),
+        open: SidebarOpen::Page {
+            tab: web_app_tab(id),
+        },
+        icon: None,
+        badge: SidebarBadge::default(),
+    }
 }
 
 fn fake_plugin(
@@ -433,6 +457,7 @@ fn fake_onboarding(mut onboarding: OnboardingViewModel) -> OnboardingViewModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::ui_fake_plugin_detail;
     use wonton_protocol::{Action, PageAction};
 
     /// 假数据塞进了各订阅、操作不落到作用域：漏填字段或写坏类型在这里就炸。
@@ -590,6 +615,48 @@ mod tests {
                 message: "disk:/dev/disk/by-id/ata-WDC_WD40EFRX-68N32N0".into()
             }
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 设置里的“我的应用”要能点开详情看分享：行里有两个插件，主人在假数据里是主人，
+    /// 一个应用已经分享给一位好友、另一个一个都没有。
+    #[test]
+    fn my_apps_rows_open_details_with_share_state() {
+        let dir = std::env::temp_dir().join(format!("wonton-ui-fake-apps-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let core = ClientCore::new_ui_fake(dir.to_string_lossy().into_owned()).unwrap();
+        let rows = core.plugins().sidebar.apps;
+        assert_eq!(
+            rows.iter()
+                .filter_map(|app| app.plugin_id.as_deref())
+                .collect::<Vec<_>>(),
+            [
+                ui_fake_plugin_detail::BUDGET_ID,
+                ui_fake_plugin_detail::HUB_ID,
+            ]
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        assert!(runtime.block_on(core.me()).unwrap().is_owner);
+        let detail = |id: &str| {
+            runtime
+                .block_on(
+                    core.plugin_detail(wonton_protocol::PluginDetailRoute::Installed {
+                        id: id.into(),
+                    }),
+                )
+                .unwrap()
+        };
+        for (id, friends) in [
+            (ui_fake_plugin_detail::HUB_ID, 1),
+            (ui_fake_plugin_detail::BUDGET_ID, 0),
+        ] {
+            let wonton_protocol::PluginDetailOutcome::Detail { detail } = detail(id) else {
+                panic!("{id} must have a fake detail");
+            };
+            assert_eq!(detail.shares.unwrap().friend_count, friends);
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

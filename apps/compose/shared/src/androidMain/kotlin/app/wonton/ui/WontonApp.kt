@@ -249,6 +249,10 @@ private fun NativeTab(
             peersOpenRequests = nav.peersOpenRequests,
             onPeersOpenRequestsHandled = { nav.peersOpenRequests = false },
             onContinueHandoff = { nav.chat.keyHandoffDeferred = false },
+            open = { entry ->
+                nav.settingsOverlay = false
+                nav.plugins.open(entry)
+            },
         ) { nav.settingsPage = it }
         pages.viewModel.showsApps || pages.current == TabRef.Apps ||
             home.status is HomeStatus.NotConfigured -> HomeRoute(

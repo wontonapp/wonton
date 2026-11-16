@@ -75,7 +75,7 @@ struct SettingsTab: View {
             AppearanceView(model: appearance)
                 .wontonPushedScreen(String(localized: .Appearance0.appearanceTitle), usesSystemToolbar: true)
         case .chatBackup: ChatBackupView(model: chat)
-        case .myApps: MyAppsSettingsView().wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
+        case .myApps: MyAppsSettingsView(chat: chat).wontonPushedScreen(TabText.myApps, usesSystemToolbar: true)
         case .notifications: NotificationSettingsView()
         case .appLock: AppLockSettingsView(model: appLock).wontonPushedScreen(String(localized: .Settings.appLockTitle))
         case .about: AboutView()

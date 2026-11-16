@@ -4,6 +4,8 @@
     <string name="share_acknowledge">このリスクを理解し、同意します</string>
     <!-- Button that creates an app share for a friend or group. No arguments. -->
     <string name="share_add">共有を追加</string>
+    <!-- Hint under an app in My Apps settings: tapping the row opens the app page where it can be shared with family. No arguments. -->
+    <string name="share_apps_row">家族と共有</string>
     <!-- Expiration choice that opens a date and time picker. No arguments. -->
     <string name="share_custom">日時を選択</string>
     <!-- Label of the share expiration picker. No arguments. -->

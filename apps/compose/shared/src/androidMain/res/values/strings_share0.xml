@@ -4,6 +4,8 @@
     <string name="share_acknowledge">I understand and accept this risk</string>
     <!-- Button that creates an app share for a friend or group. No arguments. -->
     <string name="share_add">Add share</string>
+    <!-- Hint under an app in My Apps settings: tapping the row opens the app page where it can be shared with family. No arguments. -->
+    <string name="share_apps_row">Share with family</string>
     <!-- Expiration choice that opens a date and time picker. No arguments. -->
     <string name="share_custom">Choose date and time</string>
     <!-- Label of the share expiration picker. No arguments. -->
