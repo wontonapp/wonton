@@ -4,6 +4,8 @@
     <string name="transfer_cleanup_title">清理“%1$s”</string>
     <!-- Title of the sheet listing downloaded transfers. -->
     <string name="transfer_downloaded">已下载</string>
+    <!-- Caption button above the chat composer when one file was downloaded in this chat: opens the list. Argument: the file's name. -->
+    <string name="transfer_downloaded_one">已下载“%1$s”</string>
     <!-- Caption button above the chat composer: opens the list of downloaded transfers. Argument: their count. -->
     <plurals name="transfer_downloaded_count">
         <item quantity="other">已下载 %1$d 个</item>

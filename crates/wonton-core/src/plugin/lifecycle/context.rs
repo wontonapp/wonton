@@ -8,7 +8,7 @@ use super::super::core_address;
 use super::super::hostdir::{self, Owner};
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
-use super::super::manifest::{Manifest, Permission, Sso};
+use super::super::manifest::{Manifest, ManifestExt, Permission, Sso};
 use super::super::render::InstallContext;
 use super::super::vars::{OidcVars, OwnerVars};
 use super::Undo;

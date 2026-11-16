@@ -4,7 +4,7 @@ use super::super::gpu::GpuGrant;
 use super::super::lan::LanGrant;
 use super::super::languages::Languages;
 use super::super::manager::{InstallError, PluginManager};
-use super::super::manifest::Manifest;
+use super::super::manifest::{Manifest, ManifestExt};
 use super::super::package::PluginPackage;
 use super::super::proxy_auth::ProxyAuth;
 use super::super::render::InstallContext;
