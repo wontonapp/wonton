@@ -126,6 +126,8 @@ pub struct RoomPanel {
 pub enum PlacedTab {
     /// 栈里的那一份。
     Page { tab: TabRef },
+    /// 内容窗口的一份；与栈中同一页面共享加载状态，生命周期由订阅持有。
+    Content { tab: TabRef },
     /// 面板里的那一份。
     Panel { scope: PanelScope, tab: TabRef },
 }

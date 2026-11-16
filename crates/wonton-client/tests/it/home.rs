@@ -640,9 +640,15 @@ async fn a_new_outage_does_not_inherit_the_previous_failure() {
     // 先失败：这一轮建连失败过，马上如实说连不上。
     let port = home.stop().await;
     let view = phone.wait_for(first_unreachable).await;
-    assert!(view.details.last_failure.is_some(), "{view:?}");
+    let summary = view.details.last_failure.as_ref().expect("应有失败说明");
+    let diagnostic = view.details.diagnostic.as_ref().expect("应有原始诊断");
+    assert!(
+        !summary.contains("tunnel transport unavailable"),
+        "{summary}"
+    );
+    assert!(diagnostic.contains("transport-unavailable"), "{diagnostic}");
 
-    // 再连上：旧失败原文留在详情里（排查信息不因连上丢掉），但状态不带出来。
+    // 再连上：上次失败和独立诊断都保留，但状态不带出来。
     home.start_again(port).await;
     phone
         .dispatch(Action::Home {
@@ -654,6 +660,11 @@ async fn a_new_outage_does_not_inherit_the_previous_failure() {
         .await;
     assert!(
         phone.home().details.last_failure.is_some(),
+        "{:?}",
+        phone.home()
+    );
+    assert!(
+        phone.home().details.diagnostic.is_some(),
         "{:?}",
         phone.home()
     );

@@ -1,12 +1,12 @@
 //! 插件端口在本机同号映射（ADR-0072）：只监听 `127.0.0.1`，TCP 一条本机连接一条 `Port` 流，UDP 每个来源地址
-//! 一个流向。屏幕上显示着插件的页面时自动映射（页面栈的栈顶，ADR-0095），页面看不见、App 进后台就停，回前台恢复，
+//! 一个流向。主页面栈和内容窗口显示插件页面时自动映射，全部页面关闭或 App 进后台就停，回前台恢复，
 //! 手动开关不受影响；主人的开关按服务器存在槽位目录里。绑定和解绑都在一个后台任务里按顺序做，ViewModel 只在做完
 //! 之后发出：看到“关”时端口已经空出来了。映射状态每次变化打一行 INFO 日志：端口、结果、触发原因，只在变化时打。
 
 mod listen;
 mod store;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -38,8 +38,8 @@ enum Outcome {
 #[derive(Debug, Default)]
 struct Shared {
     enabled: BTreeSet<String>,
-    /// 屏幕上正显示着页面的插件（页面栈的栈顶，ADR-0095），进后台留着，页面换走才清。
-    visible: Option<String>,
+    /// 主页面栈和内容窗口显示的插件；进后台留着，最后一个页面关闭才移除。
+    visible: HashSet<String>,
     /// App 在前台。进后台自动映射失效，回前台恢复，壳不用重报。
     foreground: bool,
     /// 已安装列表里声明了 `tunnel.ports` 的插件。
@@ -119,13 +119,13 @@ impl PortMapper {
         Ok(())
     }
 
-    /// 屏幕上换了页面（由页面栈推导）。看不见的插件只要手动开关还开着就继续映射。
-    pub(crate) fn set_visible(&self, plugin_id: Option<String>) {
+    /// 主页面栈和内容窗口的并集。看不见的插件只要手动开关还开着就继续映射。
+    pub(crate) fn set_visible(&self, plugins: HashSet<String>) {
         let mut shared = lock(&self.shared);
-        if shared.visible == plugin_id {
+        if shared.visible == plugins {
             return;
         }
-        shared.visible = plugin_id;
+        shared.visible = plugins;
         shared.triggers.insert("visible");
         drop(shared);
         self.wake.notify_one();
@@ -294,8 +294,7 @@ impl Drop for PortMapper {
 
 /// 这个插件要不要映射：主人手动打开了，或者 App 看得见它的页面。手动映射进后台照常。
 fn maps(shared: &Shared, plugin: &str) -> bool {
-    shared.enabled.contains(plugin)
-        || (shared.foreground && shared.visible.as_deref() == Some(plugin))
+    shared.enabled.contains(plugin) || (shared.foreground && shared.visible.contains(plugin))
 }
 
 fn state(mapped: bool, active: Option<&Active>, connected: bool) -> PortMappingState {

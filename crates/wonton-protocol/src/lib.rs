@@ -11,7 +11,6 @@ uniffi::setup_scaffolding!();
 mod action;
 mod action_domains;
 mod agent_chain;
-mod agent_handoff;
 mod agent_outbox;
 mod agent_permission;
 mod agent_run;
@@ -38,6 +37,7 @@ mod home;
 mod lan;
 mod link;
 mod link_preview;
+pub mod manifest;
 mod matrix_login;
 mod onboarding;
 mod owner;
@@ -80,16 +80,14 @@ pub use agent_chain::{
     AgentActionFailure, AgentChainBot, AgentChainRow, AgentChainStatus, AgentChainsViewModel,
     AgentConcurrency, AgentSettingsViewModel, BOT_TOKEN_HEADER, ChainCarrier, ChainError,
     ChainLimitKind, ChainLimits, ChainRefusal, ChainSpend, ChainTurnGrant, ChainTurnReport,
-    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_CHAIN_HEADER,
-    WONTON_MAX_DEPTH_HEADER, WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER,
-    WONTON_ON_BEHALF_OF_HEADER, WONTON_PLUGIN_HEADER, WONTON_USER_HEADER, agent_chain_stop_path,
-    agent_consumer_concurrency_path,
+    DEFAULT_CONSUMER_AGENT_CONCURRENCY, SESSION_HEADER, WONTON_BOT_HEADER, WONTON_MAX_DEPTH_HEADER,
+    WONTON_MAX_ROUNDS_HEADER, WONTON_MAX_TOKENS_HEADER, WONTON_ON_BEHALF_OF_HEADER,
+    WONTON_USER_HEADER, agent_chain_stop_path, agent_consumer_concurrency_path,
 };
-pub use agent_handoff::{
-    HAND_OFF_STATUS_TOOL, HAND_OFF_TOOL, HandOffRequest, HandOffResult, HandOffSession,
-    HandOffState, HandOffStatusRequest, SEND_MESSAGE_TOOL, SendMessageRequest,
+pub use agent_outbox::{
+    OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult, SEND_MESSAGE_TOOL,
+    SendMessageRequest,
 };
-pub use agent_outbox::{OutboxFailure, OutboxItem, OutboxKind, OutboxReceipt, OutboxResult};
 pub use agent_permission::{
     AGENT_PERMISSION_PATH, AGENT_PERMISSION_TTL_SECS, AgentPermissionKind, AgentPermissionOption,
     AgentPermissionOutcome, AgentPermissionRequest,
@@ -338,8 +336,8 @@ pub use side_chat::{
 };
 pub use sidebar::{SidebarApp, SidebarBadge, SidebarOpen, SidebarViewModel};
 pub use timeline::{
-    BackPagination, ImageCaption, ImageContent, KeyNotice, MatrixTarget, MediaHandle,
-    MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
+    BackPagination, FileAttachment, ImageCaption, ImageContent, KeyNotice, MatrixTarget,
+    MediaHandle, MessageAction, MessageContent, MessageReceipt, RichBlock, RichBlockKind, RichLink,
     RichLinkKind, RichSpan, SendState, TimelineContent, TimelineDiff, TimelineItem,
     TimelineMessage, TimelineScroll, TimelineUpdate, TimelineViewport,
 };

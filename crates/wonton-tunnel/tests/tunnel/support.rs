@@ -3,7 +3,7 @@
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
     time::Duration,
@@ -27,6 +27,72 @@ pub const WAIT: Duration = Duration::from_secs(15);
 /// 同一端口重建时等端口空出来的总预算：iroh 关掉 endpoint 以后套接字还要过一阵才真的释放，并行的
 /// 测试的 `bind(0)` 也可能临时拿走这个端口。
 pub const RESTART: Duration = Duration::from_secs(60);
+
+#[derive(Clone, Default)]
+pub struct CapturedLog {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    changed: Arc<tokio::sync::Notify>,
+}
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.bytes.lock().unwrap().extend_from_slice(bytes);
+        self.changed.notify_one();
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl CapturedLog {
+    pub fn text(&self) -> String {
+        String::from_utf8(self.bytes.lock().unwrap().clone()).unwrap()
+    }
+
+    pub async fn wait_for(&self, text: &str) {
+        loop {
+            let notified = self.changed.notified();
+            if self.text().contains(text) {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+// Loopback endpoints and their spawned tasks must use one process-global dispatcher.
+pub fn isolated_log_test(name: &str) -> bool {
+    const CHILD: &str = "WONTON_TUNNEL_LOG_TEST_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        return false;
+    }
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", name, "--nocapture"])
+        .env(CHILD, "1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "isolated log test failed:\n{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    true
+}
+
+pub fn capture_logs(filter: &str) -> CapturedLog {
+    let logs = CapturedLog::default();
+    let writer = logs.clone();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .try_init()
+        .expect("isolated log subscriber");
+    logs
+}
 
 /// 测试里的“家里服务器”：隧道服务端，可以停止、模拟崩溃，再用同样的身份和端口重启。
 pub struct Home {
