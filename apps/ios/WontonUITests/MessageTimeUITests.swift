@@ -17,8 +17,9 @@ final class MessageTimeUITests: XCTestCase {
         app.launch()
 
         app.staticTexts["Echo"].tap()
+        // 落点在第 2 条附近，第 4 条是整屏的高消息：message 5 在折叠线下面，message 3 一定在屏上。
         let message = app.staticTexts
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 5")).firstMatch
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Fixture message 3")).firstMatch
         XCTAssertTrue(message.waitForExistence(timeout: 10), "时间线没出来")
         message.press(forDuration: 1.2)
 
