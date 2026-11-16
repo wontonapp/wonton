@@ -191,7 +191,7 @@ val StoreListing.allPlugins: List<StoreItem>
     get() = official.plugins + added.flatMap { it.section.plugins } + community.plugins
 
 /** 要卸载的插件，确认对话框用。 */
-data class UninstallTarget(val id: String, val title: String)
+data class UninstallTarget(val id: String, val title: String, val keepDataOnly: Boolean = false)
 
 /** 要打开设置页的插件，设置页用：标题栏显示插件的标题。 */
 data class PluginSettingsTarget(val id: String, val title: String)

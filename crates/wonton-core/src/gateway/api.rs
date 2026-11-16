@@ -8,6 +8,7 @@
 //! | GET | `/_wonton/api/plugins/{id}` | 已安装插件的详情（`PluginDetail`） |
 //! | POST | `/_wonton/api/plugins/preview` | 请求体是来源（`InstallSource`）或插件包，返回要主人确认的内容（`InstallPreview`）；上传的包暂存到确认，`source` 是 `upload:sha256:…` |
 //! | POST | `/_wonton/api/plugins` | 按来源安装（`InstallRequest`），或者上传插件包加 `?grant=权限,权限`（可加 `&lan_webui=true`）；`grant` 含全部必需权限，可选项放在 `enabled_permissions`（201 `InstalledPlugin`） |
+//! | POST | `/_wonton/api/plugins/{id}/retry` | 安装失败且回滚完成时，按核心保留的原包及确认的输入重新安装（204）；原决定不可用或清理未完成时拒绝 |
 //! | POST | `/_wonton/api/plugins/{id}/start` | 启动已停止的插件；已运行时不重复启动，就绪并核对完成后返回（200 `InstalledPlugin`）。容器不在时按安装记录照安装的路径重建再启动（网络不在也重建），做不到按原因报类别：镜像拉不到 `image_pull_failed`，安装记录读不出 `record_unusable` |
 //! | GET | `/_wonton/api/plugins/{id}/lifecycle` | 与启动接口相同的鉴权，返回持久化意图和恢复日志（200 `PluginLifecycle`），不把容器观测状态当作主人的意图 |
 //! | POST | `/_wonton/api/plugins/{id}/stop` | 与启动接口相同的鉴权，持久化明确停止意图；幂等停止后返回（200 `InstalledPlugin`），忙时拒绝，不在后台重新启动 |
@@ -490,6 +491,30 @@ fn devices(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+pub async fn retry(
+    State(gateway): State<Arc<Gateway>>,
+    peer: Option<Extension<TunnelPeer>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
+    if let Some(denied) =
+        permissions::require(&gateway, peer, &headers, PermissionItem::InstallApps)
+    {
+        return denied;
+    }
+    let id = match PluginId::parse(&id) {
+        Ok(id) => id,
+        Err(error) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid_input", &error.to_string());
+        }
+    };
+    gateway.note_languages(peer.map(|Extension(peer)| peer), &headers);
+    match gateway.plugins.retry_failed_install(id).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => install_error(&error),
+    }
 }
 
 /// 上传的插件包，`?grant=` 是主人确认的权限。包已在门槛的预览里解析过，这里直接装。

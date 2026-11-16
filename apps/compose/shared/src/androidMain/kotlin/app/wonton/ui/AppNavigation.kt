@@ -44,6 +44,7 @@ internal class AppNavigation(val pages: PagesState, val chat: ChatNavigation, va
             }
         },
         checkInstalled = { checkInstalled() },
+        openStore = { openStore() },
     )
 
     /** 点通知进房间；通知来自旁聊时 [sideChatRoot] 是它的根，进那个旁聊（ADR-0093 §4）。 */
@@ -189,6 +190,12 @@ internal fun AppNavigation.checkInstalled() {
     plugins.addingSource = false
     plugins.uninstalling = null
     pages.send(Action.Pages(PageAction.OpenPage(TabRef.Apps)))
+}
+
+internal fun AppNavigation.openStore() {
+    plugins.detail = null
+    plugins.confirmation = null
+    openApps(HomePage.STORE)
 }
 
 /** 打开某个插件的详情页（在应用网格这一层上）。 */

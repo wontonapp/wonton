@@ -230,7 +230,9 @@ private fun InstallCompletion(
                 }
                 is PluginTaskState.Succeeded -> Text(stringResource(R.string.install_completion_done),
                     style = WontonTheme.typography.itemTitle, color = WontonTheme.colors.textPrimary.toColor())
-                is PluginTaskState.Failed -> InstallFailure(state.reason, state.message, onReview)
+                is PluginTaskState.Failed -> InstallFailedCompletion(
+                    state, installed?.installFailure, plugins, id, onReview,
+                )
                 is PluginTaskState.Uncertain -> {
                     ProblemNotice(
                         Problem(
@@ -253,16 +255,46 @@ private fun InstallCompletion(
     }
 }
 
+/** 安装失败的结果页：可重试时“重试”按核心保留的原决定直接重装；包变了的给“看看处理”。 */
+@Composable
+private fun InstallFailedCompletion(
+    state: PluginTaskState.Failed,
+    failure: app.wonton.protocol.InstallFailure?,
+    plugins: PluginsState,
+    id: String,
+    onReview: () -> Unit,
+) {
+    InstallFailure(
+        state.reason, state.message,
+        onReview = {
+            if (failure?.retryable == true) {
+                plugins.send(Action.Plugins(PluginAction.RetryPluginInstall(id = id)))
+            } else {
+                onReview()
+            }
+        },
+        retry = failure?.retryable == true,
+        showReview = failure == null && state.reason == PluginFailure.CHANGED,
+    )
+}
+
 /** 安装失败：标题和下一步按类别出，标题沿用商店任务行的“安装失败：原因”格式。 */
 @Composable
-fun InstallFailure(reason: PluginFailure, message: String, onReview: () -> Unit) {
+fun InstallFailure(
+    reason: PluginFailure,
+    message: String,
+    onReview: () -> Unit,
+    retry: Boolean = false,
+    showReview: Boolean = reason == PluginFailure.CHANGED,
+) {
     val problem = reason.problem(message)
     ProblemNotice(Problem(
         title = stringResource(R.string.plugin_task_install_failed, problem.titleText),
         nextStep = problem.nextStepText,
         detail = problem.detail,
     ))
-    WontonButton(stringResource(R.string.plugin_task_review), onReview)
+    if (retry) WontonButton(stringResource(R.string.common_retry), onReview)
+    else if (showReview) WontonButton(stringResource(R.string.plugin_task_review), onReview)
 }
 
 @Composable

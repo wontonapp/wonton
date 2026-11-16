@@ -17,4 +17,5 @@
     <string name="plugin_sources_add">追加</string>
     <!-- Status of a finished update task. -->
     <string name="plugin_task_upgrade_done">アップデートしました</string>
+    <string name="plugin_clear_failure_title">「%1$s」の失敗したインストールを消去しますか？</string>
 </resources>

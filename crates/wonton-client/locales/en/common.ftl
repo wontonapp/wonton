@@ -48,6 +48,7 @@ plugins-tasks-preview-no-source = This preview has no source, so it can't be ins
 plugins-tasks-no-such-task = There's no such task: { $id }
 
 plugins-tasks-task-not-done = The task isn't finished yet.
+plugins-tasks-retry-unavailable = The original install is no longer available to retry.
 
 # $title is the app's title, shown as it comes from the store.
 plugins-tasks-task-running = { $title } is already being installed, updated, or uninstalled.

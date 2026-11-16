@@ -85,7 +85,7 @@ extension OpenPage {
 
 extension InstalledPlugin {
     var tabChoices: [TabChoice] {
-        guard webUrl != nil else { return [] }
+        guard installFailure == nil, webUrl != nil else { return [] }
         if tabs.isEmpty {
             return [TabChoice(tab: .plugin(pluginId: id, page: nil), title: title)]
         }

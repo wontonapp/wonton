@@ -3,17 +3,26 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use wonton_protocol::{InstallFailure, InstallStage, InstalledPlugin};
+use wonton_protocol::{InstallFailure, InstallRequest, InstallStage, InstalledPlugin};
 
 use super::entry::{Entry, PluginStatus};
 use super::languages::Languages;
 use super::listed::Listed;
 use super::manager::{InstallError, PluginManager};
 use super::manifest::PluginId;
+use super::package::PluginPackage;
+
+#[derive(Clone)]
+pub(super) struct RetryInstall {
+    pub package: PluginPackage,
+    pub request: InstallRequest,
+    pub providers: Vec<PluginPackage>,
+}
 
 pub(super) struct FailedInstall {
     pub entry: Entry,
     pub failure: InstallFailure,
+    pub retry: Option<RetryInstall>,
 }
 
 impl PluginManager {
@@ -32,6 +41,7 @@ impl PluginManager {
         error: &InstallError,
         stage: InstallStage,
         cleanup_errors: Vec<String>,
+        retry: Option<RetryInstall>,
         langs: &Languages,
     ) {
         let failure = InstallFailure {
@@ -40,25 +50,34 @@ impl PluginManager {
             stage,
             failed_plugin_id: id.to_string(),
             cleanup_errors,
+            retryable: false,
         };
-        self.retain_install_failure(id, failure, None, langs);
+        self.retain_install_failure_with_retry(id, failure, None, retry, langs);
     }
 
-    pub(super) fn retain_install_failure(
+    pub(super) fn retain_install_failure_with_retry(
         &self,
         id: &PluginId,
-        failure: InstallFailure,
+        mut failure: InstallFailure,
         fallback: Option<Arc<Listed>>,
+        retry: Option<RetryInstall>,
         langs: &Languages,
     ) {
         let mut plugins = self.plugins.write().expect("插件表锁中毒");
         let mut failed = self.failed_installs.write().expect("安装结果锁中毒");
+        let previous = failed.remove(id);
         let listed = plugins
             .remove(id)
             .and_then(|entry| entry.listed)
-            .or_else(|| failed.remove(id).and_then(|entry| entry.entry.listed))
+            .or_else(|| {
+                previous
+                    .as_ref()
+                    .and_then(|entry| entry.entry.listed.clone())
+            })
             .or(fallback);
+        let retry = retry.or_else(|| previous.and_then(|entry| entry.retry));
         let Some(listed) = listed else { return };
+        failure.retryable = retry.is_some() && failure.cleanup_errors.is_empty();
         let reason = failure_reason(id, &failure, langs);
         trace_failure(id, &failure);
         failed.insert(
@@ -66,10 +85,43 @@ impl PluginManager {
             FailedInstall {
                 entry: Entry::new(listed, PluginStatus::Degraded { reason }, None),
                 failure,
+                retry,
             },
         );
         drop(failed);
         drop(plugins);
+        self.changed();
+    }
+
+    pub(in crate::plugin) fn retry_preflight_failed(
+        &self,
+        id: &PluginId,
+        previous: &InstallFailure,
+        error: &InstallError,
+        langs: &Languages,
+    ) {
+        let mut failed = self.failed_installs.write().expect("安装结果锁中毒");
+        let Some(entry) = failed
+            .get_mut(id)
+            .filter(|entry| &entry.failure == previous)
+        else {
+            return;
+        };
+        entry.failure.kind = error.kind().to_owned();
+        entry.failure.message = error.to_string();
+        entry.failure.stage = InstallStage::Preparing;
+        entry.failure.failed_plugin_id = id.to_string();
+        if matches!(
+            error,
+            InstallError::Changed(_) | InstallError::NotFound(_) | InstallError::Invalid(_)
+        ) {
+            entry.failure.retryable = false;
+            entry.retry = None;
+        }
+        entry.entry.status = PluginStatus::Degraded {
+            reason: failure_reason(id, &entry.failure, langs),
+        };
+        drop(failed);
         self.changed();
     }
 
@@ -86,6 +138,7 @@ impl PluginManager {
             stage: self.install_stage(id),
             failed_plugin_id: id.to_string(),
             cleanup_errors: Vec::new(),
+            retryable: false,
         })
     }
 
@@ -103,6 +156,7 @@ impl PluginManager {
             return;
         };
         entry.failure.cleanup_errors.extend_from_slice(errors);
+        entry.failure.retryable = false;
         entry.entry.status = PluginStatus::Degraded {
             reason: failure_reason(id, &entry.failure, langs),
         };

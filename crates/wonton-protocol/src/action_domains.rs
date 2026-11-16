@@ -266,6 +266,8 @@ pub enum PluginAction {
         #[serde(default)]
         settings: crate::SettingValues,
     },
+    /// 安装失败回滚后，使用核心保留的原始清单和主人已确认的输入重装，不重新弹确认页。
+    RetryPluginInstall { id: String },
     /// 卸载。`delete_data` 为真时同时删除它的数据、密钥和 Bot 账号，不可恢复。
     UninstallPlugin { id: String, delete_data: bool },
     /// 主人修改哪些角色能打开这个应用。

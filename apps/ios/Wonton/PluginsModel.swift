@@ -103,6 +103,7 @@ enum PluginEntry {
 extension InstalledPlugin {
     /// 打开它的方式，第一种是点图标时用的。都没有时点开看详情。
     var entries: [PluginEntry] {
+        guard installFailure == nil else { return [] }
         var entries: [PluginEntry] = []
         if kind == .agent, let bot = botUserId { entries.append(.chat(botUserId: bot)) }
         if let url = linkUrl, let external = URL(string: url) {
@@ -203,10 +204,11 @@ extension StoreListing {
     }
 }
 
-/// 要卸载的插件，确认对话框用。
+/// 要卸载的插件，确认对话框用。`keepDataOnly` 为真时只清失败的安装，数据一定保留。
 struct UninstallTarget: Identifiable {
     let id: String
     let title: String
+    var keepDataOnly: Bool = false
 }
 
 extension StoreConfirmation {

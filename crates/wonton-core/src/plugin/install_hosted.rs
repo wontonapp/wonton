@@ -248,6 +248,7 @@ impl PluginManager {
                     &failed.error,
                     wonton_protocol::InstallStage::Preparing,
                     failed.cleanup_errors.clone(),
+                    None,
                     langs,
                 );
                 return Err(self.install_rollback_error(

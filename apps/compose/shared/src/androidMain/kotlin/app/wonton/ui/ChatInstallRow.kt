@@ -30,10 +30,7 @@ private val SPINNER_SIZE = 16.dp
 private val SPINNER_STROKE = 2.dp
 private const val PERCENT_FULL = 100f
 
-/**
- * 聊天列表最上面的安装行（ADR-0067）：正在装、正在升级、装失败。只渲染核心给的行，点重试交给确认页，
- * 来源不知道时引导去应用页。
- */
+/** 聊天列表最上面的安装行（ADR-0067）：未保留安装输入时引导去应用页。 */
 @Composable
 internal fun ChatInstallRow(
     row: BotInstallRow,
@@ -83,7 +80,12 @@ internal fun ChatInstallRow(
             }
             when (val state = row.state) {
                 is BotInstallState.Running -> RunningLine(row.operation, state)
-                is BotInstallState.Failed -> FailedLine(row, state, onRetry, onOpenPage)
+                is BotInstallState.Failed -> FailedLine(
+                    row, state,
+                    plugins.viewModel.installed?.plugins?.firstOrNull { it.id == row.pluginId }
+                        ?.installFailure?.retryable == true,
+                    onRetry, onOpenPage,
+                )
                 is BotInstallState.Uncertain -> UncertainLine(state.message, onOpenPage)
             }
         }
@@ -107,6 +109,7 @@ private fun RunningLine(operation: PluginOperation, state: BotInstallState.Runni
 private fun FailedLine(
     row: BotInstallRow,
     state: BotInstallState.Failed,
+    retryable: Boolean,
     onRetry: () -> Unit,
     onOpenPage: () -> Unit,
 ) {
@@ -128,8 +131,9 @@ private fun FailedLine(
     }
     ProblemDetail(state.message)
     Row {
-        // 升级不重新预览来源，装的时候来源不知道就不能重试。
-        if (row.operation == PluginOperation.UPGRADE || row.source != null) {
+        if (row.operation == PluginOperation.UPGRADE ||
+            (row.operation == PluginOperation.INSTALL && retryable)
+        ) {
             WontonSmallButton(stringResource(R.string.common_retry), onRetry)
         } else {
             WontonSmallButton(stringResource(R.string.chat_install_open_page), onOpenPage)

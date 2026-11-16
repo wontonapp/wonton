@@ -86,12 +86,21 @@ struct ChatInstallRowView: View {
         }
     }
 
-    /// 升级直接重新预览；装的时候来源不知道就不能重试，回应用页看它。
-    private var canRetry: Bool { row.operation == .upgrade || row.source != nil }
+    private var retryableInstall: Bool {
+        plugins.viewModel.installed?.plugins.first { $0.id == row.pluginId }?.installFailure?.retryable == true
+    }
+
+    private var canRetry: Bool { row.operation == .upgrade || (row.operation == .install && retryableInstall) }
 
     private var actions: some View {
         Button(canRetry ? String(localized: .Common.commonRetry) : String(localized: .Chat1.chatInstallOpenPage)) {
-            if canRetry { retry() } else { openPage() }
+            if row.operation == .install && canRetry {
+                plugins.send(.plugins(action: .retryPluginInstall(id: row.pluginId)))
+            } else if canRetry {
+                retry()
+            } else {
+                openPage()
+            }
         }
         .buttonStyle(WontonSmallButtonStyle())
     }

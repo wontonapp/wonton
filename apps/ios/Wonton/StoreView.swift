@@ -394,6 +394,8 @@ struct TaskRow: View {
     let review: () -> Void
     /// The result is uncertain: go look in the installed apps instead of installing again.
     var checkInstalled: () -> Void = {}
+    var showsRetry = true
+    var showsReview = true
     var showsDismiss = true
     @Environment(\.wontonColors) private var colors
 
@@ -456,10 +458,17 @@ struct TaskRow: View {
                     Text(nextStep).foregroundStyle(Color(colors.textSecondary))
                 }
                 ProblemDetail(text: message)
-                if reason == .changed {
+                if showsReview, reason == .changed,
+                   !(task.operation == .install && model.viewModel.installed?.plugins
+                       .first(where: { $0.id == task.id })?.installFailure != nil) {
                     Button(
                         String(localized: .Plugin3.pluginTaskReview),
                         action: review).buttonStyle(WontonSmallButtonStyle())
+                }
+                if showsRetry, task.operation == .install,
+                   model.viewModel.installed?.plugins.first(where: { $0.id == task.id })?.installFailure?.retryable == true {
+                    Button(.Common.commonRetry) { model.send(.plugins(action: .retryPluginInstall(id: task.id))) }
+                        .buttonStyle(WontonSmallButtonStyle())
                 }
             }
         case let .uncertain(message, nextStep):

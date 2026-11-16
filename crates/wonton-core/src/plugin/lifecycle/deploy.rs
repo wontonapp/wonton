@@ -54,7 +54,7 @@ impl PluginManager {
                     cleanup_result = "pending", "Plugin installation failed; starting rollback");
                 undo.keep_bot_data();
                 let failures = self.rollback(undo, langs).await;
-                self.installation_failed(id, &error, stage, failures.clone(), langs);
+                self.installation_failed(id, &error, stage, failures.clone(), None, langs);
                 Err(self.install_rollback_error(error, failures, langs))
             }
         }

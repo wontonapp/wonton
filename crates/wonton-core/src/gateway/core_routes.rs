@@ -90,6 +90,7 @@ fn plugin_routes() -> Router<Arc<Gateway>> {
             "/_wonton/api/plugins/{id}",
             get(api::detail).delete(api::uninstall),
         )
+        .route("/_wonton/api/plugins/{id}/retry", post(api::retry))
         .route(
             &wonton_protocol::plugin_scope_path("{id}"),
             put(super::plugin_scope::scope),

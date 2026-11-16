@@ -45,6 +45,59 @@ impl PluginsLink {
         )
     }
 
+    /// 安装失败回滚后，核心保留原始安装决定时直接重装，不重新请求来源或权限确认。
+    pub(crate) fn retry_install(self: &Arc<Self>, id: String) -> Result<(), CoreError> {
+        let (title, icon, retryable) = {
+            let view = self.view.borrow();
+            if view.tasks.iter().any(|task| {
+                task.id == id && matches!(task.state, PluginTaskState::Uncertain { .. })
+            }) {
+                return Err(CoreError::NotReady {
+                    reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
+                });
+            }
+            let plugin = view
+                .installed
+                .as_ref()
+                .and_then(|installed| installed.plugins.iter().find(|plugin| plugin.id == id))
+                .ok_or_else(|| CoreError::InvalidInput {
+                    reason: l10n!(
+                        CATALOG,
+                        language(),
+                        "plugins-tasks-no-such-task",
+                        id = id.as_str()
+                    ),
+                })?;
+            (
+                plugin.title.clone(),
+                plugin.icon.clone(),
+                plugin
+                    .install_failure
+                    .as_ref()
+                    .is_some_and(|failure| failure.retryable),
+            )
+        };
+        if !retryable {
+            return Err(CoreError::NotReady {
+                reason: l10n!(CATALOG, language(), "plugins-tasks-retry-unavailable"),
+            });
+        }
+        self.begin_task(&id, &title, icon, PluginOperation::Install)?;
+        let link = self.clone();
+        let generation = self.generation.load(Ordering::SeqCst);
+        self.runtime.spawn(async move {
+            let Some(api) = link.task_api(&id, generation) else {
+                return;
+            };
+            let path = ["plugins", id.as_str(), "retry"];
+            let body = serde_json::json!({});
+            let sent = api.post_unit(&path, &body, INSTALL_TIMEOUT);
+            link.finish_task(&id, Outcome::Running { version: None }, sent)
+                .await;
+        });
+        Ok(())
+    }
+
     /// `InstallPlugin`：按预览安装，授予预览里列出的全部权限。
     pub(crate) fn install(
         self: &Arc<Self>,
@@ -73,28 +126,28 @@ impl PluginsLink {
             preview.icon.clone(),
             PluginOperation::Install,
         )?;
-        let request = InstallRequest {
-            source,
-            digest: preview.digest,
-            plan: preview.plan,
-            scope: None,
-            audience,
-            grant,
-            enabled_permissions,
-            secrets,
-            settings,
-            devices,
-            lan_webui,
-            install_together: Vec::new(),
-            connect_plugins: Vec::new(),
-            remote_oauth: None,
-        };
         let link = self.clone();
         let id = preview.id;
         let generation = self.generation.load(Ordering::SeqCst);
         self.runtime.spawn(async move {
             let Some(api) = link.task_api(&id, generation) else {
                 return;
+            };
+            let request = InstallRequest {
+                source,
+                digest: preview.digest,
+                plan: preview.plan,
+                scope: None,
+                audience,
+                grant,
+                enabled_permissions,
+                secrets,
+                settings,
+                devices,
+                lan_webui,
+                install_together: Vec::new(),
+                connect_plugins: Vec::new(),
+                remote_oauth: None,
             };
             let sent = api.post_unit(&["plugins"], &request, INSTALL_TIMEOUT);
             link.finish_task(&id, Outcome::Running { version: None }, sent)

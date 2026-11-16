@@ -208,6 +208,7 @@ impl ClientCore {
                 secrets,
                 settings,
             } => scope.plugins.upgrade(preview, secrets, settings),
+            PluginAction::RetryPluginInstall { id } => scope.plugins.retry_install(id),
             PluginAction::UninstallPlugin { id, delete_data } => {
                 scope.plugins.uninstall(id, delete_data)
             }

@@ -28,4 +28,6 @@
     <string name="plugin_task_upgrade_failed">升級失敗：%1$s</string>
     <!-- Button that uninstalls but keeps the app's data. -->
     <string name="plugin_uninstall_keep_data">解除安裝，保留資料</string>
+    <string name="plugin_clear_failure">清除失敗的安裝</string>
+    <string name="plugin_clear_failure_message">應用程式的資料會保留。</string>
 </resources>

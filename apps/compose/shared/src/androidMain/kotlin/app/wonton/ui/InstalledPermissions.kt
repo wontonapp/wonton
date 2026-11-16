@@ -41,7 +41,7 @@ internal fun PluginPermissionSection(
     DetailSection(stringResource(R.string.install_permissions)) {
         detail.permissions.forEach { line ->
             key(detail.id, line.permission) {
-                if (line.optional && detail.installed != null) {
+                if (line.optional && detail.installed != null && detail.installed.installFailure == null) {
                     InstalledPermission(
                         plugins, detail.id, line, changing == null, onUpdated,
                         onBusy = { busy -> changing = if (busy) line.permission else null },

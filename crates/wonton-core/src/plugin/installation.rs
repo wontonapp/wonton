@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::install_failure::RetryInstall;
 use super::manager::{
     Entry, InstallError, PluginManager, PluginStatus, PluginView, UninstallReport, busy, detached,
     now_secs,
@@ -99,7 +100,7 @@ impl PluginManager {
         let manifest = decision.package.manifest.clone();
         // 保持 install 子树的 future 状态机在堆上：默认 2 MiB 测试线程栈装不下整条线性 await 链
         // （egress_plugin_failures… 的栈溢出）。
-        match Box::pin(self.install_checked_retained(&decision, settings, langs)).await {
+        match Box::pin(self.install_checked_retained(&decision, settings, None, langs)).await {
             Ok((view, undo)) => {
                 if let Err(error) = self.capabilities_installed(&manifest, &[], false).await {
                     let mut failures = Vec::new();
@@ -112,7 +113,7 @@ impl PluginManager {
                     let mut cause = self.failure_cause(&manifest.id, &error);
                     cause.cleanup_errors.extend(failures.iter().cloned());
                     failures.extend(
-                        self.rollback_installed(&manifest.id, undo, &cause, langs)
+                        self.rollback_installed(&manifest.id, undo, &cause, None, langs)
                             .await,
                     );
                     return Err(self.install_rollback_error(error, failures, langs));
@@ -144,6 +145,7 @@ impl PluginManager {
         &self,
         decision: &InstallDecision,
         settings: std::collections::BTreeMap<String, serde_json::Value>,
+        retry: Option<&RetryInstall>,
         langs: &Languages,
     ) -> Result<(PluginView, Undo), InstallError> {
         let InstallDecision {
@@ -192,6 +194,9 @@ impl PluginManager {
                 &error,
                 self.install_stage(&manifest.id),
                 Vec::new(),
+                retry
+                    .filter(|retry| retry.package.manifest.id == manifest.id)
+                    .cloned(),
                 langs,
             );
             return Err(error);
@@ -230,7 +235,7 @@ impl PluginManager {
                 if let Err(error) = self.register_capability_provider(manifest) {
                     let cause = self.failure_cause(&manifest.id, &error);
                     let failures = self
-                        .rollback_installed(&manifest.id, undo, &cause, langs)
+                        .rollback_installed(&manifest.id, undo, &cause, retry, langs)
                         .await;
                     return Err(self.install_rollback_error(error, failures, langs));
                 }
@@ -246,6 +251,7 @@ impl PluginManager {
         id: &PluginId,
         mut undo: Undo,
         cause: &wonton_protocol::InstallFailure,
+        retry: Option<&RetryInstall>,
         langs: &Languages,
     ) -> Vec<String> {
         let stage = undo.final_stage.unwrap_or_else(|| self.install_stage(id));
@@ -257,7 +263,7 @@ impl PluginManager {
         let mut failure = cause.clone();
         failure.stage = stage;
         failure.cleanup_errors.extend(failures.iter().cloned());
-        self.retain_install_failure(id, failure, None, langs);
+        self.retain_install_failure_with_retry(id, failure, None, retry.cloned(), langs);
         failures
     }
 

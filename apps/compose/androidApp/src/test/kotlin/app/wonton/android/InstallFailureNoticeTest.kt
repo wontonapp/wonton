@@ -3,6 +3,8 @@ package app.wonton.android
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.assertDoesNotExist
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -12,6 +14,7 @@ import app.wonton.ui.R
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.problem
 import org.junit.Rule
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -37,6 +40,31 @@ class InstallFailureNoticeTest {
     @Test
     fun changedShowsCategoryTitleAndNextStep() {
         assertCategory(PluginFailure.CHANGED)
+    }
+
+    @Test
+    fun retryableFailureDispatchesRetry() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        var retried = false
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                InstallFailure(PluginFailure.UPSTREAM, "detail", onReview = { retried = true }, retry = true)
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.common_retry)).performClick()
+        assertTrue(retried)
+    }
+
+    @Test
+    fun nonRetryableFailureHasNoRetryOrReview() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        compose.setContent {
+            WontonTheme(testAppearance()) {
+                InstallFailure(PluginFailure.CHANGED, "detail", onReview = {}, showReview = false)
+            }
+        }
+        compose.onNodeWithText(context.getString(R.string.common_retry)).assertDoesNotExist()
+        compose.onNodeWithText(context.getString(R.string.plugin_task_review)).assertDoesNotExist()
     }
 
     private fun assertCategory(reason: PluginFailure) {

@@ -361,6 +361,7 @@ async fn a_dropped_install_preserves_the_server_failure_category() {
         stage: wonton_protocol::InstallStage::PullingImages,
         failed_plugin_id: "app.photos".into(),
         cleanup_errors: vec!["rollback incomplete".into()],
+        retryable: false,
     });
     rig.core.set_lists(vec![vec![failed]]);
     rig.core.answer(
@@ -386,6 +387,93 @@ async fn a_dropped_install_preserves_the_server_failure_category() {
         }
     );
     assert!(!rig.app.plugins().tasks[0].waiting_for_connection);
+}
+
+#[tokio::test]
+async fn retry_after_install_rollback_updates_the_task_and_installed_view() {
+    let rig = Rig::new().await;
+    rig.core.set_lists(vec![Vec::new()]);
+    rig.connected().await;
+    rig.wait_for(|view| view.installed.is_some()).await;
+    let mut failed = installed(
+        "app.photos",
+        PluginState::Degraded {
+            reason: "image denied".into(),
+        },
+    );
+    failed.install_failure = Some(wonton_protocol::InstallFailure {
+        kind: "image_pull_failed".into(),
+        message: "image denied".into(),
+        stage: wonton_protocol::InstallStage::PullingImages,
+        failed_plugin_id: "app.photos".into(),
+        cleanup_errors: Vec::new(),
+        retryable: true,
+    });
+    rig.core.set_lists(vec![vec![failed]]);
+    rig.core.answer(
+        Method::POST,
+        "/_wonton/api/plugins",
+        core_error(502, "image_pull_failed", "image denied"),
+    );
+    rig.app
+        .dispatch(wonton_protocol::Action::Plugins {
+            action: wonton_protocol::PluginAction::InstallPlugin {
+                preview: preview("app.photos"),
+                secrets: Default::default(),
+                settings: Default::default(),
+            },
+        })
+        .unwrap();
+    let state = rig.task("app.photos", |state| !state.in_progress()).await;
+    assert!(matches!(
+        state,
+        PluginTaskState::Failed {
+            reason: PluginFailure::SourceUnavailable,
+            ..
+        }
+    ));
+    rig.wait_for(|view| {
+        view.installed.as_ref().is_some_and(|list| {
+            list.plugins.iter().any(|plugin| {
+                plugin.id == "app.photos"
+                    && plugin
+                        .install_failure
+                        .as_ref()
+                        .is_some_and(|failure| failure.retryable)
+            })
+        })
+    })
+    .await;
+
+    let path = "/_wonton/api/plugins/app.photos/retry";
+    rig.core.hold(Method::POST, path);
+    rig.core
+        .answer(Method::POST, path, Canned(204, String::new()));
+    rig.app
+        .dispatch(wonton_protocol::Action::Plugins {
+            action: wonton_protocol::PluginAction::RetryPluginInstall {
+                id: "app.photos".into(),
+            },
+        })
+        .unwrap();
+    assert_eq!(rig.app.plugins().tasks[0].state, PluginTaskState::Running);
+    rig.core.set_lists(vec![vec![running("app.photos")]]);
+    rig.core.release(Method::POST, path);
+    rig.task("app.photos", |state| *state == PluginTaskState::Succeeded)
+        .await;
+    let view = rig
+        .wait_for(|view| {
+            view.installed.as_ref().is_some_and(|list| {
+                list.plugins.iter().any(|plugin| {
+                    plugin.id == "app.photos"
+                        && plugin.install_failure.is_none()
+                        && matches!(plugin.status, PluginState::Running { .. })
+                })
+            })
+        })
+        .await;
+    assert_eq!(view.tasks[0].state, PluginTaskState::Succeeded);
+    assert_eq!(rig.core.seen(&Method::POST, path).len(), 1);
 }
 
 /// 请求还吊着时断网：不等请求报错就先说在等连接，连回来再回到在做。

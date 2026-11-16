@@ -23,4 +23,5 @@
     <string name="plugin_sources_add">Add</string>
     <!-- Status of a finished update task. -->
     <string name="plugin_task_upgrade_done">Updated</string>
+    <string name="plugin_clear_failure_title">Clear the failed installation of %1$s?</string>
 </resources>
