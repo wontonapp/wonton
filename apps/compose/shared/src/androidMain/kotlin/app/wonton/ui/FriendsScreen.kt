@@ -1,6 +1,7 @@
 package app.wonton.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,6 +34,7 @@ import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonDialog
 import app.wonton.ui.design.WontonDialogAction
 import app.wonton.ui.design.WontonIconButton
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonPushedBar
 import app.wonton.ui.design.WontonScreen
 import app.wonton.ui.design.WontonTextField
@@ -178,7 +180,19 @@ private fun FriendContent(
             send(Action.Friends(FriendsAction.RefreshFriends))
         }
         state == FriendsState.Loading -> LoadingView()
-        else -> FriendEmpty(onAdd)
+        else -> Column(verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.s12)) {
+            if (friends.publicAccessOff) {
+                // 公网访问总开关关着：空页也如实挂一条（ADR-0090 第 2 节）。
+                WontonNotice(
+                    icon = WontonIcon.Info,
+                    title = stringResource(R.string.friends_public_access_off),
+                    isError = false,
+                    lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
+                )
+            }
+            // 空页自己铺满，压进横幅下面的剩余高度，别把加好友按钮挤出屏。
+            Box(Modifier.weight(1f)) { FriendEmpty(onAdd) }
+        }
     }
 }
 

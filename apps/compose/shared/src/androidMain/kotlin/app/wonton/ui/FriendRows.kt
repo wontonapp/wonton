@@ -31,12 +31,14 @@ import app.wonton.protocol.FriendsViewModel
 import app.wonton.ui.design.WontonButton
 import app.wonton.ui.design.WontonButtonKind
 import app.wonton.ui.design.WontonGroup
+import app.wonton.ui.design.WontonNotice
 import app.wonton.ui.design.WontonRow
 import app.wonton.ui.design.WontonSeparator
 import app.wonton.ui.design.WontonSmallButton
 import app.wonton.ui.design.WontonTheme
 import app.wonton.ui.design.toColor
 import app.wonton.ui.design.wontonContentPadding
+import app.wonton.ui.icons.WontonIcon
 
 @Composable
 internal fun FriendList(
@@ -57,6 +59,15 @@ internal fun FriendList(
         verticalArrangement = Arrangement.spacedBy(WontonTheme.spacing.sectionGap),
     ) {
         failed?.let { ProblemRow(it.problem(), onRetry) }
+        if (friends.publicAccessOff) {
+            // 公网访问总开关关着：如实挂一条（ADR-0090 第 2 节）。
+            WontonNotice(
+                icon = WontonIcon.Info,
+                title = stringResource(R.string.friends_public_access_off),
+                isError = false,
+                lines = listOf(stringResource(R.string.friends_public_access_off_detail)),
+            )
+        }
         FriendRequestRows(friends, onAction)
         FriendRows(friends, onMenu, onAdd)
         FriendGroups(friends, onNewGroup, onRenameGroup, onDeleteGroup)
