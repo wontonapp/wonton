@@ -76,7 +76,7 @@ impl PortStream {
             forward::tunnel_to_tcp(&mut stream.recv, &mut write, Some(&delivered)),
         );
         if let Err(err) = pumped {
-            debug!("plugin port connection ended with an error: {err}");
+            debug!(error = %err.log_safe(), "plugin port connection ended with an error");
             stream.abort();
         }
     }
